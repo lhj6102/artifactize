@@ -31,8 +31,8 @@ artifactize 호출자의 변수는 빠지고, 저장소 밖에 전용 출력 공
 보존 세부 사항을 다룹니다. CLI, [TUI](../tui/index.md), [데스크톱](../desktop/index.md)은
 같은 저장된 증거를 읽습니다.
 
-선언한 피연산자 안의 `{spec}/requirements.json` 같은 참조는 그 입력을
-받아들입니다. 실행 중에 파일이 바뀌면 리뷰는 무효가 됩니다. 이후 Run은 명령을 다시 실행하지 않고
+선언한 피연산자에서 `{spec}/requirements.json`처럼 참조하면 그 Artifact가
+입력에 들어갑니다. 실행 중에 파일이 바뀌면 리뷰는 무효가 됩니다. 이후 Run은 명령을 다시 실행하지 않고
 바뀌지 않은 결과를 RED 결과까지 포함해 재사용합니다.
 정확한 제한, 환경, 치환, 프로세스 정리는 [Fingerprint](fingerprint.md)와 [runtime 실행 레퍼런스](declarations.md#runtime-execution-library)를
 보세요.

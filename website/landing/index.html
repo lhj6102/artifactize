@@ -110,7 +110,7 @@
         <img src="/media/graph-example.en.png" width="1600" height="900" loading="eager" decoding="async"
              alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command."
              data-ko-src="/media/graph-example.ko.png"
-             data-ko-alt="Artifact Graph 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+             data-ko-alt="Artifact Graph 예시: .artf 파일에서 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 Artifact로 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
       </figure>
       <figure class="hero-demo">
         <img src="/media/review-loop.gif" width="1280" height="720" loading="eager" decoding="async"
@@ -214,7 +214,7 @@
           <p data-locale="en" class="step-k"><b>03</b>Checks</p>
           <p data-locale="ko" class="step-k"><b>03</b>검사</p>
           <h3 data-locale="en" id="step-relations-h">Code arrives, and checks connect the parts.</h3>
-          <h3 data-locale="ko" id="step-relations-h">코드가 들어오고, 검사가 조각들을 잇습니다.</h3>
+          <h3 data-locale="ko" id="step-relations-h">코드가 추가되고, 검사로 조각들을 연결합니다.</h3>
           <p data-locale="en">Compare pieces with each other. Alice approves the specification before work builds on it.</p>
           <p data-locale="ko">조각끼리 비교하세요. Alice는 명세를 바탕으로 작업을 시작하기 전에 명세를 승인합니다.</p>
           <p data-locale="en" class="sr">The code is compared with the specification; Alice signs off the specification.</p>
@@ -360,7 +360,7 @@
           </a>
         </div>
         <p data-locale="en" class="download-note">The app brings the <code>artifactize</code> command with it. On a Mac, open the app once to set up the Terminal command. On Ubuntu 22.04, Debian 12 or later, open the .deb with your software installer or run <code>sudo apt install ./Artifactize-amd64.deb</code>.</p>
-        <p data-locale="ko" class="download-note">앱에 <code>artifactize</code> 명령이 함께 들어 있습니다. Mac에서는 앱을 한 번 열면 터미널 명령이 설정됩니다. Ubuntu 22.04, Debian 12 이상에서는 소프트웨어 설치 프로그램으로 .deb를 열거나 <code>sudo apt install ./Artifactize-amd64.deb</code>를 실행하세요.</p>
+        <p data-locale="ko" class="download-note">앱에 <code>artifactize</code> 명령이 함께 들어 있습니다. Mac에서는 앱을 한 번 열면 터미널에서 artifactize 명령을 쓸 수 있습니다. Ubuntu 22.04, Debian 12 이상에서는 소프트웨어 설치 프로그램으로 .deb를 열거나 <code>sudo apt install ./Artifactize-amd64.deb</code>를 실행하세요.</p>
         <h3 data-locale="en" class="install-cli-title">Or install from the command line</h3>
         <h3 data-locale="ko" class="install-cli-title">또는 명령줄에서 설치</h3>
         <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" data-ko-aria-label="운영체제" hidden>

@@ -77,7 +77,7 @@ Apple의 공증을 받았습니다.
 다른 채널은 독립 실행형 `artifactize-tools` 명령도 제공합니다. 시작 메뉴 항목도
 두 개 추가됩니다. **Artifactize**는 [데스크톱 앱](#desktop-app)을 열고,
 **Artifactize CLI**는 명령의 도움말과 Windows Terminal 또는
-PowerShell을 열라는 안내를 보여 준 뒤, 콘솔을 혼자 쓰고 있을 때는 Enter를 기다립니다. 터미널에서 실행하거나
+PowerShell을 열라는 안내를 보여 준 뒤, 콘솔을 혼자 쓰고 있을 때는 Enter를 누를 때까지 창을 닫지 않습니다. 터미널에서 실행하거나
 입출력을 리디렉션한 경우에는 멈추지 않습니다. Store 패키지는 Windows의 기본
 AppData 가상화를 씁니다. 그래서 앱과 명령은 zip이나 Cargo 설치와 Run, 로그인, 캐시를 공유하지 않고
 패키지 전용 상태를 따로 유지합니다.
@@ -385,7 +385,7 @@ Run, 저장된 Agent 대화, 로그인을 포함한 모든 상태는 한
 `monitor`에 같은 값을 쓰세요. 상태는 리뷰 대상 저장소 밖에 있어야 합니다.
 `auth/` 아래의 토큰도 모든 git 워크트리나
 artifactize 프로젝트 안에서는 거부됩니다. `$HOME`에 있는 dotfiles 저장소나 체크아웃 안의 gitignore된 폴더가 그런 예입니다.
-`ARTIFACTIZE_CODEX_AUTH_FILE`은 저장소가 필요 없습니다
+`ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰면 토큰을 따로 저장할 곳이 필요 없습니다
 ([상태](../features/others/state.md#state)).
 
 ## 백엔드 {#backends}

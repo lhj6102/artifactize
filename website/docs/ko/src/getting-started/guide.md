@@ -69,7 +69,7 @@ status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에�
 디렉터리를 쓰도록 이 터미널을 열어 두세요.
 
 [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 검사를 RED로 만드는 방법도 보여 줍니다. 각 폴더는
-자기 `index.artf` 파일로 자신을 선언합니다. `fingerprint`를 생략하면 내장 파일 변경
+그 안의 `index.artf` 파일에서 Artifact로 선언됩니다. `fingerprint`를 생략하면 내장 파일 변경
 검사인 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
 구분은 [선언 (.artf)](../features/declarations.md)을 보세요.
 
@@ -108,7 +108,7 @@ Artifact의 eval은 그 코드의 스타일과 테스트가 기능을 얼마나 
 
 ## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
 
-위의 둘러보기에는 모델이 필요 없습니다. 이 선택 부분에는 필요합니다. 먼저
+앞의 둘러보기에는 모델이 필요 없지만, 이 선택 단계에는 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된
 모델 자격 증명, 정확한 모델, 프로필을 설정하세요.
 Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두
@@ -142,8 +142,8 @@ review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 �
 지시문을 미리 보여 줍니다. Enter는 Detail을 열고, `c`는 명시적으로 요청을 맡으며, Tab은 도구로 초점을 옮기고
 Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는
 제출합니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
-artifactize가 소유한 Run은 다른 결과와 마찬가지로 Human 결과를 기다리므로, 의존하는 eval들은
-같은 Run 안에서 이어서 진행됩니다. 그냥 `verify`는 제출하고 바로 돌아옵니다. `verify --wait`는
+Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
+의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 그냥 `verify`는 제출하고 바로 돌아옵니다. `verify --wait`는
 Run을 포그라운드에서 따라가다가, 앞선 기계 리뷰가 여전히 유효하다면
 GREEN 승인이 도착하는 즉시 여기서 0으로 종료합니다.
 

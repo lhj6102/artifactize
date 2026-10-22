@@ -16,7 +16,7 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 
 <p align="center">
   <img src="../others/graph-example.en.png" width="800"
-       alt="Artifact Graph 예시: 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 .artf 파일이 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
+       alt="Artifact Graph 예시: .artf 파일에서 프로젝트의 PROBLEM.md, SPEC.md, code/, docs/를 각각 Artifact로 선언합니다. 사람은 문제를 리뷰하고, AI 에이전트는 명세가 문제를 해결하는지, 코드의 테스트가 명세를 검사하는지, 문서가 코드를 설명하는지, 코드와 문서가 각각 정해진 규칙을 따르는지 확인합니다. 코드의 테스트는 명령으로 실행됩니다.">
 </p>
 
 <p align="center">
@@ -35,12 +35,12 @@ Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝
 - AI가 모든 것을 결정하지 않습니다. 비전, 취향, 방향에 관한 중요한 결정은 사람이 내립니다.
 
 **Artifact**는 프로젝트의 한 조각입니다. 코드, 글, 디자인이나 이미지가 될 수 있습니다.
-**그래프**는 이 조각들이 어떻게 연결되는지 보여 줍니다. 조각마다 테스트, AI 리뷰,
+**Artifact Graph**는 이 조각들이 어떻게 연결되는지 보여 줍니다. 조각마다 테스트, AI 리뷰,
 사람의 승인 같은 검사를 붙이세요. 검사 대상이 바뀌지 않았다면 Artifactize는 이전 결과를
 재사용할 수 있습니다. 프로젝트 버전이 다르거나 팀원이 작업하는 사본이어도 마찬가지입니다.
 
-자리를 비운 동안에도 검사는 계속 실행됩니다. 검증마다 Run ID라는 추적 코드가
-붙고, 명령 창을 닫아도 검증은 멈추지 않습니다.
+자리를 비운 동안에도 검사는 계속 실행됩니다. Run마다 Run ID라는 추적 코드가
+붙고, 명령 창을 닫아도 Run은 멈추지 않습니다.
 
 ## 설치
 
@@ -128,9 +128,9 @@ Review 화면이 있습니다.
 그 Run이 보입니다. core는 통과했고, cli의 테스트가 실패해 docs는 막혔으며,
 release는 사람이 승인해야 진행됩니다.
 
-<img src="../screenshots/monitor.png" width="1200" alt="실제 Artifactize 데스크톱 앱: 왼쪽 패널의 예제 브랜치와 대기 중인 승인, 그리고 core는 통과, cli는 실패, docs는 막힘, release는 승인 대기인 Run 그래프.">
+<img src="../screenshots/monitor.png" width="1200" alt="실제 Artifactize 데스크톱 앱: 왼쪽 패널의 예제 브랜치와 대기 중인 승인, 그리고 core는 통과, cli는 실패, docs는 막힘, release는 승인 대기인 Run의 Artifact Graph.">
 
-**Detail:** cli와 그 검사들이 보이고, 양옆에 cli가 사용하는 core와 cli를 사용하는 docs가 함께 보입니다.
+**Detail:** cli와 cli의 검사 목록을 보여 주고, 양옆에 cli가 사용하는 core와 cli를 사용하는 docs를 함께 보여 줍니다.
 
 <img src="../screenshots/detail.png" width="1200" alt="실제 Artifactize 데스크톱 앱의 cli Artifact Detail: 이웃인 core와 docs, 그리고 lint와 tests 검사.">
 

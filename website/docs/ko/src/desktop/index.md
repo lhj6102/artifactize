@@ -22,7 +22,7 @@ artifactize-desktop graph --repo PATH
 인자가 없으면 현재 디렉터리와 상관없이 아무것도 고르지 않은 채 앱이 열립니다.
 `--repo PATH`는 그 폴더의 브랜치를 고르고 펼친 뒤 가장 새 항목을 보여 줍니다. 기본값인 `--all`은
 아무것도 고르지 않으며, 어느 쪽이든 모든 브랜치가 나열됩니다. `review`는
-가장 새로 기다리는 Human 리뷰를, `review REQUEST_ID`는 그 요청을 엽니다. `graph`에는
+가장 최근에 승인 대기가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`는
 상태 디렉터리를 고르며, 그렇지 않으면 앱은 공유 상태 홈을 씁니다. `--reviewer NAME`은
 협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. 잘못된 인자는 2로 종료합니다.
@@ -36,7 +36,7 @@ Main area에 [Settings](#settings)를 보여 줍니다. Ctrl+O는 ID로 요청�
 Human 리뷰에 있고 진행 중인 작업이 없으면, 양식이 열려 있든 아니든 Ctrl+R이 대신 RED 명령이 됩니다.
 요청을 맡았으면 RED를 열거나 RED로 바꾸고, 그렇지 않으면 먼저 리뷰를 맡아야 한다고
 알려 줍니다. 그때는 F5나 팔레트의 **Refresh**가 상태를 다시 읽습니다.
-앱은 시스템의 라이트 또는 다크 모양을 따릅니다.
+앱은 시스템의 라이트 모드 또는 다크 모드 설정을 따릅니다.
 
 마우스를 올리면 강조만 하고, 정보는 클릭하면 열립니다.
 
@@ -207,7 +207,7 @@ Artifact의 Tool log에 도착해 Detail을 다시 열면 보입니다. 실행 �
 
 eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 시간과 토큰(`k`나 `M` 단위), 사용한 모델,
 또는 재사용으로 아낀 것, 지시문,
-결과(발견 사항은 `item`과 `where`를 머리로 한 번호 매긴 항목), 그리고 있으면
+결과(발견 사항은 `item`과 `where`를 제목으로 붙인 번호 목록), 그리고 있으면
 **Execution options**, **Execution metadata**, **Fingerprint**가 나옵니다.
 Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 재사용할 결과를
 보여 줍니다. 다른 사실은 **Debug** 아래에 접혀 있으며, Artifact나 Human이 아닌 eval의 Summary에서
@@ -224,8 +224,8 @@ Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 �
 Agent 로그는 실시간으로 갱신됩니다. 초점이 있는 Agent 로그에서 ↑/↓ 또는 `j`/`k`는 행 단위로,
 PgUp/PgDn은 페이지 단위로 이동하고, Home/End나 **Top/Bottom**은 양 끝으로 가며, 마우스 휠은
 스크롤합니다. 위로 이동하면 따라가기를 멈추고, Bottom으로 돌아가면 새 메시지를 따라갑니다.
-Space나 Enter는 보이는 묶인 내용을 켜고 끄며, 묶음 머리를 클릭해도
-펼치거나 접습니다. 숨겨진 reasoning은 보이지 않고, 공개 reasoning 요약만 보입니다.
+Space나 Enter로 화면에 보이는 묶음을 펼치거나 접을 수 있으며, 묶음 제목을 클릭해도
+같습니다. 숨겨진 reasoning은 보이지 않고, 공개 reasoning 요약만 보입니다.
 
 ### ID로 요청 열기 {#requests-by-id}
 

@@ -233,8 +233,8 @@ protocol = "json"
 ```
 
 `start`와 `stop`에는 `command`와 `args`가 필요하며, 유일한 선택 필드는
-`execution_paths`입니다. 평소의 실행 파일 찾기, 범위 지정 argv, JSON
-stdin JSON을 `args: {}`로 씁니다. `description`, `protocol`,
+`execution_paths`입니다. 실행 파일 검색과 argv 범위 해석은 일반 명령과
+같고, stdin으로 받는 JSON의 `args`는 `{}`입니다. `description`, `protocol`,
 `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은
 자기 Artifact 안의 세션을 가리켜야 하며, 내장 도구와 Human 도구는 이를 받지 않습니다.
 
