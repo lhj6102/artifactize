@@ -35,7 +35,7 @@ GitHub에서 최신 릴리스 정보를 하루에 한 번까지만 조회하고,
 업그레이드되며, 기존 Run, 캐시 기록, Human 승인은 그대로 남고 SIGNOFFS_PENDING으로 끝난 Run은 이제 YELLOW로
 처리합니다. 이전 버전의 artifactize는 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
 
-이제 Run이 선택한 승인은 다른 eval을 막지 않으므로 `verify --defer-human`, MCP `defer_human`, eval 필드
+이제 이번 Run의 실행 대상으로 선택한 승인 요청은 다른 eval의 실행을 막지 않으므로 `verify --defer-human`, MCP `defer_human`, eval 필드
 `gate = "blocking"`은 제거되었습니다. 스크립트에서는 플래그를, 선언에서는 필드를 지우세요. 이 플래그나 필드를
 사용하면 삭제하라는 오류 메시지가 표시됩니다. Run은 첫 승인을 요청한 때부터 **WAITING_HUMAN**이며, 제출되지 않은 승인만
 남으면 **YELLOW**(종료 코드 5, 이전의 SIGNOFFS_PENDING)로 끝납니다. 담당자가 맡은 승인이 제출될 때까지는 Run을

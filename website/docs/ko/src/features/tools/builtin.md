@@ -51,7 +51,7 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
 | `view_image` | `{path}` | — | — | 이미지 |
 | `section` | — | `[file]`(모델이 `heading`을 넘김) 또는 `[file, heading]` | `[file, heading]` | Markdown 섹션 하나 |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help` |
-| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 방향 있는 관계를 담은 트리. Human: 데스크톱 뷰어 |
+| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 입력에서 사용처로 이어지는 관계를 담은 트리. Human: 데스크톱 뷰어 |
 | `open` | — | — | `[file, folder 또는 URL]`(실행) | 없음. 기본 애플리케이션으로 엽니다 |
 
 `args`가 없으면 Agent 도구는 모델의 입력을 받습니다. `read`, `list`, `glob`, `grep`,
