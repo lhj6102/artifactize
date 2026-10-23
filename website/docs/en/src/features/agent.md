@@ -94,13 +94,13 @@ handles retries as described below.
 
 ### Retries and error codes
 
-A turn is retried, up to three attempts in all, when it fails with a rate limit or a
-temporary error before it produced any output or used any tokens. A retry waits as long
-as the provider asks, else 250 ms and then 500 ms. When the
-provider asks for a wait that reaches or exceeds the review's deadline, the review
-fails at once with the original `RATE_LIMIT` or `TRANSIENT` classification. A failure after output or usage is never retried, so nothing
-is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
-`errorCode`.
+A turn that fails with a rate limit or a temporary error before it produced any output
+or used any tokens is retried automatically a few times, waiting as long as the provider
+asks. A failure after output or usage is never retried, so nothing is paid for twice.
+When the retries do not help, or the provider asks to wait past the review's deadline,
+the review ends ERROR with `RATE_LIMIT` or `TRANSIENT`. Wait a moment and run `verify`
+again: finished results are reused, so only the failed reviews run. Each attempt is saved
+in `usage` with its counters, `error` and `errorCode`.
 
 ### Prompt caching
 
