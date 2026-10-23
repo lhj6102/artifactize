@@ -1,6 +1,6 @@
 # 백엔드와 로그인 {#backends-and-sign-in}
 
-Agent eval은 리뷰를 모델 서비스로 보내며, Runtime eval과 Human eval에는 필요하지 않습니다.
+Agent eval은 백엔드를 통해 모델 서비스에 리뷰를 요청하며, Runtime eval과 Human eval에는 백엔드가 필요하지 않습니다.
 Agent eval이 쓰는 백엔드만 준비하세요. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된
 ChatGPT 요금제 중 필요한 것을 쓰면 됩니다.
 

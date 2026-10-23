@@ -1,7 +1,7 @@
 # 다른 설치 방법 {#other-install-methods}
 
-OS별 기본 설치 방법은 [설치](install.md)에 있습니다. 이 페이지는 설치 방법마다 자세한 내용과
-다른 방법을 설명합니다. 한 가지 방법으로만 설치하세요. 어떤 방법으로 설치하든 `artifactize`가
+OS별 기본 설치 방법은 [설치](install.md)에 있습니다. 이 페이지에서는 각 설치 방법의 세부 절차와
+대안을 설명합니다. 한 가지 방법으로만 설치하세요. 어떤 방법으로 설치하든 `artifactize`가
 설치되며, 그 [내장 도구](../features/tools/builtin.md#artifactize-tools-cli)는
 `artifactize tools`로 쓸 수 있습니다. Store 이외의 방법으로 설치하면 이 도구가
 `artifactize-tools` 명령으로도 함께 설치됩니다. 사용 중인 시스템에 맞는 설치 파일이 릴리스에

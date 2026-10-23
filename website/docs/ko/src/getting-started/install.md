@@ -58,12 +58,13 @@ codex plugin marketplace add lhj6102/artifactize     # Codex, 터미널에서
 codex plugin add artifactize@artifactize
 ```
 
-**코딩 에이전트에게** 이렇게 말을 걸어 보세요.
+**코딩 에이전트에게** 이렇게 말을 걸어 보세요(Codex에서는 `$artifactize:hey-arti`로
+쓰세요).
 
 ```text
-/hey-arti 아티팩타이즈에 대해 설명해주고 이 프로젝트에 어떻게 적용하면 좋을지 얘기해줘
-/hey-arti 지금 있는 테스트와 리뷰를 아티팩타이즈로 옮기도록 도와줘
-/hey-arti 이 프로젝트를 아티팩타이즈로 처음부터 시작하도록 도와줘
+/artifactize:hey-arti 아티팩타이즈에 대해 설명해주고 이 프로젝트에 어떻게 적용하면 좋을지 얘기해줘
+/artifactize:hey-arti 지금 있는 테스트와 리뷰를 아티팩타이즈로 옮기도록 도와줘
+/artifactize:hey-arti 이 프로젝트를 아티팩타이즈로 처음부터 시작하도록 도와줘
 ```
 
 ## 다음 단계 {#next}

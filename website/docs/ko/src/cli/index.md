@@ -184,7 +184,7 @@ eval 동시 실행 수에는 기본 상한이 없어서, READY인 eval은 준비
 실행이 문제를 일으킬 때만 `--jobs N`(1–4294967295)을 붙이세요. 그러면 이 Run의 eval 수가
 제한됩니다. Agent 리뷰는 이와 별개로 `$STATE/limits.json`에 따라 머신 전체에서 백엔드마다
 제한됩니다([백엔드 수용량](../features/others/state.md#backend-capacity)). 백엔드 자리가
-빌 때까지 대기 중인 요청은 `--jobs` 자리도, 실행 시작 횟수도 차지하지 않습니다.
+빌 때까지 대기 중인 요청은 `--jobs`의 동시 실행 수에도, 실행 시작 횟수에도 포함되지 않습니다.
 
 `--fingerprint-jobs N`(`verify`와 `status`, 1–4294967295)은 fingerprint를 동시에 몇 개까지
 계산할지 정합니다. 기본값은 프로세스가 쓸 수 있는 CPU 수입니다. `verify`에서는 준비 단계와
