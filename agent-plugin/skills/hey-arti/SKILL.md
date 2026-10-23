@@ -131,8 +131,10 @@ verify --all --wait`) and keep the Run ID; artifactize owns the Run, so ending y
 turn does not stop it. Follow with `verify_watch` when the host shows MCP progress,
 otherwise `verify_wait`, and read findings with `verify_result`; an accepted Run is
 not a passing one. `speculate` (start downstream work early) is a per-request choice,
-off by default. Sign-offs never hold up machine work: the Run waits for a claimed one,
-then ends YELLOW when only sign-offs remain, which never replaces a required person.
+off by default. Sign-offs the Run selected never hold up machine work: the Run waits for a
+claimed one, then ends YELLOW when only sign-offs remain, which never replaces a required
+person. A selected eval that needs a sign-off outside the selection waits instead, and the
+Run ends INCOMPLETE; widen the scope to include it, such as its Artifact or `{"kind": "all"}`.
 
 **Explaining a result**
 

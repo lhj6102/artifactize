@@ -116,7 +116,8 @@ A built-in shows an action on a logical target instead: for example, opening
 command line.
 
 The footer always lists the keys of the focused area. With the mouse, a click on a
-tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` runs it.
+tool row focuses Tools and selects that tool; a click on the selected tool while Tools has
+focus, or on `[Run tool ⏎]`, runs it.
 
 | Key | Human Detail action |
 |---|---|
@@ -351,7 +352,7 @@ Detail focus; [Shared Human Detail](#shared-human-detail) owns its focus locks,
 Esc and Close behavior and retained drafts.
 
 Click focuses and selects. Double-click opens a tree row's Detail; clicking the
-peek opens it Full. In a Human Detail, a click on the selected tool runs it. The wheel scrolls the pane under the pointer without moving
+peek opens it Full. In a Human Detail, a click on the selected tool runs it once Tools has focus; the first click only focuses Tools. The wheel scrolls the pane under the pointer without moving
 focus. In the tree it moves the viewport, not the selection, so the peek stays on
 the same eval. Breadcrumb segments are not clickable. Bracketed keyboard paste
 works with mouse capture on or off.
