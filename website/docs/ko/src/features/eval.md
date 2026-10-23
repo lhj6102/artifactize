@@ -31,9 +31,9 @@ Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종�
 `app/ui`도 마찬가지입니다. 하지만 `spec`의 eval이 참조하는 다른 Artifact에는 접근할 수 없습니다. 도구 인자에 Artifact를 적는다고
 입력이 늘어나지는 않습니다.
 
-eval이 읽을 수 있는 범위는 재사용 여부를 정하는 범위나 eval이 기다리는 대상보다 넓습니다.
-재사용은 [재사용 키](fingerprint.md#the-reuse-key)를, 기다리는 대상은
-[eval 의존성](artifact.md#eval-dependencies)을 보세요.
+eval이 읽을 수 있는 범위는 재사용 여부를 판단하는 범위나, 실행 전에 결과가 나와야 하는
+Artifact의 범위보다 넓습니다. 재사용 여부는 [재사용 키](fingerprint.md#the-reuse-key)를, 실행
+전에 결과가 나와야 하는 Artifact는 [eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
 `artifactize verify library/tests --wait`는 eval 하나로 [Run](run.md)을 시작합니다. 먼저
 `artifactize status library/tests`로 무엇을 재사용할 수 있고 무엇을 리뷰해야 하는지 확인하세요.

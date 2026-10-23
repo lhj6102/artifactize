@@ -564,24 +564,30 @@ export async function createStates(): Promise<Fixture> {
  * A fresh repository whose one Artifact `app` has an eval for each of `names`, all verified
  * GREEN: an Artifact whose Detail has a tab for each of several evals.
  */
-export function createEvals(names: string[]): Fixture {
+/** An Artifact `app` with one runtime eval per name. With `input`, the first eval also reads
+ * an Artifact of that name, which has one runtime eval `ready` of its own. */
+export function createEvals(names: string[], input?: string): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
     const evals = names
       .map(
-        (name) => `
+        (name, index) => `
   [evals.${name}]
   title = "Check ${name}"
   profile = ${runtimeProfile()}
 
   [evals.${name}.payload]
   instruction = """
-  Check ${name}."""
+  Check ${name}.${input && index === 0 ? ` Read {${input}}.` : ""}"""
   `,
       )
       .join("");
     writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), `name = "app"\n${evals}`);
+    if (input) {
+      writeText(nativePath(makeDirectory(nativePath(repo, input)), "index.artf"),
+        `name = "${input}"\n[evals.ready]\ntitle = "Check ready"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ready."\n`);
+    }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");

@@ -118,9 +118,8 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-변환기는 없습니다. 에이전트에게 선언을 다시 쓰게 하고 새 `.artf` 파일을 커밋하세요. family는
-없어졌으니, 반복되는 선언은 프로젝트의 생성기로 만들고 그 `.artf` 출력을 커밋하세요.
-`staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
+예전 선언을 `.artf`로 옮기는 방법은 [0.9로 업그레이드](../getting-started/install.md#upgrading-to-09)를
+보세요. `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors`, 도구 메타데이터 `observation` 같은 예전 필드는
 거부하며, 새 필드의 별칭이 아닙니다. artifactsum 형식의 예전 `dependencies` 옵션도
 거부합니다.

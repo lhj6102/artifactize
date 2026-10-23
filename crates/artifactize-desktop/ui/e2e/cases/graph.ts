@@ -409,12 +409,12 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL; UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK
   scenario<{ run: string }>(
     "graph-eval-tabs",
     "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, and another from the tabs",
     async () => {
-      return ended(createEvals(["alpha", "beta", "gamma"]));
+      return ended(createEvals(["alpha", "beta", "gamma"], "lib"));
     },
     async (browser, { fixture, data: { run } }) => {
       await shownRun(browser, run);
@@ -452,10 +452,17 @@ export const scenarios: Scenario[] = [
       await (await view(0)).click();
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta.") && (await log()) === "",
         { timeout: 15000, timeoutMsg: "app/beta's Summary shown again" });
-      // Another eval's tab shows that eval; Esc closes the Detail.
+      // Another eval's tab shows that eval.
       await openTab(browser, "e:app/gamma");
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check gamma."), { timeout: 15000, timeoutMsg: "the Detail is app/gamma's" });
       assert.equal(await browser.$(tabAt("e:app/gamma")).getAttribute("aria-selected"), "true");
+      // With its Runtime log shown, a click on another Artifact of the graph shows that
+      // Artifact's own tab instead; Esc closes the Detail.
+      await (await view(1)).click();
+      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()), { timeout: 15000, timeoutMsg: "app/gamma's Runtime log shown" });
+      const other = await openArtifact(browser, "a:lib", "Artifact lib");
+      assert.deepEqual(other.tabs.map((tab) => tab.name), ["lib", "ready"], "lib's own chip and eval, none of app's");
+      assert.equal(await log(), "", "app/gamma's log is gone");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
     },
   ),

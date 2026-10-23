@@ -136,9 +136,8 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-There is no converter. Have an agent rewrite the declarations and commit the new
-`.artf` files. Families are removed: generate any repeated declarations with your
-own project generator and commit its `.artf` output. Older fields such as
+To move older declarations to `.artf`, follow
+[Upgrading to 0.9](../getting-started/install.md#upgrading-to-09). Older fields such as
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`

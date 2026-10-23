@@ -145,8 +145,15 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "openai",
             "anthropic",
             "codex",
-            "remote"
+            "remote",
+            "release"
         ]
+    );
+    // A newer release or a failed lookup only warns; this build names its own version.
+    assert_ne!(check(&absent, "release")["status"], "FAIL");
+    assert_eq!(
+        check(&absent, "release")["details"]["running"],
+        env!("CARGO_PKG_VERSION")
     );
     assert_eq!(check(&absent, "limits")["details"], json!({"backends":{}}));
     let sessions = &check(&absent, "sessions")["details"];

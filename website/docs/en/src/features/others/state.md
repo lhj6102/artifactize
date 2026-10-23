@@ -143,7 +143,7 @@ Each Agent review's conversation is saved under the state, for
 |---|---|---|
 | `enabled` | `true` | `false` saves no new conversation; saved ones stay readable |
 | `maxBytes` | 1 GiB | The store's size that starts a cleanup; at least 1 |
-| `targetBytes` | 768 MiB, or three quarters of `maxBytes` when that is 768 MiB or less | The size a cleanup brings the store down to; must be lower than `maxBytes` |
+| `targetBytes` | 768 MiB, or 3 × ⌊`maxBytes` ÷ 4⌋ bytes when `maxBytes` is 768 MiB or less | The size a cleanup brings the store down to; must be lower than `maxBytes` |
 
 A cleanup runs when a `verify` Run has finished its evals, and on `prune`. When the
 conversations take more than `maxBytes`, it deletes the oldest sessions until they take

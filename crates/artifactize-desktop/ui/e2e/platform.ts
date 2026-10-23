@@ -211,6 +211,12 @@ export function placeApp(app: NativePath, directory: NativePath): NativePath {
   return placed;
 }
 
+/** A folder below `root` shaped like the app's own in a bundle dragged from the macOS disk image
+ * to an Applications folder other than the person's. */
+export function diskImageAppDirectory(root: NativePath): NativePath {
+  return nativePath(root, "disk-image", "Applications", "Artifactize.app", "Contents", "MacOS");
+}
+
 /** A folder below `root` shaped like the one Windows installs the Microsoft Store package in. */
 export function storePackageDirectory(root: NativePath): NativePath {
   return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
