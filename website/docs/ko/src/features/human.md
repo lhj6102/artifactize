@@ -25,8 +25,8 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 
 승인은 [리뷰한 입력](fingerprint.md)이 그대로면 기본으로 재사용합니다. 이후 `verify`는 제출된
 결과를 재사용하고 그 결과를 쓰는 eval을 리뷰할 수 있습니다. 대상이나 포함한 의존성에
-`fingerprint = false`가 있으면 승인은 현재 Run에만 적용되고, 다음 Run은 새 Human 결정을
-요청합니다. Run의 검증은 그 시점에 있는 결과로 정해지며, 나중에 승인을 제출해도 지난 Run에 기록된 판정은
+`fingerprint = false`가 있으면 승인은 현재 Run에만 적용되므로, 다음 Run에서는 사람이
+다시 판정해야 합니다. Run의 검증은 그 시점에 있는 결과로 정해지며, 나중에 승인을 제출해도 지난 Run에 기록된 판정은
 바뀌지 않습니다.
 
 아래 명령 표기에서 대괄호는 생략할 수 있는 부분이며, 대괄호는 입력하지 않습니다. 대문자로 쓴
@@ -66,7 +66,7 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 앞당기려면 `--speculate`를 쓰세요.
 
 미룬 승인에는 DEFERRED 표시가 붙지만, 리뷰어가 처리하는 방법은 일반 승인과 같습니다. `review`, monitor, 데스크톱,
-요청 목록에 WAITING_HUMAN 요청과 함께 나오고, 담당 지정, 도구, 해제, 제출도 똑같이 Human 권한을
+요청 목록에 WAITING_HUMAN 요청과 함께 나오고, 담당 지정과 해제, 도구 실행, 판정 제출 때도 일반 승인과 똑같이 Human 권한을
 확인합니다. 막힌 승인은 사람에게 보여 주지 않습니다. Run이 어떻게 끝나는지(SIGNOFFS_PENDING,
 종료 코드 5)와 다음 verify가 결과를 어떻게 재사용하는지는
 [추측 실행과 미룬 승인](run.md#speculation-and-deferred-sign-offs)에 있습니다. 이 재사용에는

@@ -50,7 +50,7 @@ claude mcp add --transport stdio --scope project artifactize -- artifactize mcp
 claude mcp get artifactize
 ```
 
-프로젝트 등록은 호스트의 프로젝트 `.mcp.json`을 만듭니다. 이를 공유한다면
+프로젝트 범위로 등록하면 호스트가 프로젝트 폴더에 `.mcp.json` 파일을 만듭니다. 이를 공유한다면
 자격 증명과 머신별 경로를 넣지 마세요. 이 프로젝트에서 Claude Code를 시작/재시작하고,
 MCP 보기에서 서버가 연결되었는지 확인한 뒤, 아래의 검증 도구와 확인 도구가
 나열되는지 확인하세요.
