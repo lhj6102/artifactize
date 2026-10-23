@@ -110,27 +110,40 @@ impl Selection {
         Ok(result)
     }
 
-    /// Recursive execution includes every Eval in the required Artifact scope.
+    /// Recursive execution includes every Eval in the required Artifact scope. An Artifact
+    /// selection also includes its cycle peers' Evals, after the selected ones: they review
+    /// the selected Artifact, so only this Run can give them current results.
     pub fn included_evals<'a>(
         &self,
         config: &'a RepoConfig,
         recursive: bool,
     ) -> Result<Vec<&'a Eval>, String> {
         let selected = self.resolve(config)?;
-        if !recursive {
+        let peers = matches!(self, Self::Artifact { .. } | Self::Artifacts { .. });
+        if !recursive && !peers {
             return Ok(selected.evals);
         }
         let graph = Graph::new(config).map_err(|error| error.to_string())?;
-        let required: BTreeSet<_> = graph
-            .dependency_closure(&selected.roots)
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .collect();
-        Ok(config
+        let required: BTreeSet<_> = if recursive {
+            graph.dependency_closure(&selected.roots)
+        } else {
+            graph.cycle_members(&selected.roots)
+        }
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .collect();
+        let included = config
             .evals
             .iter()
-            .filter(|eval| required.contains(&eval.target))
-            .collect())
+            .filter(|eval| required.contains(&eval.target));
+        if recursive {
+            return Ok(included.collect());
+        }
+        let selected_ids: BTreeSet<_> = selected.evals.iter().map(|&eval| &eval.id).collect();
+        let peer_evals: Vec<_> = included
+            .filter(|eval| !selected_ids.contains(&eval.id))
+            .collect();
+        Ok(selected.evals.into_iter().chain(peer_evals).collect())
     }
 }
 

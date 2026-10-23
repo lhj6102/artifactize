@@ -48,8 +48,9 @@ for the `artifactize` server. Ask in your own words, or invoke the skill as
 where `<project>` is the directory the session started in.
 
 **Codex:** start a new Codex session in your project directory. The server runs as
-`artifactize mcp` in the plugin's folder, and Hey Arti names your project with each
-call ([how the server finds the project](mcp.md#which-project)). Ask in your own
+`artifactize mcp` in the plugin's folder; when a tool answers that no project is
+named, Hey Arti passes your session's project folder with each later call
+([how the server finds the project](mcp.md#which-project)). Ask in your own
 words, or mention the skill as `$artifactize:hey-arti`.
 
 ## Updates

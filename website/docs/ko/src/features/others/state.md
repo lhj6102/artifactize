@@ -20,8 +20,8 @@
 
 상태에는 모든 Run과 그 요청, 판정, 각 eval이 어떻게 실행됐는지, 시작할 때의 정의가 남습니다.
 `run list`, `run show`, `request list`, `request show`,
-[`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰가
-어떻게 진행됐는지, 그 대화와 도구 호출은 [저장된 세션](#agent-sessions)에 있습니다.
+[`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰의
+진행 과정과 대화, 도구 호출 내역은 [저장된 세션](#agent-sessions)에서 확인할 수 있습니다.
 
 **업그레이드.** 스키마 6, 7, 8 형식으로 저장된 상태는 artifactize 명령으로 처음 열 때 현재 스키마 9로
 자동 업그레이드됩니다. Run, ID, 캐시 결과, Human 승인은 그대로 남습니다. 업그레이드에는 쓰기
@@ -100,8 +100,8 @@ Agent 리뷰가 그 백엔드의 사용량 한도나 구독 요금제가 허용�
 지원하는 필드만 담은 64 KiB 이하의 일반 UTF-8 JSON 파일이어야 합니다. 그렇지 않으면 `verify`가 Run을
 만들기 전에 멈추고(종료 코드 2), `doctor`는 심각한 오류로 알립니다.
 
-리뷰는 실행되는 동안 그 백엔드의 자리 하나를 쓰고, 끝나면 그 자리를 비웁니다. 결과를
-재사용하거나 합류한 요청은 자리를 차지하지 않습니다. 리뷰 프로세스가 죽으면 쓰던 자리가 비고
+리뷰는 실행되는 동안에만 그 백엔드의 동시 실행 수에 포함됩니다. 결과를
+재사용하거나 합류한 요청은 여기에 포함되지 않습니다. 리뷰 프로세스가 죽으면 쓰던 자리가 비고
 그 리뷰는 ERROR(`OWNER_DIED`)로 끝납니다. 자리가 모두 차 있으면 요청은 `Waiting for a free codex
 slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 QUEUED로
 표시되고, 자리가 비면 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청을
@@ -125,7 +125,7 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 |---|---|---|
 | `enabled` | `true` | `false`면 새 대화를 저장하지 않음. 이미 저장된 대화는 계속 읽을 수 있음 |
 | `maxBytes` | 1 GiB | 이 크기를 넘으면 정리를 시작함. 1 이상 |
-| `targetBytes` | 768 MiB. `maxBytes`가 768 MiB 이하면 `maxBytes`의 4분의 3 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
+| `targetBytes` | `maxBytes`가 768 MiB보다 크면 768 MiB, 아니면 3 × ⌊`maxBytes` ÷ 4⌋바이트 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
 
 정리는 `verify` Run이 eval을 마쳤을 때와 `prune`을 실행할 때 합니다. 대화가 `maxBytes`보다
 많은 공간을 쓰면, 가장 오래된 세션부터 지워 `targetBytes` 이하로 줄입니다. 실행 중인 리뷰의
@@ -134,9 +134,8 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 `agentSessions` 값이 잘못되면 `verify`와 `prune`이 실패하고(종료 코드 2) `doctor`가 이를
 알립니다.
 
-저장 위치는 `$STATE/agent-sessions/`이고 나만 읽을 수 있으며, 세션마다 `sessionId`를 이름으로
-쓰는 JSON Lines 파일이 하나씩 있습니다. `session show --json`은 그 이벤트를 출력하며, 이벤트마다
-`kind`가 있습니다.
+저장 위치는 `$STATE/agent-sessions/`이고 나만 읽을 수 있습니다. `session show --json`은 세션의
+이벤트를 출력하며, 이벤트마다 `kind`가 있습니다.
 
 | `kind` | 담는 내용 |
 |---|---|
@@ -153,8 +152,7 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 
 ### follow-up 재생 {#follow-up-replay}
 
-`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 모델은 저장된
-대화 전체를 입력으로 받아 답합니다. 현재 프로젝트의 도구를 다시 제공하며,
+`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 현재 프로젝트의 도구를 다시 제공하며,
 리뷰 뒤에 그 리뷰가 다룬 Artifact 중 하나가 바뀌었다면 헤더에 그 사실을 표시하고 모델에도 알립니다. 질문은 새 리뷰가 아니라
 follow-up입니다. 모델은 일반 텍스트로 답하고, 도구를 쓸 수 있으며, 기록된 판정은 절대 바뀌지
 않습니다. `session show`는 질문을 쓴 그대로 보여 줍니다.

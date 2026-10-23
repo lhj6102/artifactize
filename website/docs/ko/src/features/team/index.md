@@ -30,8 +30,8 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 (이 예에서는 `/srv/backups`). `-readonly`를 쓰면 원본 경로를 잘못 입력해도
 그 위치에 빈 데이터베이스가 새로 생기지 않습니다.
 
-서버와 클라이언트는 함께 업그레이드하세요. 0.9의 재사용 키 v2는 이전 기록과 일치하지 않으므로, Human 승인을 포함해
-실행 가능한 모든 eval을 한 번씩 새로 리뷰해야 합니다. 전체 레퍼런스는 [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)를
+서버와 클라이언트는 함께 업그레이드하세요. 0.9의 재사용 키 v2는 더 오래된 기록과 일치하지 않으므로, Human 승인을 포함한
+모든 실행 가능한 eval에 새 리뷰가 한 번씩 필요합니다. 전체 레퍼런스는 [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)를
 보세요.
 
 ## 팀원을 안전하게 연결하기 {#connect-teammates-securely}

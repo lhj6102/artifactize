@@ -273,7 +273,9 @@ RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
 
 `artifactize verify app/e2e` selects the qualified Eval just like `--eval app/e2e`.
 Add `--recursive` to execute the Evals in the required dependency scope. Without
-it, input evidence must already be available. File Artifacts are selected by their
+it, input evidence must already be available. An Artifact selector also executes
+the Evals of its cycle peers, which review it; `--force` still marks only the
+explicitly selected Evals. File Artifacts are selected by their
 declared names; a sidecar creates no automatic relation to the surrounding folder.
 
 For which evals wait or block, including dependency cycles, see
@@ -379,8 +381,10 @@ its published name is accepted, and the scope is that Artifact and its children.
 With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
 in the eval's own scope, so a tool whose operands name another Artifact runs as it
 would in that eval's review.
-`--args` is valid only for Agent execution; Human schemas admit only an empty
-object and Human commands take no free arguments. A check never creates a Run,
+`--args` is valid only for Agent execution, and without it an Agent tool gets `{}`;
+Human schemas admit only an empty object and Human commands take no free arguments.
+With `--execute`, the report also carries the tool's response as `result`: its `content`,
+and `isError: true` when the tool failed (exit 1). A check never creates a Run,
 verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
 execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for

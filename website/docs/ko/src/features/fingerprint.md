@@ -12,7 +12,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 해시하고, 스크립트를 고를 수도 있습니다. 루트 그래프 Artifact는 항상
 [구조 기반 그래프 fingerprint](#graph-fingerprint)를 쓰며, `fingerprint`를 선언해 그 값을
 바꾸거나 끌 수 없습니다. 아래 방식으로 계산한 폴더·파일 Artifact의 fingerprint에는 도구 선언이나 다른 Artifact의
-값이 들어가지 않습니다. 의존성은 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
+값이 들어가지 않습니다. 의존하는 Artifact의 fingerprint는 [재사용 키](#the-reuse-key)에 반영됩니다.
 
 - 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,
@@ -140,8 +140,8 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
   `command`, `args`, `files`, 또는 `fingerprint = false`.
 - 입력 Artifact와 그것을 쓰는 쪽 사이의 관계: 부모·자식 관계(자식 폴더 경로가 아니라 이름), 지시문 참조,
   Runtime argv 참조(eval ID, argv 위치, 논리적 접미 경로 포함)와 그 입력 대상.
-- eval ID, eval이 속한 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과
-  선언 작성자가 추가한 정보를 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
+- eval ID, eval을 선언한 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과
+  소유자가 제공한 추가 정보를 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
 
 평가 실행 옵션은 빠집니다. 여기에는 백엔드, 모델, reasoning과 fingerprint 스크립트 시간 제한을 비롯한 모든 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그가 포함됩니다. 모든 도구 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용도 빠집니다. 선언한 범위 경로와 범위가 정해진
 인자의 접미 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프

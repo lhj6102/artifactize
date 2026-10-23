@@ -386,15 +386,16 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-자식까지 읽을 수 있습니다. 참조한 Artifact의 eval 지시문은 리뷰에 더해지지 않습니다. 프로젝트
+자식까지 읽을 수 있습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를
 담거나, 4096자를 넘을 수 없습니다. 직접 선언하는 경로(`fingerprint.files`,
-`fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. 선언을 불러올 때
-`profile_variants` 항목을 포함한 모든 프로필의 참조 문법을 확인합니다. `config check`는 eval마다
-선언한 프로필의 이름도 확인합니다. `profile_variants` 항목에만 나오는 이름과 파일 Artifact 접미사는
-그 변형을 고를 때 확인하므로, 변형을 쓰기 전에 `status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
+`fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. `config check`는 eval마다
+선언한 프로필의 이름과 문법을 확인합니다. 위의 문법과 경로 규칙은 모든 `profile_variants` 항목에도
+적용되므로, 어느 변형에든 `{app}/../outside`처럼 잘못된 참조가 있으면 `config check`가 실패합니다.
+변형에만 나오는 참조가 실제 Artifact를 가리키는지는 그 변형을 고를 때 확인하므로, 변형을 쓰기 전에
+`status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
 있는지와 심볼릭 링크를 따라가지 않는지는 명령을 준비할 때 확인합니다.
 
 ## Runtime 실행 {#runtime-execution}

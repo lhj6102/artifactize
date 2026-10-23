@@ -280,6 +280,10 @@ export function isolatedEnvironment(root: NativePath, drop: (name: string) => bo
     for (const key of Object.keys(environment)) if (key.toUpperCase() === "WEBVIEW2_USER_DATA_FOLDER") delete environment[key];
     environment.WEBVIEW2_USER_DATA_FOLDER = makeDirectory(nativePath(root, "webview"), { private: true });
   }
+  // WKWebView keeps its default website data under the Library folder of the CoreFoundation
+  // home, which ignores HOME but takes this variable, so that data is private to the fixture
+  // too and is removed with it.
+  if (MACOS) environment.CFFIXED_USER_HOME = environment.HOME;
   for (const key of Object.keys(environment)) {
     if (["HOMEDRIVE", "HOMEPATH", "USER", "USERNAME", "LOGNAME"].includes(key.toUpperCase())) delete environment[key];
   }

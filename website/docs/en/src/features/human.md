@@ -4,11 +4,10 @@ A Human eval asks a person for a GREEN or RED sign-off. The reviewer claims the
 waiting request, runs the Human tools you declared and submits a verdict, either
 with `artifactize request` commands or in the `artifactize review` terminal UI.
 
-A Human eval is ready only when every other non-Human eval of its own Artifact is
-GREEN and its dependency gates are met: a person signs off only on what the
-machine evals already pass. When one of those machine evals is RED or ERROR, the
-Human eval is BLOCKED and its reason names them. Other Human evals of the Artifact
-are not part of this condition. See [Human sign-offs](artifact.md#human-sign-offs).
+A person signs off only on what the machine evals of the Artifact already pass. While
+they are still running, the Human eval waits (`WAIT_DEPENDENCY`); when one of them is RED
+or ERROR, it is BLOCKED and its reason names them. See
+[Human sign-offs](artifact.md#human-sign-offs).
 
 When the check is ready, artifactize saves a **WAITING_HUMAN request**: work
 waiting for a person's decision. Waiting for that person uses neither a Run's
