@@ -178,9 +178,10 @@ not preserved. Reinvoke the **same tool with the same arguments**, adding
 selects the next group of Run records; it is distinct from the cursor continuing
 one group's JSON. `verify_result` instead pages its structured `findings` array.
 
-A cursor works only with the same tool and arguments while the saved evidence is
-unchanged; time passing alone does not expire it. Otherwise it is rejected: start that
-inspection again from the first page. A failed
+A cursor works only with the same tool and arguments. Each later page runs the inspection
+again, and the cursor works only while that answer is unchanged: a new Run or result, but
+also a changed file, model list or backend check, rejects it. Time passing alone does not
+expire it. When a cursor is rejected, start that inspection again from the first page. A failed
 tool call returns MCP `isError:true` with `{code,message}`. `operation_failed` carries
 the CLI's error message, cut to its first 2,048 characters; `response_too_large` means
 the answer does not fit a detail page, so narrow the inspection (for example a
