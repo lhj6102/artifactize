@@ -17,7 +17,7 @@ assets/readme/. Check these criteria:
   out, added, softened or strengthened. The headline, the project sentence "Build together
   on an Artifact Graph.", always stays in English.
 - K-SAME-TARGETS: Badges, commands, code blocks and their order are the same; code-block
-  comments and the example requests to Arti after /hey-arti may be translated. Every link
+  comments and the example requests to Arti after /artifactize:hey-arti may be translated. Every link
   and image reaches the same target as in the root README: repository files through paths
   relative to assets/readme/, and documentation pages through the same page under
   https://artifactize.dev/docs/ko/. The language line below the badges names the same
