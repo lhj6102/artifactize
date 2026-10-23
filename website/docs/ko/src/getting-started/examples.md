@@ -16,6 +16,6 @@
   글별 단어 수 제한, 서로 독립적인 artifactsum 재사용을 보여 줍니다.
   글 하나를 바꾸면 eval 하나만 리뷰되고, 공용 검사기나 규칙을 바꾸면 세 개 모두 리뷰됩니다.
 - [eval 의존성](../features/artifact.md#eval-dependencies):
-  eval별 입력과 의존성을 먼저 실행하는 스케줄링.
+  eval마다 입력을 지정하는 방법과, 의존하는 eval을 먼저 실행하는 순서를 설명합니다.
 - [팀 워크스루](../features/team/walkthrough.md): 두 머신과 CI가 하나의
   `artifactize server`를 통해 서로의 판정을 재사용합니다.

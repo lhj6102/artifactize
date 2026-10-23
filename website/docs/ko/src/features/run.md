@@ -190,8 +190,8 @@ Artifact와 현재 fingerprint, 없으면 null), 이를 합친 `key`(fingerprint
 
 status도 verify와 같은 격리와 검사 규칙을 적용하며, `--fingerprint-jobs` 한도 안에서
 선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 계산합니다. fingerprint가 실패하면 2로 종료하며, 예전에 저장한
-fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하지 않고, Run을 만들지 않고, 작업을
-점유하지 않고, 없는 데이터베이스를 만들지 않고, 로컬 캐시의 사용 시각도 바꾸지 않습니다. 다만
+fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하거나 Run을 만들지 않고, 작업 실행을
+맡지도 않습니다. 없는 데이터베이스를 새로 만들지 않으며, 로컬 캐시의 사용 시각도 바꾸지 않습니다. 다만
 팀 리뷰 저장소에서 찾은 결과는 그 저장소에서 사용한 것으로 기록되므로 더 오래 보관됩니다. fingerprint
 스크립트는 상태 디렉터리 아래의 버려도 되는 출력 폴더를 쓰며, 데이터베이스가 없어도 이 폴더는
 생길 수 있습니다. `config graph`와 `config check`는 완전히 정적이며 프로젝트 코드를 실행하지

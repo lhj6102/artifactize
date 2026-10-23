@@ -212,7 +212,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 
 이름 있는 일반 Artifact이므로 Runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
 `verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이 없고, 자식 Artifact를 갖지 않으며,
-다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv에서 직접 참조하는 것은 평소처럼 동작합니다.
+다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
 명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위 항목의
 `kind`는 `"graph"`이고 선언 경로는 `.artf`입니다.
 
@@ -238,8 +238,8 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 파일 Artifact는 들어 있는 폴더 Artifact와 자식 관계나 의존 관계를 맺지 않습니다. 하위 폴더에 `index.artf`로 선언한 Artifact는 그대로 가장 가까운 상위 폴더 Artifact의 자식이 됩니다. 폴더의
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
-들어 있는 폴더가 Runtime 명령, 도구, fingerprint 스크립트의 작업 디렉터리이므로, 상대 경로
-실행 파일로 옆 파일을 쓸 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
+파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
+실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
 내장 도구와 범위가 정해진 argv 참조는 대상 파일과 참조한 Artifact만 봅니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
 Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 그 루트 안의 경로는 들어 있는
