@@ -62,8 +62,8 @@ Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 �
 ## Doctor, models, prune {#doctor-models-and-prune}
 
 `doctor`는 provider를 호출하지 않고 Run, 판정, 캐시 항목, 로그인 정보도 만들지 않습니다.
-상태 디렉터리를 알려 주고, 쓸 수 있는지와 작업 공간 밖에 있는지 확인하며, 상태 데이터베이스가
-지원하는 스키마인지 확인하고 [필요하면](../features/others/state.md#state) 업그레이드합니다.
+상태 디렉터리를 알려 주고, 쓸 수 있는지와 작업 공간 밖에 있는지 확인합니다. 상태 데이터베이스의
+스키마를 artifactize가 지원하는지 확인하고 [필요하면](../features/others/state.md#state) 업그레이드합니다.
 지원하지 않는 스키마이면 심각한 오류로 처리하며, 현재 스키마는 `schema`에, 지원하는 스키마는 `supported`에 표시합니다.
 `--repo`를 주면 `config check`의 검사도 함께 합니다. 그 밖의 검사는 다음과 같습니다.
 

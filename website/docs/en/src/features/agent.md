@@ -184,8 +184,7 @@ like continuing a chat. The recorded verdict never changes.
 **What is saved.** Each review session is kept in one file only your account can read
 ([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
 call with its result, the correction turn, token counts and the settings the review
-used. It is the only record of a review's tool calls: the request keeps its verdict,
-result and usage.
+used.
 Saving never fails a review: a write error is reported on stderr and the review goes
 on without it.
 

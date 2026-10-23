@@ -20,9 +20,18 @@ const LOCK: &str = "providers";
 const MAX_KEY_BYTES: usize = 4096;
 
 /// An API key; never printed, logged or returned to a caller outside this crate.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct ApiKey(String);
+
+/// A saved key passes the same checks as a typed one.
+impl<'de> Deserialize<'de> for ApiKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
 
 impl ApiKey {
     pub(crate) fn expose(&self) -> &str {

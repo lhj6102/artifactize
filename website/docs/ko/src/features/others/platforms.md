@@ -75,7 +75,7 @@ artifactize는 모든 OS에서 경로를 비교할 때 대소문자를 구분합
 | Linux | `xdg-open` |
 | WSL | Linux 배포판 안의 `xdg-open` |
 | macOS | `open` |
-| Windows | Windows 셸(ShellExecute) |
+| Windows | 대상에 지정된 기본 애플리케이션 |
 
 WSL은 Linux처럼 동작합니다. `wslview`나 Windows 프로그램으로 대체하지 않습니다.
 `xdg-open`이 없거나 아무것도 열지 않으면 배포판의 `xdg-utils`를 설치하고
