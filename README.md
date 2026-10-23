@@ -100,12 +100,13 @@ codex plugin marketplace add lhj6102/artifactize     # Codex, in a terminal
 codex plugin add artifactize@artifactize
 ```
 
-**With your coding agent**, start with one of these:
+**With your coding agent**, start with one of these (in Codex, write
+`$artifactize:hey-arti` instead):
 
 ```text
-/hey-arti Explain Artifactize and tell me how we could apply it to this project
-/hey-arti Help me move our existing tests and reviews into Artifactize
-/hey-arti Help me start this project with Artifactize from the beginning
+/artifactize:hey-arti Explain Artifactize and tell me how we could apply it to this project
+/artifactize:hey-arti Help me move our existing tests and reviews into Artifactize
+/artifactize:hey-arti Help me start this project with Artifactize from the beginning
 ```
 
 To try Artifactize without an AI account first, take the
