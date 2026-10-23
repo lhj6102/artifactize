@@ -238,7 +238,7 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 `artifactize prune`이 무엇을 남기는지는
 [Runtime 실행 레퍼런스](../features/declarations.md#runtime-execution)에 있습니다.
 
-`config_graph`는 훅을 호출하지 않고 정적 정의, eval, 순환 상대, 입력 → 사용처
+`config_graph`는 훅을 호출하지 않고 정적 정의, eval, 같은 순환에 속한 Artifact, 입력 → 사용처
 관계를 찾습니다. Artifact나 eval을 고르면 그 대상의 의존성 범위가 나오며,
 `impact:true`를 더하면 영향을 받을 수 있는 하위 Artifact와 각각에 필요한 입력도
 포함됩니다. 이는 구조상 영향을 받을 수 있는 대상을 넓게 포함한

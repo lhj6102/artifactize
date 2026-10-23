@@ -7,7 +7,7 @@
 
 ## 상태 {#state}
 
-상태 하나, 즉 `state.sqlite` 데이터베이스 하나에 머신의 모든 저장소의 Run이 들어 있습니다.
+상태 데이터베이스인 `state.sqlite` 하나에 이 머신의 모든 저장소에서 만든 Run이 저장됩니다.
 위치는 `$ARTIFACTIZE_STATE_HOME`, 없으면 `$XDG_STATE_HOME/artifactize`, 없으면
 (Windows에서는) `%LOCALAPPDATA%\artifactize`, 없으면 `$HOME/.local/state/artifactize`입니다.
 `--state-dir PATH`를 주면 각 Run의 출력(`PATH/runs` 아래)을 포함해 상태 전체를 다른 폴더에

@@ -292,9 +292,9 @@ Human 리뷰에 있고 편집이나 작업이 진행 중이면 종료하지 않�
 
 ## Settings {#settings}
 
-Settings는 Main area에 나옵니다. **Settings** 버튼이나 Ctrl+,를 다시 누르면
-Main area가 보여 주던 것으로 돌아가며, 텍스트 필드나 선택 목록 밖에서의 Esc도
-마찬가지입니다(그 안에서 Esc를 누르면 초점은 그 필드에 그대로 있습니다). 대신 Pane에서 브랜치, 칩, 리뷰를 고르면
+Settings는 Main area에 나옵니다. **Settings** 버튼이나 Ctrl+,를 다시 누르거나
+텍스트 필드·선택 목록 밖에서 Esc를 누르면 Main area가 이전 화면으로 돌아갑니다(필드나
+목록 안에서 Esc를 누르면 초점은 그 필드에 그대로 있습니다). 대신 Pane에서 브랜치, 칩, 리뷰를 고르면
 고른 항목을 보여 줍니다. Settings는 화면에 열릴 때마다 계정과 저장소 정보를
 다시 불러옵니다. 다시 불러오려면 다시 열거나 팔레트의 **Refresh settings** 명령을 쓰세요.
 
