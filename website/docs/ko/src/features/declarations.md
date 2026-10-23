@@ -238,8 +238,8 @@ artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf`
 실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
 내장 도구와 범위가 정해진 argv 참조로는 대상 파일과 참조한 Artifact에만 접근할 수 있습니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
-Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 그 루트 안의 경로는 대상 파일이
-들어 있는 폴더를 기준으로 씁니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
+Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 가상 루트 안의 경로는 대상 파일이
+있는 폴더를 기준으로 지정합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
 Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 
 파일을 해시하려면 `fingerprint`를 생략하세요. artifactsum의
@@ -392,9 +392,11 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를
 담거나, 4096자를 넘을 수 없습니다. 직접 선언하는 경로(`fingerprint.files`,
-`fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. `config check`는
-`profile_variants` 항목을 포함한 모든 프로필의 이름과 문법을 확인합니다. 변형의 참조가 가리키는
-Artifact는 그 변형을 고를 때만 찾으므로, 변형을 쓰기 전에 `status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
+`fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. `config check`는 eval마다
+선언한 프로필의 이름과 문법을 확인합니다. 위의 문법과 경로 규칙은 모든 `profile_variants` 항목에도
+적용되므로, 어느 변형에든 `{app}/../outside`처럼 잘못된 참조가 있으면 `config check`가 실패합니다.
+변형에만 나오는 참조가 실제 Artifact를 가리키는지는 그 변형을 고를 때 확인하므로, 변형을 쓰기 전에
+`status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
 있는지와 심볼릭 링크를 따라가지 않는지는 명령을 준비할 때 확인합니다.
 
 ## Runtime 실행 {#runtime-execution}

@@ -351,10 +351,14 @@ export const scenarios: Scenario[] = [
       // over it and takes no part, so the camera is the graph's first one again.
       await browser.$(".graph .svelte-flow__controls-fitview").click();
       const fitted = await settled();
+      assert.notEqual(fitted.transform, zoomed.transform, "Fit View moved the person's camera");
       assert.ok(fitted.whole, `Fit View shows every Artifact inside the canvas: ${JSON.stringify(fitted)}`);
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
+      // The person zooms out again, so the next Fit View has a camera to move back.
+      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      assert.notEqual((await settled()).transform, fitted.transform, "Zoom Out moved the fitted camera");
       await browser.$(".graph .svelte-flow__controls-fitview").click();
       assert.equal((await settled()).transform, fitted.transform, "Fit View without the Detail fits as with it open");
 

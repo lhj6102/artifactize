@@ -13,15 +13,15 @@ including the [machine prerequisites of a Human sign-off](artifact.md#human-sign
 ## Verify and Runs
 
 `verify` takes exactly one [selector](../cli/index.md#command-reference): Artifacts,
-qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks; an individual eval selector
-asks to run just that check. The Run still needs valid results for every piece
+qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks. Pieces that depend on one
+another in a loop are **cycle peers**; their checks review the selected piece, so an Artifact
+selector runs its cycle peers' checks too. An individual eval selector asks to run just that check. The Run still needs valid results for every piece
 those checks rely on, following their links as far as needed. This linked group is
 the **dependency closure**; its required results are **final obligations**, even
 when you did not ask to execute them in this Run.
 
 `--recursive` also selects every check in that group, including other checks on
-the selected Artifact, in configuration order. Pieces that depend on one another
-in a loop are **cycle peers**, and are included together. `--all` already selects
+the selected Artifact, in configuration order. `--all` already selects
 every check and the obligations of pieces that have no checks. A file Artifact
 selector selects its own evals, never those of the surrounding folder.
 
