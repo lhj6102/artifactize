@@ -25,8 +25,7 @@ artifactize는 업데이트를 직접 내려받거나 설치하지 않습니다.
 위 표의 업데이트 방법을 안내하고, 설치 방식을 확인할 수 없으면 릴리스 페이지를 안내합니다.
 Microsoft Store로 설치했다면 Store가 업데이트하므로 아무것도 표시하지 않습니다.
 
-GitHub에서 최신 릴리스 정보를 하루에 한 번까지만 조회하고, 그 결과를
-[상태 디렉터리](#state)의 `release-check.json`에 보관합니다. 요청에는 artifactize 버전 말고는
+GitHub에 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 말고는
 아무것도 담기지 않습니다. 확인을 끄려면 `ARTIFACTIZE_NO_UPDATE_CHECK=1`을 설정하세요.
 
 ### 0.16으로 업그레이드 {#upgrading-to-016}

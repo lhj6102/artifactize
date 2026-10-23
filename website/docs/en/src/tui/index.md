@@ -20,8 +20,7 @@ Without an ID it lists the requests its search finds across every repository in 
 newest Run first, with their eval, request, status, claim, age and repository; Enter opens
 one. The search starts as `kind:human status:waiting_human`, the waiting Human sign-offs.
 `--repo PATH` adds that repository's `repo:` term to it; `--all` is accepted and is the
-default. With an ID it opens that request in any repository; a waiting follower's ID opens
-its original.
+default. With an ID it opens that request in any repository.
 
 A search is free text and `key:value` terms; every term must match. A plain word matches,
 case-insensitively, part of the repository, eval, request ID or claimant. A key restricts a
@@ -58,7 +57,7 @@ PgDn shows older ones and PgUp newer.
 
 The list holds one entry per waiting sign-off: followers that later Runs join to a waiting
 Human execution are listed once, as the original request, which records the Human tools and
-owner schemas and receives every action, as in the monitor. The search matches that entry, so
+owner schemas and receives every action, as in the monitor; a follower's ID opens it too. The search matches that entry, so
 a follower's own repository does not find it; a follower whose original no longer waits is
 listed as itself. A Human request opens the Human Detail below, read-only once settled. Any
 other request opens a read-only Detail: the monitor's sections of its eval in its Run, its
@@ -93,8 +92,7 @@ The monitor and standalone `review` show a Human review the same way. Opening
 or previewing a request claims nothing. The instruction comes first, below one
 line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
-owner schemas. A waiting follower opens its original request; press `t` to see that
-request's ID and repository.
+owner schemas; for a waiting follower, those of its original request.
 
 Before claim, the instruction fills the body and tools appear on one line. After
 claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
@@ -149,7 +147,6 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   after a release or a settlement elsewhere it neither claims nor runs. Each run
   reloads and resolves the declarations again, but refuses the action if the
   recorded Artifact scope or eval declarations (including tools) have changed.
-  It does not accept an updated command in place of the recorded review definition.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. A nonzero exit is a tool error, not a verdict.

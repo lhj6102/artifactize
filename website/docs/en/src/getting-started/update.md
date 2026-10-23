@@ -26,10 +26,9 @@ is out, the [desktop app](../desktop/index.md#open-the-app) shows it in its head
 table above for the way that copy was installed, or the release page when the way is
 unknown. A Microsoft Store install shows nothing: the Store updates it.
 
-To learn of a release, artifactize asks GitHub for the latest release at most once a day
-and keeps the answer in `release-check.json` in the [state directory](#state); the request
-carries nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn
-the lookup off.
+To learn of a release, artifactize asks GitHub for the latest release; the request carries
+nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn the lookup
+off.
 
 ### Upgrading to 0.16
 

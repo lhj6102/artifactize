@@ -24,9 +24,7 @@ such as `{spec}` admits that Artifact to an eval; changes to its fingerprint
 invalidate only reviews whose keys cover it. Child folders organize inputs, but
 sharing a repository alone does not make every Artifact a dependency of every check.
 
-Execution gates belong to each eval’s own references. A child folder is part of its
-parent's content, so it counts as a reference of every eval of the parent. See
-[Eval dependencies](#eval-dependencies).
+Execution gates belong to each eval; see [Eval dependencies](#eval-dependencies).
 
 The graph itself can be reviewed: a nameless root `.artf` declares the Graph
 Artifact. Its fingerprint covers extracted criteria and labeled relations, not
@@ -48,8 +46,7 @@ or `human`. All evals require `payload.instruction` and
 may have `pass_schema`, `fail_schema` and `profile_variants`.
 
 A runtime eval's exit code is its verdict (0 is GREEN); an Agent or a Human returns
-GREEN or RED with owner fields. Dependencies come from each eval’s own references
-and its Artifact's children.
+GREEN or RED with owner fields.
 
 This is the `guide` Artifact of the [runtime-relations example](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), whose README explains children,
 `{artifact}` references and basis Artifacts:
@@ -126,11 +123,9 @@ reviews delay the consumer Eval; RED input reviews block it. `--speculate` lets
 work start before unresolved input gates, without approving missing requirements.
 Final GREEN still requires all required evidence, including upstream reviews.
 
-Gates apply to each Eval. An Artifact shows ERROR or RED if one of its Evals is, else BLOCKED if one is blocked. An
-Eval's execution gates are the Evals of its referenced Artifacts and of its Artifact's
-nearest child Artifacts. A RED
-or BLOCKED gate blocks it in turn, so blocking propagates along these Eval gates.
-A RED Eval of a child blocks every Eval of its parent. An intermediate Artifact
+Gates apply to each Eval. An Artifact shows ERROR or RED if one of its Evals is, else BLOCKED if one is blocked. A RED
+or BLOCKED gate blocks the Eval in turn, so blocking propagates along these Eval gates;
+a RED Eval of a child blocks every Eval of its parent. An intermediate Artifact
 with no Evals supplies no execution gates: referring to it does not gate execution
 on its own inputs or children. Those still belong to the final approval obligations,
 so the consumer may execute without the Run being able to finish GREEN.
