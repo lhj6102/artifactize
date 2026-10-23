@@ -46,13 +46,8 @@ explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
 Waiting work starts in the Run's **scheduling order**: READY evals first, and among them
 the eval at the head of the longest chain of evals that wait on one another, so the work
 that needs the most steps to finish starts soonest. The order you select or declare evals
-in only breaks ties.
-
-When there is room for only some work, a Run starts READY evals first and, among them,
-those with the longest chain of evals still waiting on them, so the longest path through
-the graph finishes sooner; evals equal on both keep the Run's request order. The same
-order decides which reviews `--max-executions` covers and which waiting request takes a
-freed backend slot.
+in only breaks ties. The same order decides which reviews `--max-executions` covers and
+which waiting request takes a freed backend slot.
 
 ### Submit, observe and cancel
 

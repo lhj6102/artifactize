@@ -135,7 +135,8 @@ Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는
 reused(모든 eval의 결과가 평가 없이 재사용됨), would run, waiting,
 blocked 중 어느 상태인지에 따라 다른 색으로 표시됩니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
 그 Artifact의 상태와 실행될 eval 수를 담습니다. 머리말은 언제 스캔했는지 알려 줍니다.
-다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, 그 브랜치의 Run이 끝날 때 다시 스캔합니다.
+다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, Pane에 보이는 브랜치의 Run이 끝날 때 다시 스캔합니다.
+검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 **Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
 관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만

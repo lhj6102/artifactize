@@ -179,7 +179,9 @@ list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링�
 ```
 
 명령줄에서 `help`는 터미널 환경에서 `ARTIFACTIZE_*` 변수를 모두 뺀 환경으로, 별도의
-임시·출력 디렉터리 없이 프로그램을 실행합니다. 도구 오류는 stderr에 출력하고 종료 코드 1을 돌려주며, 명령을 잘못 사용한 경우에는 종료 코드 2를 돌려줍니다. `artifactize tools --help`(또는 `artifactize-tools --help`)는
+임시·출력 디렉터리 없이 프로그램을 실행합니다. 실행이 끝나면 성공했더라도 그 프로그램이 시작한 뒤 아직
+실행 중인 프로그램을 모두 멈추므로, `help`로 보조 프로그램을 계속 띄워 둘 수는 없습니다. 계속 실행해야 한다면
+[도구 세션](agent.md#tool-sessions)을 쓰세요. 도구 오류는 stderr에 출력하고 종료 코드 1을 돌려주며, 명령을 잘못 사용한 경우에는 종료 코드 2를 돌려줍니다. `artifactize tools --help`(또는 `artifactize-tools --help`)는
 도구 목록을, `artifactize tools SUBCOMMAND --help`는 도구 하나의 설명을 보여 줍니다.
 `artifactize tools help PROGRAM SUBCOMMAND...`는 다릅니다. `PROGRAM SUBCOMMAND... --help`를
 실행해서 그 프로그램의 도움말을 출력합니다.

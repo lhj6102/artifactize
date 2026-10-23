@@ -214,8 +214,10 @@ syntax and limits. The current directory is not a declared Artifact, so `artifac
 
  From the command line, `help` runs the
 program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
-with no private temporary or output directory. A tool error goes to stderr with exit
-1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
+with no private temporary or output directory. When it finishes, even successfully, any
+program it started that is still running is stopped, so `help` cannot leave a helper
+behind; keep one running with a [tool session](agent.md#tool-sessions) instead. A tool
+error goes to stderr with exit 1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
 `artifactize tools SUBCOMMAND --help` describes one. `artifactize tools help PROGRAM
 SUBCOMMAND...` is different: it runs `PROGRAM SUBCOMMAND... --help` and prints that
 program's help.
