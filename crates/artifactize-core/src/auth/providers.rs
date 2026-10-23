@@ -183,10 +183,16 @@ pub fn key_variable(provider: Provider) -> Option<&'static str> {
     }
 }
 
-fn environment_key(provider: Provider) -> Option<ApiKey> {
-    key_variable(provider)
-        .and_then(crate::platform::environment::var_text)
-        .and_then(|key| key.parse().ok())
+/// The key in `provider`'s variable. A set variable is the key in use: an invalid value is
+/// an error, never a reason to fall back to a saved key from another account.
+fn environment_key(provider: Provider) -> Option<Result<ApiKey, String>> {
+    let variable = key_variable(provider)?;
+    let value = crate::platform::environment::var_text(variable)?;
+    Some(
+        value
+            .parse()
+            .map_err(|error| format!("{variable} is set but invalid: {error}")),
+    )
 }
 
 /// The saved keys and custom providers, and why none can be saved here. Environment keys
@@ -243,7 +249,7 @@ pub(crate) fn key(
     repo: Option<&Path>,
 ) -> Result<Option<ApiKey>, String> {
     if let Some(key) = environment_key(provider) {
-        return Ok(Some(key));
+        return key.map(Some);
     }
     Ok(read(state, repo)?.0.keys.remove(&provider))
 }

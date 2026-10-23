@@ -19,7 +19,9 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 컴퓨터에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
 `gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
-그 밖의 자격 증명은 찾지 않습니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
+그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
+지웁니다. 변수가 설정되어 있으면 항상 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
+납니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
 `provider`와 `effort`는 설정에서 쓸 수 있는 별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
 없어졌으며, 아직 이를 선언한 프로필이 있으면 `config check`가 대신 쓸 백엔드를 알려 줍니다.
 
@@ -247,7 +249,9 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   ```
 
 URL은 요청을 보낼 API 루트로, 기본 provider의 루트(`https://api.openai.com/v1`,
-`https://api.anthropic.com`, `https://generativelanguage.googleapis.com`)와 같은 형태입니다. 이미 있는
+`https://api.anthropic.com`, `https://generativelanguage.googleapis.com`)와 같은 형태입니다. `http://`나
+`https://`로 시작하고 호스트가 있어야 하며, 자격 증명(`user:pass@`), 쿼리(`?…`), 프래그먼트(`#…`)가 든 URL은
+거부합니다. 키는 따로 입력하기 때문입니다. 끝의 `/`는 지웁니다. 이미 있는
 이름으로 `provider add`를 실행하면 그 provider를 바꾸고, `provider remove NAME`은 삭제합니다.
 `provider list`는 커스텀 provider 전체와 기본 provider의 키를 어디서 가져오는지 보여 주며, 키 값은
 보여 주지 않습니다. 기본 provider의 이름은 커스텀 provider 이름으로 쓸 수 없습니다.

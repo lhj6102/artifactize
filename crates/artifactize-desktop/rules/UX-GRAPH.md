@@ -250,7 +250,7 @@ that makes the transition happen and checks where it leads.
 | E-SET-TAB | Settings | choose the Providers or Remote tab | that tab shown |
 | E-SET-PROVIDER | Providers | choose a provider in the list | its setup shown on the right |
 | E-SET-KEY | an API-key provider (OpenAI, Anthropic, Gemini) | open | its key shown as set from the environment, saved or not set, never its value |
-| E-SET-KEY-SAVE | an API-key provider | paste a key, then Save key | the key saved, shown as saved, the field cleared |
+| E-SET-KEY-SAVE | an API-key provider | paste a key, then Save key | the key saved and the field cleared; shown as saved, or still set from the environment when its variable is set, since that is used first |
 | E-SET-KEY-REMOVE | an API-key provider, key saved | Remove saved key | the key shown as not set, or set from the environment |
 | E-SET-CUSTOM-NEW | Providers | + Custom provider | an empty custom provider form |
 | E-SET-CUSTOM-SAVE | custom provider form | name it, choose an alias of a built-in provider or an endpoint (API, URL, optional key), then Save | the custom provider listed by name and chosen, its key never shown |

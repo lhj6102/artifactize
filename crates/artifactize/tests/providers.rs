@@ -263,6 +263,18 @@ fn gemini_reviews_with_a_saved_key_and_its_thinking_level() {
         "application/json"
     );
 
+    // A set variable is the key in use; an invalid one never falls back to the saved key.
+    let mut command = project.command(&["models", "gemini"]);
+    gemini_base(&mut command);
+    command.env("GEMINI_API_KEY", "not a key");
+    let invalid = parsed(command.output().unwrap(), 2);
+    assert!(
+        invalid["error"]
+            .to_string()
+            .contains("GEMINI_API_KEY is set but invalid"),
+        "{invalid}"
+    );
+
     let mut command = project.command(&["models", "gemini"]);
     gemini_base(&mut command);
     let listing = parsed(command.output().unwrap(), 0);

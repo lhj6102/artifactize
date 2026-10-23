@@ -18,7 +18,9 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 [custom provider](#custom-providers) set up on the machine that runs the eval. `openai`,
 `anthropic` and `gemini` use the key in `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or
 `GEMINI_API_KEY`, or else the key saved with `artifactize login openai|anthropic|gemini`
-(or in the desktop app's Settings), and never search for other credentials; `codex` uses a
+(or in the desktop app's Settings), and never search for other credentials. A key is 1–4096
+printable ASCII characters without spaces; surrounding whitespace is trimmed. A set variable is
+always the key in use: an invalid value is an error, never a reason to use the saved key; `codex` uses a
 ChatGPT sign-in (see [Codex](#codex)). `provider` and `effort` are not config aliases.
 0.5.0 removed the `chatgpt` (Sign in with ChatGPT) and `claude` (Claude CLI) backends;
 `config check` names the replacements for any profile that still declares one.
@@ -279,7 +281,9 @@ Add as many as you need; each is one of:
 
 The URL is the API root the requests are sent under, as the built-in providers' roots are
 (`https://api.openai.com/v1`, `https://api.anthropic.com`,
-`https://generativelanguage.googleapis.com`). `provider add` with an existing name replaces
+`https://generativelanguage.googleapis.com`). It uses `http://` or `https://` and names a host;
+a URL with credentials (`user:pass@`), a query (`?…`) or a fragment (`#…`) is rejected, since
+the key goes in its own field. A trailing `/` is dropped. `provider add` with an existing name replaces
 it; `provider remove NAME` removes it; `provider list` shows every custom provider and where
 each built-in key comes from, never a key. A custom provider cannot take a built-in name.
 

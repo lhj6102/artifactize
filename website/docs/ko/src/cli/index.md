@@ -189,7 +189,7 @@ eval 동시 실행 수에는 기본 상한이 없어서, READY인 eval은 준비
 실행이 문제를 일으킬 때만 `--jobs N`(1–4294967295)을 붙이세요. 그러면 이 Run의 eval 수가
 제한됩니다. Agent 리뷰는 이와 별개로 `$STATE/limits.json`에 따라 머신 전체에서 백엔드마다
 제한됩니다([백엔드 수용량](../features/others/state.md#backend-capacity)). 백엔드 자리가
-빌 때까지 대기 중인 요청은 `--jobs` 자리도, 실행 시작 횟수도 차지하지 않습니다.
+빌 때까지 대기 중인 요청은 `--jobs`의 동시 실행 수와 실행 시작 횟수에 포함되지 않습니다.
 
 `--fingerprint-jobs N`(`verify`와 `status`, 1–4294967295)은 fingerprint를 동시에 몇 개까지
 계산할지 정합니다. 기본값은 프로세스가 쓸 수 있는 CPU 수입니다. `verify`에서는 준비 단계와
@@ -300,8 +300,8 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 ## 현재 디렉터리 도구 {#current-directory-tools}
 
 `artifactize tools read|list|glob|grep|section|help|open ...`은 내장 도구를 현재
-디렉터리에서 실행합니다. Store가 아닌 설치에는 `artifactize-tools`라는 이름으로도 들어
-있습니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
+디렉터리에서 실행합니다. Microsoft Store 외의 방법으로 설치하면 `artifactize-tools`라는 명령으로도
+사용할 수 있습니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
 사용법이 잘못되면 2로 종료합니다. `artifactize tools --help`가 도구 목록을 보여 주며,
 `artifactize tools check`는 이와 달리 선언된 리뷰 도구를 점검합니다. 하위 명령별 범위
 규칙과 제한은 [`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli)에
