@@ -113,8 +113,8 @@ codex plugin add artifactize@artifactize
 맡았을 뿐이며, 아무것도 제출되지 않았습니다. 텍스트 기반 앱(CLI)에도 Monitor와
 Review 화면이 있습니다.
 
-**통과할 때까지 고치기:** 한 예제에서 Run을 네 번 실행하는 과정을 8배속으로 보여 줍니다. Run 사이에
-녹화 스크립트가 실패한 부분을 제거해 AI가 코드를 고치는 과정을 대신합니다. 바뀌지 않은
+**통과할 때까지 고치기:** 한 예제에서 Run을 네 번 실행하는 과정을 8배속으로 보여 줍니다. Run 사이에는
+AI가 코드를 고치는 대신 녹화 스크립트가 실패한 부분을 지웁니다. 바뀌지 않은
 부분은 이전 결과를 바로 재사용합니다.
 
 <img src="../demos/review-loop.gif" width="1200" alt="Artifactize 데스크톱 앱에서 한 브랜치의 Run 네 번을 실제로 녹화한 화면: 실패한 항목은 빨간색으로 표시되고 Run 사이에 고쳐지며, 바뀌지 않은 부분은 이전 결과를 재사용하고, 네 번째 Run에서 모든 조건이 충족됩니다.">
@@ -134,6 +134,6 @@ core가 통과했고, cli의 테스트가 실패해 docs는 막혔으며, releas
 
 <img src="../screenshots/detail.png" width="1200" alt="실제 Artifactize 데스크톱 앱의 cli Artifact Detail: 이웃인 core와 docs, 그리고 lint와 tests 검사.">
 
-**Review:** 예시 리뷰어가 승인 요청 목록에서 release 승인 요청을 열어 맡은 다음, notes 도구를 실행하고 GREEN 양식을 열어 둔 화면입니다.
+**Review:** 예시 리뷰어가 승인 요청 목록에서 release 승인 요청을 열고 리뷰를 맡은 다음, notes 도구를 실행하고 GREEN 양식을 열어 둔 화면입니다.
 
 <img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 검토 지침, notes 도구, 도구 로그, GREEN 양식.">
