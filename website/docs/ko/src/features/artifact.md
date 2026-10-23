@@ -89,7 +89,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 ## eval 의존성 {#eval-dependencies}
 
-의존성은 그 Artifact의 모든 eval이 아니라 입력을 쓰는 eval에 속합니다. `payload.instruction`이나
+의존성은 Artifact의 모든 eval에 공통으로 적용되는 것이 아니라, 해당 입력을 쓰는 eval에만 적용됩니다. `payload.instruction`이나
 Runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키며, 그 eval은 입력을 판단하는
 eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부분을 검사하는 eval에서 그 Artifact를 `{name}`으로
 참조하세요. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
@@ -164,8 +164,8 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 `tags = ["type:code", "scope:player"]`는 화면에 보여 주기만 하는 메타데이터를 더합니다. 태그는
 ASCII 제어 문자가 없고 비어 있지 않은 고유한 문자열이며 64개까지입니다. `status`,
-`config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그는 fingerprint, eval 정의
-해시, 재사용 키, 관계, `verify`와 `status`의 선택을 바꾸지 않습니다. 이런 명령에는 태그로
+`config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그를 바꿔도 fingerprint, eval 정의
+해시, 재사용 키, 의존 관계, `verify`와 `status`로 선택하는 대상은 바뀌지 않습니다. 이런 명령에는 태그로
 거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. 태그로 걸러 보는 곳은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
 
 프로젝트에 템플릿이 필요하면 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은

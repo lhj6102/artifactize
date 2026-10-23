@@ -202,8 +202,8 @@ Patterns, formats, nested objects, lists inside groups, `$ref` and combinators
 such as `anyOf` are refused: a person could not enter them. Agent schemas keep the
 full validator.
 
-Schemas are limited to 8 MiB. An Agent's final response is limited to 1 MiB as it
-arrives, and the result artifactize keeps from it to 256000 characters, where an emoji or
+Schemas are limited to 8 MiB. An Agent's final response is checked once complete: over
+1 MiB it is invalid. The result artifactize keeps from it is limited to 256000 characters, where an emoji or
 another character outside the Basic Multilingual Plane counts as two. Invalid final
 responses get one bounded repair attempt, not silent field removal. The
 [Human submission interface](../cli/index.md#command-reference) separately bounds
