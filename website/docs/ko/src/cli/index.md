@@ -213,8 +213,8 @@ JSON 배열을 줄 단위 형식으로 다시 읽지는 않습니다. 상대 경
 
 `verify ... --profile NAME`은 선택과 재귀 정책으로 포함된 모든 실행 가능한 eval에 대해, 선언된
 `profile_variants` 항목 하나를 통째로 고릅니다. 변형은 그다음에 적용됩니다. 실행 가능한
-eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모든 변형은 원래 리뷰어 종류를
-유지합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
+eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 수 있으며, 각 변형은 원래 eval과 같은
+리뷰어 종류를 써야 합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
 `--recursive`를 주면 이미 선택된 의존성에도 변형이 적용됩니다. 예를 들어 `app/review
 --profile fast`가 실행하는 Runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
 `fast`가 아니라 기본 프로필로 Run에 들어옵니다. 고른 변형은 실행 옵션일 뿐 재사용 키에 들어가지
@@ -279,8 +279,8 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않음 |
 | `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact |
 
-Artifact는 그 eval들의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
-`STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
+Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+`STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
