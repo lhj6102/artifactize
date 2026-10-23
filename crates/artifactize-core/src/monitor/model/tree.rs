@@ -319,13 +319,6 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
             "running · {}",
             request.map_or_else(String::new, |view| short_profile(&view.request.profile))
         ))],
-        EvalView::InProgress(Activity::Human(None))
-            if request.is_some_and(|view| {
-                view.request.status() == crate::types::RequestStatus::Deferred
-            }) =>
-        {
-            plain("DEFERRED · Human sign-off · unclaimed")
-        }
         EvalView::InProgress(Activity::Human(None)) => plain("Human sign-off · unclaimed"),
         EvalView::InProgress(Activity::Human(Some(reviewer))) => vec![Segment::plain(format!(
             "Human sign-off · claimed by {reviewer}"

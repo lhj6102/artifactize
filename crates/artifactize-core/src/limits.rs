@@ -250,7 +250,8 @@ impl Limits {
             tempfile::NamedTempFile::new_in(state).map_err(|e| invalid(e.to_string()))?;
         serde_json::to_writer_pretty(&mut file, &declared).map_err(|e| invalid(e.to_string()))?;
         file.write_all(b"\n").map_err(|e| invalid(e.to_string()))?;
-        file.persist(&path).map_err(|e| invalid(e.error.to_string()))?;
+        file.persist(&path)
+            .map_err(|e| invalid(e.error.to_string()))?;
         Self::read(state)
     }
 
@@ -378,7 +379,10 @@ mod tests {
             Duration::ZERO
         );
         for (text, error) in [
-            (r#"{"signoffIdleGraceSeconds":86401}"#, "must be at most 86400"),
+            (
+                r#"{"signoffIdleGraceSeconds":86401}"#,
+                "must be at most 86400",
+            ),
             (r#"{"signoffIdleGraceSeconds":-1}"#, "invalid value"),
             (r#"{"signoffIdleGraceSeconds":"2m"}"#, "invalid type"),
         ] {

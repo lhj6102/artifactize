@@ -31,7 +31,7 @@ on the root command and on `artifactize tools`.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID or `{run,state}`; final text/JSON with `--wait`; JSON-line events with `--watch` | 0 accepted; outcome with `--wait` or `--watch` |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate` | Run ID or `{run,state}`; final text/JSON with `--wait`; JSON-line events with `--watch` | 0 accepted; outcome with `--wait` or `--watch` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `mcp` | | [MCP stdio protocol](../agent-plugin/mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
@@ -68,6 +68,7 @@ on the root command and on `artifactize tools`.
 | `remote push` | `--dry-run` | text or JSON | 0 |
 | `models openai\|anthropic\|codex` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
+| `limits` | `--signoff-idle-grace SECONDS` (0–86400) | the machine-wide limits in force, text or JSON | 0 |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
@@ -78,9 +79,9 @@ on the root command and on `artifactize tools`.
 | `server rm KEY` | | JSON | 0 |
 
 Run outcome codes (`verify --wait`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
-cancelled, 4 INCOMPLETE, 5 SIGNOFFS_PENDING (only sign-offs remain, not approval). Plain `verify` exits 0 on acceptance, not validation.
+cancelled, 4 INCOMPLETE, 5 YELLOW (only sign-offs remain, not approval). Plain `verify` exits 0 on acceptance, not validation.
 Ctrl-C stops a watcher with exit 130; closing it never cancels the Run. `run show --wait` follows a RUNNING
-Run until it finishes; when its own timeout expires first it prints the current
+or WAITING_HUMAN Run until it ends; when its own timeout expires first it prints the current
 Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 (unknown, repeated nonrepeatable, conflicting or missing options and values) and operational
 errors: text on stderr, or `{"error":"..."}` on stdout with `--json` (except
@@ -149,26 +150,25 @@ blocked evals side by side.
 
 ## Verify modes
 
-`--speculate` and `--defer-human` are independent per-request switches, both off
-by default. The accepted Run records `modes: {speculate, defer_human}`; a retry
-with the same `--request-key` retains the first request's modes.
+`--speculate` is a per-request switch, off by default. The accepted Run records
+`modes: {speculate}`; a retry with the same `--request-key` retains the first request's
+choice.
 
-| Modes | Dispatch and settlement |
+| Mode | Dispatch |
 |---|---|
-| Neither | Wait for dependency GREEN evidence; the owned Run waits for people |
-| `--defer-human` | Wait for machine gates; run past deferrable sign-offs provisionally |
-| `--speculate` | Start all requested kinds before unresolved gates; wait for people |
-| Both | Start machine reviews speculatively; ask for deferrable sign-offs once their own prerequisites pass |
+| Default | Start an eval once its dependencies have GREEN evidence |
+| `--speculate` | Start runtime and Agent reviews before unresolved gates |
 
-In every mode, a Human eval is asked only once every other non-Human eval of its
-own Artifact is GREEN, and is BLOCKED when one of them is RED or ERROR.
+Either way a sign-off holds up nothing: it is asked for once every other non-Human eval
+of its own Artifact is GREEN and its own gates are met, never speculatively, and is
+BLOCKED when one of them is RED or ERROR; what relies on it runs provisionally.
 With `--speculate`, newly ready work can interrupt a running speculative review to free
 `--jobs` or backend capacity; that review starts again later and uses another
-`--max-executions` start. These modes change execution order, not approval. `verify --wait` uses the
-ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5
-SIGNOFFS_PENDING. [Execution modes](../features/run.md#speculation-and-deferred-sign-offs)
-explains scheduling, cancellation, provisional results, strict Human gates and
-later sign-off reuse.
+`--max-executions` start. Speculation changes execution order, not approval. `verify --wait`
+uses the ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5 YELLOW.
+[Sign-offs and the end of a Run](../features/run.md#sign-offs-and-the-end-of-a-run) explains
+how long a Run stays open for its sign-offs and how they are reused later;
+[Speculation](../features/run.md#speculation) explains its scheduling and cancellation.
 
 ## Runtime CLI
 
@@ -184,7 +184,7 @@ request's force flag. Forced evals never read or join cached results or live
 executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
-Speculation and deferral never waive final requirements.
+Speculation and pending sign-offs never waive final requirements.
 
 [Runs share work](../features/others/state.md#state) explains when concurrent Runs
 join the same review and how `--force` changes that.
@@ -297,8 +297,8 @@ shows as `PASS`, and the action says what `verify` would do next.
 | `RED` | a RED result matches its current reuse key | one of its evals is `RED` |
 | `BLOCKED` | a gate is RED | one of its evals is `BLOCKED` |
 | `WAIT_DEPENDENCY` | a gate has no current result yet | one of its evals is waiting |
-| `WAITING_HUMAN` | a Human request waits for a person | — |
-| `DEFERRED` | a deferred sign-off waits for a person | one of its evals is `DEFERRED` |
+| `WAITING_HUMAN` | a sign-off an earlier artifactize asked for waits for a person | — |
+| `DEFERRED` | a sign-off waits for a person, holding up nothing | one of its evals is `DEFERRED` |
 | `PROVISIONAL` | GREEN, but a gate is still `DEFERRED` or `PROVISIONAL` | one of its evals is `PROVISIONAL` |
 | `STALE` | it was reviewed before, but no result matches its current reuse key (an earlier error, a keyless result or `--force` included) | one of its evals is `STALE` |
 | `UNREVIEWED` | it was never reviewed | none of its evals was reviewed, or it has no evals |

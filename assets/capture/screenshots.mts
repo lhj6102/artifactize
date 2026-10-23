@@ -176,7 +176,11 @@ async function capture(output: string, work: string): Promise<void> {
     mkdirSync(fixture.repo, { recursive: true });
     project(fixture.repo, fixtures);
     git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
-    const verify = spawnSync(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--defer-human", "--wait"],
+    // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
+    const grace = spawnSync(candidate.cli, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"],
+      { env: environment(fixture), encoding: "utf8" });
+    if (grace.status !== 0) throw new Error(`limits ended ${grace.status}: ${grace.stderr}`);
+    const verify = spawnSync(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--wait"],
       { env: environment(fixture), encoding: "utf8" });
     // RED is the expected outcome: cli's tests fail on purpose.
     if (verify.status !== 1) throw new Error(`verify ended ${verify.status}: ${verify.stderr}`);
@@ -246,8 +250,8 @@ async function capture(output: string, work: string): Promise<void> {
     }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
     await shot("detail.png");
 
-    // C. The release sign-off opened from the Pane's waiting reviews, which list the deferred
-    // sign-off that verify --defer-human left: claimed, its notes tool run, the GREEN form open.
+    // C. The release sign-off opened from the Pane's waiting reviews, which list the sign-off
+    // that verify left: claimed, its notes tool run, the GREEN form open.
     await app.$('[aria-label="Waiting reviews"] [role="option"]').click();
     await app.waitUntil(() => app.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() === "Review", MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the review" });

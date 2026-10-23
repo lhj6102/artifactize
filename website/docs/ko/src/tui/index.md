@@ -36,7 +36,7 @@ ID가 없으면 상태 안의 모든 저장소에서 검색 조건에 맞는 요
 | `reviewer:` | 맡은 사람 이름의 일부. 맡지 않은 요청은 일치하지 않음 |
 | `tag:` | eval의 Artifact가 가진 태그의 일부(선언의 `tags`, Run과 함께 저장된 그대로) |
 | `kind:` | eval 종류: `runtime`, `agent`, `human` |
-| `status:` | `waiting_human`, `green`, `red`, `error` 같은 요청 상태 |
+| `status:` | `waiting_human`(`deferred` 승인 포함), `green`, `red`, `error` 같은 요청 상태 |
 | `is:mine` | 내가 맡은 것(`$USER` 또는 `--reviewer`) |
 | `is:claimed` | 누구든 맡은 것 |
 | `is:unclaimed` | 아무도 맡지 않은 대기 중인 Human 요청 |
@@ -231,8 +231,7 @@ Scope에서는 Full + Preview를, Detail에서는 Tree Compact + Detail Full을 
   실행 중인 작업, 시간과 예산, 실행·재사용 횟수, 실제 사용량과 절약한 사용량을 모두 확인할 수 있습니다.
 
 Scope 배지와 머리말에는 주의가 필요한 항목 수가 같은 `!N ✗N ◐N ?N` 형식으로 나옵니다. ERROR와 RED인
-요청, 아직 실행 중인 Run, 사람의 결정이 필요한 승인(미룬 것
-포함)입니다. 이 수는 지금 보이는 Run 페이지가 아니라 전체 Run을 기준으로 셉니다. 한 Human 실행의 팔로워들은
+요청, 아직 끝나지 않은 Run, 사람의 결정이 필요한 승인입니다. 이 수는 지금 보이는 Run 페이지가 아니라 전체 Run을 기준으로 셉니다. 한 Human 실행의 팔로워들은
 대기 중인 승인 하나로 셉니다.
 
 ### Artifact와 eval {#artifacts-and-evals}
@@ -267,11 +266,12 @@ ERROR이면 RED일 때처럼 막지 않고, 다시 시도해야 한다고 표시
 열린 Human 요청이 있을 수 있습니다. 이 보기 상태는 저장된 요청 상태를 설명할 뿐,
 JSON의 상태 이름을 바꾸지는 않습니다.
 
-이 표시가 뜻하는 바는 Run의
-[실행 모드](../features/run.md#speculation-and-deferred-sign-offs)에 따라서도 달라집니다. `--speculate`에서는 상위 eval의 판정이 아직 나오지 않았어도 하위 eval이 READY이거나 실행 중일 수 있습니다. 이후 상위 eval의 결과가 RED/ERROR이면 추측 실행 중인 하위 작업의 실행이 차단되거나 취소됩니다. `--defer-human`에서는 승인이
-**DEFERRED**로 나오고 의존하는 작업은 승인된 것이 아니라 **PROVISIONAL**일 수 있습니다. 끝난
-**SIGNOFFS_PENDING** Run은 그 승인만 남았다는 뜻입니다. 나중에 승인을 제출해도 Run 종료 때 기록한 판정은 바뀌지 않고 현재 요청에만 반영되며, 엄격한 Human
-게이트의 승인 조건도 그대로입니다.
+이 표시가 뜻하는 바는 Run이 [승인](../features/run.md#sign-offs-and-the-end-of-a-run)과
+[추측 실행](../features/run.md#speculation)을 다루는 방식에 따라서도 달라집니다. 승인은 **DEFERRED**로 나오고 의존하는 작업은
+승인된 것이 아니라 **PROVISIONAL**일 수 있습니다. 맡은 승인이나 유휴 유예 시간을 기다리는 Run은
+**WAITING_HUMAN**이며, 둘 다 아직 끝나지 않았으므로 RUNNING보다 조금 진한 파란색으로 나옵니다. **YELLOW**로 끝난 Run은
+그 승인만 남았다는 뜻입니다. 나중에 승인을 제출해도 Run 종료 때 기록한 판정은 바뀌지 않고 현재 요청에만
+반영됩니다. `--speculate`에서는 상위 eval의 판정이 아직 나오지 않았어도 하위 eval이 READY이거나 실행 중일 수 있습니다. 이후 상위 eval의 결과가 RED/ERROR이면 추측 실행 중인 하위 작업의 실행이 차단되거나 취소됩니다.
 
 eval의 대기 조건은 [eval 의존성](../features/artifact.md#eval-dependencies) 규칙에 따라 정해집니다.
 각 행은 게이트를 Artifact별로 묶어, 아직 검증 요건을 충족하지 못한 Artifact를 최대 두 개까지

@@ -4,7 +4,7 @@
 
 /**
  * @typedef {'dev-worker' | 'dev-master'} Role
- * @typedef {'GREEN' | 'SIGNOFFS_PENDING'} VerifyOutcome
+ * @typedef {'GREEN' | 'YELLOW'} VerifyOutcome
  * @typedef {{ run: string, outcome: VerifyOutcome, commit: string }} Verify
  * @typedef {{ run: string, at: Date }} GreenMark
  * @typedef {{ role: Role | null, from: string | null, verify: Verify | null, green: GreenMark[] }} Note
@@ -83,8 +83,11 @@ export function parseNote(body) {
     } else if (key === 'from' && SHA.test(value)) {
       note.from = value.toLowerCase();
     } else if (key === 'verify' && words.length === 3 && RUN.test(words[0])
-      && (words[1] === 'GREEN' || words[1] === 'SIGNOFFS_PENDING') && SHA.test(words[2])) {
-      note.verify = { run: words[0], outcome: words[1], commit: words[2].toLowerCase() };
+      && (words[1] === 'GREEN' || words[1] === 'YELLOW' || words[1] === 'SIGNOFFS_PENDING')
+      && SHA.test(words[2])) {
+      // SIGNOFFS_PENDING is what notes written before 0.16 call YELLOW.
+      const outcome = words[1] === 'GREEN' ? 'GREEN' : 'YELLOW';
+      note.verify = { run: words[0], outcome, commit: words[2].toLowerCase() };
     } else if (key === 'green' && words.length === 2 && RUN.test(words[0])) {
       const at = new Date(isoExtended(words[1]));
       if (!Number.isNaN(at.getTime())) note.green.push({ run: words[0], at });

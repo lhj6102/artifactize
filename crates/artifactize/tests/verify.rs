@@ -374,7 +374,7 @@ fn human_waiting_does_not_prevent_runtime_execution() {
     // Observe the Human admission barrier after the runtime eval executed.
     let run = fixture.observed(&["--all"], 0, false);
     assert_eq!(run["requests"][0]["status"], "GREEN");
-    assert_eq!(run["requests"][1]["status"], "WAITING_HUMAN");
+    assert_eq!(run["requests"][1]["status"], "DEFERRED");
     assert_eq!(run["executionsStarted"], 1);
 }
 

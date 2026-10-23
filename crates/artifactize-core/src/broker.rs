@@ -21,11 +21,11 @@ use crate::{
     process,
     remote::Session,
     runtime::Verdict,
-    types::RunStatus,
     store::{
         Capacity, Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend,
     },
     tools,
+    types::RunStatus,
 };
 
 /// OS owner death and released machine-wide slots have no reliable writer notification.
@@ -423,9 +423,13 @@ impl Scheduler<'_, '_> {
                     .graph
                     .evaluate_for_run(&evidence, self.run.modes.speculate);
                 // Failures cancel transitively, including tasks, joined waits and sign-offs.
+                // Without speculation a cached result is taken before its gates resolve, even
+                // behind RED, so only work this Run started past a pending sign-off is cancelled.
                 for (request, admission) in self.requests.iter_mut().zip(admissions.iter_mut()) {
                     let eval = &evaluation.evals[request.eval_id.as_str()];
-                    if eval.readiness == crate::graph::Readiness::Blocked && !admission.blocked()
+                    if eval.readiness == crate::graph::Readiness::Blocked
+                        && !admission.blocked()
+                        && (self.run.modes.speculate || !crate::query::reused(request))
                     {
                         evidence.remove(&request.eval_id);
                         if admission.running() {
@@ -759,6 +763,12 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::WaitHuman(id) => {
                             admissions[index] = Admission::Idle;
+                            if self.run.state.status() == RunStatus::Running {
+                                // Saved before the request, so no reader sees a sign-off wait
+                                // in a Run that is not yet WAITING_HUMAN.
+                                self.run.state = crate::store::RunState::WaitingHuman;
+                                self.receipts.save_run(self.run).await?;
+                            }
                             request.execution_id = Some(id);
                             request.state = if deferred_human {
                                 crate::store::RequestState::Deferred
@@ -876,6 +886,10 @@ impl Scheduler<'_, '_> {
                         request.started_at = Some(execution.started_at);
                     }
                     request.state = crate::store::RequestState::Running;
+                    if human && self.run.state.status() == RunStatus::Running {
+                        // Saved before the sign-off request exists, as for a joined one.
+                        self.run.state = crate::store::RunState::WaitingHuman;
+                    }
                     self.receipts.save_run(self.run).await?;
                     self.receipts.save_request(request).await?;
                     let config = self.config.clone();

@@ -130,9 +130,9 @@ name an input it uses. Propose the boundary fix, not an execution option.
 verify --all --wait`) and keep the Run ID; artifactize owns the Run, so ending your
 turn does not stop it. Follow with `verify_watch` when the host shows MCP progress,
 otherwise `verify_wait`, and read findings with `verify_result`; an accepted Run is
-not a passing one. `speculate` (start downstream work early) and `defer_human` (let
-machine work finish while sign-offs wait) are per-request choices, off by default,
-never a way around a required person.
+not a passing one. `speculate` (start downstream work early) is a per-request choice,
+off by default. Sign-offs never hold up machine work: the Run waits for a claimed one,
+then ends YELLOW when only sign-offs remain, which never replaces a required person.
 
 **Explaining a result**
 
@@ -144,7 +144,7 @@ never a way around a required person.
   sometimes an ERROR. Fix that first.
 - **ERROR**: the check could not run. Read `request_logs` for a runtime eval or
   `session_show` for an Agent eval and fix the cause, not the verdict.
-- **SIGNOFFS_PENDING**: everything else passed and a person's sign-off is waiting.
+- **YELLOW**: everything else passed and a person's sign-off is waiting.
   It is not full approval.
 - **INCOMPLETE**: required evidence is missing, for example in CI that only reuses
   existing reviews.

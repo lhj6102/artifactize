@@ -150,8 +150,8 @@ Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 
 시작합니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다. 그
 자동 검사 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
 `Sibling machine eval RED: spec/review`처럼 그 eval이 나옵니다. 같은 Artifact의 다른 Human
-eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`,
-`--speculate`, `--defer-human` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 검사 eval이
+eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`와
+`--speculate` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 검사 eval이
 GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}

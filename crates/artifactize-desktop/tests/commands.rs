@@ -281,7 +281,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     };
     assert_eq!(chip["kind"], "run");
     assert_eq!(chip["running"], json!(true));
-    assert_eq!(chip["status"], "Running");
+    assert_eq!(chip["status"], "Waiting for sign-off");
     // A running Run's age is its time so far, not a time ago.
     assert!(!chip["age"].as_str().unwrap().ends_with(" ago"), "{chip}");
     assert_eq!(view["run"], Value::Null, "nothing chosen yet");
@@ -318,7 +318,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     assert_eq!(detail["sections"][0]["name"], "outcome");
     assert_eq!(
         detail["sections"][0]["fields"][0],
-        json!({"key": "Status", "value": "WAITING_HUMAN — waiting for a Human submission"})
+        json!({"key": "Status", "value": "DEFERRED — waiting for a Human sign-off; other evals go on"})
     );
     // A request without an Agent session has no transcript to open, and says why.
     let request = detail["request"].as_str().unwrap();
@@ -456,7 +456,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     );
     assert_eq!(
         saved(&fixture, "release/signoff").request.status(),
-        artifactize_core::types::RequestStatus::WaitingHuman
+        artifactize_core::types::RequestStatus::Deferred
     );
 
     let green = invoke(&window, "human_form", json!({"id": id, "verdict": "GREEN"})).unwrap();
@@ -671,7 +671,7 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
         "id": "run-agent",
         "repoPath": fixture.repo,
         "stateDir": fixture.state,
-        "status": "SIGNOFFS_PENDING",
+        "status": "YELLOW",
         "createdAt": "2026-01-01T00:00:00Z",
         "completedAt": "2026-01-01T00:00:01Z",
         "selection": {"kind": "all"},
@@ -974,7 +974,7 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
                 let current = artifactize_core::store::read_run(&fixture.state, &run)
                     .await
                     .unwrap();
-                if current.run.status() != artifactize_core::types::RunStatus::Running {
+                if !current.run.status().is_open() {
                     break current;
                 }
                 changes.next_reconciled().await;
@@ -1246,7 +1246,7 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     assert!(saved.claim.is_none());
     assert_eq!(
         saved.request.status(),
-        artifactize_core::types::RequestStatus::WaitingHuman
+        artifactize_core::types::RequestStatus::Deferred
     );
     // Another Artifact's tool is not this one's to run.
     let refused = invoke(

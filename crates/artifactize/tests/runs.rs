@@ -91,7 +91,7 @@ impl Fixture {
                     {
                         return view;
                     }
-                    assert_eq!(view.run.status(), RunStatus::Running);
+                    assert!(view.run.status().is_open());
                     changes.next_reconciled().await;
                 }
             })
@@ -206,7 +206,7 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
             .unwrap()
             .run
             .status()
-            == RunStatus::Running
+            .is_open()
     );
     fs::write(fixture.repo.join("release"), "release").unwrap();
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
@@ -333,7 +333,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
                 if let Some(request) = view
                     .requests
                     .iter()
-                    .find(|request| request.status() == RequestStatus::WaitingHuman)
+                    .find(|request| request.status() == RequestStatus::Deferred)
                 {
                     break request.id.clone();
                 }
@@ -476,7 +476,7 @@ async fn a4_dead_worker_errors_without_replay_and_cleans_owned_children() {
         tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
             loop {
                 let saved = store::read_run(&fixture.state, &id).await.unwrap();
-                if saved.run.status() != RunStatus::Running {
+                if !saved.run.status().is_open() {
                     assert_eq!(saved.run.status(), RunStatus::Error);
                     break;
                 }

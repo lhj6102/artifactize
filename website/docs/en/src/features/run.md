@@ -54,11 +54,10 @@ only; the Run continues. Only `run cancel RUN_ID` requests cancellation. It retu
 once the request is recorded; the Run then stops starting work, stops its running work and
 ends ERROR/CANCELLED, keeping results already saved. Follow it with `run watch RUN_ID` or
 `run show RUN_ID` before you rely on the work having stopped. It does not kill an execution
-this Run joined from another Run. Its sign-offs still waiting, deferred ones
-included, end as ERROR too, and so do the requests other Runs joined to them; the
-next `verify` asks again. This applies only while the Run is running: a Run that
-already ended SIGNOFFS_PENDING is finished, so cancelling it changes nothing and its
-deferred sign-offs keep waiting. Work whose process died ends as ERROR/OWNER_DIED and is not run again by itself;
+this Run joined from another Run. Its sign-offs still waiting end as ERROR too, and so
+do the requests other Runs joined to them; the next `verify` asks again. This applies
+only while the Run is open (RUNNING or WAITING_HUMAN): a Run that already ended YELLOW
+is finished, so cancelling it changes nothing and its sign-offs can still be submitted. Work whose process died ends as ERROR/OWNER_DIED and is not run again by itself;
 verify again.
 
 A Run keeps the declarations it was accepted with. If you change them while it prepares,
@@ -66,10 +65,10 @@ the Run ends **ERROR/INPUT_CHANGED** instead of running different criteria or pr
 its evals are scheduled, they run as accepted. Finish editing the declarations and submit a
 new Run (cancel the old one if it is still running); the accepted Run is not retargeted.
 
-In strict mode, the Run waits for WAITING_HUMAN requests like other reviews.
-A submission unblocks dependents in that same Run. There is no Human wait deadline
-or `verify --timeout-ms`; all eval kinds share the settlement rule. The optional
-modes below change execution order or defer sign-offs, not Human authority.
+A sign-off never holds up other evals, and the Run stays open for it only as
+[Sign-offs and the end of a Run](#sign-offs-and-the-end-of-a-run) describes. There is no
+Human wait deadline or `verify --timeout-ms`; all eval kinds share the settlement rule.
+The optional [speculation](#speculation) changes execution order, not Human authority.
 
 Watching exits with the Run's outcome; the [CLI reference](../cli/index.md#command-reference)
 lists the codes.
@@ -87,47 +86,65 @@ A [`--request-key`](../cli/index.md#submission-and-watching) names a caller's at
 repeating it returns the same Run, so keep it to retry a lost answer and use a new one
 after fixes. Eval-result reuse does not depend on it.
 
-### Speculation and deferred sign-offs
+### Sign-offs and the end of a Run
 
-The two [per-request verify modes](../cli/index.md#verify-modes),
-`--speculate` and `--defer-human`, default off and are saved in the Run's `modes`.
-The same request key keeps its original choices.
+A sign-off is requested as soon as its own prerequisites pass: its Artifact's other
+machine evals are GREEN and no gate holds it. It never holds up other evals: what relies
+on it runs at once, and its results stay PROVISIONAL until the sign-off is GREEN. Other
+machine work may still be running when it is requested; to review the final state, wait
+until it has finished. Its request shows DEFERRED. Neither DEFERRED nor PROVISIONAL is
+approval.
 
-Speculation starts requested runtime, Agent and Human evals before unresolved
-gates, within `--jobs`, backend capacity and `--max-executions` limits. A Human eval
-is never requested before every other non-Human eval of its Artifact is GREEN. Ready work
-goes first: when it needs capacity a speculative review holds, that review is interrupted
-and started again later, and each start counts against `--max-executions`. An upstream RED or ERROR immediately cancels
-only the work it makes invalid, the evals that depend on it outside their own
-Artifact and cycle, and marks it BLOCKED without a reusable cancelled result.
-GREEN keeps results already produced for the same files. Results are shared with the
-[team review store](../cli/review-store.md) only after scheduling finishes, and only those
-that survived it.
+From its first sign-off request the Run is **WAITING_HUMAN**: still open, as a RUNNING Run
+is. Once nothing but sign-offs is left, it stays open while a reviewer holds a claim on one
+of them, and ends when none has been claimed for its **idle grace**, 2 minutes unless
+[changed](others/state.md#sign-off-idle-grace). The grace counts from when the other work
+finished or the last claim was submitted or released, whichever is later; a new claim stops
+it. So a person who asked for a sign-off has time to claim it, also when every other result
+was reused, and one reviewer's submission leaves the next time to claim theirs. The Run
+then ends:
 
-Deferral allows execution past pending Human gates. A deferrable sign-off's
-request is issued as soon as its own prerequisites pass: its Artifact's other machine
-evals are GREEN and no gate holds it. Other machine work may still be running then; to
-review the final state, wait until it has finished. Requests show DEFERRED, dependent results PROVISIONAL.
-Neither state is actual approval. `gate = "blocking"` retains the strict Human
-gate. When all other obligations pass, the Run ends SIGNOFFS_PENDING (exit 5),
-meaning **only sign-offs remain**; it does not wait for those submissions.
-Later submissions update requests, not the historical Run verdict. A new verify
-reuses unchanged provisional machine results: GREEN sign-offs allow SATISFIED;
-RED sign-offs block dependents. `--reuse-only agent,human` never treats a pending
-sign-off as GREEN and stays suitable for CI.
+- **GREEN** when every result, sign-offs included, is GREEN;
+- **RED** when any result, a sign-off included, is RED;
+- **YELLOW** (exit 5) when every other result is GREEN and a sign-off is still
+  unsubmitted: **only sign-offs remain**, which is not approval.
+
+`verify --wait`, `run show --wait` and the [MCP](../agent-plugin/mcp.md) waits return when
+the Run ends, so they keep waiting while a claim holds it or its grace runs. YELLOW is
+final: a later submission updates its request, not the Run's verdict. To have the Run
+itself settle, claim before its idle grace runs out. A new verify reuses unchanged
+provisional machine results: GREEN sign-offs allow SATISFIED; RED sign-offs block
+dependents. `--reuse-only agent,human` requests no sign-off, never treats a pending one as
+GREEN and stays suitable for CI.
 
 When a newer Run issues a Human request for the same eval in the same working
 tree, earlier DEFERRED sign-offs with a different reuse key end as ERROR/SUPERSEDED,
 including requests joined to them. Claimed sign-offs are retired too. They leave
 Review and cannot be claimed again. The same key still joins the existing review;
-original sign-offs in another working tree and live WAITING_HUMAN originals stay
-untouched. Until retirement, a deferred sign-off can still be submitted after its
-Run ends; submission rechecks the fingerprints, and changed files end the request ERROR
-(`INPUT_CHANGED`) without a verdict, so verify again for a new sign-off.
+original sign-offs in another working tree stay untouched. Until retirement, a sign-off
+can still be submitted after its Run ends; submission rechecks the fingerprints, and
+changed files end the request ERROR (`INPUT_CHANGED`) without a verdict, so verify again
+for a new sign-off.
 
-`status` labels current deferred waits and provisional results, but its execution
-prediction remains strict: a new default verify still waits for Human evidence.
-Run/result readers expose SIGNOFFS_PENDING as terminal and not satisfied.
+`status` labels current deferred waits and provisional results, and predicts that what
+relies on a sign-off without a result will execute. Run/result readers expose
+WAITING_HUMAN as open and YELLOW as terminal and not satisfied.
+
+### Speculation
+
+`--speculate` is a [per-request verify mode](../cli/index.md#verify-modes), off by default
+and saved in the Run's `modes`. The same request key keeps its original choice.
+
+Speculation starts requested runtime and Agent evals before unresolved gates, within
+`--jobs`, backend capacity and `--max-executions` limits. A sign-off is never requested
+speculatively. Ready work goes first: when it needs capacity a speculative review holds,
+that review is interrupted and started again later, and each start counts against
+`--max-executions`. An upstream RED or ERROR immediately cancels only the work it makes
+invalid, the evals that depend on it outside their own Artifact and cycle, and marks
+it BLOCKED without a reusable cancelled result. GREEN keeps results
+already produced for the same files. Results are shared with the
+[team review store](../cli/review-store.md) only after scheduling finishes, and only those
+that survived it.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
@@ -234,7 +251,7 @@ Each eval's action says what `verify` would do with it:
 Status cannot say whether a `wait` eval will execute. Text ends with, for example, `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on a merged
 checkout answers what verify will re-review there without running it. Force still
 applies only to selected executable evals. Human execution actions record a waiting
-request; an active Human execution of the same key projects WAITING_HUMAN and a
+request; an active Human execution of the same key projects DEFERRED and a
 `wait` action, even after the original verifier exits. Saved attempts are read
 for this canonical repository only: each eval's optional `last: {runId, verdict, fingerprint?}` is historical,
 not current evidence. Use `run show RUN_ID` for full attribution. A GREEN or RED without a reuse key

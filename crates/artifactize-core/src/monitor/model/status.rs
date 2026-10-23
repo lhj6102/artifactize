@@ -76,7 +76,7 @@ impl Status {
             Self::Error => "operational failure, not a verdict",
             Self::Running => "executing",
             Self::WaitingHuman => "waiting for a Human submission",
-            Self::Deferred => "sign-off deferred; execution may proceed",
+            Self::Deferred => "waiting for a Human sign-off; other evals go on",
             Self::Provisional => "criteria met; dependent sign-offs remain",
             Self::Yellow => "ended with only sign-offs left",
             Self::Blocked => "blocked by a RED dependency",

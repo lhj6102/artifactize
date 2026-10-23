@@ -19,7 +19,7 @@ import driver
 
 
 # run show --wait uses outcome exit codes even after successful observation.
-TERMINAL_STATUSES = {"GREEN", "RED", "INCOMPLETE", "SIGNOFFS_PENDING", "ERROR"}
+TERMINAL_STATUSES = {"GREEN", "RED", "INCOMPLETE", "YELLOW", "ERROR"}
 RUN_PAGE_SIZE = 100  # Read every owned Run, not just the CLI's first page.
 
 
@@ -183,7 +183,7 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
 Use the canonical skill below. The agreed proposal/consent is already supplied,
 so apply it without requesting a new Human authorization. Repository: {repo.as_posix()}.
 Candidate: {candidate.as_posix()}; model available for Agent evals: anthropic/{model}.
-No plugin packaging. Leave speculate/defer_human off for these fixture checks; preserve the agreed Human boundary.
+No plugin packaging. Leave speculate off for these fixture checks; preserve the agreed Human boundary.
 MCP registration must supply all 20 tools; demonstrate config_check, config_graph (including impact) and status.
 Use verify_watch for active machine work if the host exposes progress notifications;
 otherwise bounded verify_wait is the supported fallback. Inspect runtime evidence

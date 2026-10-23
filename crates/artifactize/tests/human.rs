@@ -150,8 +150,8 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     let fixture = Fixture::new(true);
     let run = fixture.cli_verify();
     let id = run["requests"][0]["id"].as_str().unwrap();
-    assert_eq!(run["status"], "RUNNING");
-    assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
+    assert_eq!(run["status"], "WAITING_HUMAN");
+    assert_eq!(run["requests"][0]["status"], "DEFERRED");
     assert_eq!(run["executionsStarted"], 0);
     let receipts = fixture.receipts().await;
     let alice_id = "alice".parse().unwrap();
@@ -176,7 +176,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
             ..returning()
         })
         .await;
-    assert_eq!(follower.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(follower.requests[0].status().as_str(), "DEFERRED");
     assert_eq!(
         follower.requests[0].execution_id.as_deref(),
         run["requests"][0]["executionId"].as_str()
@@ -187,7 +187,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
             ..returning()
         })
         .await;
-    assert_eq!(default.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(default.requests[0].status().as_str(), "DEFERRED");
     assert_eq!(default.run.executions_started, 0);
 }
 
@@ -293,7 +293,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
                 .requests[0]
                 .status()
                 .as_str(),
-            "WAITING_HUMAN"
+            "DEFERRED"
         );
     }
     let result = human::submit(
@@ -465,7 +465,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 }
 
 #[tokio::test]
-async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
+async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
@@ -485,11 +485,11 @@ async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
     )
     .unwrap();
     let run = fixture.verify(returning()).await;
-    assert_eq!(run.run.status().as_str(), "RUNNING");
+    assert_eq!(run.run.status().as_str(), "WAITING_HUMAN");
     let waiting = run
         .requests
         .iter()
-        .find(|r| r.status() == artifactize_core::types::RequestStatus::WaitingHuman)
+        .find(|r| r.status() == artifactize_core::types::RequestStatus::Deferred)
         .unwrap();
     assert_eq!(
         run.requests
@@ -498,7 +498,8 @@ async fn submitted_fingerprint_unblocks_dependents_in_the_owned_run() {
             .unwrap()
             .status()
             .as_str(),
-        "WAIT_DEPENDENCY"
+        "PROVISIONAL",
+        "a pending sign-off holds up nothing that relies on it"
     );
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &waiting.id, &"alice".parse().unwrap())
@@ -554,7 +555,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     )
     .await
     .unwrap();
-    assert_eq!(run.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(run.requests[0].status().as_str(), "DEFERRED");
     let receipts = fixture.receipts().await;
     let follower = &run.requests[0].id;
     let owner = original["requests"][0]["id"].as_str().unwrap();
@@ -806,7 +807,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
             ..returning()
         })
         .await;
-    assert_eq!(forced.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(forced.requests[0].status().as_str(), "DEFERRED");
     human::claim(&receipts, &forced.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -868,7 +869,7 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     assert_eq!(next.requests[0].execution_id, run.requests[0].execution_id);
     fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
     let changed = fixture.verify(returning()).await;
-    assert_eq!(changed.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(changed.requests[0].status().as_str(), "DEFERRED");
     assert_ne!(changed.requests[0].key, run.requests[0].key);
     human::claim(
         &receipts,
@@ -911,7 +912,7 @@ async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
     .await
     .unwrap();
     let next = fixture.verify(returning()).await;
-    assert_eq!(next.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(next.requests[0].status().as_str(), "DEFERRED");
     assert_ne!(next.requests[0].execution_id, run.requests[0].execution_id);
 }
 
@@ -953,7 +954,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
     assert_eq!(saved.requests[0].status().as_str(), "GREEN");
     assert_eq!(saved.requests[1].status().as_str(), "GREEN");
-    assert_eq!(saved.requests[2].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(saved.requests[2].status().as_str(), "DEFERRED");
     let status = project::status(
         &fixture.repo,
         Some(&fixture.state),
@@ -965,7 +966,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .unwrap();
     assert_eq!(status.counts.reuse, 2);
     assert_eq!(status.counts.wait, 1);
-    assert_eq!(status.evals[2].state, project::EvalCondition::WaitingHuman);
+    assert_eq!(status.evals[2].state, project::EvalCondition::Deferred);
     assert_eq!(
         human::claim(&receipts, &run.requests[2].id, &"bob".parse().unwrap())
             .await
@@ -1031,7 +1032,7 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
         })
         .await;
     let request = &run.requests[0];
-    assert_eq!(request.status().as_str(), "WAITING_HUMAN");
+    assert_eq!(request.status().as_str(), "DEFERRED");
     assert_eq!(request.options.variant.as_deref(), Some("lead"));
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &request.id, &"alice".parse().unwrap())

@@ -48,6 +48,24 @@ pub(super) fn assemble(
         }
     }
     let evaluation = graph.evaluate(&evidence);
+    // verify defers every sign-off it asks for, so what relies on one is predicted to run
+    // provisionally; a Run that only reuses Human results asks for none.
+    let mut planned = evidence.clone();
+    if !options
+        .reuse_only
+        .contains(&crate::config::ProfileKind::Human)
+    {
+        for eval in config
+            .evals
+            .iter()
+            .filter(|eval| eval.declaration.profile().kind() == crate::config::ProfileKind::Human)
+        {
+            if !matches!(planned.get(&eval.id), Some(Evidence::Current(_))) {
+                planned.insert(eval.id.clone(), Evidence::Deferred);
+            }
+        }
+    }
+    let planned = graph.evaluate(&planned);
     let deferred: BTreeSet<_> = waiting
         .into_iter()
         .filter(|view| view.request.status() == crate::types::RequestStatus::Deferred)
@@ -122,7 +140,7 @@ pub(super) fn assemble(
         .iter()
         .filter(|eval| required.contains(&eval.target))
     {
-        let current = &evaluation.evals[eval.id.as_str()];
+        let current = &planned.evals[eval.id.as_str()];
         let selected = selected_ids.contains(&eval.id);
         let included = included_ids.contains(&eval.id);
         let force = options.force && selected;

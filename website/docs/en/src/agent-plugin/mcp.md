@@ -77,7 +77,7 @@ Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 
 | Tool | Arguments | Answer |
 | --- | --- | --- |
-| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submits the Run; compact Run observation, not approval |
+| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate` | Submits the Run; compact Run observation, not approval |
 | `verify_status` | `run` | Saved state, counts, elapsed seconds and `next_check` |
 | `verify_wait` | `run`, optional `seconds` | Waits for the Run's end or the bound; default 30, integer 0–40; observing takes under 45 seconds, after the first call's roots question, if any |
 | `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Follows changes for up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
@@ -109,15 +109,14 @@ backend limits in `limits.json`. An optional `jobs` (1–4294967295) is the same
 per-Run cap as CLI `--jobs`; add it only when unrestricted concurrency causes
 trouble. The Run omits `jobs` when unlimited.
 
-Both mode arguments default false and mean the same as CLI `--speculate` and
-`--defer-human`.
-`speculate` starts requested downstream work within the usual scheduling limits before
-upstream judgment; an upstream RED/ERROR cancels only the work it makes invalid. `defer_human`
-permits provisional progress and returns terminal `signoffs_pending` when only
-deferred sign-offs remain. `verify_result` reports verdict `SIGNOFFS_PENDING`;
-this is not full approval (the CLI watcher exits 5). Explicit `gate = "blocking"`
-still blocks. Request states such as `DEFERRED` and `PROVISIONAL` are the same as in
-the CLI. Later sign-offs do not re-run the machine work.
+`speculate` defaults false and means the same as CLI `--speculate`: it starts requested
+runtime and Agent work within the usual scheduling limits before upstream judgment; an
+upstream RED/ERROR cancels only the work it makes invalid. Sign-offs never hold up other
+evals: the Run is `waiting_human` from its first sign-off request, stays open while one is
+claimed or its [idle grace](../features/others/state.md#sign-off-idle-grace) runs, and ends
+`yellow` when only sign-offs remain. `verify_result` then reports verdict `YELLOW`; this
+is not full approval (the CLI watcher exits 5). Request states such as `DEFERRED` and
+`PROVISIONAL` are the same as in the CLI. Later sign-offs do not re-run the machine work.
 
 A running answer is smaller than 2 KiB. Waiting is ordinary state, not an error.
 `verify_wait` treats runtime, Agent and Human evals equally: it does **not** return

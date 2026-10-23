@@ -343,6 +343,10 @@ when shown. Reopen it or use the palette's **Refresh settings** command to reloa
   to the team's privacy needs. Signing out removes local configuration, **not the server
   token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
   See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
+- **Sign-off idle grace:** shows how long a Run with only unclaimed sign-offs left stays
+  open before it ends YELLOW, 2 minutes unless changed, and saves a new value in seconds
+  (0–86400) for the Runs started afterwards. It is the same machine-wide
+  [setting](../features/others/state.md#sign-off-idle-grace) as `artifactize limits`.
 
 Settings uses the same accounts and store operations as the CLI; credentials do
 not belong in `.artf`.

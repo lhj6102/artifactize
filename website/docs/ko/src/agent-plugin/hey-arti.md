@@ -134,8 +134,8 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **완전한
-승인이 아닙니다**.
+Arti는 요청마다 [추측 실행](../features/run.md#speculation)을 요청할 수 있습니다. 승인은 다른 eval을 막지 않지만,
+YELLOW로 끝난 Run은 **완전한 승인이 아닙니다**. 필요한 사람은 여전히 승인해야 합니다.
 
 Arti는 각 결과를 다음과 같이 다룹니다.
 
@@ -146,7 +146,7 @@ Arti는 각 결과를 다음과 같이 다룹니다.
 - **BLOCKED**: 그 eval을 실행하기 전에 통과해야 할 상위 검사가 실패했습니다. 보통 해당 eval이 입력으로 쓰는 Artifact에서 RED나 ERROR가 난 경우입니다. Arti는 그 입력을 먼저 고친 뒤 다시 검증합니다.
 - **ERROR**: 검사를 실행할 수 없었습니다. Arti는 `request_logs`나 `session_show`를 읽고
   필요한 프로그램이 없는 등 실행을 막은 원인을 해결하며, 판정 자체를 고치지는 않습니다.
-- **SIGNOFFS_PENDING**: 나머지는 모두 통과했고 사람의 승인만 남았습니다.
+- **YELLOW**: 나머지는 모두 통과했고 사람의 승인만 남았습니다.
   완전한 승인이 아니며, Arti는 사람에게 넘깁니다(아래).
 - **INCOMPLETE**: 필요한 증거가 없습니다. 예를 들어 CI가 기존 리뷰를
   재사용하기만 하는 경우입니다. Arti는 `verify`로 빠진 eval을 실행해 부족한 증거를 확보합니다.

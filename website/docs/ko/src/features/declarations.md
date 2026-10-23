@@ -59,7 +59,6 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
 | `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령을 실행하는 Agent 도구에만 씀 |
 | `evals.<id>.title` | 필수. 비어 있지 않은 제목 |
-| `evals.<id>.gate` | 선택. `"blocking"`이면 `--defer-human`에서도 Human 승인을 미루지 않음. 생략하면 요청 모드를 따름. 다른 값은 없음 |
 | `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. Runtime과 Agent eval에만 씀. 기본값 없음 |
 | `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
 | `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
@@ -300,24 +299,6 @@ payload.instruction = "Run the end-to-end suite."
 중이어도, 테스트 코드를 읽기만 하는 Agent eval까지 대기할 필요는 없습니다. 암묵적인 태그는 없습니다.
 mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fingerprint나 재사용 키가 바뀌지 않고,
 충돌하는 eval이 실행 중일 때도 캐시 결과는 재사용할 수 있습니다.
-
-## Human 게이트 정책 {#human-gate-policy}
-
-`gate = "blocking"`은 프로필이나 전역 설정이 아니라 eval에 다는 선택 필드입니다.
-`verify --defer-human`에서도 Human eval의 게이트를 대기 상태로 유지합니다. 생략하면 기본 Run에서는 승인 게이트를 엄격하게 적용하고, 요청에서 승인 미루기를 지정한 경우에만 승인을 미룰 수 있습니다. Runtime이나 Agent
-eval에서는 아무 효과도 없습니다. 미룰 수 있는 것은 Human 승인뿐입니다. 게이트 정책은
-스케줄링만 바꾸며, 평가 기준이나 재사용 키는 바꾸지 않습니다.
-
-```toml
-[evals.signoff]
-title = "The delivery is approved"
-gate = "blocking"
-profile = { kind = "human" }
-payload.instruction = "Approve the delivery before dependent work proceeds."
-```
-
-[verify 모드](../cli/index.md#verify-modes)와 [미룬 승인](human.md#deferred-sign-offs)을
-보세요.
 
 ## eval 의존성 {#eval-dependencies}
 

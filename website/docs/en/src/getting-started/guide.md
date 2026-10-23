@@ -127,7 +127,7 @@ cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --eval spec/review --tool coverage_spec --args '{}'
 artifactize verify --eval spec/review --wait    # the machine review comes first
-artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
+artifactize verify --eval spec/signoff --wait   # records a sign-off request and waits
 # In a second terminal, in the same directory:
 export ARTIFACTIZE_STATE_HOME="STATE_DIRECTORY"  # copy the first terminal's path
 artifactize request list --run RUN_ID    # shows REQUEST_ID
@@ -143,10 +143,11 @@ review` does the same in a terminal UI: it lists waiting requests and previews t
 instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
 Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S
 submits. Esc stops editing before returning to the list, keeping the draft.
-The artifactize-owned Run waits for Human results like any other, so dependents
-continue in the same Run. Plain `verify` submits and returns; `verify --wait`
-follows the Run in the foreground and exits 0 here once the GREEN sign-off arrives,
-provided the preceding machine review is still valid.
+Plain `verify` submits and returns; `verify --wait` follows the Run in the foreground.
+With only the sign-off left, the Run waits 2 minutes for a claim and then while you hold
+it, so `verify --wait` exits 0 here once the GREEN sign-off arrives, provided the preceding
+machine review is still valid. Claim later and the Run has already ended YELLOW (exit 5);
+submit anyway, and the next `verify` reuses your sign-off.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
 then run `artifactize verify --eval spec/review --wait`, adding `--profile anthropic` or `--profile codex` for the other backends. Without

@@ -31,10 +31,11 @@ definitions it started with. Read them with `run list`, `run show`, `request lis
 `request show` and [`cache list`](../../cli/maintenance.md#cache-inspection); how an Agent review went, its
 conversation and tool calls, is in its [saved session](#agent-sessions).
 
-**Upgrades.** A state written by artifactize with schema 6, 7 or 8 is upgraded to the
-current schema 9 the first time a command opens it. Runs, IDs, cached results and Human
-sign-offs are kept. The upgrade needs write access and is one way: an older binary that
-only knows schemas 6 to 8 refuses the upgraded state, so back up the state folder first if
+**Upgrades.** A state written by artifactize with schema 6, 7, 8 or 9 is upgraded to the
+current schema 10 the first time a command opens it. Runs, IDs, cached results and Human
+sign-offs are kept; a Run that ended SIGNOFFS_PENDING reads as YELLOW. The upgrade needs
+write access and is one way: an older binary that only knows schemas 6 to 9 refuses the
+upgraded state, so back up the state folder first if
 you may go back. A state from schemas 1 to 5 is refused (exit 2) with:
 
 ```text
@@ -128,6 +129,25 @@ watching.
 
 A failure that [stops a backend](../agent.md#stopping-a-backend) for the Run keeps its
 waiting requests from starting on that backend.
+
+## Sign-off idle grace
+
+`limits.json` also sets how long a Run with nothing but unclaimed sign-offs left stays
+open before it ends YELLOW ([Sign-offs and the end of a Run](../run.md#sign-offs-and-the-end-of-a-run)):
+
+```json
+{"signoffIdleGraceSeconds": 120}
+```
+
+It is 0–86400 seconds, 120 when the field or the file is missing; 0 ends such a Run at
+once. Like the backend limits it applies to every Run on this state and is read when a
+Run starts, so a change affects only Runs started afterwards. Show or change it with
+`artifactize limits` (also from the desktop Settings), which keeps the file's other
+fields:
+
+```sh
+artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
+```
 
 ## Agent sessions
 

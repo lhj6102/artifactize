@@ -69,7 +69,6 @@ by ID, not by their position in the TOML source.
 | `views.agent_sessions.<name>.start`, `.stop` | Tool-session commands: required `command` and `args`, optional `execution_paths`; no other fields |
 | `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
 | `evals.<id>.title` | Required nonblank title |
-| `evals.<id>.gate` | Optional `"blocking"`; keeps a Human sign-off strict under `--defer-human`. Omission follows the request mode; no other values |
 | `evals.<id>.mutex` | Optional list of at most 64 unique hierarchical mutex tags; runtime and Agent evals only; no default |
 | `evals.<id>.profile` | Required `runtime`, `agent` or `human` profile |
 | `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
@@ -347,26 +346,6 @@ only reads test code need not wait because another eval runs those tests. There
 are no implicit tags. Mutex tags are execution options, not evaluation criteria;
 changing them changes neither fingerprints nor reuse keys, and cached results
 can still be reused while a conflicting eval runs.
-
-## Human gate policy
-
-`gate = "blocking"` is an optional eval field, not a profile or global setting.
-It preserves a Human eval's pending gate under `verify --defer-human`. Omission
-retains ordinary strict behavior in default Runs and permits deferral only when
-that request opts in. On runtime or Agent evals it has no additional
-effect: only Human sign-offs can be deferred. Gate policy changes scheduling,
-not the judgment definition or its reuse key.
-
-```toml
-[evals.signoff]
-title = "The delivery is approved"
-gate = "blocking"
-profile = { kind = "human" }
-payload.instruction = "Approve the delivery before dependent work proceeds."
-```
-
-See [verify modes](../cli/index.md#verify-modes) and
-[deferred sign-offs](human.md#deferred-sign-offs).
 
 ## Eval dependencies
 

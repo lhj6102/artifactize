@@ -442,12 +442,12 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         corrupted["unreadable"][0]["reason"]
             .as_str()
             .unwrap()
-            .contains("A running Run cannot be completed")
+            .contains("An open Run cannot be completed")
     );
     for args in [["run", "list"].as_slice(), ["status"].as_slice()] {
         let text = cli(&repo, &state, args, false);
         assert!(text.contains(bad.run.id.as_str()), "{text}");
-        assert!(text.contains("A running Run cannot be completed"), "{text}");
+        assert!(text.contains("An open Run cannot be completed"), "{text}");
     }
     let status: Value = serde_json::from_str(&cli(&repo, &state, &["status"], true)).unwrap();
     assert_eq!(status["unreadable"][0]["id"], bad.run.id.as_str());
@@ -475,10 +475,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         String::from_utf8_lossy(&shown.stderr)
     );
     assert!(error.contains(bad.run.id.as_str()), "{error}");
-    assert!(
-        error.contains("A running Run cannot be completed"),
-        "{error}"
-    );
+    assert!(error.contains("An open Run cannot be completed"), "{error}");
     let pruned = Command::new(support::os::cli())
         .arg("--repo")
         .arg(&repo)

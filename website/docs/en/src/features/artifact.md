@@ -166,8 +166,8 @@ Evals already pass. Until then it waits. When one of those machine Evals is RED 
 ERROR, the Human Eval does not start and is BLOCKED, and its reason names them, for
 example `Sibling machine eval RED: spec/review`. Other Human Evals of the same
 Artifact are not part of this condition, so two sign-offs never wait for each other.
-The rule is the same in plain `verify`, with `--speculate` and with `--defer-human`:
-even a speculative Run does not ask a person before those machine Evals are GREEN.
+The rule is the same in plain `verify` and with `--speculate`: even a speculative Run
+does not ask a person before those machine Evals are GREEN.
 
 ## The fingerprint field
 

@@ -35,8 +35,10 @@ pub fn run_times(state: &Path, id: &str, created: &str, completed: &str) {
     };
     crate::support::runs::finished_worker(state, &run.repo_path, &id, crate::support::os::running);
     let at = match &mut run.state {
-        store::RunState::Running => panic!("fixture times require a terminal Run"),
-        store::RunState::SignoffsPending { at }
+        store::RunState::Running | store::RunState::WaitingHuman => {
+            panic!("fixture times require a terminal Run")
+        }
+        store::RunState::Yellow { at }
         | store::RunState::Green { at }
         | store::RunState::Red { at }
         | store::RunState::Error { at, .. }

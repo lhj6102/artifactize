@@ -306,6 +306,9 @@ Settings는 Main area에 나옵니다. **Settings** 버튼이나 Ctrl+,를 다�
   필요한 개인정보 보호 수준에 맞춰 공유 수준을 고르세요. 로그아웃은 로컬 설정을 제거할 뿐, **서버
   토큰은 제거하지 않습니다**. 저장소 관리자가 [그 토큰을 폐기](../cli/review-store.md#review-store-server)해야 합니다.
   [공유와 푸시 동작](../cli/review-store.md#remote-review-store-client)을 보세요.
+- **Sign-off idle grace:** 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 끝나기 전에 얼마나 열려 있는지
+  보여 주고(바꾸지 않았다면 2분), 그 뒤에 시작하는 Run에 쓸 새 값을 초 단위(0–86400)로 저장합니다.
+  `artifactize limits`와 같은 머신 전체 [설정](../features/others/state.md#sign-off-idle-grace)입니다.
 
 Settings에서 하는 계정과 저장소 관리 작업은 CLI와 같습니다. 자격 증명은
 `.artf`에 넣지 않습니다.

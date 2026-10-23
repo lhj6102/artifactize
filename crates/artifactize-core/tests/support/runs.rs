@@ -3,7 +3,7 @@
 use artifactize_core::{
     project::{VerifyOptions, selection::Selection},
     runs, store,
-    types::{RequestStatus, RunId, RunStatus},
+    types::{RequestStatus, RunId},
 };
 use std::{
     path::Path,
@@ -37,7 +37,7 @@ pub async fn terminal_worker_exited(
     changes: &mut artifactize_core::changes::Subscription,
     cancellation: &CancellationToken,
 ) -> Result<(), String> {
-    if view.run.status() == RunStatus::Running {
+    if view.run.status().is_open() {
         return Ok(());
     }
     if let Some(control) = &view.run.control {
@@ -80,12 +80,12 @@ async fn admitted(
                     !control.cancellation_requested && control.activity == runs::Activity::Waiting
                 },
             );
-            if view.run.status() != RunStatus::Running
+            if !view.run.status().is_open()
                 || (waiting
                     && view
                         .requests
                         .iter()
-                        .any(|request| request.status() == RequestStatus::WaitingHuman))
+                        .any(|request| request.status().is_human_wait()))
             {
                 terminal_worker_exited(&view, &mut changes, &cancellation).await?;
                 return Ok::<_, String>(view);
@@ -211,13 +211,13 @@ async fn release_run(context: &runs::Context, state: &Path, id: &RunId) -> Resul
     // A fixture watchdog bounds failed cleanup, never a verification execution lifetime.
     let mut changes = artifactize_core::changes::Subscription::new(state).await;
     let result = tokio::time::timeout(ADMISSION_BOUND, async {
-        if store::read_run(state, id).await?.run.status() == RunStatus::Running {
+        if store::read_run(state, id).await?.run.status().is_open() {
             // This is an explicit cleanup action, not part of an observation barrier.
             runs::cancel(context, id).await?;
         }
         loop {
             let view = store::read_run(state, id).await?;
-            if view.run.status() != RunStatus::Running {
+            if !view.run.status().is_open() {
                 terminal_worker_exited(&view, &mut changes, &CancellationToken::new()).await?;
                 return Ok::<_, String>(());
             }
@@ -335,7 +335,7 @@ pub fn cancel_active(state: &Path, repo: &Path) -> artifactize_core::types::RunI
                         .await
                         .unwrap()
                         .into_iter()
-                        .find(|run| run.status == artifactize_core::types::RunStatus::Running)
+                        .find(|run| run.status.is_open())
                         .expect("fixture has an active Run");
                     let context = runs::Context::new(
                         repo,
@@ -375,11 +375,7 @@ pub fn finished_worker(
                         artifactize_core::workspace::canonical_target(repo).unwrap(),
                         "fixture Run belongs to this repository"
                     );
-                    assert_ne!(
-                        view.run.status(),
-                        RunStatus::Running,
-                        "fixture Run must be terminal"
-                    );
+                    assert!(!view.run.status().is_open(), "fixture Run must be terminal");
                     let control = view.run.control.unwrap();
                     let runs::Worker::Admitted { owner } = control.worker else {
                         panic!("fixture worker was admitted");
@@ -423,7 +419,7 @@ pub fn worker_pid(state: &Path, repo: &Path) -> u32 {
                         .await
                         .unwrap()
                         .into_iter()
-                        .find(|run| run.status == artifactize_core::types::RunStatus::Running)
+                        .find(|run| run.status.is_open())
                         .expect("active Run");
                     let mut changes = artifactize_core::changes::Subscription::new(state).await;
                     let result = tokio::time::timeout(ADMISSION_BOUND, async {

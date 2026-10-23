@@ -461,7 +461,7 @@ fn reuse_only_runs_tests_and_takes_reviews_only_from_the_cache() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|request| request["status"] != "WAITING_HUMAN")
+            .all(|request| request["status"] != "DEFERRED")
     );
     let text = fixture.text(&base, &ci, 4);
     assert!(

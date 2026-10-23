@@ -8,7 +8,7 @@ use std::{
 
 use artifactize_core::{
     runs, store,
-    types::{RequestStatus, RunId, RunStatus},
+    types::{RequestStatus, RunId},
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -152,7 +152,7 @@ impl Fixture {
                     if ready(request) {
                         return request.clone();
                     }
-                    assert_eq!(view.run.status(), RunStatus::Running, "{view:?}");
+                    assert!(view.run.status().is_open(), "{view:?}");
                     last = Some(view);
                     changes.next_reconciled().await;
                 }

@@ -12,13 +12,12 @@ nothing to reuse is [not executed](../../cli/index.md#reuse-only) and leaves the
 a developer's `verify` has produced it for the current key. Artifactsum enables
 reuse by default; `fingerprint = false` on a target or dependency disables it.
 
-## Keep deferred work out of the merge gate
+## Keep pending sign-offs out of the merge gate
 
-Developers may use `--defer-human` to finish machine work while a person is away,
-optionally with `--speculate`. SIGNOFFS_PENDING (exit 5), DEFERRED sign-offs and
-PROVISIONAL machine results are not approval. Keep CI's
-`--reuse-only agent,human` gate: missing sign-offs are not executed, leave
-INCOMPLETE, and cannot be counted as passing even if `--defer-human` is supplied.
+A developer's `verify` finishes machine work while a person is away, since sign-offs
+never hold it up. YELLOW (exit 5), DEFERRED sign-offs and PROVISIONAL machine results
+are not approval. Keep CI's `--reuse-only agent,human` gate: missing sign-offs are not
+requested, leave INCOMPLETE, and cannot be counted as passing.
 Once a person submits GREEN, CI reuses unchanged machine evidence and the
 sign-off. RED blocks dependents. Do not treat plain verify acceptance as CI success.
 

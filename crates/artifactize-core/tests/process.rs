@@ -231,7 +231,7 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         )
         .await
         .unwrap();
-        assert_eq!(run.requests[0].status(), RequestStatus::WaitingHuman);
+        assert_eq!(run.requests[0].status(), RequestStatus::Deferred);
         let Worker::Admitted { owner } = run.run.control.unwrap().worker else {
             panic!("the fixture worker was admitted");
         };
@@ -267,7 +267,7 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         )
         .await
         .unwrap();
-        assert_eq!(later.requests[0].status(), RequestStatus::WaitingHuman);
+        assert_eq!(later.requests[0].status(), RequestStatus::Deferred);
         assert_ne!(run.run.id, later.run.id);
         let Worker::Admitted { owner } = later.run.control.unwrap().worker else {
             panic!("the later fixture worker was admitted");
