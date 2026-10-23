@@ -30,8 +30,8 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 바뀌지 않습니다.
 
 아래 명령 표기에서 대괄호는 생략할 수 있는 부분이며, 대괄호는 입력하지 않습니다. 대문자로 쓴
-부분은 바꿔 넣을 값입니다. `request list`가 돌려준 실제 `REQUEST_ID`와 `NAME` 자리의 리뷰어
-이름을 쓰세요.
+부분은 바꿔 넣을 값입니다. `REQUEST_ID`에는 `request list`가 출력한 실제 요청 ID를 넣고, `NAME`에는
+리뷰어 이름을 넣으세요.
 
 ```sh
 artifactize verify --all --wait
