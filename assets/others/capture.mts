@@ -4,12 +4,13 @@
 //   node assets/others/capture.mts check   render them again elsewhere and compare with the saved ones
 //
 // Each figure is an HTML page in this folder that takes ?lang=; graph-example.html in en, ko and
-// zh becomes graph-example.en.png, graph-example.ko.png and graph-example.zh.png. The README and
-// the landing page use those images, never the HTML.
+// zh becomes graph-example.en.png, graph-example.ko.png and graph-example.zh.png, and roles.html,
+// in English only, becomes roles.en.png. The README and the landing page use those images, never
+// the HTML.
 //
 // Linux only, like the other capture scripts. Rendering uses headless Google Chrome (or Chromium; CHROME names another binary) through the
-// DevTools protocol, with no packages to install. A small local server serves this folder and
-// the landing page's brand fonts at /fonts/, as the landing page does. The page sets
+// DevTools protocol, with no packages to install. A small local server serves this folder, the
+// landing page's brand fonts at /fonts/, as the landing page does, and the brand images at /brand/. The page sets
 // data-ready once its fonts are loaded; the picture is taken then, at twice the figure's size.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -20,17 +21,24 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fonts = join(here, "..", "..", "website", "landing", "fonts");
+const brand = join(here, "..", "brand");
 /** The figures and the languages each is rendered in. */
-const FIGURES = [{ page: "graph-example", width: 1600, height: 900, languages: ["en", "ko", "zh"] }];
+const FIGURES = [
+  { page: "graph-example", width: 1600, height: 900, languages: ["en", "ko", "zh"] },
+  { page: "roles", width: 1600, height: 760, languages: ["en"] },
+];
 const SCALE = 2;
 const WAIT = 30000;
-const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".woff2": "font/woff2" };
+const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml" };
 
-/** Serve this folder at / and the brand fonts at /fonts/ on a free local port. */
+/** Serve this folder at /, the brand fonts at /fonts/ and the brand images at /brand/ on a free
+ * local port. */
 async function serve(): Promise<{ server: Server; origin: string }> {
   const server = createServer((request, response) => {
     const path = normalize(decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname));
-    const file = path.startsWith("/fonts/") ? join(fonts, path.slice("/fonts/".length)) : join(here, path);
+    const file = path.startsWith("/fonts/") ? join(fonts, path.slice("/fonts/".length))
+      : path.startsWith("/brand/") ? join(brand, path.slice("/brand/".length))
+      : join(here, path);
     try {
       const body = readFileSync(file);
       response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });

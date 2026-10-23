@@ -6,7 +6,10 @@
 
 # Build together on an Artifact Graph.
 
-Artifactize는 사람과 에이전트의 작업을 하나로 모으고 프로젝트의 일관성을 지켜 줍니다.
+<p align="center">
+  <img src="../others/roles.en.png" width="800"
+       alt="Artifactize를 둘러싼 역할 분담 예시: 방향을 정하는 일은 사람과 AI 에이전트가 절반씩 나누고, 만드는 일은 모두 AI 에이전트가 맡으며, 평가는 AI 에이전트가 90%, 사람이 10%를 맡습니다.">
+</p>
 
 **누구를 위한 도구인가요?**
 
