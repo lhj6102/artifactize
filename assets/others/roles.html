@@ -47,9 +47,9 @@
   </defs>
 
   <!-- The three roles. -->
-  <text class="title" x="720" y="72" text-anchor="middle">Director</text>
-  <text class="title" x="160" y="470" text-anchor="middle">Builder</text>
-  <text class="title" x="1280" y="470" text-anchor="middle">Evaluator</text>
+  <text class="title" x="720" y="76" text-anchor="middle">Director</text>
+  <text class="title" x="165" y="452" text-anchor="middle">Builder</text>
+  <text class="title" x="1275" y="452" text-anchor="middle">Evaluator</text>
   <g id="teams"></g>
 
   <!-- The Artifact Graph, and the tag naming what it is passed for. -->
@@ -64,9 +64,9 @@
 
   <!-- The logo along the bottom. -->
   <g id="logo">
-    <text class="kicker" id="logo-kicker" y="772">Collaborate in</text>
-    <image id="logo-icon" href="/brand/artifactize-icon.svg" y="726" width="60" height="60"/>
-    <text class="brand" id="logo-name" y="774">Artifactize</text>
+    <text class="kicker" id="logo-kicker" y="750">Collaborate in</text>
+    <image id="logo-icon" href="/brand/artifactize-icon.svg" y="704" width="60" height="60"/>
+    <text class="brand" id="logo-name" y="752">Artifactize</text>
   </g>
 </svg>
 
@@ -79,7 +79,7 @@
   // ---------- The story, second by second ----------
 
   /** Where the graph rests beside each role. */
-  const SPOTS = { director: { x: 720, y: 348 }, builder: { x: 566, y: 540 }, evaluator: { x: 874, y: 540 } };
+  const SPOTS = { director: { x: 720, y: 360 }, builder: { x: 530, y: 505 }, evaluator: { x: 910, y: 505 } };
   /** The passes: from one role to another between `start` and `end`, tagged with why. */
   const PASSES = [
     { from: "director", to: "builder", start: 1.4, end: 2.2, tag: "build" },
@@ -109,7 +109,7 @@
     g: { x: 115, y: 96, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
   };
   /** The graph is drawn this much larger than its coordinates. */
-  const GRAPH_SCALE = 1.2;
+  const GRAPH_SCALE = 1.25;
   const EDGES = [["a", "b"], ["a", "c"], ["b", "d"], ["b", "e"], ["c", "f"], ["c", "g"]];
   const RADIUS = 22;
   /** How each state looks: fill, outline, and whether the outline is dashed. */
@@ -150,18 +150,18 @@
 
   /** Each role's team, left to right, at the centre of its row. */
   const TEAMS = {
-    director: { x: 720, y: 140, members: ["person", "person", "person", "agent", "agent"] },
-    builder: { x: 160, y: 536, members: ["agent", "agent", "agent", "agent", "agent"] },
-    evaluator: { x: 1280, y: 536, members: ["agent", "agent", "agent", "agent", "person"] },
+    director: { x: 720, y: 138, members: ["person", "person", "person", "agent", "agent"] },
+    builder: { x: 165, y: 514, members: ["agent", "agent", "agent", "agent", "agent"] },
+    evaluator: { x: 1275, y: 514, members: ["agent", "agent", "agent", "agent", "person"] },
   };
   const badges = {};
   for (const [role, team] of Object.entries(TEAMS)) {
     badges[role] = team.members.map((kind, index) => {
-      const x = team.x + (index - 2) * 62;
+      const x = team.x + (index - 2) * 64;
       const group = make("g", { transform: `translate(${x} ${team.y})`, color: COLOURS[kind] }, byId("teams"));
-      const pulse = make("circle", { r: 27, fill: "none", stroke: COLOURS[kind], "stroke-width": 2, opacity: 0 }, group);
-      const disc = make("circle", { r: 27, fill: "#10141B", stroke: COLOURS[kind], "stroke-width": 2 }, group);
-      make("use", { href: kind === "person" ? "#i-person" : "#i-agent", x: -15, y: -15, width: 30, height: 30 }, group);
+      const pulse = make("circle", { r: 25, fill: "none", stroke: COLOURS[kind], "stroke-width": 2, opacity: 0 }, group);
+      const disc = make("circle", { r: 25, fill: "#10141B", stroke: COLOURS[kind], "stroke-width": 2 }, group);
+      make("use", { href: kind === "person" ? "#i-person" : "#i-agent", x: -14, y: -14, width: 28, height: 28 }, group);
       return { kind, group, pulse, disc };
     });
   }
@@ -250,7 +250,7 @@
       box.setAttribute("x", (-width / 2).toFixed(2));
       box.setAttribute("width", width.toFixed(2));
       box.setAttribute("fill", TAGS[place.pass.tag]);
-      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 168).toFixed(2)})`);
+      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 186).toFixed(2)})`);
       tag.setAttribute("opacity", Math.min(1, place.lift * 2.5).toFixed(3));
     }
 
@@ -279,7 +279,7 @@
         const x = glow[role][i];
         badge.disc.setAttribute("fill", mix("#10141B", badge.kind === "person" ? "#4A3510" : "#2E2550", x));
         badge.group.setAttribute("filter", x > 0.05 ? "url(#glow)" : "none");
-        badge.pulse.setAttribute("r", (27 + 13 * x).toFixed(2));
+        badge.pulse.setAttribute("r", (25 + 6 * x).toFixed(2));
         badge.pulse.setAttribute("opacity", (0.6 * x).toFixed(3));
       });
     }
