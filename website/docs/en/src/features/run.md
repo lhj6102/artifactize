@@ -167,9 +167,9 @@ sibling eval in the same Run), and `remote` for a record from the [remote review
 carry `source` too.
 
 `verify --wait --json` and `run show RUN_ID` print the full saved Run. `run show` never
-discovers declarations or runs code. Each Run saves its selection, policy, profile option
-and the resolved definitions of its dependency closure with its first requests, so it
-never depends on the current declarations.
+discovers declarations or runs code. It shows the selection, policy, profile option
+and eval definitions as they were when the Run started, so later edits to the
+declarations do not change what it shows.
 
 A partial Run can use saved evidence for an eval without creating a request for
 it, such as an upstream eval outside the execution selection. The Run records

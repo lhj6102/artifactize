@@ -157,13 +157,10 @@ approves nothing.
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
 own.
-Drag the graph background to pan; wheel, pinch or a background double-click zooms
-the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
-These gestures move the camera, not the divider or the Detail. A graph shows whole
-when it first appears; from then on only you move
-its camera. Opening, switching, resizing or closing the Detail, a new result or scan
-and a new layout never zoom or pan it; **Fit View** shows the whole graph again in
-the whole canvas, the same whether the Detail floats over it or not.
+Drag the graph background to pan; wheel, pinch or a background double-click zooms.
+**Zoom In** and **Zoom Out** do the same from buttons, and **Fit View** shows the whole
+graph again. A graph shows whole when it first appears; after that only you move the
+view: the Detail, new results and new layouts leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on

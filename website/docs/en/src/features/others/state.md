@@ -175,7 +175,7 @@ conversation and its tool calls, which
 ### Follow-up replay
 
 `session send` asks the saved review a question with the same backend, model and
-reasoning, replaying the saved conversation so the provider can reuse its cache. The
+reasoning; the model answers with the whole saved conversation in mind. The
 project's current tools are offered again, and if a covered Artifact changed since the
 review, the header and the model are told. The question is a follow-up, not a new review:
 the model answers in plain text, may use the tools, and the recorded verdict never changes.
