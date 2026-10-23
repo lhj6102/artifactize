@@ -74,8 +74,8 @@ brew install lhj6102/tap/artifactize
 artifactize --version
 ```
 
-이 명령은 우리 Homebrew 패키지 저장소(*tap*)인 `lhj6102/tap`에서 Mac의 CPU에 맞는 두 명령을
-설치하며, 안정 릴리스로만 업데이트됩니다. Homebrew는 이런 명령줄 패키지를 *formula*, 앱 패키지를
+이 명령을 실행하면 프로젝트의 Homebrew 패키지 저장소(*tap*)인 `lhj6102/tap`에서 Mac의 CPU에 맞는 두 명령이
+설치되며, 이후에는 안정 릴리스로만 업데이트됩니다. Homebrew는 이런 명령줄 패키지를 *formula*, 앱 패키지를
 *cask*라고 부릅니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
 앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다. cask가 formula를 대신하므로, formula가 설치되어 있다면 먼저 제거하세요.
 
