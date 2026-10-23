@@ -102,7 +102,7 @@ eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로
 
 ## 4. Bob이 오프라인으로 작업한 뒤 푸시하기 {#4-bob-works-offline-then-pushes}
 
-Bob의 터미널에서 `$WALK/bob`에 있는 채로 계속하세요.
+Bob의 터미널에서 작업 디렉터리를 `$WALK/bob`으로 유지한 채 다음 명령을 실행하세요.
 
 ```sh
 printf 'Nothing unchanged is reviewed twice.\n' >> guide/usage/page.md
