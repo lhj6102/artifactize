@@ -299,6 +299,13 @@ export function isolatedEnvironment(root: NativePath, drop: (name: string) => bo
     for (const key of Object.keys(environment)) if (key.toUpperCase() === "WEBVIEW2_USER_DATA_FOLDER") delete environment[key];
     environment.WEBVIEW2_USER_DATA_FOLDER = makeDirectory(nativePath(root, "webview"), { private: true });
   }
+  // WKWebView keeps its default storage in the Library of Foundation's home, which ignores
+  // HOME; this variable moves that home, and so the storage, inside the fixture, where it is
+  // kept across the fixture's own relaunch and removed with it.
+  if (MACOS) {
+    for (const key of Object.keys(environment)) if (key === "CFFIXED_USER_HOME") delete environment[key];
+    environment.CFFIXED_USER_HOME = nativePath(root, "home");
+  }
   for (const key of Object.keys(environment)) {
     if (["HOMEDRIVE", "HOMEPATH", "USER", "USERNAME", "LOGNAME"].includes(key.toUpperCase())) delete environment[key];
   }

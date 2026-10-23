@@ -44,6 +44,12 @@ remaining requests become `BUDGET_EXHAUSTED` and the Run ends INCOMPLETE
 QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
 explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
 
+When there is room for only some work, a Run starts READY evals first and, among them,
+those with the longest chain of evals still waiting on them, so the longest path through
+the graph finishes sooner; evals equal on both keep the Run's request order. The same
+order decides which reviews `--max-executions` covers and which waiting request takes a
+freed backend slot.
+
 ### Submit, observe and cancel
 
 Artifactize owns the Run independently of its requester. Plain `verify` submits,
