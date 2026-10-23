@@ -34,7 +34,8 @@ fn start_time<'de, D: serde::Deserializer<'de>>(input: D) -> Result<u64, D::Erro
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().nth(1).as_deref() != Some("alive") {
+    // `args` panics on a non-Unicode argument; compare the raw one instead.
+    if std::env::args_os().nth(1).as_deref() != Some("alive".as_ref()) {
         return Err("usage: artifactize-e2e-observe alive < identities.json".into());
     }
     let mut input = String::new();
