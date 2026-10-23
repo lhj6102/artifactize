@@ -304,7 +304,7 @@ Microsoft Store는 안정 릴리스만 제공하며, Microsoft가 검토하는 �
 하라는 안내와 함께 거부됩니다. Run은 첫 승인을 요청한 때부터 **WAITING_HUMAN**이며, 제출되지 않은 승인만
 남으면 **YELLOW**(종료 코드 5, 이전의 SIGNOFFS_PENDING)로 끝납니다. 그전까지는 누군가 맡은 승인을 기다리고,
 아무도 맡지 않은 승인은 2분의 [유휴 유예 시간](../features/others/state.md#sign-off-idle-grace) 동안 기다립니다.
-종료 코드 5를 바로 기다리던 스크립트는 `artifactize limits --signoff-idle-grace 0`으로 이 시간을 0으로
+종료 코드 5가 즉시 반환된다고 가정한 스크립트는 `artifactize limits --signoff-idle-grace 0`으로 이 시간을 0으로
 설정할 수 있습니다. `--reuse-only agent,human`을 쓰는 CI는 바뀌지 않습니다.
 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)를 보세요.
 

@@ -30,13 +30,23 @@ fn command(program: &str, args: &[&str]) -> Command {
 }
 
 async fn execute(command: Command) -> process::Output {
-    timeout(
+    let cancellation = CancellationToken::new();
+    let execution = process::run(command, cancellation.clone(), |_| async { Ok(()) });
+    tokio::pin!(execution);
+    match timeout(
         support::os::patience(TEST_TIMEOUT + Duration::from_secs(2)),
-        process::run(command, CancellationToken::new(), |_| async { Ok(()) }),
+        &mut execution,
     )
     .await
-    .expect("runner must settle")
-    .unwrap()
+    {
+        Ok(output) => output.unwrap(),
+        Err(_) => {
+            // Settle the process and its supervisor before the fixture folders go.
+            cancellation.cancel();
+            let _ = execution.await;
+            panic!("runner must settle");
+        }
+    }
 }
 
 #[tokio::test]

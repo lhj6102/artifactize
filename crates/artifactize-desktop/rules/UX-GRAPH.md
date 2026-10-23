@@ -59,7 +59,8 @@ that makes the transition happen and checks where it leads.
     **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
-  - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token).
+  - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token),
+    Sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
   by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
 - **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
@@ -255,6 +256,8 @@ that makes the transition happen and checks where it leads.
 | E-SET-REMOTE-STATUS | Settings | Check status | status refreshed |
 | E-SET-REMOTE-PUSH | Settings, store signed in | Push (dry run) or Push results | push result shown |
 | E-SET-REMOTE-LOGOUT | Settings, store signed in | Sign out of the store | store signed out |
+| E-SET-GRACE | Settings | open | the sign-off idle grace in force shown, 2 minutes unless changed |
+| E-SET-GRACE-SAVE | Settings | enter a number of seconds, then Save | the new grace shown, saved for the Runs started afterwards |
 
 ## Journeys as paths
 
@@ -321,3 +324,4 @@ E-PANE-SELECT.
 - J-SET-CODEX: E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
 - J-SET-MODELS: E-SET-MODELS
 - J-SET-REMOTE: E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT
+- J-SET-SIGNOFF-GRACE: E-SCREEN-SETTINGS → E-SET-GRACE → E-SET-GRACE-SAVE

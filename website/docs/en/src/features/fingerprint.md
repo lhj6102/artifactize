@@ -160,7 +160,7 @@ not when files move or their content changes. It covers:
 - Input → consumer relations: child ownership (names, not child folder paths),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
-- Qualified eval IDs, owning Artifact, titles, optional `gate` and evaluation criteria: default
+- Qualified eval IDs, owning Artifact, titles and evaluation criteria: default
   profile kind, the full `payload` including instruction and owner context,
   `pass_schema`, `fail_schema`, and runtime `command`/`args`.
 

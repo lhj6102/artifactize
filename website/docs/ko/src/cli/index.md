@@ -272,8 +272,8 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
 | `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
 | `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 대기 중 |
-| `WAITING_HUMAN` | 이전 버전의 artifactize가 요청한 승인이 사람의 처리를 기다림 | — |
-| `DEFERRED` | 다른 작업을 막지 않는 승인 요청이 사람의 처리를 기다림 | eval 중 하나가 `DEFERRED` |
+| `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있음 | — |
+| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있음 | eval 중 하나가 `DEFERRED` |
 | `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |
 | `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
 | `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |

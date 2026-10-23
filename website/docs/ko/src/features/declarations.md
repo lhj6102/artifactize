@@ -70,7 +70,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 
 선언 키는 모두 snake_case입니다: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
-`gate`, `mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
+`mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
 씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
 들어가지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
@@ -266,7 +266,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
-Runtime이나 Agent eval은 `gate`, `profile`과 함께 `mutex`도 선언할 수 있습니다.
+Runtime이나 Agent eval은 `profile`과 함께 `mutex`도 선언할 수 있습니다.
 
 ```toml
 [evals.suite-passes]
