@@ -15,8 +15,10 @@ else (on Windows) `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifac
 output under `PATH/runs`. Saved Runs stay readable after their repository is removed.
 
 The state may not live inside the reviewed repository or another artifactize
-workspace (a folder with a `.artf` declaration, a legacy `artifactize.json` or
-`.artifactizeignore`, or above one): a command refuses it before writing. If you can
+workspace: a command refuses it before writing when the state folder or any folder
+above it holds a `.artf` declaration, a legacy `artifactize.json` or
+`.artifactizeignore`. A parent folder that only contains project folders is fine,
+for example `/work/.state` beside `/work/app/index.artf`. If you can
 search a parent folder but not list it, artifactize cannot see every declaration in it,
 so keep the state outside your projects.
 

@@ -11,7 +11,7 @@
 `--state-dir PATH`를 주면 각 Run의 출력(`PATH/runs` 아래)을 포함해 상태 전체를 다른 폴더에
 둡니다. 저장된 Run은 저장소를 지운 뒤에도 계속 읽을 수 있습니다.
 
-상태는 리뷰하는 저장소나 다른 artifactize 작업 공간 안에 둘 수 없습니다. `.artf` 선언, 예전 `artifactize.json`이나 `.artifactizeignore`가 있는 폴더뿐 아니라 그 상위 폴더도 작업 공간으로 봅니다. 이런 위치를 지정하면 명령은 아무것도 쓰지 않고 실패합니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
+상태는 리뷰하는 저장소나 다른 artifactize 작업 공간 안에 둘 수 없습니다. 상태 폴더나 그 위의 어느 폴더에든 `.artf` 선언, 예전 `artifactize.json`이나 `.artifactizeignore`가 있으면 명령은 아무것도 쓰지 않고 실패합니다. 프로젝트 폴더들을 담고만 있는 상위 폴더에는 둘 수 있습니다. 예를 들어 `/work/app/index.artf` 옆의 `/work/.state`는 괜찮습니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
 그 안의 선언을 모두 확인할 수 없으므로, 상태는 프로젝트 바깥에 두세요.
 
 **Microsoft Store 패키지**는 zip이나 Cargo로 설치한 버전과 별도로 Run, 로그인 정보, 캐시를 저장하며, 패키지를 제거하면 Windows가 이를 지웁니다. 그렇다고 격리된 환경은 아닙니다. eval이 실행하는
