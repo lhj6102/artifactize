@@ -387,8 +387,8 @@ Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우�
 있으면, artifactize는 주소를 붙여 넣으라고 요청합니다. 다른 머신에서도 같은 대체 방법을 쓰세요.
 `http://localhost:1455/auth/callback?code=`로 시작하는 전체 URL을
 터미널이나 데스크톱 로그인의 붙여 넣기 칸에 넣으세요. 로그인은 5분 안에 마쳐야 하며, 그 뒤에는
-`login codex`를 다시 실행하세요. 이 URL은 페이지를 불러오지 못한 뒤 브라우저 주소 표시줄에서,
-또는 페이지가 계속 로딩 중이면 개발자 도구 → Network에서 찾을 수 있습니다.
+`login codex`를 다시 실행하세요. 페이지 로드에 실패했다면 브라우저 주소 표시줄에서,
+페이지가 계속 로딩 중이라면 개발자 도구 → Network에서 이 URL을 찾을 수 있습니다.
 `logout codex`는 artifactize의 토큰을 삭제하고
 서버에 토큰 폐기를 요청합니다. 폐기가 확인되지 않으면 경고합니다. 대신 기존 Codex 로그인의 토큰을 쓰려면
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`을 설정하세요. artifactize는 그 파일을 읽기만 합니다.

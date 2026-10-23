@@ -7,7 +7,7 @@
   `artifactize doctor`는 provider를 부르거나 Run을 시작하지 않고 로컬 준비 상태를 확인합니다.
   `models`는 쓸 수 있는 모델 ID를 보여 주고, `prune`은 감사 기록은 남긴 채 완료된 Run의
   출력 파일 중 지워도 되는 것을 지웁니다.
-- [운영체제](platforms.md)에서는 Linux, macOS, Windows에서 어디서나 동작하는 명령 선언, 실행 파일
+- [운영체제](platforms.md)에서는 Linux, macOS, Windows에서 공통으로 쓸 명령을 선언하는 방법과 실행 파일
   찾기, 경로, 애플리케이션 열기, 상태를 다룹니다.
 - [보조 레퍼런스](reference.md)에서는 기능 가이드보다 자세한 스키마, 라이브러리 API, 프로토콜,
   제한을 확인할 수 있습니다.
