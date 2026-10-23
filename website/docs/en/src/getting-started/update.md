@@ -178,6 +178,6 @@ state, delete the state directory that `artifactize doctor` prints on its first 
 
 Uninstall does not remove your project files, exported files, or state explicitly
 placed outside AppData with `--state-dir` or an environment override. Files your evals' commands wrote, including in AppData, stay too; remove them
-separately if you no longer need them. Existing unvirtualized
-AppData files are also outside the Store package's cleanup; see the
-[Windows behavior and overlay caveat](../features/others/state.md#state).
+separately if you no longer need them. Files that were already in AppData before the Store
+app was installed, such as the state of an earlier unpackaged install, stay as well; see
+[State](../features/others/state.md#state) for how the Store app shares AppData.

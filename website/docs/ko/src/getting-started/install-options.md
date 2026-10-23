@@ -48,7 +48,7 @@ artifactize --version
 
 이 [스크립트](https://artifactize.dev/install.sh)는 OS와 CPU에 맞는 최신 안정 릴리스를
 `~/.local/bin`에 설치합니다. 내려받은 파일이 체크섬 확인에 실패하거나 바이너리가 실행되지 않으면
-아무것도 교체하기 전에 멈추므로, 기존 설치는 그대로 동작합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
+스크립트는 파일을 교체하지 않고 종료하므로, 기존에 설치된 프로그램은 계속 사용할 수 있습니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
 셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
 추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
 `PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
@@ -177,8 +177,9 @@ cargo install --path crates/artifactize-tools --locked
 실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
 [내려받기](install.md#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부되며, glibc 2.35 이상이
-필요합니다. 내려받은 폴더에서 실행 권한을 주고 실행하세요.
+`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. `VERSION`은 릴리스 버전이며,
+내려받은 파일 이름에 들어 있습니다. Linux의 시스템 C 라이브러리인 glibc 2.35 이상이 필요하며,
+`ldd --version`을 실행하면 첫 줄에 설치된 버전이 나옵니다. 내려받은 폴더에서 내려받은 파일 이름으로 실행 권한을 주고 실행하세요.
 
 ```sh
 chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage

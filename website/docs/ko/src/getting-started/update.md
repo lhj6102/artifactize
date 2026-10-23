@@ -171,6 +171,6 @@ Artifactize를 마우스 오른쪽 버튼으로 클릭해 제거하세요. `inst
 `artifactize doctor`가 첫 줄에 출력하는 상태 디렉터리를 삭제하세요.
 
 제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수로 경로를 지정해 AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 만든 파일은 AppData 안에 있더라도 남으니,
-더 이상 필요하지 않으면 따로 지우세요. 가상화되지 않은 기존
-AppData 파일도 Store 패키지의 정리 대상이 아닙니다.
-[Windows 동작과 오버레이 주의 사항](../features/others/state.md#state)을 보세요.
+더 이상 필요하지 않으면 따로 지우세요. Store 앱을 설치하기 전부터 AppData에
+있던 파일(예: 이전에 패키지되지 않은 버전이 남긴 상태)도 남습니다. Store 앱이 AppData를 어떻게 함께 쓰는지는
+[상태](../features/others/state.md#state)를 보세요.

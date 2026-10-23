@@ -308,9 +308,8 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
   값 자체는 보여 주지 않습니다. 키를 붙여 넣고 **Save key**를 누르면 `artifactize login`처럼
   저장하고, **Remove saved key**로 지웁니다. 환경 변수가 설정되어 있으면 그 키를 먼저 씁니다. 이때
   함께 저장한 키는 보관되지만 쓰이지 않는다고 표시되며, 지울 수도 있습니다.
-- **커스텀 provider:** **+ Custom provider**를 누르면 빈 양식이 열립니다. 이름을 정하고, 기본 provider에
-  연결할지(별칭이라 그 provider의 로그인이나 키를 씀) 엔드포인트에 연결할지(API, URL, 선택 키)를
-  고른 다음 **Save**를 누르세요. 필요한 만큼 추가할 수 있고, 목록에서 하나를 고르면 양식에서 바꾸거나
+- **커스텀 provider:** **+ Custom provider**를 누르면 빈 양식이 열립니다. 이름을 정하고, 기본 provider의 별칭(그 provider의 로그인이나 키를 씀)과
+  엔드포인트(API, URL, 키(선택 사항)) 중 연결 대상을 고른 다음 **Save**를 누르세요. 필요한 만큼 추가할 수 있고, 목록에서 하나를 고르면 양식에서 바꾸거나
   **Remove provider**로 삭제할 수 있습니다. 엔드포인트에 저장한 키는 보여 주지 않습니다. 키 칸을 비워 두면
   저장된 키를 그대로 쓰고, **No key**를 체크하면 키 없이 저장합니다. eval에서는 `backend`에 이 이름을
   씁니다. [커스텀 provider](../features/agent.md#custom-providers)를 보세요.
