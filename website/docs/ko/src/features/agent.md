@@ -90,12 +90,11 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
-턴이 사용량 제한이나 일시적인 오류로 실패했고, 아직 아무것도 출력하지 않았고 토큰도 쓰지
-않았다면 모두 세 번까지 시도합니다. 재시도 전에는 provider가 요청한 시간만큼 대기하고, 요청이
-없으면 250ms, 그다음 500ms를 대기합니다. provider가 요청한 대기 시간이 리뷰의 남은
-시간 이상이면 재시도하지 않고 기존 `RATE_LIMIT` 또는 `TRANSIENT` 오류로 바로 끝납니다. 출력이나 사용량이
-생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 시도마다 수치, `error`,
-`errorCode`가 `usage`에 저장됩니다.
+출력이 생기기 전에 사용량 제한이나 provider의 일시적인 오류로 실패한 턴은 provider가 요청한 시간만큼
+기다린 뒤 자동으로 몇 번 다시 시도합니다. 출력이 생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번
+내지 않습니다. 재시도를 다 쓰거나 provider가 리뷰의 남은 시간보다 긴 대기를 요청하면 eval은 `errorCode`가
+`RATE_LIMIT` 또는 `TRANSIENT`인 ERROR로 끝납니다. 나중에 `verify`를 다시 실행하면 끝난 결과는 재사용됩니다.
+시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 

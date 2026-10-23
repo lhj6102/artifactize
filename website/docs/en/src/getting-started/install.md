@@ -94,13 +94,14 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-The [script](https://artifactize.dev/install.sh) picks the archive for your OS and
-CPU from the latest stable GitHub release, checks its SHA-256 against the release's
-checksum and refuses a mismatch. It runs both new binaries before replacing anything,
-then installs them to `~/.local/bin`. It uses `curl` or `wget`, never `sudo`, and
-never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
-the line to add. It also warns about another `artifactize` or `artifactize-tools` on
-`PATH` that would run instead. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
+The [script](https://artifactize.dev/install.sh) installs the latest stable release for
+your OS and CPU into `~/.local/bin`, checking the download first; a failed check or a
+broken download leaves your existing installation as it was. It needs `curl` or `wget`,
+never `sudo`, and never edits your shell startup files. When `artifactize --version`
+prints the new version, the install worked. If `~/.local/bin` is not on `PATH`, the
+script prints the line to add to your shell profile; if it warns about another
+`artifactize` or `artifactize-tools` on `PATH`, remove that one or put `~/.local/bin`
+before it. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
 installs the [desktop app](#desktop-app) from the same release, checked the same way,
 into `~/.local/share/artifactize/desktop`, with an `artifactize-desktop` launcher beside
 the commands and an **Artifactize** menu entry. On ARM Linux and on Alpine it installs

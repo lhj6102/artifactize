@@ -91,13 +91,12 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-이 [스크립트](https://artifactize.dev/install.sh)는 GitHub의 최신 안정 릴리스에서 OS와
-CPU에 맞는 압축 파일을 고르고, 그 SHA-256을 릴리스의 체크섬과 비교해
-일치하지 않으면 설치하지 않습니다. 기존 파일을 교체하기 전에 새 바이너리 두 개가 실행되는지
-확인한 뒤 `~/.local/bin`에 설치합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
-셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
-추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
-`PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
+이 [스크립트](https://artifactize.dev/install.sh)는 OS와 CPU에 맞는 최신 안정 릴리스를 내려받아
+먼저 확인한 뒤 `~/.local/bin`에 설치합니다. 확인에 실패하거나 내려받은 파일이 손상되었으면 기존 설치는
+그대로 남습니다. `curl`이나 `wget`이 필요하며, `sudo`를 쓰지 않고 셸 시작 파일도 고치지 않습니다.
+`artifactize --version`이 새 버전을 출력하면 설치된 것입니다. `~/.local/bin`이 `PATH`에 없으면 셸
+프로필에 추가할 줄을 출력합니다. `PATH`에 있는 다른 `artifactize`나 `artifactize-tools`에 대해 경고하면
+그 파일을 지우거나 `~/.local/bin`을 그보다 앞에 두세요. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
 릴리스의 [데스크톱 앱](#desktop-app)도 같은 방식으로 확인해
 `~/.local/share/artifactize/desktop`에 설치하고, `artifactize` 명령과 같은 디렉터리에 `artifactize-desktop` 실행 파일을
 추가하며, 애플리케이션 메뉴에 **Artifactize** 항목을 만듭니다. ARM Linux와 Alpine에서는 명령만 설치합니다. 두
