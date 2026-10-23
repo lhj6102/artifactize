@@ -135,8 +135,8 @@ covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필�
 `{"summary":"All requirements are covered."}`만 입력합니다.
 
 이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 허용하는지 정하는
-규칙입니다. 결과 객체 전체의 스키마인 **결과 envelope**은 일반 JSON Schema보다 허용하는 것이
-적으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
+규칙입니다. 결과 객체 전체의 스키마인 **결과 envelope**에는 일반 JSON Schema의 일부 기능만
+쓸 수 있으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
 `oneOf`, `not`)에도 제한이 있습니다.
 
 - `type`이 있으면 `"object"`여야 합니다. `additionalProperties`가 있으면 `false`여야
