@@ -65,7 +65,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
 | `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
 | `evals.<id>.pass_schema`, `fail_schema` | 선택. 실행 가능한 eval의 소유자 필드 JSON Schema. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받음 |
-| `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은, 이름 붙은 완전한 프로필(최대 64개) |
+| `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은 프로필을 이름별로 최대 64개 선언. 각 항목에는 프로필 전체를 씀 |
 
 [도구 세션](tools/agent.md#tool-sessions)을 쓰면 리뷰 하나가 진행되는 동안 테스트 하네스를 계속 실행해 둘 수 있습니다.
 시작, 종료, 정리는 artifactize가 관리하므로 세션을 얼마나 오래 실행하고 언제 시작하거나 끝낼지 따로 설정할 필요가 없습니다.

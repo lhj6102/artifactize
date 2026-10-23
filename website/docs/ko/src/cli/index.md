@@ -161,7 +161,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
 1 RED, 2 ERROR, 4 INCOMPLETE, 5 SIGNOFFS_PENDING입니다.
 [실행 모드](../features/run.md#speculation-and-deferred-sign-offs)에서 스케줄링, 취소, 잠정
-결과, 엄격한 Human 게이트, 나중에 하는 승인의 재사용을 설명합니다.
+결과, 엄격한 Human 게이트, 나중에 제출한 승인 결과를 재사용하는 방법을 설명합니다.
 
 ## Runtime CLI {#runtime-cli}
 
@@ -382,7 +382,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
 payload, 스키마, 도구 뷰), 태그, 자식·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
-Artifact 묶음인 강하게 연결된 컴포넌트(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
+Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
 `kind`(`file`, `folder`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
 경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 컴포넌트
 ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄띄엄일 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 수준은
