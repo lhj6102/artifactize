@@ -143,8 +143,8 @@ pub(super) fn tools() -> Vec<Tool> {
         ),
         tool(
             "models",
-            "List models available from the named backend.",
-            json!({"provider":{"enum":["openai","anthropic","codex"]}}),
+            "List models available from the named backend: a built-in provider (codex, openai, anthropic, gemini) or a custom provider set up on this machine.",
+            json!({"provider":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}}),
             &["provider"],
             true,
         ),

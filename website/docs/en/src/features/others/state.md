@@ -47,10 +47,10 @@ version: N; a newer artifactize wrote it.`: update artifactize to open it.
 After an upgrade to 0.9, every eval is reviewed once; see
 [Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
 
-**Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in and the
-review store token, is refused when it lies inside a git work tree, an artifactize
-workspace or `--repo`, even in a gitignored folder. `login codex` and `remote login` then
-fail before signing in, naming both folders:
+**Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in, the
+review store token, and the saved API keys and custom providers (`providers.json`), is refused when it lies inside a git work tree, an artifactize
+workspace or `--repo`, even in a gitignored folder. `login`, `provider add` and
+`remote login` then fail before saving anything, naming both folders:
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -108,7 +108,8 @@ on that state:
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-Keys are backend names (`openai`, `anthropic`, `codex`), and each limit is 1–100000. A
+Keys are backend names as profiles write them (`openai`, `anthropic`, `gemini`, `codex`, or
+a [custom provider](../agent.md#custom-providers)'s name), and each limit is 1–100000. A
 backend without an entry, or a machine without the file, is unlimited. `verify` reads the
 file when it starts. The file must be a regular UTF-8 JSON file of at most 64 KiB with only
 known fields; anything else stops `verify` before it creates a Run (exit 2), and `doctor`

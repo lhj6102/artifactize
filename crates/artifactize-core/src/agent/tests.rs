@@ -11,7 +11,8 @@ use tempfile::TempDir;
 use super::*;
 use crate::{
     agent::error::{Code, Failure},
-    config::{Backend, read_workspace_config},
+    config::{Provider, read_workspace_config},
+    llm::Api,
 };
 
 mod budgets;
@@ -152,8 +153,8 @@ impl Fixture {
             Profile::Agent { backend, .. } => backend,
             _ => unreachable!(),
         };
-        let client = match backend {
-            Backend::Openai => Client::Openai(
+        let client = match backend.builtin().expect("a built-in provider") {
+            Provider::Openai => Client::Openai(
                 Box::new(
                     OpenAIConfig::new("fake-openai-key")
                         .connect(http.clone())
@@ -161,7 +162,7 @@ impl Fixture {
                 ),
                 "fake-openai-key".into(),
             ),
-            Backend::Anthropic => Client::Anthropic(
+            Provider::Anthropic => Client::Anthropic(
                 Box::new(
                     AnthropicConfig::new("fake-anthropic-key")
                         .connect(http.clone())
@@ -169,7 +170,9 @@ impl Fixture {
                 ),
                 "fake-anthropic-key".into(),
             ),
-            Backend::Codex => unreachable!("Codex reviews are tested end to end"),
+            Provider::Codex | Provider::Gemini => {
+                unreachable!("Codex and Gemini reviews are tested end to end")
+            }
         };
         self.reviews.set(self.reviews.get() + 1);
         let mut recorder = session::Recorder::test(&self.state(), SESSION);
@@ -613,27 +616,26 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
 
 #[test]
 fn profiles_reject_remapped_effort() {
-    let parameters =
-        |backend, reasoning| Client::parameters(backend, reasoning, &SESSION.parse().unwrap());
-    assert!(parameters(Backend::Openai, Some("xhigh")).is_ok());
-    assert!(parameters(Backend::Openai, Some("max")).is_ok());
-    assert!(parameters(Backend::Anthropic, Some("xhigh")).is_err());
-    assert!(parameters(Backend::Openai, Some("off")).is_err());
+    let parameters = |api, reasoning| Client::parameters(api, reasoning, &SESSION.parse().unwrap());
+    assert!(parameters(Api::OpenaiResponses, Some("xhigh")).is_ok());
+    assert!(parameters(Api::OpenaiResponses, Some("max")).is_ok());
+    assert!(parameters(Api::Anthropic, Some("xhigh")).is_err());
+    assert!(parameters(Api::OpenaiResponses, Some("off")).is_err());
     assert_eq!(
-        parameters(Backend::Codex, Some("max")).unwrap(),
+        parameters(Api::Codex, Some("max")).unwrap(),
         json!({"prompt_cache_key":SESSION,"reasoning":{"effort":"max","summary":"auto"}})
     );
     assert_eq!(
-        parameters(Backend::Codex, None).unwrap(),
+        parameters(Api::Codex, None).unwrap(),
         json!({"prompt_cache_key":SESSION})
     );
-    assert!(parameters(Backend::Codex, Some("ultra")).is_err());
-    let openai = parameters(Backend::Openai, None).unwrap();
+    assert!(parameters(Api::Codex, Some("ultra")).is_err());
+    let openai = parameters(Api::OpenaiResponses, None).unwrap();
     assert_eq!(openai.get("reasoning"), None);
     assert_eq!(openai["prompt_cache_key"], SESSION);
     // Anthropic caches by prefix; its requests carry no session.
     assert_eq!(
-        parameters(Backend::Anthropic, Some("high")).unwrap(),
+        parameters(Api::Anthropic, Some("high")).unwrap(),
         json!({"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}})
     );
 }

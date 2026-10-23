@@ -141,7 +141,7 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `session_show` | **`reference`**, `summary`(기본 false) | `session show REF [--summary]` |
 | `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`. `audience`는 `agent` 또는 `human` |
 | `doctor` | 없음 | `doctor` |
-| `models` | **`provider`**(`openai`, `anthropic`, `codex`) | `models PROVIDER` |
+| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름) | `models PROVIDER` |
 | `remote_status` | 없음 | `remote status` |
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 

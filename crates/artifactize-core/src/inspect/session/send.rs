@@ -79,12 +79,8 @@ pub async fn send(
             "{} {}{}",
             header
                 .backend
-                .map(|backend| serde_json::to_value(backend)
-                    .expect("backend is JSON")
-                    .as_str()
-                    .expect("backend is text")
-                    .to_owned())
-                .unwrap_or_else(|| "?".into()),
+                .as_ref()
+                .map_or("?", crate::config::Backend::as_str),
             header.model.as_deref().unwrap_or("?"),
             header.reasoning.map_or(String::new(), |reasoning| format!(
                 " (reasoning {reasoning})"

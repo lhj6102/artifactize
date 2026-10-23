@@ -1,15 +1,16 @@
-// Settings against a mocked command boundary: key presence without values, the Codex sign-in
-// states (prompt, pasted redirect, cancel, sign-out), model listings and their errors, and the
-// remote store's masked token, which leaves the screen's state when submitted.
+// Settings against a mocked command boundary: the Providers tab (key sources without values,
+// saved keys, custom providers, the Codex sign-in states and model listings) and the Remote tab
+// (the store's masked token, which leaves the screen's state when submitted).
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import Settings from "./Settings.svelte";
-import type { CodexStatus, RemoteStatus } from "../ipc/client";
+import type { CodexStatus, CustomProvider, KeySource, Provider, RemoteStatus } from "../ipc/client";
 
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
+const KEY = "sk-secret-provider-key";
 
 const none: RemoteStatus = { state: "unconfigured" };
 const signedIn: RemoteStatus = {
@@ -29,15 +30,36 @@ function backend(options: {
 }) {
   const calls: Calls = [];
   let remote = none;
+  const keys: Record<string, KeySource> = { openai: "environment", anthropic: "absent", gemini: "absent" };
+  let custom: CustomProvider[] = [];
+  const VARIABLES: Record<string, string> = { openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY" };
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
     switch (cmd) {
-      case "settings_keys":
-        return [
-          { provider: "openai", variable: "OPENAI_API_KEY", present: true },
-          { provider: "anthropic", variable: "ANTHROPIC_API_KEY", present: false },
-        ];
+      case "providers_list":
+        return {
+          keys: Object.entries(keys).map(([provider, source]) => ({ provider: provider as Provider, variable: VARIABLES[provider], source })),
+          custom,
+        };
+      case "provider_key_save":
+        keys[payload.provider as string] = "saved";
+        return null;
+      case "provider_key_remove":
+        keys[payload.provider as string] = "absent";
+        return null;
+      case "provider_custom_save": {
+        const name = payload.name as string;
+        const target = payload.target as CustomProvider["target"];
+        const key = payload.key as { kind: string };
+        const saved = custom.find((one) => one.name === name)?.target;
+        const hasKey = key.kind === "set" || (key.kind === "keep" && saved?.kind === "endpoint" && !!saved.key);
+        custom = [...custom.filter((one) => one.name !== name), { name, target: target.kind === "endpoint" ? { ...target, key: hasKey } : target }];
+        return null;
+      }
+      case "provider_custom_remove":
+        custom = custom.filter((one) => one.name !== payload.name);
+        return null;
       case "codex_status":
         return options.codex?.() ?? { state: "absent" };
       case "codex_login_start":
@@ -76,14 +98,91 @@ afterEach(() => {
 });
 
 describe("Settings", () => {
-  it("shows whether each API key is set, never a value, and the current sign-ins", async () => {
+  it("lists the built-in providers, shows where each key comes from, never a value, and the sign-ins", async () => {
     backend({});
     renderHosted(Settings, { active: true });
-    expect((await screen.findByTestId("key-openai")).textContent).toBe("Set");
-    expect(screen.getByTestId("key-anthropic").textContent).toBe("Not set");
+    const list = await screen.findByRole("navigation", { name: "Providers" });
+    expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Codex (ChatGPT)",
+      "OpenAI",
+      "Anthropic",
+      "Gemini",
+      "+ Custom provider",
+    ]);
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
+    await fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
+    await fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    expect(screen.getByTestId("key-anthropic").textContent?.trim()).toBe("Not set");
+    expect(screen.getByLabelText<HTMLInputElement>("API key").type).toBe("password");
+    await fireEvent.click(screen.getByRole("tab", { name: "Remote" }));
     expect((await screen.findByTestId("remote-status")).textContent).toBe("No remote review store is configured.");
-    expect(screen.queryByRole("textbox", { name: /key/i })).toBeNull();
+  });
+
+  it("saves a pasted key without keeping or showing it, then removes it", async () => {
+    const calls = backend({});
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Gemini" }));
+    const field = screen.getByLabelText<HTMLInputElement>("API key");
+    await fireEvent.input(field, { target: { value: KEY } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    expect(field.value).toBe("");
+    await screen.findByText("Saved the key.");
+    expect(calls.find((call) => call.cmd === "provider_key_save")?.args).toEqual({ provider: "gemini", key: KEY });
+    await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("Saved"));
+    expect(document.body.innerHTML).not.toContain(KEY);
+    await fireEvent.click(screen.getByRole("button", { name: "Remove saved key" }));
+    await screen.findByText("Removed the saved key.");
+    await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("Not set"));
+  });
+
+  it("adds custom providers by name, keeps a saved endpoint key, lists their models and removes them", async () => {
+    const calls = backend({});
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.input(screen.getByLabelText("Name"), { target: { value: "local" } });
+    await fireEvent.input(screen.getByLabelText("URL"), { target: { value: "http://localhost:11434/v1" } });
+    const key = screen.getByLabelText<HTMLInputElement>("Key");
+    await fireEvent.input(key, { target: { value: KEY } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("Saved local.");
+    expect(key.value).toBe("");
+    expect(calls.find((call) => call.cmd === "provider_custom_save")?.args).toEqual({
+      name: "local",
+      target: { kind: "endpoint", api: "openaiChat", url: "http://localhost:11434/v1" },
+      key: { kind: "set", key: KEY },
+    });
+    expect(document.body.innerHTML).not.toContain(KEY);
+    // Saved again with an empty key field, the saved key is kept.
+    expect(screen.getByLabelText<HTMLInputElement>("Key").placeholder).toBe("Saved; type to replace");
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    // The notice clears when the save starts and returns once the form shows what was saved.
+    expect(screen.queryByText("Saved local.")).toBeNull();
+    await screen.findByText("Saved local.");
+    expect(calls.filter((call) => call.cmd === "provider_custom_save")[1].args.key).toEqual({ kind: "keep" });
+
+    await fireEvent.click(screen.getByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.input(screen.getByLabelText("Name"), { target: { value: "work" } });
+    await fireEvent.click(screen.getByLabelText("a built-in provider"));
+    await fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("Saved work.");
+    expect(calls.filter((call) => call.cmd === "provider_custom_save").at(-1)?.args).toEqual({
+      name: "work",
+      target: { kind: "alias", provider: "openai" },
+      key: { kind: "none" },
+    });
+    const list = screen.getByRole("navigation", { name: "Providers" });
+    expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toContain("work");
+
+    await fireEvent.click(screen.getByRole("button", { name: "List models" }));
+    await screen.findByText("GPT Fake");
+    expect(calls.filter((call) => call.cmd === "models_list").at(-1)?.args).toEqual({ provider: "work" });
+
+    await fireEvent.click(screen.getByRole("button", { name: "local" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Remove provider" }));
+    await screen.findByText("Removed local.");
+    expect([...list.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("local");
   });
 
   it("signs in to Codex with a pasted redirect, then signs out", async () => {
@@ -144,12 +243,14 @@ describe("Settings", () => {
     expect(screen.getByRole("button", { name: "Sign out of Codex" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("lists models and shows the CLI's error for a backend without its key", async () => {
+  it("lists models and shows the CLI's error for a provider without its key", async () => {
     backend({});
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "List models" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+    await fireEvent.click(screen.getByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
-    await fireEvent.change(screen.getByLabelText("Backend"), { target: { value: "anthropic" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+    expect(screen.queryByText("GPT Fake")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
     await screen.findByText("ANTHROPIC_API_KEY is required to list models.");
   });
@@ -158,6 +259,7 @@ describe("Settings", () => {
     let attempts = 0;
     const calls = backend({ login: () => (++attempts === 1 ? new Error("Invalid or revoked token.") : signedIn) });
     renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("tab", { name: "Remote" }));
     const token = await screen.findByLabelText<HTMLInputElement>("Token");
     expect(token.type).toBe("password");
     expect(token.autocomplete).toBe("off");
@@ -188,8 +290,8 @@ describe("Settings", () => {
     let slow = false;
     mockIPC((cmd) => {
       switch (cmd) {
-        case "settings_keys":
-          return [];
+        case "providers_list":
+          return { keys: [], custom: [] };
         case "codex_status":
           return { state: "absent" };
         case "remote_status":
@@ -201,6 +303,7 @@ describe("Settings", () => {
       }
     });
     renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("tab", { name: "Remote" }));
     await screen.findByTestId("remote-principal");
     slow = true;
     const store = screen.getByRole("region", { name: "Shared remote review store" });

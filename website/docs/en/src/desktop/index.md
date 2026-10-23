@@ -30,8 +30,8 @@ exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
 Ctrl+K, F1 or the **Commands** button opens a searchable command palette; Enter runs a
-command and Esc closes it. Ctrl+, or the **Settings** button shows
-[Settings](#settings) in the Main area. Ctrl+O opens a request by ID. `?` lists the
+command and Esc closes it. Ctrl+, or the **Settings** button opens
+[Settings](#settings) over the screen. Ctrl+O opens a request by ID. `?` lists the
 keys of what has focus. Ctrl+R or F5 reloads the state from disk, scans the branches
 again and, on a Current, scans its worktree again. While a Human review has the
 keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
@@ -113,7 +113,7 @@ removed, appear without a manual reload.
 ## Main area
 
 The Main area shows what was chosen in the Pane: a Run, a branch's Current, a
-review, a request opened by ID, or Settings. With nothing chosen, while loading, on
+review, or a request opened by ID. With nothing chosen, while loading, on
 an error or with an empty graph, the graph's place stays and says so. A problem
 reading this machine's records, such as other Runs that cannot be read, shows as one
 line in the Main area's header without moving or hiding the graph; a click on it shows
@@ -314,14 +314,15 @@ yourself.
 
 ## Settings
 
-Settings shows in the Main area; the **Settings** button again or Ctrl+, again
-returns to what the Main area showed, and so does Esc outside a text field or a choice
-list (in one, Esc stays with the field). Choosing a branch, chip or review in the Pane
-instead shows that choice. It reloads account/store information
-when shown. Reopen it or use the palette's **Refresh settings** command to reload it.
+Settings opens as a modal over the screen; Esc, its **Close** or the **Settings** button
+again closes it, and the screen beneath stays as it was. It reloads account, key and store
+information each time it opens; the palette's **Refresh settings** command reloads it too.
+It has two tabs, **Providers** and **Remote** (← and → switch between them).
 
-- **API keys:** reports whether OpenAI and Anthropic key environment variables
-  are set, never their values. Set them in the app's launch environment.
+**Providers** lists the built-in providers on the left (Codex, OpenAI, Anthropic, Gemini),
+then your custom providers by name, then **+ Custom provider**. Choosing one shows its setup
+on the right, with **List models** for the models it offers.
+
 - **Codex:** shows not signed in, artifactize's stored token and expiry, a read-only
   `ARTIFACTIZE_CODEX_AUTH_FILE`, or why storage is refused. An expired stored access
   token refreshes on next use; an expired external file needs a new Codex sign-in.
@@ -333,16 +334,27 @@ when shown. Reopen it or use the palette's **Refresh settings** command to reloa
   address bar after a failed load, or DevTools → Network if it keeps loading,
   paste it in Settings, then choose **Finish sign-in**.
   Sign-out removes local tokens and warns when server revocation cannot be confirmed.
-- **Models:** lists model IDs offered by the chosen backend.
-- **Review store:** signs in with URL, token and sharing level, displays status,
-  pushes results (or a dry run) and signs out. **Summary** omits invocation details,
-  captured output and tool-call history; **Full** also sends the saved execution.
-  Summary still shares review metadata, owner results, declared Runtime commands
-  and arguments, and Agent execution-path metadata. Those declarations can contain
-  paths or sensitive literals: Summary is not secret redaction. Choose according
-  to the team's privacy needs. Signing out removes local configuration, **not the server
-  token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
-  See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
+- **OpenAI, Anthropic, Gemini:** shows whether the key is set from its environment
+  variable, saved, or not set, never its value. Paste a key and choose **Save key** to save
+  it, as `artifactize login` does; **Remove saved key** forgets it. A set environment
+  variable is used first.
+- **Custom providers:** **+ Custom provider** opens an empty form. Give it a name, then
+  choose whether it reaches a built-in provider (an alias, with that provider's sign-in or
+  key) or an endpoint (its API, URL and optional key), and choose **Save**. Add as many as
+  you need; choosing one shows its form to change it or **Remove provider**. An endpoint's
+  saved key is never shown: leave the key empty to keep it, or check **No key**. Evals use
+  a custom provider by its name in `backend`; see
+  [Custom providers](../features/agent.md#custom-providers).
+
+**Remote** is the review store: it signs in with URL, token and sharing level, displays
+status, pushes results (or a dry run) and signs out. **Summary** omits invocation details,
+captured output and tool-call history; **Full** also sends the saved execution.
+Summary still shares review metadata, owner results, declared Runtime commands
+and arguments, and Agent execution-path metadata. Those declarations can contain
+paths or sensitive literals: Summary is not secret redaction. Choose according
+to the team's privacy needs. Signing out removes local configuration, **not the server
+token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
+See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
 
 Settings uses the same accounts and store operations as the CLI; credentials do
 not belong in `.artf`.

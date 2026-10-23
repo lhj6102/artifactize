@@ -61,12 +61,17 @@ on the root command and on `artifactize tools`.
 | `tools help PROGRAM [SUBCOMMAND...]` | trailing arguments passed to PROGRAM before `--help` | text | 0 success, 1 tool error, 2 usage |
 | `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
 | `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | `Signed in with Codex.`; JSON `{"provider":"codex","signed_in":true}` | 0 |
+| `login openai\|anthropic\|gemini` | API key on stdin | `Saved the PROVIDER API key.`; JSON `{"provider":…,"saved":true}` | 0 |
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
+| `logout openai\|anthropic\|gemini` | forgets the saved key; the variable is untouched | `Forgot the saved PROVIDER API key.`; JSON `{"provider":…,"saved":false}` | 0 |
+| `provider list` | | each built-in key's source and every custom provider, never a key; text or JSON | 0 |
+| `provider add NAME` | `--alias PROVIDER`, or `--api API --url URL` with `--key` (key on stdin) | `Saved custom provider NAME.`; JSON `{"provider":NAME,"saved":true}` | 0 |
+| `provider remove NAME` | | `Removed custom provider NAME.`; JSON `{"provider":NAME,"saved":false}` | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | `Signed in to URL as NAME (scopes: …).`; JSON `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.` plus a note that the server keeps the token valid until `server token revoke`; JSON `{"signedIn":false}` | 0 |
 | `remote status` | | URL, share, token source, reachability, then principal and scopes or the error; JSON below | 0 signed in, 1 not |
 | `remote push` | `--dry-run` | text or JSON | 0 |
-| `models openai\|anthropic\|codex` | | text or JSON | 0 |
+| `models PROVIDER` | a built-in or custom provider | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |

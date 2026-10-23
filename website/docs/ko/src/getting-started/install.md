@@ -16,7 +16,7 @@ artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/
 - 예제 프로젝트는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 씁니다.
   두 명령 모두 터미널에서 쓸 수 있어야 합니다. artifactize는 모든 OS에서
   프로젝트에 선언된 명령을 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
-- Agent eval을 쓰려면 백엔드마다 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는 이런 인증 정보가 필요하지 않습니다.
+- Agent eval을 쓰려면 백엔드마다 OpenAI, Anthropic, Gemini API 키나 Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는 이런 인증 정보가 필요하지 않습니다.
 
 `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
 예제를 시작하기 전에 필요한 도구를 찾을 수 있는지 확인하세요.
@@ -359,21 +359,29 @@ artifactize 프로젝트 안에는 둘 수 없습니다. `$HOME`에 있는 dotfi
 
 Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. artifactize는
 모델 목록을 따로 제공하지 않으며, 지정한 백엔드나 모델을 다른 것으로 바꾸지도 않습니다.
+아래 기본 백엔드 말고도 직접 이름을 붙인 [커스텀 provider](../features/agent.md#custom-providers)를
+백엔드로 쓸 수 있습니다. 기본 백엔드의 별칭이나, OpenAI·Anthropic·Gemini와 호환되는 엔드포인트를
+등록하면 됩니다.
 
 **백엔드**는 artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는
 연결입니다. **API 키**는 그 서비스에서 계정을 인증할 때 쓰는 비공개 인증 정보입니다.
-API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys)이나
-[Anthropic Console](https://console.anthropic.com/settings/keys)에서 키를 만든 다음, 해당 명령의
-`...`를 그 키로 바꾸세요. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
+API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys),
+[Anthropic Console](https://console.anthropic.com/settings/keys),
+[Google AI Studio](https://aistudio.google.com/apikey)에서 키를 만든 다음 `artifactize login`으로
+저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 stdin으로 읽습니다. 데스크톱 앱의
+**Settings → Providers**에 붙여 넣어 저장해도 됩니다. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
 Codex는 대신 아래의 별도 브라우저 로그인을 씁니다.
 
 | 백엔드 | 설정 | 모델 목록 |
 |---|---|---|
-| `openai` | `export OPENAI_API_KEY=...` | `artifactize models openai` |
-| `anthropic` | `export ANTHROPIC_API_KEY=...` | `artifactize models anthropic` |
+| `openai` | `artifactize login openai` | `artifactize models openai` |
+| `anthropic` | `artifactize login anthropic` | `artifactize models anthropic` |
+| `gemini` | `artifactize login gemini` | `artifactize models gemini` |
 | `codex` | `artifactize login codex` | `artifactize models codex` |
 
-PowerShell에서는 `$env:OPENAI_API_KEY = "..."`로 키를 설정하세요.
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 키가 있으면 저장한 키보다 먼저 씁니다.
+예를 들어 `export OPENAI_API_KEY=...`처럼 설정하세요(PowerShell에서는
+`$env:OPENAI_API_KEY = "..."`). 저장한 키는 `logout openai|anthropic|gemini`로 지웁니다.
 
 `login codex`는 Codex CLI와 같은 방식으로 ChatGPT 계정에 로그인합니다.
 로그인 URL을 출력하고 기본 브라우저로 엽니다(Linux와 WSL에서는 `xdg-open`, macOS에서는 `open`,

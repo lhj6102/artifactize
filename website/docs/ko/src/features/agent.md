@@ -6,7 +6,7 @@ Agent eval은 명시한 백엔드 하나를 통해 정확히 지정한 모델 �
 
 ## Agent 리뷰 {#agent-reviews}
 
-artifactize는 모델 목록이나 별칭을 따로 제공하지 않으며, 여러 위치에서 자격 증명을 찾거나 지정한 모델을 다른 모델로
+artifactize는 모델 목록을 따로 제공하지 않으며, 여러 위치에서 자격 증명을 찾거나 지정한 모델을 다른 모델로
 대체하지도 않습니다.
 
 
@@ -15,21 +15,25 @@ artifactize는 모델 목록이나 별칭을 따로 제공하지 않으며, 여�
 profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", reasoning = "high", timeout_ms = 240000 }
 ```
 
-`backend`는 `openai`, `anthropic`, `codex` 중 하나입니다. 앞의 둘은 각각
-`OPENAI_API_KEY`나 `ANTHROPIC_API_KEY`만 쓰고 다른 자격 증명은 찾지 않습니다. `codex`는
-ChatGPT 로그인을 씁니다([Codex](#codex) 참고). `provider`와 `effort`는 설정에서 쓸 수 있는
-별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
+`backend`에는 기본 provider(`openai`, `anthropic`, `gemini`, `codex`)나, eval을 실행하는
+컴퓨터에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
+`gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
+`artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
+그 밖의 자격 증명은 찾지 않습니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
+`provider`와 `effort`는 설정에서 쓸 수 있는 별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
 없어졌으며, 아직 이를 선언한 프로필이 있으면 `config check`가 대신 쓸 백엔드를 알려 줍니다.
 
 ```sh
 artifactize models openai            # model ID and display name, in provider order
 artifactize models anthropic --json
+artifactize models gemini
 artifactize models codex
 ```
 
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
-`xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를 받습니다. 그 밖의 값은 선언
-오류이며, 다른 값으로 바꿔서 보내지 않습니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
+`xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Gemini는 `minimal`, `low`,
+`medium`, `high`를 받습니다. 그 밖의 값은 선언 오류이며, 다른 값으로 바꿔서 보내지 않습니다.
+커스텀 provider는 그 API가 받는 값을 따르며, 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
 Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
@@ -220,6 +224,43 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - **모델.** `models codex`는 Codex 모델 선택기가 내 계정에 보여 주는 모델을 서버가 준 순서대로
   나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.
 
+## 커스텀 provider {#custom-providers}
+
+프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 컴퓨터마다
+따로 설정합니다. 커스텀 provider는 Agent 프로필의 `backend`에 쓸 수 있는 이름으로, 데스크톱 앱의
+**Settings → Providers**에서 **+ Custom provider**를 누르거나 `artifactize provider`로 추가합니다.
+필요한 만큼 추가할 수 있으며, 종류는 둘 중 하나입니다.
+
+- **별칭(alias)**: 기본 provider를 다른 이름으로 쓰며, 그 provider의 로그인이나 키를 그대로 씁니다.
+
+  ```sh
+  artifactize provider add work --alias codex
+  ```
+
+- **엔드포인트**: API, 루트 URL, 키(선택)를 지정합니다. API는 `openai-responses`, `openai-chat`(호환
+  서버 대부분이 지원하는 Chat Completions), `anthropic`, `gemini` 중 하나입니다. `--key`를 주면 키를
+  명령줄이 아닌 stdin에서 읽습니다.
+
+  ```sh
+  artifactize provider add local --api openai-chat --url http://localhost:11434/v1
+  printf '%s\n' "$ROUTER_KEY" | artifactize provider add router --api openai-chat --url https://openrouter.ai/api/v1 --key
+  ```
+
+URL은 요청을 보낼 API 루트로, 기본 provider의 루트(`https://api.openai.com/v1`,
+`https://api.anthropic.com`, `https://generativelanguage.googleapis.com`)와 같은 형태입니다. 이미 있는
+이름으로 `provider add`를 실행하면 그 provider를 바꾸고, `provider remove NAME`은 삭제합니다.
+`provider list`는 커스텀 provider 전체와 기본 provider의 키를 어디서 가져오는지 보여 주며, 키 값은
+보여 주지 않습니다. 기본 provider의 이름은 커스텀 provider 이름으로 쓸 수 없습니다.
+
+```toml
+profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
+```
+
+이 컴퓨터에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR가 되며, 오류에 빠진
+provider 이름이 나옵니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
+저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
+기록되지만 재사용 키에는 들어가지 않습니다.
+
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}
 
 모델 없이 도구, 스키마, 결과 해석을 시험하려면 백엔드를 이 머신의 가짜 provider에
@@ -229,6 +270,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 |---|---|---|---|
 | `openai` | `ARTIFACTIZE_OPENAI_BASE_URL` | `http://127.0.0.1:8080/v1` | `POST <root>/responses`, `GET <root>/models` |
 | `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
+| `gemini` | `ARTIFACTIZE_GEMINI_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1beta/models/<model>:streamGenerateContent`, `GET <root>/v1beta/models` |
 | `codex` | `ARTIFACTIZE_CODEX_BASE_URL` | `http://127.0.0.1:8080/backend-api/codex` | `POST <root>/responses`, `GET <root>/models` |
 | Codex 로그인 | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token`과 `<root>/oauth/revoke`. `login codex`는 브라우저를 `<root>/oauth/authorize`로 보냄 |
 
@@ -236,7 +278,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   쿼리, 프래그먼트가 없어야 합니다. 그 밖의 값이면 연결하기 전에 리뷰, `models`, `doctor`가 그
   변수 이름을 알려 주며 실패합니다. 빈 값은 설정하지 않은 것으로 간주합니다. `anthropic`은 끝에 `/v1`이
   붙어도 됩니다.
-- API 키 변수는 이때도 필요하고 가짜 provider에 그대로 전달되므로 아무 값이나 넣어 두세요. `codex`는
+- 이때도 키(변수나 저장한 키)가 필요하고 가짜 provider에 그대로 전달되므로 아무 값이나 넣어 두세요.
+  커스텀 엔드포인트에는 변수가 필요 없으며, URL을 가짜 provider 주소로 지정하면 됩니다. `codex`는
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 `{"tokens":{"access_token":"dummy","account_id":"test"}}`
   같은 파일로 지정하세요.
 - 그 밖에는 바뀌는 것이 없습니다. 요청 본문과 스트리밍, 재시도, 예산, 도구 호출, 수정 요청,

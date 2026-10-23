@@ -147,7 +147,7 @@ listed below. They return the same JSON as their CLI counterpart, split into det
 | `session_show` | **`reference`**, `summary` (default false) | `session show REF [--summary]` |
 | `tools_check` | `eval`, or `artifact`/`audience`/`tool` | Static `tools check`; `audience` is `agent` or `human` |
 | `doctor` | none | `doctor` |
-| `models` | **`provider`** (`openai`, `anthropic`, `codex`) | `models PROVIDER` |
+| `models` | **`provider`** (a built-in provider, `openai`, `anthropic`, `gemini` or `codex`, or a custom provider's name) | `models PROVIDER` |
 | `remote_status` | none | `remote status` |
 | `cache_show` | **`key`**, `history` (default false) | `cache show KEY [--history]` |
 

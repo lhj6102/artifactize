@@ -56,12 +56,17 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `tools help PROGRAM [SUBCOMMAND...]` | 뒤따르는 인자는 `--help` 앞에 붙여 PROGRAM에 전달 | 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools open TARGET` | — | 기본 애플리케이션으로 엶 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `login codex` | 로그인 URL은 stderr에 출력. 터미널 stdin에서 붙여 넣은 리디렉션 URL을 읽을 수 있음 | `Signed in with Codex.`. JSON은 `{"provider":"codex","signed_in":true}` | 0 |
+| `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽음 | `Saved the PROVIDER API key.`. JSON은 `{"provider":…,"saved":true}` | 0 |
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도. 읽기 전용 인증 파일은 건드리지 않음 | `Signed out of Codex.`. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 로컬 로그아웃 뒤 0 |
+| `logout openai\|anthropic\|gemini` | 저장한 키를 지움. 변수는 건드리지 않음 | `Forgot the saved PROVIDER API key.`. JSON은 `{"provider":…,"saved":false}` | 0 |
+| `provider list` | | 기본 provider마다 키 출처와 커스텀 provider 전체. 키 값은 출력하지 않음. 텍스트 또는 JSON | 0 |
+| `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 `--key`(키는 stdin) | `Saved custom provider NAME.`. JSON은 `{"provider":NAME,"saved":true}` | 0 |
+| `provider remove NAME` | | `Removed custom provider NAME.`. JSON은 `{"provider":NAME,"saved":false}` | 0 |
 | `remote login URL` | `--share summary\|full`(summary). 토큰은 stdin으로 | `Signed in to URL as NAME (scopes: …).`. JSON은 `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.`와 함께, 서버에서는 `server token revoke` 전까지 토큰이 유효하다는 안내. JSON은 `{"signedIn":false}` | 0 |
 | `remote status` | | URL, 공유 수준, 토큰 출처, 접속 가능 여부, 이어서 주체와 범위 또는 오류. JSON은 아래 참고 | 로그인 상태면 0, 아니면 1 |
 | `remote push` | `--dry-run` | 텍스트 또는 JSON | 0 |
-| `models openai\|anthropic\|codex` | | 텍스트 또는 JSON | 0 |
+| `models PROVIDER` | 기본 provider나 커스텀 provider | 텍스트 또는 JSON | 0 |
 | `doctor` | | 텍스트 또는 JSON | 준비됐으면 0, 심각한 오류면 1 |
 | `prune` | `--older-than DURATION`, `--dry-run` | 텍스트 또는 JSON | 0 |
 | `monitor [PATH]` | ALL에서 시작. PATH나 `--repo PATH`는 처음 고를 저장소만 정함. `--all`은 경로와 함께 쓸 수 없음 | 터미널 UI | 0 |

@@ -141,8 +141,19 @@ export const commands = {
 	transcriptWindow: (handle: TranscriptHandle, columns: number, rows: number, movement: { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" } | null, toggle: number | null, changed: boolean) => typedError<TranscriptView, Failure>(__TAURI_INVOKE("transcript_window", { handle, columns, rows, movement, toggle, changed })),
 	/**  Close transcript `handle`; its reader removes its temporary files. */
 	transcriptClose: (handle: TranscriptHandle) => __TAURI_INVOKE<void>("transcript_close", { handle }),
-	/**  The OpenAI and Anthropic keys, as `doctor` reports them. */
-	settingsKeys: () => __TAURI_INVOKE<KeyStatus[]>("settings_keys"),
+	/**  `provider list`: the built-in keys and the custom providers, never a key's value. */
+	providersList: () => typedError<Providers, Failure>(__TAURI_INVOKE("providers_list")),
+	/**
+	 *  `login <provider>`: save an API key. The key arrives in the IPC body only; it is never
+	 *  logged, echoed or returned.
+	 */
+	providerKeySave: (provider: Provider, key: string) => typedError<null, Failure>(__TAURI_INVOKE("provider_key_save", { provider, key })),
+	/**  `logout <provider>`: forget the saved key; the environment variable is untouched. */
+	providerKeyRemove: (provider: Provider) => typedError<null, Failure>(__TAURI_INVOKE("provider_key_remove", { provider })),
+	/**  `provider add`: add the custom provider `name`, or replace it. */
+	providerCustomSave: (name: string, target: Target, key: KeyInput) => typedError<null, Failure>(__TAURI_INVOKE("provider_custom_save", { name, target, key })),
+	/**  `provider remove`: remove the custom provider `name`. */
+	providerCustomRemove: (name: string) => typedError<null, Failure>(__TAURI_INVOKE("provider_custom_remove", { name })),
 	/**  The Codex sign-in state, offline. */
 	codexStatus: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_status")),
 	/**
@@ -162,8 +173,8 @@ export const commands = {
 	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
-	/**  `models <provider>`: what the backend offers to this key or account. */
-	modelsList: (provider: Provider) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
+	/**  `models <provider>`: what a built-in or custom provider offers to this key or account. */
+	modelsList: (provider: string) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
 	/**  `remote status`: URL, share level, token source, reachability, principal and scopes. */
 	remoteStatus: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_status")),
 	/**
@@ -334,6 +345,11 @@ export type CurrentView = {
 	revision: ScanId,
 };
 
+export type CustomProvider = {
+	name: string,
+	target: Target,
+};
+
 /**  What a Detail describes, from the library's [`Target`]. */
 export type DetailTarget = "run" | "artifact" | "eval";
 
@@ -365,6 +381,9 @@ export type Draft = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
 };
+
+/**  The API a custom endpoint speaks. */
+export type EndpointApi = "openaiResponses" | "openaiChat" | "anthropic" | "gemini";
 
 export type Evidence = {
 	title: string,
@@ -489,12 +508,27 @@ export type HumanView = {
 /**  A cancellable job of one Human action, numbered by the frontend. */
 export type JobId = number;
 
-/**  Whether an API-key backend's key is in the environment; never its value. */
+/**  What saving a custom endpoint does with its key. */
+export type KeyInput = 
+/**  Save this key; it is never returned. */
+{ kind: "set"; key: string } | 
+/**  Keep the key the endpoint already has. */
+{ kind: "keep" } | 
+/**  No key. */
+{ kind: "none" };
+
+/**  Where a built-in provider's key comes from; never its value. */
+export type KeySource = 
+/**  Its environment variable, which is used first. */
+"environment" | 
+/**  Saved in Settings or with `artifactize login`. */
+"saved" | "absent";
+
 export type KeyStatus = {
 	provider: Provider,
-	/**  The environment variable the CLI reads. */
+	/**  The environment variable read first. */
 	variable: string,
-	present: boolean,
+	source: KeySource,
 };
 
 /**  One Tool log: one entry per run, in the order they started. */
@@ -639,8 +673,14 @@ export type PlanLine = {
 
 export type Profile = "runtime" | "agent" | "human";
 
-/**  A backend, as the CLI names it. */
-export type Provider = "openai" | "anthropic" | "codex";
+/**  A built-in provider, as the CLI names it. */
+export type Provider = "codex" | "openai" | "anthropic" | "gemini";
+
+/**  The providers of this machine. */
+export type Providers = {
+	keys: KeyStatus[],
+	custom: CustomProvider[],
+};
 
 export type Pushed = {
 	dryRun: boolean,
@@ -788,6 +828,9 @@ export type Submitted = {
 	notice: Notice,
 	view: HumanView | null,
 };
+
+/**  What a custom provider reaches; an endpoint's key only as whether one is saved. */
+export type Target = { kind: "alias"; provider: Provider } | { kind: "endpoint"; api: EndpointApi; url: string; key?: boolean };
 
 export type TokenSource = 
 /**  ARTIFACTIZE_REMOTE_TOKEN. */

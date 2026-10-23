@@ -125,6 +125,13 @@ export async function remoteStatus(fixture: Fixture): Promise<{ code: number; st
   return { code: status, stdout };
 }
 
+/** The providers this machine has set up, as `provider list --json` prints them. */
+export async function providerList(fixture: Fixture): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "provider", "list", "--json"],
+    { env: environment(fixture) });
+  return { code: status, stdout };
+}
+
 /** The saved requests, as `request list --json` prints them. */
 export function requests(fixture: Fixture): Saved[] {
   const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],

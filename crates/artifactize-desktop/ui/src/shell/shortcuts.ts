@@ -78,11 +78,14 @@ export const HELP: Record<"pane" | "main" | "settings", Section[]> = {
     {
       title: "Settings",
       keys: [
+        ["Providers", "Codex, OpenAI, Anthropic, Gemini and the custom providers; choose one to set it up"],
         ["Codex", "Sign in through the browser as `artifactize login codex`; paste the redirect URL if it cannot return"],
-        ["Keys", "OPENAI_API_KEY and ANTHROPIC_API_KEY come from the environment only; shown as set or not"],
-        ["Models", "List what a backend offers, as `artifactize models`"],
+        ["Keys", "Save or remove an API key, as `artifactize login`; a set environment variable is used first"],
+        ["+ Custom provider", "Name an alias of a built-in provider or an endpoint, as `artifactize provider add`"],
+        ["Models", "List what the chosen provider offers, as `artifactize models`"],
         ["Remote", "Sign in with a store URL and token, check status, sign out or push, as `artifactize remote`"],
-        ["Esc", "Back to what the Main area showed"],
+        ["← / →", "Switch between the Providers and Remote tabs"],
+        ["Esc", "Close Settings"],
         ["Tab / Shift+Tab", "Next / previous control"],
       ],
     },

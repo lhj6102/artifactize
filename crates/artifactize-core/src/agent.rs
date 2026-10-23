@@ -94,7 +94,7 @@ pub async fn execute(
     let Profile::Agent { backend, model, .. } = eval.declaration.profile() else {
         unreachable!("Agent executor requires an Agent profile")
     };
-    match Client::new(*backend, model, state, &config.root) {
+    match Client::new(backend, model, state, &config.root) {
         Ok(client) => review(&client, config, eval, output, recorder, cancellation, tools).await,
         Err(error) => Review {
             result: Err(error),
@@ -361,20 +361,20 @@ async fn run(
         eval.declaration.pass_schema(),
         eval.declaration.fail_schema(),
     )?;
-    let structured = verdict::Structured::new(&verdict.schema, *backend);
+    let structured = verdict::Structured::new(&verdict.schema, client.api());
     let mut request = prompt(config, eval, &registry)?;
     request.additional_params = Some(Client::parameters(
-        *backend,
+        client.api(),
         reasoning.map(crate::config::Reasoning::as_str),
         recorder.id(),
     )?);
     Client::output_format(
-        *backend,
+        client.api(),
         request.additional_params.as_mut().expect("parameters set"),
         structured.schema.clone(),
     );
     recorder.start(session::Header {
-        backend: Some(*backend),
+        backend: Some(backend.clone()),
         model: Some(model.clone()),
         reasoning: *reasoning,
         parameters: json!(request.additional_params),
@@ -542,7 +542,7 @@ async fn continue_conversation(
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
     client: impl FnOnce(
-        crate::config::Backend,
+        &crate::config::Backend,
         &crate::config::ModelId,
         &Path,
         &Path,
@@ -555,12 +555,12 @@ async fn continue_conversation(
             "The saved session does not name its backend and model.",
         )
     };
-    let backend = header.backend.ok_or_else(invalid)?;
+    let backend = header.backend.clone().ok_or_else(invalid)?;
     let model = header.model.as_ref().ok_or_else(invalid)?;
     let reasoning = header.reasoning.map(crate::config::Reasoning::as_str);
     let defaults = session::Budgets::default();
     let budgets = header.budgets.as_ref().unwrap_or(&defaults);
-    let client = client(backend, model, continuation.state, &config.root)?;
+    let client = client(&backend, model, continuation.state, &config.root)?;
     let registry = Registry::new(config, &eval.id)?;
     let history = continuation
         .conversation
@@ -581,7 +581,7 @@ async fn continue_conversation(
     let mut request = CompletionRequest::new(question.clone());
     request.chat_history = history;
     request.chat_history.push(question.clone());
-    request.additional_params = Some(Client::parameters(backend, reasoning, recorder.id())?);
+    request.additional_params = Some(Client::parameters(client.api(), reasoning, recorder.id())?);
     let tools = registry.sessions(continuation.state, None, cancellation.clone());
     let registry = registry.with_sessions(&tools);
     let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);

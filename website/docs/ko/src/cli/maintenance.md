@@ -39,7 +39,12 @@ artifactize cache rm KEY
 
 ```sh
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
-artifactize models openai|anthropic|codex [--json]
+artifactize models PROVIDER [--json]
+artifactize login openai|anthropic|gemini|codex [--json]
+artifactize logout openai|anthropic|gemini|codex [--json]
+artifactize provider list [--json]
+artifactize provider add NAME (--alias PROVIDER | --api API --url URL [--key]) [--json]
+artifactize provider remove NAME [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
@@ -67,8 +72,9 @@ Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 �
 - `sessions`: [Agent 세션 저장소](../features/others/state.md#agent-sessions)입니다. 세션 수와
   바이트 수, `maxBytes`, `targetBytes`, `enabled`, 저장 위치 `directory`, 상태의
   `stateId`가 나옵니다.
-- API 키: 설정되어 있는지만 알려 주며, 키가 유효한지 검사하거나 값을 출력하지는 않습니다. 사용하는 백엔드의
-  키만 있으면 되므로, 키가 없으면 오류가 아니라 경고로 처리합니다. [테스트 엔드포인트](../features/agent.md#test-against-a-fake-provider)를
+- `openai`, `anthropic`, `gemini`: API 키가 변수에 있는지, 저장되어 있는지, 없는지만 알려 주며, 키가 유효한지
+  검사하거나 값을 출력하지는 않습니다. 사용하는 백엔드의 키만 있으면 되므로, 키가 없으면 오류가 아니라
+  경고로 처리합니다. [테스트 엔드포인트](../features/agent.md#test-against-a-fake-provider)를
   쓰면 어떤 엔드포인트인지 `testEndpoint`로 알려 주는 경고가 나오고, 잘못된 엔드포인트는 심각한 오류입니다.
 - `codex`: 로그인 정보를 갱신하거나 온라인에 접속하지 않고 읽습니다. 로그인하지 않았으면
   경고입니다. 로그인 정보가 저장되어 있으면 액세스 토큰이 만료됐어도 검사를 통과합니다. 만료된 토큰은 다음에 쓸 때 갱신합니다.
@@ -76,17 +82,41 @@ Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 �
   [저장소 안에](../features/others/state.md#state) 있으면 거부 메시지를 `refused`에 담은
   경고가 나오고, 그곳에 로그인 정보가 저장되어 있으면 심각한 오류가 됩니다. 세부 정보에는 `source`
   (`stored`, `file`, `none`), `expiresAt`, `expired`, 테스트 엔드포인트가 나옵니다.
+- `providers`: 이 컴퓨터에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
+  연결되는 곳을 보여 줍니다. 키 값은 보여 주지 않습니다. `$STATE/auth`가 저장소 안에 있으면, 저장한 것이
+  없는 동안에는 경고이고 저장한 것이 있으면 심각한 오류입니다.
 - 원격 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.
   토큰이 없으면 경고이고, 설정이 잘못됐거나(루프백이 아닌 호스트에 일반 HTTP를 쓰는 경우 포함)
   토큰 파일이 안전하지 않으면 심각한 오류입니다.
 
 심각한 오류가 없으면 0, 있으면 1, 호출이 잘못되었으면 2로 종료합니다.
 
-`models openai`와 `models anthropic`은 API 키로 쓸 수 있는 모델을, `models codex`는
-로그인한 [Codex](../features/agent.md#codex) 계정의 모델을 보여 줍니다. 여기서도 테스트
-엔드포인트가 provider를 대신하며, 다른 계정이나 백엔드로 넘어가지 않습니다. 텍스트 출력은
-탭으로 구분한 slug와 이름 쌍이고, JSON은 provider가 준 순서대로
-`{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}` 형태입니다.
+`models PROVIDER`에는 프로필의 `backend`에 쓸 수 있는 이름이면 무엇이든 줄 수 있습니다.
+`models openai`, `models anthropic`, `models gemini`는 API 키로 쓸 수 있는 모델을, `models codex`는
+로그인한 [Codex](../features/agent.md#codex) 계정의 모델을, 커스텀 provider는 그 별칭이나
+엔드포인트가 제공하는 모델을 보여 줍니다. 여기서도 테스트 엔드포인트가 provider를 대신하며, 다른
+계정이나 백엔드로 넘어가지 않습니다. 텍스트 출력은 탭으로 구분한 slug와 이름 쌍이고, JSON은
+provider가 준 순서대로 `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`
+형태입니다.
+
+## 키와 커스텀 provider {#keys-and-custom-providers}
+
+`login openai|anthropic|gemini`는 stdin에서 API 키를 읽어 저장합니다. 터미널에서 입력하면 화면에
+표시되지 않습니다. 같은 이름으로 `logout`을 실행하면 저장한 키를 지웁니다. 키 변수가 설정되어 있으면
+그 변수를 먼저 씁니다. `login codex`와 `logout codex`는 [Codex 로그인](../features/agent.md#codex)입니다.
+
+`provider add NAME`은 [커스텀 provider](../features/agent.md#custom-providers)를 저장하며, 같은 이름이
+있으면 바꿉니다. `--alias PROVIDER`는 기본 provider를 다른 이름으로 쓰고, 엔드포인트는
+`--api openai-responses|openai-chat|anthropic|gemini`와 `--url`로 지정하며 `--key`를 주면 키를
+stdin에서 읽습니다. `provider remove NAME`은 삭제합니다. `provider list`는 기본 provider마다 키의
+`source`(`environment`, `saved`, `absent`)와 커스텀 provider 전체를 출력하며, 키 값은 출력하지
+않습니다.
+
+```json
+{"keys":[{"provider":"openai","variable":"OPENAI_API_KEY","source":"saved"}],
+ "custom":{"local":{"kind":"endpoint","api":"openai-chat","url":"http://localhost:11434/v1","key":false},
+           "work":{"kind":"alias","provider":"codex"}}}
+```
 
 `prune`은 `state/runs/<run-id>` 안의 출력 폴더만 지웁니다. Runtime의 `output`(이전
 버전이 남긴 `tmp`, `home`, `cache`도 포함)과 남은 도구 출력이 대상입니다. Run 기록, 결과,

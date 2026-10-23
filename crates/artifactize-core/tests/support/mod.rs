@@ -446,6 +446,71 @@ pub mod anthropic {
     }
 }
 
+/// OpenAI Chat Completions replies (`POST {base}/chat/completions`), as compatible servers
+/// stream them: `data:` records ending with `[DONE]`.
+pub mod chat {
+    use super::{Reply, Request};
+    use serde_json::json;
+
+    /// A streamed text answer for the requested model.
+    pub fn text(request: &Request, text: &str, input: u64, output: u64) -> Reply {
+        let chunk = |delta: serde_json::Value, finish: serde_json::Value| {
+            json!({"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,
+                "model":request.body["model"],
+                "choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
+        };
+        let mut last = chunk(json!({}), json!("stop"));
+        last["usage"] = json!({"prompt_tokens":input,"completion_tokens":output,
+            "total_tokens":input + output});
+        let body = [
+            chunk(json!({"role":"assistant","content":text}), json!(null)),
+            last,
+        ]
+        .iter()
+        .map(|record| format!("data: {record}\n\n"))
+        .chain(["data: [DONE]\n\n".to_owned()])
+        .collect();
+        Reply::Raw(
+            200,
+            vec![("content-type", "text/event-stream".to_owned())],
+            body,
+        )
+    }
+}
+
+/// Gemini replies (`POST {root}/v1beta/models/{model}:streamGenerateContent?alt=sse`).
+pub mod gemini {
+    use super::Reply;
+    use serde_json::json;
+
+    /// A streamed text answer from `model`.
+    pub fn text(model: &str, text: &str, input: u64, output: u64) -> Reply {
+        let record = json!({
+            "candidates":[{"content":{"role":"model","parts":[{"text":text}]},
+                "finishReason":"STOP","index":0}],
+            "usageMetadata":{"promptTokenCount":input,"candidatesTokenCount":output,
+                "totalTokenCount":input + output},
+            "modelVersion":model,
+        });
+        Reply::Raw(
+            200,
+            vec![("content-type", "text/event-stream".to_owned())],
+            format!("data: {record}\n\n"),
+        )
+    }
+
+    pub fn models(ids: &[&str]) -> Reply {
+        let models: Vec<_> = ids
+            .iter()
+            .map(|id| {
+                json!({"name":format!("models/{id}"),"displayName":id,
+                "supportedGenerationMethods":["generateContent"]})
+            })
+            .collect();
+        Reply::Json(200, json!({"models":models}))
+    }
+}
+
 /// Codex replies (`POST <root>/responses`, `GET <root>/models`) and sign-in tokens.
 pub mod codex {
     /// No CLI fixture expires while scheduling; expiry boundaries use injected unit clocks.

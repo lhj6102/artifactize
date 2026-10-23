@@ -260,7 +260,7 @@ impl ExecutionOptions {
                 max_tool_calls,
                 max_tokens,
             } => {
-                options.backend = Some(*backend);
+                options.backend = Some(backend.clone());
                 options.model = Some(model.clone());
                 options.reasoning = *reasoning;
                 options.timeout_ms = *timeout_ms;

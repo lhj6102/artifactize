@@ -16,9 +16,8 @@ If a release has no download for your system yet, install with Cargo or
 - The example projects use `python3` to run Python checks and `grep` to search text.
   Both commands must be available in your terminal. Projects run their declared
   commands as given on every OS; see [Operating systems](../features/others/platforms.md).
-- Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
-  `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime and Human evals
-  need none.
+- Optional, one per Agent backend you plan to use: an OpenAI, Anthropic or Gemini API
+  key, or a ChatGPT plan that includes Codex. Runtime and Human evals need none.
 
 `PATH` is the list of directories your terminal searches for commands. Before
 starting the examples, check that it can find their required tools:
@@ -368,22 +367,29 @@ in a checkout; `ARTIFACTIZE_CODEX_AUTH_FILE` needs no storage
 ## Backends
 
 An Agent eval names exactly one backend and one exact model ID. There is no model
-catalog and no fallback to another backend or model.
+catalog and no fallback to another backend or model. Besides the built-in backends below,
+a backend can be a [custom provider](../features/agent.md#custom-providers) you name: an
+alias of a built-in one, or any OpenAI-, Anthropic- or Gemini-compatible endpoint.
 
 A **backend** is the connection Artifactize uses to send an Agent review to a
 model service. An **API key** is that service's secret account credential. For the
-API-key backends, create a key in your [OpenAI account](https://platform.openai.com/api-keys)
-or [Anthropic Console](https://console.anthropic.com/settings/keys), then replace
-`...` in the matching command with that key. Never commit it or put it in an
-Artifact declaration. Codex uses the separate browser sign-in below instead.
+API-key backends, create a key in your [OpenAI account](https://platform.openai.com/api-keys),
+[Anthropic Console](https://console.anthropic.com/settings/keys) or
+[Google AI Studio](https://aistudio.google.com/apikey), then save it with `artifactize login`,
+which reads it from stdin (paste it when asked), or paste it in the desktop app's
+**Settings → Providers**. Never commit it or put it in an Artifact declaration. Codex uses
+the separate browser sign-in below instead.
 
 | Backend | Setup | List models |
 |---|---|---|
-| `openai` | `export OPENAI_API_KEY=...` | `artifactize models openai` |
-| `anthropic` | `export ANTHROPIC_API_KEY=...` | `artifactize models anthropic` |
+| `openai` | `artifactize login openai` | `artifactize models openai` |
+| `anthropic` | `artifactize login anthropic` | `artifactize models anthropic` |
+| `gemini` | `artifactize login gemini` | `artifactize models gemini` |
 | `codex` | `artifactize login codex` | `artifactize models codex` |
 
-In PowerShell, set a key with `$env:OPENAI_API_KEY = "..."`.
+A key in `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` is used before a saved
+one, for example `export OPENAI_API_KEY=...` (in PowerShell,
+`$env:OPENAI_API_KEY = "..."`). `logout openai|anthropic|gemini` forgets the saved key.
 
 `login codex` signs in to your ChatGPT account the way the Codex CLI does. It prints
 a sign-in URL and opens it in the default browser (`xdg-open` on Linux and WSL, `open`

@@ -59,7 +59,10 @@ that makes the transition happen and checks where it leads.
     **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
-  - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token).
+- **Settings**: a modal over the screen with two tabs. **Providers** lists the built-in providers
+  (Codex, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
+  the chosen one's setup on the right: the Codex account, an API key, or a custom provider's form,
+  each with its Models. **Remote** is the shared review store (URL, share level and token).
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
   by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
 - **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
@@ -123,8 +126,8 @@ that makes the transition happen and checks where it leads.
 | E-LAUNCH-REVIEW | Launch | start with `review` | the newest waiting Human review open in the Main area as Review |
 | E-LAUNCH-REVIEW-ID | Launch | start with `review ID` | the review ID open in the Main area as Review |
 | E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | the branch of PATH selected, its Current shown |
-| E-SCREEN-SETTINGS | any view | Ctrl+, or the Settings button | Settings in the Main area |
-| E-SETTINGS-BACK | Settings | Esc, the Settings button again, or a choice in the Pane | the Main area's view before Settings, or the one chosen |
+| E-SCREEN-SETTINGS | any view | Ctrl+, or the Settings button | Settings open over the view, on the Providers tab |
+| E-SETTINGS-BACK | Settings | Esc, Close, or the Settings button again | Settings closed, the view beneath as it was |
 | E-PALETTE-OPEN | any view | Ctrl+K or the palette button | Palette, all enabled commands listed |
 | E-PALETTE-FILTER | Palette | type text | Palette, the commands filtered by the text |
 | E-PALETTE-RUN | Palette | Enter on a command | the command's target, Palette closed |
@@ -244,17 +247,24 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-SET-KEYS | Settings | open | API keys shown as set or not, never their values |
-| E-SET-CODEX-LOGIN | Settings | Sign in with Codex | sign-in in progress; the system browser opened at the sign-in address, which is also shown |
+| E-SET-TAB | Settings | choose the Providers or Remote tab | that tab shown |
+| E-SET-PROVIDER | Providers | choose a provider in the list | its setup shown on the right |
+| E-SET-KEY | an API-key provider (OpenAI, Anthropic, Gemini) | open | its key shown as set from the environment, saved or not set, never its value |
+| E-SET-KEY-SAVE | an API-key provider | paste a key, then Save key | the key saved, shown as saved, the field cleared |
+| E-SET-KEY-REMOVE | an API-key provider, key saved | Remove saved key | the key shown as not set, or set from the environment |
+| E-SET-CUSTOM-NEW | Providers | + Custom provider | an empty custom provider form |
+| E-SET-CUSTOM-SAVE | custom provider form | name it, choose an alias of a built-in provider or an endpoint (API, URL, optional key), then Save | the custom provider listed by name and chosen, its key never shown |
+| E-SET-CUSTOM-REMOVE | a custom provider | Remove provider | the custom provider gone from the list |
+| E-SET-CODEX-LOGIN | Codex | Sign in with Codex | sign-in in progress; the system browser opened at the sign-in address, which is also shown |
 | E-SET-CODEX-RETURN | sign-in in progress | the browser returns to the app's loopback address | signed in |
 | E-SET-CODEX-PASTE | sign-in in progress | paste the redirect URL | signed in |
-| E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Settings, signed out |
-| E-SET-CODEX-LOGOUT | Settings, signed in | Sign out of Codex | Settings, signed out |
-| E-SET-MODELS | Settings | List models | models of the chosen backend shown |
-| E-SET-REMOTE-LOGIN | Settings | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
-| E-SET-REMOTE-STATUS | Settings | Check status | status refreshed |
-| E-SET-REMOTE-PUSH | Settings, store signed in | Push (dry run) or Push results | push result shown |
-| E-SET-REMOTE-LOGOUT | Settings, store signed in | Sign out of the store | store signed out |
+| E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Codex, signed out |
+| E-SET-CODEX-LOGOUT | Codex, signed in | Sign out of Codex | Codex, signed out |
+| E-SET-MODELS | a provider's setup | List models | models of the chosen provider shown |
+| E-SET-REMOTE-LOGIN | Remote | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
+| E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
+| E-SET-REMOTE-PUSH | Remote, store signed in | Push (dry run) or Push results | push result shown |
+| E-SET-REMOTE-LOGOUT | Remote, store signed in | Sign out of the store | store signed out |
 
 ## Journeys as paths
 
@@ -317,7 +327,9 @@ E-PANE-SELECT.
 - J-HUMAN-TEXT: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TEXT
 - J-HUMAN-ESC: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
   E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
-- J-SET-KEYS: E-SCREEN-SETTINGS → E-SET-KEYS
-- J-SET-CODEX: E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
-- J-SET-MODELS: E-SET-MODELS
-- J-SET-REMOTE: E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT
+- J-SET-PROVIDERS: E-SCREEN-SETTINGS → E-SET-PROVIDER
+- J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
+- J-SET-KEY: E-SET-PROVIDER → E-SET-KEY → E-SET-KEY-SAVE → E-SET-KEY-REMOVE
+- J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
+- J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS
+- J-SET-REMOTE: E-SET-TAB → E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT

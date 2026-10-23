@@ -139,7 +139,7 @@ impl From<&Profile> for StoredProfile {
                 max_tool_calls,
                 max_tokens,
             } => Self::Agent {
-                backend: *backend,
+                backend: backend.clone(),
                 model: model.clone(),
                 reasoning: (*reasoning).into(),
                 timeout_ms: (*timeout_ms).into(),
