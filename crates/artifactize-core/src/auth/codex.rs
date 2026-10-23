@@ -128,7 +128,8 @@ pub(crate) fn now() -> Result<Timestamp, String> {
 
 /// The sign-in root: its loopback test endpoint, else `https://auth.openai.com`.
 pub fn auth_root() -> Result<String, String> {
-    Ok(crate::llm::variable_endpoint(AUTH_URL_VARIABLE)?.unwrap_or_else(|| AUTH_ROOT.into()))
+    Ok(crate::llm::variable_endpoint(AUTH_URL_VARIABLE)?
+        .map_or_else(|| AUTH_ROOT.into(), |endpoint| endpoint.root().to_owned()))
 }
 
 /// The configured read-only auth file, if any.

@@ -30,7 +30,7 @@ Artifact의 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint
 fingerprint = { files = ["src"], ignore = ["*.log"] }
 ```
 
-- `files`: 그 Artifact의 폴더를 기준으로 한 중복 없는 경로 1–64개이며, 각 경로는 UTF-16 코드 단위 1024개까지입니다.
+- `files`: 그 Artifact의 폴더를 기준으로 한 중복 없는 경로 1–64개이며, 각 경로는 1024자까지입니다(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다).
   기본값은 `["."]`이며, 그 Artifact에 속한 파일을 가리킵니다. 경로는 존재해야 하고 Artifact 안에 있어야 하며,
   자식 Artifact 안을 가리키는 경로는 거부합니다. 디렉터리를 훑을 때 자식 Artifact 폴더와
   `*.artf` 선언은 모두 건너뜁니다. `.artf` 파일을 직접 입력으로 적으면 알림 없이 건너뛰지 않고

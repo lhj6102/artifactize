@@ -11,7 +11,7 @@ mod tests;
 use std::{
     io::Write,
     path::Path,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
 
 use semver::Version;
@@ -175,7 +175,7 @@ fn source(running: &Version, channel: Channel) -> Result<Source, Outcome> {
     match crate::llm::variable_endpoint(TEST_ENDPOINT_VARIABLE) {
         Ok(Some(site)) => Ok(Source {
             url: format!("{site}{TEST_LATEST_PATH}"),
-            site,
+            site: site.root().to_owned(),
         }),
         // The workspace's own version, which a release replaces.
         Ok(None) if running.pre.as_str() == "dev" => {
@@ -217,7 +217,8 @@ fn decide(running: &Version, channel: Channel, latest: Version, site: &str) -> O
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Cached {
-    checked_at: u64,
+    #[serde(with = "epoch_seconds")]
+    checked_at: SystemTime,
     site: String,
     latest: Version,
 }
@@ -231,14 +232,11 @@ async fn latest(source: &Source, state: &Path, now: SystemTime) -> Result<Versio
         return Ok(cached.latest);
     }
     let latest = fetch(&source.url).await?;
-    let seconds = now
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
     // An answer that cannot be kept only means asking again next time.
     let _ = write_cache(
         state,
         &Cached {
-            checked_at: seconds,
+            checked_at: now,
             site: source.site.clone(),
             latest: latest.clone(),
         },
@@ -246,13 +244,32 @@ async fn latest(source: &Source, state: &Path, now: SystemTime) -> Result<Versio
     Ok(latest)
 }
 
-/// Whether an answer from `checked_at` (seconds since the epoch) is still current at `now`.
-/// One from the future, after the clock went back, is not, nor a time no clock can show.
-fn fresh(checked_at: u64, now: SystemTime) -> bool {
-    UNIX_EPOCH
-        .checked_add(Duration::from_secs(checked_at))
-        .and_then(|checked| now.duration_since(checked).ok())
-        .is_some_and(|age| age < INTERVAL)
+/// Whether an answer from `checked_at` is still current at `now`. One from the future, after
+/// the clock went back, is not.
+fn fresh(checked_at: SystemTime, now: SystemTime) -> bool {
+    now.duration_since(checked_at)
+        .is_ok_and(|age| age < INTERVAL)
+}
+
+/// `checkedAt` in the kept answer: whole seconds since the Unix epoch.
+mod epoch_seconds {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    pub fn serialize<S: Serializer>(time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(
+            time.duration_since(UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs()),
+        )
+    }
+
+    /// A time no clock can show is refused, so an answer kept with one is asked again.
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<SystemTime, D::Error> {
+        let seconds = u64::deserialize(deserializer)?;
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(seconds))
+            .ok_or_else(|| D::Error::custom("checkedAt is past any clock"))
+    }
 }
 
 /// The kept answer; a missing or unreadable one is none.

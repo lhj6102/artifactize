@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::UNIX_EPOCH;
 
 /// A loopback stand-in for GitHub's latest-release API answering `body`, and how many
 /// requests it answered.
@@ -159,9 +160,11 @@ fn a_development_build_and_the_store_are_not_looked_up() {
 
 #[test]
 fn an_answer_kept_at_an_impossible_time_is_not_current() {
-    assert!(fresh(
-        at(0).duration_since(UNIX_EPOCH).unwrap().as_secs(),
-        at(DAY - 1)
-    ));
-    assert!(!fresh(u64::MAX, at(0)));
+    assert!(fresh(at(0), at(DAY - 1)));
+    assert!(!fresh(at(DAY), at(0)));
+    let kept = format!(
+        r#"{{"checkedAt":{},"site":"{SITE}","latest":"1.0.0"}}"#,
+        u64::MAX
+    );
+    assert!(serde_json::from_str::<Cached>(&kept).is_err());
 }

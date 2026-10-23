@@ -262,8 +262,8 @@ URL은 요청을 보낼 API 루트로, 기본 provider의 루트(`https://api.op
 profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 ```
 
-이 컴퓨터에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR가 되며, 오류에 빠진
-provider 이름이 나옵니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
+이 컴퓨터에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
+오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
 저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.
 

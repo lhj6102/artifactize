@@ -134,7 +134,11 @@ fn test_endpoints_are_loopback_only() {
         ("http://LOCALHOST:9", "http://localhost:9"),
         ("https://[::1]:8443/", "https://[::1]:8443"),
     ] {
-        assert_eq!(super::loopback_url(value).unwrap(), expected, "{value}");
+        assert_eq!(
+            super::loopback_url(value).unwrap().root(),
+            expected,
+            "{value}"
+        );
     }
     for value in [
         "https://api.openai.com/v1",

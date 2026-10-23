@@ -241,9 +241,9 @@ Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니�
 있는 폴더를 기준으로 지정합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
 Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 
-파일을 해시하려면 `fingerprint`를 생략하세요. artifactsum의
-[파일 Artifact 형식](fingerprint.md#artifactsum)은 대상만 적으며, 스크립트나
-`fingerprint = false`도 쓸 수 있습니다.
+파일을 해시하려면 `fingerprint`를 생략하세요. 파일 Artifact의
+[artifactsum 설정](fingerprint.md#artifactsum)에는 대상 파일만 적으며, 스크립트나
+`fingerprint = false`를 선택할 수도 있습니다.
 
 JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로세스의 작업 디렉터리는 그
 파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"graph"`가
@@ -362,7 +362,7 @@ Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 A
 준비할 때 확인합니다. 인터프리터별 플래그, 래퍼, 진입 파일 규칙은 없습니다.
 
 `fingerprint.script.files`는 Artifact 기준의 고유한 파일·디렉터리 경로를 64개까지 받으며, 각
-경로는 UTF-16 코드 단위 1024개까지입니다. 호출할 때마다 각 경로가 존재하고 심볼릭 링크를 거치지 않는지
+경로는 1024자까지입니다(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다). 호출할 때마다 각 경로가 존재하고 심볼릭 링크를 거치지 않는지
 확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 원본 출력의 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
 디렉터리는 실행이 끝나면 지웁니다. stdout은 `[A-Za-z0-9._:-]`로 이뤄진 1–128자의 ASCII여야
 하며, 그 뒤에 LF 하나(Windows에서는 CRLF 하나)만 올 수 있습니다. 그 밖의 공백은 허용하지 않고

@@ -715,14 +715,46 @@ const TEST_ENDPOINTS: [&str; 5] = [
     crate::auth::codex::AUTH_URL_VARIABLE,
 ];
 
+/// A test endpoint: an http(s) URL on localhost, 127.0.0.0/8 or [::1], without
+/// credentials, a query or a fragment. A test endpoint never leaves the machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestEndpoint(url::Url);
+
+impl TestEndpoint {
+    /// The endpoint as an API root, the text an SDK or a request path starts from: its URL
+    /// without a trailing slash.
+    pub fn root(&self) -> &str {
+        self.0.as_str().trim_end_matches('/')
+    }
+}
+
+impl std::str::FromStr for TestEndpoint {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        loopback_url(value)
+    }
+}
+
+impl std::fmt::Display for TestEndpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.root())
+    }
+}
+
+impl Serialize for TestEndpoint {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.root())
+    }
+}
+
 /// The loopback test endpoint that replaces the provider's API root, if one is set.
-pub fn test_endpoint(provider: Provider) -> Result<Option<String>, String> {
+pub fn test_endpoint(provider: Provider) -> Result<Option<TestEndpoint>, String> {
     variable_endpoint(base_url_variable(provider))
 }
 
 /// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
 /// value must be a loopback URL.
-pub fn variable_endpoint(variable: &str) -> Result<Option<String>, String> {
+pub fn variable_endpoint(variable: &str) -> Result<Option<TestEndpoint>, String> {
     let Some(value) = crate::platform::environment::var(variable).filter(|value| !value.is_empty())
     else {
         return Ok(None);
@@ -742,9 +774,8 @@ pub fn active_test_endpoint() -> Option<&'static str> {
     })
 }
 
-/// An http(s) URL on localhost, 127.0.0.0/8 or [::1], without credentials, a query or a
-/// fragment, and without a trailing slash. A test endpoint never leaves the machine.
-fn loopback_url(value: &str) -> Result<String, String> {
+/// `value` as a [`TestEndpoint`], or why it is not one.
+fn loopback_url(value: &str) -> Result<TestEndpoint, String> {
     let url = url::Url::parse(value).map_err(|_| "it is not a URL".to_owned())?;
     let loopback = match url.host() {
         Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
@@ -762,20 +793,23 @@ fn loopback_url(value: &str) -> Result<String, String> {
     {
         return Err("a test endpoint has no credentials, query or fragment".into());
     }
-    Ok(url.as_str().trim_end_matches('/').to_owned())
+    Ok(TestEndpoint(url))
 }
 
 /// The provider's API root: its loopback test endpoint, else the provider's.
 fn base_url(provider: Provider) -> Result<String, String> {
-    Ok(test_endpoint(provider)?.unwrap_or_else(|| {
-        match provider {
-            Provider::Openai => "https://api.openai.com/v1",
-            Provider::Anthropic => "https://api.anthropic.com",
-            Provider::Gemini => gemini::BASE_URL,
-            Provider::Codex => codex::BASE_URL,
-        }
-        .into()
-    }))
+    Ok(test_endpoint(provider)?.map_or_else(
+        || {
+            match provider {
+                Provider::Openai => "https://api.openai.com/v1",
+                Provider::Anthropic => "https://api.anthropic.com",
+                Provider::Gemini => gemini::BASE_URL,
+                Provider::Codex => codex::BASE_URL,
+            }
+            .into()
+        },
+        |endpoint| endpoint.root().to_owned(),
+    ))
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
