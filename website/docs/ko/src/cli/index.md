@@ -66,7 +66,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `prune` | `--older-than DURATION`, `--dry-run` | 텍스트 또는 JSON | 0 |
 | `monitor [PATH]` | ALL에서 시작. PATH나 `--repo PATH`는 처음 고를 저장소만 정함. `--all`은 경로와 함께 쓸 수 없음 | 터미널 UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값, `--repo`와 함께 쓸 수 없음), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
-| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트 0이면 빈 포트를 골라 출력에 알려 줌 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
+| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트가 0이면 사용 가능한 포트를 선택하고 그 번호를 출력함 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
 | `server token add NAME --scopes SCOPES` | `--scopes`(필수, 기본값 없음. `read`, `publish`, `human`을 쉼표로 이은 목록) | 토큰을 한 번 출력하고 저장해 두라고 안내. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | 텍스트 또는 JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
@@ -100,16 +100,15 @@ Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 
 
 ### 식별자 인자 {#identity-arguments}
 
-Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는 상태를 읽기 전에
-검사합니다. ASCII 글자, 숫자, `-`, `_`, `.`로 이뤄진 1–200자여야 하며 점만으로 이뤄질 수는
-없습니다. `cache show`, `cache rm`, `server rm`의 재사용 키 인자는 정확히 64자의 소문자
-16진수여야 합니다. 형식이 잘못된 식별자를 지정하면 사용법 오류로 처리하고 종료 코드 2로 끝납니다. 형식은 맞지만 없는
-캐시 키라면 `cache show`는 `null`(`--history`면 `[]`)을 출력하고 4로 종료하며, `cache rm`은
+Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는 ASCII 글자,
+숫자, `-`, `_`, `.`로 이뤄진 1–200자여야 하며 점만으로 이뤄질 수는 없습니다. `cache show`, `cache rm`, `server rm`의 재사용 키 인자는 정확히 64자의 소문자
+16진수여야 합니다. 형식이 잘못된 식별자를 지정하면 사용법 오류로 처리하고 종료 코드 2로 끝납니다. 형식은 맞지만 해당
+재사용 키로 저장된 기록이 없으면 `cache show`는 `null`(`--history`면 `[]`)을 출력하고 4로 종료하며, `cache rm`은
 `removed: false`를 알립니다.
 
 `server token add NAME`과 `server token revoke NAME`은 글자, 숫자, `-`, `_`, `.`로 이뤄진
 1–64자의 ASCII를 받습니다. 빈 이름, 공백, 슬래시, ASCII가 아닌 글자, 너무 긴 이름은
-**토큰 저장소를 열기 전에** 거부하고 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
+거부되며 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
 비밀 토큰이 아닙니다.
 
 `session show`와 `session send`는 Agent 리뷰의
@@ -168,7 +167,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 선택자, 게이트, 결과, 출력은 [Run, 상태, 검증](../features/run.md#verify-and-runs)에서
 다룹니다.
 
-없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)를
+없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)를
 보세요. `--force`는 직접 선택한 실행 가능한 eval만 새로 리뷰하도록 표시하며, 재귀로 포함된
 의존성에는 적용되지 않습니다. 실행 범위를 넓히거나 게이트를 건너뛰지도 않습니다. Run에는 결정된
 정책과 각 요청의 force 여부가 기록됩니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,
@@ -184,7 +183,7 @@ eval 동시 실행 수에는 기본 상한이 없어서, READY인 eval은 준비
 실행이 문제를 일으킬 때만 `--jobs N`(1–4294967295)을 붙이세요. 그러면 이 Run의 eval 수가
 제한됩니다. Agent 리뷰는 이와 별개로 `$STATE/limits.json`에 따라 머신 전체에서 백엔드마다
 제한됩니다([백엔드 수용량](../features/others/state.md#backend-capacity)). 백엔드 자리가
-빌 때까지 대기 중인 요청은 `--jobs` 자리도, 실행 시작 횟수도 차지하지 않습니다.
+빌 때까지 대기 중인 요청은 `--jobs`의 동시 실행 수에도, 실행 시작 횟수에도 포함되지 않습니다.
 
 `--fingerprint-jobs N`(`verify`와 `status`, 1–4294967295)은 fingerprint를 동시에 몇 개까지
 계산할지 정합니다. 기본값은 프로세스가 쓸 수 있는 CPU 수입니다. `verify`에서는 준비 단계와
@@ -281,8 +280,8 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않음 |
 | `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact |
 
-Artifact는 그 eval들의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
-`STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
+Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+`STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
@@ -387,8 +386,8 @@ ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄
 
 ## Human 요청 {#human-requests}
 
-`claim`, `unclaim`, `tool`, `submit`은 리뷰어를 기본으로 `$USER`에서 가져오고, 없으면 Linux와
-macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 없으면 `--reviewer NAME`을
+`claim`, `unclaim`, `tool`, `submit`은 기본 리뷰어 이름으로 `$USER` 값을 사용하며, 값이 없으면 Linux와
+macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다. 모두 없으면 `--reviewer NAME`을
 주세요. `--reviewer NAME`으로 동작마다 같은 리뷰어를 직접 지정할 수도 있습니다. 리뷰어 이름은
 계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. 요청을 맡은 사람만 도구를 실행하고,
 제출하고, 담당을 해제할 수 있습니다. `request claim`은 담당 정보를, `request unclaim`은 해제한

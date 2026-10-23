@@ -23,7 +23,8 @@ Check these criteria:
   same meaning and in the same order. Nothing is left out, added, softened or strengthened, and
   no English prose is left untranslated.
 - K-SAME-TARGETS: Code blocks, commands, flags, configuration keys, file paths and output samples
-  are unchanged; only comments inside code blocks may be translated. Every link reaches the same
+  are unchanged; only comments inside code blocks and the example requests to Arti after
+  /artifactize:hey-arti may be translated. Every link reaches the same
   target, except that a link to an English documentation page (/docs/...) reaches the same page
   of the Korean documentation (/docs/ko/...). Every heading of a chapter page carries its English
   heading's anchor as an explicit {#id} so that links and the language switch land on the same

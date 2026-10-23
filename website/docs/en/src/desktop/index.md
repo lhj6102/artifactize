@@ -4,10 +4,10 @@ Open the app to see, on one screen, every live branch of every project with Runs
 this machine and every Human review waiting for a person. Browse Runs, see what each
 branch would run now, inspect evidence and handle Human sign-offs. The app works on the
 same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
-commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
+commands; see [Desktop app](../getting-started/install-options.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
-[installation guide](../getting-started/install.md#desktop-app).
+[installation guide](../getting-started/install-options.md#desktop-app).
 
 ## Open the app
 
@@ -24,8 +24,8 @@ default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
-sets the cooperative claim name (normally the user name). `-h`, `--help` or `help`
-(also after a mode) prints help on stderr and exits 2, as invalid arguments do. The app
+sets the cooperative claim name (normally the user name). `-h` or `--help` (also
+after a mode) and `help`, or `help MODE` for one mode, print help on stderr and exits 2, as invalid arguments do. The app
 exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
@@ -39,7 +39,7 @@ form open: it opens or switches to RED once claimed, and says the review must be
 claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
 The app follows the system's light or dark appearance.
 
-When a [newer release](../getting-started/install.md#newer-releases) is out, the header
+When a [newer release](../getting-started/update.md#newer-releases) is out, the header
 shows `VERSION available` before **Settings**. A click on it opens a dialog with this
 app's version and how to update the way it was installed: the command to run, as text
 you can select and copy, or the file to download and install by hand, or, when the way
@@ -186,8 +186,7 @@ neighbours on each side, failing ones first, and counts the rest.
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it, never beside the Pane. It leaves the camera
-where it is: pan to bring an Artifact under it into view.
+with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only

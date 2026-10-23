@@ -83,7 +83,7 @@ Final validation needs actual GREEN evidence or explicit `basis = true` across
 all required scope; a basis never waives its dependencies. RED blocks downstream
 work and missing/operational evidence waits. Selected GREEN reviews with unmet
 obligations produce INCOMPLETE, with the obligations listed in text and JSON.
-The [upgrade reference](../getting-started/install.md#upgrading-from-011)
+The [upgrade reference](../getting-started/update.md#upgrading-from-011)
 covers removed legacy gate-bypass settings. `--reuse-only KINDS`
 (for example `agent,human` in CI) only reuses results for those kinds; missing
 reusable evidence is not executed and leaves INCOMPLETE. See [CLI](../cli/index.md#reuse-only).
@@ -172,9 +172,9 @@ sibling eval in the same Run), and `remote` for a record from the [remote review
 carry `source` too.
 
 `verify --wait --json` and `run show RUN_ID` print the full saved Run. `run show` never
-discovers declarations or runs code. Each Run saves its selection, policy, profile option
-and the resolved definitions of its dependency closure with its first requests, so it
-never depends on the current declarations.
+discovers declarations or runs code. It shows the selection, policy, profile option
+and eval definitions as they were when the Run started, so later edits to the
+declarations do not change what it shows.
 
 A partial Run can use saved evidence for an eval without creating a request for
 it, such as an upstream eval outside the execution selection. The Run records
@@ -235,6 +235,7 @@ Each eval's action says what `verify` would do with it:
 | `execute` | no result, and its dependencies are GREEN through results that exist now | `The current eval and fingerprints have no completed cached result.` |
 | `blocked` | no result, and a dependency is RED | `Dependency verdict RED: core/tests` |
 | `wait` | no result, and a dependency's result exists only after verify runs it | `Waiting for current GREEN dependency evidence: core/tests` |
+| `wait` | its dependencies are ready and the same review is already running; verify joins that execution instead of starting another | `The current eval and fingerprints have a live execution.` |
 
 Status cannot say whether a `wait` eval will execute. Text ends with, for example, `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on a merged
 checkout answers what verify will re-review there without running it. Force still

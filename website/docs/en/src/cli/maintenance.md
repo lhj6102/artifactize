@@ -86,7 +86,7 @@ the `supported` one. `--repo` also runs the checks of `config check`. Further ch
   its `path`. Without the app this is a warning that links the
   [install page](https://artifactize.dev/#start); the commands work without it.
 - `release`: whether a newer release of artifactize is out, the one network lookup of
-  `doctor` ([newer releases](../getting-started/install.md#newer-releases)). A newer
+  `doctor` ([newer releases](../getting-started/update.md#newer-releases)). A newer
   release is a warning naming it as `latest`, with how to update the way this copy was
   installed as `update`: a `command` to run, a file to `download` (with the `command` that
   installs it, for the `.deb`), or the release `page` when the way is unknown; `channel`

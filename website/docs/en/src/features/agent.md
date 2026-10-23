@@ -223,7 +223,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - **Sign-in.** `login codex` opens ChatGPT's sign-in page in your browser, as the
   Codex CLI does, and returns to artifactize when you have signed in. The browser steps,
   the pasted-address fallback and the five-minute limit are in
-  [sign-in setup](../getting-started/install.md#backends).
+  [sign-in setup](../getting-started/backends.md).
   It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`, readable
   only by you. Use the same `--state-dir` for `login`, `models` and `verify`.
   Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git

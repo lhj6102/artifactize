@@ -136,8 +136,8 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-To move older declarations to `.artf`, follow
-[Upgrading to 0.9](../getting-started/install.md#upgrading-to-09). Older fields such as
+To migrate, follow [Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
+Older fields such as
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
@@ -306,7 +306,7 @@ reviewed, also with `fingerprint = false`:
 Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/install.md#upgrading-from-011).
+[upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 ## Eval mutex tags
 

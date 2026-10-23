@@ -4,6 +4,9 @@
 
 - [Intro](getting-started/intro.md)
 - [Installation](getting-started/install.md)
+  - [Other install methods](getting-started/install-options.md)
+  - [Update and uninstall](getting-started/update.md)
+  - [Backends and sign-in](getting-started/backends.md)
 - [Guide](getting-started/guide.md)
   - [Examples](getting-started/examples.md)
 

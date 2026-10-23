@@ -109,16 +109,14 @@ Local tokens are still removed; a read-only external auth file is never changed.
 ### Identity arguments
 
 Run/request ID arguments (including `request list --run` and `review REQUEST_ID`)
-are validated before reading state: 1–200 ASCII letters, digits, `-`, `_` or `.`,
-never only dots. Reuse-key arguments to `cache show`, `cache rm` and `server rm`
+are 1–200 ASCII letters, digits, `-`, `_` or `.`, never only dots. Reuse-key arguments to `cache show`, `cache rm` and `server rm`
 require exactly 64 lowercase hexadecimal characters. Malformed identities exit 2
 as usage errors; valid but absent cache keys still make `cache show` print `null`
 (or `[]` with `--history`) and exit 4, while `cache rm` reports `removed: false`.
 
 `server token add NAME` and `server token revoke NAME` accept 1–64 ASCII
 characters: letters, digits, `-`, `_` and `.`. Empty names, whitespace, slashes,
-non-ASCII text and longer names are rejected with exit 2 **before opening the
-token store**. This name is a display label, not the bearer secret.
+non-ASCII text and longer names are rejected with exit 2. This name is a display label, not the bearer secret.
 
 `session show` and `session send` read and continue an Agent review's
 [saved conversation](../features/agent.md#saved-conversations); their arguments, output
@@ -175,7 +173,7 @@ later sign-off reuse.
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-See the [upgrade reference](../getting-started/install.md#upgrading-from-011)
+See the [upgrade reference](../getting-started/update.md#upgrading-from-011)
 for removed legacy gate-bypass settings. `--force` marks only explicitly
 selected executable evals for a fresh review, not recursive dependencies; it
 neither expands

@@ -10,7 +10,7 @@ The three executing kinds share the same lifecycle and reuse rules:
 |---|---|---|
 | [Agent](agent.md) | An exact model through a chosen backend, using declared read-only tools | GREEN or RED with schema-checked owner fields |
 | [Human](human.md) | A person who claims the waiting request and submits a sign-off | GREEN or RED with schema-checked owner fields |
-| [Runtime](runtime.md) | A declared program and argument vector | Exit 0 is GREEN; another exit code is RED |
+| [Runtime](runtime.md) | A declared program and its list of arguments | Exit 0 is GREEN; another exit code is RED |
 
 A failed invocation or invalid model result is **ERROR**, not RED. RED means the
 check actually judged the Artifact and rejected it. Each kind can be reused

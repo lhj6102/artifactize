@@ -404,7 +404,7 @@ Detail depends on the eval kind:
   the completed result open. Outside editing or work,
   `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
-Browsing is read-only. If publishing to the team store fails after submission,
+If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
