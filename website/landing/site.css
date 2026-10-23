@@ -525,15 +525,11 @@ p {
   }
 }
 
+.hero-roles,
 .hero-graph,
 .hero-demo {
   max-width: 1080px;
   margin: 36px auto 0;
-}
-
-.hero-roles {
-  max-width: 880px;
-  margin: 30px auto 0;
 }
 
 .hero-roles img,

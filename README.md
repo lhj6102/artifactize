@@ -8,7 +8,7 @@ English · [한국어](assets/readme/README.kr.md)
 
 <p align="center">
   <img src="assets/others/roles.en.gif" width="800"
-       alt="Animation, collaborate in Artifactize: three roles surround Artifactize. As Director, three people and two AI agents decide what to build; as Builder, five AI agents build the pieces; as Evaluator, four AI agents and one person check each piece. Pieces of work pass from role to role through Artifactize.">
+       alt="Animation, collaborate in Artifactize: three roles pass one Artifact Graph between them. As Director, three people and two AI agents decide what to build and add Docs; as Builder, five AI agents build it; as Evaluator, four AI agents and one person check the nodes one by one. Docs is RED, so the graph goes back to the Builder to fix, then to the Evaluator again, and Docs is GREEN. The Director adds Tests and changes Design, and the Builder and the Evaluator go back and forth again until GREEN.">
 </p>
 
 **Who is it for?**

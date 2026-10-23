@@ -29,7 +29,7 @@ const brand = join(here, "..", "brand");
  * and width. */
 const FIGURES: { page: string; width: number; height: number; languages: string[]; motion?: { fps: number; width: number } }[] = [
   { page: "graph-example", width: 1600, height: 900, languages: ["en", "ko", "zh"] },
-  { page: "roles", width: 1440, height: 600, languages: ["en"], motion: { fps: 20, width: 1200 } },
+  { page: "roles", width: 1440, height: 810, languages: ["en"], motion: { fps: 15, width: 1280 } },
 ];
 const SCALE = 2;
 const WAIT = 30000;
@@ -151,7 +151,7 @@ async function film(page: Page, motion: { fps: number; width: number }, gif: str
     run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-threads", "1", ...input,
       "-vf", `${scaled},palettegen=max_colors=256:stats_mode=full:reserve_transparent=0`, "-update", "1", palette]);
     run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-threads", "1", ...input, "-i", palette,
-      "-filter_complex", `[0:v]${scaled}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+      "-filter_complex", `[0:v]${scaled}[v];[v][1:v]paletteuse=dither=none:diff_mode=rectangle`,
       "-loop", "0", gif]);
   } finally {
     rmSync(work, { recursive: true, force: true });

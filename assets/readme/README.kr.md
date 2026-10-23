@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="../others/roles.en.gif" width="800"
-       alt="애니메이션, Artifactize에서 함께 일하기: Artifactize를 중심으로 세 가지 역할을 나눠 맡습니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고, AI 에이전트 다섯 개가 Builder를 맡아 조각을 만들며, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 조각마다 검사합니다. 작업 조각은 Artifactize를 거쳐 다음 역할로 넘어갑니다.">
+       alt="애니메이션, Artifactize에서 함께 일하기: 세 역할이 Artifact Graph 하나를 주고받습니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Docs를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 노드를 하나씩 검사합니다. Docs가 RED라서 그래프는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, Docs는 GREEN이 됩니다. 이어서 Director가 Tests를 추가하고 Design을 바꾸면, Builder와 Evaluator가 GREEN이 될 때까지 다시 그래프를 주고받습니다.">
 </p>
 
 **누구를 위한 도구인가요?**
