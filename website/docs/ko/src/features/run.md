@@ -38,8 +38,8 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
-대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리를
-대기 중인 요청은 Run의 `--jobs` 수에 들어가지 않습니다.
+대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리가
+빌 때까지 대기 중인 요청은 Run의 `--jobs` 동시 실행 수에 포함되지 않습니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 

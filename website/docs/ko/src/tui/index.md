@@ -243,8 +243,8 @@ Scope에서는 Full + Preview를, Detail에서는 Tree Compact + Detail Full을 
   시간, 개수를 보여 주며, 사용량은 토큰 합계만 보여 줍니다. 실행 중에는 `validation pending`을,
   그다음 **SATISFIED / NOT SATISFIED at Run end**를 보여 줍니다. 최대 세 줄의 주의
   줄이 오류, 대기 중인 Human, 실행 중인 eval을 보여 주고, 그다음 `+N more`가 나옵니다.
-  **Run** 행에서 Enter를 누르면 Detail에 검증과 충족되지 않은 최종 검증 요건, 개수, 오류, 대기 중인 작업과
-  실행 중인 작업, 시간, 예산, 실행/재사용된 개수, 쓴/아낀 사용량 전체가 열립니다.
+  **Run** 행에서 Enter를 누르면 Detail이 열리며, 검증 결과와 충족되지 않은 최종 검증 요건, 요청 수와 오류, 대기 중인 작업과
+  실행 중인 작업, 시간과 예산, 실행·재사용 횟수, 실제 사용량과 절약한 사용량을 모두 확인할 수 있습니다.
 
 Scope 배지와 머리말에는 같은 `!N ✗N ◐N ?N` 주의 카운터가 나옵니다. ERROR와 RED인
 요청, 아직 실행 중인 Run, 사람의 결정이 필요한 승인(미룬 것
