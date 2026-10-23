@@ -43,10 +43,10 @@ remaining requests become `BUDGET_EXHAUSTED` and the Run ends INCOMPLETE
 ([details](../cli/index.md#runtime-cli)). A runtime or Agent request joining another Run's review counts against an explicit `--jobs`; a Human request joining a sign-off and a cache hit do not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
 QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
 explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
-Waiting work starts in the Run's **scheduling order**: READY evals before blocked ones,
-and among them the evals that hold up the most other work first, so a failure that would
-block much of the Run shows early. The order you select or declare evals in only breaks
-ties.
+Waiting work starts in the Run's **scheduling order**: READY evals first, and among them
+the eval at the head of the longest chain of evals that wait on one another, so the work
+that needs the most steps to finish starts soonest. The order you select or declare evals
+in only breaks ties.
 
 ### Submit, observe and cancel
 

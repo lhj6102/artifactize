@@ -67,8 +67,9 @@ A folded branch shows its newest Run under its name: a dot in its status colour,
 its status and how long ago it ran (a running one, its time so far). Click a branch
 to expand it and show its newest entry; the chevron before its name expands or folds
 it without showing anything. Expanded, its timeline lists its Runs newest first, each
-with its status, age and Run ID. While a Run is in progress it comes first; otherwise
-the **Current** does, the worktree as it is now. **Older runs** at the end brings
+with its status, age and Run ID. The first entry is **Current**, the worktree as it is
+now; while a Run is in progress, that Run takes Current's place, and Current returns when
+the Run ends. **Older runs** at the end brings
 older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
 of branches can be expanded; the one the app was started for starts expanded.
 
@@ -90,7 +91,7 @@ reviews alike. A plain word matches part of a project, a branch or a waiting rev
 eval, ignoring case; `repo:` and `branch:` match part of that one field.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
-and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
+and values; in an empty field or after a space, ↓ opens the key suggestions. ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
 mouse. Enter without an open suggestion returns to the list. A query that cannot be
 read, such as an unknown key, shows its error in place of the branches, and neither list
 shows entries until it is fixed. Esc closes suggestions, then puts back `sort:recent`,

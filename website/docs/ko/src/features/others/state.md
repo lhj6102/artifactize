@@ -134,9 +134,8 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 `agentSessions` 값이 잘못되면 `verify`와 `prune`이 실패하고(종료 코드 2) `doctor`가 이를
 알립니다.
 
-저장 위치는 `$STATE/agent-sessions/`이고 나만 읽을 수 있으며, 세션마다 `sessionId`를 이름으로
-쓰는 JSON Lines 파일이 하나씩 있습니다. `session show --json`은 그 이벤트를 출력하며, 이벤트마다
-`kind`가 있습니다.
+저장 위치는 `$STATE/agent-sessions/`이고 나만 읽을 수 있습니다. `session show --json`은 세션의
+이벤트를 출력하며, 이벤트마다 `kind`가 있습니다.
 
 | `kind` | 담는 내용 |
 |---|---|

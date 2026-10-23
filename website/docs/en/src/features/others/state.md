@@ -152,9 +152,8 @@ conversations take more than `maxBytes`, it deletes the oldest sessions until th
 cleanup that fails during `verify` is reported on stderr and leaves the Run as it is. An
 invalid `agentSessions` value fails `verify` and `prune` (exit 2), and `doctor` reports it.
 
-The store is `$STATE/agent-sessions/`, readable only by you, with one JSON Lines file per
-session named by its `sessionId`. `session show --json` prints its events; each has a
-`kind`:
+The store is `$STATE/agent-sessions/`, readable only by you. `session show --json` prints
+a session's events; each has a `kind`:
 
 | `kind` | Holds |
 |---|---|

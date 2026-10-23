@@ -456,9 +456,9 @@ review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare
 (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
-`config check` checks the names and syntax of the profile each eval declares; references
-that appear only in a `profile_variants` entry are checked when that variant is selected, so
-run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
+`config check` checks the names and syntax of every profile, `profile_variants` entries
+included. The Artifacts that a variant's references name are looked up only when that
+variant is selected, so run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
 exists, and that no symbolic link is followed, is checked when the command is prepared.
 
 ## Runtime execution

@@ -173,8 +173,8 @@ artifactize keeps each Agent review's conversation on this machine, so you can r
 what the reviewer saw and said, and ask it a follow-up in the same conversation, much
 like continuing a chat. The recorded verdict never changes.
 
-**What is saved.** Each review session is kept in one file only your account can read
-([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
+**What is saved.** Each review session is kept where only your account can read it
+([store](others/state.md#agent-sessions)): the instructions, every message, each tool
 call with its result, the correction turn, token counts and the settings the review
 used. It is the only record of a review's tool calls: the request keeps its verdict,
 result and usage.
