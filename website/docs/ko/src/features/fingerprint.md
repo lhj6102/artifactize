@@ -49,7 +49,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 파일 Artifact는 대상 파일만 해시합니다. artifactsum 형식을 직접 쓸 때는
 `fingerprint = { files = ["hero.png"] }`처럼 그 파일만 적어야 합니다. 파일 Artifact에서는
 `fingerprint = {}`, `files = ["."]`, `ignore`(`[]`라도)를 거부합니다. 기본값을 쓰려면 필드를
-생략하고, 파일 말고 더 많은 것을 포함해야 하면 스크립트를 쓰세요.
+생략하고, 대상 파일 외의 입력까지 fingerprint에 반영하려면 스크립트를 쓰세요.
 
 예전 `dependencies` fingerprint 옵션은 거부합니다. fingerprint는 그 Artifact만 포함합니다.
 탐색 제한은 [레퍼런스](declarations.md#artifactsum)에, 스크립트 형식은

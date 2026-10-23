@@ -112,7 +112,7 @@ artifactize remote status
 `full`(`remote login --share full` 또는 `ARTIFACTIZE_REMOTE_SHARE=full`)은 추가로
 캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 소유자 필드에는
 텍스트를 자유롭게 쓸 수 있으므로, 공유되는 선언과 `pass_schema`, `fail_schema`가 허용하는 필드에는
-비밀을 넣지 마세요.
+API 키나 토큰 같은 민감한 정보를 넣지 마세요.
 
 **신뢰.**
 
