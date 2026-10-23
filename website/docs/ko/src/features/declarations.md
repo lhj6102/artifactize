@@ -1,6 +1,6 @@
 # 선언(.artf) {#declarations-artf}
 
-리뷰하려는 폴더 안에 `index.artf`를, 파일이라면 그 옆에 `NAME.artf`를 만든 다음 아래 명령으로 확인하세요.
+폴더를 리뷰하려면 그 안에 `index.artf`를, 파일을 리뷰하려면 그 옆에 `NAME.artf`를 만든 다음 아래 명령으로 확인하세요.
 
 ```sh
 artifactize config check
@@ -12,8 +12,7 @@ artifactize config check
 
 ## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
 
-`kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성 eval을 지우고, 필요한 Artifact를
-그 결과를 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에 `{name}` 참조로 넣으세요.
+`kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성 eval을 지우세요. 필요한 Artifact는 해당 Artifact를 입력으로 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에서 `{name}`으로 참조하세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
 `"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 관련 없는 형제 eval은 그대로 실행됩니다.
 
@@ -22,7 +21,7 @@ artifactize config check
 
 예전 프로필을 쓰면 설정을 해석하는 단계에서
 `unknown variant `dependency`, expected one of `agent`, `human`, `runtime`` 오류가 납니다.
-지원하는 프로필에 `depends_on` 필드가 있으면 알 수 없는 필드 오류입니다. 이는 리뷰 판정이
+지원하는 프로필이라도 `depends_on` 필드를 쓰면 알 수 없는 필드라는 오류가 납니다. 이는 리뷰 판정이
 아니라 설정 오류이므로, verify하기 전에 선언을 옮기세요.
 
 ## 선언 검사 {#declaration-validation}
@@ -60,7 +59,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
 | `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령을 실행하는 Agent 도구에만 씀 |
 | `evals.<id>.title` | 필수. 비어 있지 않은 제목 |
-| `evals.<id>.gate` | 선택. `"blocking"`이면 `--defer-human`에서도 Human 승인을 엄격하게 유지. 생략하면 요청 모드를 따름. 다른 값은 없음 |
+| `evals.<id>.gate` | 선택. `"blocking"`이면 `--defer-human`에서도 Human 승인을 미루지 않음. 생략하면 요청 모드를 따름. 다른 값은 없음 |
 | `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. Runtime과 Agent eval에만 씀. 기본값 없음 |
 | `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
 | `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
@@ -172,15 +171,13 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 `type = "object"`, `properties`, `required`, `additionalProperties`를 씁니다. `required`에
 적은 이름은 모두 선언한 속성이어야 합니다. 어느 스키마에나 `title`, `description`,
 `$comment`를 붙일 수 있으며, 속성의 `description`은 도움말로 나옵니다. 필수 필드에는 `*`가
-붙습니다. 비어 있는 선택 필드에는 *Optional*이 표시되고 결과에서 빠지며, 빈 목록 항목과 아무것도
-입력하지 않은 그룹도 빠집니다. 데스크톱 앱에서는 `+ Add`와 ✕ 버튼으로 항목과 그룹을 추가하고
+붙습니다. 비어 있는 선택 필드에는 *Optional*이 표시되며, 해당 필드는 결과에 포함되지 않습니다. 빈 목록 항목과 아무것도 입력하지 않은 그룹도 결과에 포함되지 않습니다. 데스크톱 앱에서는 `+ Add`와 ✕ 버튼으로 항목과 그룹을 추가하고
 지우며, 터미널 UI에서는 [Review 양식](../tui/index.md)에서 설명하는 키를 씁니다. 패턴, 형식,
 중첩 객체, 그룹 안의 목록, `$ref`, `anyOf` 같은 조합은 사람이 입력할 수 없으므로 거부합니다.
 Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습니다.
 
 스키마는 8 MiB까지입니다. Agent의 최종 응답 원문은 1 MiB까지이고, 정규화한 결과는 UTF-16 코드
-단위 256000개까지입니다. 최종 응답이 잘못되면 정해진 범위에서 한 번 수정을 요청할 뿐, 알림 없이
-필드를 지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
+단위 256000개까지입니다. 최종 응답이 잘못되면 한 번만 수정을 요청하며, 이때도 정해진 제한을 적용합니다. 알리지 않고 필드를 지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
 제한하며, 검사 오류를 알릴 뿐 요청을 확정하지 않습니다.
 
 ## 그래프 Artifact {#graph-artifact}
@@ -211,8 +208,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 ```
 
 이름 있는 일반 Artifact이므로 Runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
-`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이 없고, 자식 Artifact를 갖지 않으며,
-다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
+`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이나 자식 Artifact는 없고, 다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
 명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위 항목의
 `kind`는 `"graph"`이고 선언 경로는 `.artf`입니다.
 
@@ -240,7 +236,7 @@ artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf`
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
 실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
-내장 도구와 범위가 정해진 argv 참조는 대상 파일과 참조한 Artifact만 봅니다. `{name}`은 폴더가
+내장 도구와 범위가 정해진 argv 참조로는 대상 파일과 참조한 Artifact에만 접근할 수 있습니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
 Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 그 루트 안의 경로는 들어 있는
 폴더를 기준으로 합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
@@ -267,8 +263,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 파일을 되돌려 놓은 뒤 다시 verify하세요.
 
-없어진 예전 정책 필드와 대신 쓸 것은
-[업그레이드 안내](../getting-started/install.md#upgrading-from-011)를 보세요.
+어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에서 확인하세요.
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
@@ -337,8 +332,7 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 `files`, `ignore`, 파일 Artifact 형식은 [Fingerprint와 재사용](fingerprint.md#artifactsum)에
 있습니다. 태그는 해시하지 않습니다.
 
-탐색은 범위가 정해진 경로 규칙을 따릅니다. 심볼릭 링크와 특수 파일은 ignore하지 않으면
-실패합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
+탐색은 범위가 정해진 경로 규칙을 따릅니다. ignore하지 않은 심볼릭 링크나 특수 파일이 있으면 탐색에 실패합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
 심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. Artifact의 범위 밖으로는 나가지
 않으며, 항목 10,000개나 1 GiB를 넘으면 오류와 함께 탐색을 멈춥니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
@@ -354,7 +348,7 @@ eval을 선택하지 않은 의존성도 포함합니다. 동시에 몇 개를 �
 Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도의 출력 폴더를 줍니다.
 
 스크립트 출력은 그대로 Artifact의 fingerprint가 되며, 그 Artifact의 모든 eval에 같은 값이
-쓰이고 요청마다 저장됩니다. 이 값이 기준, 의존성과 어떻게 합쳐지는지는
+쓰이고 요청마다 저장됩니다. 이 값을 평가 기준 및 의존성과 어떻게 조합하는지는
 [재사용 키](fingerprint.md#the-reuse-key)에 있습니다. artifactsum이 실패해도 똑같이 준비를
 멈춥니다.
 
@@ -362,7 +356,7 @@ Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도�
 받아 실행됩니다. 경로 없는 명령은 PATH에서 찾고, 절대 경로 실행 파일은 그대로 실행합니다.
 `./fingerprint.sh`처럼 `/`가 든 상대 경로 실행 파일은 폴더 Artifact의 허용된 범위 안에서
 찾습니다. 파일 Artifact라면 들어 있는 폴더 아래에서 찾으며 상관없는 옆 파일을 가리킬 수도
-있습니다. 어느 쪽이든 상위 경로로 올라가기와 심볼릭 링크는 거부합니다. 인자는 범위가 정해진
+있습니다. 어느 쪽이든 상위 경로로 올라가거나 심볼릭 링크를 거치는 경로는 거부합니다. 인자는 범위가 정해진
 Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 Artifact 이름입니다. 스크립트에서는
 참조한 Artifact와 그 자식까지 접근할 수 있지만, 이 참조로 그래프에 관계가 추가되지는 않습니다.
 `config check`는 모르는 참조와 형식이 잘못된 참조를 거부하며, 존재 여부와 심볼릭 링크는 명령을
@@ -373,9 +367,7 @@ Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 A
 확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 원본 출력의 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
 디렉터리는 실행이 끝나면 지웁니다. stdout은 `[A-Za-z0-9._:-]`로 이뤄진 1–128자의 ASCII여야
 하며, 그 뒤에 LF 하나(Windows에서는 CRLF 하나)만 올 수 있습니다. 그 밖의 공백은 허용하지 않고
-앞뒤 공백을 지워 주지도 않습니다. 종료 코드가 0이 아니거나, 출력 형식이 잘못됐거나, 시간이
-초과됐거나, 취소됐거나, 파일이 없거나, 정리에 실패하면 동작 오류로 준비를 멈추며, eval도, 캐시 없는
-리뷰도 시작하지 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
+앞뒤 공백을 지워 주지도 않습니다. 종료 코드가 0이 아니거나, 출력 형식이 잘못됐거나, 시간이 초과됐거나, 취소됐거나, 파일이 없거나, 정리에 실패하면 동작 오류로 준비를 멈춥니다. eval을 시작하지 않으며, 캐시 없이 리뷰하는 방식으로 전환하지도 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
 
 Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
@@ -435,5 +427,4 @@ Run의 `output` 폴더를 지우지만 이 스트림 캡처는 남깁니다. 캡
 백그라운드에서 시작한 프로그램이 명령보다 오래 남지 않습니다. 계속 실행되어야 하는 보조 프로그램에는
 Agent [도구 세션](tools/agent.md#tool-sessions)이나 Human [launch 도구](tools/human.md#running)를
 쓰세요. 명령은 사용자가 신뢰하는 로컬 코드로 보고
-**샌드박스 없이** 실행합니다. 명령은 내 계정의 권한으로 실행되므로 내 계정이 할 수 있는 일은 무엇이든 할 수 있습니다. 명령이 리뷰하는
-입력을 바꾸면 안 됩니다. 부모 프로세스에서 일부러 분리해 실행한 프로그램은 명령이 끝난 뒤에도 계속 실행될 수 있습니다.
+**샌드박스 없이** 실행합니다. 명령은 내 계정의 권한으로 실행되므로 내 계정이 할 수 있는 일은 무엇이든 할 수 있습니다. 명령은 리뷰 대상인 입력을 바꾸면 안 됩니다. 부모 프로세스에서 일부러 분리해 실행한 프로그램은 명령이 끝난 뒤에도 계속 실행될 수 있습니다.

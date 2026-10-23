@@ -33,12 +33,9 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본 상한이 없습니다**. 머신이 감당하기
 어려울 만큼 프로세스가 많아지는 등 한꺼번에 실행하는 것이 문제를 일으킬 때만 `--jobs N`(최소
 1)을 쓰세요. `--jobs`나 백엔드 한도 때문에 일부만 실행할 수 있으면 나머지는 이유와 함께 QUEUED로
-표시되고, 앞선 작업이 끝나는 대로 시작합니다. `--max-executions`는 다릅니다. Run이 시작하는 리뷰의
-총수를 제한하며, 다 쓰고 나면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로
-끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
+표시되고, 앞선 작업이 끝나는 대로 시작합니다. `--max-executions`는 다릅니다. Run에서 시작할 수 있는 리뷰의 총수를 제한합니다. 한도에 도달하면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로 끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
-[백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기, 백엔드 자리
-대기, 합류한 실행 대기, 직접 정한 Run의 작업 상한 대기를 뜻할 수 있습니다. 백엔드 자리가
+[백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수를 기다리거나 백엔드 자리가 나기를 기다릴 때, 합류한 실행이 끝나기를 기다릴 때, 직접 정한 Run의 동시 실행 상한 때문에 대기할 때 표시됩니다. 백엔드 자리가
 빌 때까지 대기 중인 요청은 Run의 `--jobs` 동시 실행 수에 포함되지 않습니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
@@ -50,7 +47,7 @@ Run은 요청한 쪽과 상관없이 artifactize가 관리합니다. 옵션 없�
 방법은 `run cancel RUN_ID`뿐입니다. 요청이 기록되면 바로 0으로 종료하고, 그 뒤 Run은 새 작업을
 시작하지 않고, 실행 중인 작업을 멈추고, 이미 저장된 결과는 남긴 채 ERROR/CANCELLED로 끝납니다.
 작업이 정말 멈췄는지 확인하려면 `run watch RUN_ID`나 `run show RUN_ID`로 이어서 보세요. 이 Run이 다른 Run의 실행에 합류했다면 그 원래 실행은 멈추지 않습니다. 미룬 승인을 포함해 아직 대기 중이던 승인도
-ERROR로 끝나고, 다른 Run이 거기에 합류한 요청도 마찬가지이며, 다음 `verify`가 다시 요청합니다.
+ERROR로 끝나고, 다른 Run에서 그 승인에 합류한 요청도 마찬가지이며, 다음 `verify`가 다시 요청합니다.
 이는 Run이 실행 중일 때만 해당합니다. 이미 SIGNOFFS_PENDING으로 끝난 Run은
 취소해도 바뀌는 것이 없고, 미룬 승인은 계속 남아 있습니다. 프로세스가 죽은 작업은
 ERROR/OWNER_DIED로 끝나고 자동으로 다시 실행되지 않으니 다시 verify하세요.
@@ -85,12 +82,10 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [요청별 verify 모드](../cli/index.md#verify-modes)인 `--speculate`와 `--defer-human`은
 기본으로 꺼져 있고 Run의 `modes`에 저장됩니다. 같은 요청 키로 다시 제출하면 처음 선택한 모드를 그대로 씁니다.
 
-추측 실행은 요청한 Runtime, Agent, Human eval을 게이트가 정해지기 전에 `--jobs`, 백엔드 수용량,
-`--max-executions` 한도 안에서 시작합니다. Human eval은 같은 Artifact의 Human이 아닌 다른 eval이
+추측 실행을 사용하면 게이트 조건의 충족 여부가 정해지기 전에도 요청한 Runtime, Agent, Human eval을 시작합니다. 이때도 `--jobs`, 백엔드 수용량, `--max-executions` 한도를 지킵니다. Human eval은 같은 Artifact의 Human이 아닌 다른 eval이
 모두 GREEN이 되기 전에는 절대 요청하지 않습니다. 준비된 작업이 먼저 실행됩니다. 준비된 작업에 추측 실행 리뷰가 쓰고 있는 자리가 필요하면 그 리뷰를 중단했다가 나중에 다시 시작하며, 시작할 때마다 `--max-executions`로 정한 실행 횟수에 포함됩니다. 상위 eval이 RED나 ERROR가
 되면 그 결과로 무효가 된 하위 작업만 바로 취소합니다. 취소 대상은 실패한 상위 eval에 의존하는 eval이며, 실패한 eval과 같은 Artifact에
-속하거나 같은 순환에 드는 eval은 제외합니다. 취소한 eval은 재사용할 수 있는 결과를 남기지 않고 BLOCKED로 표시합니다. GREEN이면 같은
-파일로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
+속하거나 같은 순환에 드는 eval은 제외합니다. 취소한 eval은 재사용할 수 있는 결과를 남기지 않고 BLOCKED로 표시합니다. 상위 eval이 GREEN이면 같은 파일을 대상으로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.
 
 승인을 미루면 Human 게이트가 대기 중이어도 그 뒤의 작업을 계속 실행합니다. 미룰 수 있는 승인 요청은
@@ -100,7 +95,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 아닙니다. `gate = "blocking"`은 엄격한 Human 게이트를 유지합니다. 나머지 검증 요건을 모두 충족하면
 Run은 SIGNOFFS_PENDING(종료 코드 5)으로 끝나며, 이는 **승인만 남았다**는 뜻입니다. 승인이
 제출되지 않아도 Run은 끝납니다. 나중에 제출하면 요청이 바뀔 뿐, 지난 Run의 판정은 바뀌지
-않습니다. 새 verify는 바뀌지 않은 잠정 자동 검사 결과를 재사용합니다. 승인이 GREEN이면
+않습니다. 새 verify에서는 자동 검사의 잠정 결과가 바뀌지 않았으면 이를 재사용합니다. 승인이 GREEN이면
 SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `--reuse-only agent,human`은 대기
 중인 승인을 GREEN으로 간주하지 않으므로 CI에 그대로 쓸 수 있습니다.
 
@@ -116,9 +111,7 @@ fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 
 verify를 다시 실행하면 Human 증거가 확보될 때까지 대기합니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING인 Run을, 실행은
 끝났지만 최종 검증 요건은 충족하지 못한 상태로 표시합니다.
 
-텍스트 형식에서는 요청별 결과를 한 줄씩 보여 주며, 다른 요청의 실행에서 가져온 결과(fingerprint 적중이나
-합류한 실행)에는 그 출처 Run을 표시합니다([원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서
-온 결과에는 만든 사람이나 Human 리뷰어도 나옵니다).
+텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint 적중이나 합류한 실행처럼 다른 요청의 실행에서 가져온 결과에는 출처 Run을 표시합니다. [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
 
 ```text
   web/tests [run-x05qFq-5]: GREEN
@@ -129,7 +122,7 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 
 `executed`는 ERROR 결과와 이 Run이 기록한 Human 요청을 포함해 이 Run이 직접 실행한 횟수이고,
 `reused`는 캐시, 합류, 원격 결과를 셉니다. 모델, 제한 같은 설정은 재사용 키에
-들어가지 않으므로, 다른 설정의 프로필이 만든 결과도 재사용될 수 있습니다. 그런 결과의 줄에는
+들어가지 않으므로, 설정이 다른 프로필로 얻은 결과도 재사용될 수 있습니다. 그런 결과의 줄에는
 `profile NAME`이 붙습니다. 요약 끝에는 `; N produced by another profile`(JSON에서는
 `summary.reused.otherProfile`)이 붙습니다. 설정이
 같은 변형의 결과에는 표시가 붙지 않으며, 저장된 `options.variant`에 변형 이름이 있습니다.
@@ -145,7 +138,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그
 "source": {"runId": "run-Ksl1Qr", "requestId": "run-Ksl1Qr-3", "kind": "cache"}
 ```
 
-`kind`는 재사용 키의 완료된 기록이면 `cache`, 같은 키로 실행 중인 작업(다른
+`kind`는 해당 재사용 키로 저장된 완료 기록을 썼으면 `cache`, 같은 키로 실행 중인 작업(다른
 `verify`나 같은 Run의 형제 eval)이 끝날 때까지 대기한 뒤 그 결과를 썼으면 `joined`,
 [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)의 기록이면 `remote`입니다.
 `run show`, `request show`, `request list --json`에도 `source`가 있습니다.
@@ -189,9 +182,8 @@ Artifact와 현재 fingerprint, 없으면 null), 이를 합친 `key`(fingerprint
 0은 현재 검증 요건을 모두 충족했다는 뜻이고, 1은 아직 충족하지 못한 요건이 남았다는 뜻이며, 입력이나 상태가 잘못되면 2입니다.
 
 status도 verify와 같은 격리와 검사 규칙을 적용하며, `--fingerprint-jobs` 한도 안에서
-선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 계산합니다. fingerprint가 실패하면 2로 종료하며, 예전에 저장한
-fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하거나 Run을 만들지 않고, 작업 실행을
-맡지도 않습니다. 없는 데이터베이스를 새로 만들지 않으며, 로컬 캐시의 사용 시각도 바꾸지 않습니다. 다만
+선택한 범위의 실행 가능한 eval에 필요한 fingerprint를 계산합니다. fingerprint 계산에 실패하면 2로 종료하며, 예전에 저장한
+fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하거나 Run을 만들지 않고, 실행할 작업을 예약하지도 않습니다. 없는 데이터베이스를 새로 만들지 않으며, 로컬 캐시의 사용 시각도 바꾸지 않습니다. 다만
 팀 리뷰 저장소에서 찾은 결과는 그 저장소에서 사용한 것으로 기록되므로 더 오래 보관됩니다. fingerprint
 스크립트는 상태 디렉터리 아래의 버려도 되는 출력 폴더를 쓰며, 데이터베이스가 없어도 이 폴더는
 생길 수 있습니다. `config graph`와 `config check`는 완전히 정적이며 프로젝트 코드를 실행하지
@@ -223,8 +215,7 @@ summary}`를 알려 줍니다. 텍스트로는 `Fingerprint changed since Run RU
 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
 대상 Artifact에 속한 파일의 변경을 `path`(바뀜), `+path`(추가), `-path`(삭제)로 보여 주고, `dependencies`는
 fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
-줍니다. 스크립트 fingerprint나 파일 목록이 빠진 매니페스트는 대상에 대해
-`fingerprint changed`나 `inputs changed`만 알릴 수 있습니다. 그 eval 정의가 캐시된 적이 없거나
+줍니다. fingerprint를 스크립트로 계산했거나 매니페스트에 파일 목록이 없으면, 대상의 변경 내역은 `fingerprint changed`나 `inputs changed`로만 표시할 수 있습니다. 그 eval 정의가 캐시된 적이 없거나
 강제로 실행한 eval이면 설명이 나오지 않습니다. 강제로 실행하지 않은 READY Runtime/Agent eval에 키가 없으면,
 실행 사유에 `fingerprint = false`를 선언한 대상이나 의존성이 나옵니다. READY인 Human eval은 키가
 없어도 "Record a request awaiting a Human claim and submission"이라고 나옵니다. 막혔거나

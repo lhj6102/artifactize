@@ -14,8 +14,7 @@ payload.instruction = "Check that every link in the docs resolves."
 ```
 
 그다음 `artifactize config check`를 실행하면 `Folder configuration is valid.`가 나오거나,
-오류가 나옵니다. 선언 안의 실수라면 그 파일, 줄, 열이, 대상 파일이 없는 것 같은 문제라면 그
-경로가 나옵니다. artifactize는 이 선언들을 읽어 의존성 그래프 하나로
+오류가 나옵니다. 선언 내용이 잘못되었으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 등의 문제라면 해당 경로가 나옵니다. artifactize는 이 선언들을 읽어 의존성 그래프 하나로
 만듭니다.
 
 ## Artifact Graph {#artifact-graph}
@@ -82,7 +81,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
 파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
-폴더이지만, 내장 도구는 상관없는 옆 파일이 아니라 그 파일과 허용된 범위만 봅니다. 사이드카를
+폴더이지만, 내장 도구로는 상관없는 옆 파일에 접근할 수 없고, 그 파일과 허용된 범위에만 접근할 수 있습니다. 사이드카를
 추가해도 그 파일 Artifact가 상위 폴더 Artifact의 자식이 되지는 않으며, 상위 폴더의 해시에는 대상
 파일이 계속 들어갑니다. 반면 `index.artf`로 선언한 폴더는 그 위에서 가장 가까운 Artifact 폴더의 자식입니다.
 이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
@@ -116,8 +115,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 실행할 수 있습니다.
 
 모든 eval은 입력의 판정과 상관없이 그 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
-효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval이 늦어지고,
-입력 리뷰가 RED면 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 상위 리뷰를 포함해 필요한 증거가
+효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval도 대기하고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 상위 리뷰를 포함해 필요한 증거가
 모두 있어야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
@@ -136,9 +134,7 @@ Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 R
 
 순환으로 묶인 대상을 참조하는 eval도 순환 밖 입력의 검사 결과가 나올 때까지 대기합니다. `cli`의 eval이
 `core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
-`docs/matches-cli`도 막힙니다. 이 Artifact들의 eval 중 순환으로 묶인 대상도, 입력도, 자식도
-참조하지 않는 eval은 이들 때문에 늦어지지 않지만, Run이 GREEN으로 끝나려면 이들의 결과가
-모두 필요합니다. 다른 곳에서 `docs`를
+`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환으로 묶인 대상이나 입력, 자식을 참조하지 않으면 이들의 결과를 기다리지 않고 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환으로 묶인 대상과 입력, 자식의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
@@ -172,5 +168,5 @@ ASCII 제어 문자가 없고 비어 있지 않은 고유한 문자열이며 64�
 해시, 재사용 키, 관계, `verify`와 `status`의 선택을 바꾸지 않습니다. 이런 명령에는 태그로
 거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. 태그로 걸러 보는 곳은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
 
-템플릿이 필요한 프로젝트는 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은
+프로젝트에 템플릿이 필요하면 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은
 [선언 검사](declarations.md#declaration-validation)에 있습니다.

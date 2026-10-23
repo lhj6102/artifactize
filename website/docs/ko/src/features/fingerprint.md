@@ -18,8 +18,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,
   파일 Artifact는 대상 파일 하나를 해시합니다.
 - `fingerprint = { script = { command = "hash", args = [] } }`는 명령의 출력을
-  fingerprint로 씁니다. artifactize가 따로 해시를 계산하지 않으므로, 다시 리뷰해야 할 입력과 스크립트의
-  변경을 모두 명령의 출력에 반영해야 합니다.
+  fingerprint로 씁니다. artifactize가 따로 해시를 계산하지 않으므로, 입력이나 스크립트가 바뀌어 다시 리뷰해야 한다면 그 변경을 모두 명령의 출력에 반영해야 합니다.
 - `fingerprint = false`는 재사용을 끕니다. `fingerprint = true`는 거부합니다.
 
 ## Artifactsum {#artifactsum}
@@ -57,7 +56,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 ## 재사용 키 {#the-reuse-key}
 
-eval은 대상 Artifact와, 대상과 직접 이어진 것에 의존합니다.
+eval은 대상 Artifact와, 대상에 직접 연결된 다음 Artifact에 의존합니다.
 
 - 대상의 자식 Artifact
 - eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact
@@ -127,8 +126,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 ## 0.9로 업그레이드 {#upgrading-to-09}
 
 선언, 상태 디렉터리, 터미널 변경은
-[설치: 0.9로 업그레이드](../getting-started/install.md#upgrading-to-09)를 보세요. 재사용 키
-v2는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 이전 결과와 하나도 맞지 않습니다.
+[설치: 0.9로 업그레이드](../getting-started/install.md#upgrading-to-09)를 보세요. 재사용 키 v2로는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 이전 결과를 하나도 재사용할 수 없습니다.
 그래서 처음 전체 `verify`를 할 때 Human 승인을 포함해 실행 가능한 eval을 모두 한 번 리뷰하고,
 그 뒤 Run부터는 평소처럼 재사용합니다.
 
@@ -145,9 +143,7 @@ v2는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 �
 - eval ID, 소유 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과 소유자
   맥락을 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
 
-평가 실행 옵션(백엔드, 모델, reasoning, fingerprint 스크립트 시간 제한을 포함한 모든
-`timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그), 모든 도구
-뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용은 빠집니다. 선언한 범위 경로와 범위가 정해진
+평가 실행 옵션은 빠집니다. 여기에는 백엔드, 모델, reasoning과 fingerprint 스크립트 시간 제한을 비롯한 모든 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그가 포함됩니다. 모든 도구 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용도 빠집니다. 선언한 범위 경로와 범위가 정해진
 인자의 접미 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프
 fingerprint는 바뀌지 않습니다. 실행 옵션은 그래프 fingerprint에서 빠질 뿐, 일반 상태 기록에는 그대로 저장됩니다.
 

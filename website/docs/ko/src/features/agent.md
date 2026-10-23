@@ -29,14 +29,12 @@ artifactize models codex
 
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
 `xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를 받습니다. 그 밖의 값은 선언
-오류이며, 다른 값으로 바꿔서 보내지 않습니다. 모델이 요청한 설정을 지원하지 않으면 provider에서
-실패하며, artifactize가 다른 모델로 바꾸거나 강도를 낮추지 않습니다. 응답에 모델 ID가 나오면
+오류이며, 다른 값으로 바꿔서 보내지 않습니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
 Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
-들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필이 만든
-결과도 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
+들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필로 실행해 얻은 결과도 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
 제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. `{name}`
@@ -51,7 +49,7 @@ artifactize가 한 번 고쳐 달라고 요청하고, 그래도 잘못되면 리
 
 ## Agent 프로필 제한 {#agent-profile-limits}
 
-Agent 프로필은 `max_tokens`와 `max_tool_calls`로 리뷰의 한도를 정할 수 있습니다.
+Agent 프로필에서 `max_tokens`와 `max_tool_calls`로 리뷰의 한도를 정할 수 있습니다.
 
 ```toml
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
@@ -61,14 +59,13 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 저장소의 토큰과는 상관없습니다. 두 예산 모두 선택 항목이며 1부터 9007199254740991까지의 정수를
 받습니다. 생략하면 그 예산은
 무제한입니다. 이는 provider의 생성 매개변수가 아니라 클라이언트 쪽 리뷰 예산입니다.
-`max_tokens`는 모든 턴과 수정 요청 턴에서 성공한 응답마다 보고된 `total_tokens`(보고된 캐시 읽기·쓰기 포함)를
-합산한 값으로 셉니다. 합계가 보고되지 않으면 0으로 셉니다. 사용량은 응답을 받은 뒤에
+`max_tokens`로 제한하는 사용량은 모든 턴과 수정 요청 턴에서 성공한 응답에 보고된 `total_tokens`를 합산한 값입니다(보고된 캐시 읽기·쓰기 포함). 합계가 보고되지 않으면 0으로 셉니다. 사용량은 응답을 받은 뒤에
 확인하고 합계가 한도를 넘을 때만 실패로 처리하므로, 실제 사용량은 한도를 넘을 수 있으며 이 설정이 생성량이나 비용의 엄격한
 상한이 되지는 않습니다.
 
 `max_tool_calls`는 도구를 실행하기 전에 호출 시도를 세며, 성공한 호출뿐 아니라 모르는 도구,
 잘못된 호출, 실패한 호출도 포함합니다. 둘 중 하나라도 넘으면 `PROVIDER_BUDGET_EXCEEDED`로
-작업을 멈춥니다. 수정 요청도 원래 리뷰 제한 시간과 예산 안에서 하며, 예산을 새로 받지 않습니다.
+작업을 멈춥니다. 수정 요청을 할 때도 원래 리뷰의 제한 시간과 예산을 적용하며, 예산을 추가하지 않습니다.
 
 ## Agent 도구 {#agent-tools}
 
@@ -98,7 +95,7 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
-provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤쪽 턴일수록 비용이 줄어듭니다. 얼마나
+provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반에는 턴당 비용이 줄어듭니다. 얼마나
 캐시되었는지는 `usage`에 있는 시도별 `cacheReadTokens` 수치로 확인하세요(`verify --wait
 --json`, `run show`, `request show`, `session show --summary`). 강제로 실행한 리뷰도 포함해 리뷰는 매번 새로 시작합니다. [follow-up](#saved-conversations)은 그 리뷰의 대화를 이어 가므로 캐시를
 쓸 수 있습니다. 캐시 적중 여부는 provider가 정합니다. `anthropic` follow-up은 답이 판정이 아닌
@@ -110,13 +107,13 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로 리뷰의 뒤�
 |---|---|---|
 | `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부됨: HTTP 401/403, API 키 없음, Codex 로그인 없음, 만료된 인증 파일 | 안 함. 백엔드를 멈춤 |
 | `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 안 함. 백엔드를 멈춤 |
-| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나 `Retry-After`가 제한 시간에 도달함 | 함 |
+| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상임 | 함 |
 | `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림. 요청한 재시도 대기가 너무 길어도 이 분류를 유지 | 출력 전이면 함 |
 | `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 안 함 |
 | `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘음 | 안 함 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |
-| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 모르거나 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
+| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
 | `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
 | `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
 
@@ -129,7 +126,7 @@ Ctrl-C로 `verify --wait`를 중단해도 진행 상황 표시만 멈추며, Age
 
 ### 백엔드 멈추기 {#stopping-a-backend}
 
-`AUTHENTICATION`이나 `QUOTA` 실패는 같은 백엔드의 모든 리뷰에서 똑같이 반복되므로, 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다. 그 Run에서 뒤이어 오는 같은 백엔드의 리뷰는 시작하지 않고
+`AUTHENTICATION`이나 `QUOTA` 실패는 같은 백엔드의 모든 리뷰에서 똑같이 반복되므로, 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다. 이후 그 Run에서 같은 백엔드로 실행하려던 리뷰는 시작하지 않고
 `BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 자리가 날 때까지
 대기하던 리뷰([백엔드 수용량](others/state.md#backend-capacity))도 같은 방식으로 대기를
 멈추며, 멈춘 백엔드의 요청은 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
@@ -144,9 +141,7 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 실행됩니다. 각 도구가 무엇을 받고
 돌려주는지는 [Agent 도구](tools/agent.md#agent-tools)에 있습니다. PNG/JPEG/WebP 결과는 모든 백엔드에
-보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는
-성공했을 때와 ERROR일 때 모두 저장하며, 캐시가 적중하면 그 시도는 `reusedUsage`로 옮겨지고
-쓴 것으로 세지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나
+보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는 성공했을 때와 ERROR일 때 모두 저장합니다. 캐시가 적중하면 해당 시도의 사용량을 `reusedUsage`로 옮겨 기록하고, 새로 쓴 사용량에 포함하지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나
 비용이 아닙니다. Anthropic의 `inputTokens`는 캐시하지 않은 입력만 센 값이고 캐시 읽기·쓰기
 수치는 따로 있습니다. OpenAI의 입력에는 캐시 읽기가 이미 포함되어 있습니다. 모든 수치를 더하지
 마세요. 보고되지 않은 필드는 빠집니다. 요청에는 판정, 결과, 사용량이 남고, 메시지, reasoning,
@@ -169,8 +164,7 @@ artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그�
 결과, 사용량만 남습니다. 저장에 실패해도 리뷰는 실패하지 않습니다. 쓰기 오류는 stderr에 출력하고 리뷰는 저장
 없이 계속됩니다.
 
-**참조.** 대화가 저장된 요청은 `verify --wait --json`, `run show`, `request show`에
-`session` 필드가 들어 있습니다.
+**참조.** 대화가 저장된 요청을 `verify --wait --json`, `run show`, `request show`로 확인하면 `session` 필드가 나옵니다.
 
 ```json
 "session": {
@@ -212,10 +206,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 전에
   갱신합니다. 서버가 갱신 토큰을 더 이상 허용하지 않으면 artifactize는 저장된 토큰을 지우고, 리뷰는 다시
   로그인하라는 오류로 끝납니다.
-- **이미 있는 Codex 로그인 쓰기.** `ARTIFACTIZE_CODEX_AUTH_FILE`을 예를 들어
-  `~/.codex/auth.json`(1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로
-  쓰이지 않습니다)으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의
-  `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 그 파일을 쓰거나 복사하거나
+- **이미 있는 Codex 로그인 쓰기.** 예를 들어 `ARTIFACTIZE_CODEX_AUTH_FILE`을 `~/.codex/auth.json`으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의 `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 지정한 파일은 1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로 쓰이지 않습니다. 그 파일을 쓰거나 복사하거나
   갱신하지는 않습니다. 토큰 만료까지 남은 시간이 1분 이하이면 리뷰는 `codex login` 등으로 Codex에 다시
   로그인하라는 메시지와 함께 실패합니다. `logout codex`는 그 파일을 건드리지 않습니다.
 - **요청.** provider는 대화를 보관하지 않습니다. 선언한 `reasoning`은 `max`를 포함해 그대로
@@ -232,7 +223,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}
 
 모델 없이 도구, 스키마, 결과 해석을 시험하려면 백엔드를 이 머신의 가짜 provider에
-연결하세요. 아래 변수가 provider의 API 루트를 대신합니다.
+연결하세요. 아래 변수로 provider의 API 루트를 바꿀 수 있습니다.
 
 | 백엔드 | 변수 | 예 | 가짜 provider가 응답할 요청 |
 |---|---|---|---|

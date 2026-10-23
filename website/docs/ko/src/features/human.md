@@ -19,8 +19,7 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 
 리뷰어가 요청을 **맡으면**(`claim`) 그 리뷰어가 담당자로 지정됩니다. 이와 별개로, 다른 Run에서 같은 입력과
 프로필에 대한 승인이 필요하면 다른 체크아웃에서 실행한 Run이라도 새로 요청하지 않고 대기 중인
-리뷰에 합류합니다. 이렇게 합류한 요청을 **팔로워**라고 하며, 팔로워 요청에서 한 Human 작업은 원래
-요청이 있는 저장소에서 원래 요청을 대상으로 처리됩니다. `--force`는 합류하지 않고 새 승인을 요청하지만, 새 요청에서도 사람이 먼저
+리뷰에 합류합니다. 이렇게 합류한 요청을 **팔로워**라고 하며, 팔로워 요청에서 Human 작업을 해도 실제로는 원래 요청이 있는 저장소에서 원래 요청을 대상으로 처리합니다. `--force`는 합류하지 않고 새 승인을 요청하지만, 새 요청에서도 사람이 먼저
 맡아야 도구를 실행하거나 판정을 제출할 수 있습니다.
 
 승인은 [리뷰한 입력](fingerprint.md)이 그대로면 기본으로 재사용합니다. 이후 `verify`는 제출된
@@ -73,8 +72,7 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 fingerprint가 필요하므로 `fingerprint = false`면 재사용하지 않습니다.
 
 같은 워크트리에서 같은 eval에 더 새로운 요청이 오면, 재사용 키가 다른 이전 DEFERRED 승인은
-끝나고 Review에서 사라집니다. 이렇게 끝나는 규칙, 합류, Run이 끝난 뒤의 승인 제출은
-[Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
+끝나고 Review에서 사라집니다. 이전 승인이 종료되는 조건과 리뷰 합류 방식, Run이 끝난 뒤 승인을 제출하는 방법은 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
 
 승인이 반려될 때 그 결과에 의존하는 많은 작업을 다시 해야 한다면, 승인이 끝날 때까지 그 작업을 막도록 게이트를 직접 지정하세요.
 
@@ -127,8 +125,7 @@ edit = { description = "Open {artifactName} in VS Code.", kind = "launch", comma
 ## 결과 양식 {#result-forms}
 
 리뷰어는 eval의 `pass_schema`(GREEN)나 `fail_schema`(RED)로 만든 양식에 결과를 입력합니다.
-텍스트, 숫자, true/false, 선택지, 텍스트 목록, 필드를 반복하는 그룹이 있으며, 상수는 미리
-채워집니다. Human eval의 스키마에는 이런 형태만 쓸 수 있습니다.
+텍스트, 숫자, true/false, 선택지, 텍스트 목록, 반복해서 추가할 수 있는 필드 그룹이 있으며, 상수는 미리 채워집니다. Human eval의 스키마에는 이런 형태만 쓸 수 있습니다.
 [선언 레퍼런스](declarations.md#human-result-schemas)에 지원하는 형태의 목록과 화면 표시 방식이
 정리되어 있습니다.
 
