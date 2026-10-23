@@ -67,7 +67,7 @@ macOS 11 이상의 Apple 실리콘 Mac과 Intel Mac을 모두 지원합니다.
 스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 시작 메뉴의
 **Artifactize** 항목은 [데스크톱 앱](#desktop-app)을 엽니다. Store 버전의
 [시작 메뉴 항목](../features/others/platforms.md#desktop-console-launches)과
-[별도로 유지하는 상태](../features/others/state.md#state)는 다른 Windows 차이점과 함께
+[별도로 유지하는 상태](../features/others/state.md#state)는 Windows에서 달라지는 다른 동작과 함께
 설명합니다.
 
 **Linux.** x86_64 Ubuntu 22.04, Debian 12 이상에서는

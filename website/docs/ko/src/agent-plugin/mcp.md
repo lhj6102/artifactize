@@ -177,8 +177,8 @@ offset은 UTF-8 바이트 오프셋입니다. `run_list.offset`은
 cursor는 저장된 증거가 그대로인 동안 같은 도구와 같은 인자에서만 동작하며, 시간이 흐른다고
 만료되지는 않습니다. cursor가 거부되면 같은 도구를 첫 페이지부터 다시 호출하세요. 실패한
 도구 호출은 `{code,message}`와 함께 MCP `isError:true`를 돌려줍니다. `operation_failed`에는 CLI의
-오류 메시지가 처음 2,048자까지 담깁니다. `response_too_large`는 답이 세부 페이지 하나에 들어가지
-않는다는 뜻이니, `request_logs`의 범위나 검색처럼 확인 범위를 좁히세요. 불완전한 페이지를 전체
+오류 메시지가 처음 2,048자까지 담깁니다. `response_too_large`는 응답이 세부 페이지 하나에 담기지
+않는다는 뜻이므로, `request_logs`의 조회 범위나 검색 조건을 조정해 조회할 내용을 줄이세요. 불완전한 페이지를 전체
 결과처럼 보이게 하려고 세부 내용을 자르는 일은 없습니다.
 
 ## 일부러 빼놓은 것 {#deliberately-absent}
