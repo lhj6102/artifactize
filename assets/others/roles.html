@@ -1,15 +1,18 @@
 <!doctype html>
-<!-- Who does the work: how people and AI agents share directing, building and evaluating.
-     capture.mts renders it into roles.en.png; the README and the landing page use that image. -->
+<!-- Who does the work around Artifactize: how people and AI agents share directing, building
+     and evaluating. capture.mts renders it into roles.en.png; the README and the landing page use
+     that image. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Roles of people and agents</title>
-<!-- The landing page's brand fonts; capture.mts serves them at /fonts/. -->
+<!-- The landing page's brand fonts and the brand icon; capture.mts serves them at /fonts/ and
+     /brand/. -->
 <link rel="stylesheet" href="/fonts/fonts.css">
 <style>
   :root {
     --bg: #F7F9FC;
+    --line: #D9DFE8;
     --text: #0F141B;
     --agent: #7C3AED;
     --human: #C26A0A;
@@ -21,38 +24,71 @@
   body { color: var(--text); }
 
   .figure {
-    display: grid;
-    grid-template-columns: 300px 1fr;
-    align-content: center;
-    row-gap: 44px;
-    width: 1200px;
-    height: 480px;
-    padding: 0 80px;
+    position: relative;
+    width: 1440px;
+    height: 600px;
     background: var(--bg);
   }
 
-  h2 {
-    margin: 0;
-    align-self: center;
+  .links {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .links path { fill: none; stroke: var(--line); stroke-width: 2.4; stroke-linecap: round; }
+
+  /* ---------- Artifactize in the middle ---------- */
+
+  .center {
+    position: absolute;
+    left: 520px;
+    top: 250px;
+    width: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .center img { width: 220px; height: 220px; }
+  .center p {
+    margin: 10px 0 0;
     font: 700 52px/1 var(--display);
     letter-spacing: -0.03em;
   }
 
-  /* One bar per role: each share is as wide as its part of the role and shows who takes it. */
+  /* ---------- The roles around it ---------- */
+
+  .role {
+    position: absolute;
+    width: 440px;
+    text-align: center;
+  }
+  .role.director { left: 500px; top: 56px; }
+  .role.builder { left: 70px; top: 264px; }
+  .role.evaluator { left: 930px; top: 264px; }
+  .role h2 {
+    margin: 0 0 22px;
+    font: 700 56px/1 var(--display);
+    letter-spacing: -0.03em;
+  }
+
+  /* One bar per role: each share is as wide as its part of the role, but never narrower than
+     its icon, and shows who takes it. */
   .bar {
     display: flex;
     gap: 6px;
-    height: 76px;
+    height: 56px;
   }
   .bar span {
     display: grid;
     place-items: center;
-    border-radius: 38px;
+    min-width: 56px;
+    border-radius: 28px;
     color: #FFFFFF;
   }
   .bar .human { background: var(--human); }
   .bar .agent { background: var(--agent); }
-  .bar svg { width: 40px; height: 40px; }
+  .bar svg { width: 32px; height: 32px; }
 </style>
 </head>
 <body>
@@ -64,21 +100,40 @@
 </svg>
 
 <div class="figure">
-  <h2>Director</h2>
-  <div class="bar">
-    <span class="human" style="flex:50"><svg><use href="#i-person"/></svg></span>
-    <span class="agent" style="flex:50"><svg><use href="#i-agent"/></svg></span>
-  </div>
+  <!-- Each role joins Artifactize: from the Director's bar down, and from the Builder's and the
+       Evaluator's bars in. -->
+  <svg class="links" viewBox="0 0 1440 600" aria-hidden="true">
+    <path d="M720 206 V282"/>
+    <path d="M526 370 H628"/>
+    <path d="M816 370 H914"/>
+  </svg>
 
-  <h2>Builder</h2>
-  <div class="bar">
-    <span class="agent" style="flex:100"><svg><use href="#i-agent"/></svg></span>
-  </div>
+  <section class="role director">
+    <h2>Director</h2>
+    <div class="bar">
+      <span class="human" style="flex:50"><svg><use href="#i-person"/></svg></span>
+      <span class="agent" style="flex:50"><svg><use href="#i-agent"/></svg></span>
+    </div>
+  </section>
 
-  <h2>Evaluator</h2>
-  <div class="bar">
-    <span class="agent" style="flex:90"><svg><use href="#i-agent"/></svg></span>
-    <span class="human" style="flex:10"><svg><use href="#i-person"/></svg></span>
+  <section class="role builder">
+    <h2>Builder</h2>
+    <div class="bar">
+      <span class="agent" style="flex:100"><svg><use href="#i-agent"/></svg></span>
+    </div>
+  </section>
+
+  <section class="role evaluator">
+    <h2>Evaluator</h2>
+    <div class="bar">
+      <span class="agent" style="flex:90"><svg><use href="#i-agent"/></svg></span>
+      <span class="human" style="flex:10"><svg><use href="#i-person"/></svg></span>
+    </div>
+  </section>
+
+  <div class="center">
+    <img src="/brand/artifactize-icon.svg" alt="">
+    <p>Artifactize</p>
   </div>
 </div>
 
