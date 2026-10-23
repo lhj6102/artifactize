@@ -147,7 +147,7 @@ eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 �
 도구 호출과 그 인자, 결과는 리뷰의 [저장된 대화](#saved-conversations)에만 있습니다.
 [`session show --summary`](../cli/index.md#session-summary)가 이를 집계합니다.
 
-백엔드를 믿고 쓰기 전에, 계정에서 쓸 수 있는 정확한 모델 ID와 선언한 도구 하나로 작은 리뷰를
+백엔드를 본격적으로 쓰기 전에, 계정에서 쓸 수 있는 정확한 모델 ID와 선언한 도구 하나로 간단한 시험용 리뷰를
 한 번 실행하고 `run show`로 결과를 확인하세요. 모델 없이 도구와 스키마를 시험하려면
 [가짜 provider](#test-against-a-fake-provider)를 쓰세요.
 

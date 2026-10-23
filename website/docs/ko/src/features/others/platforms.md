@@ -18,7 +18,7 @@ Runtime eval, fingerprint 스크립트, 명령을 실행하는 Agent 도구와 H
 `xdg-open`이며, `xdg-open`은 설치되어 있어야 합니다.
 
 명령은 [Runtime 실행](../declarations.md#runtime-execution)에서 설명한 대로 내 환경에서
-실행됩니다. OS마다 다른 점은 Windows에서는 시스템 변수도 전달한다는 것입니다.
+실행됩니다. Windows에서는 다른 OS와 달리 시스템 변수도 전달합니다.
 
 Linux에서 AppImage로 실행한 데스크톱 앱이 다른 프로그램을 시작하면, 앱이 시작될 때의 환경에서
 AppImage가 더한 설정을 뺀 환경을 넘깁니다. 직접 설정해 둔 변수를 AppImage가 덮어썼다면(`GTK_THEME` 등) 원래
