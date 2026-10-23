@@ -298,13 +298,9 @@ Microsoft Store는 안정 릴리스만 제공하며, Microsoft가 검토하는 �
 
 artifactize는 업데이트를 직접 내려받거나 설치하지 않습니다. 새 안정 릴리스가 나오면
 [데스크톱 앱](../desktop/index.md#open-the-app)은 헤더에 이를 표시하고,
-`artifactize doctor`는 `release` 검사에서 경고합니다. 둘 다 그 복사본을 설치한 방법에 맞춰
-위 표의 업데이트 방법을 알려 주고, 설치 방법을 알 수 없으면 릴리스 페이지를 안내합니다.
+`artifactize doctor`는 `release` 검사에서 경고합니다. 앱과 doctor는 현재 설치 방식에 맞는
+위 표의 업데이트 방법을 안내하고, 설치 방식을 확인할 수 없으면 릴리스 페이지를 안내합니다.
 Microsoft Store로 설치했다면 Store가 업데이트하므로 아무것도 표시하지 않습니다.
-
-설치 방법은 실행 파일이 있는 위치로 판단합니다. `install.sh`와 `install.ps1`은 설치한 명령
-옆에 자기 이름을 적은 `.artifactize-receipt` 파일도 남깁니다. 그래서 같은 폴더에 직접 압축을
-푼 명령을 설치 스크립트로 설치한 것으로 잘못 판단하지 않습니다.
 
 새 릴리스는 GitHub에 최신 릴리스를 하루에 한 번까지만 물어서 확인하고, 그 결과를
 [상태 디렉터리](#state)의 `release-check.json`에 보관합니다. 요청에는 artifactize 버전 말고는

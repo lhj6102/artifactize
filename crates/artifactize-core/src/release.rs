@@ -19,16 +19,15 @@ use serde::{Deserialize, Serialize};
 
 /// GitHub's latest stable release of the repository: drafts and prereleases are never latest.
 const LATEST_URL: &str = "https://api.github.com/repos/lhj6102/artifactize/releases/latest";
-/// The newest release's page, for a copy whose install channel is unknown.
-const RELEASE_PAGE: &str = "https://github.com/lhj6102/artifactize/releases/latest";
-/// Where the stable names of the newest release's files are downloaded from.
-const LATEST_DOWNLOAD: &str = "https://github.com/lhj6102/artifactize/releases/latest/download";
-/// Where a release's versioned files are downloaded from.
-const DOWNLOAD: &str = "https://github.com/lhj6102/artifactize/releases/download";
+/// The repository's site, below which its releases' pages and files are.
+const SITE: &str = "https://github.com/lhj6102/artifactize";
+/// Where a stand-in site answers the latest-release lookup, below its root.
+const TEST_LATEST_PATH: &str = "/api/releases/latest";
 /// Set to anything but empty, artifactize does not look up releases or contact GitHub.
 pub const OFF_VARIABLE: &str = "ARTIFACTIZE_NO_UPDATE_CHECK";
-/// A loopback URL that answers in place of GitHub's latest-release API, for tests. It is asked
-/// even by a development build, and its answer is never kept.
+/// A loopback URL standing in for the repository's site, for tests: it answers the lookup
+/// below [`TEST_LATEST_PATH`], and the release's pages and files are linked below it. It is
+/// asked even by a development build, and its answer is never kept.
 pub const TEST_ENDPOINT_VARIABLE: &str = "ARTIFACTIZE_RELEASES_URL";
 /// About once a day: a release is not urgent, and GitHub's API allows an address 60
 /// unauthenticated requests an hour.
@@ -85,37 +84,7 @@ pub enum Update {
 impl Channel {
     /// How to update this channel's install to `latest`; `None` when the Store does it.
     pub fn update(self, latest: &Version) -> Option<Update> {
-        let command = |command: &str| {
-            Some(Update::Command {
-                command: command.into(),
-            })
-        };
-        match self {
-            Self::Store => None,
-            Self::Winget => command("winget upgrade lhj6102.Artifactize"),
-            Self::InstallSh => command("curl -fsSL https://artifactize.dev/install.sh | sh"),
-            Self::InstallPs1 => command("irm https://artifactize.dev/install.ps1 | iex"),
-            Self::Homebrew => command("brew upgrade artifactize"),
-            Self::HomebrewCask => command("brew upgrade --cask artifactize"),
-            Self::Cargo => command("cargo install artifactize artifactize-tools --locked"),
-            Self::Dmg => Some(Update::Download {
-                url: format!("{LATEST_DOWNLOAD}/Artifactize.dmg"),
-                command: None,
-            }),
-            Self::Deb => Some(Update::Download {
-                url: format!("{LATEST_DOWNLOAD}/Artifactize-amd64.deb"),
-                command: Some("sudo apt install ./Artifactize-amd64.deb".into()),
-            }),
-            Self::AppImage => Some(Update::Download {
-                url: format!(
-                    "{DOWNLOAD}/v{latest}/artifactize-desktop-v{latest}-x86_64-unknown-linux-gnu.AppImage"
-                ),
-                command: None,
-            }),
-            Self::Unknown => Some(Update::Page {
-                url: RELEASE_PAGE.into(),
-            }),
-        }
+        crate::platform::install::update(self, latest, SITE)
     }
 }
 
@@ -152,9 +121,11 @@ pub struct Status {
     pub outcome: Outcome,
 }
 
-/// Where a lookup asks for the latest release, and whether its answer is kept.
+/// Where a lookup asks for the latest release, the site its links point into, and whether
+/// its answer is kept.
 struct Source {
     url: String,
+    site: String,
     cached: bool,
 }
 
@@ -188,13 +159,18 @@ fn source(running: &Version, channel: Channel) -> Result<Source, Outcome> {
         return Err(Outcome::Unchecked(Unchecked::Store));
     }
     match crate::llm::variable_endpoint(TEST_ENDPOINT_VARIABLE) {
-        Ok(Some(url)) => Ok(Source { url, cached: false }),
+        Ok(Some(site)) => Ok(Source {
+            url: format!("{site}{TEST_LATEST_PATH}"),
+            site,
+            cached: false,
+        }),
         // The workspace's own version, which a release replaces.
         Ok(None) if running.pre.as_str() == "dev" => {
             Err(Outcome::Unchecked(Unchecked::Development))
         }
         Ok(None) => Ok(Source {
             url: LATEST_URL.into(),
+            site: SITE.into(),
             cached: true,
         }),
         Err(error) => Err(Outcome::Failed(error)),
@@ -209,17 +185,17 @@ async fn look_up(
     now: SystemTime,
 ) -> Outcome {
     match latest(source, state, now).await {
-        Ok(latest) => decide(running, channel, latest),
+        Ok(latest) => decide(running, channel, latest, &source.site),
         Err(error) => Outcome::Failed(error),
     }
 }
 
-/// What `latest` means for this copy.
-fn decide(running: &Version, channel: Channel, latest: Version) -> Outcome {
+/// What `latest` means for this copy, whose updates link into `site`.
+fn decide(running: &Version, channel: Channel, latest: Version, site: &str) -> Outcome {
     if latest <= *running {
         return Outcome::Latest(latest);
     }
-    match channel.update(&latest) {
+    match crate::platform::install::update(channel, &latest, site) {
         Some(update) => Outcome::Newer { latest, update },
         None => Outcome::Unchecked(Unchecked::Store),
     }

@@ -310,10 +310,6 @@ is out, the [desktop app](../desktop/index.md#open-the-app) shows it in its head
 table above for the way that copy was installed, or the release page when the way is
 unknown. A Microsoft Store install shows nothing: the Store updates it.
 
-artifactize tells the way from where its executable is. `install.sh` and `install.ps1`
-also leave a `.artifactize-receipt` file naming themselves beside the commands they
-install, so commands unpacked by hand into the same folder are not mistaken for theirs.
-
 To learn of a release, artifactize asks GitHub for the latest release at most once a day
 and keeps the answer in `release-check.json` in the [state directory](#state); the request
 carries nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn

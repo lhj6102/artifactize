@@ -13,7 +13,8 @@ at 8 MiB. Calls require a JSON object of at most 64 KiB before any process or ou
 directory is created. Validation errors show at most five bounded, escaped
 instance/schema paths (under 4 KiB), never argument values.
 
-Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
+Descriptions must be nonblank and at most 4000 characters long, where an emoji or another
+character outside the Basic Multilingual Plane counts as two, and support only
 `{artifactName}` interpolation (the canonical Artifact ID). Built-in references
 take `builtin`, optional `args` and optional `description`. Without `args`, `read`,
 `list`, `glob`, `grep` and `view_image` take the model's input below; with `args`,

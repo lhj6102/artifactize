@@ -42,6 +42,7 @@ impl Releases {
     fn source(&self, cached: bool) -> Source {
         Source {
             url: self.url.clone(),
+            site: SITE.into(),
             cached,
         }
     }

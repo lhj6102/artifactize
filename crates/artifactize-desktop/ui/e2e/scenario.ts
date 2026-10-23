@@ -7,6 +7,9 @@ export type Prepared<T = unknown> = {
   args?: string[];
   env?: Environment;
   data: T;
+  /** The address on the case's loopback server, or the start of the addresses, that the app
+   * opens in the system browser; the case then gets a fixture browser. */
+  browser?: string;
   release?: () => Promise<void>;
 };
 

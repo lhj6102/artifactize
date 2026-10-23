@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::release::Channel;
+use crate::release::{Channel, Update};
 
 /// The receipt `install.sh` or `install.ps1` writes beside the commands it installs; it holds
 /// the script's name.
@@ -161,6 +161,43 @@ pub(crate) fn classify(executable: &Path, places: &Places) -> Channel {
         return Channel::Deb;
     }
     Channel::Unknown
+}
+
+/// How to update an install of `channel` to `latest`, whose pages and files are below the
+/// repository's `site`; `None` when the Microsoft Store updates it. Each channel's commands and
+/// file names are its operating system's.
+pub(crate) fn update(channel: Channel, latest: &semver::Version, site: &str) -> Option<Update> {
+    let command = |command: &str| {
+        Some(Update::Command {
+            command: command.into(),
+        })
+    };
+    match channel {
+        Channel::Store => None,
+        Channel::Winget => command("winget upgrade lhj6102.Artifactize"),
+        Channel::InstallSh => command("curl -fsSL https://artifactize.dev/install.sh | sh"),
+        Channel::InstallPs1 => command("irm https://artifactize.dev/install.ps1 | iex"),
+        Channel::Homebrew => command("brew upgrade artifactize"),
+        Channel::HomebrewCask => command("brew upgrade --cask artifactize"),
+        Channel::Cargo => command("cargo install artifactize artifactize-tools --locked"),
+        Channel::Dmg => Some(Update::Download {
+            url: format!("{site}/releases/latest/download/Artifactize.dmg"),
+            command: None,
+        }),
+        Channel::Deb => Some(Update::Download {
+            url: format!("{site}/releases/latest/download/Artifactize-amd64.deb"),
+            command: Some("sudo apt install ./Artifactize-amd64.deb".into()),
+        }),
+        Channel::AppImage => Some(Update::Download {
+            url: format!(
+                "{site}/releases/download/v{latest}/artifactize-desktop-v{latest}-x86_64-unknown-linux-gnu.AppImage"
+            ),
+            command: None,
+        }),
+        Channel::Unknown => Some(Update::Page {
+            url: format!("{site}/releases/latest"),
+        }),
+    }
 }
 
 /// The app bundle whose `Contents/MacOS` is `directory`.

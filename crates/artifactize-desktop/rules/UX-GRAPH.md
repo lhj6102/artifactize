@@ -111,8 +111,15 @@ that makes the transition happen and checks where it leads.
   and Scrolled up (the reader scrolled away from the bottom: it stays where the reader left
   it while lines arrive below). Its text selects and copies like any page text. A review's
   submission clears its log; an Artifact's tool runs record nothing as a review's evidence.
+- **Release notice**: `{version} available` in the header before Settings, shown while a newer
+  stable release is out; never on a Microsoft Store install, which the Store updates. The app
+  looks the release up on GitHub when it starts and once a day while it runs, the lookup
+  `artifactize doctor` reuses, and never downloads or installs anything itself.
 - **Overlays**: Palette (a filterable list of commands), Help (the keys of what has focus),
-  Open by ID (a field for a request ID), Leave dialog (quit while this window holds claims).
+  Open by ID (a field for a request ID), Leave dialog (quit while this window holds claims),
+  Update (the running and the new version and how to update the way the app was installed: a
+  command as selectable text, a file to download and install by hand, or the release page
+  when the way is unknown).
 
 ## Window
 
@@ -131,6 +138,10 @@ that makes the transition happen and checks where it leads.
 | E-PALETTE-CLOSE | Palette | Esc or a click outside | the view below |
 | E-HELP-OPEN | any view, outside fields | `?` | Help, listing the keys of what has focus (Pane, Main area or Settings) |
 | E-HELP-CLOSE | Help | Esc | the view below |
+| E-UPDATE-NOTICE | any view, no newer release shown | the app's release lookup, at start or later that day, finds a newer release | the same view, the Release notice in the header |
+| E-UPDATE-OPEN | any view with the Release notice | a click on it | Update |
+| E-UPDATE-LINK | Update with a download or the release page | a click on the link | Update, the link opened in the browser |
+| E-UPDATE-CLOSE | Update | Esc or Close | the view below, the Release notice still shown |
 | E-REFRESH | any view | F5, or Ctrl+R outside verdict editing (while editing a verdict Ctrl+R switches to RED, E-HUMAN-SWITCH) | same view, the state reloaded and the Branches scanned again; a shown Current scanned again (E-CURRENT-REFRESH) |
 | E-REVIEW-OPEN-ID | any view | Ctrl+O, or the palette's "Open a request by ID", then a waiting Human review's ID | Review of that request in the Main area, actionable |
 | E-REVIEW-READONLY | any view | Ctrl+O, or the palette's "Open a request by ID", then the ID of any other request | Request: that request in the Main area, read-only |
@@ -267,6 +278,8 @@ E-PANE-SELECT.
 - J-SETTINGS: E-SCREEN-SETTINGS → E-SETTINGS-BACK
 - J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
 - J-HELP: E-HELP-OPEN → E-HELP-CLOSE
+- J-UPDATE: E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-CLOSE
+  E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-LINK → E-UPDATE-CLOSE
 - J-REFRESH: E-REFRESH
   E-CURRENT-CHIP → E-REFRESH
 - J-QUIT: E-QUIT-CLEAN | E-QUIT-ASK → E-QUIT-STAY | E-QUIT-ASK → E-QUIT-RELEASE
