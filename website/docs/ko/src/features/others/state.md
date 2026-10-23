@@ -69,7 +69,7 @@ Run은 취소되지 않습니다. `--force`를 쓰면 항상 따로 실행합니
 
 ## 읽을 수 없는 기록 {#unreadable-records}
 
-상태의 나머지는 멀쩡해도 저장된 기록 하나를 읽지 못할 수 있습니다. 그러면 artifactize는 판정을
+다른 상태 데이터가 정상이더라도 저장된 기록 하나를 읽지 못할 수 있습니다. 그러면 artifactize는 판정을
 지어내지 않고 그 기록을 증거에서 뺍니다. 그 요청은 Run 개수에서 빠지고, 읽을 수 없는 Run은
 읽을 수 없다고 표시됩니다. status와 Run 목록은 그런 기록을 `unreadable` 아래에 `kind`, `id`,
 `reason`과 함께 알리고, 증거를 읽는 명령은 stderr에 `Unreadable ...` 줄을 출력합니다. 개수가

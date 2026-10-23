@@ -1,6 +1,6 @@
 # Claude Code와 Codex용 플러그인 {#plugin-for-claude-code-and-codex}
 
-**플러그인**은 코딩 어시스턴트가 한 번에 설치하는 패키지입니다. `artifactize`
+**플러그인**은 코딩 어시스턴트에 한 번에 설치할 수 있는 패키지입니다. `artifactize`
 플러그인은 Claude Code와 Codex에 두 가지를 함께 제공합니다.
 
 - [Hey Arti](hey-arti.md) 스킬: 어시스턴트가 artifactize로 프로젝트를 구성하고

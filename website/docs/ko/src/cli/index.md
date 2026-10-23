@@ -491,8 +491,8 @@ Tool calls: 3 (1 failed)
   search_notes: 1 (1 failed)
 ```
 
-여러 번 시도한 턴에는 `(2 attempts)`처럼 시도 횟수가 붙습니다. 토큰 수는 provider가 알려 준
-값을 그 턴의 시도마다 더한 것이며, 어느 시도도 알려 주지 않은 항목은 빠집니다. `--json`은 같은
+여러 번 시도한 턴에는 `(2 attempts)`처럼 시도 횟수가 붙습니다. 토큰 수는 그 턴의 각 시도에서
+provider가 보고한 값을 합산한 것이며, 한 번도 보고되지 않은 항목은 생략합니다. `--json`은 같은
 내용을 객체 하나로 출력합니다. `backend`, `model`, `reasoning`, `startedAt`, `endedAt`,
 `durationMs`, `followUps`, `turns`(각 턴마다 follow-up에 대한 답이면 `followUp`, 그리고
 `turn`, `attempts`, `tokens`), `tokens`, `toolCalls`

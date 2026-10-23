@@ -344,7 +344,7 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
 파일이 생겨도 `INPUT_CHANGED`가 일어나지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
 `status`가 그 뒤로 바뀐 파일(`path`, `+path`, `-path`)과 바뀐 의존성을 알려 줄 수 있습니다.
-아주 큰 폴더는 무언가 바뀌었다는 것만 보여 줄 수도 있습니다.
+폴더가 아주 크면 `status`가 구체적인 변경 내역 대신 변경 여부만 알려 줄 수도 있습니다.
 
 ## Fingerprint 스크립트 {#fingerprint-scripts}
 

@@ -93,8 +93,8 @@ macOS는 평소처럼 인자 없이 도움말을 보여 주고 바로 종료합�
 
 Microsoft Store 패키지에는 보이는 항목이 두 개 있습니다. 데스크톱
 앱용 **Artifactize**와 이 도움말 실행용 **Artifactize CLI**이며, 명령 별칭은
-`artifactize` 하나입니다. 도구 명령은 `artifactize tools`로 쓸 수 있습니다. Store가 아닌 채널은
-독립 실행형 `artifactize-tools` 명령도 함께 제공합니다.
+`artifactize` 하나입니다. 도구 명령은 `artifactize tools`로 쓸 수 있습니다. Store 이외의 방법으로
+설치하면 독립 실행형 `artifactize-tools` 명령도 함께 설치됩니다.
 
 ## 상태 {#state}
 
