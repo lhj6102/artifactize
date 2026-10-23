@@ -541,6 +541,7 @@ mod console_tests {
     fn a_probe_from_a_process_without_a_console_shows_no_window() {
         let mut parent = crate::test_os::test_command(
             "platform::windows::process::console_tests::detached_parent_probe",
+            &[],
         );
         let output = crate::test_os::detached_launch(parent.arg("--ignored"))
             .output()
