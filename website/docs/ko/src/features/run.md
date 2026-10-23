@@ -238,7 +238,7 @@ summary}`를 알려 줍니다. 텍스트로는 `Fingerprint changed since Run RU
 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
 대상 Artifact에 속한 파일의 변경을 `path`(바뀜), `+path`(추가), `-path`(삭제)로 보여 주고, `dependencies`는
 fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
-줍니다. fingerprint를 스크립트로 계산했거나 매니페스트에 파일 목록이 없으면, 대상의 변경 내역은 `fingerprint changed`나 `inputs changed`로만 표시할 수 있습니다. 그 eval 정의가 캐시된 적이 없거나
+줍니다. fingerprint를 스크립트로 계산했거나 파일 목록을 남기지 않은 이전 기록처럼 파일별 변경 내역을 알 수 없으면, 대상의 변경 내역은 `fingerprint changed`나 `inputs changed`로만 표시합니다. 그 eval 정의가 캐시된 적이 없거나
 강제로 실행한 eval이면 설명이 나오지 않습니다. 강제로 실행하지 않은 READY Runtime/Agent eval에 키가 없으면,
 실행 사유에 `fingerprint = false`를 선언한 대상이나 의존성이 나옵니다. READY인 Human eval은 키가
 없어도 "Record a request awaiting a Human claim and submission"이라고 나옵니다. 막혔거나

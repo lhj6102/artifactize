@@ -16,7 +16,7 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 ```
 
 `backend`에는 기본 provider(`openai`, `anthropic`, `gemini`, `codex`)나, eval을 실행하는
-컴퓨터에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
+머신에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
 `gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
 그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
@@ -231,7 +231,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 ## 커스텀 provider {#custom-providers}
 
-프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 컴퓨터마다
+프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 머신마다
 따로 설정합니다. 커스텀 provider는 Agent 프로필의 `backend`에 쓸 수 있는 이름으로, 데스크톱 앱의
 **Settings → Providers**에서 **+ Custom provider**를 누르거나 `artifactize provider`로 추가합니다.
 필요한 만큼 추가할 수 있으며, 종류는 둘 중 하나입니다.
@@ -263,7 +263,7 @@ URL은 요청을 보낼 API 루트로, 기본 provider의 루트(`https://api.op
 profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 ```
 
-이 컴퓨터에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
+이 머신에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
 오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
 저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.

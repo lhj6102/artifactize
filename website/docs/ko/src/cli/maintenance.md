@@ -84,7 +84,7 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
   [저장소 안에](../features/others/state.md#state) 있으면 거부 메시지를 `refused`에 담은
   경고가 나오고, 그곳에 로그인 정보가 저장되어 있으면 심각한 오류가 됩니다. 세부 정보에는 `source`
   (`stored`, `file`, `none`), `expiresAt`, `expired`, 테스트 엔드포인트가 나옵니다.
-- `providers`: 이 컴퓨터에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
+- `providers`: 이 머신에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
   연결되는 곳을 보여 줍니다. 키 값은 보여 주지 않습니다. `$STATE/auth`가 저장소 안에 있으면, 저장한 것이
   없는 동안에는 경고이고 저장한 것이 있으면 심각한 오류입니다.
 - 원격 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.

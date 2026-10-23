@@ -33,9 +33,10 @@ the lookup off.
 
 ### Upgrading to 0.16
 
-The state is upgraded to schema 10 on first use; a Run that ended SIGNOFFS_PENDING now
-reads as YELLOW. An older artifactize cannot open the upgraded state, so keep a backup
-before switching versions.
+The state's format of saved review data (its schema) is upgraded automatically on first use,
+from schemas 6 to 9 to the current schema 10; existing Runs, cache records and Human approvals
+are kept, and a Run that ended SIGNOFFS_PENDING now reads as YELLOW. An older artifactize
+cannot open the upgraded state, so keep a backup before switching versions.
 
 A sign-off the Run selected no longer holds up other evals, so `verify --defer-human`, MCP
 `defer_human` and the eval field `gate = "blocking"` are removed: drop the flag from
@@ -50,10 +51,7 @@ unchanged. See [Sign-offs and the end of a Run](../features/run.md#sign-offs-and
 
 ### Upgrading from 0.11
 
-The state's format of saved review data (its schema) is upgraded automatically on first use,
-from schemas 6 to 9 to the current schema 10; existing Runs, cache records and Human approvals
-are kept. An older artifactize cannot open the upgraded state, so keep a backup before
-switching versions.
+The state upgrades as for [0.16](#upgrading-to-016).
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal

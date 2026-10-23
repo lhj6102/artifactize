@@ -162,15 +162,12 @@ choice.
 | Default | Start an eval once its dependencies have GREEN evidence |
 | `--speculate` | Start runtime and Agent reviews before unresolved gates |
 
-Either way a sign-off holds up nothing: it is asked for once every other non-Human eval
-of its own Artifact is GREEN and its own gates are met, never speculatively, and is
-BLOCKED when one of them is RED or ERROR; what relies on it runs provisionally.
+Sign-offs are never started speculatively; when they are asked for and how what relies on
+them runs is in [Sign-offs and the end of a Run](../features/run.md#sign-offs-and-the-end-of-a-run).
 With `--speculate`, newly ready work can interrupt a running speculative review to free
 `--jobs` or backend capacity; that review starts again later and uses another
 `--max-executions` start. Speculation changes execution order, not approval. `verify --wait`
 uses the ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5 YELLOW.
-[Sign-offs and the end of a Run](../features/run.md#sign-offs-and-the-end-of-a-run) explains
-how long a Run stays open for its sign-offs and how they are reused later;
 [Speculation](../features/run.md#speculation) explains its scheduling and cancellation.
 
 ## Runtime CLI
