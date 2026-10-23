@@ -90,6 +90,8 @@ pub struct KeyStatus {
     /// The environment variable read first.
     pub variable: String,
     pub source: KeySource,
+    /// Whether a key is saved here, also while the variable comes first.
+    pub saved: bool,
 }
 
 /// What a custom provider reaches; an endpoint's key only as whether one is saved.
@@ -160,6 +162,7 @@ pub fn providers_list(app: tauri::State<'_, App>) -> Result<Providers, Failure> 
                     providers::KeySource::Saved => KeySource::Saved,
                     providers::KeySource::Absent => KeySource::Absent,
                 },
+                saved: key.saved,
             })
             .collect(),
         custom: list

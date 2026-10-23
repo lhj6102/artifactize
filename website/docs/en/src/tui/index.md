@@ -130,9 +130,10 @@ tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` run
 | Esc | Cancel work, then stop editing, then leave Detail |
 | Enter on `+ Add` / Ctrl-D | In a list of groups, add a group / remove the selected group |
 
-While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
+While a Human review is being claimed or released, running a tool, or submitting,
+ordinary PgUp/PgDn scroll the Tool log
 regardless of the focused area. Normal editing and focus switching pause until
-the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
+that ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
 - **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
   `--reviewer NAME`, while Monitor always uses the default.
@@ -404,8 +405,7 @@ latest. A waiting Human review's Detail shows the tool commands of the declarati
 were when you first opened it, without claiming the review or running anything. A refresh
 keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
 open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
-commands shown are updated after one. A follower opens its
-original request.
+commands shown are updated after one.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

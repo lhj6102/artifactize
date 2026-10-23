@@ -93,14 +93,13 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-The [script](https://artifactize.dev/install.sh) picks the archive for your OS and
-CPU from the latest stable GitHub release, checks its SHA-256 against the release's
-checksum and refuses a mismatch. It runs both new binaries before replacing anything,
-then installs them to `~/.local/bin`. It uses `curl` or `wget`, never `sudo`, and
-never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
-the line to add. It also warns about another `artifactize` or `artifactize-tools` on
-`PATH` that would run instead. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
-installs the [desktop app](#desktop-app) from the same release, checked the same way,
+The [script](https://artifactize.dev/install.sh) installs `artifactize` and
+`artifactize-tools` from the latest stable release into `~/.local/bin`, without `sudo`.
+It never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
+the line to add to yours; add it and open a new terminal. It also warns about another
+`artifactize` or `artifactize-tools` on `PATH` that would run instead. If a download or
+its check fails, it stops and leaves what you had installed unchanged. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
+installs the [desktop app](#desktop-app) from the same release,
 into `~/.local/share/artifactize/desktop`, with an `artifactize-desktop` launcher beside
 the commands and an **Artifactize** menu entry. On ARM Linux and on Alpine it installs
 the commands only. Two
@@ -123,11 +122,12 @@ brew install lhj6102/tap/artifactize
 artifactize --version
 ```
 
-The formula in the `lhj6102/tap` Homebrew tap installs both commands for your Mac's
-CPU and follows stable releases. The desktop app is a cask in the same tap. It links
-the app's own `artifactize` and `artifactize-tools` onto Homebrew's PATH, so this one
-command gives you the app and both commands (uninstall the formula first if you have
-it; the cask replaces it):
+This installs both commands for your Mac's CPU from `lhj6102/tap`, our Homebrew
+package source (a *tap*), and follows stable releases. Homebrew calls this command-line
+package a *formula*, and an app package a *cask*. The desktop app is a cask in the same
+tap. It links the app's own `artifactize` and `artifactize-tools` onto Homebrew's PATH,
+so this one command gives you the app and both commands (uninstall the formula first if
+you have it; the cask replaces it):
 
 ```sh
 brew install --cask lhj6102/tap/artifactize
@@ -227,8 +227,13 @@ would run now, and the Human reviews waiting, in one window. From the disk image
 launch (below).
 
 Install it from the [downloads](#download-the-app). Each release also attaches an
-AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
-executable and run it; it needs glibc 2.35 or later.
+AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`, which needs
+glibc 2.35 or later. In the folder you downloaded it to, make it executable and run it:
+
+```sh
+chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
+./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
+```
 
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.

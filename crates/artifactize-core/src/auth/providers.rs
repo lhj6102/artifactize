@@ -151,6 +151,8 @@ pub struct KeyStatus {
     /// The environment variable read first.
     pub variable: &'static str,
     pub source: KeySource,
+    /// Whether a key is saved here, also while the variable comes first.
+    pub saved: bool,
 }
 
 /// The providers this machine has set up.
@@ -219,9 +221,10 @@ pub fn list(state: Option<&Path>, repo: Option<&Path>) -> Result<Providers, Stri
             .into_iter()
             .filter_map(|provider| {
                 let variable = key_variable(provider)?;
+                let stored = saved.keys.contains_key(&provider);
                 let source = if environment_key(provider).is_some() {
                     KeySource::Environment
-                } else if saved.keys.contains_key(&provider) {
+                } else if stored {
                     KeySource::Saved
                 } else {
                     KeySource::Absent
@@ -230,6 +233,7 @@ pub fn list(state: Option<&Path>, repo: Option<&Path>) -> Result<Providers, Stri
                     provider,
                     variable,
                     source,
+                    saved: stored,
                 })
             })
             .collect(),

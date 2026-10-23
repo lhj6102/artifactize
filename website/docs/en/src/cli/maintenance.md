@@ -112,11 +112,12 @@ set, is still used first. `login codex` and `logout codex` are the
 replaces the one with that name: `--alias PROVIDER` for a built-in provider under another
 name, or `--api openai-responses|openai-chat|anthropic|gemini` with `--url` for an endpoint,
 with `--key` to read its key from stdin. `provider remove NAME` removes it. `provider list`
-prints each built-in key's `source` (`environment`, `saved` or `absent`) and every custom
+prints each built-in key's `source` (`environment`, `saved` or `absent`; the variable comes
+first), whether a key is `saved` even while the variable is used, and every custom
 provider, never a key:
 
 ```json
-{"keys":[{"provider":"openai","variable":"OPENAI_API_KEY","source":"saved"}],
+{"keys":[{"provider":"openai","variable":"OPENAI_API_KEY","source":"environment","saved":true}],
  "custom":{"local":{"kind":"endpoint","api":"openai-chat","url":"http://localhost:11434/v1","key":false},
            "work":{"kind":"alias","provider":"codex"}}}
 ```

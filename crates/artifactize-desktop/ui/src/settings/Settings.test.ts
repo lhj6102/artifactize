@@ -30,7 +30,9 @@ function backend(options: {
 }) {
   const calls: Calls = [];
   let remote = none;
-  const keys: Record<string, KeySource> = { openai: "environment", anthropic: "absent", gemini: "absent" };
+  const environment = new Set(["openai"]);
+  const saved = new Set<string>();
+  const source = (provider: string): KeySource => (environment.has(provider) ? "environment" : saved.has(provider) ? "saved" : "absent");
   let custom: CustomProvider[] = [];
   const VARIABLES: Record<string, string> = { openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY" };
   mockIPC((cmd, args) => {
@@ -39,14 +41,19 @@ function backend(options: {
     switch (cmd) {
       case "providers_list":
         return {
-          keys: Object.entries(keys).map(([provider, source]) => ({ provider: provider as Provider, variable: VARIABLES[provider], source })),
+          keys: Object.keys(VARIABLES).map((provider) => ({
+            provider: provider as Provider,
+            variable: VARIABLES[provider],
+            source: source(provider),
+            saved: saved.has(provider),
+          })),
           custom,
         };
       case "provider_key_save":
-        keys[payload.provider as string] = "saved";
+        saved.add(payload.provider as string);
         return null;
       case "provider_key_remove":
-        keys[payload.provider as string] = "absent";
+        saved.delete(payload.provider as string);
         return null;
       case "provider_custom_save": {
         const name = payload.name as string;
@@ -134,6 +141,22 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Remove saved key" }));
     await screen.findByText("Removed the saved key.");
     await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("Not set"));
+  });
+
+  it("keeps a set variable first, still showing and removing a key saved beside it", async () => {
+    backend({});
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
+    expect(screen.queryByRole("button", { name: "Remove saved key" })).toBeNull();
+    await fireEvent.input(screen.getByLabelText<HTMLInputElement>("API key"), { target: { value: KEY } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY; a saved key is kept but not used"),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Remove saved key" }));
+    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
+    expect(screen.queryByRole("button", { name: "Remove saved key" })).toBeNull();
   });
 
   it("adds custom providers by name, keeps a saved endpoint key, lists their models and removes them", async () => {

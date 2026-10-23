@@ -11,6 +11,9 @@ const REQUEST_KEY_CHARS: usize = 128;
 const LOG_TAIL_LINES: usize = 200;
 /// Match the core literal-search bound to limit scanning input per request.
 const LOG_SEARCH_CHARS: usize = 2048;
+/// Match core's identifier bound for a backend name, so a name no declaration can use is
+/// refused before the provider lookup.
+const BACKEND_NAME_CHARS: usize = 64;
 
 pub(super) fn tools() -> Vec<Tool> {
     let scope = json!({"oneOf": [
@@ -144,7 +147,7 @@ pub(super) fn tools() -> Vec<Tool> {
         tool(
             "models",
             "List models available from the named backend: a built-in provider (codex, openai, anthropic, gemini) or a custom provider set up on this machine.",
-            json!({"provider":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}}),
+            json!({"provider":{"type":"string","pattern":format!("^[A-Za-z0-9][A-Za-z0-9_-]{{0,{}}}$", BACKEND_NAME_CHARS - 1)}}),
             &["provider"],
             true,
         ),

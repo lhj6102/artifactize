@@ -182,9 +182,9 @@ fn settings_command_probe() {
     // API keys: where each comes from, never its value.
     let keys = |gemini: &str| {
         json!([
-            {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment"},
-            {"provider": "anthropic", "variable": "ANTHROPIC_API_KEY", "source": "absent"},
-            {"provider": "gemini", "variable": "GEMINI_API_KEY", "source": gemini},
+            {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
+            {"provider": "anthropic", "variable": "ANTHROPIC_API_KEY", "source": "absent", "saved": false},
+            {"provider": "gemini", "variable": "GEMINI_API_KEY", "source": gemini, "saved": gemini == "saved"},
         ])
     };
     let providers = call("providers_list", json!({})).unwrap();

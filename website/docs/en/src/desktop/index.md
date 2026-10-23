@@ -337,7 +337,8 @@ on the right, with **List models** for the models it offers.
 - **OpenAI, Anthropic, Gemini:** shows whether the key is set from its environment
   variable, saved, or not set, never its value. Paste a key and choose **Save key** to save
   it, as `artifactize login` does; **Remove saved key** forgets it. A set environment
-  variable is used first.
+  variable is used first: a key saved beside it shows as kept but not used, and can still be
+  removed.
 - **Custom providers:** **+ Custom provider** opens an empty form. Give it a name, then
   choose whether it reaches a built-in provider (an alias, with that provider's sign-in or
   key) or an endpoint (its API, URL and optional key), and choose **Save**. Add as many as

@@ -61,6 +61,12 @@ pub(super) async fn execute(
             }
             for key in &list.keys {
                 let source = match key.source {
+                    providers::KeySource::Environment if key.saved => {
+                        format!(
+                            "key from {}; a saved key is kept but not used",
+                            key.variable
+                        )
+                    }
                     providers::KeySource::Environment => format!("key from {}", key.variable),
                     providers::KeySource::Saved => "saved key".to_owned(),
                     providers::KeySource::Absent => "no key".to_owned(),

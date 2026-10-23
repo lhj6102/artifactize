@@ -109,11 +109,12 @@ provider가 준 순서대로 `{"backend":"openai","models":[{"slug":"model-id","
 있으면 바꿉니다. `--alias PROVIDER`는 기본 provider를 다른 이름으로 쓰고, 엔드포인트는
 `--api openai-responses|openai-chat|anthropic|gemini`와 `--url`로 지정하며 `--key`를 주면 키를
 stdin에서 읽습니다. `provider remove NAME`은 삭제합니다. `provider list`는 기본 provider마다 키의
-`source`(`environment`, `saved`, `absent`)와 커스텀 provider 전체를 출력하며, 키 값은 출력하지
+`source`(`environment`, `saved`, `absent` 중 하나이며 변수를 먼저 봅니다), 변수를 쓰는 동안에도 키가 저장되어 있는지(`saved`), 커스텀
+provider 전체를 출력하며, 키 값은 출력하지
 않습니다.
 
 ```json
-{"keys":[{"provider":"openai","variable":"OPENAI_API_KEY","source":"saved"}],
+{"keys":[{"provider":"openai","variable":"OPENAI_API_KEY","source":"environment","saved":true}],
  "custom":{"local":{"kind":"endpoint","api":"openai-chat","url":"http://localhost:11434/v1","key":false},
            "work":{"kind":"alias","provider":"codex"}}}
 ```

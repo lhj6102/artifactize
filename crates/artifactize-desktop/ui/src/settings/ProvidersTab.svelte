@@ -83,7 +83,7 @@
             {#if !keyStatus}
               …
             {:else if keyStatus.source === "environment"}
-              Set from {keyStatus.variable}
+              Set from {keyStatus.variable}{keyStatus.saved ? "; a saved key is kept but not used" : ""}
             {:else if keyStatus.source === "saved"}
               Saved
             {:else}
@@ -96,7 +96,7 @@
           <input id="provider-key" class="input" type="password" bind:value={s.key} autocomplete="off" spellcheck="false" />
           <div class="row">
             <button class="button primary" type="submit" disabled={s.saving || !s.key.trim()}>Save key</button>
-            {#if keyStatus?.source === "saved"}
+            {#if keyStatus?.saved}
               <button class="button" type="button" disabled={s.saving} onclick={() => void s.removeKey(provider)}>Remove saved key</button>
             {/if}
           </div>

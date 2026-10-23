@@ -91,14 +91,12 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-이 [스크립트](https://artifactize.dev/install.sh)는 GitHub의 최신 안정 릴리스에서 OS와
-CPU에 맞는 압축 파일을 고르고, 그 SHA-256을 릴리스의 체크섬과 비교해
-일치하지 않으면 설치하지 않습니다. 기존 파일을 교체하기 전에 새 바이너리 두 개가 실행되는지
-확인한 뒤 `~/.local/bin`에 설치합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
-셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
-추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
-`PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
-릴리스의 [데스크톱 앱](#desktop-app)도 같은 방식으로 확인해
+이 [스크립트](https://artifactize.dev/install.sh)는 최신 안정 릴리스의 `artifactize`와
+`artifactize-tools`를 `sudo` 없이 `~/.local/bin`에 설치합니다. 셸 시작 파일은 고치지 않으며,
+`~/.local/bin`이 `PATH`에 없다면 추가할 줄을 출력합니다. 그 줄을 셸 시작 파일에 추가하고 새 터미널을
+여세요. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가 `PATH`에 있으면 경고도 합니다.
+내려받기나 확인에 실패하면 설치를 멈추며, 이미 설치된 것은 바뀌지 않습니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
+릴리스의 [데스크톱 앱](#desktop-app)도
 `~/.local/share/artifactize/desktop`에 설치하고, `artifactize` 명령과 같은 디렉터리에 `artifactize-desktop` 실행 파일을
 추가하며, 애플리케이션 메뉴에 **Artifactize** 항목을 만듭니다. ARM Linux와 Alpine에서는 명령만 설치합니다. 두
 환경 변수로 동작을 바꿀 수 있습니다.
@@ -120,8 +118,9 @@ brew install lhj6102/tap/artifactize
 artifactize --version
 ```
 
-`lhj6102/tap` Homebrew tap의 formula는 Mac의 CPU에 맞는 두 명령을 설치하며
-안정 릴리스로만 업데이트됩니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
+이 명령은 우리 Homebrew 패키지 저장소(*tap*)인 `lhj6102/tap`에서 Mac의 CPU에 맞는 두 명령을
+설치하며, 안정 릴리스로만 업데이트됩니다. Homebrew는 이런 명령줄 패키지를 *formula*, 앱 패키지를
+*cask*라고 부릅니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
 앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다. cask가 formula를 대신하므로, formula가 설치되어 있다면 먼저 제거하세요.
 
 ```sh
@@ -221,8 +220,13 @@ cargo install --path crates/artifactize-tools --locked
 실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
 [내려받기](#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. AppImage에
-실행 권한을 주고 실행하세요. glibc 2.35 이상이 필요합니다.
+`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부되며, glibc 2.35 이상이
+필요합니다. 내려받은 폴더에서 실행 권한을 주고 실행하세요.
+
+```sh
+chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
+./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
+```
 
 각 파일 옆에는 `.sha256` 체크섬이 있습니다. `artifactize-desktop` 명령으로 앱을 실행하거나
 응용 프로그램 메뉴 또는 시작 메뉴에서 **Artifactize**를 여세요.

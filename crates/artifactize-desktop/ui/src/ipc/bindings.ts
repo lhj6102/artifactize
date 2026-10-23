@@ -529,6 +529,8 @@ export type KeyStatus = {
 	/**  The environment variable read first. */
 	variable: string,
 	source: KeySource,
+	/**  Whether a key is saved here, also while the variable comes first. */
+	saved: boolean,
 };
 
 /**  One Tool log: one entry per run, in the order they started. */
