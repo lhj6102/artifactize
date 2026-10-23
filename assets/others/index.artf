@@ -71,11 +71,11 @@ instruction = """
 README and the landing page use it in place of a sentence saying that Artifactize brings human \
 and agent work together. Its point is that people and AI agents collaborate in Artifactize \
 through three roles that pass one Artifact Graph between them: Director above, Builder and \
-Evaluator on either side, and the Artifactize logo along the bottom. Each role has a short \
-line on what it does and its team of five, as person and agent icons: three people and two \
-agents direct, five agents build, and four agents and one person evaluate. The scene is 16:9. \
-The graph is abstract on purpose: unnamed nodes and their links, with nothing around them. \
-In motion, the graph moves to whichever role has it, tagged with why it is passed (build, \
+Evaluator on either side, and the Artifactize logo along the bottom. Each role shows only its \
+name and its team of five, as person and agent icons: three people and two agents direct, five \
+agents build, and four agents and one person evaluate; the motion shows what each role does. \
+The scene is 16:9. The graph is abstract on purpose: unnamed nodes in columns, linked left to \
+right like a DAG, with nothing around them. In motion, the graph moves to whichever role has it, tagged with why it is passed (build, \
 verify, RED or GREEN). The Director adds a node; the Builder builds it; the Evaluator checks \
 the nodes one by one and finds the new one RED; the Builder fixes it; the Evaluator checks it \
 again, the person signing off, and it is GREEN. The Director then adds another node and \
@@ -85,9 +85,9 @@ the white nodes are checked again. Read roles.html, ask gif for the GIF's length
 enough frames to follow every step. Judge:
 - Meaning: the three roles are what the figure is about, and the motion shows the graph \
 passing between them in that order, the Builder and the Evaluator going back and forth until \
-GREEN; each role's line says plainly what it does (W-INTRO-PLAIN-LANGUAGE of \
-{writer-introduction}), and the figure shows nothing beyond the roles, their teams, the graph, \
-why it is passed and the logo.
+GREEN, so a first-time reader sees what each role does without a caption; its few words follow \
+W-INTRO-PLAIN-LANGUAGE of {writer-introduction}; and the figure shows nothing beyond the roles, \
+their teams, the graph, why it is passed and the logo.
 - Clarity: a first-time reader tells the person from the AI agent without labels, because \
 each keeps one icon and one color across the figure; sees which team works while it has the \
 graph; and can tell each state of a node from its look.

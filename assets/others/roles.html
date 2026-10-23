@@ -4,7 +4,7 @@
      builds it and the Evaluator checks it node by node; a RED sends it back to the Builder, and
      the fixed node is checked again until GREEN. Then the Director adds a node and changes
      another, and the Builder and the Evaluator go back and forth again. The graph is abstract:
-     unnamed nodes and their links, nothing around them. A node is dashed when new or changed,
+     unnamed nodes in columns, linked left to right, nothing around them. A node is dashed when new or changed,
      white when built, then GREEN or RED once checked. The scene is 16:9 and a
      pure function of time, figure.frame(t), so capture.mts renders the same frames every time
      into roles.en.gif; opened directly, the page plays itself. -->
@@ -28,16 +28,16 @@
   html, body { margin: 0; background: var(--bg); }
   svg.scene { display: block; width: 1440px; height: 810px; }
   .title { fill: var(--text); font: 700 54px var(--display); letter-spacing: -0.03em; }
-  .desc { fill: var(--dim); font: 500 28px var(--sans); }
   .kicker { fill: var(--dim); font: 500 28px var(--sans); }
   .brand { fill: var(--text); font: 700 42px var(--display); letter-spacing: -0.03em; }
-  .edge { stroke: #4A5568; stroke-width: 3; }
+  .edge { fill: none; stroke: #4A5568; stroke-width: 3; marker-end: url(#arrow); }
   .tag-text { font: 700 22px var(--mono); }
 </style>
 </head>
 <body>
 <svg class="scene" viewBox="0 0 1440 810" aria-hidden="true">
   <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1 1.5 9 5 1 8.5Z" fill="#4A5568"/></marker>
     <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
       <feGaussianBlur stdDeviation="5" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -48,11 +48,8 @@
 
   <!-- The three roles. -->
   <text class="title" x="720" y="72" text-anchor="middle">Director</text>
-  <text class="desc" x="720" y="114" text-anchor="middle">Decides what to build</text>
   <text class="title" x="160" y="470" text-anchor="middle">Builder</text>
-  <text class="desc" x="160" y="512" text-anchor="middle">Builds the pieces</text>
   <text class="title" x="1280" y="470" text-anchor="middle">Evaluator</text>
-  <text class="desc" x="1280" y="512" text-anchor="middle">Checks each piece</text>
   <g id="teams"></g>
 
   <!-- The Artifact Graph, and the tag naming what it is passed for. -->
@@ -82,7 +79,7 @@
   // ---------- The story, second by second ----------
 
   /** Where the graph rests beside each role. */
-  const SPOTS = { director: { x: 720, y: 380 }, builder: { x: 548, y: 540 }, evaluator: { x: 892, y: 540 } };
+  const SPOTS = { director: { x: 720, y: 330 }, builder: { x: 566, y: 540 }, evaluator: { x: 874, y: 540 } };
   /** The passes: from one role to another between `start` and `end`, tagged with why. */
   const PASSES = [
     { from: "director", to: "builder", start: 1.4, end: 2.2, tag: "build" },
@@ -98,21 +95,23 @@
   ];
   const TAGS = { build: "#B49CFF", verify: "#6AA8FF", RED: "#FF5D5D", GREEN: "#3EE08F" };
 
-  /** The graph's nodes, around its centre, and each one's states over the loop: five built at
-   * the start, one added in each round, and one changed in the second. At the loop's end
-   * everything returns to the first state, so the loop starts again. */
+  /** The graph's nodes in four columns, left to right, and each one's states over the loop: five
+   * built at the start, one added in each round, and one changed in the second. The Evaluator
+   * checks them column by column. At the loop's end everything returns to the first state, so
+   * the loop starts again. */
   const NODES = {
-    a: { x: -120, y: -60, states: [[0, "built"], [4.15, "green"], [18.3, "built"]] },
-    b: { x: -20, y: -105, states: [[0, "built"], [4.4, "green"], [18.3, "built"]] },
-    c: { x: 105, y: -75, states: [[0, "built"], [4.65, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
-    d: { x: -50, y: 15, states: [[0, "built"], [4.9, "green"], [18.3, "built"]] },
-    e: { x: 80, y: 30, states: [[0, "built"], [5.15, "green"], [18.3, "built"]] },
-    f: { x: -130, y: 95, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.45, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
-    g: { x: 45, y: 120, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
+    a: { x: -160, y: -55, states: [[0, "built"], [4.15, "green"], [18.3, "built"]] },
+    b: { x: -160, y: 55, states: [[0, "built"], [4.4, "green"], [18.3, "built"]] },
+    c: { x: -55, y: 0, states: [[0, "built"], [4.65, "green"], [18.3, "built"]] },
+    d: { x: 50, y: -55, states: [[0, "built"], [4.9, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
+    e: { x: 50, y: 55, states: [[0, "built"], [5.15, "green"], [18.3, "built"]] },
+    f: { x: 155, y: -55, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.45, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
+    g: { x: 155, y: 55, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
   };
   /** The graph is drawn this much larger than its coordinates. */
   const GRAPH_SCALE = 1.2;
-  const EDGES = [["a", "b"], ["b", "c"], ["a", "d"], ["b", "d"], ["c", "e"], ["d", "e"], ["d", "f"], ["e", "g"], ["d", "g"]];
+  const EDGES = [["a", "c"], ["b", "c"], ["c", "d"], ["c", "e"], ["d", "f"], ["d", "g"], ["e", "g"]];
+  const RADIUS = 22;
   /** How each state looks: fill, outline, and whether the outline is dashed. */
   const LOOKS = {
     hidden: { fill: "#090B0F", stroke: "#090B0F", opacity: 0 },
@@ -151,9 +150,9 @@
 
   /** Each role's team, left to right, at the centre of its row. */
   const TEAMS = {
-    director: { x: 720, y: 174, members: ["person", "person", "person", "agent", "agent"] },
-    builder: { x: 160, y: 576, members: ["agent", "agent", "agent", "agent", "agent"] },
-    evaluator: { x: 1280, y: 576, members: ["agent", "agent", "agent", "agent", "person"] },
+    director: { x: 720, y: 140, members: ["person", "person", "person", "agent", "agent"] },
+    builder: { x: 160, y: 536, members: ["agent", "agent", "agent", "agent", "agent"] },
+    evaluator: { x: 1280, y: 536, members: ["agent", "agent", "agent", "agent", "person"] },
   };
   const badges = {};
   for (const [role, team] of Object.entries(TEAMS)) {
@@ -167,14 +166,17 @@
     });
   }
 
-  const edges = EDGES.map(([from, to]) => ({
-    from, to,
-    line: make("line", { class: "edge", x1: NODES[from].x, y1: NODES[from].y, x2: NODES[to].x, y2: NODES[to].y }, byId("edges")),
-  }));
+  // Each link leaves its node's right side and enters the next one's left side, level at both ends.
+  const edges = EDGES.map(([from, to]) => {
+    const [a, b] = [NODES[from], NODES[to]];
+    const [x1, x2] = [a.x + RADIUS + 3, b.x - RADIUS - 4];
+    const middle = (x1 + x2) / 2;
+    return { from, to, line: make("path", { class: "edge", d: `M${x1} ${a.y} C ${middle} ${a.y} ${middle} ${b.y} ${x2} ${b.y}` }, byId("edges")) };
+  });
   for (const node of Object.values(NODES)) {
     node.group = make("g", { transform: `translate(${node.x} ${node.y})` }, byId("nodes"));
     node.ring = make("circle", { r: 33, fill: "none", stroke: "#6AA8FF", "stroke-width": 3, opacity: 0 }, node.group);
-    node.dot = make("circle", { r: 22, "stroke-width": 3 }, node.group);
+    node.dot = make("circle", { r: RADIUS, "stroke-width": 3 }, node.group);
   }
 
   // ---------- Motion ----------
@@ -246,7 +248,7 @@
       box.setAttribute("x", (-width / 2).toFixed(2));
       box.setAttribute("width", width.toFixed(2));
       box.setAttribute("fill", TAGS[place.pass.tag]);
-      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 200).toFixed(2)})`);
+      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 130).toFixed(2)})`);
       tag.setAttribute("opacity", Math.min(1, place.lift * 2.5).toFixed(3));
     }
 
