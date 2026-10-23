@@ -180,7 +180,7 @@ fn heading(out: &mut impl Write, located: &Located, engine: &Engine) -> io::Resu
 fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
     let mut out = io::stdout().lock();
     let engine = Engine {
-        backend: summary.backend,
+        backend: summary.backend.clone(),
         model: summary.model.clone(),
         reasoning: summary.reasoning,
     };
@@ -245,7 +245,7 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
         &mut out,
         located,
         &Engine {
-            backend: header.backend,
+            backend: header.backend.clone(),
             model: header.model.clone(),
             reasoning: header.reasoning,
         },

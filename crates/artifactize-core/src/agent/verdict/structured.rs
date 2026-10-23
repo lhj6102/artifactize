@@ -1,13 +1,14 @@
 //! Provider-safe final-answer schemas. The original owner schema remains authoritative.
 //!
 //! OpenAI requires a closed object root (not a root anyOf), and all properties required.
-//! Anthropic also requires closed objects, but supports fewer validation keywords:
+//! Anthropic also requires closed objects, but supports fewer validation keywords; Gemini is
+//! given the same smaller set:
 //! https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas
 //! https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-support
 
 use serde_json::{Map, Value, json};
 
-use crate::config::Backend;
+use crate::llm::Api;
 
 mod limits;
 
@@ -18,11 +19,11 @@ pub(in crate::agent) struct Structured {
 }
 
 impl Structured {
-    pub fn new(branches: &Value, backend: Backend) -> Self {
-        let (green_schema, green) = project_branch(&branches["GREEN"], backend);
-        let (red_schema, red) = project_branch(&branches["RED"], backend);
+    pub fn new(branches: &Value, api: Api) -> Self {
+        let (green_schema, green) = project_branch(&branches["GREEN"], api);
+        let (red_schema, red) = project_branch(&branches["RED"], api);
         let schema = envelope(green_schema, red_schema);
-        if backend != Backend::Anthropic && !limits::fits(&schema) {
+        if api.openai_schema() && !limits::fits(&schema) {
             let (green_schema, green) = encoded(&branches["GREEN"]);
             let (red_schema, red) = encoded(&branches["RED"]);
             return Self {
@@ -183,8 +184,8 @@ impl Shape {
     }
 }
 
-fn project_branch(schema: &Value, backend: Backend) -> (Value, Shape) {
-    let (mut projected, shape) = project(schema, backend, schema);
+fn project_branch(schema: &Value, api: Api) -> (Value, Shape) {
+    let (mut projected, shape) = project(schema, api, schema);
     if has_reference(schema) {
         // Keep reference context once, not once per reference (quadratic schema growth).
         let description = projected["description"].as_str().unwrap_or_default();
@@ -207,7 +208,7 @@ fn has_reference(value: &Value) -> bool {
     }
 }
 
-fn project(schema: &Value, backend: Backend, root: &Value) -> (Value, Shape) {
+fn project(schema: &Value, api: Api, root: &Value) -> (Value, Shape) {
     // Open maps, references, unions and untyped values cannot always be expressed in
     // both providers' closed, nonrecursive subset. Encode just that value as JSON text;
     // decode it before local validation, preserving arbitrary owner JSON without rejecting
@@ -217,7 +218,7 @@ fn project(schema: &Value, backend: Backend, root: &Value) -> (Value, Shape) {
     if let Some(branches) = schema.get("anyOf").and_then(Value::as_array) {
         let projected: Vec<_> = branches
             .iter()
-            .map(|branch| project(branch, backend, root))
+            .map(|branch| project(branch, api, root))
             .collect();
         if projected.iter().all(|(_, shape)| shape.is_identity()) {
             return (
@@ -278,13 +279,13 @@ fn project(schema: &Value, backend: Backend, root: &Value) -> (Value, Shape) {
             // Avoid regex dialect differences. Unsupported constraints remain visible to
             // the model as descriptions, and the unchanged local validator enforces them.
             "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum" | "multipleOf"
-                if backend != Backend::Anthropic
+                if api.openai_schema()
                     && matches!(kind, Some("number" | "integer"))
                     && value.is_number() =>
             {
                 output.insert(key.clone(), value.clone());
             }
-            "minItems" | "maxItems" if backend != Backend::Anthropic && kind == Some("array") => {
+            "minItems" | "maxItems" if api.openai_schema() && kind == Some("array") => {
                 output.insert(key.clone(), value.clone());
             }
             "minItems" if kind == Some("array") && (value == 0 || value == 1) => {
@@ -326,7 +327,7 @@ fn project(schema: &Value, backend: Backend, root: &Value) -> (Value, Shape) {
                     let optional = !schema["required"]
                         .as_array()
                         .is_some_and(|required| required.contains(&json!(name)));
-                    let (mut projected, shape) = project(child, backend, root);
+                    let (mut projected, shape) = project(child, api, root);
                     let omit_null = optional && !accepts_null(child, root);
                     if optional {
                         projected = json!({"anyOf":[projected,{"type":"null"}]});
@@ -348,11 +349,8 @@ fn project(schema: &Value, backend: Backend, root: &Value) -> (Value, Shape) {
             Shape::Object(fields)
         }
         Some("array") => {
-            let (items, shape) = project(
-                schema.get("items").unwrap_or(&Value::Bool(true)),
-                backend,
-                root,
-            );
+            let (items, shape) =
+                project(schema.get("items").unwrap_or(&Value::Bool(true)), api, root);
             output.insert("items".into(), items);
             Shape::Array(Box::new(shape))
         }

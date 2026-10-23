@@ -609,14 +609,30 @@ fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
             assert!(error.contains(&named), "{error}");
         }
     }
-    let unknown = json!({"kind":"agent","backend":"unknown","model":"m"});
-    let error = parse(json!({"name":"a","evals":[eval(unknown)]}))
+    // Any other name is a custom provider, set up where the eval runs; its form is checked.
+    let custom = json!({"kind":"agent","backend":"local","model":"m","reasoning":"minimal"});
+    assert!(parse(json!({"name":"a","evals":[eval(custom)]})).is_ok());
+    let malformed = json!({"kind":"agent","backend":"my provider","model":"m"});
+    let error = parse(json!({"name":"a","evals":[eval(malformed)]}))
         .err()
         .unwrap();
-    assert!(error.contains("unknown variant `unknown`"), "{error}");
+    assert!(error.contains("backend must match"), "{error}");
+    for (reasoning, ok) in [
+        ("high", true),
+        ("minimal", true),
+        ("xhigh", false),
+        ("none", false),
+    ] {
+        let gemini = json!({"kind":"agent","backend":"gemini","model":"m","reasoning":reasoning});
+        assert_eq!(
+            parse(json!({"name":"a","evals":[eval(gemini)]})).is_ok(),
+            ok,
+            "{reasoning}"
+        );
+    }
     for profile in [
         json!({"kind":"agent","provider":"openai","model":"m"}),
-        json!({"kind":"agent","backend":"unknown","model":"m"}),
+        json!({"kind":"agent","backend":"my provider","model":"m"}),
         json!({"kind":"agent","backend":"openai","model":"m","reasoning":"off"}),
         json!({"kind":"agent","backend":"anthropic","model":"m","reasoning":"xhigh"}),
         json!({"kind":"agent","backend":"codex","model":"m","reasoning":"ultra"}),

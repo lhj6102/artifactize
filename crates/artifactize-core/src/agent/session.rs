@@ -752,7 +752,7 @@ mod tests {
         };
         let mut recorder = Recorder::new(Some(&saving), &request.request, &reference.session_id);
         recorder.start(Header {
-            backend: Some(crate::config::Backend::Openai),
+            backend: Some(crate::config::Provider::Openai.into()),
             ..Header::default()
         });
         recorder.message(1, &Message::user("still recorded nowhere"), false);

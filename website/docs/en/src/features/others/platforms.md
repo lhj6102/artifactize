@@ -82,7 +82,7 @@ their target with the desktop's default application:
 | Linux | `xdg-open` |
 | WSL | `xdg-open`, inside the Linux distribution |
 | macOS | `open` |
-| Windows | the Windows shell (ShellExecute) |
+| Windows | the default application for the target |
 
 WSL behaves as Linux: there is no fallback to `wslview` or Windows programs. If
 `xdg-open` is missing or opens nothing, install your distribution's `xdg-utils` and

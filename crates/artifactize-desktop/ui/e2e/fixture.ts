@@ -10,7 +10,7 @@ import { commandFields, runtimeProfile, type Operation } from "./native-fixtures
 import { waitingRun } from "./run-fixtures.ts";
 import {
   exists, makeDirectory, nativePath, parentOf, portablePath, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
-  type NativePath,
+  type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
 export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
@@ -122,6 +122,20 @@ export type Saved = {
 export async function remoteStatus(fixture: Fixture): Promise<{ code: number; stdout: string }> {
   const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "remote", "status", "--json"],
     { env: { ...environment(fixture), ARTIFACTIZE_REMOTE: "" } });
+  return { code: status, stdout };
+}
+
+/** The providers this machine has set up, as `provider list --json` prints them with the app's `env`. */
+export async function providerList(fixture: Fixture, env: Environment = {}): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "provider", "list", "--json"],
+    { env: { ...environment(fixture), ...env } });
+  return { code: status, stdout };
+}
+
+/** `verify --all --wait --json` without blocking a provider served by the calling test. */
+export async function verifyAll(fixture: Fixture): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "verify", "--all", "--wait", "--json"],
+    { env: environment(fixture) });
   return { code: status, stdout };
 }
 

@@ -19,7 +19,6 @@
   import DetailPane from "./DetailPane.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
-  import Settings from "../settings/Settings.svelte";
   import { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
@@ -58,7 +57,7 @@
 
   /** The chip of `item` shown in the Main area, by its index. */
   function filled(item: BranchView): number | null {
-    if ((shown.kind !== "run" && shown.kind !== "current") || keyOf(shown.branch) !== keyOf(item.key) || m.settings) return null;
+    if ((shown.kind !== "run" && shown.kind !== "current") || keyOf(shown.branch) !== keyOf(item.key)) return null;
     const at = item.chips.findIndex((chip) => (shown.kind === "run" ? chip.kind === "run" && chip.id === shown.run : chip.kind === "current"));
     return at < 0 ? null : at;
   }
@@ -76,7 +75,6 @@
 
   /** Show `chip` of `item` in the Main area. */
   function show(item: BranchView, chip: Chip) {
-    m.settings = false;
     if (chip.kind === "run") {
       m.shown = { kind: "run", branch: item.key, run: chip.id };
       closeDetailOf(keyOf({ kind: "run", run: chip.id }));
@@ -86,7 +84,6 @@
   }
 
   function showCurrent(item: BranchView) {
-    m.settings = false;
     m.shown = { kind: "current", branch: item.key };
     closeDetailOf(keyOf({ kind: "current", branch: item.key }));
     void browse.close();
@@ -116,7 +113,6 @@
   /** Open a waiting review (or a Human request opened by ID) in the Main area. */
   function openReview(id: string) {
     app.review(id);
-    m.settings = false;
     m.shown = { kind: "review", id };
     m.opened = null;
     current.clear();
@@ -134,7 +130,6 @@
     try {
       const detail = await call(app.ipc.requestDetail(id));
       if (detail.profile === "human") return openReview(id);
-      m.settings = false;
       m.folds = { technical: false, pending: false, log: false, debug: false };
       m.shown = { kind: "request", detail };
       m.opened = null;
@@ -317,8 +312,8 @@
   }
 
   function mainKey(event: KeyboardEvent) {
-    // A review and Settings take their own keys; a read-only request has its folds.
-    if (m.settings || shown.kind === "review") return;
+    // A review takes its own keys; a read-only request has its folds.
+    if (shown.kind === "review") return;
     if (shown.kind === "request" && !plain(event, "Escape") && !plain(event, "ArrowLeft")) {
       if (m.folds.log) return;
       if (plain(event, "t") && shown.detail.card) m.folds.debug = !m.folds.debug;
@@ -351,7 +346,6 @@
   }
 
   const title = $derived.by(() => {
-    if (m.settings) return "Settings";
     if (shown.kind === "run") return `Run ${shown.run}`;
     if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
     if (shown.kind === "review") return "Review";
@@ -365,7 +359,7 @@
     { id: "pane.focus", group: "Pane", label: "Focus the Pane", run: () => void focus("pane") },
     { id: "main.focus", group: "Main area", label: "Focus the Main area", run: () => void focus("main") },
     { id: "main.open-id", group: "Main area", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
-    { id: "main.run", group: "Main area", label: "Open the Run's Detail", enabled: () => run !== null && !m.settings, run: openRun },
+    { id: "main.run", group: "Main area", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
     {
       id: "main.close",
       group: "Main area",
@@ -410,9 +404,7 @@
               <button class="button small" onclick={closeMain}>Close <kbd>Esc</kbd></button>
             {/if}
           {/snippet}
-          {#if m.settings}
-            <Settings active={m.settings} />
-          {:else if shown.kind === "run"}
+          {#if shown.kind === "run"}
             {#if run}
               <RunView {run} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
             {:else if view?.missing}
@@ -439,7 +431,7 @@
             <p class="empty">Choose a branch or a waiting review in the Pane.</p>
           {/if}
         </Panel>
-        {#if m.opened && source && keyOf(m.opened.source) === keyOf(source) && !m.settings}
+        {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
           <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
             <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
                  the resize cursor. -->

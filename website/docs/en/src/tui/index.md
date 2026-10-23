@@ -135,9 +135,10 @@ tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` run
 | Esc | Cancel work, then stop editing, then leave Detail |
 | Enter on `+ Add` / Ctrl-D | In a list of groups, add a group / remove the selected group |
 
-While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
+While a Human review is being claimed or released, running a tool, or submitting,
+ordinary PgUp/PgDn scroll the Tool log
 regardless of the focused area. Normal editing and focus switching pause until
-the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
+that ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
 - **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
   `--reviewer NAME`, while Monitor always uses the default.
@@ -264,7 +265,10 @@ focused pane needs more room.
   lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
   **Run** row opens validation and unmet obligations, counts, errors, waiting and
   running work, timing, budgets, executed/reused counts and full spent/saved
-  usage in Detail.
+  usage in Detail. Validation stays as it was at Run end, while the tree's rows show the
+  requests as they stand now, including a later Human submission: a dim `*` marks a row
+  whose state changed since the Run ended (not that files changed), and Artifact Detail
+  keeps an `At Run end` field.
 
 Scope badges and the header share `!N ✗N ◐N ?N` attention counters: requests in
 ERROR and RED, Runs still running, and sign-offs waiting for a person, deferred ones
@@ -329,12 +333,6 @@ The selected eval's upstream Artifact rows get `↑`: bright when unmet, dim whe
 complete. There is no downstream highlight. Off-screen targets show `↑N above` or
 `↑N below`. `b` cycles through those Artifact rows, unmet first; Backspace returns
 to the original row. On an Artifact row, `b` uses its evals' combined upstream.
-
-The headline's validation stays **at Run end**. The tree rolls up the requests as
-they stand now, including a later Human submission. A dim `*` marks a row whose
-derived state changed since the Run ended; it does not mean files changed. Artifact
-Detail also keeps an `At Run end` field. Historical requests and validation are
-not rewritten by this view.
 
 ### Keys and mouse
 

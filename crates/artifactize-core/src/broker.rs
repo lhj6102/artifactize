@@ -92,14 +92,17 @@ impl Stops {
 
     /// The stop of the backend the request's Agent review uses, if any.
     fn of(&self, request: &Request) -> Option<StoppedBackend> {
-        let backend = request.options.backend?;
+        let backend = request.options.backend.as_ref()?;
         let stopped = self.0.lock().unwrap();
-        stopped.iter().find(|stop| stop.backend == backend).cloned()
+        stopped
+            .iter()
+            .find(|stop| &stop.backend == backend)
+            .cloned()
     }
 
     /// Whether `backend` stopped, asked later.
     fn check(&self, backend: &crate::config::Backend) -> Box<dyn FnOnce() -> bool + Send> {
-        let (stops, backend) = (self.clone(), *backend);
+        let (stops, backend) = (self.clone(), backend.clone());
         Box::new(move || {
             let stopped = stops.0.lock().unwrap();
             stopped.iter().any(|stop| stop.backend == backend)
@@ -114,7 +117,7 @@ impl Stops {
         let mut stopped = self.0.lock().unwrap();
         if Code::stops_backend(code) && !stopped.iter().any(|stop| &stop.backend == backend) {
             stopped.push(StoppedBackend {
-                backend: *backend,
+                backend: backend.clone(),
                 error_code: (*code).try_into().expect("backend stopping failure"),
                 eval_id: request.eval_id.clone(),
                 request_id: request.id.clone(),
@@ -471,7 +474,7 @@ impl Scheduler<'_, '_> {
                         && !admissions[index].blocked()
                     {
                         // Ready work owns capacity; speculative tasks yield before any ready task.
-                        let backend = current.options.backend;
+                        let backend = current.options.backend.as_ref();
                         let jobs_full = !matches!(admissions[index], Admission::Joining)
                             && self.run.jobs.is_some_and(|limit| {
                                 admissions.iter().filter(|state| state.uses_job()).count() >= limit
@@ -480,7 +483,8 @@ impl Scheduler<'_, '_> {
                             matches!(admissions[index], Admission::Capacity)
                                 && admissions.iter().enumerate().any(|(active, state)| {
                                     state.running()
-                                        && self.requests[active].options.backend == Some(backend)
+                                        && self.requests[active].options.backend.as_ref()
+                                            == Some(backend)
                                 })
                         });
                         if jobs_full || backend_full {
@@ -491,7 +495,8 @@ impl Scheduler<'_, '_> {
                                     matches!(state, Admission::Running { stop: None, .. })
                                         && evaluation.evals[request.eval_id.as_str()].readiness
                                             == crate::graph::Readiness::Wait
-                                        && (!backend_full || request.options.backend == backend)
+                                        && (!backend_full
+                                            || request.options.backend.as_ref() == backend)
                                 })
                             {
                                 admissions[active].stop(modes::Stop::Yield);
@@ -653,7 +658,7 @@ impl Scheduler<'_, '_> {
                             .options
                             .backend
                             .as_ref()
-                            .and_then(|name| Some((*name, self.limits.limit(*backend)?))),
+                            .and_then(|name| Some((name.clone(), self.limits.limit(backend)?))),
                         _ => None,
                     };
                     let mut claim = claim(
@@ -710,12 +715,13 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::Full => {
                             let (backend, limit) = limited.as_ref().expect("a limited backend");
-                            full.insert(*backend);
+                            full.insert(backend.clone());
                             let newly_waiting = !matches!(admissions[index], Admission::Capacity);
                             admissions[index] = Admission::Capacity;
                             if newly_waiting {
-                                request.queue =
-                                    Some(crate::store::QueueReason::Slot { backend: *backend });
+                                request.queue = Some(crate::store::QueueReason::Slot {
+                                    backend: backend.clone(),
+                                });
                                 request.blocked_reason = Some(format!(
                                     "Waiting for a free {backend} slot: all {limit} are in use on this machine (limits.json)."
                                 ));

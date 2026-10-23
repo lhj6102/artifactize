@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::{
     auth,
-    config::{Backend, read_workspace_config},
+    config::{Backend, Provider, read_workspace_config},
     llm, release, store, workspace,
 };
 
@@ -82,6 +82,9 @@ pub enum Details {
         present: bool,
         #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
         test_endpoint: Option<String>,
+    },
+    Providers {
+        custom: std::collections::BTreeMap<Backend, auth::providers::CustomView>,
     },
     NoRemote {
         configured: bool,
@@ -266,16 +269,24 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     }
     let (status, message, details) = sessions(&state);
     report.add("sessions", status, &message, details);
-    for (name, backend) in [
-        ("openai", Backend::Openai),
-        ("anthropic", Backend::Anthropic),
-    ] {
-        let variable = llm::key_variable(backend).expect("an API-key backend");
-        let present = llm::key_present(backend);
-        let key = format!(
-            "{variable} is {} (not validated with the provider)",
-            if present { "present" } else { "absent" }
-        );
+    let providers = auth::providers::list(Some(&state), repo);
+    let keys = match &providers {
+        Ok(providers) => providers.keys.clone(),
+        Err(_) => Vec::new(),
+    };
+    for status in keys {
+        let (name, variable, source) = (status.provider.as_str(), status.variable, status.source);
+        let present = source != auth::providers::KeySource::Absent;
+        let key = match source {
+            auth::providers::KeySource::Saved => format!(
+                "{variable} is absent; a saved {name} key is present (not validated with the provider)"
+            ),
+            _ => format!(
+                "{variable} is {} (not validated with the provider)",
+                if present { "present" } else { "absent" }
+            ),
+        };
+        let backend = status.provider;
         match llm::test_endpoint(backend) {
             Ok(None) => report.add(
                 name,
@@ -299,6 +310,51 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             ),
             Err(error) => report.add(name, CheckStatus::Fail, &error, Details::ApiKey { present, test_endpoint: None }),
         }
+    }
+    match providers {
+        // Like Codex: nothing is stored there yet, so the refusal is advice.
+        Ok(auth::providers::Providers {
+            refused: Some(refusal),
+            custom,
+            ..
+        }) => report.add(
+            "providers",
+            CheckStatus::Warn,
+            &refusal,
+            Details::Providers { custom },
+        ),
+        Ok(providers) if providers.custom.is_empty() => report.add(
+            "providers",
+            CheckStatus::Pass,
+            "No custom providers are set up.",
+            Details::Providers {
+                custom: providers.custom,
+            },
+        ),
+        Ok(providers) => report.add(
+            "providers",
+            CheckStatus::Pass,
+            &format!(
+                "Custom providers on this machine: {}.",
+                providers
+                    .custom
+                    .iter()
+                    .map(|(name, custom)| match custom {
+                        auth::providers::CustomView::Alias { provider } => {
+                            format!("{name} (alias of {provider})")
+                        }
+                        auth::providers::CustomView::Endpoint { url, .. } => {
+                            format!("{name} ({})", url.as_str())
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Details::Providers {
+                custom: providers.custom,
+            },
+        ),
+        Err(error) => report.add("providers", CheckStatus::Fail, &error, Details::None),
     }
     let (status, message, details) = codex(&state, repo);
     report.add("codex", status, &message, details);
@@ -481,7 +537,7 @@ fn sessions(state: &Path) -> (CheckStatus, String, Details) {
 /// The Codex sign-in, read offline: no lock, refresh or network, and an auth file is
 /// only read.
 fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
-    let endpoints = llm::test_endpoint(Backend::Codex).and_then(|base| {
+    let endpoints = llm::test_endpoint(Provider::Codex).and_then(|base| {
         Ok((
             base,
             llm::variable_endpoint(auth::codex::AUTH_URL_VARIABLE)?,
@@ -534,7 +590,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
         ),
     };
     for (variable, endpoint) in [
-        (llm::base_url_variable(Backend::Codex), &base),
+        (llm::base_url_variable(Provider::Codex), &base),
         (auth::codex::AUTH_URL_VARIABLE, &sign_in),
     ] {
         if let Some(endpoint) = endpoint {

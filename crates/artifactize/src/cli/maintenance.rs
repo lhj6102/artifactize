@@ -1,6 +1,7 @@
 //! Readiness, maintenance and account command workflows.
 
 use super::{Context, cancellation_listener, print_json};
+use artifactize_core::config::{Backend, Provider};
 use serde_json::json;
 use std::{
     io::{self, Write},
@@ -25,9 +26,20 @@ pub(super) async fn tools(
     Ok(u8::from(!report.ok))
 }
 
-pub(super) async fn login(context: Context) -> Result<u8, String> {
-    artifactize_core::auth::codex::login(context.state_dir.as_deref(), context.repo.as_deref())
-        .await?;
+pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, String> {
+    let (state, repo) = (context.state_dir.as_deref(), context.repo.as_deref());
+    if provider != Provider::Codex {
+        let key = super::secret::read(&format!("{provider} API key"))?.parse()?;
+        artifactize_core::auth::providers::save_key(state, repo, provider, key).await?;
+        if context.json {
+            print_json(&json!({ "provider": provider, "saved": true }))?;
+        } else {
+            writeln!(io::stdout().lock(), "Saved the {provider} API key.")
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(0);
+    }
+    artifactize_core::auth::codex::login(state, repo).await?;
     if context.json {
         print_json(&json!({ "provider": "codex", "signed_in": true }))?;
     } else {
@@ -36,7 +48,22 @@ pub(super) async fn login(context: Context) -> Result<u8, String> {
     Ok(0)
 }
 
-pub(super) async fn logout(context: Context) -> Result<u8, String> {
+pub(super) async fn logout(context: Context, provider: Provider) -> Result<u8, String> {
+    if provider != Provider::Codex {
+        artifactize_core::auth::providers::remove_key(
+            context.state_dir.as_deref(),
+            context.repo.as_deref(),
+            provider,
+        )
+        .await?;
+        if context.json {
+            print_json(&json!({ "provider": provider, "saved": false }))?;
+        } else {
+            writeln!(io::stdout().lock(), "Forgot the saved {provider} API key.")
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(0);
+    }
     let revoked = artifactize_core::auth::codex::logout(
         context.state_dir.as_deref(),
         context.repo.as_deref(),
@@ -131,9 +158,9 @@ pub(super) async fn prune(
     Ok(0)
 }
 
-pub(super) async fn models(context: Context, provider: super::ModelProvider) -> Result<u8, String> {
+pub(super) async fn models(context: Context, provider: Backend) -> Result<u8, String> {
     let listing = artifactize_core::llm::models::list(
-        provider.backend(),
+        provider,
         context.state_dir.as_deref(),
         context.repo.as_deref(),
     )

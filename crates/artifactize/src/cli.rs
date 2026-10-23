@@ -10,9 +10,11 @@ mod interactive;
 mod maintenance;
 #[cfg(test)]
 mod monitor_tests;
+mod provider;
 mod remote;
 mod render;
 mod run;
+mod secret;
 mod tools;
 mod workflow;
 use dispatch::Context;
@@ -85,15 +87,20 @@ pub enum Command {
         #[command(subcommand)]
         command: ToolsCommand,
     },
-    /// Sign in with Codex (ChatGPT) in the system browser and save artifactize's tokens.
+    /// Sign in with Codex (ChatGPT) in the system browser, or save an API key read from stdin.
     Login {
-        #[command(subcommand)]
-        provider: AuthProvider,
+        #[arg(value_enum)]
+        provider: artifactize_core::config::Provider,
     },
-    /// Revoke and remove artifactize's own Codex tokens.
+    /// Revoke and remove artifactize's own Codex tokens, or forget a saved API key.
     Logout {
+        #[arg(value_enum)]
+        provider: artifactize_core::config::Provider,
+    },
+    /// List, add or remove the custom providers an Agent profile's backend may name.
+    Provider {
         #[command(subcommand)]
-        provider: AuthProvider,
+        command: provider::ProviderCommand,
     },
     /// Sign in to, sign out of, or check a shared remote review store.
     Remote {
@@ -111,10 +118,10 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// List the models a backend offers to your key or account.
+    /// List the models a built-in or custom provider offers to your key or account.
     Models {
-        #[command(subcommand)]
-        provider: ModelProvider,
+        /// The provider, as an Agent profile's backend names it.
+        provider: artifactize_core::config::Backend,
     },
     /// Submit selected evals; use --wait to observe the validation outcome.
     #[command(group(clap::ArgGroup::new("required_selection")
@@ -300,32 +307,6 @@ impl PolicyArgs {
             force: self.force,
             fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs as usize),
             ..Default::default()
-        }
-    }
-}
-
-#[derive(Debug, Subcommand)]
-pub enum AuthProvider {
-    /// The ChatGPT/Codex account that the codex backend uses.
-    Codex,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ModelProvider {
-    /// OpenAI API models (OPENAI_API_KEY).
-    Openai,
-    /// Anthropic API models (ANTHROPIC_API_KEY).
-    Anthropic,
-    /// Codex models your ChatGPT account can use (artifactize login codex).
-    Codex,
-}
-
-impl ModelProvider {
-    fn backend(self) -> artifactize_core::config::Backend {
-        match self {
-            Self::Openai => artifactize_core::config::Backend::Openai,
-            Self::Anthropic => artifactize_core::config::Backend::Anthropic,
-            Self::Codex => artifactize_core::config::Backend::Codex,
         }
     }
 }

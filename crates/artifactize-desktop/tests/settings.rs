@@ -1,7 +1,7 @@
 //! Settings at the command boundary, against the CLI tests' loopback fake for the Codex
-//! sign-in, the model listings and a remote review store: API-key presence (never values),
-//! `login`/`logout codex` with a pasted redirect and a cancel, `models`, and `remote
-//! login|status|logout`. A child probe owns its environment, separate from the shared fixture
+//! sign-in, the model listings and a remote review store: where each API key comes from (never
+//! values), saved keys and custom providers, `login`/`logout codex` with a pasted redirect and a
+//! cancel, `models`, and `remote login|status|logout`. A child probe owns its environment, separate from the shared fixture
 //! lifecycle tests running in this binary.
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
@@ -19,6 +19,8 @@ mod support;
 use support::{FakeProvider, Reply, codex, openai};
 
 const OPENAI_KEY: &str = "sk-desktop-settings-secret";
+const SAVED_KEY: &str = "sk-desktop-saved-gemini-key";
+const ENDPOINT_KEY: &str = "sk-desktop-endpoint-key-0123";
 const REMOTE_TOKEN: &str = "azt_desktopsettingstoken0123456789";
 /// Answered with a client error that echoes it back.
 const ECHO_TOKEN: &str = "azt_echoedbythestore0123456789abcd";
@@ -91,7 +93,10 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
             ("ARTIFACTIZE_CODEX_AUTH_URL", provider.url.clone().into()),
         ],
     );
-    command.arg("--ignored").env_remove("ANTHROPIC_API_KEY");
+    command
+        .arg("--ignored")
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("GEMINI_API_KEY");
     for variable in [
         "ARTIFACTIZE_CODEX_AUTH_FILE",
         "ARTIFACTIZE_REMOTE",
@@ -135,6 +140,10 @@ fn settings_command_probe() {
         .unwrap()
         .into_string()
         .unwrap();
+    let openai_base = support::os::environment_variable("ARTIFACTIZE_OPENAI_BASE_URL")
+        .unwrap()
+        .into_string()
+        .unwrap();
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
@@ -158,21 +167,93 @@ fn settings_command_probe() {
     let call = |command: &str, args: Value| invoke(&window, command, args);
     let secret_free = |value: &Value| {
         let text = value.to_string();
-        for secret in [OPENAI_KEY, REMOTE_TOKEN, ECHO_TOKEN] {
+        for secret in [
+            OPENAI_KEY,
+            SAVED_KEY,
+            ENDPOINT_KEY,
+            REMOTE_TOKEN,
+            ECHO_TOKEN,
+        ] {
             // Not even a prefix of it.
             assert!(!text.contains(&secret[..12]), "{text}");
         }
     };
 
-    // API keys: whether each is in the environment, never its value.
-    let keys = call("settings_keys", json!({})).unwrap();
-    secret_free(&keys);
-    assert_eq!(
-        keys,
+    // API keys: where each comes from, never its value.
+    let keys = |gemini: &str| {
         json!([
-            {"provider": "openai", "variable": "OPENAI_API_KEY", "present": true},
-            {"provider": "anthropic", "variable": "ANTHROPIC_API_KEY", "present": false},
+            {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
+            {"provider": "anthropic", "variable": "ANTHROPIC_API_KEY", "source": "absent", "saved": false},
+            {"provider": "gemini", "variable": "GEMINI_API_KEY", "source": gemini, "saved": gemini == "saved"},
         ])
+    };
+    let providers = call("providers_list", json!({})).unwrap();
+    assert_eq!(providers, json!({"keys": keys("absent"), "custom": []}));
+    call(
+        "provider_key_save",
+        json!({"provider": "gemini", "key": SAVED_KEY}),
+    )
+    .unwrap();
+    let providers = call("providers_list", json!({})).unwrap();
+    secret_free(&providers);
+    assert_eq!(providers["keys"], keys("saved"));
+    let codex_key = call(
+        "provider_key_save",
+        json!({"provider": "codex", "key": SAVED_KEY}),
+    );
+    assert_eq!(codex_key.unwrap_err()["kind"], "account");
+
+    // Custom providers: an endpoint with a key (never shown) and an alias, each usable by name.
+    call(
+        "provider_custom_save",
+        json!({
+            "name": "local",
+            "target": {"kind": "endpoint", "api": "openaiChat", "url": openai_base},
+            "key": {"kind": "set", "key": ENDPOINT_KEY},
+        }),
+    )
+    .unwrap();
+    call(
+        "provider_custom_save",
+        json!({"name": "work", "target": {"kind": "alias", "provider": "openai"}, "key": {"kind": "none"}}),
+    )
+    .unwrap();
+    let builtin = call(
+        "provider_custom_save",
+        json!({"name": "openai", "target": {"kind": "alias", "provider": "codex"}, "key": {"kind": "none"}}),
+    );
+    assert_eq!(builtin.unwrap_err()["kind"], "account");
+    let providers = call("providers_list", json!({})).unwrap();
+    secret_free(&providers);
+    assert_eq!(
+        providers["custom"],
+        json!([
+            {"name": "local", "target": {"kind": "endpoint", "api": "openaiChat", "url": openai_base, "key": true}},
+            {"name": "work", "target": {"kind": "alias", "provider": "openai"}},
+        ])
+    );
+    for name in ["local", "work"] {
+        let models = call("models_list", json!({"provider": name})).unwrap();
+        assert_eq!(
+            models,
+            json!([{"slug": "gpt-fake", "displayName": "gpt-fake"}])
+        );
+    }
+    call("provider_custom_remove", json!({"name": "local"})).unwrap();
+    call("provider_key_remove", json!({"provider": "gemini"})).unwrap();
+    let providers = call("providers_list", json!({})).unwrap();
+    assert_eq!(providers["keys"], keys("absent"));
+    assert_eq!(
+        providers["custom"],
+        json!([{"name": "work", "target": {"kind": "alias", "provider": "openai"}}])
+    );
+    let gone = call("models_list", json!({"provider": "local"})).unwrap_err();
+    assert!(
+        gone["message"]
+            .as_str()
+            .unwrap()
+            .contains("No provider named local"),
+        "{gone}"
     );
 
     // Models, with the CLI's error for a missing key.
@@ -184,7 +265,7 @@ fn settings_command_probe() {
     let missing = call("models_list", json!({"provider": "anthropic"})).unwrap_err();
     assert_eq!(
         missing,
-        json!({"kind": "account", "message": "ANTHROPIC_API_KEY is required to list models."})
+        json!({"kind": "account", "message": "ANTHROPIC_API_KEY or a saved anthropic key is required to list models."})
     );
     let signed_out = call("models_list", json!({"provider": "codex"})).unwrap_err();
     assert!(

@@ -30,7 +30,7 @@ fn conversation(fixture: &Fixture) -> (Conversation, Recorder) {
 async fn run(
     fixture: &Fixture,
     factory: impl FnOnce(
-        crate::config::Backend,
+        &crate::config::Backend,
         &crate::config::ModelId,
         &Path,
         &Path,

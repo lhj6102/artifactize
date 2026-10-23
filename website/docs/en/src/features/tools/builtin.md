@@ -90,8 +90,8 @@ block; fixed `read`, `section` and `help` return text blocks:
   with the exit status and the program's stderr as it is, without its stdout. It runs a real program, so name
   only programs you trust.
 - **`open`** (Human only) opens one file, folder or `http://`/`https://` URL in the
-  desktop's default application: `xdg-open` on Linux and WSL, `open` on macOS, the
-  Windows shell (ShellExecute) on Windows. The target is passed as one argument,
+  desktop's default application: through `xdg-open` on Linux and WSL, `open` on macOS,
+  and the default application for the target on Windows. The target is passed as one argument,
   never through a shell. Other URL schemes, such as `file:` or `mailto:`, are
   refused. The result only records that the application was
   started; the application belongs to the reviewer and keeps running.

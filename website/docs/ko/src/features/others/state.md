@@ -38,9 +38,11 @@ wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 0.9로 업그레이드하면 모든 eval을 한 번 리뷰합니다.
 [0.9로 업그레이드](../fingerprint.md#upgrading-to-09)를 보세요.
 
-**토큰은 저장소 밖에 둡니다.** Codex 로그인 정보와 리뷰 저장소 토큰을 담는 `$STATE/auth`가
+**토큰은 저장소 밖에 둡니다.** Codex 로그인 정보, 리뷰 저장소 토큰, 저장한 API 키와 커스텀
+provider(`providers.json`)를 담는 `$STATE/auth`가
 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면, gitignore된 폴더라도 거부합니다.
-그러면 `login codex`와 `remote login`은 로그인하기 전에 두 폴더 경로를 모두 알려 주며 실패합니다.
+그러면 `login`, `provider add`, `remote login`은 아무것도 저장하기 전에 두 폴더 경로를 모두 알려
+주며 실패합니다.
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -95,8 +97,9 @@ Agent 리뷰가 그 백엔드의 사용량 한도나 구독 요금제가 허용�
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-키는 백엔드 이름(`openai`, `anthropic`, `codex`)이고 한도는 1–100000입니다. 항목을 지정하지 않은
-백엔드나 이 파일이 없는 머신에서는 Agent 리뷰의 동시 실행 수를 제한하지 않습니다. `verify`는 시작할 때 이 파일을 읽습니다. 파일은 artifactize가
+키는 프로필에 적는 백엔드 이름(`openai`, `anthropic`, `gemini`, `codex`, 또는
+[커스텀 provider](../agent.md#custom-providers) 이름)이고 한도는 1–100000입니다. 항목이 없는
+백엔드나 파일이 없는 머신은 무제한입니다. `verify`는 시작할 때 이 파일을 읽습니다. 파일은 artifactize가
 지원하는 필드만 담은 64 KiB 이하의 일반 UTF-8 JSON 파일이어야 합니다. 그렇지 않으면 `verify`가 Run을
 만들기 전에 멈추고(종료 코드 2), `doctor`는 심각한 오류로 알립니다.
 

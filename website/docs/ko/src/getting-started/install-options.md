@@ -74,8 +74,9 @@ brew install lhj6102/tap/artifactize
 artifactize --version
 ```
 
-`lhj6102/tap` Homebrew tap의 formula는 Mac의 CPU에 맞는 두 명령을 설치하며
-안정 릴리스로만 업데이트됩니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
+이 명령은 우리 Homebrew 패키지 저장소(*tap*)인 `lhj6102/tap`에서 Mac의 CPU에 맞는 두 명령을
+설치하며, 안정 릴리스로만 업데이트됩니다. Homebrew는 이런 명령줄 패키지를 *formula*, 앱 패키지를
+*cask*라고 부릅니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
 앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다. cask가 formula를 대신하므로, formula가 설치되어 있다면 먼저 제거하세요.
 
 ```sh
@@ -176,8 +177,13 @@ cargo install --path crates/artifactize-tools --locked
 실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
 [내려받기](install.md#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. AppImage에
-실행 권한을 주고 실행하세요. glibc 2.35 이상이 필요합니다.
+`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부되며, glibc 2.35 이상이
+필요합니다. 내려받은 폴더에서 실행 권한을 주고 실행하세요.
+
+```sh
+chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
+./artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
+```
 
 각 파일 옆에는 `.sha256` 체크섬이 있습니다. `artifactize-desktop` 명령으로 앱을 실행하거나
 응용 프로그램 메뉴 또는 시작 메뉴에서 **Artifactize**를 여세요.

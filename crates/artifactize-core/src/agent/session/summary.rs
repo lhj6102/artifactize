@@ -62,7 +62,7 @@ impl Summary {
             .zip(ended_at)
             .map(|(start, end)| end.since(start));
         let mut summary = Self {
-            backend: header.backend,
+            backend: header.backend.clone(),
             model: header.model.clone(),
             reasoning: header.reasoning,
             started_at,
@@ -225,7 +225,10 @@ mod tests {
                 .map(|event| serde_json::from_value(event).unwrap())
                 .collect(),
         });
-        assert_eq!(summary.backend, Some(crate::config::Backend::Openai));
+        assert_eq!(
+            summary.backend,
+            Some(crate::config::Provider::Openai.into())
+        );
         assert_eq!(
             summary.duration_ms,
             Some(std::time::Duration::from_millis(2500))

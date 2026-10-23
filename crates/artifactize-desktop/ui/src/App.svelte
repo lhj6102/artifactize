@@ -2,6 +2,7 @@
   // The window: its one screen over one state, the command palette, help, and what happens on
   // quit.
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { Dialog } from "bits-ui";
   import { onMount, tick } from "svelte";
   import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
   import { call, message, onHumanToolLog, onStateChanged } from "./ipc/client";
@@ -9,9 +10,10 @@
   import LeaveDialog from "./review/LeaveDialog.svelte";
   import Palette from "./shell/Palette.svelte";
   import Help from "./shell/Help.svelte";
+  import Settings from "./settings/Settings.svelte";
   import ReleaseDialog from "./shell/ReleaseDialog.svelte";
   import { useCommands } from "./shell/commands.svelte";
-  import { chord, composing, editable, plain } from "./shell/keys";
+  import { chord, composing, plain } from "./shell/keys";
   import { HELP } from "./shell/shortcuts";
   import { AppState, setAppState } from "./shell/app.svelte";
 
@@ -73,6 +75,12 @@
     m.settings = !m.settings;
   }
 
+  /** A press on the bar's Settings button is its own toggle, not a click outside Settings that
+   * would close it only for the button to open it again. */
+  function keepToggle(event: PointerEvent) {
+    if (event.target instanceof Element && event.target.closest("[data-settings-toggle]")) event.preventDefault();
+  }
+
   async function search() {
     m.settings = false;
     await tick();
@@ -89,7 +97,7 @@
   ]);
 
   /** No dialog is open: window keys belong to the screen. */
-  const free = () => !app.palette && !app.help && !app.asking && !release.open && leaving.taken === null;
+  const free = () => !app.palette && !app.help && !app.asking && !m.settings && !release.open && leaving.taken === null;
 
   function keydown(event: KeyboardEvent) {
     if (event.defaultPrevented || composing(event)) return;
@@ -105,13 +113,10 @@
     } else if (chord(event, "f") || (plain(event, "/") && free())) {
       event.preventDefault();
       void search();
-    } else if (plain(event, "Escape") && m.settings && free() && !editable(event.target)) {
-      event.preventDefault();
-      m.settings = false;
     } else if (plain(event, "?")) {
       event.preventDefault();
       app.help = true;
-    } else if (plain(event, "q")) {
+    } else if (plain(event, "q") && !m.settings) {
       event.preventDefault();
       void quit();
     } else if (chord(event, "r") || event.key === "F5") {
@@ -128,7 +133,7 @@
 <svelte:window onkeydown={keydown} />
 
 <div class="app">
-  <header class="bar">
+  <header class="bar" class:raised={m.settings}>
     <div class="brand"><img src={brandMark} alt="" width="24" height="24" />Artifactize</div>
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
@@ -136,7 +141,7 @@
     {#if release.notice}
       <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
     {/if}
-    <button class="button" aria-pressed={m.settings} onclick={settings}>Settings</button>
+    <button class="button" aria-pressed={m.settings} data-settings-toggle onclick={settings}>Settings</button>
     <button class="button" onclick={() => (app.palette = true)}>
       Commands <kbd>Ctrl+K</kbd>
     </button>
@@ -150,6 +155,16 @@
   {/if}
 </div>
 
+<!-- Settings opens over the screen; closing it leaves the screen beneath as it was. The bar
+     stays above it, so its Settings button closes it again. -->
+<Dialog.Root bind:open={m.settings}>
+  <Dialog.Portal>
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class="dialog settings-dialog" aria-labelledby="settings-title" onInteractOutside={keepToggle}>
+      <Settings active={m.settings} onclose={() => (m.settings = false)} />
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
 <Palette bind:open={app.palette} />
 <Help bind:open={app.help} sections={help} />
 <ReleaseDialog {release} />
@@ -174,6 +189,11 @@
     padding: 8px var(--pad);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
+  }
+  /* Above the Settings overlay and dialog. */
+  .raised {
+    position: relative;
+    z-index: 52;
   }
   .brand {
     display: flex;

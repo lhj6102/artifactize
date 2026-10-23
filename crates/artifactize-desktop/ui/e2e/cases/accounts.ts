@@ -131,7 +131,7 @@ export const scenarios: Scenario[] = [
       await signedIn();
       await signOut();
 
-      await browser.$("#models-provider").selectByAttribute("value", "openai");
+      await browser.$('nav[aria-label="Providers"]').$("button=OpenAI").click();
       await browser.$("button=List models").click();
       await browser.waitUntil(async () => (await browser.$('table[aria-label="Models"]').getText()).includes("gpt-e2e"), { timeout: 15000, timeoutMsg: "the backend model list appears" });
     },

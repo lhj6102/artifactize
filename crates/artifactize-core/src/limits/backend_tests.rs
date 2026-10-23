@@ -1,5 +1,6 @@
 //! Pin accepted backend names, previous diagnostics and lexicographic JSON/display order.
 use super::*;
+use crate::config::Provider;
 use std::fs;
 
 #[tokio::test]
@@ -11,9 +12,9 @@ async fn limits_keep_typed_backend_keys_and_existing_wire_order() {
     )
     .unwrap();
     let limits = Limits::read(directory.path()).unwrap();
-    assert_eq!(limits.limit(Backend::Openai), Some(8));
-    assert_eq!(limits.limit(Backend::Codex), Some(4));
-    assert_eq!(limits.limit(Backend::Anthropic), Some(2));
+    assert_eq!(limits.limit(&Provider::Openai.into()), Some(8));
+    assert_eq!(limits.limit(&Provider::Codex.into()), Some(4));
+    assert_eq!(limits.limit(&Provider::Anthropic.into()), Some(2));
     assert_eq!(
         serde_json::to_string(limits.backends()).unwrap(),
         r#"{"anthropic":2,"codex":4,"openai":8}"#
@@ -33,7 +34,7 @@ async fn limits_keep_typed_backend_keys_and_existing_wire_order() {
     fs::write(directory.path().join(FILE), "{}").unwrap();
     let empty = Limits::read(directory.path()).unwrap();
     assert!(empty.backends().is_empty());
-    assert_eq!(empty.limit(Backend::Openai), None);
+    assert_eq!(empty.limit(&Provider::Openai.into()), None);
 }
 
 #[test]
@@ -42,12 +43,12 @@ fn backend_errors_keep_previously_emitted_messages() {
     let path = directory.path().join(FILE);
     for (wire, expected) in [
         (
-            r#"{"backends":{"opneai":2}}"#,
-            "backends: unknown variant `opneai`, expected one of `openai`, `anthropic`, `codex`",
+            r#"{"backends":{"my provider":2}}"#,
+            "backends: backend must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}.",
         ),
         (
             r#"{"backends":{"claude":2}}"#,
-            "backends: backend \"claude\" was removed in 0.5.0; use \"openai\" or \"anthropic\" with an API key, or \"codex\" with a ChatGPT/Codex sign-in",
+            "backends: backend \"claude\" was removed in 0.5.0; use \"openai\", \"anthropic\" or \"gemini\" with an API key, or \"codex\" with a ChatGPT/Codex sign-in",
         ),
         (
             r#"{"backends":{"openai":0}}"#,
@@ -68,13 +69,13 @@ fn backend_errors_keep_previously_emitted_messages() {
         r#"{"backends":null}"#,
         r#"{"backends":{"openai":null}}"#,
         r#"{"backends":{"openai":1.0}}"#,
-        r#"{"backends":{"Openai":1}}"#,
+        r#"{"backends":{"-openai":1}}"#,
     ] {
         fs::write(&path, wire).unwrap();
         assert!(Limits::read(directory.path()).is_err());
     }
     // Keep old sorted validation precedence when multiple keys are invalid.
-    fs::write(&path, r#"{"backends":{"opneai":1,"anthropic":0}}"#).unwrap();
+    fs::write(&path, r#"{"backends":{"zz-name!":1,"anthropic":0}}"#).unwrap();
     assert_eq!(
         Limits::read(directory.path()).unwrap_err(),
         format!(
