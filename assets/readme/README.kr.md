@@ -90,8 +90,8 @@ Arti와 대화하면서 시작해 보기를 권합니다. Arti는 코딩 어시�
 지금 프로젝트를 예로 들어 Artifactize를 설명하고, 기존 테스트와 리뷰를 옮기거나
 새 프로젝트를 준비하도록 돕습니다.
 [플러그인](https://artifactize.dev/docs/ko/agent-plugin/plugin.html) 하나만 설치하면 Claude Code와
-Codex에서 [Hey Arti](https://artifactize.dev/docs/ko/agent-plugin/hey-arti.html)의 안내와
-Artifactize 도구를 쓸 수 있습니다.
+Codex에서 [Hey Arti](https://artifactize.dev/docs/ko/agent-plugin/hey-arti.html)의 안내를
+받으며 Artifactize 도구를 쓸 수 있습니다.
 
 ```text
 /plugin marketplace add lhj6102/artifactize          # Claude Code, 세션 안에서
@@ -149,4 +149,4 @@ core가 통과했고, cli의 테스트가 실패해 docs는 막혔으며, releas
 
 **Review:** 예시 리뷰어가 승인 요청 목록에서 release 승인 요청을 열고 리뷰를 맡은 다음, notes 도구를 실행하고 GREEN 양식을 열어 둔 화면입니다.
 
-<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 검토 지침, notes 도구, 도구 로그, GREEN 양식.">
+<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 리뷰 지침, notes 도구, 도구 로그, GREEN 양식.">
