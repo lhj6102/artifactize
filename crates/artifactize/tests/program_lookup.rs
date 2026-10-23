@@ -318,28 +318,27 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
 
 #[test]
 fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments() {
+    // The scripts are files and every value arrives as a field, never inside a shell string.
+    let scripts = support::os::tempdir();
+    let fields = scripts.path().join("fields");
+    fs::write(&fields, "printf '<%s>\\n' \"$@\"\n").unwrap();
     let output = Command::new(support::os::stand_in_shell())
-        .args([
-            "-c",
-            "printf '<%s>\\n' \"$@\"",
-            "fixture",
-            "a b",
-            "say \"hello\"",
-            "a&b",
-            "",
-        ])
+        .arg(&fields)
+        .args(["a b", "say \"hello\"", "a&b", ""])
         .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, b"<a b>\n<say \"hello\">\n<a&b>\n<>\n");
-    // The program reaches the fixed script as a variable, never as interpolated source.
+    // With no fields after the program and its arguments, "$@" adds no empty field.
+    let forward = scripts.path().join("forward");
+    fs::write(&forward, "\"$@\"\n").unwrap();
     let output = Command::new(support::os::stand_in_shell())
+        .arg(&forward)
         .args([
+            support::os::python_program(),
             "-c",
-            "\"$PROGRAM\" -c 'import sys; print(len(sys.argv)-1)' \"$@\"",
-            "fixture",
+            "import sys; print(len(sys.argv)-1)",
         ])
-        .env("PROGRAM", support::os::python_program())
         .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");

@@ -3,7 +3,7 @@
 GREEN이나 RED 결과에 무엇이 들어갈지는 `pass_schema`와 `fail_schema`로 선언합니다
 ([소유자 스키마](../declarations.md#owner-result-schemas)). 이 페이지는 Agent가 무엇을 돌려줘야
 하는지, artifactize가 이를 어떻게 확인하는지, 실패하면 `run show`에서 무엇을 보게 되는지
-설명합니다. 설정과 평소 사용법은 [Agent eval과 백엔드](../agent.md)를 보세요.
+설명합니다. 설정 방법과 기본 사용법은 [Agent eval과 백엔드](../agent.md)를 보세요.
 
 ## 최종 출력과 검사 {#final-output-and-validation}
 

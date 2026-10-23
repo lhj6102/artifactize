@@ -11,7 +11,7 @@
 `--state-dir PATH`를 주면 각 Run의 출력(`PATH/runs` 아래)을 포함해 상태 전체를 다른 폴더에
 둡니다. 저장된 Run은 저장소를 지운 뒤에도 계속 읽을 수 있습니다.
 
-상태는 리뷰하는 저장소나 다른 artifactize 작업 공간 안에 둘 수 없습니다. `.artf` 선언, 예전 `artifactize.json`이나 `.artifactizeignore`가 있는 폴더뿐 아니라 그 상위 폴더도 작업 공간으로 봅니다. 이런 위치를 지정하면 명령은 아무것도 쓰지 않고 실패합니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
+상태는 리뷰하는 저장소나 다른 artifactize 작업 공간 안에 둘 수 없습니다. 상태 디렉터리나 그 위의 어느 폴더에든 `.artf` 선언, 예전 `artifactize.json`이나 `.artifactizeignore`가 있으면 명령은 아무것도 쓰지 않고 실패합니다. 프로젝트 폴더들을 담고만 있는 상위 폴더에는 둘 수 있습니다. 예를 들어 `/work/app/index.artf` 옆의 `/work/.state`는 괜찮습니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
 그 안의 선언을 모두 확인할 수 없으므로, 상태는 프로젝트 바깥에 두세요.
 
 **Microsoft Store 패키지**는 zip이나 Cargo로 설치한 버전과 별도로 Run, 로그인 정보, 캐시를 저장하며, 패키지를 제거하면 Windows가 이를 지웁니다. 그렇다고 격리된 환경은 아닙니다. eval이 실행하는
@@ -25,7 +25,7 @@
 
 **업그레이드.** 스키마 6, 7, 8, 9 형식으로 저장된 상태는 artifactize 명령으로 처음 열 때 현재 스키마 10으로
 자동 업그레이드됩니다. Run, ID, 캐시 결과, Human 승인은 그대로 남고, SIGNOFFS_PENDING으로 끝난 Run은
-YELLOW로 읽힙니다. 업그레이드에는 쓰기 권한이 필요하고 되돌릴 수 없습니다. 스키마 6~9만 지원하는 이전 바이너리로는 업그레이드된 상태를 열 수 없으므로, 이전 버전으로 돌아갈 수도 있다면 먼저 상태 폴더를 백업하세요. 스키마 1~5의 상태는
+YELLOW로 읽힙니다. 업그레이드에는 쓰기 권한이 필요하고 되돌릴 수 없습니다. 스키마 6~9만 지원하는 이전 바이너리로는 업그레이드된 상태를 열 수 없으므로, 이전 버전으로 돌아갈 수도 있다면 먼저 상태 디렉터리를 백업하세요. 스키마 1~5의 상태는
 다음 메시지와 함께 거부됩니다(종료 코드 2).
 
 ```text
@@ -38,9 +38,11 @@ wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 0.9로 업그레이드하면 모든 eval을 한 번 리뷰합니다.
 [0.9로 업그레이드](../fingerprint.md#upgrading-to-09)를 보세요.
 
-**토큰은 저장소 밖에 둡니다.** Codex 로그인 정보와 리뷰 저장소 토큰을 담는 `$STATE/auth`가
+**토큰은 저장소 밖에 둡니다.** Codex 로그인 정보, 리뷰 저장소 토큰, 저장한 API 키와 커스텀
+provider(`providers.json`)를 담는 `$STATE/auth`가
 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면, gitignore된 폴더라도 거부합니다.
-그러면 `login codex`와 `remote login`은 로그인하기 전에 두 폴더 경로를 모두 알려 주며 실패합니다.
+그러면 `login`, `provider add`, `remote login`은 아무것도 저장하기 전에 두 폴더 경로를 모두 알려
+주며 실패합니다.
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -48,14 +50,14 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 
 저장소 밖의 상태 디렉터리를 쓰거나, 아무것도 저장하지 않는 `ARTIFACTIZE_CODEX_AUTH_FILE`과
 `ARTIFACTIZE_REMOTE_TOKEN`을 쓰세요. `doctor`는 그런 상태에 아직 로그인 정보가 없으면
-경고하고, 로그인 정보가 저장되면(예를 들어 기존 상태 위에서 `git init`을 한 경우) 심각한 오류로
+경고하고, 로그인 정보가 저장되면(예를 들어 기존 상태 디렉터리나 그 상위 디렉터리에서 `git init`을 한 경우) 심각한 오류로
 알립니다.
 
 **Run끼리 작업을 나눕니다.** 재사용 키가 있는 완료된 결과는 같은 상태의 모든 Run이
 재사용합니다. 다른 워크트리나 프로세스를 포함해 두 Run이 같은 프로필로 같은 리뷰를 동시에
 필요로 하면, 두 번째 Run은 다시 실행하지 않고 첫 번째 실행에 합류합니다. 합류한 요청은 원래 실행이
 끝날 때까지 대기하며, 실행 시작 횟수에 포함되지 않고 백엔드 자리도 차지하지 않습니다. 합류한 요청도 같은 GREEN, RED, ERROR를
-받으며, ERROR는 이후 Run을 위해 남겨 두지 않습니다. 첫 번째 Runtime이나 Agent 리뷰가
+받으며, ERROR 결과는 이후 Run에서 재사용하지 않습니다. 첫 번째 Runtime이나 Agent 리뷰가
 취소되거나 끝나지 못하면, 대기 중이던 Run이 직접 실행하고 나머지는 그 실행에 합류합니다. Human
 승인은 다시 시작하지 않습니다. 승인을 요청한 Run이 취소되거나 멈추면, 해당 승인 요청과 그 결과가 나올 때까지 대기 중이던 다른 요청이 모두 ERROR로 끝나며, `verify`를 새로 실행하면 승인을 다시 요청합니다. 대기 중이던 Run을 취소해도 첫 번째
 Run은 취소되지 않습니다. `--force`를 쓰면 항상 따로 실행합니다. 진행 중인 리뷰는 원격
@@ -95,13 +97,14 @@ Agent 리뷰가 그 백엔드의 사용량 한도나 구독 요금제가 허용�
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-키는 백엔드 이름(`openai`, `anthropic`, `codex`)이고 한도는 1–100000입니다. 항목이 없는
+키는 프로필에 적는 백엔드 이름(`openai`, `anthropic`, `gemini`, `codex`, 또는
+[커스텀 provider](../agent.md#custom-providers) 이름)이고 한도는 1–100000입니다. 항목이 없는
 백엔드나 파일이 없는 머신은 무제한입니다. `verify`는 시작할 때 이 파일을 읽습니다. 파일은 artifactize가
 지원하는 필드만 담은 64 KiB 이하의 일반 UTF-8 JSON 파일이어야 합니다. 그렇지 않으면 `verify`가 Run을
 만들기 전에 멈추고(종료 코드 2), `doctor`는 심각한 오류로 알립니다.
 
-리뷰는 실행되는 동안 그 백엔드의 자리 하나를 쓰고, 끝나면 그 자리를 비웁니다. 결과를
-재사용하거나 합류한 요청은 자리를 차지하지 않습니다. 리뷰 프로세스가 죽으면 쓰던 자리가 비고
+리뷰는 실행되는 동안에만 그 백엔드의 동시 실행 수에 포함됩니다. 결과를
+재사용하거나 합류한 요청은 여기에 포함되지 않습니다. 리뷰 프로세스가 죽으면 쓰던 자리가 비고
 그 리뷰는 ERROR(`OWNER_DIED`)로 끝납니다. 자리가 모두 차 있으면 요청은 `Waiting for a free codex
 slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 QUEUED로
 표시되고, 자리가 비면 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청을
@@ -143,7 +146,7 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 |---|---|---|
 | `enabled` | `true` | `false`면 새 대화를 저장하지 않음. 이미 저장된 대화는 계속 읽을 수 있음 |
 | `maxBytes` | 1 GiB | 이 크기를 넘으면 정리를 시작함. 1 이상 |
-| `targetBytes` | 768 MiB. `maxBytes`가 768 MiB 이하면 `maxBytes`의 4분의 3 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
+| `targetBytes` | `maxBytes`가 768 MiB보다 크면 768 MiB, 아니면 3 × ⌊`maxBytes` ÷ 4⌋바이트 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
 
 정리는 `verify` Run이 eval을 마쳤을 때와 `prune`을 실행할 때 합니다. 대화가 `maxBytes`보다
 많은 공간을 쓰면, 가장 오래된 세션부터 지워 `targetBytes` 이하로 줄입니다. 실행 중인 리뷰의
@@ -152,9 +155,8 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 `agentSessions` 값이 잘못되면 `verify`와 `prune`이 실패하고(종료 코드 2) `doctor`가 이를
 알립니다.
 
-저장 위치는 `$STATE/agent-sessions/`이고 나만 읽을 수 있으며, 세션마다 `sessionId`를 이름으로
-쓰는 JSON Lines 파일이 하나씩 있습니다. `session show --json`은 그 이벤트를 출력하며, 이벤트마다
-`kind`가 있습니다.
+저장 위치는 `$STATE/agent-sessions/`이고 나만 읽을 수 있습니다. `session show --json`은 세션의
+이벤트를 출력하며, 이벤트마다 `kind`가 있습니다.
 
 | `kind` | 담는 내용 |
 |---|---|
@@ -171,8 +173,7 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 
 ### follow-up 재생 {#follow-up-replay}
 
-`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 저장된 대화를
-다시 보내므로 provider가 캐시를 재사용할 수 있습니다. 현재 프로젝트의 도구를 다시 제공하며,
+`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 현재 프로젝트의 도구를 다시 제공하며,
 리뷰 뒤에 그 리뷰가 다룬 Artifact 중 하나가 바뀌었다면 헤더에 그 사실을 표시하고 모델에도 알립니다. 질문은 새 리뷰가 아니라
 follow-up입니다. 모델은 일반 텍스트로 답하고, 도구를 쓸 수 있으며, 기록된 판정은 절대 바뀌지
 않습니다. `session show`는 질문을 쓴 그대로 보여 줍니다.

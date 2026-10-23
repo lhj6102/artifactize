@@ -10,7 +10,7 @@ The three executing kinds share the same lifecycle and reuse rules:
 |---|---|---|
 | [Agent](agent.md) | An exact model through a chosen backend, using declared read-only tools | GREEN or RED with schema-checked owner fields |
 | [Human](human.md) | A person who claims the waiting request and submits a sign-off | GREEN or RED with schema-checked owner fields |
-| [Runtime](runtime.md) | A declared program and argument vector | Exit 0 is GREEN; another exit code is RED |
+| [Runtime](runtime.md) | A declared program and its list of arguments | Exit 0 is GREEN; another exit code is RED |
 
 A failed invocation or invalid model result is **ERROR**, not RED. RED means the
 check actually judged the Artifact and rejected it. Each kind can be reused
@@ -34,10 +34,9 @@ instruction or runtime arguments name, and all their child Artifacts. For exampl
 `app/ui` if `ui` is a child of `app`, and use their tools; it does not reach what `spec`'s
 own evals reference. Naming an Artifact in a tool's arguments does not add an input.
 
-What an eval can read is more than what its [reuse key](fingerprint.md#the-reuse-key)
-covers: the key covers the target, its direct children and the named inputs, so a change
-deeper inside `app/ui`'s own children does not by itself review `app/review` again. Execution gates follow this eval’s own references and its target's children, not its siblings' references.
-Its own Artifact and the Artifacts in a cycle with it never gate it; a RED sibling or cycle peer does not block it, except that a [Human eval](artifact.md#human-sign-offs) waits for its Artifact's machine evals. See [Artifact](artifact.md) for declarations.
+An eval can read more than what decides its reuse (the
+[reuse key](fingerprint.md#the-reuse-key)) and more than what it waits for
+([eval dependencies](artifact.md#eval-dependencies)).
 
 `artifactize verify library/tests --wait` starts a [Run](run.md) for one eval.
 Use `artifactize status library/tests` first to see what can reuse or needs review;

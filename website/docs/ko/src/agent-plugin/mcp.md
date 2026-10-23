@@ -38,7 +38,7 @@
 Claude Code와 Codex에서는 [플러그인](plugin.md)이 Hey Arti 스킬과 함께
 이 서버를 등록합니다. 아래 명령은 수동 등록입니다. 이 명령으로
 호스트에 서버를 직접 등록해야 하며, artifactize가 호스트 설정을 자동으로
-추가하거나 바꾸지는 않습니다. 호스트의 평소 신뢰/승인 절차를 따르세요.
+추가하거나 바꾸지는 않습니다. 호스트에서 제공하는 신뢰 확인과 승인 절차를 따르세요.
 
 ### Claude Code {#claude-code}
 
@@ -120,7 +120,7 @@ Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기
 Run은 artifactize가 관리합니다. MCP 요청 처리를 중단하거나, MCP 연결을 닫거나,
 지켜보기를 멈추거나, 에이전트 턴을 끝내도 Run은 취소되지 않습니다. Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 RED/INCOMPLETE/ERROR/취소됨은 잘못된 도구 호출이 아니라 저장된 Run 결과입니다.
-Human 요청을 맡거나 담당을 해제하고 판정을 제출하는 일은 사람이 직접 하며, MCP에는 이 기능이 없습니다.
+Human 요청의 담당 지정·해제와 판정 제출은 사람이 직접 처리하며, MCP에서는 이 기능을 제공하지 않습니다.
 
 ## 확인 도구 {#inspection-tools}
 
@@ -140,7 +140,7 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `session_show` | **`reference`**, `summary`(기본 false) | `session show REF [--summary]` |
 | `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`. `audience`는 `agent` 또는 `human` |
 | `doctor` | 없음 | `doctor` |
-| `models` | **`provider`**(`openai`, `anthropic`, `codex`) | `models PROVIDER` |
+| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름. 이름은 ASCII 영문자, 숫자, `_`, `-` 1–64자이며 영문자나 숫자로 시작) | `models PROVIDER` |
 | `remote_status` | 없음 | `remote status` |
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 
@@ -151,7 +151,7 @@ CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. �
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
 명령은 OS 샌드박스 안에서 실행되지 않습니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며
 자격 증명을 돌려주는 일도 없습니다. `models`, `doctor`, `remote_status`는 백엔드
-준비 상태를 확인할 수 있습니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 영구히 거부되면 저장된 로그인 정보를 지울 수 있습니다.
+준비 상태를 확인할 수 있고, `doctor`는 CLI와 마찬가지로 [새 릴리스](../getting-started/update.md#newer-releases)도 확인합니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 영구히 거부되면 저장된 로그인 정보를 지울 수 있습니다.
 
 ### 세부 페이지 {#detail-pages}
 
@@ -170,12 +170,13 @@ offset은 UTF-8 바이트 오프셋입니다. `run_list.offset`은
 다음 Run 기록 묶음을 고르며, 한 묶음의 JSON을 이어 가는 cursor와는 다릅니다.
 `verify_result`는 대신 구조화된 `findings` 배열을 페이지 단위로 넘깁니다.
 
-cursor는 저장된 증거가 그대로인 동안 같은 도구와 같은 인자에서만 동작하며, 시간이 흐른다고
-만료되지는 않습니다. cursor가 거부되면 같은 도구를 첫 페이지부터 다시 호출하세요. 실패한
+cursor는 같은 도구와 같은 인자에서만 동작합니다. 다음 페이지를 읽을 때마다 확인을 다시
+실행하며, 그 답이 그대로인 동안에만 cursor가 동작합니다. 새 Run이나 결과가 생겼을 때뿐 아니라
+파일, 모델 목록, 백엔드 상태가 바뀌어도 거부됩니다. 시간이 흐른다고 만료되지는 않습니다. cursor가 거부되면 같은 도구를 첫 페이지부터 다시 호출하세요. 실패한
 도구 호출은 `{code,message}`와 함께 MCP `isError:true`를 돌려줍니다. `operation_failed`에는 CLI의
 오류 메시지가 처음 2,048자까지 담깁니다. `response_too_large`는 응답이 세부 페이지 하나에 담기지
-않는다는 뜻이므로, `request_logs`의 조회 범위나 검색 조건을 조정해 조회할 내용을 줄이세요. 불완전한 페이지를 전체
-결과처럼 보이게 하려고 세부 내용을 자르는 일은 없습니다.
+않는다는 뜻이므로, `request_logs`의 조회 범위나 검색 조건을 조정해 조회할 내용을 줄이세요. 내용 일부를 생략한
+페이지를 전체 결과인 것처럼 반환하지 않습니다.
 
 ## 일부러 빼놓은 것 {#deliberately-absent}
 

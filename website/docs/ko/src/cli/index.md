@@ -56,18 +56,23 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `tools help PROGRAM [SUBCOMMAND...]` | 뒤따르는 인자는 `--help` 앞에 붙여 PROGRAM에 전달 | 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools open TARGET` | — | 기본 애플리케이션으로 엶 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `login codex` | 로그인 URL은 stderr에 출력. 터미널 stdin에서 붙여 넣은 리디렉션 URL을 읽을 수 있음 | `Signed in with Codex.`. JSON은 `{"provider":"codex","signed_in":true}` | 0 |
+| `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽음 | `Saved the PROVIDER API key.`. JSON은 `{"provider":…,"saved":true}` | 0 |
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도. 읽기 전용 인증 파일은 건드리지 않음 | `Signed out of Codex.`. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 로컬 로그아웃 뒤 0 |
+| `logout openai\|anthropic\|gemini` | 저장한 키를 지움. 변수는 건드리지 않음 | `Forgot the saved PROVIDER API key.`. JSON은 `{"provider":…,"saved":false}` | 0 |
+| `provider list` | | 기본 provider마다 키 출처와 커스텀 provider 전체. 키 값은 출력하지 않음. 텍스트 또는 JSON | 0 |
+| `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 선택 항목 `--key`(키는 stdin. 없으면 엔드포인트에 키가 없음) | `Saved custom provider NAME.`. JSON은 `{"provider":NAME,"saved":true}` | 0 |
+| `provider remove NAME` | | `Removed custom provider NAME.`. JSON은 `{"provider":NAME,"saved":false}` | 0 |
 | `remote login URL` | `--share summary\|full`(summary). 토큰은 stdin으로 | `Signed in to URL as NAME (scopes: …).`. JSON은 `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.`와 함께, 서버에서는 `server token revoke` 전까지 토큰이 유효하다는 안내. JSON은 `{"signedIn":false}` | 0 |
 | `remote status` | | URL, 공유 수준, 토큰 출처, 접속 가능 여부, 이어서 주체와 범위 또는 오류. JSON은 아래 참고 | 로그인 상태면 0, 아니면 1 |
 | `remote push` | `--dry-run` | 텍스트 또는 JSON | 0 |
-| `models openai\|anthropic\|codex` | | 텍스트 또는 JSON | 0 |
+| `models PROVIDER` | 기본 provider나 커스텀 provider | 텍스트 또는 JSON | 0 |
 | `doctor` | | 텍스트 또는 JSON | 준비됐으면 0, 심각한 오류면 1 |
 | `limits` | `--signoff-idle-grace SECONDS`(0–86400) | 지금 적용되는 머신 전체 한도. 텍스트 또는 JSON | 0 |
 | `prune` | `--older-than DURATION`, `--dry-run` | 텍스트 또는 JSON | 0 |
 | `monitor [PATH]` | ALL에서 시작. PATH나 `--repo PATH`는 처음 고를 저장소만 정함. `--all`은 경로와 함께 쓸 수 없음 | 터미널 UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값, `--repo`와 함께 쓸 수 없음), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
-| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트 0이면 빈 포트를 골라 출력에 알려 줌 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
+| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트가 0이면 사용 가능한 포트를 선택하고 그 번호를 출력함 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
 | `server token add NAME --scopes SCOPES` | `--scopes`(필수, 기본값 없음. `read`, `publish`, `human`을 쉼표로 이은 목록) | 토큰을 한 번 출력하고 저장해 두라고 안내. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | 텍스트 또는 JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
@@ -101,16 +106,15 @@ WAITING_HUMAN 상태의 Run이 끝날 때까지 상태를 계속 확인합니다
 
 ### 식별자 인자 {#identity-arguments}
 
-Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는 상태를 읽기 전에
-검사합니다. ASCII 글자, 숫자, `-`, `_`, `.`로 이뤄진 1–200자여야 하며 점만으로 이뤄질 수는
-없습니다. `cache show`, `cache rm`, `server rm`의 재사용 키 인자는 정확히 64자의 소문자
-16진수여야 합니다. 형식이 잘못된 식별자를 지정하면 사용법 오류로 처리하고 종료 코드 2로 끝납니다. 형식은 맞지만 없는
-캐시 키라면 `cache show`는 `null`(`--history`면 `[]`)을 출력하고 4로 종료하며, `cache rm`은
+Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는 ASCII 글자,
+숫자, `-`, `_`, `.`로 이뤄진 1–200자여야 하며 점만으로 이뤄질 수는 없습니다. `cache show`, `cache rm`, `server rm`의 재사용 키 인자는 정확히 64자의 소문자
+16진수여야 합니다. 형식이 잘못된 식별자를 지정하면 사용법 오류로 처리하고 종료 코드 2로 끝납니다. 형식은 맞지만 해당
+재사용 키로 저장된 기록이 없으면 `cache show`는 `null`(`--history`면 `[]`)을 출력하고 4로 종료하며, `cache rm`은
 `removed: false`를 알립니다.
 
 `server token add NAME`과 `server token revoke NAME`은 글자, 숫자, `-`, `_`, `.`로 이뤄진
 1–64자의 ASCII를 받습니다. 빈 이름, 공백, 슬래시, ASCII가 아닌 글자, 너무 긴 이름은
-**토큰 저장소를 열기 전에** 거부하고 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
+거부되며 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
 비밀 토큰이 아닙니다.
 
 `session show`와 `session send`는 Agent 리뷰의
@@ -168,7 +172,7 @@ Run이 승인 대기 상태를 얼마나 오래 유지하는지, 승인 결과�
 선택자, 게이트, 결과, 출력은 [Run, 상태, 검증](../features/run.md#verify-and-runs)에서
 다룹니다.
 
-없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)를
+없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)를
 보세요. `--force`는 직접 선택한 실행 가능한 eval만 새로 리뷰하도록 표시하며, 재귀로 포함된
 의존성에는 적용되지 않습니다. 실행 범위를 넓히거나 게이트를 건너뛰지도 않습니다. Run에는 결정된
 정책과 각 요청의 force 여부가 기록됩니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,
@@ -183,7 +187,8 @@ Run이 승인 대기 상태를 얼마나 오래 유지하는지, 승인 결과�
 eval 동시 실행 수에는 기본 상한이 없어서, READY인 eval은 준비되는 즉시 시작합니다. 동시
 실행이 문제를 일으킬 때만 `--jobs N`(1–4294967295)을 붙이세요. 그러면 이 Run의 eval 수가
 제한됩니다. Agent 리뷰는 이와 별개로 `$STATE/limits.json`에 따라 머신 전체에서 백엔드마다
-제한됩니다([백엔드 수용량](../features/others/state.md#backend-capacity)). 백엔드 자리가 빌 때까지 대기 중인 요청은 `--jobs`의 동시 실행 수나 실행 시작 횟수에 포함되지 않습니다.
+제한됩니다([백엔드 수용량](../features/others/state.md#backend-capacity)). 백엔드 자리가
+빌 때까지 대기 중인 요청은 `--jobs`의 동시 실행 수에도, 실행 시작 횟수에도 포함되지 않습니다.
 
 `--fingerprint-jobs N`(`verify`와 `status`, 1–4294967295)은 fingerprint를 동시에 몇 개까지
 계산할지 정합니다. 기본값은 프로세스가 쓸 수 있는 CPU 수입니다. `verify`에서는 준비 단계와
@@ -211,9 +216,9 @@ Human 대기와 취소는 [제출, 지켜보기, 취소](../features/run.md#subm
 JSON 배열을 줄 단위 형식으로 다시 읽지는 않습니다. 상대 경로는 `--repo`가 아니라 CLI의 현재
 디렉터리를 기준으로 합니다.
 
-`verify ... --profile NAME`은 선택과 재귀 정책으로 포함된 모든 실행 가능한 eval에 대해, 선언된
-`profile_variants` 항목 하나를 통째로 고릅니다. 변형은 그다음에 적용됩니다. 실행 가능한
-eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모든 변형은 원래 리뷰어 종류를
+`verify ... --profile NAME`은 선택과 재귀 정책으로 정한 범위에 포함된 실행 가능한 모든 eval에서
+이름이 NAME인 `profile_variants` 항목을 통째로 선택합니다. 변형은 그다음에 적용됩니다. 실행 가능한
+eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 수 있으며, 각 변형은 원래 리뷰어 종류를
 유지합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
 `--recursive`를 주면 이미 선택된 의존성에도 변형이 적용됩니다. 예를 들어 `app/review
 --profile fast`가 실행하는 Runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
@@ -250,7 +255,8 @@ eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모�
 
 `artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
 범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
-합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
+합니다. Artifact 선택자는 그 Artifact를 리뷰하는, 순환으로 묶인 대상의 eval도 함께 실행합니다.
+`--force`는 그래도 직접 선택한 eval만 새로 리뷰하도록 표시합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
 관계를 맺지 않습니다.
 
 의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
@@ -279,8 +285,8 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않음 |
 | `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact |
 
-Artifact는 그 eval들의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
-`STALE`, `UNREVIEWED` 순서로 처음 해당하는 것을 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
+Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+`STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
@@ -294,8 +300,8 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 ## 현재 디렉터리 도구 {#current-directory-tools}
 
 `artifactize tools read|list|glob|grep|section|help|open ...`은 내장 도구를 현재
-디렉터리에서 실행합니다. Microsoft Store 이외의 방법으로 설치하면 `artifactize-tools`
-명령도 함께 설치됩니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
+디렉터리에서 실행합니다. Store 이외의 방법으로 설치하면 `artifactize-tools` 명령도
+함께 설치됩니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
 사용법이 잘못되면 2로 종료합니다. `artifactize tools --help`가 도구 목록을 보여 주며,
 `artifactize tools check`는 이와 달리 선언된 리뷰 도구를 점검합니다. 하위 명령별 범위
 규칙과 제한은 [`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli)에
@@ -346,8 +352,10 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
-`--args`는 Agent 실행에서만 쓸 수 있습니다. Human 스키마는 빈 객체만 받고, Human 명령에는 임의의
-인자를 넘길 수 없습니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
+`--args`는 Agent 실행에서만 쓸 수 있고, 생략하면 Agent 도구는 `{}`를 받습니다. Human 스키마는 빈
+객체만 받고, Human 명령에는 임의의 인자를 넘길 수 없습니다. `--execute`를 쓰면 보고서의
+`result`에 도구의 응답이 함께 담깁니다. `content`가 들어 있고, 도구가 실패하면 `isError: true`이며
+종료 코드는 1입니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
 환경에서 별도의 임시 출력 폴더(실행 뒤 삭제)를 쓰고, Human 호출은 리뷰어의 실제 환경을 씁니다.
 종료 코드는 준비 완료나 성공이면 0, 선언·사전 점검·도구·정리 실패면 1, 호출이 잘못되면
 2입니다. `--repo`, `--state-dir`, `--json`을 받으며, `--json`이 없어도 보고서는 JSON입니다.
@@ -383,8 +391,8 @@ ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄
 
 ## Human 요청 {#human-requests}
 
-`claim`, `unclaim`, `tool`, `submit`은 리뷰어를 기본으로 `$USER`에서 가져오고, 없으면 Linux와
-macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 없으면 `--reviewer NAME`을
+`claim`, `unclaim`, `tool`, `submit`은 기본 리뷰어 이름으로 `$USER` 값을 사용하며, 값이 없으면 Linux와
+macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다. 모두 없으면 `--reviewer NAME`을
 주세요. `--reviewer NAME`으로 동작마다 같은 리뷰어를 직접 지정할 수도 있습니다. 리뷰어 이름은
 계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. 요청을 맡은 사람만 도구를 실행하고,
 제출하고, 담당을 해제할 수 있습니다. `request claim`은 담당 정보를, `request unclaim`은 해제한
@@ -402,8 +410,8 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 �
 도구를 실행하거나 제출을 저장하기 전에 리뷰한 파일과 선언을 다시 확인합니다. fingerprint가
 바뀌었거나 계산할 수 없으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`나
 `FINGERPRINT_RECHECK_FAILED`)로 끝나고 명령은 종료 코드 2로 끝납니다. 새 요청을 받으려면
-`verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 종료 코드 2로 거부하고
-요청은 대기 상태로 남습니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
+`verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 거부하고 종료 코드 2로
+끝나며, 요청은 대기 상태로 남습니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
 
 이미 맡은 요청에 같은 리뷰어로 `request claim`을 다시 실행해도 기존 담당 정보를 돌려주고 0으로
 종료하므로, 담당 지정은 반복해도 안전합니다. 제출은 한 번만 받으며, 다시 제출하면 종료 코드 2로 끝납니다. 명령이 중단되는 등 제출

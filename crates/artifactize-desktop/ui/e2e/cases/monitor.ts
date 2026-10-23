@@ -817,13 +817,16 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the edge opens nothing");
       await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closes");
       // The split stays as dragged whatever the Main area shows: another branch's Current,
-      // then Settings, then the Run again.
+      // with Settings open over it, then the Run again.
       await selectBranch(browser, "empty-repo  master");
       await browser.waitUntil(async () => (await mainTitle(browser)) === "Current · empty-repo  master", { timeout: 15000, timeoutMsg: "the other branch's Current shown" });
       assert.equal(await main(), split, "the split stays as dragged on a Current");
       await browser.$("button*=Settings").click();
-      await browser.waitUntil(async () => (await mainTitle(browser)) === "Settings", { timeout: 15000, timeoutMsg: "Settings shown" });
-      assert.equal(await main(), split, "the split stays as dragged on Settings");
+      await browser.waitUntil(() => browser.$("#settings-title").isExisting(), { timeout: 15000, timeoutMsg: "Settings open" });
+      assert.equal(await mainTitle(browser), "Current · empty-repo  master", "Settings opens over the Current");
+      assert.equal(await main(), split, "the split stays as dragged under Settings");
+      await press(browser, ["Escape"], async () => !(await browser.$("#settings-title").isExisting()), "Settings closed");
+      assert.equal(await main(), split, "the split stays as dragged after Settings");
       const line = await visibleCenter(browser, await divider().getElement());
       await browser.action("pointer").move(line).perform();
       assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the divider opens nothing");

@@ -365,3 +365,8 @@ kbd {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
+.settings-dialog {
+  top: 64px;
+  width: min(900px, 94vw);
+  max-height: calc(100vh - 80px);
+}

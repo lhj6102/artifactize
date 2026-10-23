@@ -17,6 +17,7 @@ pub(super) const MAX_CREDENTIAL_BYTES: usize = 1024 * 1024;
 pub(super) enum Tokens {
     Codex,
     Remote,
+    Providers,
 }
 
 /// `$STATE/auth` (canonical) and the repository enclosing it, if any: tokens are never
@@ -70,13 +71,15 @@ impl Location {
     pub fn refusal(&self, tokens: Tokens) -> Option<String> {
         let (kind, path) = self.enclosure.as_ref()?;
         let (storage, variable) = match tokens {
-            Tokens::Codex => ("Codex sign-in storage", "ARTIFACTIZE_CODEX_AUTH_FILE"),
-            Tokens::Remote => ("Remote token storage", "ARTIFACTIZE_REMOTE_TOKEN"),
+            Tokens::Codex => ("Codex sign-in storage", Some("ARTIFACTIZE_CODEX_AUTH_FILE")),
+            Tokens::Remote => ("Remote token storage", Some("ARTIFACTIZE_REMOTE_TOKEN")),
+            Tokens::Providers => ("Provider key storage", None),
         };
         Some(format!(
-            "{storage} {} is inside the {kind} {}; artifactize keeps tokens outside repositories. Use a state directory outside it, or set {variable}.",
+            "{storage} {} is inside the {kind} {}; artifactize keeps tokens outside repositories. Use a state directory outside it{}.",
             crate::platform::path_text(&self.directory),
-            crate::platform::path_text(path)
+            crate::platform::path_text(path),
+            variable.map_or(String::new(), |variable| format!(", or set {variable}"))
         ))
     }
 }

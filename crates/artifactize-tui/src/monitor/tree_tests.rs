@@ -231,7 +231,7 @@ fn queued_for_a_slot_or_jobs_differs_from_waiting_for_an_artifact() {
                 "blockedReason":"Waiting for a free codex slot: all 2 are in use on this machine (limits.json).",
                 "queue":{"kind":"slot","backend":"codex"},
             }),
-            Queue::Slot(crate::config::Backend::Codex),
+            Queue::Slot(crate::config::Provider::Codex.into()),
             "queued · codex slots full",
         ),
         (

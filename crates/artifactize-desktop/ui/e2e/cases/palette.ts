@@ -158,7 +158,8 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
       const before = await mainTitle(browser);
       const steps: [string, () => Promise<boolean>][] = [
-        ["Show Settings", async () => (await mainTitle(browser)) === "Settings"],
+        // Settings opens over the Run, which stays the Main area's view beneath it.
+        ["Show Settings", async () => (await browser.$("#settings-title").isExisting()) && (await mainTitle(browser)) === before],
         ["Open the Run's Detail", async () => (await detail(browser))?.title === before],
         ["Focus the Pane", () => entriesFocused(browser)],
         ["Search branches and reviews", () => searchFocused(browser)],
@@ -171,8 +172,11 @@ export const scenarios: Scenario[] = [
         await browser.$("button*=Commands").click();
         await opened(`after ${label}`);
         await escape("Esc");
-        // Esc, not the palette, leaves Settings for the view before it.
-        if (label === "Show Settings") await press(browser, ["Escape"], async () => (await mainTitle(browser)) === before, "the Run again");
+        // Esc, not the palette, closes Settings over the unchanged Run.
+        if (label === "Show Settings") {
+          await press(browser, ["Escape"], async () => !(await browser.$("#settings-title").isExisting()), "Settings closed");
+          assert.equal(await mainTitle(browser), before, "the Run is still shown");
+        }
       }
       // Open a request by ID: its dialog, then the review.
       await ctrlK("before Open a request by ID");

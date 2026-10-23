@@ -1,6 +1,7 @@
-//! Exact-model rig backends with explicit API-key or Codex credentials, and the
-//! loopback-only test endpoint override for offline fake providers.
+//! Exact-model rig backends with explicit API-key or Codex credentials, the custom providers
+//! of this machine, and the loopback-only test endpoint override for offline fake providers.
 
+mod api;
 pub mod codex;
 mod delivery;
 #[cfg(test)]
@@ -23,17 +24,20 @@ use rig_core::{
     completion::{CompletionRequest, CompletionResponse, FinishReason},
     error::ProviderError,
     observe::{Action, AdapterContext, AdapterEvent, Observation, Subject, Witness},
-    providers::{anthropic, openai},
+    providers::{anthropic, gemini, openai},
     streaming::CompletionStream,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
+pub use api::{Api, EndpointApi};
+
 use crate::{
     agent::error::{Code, Failure},
-    config::Backend,
+    auth::providers::{self, ApiKey, Custom},
+    config::{Backend, Provider},
 };
 
 /// Attempts per turn: the first and up to two retries.
@@ -47,12 +51,65 @@ const MAX_DIAGNOSTIC_CHARS: usize = 4096;
 /// while bounding one response; this is independent of the review-wide maxTokens budget.
 const ANTHROPIC_OUTPUT_TOKENS: u64 = 16_384;
 
-/// A backend's client for one review. The API-key backends keep the key they send: a
-/// provider error may echo it, and every error leaves through the shared rule for server text.
+/// A backend's client for one review. The API-key backends keep the key they send (empty for
+/// an endpoint without one): a provider error may echo it, and every error leaves through the
+/// shared rule for server text.
 pub enum Client {
     Openai(Box<Model<openai::responses_api::wire::Responses>>, String),
+    Chat(Box<Model<openai::wire::Chat>>, String),
     Anthropic(Box<Model<anthropic::wire::Messages>>, String),
+    Gemini(Box<Model<gemini::completion::GenerateContent>>, String),
     Codex(codex::Codex),
+}
+
+/// Where a provider's requests go: its API, its root and its key.
+pub(crate) struct Route {
+    pub api: Api,
+    pub base: String,
+    pub key: Option<ApiKey>,
+}
+
+/// Resolve `backend` on this machine: a built-in provider, or the custom provider `state`
+/// saved under that name. `purpose` completes a missing-key error; a missing provider or key
+/// is an authentication failure, as no credentials are.
+pub(crate) fn route(
+    backend: &Backend,
+    state: Option<&Path>,
+    repo: Option<&Path>,
+    purpose: &str,
+) -> Result<Route, Failure> {
+    let missing = |message: String| Failure::new(Code::Authentication, message);
+    let provider = match backend.builtin() {
+        Some(provider) => provider,
+        None => match providers::custom(backend, state, repo)? {
+            Some(Custom::Alias { provider }) => provider,
+            Some(Custom::Endpoint { api, url, key }) => {
+                return Ok(Route {
+                    api: api.into(),
+                    base: url.as_str().to_owned(),
+                    key,
+                });
+            }
+            None => {
+                return Err(missing(format!(
+                    "No provider named {backend} is set up on this machine; add it in Settings → Providers or with `artifactize provider add {backend}`."
+                )));
+            }
+        },
+    };
+    let key = match providers::key_variable(provider) {
+        Some(variable) => Some(providers::key(provider, state, repo)?.ok_or_else(|| {
+            missing(format!(
+                "{variable} or a saved {provider} key is required {purpose}."
+            ))
+        })?),
+        None => None,
+    };
+    Ok(Route {
+        api: provider.into(),
+        base: base_url(provider)?,
+        key,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,55 +184,86 @@ fn insert_counter(
 }
 
 impl Client {
-    /// `state` and `repo` locate Codex credentials; the API-key backends ignore them.
+    /// `state` holds saved keys, custom providers and Codex credentials; `repo` keeps them
+    /// outside the reviewed repository.
     pub fn new(
-        backend: Backend,
+        backend: &Backend,
         model: &crate::config::ModelId,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, Failure> {
-        let base = base_url(backend)?;
-        if backend == Backend::Codex {
+        let Route { api, base, key } =
+            route(backend, Some(state), Some(repo), "for this Agent backend")?;
+        if api == Api::Codex {
             return Ok(Self::Codex(codex::Codex::new(model, &base, state, repo)?));
         }
-        let key = api_key(backend, "for this Agent backend")
-            .map_err(|message| Failure::new(Code::Authentication, message))?;
+        // An endpoint without a key sends an empty one, which keyless servers ignore.
+        let key = key.map(|key| key.expose().to_owned()).unwrap_or_default();
         let http = delivery::Tap::new(http_client()?);
-        Ok(match backend {
-            Backend::Openai => Self::Openai(
-                Box::new(
-                    openai::OpenAIConfig::new(key.clone())
-                        .with_base_url(base)
-                        .connect(http)
-                        .responses(model.as_str()),
-                ),
-                key,
-            ),
-            Backend::Anthropic => Self::Anthropic(
+        let openai = || {
+            openai::OpenAIConfig::new(key.clone())
+                .with_base_url(&base)
+                .connect(http.clone())
+        };
+        Ok(match api {
+            Api::OpenaiResponses => {
+                Self::Openai(Box::new(openai().responses(model.as_str())), key.clone())
+            }
+            Api::OpenaiChat => Self::Chat(Box::new(openai().chat(model.as_str())), key.clone()),
+            Api::Anthropic => Self::Anthropic(
                 Box::new(
                     anthropic::AnthropicConfig::new(key.clone())
-                        .with_base_url(base)
+                        .with_base_url(&base)
                         .connect(http)
                         .completion(model.as_str()),
                 ),
                 key,
             ),
-            Backend::Codex => unreachable!("built above"),
+            Api::Gemini => Self::Gemini(
+                Box::new(
+                    gemini::GeminiConfig::new(key.clone())
+                        .with_base_url(&base)
+                        .connect(http)
+                        .completion(model.as_str()),
+                ),
+                key,
+            ),
+            Api::Codex => unreachable!("built above"),
         })
     }
 
+    /// The API this client's requests use.
+    pub fn api(&self) -> Api {
+        match self {
+            Self::Openai(..) => Api::OpenaiResponses,
+            Self::Chat(..) => Api::OpenaiChat,
+            Self::Anthropic(..) => Api::Anthropic,
+            Self::Gemini(..) => Api::Gemini,
+            Self::Codex(_) => Api::Codex,
+        }
+    }
+
     /// The provider parameters of every request of one review. The Responses backends key
-    /// their prompt cache on the review's `session` id; Anthropic caches by prefix alone.
+    /// their prompt cache on the review's `session` id; Anthropic, Gemini and Chat
+    /// Completions cache by prefix alone.
     pub fn parameters(
-        backend: Backend,
+        api: Api,
         reasoning: Option<&str>,
         session: &crate::types::SessionId,
     ) -> Result<Value, String> {
         if let Some(reasoning) = reasoning {
-            backend.validate_reasoning(reasoning)?;
+            api.validate_reasoning(reasoning)?;
         }
-        Ok(match backend {
-            Backend::Openai => {
+        Ok(match api {
+            Api::OpenaiChat => reasoning.map_or(
+                json!({}),
+                |effort| json!({"reasoning_effort":effort, "parallel_tool_calls":false}),
+            ),
+            Api::Gemini => reasoning.map_or(
+                json!({}),
+                |effort| json!({"generationConfig":{"thinkingConfig":{"thinkingLevel":effort}}}),
+            ),
+            Api::OpenaiResponses => {
                 let mut value = json!({
                     "store":false,
                     "parallel_tool_calls":false,
@@ -187,13 +275,13 @@ impl Client {
                 }
                 value
             }
-            Backend::Anthropic => reasoning.map_or(
+            Api::Anthropic => reasoning.map_or(
                 json!({}),
                 |effort| json!({"thinking":{"type":"adaptive"}, "output_config":{"effort":effort}}),
             ),
             // rig's Codex contract states store:false and encrypted reasoning itself. The
             // `session-id` header repeats the cache key (see `codex::envelope`).
-            Backend::Codex => {
+            Api::Codex => {
                 let mut value = json!({"prompt_cache_key":session});
                 if let Some(effort) = reasoning {
                     value["reasoning"] = json!({"effort":effort, "summary":"auto"});
@@ -204,22 +292,40 @@ impl Client {
     }
 
     /// Structured output constrains the final answer only; tool calls keep their contract.
-    /// Merge Anthropic's format with the reasoning effort already in output_config.
-    pub fn output_format(backend: Backend, parameters: &mut Value, schema: Value) {
-        match backend {
-            Backend::Openai | Backend::Codex => {
+    /// Merge Anthropic's format with the reasoning effort already in output_config, and
+    /// Gemini's with the thinking level already in generationConfig.
+    pub fn output_format(api: Api, parameters: &mut Value, schema: Value) {
+        fn section<'a>(parameters: &'a mut Value, name: &str) -> &'a mut Map<String, Value> {
+            parameters
+                .as_object_mut()
+                .expect("parameters object")
+                .entry(name)
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .expect("parameter section object")
+        }
+        match api {
+            Api::OpenaiResponses | Api::Codex => {
                 parameters["text"] = json!({"format":{
                     "type":"json_schema", "name":"artifactize_verdict", "strict":true,
                     "schema":schema,
                 }});
             }
-            Backend::Anthropic => {
-                let config = parameters
-                    .as_object_mut()
-                    .expect("parameters object")
-                    .entry("output_config")
-                    .or_insert_with(|| json!({}));
-                config["format"] = json!({"type":"json_schema", "schema":schema});
+            Api::OpenaiChat => {
+                parameters["response_format"] = json!({"type":"json_schema", "json_schema":{
+                    "name":"artifactize_verdict", "strict":true, "schema":schema,
+                }});
+            }
+            Api::Anthropic => {
+                section(parameters, "output_config").insert(
+                    "format".into(),
+                    json!({"type":"json_schema", "schema":schema}),
+                );
+            }
+            Api::Gemini => {
+                let config = section(parameters, "generationConfig");
+                config.insert("responseMimeType".into(), json!("application/json"));
+                config.insert("responseJsonSchema".into(), schema);
             }
         }
     }
@@ -231,6 +337,8 @@ impl Client {
     ) -> Result<CompletionStream, Classified> {
         match self {
             Self::Openai(model, _) => model.stream_observed(request, observed),
+            Self::Chat(model, _) => model.stream_observed(request, observed),
+            Self::Gemini(model, _) => model.stream_observed(request, observed),
             Self::Anthropic(model, _) => {
                 request.max_tokens = Some(ANTHROPIC_OUTPUT_TOKENS);
                 model.stream_observed(request, observed)
@@ -255,7 +363,13 @@ impl Client {
     /// The credentials this client sent: its key, or the Codex access tokens of its turns.
     fn sent(&self) -> Vec<String> {
         match self {
-            Self::Openai(_, key) | Self::Anthropic(_, key) => vec![key.clone()],
+            Self::Openai(_, key)
+            | Self::Chat(_, key)
+            | Self::Anthropic(_, key)
+            | Self::Gemini(_, key) => Some(key.clone())
+                .filter(|key| !key.is_empty())
+                .into_iter()
+                .collect(),
             Self::Codex(client) => client.sent(),
         }
     }
@@ -582,48 +696,65 @@ fn message(error: &ProviderError) -> String {
         .unwrap_or_else(|| error.to_string())
 }
 
-/// The environment variable that holds an API-key backend's key; `None` for codex.
-pub fn key_variable(backend: Backend) -> Option<&'static str> {
-    match backend {
-        Backend::Openai => Some("OPENAI_API_KEY"),
-        Backend::Anthropic => Some("ANTHROPIC_API_KEY"),
-        Backend::Codex => None,
-    }
-}
-
-/// Whether an API-key backend's key is set in the environment (never its value); always
-/// `false` for codex, which signs in instead.
-pub fn key_present(backend: Backend) -> bool {
-    key_variable(backend)
-        .and_then(crate::platform::environment::var_text)
-        .is_some_and(|key| !key.trim().is_empty())
-}
-
-/// The environment variable that points the backend at a loopback test endpoint.
-pub fn base_url_variable(backend: Backend) -> &'static str {
-    match backend {
-        Backend::Openai => "ARTIFACTIZE_OPENAI_BASE_URL",
-        Backend::Anthropic => "ARTIFACTIZE_ANTHROPIC_BASE_URL",
-        Backend::Codex => "ARTIFACTIZE_CODEX_BASE_URL",
+/// The environment variable that points a built-in provider at a loopback test endpoint.
+pub fn base_url_variable(provider: Provider) -> &'static str {
+    match provider {
+        Provider::Openai => "ARTIFACTIZE_OPENAI_BASE_URL",
+        Provider::Anthropic => "ARTIFACTIZE_ANTHROPIC_BASE_URL",
+        Provider::Gemini => "ARTIFACTIZE_GEMINI_BASE_URL",
+        Provider::Codex => "ARTIFACTIZE_CODEX_BASE_URL",
     }
 }
 
 /// Every test endpoint variable: the backends' API roots and the Codex sign-in root.
-const TEST_ENDPOINTS: [&str; 4] = [
+const TEST_ENDPOINTS: [&str; 5] = [
     "ARTIFACTIZE_OPENAI_BASE_URL",
     "ARTIFACTIZE_ANTHROPIC_BASE_URL",
+    "ARTIFACTIZE_GEMINI_BASE_URL",
     "ARTIFACTIZE_CODEX_BASE_URL",
     crate::auth::codex::AUTH_URL_VARIABLE,
 ];
 
-/// The loopback test endpoint that replaces the backend's API root, if one is set.
-pub fn test_endpoint(backend: Backend) -> Result<Option<String>, String> {
-    variable_endpoint(base_url_variable(backend))
+/// A test endpoint: an http(s) URL on localhost, 127.0.0.0/8 or [::1], without
+/// credentials, a query or a fragment. A test endpoint never leaves the machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestEndpoint(url::Url);
+
+impl TestEndpoint {
+    /// The endpoint as an API root, the text an SDK or a request path starts from: its URL
+    /// without a trailing slash.
+    pub fn root(&self) -> &str {
+        self.0.as_str().trim_end_matches('/')
+    }
+}
+
+impl std::str::FromStr for TestEndpoint {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        loopback_url(value)
+    }
+}
+
+impl std::fmt::Display for TestEndpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.root())
+    }
+}
+
+impl Serialize for TestEndpoint {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.root())
+    }
+}
+
+/// The loopback test endpoint that replaces the provider's API root, if one is set.
+pub fn test_endpoint(provider: Provider) -> Result<Option<TestEndpoint>, String> {
+    variable_endpoint(base_url_variable(provider))
 }
 
 /// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
 /// value must be a loopback URL.
-pub fn variable_endpoint(variable: &str) -> Result<Option<String>, String> {
+pub fn variable_endpoint(variable: &str) -> Result<Option<TestEndpoint>, String> {
     let Some(value) = crate::platform::environment::var(variable).filter(|value| !value.is_empty())
     else {
         return Ok(None);
@@ -643,9 +774,8 @@ pub fn active_test_endpoint() -> Option<&'static str> {
     })
 }
 
-/// An http(s) URL on localhost, 127.0.0.0/8 or [::1], without credentials, a query or a
-/// fragment, and without a trailing slash. A test endpoint never leaves the machine.
-fn loopback_url(value: &str) -> Result<String, String> {
+/// `value` as a [`TestEndpoint`], or why it is not one.
+fn loopback_url(value: &str) -> Result<TestEndpoint, String> {
     let url = url::Url::parse(value).map_err(|_| "it is not a URL".to_owned())?;
     let loopback = match url.host() {
         Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
@@ -663,27 +793,23 @@ fn loopback_url(value: &str) -> Result<String, String> {
     {
         return Err("a test endpoint has no credentials, query or fragment".into());
     }
-    Ok(url.as_str().trim_end_matches('/').to_owned())
+    Ok(TestEndpoint(url))
 }
 
-/// The backend's API root: its loopback test endpoint, else the provider's.
-fn base_url(backend: Backend) -> Result<String, String> {
-    Ok(test_endpoint(backend)?.unwrap_or_else(|| {
-        match backend {
-            Backend::Openai => "https://api.openai.com/v1",
-            Backend::Anthropic => "https://api.anthropic.com",
-            Backend::Codex => codex::BASE_URL,
-        }
-        .into()
-    }))
-}
-
-/// The backend's API key from its environment variable; never printed or logged.
-fn api_key(backend: Backend, purpose: &str) -> Result<String, String> {
-    let variable = key_variable(backend).expect("an API-key backend");
-    crate::platform::environment::var_text(variable)
-        .filter(|key| !key.trim().is_empty())
-        .ok_or_else(|| format!("{variable} is required {purpose}."))
+/// The provider's API root: its loopback test endpoint, else the provider's.
+fn base_url(provider: Provider) -> Result<String, String> {
+    Ok(test_endpoint(provider)?.map_or_else(
+        || {
+            match provider {
+                Provider::Openai => "https://api.openai.com/v1",
+                Provider::Anthropic => "https://api.anthropic.com",
+                Provider::Gemini => gemini::BASE_URL,
+                Provider::Codex => codex::BASE_URL,
+            }
+            .into()
+        },
+        |endpoint| endpoint.root().to_owned(),
+    ))
 }
 
 fn http_client() -> Result<reqwest::Client, String> {

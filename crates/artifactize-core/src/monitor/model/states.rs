@@ -584,7 +584,7 @@ impl<'a> States<'a> {
             return EvalView::NotRun(NotRun::Unreviewed);
         }
         EvalView::InProgress(Activity::Queued(
-            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue {
+            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue.clone() {
                 Queue::Slot(backend)
             } else if request.execution_id.is_some() {
                 Queue::Joined

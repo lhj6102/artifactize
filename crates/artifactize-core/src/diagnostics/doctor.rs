@@ -10,8 +10,8 @@ use serde::Serialize;
 
 use crate::{
     auth,
-    config::{Backend, read_workspace_config},
-    llm, store, workspace,
+    config::{Backend, Provider, read_workspace_config},
+    llm, release, store, workspace,
 };
 
 #[derive(Debug, Serialize)]
@@ -81,7 +81,10 @@ pub enum Details {
     ApiKey {
         present: bool,
         #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
-        test_endpoint: Option<String>,
+        test_endpoint: Option<llm::TestEndpoint>,
+    },
+    Providers {
+        custom: std::collections::BTreeMap<Backend, auth::providers::CustomView>,
     },
     NoRemote {
         configured: bool,
@@ -106,15 +109,31 @@ pub enum Details {
         #[serde(rename = "stateId")]
         state_id: Option<crate::types::StateId>,
     },
+    Release {
+        channel: release::Channel,
+        running: semver::Version,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        latest: Option<semver::Version>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        update: Option<release::Update>,
+    },
     Codex {
         #[serde(flatten)]
         status: auth::codex::Status,
         #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
-        test_endpoint: Option<String>,
+        test_endpoint: Option<llm::TestEndpoint>,
         #[serde(rename = "testAuthEndpoint", skip_serializing_if = "Option::is_none")]
-        test_auth_endpoint: Option<String>,
+        test_auth_endpoint: Option<llm::TestEndpoint>,
+    },
+    /// The installed desktop app, or `null` without one.
+    Desktop {
+        #[serde(with = "crate::platform::path_serde::option")]
+        path: Option<PathBuf>,
     },
 }
+
+/// Where a person without the desktop app installs it.
+const DESKTOP_INSTALL_PAGE: &str = "https://artifactize.dev/#start";
 
 impl DoctorReport {
     fn add(&mut self, name: &'static str, status: CheckStatus, message: &str, details: Details) {
@@ -128,7 +147,8 @@ impl DoctorReport {
     }
 }
 
-/// Local readiness only. Missing optional backends are warnings, not failed reviews.
+/// Local readiness, and whether a newer release is out. Missing optional backends and an
+/// older release are warnings, not failed reviews.
 pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorReport, String> {
     let state = store::state_dir(state)?;
     let mut report = DoctorReport {
@@ -249,16 +269,24 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     }
     let (status, message, details) = sessions(&state);
     report.add("sessions", status, &message, details);
-    for (name, backend) in [
-        ("openai", Backend::Openai),
-        ("anthropic", Backend::Anthropic),
-    ] {
-        let variable = llm::key_variable(backend).expect("an API-key backend");
-        let present = llm::key_present(backend);
-        let key = format!(
-            "{variable} is {} (not validated with the provider)",
-            if present { "present" } else { "absent" }
-        );
+    let providers = auth::providers::list(Some(&state), repo);
+    let keys = match &providers {
+        Ok(providers) => providers.keys.clone(),
+        Err(_) => Vec::new(),
+    };
+    for status in keys {
+        let (name, variable, source) = (status.provider.as_str(), status.variable, status.source);
+        let present = source != auth::providers::KeySource::Absent;
+        let key = match source {
+            auth::providers::KeySource::Saved => format!(
+                "{variable} is absent; a saved {name} key is present (not validated with the provider)"
+            ),
+            _ => format!(
+                "{variable} is {} (not validated with the provider)",
+                if present { "present" } else { "absent" }
+            ),
+        };
+        let backend = status.provider;
         match llm::test_endpoint(backend) {
             Ok(None) => report.add(
                 name,
@@ -282,6 +310,51 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             ),
             Err(error) => report.add(name, CheckStatus::Fail, &error, Details::ApiKey { present, test_endpoint: None }),
         }
+    }
+    match providers {
+        // Like Codex: nothing is stored there yet, so the refusal is advice.
+        Ok(auth::providers::Providers {
+            refused: Some(refusal),
+            custom,
+            ..
+        }) => report.add(
+            "providers",
+            CheckStatus::Warn,
+            &refusal,
+            Details::Providers { custom },
+        ),
+        Ok(providers) if providers.custom.is_empty() => report.add(
+            "providers",
+            CheckStatus::Pass,
+            "No custom providers are set up.",
+            Details::Providers {
+                custom: providers.custom,
+            },
+        ),
+        Ok(providers) => report.add(
+            "providers",
+            CheckStatus::Pass,
+            &format!(
+                "Custom providers on this machine: {}.",
+                providers
+                    .custom
+                    .iter()
+                    .map(|(name, custom)| match custom {
+                        auth::providers::CustomView::Alias { provider } => {
+                            format!("{name} (alias of {provider})")
+                        }
+                        auth::providers::CustomView::Endpoint { url, .. } => {
+                            format!("{name} ({})", url.as_str())
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Details::Providers {
+                custom: providers.custom,
+            },
+        ),
+        Err(error) => report.add("providers", CheckStatus::Fail, &error, Details::None),
     }
     let (status, message, details) = codex(&state, repo);
     report.add("codex", status, &message, details);
@@ -318,7 +391,100 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         }
         Err(error) => report.add("remote", CheckStatus::Fail, &error, Details::None),
     }
+    // The commands work without the app, so a missing app only warns.
+    match crate::platform::desktop_app::installed() {
+        Some(path) => report.add(
+            "desktop",
+            CheckStatus::Pass,
+            &format!(
+                "The desktop app is installed: {}.",
+                crate::platform::path_text(&path)
+            ),
+            Details::Desktop { path: Some(path) },
+        ),
+        None => report.add(
+            "desktop",
+            CheckStatus::Warn,
+            &format!("The desktop app is not installed; install it from {DESKTOP_INSTALL_PAGE}."),
+            Details::Desktop { path: None },
+        ),
+    }
+    let (status, message, details) = release_check(release::check(&state).await);
+    report.add("release", status, &message, details);
     Ok(report)
+}
+
+/// Whether a newer release is out and how to update to it. Never a hard error: an older
+/// copy still works, and a failed lookup is asked again later.
+fn release_check(checked: release::Status) -> (CheckStatus, String, Details) {
+    use release::{Outcome, Unchecked, Update};
+    let release::Status {
+        running,
+        channel,
+        outcome,
+    } = checked;
+    let (status, message, latest, update) = match outcome {
+        Outcome::Unchecked(Unchecked::Store) => (
+            CheckStatus::Pass,
+            format!("The Microsoft Store keeps artifactize {running} up to date."),
+            None,
+            None,
+        ),
+        Outcome::Unchecked(Unchecked::Off) => (
+            CheckStatus::Pass,
+            format!(
+                "{} is set; releases are not looked up.",
+                release::OFF_VARIABLE
+            ),
+            None,
+            None,
+        ),
+        Outcome::Unchecked(Unchecked::Development) => (
+            CheckStatus::Pass,
+            format!("artifactize {running} is a development build; releases are not looked up."),
+            None,
+            None,
+        ),
+        Outcome::Latest(latest) => (
+            CheckStatus::Pass,
+            format!("artifactize {running} is up to date; the latest release is {latest}."),
+            Some(latest),
+            None,
+        ),
+        Outcome::Newer { latest, update } => {
+            let how = match &update {
+                Update::Command { command } => format!("run `{command}`"),
+                Update::Download { url, command: None } => format!("download and install {url}"),
+                Update::Download {
+                    url,
+                    command: Some(command),
+                } => format!("download {url}, then run `{command}`"),
+                Update::Page { url } => format!("see {url}"),
+            };
+            (
+                CheckStatus::Warn,
+                format!("artifactize {latest} is out (this is {running}); to update, {how}."),
+                Some(latest),
+                Some(update),
+            )
+        }
+        Outcome::Failed(error) => (
+            CheckStatus::Warn,
+            format!("Cannot look up the latest release: {error}"),
+            None,
+            None,
+        ),
+    };
+    (
+        status,
+        message,
+        Details::Release {
+            channel,
+            running,
+            latest,
+            update,
+        },
+    )
 }
 
 /// The saved Agent conversations: whether new ones are saved, the store's size against its
@@ -371,7 +537,7 @@ fn sessions(state: &Path) -> (CheckStatus, String, Details) {
 /// The Codex sign-in, read offline: no lock, refresh or network, and an auth file is
 /// only read.
 fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
-    let endpoints = llm::test_endpoint(Backend::Codex).and_then(|base| {
+    let endpoints = llm::test_endpoint(Provider::Codex).and_then(|base| {
         Ok((
             base,
             llm::variable_endpoint(auth::codex::AUTH_URL_VARIABLE)?,
@@ -424,7 +590,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
         ),
     };
     for (variable, endpoint) in [
-        (llm::base_url_variable(Backend::Codex), &base),
+        (llm::base_url_variable(Provider::Codex), &base),
         (auth::codex::AUTH_URL_VARIABLE, &sign_in),
     ] {
         if let Some(endpoint) = endpoint {

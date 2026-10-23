@@ -389,7 +389,7 @@ fn invalid_limits_fail_verify_and_doctor_before_any_run() {
     for (limits, message) in [
         (json!({"backends":{"openai":0}}), "between 1 and 100000"),
         (json!({"backends":{"claude":2}}), "was removed in 0.5.0"),
-        (json!({"backends":{"opneai":2}}), "unknown variant"),
+        (json!({"backends":{"my provider":2}}), "backend must match"),
         (json!({"backend":{"openai":2}}), "unknown field"),
     ] {
         fixture.limits(limits);

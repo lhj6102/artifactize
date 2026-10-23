@@ -75,71 +75,108 @@ impl ConfigError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+/// A built-in provider: one artifactize reaches with a sign-in or an API key and no other setup.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
-pub enum Backend {
-    // Preserve lexicographic wire-name ordering in maps that used String keys.
-    Anthropic,
+pub enum Provider {
+    /// The ChatGPT/Codex account (artifactize login codex).
     Codex,
+    /// The OpenAI API (OPENAI_API_KEY or a saved key).
     Openai,
+    /// The Anthropic API (ANTHROPIC_API_KEY or a saved key).
+    Anthropic,
+    /// The Gemini API (GEMINI_API_KEY or a saved key).
+    Gemini,
+}
+
+impl Provider {
+    /// In the order Settings lists them.
+    pub const ALL: [Self; 4] = [Self::Codex, Self::Openai, Self::Anthropic, Self::Gemini];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Codex => "codex",
+            Self::Gemini => "gemini",
+            Self::Openai => "openai",
+        }
+    }
+
+    fn named(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|provider| provider.as_str() == name)
+    }
+}
+
+impl std::fmt::Display for Provider {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 /// Backends that 0.5.0 removed; a declaration naming one fails with its replacements.
 const REMOVED_BACKENDS: [&str; 2] = ["chatgpt", "claude"];
 
+/// What an Agent profile's `backend` names: a built-in [`Provider`], or a custom provider
+/// set up on the machine that runs the eval. The project only declares the name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct Backend(String);
+
+impl Backend {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The built-in provider this names, or `None` for a custom provider.
+    pub fn builtin(&self) -> Option<Provider> {
+        Provider::named(&self.0)
+    }
+}
+
+impl From<Provider> for Backend {
+    fn from(provider: Provider) -> Self {
+        Self(provider.as_str().to_owned())
+    }
+}
+
+impl std::str::FromStr for Backend {
+    type Err = String;
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        if REMOVED_BACKENDS.contains(&name) {
+            return Err(format!(
+                r#"backend "{name}" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, or "codex" with a ChatGPT/Codex sign-in"#
+            ));
+        }
+        identifier(name, "backend")?;
+        Ok(Self(name.to_owned()))
+    }
+}
+
 impl<'de> Deserialize<'de> for Backend {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        let name = String::deserialize(deserializer)?;
-        match name.as_str() {
-            "openai" => Ok(Self::Openai),
-            "anthropic" => Ok(Self::Anthropic),
-            "codex" => Ok(Self::Codex),
-            removed if REMOVED_BACKENDS.contains(&removed) => Err(D::Error::custom(format!(
-                r#"backend "{removed}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" with a ChatGPT/Codex sign-in"#
-            ))),
-            other => Err(D::Error::unknown_variant(
-                other,
-                &["openai", "anthropic", "codex"],
-            )),
-        }
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
     }
 }
 
 impl std::fmt::Display for Backend {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(match self {
-            Self::Openai => "openai",
-            Self::Anthropic => "anthropic",
-            Self::Codex => "codex",
-        })
-    }
-}
-
-impl Backend {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Anthropic => "anthropic",
-            Self::Codex => "codex",
-            Self::Openai => "openai",
-        }
-    }
-    pub fn validate_reasoning(self, reasoning: &str) -> Result<(), String> {
-        let supported = match self {
-            // Codex takes the Responses efforts as they are, as Pi's openai-codex does.
-            Self::Openai | Self::Codex => matches!(
-                reasoning,
-                "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
-            ),
-            Self::Anthropic => matches!(reasoning, "low" | "medium" | "high" | "max"),
-        };
-        if supported {
-            Ok(())
-        } else {
-            Err(format!(
-                "Unsupported reasoning {reasoning:?} for {self:?}; effort is never remapped."
-            ))
-        }
+        formatter.write_str(&self.0)
     }
 }
 
@@ -228,10 +265,12 @@ impl Profile {
                 location
                     .child("model")
                     .check(text(model, "Agent profile model"))?;
-                if let Some(reasoning) = reasoning {
-                    location
-                        .child("reasoning")
-                        .check(backend.validate_reasoning(reasoning.as_str()))?;
+                // A custom provider's API is known only where it runs, so its effort is
+                // checked there.
+                if let (Some(reasoning), Some(provider)) = (reasoning, backend.builtin()) {
+                    location.child("reasoning").check(
+                        crate::llm::Api::from(provider).validate_reasoning(reasoning.as_str()),
+                    )?;
                 }
                 Ok(())
             }

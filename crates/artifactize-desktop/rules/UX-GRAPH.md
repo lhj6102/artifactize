@@ -59,8 +59,11 @@ that makes the transition happen and checks where it leads.
     **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
-  - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token),
-    Sign-off idle grace.
+- **Settings**: a modal over the screen with three tabs. **Providers** lists the built-in providers
+  (Codex, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
+  the chosen one's setup on the right: the Codex account, an API key, or a custom provider's form,
+  each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
+  sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
   by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
 - **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
@@ -112,8 +115,15 @@ that makes the transition happen and checks where it leads.
   and Scrolled up (the reader scrolled away from the bottom: it stays where the reader left
   it while lines arrive below). Its text selects and copies like any page text. A review's
   submission clears its log; an Artifact's tool runs record nothing as a review's evidence.
+- **Release notice**: `{version} available` in the header before Settings, shown while a newer
+  stable release is out; never on a Microsoft Store install, which the Store updates. The app
+  looks the release up on GitHub when it starts and once a day while it runs, the lookup
+  `artifactize doctor` reuses, and never downloads or installs anything itself.
 - **Overlays**: Palette (a filterable list of commands), Help (the keys of what has focus),
-  Open by ID (a field for a request ID), Leave dialog (quit while this window holds claims).
+  Open by ID (a field for a request ID), Leave dialog (quit while this window holds claims),
+  Update (the running and the new version and how to update the way the app was installed: a
+  command as selectable text, a file to download and install by hand, or the release page
+  when the way is unknown).
 
 ## Window
 
@@ -124,14 +134,18 @@ that makes the transition happen and checks where it leads.
 | E-LAUNCH-REVIEW | Launch | start with `review` | the newest waiting Human review open in the Main area as Review |
 | E-LAUNCH-REVIEW-ID | Launch | start with `review ID` | the review ID open in the Main area as Review |
 | E-CURRENT-LAUNCH | Launch | start with `graph --repo PATH`, directly or via the Human `graph` tool | the branch of PATH selected, its Current shown |
-| E-SCREEN-SETTINGS | any view | Ctrl+, or the Settings button | Settings in the Main area |
-| E-SETTINGS-BACK | Settings | Esc, the Settings button again, or a choice in the Pane | the Main area's view before Settings, or the one chosen |
+| E-SCREEN-SETTINGS | any view | Ctrl+, or the Settings button | Settings open over the view, on the Providers tab |
+| E-SETTINGS-BACK | Settings | Esc, Close, or the Settings button again | Settings closed, the view beneath as it was |
 | E-PALETTE-OPEN | any view | Ctrl+K or the palette button | Palette, all enabled commands listed |
 | E-PALETTE-FILTER | Palette | type text | Palette, the commands filtered by the text |
 | E-PALETTE-RUN | Palette | Enter on a command | the command's target, Palette closed |
 | E-PALETTE-CLOSE | Palette | Esc or a click outside | the view below |
 | E-HELP-OPEN | any view, outside fields | `?` | Help, listing the keys of what has focus (Pane, Main area or Settings) |
 | E-HELP-CLOSE | Help | Esc | the view below |
+| E-UPDATE-NOTICE | any view, no newer release shown | the app's release lookup, at start or later that day, finds a newer release | the same view, the Release notice in the header |
+| E-UPDATE-OPEN | any view with the Release notice | a click on it | Update |
+| E-UPDATE-LINK | Update with a download or the release page | a click on the link | Update, the link opened in the browser |
+| E-UPDATE-CLOSE | Update | Esc or Close | the view below, the Release notice still shown |
 | E-REFRESH | any view | F5, or Ctrl+R outside verdict editing (while editing a verdict Ctrl+R switches to RED, E-HUMAN-SWITCH) | same view, the state reloaded and the Branches scanned again; a shown Current scanned again (E-CURRENT-REFRESH) |
 | E-REVIEW-OPEN-ID | any view | Ctrl+O, or the palette's "Open a request by ID", then a waiting Human review's ID | Review of that request in the Main area, actionable |
 | E-REVIEW-READONLY | any view | Ctrl+O, or the palette's "Open a request by ID", then the ID of any other request | Request: that request in the Main area, read-only |
@@ -245,19 +259,26 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-SET-KEYS | Settings | open | API keys shown as set or not, never their values |
-| E-SET-CODEX-LOGIN | Settings | Sign in with Codex | sign-in in progress; the system browser opened at the sign-in address, which is also shown |
+| E-SET-TAB | Settings | choose the Providers, Remote or Limits tab | that tab shown |
+| E-SET-PROVIDER | Providers | choose a provider in the list | its setup shown on the right |
+| E-SET-KEY | an API-key provider (OpenAI, Anthropic, Gemini) | open | its key shown as set from the environment, saved or not set, never its value |
+| E-SET-KEY-SAVE | an API-key provider | paste a key, then Save key | the key saved and the field cleared; shown as saved, or still set from the environment when its variable is set, since that is used first |
+| E-SET-KEY-REMOVE | an API-key provider, key saved | Remove saved key | the key shown as not set, or set from the environment |
+| E-SET-CUSTOM-NEW | Providers | + Custom provider | an empty custom provider form |
+| E-SET-CUSTOM-SAVE | custom provider form | name it, choose an alias of a built-in provider or an endpoint (API, URL, optional key), then Save | the custom provider listed by name and chosen, its key never shown |
+| E-SET-CUSTOM-REMOVE | a custom provider | Remove provider | the custom provider gone from the list |
+| E-SET-CODEX-LOGIN | Codex | Sign in with Codex | sign-in in progress; the system browser opened at the sign-in address, which is also shown |
 | E-SET-CODEX-RETURN | sign-in in progress | the browser returns to the app's loopback address | signed in |
 | E-SET-CODEX-PASTE | sign-in in progress | paste the redirect URL | signed in |
-| E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Settings, signed out |
-| E-SET-CODEX-LOGOUT | Settings, signed in | Sign out of Codex | Settings, signed out |
-| E-SET-MODELS | Settings | List models | models of the chosen backend shown |
-| E-SET-REMOTE-LOGIN | Settings | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
-| E-SET-REMOTE-STATUS | Settings | Check status | status refreshed |
-| E-SET-REMOTE-PUSH | Settings, store signed in | Push (dry run) or Push results | push result shown |
-| E-SET-REMOTE-LOGOUT | Settings, store signed in | Sign out of the store | store signed out |
-| E-SET-GRACE | Settings | open | the sign-off idle grace in force shown, 2 minutes unless changed |
-| E-SET-GRACE-SAVE | Settings | enter a number of seconds, then Save | the new grace shown, saved for the Runs started afterwards |
+| E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Codex, signed out |
+| E-SET-CODEX-LOGOUT | Codex, signed in | Sign out of Codex | Codex, signed out |
+| E-SET-MODELS | a provider's setup | List models | models of the chosen provider shown |
+| E-SET-REMOTE-LOGIN | Remote | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
+| E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
+| E-SET-REMOTE-PUSH | Remote, store signed in | Push (dry run) or Push results | push result shown |
+| E-SET-REMOTE-LOGOUT | Remote, store signed in | Sign out of the store | store signed out |
+| E-SET-GRACE | Limits | open | the sign-off idle grace in force shown, 2 minutes unless changed |
+| E-SET-GRACE-SAVE | Limits | enter a number of seconds, then Save | the new grace shown, saved for the Runs started afterwards |
 
 ## Journeys as paths
 
@@ -270,6 +291,8 @@ E-PANE-SELECT.
 - J-SETTINGS: E-SCREEN-SETTINGS → E-SETTINGS-BACK
 - J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
 - J-HELP: E-HELP-OPEN → E-HELP-CLOSE
+- J-UPDATE: E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-CLOSE
+  E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-LINK → E-UPDATE-CLOSE
 - J-REFRESH: E-REFRESH
   E-CURRENT-CHIP → E-REFRESH
 - J-QUIT: E-QUIT-CLEAN | E-QUIT-ASK → E-QUIT-STAY | E-QUIT-ASK → E-QUIT-RELEASE
@@ -320,8 +343,10 @@ E-PANE-SELECT.
 - J-HUMAN-TEXT: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TEXT
 - J-HUMAN-ESC: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
   E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
-- J-SET-KEYS: E-SCREEN-SETTINGS → E-SET-KEYS
-- J-SET-CODEX: E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
-- J-SET-MODELS: E-SET-MODELS
-- J-SET-REMOTE: E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT
-- J-SET-SIGNOFF-GRACE: E-SCREEN-SETTINGS → E-SET-GRACE → E-SET-GRACE-SAVE
+- J-SET-PROVIDERS: E-SCREEN-SETTINGS → E-SET-PROVIDER
+- J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
+- J-SET-KEY: E-SET-PROVIDER → E-SET-KEY → E-SET-KEY-SAVE → E-SET-KEY-REMOVE
+- J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
+- J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS
+- J-SET-REMOTE: E-SET-TAB → E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT
+- J-SET-SIGNOFF-GRACE: E-SET-TAB → E-SET-GRACE → E-SET-GRACE-SAVE

@@ -54,10 +54,13 @@ async fn fixture() -> (
 }
 
 fn row<T: rusqlite::types::FromSql>(state: &Path, sql: &str) -> T {
-    Connection::open(state.join(DATABASE))
-        .unwrap()
-        .query_row(sql, [], |row| row.get(0))
-        .unwrap()
+    Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(sql, [], |row| row.get(0))
+    .unwrap()
 }
 
 #[tokio::test]

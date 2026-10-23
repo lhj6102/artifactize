@@ -1,8 +1,8 @@
 //! Machine-wide limits in `$STATE/limits.json`: `backends` caps how many Agent reviews of a
-//! backend are in flight at once across every `verify` that shares the state directory,
-//! `agentSessions` sets whether Agent conversations are saved and how large their store grows,
-//! and `signoffIdleGraceSeconds` sets how long a Run with only unclaimed sign-offs left stays
-//! open.
+//! backend (a built-in or custom provider name) are in flight at once across every `verify`
+//! that shares the state directory, `agentSessions` sets whether Agent conversations are saved
+//! and how large their store grows, and `signoffIdleGraceSeconds` sets how long a Run with only
+//! unclaimed sign-offs left stays open.
 //!
 //! ```json
 //! {"backends": {"codex": 4, "openai": 16},
@@ -256,8 +256,8 @@ impl Limits {
     }
 
     /// The slot count of a parsed backend; `None` when it is unlimited.
-    pub fn limit(&self, backend: Backend) -> Option<u32> {
-        self.backends.get(&backend).copied()
+    pub fn limit(&self, backend: &Backend) -> Option<u32> {
+        self.backends.get(backend).copied()
     }
 
     pub fn backends(&self) -> &BTreeMap<Backend, u32> {

@@ -22,7 +22,7 @@ async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolea
 
 /** The keys the open Help dialog lists, each with what it does. */
 function shortcuts(browser: WebdriverIO.Browser) {
-  return browser.execute(() => [...document.querySelectorAll('[role="dialog"] dt')].map((key) => ({
+  return browser.execute(() => [...document.querySelectorAll('[role="dialog"].help dt')].map((key) => ({
     keys: key.textContent?.trim() ?? "",
     action: key.nextElementSibling?.textContent?.trim() ?? "",
   })));
@@ -38,11 +38,12 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
-      const helpOpen = () => browser.$('[role="dialog"]').isExisting();
+      // Help, not Settings, which is also a dialog.
+      const helpOpen = () => browser.$('[role="dialog"].help').isExisting();
       /** Each pair's keys as a pattern, or as the exact label the platform shows. */
       const listed = async (pairs: [RegExp | string, RegExp][], absent: RegExp[], where: string) => {
         await press(browser, ["?"], helpOpen, `the keys of ${where}`);
-        assert.match(await browser.$('[role="dialog"]').getText(), /Keyboard shortcuts/);
+        assert.match(await browser.$('[role="dialog"].help').getText(), /Keyboard shortcuts/);
         const shown = await shortcuts(browser);
         for (const [keys, action] of pairs) {
           const matches = (label: string) => typeof keys === "string" ? label === keys : keys.test(label);
@@ -69,8 +70,10 @@ export const scenarios: Scenario[] = [
         [/^c$/, /^Claim$/],
         [/\bF5\b/, /^Refresh/],
       ], [/^↑ \/ ↓ · j \/ k$/, /^v$/, /^(?:!|o|b \/ Backspace)$/], "the Main area");
-      await press(browser, [primaryModifier, ","], async () => (await mainTitle(browser)) === "Settings", "Settings shown");
-      await listed([[/^Esc$/, /Back/]], [/^Click an Artifact$/, /^← \/ →$/], "Settings");
+      const beneath = await mainTitle(browser);
+      await press(browser, [primaryModifier, ","], () => browser.$("#settings-title").isExisting(), "Settings open");
+      assert.equal(await mainTitle(browser), beneath, "Settings opens over the Main area's view");
+      await listed([[/^Esc$/, /^Close Settings$/], [/^← \/ →$/, /Providers and Remote tabs/]], [/^Click an Artifact$/, /^c$/], "Settings");
     },
   ),
 

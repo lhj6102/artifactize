@@ -4,10 +4,10 @@ Open the app to see, on one screen, every live branch of every project with Runs
 this machine and every Human review waiting for a person. Browse Runs, see what each
 branch would run now, inspect evidence and handle Human sign-offs. The app works on the
 same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
-commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
+commands; see [Desktop app](../getting-started/install-options.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
-[installation guide](../getting-started/install.md#desktop-app).
+[installation guide](../getting-started/install-options.md#desktop-app).
 
 ## Open the app
 
@@ -31,14 +31,22 @@ exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
 Ctrl+K, F1 or the **Commands** button opens a searchable command palette; Enter runs a
-command and Esc closes it. Ctrl+, or the **Settings** button shows
-[Settings](#settings) in the Main area. Ctrl+O opens a request by ID. `?` lists the
+command and Esc closes it. Ctrl+, or the **Settings** button opens
+[Settings](#settings) over the screen. Ctrl+O opens a request by ID. `?` lists the
 keys of what has focus. Ctrl+R or F5 reloads the state from disk, scans the branches
 again and, on a Current, scans its worktree again. While a Human review has the
 keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
 form open: it opens or switches to RED once claimed, and says the review must be
 claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
 The app follows the system's light or dark appearance.
+
+When a [newer release](../getting-started/update.md#newer-releases) is out, the header
+shows `VERSION available` before **Settings**. A click on it opens a dialog with this
+app's version and how to update the way it was installed: the command to run, as text
+you can select and copy, or the file to download and install by hand, or, when the way
+is unknown, the release page. A link opens in your browser; Esc or **Close** closes the
+dialog. The app looks the release up when it starts and once a day while it runs, and
+never updates itself. A Microsoft Store install never shows it: the Store updates the app.
 
 Hovering only highlights; information opens on a click.
 
@@ -68,8 +76,9 @@ A folded branch shows its newest Run under its name: a dot in its status colour,
 its status and how long ago it ran (a running one, its time so far). Click a branch
 to expand it and show its newest entry; the chevron before its name expands or folds
 it without showing anything. Expanded, its timeline lists its Runs newest first, each
-with its status, age and Run ID. While a Run is in progress it comes first; otherwise
-the **Current** does, the worktree as it is now. **Older runs** at the end brings
+with its status, age and Run ID. The first entry is **Current**, the worktree as it is
+now; while a Run is in progress, that Run takes Current's place, and Current returns when
+the Run ends. **Older runs** at the end brings
 older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
 of branches can be expanded; the one the app was started for starts expanded.
 
@@ -91,7 +100,7 @@ reviews alike. A plain word matches part of a project, a branch or a waiting rev
 eval, ignoring case; `repo:` and `branch:` match part of that one field.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
-and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
+and values; in an empty field or after a space, ↓ opens the key suggestions. ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
 mouse. Enter without an open suggestion returns to the list. A query that cannot be
 read, such as an unknown key, shows its error in place of the branches, and neither list
 shows entries until it is fixed. Esc closes suggestions, then puts back `sort:recent`,
@@ -114,7 +123,7 @@ removed, appear without a manual reload.
 ## Main area
 
 The Main area shows what was chosen in the Pane: a Run, a branch's Current, a
-review, a request opened by ID, or Settings. With nothing chosen, while loading, on
+review, or a request opened by ID. With nothing chosen, while loading, on
 an error or with an empty graph, the graph's place stays and says so. A problem
 reading this machine's records, such as other Runs that cannot be read, shows as one
 line in the Main area's header without moving or hiding the graph; a click on it shows
@@ -147,7 +156,8 @@ the graph of its current declarations without needing a Run. Each Artifact is co
 reused (every eval's result would be reused without evaluation), would run, waiting or
 blocked; like a Run's Artifact, its node shows only its name, and its accessible name
 says which, with how many of its evals would run. Its header says when it was scanned. It scans again
-when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends.
+when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
+the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it
@@ -158,13 +168,11 @@ approves nothing.
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
 own.
-Drag the graph background to pan; wheel, pinch or a background double-click zooms
-the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
-These gestures move the camera, not the divider or the Detail. A graph shows whole
-when it first appears; from then on only you move
-its camera. Opening, switching, resizing or closing the Detail, a new result or scan
-and a new layout never zoom or pan it; **Fit View** shows the whole graph again in
-the whole canvas, the same whether the Detail floats over it or not.
+Drag the graph background to pan; wheel, pinch or a background double-click zooms.
+**Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
+whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
+appears; after that only you move its camera: the Detail, new results, scans and layouts
+leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
@@ -179,8 +187,7 @@ neighbours on each side, failing ones first, and counts the rest.
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it, never beside the Pane. It leaves the camera
-where it is: pan to bring an Artifact under it into view.
+with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only
@@ -315,14 +322,15 @@ yourself.
 
 ## Settings
 
-Settings shows in the Main area; the **Settings** button again or Ctrl+, again
-returns to what the Main area showed, and so does Esc outside a text field or a choice
-list (in one, Esc stays with the field). Choosing a branch, chip or review in the Pane
-instead shows that choice. It reloads account/store information
-when shown. Reopen it or use the palette's **Refresh settings** command to reload it.
+Settings opens as a modal over the screen; Esc, its **Close** or the **Settings** button
+again closes it, and the screen beneath stays as it was. It reloads account, key and store
+information each time it opens; the palette's **Refresh settings** command reloads it too.
+It has two tabs, **Providers** and **Remote** (← and → switch between them).
 
-- **API keys:** reports whether OpenAI and Anthropic key environment variables
-  are set, never their values. Set them in the app's launch environment.
+**Providers** lists the built-in providers on the left (Codex, OpenAI, Anthropic, Gemini),
+then your custom providers by name, then **+ Custom provider**. Choosing one shows its setup
+on the right, with **List models** for the models it offers.
+
 - **Codex:** shows not signed in, artifactize's stored token and expiry, a read-only
   `ARTIFACTIZE_CODEX_AUTH_FILE`, or why storage is refused. An expired stored access
   token refreshes on next use; an expired external file needs a new Codex sign-in.
@@ -334,20 +342,33 @@ when shown. Reopen it or use the palette's **Refresh settings** command to reloa
   address bar after a failed load, or DevTools → Network if it keeps loading,
   paste it in Settings, then choose **Finish sign-in**.
   Sign-out removes local tokens and warns when server revocation cannot be confirmed.
-- **Models:** lists model IDs offered by the chosen backend.
-- **Review store:** signs in with URL, token and sharing level, displays status,
-  pushes results (or a dry run) and signs out. **Summary** omits invocation details,
-  captured output and tool-call history; **Full** also sends the saved execution.
-  Summary still shares review metadata, owner results, declared Runtime commands
-  and arguments, and Agent execution-path metadata. Those declarations can contain
-  paths or sensitive literals: Summary is not secret redaction. Choose according
-  to the team's privacy needs. Signing out removes local configuration, **not the server
-  token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
-  See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
-- **Sign-off idle grace:** shows how long a Run with only unclaimed sign-offs left stays
-  open before it ends YELLOW, 2 minutes unless changed, and saves a new value in seconds
-  (0–86400) for the Runs started afterwards. It is the same machine-wide
-  [setting](../features/others/state.md#sign-off-idle-grace) as `artifactize limits`.
+- **OpenAI, Anthropic, Gemini:** shows whether the key is set from its environment
+  variable, saved, or not set, never its value. Paste a key and choose **Save key** to save
+  it, as `artifactize login` does; **Remove saved key** forgets it. A set environment
+  variable is used first: a key saved beside it shows as kept but not used, and can still be
+  removed.
+- **Custom providers:** **+ Custom provider** opens an empty form. Give it a name, then
+  choose whether it reaches a built-in provider (an alias, with that provider's sign-in or
+  key) or an endpoint (its API, URL and optional key), and choose **Save**. Add as many as
+  you need; choosing one shows its form to change it or **Remove provider**. An endpoint's
+  saved key is never shown: leave the key empty to keep it, or check **No key**. Evals use
+  a custom provider by its name in `backend`; see
+  [Custom providers](../features/agent.md#custom-providers).
+
+**Remote** is the review store: it signs in with URL, token and sharing level, displays
+status, pushes results (or a dry run) and signs out. **Summary** omits invocation details,
+captured output and tool-call history; **Full** also sends the saved execution.
+Summary still shares review metadata, owner results, declared Runtime commands
+and arguments, and Agent execution-path metadata. Those declarations can contain
+paths or sensitive literals: Summary is not secret redaction. Choose according
+to the team's privacy needs. Signing out removes local configuration, **not the server
+token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
+See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
+
+**Limits** is the sign-off idle grace: how long a Run with only unclaimed sign-offs left
+stays open before it ends YELLOW, 2 minutes unless changed. Save a new value in seconds
+(0–86400) for the Runs started afterwards. It is the same machine-wide
+[setting](../features/others/state.md#sign-off-idle-grace) as `artifactize limits`.
 
 Settings uses the same accounts and store operations as the CLI; credentials do
 not belong in `.artf`.

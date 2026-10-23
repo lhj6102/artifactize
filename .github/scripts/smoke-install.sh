@@ -13,6 +13,9 @@ for bin in artifactize artifactize-tools; do
     test "$("$bin" --version)" = "$bin $ARTIFACTIZE_VERSION"
 done
 artifactize --state-dir "$HOME/doctor-state" doctor
+# The script's receipt names it as the way to update; the lookup itself stays offline.
+ARTIFACTIZE_NO_UPDATE_CHECK=1 artifactize --state-dir "$HOME/doctor-state" doctor --json |
+    grep -E '"channel": ?"installSh"'
 
 # Both commands must warn about an older install that shadows the new one.
 mkdir "$HOME/shadow"

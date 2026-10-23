@@ -61,12 +61,17 @@ on the root command and on `artifactize tools`.
 | `tools help PROGRAM [SUBCOMMAND...]` | trailing arguments passed to PROGRAM before `--help` | text | 0 success, 1 tool error, 2 usage |
 | `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
 | `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | `Signed in with Codex.`; JSON `{"provider":"codex","signed_in":true}` | 0 |
+| `login openai\|anthropic\|gemini` | API key on stdin | `Saved the PROVIDER API key.`; JSON `{"provider":…,"saved":true}` | 0 |
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
+| `logout openai\|anthropic\|gemini` | forgets the saved key; the variable is untouched | `Forgot the saved PROVIDER API key.`; JSON `{"provider":…,"saved":false}` | 0 |
+| `provider list` | | each built-in key's source and every custom provider, never a key; text or JSON | 0 |
+| `provider add NAME` | `--alias PROVIDER`, or `--api API --url URL` with optional `--key` (key on stdin; without it the endpoint has no key) | `Saved custom provider NAME.`; JSON `{"provider":NAME,"saved":true}` | 0 |
+| `provider remove NAME` | | `Removed custom provider NAME.`; JSON `{"provider":NAME,"saved":false}` | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | `Signed in to URL as NAME (scopes: …).`; JSON `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.` plus a note that the server keeps the token valid until `server token revoke`; JSON `{"signedIn":false}` | 0 |
 | `remote status` | | URL, share, token source, reachability, then principal and scopes or the error; JSON below | 0 signed in, 1 not |
 | `remote push` | `--dry-run` | text or JSON | 0 |
-| `models openai\|anthropic\|codex` | | text or JSON | 0 |
+| `models PROVIDER` | a built-in or custom provider | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `limits` | `--signoff-idle-grace SECONDS` (0–86400) | the machine-wide limits in force, text or JSON | 0 |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
@@ -110,16 +115,14 @@ Local tokens are still removed; a read-only external auth file is never changed.
 ### Identity arguments
 
 Run/request ID arguments (including `request list --run` and `review REQUEST_ID`)
-are validated before reading state: 1–200 ASCII letters, digits, `-`, `_` or `.`,
-never only dots. Reuse-key arguments to `cache show`, `cache rm` and `server rm`
+are 1–200 ASCII letters, digits, `-`, `_` or `.`, never only dots. Reuse-key arguments to `cache show`, `cache rm` and `server rm`
 require exactly 64 lowercase hexadecimal characters. Malformed identities exit 2
 as usage errors; valid but absent cache keys still make `cache show` print `null`
 (or `[]` with `--history`) and exit 4, while `cache rm` reports `removed: false`.
 
 `server token add NAME` and `server token revoke NAME` accept 1–64 ASCII
 characters: letters, digits, `-`, `_` and `.`. Empty names, whitespace, slashes,
-non-ASCII text and longer names are rejected with exit 2 **before opening the
-token store**. This name is a display label, not the bearer secret.
+non-ASCII text and longer names are rejected with exit 2. This name is a display label, not the bearer secret.
 
 `session show` and `session send` read and continue an Agent review's
 [saved conversation](../features/agent.md#saved-conversations); their arguments, output
@@ -175,7 +178,7 @@ how long a Run stays open for its sign-offs and how they are reused later;
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-See the [upgrade reference](../getting-started/install.md#upgrading-from-011)
+See the [upgrade reference](../getting-started/update.md#upgrading-from-011)
 for removed legacy gate-bypass settings. `--force` marks only explicitly
 selected executable evals for a fresh review, not recursive dependencies; it
 neither expands
@@ -275,7 +278,9 @@ RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
 
 `artifactize verify app/e2e` selects the qualified Eval just like `--eval app/e2e`.
 Add `--recursive` to execute the Evals in the required dependency scope. Without
-it, input evidence must already be available. File Artifacts are selected by their
+it, input evidence must already be available. An Artifact selector also executes
+the Evals of its cycle peers, which review it; `--force` still marks only the
+explicitly selected Evals. File Artifacts are selected by their
 declared names; a sidecar creates no automatic relation to the surrounding folder.
 
 For which evals wait or block, including dependency cycles, see
@@ -381,8 +386,10 @@ its published name is accepted, and the scope is that Artifact and its children.
 With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
 in the eval's own scope, so a tool whose operands name another Artifact runs as it
 would in that eval's review.
-`--args` is valid only for Agent execution; Human schemas admit only an empty
-object and Human commands take no free arguments. A check never creates a Run,
+`--args` is valid only for Agent execution, and without it an Agent tool gets `{}`;
+Human schemas admit only an empty object and Human commands take no free arguments.
+With `--execute`, the report also carries the tool's response as `result`: its `content`,
+and `isError: true` when the tool failed (exit 1). A check never creates a Run,
 verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
 execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for

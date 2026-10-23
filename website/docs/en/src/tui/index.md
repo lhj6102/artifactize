@@ -103,7 +103,10 @@ scrolls it. While Technical is shown the instruction stays expanded, so hide
 Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens the Tools and
 Tool log column to 60% of the available width;
-the selected tool shows its action and description. A command tool shows its resolved command line. If a tool's command could not be
+the selected tool shows its action and description. A command tool shows the command line
+it would run, worked out from the declarations when you opened the review, without claiming
+it or running anything. If you changed the declarations since, the line may be out of date
+until the next tool run updates it. If a tool's command could not be
 worked out, for example because its program is missing, it shows the declaration and why.
 If the review's declarations could not be read at all, every tool shows its command as
 declared, without a reason; running the tool then reports the error. Fix the declaration
@@ -130,9 +133,10 @@ tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` run
 | Esc | Cancel work, then stop editing, then leave Detail |
 | Enter on `+ Add` / Ctrl-D | In a list of groups, add a group / remove the selected group |
 
-While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
+While a Human review is being claimed or released, running a tool, or submitting,
+ordinary PgUp/PgDn scroll the Tool log
 regardless of the focused area. Normal editing and focus switching pause until
-the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
+that ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
 - **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
   `--reviewer NAME`, while Monitor always uses the default.
@@ -185,7 +189,7 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
+  draft kept, then leave Detail. In standalone `review`, Close works like Esc. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
@@ -204,7 +208,9 @@ it asks what to do with them:
 | Esc | Stay |
 | Ctrl-C | Quit, keeping the claims |
 
-If a release fails, Review stays open with the error and keeps those claims. Monitor
+The list is the claims taken in this session, so it can still show one you released or
+submitted elsewhere; keeping quits without touching it. If a release fails, Review stays
+open with the error and keeps those claims. Monitor
 keeps claims when it quits; release one with `u` first to give it back.
 
 After a standalone submission the list returns. A page emptied by reviews goes
@@ -232,11 +238,12 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-The screen always shows **Compact + Full + Preview**: each side pane is 16 columns
-below 100 terminal columns, 28 up to 139 and 36 from 140, and the focused pane takes
-the middle. Scope shows Full + Preview, and Detail shows Tree Compact + Detail Full.
-No level is hidden on a narrow terminal, so on a very small one the focused pane can
-shrink to nothing; widen the terminal when it needs more room.
+The screen always shows **Compact + Full + Preview**, the focused pane in the middle
+with the room the side panes leave. Scope shows Full + Preview, and Detail shows Tree
+Compact + Detail Full. Each side pane is 16 columns wide in a terminal narrower than 100
+columns, 28 from 100 columns and 36 from 140. In a terminal too narrow for them, the side panes
+share its width and the focused pane can shrink to nothing; widen the terminal when the
+focused pane needs more room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate
@@ -256,7 +263,10 @@ shrink to nothing; widen the terminal when it needs more room.
   lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
   **Run** row opens validation and unmet obligations, counts, errors, waiting and
   running work, timing, budgets, executed/reused counts and full spent/saved
-  usage in Detail.
+  usage in Detail. Validation stays as it was at Run end, while the tree's rows show the
+  requests as they stand now, including a later Human submission: a dim `*` marks a row
+  whose state changed since the Run ended (not that files changed), and Artifact Detail
+  keeps an `At Run end` field.
 
 Scope badges and the header share `!N ✗N ◐N ?N` attention counters: requests in
 ERROR and RED, Runs still open, and sign-offs waiting for a person. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
@@ -320,12 +330,6 @@ The selected eval's upstream Artifact rows get `↑`: bright when unmet, dim whe
 complete. There is no downstream highlight. Off-screen targets show `↑N above` or
 `↑N below`. `b` cycles through those Artifact rows, unmet first; Backspace returns
 to the original row. On an Artifact row, `b` uses its evals' combined upstream.
-
-The headline's validation stays **at Run end**. The tree rolls up the requests as
-they stand now, including a later Human submission. A dim `*` marks a row whose
-derived state changed since the Run ended; it does not mean files changed. Artifact
-Detail also keeps an `At Run end` field. Historical requests and validation are
-not rewritten by this view.
 
 ### Keys and mouse
 
@@ -395,16 +399,11 @@ Detail depends on the eval kind:
   the completed result open. Outside editing or work,
   `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
-Browsing is read-only. If publishing to the team store fails after submission,
+If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
-latest. A waiting Human review's Detail shows the tool commands of the declarations as they
-were when you first opened it, without claiming the review or running anything. A refresh
-keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
-open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
-commands shown are updated after one. A follower opens its
-original request.
+latest.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

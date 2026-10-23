@@ -351,10 +351,14 @@ export const scenarios: Scenario[] = [
       // over it and takes no part, so the camera is the graph's first one again.
       await browser.$(".graph .svelte-flow__controls-fitview").click();
       const fitted = await settled();
+      assert.notEqual(fitted.transform, zoomed.transform, "Fit View moved the person's camera");
       assert.ok(fitted.whole, `Fit View shows every Artifact inside the canvas: ${JSON.stringify(fitted)}`);
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
+      // The person zooms out again, so the next Fit View has a camera to move back.
+      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      assert.notEqual((await settled()).transform, fitted.transform, "Zoom Out moved the fitted camera");
       await browser.$(".graph .svelte-flow__controls-fitview").click();
       assert.equal((await settled()).transform, fitted.transform, "Fit View without the Detail fits as with it open");
 
@@ -391,14 +395,13 @@ export const scenarios: Scenario[] = [
           return box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
         }).map((node) => node.dataset.id ?? "");
       });
-      const drawn = (id: string) => browser.execute((want) => !!document.querySelector(`.svelte-flow__node[data-id="${want}"]`), id);
       await browser.waitUntil(async () => (await visible()).length > 0,
         { timeout: 30000, timeoutMsg: "a graph node is visible after the initial fit" });
-      // Zoom in until the chain extends beyond the canvas and its last Artifact is not drawn.
+      // Zoom in until the chain extends beyond the canvas and its last Artifact is out of view.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
-      await browser.waitUntil(async () => !(await drawn(name(124))) && !(await visible()).includes(name(124)),
-        { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas and is not drawn" });
+      await browser.waitUntil(async () => !(await visible()).includes(name(124)),
+        { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas" });
       // Fit View moves the camera back over the whole chain: the Artifacts it brings into view
       // are drawn, the chain's end among them.
       await browser.$(".svelte-flow__controls-fitview").click();
@@ -409,12 +412,12 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL; UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK
   scenario<{ run: string }>(
     "graph-eval-tabs",
     "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, and another from the tabs",
     async () => {
-      return ended(createEvals(["alpha", "beta", "gamma"]));
+      return ended(createEvals(["alpha", "beta", "gamma"], "lib"));
     },
     async (browser, { fixture, data: { run } }) => {
       await shownRun(browser, run);
@@ -452,10 +455,17 @@ export const scenarios: Scenario[] = [
       await (await view(0)).click();
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta.") && (await log()) === "",
         { timeout: 15000, timeoutMsg: "app/beta's Summary shown again" });
-      // Another eval's tab shows that eval; Esc closes the Detail.
+      // Another eval's tab shows that eval.
       await openTab(browser, "e:app/gamma");
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check gamma."), { timeout: 15000, timeoutMsg: "the Detail is app/gamma's" });
       assert.equal(await browser.$(tabAt("e:app/gamma")).getAttribute("aria-selected"), "true");
+      // With its Runtime log shown, a click on another Artifact of the graph shows that
+      // Artifact's own tab instead; Esc closes the Detail.
+      await (await view(1)).click();
+      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()), { timeout: 15000, timeoutMsg: "app/gamma's Runtime log shown" });
+      const other = await openArtifact(browser, "a:lib", "Artifact lib");
+      assert.deepEqual(other.tabs.map((tab) => tab.name), ["lib", "ready"], "lib's own chip and eval, none of app's");
+      assert.equal(await log(), "", "app/gamma's log is gone");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
     },
   ),

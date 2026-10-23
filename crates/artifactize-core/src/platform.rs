@@ -16,9 +16,11 @@
 //! Program lookup and desktop-opener crate choices are documented in artifactize-tools'
 //! platform module, where those implementations live.
 
+pub(crate) mod desktop_app;
 pub mod desktop_commands;
 pub mod environment;
 mod hidden_input;
+pub(crate) mod install;
 pub(crate) mod net;
 pub(crate) mod path_serde;
 pub(crate) mod paths;

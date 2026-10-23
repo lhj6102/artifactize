@@ -1,7 +1,7 @@
 # 평가 Run {#evaluation-run}
 
 `verify`는 선택한 eval을 리뷰하고 Run을 기록합니다. `status`는 eval을 실행하지 않고, 다음
-`verify`에서 각 eval이 실행, 결과 재사용, 대기, 차단 중 어느 쪽이 될지 예측합니다. `status`도 선언된
+`verify`에서 각 eval을 실행할지, 기존 결과를 재사용할지, 대기시키거나 차단할지 예측합니다. `status`도 선언된
 fingerprint 스크립트는 실행할 수 있습니다.
 
 ## eval 실행 게이트 {#eval-execution-gates}
@@ -14,12 +14,14 @@ fingerprint 스크립트는 실행할 수 있습니다.
 
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
 eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact의 검사를 실행해
-달라는 뜻이고, eval 선택자는 그 검사 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 검사가 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
+달라는 뜻입니다. 서로 고리처럼 의존하는 대상은 **순환으로 묶인 대상**입니다. 이들의 검사는 선택한
+Artifact를 리뷰하므로, Artifact 선택자는 순환으로 묶인 대상의 검사도 함께 실행합니다. eval 선택자는 그
+검사 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 검사가 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
 **의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
 않았더라도 마찬가지입니다.
 
 `--recursive`는 선택한 Artifact의 다른 검사를 포함해 그 묶음의 모든 검사를 설정 순서대로
-선택합니다. 서로 고리처럼 의존하는 대상은 **순환으로 묶인 대상**이며 함께 포함됩니다. `--all`은
+선택합니다. `--all`은
 이미 모든 검사를 선택하며, 검사가 없는 대상도 최종 검증 요건에 포함합니다. 파일 Artifact 선택자는 그 파일의 eval만
 선택하며, 그 파일이 들어 있는 폴더의 eval은 선택하지 않습니다.
 
@@ -37,6 +39,8 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기 중이거나, 백엔드 자리가 나지 않았거나, 합류한 실행이 아직 끝나지 않았거나, 직접 정한 Run의 동시 실행 상한에 걸렸을 때 표시됩니다. 백엔드 자리가
 빌 때까지 대기 중인 요청은 Run의 `--jobs` 동시 실행 수에 포함되지 않습니다.
+대기 중인 작업은 eval을 선택하거나 선언한 순서가 아니라, Run 전체가 더 빨리 끝나도록 artifactize가
+정한 순서대로 시작합니다. `--max-executions`가 어떤 리뷰까지 실행할지도 이 순서로 정합니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 
@@ -68,7 +72,7 @@ Run이 끝나면 지켜보는 명령도 그 Run의 결과에 맞는 종료 코�
 최종 검증에는 필요한 범위 전체에서 실제 GREEN 증거나 직접 선언한 `basis = true`가 필요합니다.
 basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 하위 작업이 대기합니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
-[업그레이드 안내](../getting-started/install.md#upgrading-from-011)에 있습니다.
+[업그레이드 안내](../getting-started/update.md#upgrading-from-011)에 있습니다.
 `--reuse-only KINDS`(CI에서는 예를 들어 `agent,human`)는 그 종류의 결과를 재사용만 합니다.
 재사용할 증거가 없으면 실행하지 않고 INCOMPLETE로 남깁니다. [CLI](../cli/index.md#reuse-only)를
 보세요.
@@ -129,7 +133,7 @@ DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED�
 속하거나 같은 순환에 드는 eval은 제외합니다. 취소한 eval은 재사용할 수 있는 결과를 남기지 않고 BLOCKED로 표시합니다. 상위 eval이 GREEN이면 같은 파일을 대상으로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.
 
-텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint가 일치해 기존 결과를 재사용하거나 다른 실행에 합류한 경우에는 그 결과를 만든 Run을 표시합니다. [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
+텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint가 일치해 재사용한 결과나 실행 중인 리뷰에 합류해 얻은 결과에는 결과를 만든 Run을 표시합니다. [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
 
 ```text
   web/tests [run-x05qFq-5]: GREEN
@@ -162,8 +166,8 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그
 `run show`, `request show`, `request list --json`에도 `source`가 있습니다.
 
 `verify --wait --json`과 `run show RUN_ID`는 저장된 Run 전체를 출력합니다. `run show`는 선언을
-찾거나 코드를 실행하지 않습니다. Run마다 처음 요청을 만들 때 확정한 선택, 정책, 프로필 옵션, 의존성
-범위의 정의를 함께 저장하므로, Run을 볼 때 현재 선언을 참조하지 않습니다.
+찾거나 코드를 실행하지 않습니다. Run이 시작될 때의 선택, 정책, 프로필 옵션, eval 정의를
+보여 주므로, 나중에 선언을 고쳐도 보이는 내용은 바뀌지 않습니다.
 
 일부 eval만 실행하는 Run에서는 선택 범위 밖의 상위 eval 등에 새 요청을 만들지 않고 저장된 증거를 쓸 수 있습니다. Run은 eval ID를 키로, 저장된 상태를 값으로 하는 `evidence` 맵에 그 판정을 기록합니다.
 
@@ -215,6 +219,7 @@ eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결�
 | `execute` | 결과가 없고, 의존성은 지금 있는 결과로 GREEN | `The current eval and fingerprints have no completed cached result.` |
 | `blocked` | 결과가 없고, 의존성이 RED | `Dependency verdict RED: core/tests` |
 | `wait` | 결과가 없고, 의존성의 결과는 verify가 실행해야 생김 | `Waiting for current GREEN dependency evidence: core/tests` |
+| `wait` | 의존성은 준비됐고 같은 리뷰가 이미 실행 중임. verify는 새 리뷰를 시작하지 않고 그 실행에 합류함 | `The current eval and fingerprints have a live execution.` |
 
 status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스트 출력은 예를 들어
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합한

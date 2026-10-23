@@ -462,7 +462,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
     assert_eq!(
         request.options.backend,
-        Some(artifactize_core::config::Backend::Anthropic)
+        Some(artifactize_core::config::Provider::Anthropic.into())
     );
     assert_eq!(request.options.max_tokens, Some(500));
     let shown = cli(&state, &["cache", "show", &key.value]);

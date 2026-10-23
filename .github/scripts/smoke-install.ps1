@@ -39,6 +39,12 @@ try {
     }
     & artifactize --state-dir (Join-Path $root 'doctor-state') doctor
     if ($LASTEXITCODE -ne 0) { throw 'artifactize doctor failed' }
+    # The script's receipt names it as the way to update; the lookup itself stays offline.
+    $env:ARTIFACTIZE_NO_UPDATE_CHECK = '1'
+    $report = & artifactize --state-dir (Join-Path $root 'doctor-state') doctor --json | Out-String | ConvertFrom-Json
+    Remove-Item Env:ARTIFACTIZE_NO_UPDATE_CHECK
+    $channel = ($report.checks | Where-Object name -eq 'release').details.channel
+    if ($channel -ne 'installPs1') { throw "artifactize doctor names the channel '$channel', not installPs1" }
 
     # The desktop app beside the CLI that starts its Runs, opened from its Start shortcut.
     $desktop = Join-Path $env:ARTIFACTIZE_INSTALL_DIR 'artifactize-desktop.exe'

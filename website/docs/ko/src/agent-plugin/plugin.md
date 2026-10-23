@@ -47,15 +47,15 @@ codex plugin add artifactize@artifactize
 `<project>`는 세션이 시작된 디렉터리입니다.
 
 **Codex:** 프로젝트 디렉터리에서 새 Codex 세션을 시작하세요. 서버는
-플러그인 폴더에서 `artifactize mcp`로 실행되며, Hey Arti가 호출할 때마다 프로젝트를
-지정합니다([서버가 프로젝트를 찾는 방법](mcp.md#which-project)). 평소 말투로 요청하거나,
+플러그인 폴더에서 `artifactize mcp`로 실행되며, 도구가 프로젝트를 지정하지 않았다고 답하면 Hey Arti가
+그 뒤의 호출마다 세션의 프로젝트 폴더를 넘깁니다([서버가 프로젝트를 찾는 방법](mcp.md#which-project)). 평소 말투로 요청하거나,
 스킬을 `$artifactize:hey-arti`로 언급하세요.
 
 ## 업데이트 {#updates}
 
-플러그인은 릴리스된 버전이 올라가는 이 저장소의 `main` 브랜치를 기준으로 업데이트됩니다.
+플러그인을 업데이트하면 이 저장소의 `main` 브랜치에 반영된 릴리스 버전이 적용됩니다.
 Claude Code에서는 `/plugin marketplace update artifactize`로 업데이트하세요. `/plugin`에서 마켓플레이스의 자동 업데이트를 켜도 됩니다. Codex에서는 `codex plugin marketplace upgrade artifactize`로 업데이트하세요.
-`artifactize` 프로그램 자체를 업데이트하는 방법은 [설치 페이지](../getting-started/install.md#update)에 있습니다.
+`artifactize` 프로그램 자체를 업데이트하는 방법은 [업데이트와 제거](../getting-started/update.md#update)에 있습니다.
 
 ## 플러그인 없이 {#without-the-plugin}
 

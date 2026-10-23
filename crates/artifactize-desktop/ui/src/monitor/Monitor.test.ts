@@ -10,7 +10,7 @@ import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { BrowseView, CurrentView, LaunchView, Navigate } from "../ipc/client";
 import App from "../App.svelte";
 import { branch, branchKey, browseView, runChip, waitingRow } from "./fixtures";
-import { humanView } from "../review/fixtures";
+import { greenForm, humanView } from "../review/fixtures";
 
 vi.mock("./layout", () => ({
   NODE: { width: 168, height: 44 },
@@ -57,6 +57,7 @@ const current = (revision: number): CurrentView => ({
 function backend(launch: LaunchView, snapshot: () => BrowseView) {
   const calls: { command: string; args: unknown }[] = [];
   let scans = 0;
+  let stage: "claim" | "review" = "claim";
   mockIPC(
     (command, args) => {
       calls.push({ command, args });
@@ -84,7 +85,12 @@ function backend(launch: LaunchView, snapshot: () => BrowseView) {
         case "pane_complete":
           return { keep: "", candidates: [] };
         case "human_open":
-          return humanView("claim");
+          return humanView(stage);
+        case "human_claim":
+          stage = "review";
+          return { notice: null, view: humanView(stage) };
+        case "human_form":
+          return greenForm;
         default:
           return null;
       }
@@ -264,4 +270,28 @@ it("opens the newest waiting review when started with review alone", async () =>
   await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Review"));
   const rows = within(screen.getByRole("listbox", { name: "Waiting reviews" })).getAllByRole("option");
   expect(rows[0].getAttribute("aria-selected")).toBe("true");
+});
+
+it("closes a review in the Main area with the one Close in its header, after leaving the review's form", async () => {
+  backend({ ...monitor(), mode: "review" }, () => browseView(1, { waiting: [waitingRow("run-9-1")] }));
+  render(App);
+  const main = await screen.findByLabelText("Main area");
+  await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("Review"));
+  const region = await within(main).findByLabelText("Human review");
+  await within(main).findByRole("button", { name: "Claim to review" });
+  // Close is the header's one control, and the review keeps none of its own.
+  const header = main.querySelector("h2")!.parentElement!;
+  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close Esc"]);
+  expect(within(main).getAllByRole("button", { name: /Close/ })).toHaveLength(1);
+
+  await fireEvent.keyDown(region, { key: "c" });
+  await within(main).findByText("REVIEW (yours)");
+  await fireEvent.keyDown(region, { key: "g" });
+  await within(main).findByLabelText(/comment/);
+  // The first Close leaves the form with the review still open; the next returns to the Pane.
+  await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
+  await waitFor(() => expect(within(main).queryByLabelText(/comment/)).toBeNull());
+  expect(main.querySelector("h2")?.textContent).toBe("Review");
+  await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("group", { name: "Pane entries" })));
 });

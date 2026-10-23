@@ -10,7 +10,7 @@ import { commandFields, runtimeProfile, type Operation } from "./native-fixtures
 import { waitingRun } from "./run-fixtures.ts";
 import {
   exists, makeDirectory, nativePath, parentOf, portablePath, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
-  type NativePath,
+  type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
 export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
@@ -130,6 +130,20 @@ export function signoffGrace(fixture: Fixture): number {
   const result = runProgram(cli(), ["--state-dir", fixture.state, "limits", "--json"], { env: environment(fixture) });
   if (result.status !== 0) throw new Error(result.stderr);
   return (JSON.parse(result.stdout) as { signoffIdleGraceSeconds: number }).signoffIdleGraceSeconds;
+}
+
+/** The providers this machine has set up, as `provider list --json` prints them with the app's `env`. */
+export async function providerList(fixture: Fixture, env: Environment = {}): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "provider", "list", "--json"],
+    { env: { ...environment(fixture), ...env } });
+  return { code: status, stdout };
+}
+
+/** `verify --all --wait --json` without blocking a provider served by the calling test. */
+export async function verifyAll(fixture: Fixture): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "verify", "--all", "--wait", "--json"],
+    { env: environment(fixture) });
+  return { code: status, stdout };
 }
 
 /** The saved requests, as `request list --json` prints them. */
@@ -613,24 +627,30 @@ export async function createStates(): Promise<Fixture> {
  * A fresh repository whose one Artifact `app` has an eval for each of `names`, all verified
  * GREEN: an Artifact whose Detail has a tab for each of several evals.
  */
-export function createEvals(names: string[]): Fixture {
+/** An Artifact `app` with one runtime eval per name. With `input`, the first eval also reads
+ * an Artifact of that name, which has one runtime eval `ready` of its own. */
+export function createEvals(names: string[], input?: string): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
     const evals = names
       .map(
-        (name) => `
+        (name, index) => `
   [evals.${name}]
   title = "Check ${name}"
   profile = ${runtimeProfile()}
 
   [evals.${name}.payload]
   instruction = """
-  Check ${name}."""
+  Check ${name}.${input && index === 0 ? ` Read {${input}}.` : ""}"""
   `,
       )
       .join("");
     writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), `name = "app"\n${evals}`);
+    if (input) {
+      writeText(nativePath(makeDirectory(nativePath(repo, input)), "index.artf"),
+        `name = "${input}"\n[evals.ready]\ntitle = "Check ready"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ready."\n`);
+    }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");

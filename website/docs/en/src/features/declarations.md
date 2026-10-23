@@ -135,9 +135,8 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-There is no converter. Have an agent rewrite the declarations and commit the new
-`.artf` files. Families are removed: generate any repeated declarations with your
-own project generator and commit its `.artf` output. Older fields such as
+To migrate, follow [Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
+Older fields such as
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
@@ -202,8 +201,9 @@ Patterns, formats, nested objects, lists inside groups, `$ref` and combinators
 such as `anyOf` are refused: a person could not enter them. Agent schemas keep the
 full validator.
 
-Schemas are limited to 8 MiB. An Agent's raw final response is limited to 1 MiB;
-the normalized result is limited to 256000 UTF-16 code units. Invalid final
+Schemas are limited to 8 MiB. An Agent's final response is checked once complete: over
+1 MiB it is invalid. The result artifactize keeps from it is limited to 256000 characters, where an emoji or
+another character outside the Basic Multilingual Plane counts as two. Invalid final
 responses get one bounded repair attempt, not silent field removal. The
 [Human submission interface](../cli/index.md#command-reference) separately bounds
 its input and reports validation errors without settling the request.
@@ -305,7 +305,7 @@ reviewed, also with `fingerprint = false`:
 Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/install.md#upgrading-from-011).
+[upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 ## Eval mutex tags
 
@@ -399,7 +399,7 @@ are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
-file/directory paths of up to 1024 UTF-16 code units each. They must exist without symlink traversal on every call;
+file/directory paths of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two). They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
 bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after
@@ -435,8 +435,10 @@ review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare
 (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
-`config check` checks the names and syntax of the profile each eval declares; references
-that appear only in a `profile_variants` entry are checked when that variant is selected, so
+`config check` checks the names and syntax of the profile each eval declares. The syntax and
+path rules above apply to every `profile_variants` entry too, so a malformed reference such
+as `{app}/../outside` in any variant fails `config check`. Whether a reference that appears
+only in a variant names an existing Artifact is checked when that variant is selected, so
 run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
 exists, and that no symbolic link is followed, is checked when the command is prepared.
 

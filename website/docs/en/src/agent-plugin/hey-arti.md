@@ -121,14 +121,12 @@ and independent parts still reused. See [Fingerprints and reuse](../features/fin
 
 ## Use MCP first
 
-Arti uses `config_graph` to discover Artifacts, evals and dependencies (`impact:true`
-adds downstream consumers conservatively), `config_check` to validate declarations
-and `status` to predict which evals execute, reuse or wait. `tools_check` inspects
-tools and sessions statically. It reads every continuation page of an inspection
-result before parsing it. The [MCP reference](mcp.md) lists these tools and what MCP
-[deliberately leaves out](mcp.md#deliberately-absent). If MCP is not registered,
-the CLI fallback is `artifactize config check`, `artifactize config graph`,
-`artifactize status --all` and `artifactize tools check`.
+Ask Arti which Artifacts, evals and dependencies your project declares and what a change
+affects, whether the declarations are valid, which evals would run, be reused or wait,
+and whether their tools and sessions are set up. Arti answers from artifactize's
+[MCP tools](mcp.md) when they are registered, and otherwise from
+`artifactize config check`, `artifactize config graph`, `artifactize status --all` and
+`artifactize tools check`.
 
 ## Tool sessions
 

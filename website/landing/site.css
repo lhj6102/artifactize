@@ -560,11 +560,6 @@ p {
   text-align: center;
 }
 
-.app-demo .demo-tabs {
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
 .app-demo img {
   display: block;
   width: 100%;

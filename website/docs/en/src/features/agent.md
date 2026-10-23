@@ -6,7 +6,7 @@ verdict.
 
 ## Agent reviews
 
-There is no bundled model catalog, alias, credential search or fallback:
+There is no bundled model catalog, credential search or fallback:
 
 
 ```toml
@@ -14,22 +14,29 @@ There is no bundled model catalog, alias, credential search or fallback:
 profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", reasoning = "high", timeout_ms = 240000 }
 ```
 
-`backend` accepts `openai`, `anthropic` or `codex`. The first two use only
-`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively, and never search for other
-credentials; `codex` uses a ChatGPT sign-in (see [Codex](#codex)). `provider` and
-`effort` are not config aliases. 0.5.0 removed the `chatgpt` (Sign in with ChatGPT)
-and `claude` (Claude CLI) backends; `config check` names the replacements for any
-profile that still declares one.
+`backend` names a built-in provider (`openai`, `anthropic`, `gemini` or `codex`) or a
+[custom provider](#custom-providers) set up on the machine that runs the eval. `openai`,
+`anthropic` and `gemini` use the key in `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or
+`GEMINI_API_KEY`, or else the key saved with `artifactize login openai|anthropic|gemini`
+(or in the desktop app's Settings), and never search for other credentials. A key is 1–4096
+printable ASCII characters without spaces; surrounding whitespace is trimmed. A set variable is
+always the key in use: an invalid value is an error, never a reason to use the saved key; `codex` uses a
+ChatGPT sign-in (see [Codex](#codex)). `provider` and `effort` are not config aliases.
+0.5.0 removed the `chatgpt` (Sign in with ChatGPT) and `claude` (Claude CLI) backends;
+`config check` names the replacements for any profile that still declares one.
 
 ```sh
 artifactize models openai            # model ID and display name, in provider order
 artifactize models anthropic --json
+artifactize models gemini
 artifactize models codex
 ```
 
 `reasoning` is optional. OpenAI and Codex accept `none`, `minimal`, `low`, `medium`,
-`high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`. Other values
-are a declaration error and are never changed into another value. A model that does not support
+`high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`; Gemini
+accepts `minimal`, `low`, `medium` and `high`. Other values are a declaration error and are
+never changed into another value. A custom provider's values are those of its API, checked
+when the review starts. A model that does not support
 the requested setting fails at the provider; artifactize does not substitute a
 model or lower effort. If the response reports a model ID, it must match exactly.
 
@@ -40,7 +47,9 @@ the same eval, Artifact kinds and fingerprints is reused, and its record shows w
 
 Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
 receives the eval's title and ID, its target and your instruction; artifactize adds the
-general review rules. Each `{name}` reference tells the reviewer that Artifact's name and
+general review rules. The reviewer only reviews: it never changes or repairs what it
+reviews, and it judges tests by reading them, without running them. When a check needs
+tests to run, declare a [Runtime eval](runtime.md) for it. Each `{name}` reference tells the reviewer that Artifact's name and
 the tools it can read it with (and a file Artifact's path), so the instruction need not
 name tools.
 
@@ -99,15 +108,13 @@ handles retries as described below.
 
 ### Retries and error codes
 
-A turn that hits a rate limit or a temporary provider error is retried automatically, at
-most twice (three attempts in all), waiting as long as the provider asks, but only while
-the provider has neither streamed any output nor reported any usage for it. A failure
-after either is never retried, so nothing is paid for twice, even when no answer text
-appeared. When the retries run out,
-or the provider asks for a wait longer than the review has left, the eval ends ERROR
-with `RATE_LIMIT` or `TRANSIENT` as its `errorCode`: run `verify` again later, and
-finished results are reused. Each attempt is saved in `usage` with its counters, `error`
-and `errorCode`.
+A turn that fails with a rate limit or a temporary error before it produced any output
+or used any tokens is retried automatically a few times, waiting as long as the provider
+asks. A failure after output or usage is never retried, so nothing is paid for twice.
+When the retries do not help, or the provider asks to wait past the review's deadline,
+the review ends ERROR with `RATE_LIMIT` or `TRANSIENT`. Wait a moment and run `verify`
+again: finished results are reused, so only the failed reviews run. Each attempt is saved
+in `usage` with its counters, `error` and `errorCode`.
 
 ### Prompt caching
 
@@ -181,11 +188,10 @@ artifactize keeps each Agent review's conversation on this machine, so you can r
 what the reviewer saw and said, and ask it a follow-up in the same conversation, much
 like continuing a chat. The recorded verdict never changes.
 
-**What is saved.** Each review session is kept in one file only your account can read
-([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
+**What is saved.** Each review session is kept where only your account can read it
+([store](others/state.md#agent-sessions)): the instructions, every message, each tool
 call with its result, the correction turn, token counts and the settings the review
-used. It is the only record of a review's tool calls: the request keeps its verdict,
-result and usage.
+used.
 Saving never fails a review: a write error is reported on stderr and the review goes
 on without it.
 
@@ -228,7 +234,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - **Sign-in.** `login codex` opens ChatGPT's sign-in page in your browser, as the
   Codex CLI does, and returns to artifactize when you have signed in. The browser steps,
   the pasted-address fallback and the five-minute limit are in
-  [sign-in setup](../getting-started/install.md#backends).
+  [sign-in setup](../getting-started/backends.md).
   It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`, readable
   only by you. Use the same `--state-dir` for `login`, `models` and `verify`.
   Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git
@@ -257,6 +263,46 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   account, in the server's order. A profile may name any model your account can use,
   listed or not.
 
+## Custom providers
+
+A project only names a provider; what the name reaches is set up on each machine that runs
+the eval. A custom provider is a name an Agent profile's `backend` may use, added in the
+desktop app's **Settings → Providers** (**+ Custom provider**) or with `artifactize provider`.
+Add as many as you need; each is one of:
+
+- **An alias** of a built-in provider, used with that provider's sign-in or key:
+
+  ```sh
+  artifactize provider add work --alias codex
+  ```
+
+- **An endpoint**: an API, its root URL and an optional key. The API is `openai-responses`,
+  `openai-chat` (Chat Completions, which most compatible servers offer), `anthropic` or
+  `gemini`. With `--key`, the key is read from stdin, never from the command line:
+
+  ```sh
+  artifactize provider add local --api openai-chat --url http://localhost:11434/v1
+  printf '%s\n' "$ROUTER_KEY" | artifactize provider add router --api openai-chat --url https://openrouter.ai/api/v1 --key
+  ```
+
+The URL is the API root the requests are sent under, as the built-in providers' roots are
+(`https://api.openai.com/v1`, `https://api.anthropic.com`,
+`https://generativelanguage.googleapis.com`). It uses `http://` or `https://` and names a host;
+a URL with credentials (`user:pass@`), a query (`?…`) or a fragment (`#…`) is rejected, since
+the key goes in its own field. A trailing `/` is dropped. `provider add` with an existing name replaces
+it; `provider remove NAME` removes it; `provider list` shows every custom provider and where
+each built-in key comes from, never a key. A custom provider cannot take a built-in name.
+
+```toml
+profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
+```
+
+A review that names a provider this machine has not set up is an `AUTHENTICATION` ERROR
+naming the missing provider. Keys and custom providers are saved in `$STATE/auth/providers.json`,
+readable by you only, and never inside a repository. The provider, like the model and
+reasoning, is an execution option: it is recorded with each result and is not part of the
+reuse key.
+
 ## Test against a fake provider
 
 To test your tools, schemas and result parsing without a model, point a backend at
@@ -266,6 +312,7 @@ a fake provider on this machine. The variable replaces the provider's API root:
 |---|---|---|---|
 | `openai` | `ARTIFACTIZE_OPENAI_BASE_URL` | `http://127.0.0.1:8080/v1` | `POST <root>/responses`, `GET <root>/models` |
 | `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
+| `gemini` | `ARTIFACTIZE_GEMINI_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1beta/models/<model>:streamGenerateContent`, `GET <root>/v1beta/models` |
 | `codex` | `ARTIFACTIZE_CODEX_BASE_URL` | `http://127.0.0.1:8080/backend-api/codex` | `POST <root>/responses`, `GET <root>/models` |
 | Codex sign-in | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token` and `<root>/oauth/revoke`; `login codex` sends the browser to `<root>/oauth/authorize` |
 
@@ -273,8 +320,8 @@ a fake provider on this machine. The variable replaces the provider's API root:
   without credentials, a query or a fragment. Any other value fails the review,
   `models` and `doctor` with a message naming the variable, before any connection.
   An empty value counts as unset. For `anthropic`, a trailing `/v1` is accepted.
-- The API-key variable is still required and is sent to the fake unchanged, so set
-  a dummy key. For `codex`, point `ARTIFACTIZE_CODEX_AUTH_FILE` at a file such as
+- A key is still required (its variable or a saved one) and is sent to the fake unchanged,
+  so set a dummy key. A custom endpoint needs no variable: give it the fake's URL. For `codex`, point `ARTIFACTIZE_CODEX_AUTH_FILE` at a file such as
   `{"tokens":{"access_token":"dummy","account_id":"test"}}`.
 - Nothing else changes: the same request bodies and streaming, retries, budgets,
   tool calls, repair and verdict validation.

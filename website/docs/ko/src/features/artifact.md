@@ -37,14 +37,14 @@ Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람�
 
 `index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `basis`, `views`,
 `fingerprint`, `tags`는 선택입니다. 예전 선언은
-[예전 정책 업그레이드 안내](../getting-started/install.md#upgrading-from-011)를 보세요.
+[예전 정책 업그레이드 안내](../getting-started/update.md#upgrading-from-011)를 보세요.
 
 eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[evals.heading]`은 eval ID
 `usage/heading`이 됩니다. `id` 필드는 선언하지 마세요. eval마다 `title`과, `kind`가 `runtime`,
 `agent`, `human` 중 하나인 `profile`이 있습니다. 모든 eval에는 `payload.instruction`이 필요하며,
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
-Runtime eval은 종료 코드가 판정입니다(0이면 GREEN). Agent나 Human은 소유자 필드와 함께 GREEN이나
+Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent나 Human은 소유자 필드와 함께 GREEN이나
 RED를 돌려줍니다. 각 eval의 의존성은 그 eval이 참조하는 Artifact와 대상 Artifact의 자식으로 정해집니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
@@ -81,7 +81,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
 파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
-폴더이지만, 내장 도구로는 상관없는 옆 파일에 접근할 수 없고, 그 파일과 허용된 범위에만 접근할 수 있습니다. 사이드카를
+폴더이지만, 내장 도구로는 대상 파일과 허용 범위에 포함된 파일에만 접근할 수 있습니다. 사이드카를
 추가해도 그 파일 Artifact가 상위 폴더 Artifact의 자식이 되지는 않으며, 상위 폴더의 해시에는 대상
 파일이 계속 들어갑니다. 반면 `index.artf`로 선언한 폴더는 그 위에서 가장 가까운 Artifact 폴더의 자식입니다.
 이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
@@ -89,13 +89,13 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 ## eval 의존성 {#eval-dependencies}
 
-의존성은 그 Artifact의 모든 eval이 아니라 입력을 쓰는 eval에 속합니다. `payload.instruction`이나
+의존성은 Artifact의 모든 eval에 일괄 적용되지 않고, 해당 입력을 쓰는 eval에만 적용됩니다. `payload.instruction`이나
 Runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키며, 그 eval은 입력을 판단하는
 eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부분을 검사하는 eval에서 그 Artifact를 `{name}`으로
 참조하세요. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
 
-자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact의 파일에는 자식 폴더가 포함되므로,
-자식은 부모의 모든 eval이 참조한 것으로 간주합니다. 부모의 각 eval은 Artifact로 선언된 가장
+자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact에는 자식 폴더의 내용도 포함되므로,
+부모의 모든 eval이 자식 Artifact를 참조하는 것으로 간주합니다. 부모의 각 eval은 Artifact로 선언된 가장
 가까운 하위 폴더의 eval에 의존합니다.
 
 예를 들어 애플리케이션의 E2E 테스트를 실행하는 eval은 애플리케이션 Artifact에 선언합니다.
@@ -115,13 +115,13 @@ payload.instruction = "Run {e2e-tests} against {app}."
 실행할 수 있습니다.
 
 모든 eval은 입력의 판정과 상관없이 그 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
-효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval도 대기하고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 상위 리뷰를 포함해 필요한 증거가
-모두 있어야 합니다.
+효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval도 대기하고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 결과가 GREEN이 되려면 상위 리뷰를
+포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 자기
-Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
-실행이 차단된 eval에 의존하는 eval도 이 게이트에 따라 차단됩니다. 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
+하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 그 eval의
+대상 Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
+막힘은 이 eval 게이트를 따라 퍼집니다. 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
 실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
 쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
@@ -164,8 +164,8 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 `tags = ["type:code", "scope:player"]`는 화면에 보여 주기만 하는 메타데이터를 더합니다. 태그는
 ASCII 제어 문자가 없고 비어 있지 않은 고유한 문자열이며 64개까지입니다. `status`,
-`config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그는 fingerprint, eval 정의
-해시, 재사용 키, 관계, `verify`와 `status`의 선택을 바꾸지 않습니다. 이런 명령에는 태그로
+`config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그를 바꿔도 fingerprint, eval 정의
+해시, 재사용 키, 의존 관계, `verify`와 `status`로 선택하는 대상은 바뀌지 않습니다. 이런 명령에는 태그로
 거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. 태그로 걸러 보는 곳은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
 
 프로젝트에 템플릿이 필요하면 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은

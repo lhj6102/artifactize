@@ -7,6 +7,9 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/sv
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import type { DetailView, Source, TreeNode } from "../ipc/client";
 import DetailPane from "./DetailPane.svelte";
+import { Jobs } from "../ipc/jobs.svelte";
+import { Review } from "../review/review.svelte";
+import { humanView } from "../review/fixtures";
 
 beforeAll(() => {
   // jsdom lays nothing out; the neighbours' small graph only observes sizes and reads transforms.
@@ -173,6 +176,26 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   await screen.findByRole("log", { name: "Agent transcript" });
   expect(screen.queryByText("Outcome")).toBeNull();
   await waitFor(() => expect(opened).toEqual(["run-a-7"]));
+});
+
+it("keeps Close alone in the header on a Human review's tab, the review showing none of its own", async () => {
+  mockIPC((command, args) => {
+    if (command === "detail_row") return rowOf(args);
+    if (command === "detail") return { ...view("e:app/test", "app/test · Sign-off"), profile: "human", request: "run-a-2" };
+    return command === "human_open" ? humanView("review") : null;
+  }, { shouldMockEvents: true });
+  const reviewing = new Review("run-a-2", new Jobs());
+  const onback = vi.fn();
+  renderHosted(DetailPane, {
+    source: RUN, revision: 1, branch: null, node: "a:app", tab: "e:app/test", focused: false, active: true,
+    review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback, ongone: vi.fn(),
+  });
+  await screen.findByText("REVIEW (yours)");
+  const header = screen.getByRole("heading", { name: "Human review" }).parentElement!;
+  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close Esc"]);
+  expect(screen.getAllByRole("button", { name: /Close/ })).toHaveLength(1);
+  await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
+  expect(onback).toHaveBeenCalledOnce();
 });
 
 it("shows only the Artifact's chip, without a `/`, for an Artifact without evals", async () => {
