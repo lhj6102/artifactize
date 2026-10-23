@@ -14,7 +14,10 @@ When the check is ready, artifactize saves a **DEFERRED request**: work waiting 
 person's decision that holds up nothing else. Waiting for that person uses neither a
 Run's `--jobs` execution slot nor its `--max-executions` budget, even if that budget is
 zero. Checks that rely on the sign-off run at once and stay PROVISIONAL until it is
-GREEN. Watching or closing a terminal does not make the decision. The
+GREEN. Since other work may still run, wait for it to finish if you want to review the
+final state. Every sign-off is listed in `review`, monitor, desktop and request listings,
+and claim, tools, release and submission check Human authority; a blocked sign-off is never
+offered to a person. Watching or closing a terminal does not make the decision. The
 [Run lifecycle](run.md#submit-observe-and-cancel) explains submission, watching and
 explicit cancellation.
 
@@ -64,9 +67,7 @@ The [reference](tools/human.md#in-a-review) has the `request list` and
 
 ## Sign-offs and the Run
 
-A sign-off is requested as soon as its own Artifact's machine evals are GREEN, possibly
-while other work still runs; wait for that work to finish if you want to review the
-final state. Its Run stays **WAITING_HUMAN** while a reviewer holds a claim on one of its
+A Run stays **WAITING_HUMAN** while a reviewer holds a claim on one of its
 sign-offs, and for an idle grace (2 minutes unless
 [changed](others/state.md#sign-off-idle-grace)) after nothing else is left. Claim the
 sign-off in that time and submit it, and the Run ends GREEN or RED with it; left
@@ -74,10 +75,6 @@ unclaimed, the Run ends **YELLOW** (exit 5): only sign-offs remain. The sign-off
 be submitted afterwards, and the next verify reuses it. The details are in
 [Sign-offs and the end of a Run](run.md#sign-offs-and-the-end-of-a-run); that reuse needs
 fingerprints, so `fingerprint = false` disables it.
-
-For a reviewer, every sign-off is marked DEFERRED: it is listed in `review`, monitor,
-desktop and request listings, and claim, tools, release and submission check Human
-authority. A blocked sign-off is never offered to a person.
 
 A newer request for the same eval in the same working tree retires earlier
 DEFERRED sign-offs with a different reuse key, removing them from Review. See

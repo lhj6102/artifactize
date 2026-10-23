@@ -334,10 +334,10 @@ is the explicit cancellation action. The foreground Human deadline and
 
 Gate bypass (`--ignore-gates` and `review_policy`, including
 `review_policy.dependency_gates`) is removed; even an empty `review_policy` table fails
-configuration validation, so delete it. Per-request `--speculate` and `--defer-human`
-replace it, both off by default and neither waiving final approval; deferred sign-offs
-end with `SIGNOFFS_PENDING` and `--wait` exit 5 (0.16 removed `--defer-human` again; see
-above). See [Runs and status](../features/run.md).
+configuration validation, so delete it. To run checks before their gates resolve, add
+`--speculate` to the verify request; it never waives final approval. Sign-offs no longer
+hold up other evals (see [Upgrading to 0.16](#upgrading-to-016)). See
+[Runs and status](../features/run.md).
 Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
 selects that repository initially.
 

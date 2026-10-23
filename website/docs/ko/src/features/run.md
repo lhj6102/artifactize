@@ -98,8 +98,8 @@ eval도 바로 실행하며, 그 결과는 승인이 GREEN이 될 때까지 PROV
 - **YELLOW**(종료 코드 5): 다른 결과는 모두 GREEN이지만 제출되지 않은 승인이 있습니다.
   **승인만 남았다**는 뜻이며 승인된 것은 아닙니다.
 
-`verify --wait`, `run show --wait`, [MCP](../agent-plugin/mcp.md)의 대기 도구는 Run이 끝나면 반환하므로, 승인을
-맡고 있거나 유예 시간이 남은 동안에는 계속 기다립니다. YELLOW는 최종 상태입니다. 나중에 제출하면 요청이
+`verify --wait`, `run show --wait`, [MCP](../agent-plugin/mcp.md)의 대기 도구는 Run이 끝나야 반환하므로, 리뷰어가
+승인을 맡고 있거나 유예 시간이 남아 있으면 호출이 반환되지 않습니다. YELLOW는 최종 상태입니다. 나중에 제출하면 요청이
 바뀔 뿐, Run의 판정은 바뀌지 않습니다. Run 자체가 승인 결과로 끝나게 하려면 유휴 유예 시간 안에 승인을
 맡으세요. 새 verify에서는 자동 검사의 잠정 결과가 바뀌지 않았으면 이를 재사용합니다. 승인이 GREEN이면
 SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `--reuse-only agent,human`은 승인을 요청하지
