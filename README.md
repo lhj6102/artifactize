@@ -8,7 +8,7 @@ English · [한국어](assets/readme/README.kr.md)
 
 <p align="center">
   <img src="assets/others/roles.en.png" width="800"
-       alt="How people and AI agents share the work around Artifactize: people and agents direct half and half, agents do all of the building, and agents do most of the evaluating while people do a small part.">
+       alt="Collaborate in Artifactize: the work splits into three roles around it. As Director, a person and an AI agent decide what to build; as Builder, an AI agent builds the pieces; as Evaluator, an AI agent and a person check each piece.">
 </p>
 
 **Who is it for?**

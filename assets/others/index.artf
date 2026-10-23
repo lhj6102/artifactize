@@ -49,20 +49,21 @@ required = ["findings"]
 additionalProperties = false
 
 [evals.shows-roles]
-title = "The role figure shows how people and agents share the work, cleanly"
+title = "The role figure shows people and agents collaborating in three roles, cleanly"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
 
 [evals.shows-roles.payload]
 instruction = """
-{others} holds roles.html and the image capture.mts renders from it, roles.en.png. It shows \
-three roles, Director above and Builder and Evaluator on either side of the Artifactize icon \
-and name, each with one bar split into the shares people and AI agents take of it, told apart \
-only by a person icon and an agent icon. The README and \
-the landing page use it in place of a sentence saying that Artifactize brings human and agent \
-work together. Read roles.html and view the image. Judge:
-- Meaning: people and agents share directing half and half, agents do all of the building, \
-and agents do most of the evaluating while people do a small part; each share's width matches \
-that, and the figure shows nothing beyond it.
+{others} holds roles.html and the image capture.mts renders from it, roles.en.png. The README \
+and the landing page use it in place of a sentence saying that Artifactize brings human and \
+agent work together. Its point is that people and AI agents collaborate in Artifactize through \
+three roles: Director above and Builder and Evaluator on either side of the Artifactize icon. \
+Each role has a short line on what it does and the icons of who takes part in it: a person and \
+an agent direct, an agent builds, and an agent and a person evaluate. Read roles.html and view \
+the image. Judge:
+- Meaning: the three roles are what the figure is about; each role's line says plainly what it \
+does (W-INTRO-PLAIN-LANGUAGE of {writer-introduction}), and the figure shows nothing beyond \
+the roles, who takes part in them and Artifactize.
 - Clarity: a first-time reader tells the person from the AI agent without labels, because \
 each keeps one icon and one color across the figure.
 - Layout: the roles form a balanced triangle around Artifactize, each joined to it by a line; \

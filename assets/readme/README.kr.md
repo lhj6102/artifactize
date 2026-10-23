@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="../others/roles.en.png" width="800"
-       alt="Artifactize를 중심으로 사람과 AI 에이전트가 일을 나누는 방식: 방향은 사람과 에이전트가 절반씩 정하고, 만드는 일은 모두 에이전트가 맡으며, 평가는 대부분 에이전트가 하고 사람은 일부만 맡습니다.">
+       alt="Artifactize에서 함께 일하기: 일은 Artifactize를 중심으로 세 역할로 나뉩니다. Director로서 사람과 AI 에이전트가 무엇을 만들지 정하고, Builder로서 AI 에이전트가 조각을 만들며, Evaluator로서 AI 에이전트와 사람이 조각마다 검사합니다.">
 </p>
 
 **누구를 위한 도구인가요?**
