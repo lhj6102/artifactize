@@ -381,8 +381,10 @@ its published name is accepted, and the scope is that Artifact and its children.
 With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
 in the eval's own scope, so a tool whose operands name another Artifact runs as it
 would in that eval's review.
-`--args` is valid only for Agent execution; Human schemas admit only an empty
-object and Human commands take no free arguments. A check never creates a Run,
+`--args` is valid only for Agent execution, and without it an Agent tool gets `{}`;
+Human schemas admit only an empty object and Human commands take no free arguments.
+With `--execute`, the report also carries the tool's response as `result`: its `content`,
+and `isError: true` when the tool failed (exit 1). A check never creates a Run,
 verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
 execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for

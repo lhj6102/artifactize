@@ -91,10 +91,9 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-이 [스크립트](https://artifactize.dev/install.sh)는 GitHub의 최신 안정 릴리스에서 OS와
-CPU에 맞는 압축 파일을 고르고, 그 SHA-256을 릴리스의 체크섬과 비교해
-일치하지 않으면 설치하지 않습니다. 기존 파일을 교체하기 전에 새 바이너리 두 개가 실행되는지
-확인한 뒤 `~/.local/bin`에 설치합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
+이 [스크립트](https://artifactize.dev/install.sh)는 OS와 CPU에 맞는 최신 안정 릴리스를
+`~/.local/bin`에 설치합니다. 내려받은 파일이 체크섬 확인에 실패하거나 바이너리가 실행되지 않으면
+아무것도 교체하기 전에 멈추므로, 기존 설치는 그대로 동작합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
 셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
 추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
 `PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은

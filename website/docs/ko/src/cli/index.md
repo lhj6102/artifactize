@@ -347,8 +347,10 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
-`--args`는 Agent 실행에서만 쓸 수 있습니다. Human 스키마는 빈 객체만 받고, Human 명령에는 임의의
-인자를 넘길 수 없습니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
+`--args`는 Agent 실행에서만 쓸 수 있고, 생략하면 Agent 도구는 `{}`를 받습니다. Human 스키마는 빈
+객체만 받고, Human 명령에는 임의의 인자를 넘길 수 없습니다. `--execute`를 쓰면 보고서의
+`result`에 도구의 응답이 함께 담깁니다. `content`가 들어 있고, 도구가 실패하면 `isError: true`이며
+종료 코드는 1입니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
 환경에서 별도의 임시 출력 폴더(실행 뒤 삭제)를 쓰고, Human 호출은 리뷰어의 실제 환경을 씁니다.
 종료 코드는 준비 완료나 성공이면 0, 선언·사전 점검·도구·정리 실패면 1, 호출이 잘못되면
 2입니다. `--repo`, `--state-dir`, `--json`을 받으며, `--json`이 없어도 보고서는 JSON입니다.
