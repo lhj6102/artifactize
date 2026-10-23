@@ -391,12 +391,12 @@ Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우�
 [Codex](../features/agent.md#codex)를 보세요.
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
 `doctor`는 어떤 provider도 호출하지 않고 Run도 만들지 않습니다. 모든 백엔드가 선택 사항이므로
-키나 로그인이 없으면 경고로 처리합니다. 쓸 수 없는 상태나 잘못된 설정 같은
+키나 로그인이 없으면 경고로 처리합니다. 데스크톱 앱이 없을 때도 설치 링크와 함께 경고만 합니다. 쓸 수 없는 상태나 잘못된 설정 같은
 심각한 오류가 있을 때만 1로 종료합니다.
 
 ## 정리와 제거 {#cleanup-and-uninstall}
