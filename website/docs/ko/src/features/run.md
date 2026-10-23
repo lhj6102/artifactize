@@ -116,7 +116,7 @@ fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 
 verify를 다시 실행하면 Human 증거가 확보될 때까지 대기합니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING인 Run을, 실행은
 끝났지만 최종 검증 요건은 충족하지 못한 상태로 표시합니다.
 
-텍스트 출력은 요청마다 한 줄을 출력하며, 다른 요청의 실행에서 가져온 결과(fingerprint 적중이나
+텍스트 형식에서는 요청별 결과를 한 줄씩 보여 주며, 다른 요청의 실행에서 가져온 결과(fingerprint 적중이나
 합류한 실행)에는 그 출처 Run을 표시합니다([원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서
 온 결과에는 만든 사람이나 Human 리뷰어도 나옵니다).
 
@@ -146,7 +146,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그
 ```
 
 `kind`는 재사용 키의 완료된 기록이면 `cache`, 같은 키로 실행 중인 작업(다른
-`verify`나 같은 Run의 형제 eval)이 끝나기를 대기한 뒤 그 결과를 썼으면 `joined`,
+`verify`나 같은 Run의 형제 eval)이 끝날 때까지 대기한 뒤 그 결과를 썼으면 `joined`,
 [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)의 기록이면 `remote`입니다.
 `run show`, `request show`, `request list --json`에도 `source`가 있습니다.
 

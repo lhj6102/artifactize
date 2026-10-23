@@ -186,7 +186,7 @@ Alice의 `verify --wait`는 요청을 기록할 Run을 제출한 뒤, 포그라�
 승인합니다. Alice의 토큰에는 `human` 범위가 있으므로 `request submit`이
 승인을 게시하고, Alice의 `verify --wait`는 GREEN으로 끝납니다.
 
-첫 번째 터미널에서는 지켜보기를 계속 실행해 두세요.
+첫 번째 터미널에서는 Alice의 `verify --wait`를 계속 실행해 두세요.
 
 ```sh
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
