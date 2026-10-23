@@ -387,7 +387,7 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-자식까지 읽을 수 있습니다. 참조한 Artifact의 eval 지시문은 리뷰에 더해지지 않습니다. 프로젝트
+자식까지 읽을 수 있습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를

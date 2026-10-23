@@ -66,4 +66,8 @@ fn typed_details_preserve_null_and_flat_auth_wire_forms() {
         serde_json::to_value(codex).unwrap(),
         json!({"source":"none","expiresAt":null,"expired":false,"testEndpoint":"http://localhost"})
     );
+    assert_eq!(
+        serde_json::to_value(Details::Desktop { path: None }).unwrap(),
+        json!({"path":null})
+    );
 }

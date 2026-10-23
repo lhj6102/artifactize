@@ -91,10 +91,9 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-이 [스크립트](https://artifactize.dev/install.sh)는 GitHub의 최신 안정 릴리스에서 OS와
-CPU에 맞는 압축 파일을 고르고, 그 SHA-256을 릴리스의 체크섬과 비교해
-일치하지 않으면 설치하지 않습니다. 기존 파일을 교체하기 전에 새 바이너리 두 개가 실행되는지
-확인한 뒤 `~/.local/bin`에 설치합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
+이 [스크립트](https://artifactize.dev/install.sh)는 OS와 CPU에 맞는 최신 안정 릴리스를
+`~/.local/bin`에 설치합니다. 내려받은 파일이 체크섬 확인에 실패하거나 바이너리가 실행되지 않으면
+아무것도 교체하기 전에 멈추므로, 기존 설치는 그대로 동작합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
 셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
 추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
 `PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
@@ -391,12 +390,12 @@ Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우�
 [Codex](../features/agent.md#codex)를 보세요.
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
 `doctor`는 어떤 provider도 호출하지 않고 Run도 만들지 않습니다. 모든 백엔드가 선택 사항이므로
-키나 로그인이 없으면 경고로 처리합니다. 쓸 수 없는 상태나 잘못된 설정 같은
+키나 로그인이 없으면 경고로 처리합니다. 데스크톱 앱이 없을 때도 설치 링크와 함께 경고만 합니다. 쓸 수 없는 상태나 잘못된 설정 같은
 심각한 오류가 있을 때만 1로 종료합니다.
 
 ## 정리와 제거 {#cleanup-and-uninstall}
@@ -460,8 +459,8 @@ Artifactize를 마우스 오른쪽 버튼으로 클릭해 제거하세요. `inst
 검색하세요).
 
 **Store 앱**을 제거하면 Run, 저장된 결과, 로그인, 캐시를 포함한
-패키지 전용 상태가 제거됩니다. 다른 설치 방법은 상태 디렉터리를 남겨 두므로,
-나중에 패키지되지 않은 버전을 설치하면 그 Run과 결과를 다시 볼 수 있습니다. `prune`은 활성 Run,
+패키지 전용 상태가 제거됩니다. 다른 방법으로 설치했다면 앱을 제거해도 상태 디렉터리가 남으므로,
+나중에 패키지되지 않은 버전을 설치하면 기존 Run과 결과를 다시 볼 수 있습니다. `prune`은 활성 Run,
 데이터베이스 행, 저장소를 건드리지 않습니다. 패키지되지 않은 버전이 남긴 상태를 지우려면
 `artifactize doctor`가 첫 줄에 출력하는 상태 디렉터리를 삭제하세요.
 

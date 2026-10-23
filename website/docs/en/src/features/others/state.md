@@ -143,7 +143,7 @@ Each Agent review's conversation is saved under the state, for
 |---|---|---|
 | `enabled` | `true` | `false` saves no new conversation; saved ones stay readable |
 | `maxBytes` | 1 GiB | The store's size that starts a cleanup; at least 1 |
-| `targetBytes` | 768 MiB, or three quarters of `maxBytes` when that is 768 MiB or less | The size a cleanup brings the store down to; must be lower than `maxBytes` |
+| `targetBytes` | 768 MiB when `maxBytes` is larger, otherwise 3 × ⌊`maxBytes` ÷ 4⌋ bytes | The size a cleanup brings the store down to; must be lower than `maxBytes` |
 
 A cleanup runs when a `verify` Run has finished its evals, and on `prune`. When the
 conversations take more than `maxBytes`, it deletes the oldest sessions until they take
@@ -152,9 +152,8 @@ conversations take more than `maxBytes`, it deletes the oldest sessions until th
 cleanup that fails during `verify` is reported on stderr and leaves the Run as it is. An
 invalid `agentSessions` value fails `verify` and `prune` (exit 2), and `doctor` reports it.
 
-The store is `$STATE/agent-sessions/`, readable only by you, with one JSON Lines file per
-session named by its `sessionId`. `session show --json` prints its events; each has a
-`kind`:
+The store is `$STATE/agent-sessions/`, readable only by you. `session show --json` prints
+a session's events; each has a `kind`:
 
 | `kind` | Holds |
 |---|---|
@@ -173,7 +172,7 @@ conversation and its tool calls, which
 ### Follow-up replay
 
 `session send` asks the saved review a question with the same backend, model and
-reasoning, replaying the saved conversation so the provider can reuse its cache. The
+reasoning, continuing its saved conversation. The
 project's current tools are offered again, and if a covered Artifact changed since the
 review, the header and the model are told. The question is a follow-up, not a new review:
 the model answers in plain text, may use the tools, and the recorded verdict never changes.

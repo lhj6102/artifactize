@@ -94,10 +94,10 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-The [script](https://artifactize.dev/install.sh) picks the archive for your OS and
-CPU from the latest stable GitHub release, checks its SHA-256 against the release's
-checksum and refuses a mismatch. It runs both new binaries before replacing anything,
-then installs them to `~/.local/bin`. It uses `curl` or `wget`, never `sudo`, and
+The [script](https://artifactize.dev/install.sh) installs the latest stable release for
+your OS and CPU into `~/.local/bin`. A download that fails its checksum or a binary that
+does not run stops it before anything is replaced, so your previous install keeps
+working. It uses `curl` or `wget`, never `sudo`, and
 never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
 the line to add. It also warns about another `artifactize` or `artifactize-tools` on
 `PATH` that would run instead. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
@@ -401,12 +401,13 @@ and asks the server to revoke them; it warns when the revocation is not confirme
 See [Codex](../features/agent.md#codex).
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
 `doctor` calls no provider and creates no Run. Missing keys or sign-ins are
-warnings, because every backend is optional. It exits 1 only for hard errors such as unusable state
+warnings, because every backend is optional; so is a missing desktop app, with a link to
+install it. It exits 1 only for hard errors such as unusable state
 or invalid configuration.
 
 ## Cleanup and uninstall

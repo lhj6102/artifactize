@@ -67,8 +67,9 @@ A folded branch shows its newest Run under its name: a dot in its status colour,
 its status and how long ago it ran (a running one, its time so far). Click a branch
 to expand it and show its newest entry; the chevron before its name expands or folds
 it without showing anything. Expanded, its timeline lists its Runs newest first, each
-with its status, age and Run ID. While a Run is in progress it comes first; otherwise
-the **Current** does, the worktree as it is now. **Older runs** at the end brings
+with its status, age and Run ID. The first entry is **Current**, the worktree as it is
+now; while a Run is in progress, that Run takes Current's place, and Current returns when
+the Run ends. **Older runs** at the end brings
 older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
 of branches can be expanded; the one the app was started for starts expanded.
 
@@ -90,7 +91,7 @@ reviews alike. A plain word matches part of a project, a branch or a waiting rev
 eval, ignoring case; `repo:` and `branch:` match part of that one field.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
-and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
+and values; in an empty field or after a space, ↓ opens the key suggestions. ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
 mouse. Enter without an open suggestion returns to the list. A query that cannot be
 read, such as an unknown key, shows its error in place of the branches, and neither list
 shows entries until it is fixed. Esc closes suggestions, then puts back `sort:recent`,
@@ -157,13 +158,11 @@ approves nothing.
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
 own.
-Drag the graph background to pan; wheel, pinch or a background double-click zooms
-the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
-These gestures move the camera, not the divider or the Detail. A graph shows whole
-when it first appears; from then on only you move
-its camera. Opening, switching, resizing or closing the Detail, a new result or scan
-and a new layout never zoom or pan it; **Fit View** shows the whole graph again in
-the whole canvas, the same whether the Detail floats over it or not.
+Drag the graph background to pan; wheel, pinch or a background double-click zooms.
+**Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
+whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
+appears; after that only you move its camera: the Detail, new results, scans and layouts
+leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on

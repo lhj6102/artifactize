@@ -1499,6 +1499,14 @@ pub fn console_launch(command: &mut Command, with_console: bool) -> &mut Command
     })
 }
 
+/// Launch with no console at all, as the desktop app runs. Only Windows has this desktop
+/// console attachment distinction.
+#[cfg(windows)]
+pub fn detached_launch(command: &mut Command) -> &mut Command {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(windows_sys::Win32::System::Threading::DETACHED_PROCESS)
+}
+
 /// Start `command` where `interrupt` can reach it alone: on Windows, its own console process
 /// group, which Ctrl-Break addresses; Unix signals address one process already.
 pub fn new_group(command: &mut Command) -> &mut Command {
