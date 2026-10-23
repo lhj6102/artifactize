@@ -380,8 +380,8 @@ Artifact는 자식까지 포함해 스크립트의 범위에 들어오지만 그
 Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
 ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 않습니다. `fingerprint = false`인
-Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 파일
-대상 확인은 키 없는 eval을 포함해 준비, eval 시작과 끝, 도구 호출 때 항상 합니다. 필요한 다른
+Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 재사용 키가
+없는 eval에서도 준비 단계와 eval 실행 전후, 도구 호출 때마다 파일 Artifact의 대상 파일을 확인합니다. 필요한 다른
 Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간의 변경을 계속 감시하지는 않습니다.
 artifactsum은 준비와 재확인 때만 해시합니다.
 
