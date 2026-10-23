@@ -107,7 +107,8 @@ the selected tool shows its action and description. For a waiting review, a comm
 shows its resolved command line, worked out from the declarations when you first open the
 review, without claiming it or running anything. A refresh keeps it; reopening the review
 keeps it in Monitor, and in standalone Review until you open another Human request there; a
-tool run updates it. A review that no longer waits shows its commands as declared. If a tool's command could not be
+tool run updates it. A review that no longer waits keeps the command lines worked out
+while it waited; opened fresh, it shows its commands as declared. If a tool's command could not be
 worked out, for example because its program is missing, it shows the declaration and why.
 If the review's declarations could not be read at all, every tool shows its command as
 declared, without a reason; running the tool then reports the error. Fix the declaration
