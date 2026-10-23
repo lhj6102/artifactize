@@ -234,7 +234,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 모델 없이 도구, 스키마, 결과 해석을 시험하려면 백엔드를 이 머신의 가짜 provider에
 연결하세요. 아래 변수가 provider의 API 루트를 대신합니다.
 
-| 백엔드 | 변수 | 예 | 가짜가 응답할 요청 |
+| 백엔드 | 변수 | 예 | 가짜 provider가 응답할 요청 |
 |---|---|---|---|
 | `openai` | `ARTIFACTIZE_OPENAI_BASE_URL` | `http://127.0.0.1:8080/v1` | `POST <root>/responses`, `GET <root>/models` |
 | `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
@@ -245,7 +245,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   쿼리, 프래그먼트가 없어야 합니다. 그 밖의 값이면 연결하기 전에 리뷰, `models`, `doctor`가 그
   변수 이름을 알려 주며 실패합니다. 빈 값은 설정하지 않은 것으로 간주합니다. `anthropic`은 끝에 `/v1`이
   붙어도 됩니다.
-- API 키 변수는 이때도 필요하고 가짜에 그대로 전달되므로 아무 값이나 넣어 두세요. `codex`는
+- API 키 변수는 이때도 필요하고 가짜 provider에 그대로 전달되므로 아무 값이나 넣어 두세요. `codex`는
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 `{"tokens":{"access_token":"dummy","account_id":"test"}}`
   같은 파일로 지정하세요.
 - 그 밖에는 바뀌는 것이 없습니다. 요청 본문과 스트리밍, 재시도, 예산, 도구 호출, 수정 요청,
@@ -256,9 +256,9 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `remote push`하지 마세요.
 - 테스트 엔드포인트가 설정되어 있는 동안 `doctor`는 경고하고 이를 `testEndpoint`로 알립니다.
 
-가짜는 요청한 모델에 대해 provider의 전송 형식대로 `text/event-stream`으로 답을 스트리밍합니다.
+가짜 provider는 요청받은 모델의 응답을 해당 provider의 전송 형식에 맞춰 `text/event-stream`으로 스트리밍합니다.
 `openai`라면 `response.completed` 이벤트 하나면 됩니다. GREEN 스키마가 `{"verdict":"GREEN"}`만으로 충족되는 리뷰는 이 가짜 provider로 통과시킬 수 있습니다. `pass_schema`에 다른 필드가 필요하면
-가짜의 `text` 응답에 그 필드의 유효한 값을 넣으세요. 그러지 않으면 응답이 스키마에 맞지
+가짜 provider의 `text` 응답에 그 필드의 유효한 값을 넣으세요. 그러지 않으면 응답이 스키마에 맞지
 않아 artifactize가 한 번 수정을 요청하고, 수정한 응답도 맞지 않으면 `INVALID_RESULT`가 됩니다.
 
 ```python

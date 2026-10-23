@@ -98,7 +98,7 @@ artifactize remote status
   fingerprint와 그 종류(`folder`/`file`/`graph`)
   (기록의 `artifactKinds`)
 - 프로필, 그 실행 옵션(백엔드, 모델, reasoning, 제한, 변형),
-  사용량 카운터, Agent 결과의 작업 공간 기준 상대 `executionPaths` 고정 값
+  사용량 카운터, Agent 결과의 작업 공간 기준 상대 `executionPaths` 실행 경로별 해시 기록
 - 만든 사람(`user@host`), Human 리뷰어, 타임스탬프
 - Agent 결과라면 저장된 대화에 대한 [참조](../agent.md#saved-conversations)
   (`producer.session`: 만든 사람, 그 상태 ID, Run,
@@ -108,7 +108,7 @@ artifactize remote status
 저장소 출처, Agent 대화 자체를 빼고 보냅니다. 그래도 명령과 인자를 포함한
 선언된 Runtime 프로필 전체는 보냅니다. 그곳에 작성한 경로나
 민감한 리터럴은 가려지지 않고 공유됩니다.
-`executionPaths` 고정 값도 작업 공간 기준 상대 경로를 담습니다.
+`executionPaths` 기록에도 작업 공간 기준 상대 경로가 들어 있습니다.
 `full`(`remote login --share full` 또는 `ARTIFACTIZE_REMOTE_SHARE=full`)은 추가로
 캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 소유자 필드에는
 텍스트를 자유롭게 쓸 수 있으므로, 공유되는 선언과 `pass_schema`, `fail_schema`가 허용하는 필드에는
