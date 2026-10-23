@@ -91,7 +91,7 @@ export const scenarios: Scenario[] = [
       for (const name of ["repo  master", "repo  scope-one", "repo  scope-two"]) {
         const shown = await branch(browser, name);
         assert.equal(shown?.expanded, false, `${name} starts folded`);
-        assert.match(shown?.latest ?? "", /^Running \d+[smh]/, `${name}'s own Run in progress`);
+        assert.match(shown?.latest ?? "", /^Waiting for sign-off \d+[smh]/, `${name}'s own Run in progress, waiting for its sign-off`);
       }
       // A click on a branch's name expands it and shows its newest entry, its one Run, marked.
       await selectBranch(browser, "repo  master");
@@ -176,7 +176,7 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { ids } }) => {
       const newest = ids[2];
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${newest} · WAITING_HUMAN · unclaimed`),
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${newest} · DEFERRED · unclaimed`),
         "the newest waiting review opened");
       assert.equal(await nativeTitle(browser), "Artifactize");
       const stack = await waiting(browser);
@@ -197,7 +197,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { data: { ids } }) => {
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${ids[1]} · WAITING_HUMAN · unclaimed`),
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${ids[1]} · DEFERRED · unclaimed`),
         "the named review opened");
       assert.deepEqual((await waiting(browser)).rows.map((row) => row.id), [...ids].reverse(), "the newest one stays at the top, not opened");
     },

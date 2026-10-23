@@ -85,6 +85,9 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             older_than,
             dry_run,
         }) => maintenance::prune(context, older_than, dry_run).await,
+        Some(Command::Limits { signoff_idle_grace }) => {
+            maintenance::limits(context, signoff_idle_grace)
+        }
         Some(Command::Models { provider }) => maintenance::models(context, provider).await,
         Some(Command::Verify {
             selection,
@@ -98,15 +101,15 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             speculate,
             defer_human,
         }) => {
+            if defer_human {
+                return Err("--defer-human was removed in 0.16.0: every verify lets machine work go on while sign-offs wait; remove the flag.".into());
+            }
             workflow::verify(
                 context,
                 selection,
                 policy,
                 workflow::VerifyLimits {
-                    modes: artifactize_core::runs::RunModes {
-                        speculate,
-                        defer_human,
-                    },
+                    modes: artifactize_core::runs::RunModes { speculate },
                     jobs,
                     max_executions,
                     follow: workflow::Follow::from_flags(wait, watch),

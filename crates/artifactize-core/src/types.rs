@@ -398,12 +398,19 @@ status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script", Grap
 status!(ArtifactValidationStatus { Deferred => "DEFERRED", Provisional => "PROVISIONAL", Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
 status!(RunStatus {
     Running => "RUNNING",
+    WaitingHuman => "WAITING_HUMAN",
     Green => "GREEN",
     Red => "RED",
     Error => "ERROR",
     Incomplete => "INCOMPLETE",
-    SignoffsPending => "SIGNOFFS_PENDING",
+    Yellow => "YELLOW",
 });
+impl RunStatus {
+    /// Whether the Run is still open: running, or waiting for its sign-offs.
+    pub fn is_open(self) -> bool {
+        matches!(self, Self::Running | Self::WaitingHuman)
+    }
+}
 status!(RequestStatus {
     Queued => "QUEUED",
     Running => "RUNNING",
@@ -603,7 +610,7 @@ mod tests {
             RequestStatus::WaitingHuman
         );
         assert!("QUEUED".parse::<ExecutionStatus>().is_err());
-        assert!("WAITING_HUMAN".parse::<RunStatus>().is_err());
+        assert!("QUEUED".parse::<RunStatus>().is_err());
         assert!("INCOMPLETE".parse::<RequestStatus>().is_err());
     }
 }

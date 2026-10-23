@@ -1,6 +1,7 @@
 // Settings against a mocked command boundary: key presence without values, the Codex sign-in
 // states (prompt, pasted redirect, cancel, sign-out), model listings and their errors, and the
-// remote store's masked token, which leaves the screen's state when submitted.
+// remote store's masked token, which leaves the screen's state when submitted, and the sign-off
+// idle grace the next Runs take.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
@@ -29,6 +30,7 @@ function backend(options: {
 }) {
   const calls: Calls = [];
   let remote = none;
+  let grace = 120;
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
@@ -63,6 +65,11 @@ function backend(options: {
       case "remote_logout":
         remote = none;
         return none;
+      case "signoff_grace":
+        return { seconds: grace, maxSeconds: 86400 };
+      case "signoff_grace_set":
+        grace = payload.seconds as number;
+        return { seconds: grace, maxSeconds: 86400 };
       default:
         return null;
     }
@@ -142,6 +149,27 @@ describe("Settings", () => {
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent).toMatch(/Read-only Codex auth file/));
     expect(screen.getByRole("button", { name: "Sign in with ChatGPT" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Sign out of Codex" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows the sign-off idle grace in force and saves a new one for later Runs", async () => {
+    const calls = backend({});
+    renderHosted(Settings, { active: true });
+    await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("2 minutes"));
+    const seconds = screen.getByLabelText<HTMLInputElement>("Seconds");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(seconds.value).toBe("120");
+    // Unchanged or out of bounds, nothing can be saved.
+    expect(save.hasAttribute("disabled")).toBe(true);
+    await fireEvent.input(seconds, { target: { value: "90000" } });
+    expect(save.hasAttribute("disabled")).toBe(true);
+    await fireEvent.input(seconds, { target: { value: "300" } });
+    await fireEvent.click(save);
+    await screen.findByText("Saved. Runs started from now on wait this long.");
+    expect(calls.find((call) => call.cmd === "signoff_grace_set")?.args).toEqual({ seconds: 300 });
+    expect(screen.getByTestId("grace-status").textContent).toBe("5 minutes");
+    await fireEvent.input(seconds, { target: { value: "0" } });
+    await fireEvent.click(save);
+    await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("0 seconds"));
   });
 
   it("lists models and shows the CLI's error for a backend without its key", async () => {

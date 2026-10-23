@@ -652,24 +652,7 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
         let request = &mut view.request;
         if late(request.completed_at()) {
             request.state = if request.profile.kind() == crate::config::ProfileKind::Human {
-                if run.run.modes.defer_human
-                    && request.profile.kind() == crate::config::ProfileKind::Human
-                    && run
-                        .run
-                        .definitions
-                        .graph()
-                        .and_then(|graph| {
-                            graph.evals().iter().find(|eval| eval.id == request.eval_id)
-                        })
-                        .and_then(|eval| eval.declaration.value())
-                        .is_some_and(|declaration| {
-                            declaration.gate.value() != Some(&crate::config::Gate::Blocking)
-                        })
-                {
-                    crate::store::RequestState::Deferred
-                } else {
-                    crate::store::RequestState::WaitingHuman
-                }
+                crate::store::RequestState::Deferred
             } else {
                 crate::store::RequestState::Running
             };

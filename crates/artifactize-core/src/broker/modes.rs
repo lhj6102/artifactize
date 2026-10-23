@@ -2,25 +2,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    config::{EvalId, Gate, ProfileKind, RepoConfig},
+    config::{EvalId, ProfileKind},
     graph::{Evidence, Graph, Readiness},
     store::{Request, Run},
 };
 
-pub(super) fn deferred(config: &RepoConfig, run: &Run, requests: &[Request]) -> BTreeSet<EvalId> {
-    if !run.modes.defer_human || run.reuse_only.contains(&ProfileKind::Human) {
+/// Every Human sign-off is deferred: it never holds up other evals. A Run that only reuses
+/// Human results requests none.
+pub(super) fn deferred(run: &Run, requests: &[Request]) -> BTreeSet<EvalId> {
+    if run.reuse_only.contains(&ProfileKind::Human) {
         return BTreeSet::new();
     }
     requests
         .iter()
         .filter(|request| request.profile.kind() == ProfileKind::Human)
-        .filter(|request| {
-            config
-                .evals
-                .iter()
-                .find(|eval| eval.id == request.eval_id)
-                .is_some_and(|eval| eval.declaration.gate != Some(Gate::Blocking))
-        })
         .map(|request| request.eval_id.clone())
         .collect()
 }

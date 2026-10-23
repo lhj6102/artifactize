@@ -1,14 +1,17 @@
 // Status and tone names to theme classes; the glyphs and words come from the backend.
 import type { Status, Tone } from "../ipc/client";
 
-const STATUS: Record<Status, Tone> = {
+/** The tones the backend names, and the yellow of a Run that ended with only sign-offs left. */
+type Shade = Tone | "yellow";
+
+const STATUS: Record<Status, Shade> = {
   ERROR: "error",
   RED: "red",
   BLOCKED: "blocked",
   RUNNING: "running",
   WAITING_HUMAN: "human",
   DEFERRED: "human",
-  SIGNOFFS_PENDING: "human",
+  YELLOW: "yellow",
   PROVISIONAL: "muted",
   QUEUED: "queued",
   BUDGET_EXHAUSTED: "blocked",

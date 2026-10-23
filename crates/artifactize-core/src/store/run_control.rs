@@ -29,10 +29,10 @@ fn saved_control(
 /// Never replace concurrent admission/cancellation with an older scheduler clone.
 pub(super) fn save(db: &rusqlite::Connection, mut run: Run) -> Result<(), Error> {
     let (status, saved) = saved_control(db, &run.id)?;
-    if status != RunStatus::Running && saved.is_some() {
+    if !status.is_open() && saved.is_some() {
         return Ok(());
     }
-    let running = run.status() == RunStatus::Running;
+    let running = run.status().is_open();
     if let (Some(control), Some(saved)) = (&mut run.control, saved) {
         control.worker = saved.worker;
         control.cancellation_requested |= saved.cancellation_requested;
@@ -126,7 +126,7 @@ impl Receipts {
         self.connection.call(move |db| -> Result<(), Error> {
             let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let mut run = load(&transaction, &id)?;
-            if run.status() != RunStatus::Running { return Ok(()); }
+            if !run.status().is_open() { return Ok(()); }
             let requests = {
                 let mut statement = transaction.prepare("SELECT data FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR')")?;
                 statement.query_map([&id], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>,_>>()?
@@ -164,7 +164,7 @@ impl Receipts {
 
     pub(crate) async fn request_cancel(&self, id: &RunId) -> Result<Run, String> {
         self.control(id, |run| {
-            if run.status() == RunStatus::Running {
+            if run.status().is_open() {
                 let control = run.control.get_or_insert_with(Control::legacy);
                 control.cancellation_requested = true;
                 control.activity = Activity::Cancelling;

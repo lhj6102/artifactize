@@ -262,7 +262,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["j"], async () => (await selected()) === example.review, "the waiting review selected");
       assert.equal(await mainTitle(browser), `Run ${newer.id}`, "selecting a waiting review opens nothing");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "Enter opened the review");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${example.review} · WAITING_HUMAN`),
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${example.review} · DEFERRED`),
         "the selected review opened");
       // Esc in a review opened from the Pane returns to the Pane, the review still selected.
       await browser.$('[aria-label="Human review"]').click();

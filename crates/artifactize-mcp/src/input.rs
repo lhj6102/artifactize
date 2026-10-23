@@ -30,8 +30,6 @@ pub(super) struct Start {
     pub jobs: Option<u32>,
     #[serde(default)]
     pub speculate: bool,
-    #[serde(default)]
-    pub defer_human: bool,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

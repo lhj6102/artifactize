@@ -125,6 +125,13 @@ export async function remoteStatus(fixture: Fixture): Promise<{ code: number; st
   return { code: status, stdout };
 }
 
+/** The sign-off idle grace in force, in seconds, as `limits --json` prints it. */
+export function signoffGrace(fixture: Fixture): number {
+  const result = runProgram(cli(), ["--state-dir", fixture.state, "limits", "--json"], { env: environment(fixture) });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return (JSON.parse(result.stdout) as { signoffIdleGraceSeconds: number }).signoffIdleGraceSeconds;
+}
+
 /** The saved requests, as `request list --json` prints them. */
 export function requests(fixture: Fixture): Saved[] {
   const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
@@ -219,13 +226,16 @@ instruction = ${JSON.stringify(`Review ${title}.`)}
 `);
 }
 
+/** A Run that ended YELLOW at once: with no idle grace, nothing holds it open for its sign-off. */
 function deferredHuman(fixture: Fixture): string {
+  const limited = runProgram(cli(), ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"], { env: environment(fixture) });
+  if (limited.status !== 0) throw new Error(limited.stderr || limited.stdout || "cannot set the sign-off idle grace");
   const submitted = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
-    "verify", "--all", "--defer-human", "--wait", "--json"], { env: environment(fixture) });
+    "verify", "--all", "--wait", "--json"], { env: environment(fixture) });
   if (submitted.status !== 5) throw new Error(submitted.stderr || submitted.stdout || "Human deferral did not complete");
   const saved = JSON.parse(submitted.stdout) as { status: string; requests: Saved[] };
   const run = saved.requests[0]?.runId;
-  if (saved.status !== "SIGNOFFS_PENDING" || !run || saved.requests.some((request) => request.runId !== run || request.status !== "DEFERRED")) {
+  if (saved.status !== "YELLOW" || !run || saved.requests.some((request) => request.runId !== run || request.status !== "DEFERRED")) {
     throw new Error(`unexpected deferred Human result: ${submitted.stdout}`);
   }
   settleRuns(cli(), fixture.repo, fixture.state);

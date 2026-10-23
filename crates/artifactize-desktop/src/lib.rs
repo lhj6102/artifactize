@@ -77,6 +77,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             settings::remote_login,
             settings::remote_logout,
             settings::remote_push,
+            settings::signoff_grace,
+            settings::signoff_grace_set,
         ])
         .events(collect_events![
             watch::StateChanged,

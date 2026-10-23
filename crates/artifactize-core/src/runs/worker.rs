@@ -3,7 +3,7 @@ use super::{Context, Worker};
 use crate::{
     process,
     store::{self, Receipts, RunView},
-    types::{FailureCode, RequestStatus, RunId, RunStatus},
+    types::{FailureCode, RequestStatus, RunId},
 };
 use tokio_util::sync::CancellationToken;
 /// Bound only the internal handoff, not a verification's lifetime.
@@ -15,7 +15,7 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
     let admitted = async {
         loop {
             let run = store::read_run(&context.state, id).await?.run;
-            if run.status() != RunStatus::Running {
+            if !run.status().is_open() {
                 return Err("Run already settled before admission.".into());
             }
             let worker = run.control.as_ref().map(|control| control.worker);
@@ -32,7 +32,7 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
                         // graph is decoded. A dead old identity is not a rejected handoff:
                         // compare fresh, compact SQLite control before refusing it.
                         let current = store::run_control::observe(&context.state, id).await?;
-                        if current.status == RunStatus::Running
+                        if current.status.is_open()
                             && current.control.as_ref().map(|control| control.worker) == worker
                         {
                             return Err("Run worker identity was not admitted.".into());
@@ -95,7 +95,7 @@ async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> R
     }
     child.wait().await.map_err(|e| e.to_string())?;
     let view = store::read_run(&context.state, id).await?;
-    if view.run.status() == RunStatus::Running {
+    if view.run.status().is_open() {
         recover(&context.state, &view).await?;
     }
     Ok(())

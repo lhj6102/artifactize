@@ -1,8 +1,8 @@
 <script lang="ts">
   // Settings: what the CLI configures, through the same library calls — the Codex (ChatGPT)
-  // sign-in, the API keys the environment holds, the models each backend lists, and the
-  // shared remote review store. Secrets are never shown; a typed store token leaves this
-  // screen's state as soon as it is submitted.
+  // sign-in, the API keys the environment holds, the models each backend lists, the shared
+  // remote review store and the sign-off idle grace. Secrets are never shown; a typed store
+  // token leaves this screen's state as soon as it is submitted.
   import {
     call,
     useIpc,
@@ -10,6 +10,7 @@
     type Provider,
     type Pushed,
     type RemoteStatus,
+    type SignoffGrace,
   } from "../ipc/client";
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -59,9 +60,24 @@
     await remoteCall(() => call(commands.remoteStatus()));
   }
 
+  /** The grace in force, and the seconds field set to it. */
+  function showGrace(grace: SignoffGrace) {
+    s.grace = grace;
+    s.graceSeconds = grace.seconds;
+  }
+
+  async function loadGrace() {
+    try {
+      showGrace(await call(commands.signoffGrace()));
+      s.graceError = null;
+    } catch (failure) {
+      s.graceError = message(failure);
+    }
+  }
+
   async function load() {
     s.keys = await commands.settingsKeys();
-    await Promise.all([loadCodex(), loadRemote()]);
+    await Promise.all([loadCodex(), loadRemote(), loadGrace()]);
   }
 
   /** Read every time the screen shows: another process may have signed in or out. A sign-in
@@ -165,6 +181,40 @@
     }
   }
 
+  /** Whole seconds within the accepted bound; anything else cannot be saved. */
+  const graceValid = $derived(
+    s.grace !== null &&
+      s.graceSeconds !== null &&
+      Number.isInteger(s.graceSeconds) &&
+      s.graceSeconds >= 0 &&
+      s.graceSeconds <= s.grace.maxSeconds,
+  );
+
+  async function saveGrace(event: SubmitEvent) {
+    event.preventDefault();
+    if (!graceValid || s.graceSeconds === null) return;
+    s.graceSaving = true;
+    s.graceError = null;
+    s.graceNotice = null;
+    try {
+      showGrace(await call(commands.signoffGraceSet(s.graceSeconds)));
+      s.graceNotice = "Saved. Runs started from now on wait this long.";
+    } catch (failure) {
+      s.graceError = message(failure);
+    } finally {
+      s.graceSaving = false;
+    }
+  }
+
+  /** A grace in whole seconds, as a person reads it: `2 minutes`, `90 seconds`. */
+  function span(seconds: number): string {
+    if (seconds % 60 === 0 && seconds > 0) {
+      const minutes = seconds / 60;
+      return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+    }
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
   /** A moment the library counts in whole seconds, as text: shown in the person's locale when
    * the calendar reaches it, else as the count itself. */
   function when(seconds: string | null): string {
@@ -198,7 +248,7 @@
 
 <div class="settings" {@attach reload}>
   <h1>Settings</h1>
-  <p class="lead">The same settings as the CLI's <code>login</code>, <code>models</code> and <code>remote</code> commands.</p>
+  <p class="lead">The same settings as the CLI's <code>login</code>, <code>models</code>, <code>remote</code> and <code>limits</code> commands.</p>
 
   <section aria-labelledby="codex-title">
     <h2 id="codex-title">Codex (ChatGPT) account</h2>
@@ -350,6 +400,42 @@
     {#if s.remoteNotice}<p class="notice" role="status">{s.remoteNotice}</p>{/if}
     {#if s.remoteError}<p class="error" role="alert">{s.remoteError}</p>{/if}
   </section>
+
+  <section aria-labelledby="grace-title" aria-busy={s.graceSaving}>
+    <h2 id="grace-title">Sign-off idle grace</h2>
+    <p class="muted">
+      How long a Run with only sign-offs left, and none of them claimed, waits before it ends, as <code
+        >artifactize limits</code
+      > shows and sets it. A claim keeps the Run open; a change applies to the Runs started afterwards.
+    </p>
+    <dl class="facts" aria-label="Sign-off idle grace">
+      <dt>In force</dt>
+      <dd data-testid="grace-status">{s.grace ? span(s.grace.seconds) : "…"}</dd>
+    </dl>
+    <form class="row" onsubmit={saveGrace} aria-label="Change the sign-off idle grace">
+      <label for="grace-seconds">Seconds</label>
+      <input
+        id="grace-seconds"
+        class="input narrow"
+        type="number"
+        min="0"
+        max={s.grace?.maxSeconds}
+        step="1"
+        bind:value={s.graceSeconds}
+        aria-describedby="grace-help"
+      />
+      <button
+        class="button"
+        type="submit"
+        disabled={s.graceSaving || !graceValid || s.graceSeconds === s.grace?.seconds}>Save</button
+      >
+    </form>
+    <p id="grace-help" class="muted">
+      Whole seconds from 0 to {s.grace?.maxSeconds ?? "…"}; 0 ends the Run as soon as nothing is claimed.
+    </p>
+    {#if s.graceNotice}<p class="notice" role="status">{s.graceNotice}</p>{/if}
+    {#if s.graceError}<p class="error" role="alert">{s.graceError}</p>{/if}
+  </section>
 </div>
 
 <style>
@@ -434,7 +520,7 @@
     font-size: 11px;
   }
   .warn {
-    color: var(--human);
+    color: var(--yellow);
   }
   .notice {
     color: var(--green);

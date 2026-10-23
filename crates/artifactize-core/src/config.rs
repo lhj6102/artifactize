@@ -329,20 +329,11 @@ impl std::fmt::Display for LocalEvalId {
     }
 }
 
-/// A Human eval may explicitly retain its strict gate even in deferred Runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Gate {
-    Blocking,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvalDeclaration {
     pub id: LocalEvalId,
     pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gate: Option<Gate>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mutex: Vec<MutexTag>,
     #[serde(flatten)]
@@ -404,8 +395,6 @@ impl EvalDeclaration {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct EvalFields {
     title: String,
-    #[serde(default)]
-    gate: Option<Gate>,
     #[serde(default, deserialize_with = "present")]
     mutex: Option<Vec<MutexTag>>,
     profile: Profile,
@@ -442,7 +431,6 @@ impl EvalDeclaration {
         Ok(Self {
             id,
             title: fields.title,
-            gate: fields.gate,
             mutex: fields.mutex.unwrap_or_default(),
             body,
         })
@@ -827,6 +815,16 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
         .and_then(|value| value.get_ref().as_table())
     {
         for (id, eval) in evals {
+            if eval.get_ref().get("gate").is_some() {
+                return Err(location
+                    .child("evals")
+                    .child(id.get_ref())
+                    .child("gate")
+                    .error(format!(
+                        "Eval {}: gate was removed in 0.16.0; remove it. A Human sign-off never holds up other evals.",
+                        id.get_ref()
+                    )));
+            }
             if eval.get_ref().get("result_check").is_some() {
                 return Err(location
                     .child("evals")

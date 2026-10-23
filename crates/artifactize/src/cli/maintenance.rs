@@ -131,6 +131,44 @@ pub(super) async fn prune(
     Ok(0)
 }
 
+pub(super) fn limits(context: Context, signoff_idle_grace: Option<u64>) -> Result<u8, String> {
+    use artifactize_core::limits::Limits;
+    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
+    let limits = match signoff_idle_grace {
+        Some(seconds) => {
+            Limits::set_signoff_idle_grace(&state, std::time::Duration::from_secs(seconds))?
+        }
+        None => Limits::read(&state)?,
+    };
+    if context.json {
+        print_json(&limits)?;
+    } else {
+        let mut out = io::stdout().lock();
+        writeln!(
+            out,
+            "Sign-off idle grace: {} seconds",
+            limits.signoff_idle_grace().as_secs()
+        )
+        .map_err(|e| e.to_string())?;
+        for (backend, slots) in limits.backends() {
+            writeln!(out, "Backend {backend}: {slots} reviews at once")
+                .map_err(|e| e.to_string())?;
+        }
+        let sessions = limits.agent_sessions();
+        if sessions.enabled {
+            writeln!(
+                out,
+                "Agent sessions: saved; past {} bytes, collected down to {} bytes",
+                sessions.max_bytes, sessions.target_bytes
+            )
+        } else {
+            writeln!(out, "Agent sessions: not saved")
+        }
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(0)
+}
+
 pub(super) async fn models(context: Context, provider: super::ModelProvider) -> Result<u8, String> {
     let listing = artifactize_core::llm::models::list(
         provider.backend(),

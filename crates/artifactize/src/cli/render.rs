@@ -9,7 +9,7 @@ pub(super) const WAIT_TIMEOUT_EXIT: u8 = 3;
 /// retain the existing Run-outcome protocol used by verify and run show --wait.
 const INCOMPLETE_EXIT: u8 = 4;
 /// Distinct terminal outcome: all machine work passed, but real sign-offs remain.
-const SIGNOFFS_PENDING_EXIT: u8 = 5;
+const YELLOW_EXIT: u8 = 5;
 
 pub(super) fn verify(
     view: &artifactize_core::store::RunView,
@@ -355,10 +355,10 @@ pub(super) fn outcome_code(run: &artifactize_core::store::Run) -> u8 {
         artifactize_core::types::RunStatus::Green => 0,
         artifactize_core::types::RunStatus::Red => 1,
         artifactize_core::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
-        artifactize_core::types::RunStatus::SignoffsPending => SIGNOFFS_PENDING_EXIT,
-        artifactize_core::types::RunStatus::Running | artifactize_core::types::RunStatus::Error => {
-            2
-        }
+        artifactize_core::types::RunStatus::Yellow => YELLOW_EXIT,
+        artifactize_core::types::RunStatus::Running
+        | artifactize_core::types::RunStatus::WaitingHuman
+        | artifactize_core::types::RunStatus::Error => 2,
     }
 }
 

@@ -130,7 +130,7 @@ impl Branch {
     pub fn running(&self) -> Option<&Chip> {
         self.runs
             .last()
-            .filter(|chip| chip.status == RunStatus::Running)
+            .filter(|chip| chip.status.is_open())
     }
 
     /// When its newest Run started.

@@ -1,5 +1,5 @@
 import { createContext } from "svelte";
-import type { CodexPrompt, CodexStatus, KeyStatus, Model, Provider, RemoteStatus, Share } from "../ipc/client";
+import type { CodexPrompt, CodexStatus, KeyStatus, Model, Provider, RemoteStatus, Share, SignoffGrace } from "../ipc/client";
 
 /** What the Settings screen holds: the snapshots it read, what is typed and what is under way. */
 export class SettingsState {
@@ -25,6 +25,13 @@ export class SettingsState {
   share = $state<Share>("summary");
   token = $state("");
   working = $state(false);
+  /** The sign-off idle grace in force, as limits.json holds it. */
+  grace = $state.raw<SignoffGrace | null>(null);
+  /** The seconds typed for it; filled in with the one in force whenever that is read. */
+  graceSeconds = $state<number | null>(null);
+  graceError = $state<string | null>(null);
+  graceNotice = $state<string | null>(null);
+  graceSaving = $state(false);
 }
 
 export const [getSettingsState, setSettingsState] = createContext<SettingsState>();

@@ -12,7 +12,7 @@ use super::Saved;
 use crate::{
     graph::EvalStatus,
     store::RequestView,
-    types::{ArtifactName, EvalId, RequestStatus, RunStatus},
+    types::{ArtifactName, EvalId, RequestStatus},
 };
 
 /// Where a done eval's GREEN came from.
@@ -330,7 +330,7 @@ impl<'a> States<'a> {
             #[cfg(any(test, feature = "test-support"))]
             derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
-            running: run.status() == RunStatus::Running,
+            running: run.status().is_open(),
             views: RefCell::new(HashMap::new()),
             effective: RefCell::new(HashMap::new()),
             completions: RefCell::new(HashMap::new()),

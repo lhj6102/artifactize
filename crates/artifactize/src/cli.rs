@@ -111,6 +111,13 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Show the machine-wide limits; with --signoff-idle-grace, change it first.
+    Limits {
+        /// Seconds a Run with nothing but unclaimed sign-offs left stays open (0–86400), for
+        /// the Runs started afterwards.
+        #[arg(long, value_name = "SECONDS")]
+        signoff_idle_grace: Option<u64>,
+    },
     /// List the models a backend offers to your key or account.
     Models {
         #[command(subcommand)]
@@ -151,8 +158,8 @@ pub enum Command {
         /// Start reviews before unresolved dependency gates; cancel blocked work.
         #[arg(long)]
         speculate: bool,
-        /// Run past pending sign-offs and finish with SIGNOFFS_PENDING (exit 5).
-        #[arg(long)]
+        /// Removed in 0.16.0: a sign-off never holds up other evals.
+        #[arg(long, hide = true)]
         defer_human: bool,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.

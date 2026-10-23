@@ -21,6 +21,7 @@ use crate::{
     process,
     remote::Session,
     runtime::Verdict,
+    types::RunStatus,
     store::{
         Capacity, Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend,
     },
@@ -293,7 +294,11 @@ impl Scheduler<'_, '_> {
             .graph()
             .map(|graph| graph.evals().iter().map(|eval| eval.id.clone()).collect())
             .unwrap_or_default();
-        let deferred = modes::deferred(&self.config, self.run, self.requests);
+        let deferred = modes::deferred(self.run, self.requests);
+        // Nothing but unclaimed sign-offs has been left since then; `None` while anything else
+        // runs or waits, or a reviewer holds a claim.
+        let mut idle_since: Option<tokio::time::Instant> = None;
+        let grace = self.limits.signoff_idle_grace();
         let mut admissions: Vec<_> = self.requests.iter().map(|_| Admission::Idle).collect();
         let stops = Stops::new(self.run.stopped_backends.clone());
         loop {
@@ -420,9 +425,7 @@ impl Scheduler<'_, '_> {
                 // Failures cancel transitively, including tasks, joined waits and sign-offs.
                 for (request, admission) in self.requests.iter_mut().zip(admissions.iter_mut()) {
                     let eval = &evaluation.evals[request.eval_id.as_str()];
-                    if (self.run.modes.speculate || self.run.modes.defer_human)
-                        && eval.readiness == crate::graph::Readiness::Blocked
-                        && !admission.blocked()
+                    if eval.readiness == crate::graph::Readiness::Blocked && !admission.blocked()
                     {
                         evidence.remove(&request.eval_id);
                         if admission.running() {
@@ -549,10 +552,8 @@ impl Scheduler<'_, '_> {
                         }
                         continue;
                     }
-                    // Deferral asks for a sign-off only once its gates are met, never
-                    // speculatively.
-                    if self.run.modes.defer_human
-                        && request.profile.kind() == ProfileKind::Human
+                    // A sign-off is asked for only once its gates are met, never speculatively.
+                    if request.profile.kind() == ProfileKind::Human
                         && eval.readiness != crate::graph::Readiness::Ready
                     {
                         continue;
@@ -977,15 +978,34 @@ impl Scheduler<'_, '_> {
             if !cancelled && evidence.len() != completed {
                 continue;
             }
-            let human_wait = self
+            let signoffs: Vec<_> = self
                 .requests
                 .iter()
-                .any(|request| request.status() == crate::types::RequestStatus::WaitingHuman);
+                .filter(|request| request.status().is_human_wait())
+                .map(|request| request.id.clone())
+                .collect();
+            let human_wait = !signoffs.is_empty();
+            if human_wait && !cancelled && self.run.state.status() == RunStatus::Running {
+                self.run.state = crate::store::RunState::WaitingHuman;
+                self.receipts.save_run(self.run).await?;
+            }
             let admission_wait = admissions.iter().any(Admission::waiting);
-            if self.tasks.is_empty() && (!admission_wait || cancelled) && (cancelled || !human_wait)
-            {
+            let idle = self.tasks.is_empty() && (!admission_wait || cancelled);
+            if idle && (cancelled || !human_wait) {
                 break;
             }
+            // Only sign-offs are left: the Run stays open while one is claimed, and ends once
+            // none has been for its idle grace.
+            let grace_due = if idle && !self.receipts.signoff_claimed(signoffs).await? {
+                let due = *idle_since.get_or_insert_with(tokio::time::Instant::now) + grace;
+                if tokio::time::Instant::now() >= due {
+                    break;
+                }
+                Some(due)
+            } else {
+                idle_since = None;
+                None
+            };
             if let Some(control) = &mut self.run.control {
                 let activity = if cancelled {
                     crate::runs::Activity::Cancelling
@@ -1052,6 +1072,8 @@ impl Scheduler<'_, '_> {
                 _ = self.cancellation.cancelled(), if !cancelled => {},
                 _ = changes.next_state(), if !cancelled => {},
                 _ = reconcile.tick(), if waiting_external && !cancelled => {},
+                _ = tokio::time::sleep_until(grace_due.unwrap_or_else(tokio::time::Instant::now)),
+                    if grace_due.is_some() && !cancelled => {},
                 _ = tokio::time::sleep_until(remote_due),
                     if human_wait && self.remote.is_some() && !self.run.force && !cancelled => {},
             }

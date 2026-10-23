@@ -27,4 +27,7 @@ pub enum Failure {
     /// A sign-in, sign-out, listing or store call failed, with the CLI's own message.
     #[error("{0}")]
     Account(String),
+    /// Reading or saving a machine-wide setting failed, with the CLI's own message.
+    #[error("{0}")]
+    Setting(String),
 }

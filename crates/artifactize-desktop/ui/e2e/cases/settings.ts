@@ -1,8 +1,9 @@
 // Settings through the real app and CLI: environment-key presence without values,
-// and a remote store's HTTP identity, persisted sign-in, status, dry run and logout.
+// a remote store's HTTP identity, persisted sign-in, status, dry run and logout, and the
+// sign-off idle grace both read and set.
 import assert from "node:assert/strict";
-import { create, createOutside, environment, remoteStatus, signoff, type Fixture } from "../fixture.ts";
-import { press, typeText } from "../keys.ts";
+import { artifactize, create, createOutside, environment, remoteStatus, signoff, signoffGrace, type Fixture } from "../fixture.ts";
+import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle, openWaiting } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -90,6 +91,31 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => browser.execute(() => document.querySelector('[data-testid="key-openai"]')?.textContent === "Not set"
         && document.querySelector('[data-testid="key-anthropic"]')?.textContent === "Set"), { timeout: 15000, timeoutMsg: "the inverse key-presence statuses" });
       assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(key), "the Anthropic fixture value is nowhere in the page");
+    },
+  ),
+  // UX journey: J-SET-SIGNOFF-GRACE
+  scenario(
+    "settings-signoff-grace",
+    "settings: shows the sign-off idle grace the CLI reads and saves a new one the CLI then reads",
+    async () => {
+      const fixture = createOutside();
+      return { fixture, env: settingsEnvironment(fixture), data: null };
+    },
+    async (browser, { fixture }) => {
+      const shown = () => browser.execute(() => document.querySelector('[data-testid="grace-status"]')?.textContent ?? null);
+      await browser.$("button=Settings").waitForExist({ timeout: 15000 });
+      await browser.$("button=Settings").click();
+      await browser.waitUntil(async () => (await shown()) === "2 minutes", { timeout: 15000, timeoutMsg: "the default idle grace" });
+      assert.equal(await browser.$("#grace-seconds").getValue(), "120");
+      await fill(browser, "#grace-seconds", "300");
+      await browser.$("button=Save").click();
+      await browser.waitUntil(async () => (await shown()) === "5 minutes", { timeout: 15000, timeoutMsg: "the saved idle grace" });
+      assert.equal(signoffGrace(fixture), 300, "the CLI reads what Settings saved");
+      // Set by the CLI, it shows when Settings is shown again.
+      assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "45"), 0);
+      await browser.$("button=Settings").click();
+      await browser.$("button=Settings").click();
+      await browser.waitUntil(async () => (await shown()) === "45 seconds", { timeout: 15000, timeoutMsg: "the idle grace the CLI set" });
     },
   ),
   // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT

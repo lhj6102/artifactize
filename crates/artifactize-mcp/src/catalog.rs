@@ -24,8 +24,8 @@ pub(super) fn tools() -> Vec<Tool> {
     vec![
         tool(
             "verify_start",
-            "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Modes default off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Provisional sign-offs are not full approval.",
-            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"speculate":{"type":"boolean","default":false},"defer_human":{"type":"boolean","default":false}}),
+            "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Speculation defaults off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Sign-offs never hold up other evals: the Run stays waiting_human while one is claimed or its idle grace runs, then ends yellow when only sign-offs remain, which is not full approval.",
+            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"speculate":{"type":"boolean","default":false}}),
             &["scope"],
             false,
         ),

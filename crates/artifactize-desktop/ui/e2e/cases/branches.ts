@@ -143,7 +143,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([run, first]),
         "the timeline starts with the Run in progress, the Current gone");
       const running = (await branch(browser, "repo  master"))!.chips[0];
-      assert.match(running.text, /^Running \d+[smh]( \d+[smh])?$/, `the running entry reads its time so far, not a time ago: ${running.text}`);
+      assert.match(running.text, /^Waiting for sign-off \d+[smh]( \d+[smh])?$/, `the open entry reads its time so far, not a time ago: ${running.text}`);
       assert.equal(running.sub, run);
       // Its sign-off is given elsewhere: the Run ends, its entry shows its final status and age.
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
@@ -230,7 +230,7 @@ export const scenarios: Scenario[] = [
       removeTree(plain.folder);
       await waitFor(browser, async () => (await names()).length === 3, "the deleted folder gone");
       assert.deepEqual(await names(), ["repo  master", "repo  scope-one", "repo  scope-two"]);
-      const reviews = requests(fixture).filter((request) => runs.includes(request.runId) && request.status === "WAITING_HUMAN").map((request) => request.id);
+      const reviews = requests(fixture).filter((request) => runs.includes(request.runId) && request.status === "DEFERRED").map((request) => request.id);
       assert.equal(reviews.length, 2, "each worktree's Run waits for a person");
       // Git alone, in another process: a new branch's worktree and a detached one appear
       // within seconds, without a reload.
@@ -280,7 +280,7 @@ export const scenarios: Scenario[] = [
       assert.ok((await height()) > empty, "the stack grew upward by its row");
       // A click opens it in the Main area.
       await openWaiting(browser, id);
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed`),
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · DEFERRED · unclaimed`),
         "the clicked review open");
       // Submitted elsewhere, it stops waiting: its row goes and the bar reads (0) again.
       signOff(fixture, id, "{}");
@@ -327,7 +327,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await selected()) === last, "the bottom review selected");
       await waitFor(browser, visible, "the list scrolled the selected review into view");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "its Review shown");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${last} · WAITING_HUMAN`), "the scrolled-to review open");
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${last} · DEFERRED`), "the scrolled-to review open");
     },
   ),
 
@@ -343,7 +343,7 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       await openWaiting(browser, id);
       const review = () => browser.$('[aria-label="Human review"]');
-      await waitFor(browser, async () => (await review().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed`), "the review open");
+      await waitFor(browser, async () => (await review().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed`), "the review open");
       // Its eval and Artifact read above it.
       assert.equal(await browser.$('section.panel[aria-label="Main area"] .crumb').getText(), "release/signoff · A person approves the release · Artifact release");
       await review().click();

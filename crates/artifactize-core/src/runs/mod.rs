@@ -9,7 +9,7 @@ use crate::{
     process,
     project::{VerifyOptions, selection::Selection},
     store::{self, Receipts},
-    types::{FailureCode, RequestKey, RunId, RunStatus},
+    types::{FailureCode, RequestKey, RunId},
 };
 pub use observe::{Counts, RunObservation, State, status, view, wait};
 pub use result::{Finding, ResultCursor, ResultState, RunResultPage, RunVerdict, result};
@@ -24,7 +24,6 @@ pub use worker::{execute, supervise};
 #[serde(default)]
 pub struct RunModes {
     pub speculate: bool,
-    pub defer_human: bool,
 }
 impl RunModes {
     pub(crate) fn is_default(&self) -> bool {
@@ -196,7 +195,7 @@ pub(crate) async fn reconcile(
     state: &Path,
     view: store::RunView,
 ) -> Result<store::RunView, String> {
-    if view.run.status() == RunStatus::Running
+    if view.run.status().is_open()
         && let Some(control) = &view.run.control
     {
         let owner = match control.worker {

@@ -230,8 +230,6 @@ pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]
     pub mutex: Field<Vec<config::MutexTag>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub gate: Field<config::Gate>,
-    #[serde(default, skip_serializing_if = "missing")]
     pub id: Field<crate::config::LocalEvalId>,
     #[serde(default, skip_serializing_if = "missing")]
     pub title: Field<String>,

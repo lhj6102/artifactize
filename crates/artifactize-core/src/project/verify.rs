@@ -429,7 +429,7 @@ pub(crate) async fn execute(
             graph.artifacts()[id.as_str()].basis || !graph.artifacts()[id.as_str()].evals.is_empty()
         })
     {
-        crate::store::RunState::SignoffsPending { at }
+        crate::store::RunState::Yellow { at }
     } else if satisfied {
         crate::store::RunState::Green { at }
     } else {
