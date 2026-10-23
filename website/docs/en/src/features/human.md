@@ -13,8 +13,8 @@ are not part of this condition. See [Human sign-offs](artifact.md#human-sign-off
 When the check is ready, artifactize saves a **DEFERRED request**: work waiting for a
 person's decision that holds up nothing else. Waiting for that person uses neither a
 Run's `--jobs` execution slot nor its `--max-executions` budget, even if that budget is
-zero. Checks that rely on the sign-off run at once and stay PROVISIONAL until it is
-GREEN. Since other work may still run, wait for it to finish if you want to review the
+zero. Checks that rely on the sign-off run at once; their GREEN results stay PROVISIONAL
+until it is GREEN, while their own RED or ERROR shows as it is. Since other work may still run, wait for it to finish if you want to review the
 final state. Every sign-off is listed in `review`, monitor, desktop and request listings,
 and claim, tools, release and submission check Human authority; a blocked sign-off is never
 offered to a person. Watching or closing a terminal does not make the decision. The

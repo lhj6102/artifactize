@@ -90,7 +90,8 @@ after fixes. Eval-result reuse does not depend on it.
 
 A sign-off is requested as soon as its own prerequisites pass: its Artifact's other
 machine evals are GREEN and no gate holds it. It never holds up other evals: what relies
-on it runs at once, and its results stay PROVISIONAL until the sign-off is GREEN. Other
+on it runs at once, and its GREEN results stay PROVISIONAL until the sign-off is GREEN;
+its own RED or ERROR shows as it is. Other
 machine work may still be running when it is requested; to review the final state, wait
 until it has finished. Its request shows DEFERRED. Neither DEFERRED nor PROVISIONAL is
 approval. This holds for sign-offs the Run selected. A sign-off outside the selection is

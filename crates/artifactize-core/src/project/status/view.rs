@@ -49,17 +49,17 @@ pub(super) fn assemble(
     }
     let evaluation = graph.evaluate(&evidence);
     // verify defers every sign-off it asks for, so what relies on one is predicted to run
-    // provisionally; a Run that only reuses Human results asks for none.
+    // provisionally; a sign-off outside the selection is not asked for and still gates, and a
+    // Run that only reuses Human results asks for none.
     let mut planned = evidence.clone();
     if !options
         .reuse_only
         .contains(&crate::config::ProfileKind::Human)
     {
-        for eval in config
-            .evals
-            .iter()
-            .filter(|eval| eval.declaration.profile().kind() == crate::config::ProfileKind::Human)
-        {
+        for eval in config.evals.iter().filter(|eval| {
+            eval.declaration.profile().kind() == crate::config::ProfileKind::Human
+                && included_ids.contains(&eval.id)
+        }) {
             if !matches!(planned.get(&eval.id), Some(Evidence::Current(_))) {
                 planned.insert(eval.id.clone(), Evidence::Deferred);
             }

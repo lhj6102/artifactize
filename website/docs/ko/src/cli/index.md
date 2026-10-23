@@ -158,7 +158,7 @@ BLOCKED가 됩니다. 그 승인에 의존하는 eval은 먼저 실행하되, �
 다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 추측 실행은 실행 순서를 바꿀 뿐 승인 여부를
 바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
 1 RED, 2 ERROR, 4 INCOMPLETE, 5 YELLOW입니다.
-Run이 승인을 위해 얼마나 열려 있는지, 승인 결과를 나중에 어떻게 재사용하는지는
+Run이 승인 대기 상태를 얼마나 오래 유지하는지, 승인 결과를 나중에 어떻게 재사용하는지는
 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)에서, 추측 실행의 스케줄링과 취소는
 [추측 실행](../features/run.md#speculation)에서 설명합니다.
 

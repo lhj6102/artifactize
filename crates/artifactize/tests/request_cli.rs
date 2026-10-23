@@ -508,6 +508,38 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
 }
 
 #[test]
+fn status_predicts_deferral_only_for_a_selected_signoff() {
+    let fixture = Fixture::new(false);
+    let action = |args: &[&str], eval: &str| {
+        let output = fixture
+            .command()
+            .args(["status", "--json"])
+            .args(args)
+            .output()
+            .unwrap();
+        let status = parse(&output);
+        status["evals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == eval)
+            .unwrap_or_else(|| panic!("{eval} in {status}"))["action"]
+            .clone()
+    };
+    // Outside the selection, the sign-off is not asked for, so what relies on it waits.
+    assert_eq!(action(&["parent"], "parent/check"), "wait");
+    // Selected, it is asked for and deferred, so what relies on it runs at once.
+    assert_eq!(
+        action(&["parent", "--recursive"], "parent/check"),
+        "execute"
+    );
+    assert_eq!(
+        action(&["parent", "--recursive"], "child/review"),
+        "execute"
+    );
+}
+
+#[test]
 fn submission_leaves_human_claim_and_submission_available() {
     let fixture = Fixture::new(false);
     let run = fixture.json(&["verify", "--all"], 0);

@@ -283,7 +283,7 @@ artifactize MCP 서버를 추가합니다. 먼저 위 설치 방법 중 하나�
 | `install.sh` 또는 `install.ps1` | 같은 명령을 다시 실행하세요. 데스크톱 앱도 함께 업데이트됩니다 |
 | Homebrew | `brew upgrade artifactize`. 데스크톱 앱은 `brew upgrade --cask artifactize` |
 | Microsoft Store | 자동. 또는 Store 앱의 **라이브러리 → 업데이트 받기** |
-| 디스크 이미지, `.deb` 또는 AppImage | 릴리스의 더 새 파일을 같은 방법으로 설치하세요 |
+| 디스크 이미지, `.deb` 또는 AppImage | 새 버전 설치 파일을 내려받아 같은 방법으로 설치하세요 |
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`. 체크아웃에서는 `git pull` 후 `cargo install --path`를 반복하세요 |
 
