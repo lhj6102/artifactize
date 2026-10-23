@@ -110,7 +110,7 @@ codex plugin add artifactize@artifactize
 아래는 데스크톱 앱의 실제 녹화와 스크린샷입니다. 실제 프로젝트에서 검사를 실행하는 화면을
 스크립트([데모](../capture/demos.mts), [스크린샷](../capture/screenshots.mts))로
 녹화하고 촬영했습니다. 예시 리뷰어 "alice"는 리뷰 양식을 보여 주려고 승인 요청을
-맡았을 뿐이며, 아무것도 제출되지 않았습니다. 텍스트 기반 앱(CLI)에도 Monitor와
+맡았을 뿐, 리뷰 결과를 제출하지는 않았습니다. 텍스트 기반 앱(CLI)에도 Monitor와
 Review 화면이 있습니다.
 
 **통과할 때까지 고치기:** 한 예제에서 Run을 네 번 실행하는 과정을 8배속으로 보여 줍니다. Run 사이에는
