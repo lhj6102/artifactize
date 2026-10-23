@@ -71,7 +71,8 @@ instruction = """
 README and the landing page use it in place of a sentence saying that Artifactize brings human \
 and agent work together. Its point is that people and AI agents collaborate in Artifactize \
 through three roles that pass one Artifact Graph between them: Director above, Builder and \
-Evaluator on either side, and the Artifactize logo along the bottom. Each role shows only its \
+Evaluator on either side, and along the bottom the line "Collaborate in" with the Artifactize \
+icon and name, the figure's title. Each role shows only its \
 name and its team of five, as person and agent icons: three people and two agents direct, five \
 agents build, and four agents and one person evaluate; the motion shows what each role does. \
 The scene is 16:9. The graph is abstract on purpose: unnamed nodes fanning out from one node \
@@ -88,7 +89,7 @@ enough frames to follow every step. Judge:
 passing between them in that order, the Builder and the Evaluator going back and forth until \
 GREEN, so a first-time reader sees what each role does without a caption; its few words follow \
 W-INTRO-PLAIN-LANGUAGE of {writer-introduction}; and the figure shows nothing beyond the roles, \
-their teams, the graph, why it is passed and the logo.
+their teams, the graph, why it is passed and that title line.
 - Clarity: a first-time reader tells the person from the AI agent without labels, because \
 each keeps one icon and one color across the figure; sees which team works while it has the \
 graph; and can tell each state of a node from its look.
