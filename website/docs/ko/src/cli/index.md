@@ -220,7 +220,7 @@ JSON 배열을 줄 단위 형식으로 다시 읽지는 않습니다. 상대 경
 eval마다 안전한 이름의 변형을 64개까지 선언할 수 있고, 모든 변형은 원래 리뷰어 종류를
 유지합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
 `--recursive`를 주면 이미 선택된 의존성에도 변형이 적용됩니다. 예를 들어 `app/review
---profile fast`가 실행하는 runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
+--profile fast`가 실행하는 Runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
 `fast`가 아니라 기본 프로필로 Run에 들어옵니다. 고른 변형은 실행 옵션일 뿐 재사용 키에 들어가지
 않습니다. 그래서 Runtime 변형이 명령이나 인자를 바꾸지 않는 한, 변형(그리고 선언된
 프로필)이 달라도 결과를 서로 재사용할 수 있습니다. 저장된 요청의 `profile`과 `options`는 결과를 만든 실행을
@@ -316,7 +316,7 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 그대로 재생하지는 않습니다. 자세한 내용이 필요하면 결과의 `next_cursor`를 MCP
 `verify_result`에 넘겨 다음 내용을 읽거나 저장된 Run을 살펴보세요.
 
-Runtime 결과가 실패했을 때:
+Runtime eval이 실패했을 때:
 
 ```sh
 artifactize request logs REQUEST_ID --stream stderr --tail 30
