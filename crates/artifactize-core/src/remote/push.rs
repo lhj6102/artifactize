@@ -72,15 +72,14 @@ pub async fn push(
                 .map_err(|failure| failure.message)?
                 .into_iter()
                 .filter_map(Result::ok)
-                .map(|entry| (entry.key.to_string(), entry.execution_id.to_string()))
+                .map(|entry| (entry.key, entry.execution_id))
                 .collect()
         } else {
             BTreeSet::new()
         };
         for record in records {
             // The store keeps each execution once; a resent record answers `created: false`.
-            let created = !existing
-                .contains(&(record.key.to_string(), record.execution_id.to_string()))
+            let created = !existing.contains(&(record.key.clone(), record.execution_id.clone()))
                 && (dry_run
                     || remote
                         .publish(&record)

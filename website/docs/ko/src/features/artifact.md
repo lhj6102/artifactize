@@ -115,8 +115,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 실행할 수 있습니다.
 
 모든 eval은 입력의 판정과 상관없이 그 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
-효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval도 대기하고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 GREEN에는 상위 리뷰를 포함해 필요한 증거가
-모두 있어야 합니다.
+효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval도 대기하고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 결과가 GREEN이 되려면 상위 리뷰를
+포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
 하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 그 eval의
@@ -164,8 +164,8 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 `tags = ["type:code", "scope:player"]`는 화면에 보여 주기만 하는 메타데이터를 더합니다. 태그는
 ASCII 제어 문자가 없고 비어 있지 않은 고유한 문자열이며 64개까지입니다. `status`,
-`config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그는 fingerprint, eval 정의
-해시, 재사용 키, 관계, `verify`와 `status`의 선택을 바꾸지 않습니다. 이런 명령에는 태그로
+`config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그를 바꿔도 fingerprint, eval 정의
+해시, 재사용 키, 의존 관계, `verify`와 `status`로 선택하는 대상은 바뀌지 않습니다. 이런 명령에는 태그로
 거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. 태그로 걸러 보는 곳은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
 
 프로젝트에 템플릿이 필요하면 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은

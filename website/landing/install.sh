@@ -8,7 +8,8 @@
 #
 # Downloads the release archive for this OS and CPU over https, checks its SHA-256
 # against the release's .sha256 file, and installs artifactize and artifactize-tools to
-# ~/.local/bin. It never uses sudo and never edits shell startup files; if the
+# ~/.local/bin, with a .artifactize-receipt naming this script, so artifactize can tell
+# how to update it. It never uses sudo and never edits shell startup files; if the
 # directory is not on PATH, it prints the line to add. Run it again to update.
 #
 # It also installs the desktop app, checked the same way, where the release has one
@@ -163,6 +164,8 @@ main() {
     done
     rmdir "$staged"
     staged=
+    # artifactize reads it to name this script as the way to update the commands beside it.
+    printf 'install.sh\n' >"$install_dir/.artifactize-receipt"
 
     install_desktop
 

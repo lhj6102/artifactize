@@ -38,11 +38,11 @@ and asks the server to revoke them; it warns when the revocation is not confirme
 See [Codex](../features/agent.md#codex).
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app, newer release
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
 `doctor` calls no provider and creates no Run. Missing keys or sign-ins are
 warnings, because every backend is optional; so is a missing desktop app, with a link to
-install it. It exits 1 only for hard errors such as unusable state
+install it, and a [newer release](update.md#newer-releases). It exits 1 only for hard errors such as unusable state
 or invalid configuration.

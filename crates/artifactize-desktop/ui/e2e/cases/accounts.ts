@@ -64,6 +64,7 @@ export const scenarios: Scenario[] = [
             OPENAI_API_KEY: "sk-e2e-accounts",
           },
           data: { authorizationLog },
+          browser: `${authUrl}/oauth/authorize`,
           release: () => closeServers(servers, "account fixture servers"),
         };
       } catch (error) {

@@ -6,7 +6,7 @@
 // no OS branches. The app/driver lifetime still belongs to WDIO's Tauri service.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
-  appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
+  appendFileSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
   realpathSync, renameSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -201,6 +201,25 @@ export function replaceText(path: NativePath, text: string): void {
 
 export function copyFile(from: NativePath, to: NativePath): void {
   copyFileSync(from, to);
+}
+
+/** The app as a hard link in `directory`, so it runs from a place an install channel puts it
+ * while the build stays one file. Removing the fixture removes only the link. */
+export function placeApp(app: NativePath, directory: NativePath): NativePath {
+  const placed = nativePath(makeDirectory(directory), nameOf(app));
+  linkSync(app, placed);
+  return placed;
+}
+
+/** A folder below `root` shaped like the app's own in a bundle dragged from the macOS disk image
+ * to an Applications folder other than the person's. */
+export function diskImageAppDirectory(root: NativePath): NativePath {
+  return nativePath(root, "disk-image", "Applications", "Artifactize.app", "Contents", "MacOS");
+}
+
+/** A folder below `root` shaped like the one Windows installs the Microsoft Store package in. */
+export function storePackageDirectory(root: NativePath): NativePath {
+  return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
 }
 
 /** Remove a directory tree. An app's web engine helper processes (WebView2, WebKitGTK's
@@ -734,11 +753,10 @@ export function assertHarnessPlatform(): void {
 
 /** Close only the browser tree whose native launch command names this fixture's auth
  * origin. Existing browser processes are rejected during setup, never adopted or killed. */
-export async function releaseAccountBrowser(root: NativePath, origin: string | undefined): Promise<void> {
+export async function releaseBrowser(root: NativePath, entry: string): Promise<void> {
   if (!WINDOWS) return;
-  if (!origin) throw new Error("the account browser requires its fixture's auth origin");
-  const stopped = await runProgramAsync("pwsh", ["-NoProfile", "-NonInteractive", "-File", nativePath(root, "account-browser.ps1"), "-Mode", "release", "-Origin", origin]);
-  if (stopped.status !== 0) throw new Error(`owned account browser cleanup failed: ${stopped.stderr}`);
+  const stopped = await runProgramAsync("pwsh", ["-NoProfile", "-NonInteractive", "-File", nativePath(root, "browser.ps1"), "-Mode", "release", "-Entry", entry]);
+  if (stopped.status !== 0) throw new Error(`owned fixture browser cleanup failed: ${stopped.stderr}`);
 }
 
 /** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
@@ -769,23 +787,23 @@ export async function requestWindowClose(browser: WebdriverIO.Browser): Promise<
   if (error !== null) throw new Error(`native window close failed: ${String(error)}`);
 }
 
-/** Unix desktop openers are declared fixture executables performing the real HTTP GET;
- * the account server, not this program, records the exact displayed address reached. */
-export function accountBrowserEnvironment(root: NativePath, env: Environment): Environment {
+/** The system browser of a case that opens `entry`, an address on its private loopback server,
+ * or one below it. Unix desktop openers are declared fixture executables performing the real
+ * HTTP GET; the fixture server, not this program, records the exact address reached. */
+export function browserEnvironment(root: NativePath, env: Environment, entry: string): Environment {
   if (WINDOWS) {
-    const origin = env.ARTIFACTIZE_CODEX_AUTH_URL;
-    if (!origin || new URL(origin).hostname !== "127.0.0.1") throw new Error("the account browser requires a private loopback auth origin");
-    const script = nativePath(root, "account-browser.ps1");
-    writeText(script, `param([ValidateSet('check','release')][string]$Mode, [string]$Origin)
+    if (new URL(entry).hostname !== "127.0.0.1") throw new Error("the fixture browser requires a private loopback origin");
+    const script = nativePath(root, "browser.ps1");
+    writeText(script, `param([ValidateSet('check','release')][string]$Mode, [string]$Entry)
 $ErrorActionPreference = 'Stop'
 $all = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'")
 if ($Mode -eq 'check') {
-  if ($all.Count) { throw 'Account E2E requires no pre-existing Edge processes; none will be killed.' }
+  if ($all.Count) { throw 'Browser E2E requires no pre-existing Edge processes; none will be killed.' }
   return
 }
-$roots = @($all | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Origin + '/oauth/authorize') })
+$roots = @($all | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Entry) })
 if (!$roots.Count) {
-  if ($all.Count) { throw 'No Edge process is attributable to this account fixture; refusing image-wide cleanup.' }
+  if ($all.Count) { throw 'No Edge process is attributable to this fixture; refusing image-wide cleanup.' }
   return
 }
 $ids = [System.Collections.Generic.HashSet[int]]::new()
@@ -817,7 +835,7 @@ try {
   foreach ($process in $owned) { $process.Dispose() }
 }
 `);
-    runProgramOk("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-Mode", "check", "-Origin", origin]);
+    runProgramOk("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-Mode", "check", "-Entry", entry]);
     return env;
   }
   const bin = makeDirectory(nativePath(root, "browser-bin"));

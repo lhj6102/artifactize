@@ -24,8 +24,8 @@ default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
-sets the cooperative claim name (normally the user name). `-h`, `--help` or `help`
-(also after a mode) prints help on stderr and exits 2, as invalid arguments do. The app
+sets the cooperative claim name (normally the user name). `-h` or `--help` (also
+after a mode) and `help`, or `help MODE` for one mode, print help on stderr and exits 2, as invalid arguments do. The app
 exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
@@ -38,6 +38,14 @@ keyboard and runs nothing, Ctrl+R is its RED command instead, with or without it
 form open: it opens or switches to RED once claimed, and says the review must be
 claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
 The app follows the system's light or dark appearance.
+
+When a [newer release](../getting-started/update.md#newer-releases) is out, the header
+shows `VERSION available` before **Settings**. A click on it opens a dialog with this
+app's version and how to update the way it was installed: the command to run, as text
+you can select and copy, or the file to download and install by hand, or, when the way
+is unknown, the release page. A link opens in your browser; Esc or **Close** closes the
+dialog. The app looks the release up when it starts and once a day while it runs, and
+never updates itself. A Microsoft Store install never shows it: the Store updates the app.
 
 Hovering only highlights; information opens on a click.
 
@@ -147,7 +155,8 @@ the graph of its current declarations without needing a Run. Each Artifact is co
 reused (every eval's result would be reused without evaluation), would run, waiting or
 blocked; like a Run's Artifact, its node shows only its name, and its accessible name
 says which, with how many of its evals would run. Its header says when it was scanned. It scans again
-when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends.
+when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
+the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it

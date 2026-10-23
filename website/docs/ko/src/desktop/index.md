@@ -23,7 +23,7 @@ artifactize-desktop graph --repo PATH
 가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`로
 상태 디렉터리를 지정하며, 지정하지 않으면 공유 상태 디렉터리를 씁니다. `--reviewer NAME`은
-협업할 때 리뷰 담당자로 표시할 이름(보통은 사용자 이름)을 정합니다. `-h`, `--help`, `help`(모드 뒤에 써도 됨)는 잘못된 인자와
+협업할 때 리뷰 담당자로 표시할 이름(보통은 사용자 이름)을 정합니다. `-h`, `--help`(모드 뒤에 써도 됨)와 `help`, 모드 하나의 도움말을 보는 `help MODE`는 잘못된 인자와
 마찬가지로 stderr에 도움말을 출력하고 2로 종료합니다. 앱을 정상적으로 닫으면 종료 코드는 0이고, 시작하지 못하면
 1입니다.
 
@@ -33,6 +33,14 @@ Human 리뷰에 있고 진행 중인 작업이 없으면, 양식이 열려 있�
 요청을 맡았으면 RED를 열거나 RED로 바꾸고, 그렇지 않으면 먼저 리뷰를 맡아야 한다고
 알려 줍니다. 이때 상태를 다시 읽으려면 F5나 팔레트의 **Refresh**를 쓰세요.
 앱은 시스템의 라이트 모드 또는 다크 모드 설정을 따릅니다.
+
+[새 릴리스](../getting-started/update.md#newer-releases)가 나오면 헤더의 **Settings** 앞에
+`VERSION available`이 나타납니다. 클릭하면 대화상자가 열리고, 이 앱의 버전과 앱을 설치한
+방법에 맞는 업데이트 방법을 보여 줍니다. 실행할 명령은 선택해서 복사할 수 있는 텍스트로,
+직접 내려받아 설치할 파일은 링크로 보여 주고, 설치 방법을 알 수 없으면 릴리스 페이지를
+안내합니다. 링크는 브라우저에서 열리고, Esc나 **Close**로 대화상자를 닫습니다. 앱은 시작할 때와
+실행 중 하루에 한 번 새 릴리스를 확인하며, 스스로 업데이트하지는 않습니다. Microsoft Store로
+설치한 앱은 Store가 업데이트하므로 이 알림이 나타나지 않습니다.
 
 마우스를 올리면 강조만 되고, 자세한 정보는 클릭해야 열립니다.
 
@@ -127,7 +135,8 @@ Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는
 reused(모든 eval의 결과가 평가 없이 재사용됨), would run, waiting,
 blocked 중 어느 상태인지에 따라 다른 색으로 표시됩니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
 그 Artifact의 상태와 실행될 eval 수를 담습니다. 머리말은 언제 스캔했는지 알려 줍니다.
-다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, 그 브랜치의 Run이 끝날 때 다시 스캔합니다.
+다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, Pane에 보이는 브랜치의 Run이 끝날 때 다시 스캔합니다.
+검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 **Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
 관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
@@ -205,8 +214,8 @@ Space나 Enter로 화면에 보이는 묶음을 펼치거나 접을 수 있으�
 
 Ctrl+O 또는 팔레트의 **Open a request by ID**는 어느
 저장소의 저장된 요청이든 Main area에 엽니다. 대기 중인 Human 리뷰는 Pane에서 열 때처럼 조작할 수 있고,
-다른 요청은 읽기 전용입니다. 끝난 Human 요청은 Human 리뷰 화면에 읽기 전용으로 열리며, `t`가
-Technical을 보이거나 숨깁니다. 로그가 있는 다른 읽기 전용 요청은 eval의 칩처럼 Summary와 Agent log
+다른 요청은 읽기 전용입니다. 완료된 Human 요청을 열면 Human 리뷰 화면이 읽기 전용으로 표시되며,
+`t`를 누르면 Technical이 표시되거나 숨겨집니다. 로그가 있는 다른 읽기 전용 요청은 eval의 칩처럼 Summary와 Agent log
 또는 Runtime log 사이를 오가며, `t`를 누르면 **Debug** 정보가 표시되거나 숨겨집니다. **Close**는 Pane으로 돌아갑니다. 다른 곳에서 일어난
 요청의 변경도 화면에 반영되며, Ctrl+R이나 F5로 다시 열지 않고 다시 읽을 수 있습니다.
 

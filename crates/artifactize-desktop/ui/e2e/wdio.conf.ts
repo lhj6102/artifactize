@@ -4,7 +4,7 @@ import { readCandidate } from "./build.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { environment, releaseFixtures, settleFixtures } from "./fixture.ts";
 import {
-  accountBrowserEnvironment, asNativePath, releaseAccountBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
+  browserEnvironment, asNativePath, releaseBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
   assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
   type Environment,
 } from "./platform.ts";
@@ -54,6 +54,7 @@ type Capability = {
   "wdio:specs": string[];
   "wdio:enforceWebDriverClassic": boolean;
   "wdio:tauriServiceOptions"?: Record<string, unknown>;
+  "tauri:options"?: { application: string };
 };
 
 export const config = {
@@ -102,21 +103,22 @@ export const config = {
           DESKTOP_TEST_RELAUNCH: variable("DESKTOP_TEST_RELAUNCH"),
           ARTIFACTIZE_E2E_OWNER_FILE: nativePath(outputDir, `${item.id}.owner.json`),
         };
-        if (item.id === "accounts") {
-          env = accountBrowserEnvironment(input.fixture.root, env);
+        const entry = input.browser;
+        if (entry) {
+          env = browserEnvironment(input.fixture.root, env, entry);
           // Runs after the app has ended and before the fixture is deleted.
           const release = input.release;
-          const browserOrigin = env.ARTIFACTIZE_CODEX_AUTH_URL;
           input.release = async () => {
             const failures: unknown[] = [];
-            try { await releaseAccountBrowser(input.fixture.root, browserOrigin); } catch (error) { failures.push(error); }
+            try { await releaseBrowser(input.fixture.root, entry); } catch (error) { failures.push(error); }
             try { await release?.(); } catch (error) { failures.push(error); }
-            if (failures.length) throw new AggregateError(failures, "account fixtures could not be released");
+            if (failures.length) throw new AggregateError(failures, "browser fixtures could not be released");
           };
         }
         // Release callbacks and native fixture handles never cross the worker boundary.
         writeJson(context, { fixture: input.fixture, args, env, data: input.data }, { private: true });
         capabilities[index]["artifactize:context"] = context;
+        if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
         capabilities[index]["wdio:tauriServiceOptions"] = {
           appArgs: args,
           env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)),

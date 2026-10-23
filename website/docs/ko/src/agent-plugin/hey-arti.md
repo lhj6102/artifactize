@@ -110,12 +110,11 @@ eval의 지시문, 결과 스키마, Runtime 명령을 바꾸면 그
 
 ## MCP를 먼저 쓰기 {#use-mcp-first}
 
-Arti는 `config_graph`로 Artifact, eval, 의존성을 찾습니다. `impact:true`를 쓰면 그 입력을 쓰는 하위 Artifact 중 영향을 받을 수 있는 대상도 넓게 포함합니다. `config_check`로 선언을 검증하며, `status`로 각 eval을 실행할지, 기존 결과를 재사용할지, 대기할지 예측합니다. `tools_check`는
-도구와 세션을 정적으로 살펴봅니다. Arti는 확인 결과를 파싱하기 전에 이어지는 페이지를
-모두 읽습니다. [MCP 레퍼런스](mcp.md)에 이 도구들과 MCP가
-[일부러 빼놓은 것](mcp.md#deliberately-absent)이 나와 있습니다. MCP가 등록되지 않았다면
-CLI 대체 명령은 `artifactize config check`, `artifactize config graph`,
-`artifactize status --all`, `artifactize tools check`입니다.
+프로젝트에 어떤 Artifact, eval, 의존성이 선언되어 있고 변경이 어디에 영향을 주는지, 선언이
+올바른지, 어떤 eval을 실행하거나 재사용하거나 대기시킬지, 도구와 세션이 제대로 설정되어
+있는지 Arti에게 물어보세요. Arti는 artifactize의 [MCP 도구](mcp.md)가 등록되어 있으면 그것으로,
+없으면 `artifactize config check`, `artifactize config graph`, `artifactize status --all`,
+`artifactize tools check`로 확인해 답합니다.
 
 ## 도구 세션 {#tool-sessions}
 
@@ -134,8 +133,8 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **완전한
-승인이 아닙니다**.
+Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **사람의 승인이
+아직 남아 있는 상태입니다**.
 
 Arti는 각 결과를 다음과 같이 다룹니다.
 

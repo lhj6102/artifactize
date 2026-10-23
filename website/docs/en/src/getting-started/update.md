@@ -18,6 +18,19 @@ Microsoft reviews it. Updating keeps your state.
 The [plugin page](../agent-plugin/plugin.md#updates) shows how to update the
 plugin.
 
+### Newer releases
+
+artifactize never downloads or installs an update itself. When a newer stable release
+is out, the [desktop app](../desktop/index.md#open-the-app) shows it in its header and
+`artifactize doctor` warns about it (its `release` check), each with the update from the
+table above for the way that copy was installed, or the release page when the way is
+unknown. A Microsoft Store install shows nothing: the Store updates it.
+
+To learn of a release, artifactize asks GitHub for the latest release at most once a day
+and keeps the answer in `release-check.json` in the [state directory](#state); the request
+carries nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn
+the lookup off.
+
 ### Upgrading from 0.11
 
 The state's format of saved review data (its schema) is upgraded automatically on first use,
