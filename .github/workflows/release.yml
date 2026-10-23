@@ -112,8 +112,13 @@ jobs:
         run: |
           flags=
           if [ "$PRERELEASE" = true ]; then flags=--prerelease; fi
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
-            --generate-notes $flags dist/*
+          # A rerun of this tag finds its release and uploads the archives again.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber dist/*
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+              --generate-notes $flags dist/*
+          fi
       - name: Set the version
         if: env.PRERELEASE == 'false'
         run: sh .github/scripts/set-version.sh "$VERSION"
@@ -122,12 +127,11 @@ jobs:
       - uses: rust-lang/crates-io-auth-action@v1
         if: env.PRERELEASE == 'false'
         id: auth
-      # PR verification and the release builds already passed, so skip the verification
-      # build. --allow-dirty: the version was set in this checkout.
+      # PR verification and the release builds already passed, so the script skips the
+      # verification build; it waits for each crate to reach the index before the next.
       - name: Publish to crates.io
         if: env.PRERELEASE == 'false'
-        run: |
-          cargo publish --locked --allow-dirty --no-verify -p artifactize-core -p artifactize-tools -p artifactize-tui -p artifactize-mcp -p artifactize
+        run: sh .github/scripts/publish-crates.sh "$VERSION"
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
