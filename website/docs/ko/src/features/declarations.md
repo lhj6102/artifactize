@@ -7,7 +7,7 @@ artifactize config check
 ```
 
 선언이 유효하면 `Folder configuration is valid.`를 출력하고, 오류가 있으면 오류를 출력한 뒤 종료 코드 2로 끝납니다. 선언 내용에
-오류가 있으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 것처럼 디스크에 문제가 있으면 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
+오류가 있으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 등 파일 시스템에 문제가 있으면 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
 정확한 규칙이 있습니다. 개념 소개는 [Artifact와 eval](artifact.md)에 있습니다.
 
 ## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
