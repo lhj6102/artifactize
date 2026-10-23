@@ -111,10 +111,12 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    /// Whether a reviewer holds a claim on any of these waiting sign-offs. A claim is held on
-    /// the request that issued the sign-off, so a request that joined it finds it through
-    /// their shared execution.
-    pub(crate) async fn signoff_claimed(
+    /// Whether any of these sign-offs, waiting when the caller last looked, still has a person
+    /// on it: a reviewer holds a claim, or it was submitted since. A claim is held on the request
+    /// that issued the sign-off, so a request that joined it finds it through their shared
+    /// execution. A submission also releases the claim, so it counts until the caller has taken
+    /// its result.
+    pub(crate) async fn signoff_attended(
         &self,
         ids: Vec<crate::types::RequestId>,
     ) -> Result<bool, String> {
@@ -124,7 +126,7 @@ impl Receipts {
         self.connection
             .call(move |db| -> Result<_, Error> {
                 Ok(db.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM requests q JOIN requests c ON c.execution_id=q.execution_id WHERE q.id IN (SELECT value FROM json_each(?)) AND q.status IN ('WAITING_HUMAN','DEFERRED') AND c.claimed_by IS NOT NULL)",
+                    "SELECT EXISTS(SELECT 1 FROM requests q JOIN requests c ON c.execution_id=q.execution_id WHERE q.id IN (SELECT value FROM json_each(?1)) AND q.status IN ('WAITING_HUMAN','DEFERRED') AND c.claimed_by IS NOT NULL) OR EXISTS(SELECT 1 FROM requests WHERE id IN (SELECT value FROM json_each(?1)) AND status NOT IN ('WAITING_HUMAN','DEFERRED'))",
                     [serde_json::to_string(&ids)?],
                     |row| row.get(0),
                 )?)

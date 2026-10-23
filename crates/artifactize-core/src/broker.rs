@@ -1009,8 +1009,9 @@ impl Scheduler<'_, '_> {
                 break;
             }
             // Only sign-offs are left: the Run stays open while one is claimed, and ends once
-            // none has been for its idle grace.
-            let grace_due = if idle && !self.receipts.signoff_claimed(signoffs).await? {
+            // none has been for its idle grace. One submitted since this loop last looked is
+            // taken on the next turn, never ended over.
+            let grace_due = if idle && !self.receipts.signoff_attended(signoffs).await? {
                 let due = *idle_since.get_or_insert_with(tokio::time::Instant::now) + grace;
                 if tokio::time::Instant::now() >= due {
                     break;

@@ -124,7 +124,7 @@ configured.`(JSON은 `{"configured":false}`)를 출력하고 1로 종료합니�
 보고됩니다. `request submit`은 Human 승인을 게시합니다. `--speculate` Run은 스케줄링이 끝난 뒤에,
 끝까지 유효한 결과만 게시합니다([추측 실행](../features/run.md#speculation)).
 토큰으로는 부여된 [권한 범위](#review-store-server) 안에서만 작업할 수 있습니다. `read`가 없으면 아무것도
-조회하지 않고, `publish`가 없으면 아무것도 게시하지 않으므로 읽기 전용 CI 토큰은 재사용만 하며,
+조회하지 않고, `publish`가 없으면 아무것도 게시하지 않으므로 읽기 전용 CI 토큰을 사용하면 결과를 재사용할 수만 있고 새 결과를 게시할 수는 없으며,
 `human`이 없으면 Human 승인은 경고와 함께 로컬에만 남습니다. 재사용 키가 없는 eval은 아무것도
 게시하지 않으며, [`--force`](../features/fingerprint.md#completed-result-reuse) 결과는 게시되어 가장
 최근 기록이 됩니다. `status`도 읽기 전용 조회로 같은 비교를 하므로 `reuse` 예측에 더 새로운 원격
