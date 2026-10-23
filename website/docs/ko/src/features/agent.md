@@ -37,8 +37,8 @@ Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까
 들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필로 실행해 얻은 결과도 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
-제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 리뷰만
-하며, 리뷰 대상을 고치거나 수리하지 않고, 테스트는 실행하지 않고 읽어서 판단합니다. 테스트를 실행해야
+제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 대상을
+수정하지 않고 리뷰만 하며, 테스트도 실행하지 않고 코드를 읽어 판단합니다. 테스트를 실행해야
 하는 검사라면 [Runtime eval](runtime.md)을 선언하세요. `{name}`
 참조마다 리뷰어에게 그 Artifact의 이름과 읽을 때 쓸 도구(파일 Artifact라면 경로도)를 알려
 주므로, 지시문에 도구 이름을 적을 필요는 없습니다.
@@ -144,7 +144,7 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 실행됩니다. 각 도구가 무엇을 받고
 돌려주는지는 [Agent 도구](tools/agent.md#agent-tools)에 있습니다. PNG/JPEG/WebP 결과는 모든 백엔드에
-보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는 성공했을 때와 ERROR일 때 모두 저장합니다. 캐시가 적중하면 해당 시도의 사용량을 `reusedUsage`로 옮겨 기록하고, 새로 쓴 사용량에 포함하지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나
+보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는 성공했을 때와 ERROR일 때 모두 저장합니다. 캐시가 적중하면 해당 시도의 사용량을 `reusedUsage`에 기록하고, 이번 실행에서 발생한 사용량에는 포함하지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나
 비용이 아닙니다. Anthropic의 `inputTokens`는 캐시하지 않은 입력만 센 값이고 캐시 읽기·쓰기
 수치는 따로 있습니다. OpenAI의 입력에는 캐시 읽기가 이미 포함되어 있습니다. 모든 수치를 더하지
 마세요. 보고되지 않은 필드는 빠집니다. 요청에는 판정, 결과, 사용량이 남고, 메시지, reasoning,
