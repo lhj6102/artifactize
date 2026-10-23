@@ -219,8 +219,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 [그래프 fingerprint](fingerprint.md#graph-fingerprint)는 소스 파일 내용이나 eval 실행 옵션이
-아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 결과는
-현재 상태만 기준으로 리뷰하거나 재사용합니다.
+아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 현재
+그래프를 리뷰해 결과를 만들거나, 현재 그래프에 맞는 기존 결과를 재사용합니다.
 
 ## 파일 Artifact {#file-artifacts}
 
