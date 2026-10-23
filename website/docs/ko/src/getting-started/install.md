@@ -101,8 +101,8 @@ CPU에 맞는 압축 파일을 고르고, 그 SHA-256을 릴리스의 체크섬�
 추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
 `PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
 릴리스의 [데스크톱 앱](#desktop-app)도 같은 방식으로 확인해
-`~/.local/share/artifactize/desktop`에 설치하고, 명령 옆에 `artifactize-desktop` 실행 파일과
-**Artifactize** 메뉴 항목을 추가합니다. ARM Linux와 Alpine에서는 명령만 설치합니다. 두
+`~/.local/share/artifactize/desktop`에 설치하고, `artifactize` 명령과 같은 디렉터리에 `artifactize-desktop` 실행 파일을
+추가하며, 애플리케이션 메뉴에 **Artifactize** 항목을 만듭니다. ARM Linux와 Alpine에서는 명령만 설치합니다. 두
 환경 변수로 동작을 바꿀 수 있습니다.
 사전 릴리스는 `ARTIFACTIZE_VERSION`으로 그 버전을 지정했을 때만 설치됩니다.
 

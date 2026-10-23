@@ -272,7 +272,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
-Runtime이나 Agent eval은 `gate`와 `profile` 옆에 `mutex`를 선언할 수 있습니다.
+Runtime이나 Agent eval은 `gate`, `profile`과 함께 `mutex`도 선언할 수 있습니다.
 
 ```toml
 [evals.suite-passes]

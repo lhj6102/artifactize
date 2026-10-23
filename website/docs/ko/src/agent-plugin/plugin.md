@@ -16,7 +16,7 @@
 
 플러그인은 `artifactize` 프로그램을 실행하므로 먼저 [artifactize를 설치](../getting-started/install.md)하세요.
 같은 페이지에서 [데스크톱 앱](../desktop/index.md)을 받는 방법도 확인할 수 있습니다. 프로그램이
-없으면 Hey Arti가 그렇다고 알려 주고 그 페이지에 나온, 사용 중인 시스템의 기본 설치 방법을 안내합니다.
+설치되어 있지 않으면 Hey Arti가 이를 알리고, 설치 페이지를 바탕으로 사용 중인 시스템의 기본 설치 방법을 안내합니다.
 
 ## 어시스턴트에 플러그인 추가하기 {#add-the-plugin-to-your-assistant}
 
