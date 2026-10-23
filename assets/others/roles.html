@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Collaborating in Artifactize: the work splits into three roles around it, and each role
-     shows who takes part in it, people, AI agents or both. capture.mts renders it into
+     shows its team of five, people and AI agents. capture.mts renders it into
      roles.en.png; the README and the landing page use that image. -->
 <html lang="en">
 <head>
@@ -88,10 +88,10 @@
     font: 500 24px/1 var(--sans);
   }
 
-  /* Who takes part in the role. */
+  /* The team that takes the role: five members, people and AI agents. */
   .who {
     display: flex;
-    gap: 14px;
+    gap: 12px;
     margin-top: 20px;
   }
   .who span {
@@ -129,6 +129,9 @@
     <p>Decides what to build</p>
     <div class="who">
       <span class="human"><svg><use href="#i-person"/></svg></span>
+      <span class="human"><svg><use href="#i-person"/></svg></span>
+      <span class="human"><svg><use href="#i-person"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
       <span class="agent"><svg><use href="#i-agent"/></svg></span>
     </div>
   </section>
@@ -138,6 +141,10 @@
     <p>Builds the pieces</p>
     <div class="who">
       <span class="agent"><svg><use href="#i-agent"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
     </div>
   </section>
 
@@ -145,6 +152,9 @@
     <h2>Evaluator</h2>
     <p>Checks each piece</p>
     <div class="who">
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
+      <span class="agent"><svg><use href="#i-agent"/></svg></span>
       <span class="agent"><svg><use href="#i-agent"/></svg></span>
       <span class="human"><svg><use href="#i-person"/></svg></span>
     </div>

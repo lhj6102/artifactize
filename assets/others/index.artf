@@ -58,12 +58,12 @@ instruction = """
 and the landing page use it in place of a sentence saying that Artifactize brings human and \
 agent work together. Its point is that people and AI agents collaborate in Artifactize through \
 three roles: Director above and Builder and Evaluator on either side of the Artifactize icon. \
-Each role has a short line on what it does and the icons of who takes part in it: a person and \
-an agent direct, an agent builds, and an agent and a person evaluate. Read roles.html and view \
+Each role has a short line on what it does and its team of five, as person and agent icons: \
+three people and two agents direct, five agents build, and four agents and one person evaluate. Read roles.html and view \
 the image. Judge:
 - Meaning: the three roles are what the figure is about; each role's line says plainly what it \
 does (W-INTRO-PLAIN-LANGUAGE of {writer-introduction}), and the figure shows nothing beyond \
-the roles, who takes part in them and Artifactize.
+the roles, their teams and Artifactize.
 - Clarity: a first-time reader tells the person from the AI agent without labels, because \
 each keeps one icon and one color across the figure.
 - Layout: the roles form a balanced triangle around Artifactize, each joined to it by a line; \

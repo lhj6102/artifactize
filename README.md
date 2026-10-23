@@ -8,7 +8,7 @@ English · [한국어](assets/readme/README.kr.md)
 
 <p align="center">
   <img src="assets/others/roles.en.png" width="800"
-       alt="Collaborate in Artifactize: the work splits into three roles around it. As Director, a person and an AI agent decide what to build; as Builder, an AI agent builds the pieces; as Evaluator, an AI agent and a person check each piece.">
+       alt="Collaborate in Artifactize: the work splits into three roles around it. As Director, three people and two AI agents decide what to build; as Builder, five AI agents build the pieces; as Evaluator, four AI agents and one person check each piece.">
 </p>
 
 **Who is it for?**
