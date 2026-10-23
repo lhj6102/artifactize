@@ -22,8 +22,6 @@
   const commands = app.ipc;
   setAppState(app);
   const { browse, current, leaving, monitor: m, release } = app;
-  /** The library looks releases up at most once a day; asking hourly finds a new one that day. */
-  const RELEASE_INTERVAL_MS = 60 * 60 * 1000;
 
   onMount(() => {
     const hideActivity = exposeActivity(app.activity);
@@ -36,8 +34,7 @@
     void browse.navigate({ full: true });
     // Ages and running times redraw from the snapshot; nothing is read.
     const clock = setInterval(() => void browse.redraw(), 1000);
-    void release.look();
-    const releases = setInterval(() => void release.look(), RELEASE_INTERVAL_MS);
+    const unwatched = release.watch();
     const unchanged = onStateChanged((resync) => browse.refresh(resync));
     // What Human tools print, for whichever review or Artifact shows it.
     const unlogged = onHumanToolLog((logs) => app.logged(logs));
@@ -49,7 +46,7 @@
     return () => {
       hideActivity();
       clearInterval(clock);
-      clearInterval(releases);
+      unwatched();
       unchanged();
       unlogged();
       unlisten?.();

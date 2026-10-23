@@ -125,14 +125,10 @@ export const commands = {
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
 	/**
-	 *  The newer release, if one is out; `None` when this copy is the latest, the lookup is off
-	 *  or failed, or the Microsoft Store updates it. A lookup made within the day is reused.
+	 *  The newer release, if one is out: none when this copy is the latest, the lookup is off or
+	 *  failed, or the Microsoft Store updates it. A lookup made within the day is reused.
 	 */
-	releaseNotice: () => typedError<{
-	running: string,
-	latest: string,
-	update: ReleaseUpdate,
-} | null, Failure>(__TAURI_INVOKE("release_notice")),
+	releaseNotice: () => typedError<ReleaseView, Failure>(__TAURI_INVOKE("release_notice")),
 	/**  Open the newer release's download or page in the browser. */
 	releaseOpen: () => typedError<null, Failure>(__TAURI_INVOKE("release_open")),
 	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
@@ -681,6 +677,13 @@ export type ReleaseUpdate =
 { kind: "download"; url: string; command: string | null } | 
 /**  See the release page: how the app was installed is unknown. */
 { kind: "page"; url: string };
+
+/**  The release lookup as the header shows it, and when to ask again. */
+export type ReleaseView = {
+	notice: ReleaseNotice | null,
+	/**  Milliseconds until the app asks again ([`release::recheck_interval`]). */
+	recheckMs: number,
+};
 
 /**  `remote status`: never the token. */
 export type RemoteStatus = 

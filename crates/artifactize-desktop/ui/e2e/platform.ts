@@ -6,7 +6,7 @@
 // no OS branches. The app/driver lifetime still belongs to WDIO's Tauri service.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
-  appendFileSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
+  appendFileSync, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
   realpathSync, renameSync, rmSync, writeFileSync,
 } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -201,6 +201,19 @@ export function replaceText(path: NativePath, text: string): void {
 
 export function copyFile(from: NativePath, to: NativePath): void {
   copyFileSync(from, to);
+}
+
+/** The app as a hard link in `directory`, so it runs from a place an install channel puts it
+ * while the build stays one file. Removing the fixture removes only the link. */
+export function placeApp(app: NativePath, directory: NativePath): NativePath {
+  const placed = nativePath(makeDirectory(directory), nameOf(app));
+  linkSync(app, placed);
+  return placed;
+}
+
+/** A folder below `root` shaped like the one Windows installs the Microsoft Store package in. */
+export function storePackageDirectory(root: NativePath): NativePath {
+  return nativePath(root, "WindowsApps", "lhj6102.Artifactize_9.9.9.0_x64__ayfzfzbsv48sg");
 }
 
 /** Remove a directory tree. An app's web engine helper processes (WebView2, WebKitGTK's

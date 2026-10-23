@@ -76,12 +76,12 @@ async fn a_newer_release_comes_with_the_channels_update_and_is_asked_once_a_day(
     let running = version("0.15.1");
     let newer = Outcome::Newer {
         latest: version("0.16.0"),
-        update: Update::Command {
-            command: "brew upgrade artifactize".into(),
+        update: Update::Page {
+            url: "https://github.com/lhj6102/artifactize/releases/latest".into(),
         },
     };
     let source = releases.source(true);
-    let look = |now| look_up(&running, Channel::Homebrew, &source, state.path(), now);
+    let look = |now| look_up(&running, Channel::Unknown, &source, state.path(), now);
     assert_eq!(look(at(0)).await, newer);
     assert_eq!(look(at(DAY - 1)).await, newer);
     assert_eq!(releases.requests(), 1);
@@ -132,57 +132,6 @@ async fn a_failed_lookup_is_reported_and_asked_again() {
         );
     }
     assert_eq!(releases.requests(), 2);
-}
-
-#[test]
-fn every_channel_but_the_store_says_how_to_update() {
-    let latest = version("0.16.0");
-    let command = |command: &str| {
-        Some(Update::Command {
-            command: command.into(),
-        })
-    };
-    assert_eq!(Channel::Store.update(&latest), None);
-    assert_eq!(
-        Channel::InstallSh.update(&latest),
-        command("curl -fsSL https://artifactize.dev/install.sh | sh")
-    );
-    assert_eq!(
-        Channel::InstallPs1.update(&latest),
-        command("irm https://artifactize.dev/install.ps1 | iex")
-    );
-    assert_eq!(
-        Channel::Winget.update(&latest),
-        command("winget upgrade lhj6102.Artifactize")
-    );
-    assert_eq!(
-        Channel::HomebrewCask.update(&latest),
-        command("brew upgrade --cask artifactize")
-    );
-    assert_eq!(
-        Channel::Cargo.update(&latest),
-        command("cargo install artifactize artifactize-tools --locked")
-    );
-    assert_eq!(
-        Channel::Deb.update(&latest),
-        Some(Update::Download {
-            url: "https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb".into(),
-            command: Some("sudo apt install ./Artifactize-amd64.deb".into()),
-        })
-    );
-    assert_eq!(
-        Channel::AppImage.update(&latest),
-        Some(Update::Download {
-            url: "https://github.com/lhj6102/artifactize/releases/download/v0.16.0/artifactize-desktop-v0.16.0-x86_64-unknown-linux-gnu.AppImage".into(),
-            command: None,
-        })
-    );
-    assert_eq!(
-        Channel::Unknown.update(&latest),
-        Some(Update::Page {
-            url: "https://github.com/lhj6102/artifactize/releases/latest".into()
-        })
-    );
 }
 
 #[test]

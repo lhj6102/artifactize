@@ -71,30 +71,27 @@ fn typed_details_preserve_null_and_flat_auth_wire_forms() {
 #[test]
 fn a_newer_release_warns_with_its_update_and_an_unchecked_one_passes() {
     let version = |text| semver::Version::parse(text).unwrap();
+    let page = "https://github.com/lhj6102/artifactize/releases/latest";
     let (status, message, details) = release_check(release::Status {
         running: version("0.15.1"),
-        channel: release::Channel::Deb,
+        channel: release::Channel::Unknown,
         outcome: release::Outcome::Newer {
             latest: version("0.16.0"),
-            update: release::Channel::Deb.update(&version("0.16.0")).unwrap(),
+            update: release::Update::Page { url: page.into() },
         },
     });
     assert_eq!(status, CheckStatus::Warn);
     assert!(
-        message.contains("0.16.0") && message.contains("sudo apt install ./Artifactize-amd64.deb"),
+        message.contains("0.16.0") && message.contains(page),
         "{message}"
     );
     assert_eq!(
         serde_json::to_value(details).unwrap(),
         json!({
-            "channel":"deb",
+            "channel":"unknown",
             "running":"0.15.1",
             "latest":"0.16.0",
-            "update":{
-                "kind":"download",
-                "url":"https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb",
-                "command":"sudo apt install ./Artifactize-amd64.deb",
-            },
+            "update":{"kind":"page","url":page},
         })
     );
     let (status, _, details) = release_check(release::Status {

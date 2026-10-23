@@ -1,6 +1,8 @@
 use super::*;
 use std::fs;
 
+const SITE: &str = "https://github.com/lhj6102/artifactize";
+
 /// An executable at `relative` below `root`, created with its directories.
 fn executable(root: &Path, relative: &str) -> PathBuf {
     let path = root.join(relative);
@@ -111,4 +113,55 @@ fn linux_bundles_are_known_by_the_data_directory_the_appimage_and_dpkg() {
 
 fn path_text(path: &Path) -> String {
     real(path).to_str().unwrap().to_owned()
+}
+
+#[test]
+fn every_channel_but_the_store_says_how_to_update() {
+    let latest = semver::Version::parse("0.16.0").unwrap();
+    let command = |command: &str| {
+        Some(Update::Command {
+            command: command.into(),
+        })
+    };
+    assert_eq!(update(Channel::Store, &latest, SITE), None);
+    assert_eq!(
+        update(Channel::InstallSh, &latest, SITE),
+        command("curl -fsSL https://artifactize.dev/install.sh | sh")
+    );
+    assert_eq!(
+        update(Channel::InstallPs1, &latest, SITE),
+        command("irm https://artifactize.dev/install.ps1 | iex")
+    );
+    assert_eq!(
+        update(Channel::Winget, &latest, SITE),
+        command("winget upgrade lhj6102.Artifactize")
+    );
+    assert_eq!(
+        update(Channel::HomebrewCask, &latest, SITE),
+        command("brew upgrade --cask artifactize")
+    );
+    assert_eq!(
+        update(Channel::Cargo, &latest, SITE),
+        command("cargo install artifactize artifactize-tools --locked")
+    );
+    assert_eq!(
+        update(Channel::Deb, &latest, SITE),
+        Some(Update::Download {
+            url: "https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb".into(),
+            command: Some("sudo apt install ./Artifactize-amd64.deb".into()),
+        })
+    );
+    assert_eq!(
+        update(Channel::AppImage, &latest, SITE),
+        Some(Update::Download {
+            url: "https://github.com/lhj6102/artifactize/releases/download/v0.16.0/artifactize-desktop-v0.16.0-x86_64-unknown-linux-gnu.AppImage".into(),
+            command: None,
+        })
+    );
+    assert_eq!(
+        update(Channel::Unknown, &latest, SITE),
+        Some(Update::Page {
+            url: "https://github.com/lhj6102/artifactize/releases/latest".into()
+        })
+    );
 }

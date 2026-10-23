@@ -32,6 +32,11 @@ pub const TEST_ENDPOINT_VARIABLE: &str = "ARTIFACTIZE_RELEASES_URL";
 /// About once a day: a release is not urgent, and GitHub's API allows an address 60
 /// unauthenticated requests an hour.
 const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// How often a long-running app asks again: hourly finds a release out that day, while the
+/// lookup itself reaches GitHub at most once a day.
+const RECHECK: Duration = Duration::from_secs(60 * 60);
+/// How often it asks a test endpoint, which keeps no answer, so a test sees a new release soon.
+const TEST_RECHECK: Duration = Duration::from_secs(1);
 /// A lookup still unanswered then is abandoned; the next one tries again.
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// The last answer, in the state directory.
@@ -142,6 +147,17 @@ pub async fn check(state: &Path) -> Status {
         running,
         channel,
         outcome,
+    }
+}
+
+/// How long a long-running app waits before it asks [`check`] again.
+pub fn recheck_interval() -> Duration {
+    if crate::platform::environment::var(TEST_ENDPOINT_VARIABLE)
+        .is_some_and(|value| !value.is_empty())
+    {
+        TEST_RECHECK
+    } else {
+        RECHECK
     }
 }
 

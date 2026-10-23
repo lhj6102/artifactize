@@ -54,6 +54,7 @@ type Capability = {
   "wdio:specs": string[];
   "wdio:enforceWebDriverClassic": boolean;
   "wdio:tauriServiceOptions"?: Record<string, unknown>;
+  "tauri:options"?: { application: string };
 };
 
 export const config = {
@@ -117,6 +118,7 @@ export const config = {
         // Release callbacks and native fixture handles never cross the worker boundary.
         writeJson(context, { fixture: input.fixture, args, env, data: input.data }, { private: true });
         capabilities[index]["artifactize:context"] = context;
+        if (input.app) capabilities[index]["tauri:options"] = { application: input.app };
         capabilities[index]["wdio:tauriServiceOptions"] = {
           appArgs: args,
           env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)),

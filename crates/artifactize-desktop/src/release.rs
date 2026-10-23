@@ -14,6 +14,15 @@ pub struct ReleaseNotice {
     pub update: ReleaseUpdate,
 }
 
+/// The release lookup as the header shows it, and when to ask again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseView {
+    pub notice: Option<ReleaseNotice>,
+    /// Milliseconds until the app asks again ([`release::recheck_interval`]).
+    pub recheck_ms: u32,
+}
+
 /// How to update this install, as [`release::Update`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -47,19 +56,24 @@ fn link(update: &release::Update) -> Option<&str> {
     }
 }
 
-/// The newer release, if one is out; `None` when this copy is the latest, the lookup is off
-/// or failed, or the Microsoft Store updates it. A lookup made within the day is reused.
+/// The newer release, if one is out: none when this copy is the latest, the lookup is off or
+/// failed, or the Microsoft Store updates it. A lookup made within the day is reused.
 #[tauri::command]
 #[specta::specta]
-pub async fn release_notice(app: tauri::State<'_, App>) -> Result<Option<ReleaseNotice>, Failure> {
+pub async fn release_notice(app: tauri::State<'_, App>) -> Result<ReleaseView, Failure> {
     let checked = release::check(&app.launch.state).await;
-    Ok(match checked.outcome {
+    let notice = match checked.outcome {
         release::Outcome::Newer { latest, update } => Some(ReleaseNotice {
             running: checked.running.to_string(),
             latest: latest.to_string(),
             update: update.into(),
         }),
         _ => None,
+    };
+    let recheck = release::recheck_interval().as_millis();
+    Ok(ReleaseView {
+        notice,
+        recheck_ms: u32::try_from(recheck).expect("the recheck interval fits in u32 milliseconds"),
     })
 }
 

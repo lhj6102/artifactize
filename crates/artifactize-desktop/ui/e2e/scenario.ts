@@ -1,5 +1,5 @@
 import type { Fixture } from "./fixture.ts";
-import type { Environment } from "./platform.ts";
+import type { Environment, NativePath } from "./platform.ts";
 
 /** Domain inputs prepared before the service launches a capability's app. */
 export type Prepared<T = unknown> = {
@@ -10,6 +10,8 @@ export type Prepared<T = unknown> = {
   /** The address on the case's loopback server, or the start of the addresses, that the app
    * opens in the system browser; the case then gets a fixture browser. */
   browser?: string;
+  /** The candidate app placed elsewhere ([`placeApp`]); the case launches it instead. */
+  app?: NativePath;
   release?: () => Promise<void>;
 };
 

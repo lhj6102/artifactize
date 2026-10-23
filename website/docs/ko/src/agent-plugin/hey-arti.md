@@ -110,12 +110,11 @@ eval의 지시문, 결과 스키마, Runtime 명령을 바꾸면 그
 
 ## MCP를 먼저 쓰기 {#use-mcp-first}
 
-Arti는 `config_graph`로 Artifact, eval, 의존성을 찾습니다. `impact:true`를 쓰면 그 입력을 쓰는 하위 Artifact 중 영향을 받을 수 있는 대상도 넓게 포함합니다. `config_check`로 선언을 검증하며, `status`로 각 eval을 실행할지, 기존 결과를 재사용할지, 대기할지 예측합니다. `tools_check`는
-도구와 세션을 정적으로 살펴봅니다. Arti는 확인 결과를 파싱하기 전에 이어지는 페이지를
-모두 읽습니다. [MCP 레퍼런스](mcp.md)에 이 도구들과 MCP가
-[일부러 빼놓은 것](mcp.md#deliberately-absent)이 나와 있습니다. MCP가 등록되지 않았다면
-CLI 대체 명령은 `artifactize config check`, `artifactize config graph`,
-`artifactize status --all`, `artifactize tools check`입니다.
+프로젝트에 어떤 Artifact, eval, 의존성이 선언되어 있고 변경이 어디에 영향을 주는지, 선언이
+올바른지, 어떤 eval을 실행하거나 재사용하거나 대기시킬지, 도구와 세션이 제대로 설정되어
+있는지 Arti에게 물어보세요. Arti는 artifactize의 [MCP 도구](mcp.md)가 등록되어 있으면 그것으로,
+없으면 `artifactize config check`, `artifactize config graph`, `artifactize status --all`,
+`artifactize tools check`로 확인해 답합니다.
 
 ## 도구 세션 {#tool-sessions}
 
