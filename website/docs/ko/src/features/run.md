@@ -35,7 +35,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 1)을 쓰세요. `--jobs`나 백엔드 한도 때문에 일부만 실행할 수 있으면 나머지는 이유와 함께 QUEUED로
 표시되고, 앞선 작업이 끝나는 대로 시작합니다. `--max-executions`는 다릅니다. Run에서 시작할 수 있는 리뷰의 총수를 제한합니다. 한도에 도달하면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로 끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
-[백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수를 기다리거나 백엔드 자리가 나기를 기다릴 때, 합류한 실행이 끝나기를 기다릴 때, 직접 정한 Run의 동시 실행 상한 때문에 대기할 때 표시됩니다. 백엔드 자리가
+[백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기 중이거나, 백엔드 자리가 나지 않았거나, 합류한 실행이 아직 끝나지 않았거나, 직접 정한 Run의 동시 실행 상한에 걸렸을 때 표시됩니다. 백엔드 자리가
 빌 때까지 대기 중인 요청은 Run의 `--jobs` 동시 실행 수에 포함되지 않습니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
