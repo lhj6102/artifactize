@@ -20,7 +20,7 @@ artifactize-desktop graph --repo PATH
 인자가 없으면 현재 디렉터리와 상관없이 아무것도 고르지 않은 채 앱이 열립니다.
 `--repo PATH`는 그 폴더의 브랜치를 고르고 펼친 뒤 가장 최근 항목을 보여 줍니다. 기본값인 `--all`은
 아무것도 고르지 않으며, 어느 쪽이든 모든 브랜치가 나열됩니다. `review`는
-가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `graph`에는
+가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `review`는 `--repo`를 주어도 브랜치를 고르거나 펼치지 않습니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`로
 상태 디렉터리를 지정하며, 지정하지 않으면 공유 상태 디렉터리를 씁니다. `--reviewer NAME`은
 협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. `-h`나 `--help`(모드 뒤에도
@@ -70,7 +70,7 @@ Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무
 상태, 경과 시간, Run ID가 붙습니다. 맨 앞 항목은 워크트리의 지금 상태인 **Current**입니다. Run이
 진행 중이면 그 Run이 Current 자리에 오고, Run이 끝나면 Current가 돌아옵니다. 끝의 **Older runs**는
 더 오래된 Run을 가져옵니다. 항목을 클릭하면 회색의 둥근 배지로 표시되며 Main area에 나옵니다. 브랜치는
-몇 개든 펼칠 수 있으며, 앱을 시작할 때 지정한 브랜치는 펼친 채로 시작합니다.
+몇 개든 펼칠 수 있으며, `monitor`나 `graph`로 시작할 때 지정한 브랜치는 펼친 채로 시작합니다.
 
 브랜치 이름 끝의 ☆로 별표를 붙입니다. 별표 붙은 브랜치가 먼저 나열되고,
 별표 붙은 브랜치와 나머지 브랜치는 각각 검색 순서대로 정렬됩니다. 별표는 앱을 다시 열어도 남아 있습니다.
@@ -195,8 +195,8 @@ eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 
 결과(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
 **Execution options**, **Execution metadata**, **Fingerprint**도 함께 표시합니다.
 Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 재사용할 결과를
-보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact의 Summary나 Human이 아닌 eval의
-Summary에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 로그가 있는 eval은 칩 아래에서
+보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact나 eval의 읽기 전용
+Summary(Current의 Human eval 포함)에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 판정을 제출할 수 있는 Human 리뷰에서는 `t`가 **Technical**을 표시하거나 숨깁니다. 로그가 있는 eval은 칩 아래에서
 먼저 보이는 Summary와 로그 사이를 오갈 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
 항목은 굵고 진한 글씨로 강조됩니다. 로그는 Agent eval의 **Agent log**(대화. 별도의 스크롤 막대가 있음) 또는 Runtime eval의 **Runtime log**(저장된 stdout/stderr. 실시간
 로그 스트림이 아님)입니다. 대화가 없거나 원격에만 있으면
