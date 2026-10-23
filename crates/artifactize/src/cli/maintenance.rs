@@ -131,13 +131,14 @@ pub(super) async fn prune(
     Ok(0)
 }
 
-pub(super) fn limits(context: Context, signoff_idle_grace: Option<u64>) -> Result<u8, String> {
+pub(super) fn limits(
+    context: Context,
+    signoff_idle_grace: Option<std::time::Duration>,
+) -> Result<u8, String> {
     use artifactize_core::limits::Limits;
     let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
     let limits = match signoff_idle_grace {
-        Some(seconds) => {
-            Limits::set_signoff_idle_grace(&state, std::time::Duration::from_secs(seconds))?
-        }
+        Some(grace) => Limits::set_signoff_idle_grace(&state, grace)?,
         None => Limits::read(&state)?,
     };
     if context.json {

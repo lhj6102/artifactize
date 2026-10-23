@@ -115,8 +115,8 @@ pub enum Command {
     Limits {
         /// Seconds a Run with nothing but unclaimed sign-offs left stays open (0–86400), for
         /// the Runs started afterwards.
-        #[arg(long, value_name = "SECONDS")]
-        signoff_idle_grace: Option<u64>,
+        #[arg(long, value_name = "SECONDS", value_parser = seconds)]
+        signoff_idle_grace: Option<std::time::Duration>,
     },
     /// List the models a backend offers to your key or account.
     Models {
@@ -607,4 +607,11 @@ where
         .into_iter()
         .map(|text| text.parse::<T>())
         .collect()
+}
+
+/// Whole seconds as a duration, read at the command line.
+fn seconds(text: &str) -> Result<std::time::Duration, String> {
+    text.parse::<u64>()
+        .map(std::time::Duration::from_secs)
+        .map_err(|error| error.to_string())
 }

@@ -332,15 +332,14 @@ fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, b"<a b>\n<say \"hello\">\n<a&b>\n<>\n");
+    // The program reaches the fixed script as a variable, never as interpolated source.
     let output = Command::new(support::os::stand_in_shell())
         .args([
             "-c",
-            &format!(
-                "{} -c 'import sys; print(len(sys.argv)-1)' \"$@\"",
-                support::os::python_program()
-            ),
+            "\"$PROGRAM\" -c 'import sys; print(len(sys.argv)-1)' \"$@\"",
             "fixture",
         ])
+        .env("PROGRAM", support::os::python_program())
         .record_output()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
