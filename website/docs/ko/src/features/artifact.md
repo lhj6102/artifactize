@@ -81,7 +81,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
 파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
-폴더이지만, 내장 도구로는 상관없는 옆 파일에 접근할 수 없고, 그 파일과 허용된 범위에만 접근할 수 있습니다. 사이드카를
+폴더이지만, 내장 도구로는 대상 파일과 허용 범위에 포함된 파일에만 접근할 수 있습니다. 사이드카를
 추가해도 그 파일 Artifact가 상위 폴더 Artifact의 자식이 되지는 않으며, 상위 폴더의 해시에는 대상
 파일이 계속 들어갑니다. 반면 `index.artf`로 선언한 폴더는 그 위에서 가장 가까운 Artifact 폴더의 자식입니다.
 이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
@@ -119,8 +119,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 모두 있어야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 자기
-Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
+하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 그 eval의
+대상 Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
 막힘은 이 eval 게이트를 따라 퍼집니다. 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
 실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를

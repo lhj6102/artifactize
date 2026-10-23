@@ -34,7 +34,7 @@ artifactize models codex
 
 Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
-들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필로 실행해 얻은 결과도 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
+들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
 제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. `{name}`

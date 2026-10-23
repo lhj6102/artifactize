@@ -7,7 +7,7 @@
 | `install.sh` 또는 `install.ps1` | 같은 명령을 다시 실행하세요. 데스크톱 앱도 함께 업데이트됩니다 |
 | Homebrew | `brew upgrade artifactize`. 데스크톱 앱은 `brew upgrade --cask artifactize` |
 | Microsoft Store | 자동. 또는 Store 앱의 **라이브러리 → 업데이트 받기** |
-| 디스크 이미지, `.deb` 또는 AppImage | 릴리스의 더 새 파일을 같은 방법으로 설치하세요 |
+| 디스크 이미지, `.deb` 또는 AppImage | 최신 릴리스의 설치 파일을 같은 방법으로 설치하세요 |
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`. 체크아웃에서는 `git pull` 후 `cargo install --path`를 반복하세요 |
 
