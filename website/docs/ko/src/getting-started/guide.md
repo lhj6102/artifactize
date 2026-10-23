@@ -94,7 +94,7 @@ cd ../runtime-relations    # continue the tour below
 각 파일 Artifact의 해시에는 그 파일만 들어갑니다. 참조된 `house-style` Artifact가
 검사기와 금지어를 담고 있으므로, 공용 부분이 바뀌면 세 글 모두 기존 리뷰의
 [재사용 키](../features/fingerprint.md#the-reuse-key)가 무효가 됩니다. 재사용 키는
-검사의 기준과 리뷰된 입력을 식별하도록 기록된 값으로, 이전 결과가 여전히 적용되는지를 결정합니다.
+검사 기준과 리뷰한 입력을 나타내는 값이며, 이 값으로 이전 결과를 다시 쓸 수 있는지 판단합니다.
 이 예제의 README는 글 하나를 RED로 만들고 나머지 두 개는 재사용하는 방법을 보여 줍니다.
 
 Runtime eval은 지시문이나 인자에서 입력을 직접 참조합니다. 예를 들어

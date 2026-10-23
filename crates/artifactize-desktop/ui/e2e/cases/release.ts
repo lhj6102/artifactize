@@ -1,10 +1,10 @@
 // Newer releases through the real app: a loopback stand-in for the repository's site answers
 // the app's release lookup and records what the system browser fetches. The app finds its
 // install channel from where it runs; a case places the candidate where a channel puts it.
-// When the library asks GitHub again across a day is its own unit test, on a controlled clock;
-// here the app asks the stand-in again by itself, which keeps no answer.
+// The app keeps the site's answer in its state for a day; a case moves that answer's time back
+// a day to stand for a day passing.
 import assert from "node:assert/strict";
-import { app, cli, createOutside, environment, type Fixture } from "../fixture.ts";
+import { app, cli, create, createOutside, environment, type Fixture } from "../fixture.ts";
 import { checkpoint } from "../commands.ts";
 import { dispatchInput } from "../input.ts";
 import { afterRender, press } from "../keys.ts";
@@ -21,6 +21,9 @@ const LATEST = "9.9.9";
 const LOOKUP = "/api/releases/latest";
 const PAGE = "/releases/latest";
 const DISK_IMAGE = "/releases/latest/download/Artifactize.dmg";
+/** The answer the app keeps in its state, and a day in its seconds. */
+const KEPT = "release-check.json";
+const DAY_SECONDS = 24 * 60 * 60;
 
 type Site = { url: string; visits: NativePath; answer: NativePath };
 
@@ -94,8 +97,13 @@ async function closeByButton(browser: WebdriverIO.Browser): Promise<void> {
 
 /** A release case's fixture: the stand-in site, the app placed by `place` when given, and
  * the system browser for `browser`. */
-async function prepare(tag: string, options: { place?: (fixture: Fixture) => { app: NativePath; env?: Environment }; browser?: string } = {}) {
-  const fixture = createOutside();
+async function prepare(tag: string, options: {
+  place?: (fixture: Fixture) => { app: NativePath; env?: Environment };
+  browser?: string;
+  /** A fixture whose state the CLI already made, as on a machine that ran artifactize before. */
+  used?: boolean;
+} = {}) {
+  const fixture = options.used ? await create() : createOutside();
   const placed = options.place?.(fixture);
   const { data, server } = await site(fixture, tag);
   return {
@@ -113,15 +121,29 @@ export const scenarios: Scenario[] = [
   scenario<Site>(
     "release-notice",
     "a release found later while the app runs shows in the header, as doctor reports it; its dialog links the release page, which opens in the browser, and closes by Esc or Close",
-    () => prepare(`v${running()}`, { browser: PAGE }),
+    () => prepare(`v${running()}`, { browser: PAGE, used: true }),
     async (browser, { fixture, env, data }) => {
-      // The running version is the latest: nothing shows.
+      const lookups = () => visited(data).filter((path) => path === LOOKUP).length;
+      const asked = async () => (await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0;
+      // At start the app asks the site once. The running version is the latest: nothing shows.
       await lookedUp(browser);
       assert.equal(await notice(browser).isExisting(), false, "no notice while this app is the latest release");
+      assert.equal(lookups(), 1, "the app asked the site at start");
       const view = await mainTitle(browser);
-      // A release comes out while the app runs; a later lookup finds it.
+      // A release comes out. The app looks again by itself, but within the day it reuses its
+      // answer and does not ask the site.
       replaceText(data.answer, `v${LATEST}`);
-      await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "a later lookup puts the notice in the header" });
+      const before = await asked();
+      await browser.waitUntil(async () => (await asked()) >= before + 2, { timeout: 15000, timeoutMsg: "the app looked again twice" });
+      await afterRender(browser);
+      assert.equal(await notice(browser).isExisting(), false, "within the day the kept answer stands");
+      assert.equal(lookups(), 1, "within the day the app asked the site nothing more");
+      // A day later, the next look asks the site again and finds the release.
+      const kept = nativePath(fixture.state, KEPT);
+      const answer = JSON.parse(readText(kept)) as { checkedAt: number };
+      replaceText(kept, JSON.stringify({ ...answer, checkedAt: answer.checkedAt - DAY_SECONDS }));
+      await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "a day later the app's lookup puts the notice in the header" });
+      assert.equal(lookups(), 2, "a day later the app asked the site once more");
       assert.equal(await mainTitle(browser), view, "the notice leaves the shown view as it was");
       const header = await browser.execute(() =>
         [...document.querySelectorAll("header.bar button")].map((button) => button.textContent?.trim() ?? ""));
@@ -134,6 +156,7 @@ export const scenarios: Scenario[] = [
       assert.equal(release?.status, "WARN", JSON.stringify(release));
       assert.equal(release?.details.latest, LATEST);
       assert.deepEqual(release?.details.update, { kind: "page", url: `${data.url}${PAGE}` });
+      assert.equal(lookups(), 2, "doctor reused the app's answer of the day");
 
       const text = await openDialog(browser);
       assert.ok(text.includes("See the release page"), text);

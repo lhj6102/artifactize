@@ -27,7 +27,7 @@ const TEST_LATEST_PATH: &str = "/api/releases/latest";
 pub const OFF_VARIABLE: &str = "ARTIFACTIZE_NO_UPDATE_CHECK";
 /// A loopback URL standing in for the repository's site, for tests: it answers the lookup
 /// below [`TEST_LATEST_PATH`], and the release's pages and files are linked below it. It is
-/// asked even by a development build, and its answer is never kept.
+/// asked even by a development build; its answer is kept as GitHub's is, for its own site.
 pub const TEST_ENDPOINT_VARIABLE: &str = "ARTIFACTIZE_RELEASES_URL";
 /// About once a day: a release is not urgent, and GitHub's API allows an address 60
 /// unauthenticated requests an hour.
@@ -35,7 +35,7 @@ const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 /// How often a long-running app asks again: hourly finds a release out that day, while the
 /// lookup itself reaches GitHub at most once a day.
 const RECHECK: Duration = Duration::from_secs(60 * 60);
-/// How often it asks a test endpoint, which keeps no answer, so a test sees a new release soon.
+/// How often it asks with a test endpoint, so a test sees the app ask again soon.
 const TEST_RECHECK: Duration = Duration::from_secs(1);
 /// A lookup still unanswered then is abandoned; the next one tries again.
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -126,12 +126,10 @@ pub struct Status {
     pub outcome: Outcome,
 }
 
-/// Where a lookup asks for the latest release, the site its links point into, and whether
-/// its answer is kept.
+/// Where a lookup asks for the latest release, and the site its links point into.
 struct Source {
     url: String,
     site: String,
-    cached: bool,
 }
 
 /// Look up whether a newer release is out for this copy, reusing an answer kept in `state`
@@ -178,7 +176,6 @@ fn source(running: &Version, channel: Channel) -> Result<Source, Outcome> {
         Ok(Some(site)) => Ok(Source {
             url: format!("{site}{TEST_LATEST_PATH}"),
             site,
-            cached: false,
         }),
         // The workspace's own version, which a release replaces.
         Ok(None) if running.pre.as_str() == "dev" => {
@@ -187,7 +184,6 @@ fn source(running: &Version, channel: Channel) -> Result<Source, Outcome> {
         Ok(None) => Ok(Source {
             url: LATEST_URL.into(),
             site: SITE.into(),
-            cached: true,
         }),
         Err(error) => Err(Outcome::Failed(error)),
     }
@@ -217,36 +213,36 @@ fn decide(running: &Version, channel: Channel, latest: Version, site: &str) -> O
     }
 }
 
-/// The last answer and when it came.
+/// The last answer, which site gave it and when.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Cached {
     checked_at: u64,
+    site: String,
     latest: Version,
 }
 
-/// The latest release: the kept answer while it is younger than a day, else a new one.
+/// The latest release: the source's kept answer while it is younger than a day, else a new one.
 async fn latest(source: &Source, state: &Path, now: SystemTime) -> Result<Version, String> {
     let cache = state.join(CACHE);
-    if source.cached
-        && let Some(cached) = read_cache(&cache).filter(|cached| fresh(cached.checked_at, now))
+    if let Some(cached) = read_cache(&cache)
+        .filter(|cached| cached.site == source.site && fresh(cached.checked_at, now))
     {
         return Ok(cached.latest);
     }
     let latest = fetch(&source.url).await?;
-    if source.cached {
-        let seconds = now
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs());
-        // An answer that cannot be kept only means asking again next time.
-        let _ = write_cache(
-            state,
-            &Cached {
-                checked_at: seconds,
-                latest: latest.clone(),
-            },
-        );
-    }
+    let seconds = now
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    // An answer that cannot be kept only means asking again next time.
+    let _ = write_cache(
+        state,
+        &Cached {
+            checked_at: seconds,
+            site: source.site.clone(),
+            latest: latest.clone(),
+        },
+    );
     Ok(latest)
 }
 

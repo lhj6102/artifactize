@@ -196,8 +196,8 @@ protocol = "json"
 ```
 
 `start`와 `stop`에는 `command`와 `args`가 필요하고, 선택 필드는 `execution_paths`뿐입니다. 실행 파일을 찾는 방식과 argv에 적용하는 범위는 명령 도구와 같습니다. stdin으로는 명령 도구와 같은 형식의 JSON 요청을 받으며, `args: {}`를 씁니다. `description`,
-`protocol`, `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은 자기
-Artifact에 있는 세션을 가리켜야 하며, 내장 도구와 Human 도구는 `session`을 받지 않습니다. 도구
+`protocol`, `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은 그 명령
+도구와 같은 Artifact에 선언한 세션을 가리켜야 하며, 내장 도구와 Human 도구는 `session`을 받지 않습니다. 도구
 이름처럼, eval이 쓸 수 있는 세션의 `<session>_<artifact>` 이름도 겹치면 안 됩니다. 겹치면
 `config check`는 통과하지만 리뷰는 `PREPARATION_FAILED`로 실패하니, 세션이나 Artifact의 이름을
 바꾸세요.

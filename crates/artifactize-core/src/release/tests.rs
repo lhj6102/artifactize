@@ -39,11 +39,10 @@ impl Releases {
         }
     }
 
-    fn source(&self, cached: bool) -> Source {
+    fn source(&self, site: &str) -> Source {
         Source {
             url: self.url.clone(),
-            site: SITE.into(),
-            cached,
+            site: site.into(),
         }
     }
 
@@ -80,7 +79,7 @@ async fn a_newer_release_comes_with_the_channels_update_and_is_asked_once_a_day(
             url: "https://github.com/lhj6102/artifactize/releases/latest".into(),
         },
     };
-    let source = releases.source(true);
+    let source = releases.source(SITE);
     let look = |now| look_up(&running, Channel::Unknown, &source, state.path(), now);
     assert_eq!(look(at(0)).await, newer);
     assert_eq!(look(at(DAY - 1)).await, newer);
@@ -98,7 +97,7 @@ async fn the_latest_release_or_an_older_one_is_no_news() {
             look_up(
                 &version(running),
                 Channel::InstallSh,
-                &releases.source(false),
+                &releases.source(SITE),
                 state.path(),
                 at(0),
             )
@@ -107,8 +106,20 @@ async fn the_latest_release_or_an_older_one_is_no_news() {
             "{running}"
         );
     }
-    // A test endpoint's answer is not kept.
-    assert!(!state.path().join(CACHE).exists());
+    assert_eq!(
+        releases.requests(),
+        1,
+        "the second lookup reused the kept answer"
+    );
+    // An answer is kept for the site that gave it: another site is asked anew.
+    look_up(
+        &version("0.15.1"),
+        Channel::InstallSh,
+        &releases.source("http://127.0.0.1:1/stand-in"),
+        state.path(),
+        at(0),
+    )
+    .await;
     assert_eq!(releases.requests(), 2);
 }
 
@@ -121,7 +132,7 @@ async fn a_failed_lookup_is_reported_and_asked_again() {
         let outcome = look_up(
             &running,
             Channel::Cargo,
-            &releases.source(true),
+            &releases.source(SITE),
             state.path(),
             at(0),
         )
