@@ -100,7 +100,7 @@ glob 패턴은 `path` 기준입니다. `*`는 폴더 이름 하나 안에서, `*
 scope 항목에는 정규화된 실제 경로, `kind`(`file`, `folder`, `graph`), 논리적 자식 맵이 들어
 있습니다. 파일 Artifact라면 `context.artifactPath`와 그 scope 항목의 `path`는 프로세스 작업
 디렉터리가 아니라 그 파일을 가리키며, 작업 디렉터리는 파일이 들어 있는 폴더입니다. 파일
-Artifact 참조에는 `/path` 접미 경로를 붙일 수 없습니다. 이 프로토콜 키는 camelCase를 유지하며,
+Artifact 참조 뒤에는 `/path`처럼 경로를 덧붙일 수 없습니다. 이 프로토콜 키는 camelCase를 유지하며,
 선언에서는 `execution_paths`와 `input_schema`를 씁니다. `executionPaths`는 비어 있으면
 생략합니다. 실행 경로로는 작업 공간 기준 파일이나 디렉터리를 중복 없이 최대 64개 선언할 수 있으며, 각 경로는
 UTF-16 코드 단위 1024개까지입니다. 경로는 심볼릭 링크를 거치지 않고 해석하며, 대상을 복사하지 않습니다. 파일
