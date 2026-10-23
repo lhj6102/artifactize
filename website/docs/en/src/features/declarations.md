@@ -420,7 +420,7 @@ are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
-file/directory paths of up to 1024 UTF-16 code units each. They must exist without symlink traversal on every call;
+file/directory paths of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two). They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
 bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after

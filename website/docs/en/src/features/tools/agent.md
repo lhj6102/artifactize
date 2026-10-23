@@ -46,7 +46,8 @@ Paths are relative logical paths from the tool's declaring Artifact, including
 its children; omitted paths mean its root. Another Artifact's files are read with
 that Artifact's own tools, which an eval admits when it references the Artifact. They never accept
 absolute paths, traversal components or symlinks. Logical paths are at most
-4096 UTF-16 code units and reject ASCII controls, backslashes, colons and empty
+4096 characters (an emoji or another character outside the Basic Multilingual Plane
+counts as two) and reject ASCII controls, backslashes, colons and empty
 or `.`/`..` components. The lone `.` is accepted as
 a file Artifact's virtual root for list/glob/grep; other dot components are
 rejected. A tool reaches only the Artifacts in its own eval's scope, never those of
@@ -123,7 +124,7 @@ folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and
 `input_schema`. `executionPaths` is
 omitted when empty. Declared execution paths are up to 64 unique workspace-relative
-files/directories of up to 1024 UTF-16 code units each, resolved without symlinks or copying. This remains
+files/directories of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two), resolved without symlinks or copying. This remains
 workspace-relative for file Artifacts; it is not relative to their cwd or target.
 
 When an Agent review starts, artifactize records the SHA-256 of each execution path
