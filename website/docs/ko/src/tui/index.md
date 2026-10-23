@@ -322,7 +322,7 @@ Detail에서 `!`는 다음 주의 항목의 Detail을 엽니다. Human 리뷰 �
 
 트리에 초점이 있으면 Detail은 `j`/`k`로 고른 행에 따라 바뀌는 **peek**(간략 보기)입니다. Outcome과
 그 eval을 실행하기 전에 검사가 끝나야 하는 Artifact를 보여 줍니다. 실행 중인 Agent의 peek는 대화 기록의 마지막
-줄도 보여 줍니다. Enter, →, 또는 peek를 클릭하면 모달 대신 **Full** Detail이 열립니다.
+줄도 보여 줍니다. Enter나 →를 누르거나 peek를 클릭하면 모달 대신 **Full** Detail이 열립니다.
 Detail에서 나가면 Full 보기가 닫히고 다시 peek가 나옵니다.
 
 읽기 전용 섹션은 이 순서로 나옵니다. **Outcome → Waits for → What → Provenance
