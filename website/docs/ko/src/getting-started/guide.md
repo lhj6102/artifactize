@@ -29,7 +29,7 @@ artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
-artifactize의 **상태(state)** 는 Run과 결과를 저장하는 곳입니다.
+artifactize는 Run과 결과 같은 **상태(state)** 데이터를 상태 디렉터리에 저장합니다.
 이 둘러보기의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 폴더를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
@@ -108,7 +108,7 @@ cd ../runtime-relations    # continue the tour below
 각 파일 Artifact의 해시에는 그 파일만 들어갑니다. 참조된 `house-style` Artifact가
 검사기와 금지어를 담고 있으므로, 공용 부분이 바뀌면 세 글 모두 기존 리뷰의
 [재사용 키](../features/fingerprint.md#the-reuse-key)가 무효가 됩니다. 재사용 키는
-검사의 기준과 리뷰된 입력을 식별하도록 기록된 값으로, 이전 결과가 여전히 적용되는지를 결정합니다.
+검사 기준과 리뷰한 입력을 구분하는 값이며, 이 값을 기준으로 이전 결과를 계속 쓸 수 있는지 판단합니다.
 이 예제의 README는 글 하나를 RED로 만들고 나머지 두 개는 재사용하는 방법을 보여 줍니다.
 
 Runtime eval은 지시문이나 인자에서 입력을 직접 참조합니다. 예를 들어
