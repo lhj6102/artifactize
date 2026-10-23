@@ -38,7 +38,8 @@ keys of what has focus. Ctrl+R or F5 reloads the state from disk, scans the bran
 again and, on a Current, scans its worktree again. While a Human review has the
 keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
 form open: it opens or switches to RED once claimed, and says the review must be
-claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
+claimed first otherwise. In a completed, read-only Human review Ctrl+R does nothing. In
+either, F5 or the palette's **Refresh** reloads the state.
 The app follows the system's light or dark appearance.
 
 When a [newer release](../getting-started/update.md#newer-releases) is out, the header
