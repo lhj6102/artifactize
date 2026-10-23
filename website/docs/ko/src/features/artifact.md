@@ -44,7 +44,7 @@ eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[eva
 `agent`, `human` 중 하나인 `profile`이 있습니다. 모든 eval에는 `payload.instruction`이 필요하며,
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
-Runtime eval은 종료 코드가 판정입니다(0이면 GREEN). Agent나 Human은 소유자 필드와 함께 GREEN이나
+Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent나 Human은 소유자 필드와 함께 GREEN이나
 RED를 돌려줍니다. 각 eval의 의존성은 그 eval이 참조하는 Artifact와 대상 Artifact의 자식으로 정해집니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
@@ -89,7 +89,7 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 ## eval 의존성 {#eval-dependencies}
 
-의존성은 그 Artifact의 모든 eval이 아니라 입력을 쓰는 eval에 속합니다. `payload.instruction`이나
+의존성은 Artifact의 모든 eval에 일괄 적용되지 않고, 해당 입력을 쓰는 eval에만 적용됩니다. `payload.instruction`이나
 Runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키며, 그 eval은 입력을 판단하는
 eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부분을 검사하는 eval에서 그 Artifact를 `{name}`으로
 참조하세요. 그 밖의 방식으로는 의존성이 추가되지 않습니다.

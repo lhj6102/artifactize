@@ -384,8 +384,8 @@ ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄
 
 ## Human 요청 {#human-requests}
 
-`claim`, `unclaim`, `tool`, `submit`은 리뷰어를 기본으로 `$USER`에서 가져오고, 없으면 Linux와
-macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 없으면 `--reviewer NAME`을
+`claim`, `unclaim`, `tool`, `submit`은 기본 리뷰어 이름으로 `$USER` 값을 사용하며, 값이 없으면 Linux와
+macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다. 모두 없으면 `--reviewer NAME`을
 주세요. `--reviewer NAME`으로 동작마다 같은 리뷰어를 직접 지정할 수도 있습니다. 리뷰어 이름은
 계정 인증이 아니라 담당자를 구분하는 데 쓰이며, 같은 요청을 여러 리뷰어가 겹쳐 처리하지 않도록 로컬 잠금을 겁니다. 요청을 맡은 사람만 도구를 실행하고,
 제출하고, 담당을 해제할 수 있습니다. `request claim`은 담당 정보를, `request unclaim`은 해제한

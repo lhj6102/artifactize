@@ -121,8 +121,10 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 ## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
 
 앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
-[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된
-모델 자격 증명, 사용할 모델의 정확한 ID, 프로필을 설정하세요.
+[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된 대로
+`examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
+다른 백엔드를 쓰려면 `verify`에 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
+자격 증명이 없으면 리뷰는 ERROR로 기록되고 대기 명령은 2로 종료합니다.
 Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두
 GREEN이 된 뒤에만 요청되므로 `spec/review`가 먼저 실행됩니다. 두 터미널은 같은 임시 상태 디렉터리를 써야 합니다. 아래의
 대기 명령을 시작하기 전에 첫 번째 터미널의 값을
@@ -154,10 +156,6 @@ review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 �
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
 의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run이 끝날 때까지 대기하며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
-
-실제 Agent 리뷰를 하려면 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣은 다음
-`artifactize verify --eval spec/review --wait`를 실행하세요. 다른 백엔드를 쓰려면 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
-자격 증명이 없으면 리뷰는 ERROR로 기록되고 대기 명령은 2로 종료합니다. [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)를 보세요.
 
 ## Monitor {#monitor}
 
