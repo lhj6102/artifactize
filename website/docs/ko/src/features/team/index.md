@@ -3,8 +3,7 @@
 여러 머신과 CI는 공유 리뷰 저장소 하나,
 `artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))를 통해 서로의 판정을 재사용할 수 있습니다. 각 머신은
 각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
-돌려주므로, 나중에 한 리뷰(예: 강제 재리뷰)가 있으면 모든 팀원이 이전 판정 대신 그 판정을
-재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
+돌려주므로, 강제로 다시 리뷰하는 등 새 리뷰를 수행하면 모든 팀원이 이전 판정 대신 새 판정을 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
 
 **서버.** 소규모 서버에 별도의 상태 디렉터리를 두고 리뷰 저장소를 실행하세요.
 
@@ -67,8 +66,8 @@ SSH의 표준 호스트 확인과 인증 절차를 따르고, 이를 우회하�
 
 ## 로그인하고 결과 공유하기 {#sign-in-and-share-results}
 
-각 머신은 한 번 로그인합니다. 토큰은 명령 인자가 아니라
-stdin에서 읽습니다. 터미널이 지원하면 대화형 입력은 가려집니다.
+머신마다 한 번씩 로그인하세요. 토큰은 명령 인자가 아니라
+stdin에서 읽습니다. 터미널이 지원하면 직접 입력하는 토큰은 화면에 표시되지 않습니다.
 Windows에서 입력 내용을 가리지 못하면 CLI가 경고한 뒤 토큰이 화면에 보이는 상태로 입력을 받고,
 Linux와 macOS에서는 로그인을 중단합니다. 파이프로 들어온 입력은
 터미널 모드를 바꾸지 않고 읽습니다.
@@ -97,8 +96,7 @@ artifactize remote status
 - 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
   fingerprint와 그 종류(`folder`/`file`/`graph`)
   (기록의 `artifactKinds`)
-- 프로필, 그 실행 옵션(백엔드, 모델, reasoning, 제한, 변형),
-  사용량 카운터, Agent 결과의 작업 공간 기준 상대 `executionPaths` 실행 경로별 해시 기록
+- 프로필과 실행 옵션(백엔드, 모델, reasoning, 제한, 변형), 사용량 카운터. Agent 결과의 `executionPaths`에는 작업 공간 기준 상대 경로와 경로별 해시도 기록합니다.
 - 만든 사람(`user@host`), Human 리뷰어, 타임스탬프
 - Agent 결과라면 저장된 대화에 대한 [참조](../agent.md#saved-conversations)
   (`producer.session`: 만든 사람, 그 상태 ID, Run,
@@ -106,8 +104,7 @@ artifactize remote status
 
 `summary`는 캡처한 stdout/stderr, 별도의 호출 감사 기록, 로컬
 저장소 출처, Agent 대화 자체를 빼고 보냅니다. 그래도 명령과 인자를 포함한
-선언된 Runtime 프로필 전체는 보냅니다. 그곳에 작성한 경로나
-민감한 리터럴은 가려지지 않고 공유됩니다.
+선언된 Runtime 프로필 전체는 보냅니다. 프로필에 적은 경로나 민감한 리터럴은 가려지지 않고 공유됩니다.
 `executionPaths` 기록에도 작업 공간 기준 상대 경로가 들어 있습니다.
 `full`(`remote login --share full` 또는 `ARTIFACTIZE_REMOTE_SHARE=full`)은 추가로
 캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 소유자 필드에는

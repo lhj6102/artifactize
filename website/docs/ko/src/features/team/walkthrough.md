@@ -15,8 +15,7 @@ cp -r examples/runtime-relations "$WALK/bob"
 printf 'WALK directory: %s\n' "$WALK"
 ```
 
-`mktemp -d`는 체크아웃 밖에 새 임시 폴더를 만들고, `WALK`에 그
-경로가 담기며 마지막 줄이 이를 출력합니다. 그 값을 보관하세요.
+`mktemp -d`로 체크아웃 밖에 새 임시 폴더를 만듭니다. 생성된 폴더의 경로는 `WALK`에 저장되며 마지막 명령으로 출력됩니다. 그 값을 보관하세요.
 
 서버, Alice, Bob, 로컬 CI 시연에는 각각 별도의 터미널을 쓰세요.
 **새 터미널마다** 다음을 실행하되, `COPIED_WALK_PATH`를 방금 출력된
@@ -66,8 +65,7 @@ artifactize verify --all --wait
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
-각 GREEN 결과가 fingerprint 재확인을 통과했으므로, `verify`는 요약
-기록을 게시했습니다. 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프입니다.
+각 GREEN 결과가 fingerprint 재확인을 통과했으므로, `verify`는 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
 요약에는 캡처한 stdout/stderr, 별도의 호출 감사 기록,
 로컬 저장소 출처가 빠졌습니다. 선언된 Runtime 명령과 인자는
 프로필의 일부로 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은
@@ -96,7 +94,7 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0,
 
 Bob의 체크아웃은 Artifact 이름, 종류, 내용이 같아 fingerprint와
 eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로는 상관없습니다. `status`는 Bob의 로컬 상태를 바꾸지 않고
-저장소를 조회했으며, 저장소는 조회된 기록을 사용한 것으로 표시합니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
+저장소를 조회했으며, 저장소에서는 이 조회도 기록을 사용한 것으로 집계합니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
 `artifactize cache list`가 저장소를 출처로 하는 그 기록을 보여 줍니다. 이후의
 `verify`는 저장소가 없어도 그 기록을 로컬에서 재사용합니다.
 
@@ -129,8 +127,7 @@ Human 승인은 건너뜁니다.
 ## 5. CI가 둘 다 재사용하기 {#5-ci-reuses-both}
 
 CI는 환경 변수로만 설정합니다. 1단계의 읽기 전용 `ci` 토큰을 쓰며,
-여기서는 `CI_TOKEN` 변수로 전달합니다. 토큰은 커밋한 파일이 아니라 CI 시크릿으로 등록하세요. `--reuse-only
-agent,human`은 Agent 리뷰와 Human 승인이 저장소나 캐시에서만 오도록 보장합니다.
+여기서는 `CI_TOKEN` 변수로 전달합니다. 토큰은 커밋한 파일이 아니라 CI 시크릿으로 등록하세요. `--reuse-only agent,human`을 쓰면 Agent 리뷰와 Human 승인은 저장소나 캐시에 있는 결과만 재사용합니다.
 로컬 시연에서는 먼저 이 터미널에도 `WALK`를 복사하고,
 1단계에서 `server token add ci`가 출력한 토큰을 `CI_TOKEN`으로 붙여 넣으세요.
 
@@ -181,7 +178,7 @@ TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 
-Alice의 `verify --wait`는 요청을 기록할 Run을 제출한 뒤, 포그라운드에서 진행 상황을 보여 주며 Run이 끝날 때까지 대기합니다. Alice는 두 번째 터미널에서 같은 디렉터리로 이동하고
+Alice가 `verify --wait`를 실행하면 Run이 제출되고 그 Run에 요청이 기록됩니다. 포그라운드에서는 Run이 끝날 때까지 진행 상황을 보여 주며 대기합니다. Alice는 두 번째 터미널에서 같은 디렉터리로 이동하고
 `ARTIFACTIZE_STATE_HOME`을 같은 값으로 설정한 뒤 요청을 맡아
 승인합니다. Alice의 토큰에는 `human` 범위가 있으므로 `request submit`이
 승인을 게시하고, Alice의 `verify --wait`는 GREEN으로 끝납니다.

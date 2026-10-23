@@ -8,8 +8,7 @@ CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실�
 선택한 모든 eval이 GREEN이면 종료 코드는 0이며, RED(1), ERROR(2), INCOMPLETE(4)이면
 CI 작업은 실패로 처리됩니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. Agent 리뷰나
 Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않고](../../cli/index.md#reuse-only) Run이 INCOMPLETE로 남으므로,
-개발자가 `verify`로 현재 재사용 키에 맞는 결과를 만든 뒤에야 CI가 통과합니다. Artifactsum이
-기본으로 재사용을 켜 두며, 대상이나 의존성의 `fingerprint = false`는 재사용을 끕니다.
+개발자가 `verify`로 현재 재사용 키에 맞는 결과를 만든 뒤에야 CI가 통과합니다. 기본 artifactsum을 쓰면 결과를 재사용하며, 대상이나 의존성에 `fingerprint = false`를 지정하면 재사용하지 않습니다.
 
 ## 미룬 작업을 병합 게이트에서 빼기 {#keep-deferred-work-out-of-the-merge-gate}
 
@@ -54,5 +53,5 @@ PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙�
 
 ## 모델 없이 Agent eval 테스트하기 {#test-agent-evals-without-a-model}
 
-CI 작업은 루프백에서 시작한 가짜 provider를 상대로, 버려도 되는 상태 디렉터리를 쓰고 리뷰 저장소 연동을 끈 채로 Agent eval을 실행할 수 있습니다.
+CI 작업에서는 임시 상태 디렉터리를 쓰고 리뷰 저장소 연동을 끈 채, 루프백 주소로 띄운 가짜 provider에 연결해 Agent eval을 실행할 수 있습니다.
 [가짜 provider로 테스트하기](../agent.md#test-against-a-fake-provider)를 보세요.

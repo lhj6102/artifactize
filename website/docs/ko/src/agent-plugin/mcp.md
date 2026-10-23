@@ -25,8 +25,7 @@
 폴더에 있는 경우입니다.
 
 최신 버전과 이전 버전의 MCP 호스트에서 모두 동작합니다. 프로토콜 메시지는 stdout으로,
-진단 정보는 stderr로 출력합니다. 한도가 정해진
-`verify_watch` 호출은 표준 MCP 진행 알림도 보낼 수 있습니다. 자세한 내용은
+진단 정보는 stderr로 출력합니다. 제한 시간 안에서 실행되는 `verify_watch` 호출은 표준 MCP 진행 알림도 보낼 수 있습니다. 자세한 내용은
 [프로토콜 버전](#protocol-versions)을 보세요.
 
 ## MCP 서버 등록하기 {#register-the-mcp-server}
@@ -64,8 +63,7 @@ codex mcp add artifactize -- artifactize mcp
 codex mcp get artifactize
 ```
 
-등록한 명령은 Codex의 MCP 설정에 기록됩니다. 전역으로 등록한 명령도
-의도한 프로젝트 디렉터리에서 시작해야 합니다. 호스트가 프로젝트에서
+등록한 명령은 Codex의 MCP 설정에 기록됩니다. 명령을 전역으로 등록했더라도 Codex는 해당 프로젝트 디렉터리에서 시작해야 합니다. 호스트가 프로젝트에서
 실행될 수 없다면, 스킬 디렉터리를 가리키지 말고
 `artifactize --repo PATH mcp`로 프로젝트별 명령을 등록하세요.
 호스트에서 평소 쓰는 권한·인증 절차가 그대로 적용되므로 우회 플래그는 필요 없습니다.
@@ -93,7 +91,7 @@ codex mcp get artifactize
 `{"kind":"eval","evalId":"library/tests"}`,
 `{"kind":"artifacts","artifactIds":["library","consumer"]}`,
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`가 있습니다.
-배열 선택에는 ID가 1–64개 들어가며, 처음 나온 순서를 유지합니다. 의존성 처리와 결과 재사용에는 CLI와 같은 기본 규칙이 적용되며,
+배열로 선택할 때는 ID를 1–64개 넣을 수 있으며, 처음 나온 순서를 유지합니다. 의존성 처리와 결과 재사용에는 CLI와 같은 기본 규칙이 적용되며,
 전송 방식에 따른 별도의 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
 CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
 ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
@@ -109,11 +107,10 @@ Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 �
 Run에는 `jobs` 필드가 없습니다.
 
 두 모드 인자는 기본값이 false이며 CLI의 `--speculate`, `--defer-human`과 뜻이 같습니다.
-`speculate`는 상위 판단 전에 요청된 하위 작업을 일반 스케줄링 한도 안에서
-시작하며, 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. `defer_human`을
+`speculate`를 쓰면 요청된 하위 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. `defer_human`을
 쓰면 미룰 수 있는 Human 승인이 대기 중이어도 자동 검사를 계속 진행하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
-이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). `gate = "blocking"`을 직접 지정한
+이는 완전한 승인이 아닙니다. CLI에서 진행 상황을 지켜보는 명령은 종료 코드 5로 끝납니다. `gate = "blocking"`을 직접 지정한
 Human eval은 이때도 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기 상태는 오류가 아니라 정상입니다.
@@ -149,7 +146,7 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 
 `session_show.reference`는 저장된 세션 참조, 요청 ID, 세션
-ID를 받으며, CLI와 같은 `producer`(리뷰를 실행한 `user@host`)/상태 확인을 합니다. 없는 캐시 기록은
+ID를 받으며, CLI와 마찬가지로 `producer`(리뷰를 실행한 `user@host`)와 상태를 확인합니다. 없는 캐시 기록은
 CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. 정적
 `tools_check`는 프로젝트 도구를 호출하거나 세션을 시작하지 않습니다. `status`는
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
@@ -217,8 +214,7 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 임의의 호스트에 메시지를 끼워 넣을 수 없습니다. 셸을 쓸 수 있는 호스트에서는
 `artifactize verify --all --watch`나 `artifactize run watch RUN`이 종료될 때까지
 같은 JSON 줄 이벤트를 스트리밍하며, 호스트는 그 프로세스의 실행을 관리하고 출력을
-전달할 수 있습니다. 이 전송 방식이 구현되어 있어도, 모든 코딩 호스트가
-진행 상황을 실시간으로 대화에 전달할 수 있는 것은 아닙니다.
+전달할 수 있습니다. artifactize에서 이런 전송 방식을 제공한다고 해서 모든 코딩 호스트에서 진행 상황을 실시간으로 대화에 전달할 수 있는 것은 아닙니다.
 
 실패 원인을 조사할 때는 `run_show`로 감사 기록 전체를 읽는 대신 그 `request` ID로 `request_logs`를 조회하세요. `stream`의 기본값은 both입니다. 범위가 없으면 일치하는 마지막 50
 줄을 돌려주며, `tail`은 일치하는 줄 1–200개를 고릅니다. `start`/`end`는 1부터 세는
@@ -226,8 +222,7 @@ Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았�
 리터럴이며(UTF-8 1–2048바이트), tail 선택 전에 적용됩니다. 시작 줄부터 순서대로 읽는 범위 조회는
 최대 200줄과 스트림별 바이트 한도까지만 돌려주며, 이어서 읽으려면 stream/search/end를 그대로 두고
 `next_start`를 다음 시작 위치로 쓰세요. 원본 줄이 2048바이트를 넘으면 앞부분과 끝부분만 정해진 길이만큼 보여 주고 `clipped` 표시를 붙이며, 원본 전체는 로컬 디스크에 남습니다. 줄 중간이
-잘려 보이지 않더라도 그 부분에 검색어가 있으면 검색 결과에 포함될 수 있습니다. 결과는 바이트 단위 내보내기가 아니라
-정리된 UTF-8 진단 텍스트입니다. 이 응답에도 앞서 설명한 세부 페이지 나누기와 크기 제한이 그대로 적용됩니다.
+잘려 보이지 않더라도 그 부분에 검색어가 있으면 검색 결과에 포함될 수 있습니다. 결과는 원본 바이트를 그대로 내보낸 것이 아니라, 읽기 좋게 정리한 UTF-8 진단 텍스트입니다. 이 응답에도 앞서 설명한 세부 페이지 나누기와 크기 제한이 그대로 적용됩니다.
 
 각 스트림의 `evidence`는 `complete`(끝부분을 포함한 전체 로컬 캡처),
 `partial`(실행 중이거나 중단된 캡처처럼 확인된 EOF가 없음), `saved_audit`

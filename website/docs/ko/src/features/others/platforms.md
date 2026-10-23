@@ -10,7 +10,7 @@ OS의 설치 채널은 [설치](../../getting-started/install.md)에 있습니�
 ## 프로젝트 명령은 선언된 그대로 실행 {#project-commands-run-as-declared}
 
 Runtime eval, fingerprint 스크립트, 명령을 실행하는 Agent 도구와 Human 도구는 모든 OS에서
-`command`와 `args`를 인자 목록 하나로 실행합니다. 셸도 없고, OS마다 다른 선언도 없습니다.
+`command`와 `args`를 인자 목록 하나로 실행합니다. 셸을 거치지 않으며 OS별로 선언을 따로 작성하지도 않습니다.
 리뷰어의 실행 환경에서 쓸 수 있는 명령을 프로젝트에 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
 리뷰어의 `PATH`에 그 명령이 있어야 합니다. 파일을 읽고 검색하는 데는
 [내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 OS가 제공하는
@@ -36,8 +36,7 @@ fingerprint 스크립트, 명령 도구에서 같은 방식으로 찾습니다.
 - `./tools/check`처럼 `/`가 들어간 상대 이름은
   폴더 Artifact의 허용된 범위 안에서 해석됩니다. 파일 Artifact에서는 상대 경로로 지정한 실행 파일을
   대상 파일이 있는 폴더 아래에서 찾으며, 관련 없는 형제 파일을 가리켜도 됩니다(예:
-  `./inspect`). 두 경우 모두 `..`과 심볼릭 링크는 거부됩니다. 이 실행 파일 찾기 때문에
-  형제 파일이 내장 도구나 범위가 정해진 argv 참조에 보이게 되지는 않습니다.
+  `./inspect`). 두 경우 모두 `..`과 심볼릭 링크는 거부됩니다. 실행 파일을 이렇게 찾을 수 있다고 해서 형제 파일을 내장 도구나 범위가 정해진 argv 참조의 대상으로 쓸 수 있는 것은 아닙니다.
 - 절대 경로는 적힌 그대로 실행합니다.
 
 내장 **help**는 다릅니다. 인자로 지정한 실행 파일은 일반적인 cwd/PATH 검색으로 찾으며, 절대 경로,
@@ -49,7 +48,7 @@ Windows 배치 파일(`.cmd`, `.bat`)도 명령으로 쓸 수 있지만, 모든 
 없습니다. artifactize는 그런 인자를 바꿔서 넘기지 않고 거부합니다. 오류 메시지는
 `Process arguments could not be passed safely`이고, 아무것도 실행되지 않습니다.
 
-도구 세션은 모든 OS에서 같은 방식으로 멈추고 정리합니다. 그 범위와 신뢰하는 명령의 한계는
+도구 세션은 모든 OS에서 같은 방식으로 멈추고 정리합니다. 어디까지 정리하는지와 신뢰하는 명령에 어떤 한계가 있는지는
 [도구 세션 계약](../tools/agent.md#tool-sessions)에서 설명합니다.
 
 ## 경로 {#paths}
@@ -88,11 +87,9 @@ WSL은 Linux처럼 동작합니다. `wslview`나 Windows 프로그램으로 대�
 
 Windows에서 시작 메뉴나 탐색기로 인자 없이 `artifactize`를 실행하면, 창이 바로 닫히지 않도록
 도움말과 터미널 안내를 보여 준 뒤 Enter를 누를 때까지 창을 열어 둡니다. 인자가 있거나, 직접 연 터미널이나
-스크립트에서 실행하면 멈추지 않습니다. Linux와
-macOS는 평소처럼 인자 없이 도움말을 보여 주고 바로 종료합니다.
+스크립트에서 실행하면 멈추지 않습니다. Linux와 macOS에서는 인자 없이 실행하면 평소처럼 도움말을 보여 주고 바로 종료합니다.
 
-Microsoft Store 패키지를 설치하면 항목 두 개가 표시됩니다. 데스크톱
-앱용 **Artifactize**와 이 도움말 실행용 **Artifactize CLI**이며, 명령 별칭은
+Microsoft Store 패키지를 설치하면 항목 두 개가 표시됩니다. 데스크톱 앱을 여는 **Artifactize**와 도움말을 여는 **Artifactize CLI**이며, 명령 별칭은
 `artifactize` 하나입니다. 도구 명령은 `artifactize tools`로 쓸 수 있습니다. Store 이외의 방법으로
 설치하면 독립 실행형 `artifactize-tools` 명령도 함께 설치됩니다.
 
@@ -100,6 +97,6 @@ Microsoft Store 패키지를 설치하면 항목 두 개가 표시됩니다. 데
 
 기본 상태 디렉터리는 OS마다 다릅니다. Windows에서는 `%LOCALAPPDATA%\artifactize`,
 Linux와 macOS에서는 `~/.local/state/artifactize`입니다. Store 버전은
-패키지 전용 상태를 따로 유지하며 Windows가 제거 시 이를 지웁니다. WSL은 별도의 Linux
+패키지 전용 상태를 따로 유지하며 패키지를 제거하면 Windows가 이 상태를 지웁니다. WSL은 별도의 Linux
 상태를 유지합니다. 전체 우선순위와 Windows 오버레이 주의 사항은
 [상태](state.md#state)를 보세요.

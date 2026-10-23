@@ -2,8 +2,7 @@
 
 프로젝트에서 `artifactize verify --all --wait`를 실행하면 리뷰가 시작됩니다. 명령은 Run ID를
 알려 주고, Run이 끝나면 eval마다 결과를 출력하며, 모두 GREEN이면 0으로
-종료합니다. 이 페이지에는 모든 명령의 플래그, 출력, 종료 코드가 있고, 이어서 `verify`의
-정책, 예산, 선택 파일, 프로필 변형을 자세히 설명합니다.
+종료합니다. 이 페이지는 모든 명령의 플래그, 출력, 종료 코드를 정리하고, 이어서 `verify`의 정책, 예산, 선택 파일, 프로필 변형을 자세히 설명합니다.
 
 ## 명령 레퍼런스 {#command-reference}
 
@@ -13,7 +12,7 @@
 확인합니다**. Monitor와 Review는 아래 설명처럼 ALL에서 시작합니다. 상태는 기본으로 공유
 [상태 디렉터리](../features/others/state.md#state)에 저장됩니다. 저장소나 상태를 쓰지 않는 명령은 이
 옵션들을 무시합니다. Monitor와 Review는 `--json`을 거부합니다. `mcp`는 항상 stdout에
-JSON-RPC를, stderr에 시작 진단을 씁니다. 현재 디렉터리 도구의 출력은 이미 아래 표처럼 텍스트나
+JSON-RPC를, stderr에 시작할 때의 진단 메시지를 씁니다. 현재 디렉터리 도구의 출력은 이미 아래 표처럼 텍스트나
 JSON이므로 `--json`을 줘도 바뀌지 않습니다. `tools help`에서 프로그램 인자 뒤에 오는 플래그는
 artifactize가 아니라 그 프로그램에 전달됩니다.
 `SELECTOR` 자리에는 위치 인자 `ARTIFACT`나 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`,
@@ -196,8 +195,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 `verify --max-executions N`은 Run 하나에서 실행기를 시작할 수 있는 횟수를 0–18446744073709551615
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
-기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
-한 번으로 셉니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
+기록합니다. 준비를 마친 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작 횟수에 1회로 집계됩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
 재확인, 캐시 적중, 합류해서 대기 중인 요청도 마찬가지입니다. 실행기 준비 초기에 실패한 경우는 시작
 횟수에 넣지 않습니다. 시작 횟수를 센 다음 Agent의 `execution_paths`를 고정하므로, 고정에
 실패한 실행도 시작 횟수에 포함하며 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
@@ -209,8 +207,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 Human 대기와 취소는 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)를
 따릅니다. 담당 지정, 도구, 승인은 [Human 가이드](../features/human.md)에서 다룹니다.
 
-선택 파일은 4 MiB 이하의 일반 파일이어야 하며, JSON 문자열 배열이나 한 줄에 앞뒤 공백을 뺀 ID
-하나씩을 담습니다(UTF-8 BOM과 CRLF도 됩니다). 중복을 빼기 전 기준으로 ID가 1–100000개여야
+선택 파일은 4 MiB 이하의 일반 파일이어야 합니다. ID를 JSON 문자열 배열로 담거나, 앞뒤 공백을 뺀 ID를 한 줄에 하나씩 담으세요. UTF-8 BOM과 CRLF도 쓸 수 있습니다. 중복을 빼기 전 기준으로 ID가 1–100000개여야
 합니다. 빈 줄은 무시하며, ID에는 ASCII 공백, 제어 문자, 쉼표를 쓸 수 없습니다. 형식이 잘못된
 JSON 배열을 줄 단위 형식으로 다시 읽지는 않습니다. 상대 경로는 `--repo`가 아니라 CLI의 현재
 디렉터리를 기준으로 합니다.
@@ -267,8 +264,7 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 ### status 상태 {#status-states}
 
 `status`는 Artifact와 eval마다 상태를 출력합니다. 상태는 저장된 판정이 아니라 지금의 파일과
-선언을 기준으로 합니다. 재사용 키가 지금도 맞는 저장된 GREEN은 `PASS`로 나오고, 동작은
-`verify`가 다음에 무엇을 할지 알려 줍니다.
+선언을 기준으로 합니다. 저장된 GREEN 결과의 재사용 키가 현재 키와 일치하면 `PASS`로 표시되며, 동작 항목에는 다음에 `verify`를 실행하면 무엇을 할지 나옵니다.
 
 | 상태 | eval | Artifact |
 |---|---|---|
@@ -292,9 +288,8 @@ Artifact는 그 eval들의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFE
 
 저장된 증거가 있으면 `run show RUN_ID --json`과 `verify --wait --json`의 출력 객체 최상위에
 `evidence` 필드가 들어갑니다. Run 필드는 `run`으로 감싸지 않고 출력 객체에 바로 들어갑니다. `evidence`는 이
-Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다. 일부만 실행한 Run에서 캐시로 쓴
-상위 증거가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
-보세요. 터미널 키와 화면 배치는 [Monitor](../tui/index.md#monitor)와
+Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다. 일부 eval만 실행한 Run에서 상위 eval의 결과를 캐시에서 가져와 쓴 경우가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
+보세요. 터미널에서 쓰는 키와 화면 배치는 [Monitor](../tui/index.md#monitor)와
 [Human 리뷰](../tui/index.md#review)에 있습니다.
 
 ## 현재 디렉터리 도구 {#current-directory-tools}
@@ -329,8 +324,7 @@ artifactize config graph INPUT_ARTIFACT --impact --json
 스트림마다 최대 200줄과 제한된 바이트만 돌려주고, 이어서 볼 위치를 `next_start`로 알려
 줍니다. tail과 범위 조회는 함께 쓸 수 없습니다. `search`는 1–2048바이트의 문자열을 대소문자를
 구분해 그대로 찾습니다. 원래 2048바이트가 넘는 줄은 `clipped`로 표시하고 앞뒤 일부만
-보여 줍니다. 저장된 128 KiB 감사 기록 뒤쪽까지 포함한 Runtime 원본 스트림 전체는 Run 출력에
-남습니다. `prune`은 이 원본 로그를 지우지 않으며, 정해진 주기로 지우는 기능도 없습니다. 원본 로그가 없거나 이전 버전 또는 원격 실행의 감사 기록만 남아 있으면 그 상태를 분명히 표시합니다. 공통
+보여 줍니다. Runtime 원본 스트림 전체는 저장된 감사 기록의 128 KiB 한도를 넘는 뒷부분까지 Run 출력에 남습니다. `prune`은 이 원본 로그를 지우지 않으며, 정해진 주기로 지우는 기능도 없습니다. 원본 로그가 없거나 이전 버전 또는 원격 실행의 감사 기록만 남아 있으면 그 상태를 분명히 표시합니다. 공통
 [Runtime 보존 레퍼런스](../features/declarations.md#runtime-execution)를 보세요. 공통 증거와
 이벤트 스키마, 클라이언트 전달 제한은 [MCP 집중 진단](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)에
 있습니다.
@@ -349,8 +343,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `tools check`는 선언의 유효성, 실행 파일이 있는지, 범위가 정해진 argv 인자와 선언된 실행 경로를 확인한 뒤 범위, 스키마, 도구별 준비 상태를 JSON으로 출력합니다. 기본으로는
 정적으로만 확인하므로 프로젝트 도구나 fingerprint 스크립트를 실행하지 않고 상태나 출력 폴더도
 만들지 않습니다. 위치 인자 선택자나 `--eval`은 Agent/Human eval 하나를 고르며, `--artifact`나
-`--audience`와 함께 쓸 수 없습니다. 실제로 실행하려면 `--tool`과 함께 eval 선택자나
-`--artifact`와 `--audience` 둘 다가 필요합니다. `--artifact`를 쓰면 짧은 동작 이름과 공개된
+`--audience`와 함께 쓸 수 없습니다. 실제로 실행하려면 `--tool`을 지정하고, eval 선택자를 쓰거나 `--artifact`와 `--audience`를 함께 지정해야 합니다. `--artifact`를 쓰면 짧은 동작 이름과 공개된
 이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
@@ -377,8 +370,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 
 `config graph [ARTIFACT]`는 기본으로 프로젝트 전체를 보여 주고, ARTIFACT를 주면 순환으로
 묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는 하위 Artifact와 각 Artifact가 쓰는 입력도 포함합니다. 이는 구조상 영향이 미칠 수 있는 범위를 넉넉하게
-잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`는 Artifact나 eval
-하나 또는 여러 개를 범위로 같은 정의를 보여 줍니다. 실제로 무엇을 실행하고 재사용할지는
+잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
 payload, 스키마, 도구 뷰), 태그, 자식·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
@@ -405,7 +397,7 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 �
 제출하려면 `--verdict GREEN|RED`가 필요합니다. `--fields`와 `--fields-file`은 함께 쓸 수
 없습니다. 둘 중 하나로 소유자가 정한 필드만 담은 JSON 객체를 넘기며, 판정은 이 객체에 넣지 않습니다. 생략하면 `{}`입니다. 파일은
 일반 파일이어야 하고, 필드와 전체 결과는 256000바이트까지입니다. JSON, 스키마, 리뷰어 이름,
-판정이 잘못되면 2로 종료하며, 요청은 고칠 수 있는 상태로 남습니다. 제출에 성공하면 RED여도
+판정이 잘못되면 2로 종료하며, 요청은 수정 후 다시 제출할 수 있는 상태로 남습니다. 제출에 성공하면 RED여도
 0으로 종료하며, 별도의 검증 과정을 시작하지 않습니다.
 
 도구를 실행하거나 제출을 저장하기 전에 리뷰한 파일과 선언을 다시 확인합니다. fingerprint가
@@ -467,8 +459,7 @@ Your final response did not match the required schema: …
 
 `--summary`는 세션 파일만 읽어 대화의 토큰 사용량과 도구 호출 수 등을 집계합니다. 턴(provider
 요청)별 토큰 수와 합계, 도구별 호출 수와 실패 수, follow-up, 백엔드, 모델, 시간 범위가
-나옵니다. 실패한 호출은 오류를 돌려줬거나, 예산이나 제한 시간이나 리뷰 종료 때문에 실행되지
-못한 호출입니다.
+나옵니다. 오류를 반환했거나, 예산 한도·시간 제한·리뷰 종료 때문에 실행하지 못한 호출을 실패한 호출로 셉니다.
 
 ```sh
 artifactize session show run-FiVNCV-1 --summary
@@ -523,11 +514,10 @@ follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 
 
 다른 머신이나 다른 상태의 참조를 주면 그 대화가 저장된 위치를 알려 주고 실패합니다. 예를 들면
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
-5d0e…`입니다. 오래된 저장 대화를 자동으로 정리하면서 지운 세션은 `was removed by the session
-GC`를, 저장된 적이 없는 세션은 `was not saved`를 알립니다. 이런 경우, 아직 실행 중인 요청에
+5d0e…`입니다. 오래된 대화를 자동으로 정리하는 과정에서 세션이 지워졌으면 `was removed by the session GC`라는 안내가 나오고, 처음부터 저장하지 않은 세션에는 `was not saved`라는 안내가 나옵니다. 이런 경우, 아직 실행 중인 요청에
 `session send`를 쓴 경우, follow-up이 실패한 경우에 `session show`와 `session send`는 종료 코드 2로 끝납니다.
 
-**보관.** 저장소가 크기 한도를 넘으면 오래된 대화부터 지웁니다. 한도와 바꾸는 방법은
+**보관.** 저장소가 크기 한도를 넘으면 오래된 대화부터 지웁니다. 한도와 이를 바꾸는 방법은
 [Agent 세션](../features/others/state.md#agent-sessions)에 있습니다.
 
 **개인정보.** 대화에는 리뷰어가 도구로 읽은 모든 내용(파일 내용 포함)과 리뷰어가 쓴 모든 내용이

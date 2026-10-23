@@ -3,8 +3,7 @@
 이 둘러보기는 저장소의 예제 프로젝트를 사용합니다. 저장소의 로컬 사본인 체크아웃에서
 직접 빌드하지 않았다면, 먼저 버전 관리 프로그램인 **Git**으로 사본을 만드세요
 (`git --version`이 응답하지 않으면 [Git 받기](https://git-scm.com/downloads)).
-`git clone`은 저장소를 새 `artifactize` 폴더에 내려받고,
-`cd`는 그 폴더로 들어갑니다.
+`git clone`으로 저장소를 새 `artifactize` 폴더에 내려받은 다음, `cd`로 그 폴더에 들어가세요.
 
 ```sh
 git clone https://github.com/lhj6102/artifactize
@@ -33,7 +32,7 @@ artifactize config graph
 PowerShell에서는 첫 줄을
 `$env:ARTIFACTIZE_STATE_HOME = (New-Item -ItemType Directory (Join-Path $env:TEMP (New-Guid))).FullName`으로 바꾸세요.
 이 명령은 Windows 임시 디렉터리 아래에 고유한 이름의 폴더를 만들고
-그 경로를 같은 설정에 저장합니다. `artifactize` 명령은 그대로입니다.
+그 경로를 위와 같은 환경 변수에 저장합니다. `artifactize` 명령은 그대로입니다.
 
 `config check`는 프로젝트 프로그램을 실행하지 않고 선언을 검증합니다.
 `status`는 검사 두 개가 실행되고, 세 번째 검사는 그 결과가 나올 때까지 대기한다고 예측합니다.
@@ -69,8 +68,7 @@ status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에�
 디렉터리를 쓰도록 이 터미널을 열어 두세요.
 
 [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 검사를 RED로 만드는 방법도 보여 줍니다. 각 폴더는
-그 안의 `index.artf` 파일에서 Artifact로 선언됩니다. `fingerprint`를 생략하면 내장 파일 변경
-검사인 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
+그 안의 `index.artf` 파일에서 Artifact로 선언됩니다. `fingerprint`를 생략하면 파일 변경 여부를 확인하는 내장 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
 구분은 [선언 (.artf)](../features/declarations.md)을 보세요.
 
 ## 파일과 eval 의존성 {#files-and-eval-dependencies}
@@ -110,7 +108,7 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 
 앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된
-모델 자격 증명, 정확한 모델, 프로필을 설정하세요.
+모델 자격 증명, 사용할 모델의 정확한 ID, 프로필을 설정하세요.
 Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두
 GREEN이 된 뒤에만 요청되므로 `spec/review`가 먼저 실행됩니다. 두 터미널은 같은 임시 상태 디렉터리를 써야 합니다. 아래의
 대기 명령을 시작하기 전에 첫 번째 터미널의 값을
@@ -139,9 +137,7 @@ artifactize run show RUN_ID
 `claim`, `tool`, `submit`은 `--reviewer NAME`을 넘기지 않으면 내 사용자 이름(`$USER`)을 리뷰어로
 씁니다. `request unclaim REQUEST_ID`는 담당을 해제합니다. `artifactize
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
-지시문을 미리 보여 줍니다. Enter는 Detail을 열고, `c`는 명시적으로 요청을 맡으며, Tab은 도구로 초점을 옮기고
-Enter(또는 클릭)는 도구 하나를 바로 실행합니다. `g`/`r`은 GREEN/RED 입력 칸을 열고, Ctrl-S는
-제출합니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
+지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
 의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run이 끝날 때까지 대기하며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
 
@@ -157,8 +153,7 @@ artifactize monitor        # Initially select ALL repositories in this state
 ```
 
 Run이 실행되는 동안 두 번째 터미널에서 시작하세요. Enter나 →로
-Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`로
-항목을 고르고, `?`는 도움말을 보여 주며, `q`는 종료합니다. Detail은 Agent 대화, Runtime
+Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`로 항목을 고르고, `?`로 도움말을 확인하고, `q`로 종료하세요. Detail은 Agent 대화, Runtime
 로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 화면을 살펴보기만 해서는 프로젝트에 선언된 명령이 실행되지 않습니다.
 
 Human 요청 담당 지정, 도구, 판정 양식은

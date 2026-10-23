@@ -26,11 +26,11 @@ artifactize cache rm KEY
 `artifactKinds`(포함한 이름마다 `folder`, `file`, `graph` 중 하나), 사용량, `producer`
 (`user@host`와 artifactize 버전, Human 결과라면 `reviewer`까지)가 나옵니다.
 [공유 원격 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
-붙어 있습니다. 없는 키는 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
+붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
 출력합니다. 읽기만 하므로 아무것도 바뀌지 않습니다.
 
 `rm`은 그 키의 기록이 더는 재사용되지 않게 하고 `{"removed":true}`(없었으면 false)를
-출력합니다. 저장된 Run의 결과는 그대로 남습니다. 지금 리뷰 중인 키는 거부합니다. 키는
+출력합니다. 저장된 Run의 결과는 그대로 남습니다. 지금 리뷰 중인 키의 기록은 지울 수 없습니다. 키는
 `cache list`에서, 또는 `verify --wait --json`과 `run show`에 나오는 요청의 `key`에서 얻을
 수 있습니다. 키를 만드는 방법과 캐시가 적중했을 때 무엇을 돌려주는지는
 [완료된 결과 재사용](../features/fingerprint.md#completed-result-reuse)에 있습니다.
@@ -46,8 +46,7 @@ artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 `prune`은 현재 저장소만이 아니라 선택한 상태에 있는 모든 저장소의 Run을 다룹니다.
 **GREEN, RED, ERROR, INCOMPLETE**로 끝났고 아직 실행 중인 작업이 없는 Run의 출력을
 지웁니다. SIGNOFFS_PENDING Run은 승인이 모두 제출된 뒤에도 **항상 건너뛰며**, 끝나지 않은
-Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, `s`, `m`, `h`, `d`, `w`를
-붙인 정수로 씁니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `--dry-run`은 지우지
+Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `--dry-run`은 지우지
 않고 `wouldRemove`를 돌려주고, 실제로 정리하면 `removed`를 돌려줍니다. 둘 다
 `skippedRuns`를 포함합니다. `prune`은 `--older-than`과 상관없이
 [Agent 세션 저장소](../features/others/state.md#agent-sessions)도 크기 한도까지 줄입니다.
@@ -60,7 +59,7 @@ Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, 
 `doctor`는 provider를 호출하지 않고 Run, 판정, 캐시 항목, 로그인 정보도 만들지 않습니다.
 상태 디렉터리를 알려 주고, 쓸 수 있는지와 작업 공간 밖에 있는지 확인하며, 상태 데이터베이스가
 지원하는 스키마인지 확인하고 [필요하면](../features/others/state.md#state) 업그레이드합니다.
-지원하지 않는 스키마는 심각한 오류이며, 그 `schema`와 지원하는 `supported`를 보여 줍니다.
+지원하지 않는 스키마이면 심각한 오류로 처리하며, 현재 스키마는 `schema`에, 지원하는 스키마는 `supported`에 표시합니다.
 `--repo`를 주면 `config check`의 검사도 함께 합니다. 그 밖의 검사는 다음과 같습니다.
 
 - `limits`: [백엔드 수용량](../features/others/state.md#backend-capacity)입니다. `limits.json`이
@@ -72,7 +71,7 @@ Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, 
   키만 있으면 되므로, 키가 없으면 오류가 아니라 경고로 처리합니다. [테스트 엔드포인트](../features/agent.md#test-against-a-fake-provider)를
   쓰면 어떤 엔드포인트인지 `testEndpoint`로 알려 주는 경고가 나오고, 잘못된 엔드포인트는 심각한 오류입니다.
 - `codex`: 로그인 정보를 갱신하거나 온라인에 접속하지 않고 읽습니다. 로그인하지 않았으면
-  경고입니다. 저장된 로그인은 액세스 토큰이 만료됐어도 통과합니다(다음에 쓸 때 갱신합니다).
+  경고입니다. 로그인 정보가 저장되어 있으면 액세스 토큰이 만료됐어도 검사를 통과합니다. 만료된 토큰은 다음에 쓸 때 갱신합니다.
   `ARTIFACTIZE_CODEX_AUTH_FILE`의 토큰이 만료됐으면 경고입니다. `$STATE/auth`가
   [저장소 안에](../features/others/state.md#state) 있으면 거부 메시지를 `refused`에 담은
   경고가 나오고, 그곳에 로그인 정보가 저장되어 있으면 심각한 오류가 됩니다. 세부 정보에는 `source`

@@ -14,7 +14,7 @@ eval의 기준을 대신하거나 판정을 지어내지 않습니다.
 이미지나 섹션을 보여 주는 Agent 내장 도구는 머신 전체가 아니라 eval의 범위에 들어간 Artifact만 봅니다.
 `graph`는 eval 범위와 상관없이 프로젝트의 현재 선언을 모두 읽습니다.
 `help`는 일반적인 실행 파일 검색으로 찾은 실제 프로그램을 실행하며,
-선언된 명령 도구도 신뢰한다고 보고 실행하는 프로그램입니다. 어느 쪽도 **OS
+직접 선언한 명령 도구도 사용자가 신뢰하는 프로그램으로 보고 실행합니다. 어느 쪽도 **OS
 샌드박스 안에서 실행되지 않습니다**.
 
 ```toml
@@ -31,9 +31,8 @@ eval은 실제로 참조하는 Artifact에 선언된 도구를 쓸 수 있습니
 
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}
 
-재사용할 도구는 구현 파일이 있는 폴더에 Artifact 선언을 추가하세요.
-예를 들어 `tools/checker/index.artf`는 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더가 들어 있는
-`checker` Artifact를 선언할 수 있습니다.
+도구를 재사용하려면 구현 파일이 있는 폴더에 Artifact 선언을 추가하세요.
+예를 들어 `tools/checker/index.artf`에서 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더를 포함하는 `checker` Artifact를 선언할 수 있습니다.
 
 ```toml
 name = "checker"
@@ -78,8 +77,7 @@ Agent는 `inspect_checker`를, 사람은 `source_checker`를 쓸 수 있습니�
 `json` 명령은 stdin에서 `context`와 `args`가 든 JSON 요청 하나를 읽고,
 `{"content":[{"type":"text","text":"The required headings are present."}]}` 같은
 JSON 콘텐츠 객체 하나를 출력합니다.
-`plain` 명령은 선언된 스키마 속성을 별도의 argv
-항목으로 치환하고, 크기가 제한된 stdout을 텍스트로 돌려줍니다. Human 명령에는 실행할 때 임의의 인자를 추가로 넘길 수 없으므로,
+`plain` 명령은 선언된 스키마 속성을 별도의 argv 항목으로 치환하고, stdout을 정해진 크기까지만 텍스트로 돌려줍니다. Human 명령에는 실행할 때 임의의 인자를 추가로 넘길 수 없으므로,
 출력을 수집하는 `output` 방식이나 애플리케이션을 실행하는 `launch` 방식 중 하나로 선언하세요. 전체 프로토콜, 범위, 제한은
 [Agent 도구](agent.md)와 [Human 도구](human.md)를 보세요.
 
@@ -106,14 +104,12 @@ args = ["board"]
 start 명령은 명령 도구와 같은 형식의 JSON 객체를 읽고, 공유 상태를 전용
 `ARTIFACTIZE_SESSION_DIR`에 쓰고, 준비 완료 줄 하나를 출력한 뒤 계속 실행됩니다. 세션에 묶인
 도구 호출과 stop 명령은 같은 디렉터리를 쓰고, 세션은 리뷰마다 따로 만들어집니다.
-Agent는 인스턴스를 시작하거나, 멈추거나, 이름을 정하지 않습니다. 오류와 취소를 포함해
-모든 세션을 멈추고 정리하는 일은 artifactize가 맡습니다. 리뷰 결과를 재사용할 때는 하네스를
+Agent는 인스턴스를 시작하거나, 멈추거나, 이름을 정하지 않습니다. 오류가 나거나 취소된 경우에도 모든 세션을 멈추고 정리하는 일은 artifactize가 맡습니다. 리뷰 결과를 재사용할 때는 하네스를
 시작하지 않습니다. 세션은 [저장된 Agent 대화](../agent.md#saved-conversations)가 아닙니다. 하네스가
 구현해야 할 규약은 [도구 세션](agent.md#tool-sessions)에서 확인하세요.
 
 ## 리뷰하기 전에 선언 확인하기 {#check-a-declaration-before-reviewing}
 
-`artifactize tools check`는 프로젝트 명령을 실행하지 않고 사용 가능 여부와 선언을
-확인합니다. 특정 도구를 시험하려면 명시적인
+`artifactize tools check`는 프로젝트 명령을 실행하지 않고 도구를 쓸 수 있는지, 선언이 올바른지 확인합니다. 특정 도구를 시험하려면 명시적인
 [실행 형식](../../cli/index.md#tool-diagnostics)을 쓰세요. 이 방식으로 도구를 실행해도 Run, 리뷰, 캐시
 항목은 생기지 않습니다. 세션에 묶인 Agent 도구는 그 진단 호출에만 쓰는 하네스를 새로 실행합니다.

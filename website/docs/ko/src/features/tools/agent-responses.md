@@ -13,8 +13,7 @@ Agent는 먼저 도구를 호출할 수 있고, 그다음 provider의 구조화�
 함께 담은 객체 하나입니다. `session send`의 follow-up 답변은 일반 텍스트입니다.
 
 artifactize가 직접 소유자 스키마에 따라 답을 검사하므로, provider가 검증하지 못하는 키워드까지
-포함해 선언한 JSON Schema 제약 조건이 모두 적용됩니다. 답이 스키마에 맞지 않으면 Agent에게 무엇이
-잘못됐는지 알리고 도구 없이 한 번 더 기회를 줍니다. Agent는 이미 모은 정보로 답해야 하며, 이때
+포함해 선언한 JSON Schema 제약 조건이 모두 적용됩니다. 답이 스키마에 맞지 않으면 Agent에게 무엇이 잘못됐는지 알리고 도구를 쓰지 않은 채 한 번 더 답하게 합니다. Agent는 이미 모은 정보로 답해야 하며, 이때
 도구를 요청해도 리뷰는 `INVALID_RESULT`로 끝납니다. 저장된 대화에 그 메시지가 나옵니다.
 
 ```text
@@ -24,7 +23,4 @@ Return only one JSON object matching the schema.
 ```
 
 그 답도 잘못되면 리뷰는 `INVALID_RESULT`와 함께 ERROR로 끝납니다.
-[`session show`](../../cli/index.md#agent-sessions)로 Agent가 무엇을 답했는지 읽고, 스키마와
-지시문이 서로 맞도록 고친 다음(예를 들어 각 필드에 무엇이 들어가야 하는지 지시문에 적기) 다시
-verify하세요. `max_tokens`와 `max_tool_calls`는 artifactize가 세며, 예산을 다 쓰면 더 이상 도구
-호출을 하지 않게 합니다. 이 값들은 provider에게 보내지 않습니다.
+[`session show`](../../cli/index.md#agent-sessions)로 Agent가 무엇을 답했는지 읽고, 스키마와 지시문이 서로 맞도록 고친 다음 다시 verify하세요. 예를 들어 각 필드에 무엇이 들어가야 하는지 지시문에 적을 수 있습니다. artifactize는 `max_tokens`와 `max_tool_calls`에 따라 토큰 수와 도구 호출 수를 세며, 예산을 다 쓰면 더 이상 도구를 호출하지 못하게 합니다. 이 값들은 provider에게 보내지 않습니다.

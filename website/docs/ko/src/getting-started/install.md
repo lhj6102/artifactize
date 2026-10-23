@@ -16,8 +16,7 @@ artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/
 - 예제 프로젝트는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 씁니다.
   두 명령 모두 터미널에서 쓸 수 있어야 합니다. artifactize는 모든 OS에서
   프로젝트에 선언된 명령을 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
-- Agent eval을 쓰려면 백엔드마다 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는
-  아무것도 필요 없습니다.
+- Agent eval을 쓰려면 백엔드마다 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는 이런 인증 정보가 필요하지 않습니다.
 
 `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
 예제를 시작하기 전에 필요한 도구를 찾을 수 있는지 확인하세요.
@@ -64,8 +63,7 @@ macOS 11 이상의 Apple 실리콘 Mac과 Intel Mac을 모두 지원합니다.
 **Windows.**
 [Microsoft Store 페이지](https://apps.microsoft.com/detail/9PB6W4LL165D)(x64)에서 Artifactize를 설치한 뒤
 새 터미널을 열고 `artifactize --version`을 실행하세요. Microsoft가 Store 패키지에 서명하므로
-스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 시작 메뉴의
-**Artifactize** 항목은 [데스크톱 앱](#desktop-app)을 엽니다. Store 버전의
+스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 시작 메뉴에서 **Artifactize**를 선택하면 [데스크톱 앱](#desktop-app)이 열립니다. Store 버전의
 [시작 메뉴 항목](../features/others/platforms.md#desktop-console-launches)과
 [별도로 유지하는 상태](../features/others/state.md#state)는 Windows에서 달라지는 다른 동작과 함께
 설명합니다.
@@ -124,8 +122,7 @@ artifactize --version
 
 `lhj6102/tap` Homebrew tap의 formula는 Mac의 CPU에 맞는 두 명령을 설치하며
 안정 릴리스로만 업데이트됩니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
-앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다(formula가 설치되어 있다면 먼저 제거하세요.
-cask가 formula를 대신합니다).
+앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다. cask가 formula를 대신하므로, formula가 설치되어 있다면 먼저 제거하세요.
 
 ```sh
 brew install --cask lhj6102/tap/artifactize
@@ -254,7 +251,7 @@ cargo install --path crates/artifactize-tools --locked
 
 #### 소스에서 데스크톱 앱 빌드 {#build-the-desktop-app-from-source}
 
-위의 소스 빌드용 Rust 사전 요구 사항에 더해 Node.js 24,
+위에서 설명한 소스 빌드에 필요한 Rust 도구 외에 Node.js 24,
 `crates/artifactize-desktop/ui/package.json`에 적힌 버전의 pnpm, 그리고
 OS별로 [Tauri 빌드에 필요한 도구와 라이브러리](https://v2.tauri.app/start/prerequisites/)를 설치하세요.
 Linux에는 WebKitGTK 4.1, GTK 3, librsvg 개발 패키지가 필요하고, macOS에는
@@ -276,7 +273,7 @@ artifactize-desktop
 ### Claude Code와 Codex용 플러그인 {#plugin-for-claude-code-and-codex}
 
 [플러그인](../agent-plugin/plugin.md)은 Claude Code나 Codex에 Hey Arti 스킬과
-artifactize MCP 서버를 추가합니다. 먼저 위 채널 중 하나로 `artifactize` 프로그램을
+artifactize MCP 서버를 추가합니다. 먼저 위 설치 방법 중 하나로 `artifactize` 프로그램을
 설치한 다음
 [플러그인 페이지](../agent-plugin/plugin.md#add-the-plugin-to-your-assistant)를 따르세요.
 
@@ -312,8 +309,7 @@ Microsoft Store는 안정 릴리스만 제공하며, Microsoft가 검토하는 �
 게이트 우회(`review_policy.dependency_gates`를 포함한 `--ignore-gates`와 `review_policy`)는
 제거되었습니다. 빈 `review_policy` 테이블도 설정 검사에 실패하니 지우세요. 요청마다 고르는
 `--speculate`와 `--defer-human`이 이를 대신하며, 둘 다 기본으로 꺼져 있고 어느 쪽도 최종 승인을
-면제하지 않습니다. 미룬 승인은
-`SIGNOFFS_PENDING`으로 끝나고 `--wait`는 5로 종료합니다. [Run과 status](../features/run.md)를 보세요.
+면제하지 않습니다. 승인을 미루면 Run은 `SIGNOFFS_PENDING`으로 끝나고 `--wait`는 5로 종료합니다. [Run과 status](../features/run.md)를 보세요.
 인자 없이 실행한 `artifactize monitor`는 ALL에서 시작합니다. `monitor .`, 위치 인자 경로, 또는 `--repo`는
 처음에 그 저장소를 선택합니다.
 
@@ -384,7 +380,7 @@ PowerShell에서는 `$env:OPENAI_API_KEY = "..."`로 키를 설정하세요.
 Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우저에서 마치세요.
 로그인이 끝나면 브라우저가 `localhost:1455`로 이동합니다. WSL 2에서는 Windows 브라우저도 쓸 수 있습니다. 아무것도 열리지 않으면
 출력된 URL을 브라우저에 복사하세요. Codex CLI나 앱 로그인 같은 다른 프로그램이 포트 1455를 쓰고
-있으면, artifactize는 주소를 붙여 넣으라고 요청합니다. 다른 머신에서도 같은 대체 방법을 쓰세요.
+있으면, artifactize는 주소를 붙여 넣으라고 요청합니다. 다른 머신에서 로그인할 때도 URL을 붙여 넣는 방법을 쓰세요.
 `http://localhost:1455/auth/callback?code=`로 시작하는 전체 URL을
 터미널이나 데스크톱 로그인의 붙여 넣기 칸에 넣으세요. 로그인은 5분 안에 마쳐야 하며, 그 뒤에는
 `login codex`를 다시 실행하세요. 페이지 로드에 실패했다면 브라우저 주소 표시줄에서,
@@ -469,8 +465,7 @@ Artifactize를 마우스 오른쪽 버튼으로 클릭해 제거하세요. `inst
 데이터베이스 행, 저장소를 건드리지 않습니다. 패키지되지 않은 버전이 남긴 상태를 지우려면
 `artifactize doctor`가 첫 줄에 출력하는 상태 디렉터리를 삭제하세요.
 
-제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수 재정의로
-AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 만든 파일은 AppData 안에 있더라도 남으니,
+제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수로 경로를 지정해 AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 만든 파일은 AppData 안에 있더라도 남으니,
 더 이상 필요하지 않으면 따로 지우세요. 가상화되지 않은 기존
 AppData 파일도 Store 패키지의 정리 대상이 아닙니다.
 [Windows 동작과 오버레이 주의 사항](../features/others/state.md#state)을 보세요.
