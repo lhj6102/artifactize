@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::{
     auth,
     config::{Backend, read_workspace_config},
-    llm, store, workspace,
+    llm, release, store, workspace,
 };
 
 #[derive(Debug, Serialize)]
@@ -106,6 +106,14 @@ pub enum Details {
         #[serde(rename = "stateId")]
         state_id: Option<crate::types::StateId>,
     },
+    Release {
+        channel: release::Channel,
+        running: semver::Version,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        latest: Option<semver::Version>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        update: Option<release::Update>,
+    },
     Codex {
         #[serde(flatten)]
         status: auth::codex::Status,
@@ -128,7 +136,8 @@ impl DoctorReport {
     }
 }
 
-/// Local readiness only. Missing optional backends are warnings, not failed reviews.
+/// Local readiness, and whether a newer release is out. Missing optional backends and an
+/// older release are warnings, not failed reviews.
 pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorReport, String> {
     let state = store::state_dir(state)?;
     let mut report = DoctorReport {
@@ -318,7 +327,82 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         }
         Err(error) => report.add("remote", CheckStatus::Fail, &error, Details::None),
     }
+    let (status, message, details) = release_check(release::check(&state).await);
+    report.add("release", status, &message, details);
     Ok(report)
+}
+
+/// Whether a newer release is out and how to update to it. Never a hard error: an older
+/// copy still works, and a failed lookup is asked again later.
+fn release_check(checked: release::Status) -> (CheckStatus, String, Details) {
+    use release::{Outcome, Unchecked, Update};
+    let release::Status {
+        running,
+        channel,
+        outcome,
+    } = checked;
+    let (status, message, latest, update) = match outcome {
+        Outcome::Unchecked(Unchecked::Store) => (
+            CheckStatus::Pass,
+            format!("The Microsoft Store keeps artifactize {running} up to date."),
+            None,
+            None,
+        ),
+        Outcome::Unchecked(Unchecked::Off) => (
+            CheckStatus::Pass,
+            format!(
+                "{} is set; releases are not looked up.",
+                release::OFF_VARIABLE
+            ),
+            None,
+            None,
+        ),
+        Outcome::Unchecked(Unchecked::Development) => (
+            CheckStatus::Pass,
+            format!("artifactize {running} is a development build; releases are not looked up."),
+            None,
+            None,
+        ),
+        Outcome::Latest(latest) => (
+            CheckStatus::Pass,
+            format!("artifactize {running} is up to date; the latest release is {latest}."),
+            Some(latest),
+            None,
+        ),
+        Outcome::Newer { latest, update } => {
+            let how = match &update {
+                Update::Command { command } => format!("run `{command}`"),
+                Update::Download { url, command: None } => format!("download and install {url}"),
+                Update::Download {
+                    url,
+                    command: Some(command),
+                } => format!("download {url}, then run `{command}`"),
+                Update::Page { url } => format!("see {url}"),
+            };
+            (
+                CheckStatus::Warn,
+                format!("artifactize {latest} is out (this is {running}); to update, {how}."),
+                Some(latest),
+                Some(update),
+            )
+        }
+        Outcome::Failed(error) => (
+            CheckStatus::Warn,
+            format!("Cannot look up the latest release: {error}"),
+            None,
+            None,
+        ),
+    };
+    (
+        status,
+        message,
+        Details::Release {
+            channel,
+            running,
+            latest,
+            update,
+        },
+    )
 }
 
 /// The saved Agent conversations: whether new ones are saved, the store's size against its

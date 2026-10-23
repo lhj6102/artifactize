@@ -19,6 +19,7 @@
 pub mod desktop_commands;
 pub mod environment;
 mod hidden_input;
+pub(crate) mod install;
 pub(crate) mod net;
 pub(crate) mod path_serde;
 pub(crate) mod paths;
