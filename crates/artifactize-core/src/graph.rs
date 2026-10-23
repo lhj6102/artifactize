@@ -212,6 +212,28 @@ impl<'a> Graph<'a> {
         Ok(required.into_iter().collect())
     }
 
+    /// The roots and every Artifact sharing a cycle with one of them, lexically ordered.
+    pub fn cycle_members(
+        &self,
+        roots: &[&ArtifactName],
+    ) -> Result<Vec<&'a ArtifactName>, GraphError> {
+        let components = roots
+            .iter()
+            .map(|root| {
+                self.artifacts
+                    .get(*root)
+                    .map(|artifact| artifact.component)
+                    .ok_or_else(|| GraphError(format!("Unknown Artifact: {root}")))
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        Ok(components
+            .into_iter()
+            .flat_map(|component| self.components[component.index()].artifacts.iter().copied())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect())
+    }
+
     /// Evaluate the whole graph. Evidence freshness is supplied by the caller;
     /// absent entries are unreviewed, and unrelated entries are ignored.
     pub fn evaluate(&self, evidence: &BTreeMap<EvalId, Evidence>) -> Evaluation<'_> {

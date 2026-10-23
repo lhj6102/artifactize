@@ -22,7 +22,7 @@ pub enum Status {
     Incomplete,
     Deferred,
     Provisional,
-    SignoffsPending,
+    Yellow,
     Green,
     Basis,
 }
@@ -45,7 +45,7 @@ impl From<monitor::Status> for Status {
             S::Incomplete => Self::Incomplete,
             S::Deferred => Self::Deferred,
             S::Provisional => Self::Provisional,
-            S::SignoffsPending => Self::SignoffsPending,
+            S::Yellow => Self::Yellow,
             S::Green => Self::Green,
             S::Basis => Self::Basis,
         }

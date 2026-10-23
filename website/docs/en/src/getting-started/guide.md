@@ -11,6 +11,20 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
+The examples use `python3` to run Python checks and `grep` to search text, so both
+commands must be available in your terminal. `PATH` is the list of directories your
+terminal searches for commands. Check that it finds them:
+
+```sh
+python3 --version
+grep --help
+```
+
+These should print a Python version and grep's help. If either command is not
+found, install that tool or add its directory to `PATH` before continuing. Projects
+run their declared commands as given on every OS; see
+[Operating systems](../features/others/platforms.md).
+
 Each reviewed piece is an **Artifact**. Its `index.artf` is a text configuration
 file listing its checks, called **evals**. It uses **TOML**, a readable `key = value`
 format. A **fingerprint** identifies the reviewed inputs; the built-in
@@ -109,9 +123,13 @@ See [Eval dependencies](../features/artifact.md#eval-dependencies).
 
 ## Optional: Agent tools and the Human flow
 
-The tour above needs no model. This optional part does: first set up the model
-credentials, exact model and profile described in the
-[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
+The tour above needs no model. This optional part does: first put an exact model ID
+in the profile you use in `examples/agent-tools/spec/index.artf` and set up its
+credentials, as the
+[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)
+describes. Add `--profile anthropic` or `--profile codex` to `verify` for the other
+backends. Without credentials the review is recorded as ERROR and the waiting command
+exits 2.
 A Human eval is requested only once every other non-Human eval of its Artifact is
 GREEN, so `spec/review` runs first. Both terminals must use the same temporary state directory. Before starting the
 waiting command below, print the first terminal's value with
@@ -127,7 +145,7 @@ cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --eval spec/review --tool coverage_spec --args '{}'
 artifactize verify --eval spec/review --wait    # the machine review comes first
-artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
+artifactize verify --eval spec/signoff --wait   # records a sign-off request and waits
 # In a second terminal, in the same directory:
 export ARTIFACTIZE_STATE_HOME="STATE_DIRECTORY"  # copy the first terminal's path
 artifactize request list --run RUN_ID    # shows REQUEST_ID
@@ -143,14 +161,11 @@ review` does the same in a terminal UI: it lists waiting requests and previews t
 instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
 Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S
 submits. Esc stops editing before returning to the list, keeping the draft.
-The artifactize-owned Run waits for Human results like any other, so dependents
-continue in the same Run. Plain `verify` submits and returns; `verify --wait`
-follows the Run in the foreground and exits 0 here once the GREEN sign-off arrives,
-provided the preceding machine review is still valid.
-
-For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
-then run `artifactize verify --eval spec/review --wait`, adding `--profile anthropic` or `--profile codex` for the other backends. Without
-credentials the review is recorded as ERROR and the waiting command exits 2. See the [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
+Plain `verify` submits and returns; `verify --wait` follows the Run in the foreground.
+With only the sign-off left, the Run waits 2 minutes for a claim and then while you hold
+it, so `verify --wait` exits 0 here once the GREEN sign-off arrives, provided the preceding
+machine review is still valid. Claim later and the Run has already ended YELLOW (exit 5);
+submit anyway, and the next `verify` reuses your sign-off.
 
 ## Monitor
 

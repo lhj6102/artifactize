@@ -260,20 +260,3 @@ var TEXT = WORDS[document.documentElement.lang] || WORDS.en;
   window.addEventListener('resize', schedule);
   update();
 })();
-
-// The desktop app recordings: each tab swaps the GIF, its description and caption.
-(function () {
-  var demo = document.querySelector('[data-app-demo]');
-  if (!demo) return;
-  var img = demo.querySelector('img');
-  var caption = demo.querySelector('.app-demo-caption');
-  var tabs = Array.prototype.slice.call(demo.querySelectorAll('.demo-tab'));
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      tabs.forEach(function (t) { t.setAttribute('aria-pressed', t === tab ? 'true' : 'false'); });
-      img.src = tab.getAttribute('data-src');
-      img.alt = tab.getAttribute('data-alt');
-      if (caption) caption.textContent = tab.getAttribute('data-label');
-    });
-  });
-})();

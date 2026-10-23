@@ -3,7 +3,7 @@
 이 워크스루는 [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)를 사용합니다.
 Alice와 Bob은 서로 다른 체크아웃과 상태 디렉터리를 씁니다. CI에는 세 번째
 체크아웃이 있습니다. `artifactize server` 하나가 공유 판정을 보관합니다. 모든
-단계를 컴퓨터 한 대에서 실행할 수 있습니다. 이 실습에서는 `--state-dir`로 상태 디렉터리를
+단계를 머신 한 대에서 실행할 수 있습니다. 이 실습에서는 `--state-dir`로 상태 디렉터리를
 달리 지정해 각 "머신"을 구분하고, `USER`로 결과를 만든 사람의 이름을 정합니다. 명령은 `examples/`가 들어 있는 artifactize 체크아웃
 ([`git clone https://github.com/lhj6102/artifactize`](https://github.com/lhj6102/artifactize))의
 루트에서 연 POSIX 셸(Linux, macOS, WSL)용입니다.
@@ -42,8 +42,8 @@ artifactize --state-dir "$WALK/server" server token add ci --scopes read
 artifactize --state-dir "$WALK/server" server run      # Listening on http://127.0.0.1:8417/
 ```
 
-`server run`은 별도 터미널에서 계속 실행해 두세요. 이 워크스루는 같은 컴퓨터의
-프로그램만 연결합니다. 서로 다른 컴퓨터라면 먼저
+`server run`은 별도 터미널에서 계속 실행해 두세요. 이 워크스루는 같은 머신의
+프로그램만 연결합니다. 서로 다른 머신에서 실행한다면 먼저
 [안전한 연결 설정](index.md#connect-teammates-securely)을 따르세요.
 
 ## 2. Alice가 먼저 리뷰하기 {#2-alice-reviews-first}
@@ -160,8 +160,8 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 
 ## Human 승인 {#human-sign-offs}
 
-Human 판정은 기본적으로 artifactsum을 통해 재사용되며, `fingerprint = false`면 재사용되지 않습니다. 다음은
-Human 승인이 있는 파일 하나짜리 프로젝트와, Bob을 위한 그 사본입니다. `WALK`가 아직 공유 디렉터리를
+Human 판정은 기본적으로 artifactsum을 통해 재사용되며, `fingerprint = false`면 재사용되지 않습니다. 아래 명령으로
+Human 승인이 필요한 파일 하나짜리 프로젝트를 만들고, Bob이 쓸 복사본도 준비하세요. `WALK`가 아직 공유 디렉터리를
 가리키고 있는 Alice의 터미널로 돌아가세요.
 
 ```sh

@@ -10,13 +10,12 @@ CI 작업은 실패로 처리됩니다. 모든 종료 코드는 [명령 레퍼�
 Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않고](../../cli/index.md#reuse-only) Run이 INCOMPLETE로 남으므로,
 개발자가 `verify`로 현재 재사용 키에 맞는 결과를 만든 뒤에야 CI가 통과합니다. 기본 artifactsum을 쓰면 결과를 재사용하며, 대상이나 의존성에 `fingerprint = false`를 지정하면 재사용하지 않습니다.
 
-## 미룬 작업을 병합 게이트에서 빼기 {#keep-deferred-work-out-of-the-merge-gate}
+## 대기 중인 승인을 병합 게이트에서 빼기 {#keep-pending-sign-offs-out-of-the-merge-gate}
 
-개발자는 사람이 자리를 비운 동안 자동 검사를 먼저 마치려고 `--defer-human`을 쓸 수 있으며,
-`--speculate`를 함께 쓸 수도 있습니다. SIGNOFFS_PENDING(종료 코드 5), DEFERRED 승인,
-PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙니다. CI의
-`--reuse-only agent,human` 게이트를 유지하세요. 필요한 승인이 없으면 Human eval은
-실행되지 않고 Run이 INCOMPLETE로 남으며, `--defer-human`을 넘겨도 통과로 간주되지 않습니다.
+승인은 자동 검사를 막지 않으므로, 개발자의 `verify`는 사람이 자리를 비운 동안에도 자동 검사를 끝냅니다.
+YELLOW(종료 코드 5), DEFERRED 승인, PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙니다. CI의
+`--reuse-only agent,human` 게이트를 유지하세요. 필요한 승인이 없으면 승인을 요청하지 않고 Run이
+INCOMPLETE로 남으며, 통과로 간주되지 않습니다.
 사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 검사 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. verify가 접수됐다는 것만으로 CI가 성공했다고 보지 마세요.
 
 ## 팀 저장소의 판정 재사용하기 {#reuse-verdicts-from-the-team-store}
@@ -42,7 +41,7 @@ PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙�
 ```
 
 - 읽기 토큰으로는 결과를 재사용할 수 있지만 게시할 수는 없습니다.
-- 리뷰 저장소에 연결할 수 없어도 검증을 멈추지 않습니다. `verify`는 한 번 경고하고 로컬 캐시로 계속합니다.
+- 리뷰 저장소에 연결할 수 없어도 검증을 멈추지 않습니다. `verify`는 한 번 경고하고 로컬 캐시를 사용해 검증을 계속합니다.
   그러면 저장소에만 있는 리뷰는 재사용되지 않으므로 Run은 INCOMPLETE가 됩니다.
 - 토큰이 거부되거나, TLS 연결에 실패하거나, 설정이 잘못되면 작업이 실패하므로(종료 코드 2),
   잘못된 설정이 오류 없이 무시되는 일은 없습니다.

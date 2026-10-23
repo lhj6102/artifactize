@@ -4,6 +4,9 @@
 
 - [소개](getting-started/intro.md)
 - [설치](getting-started/install.md)
+  - [다른 설치 방법](getting-started/install-options.md)
+  - [업데이트와 제거](getting-started/update.md)
+  - [백엔드와 로그인](getting-started/backends.md)
 - [가이드](getting-started/guide.md)
   - [예제](getting-started/examples.md)
 

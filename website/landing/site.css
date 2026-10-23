@@ -467,19 +467,12 @@ p {
   white-space: nowrap;
 }
 
-.logline {
-  max-width: 720px;
-  text-wrap: balance;
-  margin: 22px auto 0;
-  color: var(--text);
-  font-size: clamp(19px, 2.3vw, 24px);
-  font-weight: 500;
-  line-height: 1.45;
-}
-
+/* Who it is for: its own band between the hero and the story. */
 .audience {
-  max-width: 1000px;
-  margin: 40px auto 0;
+  max-width: 1064px;
+  margin: 0 auto;
+  padding-bottom: 72px;
+  text-align: center;
 }
 
 .audience h2 {
@@ -532,12 +525,14 @@ p {
   }
 }
 
+.hero-roles,
 .hero-graph,
 .hero-demo {
   max-width: 1080px;
   margin: 36px auto 0;
 }
 
+.hero-roles img,
 .hero-graph img,
 .hero-demo img {
   display: block;
@@ -558,11 +553,6 @@ p {
   max-width: 1080px;
   margin: 34px auto 0;
   text-align: center;
-}
-
-.app-demo .demo-tabs {
-  justify-content: center;
-  margin-bottom: 16px;
 }
 
 .app-demo img {

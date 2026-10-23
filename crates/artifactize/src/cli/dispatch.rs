@@ -1,8 +1,8 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    AuthProvider, Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, cache,
-    interactive, maintenance, remote, request, run, server, session, workflow,
+    Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, cache, interactive,
+    maintenance, provider, remote, request, run, server, session, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -74,17 +74,25 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Tools {
             command: ToolsCommand::Builtin(tool),
         }) => Ok(artifactize_tools::cli::run(tool).await),
-        Some(Command::Login {
-            provider: AuthProvider::Codex,
-        }) => maintenance::login(context).await,
-        Some(Command::Logout {
-            provider: AuthProvider::Codex,
-        }) => maintenance::logout(context).await,
+        Some(Command::Login { provider }) => maintenance::login(context, provider).await,
+        Some(Command::Logout { provider }) => maintenance::logout(context, provider).await,
+        Some(Command::Provider { command }) => {
+            provider::execute(
+                context.state_dir.as_deref(),
+                context.repo.as_deref(),
+                command,
+                context.json,
+            )
+            .await
+        }
         Some(Command::Doctor) => maintenance::doctor(context).await,
         Some(Command::Prune {
             older_than,
             dry_run,
         }) => maintenance::prune(context, older_than, dry_run).await,
+        Some(Command::Limits { signoff_idle_grace }) => {
+            maintenance::limits(context, signoff_idle_grace)
+        }
         Some(Command::Models { provider }) => maintenance::models(context, provider).await,
         Some(Command::Verify {
             selection,
@@ -98,15 +106,15 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             speculate,
             defer_human,
         }) => {
+            if defer_human {
+                return Err("--defer-human was removed in 0.16.0: every verify lets machine work go on while sign-offs wait; remove the flag.".into());
+            }
             workflow::verify(
                 context,
                 selection,
                 policy,
                 workflow::VerifyLimits {
-                    modes: artifactize_core::runs::RunModes {
-                        speculate,
-                        defer_human,
-                    },
+                    modes: artifactize_core::runs::RunModes { speculate },
                     jobs,
                     max_executions,
                     follow: workflow::Follow::from_flags(wait, watch),

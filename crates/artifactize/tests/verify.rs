@@ -236,22 +236,30 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
 fn foreground_exit_codes_selection_and_missing_evidence() {
     let fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
-    for (selection, code, status) in [
-        ("green", 0, "GREEN"),
-        ("red", 1, "RED"),
-        ("timeout", 2, "ERROR"),
-        ("blocked", 4, "INCOMPLETE"),
-        ("cycle-a", 4, "INCOMPLETE"),
+    // An Eval selector runs only that eval; an Artifact in a cycle also evaluates its peers.
+    for (selection, code, status, evals) in [
+        ("green", 0, "GREEN", &["green/check"][..]),
+        ("red", 1, "RED", &["red/check"]),
+        ("timeout", 2, "ERROR", &["timeout/check"]),
+        ("blocked", 4, "INCOMPLETE", &["blocked/check"]),
+        ("cycle-a/check", 4, "INCOMPLETE", &["cycle-a/check"]),
+        ("cycle-a", 0, "GREEN", &["cycle-a/check", "cycle-b/check"]),
     ] {
         let output = fixture
             .command()
             .args(["verify", "--wait", selection, "--json"])
             .record_output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(code));
+        assert_eq!(output.status.code(), Some(code), "{selection}");
         let run = json_output(&output);
-        assert_eq!(run["status"], status);
-        assert_eq!(run["requests"].as_array().unwrap().len(), 1);
+        assert_eq!(run["status"], status, "{selection}");
+        let requested: Vec<_> = run["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|request| request["evalId"].as_str().unwrap())
+            .collect();
+        assert_eq!(requested, evals, "{selection}");
     }
     assert_eq!(
         fixture
@@ -374,7 +382,7 @@ fn human_waiting_does_not_prevent_runtime_execution() {
     // Observe the Human admission barrier after the runtime eval executed.
     let run = fixture.observed(&["--all"], 0, false);
     assert_eq!(run["requests"][0]["status"], "GREEN");
-    assert_eq!(run["requests"][1]["status"], "WAITING_HUMAN");
+    assert_eq!(run["requests"][1]["status"], "DEFERRED");
     assert_eq!(run["executionsStarted"], 1);
 }
 

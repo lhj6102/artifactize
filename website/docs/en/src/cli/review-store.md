@@ -28,8 +28,7 @@ loopback. Token commands work on the same file while the server runs, and take
 effect immediately.
 
 Token names are bounded ASCII display labels, not secrets; the
-[CLI identity rules](index.md#identity-arguments) give the syntax and
-pre-store validation.
+[CLI identity rules](index.md#identity-arguments) give the syntax.
 
 `token add` prints a random bearer token once; the store cannot show it again, so save it then.
 `--scopes` is required and has no default; omitting it exits 2. Scopes are `read`
@@ -140,7 +139,7 @@ the same store without upgrading.
 verify publishes its summary record, or the full record with share `full`; if publishing
 fails, the local result stays and the failure is reported. `request submit` publishes
 Human sign-offs. A `--speculate` Run publishes only after its scheduling finishes, and only
-the results that survived ([speculation](../features/run.md#speculation-and-deferred-sign-offs)).
+the results that survived ([speculation](../features/run.md#speculation)).
 A token works within its [scopes](#review-store-server): without `read` it looks nothing
 up, without `publish` it publishes nothing, so a read-only CI token only reuses, and
 without `human` sign-offs stay local with a warning. Evals without a reuse key publish

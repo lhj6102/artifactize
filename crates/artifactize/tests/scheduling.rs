@@ -224,10 +224,7 @@ async fn observed(
                 if ready(&view) {
                     return view;
                 }
-                assert_eq!(
-                    view.run.status(),
-                    artifactize_core::types::RunStatus::Running
-                );
+                assert!(view.run.status().is_open());
                 changes.next_reconciled().await;
             }
         })

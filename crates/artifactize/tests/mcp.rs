@@ -81,7 +81,7 @@ impl Project {
                     {
                         return;
                     }
-                    assert!(view.run.status() == RunStatus::Running);
+                    assert!(view.run.status().is_open());
                     changes.next_reconciled().await;
                 }
             })
@@ -222,7 +222,8 @@ impl Client {
         // result assertion after the controlled release/cancellation below.
         let active = self.call("verify_status", json!({"run":run})).await;
         assert!(
-            ["preparing", "running", "waiting"].contains(&active["state"].as_str().unwrap()),
+            ["preparing", "running", "waiting", "waiting_human"]
+                .contains(&active["state"].as_str().unwrap()),
             "fixture settled before the wait barrier: {active}"
         );
         settle.await;
@@ -435,7 +436,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
             .unwrap()
             .run
             .status()
-            == RunStatus::Running
+            .is_open()
     );
     let mut legacy = Client::new(project.command(), "2024-11-05").await;
     assert_eq!(
@@ -532,7 +533,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
             .await;
         let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
         let expected = if kind == "human" {
-            artifactize_core::types::RequestStatus::WaitingHuman
+            artifactize_core::types::RequestStatus::Deferred
         } else {
             artifactize_core::types::RequestStatus::Running
         };
@@ -585,12 +586,16 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
     let project = Project::new(
         json!([{ "id":"review", "title":"Person", "profile":{"kind":"human"}, "payload":{"instruction":"The person decides."} }]),
     );
+    // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
+    std::fs::create_dir_all(&project.state).unwrap();
+    std::fs::write(
+        project.state.join("limits.json"),
+        r#"{"signoffIdleGraceSeconds":0}"#,
+    )
+    .unwrap();
     let mut client = Client::new(project.command(), "2026-07-28").await;
     let started = client
-        .call(
-            "verify_start",
-            json!({"scope":{"kind":"all"},"defer_human":true,"jobs":1}),
-        )
+        .call("verify_start", json!({"scope":{"kind":"all"},"jobs":1}))
         .await;
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
     assert_eq!(
@@ -605,23 +610,15 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         client
             .call("verify_wait", json!({"run":run,"seconds":40}))
             .await["state"],
-        "signoffs_pending"
+        "yellow"
     );
     assert_eq!(
         client.call("verify_status", json!({"run":run})).await["state"],
-        "signoffs_pending"
+        "yellow"
     );
     assert_eq!(
         client.call("verify_result", json!({"run":run})).await["verdict"],
-        "SIGNOFFS_PENDING"
-    );
-    assert!(
-        store::read_run(&project.state, &run)
-            .await
-            .unwrap()
-            .run
-            .modes
-            .defer_human
+        "YELLOW"
     );
     client.close().await;
 }

@@ -20,8 +20,7 @@ Without an ID it lists the requests its search finds across every repository in 
 newest Run first, with their eval, request, status, claim, age and repository; Enter opens
 one. The search starts as `kind:human status:waiting_human`, the waiting Human sign-offs.
 `--repo PATH` adds that repository's `repo:` term to it; `--all` is accepted and is the
-default. With an ID it opens that request in any repository; a waiting follower's ID opens
-its original.
+default. With an ID it opens that request in any repository.
 
 A search is free text and `key:value` terms; every term must match. A plain word matches,
 case-insensitively, part of the repository, eval, request ID or claimant. A key restricts a
@@ -36,7 +35,7 @@ search for it literally (`"type:style"`):
 | `reviewer:` | part of the claimant's name; unclaimed requests never match |
 | `tag:` | part of a tag of the eval's Artifact (`tags` in its declaration, as saved with the Run) |
 | `kind:` | the eval kind: `runtime`, `agent` or `human` |
-| `status:` | the request status, such as `waiting_human`, `green`, `red` or `error` |
+| `status:` | the request status, such as `waiting_human` (which includes `deferred` sign-offs), `green`, `red` or `error` |
 | `is:mine` | claimed by you (`$USER` or `--reviewer`) |
 | `is:claimed` | claimed by anyone |
 | `is:unclaimed` | a waiting Human request no one has claimed |
@@ -58,7 +57,7 @@ PgDn shows older ones and PgUp newer.
 
 The list holds one entry per waiting sign-off: followers that later Runs join to a waiting
 Human execution are listed once, as the original request, which records the Human tools and
-owner schemas and receives every action, as in the monitor. The search matches that entry, so
+owner schemas and receives every action, as in the monitor; a follower's ID opens it too. The search matches that entry, so
 a follower's own repository does not find it; a follower whose original no longer waits is
 listed as itself. A Human request opens the Human Detail below, read-only once settled. Any
 other request opens a read-only Detail: the monitor's sections of its eval in its Run, its
@@ -93,8 +92,7 @@ The monitor and standalone `review` show a Human review the same way. Opening
 or previewing a request claims nothing. The instruction comes first, below one
 line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
-owner schemas. A waiting follower opens its original request; press `t` to see that
-request's ID and repository.
+owner schemas; for a waiting follower, those of its original request.
 
 Before claim, the instruction fills the body and tools appear on one line. After
 claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
@@ -103,7 +101,10 @@ scrolls it. While Technical is shown the instruction stays expanded, so hide
 Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens the Tools and
 Tool log column to 60% of the available width;
-the selected tool shows its action and description. A command tool shows its resolved command line. If a tool's command could not be
+the selected tool shows its action and description. A command tool shows the command line
+it would run, worked out from the declarations when you opened the review, without claiming
+it or running anything. If you changed the declarations since, the line may be out of date
+until the next tool run updates it. If a tool's command could not be
 worked out, for example because its program is missing, it shows the declaration and why.
 If the review's declarations could not be read at all, every tool shows its command as
 declared, without a reason; running the tool then reports the error. Fix the declaration
@@ -113,7 +114,8 @@ A built-in shows an action on a logical target instead: for example, opening
 command line.
 
 The footer always lists the keys of the focused area. With the mouse, a click on a
-tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` runs it.
+tool row focuses Tools and selects that tool; a click on the selected tool while Tools has
+focus, or on `[Run tool ⏎]`, runs it.
 
 | Key | Human Detail action |
 |---|---|
@@ -130,9 +132,10 @@ tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` run
 | Esc | Cancel work, then stop editing, then leave Detail |
 | Enter on `+ Add` / Ctrl-D | In a list of groups, add a group / remove the selected group |
 
-While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
+While a Human review is being claimed or released, running a tool, or submitting,
+ordinary PgUp/PgDn scroll the Tool log
 regardless of the focused area. Normal editing and focus switching pause until
-the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
+that ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
 - **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
   `--reviewer NAME`, while Monitor always uses the default.
@@ -144,7 +147,6 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   after a release or a settlement elsewhere it neither claims nor runs. Each run
   reloads and resolves the declarations again, but refuses the action if the
   recorded Artifact scope or eval declarations (including tools) have changed.
-  It does not accept an updated command in place of the recorded review definition.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. A nonzero exit is a tool error, not a verdict.
@@ -185,7 +187,7 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
+  draft kept, then leave Detail. In standalone `review`, Close works like Esc. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
@@ -204,7 +206,9 @@ it asks what to do with them:
 | Esc | Stay |
 | Ctrl-C | Quit, keeping the claims |
 
-If a release fails, Review stays open with the error and keeps those claims. Monitor
+The list is the claims taken in this session, so it can still show one you released or
+submitted elsewhere; keeping quits without touching it. If a release fails, Review stays
+open with the error and keeps those claims. Monitor
 keeps claims when it quits; release one with `u` first to give it back.
 
 After a standalone submission the list returns. A page emptied by reviews goes
@@ -232,11 +236,12 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-The screen always shows **Compact + Full + Preview**: each side pane is 16 columns
-below 100 terminal columns, 28 up to 139 and 36 from 140, and the focused pane takes
-the middle. Scope shows Full + Preview, and Detail shows Tree Compact + Detail Full.
-No level is hidden on a narrow terminal, so on a very small one the focused pane can
-shrink to nothing; widen the terminal when it needs more room.
+The screen always shows **Compact + Full + Preview**, the focused pane in the middle
+with the room the side panes leave. Scope shows Full + Preview, and Detail shows Tree
+Compact + Detail Full. Each side pane is 16 columns wide in a terminal narrower than 100
+columns, 28 from 100 columns and 36 from 140. In a terminal too narrow for them, the side panes
+share its width and the focused pane can shrink to nothing; widen the terminal when the
+focused pane needs more room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate
@@ -256,11 +261,13 @@ shrink to nothing; widen the terminal when it needs more room.
   lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
   **Run** row opens validation and unmet obligations, counts, errors, waiting and
   running work, timing, budgets, executed/reused counts and full spent/saved
-  usage in Detail.
+  usage in Detail. Validation stays as it was at Run end, while the tree's rows show the
+  requests as they stand now, including a later Human submission: a dim `*` marks a row
+  whose state changed since the Run ended (not that files changed), and Artifact Detail
+  keeps an `At Run end` field.
 
 Scope badges and the header share `!N ✗N ◐N ?N` attention counters: requests in
-ERROR and RED, Runs still running, and sign-offs waiting for a person, deferred ones
-included. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
+ERROR and RED, Runs still open, and sign-offs waiting for a person. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
 one waiting sign-off.
 
 ### Artifacts and evals
@@ -296,14 +303,14 @@ upstream asks for a retry rather than blocking as RED does. A finished Run can
 still have an open Human request. These view states explain saved request states;
 they do not rename the states in JSON.
 
-The Run's [execution modes](../features/run.md#speculation-and-deferred-sign-offs)
-also explain its display. With `--speculate`, a downstream eval can be READY or
-running while upstream judgment is still pending; a later upstream RED/ERROR
-blocks or cancels that speculative work. With `--defer-human`, sign-offs appear
-as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A finished
-**SIGNOFFS_PENDING** Run means only those sign-offs remain. Their later submissions
-change current requests, not the historical Run-end verdict; strict Human gates
-still remain strict.
+How a Run treats [sign-offs](../features/run.md#sign-offs-and-the-end-of-a-run) and
+[speculation](../features/run.md#speculation) also explains its display. Sign-offs appear
+as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A Run waiting for a
+claimed sign-off or its idle grace is **WAITING_HUMAN**, a darker blue than RUNNING since
+both are still open; a Run that ended **YELLOW** has only those sign-offs left. Their later
+submissions change current requests, not the historical Run-end verdict. With
+`--speculate`, a downstream eval can be READY or running while upstream judgment is still
+pending; a later upstream RED/ERROR blocks or cancels that speculative work.
 
 What an eval waits for follows [Eval dependencies](../features/artifact.md#eval-dependencies).
 A row groups those gates into at most two unmet Artifacts, then `+N`, with each
@@ -321,12 +328,6 @@ The selected eval's upstream Artifact rows get `↑`: bright when unmet, dim whe
 complete. There is no downstream highlight. Off-screen targets show `↑N above` or
 `↑N below`. `b` cycles through those Artifact rows, unmet first; Backspace returns
 to the original row. On an Artifact row, `b` uses its evals' combined upstream.
-
-The headline's validation stays **at Run end**. The tree rolls up the requests as
-they stand now, including a later Human submission. A dim `*` marks a row whose
-derived state changed since the Run ended; it does not mean files changed. Artifact
-Detail also keeps an `At Run end` field. Historical requests and validation are
-not rewritten by this view.
 
 ### Keys and mouse
 
@@ -348,7 +349,7 @@ Detail focus; [Shared Human Detail](#shared-human-detail) owns its focus locks,
 Esc and Close behavior and retained drafts.
 
 Click focuses and selects. Double-click opens a tree row's Detail; clicking the
-peek opens it Full. In a Human Detail, a click on the selected tool runs it. The wheel scrolls the pane under the pointer without moving
+peek opens it Full. In a Human Detail, a click on the selected tool runs it once Tools has focus; the first click only focuses Tools. The wheel scrolls the pane under the pointer without moving
 focus. In the tree it moves the viewport, not the selection, so the peek stays on
 the same eval. Breadcrumb segments are not clickable. Bracketed keyboard paste
 works with mouse capture on or off.
@@ -396,16 +397,11 @@ Detail depends on the eval kind:
   the completed result open. Outside editing or work,
   `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
-Browsing is read-only. If publishing to the team store fails after submission,
+If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
-latest. A waiting Human review's Detail shows the tool commands of the declarations as they
-were when you first opened it, without claiming the review or running anything. A refresh
-keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
-open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
-commands shown are updated after one. A follower opens its
-original request.
+latest.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

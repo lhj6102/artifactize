@@ -93,9 +93,9 @@ pub enum Chip {
     Run {
         id: crate::ids::RunKey,
         mark: Mark,
-        /// Its status in words: `GREEN`, `RED`, `Running`.
+        /// Its status in words: `GREEN`, `RED`, `Running`, `Waiting for sign-off`.
         status: String,
-        /// How long ago it started, `25m ago`; a running one's time so far, `2m 22s`.
+        /// How long ago it started, `25m ago`; an open one's time so far, `2m 22s`.
         age: String,
         running: bool,
     },
@@ -329,6 +329,7 @@ pub(crate) fn row(
 fn status_word(status: RunStatus) -> String {
     match status {
         RunStatus::Running => "Running".into(),
+        RunStatus::WaitingHuman => "Waiting for sign-off".into(),
         other => other.as_str().replace('_', " "),
     }
 }

@@ -27,7 +27,7 @@ artifactize config check
 ## 선언 검사 {#declaration-validation}
 
 `index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 이름이 확장자까지
-정확히 `<filename>`인 옆 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
+정확히 `<filename>`이고 같은 폴더에 있는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
 
@@ -59,7 +59,6 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
 | `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령을 실행하는 Agent 도구에만 씀 |
 | `evals.<id>.title` | 필수. 비어 있지 않은 제목 |
-| `evals.<id>.gate` | 선택. `"blocking"`이면 `--defer-human`에서도 Human 승인을 미루지 않음. 생략하면 요청 모드를 따름. 다른 값은 없음 |
 | `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. Runtime과 Agent eval에만 씀. 기본값 없음 |
 | `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
 | `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
@@ -71,7 +70,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 
 선언 키는 모두 snake_case입니다: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
-`gate`, `mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
+`mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
 씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
 들어가지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
@@ -118,8 +117,7 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-변환기는 없습니다. 에이전트에게 선언을 다시 쓰게 하고 새 `.artf` 파일을 커밋하세요. family는
-없어졌으니, 반복되는 선언은 프로젝트의 생성기로 만들고 그 `.artf` 출력을 커밋하세요.
+옮기는 방법은 [0.9로 업그레이드](../getting-started/update.md#upgrading-to-09)를 보세요.
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors`, 도구 메타데이터 `observation` 같은 예전 필드는
 거부하며, 새 필드의 별칭이 아닙니다. artifactsum 형식의 예전 `dependencies` 옵션도
@@ -176,14 +174,14 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 중첩 객체, 그룹 안의 목록, `$ref`, `anyOf` 같은 조합은 사람이 입력할 수 없으므로 거부합니다.
 Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습니다.
 
-스키마는 8 MiB까지입니다. Agent의 최종 응답 원문은 1 MiB까지이고, 정규화한 결과는 UTF-16 코드
-단위 256000개까지입니다. 최종 응답이 잘못되면 한 번만 수정을 요청하며, 이때도 정해진 제한을 적용합니다. 알리지 않고 필드를 지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
+스키마는 8 MiB까지입니다. Agent의 최종 응답은 다 받은 뒤에 검사하며, 1 MiB를 넘으면
+잘못된 응답입니다. 그 응답에서 artifactize가 보관하는 결과는 256000자까지입니다. 이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다. 최종 응답이 잘못되면 한 번만 수정을 요청하며, 이때도 정해진 제한을 적용합니다. 알리지 않고 필드를 지우지는 않습니다. [Human 제출 인터페이스](../cli/index.md#command-reference)는 따로 입력 크기를
 제한하며, 검사 오류를 알릴 뿐 요청을 확정하지 않습니다.
 
 ## 그래프 Artifact {#graph-artifact}
 
 저장소 루트에 이름 없는 `.artf`를 두면 프로젝트 전체의 Artifact Graph를 선언합니다.
-이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 옆 파일을 선언합니다. 다른
+이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 같은 폴더의 그 파일을 선언합니다. 다른
 디렉터리에 이름 없는 `.artf`가 있으면 선언 오류입니다. 루트 `.artf`는 `index.artf`처럼
 `.artfignore` 패턴이 그 파일 이름을 가리켜도 읽습니다. 그래프 Artifact는 하나만 둘 수
 있습니다.
@@ -219,8 +217,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 [그래프 fingerprint](fingerprint.md#graph-fingerprint)는 소스 파일 내용이나 eval 실행 옵션이
-아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 결과는
-현재 상태만 기준으로 리뷰하거나 재사용합니다.
+아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 현재
+그래프를 리뷰해 결과를 만들거나, 현재 그래프에 맞는 기존 결과를 재사용합니다.
 
 ## 파일 Artifact {#file-artifacts}
 
@@ -235,16 +233,16 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
-실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
+실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 같은 폴더의 다른 파일에 접근할 수 있는 것은 아닙니다.
 내장 도구와 범위가 정해진 argv 참조로는 대상 파일과 참조한 Artifact에만 접근할 수 있습니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
-Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 그 루트 안의 경로는 들어 있는
-폴더를 기준으로 합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
+Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 가상 루트 안의 경로는 대상 파일이
+있는 폴더를 기준으로 지정합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
 Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 
-파일을 해시하려면 `fingerprint`를 생략하세요. artifactsum의
-[파일 Artifact 형식](fingerprint.md#artifactsum)은 대상만 적으며, 스크립트나
-`fingerprint = false`도 쓸 수 있습니다.
+파일을 해시하려면 `fingerprint`를 생략하세요. 파일 Artifact의
+[artifactsum 설정](fingerprint.md#artifactsum)에는 대상 파일만 적으며, 스크립트나
+`fingerprint = false`를 선택할 수도 있습니다.
 
 JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로세스의 작업 디렉터리는 그
 파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"graph"`가
@@ -263,11 +261,11 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 파일을 되돌려 놓은 뒤 다시 verify하세요.
 
-어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에서 확인하세요.
+어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에서 확인하세요.
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
-Runtime이나 Agent eval은 `gate`, `profile`과 함께 `mutex`도 선언할 수 있습니다.
+Runtime이나 Agent eval은 `profile`과 함께 `mutex`도 선언할 수 있습니다.
 
 ```toml
 [evals.suite-passes]
@@ -300,24 +298,6 @@ payload.instruction = "Run the end-to-end suite."
 중이어도, 테스트 코드를 읽기만 하는 Agent eval까지 대기할 필요는 없습니다. 암묵적인 태그는 없습니다.
 mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fingerprint나 재사용 키가 바뀌지 않고,
 충돌하는 eval이 실행 중일 때도 캐시 결과는 재사용할 수 있습니다.
-
-## Human 게이트 정책 {#human-gate-policy}
-
-`gate = "blocking"`은 프로필이나 전역 설정이 아니라 eval에 다는 선택 필드입니다.
-`verify --defer-human`에서도 Human eval의 게이트를 대기 상태로 유지합니다. 생략하면 기본 Run에서는 승인 게이트를 엄격하게 적용하고, 요청에서 승인 미루기를 지정한 경우에만 승인을 미룰 수 있습니다. Runtime이나 Agent
-eval에서는 아무 효과도 없습니다. 미룰 수 있는 것은 Human 승인뿐입니다. 게이트 정책은
-스케줄링만 바꾸며, 평가 기준이나 재사용 키는 바꾸지 않습니다.
-
-```toml
-[evals.signoff]
-title = "The delivery is approved"
-gate = "blocking"
-profile = { kind = "human" }
-payload.instruction = "Approve the delivery before dependent work proceeds."
-```
-
-[verify 모드](../cli/index.md#verify-modes)와 [미룬 승인](human.md#deferred-sign-offs)을
-보세요.
 
 ## eval 의존성 {#eval-dependencies}
 
@@ -355,15 +335,15 @@ Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도�
 명령은 그 Artifact의 작업 디렉터리에서 stdin으로 JSON `{"version":1,"artifactId":"example"}`을
 받아 실행됩니다. 경로 없는 명령은 PATH에서 찾고, 절대 경로 실행 파일은 그대로 실행합니다.
 `./fingerprint.sh`처럼 `/`가 든 상대 경로 실행 파일은 폴더 Artifact의 허용된 범위 안에서
-찾습니다. 파일 Artifact라면 들어 있는 폴더 아래에서 찾으며 상관없는 옆 파일을 가리킬 수도
-있습니다. 어느 쪽이든 상위 경로로 올라가거나 심볼릭 링크를 거치는 경로는 거부합니다. 인자는 범위가 정해진
+찾습니다. 파일 Artifact라면 대상 파일이 있는 폴더 아래에서 찾으며, 같은 폴더의 다른 파일을
+가리킬 수도 있습니다. 어느 쪽이든 상위 경로로 올라가거나 심볼릭 링크를 거치는 경로는 거부합니다. 인자는 범위가 정해진
 Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 Artifact 이름입니다. 스크립트에서는
 참조한 Artifact와 그 자식까지 접근할 수 있지만, 이 참조로 그래프에 관계가 추가되지는 않습니다.
 `config check`는 모르는 참조와 형식이 잘못된 참조를 거부하며, 존재 여부와 심볼릭 링크는 명령을
 준비할 때 확인합니다. 인터프리터별 플래그, 래퍼, 진입 파일 규칙은 없습니다.
 
 `fingerprint.script.files`는 Artifact 기준의 고유한 파일·디렉터리 경로를 64개까지 받으며, 각
-경로는 UTF-16 코드 단위 1024개까지입니다. 호출할 때마다 각 경로가 존재하고 심볼릭 링크를 거치지 않는지
+경로는 1024자까지입니다(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다). 호출할 때마다 각 경로가 존재하고 심볼릭 링크를 거치지 않는지
 확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 원본 출력의 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
 디렉터리는 실행이 끝나면 지웁니다. stdout은 `[A-Za-z0-9._:-]`로 이뤄진 1–128자의 ASCII여야
 하며, 그 뒤에 LF 하나(Windows에서는 CRLF 하나)만 올 수 있습니다. 그 밖의 공백은 허용하지 않고
@@ -387,14 +367,16 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-자식까지 읽을 수 있습니다. 참조한 Artifact의 eval 지시문은 리뷰에 더해지지 않습니다. 프로젝트
+자식까지 읽을 수 있습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를
 담거나, 4096자를 넘을 수 없습니다. 직접 선언하는 경로(`fingerprint.files`,
 `fingerprint.script.files`, `execution_paths`)는 1024자까지입니다. `config check`는 eval마다
-선언한 프로필의 이름과 문법을 확인합니다. `profile_variants` 항목에만 나오는 참조는 그 변형을
-고를 때 확인하므로, 변형을 쓰기 전에 `status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
+선언한 프로필의 이름과 문법을 확인합니다. 위의 문법과 경로 규칙은 모든 `profile_variants` 항목에도
+적용되므로, 어느 변형에든 `{app}/../outside`처럼 잘못된 참조가 있으면 `config check`가 실패합니다.
+변형에만 나오는 참조가 실제 Artifact를 가리키는지는 그 변형을 고를 때 확인하므로, 변형을 쓰기 전에
+`status SELECTOR --profile NAME`을 실행하세요. 참조한 파일이
 있는지와 심볼릭 링크를 따라가지 않는지는 명령을 준비할 때 확인합니다.
 
 ## Runtime 실행 {#runtime-execution}

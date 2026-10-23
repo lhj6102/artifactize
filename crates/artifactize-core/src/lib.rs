@@ -19,6 +19,7 @@ pub mod platform;
 pub mod process;
 pub mod project;
 pub mod query;
+pub mod release;
 pub mod remote;
 pub mod repository;
 pub mod review;

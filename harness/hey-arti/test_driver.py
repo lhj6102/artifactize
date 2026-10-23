@@ -674,7 +674,7 @@ class HostLifecycleTests(OwnedTestCase):
                 # submit can have saved a Run before returning its announcement.
                 for saved in json.loads(command(["run", "list", "--json"]).stdout):
                     view = json.loads(command(["run", "show", saved["id"]]).stdout)
-                    self.assertIn(view["status"], {"GREEN", "RED", "INCOMPLETE", "SIGNOFFS_PENDING", "ERROR"})
+                    self.assertIn(view["status"], {"GREEN", "RED", "INCOMPLETE", "YELLOW", "ERROR"})
                 for descriptor in handles.values():
                     self.assertTrue(select.select([descriptor], [], [], observation_bound)[0],
                                     f"owned worker did not exit; fixture retained at {area.as_posix()}")
@@ -704,9 +704,9 @@ payload.instruction = "Keep this request pending; the fixture cancels without ap
         while True:
             view = json.loads(command(["run", "show", identifier]).stdout)
             capture_worker(view)
-            if handles and any(request["status"] == "WAITING_HUMAN" for request in view["requests"]):
+            if handles and any(request["status"] == "DEFERRED" for request in view["requests"]):
                 break
-            self.assertEqual(view["status"], "RUNNING", view)
+            self.assertIn(view["status"], {"RUNNING", "WAITING_HUMAN"}, view)
             self.assertLess(time.monotonic(), deadline, "owned fixture did not reach its Human boundary")
         cleanup = release()
         self.assertFalse(area.exists())

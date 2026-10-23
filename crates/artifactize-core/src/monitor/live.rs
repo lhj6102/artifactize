@@ -128,9 +128,7 @@ pub struct Branch {
 impl Branch {
     /// The Run in progress a branch's timeline starts with: the newest Run, while it runs.
     pub fn running(&self) -> Option<&Chip> {
-        self.runs
-            .last()
-            .filter(|chip| chip.status == RunStatus::Running)
+        self.runs.last().filter(|chip| chip.status.is_open())
     }
 
     /// When its newest Run started.

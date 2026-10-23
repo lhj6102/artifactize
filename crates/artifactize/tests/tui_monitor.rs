@@ -226,10 +226,11 @@ async fn live_verify_progress_and_runs_across_repositories() {
                 if slow.is_some_and(|view| {
                     view.request.status() == artifactize_core::types::RequestStatus::Running
                 }) && human.is_some_and(|view| {
-                    view.request.status() == artifactize_core::types::RequestStatus::WaitingHuman
+                    view.request.status() == artifactize_core::types::RequestStatus::Deferred
                 }) {
                     let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
-                    assert_eq!(progress.status.as_str(), "RUNNING");
+                    // Open from its first sign-off request, while other work still runs.
+                    assert_eq!(progress.status.as_str(), "WAITING_HUMAN");
                     assert_eq!(progress.validation, "pending");
                     assert_eq!(progress.running.len(), 1);
                     assert_eq!(progress.running[0].0, "slow/wait");
@@ -258,10 +259,10 @@ async fn live_verify_progress_and_runs_across_repositories() {
     assert!(list.contains("all repositories"), "{list}");
     let live_row = list
         .lines()
-        .find(|line| line.contains(live.as_str()) && line.contains("RUNNING"))
+        .find(|line| line.contains(live.as_str()) && line.contains("WAITING_HUMAN"))
         .unwrap();
     assert!(
-        live_row.contains("RUNNING") && live_row.contains("beta"),
+        live_row.contains("WAITING_HUMAN") && live_row.contains("beta"),
         "{list}"
     );
     assert!(list.contains(&second));
@@ -288,7 +289,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{progress}"
     );
     assert!(
-        progress.contains("◐ RUNNING · validation pending · ◐1 ?1"),
+        progress.contains("? WAITING_HUMAN · validation pending · ◐1 ?1"),
         "{progress}"
     );
 
@@ -313,7 +314,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     all.refresh().await;
     let progress = screen(&mut all);
     assert!(
-        progress.contains("◐ RUNNING · validation pending · ?1 ✓1"),
+        progress.contains("? WAITING_HUMAN · validation pending · ?1 ✓1"),
         "{progress}"
     );
     fixture.json(

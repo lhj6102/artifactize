@@ -1,5 +1,6 @@
-//! C1–C4: observable cancellation, deferred sign-offs and scheduling seams, including the
-//! hidden eval link from a parent Artifact to its children.
+//! C1–C4: observable cancellation, deferred sign-offs, the idle grace that holds a Run open for
+//! them, and scheduling seams, including the hidden eval link from a parent Artifact to its
+//! children.
 #[path = "support/run.rs"]
 mod owned_run;
 
@@ -43,12 +44,28 @@ impl Fixture {
         let state = root.path().join("state");
         let root = owned_run::Root::from(root);
         root.track(&state, &repo);
-        Self {
+        let fixture = Self {
             repo,
             state,
             script,
             _root: root,
-        }
+        };
+        // A Run ends as soon as only unclaimed sign-offs are left, unless a test holds it open.
+        fixture.grace(0);
+        fixture
+    }
+    /// Set the state's sign-off idle grace through the CLI, for the Runs started afterwards.
+    fn grace(&self, seconds: u64) {
+        let output = support::os::run(self.command().args([
+            "limits",
+            "--signoff-idle-grace",
+            &seconds.to_string(),
+        ]));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     fn runtime(&self, id: &str, deps: &[&str]) -> Value {
         json!({"id":id,"title":id,"profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&self.script),id]},"payload":{"instruction":format!("Check {}.", deps.iter().map(|name| format!("{{{name}}}")).collect::<Vec<_>>().join(" "))}})
@@ -101,9 +118,8 @@ impl Fixture {
                         if predicate(&view) {
                             return view;
                         }
-                        assert_eq!(
-                            view.run.status(),
-                            RunStatus::Running,
+                        assert!(
+                            view.run.status().is_open(),
                             "{}",
                             serde_json::to_string_pretty(&view).unwrap()
                         );
@@ -147,6 +163,28 @@ impl Fixture {
         fs::read_to_string(self.repo.join(artifact).join(format!("{eval}-ready")))
             .is_ok_and(|contents| contents == "ready")
     }
+    async fn claim(&self, view: &RunView, eval: &str) {
+        let request = view
+            .requests
+            .iter()
+            .find(|request| request.eval_id.as_str() == eval)
+            .unwrap();
+        let receipts = Receipts::open(&self.state, &self.repo).await.unwrap();
+        human::claim(&receipts, &request.id, &"reviewer".parse().unwrap())
+            .await
+            .unwrap();
+    }
+    async fn unclaim(&self, view: &RunView, eval: &str) {
+        let request = view
+            .requests
+            .iter()
+            .find(|request| request.eval_id.as_str() == eval)
+            .unwrap();
+        let receipts = Receipts::open(&self.state, &self.repo).await.unwrap();
+        human::unclaim(&receipts, &request.id, &"reviewer".parse().unwrap())
+            .await
+            .unwrap();
+    }
     async fn sign(&self, view: &RunView, eval: &str, verdict: &str) {
         let request = view
             .requests
@@ -176,18 +214,17 @@ fn status(view: &RunView, eval: &str) -> RequestStatus {
         .unwrap()
         .status()
 }
-fn human_eval(deps: &[&str], blocking: bool) -> Value {
-    let mut eval = json!({"id":"sign","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":format!("Review {}.", deps.iter().map(|name| format!("{{{name}}}")).collect::<Vec<_>>().join(" "))}});
-    if blocking {
-        eval["gate"] = json!("blocking");
-    }
-    eval
+fn human_eval(deps: &[&str]) -> Value {
+    json!({"id":"sign","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":format!("Review {}.", deps.iter().map(|name| format!("{{{name}}}")).collect::<Vec<_>>().join(" "))}})
 }
 
 #[tokio::test]
-async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green() {
+async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_red_and_keeps_green()
+{
     for verdict in ["RED", "GREEN"] {
         let fixture = Fixture::new();
+        // The Run stays open for its sign-offs until they are submitted.
+        fixture.grace(24 * 60 * 60);
         let gate = support::Gate::default();
         gate.close();
         let started = Arc::new(AtomicBool::new(false));
@@ -208,10 +245,10 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
         });
         fixture.declare("up", vec![fixture.runtime("check", &[])]);
         fixture.declare("down", vec![fixture.runtime("runtime", &["up"]),
-            json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},"payload":{"instruction":"Review {up}."}}), human_eval(&["up"], false)]);
+            json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},"payload":{"instruction":"Review {up}."}}), human_eval(&["up"])]);
         fixture.declare("leaf", vec![fixture.runtime("check", &["down"])]);
-        // A sign-off without machine siblings is asked speculatively.
-        fixture.declare("notes", vec![human_eval(&["up"], false)]);
+        // Even a sign-off without machine siblings is never asked speculatively.
+        fixture.declare("notes", vec![human_eval(&["up"])]);
         let run = fixture.submit(&["--speculate", "--jobs", "5"], Some(&provider));
         let active = fixture
             .until(&run, |view| {
@@ -225,7 +262,6 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
                     && view.requests.iter().any(|request| {
                         request.eval_id.as_str() == "down/runtime" && request.child.is_some()
                     })
-                    && status(view, "notes/sign") == RequestStatus::WaitingHuman
             })
             .await;
         assert_eq!(
@@ -233,11 +269,13 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
             RequestStatus::Running,
             "downstream started before upstream ended"
         );
-        assert_ne!(
-            status(&active, "down/sign"),
-            RequestStatus::WaitingHuman,
-            "no person is asked before the Artifact's other machine evals are GREEN"
-        );
+        for eval in ["down/sign", "notes/sign"] {
+            assert!(
+                !status(&active, eval).is_human_wait(),
+                "no person is asked before the evals {eval} relies on are GREEN"
+            );
+        }
+        assert_eq!(active.run.status(), RunStatus::Running);
         let runtime_child = active
             .requests
             .iter()
@@ -247,7 +285,6 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
             .clone()
             .unwrap();
         if verdict == "GREEN" {
-            fixture.sign(&active, "notes/sign", "GREEN").await;
             fixture.release("down", "runtime", 0);
             fixture.release("leaf", "check", 0);
             gate.open();
@@ -259,16 +296,20 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
                 })
                 .await;
             // Speculative GREENs still wait for up, so no person is asked yet.
-            assert_ne!(
-                status(&speculated, "down/sign"),
-                RequestStatus::WaitingHuman
-            );
+            assert!(!status(&speculated, "down/sign").is_human_wait());
             fixture.release("up", "check", 0);
             let signoff = fixture
                 .until(&run, |view| {
-                    status(view, "down/sign") == RequestStatus::WaitingHuman
+                    status(view, "down/sign") == RequestStatus::Deferred
+                        && status(view, "notes/sign") == RequestStatus::Deferred
                 })
                 .await;
+            assert_eq!(
+                signoff.run.status(),
+                RunStatus::WaitingHuman,
+                "a Run that asked for a sign-off waits for it"
+            );
+            fixture.sign(&signoff, "notes/sign", "GREEN").await;
             fixture.sign(&signoff, "down/sign", "GREEN").await;
             let ended = fixture.settled(&run).await;
             assert_eq!(ended.run.status(), RunStatus::Green);
@@ -297,19 +338,6 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
             ] {
                 assert_eq!(status(&ended, eval), RequestStatus::Blocked);
             }
-            let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
-            for eval in ["down/sign", "notes/sign"] {
-                let sign = ended
-                    .requests
-                    .iter()
-                    .find(|request| request.eval_id.as_str() == eval)
-                    .unwrap();
-                assert!(
-                    human::claim(&receipts, &sign.id, &"reviewer".parse().unwrap())
-                        .await
-                        .is_err()
-                );
-            }
             assert!(
                 store::read_waiting(&fixture.state, None)
                     .await
@@ -331,15 +359,12 @@ async fn c1_speculation_starts_all_kinds_cancels_transitive_red_and_keeps_green(
 }
 
 #[tokio::test]
-async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_when_blocking() {
+async fn c2_signoffs_are_late_provisional_end_yellow_and_are_reused_by_the_next_verify() {
     for verdict in ["GREEN", "RED"] {
         let fixture = Fixture::new();
-        fixture.declare(
-            "up",
-            vec![fixture.runtime("check", &[]), human_eval(&[], false)],
-        );
+        fixture.declare("up", vec![fixture.runtime("check", &[]), human_eval(&[])]);
         fixture.declare("down", vec![fixture.runtime("check", &["up"])]);
-        let run = fixture.submit(&["--defer-human", "--request-key", "mode-choice"], None);
+        let run = fixture.submit(&["--request-key", "mode-choice"], None);
         let active = fixture
             .until(&run, |view| {
                 fixture.ready("up", "check") && status(view, "up/check") == RequestStatus::Running
@@ -368,7 +393,7 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
         );
         fixture.release("down", "check", 0);
         let ended = fixture.settled(&run).await;
-        assert_eq!(ended.run.status(), RunStatus::SignoffsPending);
+        assert_eq!(ended.run.status(), RunStatus::Yellow);
         assert_eq!(status(&ended, "down/check"), RequestStatus::Provisional);
         assert!(
             !ended
@@ -423,14 +448,6 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
         let retry = fixture.submit(&["--speculate", "--request-key", "mode-choice"], None);
         assert_eq!(retry, run);
         assert!(
-            store::read_run(&fixture.state, &retry)
-                .await
-                .unwrap()
-                .run
-                .modes
-                .defer_human
-        );
-        assert!(
             !store::read_run(&fixture.state, &retry)
                 .await
                 .unwrap()
@@ -444,7 +461,7 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(5));
-        let ci = fixture.submit(&["--defer-human", "--reuse-only", "agent,human"], None);
+        let ci = fixture.submit(&["--reuse-only", "agent,human"], None);
         let ci = fixture.settled(&ci).await;
         assert_eq!(
             ci.run.status(),
@@ -452,7 +469,7 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
             "CI never counts deferred evidence as approval"
         );
         fixture.sign(&ended, "up/sign", verdict).await;
-        let next = fixture.submit(&["--defer-human"], None);
+        let next = fixture.submit(&[], None);
         let next = fixture.settled(&next).await;
         assert_eq!(next.run.executions_started, 0);
         if verdict == "GREEN" {
@@ -469,69 +486,193 @@ async fn c2_deferred_signoffs_are_late_provisional_terminal_reusable_and_strict_
             );
             assert_eq!(status(&next, "down/check"), RequestStatus::Green);
         } else {
+            // The cached result is still taken behind the RED sign-off; the Run is not.
             assert_eq!(next.run.status(), RunStatus::Red);
-            assert_eq!(status(&next, "down/check"), RequestStatus::Blocked);
+            assert_eq!(status(&next, "down/check"), RequestStatus::Green);
         }
     }
+}
+
+#[tokio::test]
+async fn c2_removed_gate_and_defer_human_are_refused_with_their_replacement() {
     let fixture = Fixture::new();
-    fixture.declare(
-        "up",
-        vec![fixture.runtime("check", &[]), human_eval(&[], true)],
-    );
-    fixture.declare("down", vec![fixture.runtime("check", &["up"])]);
-    let run = fixture.submit(&["--defer-human"], None);
-    fixture
-        .until(&run, |view| {
-            fixture.ready("up", "check") && status(view, "up/check") == RequestStatus::Running
-        })
-        .await;
+    let mut eval = human_eval(&[]);
+    eval["gate"] = json!("blocking");
+    fixture.declare("up", vec![eval]);
+    let output = support::os::run(fixture.command().args(["verify", "--all"]));
+    assert!(!output.status.success());
     assert!(
-        store::read_waiting(&fixture.state, None)
-            .await
-            .unwrap()
-            .is_empty(),
-        "blocking sign-offs also wait for machine evidence before issuance"
+        String::from_utf8_lossy(&output.stderr).contains(
+            "gate was removed in 0.16.0; remove it. A Human sign-off never holds up other evals."
+        ),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    fixture.release("up", "check", 0);
-    let awaiting = fixture
-        .until(&run, |view| {
-            status(view, "up/sign") == RequestStatus::WaitingHuman
-                && status(view, "up/check") == RequestStatus::Green
-        })
-        .await;
+    fixture.declare("up", vec![human_eval(&[])]);
+    let output = support::os::run(fixture.command().args(["verify", "--all", "--defer-human"]));
+    assert!(!output.status.success());
     assert!(
-        !fixture.ready("down", "check"),
-        "gate=blocking retains its pending gate"
+        String::from_utf8_lossy(&output.stderr).contains("--defer-human was removed in 0.16.0"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    fixture.sign(&awaiting, "up/sign", "GREEN").await;
-    fixture
+}
+
+#[tokio::test]
+async fn c2_a_claim_holds_the_run_open_until_it_is_submitted_or_released() {
+    for submit in [true, false] {
+        let fixture = Fixture::new();
+        fixture.declare("notes", vec![human_eval(&[])]);
+        fixture.declare("slow", vec![fixture.runtime("check", &[])]);
+        let run = fixture.submit(&[], None);
+        let asked = fixture
+            .until(&run, |view| {
+                status(view, "notes/sign") == RequestStatus::Deferred
+                    && fixture.ready("slow", "check")
+            })
+            .await;
+        assert_eq!(
+            asked.run.status(),
+            RunStatus::WaitingHuman,
+            "the Run waits from its first sign-off request"
+        );
+        fixture.claim(&asked, "notes/sign").await;
+        fixture.release("slow", "check", 0);
+        // Even with no idle grace, the claim keeps the Run open after its other work ended.
+        let held = fixture
+            .until(&run, |view| {
+                status(view, "slow/check") == RequestStatus::Green
+            })
+            .await;
+        assert_eq!(held.run.status(), RunStatus::WaitingHuman);
+        let ended = if submit {
+            fixture.sign(&held, "notes/sign", "GREEN").await;
+            let ended = fixture.settled(&run).await;
+            assert_eq!(
+                ended.run.status(),
+                RunStatus::Green,
+                "the Run settles with its sign-off"
+            );
+            ended
+        } else {
+            fixture.unclaim(&held, "notes/sign").await;
+            let ended = fixture.settled(&run).await;
+            assert_eq!(
+                ended.run.status(),
+                RunStatus::Yellow,
+                "a released claim leaves only an unclaimed sign-off"
+            );
+            assert_eq!(status(&ended, "notes/sign"), RequestStatus::Deferred);
+            ended
+        };
+        let output = support::os::run(fixture.command().args([
+            "run",
+            "show",
+            ended.run.id.as_str(),
+            "--wait",
+        ]));
+        assert_eq!(output.status.code(), Some(if submit { 0 } else { 5 }));
+    }
+}
+
+#[tokio::test]
+async fn c2_the_idle_grace_holds_a_run_with_only_signoffs_left_open() {
+    let fixture = Fixture::new();
+    fixture.grace(24 * 60 * 60);
+    fixture.declare("notes", vec![human_eval(&[])]);
+    // Nothing but the sign-off: the Run is idle from its start, and nobody has claimed it.
+    let run = fixture.submit(&[], None);
+    let waiting = fixture
         .until(&run, |view| {
-            fixture.ready("down", "check") && status(view, "down/check") == RequestStatus::Running
+            status(view, "notes/sign") == RequestStatus::Deferred
+                && view.run.control.as_ref().is_some_and(|control| {
+                    control.activity == artifactize_core::runs::Activity::Waiting
+                })
         })
         .await;
-    fixture.release("down", "check", 0);
-    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
+    assert_eq!(waiting.run.status(), RunStatus::WaitingHuman);
+    let observed =
+        support::os::run(
+            fixture
+                .command()
+                .args(["run", "show", run.as_str(), "--json"]),
+        );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&observed.stdout).unwrap()["status"],
+        "WAITING_HUMAN"
+    );
+    fixture.sign(&waiting, "notes/sign", "RED").await;
+    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Red);
+
+    let output = support::os::run(fixture.command().args(["limits", "--json"]));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["signoffIdleGraceSeconds"],
+        86400
+    );
+    let output =
+        support::os::run(
+            fixture
+                .command()
+                .args(["limits", "--signoff-idle-grace", "86401"]),
+        );
+    assert!(!output.status.success(), "a grace past a day is refused");
+}
+
+#[tokio::test]
+async fn c2_a_run_that_an_earlier_version_ended_signoffs_pending_reads_as_yellow() {
+    let fixture = Fixture::new();
+    fixture.declare("notes", vec![human_eval(&[])]);
+    let run = fixture.submit(&[], None);
+    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Yellow);
+    // Back to schema 9, which called the same end SIGNOFFS_PENDING.
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    db.execute(
+        "UPDATE runs SET status='SIGNOFFS_PENDING',data=json_set(data,'$.status','SIGNOFFS_PENDING') WHERE id=?",
+        [run.as_str()],
+    )
+    .unwrap();
+    db.execute_batch("PRAGMA user_version=9;").unwrap();
+    drop(db);
+    let upgraded = store::read_run(&fixture.state, &run).await.unwrap();
+    assert_eq!(upgraded.run.status(), RunStatus::Yellow);
+    let db = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(
+        db.query_row(
+            "SELECT status FROM runs WHERE id=?",
+            [run.as_str()],
+            |row| { row.get::<_, String>(0) }
+        )
+        .unwrap(),
+        "YELLOW"
+    );
+    assert_eq!(
+        db.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .unwrap(),
+        store::STATE_SCHEMA_VERSION
+    );
 }
 
 #[tokio::test]
 async fn c2_cancelling_a_run_ends_its_deferred_signoff_and_the_requests_joined_to_it() {
     let fixture = Fixture::new();
-    fixture.declare("up", vec![human_eval(&[], false)]);
+    fixture.declare("up", vec![human_eval(&[])]);
     fixture.declare("slow", vec![fixture.runtime("check", &[])]);
-    let run = fixture.submit(&["--defer-human"], None);
+    let run = fixture.submit(&[], None);
     fixture
         .until(&run, |view| {
             status(view, "up/sign") == RequestStatus::Deferred && fixture.ready("slow", "check")
         })
         .await;
     // Another Run joins the same sign-off while the first one still runs.
-    let output = support::os::run(fixture.command().args([
-        "verify",
-        "--eval",
-        "up/sign",
-        "--defer-human",
-        "--json",
-    ]));
+    let output = support::os::run(
+        fixture
+            .command()
+            .args(["verify", "--eval", "up/sign", "--json"]),
+    );
     assert!(
         output.status.success(),
         "{}",
@@ -574,119 +715,102 @@ async fn c2_cancelling_a_run_ends_its_deferred_signoff_and_the_requests_joined_t
 #[tokio::test]
 async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_followers() {
     for claimed in [false, true] {
-        for defer in [false, true] {
-            let fixture = Fixture::new();
-            fixture.declare(
-                "up",
-                vec![fixture.runtime("check", &[]), human_eval(&[], false)],
-            );
-            fixture.release("up", "check", 0);
-            let first = fixture.submit(&["--defer-human"], None);
-            let first = fixture.settled(&first).await;
-            assert_eq!(first.run.status(), RunStatus::SignoffsPending);
-            let original = first
-                .requests
-                .iter()
-                .find(|q| q.eval_id.as_str() == "up/sign")
+        let fixture = Fixture::new();
+        fixture.declare("up", vec![fixture.runtime("check", &[]), human_eval(&[])]);
+        fixture.release("up", "check", 0);
+        let first = fixture.submit(&[], None);
+        let first = fixture.settled(&first).await;
+        assert_eq!(first.run.status(), RunStatus::Yellow);
+        let original = first
+            .requests
+            .iter()
+            .find(|q| q.eval_id.as_str() == "up/sign")
+            .unwrap();
+        let joined = fixture.submit(&[], None);
+        let joined = fixture.settled(&joined).await;
+        let follower = joined
+            .requests
+            .iter()
+            .find(|q| q.eval_id.as_str() == "up/sign")
+            .unwrap();
+        assert_eq!(follower.status(), RequestStatus::Deferred);
+        assert_eq!(
+            original.execution_id, follower.execution_id,
+            "same-key requests still join"
+        );
+        let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
+        let reviewer = "reviewer".parse().unwrap();
+        if claimed {
+            human::claim(&receipts, &original.id, &reviewer)
+                .await
                 .unwrap();
-            let joined = fixture.submit(&["--defer-human"], None);
-            let joined = fixture.settled(&joined).await;
-            let follower = joined
-                .requests
-                .iter()
-                .find(|q| q.eval_id.as_str() == "up/sign")
-                .unwrap();
-            assert_eq!(follower.status(), RequestStatus::Deferred);
-            assert_eq!(
-                original.execution_id, follower.execution_id,
-                "same-key requests still join"
-            );
-            let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
-            let reviewer = "reviewer".parse().unwrap();
-            if claimed {
-                human::claim(&receipts, &original.id, &reviewer)
-                    .await
-                    .unwrap();
-            }
-
-            fs::write(fixture.repo.join("up/fingerprint"), "changed").unwrap();
-            fs::remove_file(fixture.repo.join("up/check-ready")).unwrap();
-            fs::remove_file(fixture.repo.join("up/check-release")).unwrap();
-            let newer = fixture.submit(if defer { &["--defer-human"] } else { &[] }, None);
-            fixture
-                .until(&newer, |view| {
-                    fixture.ready("up", "check")
-                        && status(view, "up/check") == RequestStatus::Running
-                })
-                .await;
-            let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
-            assert!(
-                waiting.iter().any(|q| q.request.id == original.id),
-                "acceptance alone does not retire a sign-off"
-            );
-            assert!(waiting.iter().any(|q| q.request.id == follower.id));
-            fixture.release("up", "check", 0);
-            let issued = fixture
-                .until(&newer, |view| {
-                    status(view, "up/sign")
-                        == if defer {
-                            RequestStatus::Deferred
-                        } else {
-                            RequestStatus::WaitingHuman
-                        }
-                })
-                .await;
-            for (run, request) in [(&first.run.id, original), (&joined.run.id, follower)] {
-                let ended = store::read_run(&fixture.state, run).await.unwrap();
-                let signoff = ended.requests.iter().find(|q| q.id == request.id).unwrap();
-                assert_eq!(signoff.status(), RequestStatus::Error);
-                assert_eq!(
-                    signoff.error_code(),
-                    Some(artifactize_core::types::FailureCode::Superseded)
-                );
-                assert!(
-                    human::claim(&receipts, &request.id, &reviewer)
-                        .await
-                        .is_err()
-                );
-            }
-            let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
-            assert!(
-                waiting
-                    .iter()
-                    .all(|q| q.request.id != original.id && q.request.id != follower.id)
-            );
-            assert_eq!(waiting.len(), 1);
-            fixture.sign(&issued, "up/sign", "GREEN").await;
-            fixture.settled(&newer).await;
         }
+
+        fs::write(fixture.repo.join("up/fingerprint"), "changed").unwrap();
+        fs::remove_file(fixture.repo.join("up/check-ready")).unwrap();
+        fs::remove_file(fixture.repo.join("up/check-release")).unwrap();
+        let newer = fixture.submit(&[], None);
+        fixture
+            .until(&newer, |view| {
+                fixture.ready("up", "check") && status(view, "up/check") == RequestStatus::Running
+            })
+            .await;
+        let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
+        assert!(
+            waiting.iter().any(|q| q.request.id == original.id),
+            "acceptance alone does not retire a sign-off"
+        );
+        assert!(waiting.iter().any(|q| q.request.id == follower.id));
+        fixture.release("up", "check", 0);
+        let issued = fixture
+            .until(&newer, |view| {
+                status(view, "up/sign") == RequestStatus::Deferred
+            })
+            .await;
+        for (run, request) in [(&first.run.id, original), (&joined.run.id, follower)] {
+            let ended = store::read_run(&fixture.state, run).await.unwrap();
+            let signoff = ended.requests.iter().find(|q| q.id == request.id).unwrap();
+            assert_eq!(signoff.status(), RequestStatus::Error);
+            assert_eq!(
+                signoff.error_code(),
+                Some(artifactize_core::types::FailureCode::Superseded)
+            );
+            assert!(
+                human::claim(&receipts, &request.id, &reviewer)
+                    .await
+                    .is_err()
+            );
+        }
+        let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
+        assert!(
+            waiting
+                .iter()
+                .all(|q| q.request.id != original.id && q.request.id != follower.id)
+        );
+        assert_eq!(waiting.len(), 1);
+        fixture.sign(&issued, "up/sign", "GREEN").await;
+        fixture.settled(&newer).await;
     }
 }
 
 #[tokio::test]
-async fn c2_superseding_a_signoff_leaves_other_worktrees_and_live_strict_waits() {
+async fn c2_superseding_a_signoff_leaves_other_worktrees() {
     let fixture = Fixture::new();
-    fixture.declare("up", vec![human_eval(&[], false)]);
-    let strict = fixture.submit(&[], None);
-    let strict = fixture
-        .until(&strict, |view| {
-            status(view, "up/sign") == RequestStatus::WaitingHuman
-        })
-        .await;
+    fixture.declare("up", vec![human_eval(&[])]);
     fs::write(fixture.repo.join("up/fingerprint"), "deferred").unwrap();
-    let deferred = fixture.submit(&["--defer-human"], None);
+    let deferred = fixture.submit(&[], None);
     let deferred = fixture.settled(&deferred).await;
 
     let mut other = Fixture::new();
     other.state = fixture.state.clone();
     other._root.track(&other.state, &other.repo);
-    other.declare("up", vec![human_eval(&[], false)]);
+    other.declare("up", vec![human_eval(&[])]);
     fs::write(other.repo.join("up/fingerprint"), "other-tree").unwrap();
-    let other_run = other.submit(&["--defer-human"], None);
+    let other_run = other.submit(&[], None);
     let other_run = other.settled(&other_run).await;
 
     fs::write(fixture.repo.join("up/fingerprint"), "newest").unwrap();
-    let newest = fixture.submit(&["--defer-human"], None);
+    let newest = fixture.submit(&[], None);
     fixture.settled(&newest).await;
     assert_eq!(
         status(
@@ -698,47 +822,37 @@ async fn c2_superseding_a_signoff_leaves_other_worktrees_and_live_strict_waits()
         RequestStatus::Error
     );
     let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
-    for view in [&strict, &other_run] {
-        let request = &view.requests[0];
-        let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
-        assert!(
-            waiting.iter().any(|q| q.request.id == request.id),
-            "request={request:#?}, waiting={waiting:#?}"
-        );
-        human::claim(&receipts, &request.id, &"reviewer".parse().unwrap())
-            .await
-            .unwrap();
-    }
-    let output =
-        support::os::run(
-            fixture
-                .command()
-                .args(["run", "cancel", strict.run.id.as_str()]),
-        );
-    assert!(output.status.success());
-    fixture.settled(&strict.run.id).await;
+    let request = &other_run.requests[0];
+    let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
+    assert!(
+        waiting.iter().any(|q| q.request.id == request.id),
+        "request={request:#?}, waiting={waiting:#?}"
+    );
+    human::claim(&receipts, &request.id, &"reviewer".parse().unwrap())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn c2_joining_a_new_key_also_supersedes_earlier_deferred_signoffs() {
     let fixture = Fixture::new();
-    fixture.declare("up", vec![human_eval(&[], false)]);
-    let first = fixture.submit(&["--defer-human"], None);
+    fixture.declare("up", vec![human_eval(&[])]);
+    let first = fixture.submit(&[], None);
     let first = fixture.settled(&first).await;
 
     let mut other = Fixture::new();
     other.state = fixture.state.clone();
     other._root.track(&other.state, &other.repo);
-    other.declare("up", vec![human_eval(&[], false)]);
+    other.declare("up", vec![human_eval(&[])]);
     fs::write(other.repo.join("up/fingerprint"), "new-key").unwrap();
-    let active = other.submit(&["--defer-human"], None);
+    let active = other.submit(&[], None);
     let active = other.settled(&active).await;
     assert_ne!(
         first.requests[0].key, active.requests[0].key,
         "first={first:#?}, active={active:#?}"
     );
     fs::write(fixture.repo.join("up/fingerprint"), "new-key").unwrap();
-    let joined = fixture.submit(&["--defer-human"], None);
+    let joined = fixture.submit(&[], None);
     let joined = fixture.settled(&joined).await;
     assert_eq!(
         joined.requests[0].execution_id,
@@ -767,56 +881,54 @@ async fn c2_joining_a_new_key_also_supersedes_earlier_deferred_signoffs() {
 
 #[tokio::test]
 async fn c2_retiring_a_deferred_follower_preserves_its_original_in_another_tree() {
-    for defer in [false, true] {
-        let original = Fixture::new();
-        original.declare("up", vec![human_eval(&[], false)]);
-        let run = original.submit(if defer { &["--defer-human"] } else { &[] }, None);
-        let issued = original
-            .until(&run, |view| status(view, "up/sign").is_human_wait())
-            .await;
-        let mut follower = Fixture::new();
-        follower.state = original.state.clone();
-        follower._root.track(&follower.state, &follower.repo);
-        follower.declare("up", vec![human_eval(&[], false)]);
-        let joined = follower.submit(&["--defer-human"], None);
-        let joined = follower.settled(&joined).await;
-        assert_eq!(
-            joined.requests[0].execution_id,
-            issued.requests[0].execution_id
-        );
+    let original = Fixture::new();
+    original.declare("up", vec![human_eval(&[])]);
+    let run = original.submit(&[], None);
+    let issued = original
+        .until(&run, |view| status(view, "up/sign").is_human_wait())
+        .await;
+    let mut follower = Fixture::new();
+    follower.state = original.state.clone();
+    follower._root.track(&follower.state, &follower.repo);
+    follower.declare("up", vec![human_eval(&[])]);
+    let joined = follower.submit(&[], None);
+    let joined = follower.settled(&joined).await;
+    assert_eq!(
+        joined.requests[0].execution_id,
+        issued.requests[0].execution_id
+    );
 
-        fs::write(follower.repo.join("up/fingerprint"), "changed").unwrap();
-        let newer = follower.submit(&["--defer-human"], None);
-        follower.settled(&newer).await;
-        let retired = store::read_request(&follower.state, joined.requests[0].id.as_str())
+    fs::write(follower.repo.join("up/fingerprint"), "changed").unwrap();
+    let newer = follower.submit(&[], None);
+    follower.settled(&newer).await;
+    let retired = store::read_request(&follower.state, joined.requests[0].id.as_str())
+        .await
+        .unwrap();
+    assert_eq!(
+        retired.request.error_code(),
+        Some(artifactize_core::types::FailureCode::Superseded)
+    );
+    let receipts = Receipts::open(&follower.state, &follower.repo)
+        .await
+        .unwrap();
+    assert!(
+        human::claim(&receipts, &retired.request.id, &"reviewer".parse().unwrap())
             .await
-            .unwrap();
-        assert_eq!(
-            retired.request.error_code(),
-            Some(artifactize_core::types::FailureCode::Superseded)
-        );
-        let receipts = Receipts::open(&follower.state, &follower.repo)
-            .await
-            .unwrap();
-        assert!(
-            human::claim(&receipts, &retired.request.id, &"reviewer".parse().unwrap())
-                .await
-                .is_err()
-        );
-        let waiting = store::read_waiting(&original.state, None).await.unwrap();
-        assert!(
-            waiting
-                .iter()
-                .any(|view| view.request.id == issued.requests[0].id)
-        );
-        assert!(
-            waiting
-                .iter()
-                .all(|view| view.request.id != retired.request.id)
-        );
-        original.sign(&issued, "up/sign", "GREEN").await;
-        original.settled(&run).await;
-    }
+            .is_err()
+    );
+    let waiting = store::read_waiting(&original.state, None).await.unwrap();
+    assert!(
+        waiting
+            .iter()
+            .any(|view| view.request.id == issued.requests[0].id)
+    );
+    assert!(
+        waiting
+            .iter()
+            .all(|view| view.request.id != retired.request.id)
+    );
+    original.sign(&issued, "up/sign", "GREEN").await;
+    original.settled(&run).await;
 }
 
 #[tokio::test]
@@ -873,11 +985,11 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
     fs::create_dir_all(&fixture.state).unwrap();
     fs::write(
         fixture.state.join("limits.json"),
-        r#"{"backends":{"openai":1}}"#,
+        r#"{"backends":{"openai":1},"signoffIdleGraceSeconds":0}"#,
     )
     .unwrap();
-    fixture.declare("up", vec![human_eval(&[], false)]);
-    fixture.declare("trigger", vec![human_eval(&[], false)]);
+    fixture.declare("up", vec![fixture.runtime("check", &[])]);
+    fixture.declare("trigger", vec![fixture.runtime("check", &[])]);
     let agent = |title: &str, dependency: &str| json!({"id":"check","title":title,"profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},"payload":{"instruction":format!("{title}: review {{{dependency}}}.")}});
     fixture.declare("a-spec", vec![agent("Speculative", "up")]);
     fixture.declare("b-ready", vec![agent("Ready", "trigger")]);
@@ -911,18 +1023,20 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
         }
     });
     let run = fixture.submit(
-        &["--speculate", "--jobs", "2", "--max-executions", "3"],
+        &["--speculate", "--jobs", "3", "--max-executions", "5"],
         Some(&provider),
     );
-    let active = fixture
+    fixture
         .until(&run, |view| {
             spec_starts.load(Ordering::SeqCst) == 1
-                && status(view, "up/sign") == RequestStatus::WaitingHuman
-                && status(view, "trigger/sign") == RequestStatus::WaitingHuman
+                && fixture.ready("up", "check")
+                && fixture.ready("trigger", "check")
+                && status(view, "up/check") == RequestStatus::Running
+                && status(view, "trigger/check") == RequestStatus::Running
         })
         .await;
     assert!(!ready_started.load(Ordering::SeqCst));
-    fixture.sign(&active, "trigger/sign", "GREEN").await;
+    fixture.release("trigger", "check", 0);
     fixture
         .until(&run, |_| ready_started.load(Ordering::SeqCst))
         .await;
@@ -934,11 +1048,12 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
         })
         .await;
     assert_eq!(spec_starts.load(Ordering::SeqCst), 2);
-    fixture.sign(&reviewed, "up/sign", "GREEN").await;
+    assert_eq!(status(&reviewed, "up/check"), RequestStatus::Running);
+    fixture.release("up", "check", 0);
     let ended = fixture.settled(&run).await;
     assert_eq!(ended.run.status(), RunStatus::Green);
     assert_eq!(
-        ended.run.executions_started, 3,
+        ended.run.executions_started, 5,
         "yielded executor starts still consume the cap"
     );
 }

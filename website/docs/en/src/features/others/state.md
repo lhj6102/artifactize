@@ -15,8 +15,10 @@ else (on Windows) `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifac
 output under `PATH/runs`. Saved Runs stay readable after their repository is removed.
 
 The state may not live inside the reviewed repository or another artifactize
-workspace (a folder with a `.artf` declaration, a legacy `artifactize.json` or
-`.artifactizeignore`, or above one): a command refuses it before writing. If you can
+workspace: a command refuses it before writing when the state folder or any folder
+above it holds a `.artf` declaration, a legacy `artifactize.json` or
+`.artifactizeignore`. A parent folder that only contains project folders is fine,
+for example `/work/.state` beside `/work/app/index.artf`. If you can
 search a parent folder but not list it, artifactize cannot see every declaration in it,
 so keep the state outside your projects.
 
@@ -31,10 +33,11 @@ definitions it started with. Read them with `run list`, `run show`, `request lis
 `request show` and [`cache list`](../../cli/maintenance.md#cache-inspection); how an Agent review went, its
 conversation and tool calls, is in its [saved session](#agent-sessions).
 
-**Upgrades.** A state written by artifactize with schema 6, 7 or 8 is upgraded to the
-current schema 9 the first time a command opens it. Runs, IDs, cached results and Human
-sign-offs are kept. The upgrade needs write access and is one way: an older binary that
-only knows schemas 6 to 8 refuses the upgraded state, so back up the state folder first if
+**Upgrades.** A state written by artifactize with schema 6, 7, 8 or 9 is upgraded to the
+current schema 10 the first time a command opens it. Runs, IDs, cached results and Human
+sign-offs are kept; a Run that ended SIGNOFFS_PENDING reads as YELLOW. The upgrade needs
+write access and is one way: an older binary that only knows schemas 6 to 9 refuses the
+upgraded state, so back up the state folder first if
 you may go back. A state from schemas 1 to 5 is refused (exit 2) with:
 
 ```text
@@ -47,10 +50,10 @@ version: N; a newer artifactize wrote it.`: update artifactize to open it.
 After an upgrade to 0.9, every eval is reviewed once; see
 [Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
 
-**Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in and the
-review store token, is refused when it lies inside a git work tree, an artifactize
-workspace or `--repo`, even in a gitignored folder. `login codex` and `remote login` then
-fail before signing in, naming both folders:
+**Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in, the
+review store token, and the saved API keys and custom providers (`providers.json`), is refused when it lies inside a git work tree, an artifactize
+workspace or `--repo`, even in a gitignored folder. `login`, `provider add` and
+`remote login` then fail before saving anything, naming both folders:
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -108,7 +111,8 @@ on that state:
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-Keys are backend names (`openai`, `anthropic`, `codex`), and each limit is 1–100000. A
+Keys are backend names as profiles write them (`openai`, `anthropic`, `gemini`, `codex`, or
+a [custom provider](../agent.md#custom-providers)'s name), and each limit is 1–100000. A
 backend without an entry, or a machine without the file, is unlimited. `verify` reads the
 file when it starts. The file must be a regular UTF-8 JSON file of at most 64 KiB with only
 known fields; anything else stops `verify` before it creates a Run (exit 2), and `doctor`
@@ -129,6 +133,25 @@ watching.
 A failure that [stops a backend](../agent.md#stopping-a-backend) for the Run keeps its
 waiting requests from starting on that backend.
 
+## Sign-off idle grace
+
+`limits.json` also sets how long a Run with nothing but unclaimed sign-offs left stays
+open before it ends YELLOW ([Sign-offs and the end of a Run](../run.md#sign-offs-and-the-end-of-a-run)):
+
+```json
+{"signoffIdleGraceSeconds": 120}
+```
+
+It is 0–86400 seconds, 120 when the field or the file is missing; 0 ends such a Run at
+once. Like the backend limits it applies to every Run on this state and is read when a
+Run starts, so a change affects only Runs started afterwards. Show or change it with
+`artifactize limits` (also from the desktop Settings), which keeps the file's other
+fields:
+
+```sh
+artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
+```
+
 ## Agent sessions
 
 Each Agent review's conversation is saved under the state, for
@@ -143,7 +166,7 @@ Each Agent review's conversation is saved under the state, for
 |---|---|---|
 | `enabled` | `true` | `false` saves no new conversation; saved ones stay readable |
 | `maxBytes` | 1 GiB | The store's size that starts a cleanup; at least 1 |
-| `targetBytes` | 768 MiB, or three quarters of `maxBytes` when that is 768 MiB or less | The size a cleanup brings the store down to; must be lower than `maxBytes` |
+| `targetBytes` | 768 MiB when `maxBytes` is larger, otherwise 3 × ⌊`maxBytes` ÷ 4⌋ bytes | The size a cleanup brings the store down to; must be lower than `maxBytes` |
 
 A cleanup runs when a `verify` Run has finished its evals, and on `prune`. When the
 conversations take more than `maxBytes`, it deletes the oldest sessions until they take
@@ -152,9 +175,8 @@ conversations take more than `maxBytes`, it deletes the oldest sessions until th
 cleanup that fails during `verify` is reported on stderr and leaves the Run as it is. An
 invalid `agentSessions` value fails `verify` and `prune` (exit 2), and `doctor` reports it.
 
-The store is `$STATE/agent-sessions/`, readable only by you, with one JSON Lines file per
-session named by its `sessionId`. `session show --json` prints its events; each has a
-`kind`:
+The store is `$STATE/agent-sessions/`, readable only by you. `session show --json` prints
+a session's events; each has a `kind`:
 
 | `kind` | Holds |
 |---|---|
@@ -173,7 +195,7 @@ conversation and its tool calls, which
 ### Follow-up replay
 
 `session send` asks the saved review a question with the same backend, model and
-reasoning, replaying the saved conversation so the provider can reuse its cache. The
+reasoning, continuing its saved conversation. The
 project's current tools are offered again, and if a covered Artifact changed since the
 review, the header and the model are told. The question is a follow-up, not a new review:
 the model answers in plain text, may use the tools, and the recorded verdict never changes.

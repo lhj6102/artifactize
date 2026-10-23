@@ -124,6 +124,13 @@ export const commands = {
 	artifactToolRun: (branch: BranchKey, artifact: string, tool: string, job: JobId) => typedError<Notice, Failure>(__TAURI_INVOKE("artifact_tool_run", { branch, artifact, tool, job })),
 	/**  The read-only Detail of request `id` in its Run. */
 	requestDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("request_detail", { id })),
+	/**
+	 *  The newer release, if one is out: none when this copy is the latest, the lookup is off or
+	 *  failed, or the Microsoft Store updates it. A lookup made within the day is reused.
+	 */
+	releaseNotice: () => typedError<ReleaseView, Failure>(__TAURI_INVOKE("release_notice")),
+	/**  Open the newer release's download or page in the browser. */
+	releaseOpen: () => typedError<null, Failure>(__TAURI_INVOKE("release_open")),
 	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
 	humanTaken: () => __TAURI_INVOKE<string[]>("human_taken"),
 	/**
@@ -141,8 +148,19 @@ export const commands = {
 	transcriptWindow: (handle: TranscriptHandle, columns: number, rows: number, movement: { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" } | null, toggle: number | null, changed: boolean) => typedError<TranscriptView, Failure>(__TAURI_INVOKE("transcript_window", { handle, columns, rows, movement, toggle, changed })),
 	/**  Close transcript `handle`; its reader removes its temporary files. */
 	transcriptClose: (handle: TranscriptHandle) => __TAURI_INVOKE<void>("transcript_close", { handle }),
-	/**  The OpenAI and Anthropic keys, as `doctor` reports them. */
-	settingsKeys: () => __TAURI_INVOKE<KeyStatus[]>("settings_keys"),
+	/**  `provider list`: the built-in keys and the custom providers, never a key's value. */
+	providersList: () => typedError<Providers, Failure>(__TAURI_INVOKE("providers_list")),
+	/**
+	 *  `login <provider>`: save an API key. The key arrives in the IPC body only; it is never
+	 *  logged, echoed or returned.
+	 */
+	providerKeySave: (provider: Provider, key: string) => typedError<null, Failure>(__TAURI_INVOKE("provider_key_save", { provider, key })),
+	/**  `logout <provider>`: forget the saved key; the environment variable is untouched. */
+	providerKeyRemove: (provider: Provider) => typedError<null, Failure>(__TAURI_INVOKE("provider_key_remove", { provider })),
+	/**  `provider add`: add the custom provider `name`, or replace it. */
+	providerCustomSave: (name: string, target: Target, key: KeyInput) => typedError<null, Failure>(__TAURI_INVOKE("provider_custom_save", { name, target, key })),
+	/**  `provider remove`: remove the custom provider `name`. */
+	providerCustomRemove: (name: string) => typedError<null, Failure>(__TAURI_INVOKE("provider_custom_remove", { name })),
 	/**  The Codex sign-in state, offline. */
 	codexStatus: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_status")),
 	/**
@@ -162,8 +180,8 @@ export const commands = {
 	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
-	/**  `models <provider>`: what the backend offers to this key or account. */
-	modelsList: (provider: Provider) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
+	/**  `models <provider>`: what a built-in or custom provider offers to this key or account. */
+	modelsList: (provider: string) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
 	/**  `remote status`: URL, share level, token source, reachability, principal and scopes. */
 	remoteStatus: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_status")),
 	/**
@@ -178,6 +196,10 @@ export const commands = {
 	remoteLogout: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_logout")),
 	/**  `remote push`: re-send local GREEN/RED results the store does not have yet. */
 	remotePush: (dryRun: boolean) => typedError<Pushed, Failure>(__TAURI_INVOKE("remote_push", { dryRun })),
+	/**  `limits`: the idle grace Runs started now take. */
+	signoffGrace: () => typedError<SignoffGrace, Failure>(__TAURI_INVOKE("signoff_grace")),
+	/**  `limits --signoff-idle-grace SECONDS`: the Runs started afterwards take it. */
+	signoffGraceSet: (seconds: number) => typedError<SignoffGrace, Failure>(__TAURI_INVOKE("signoff_grace_set", { seconds })),
 };
 
 /** Events */
@@ -270,9 +292,9 @@ export type CardView = {
 
 /**  One entry of a branch's timeline: a Run, or the branch's Current. */
 export type Chip = { kind: "run"; id: string; mark: Mark; 
-/**  Its status in words: `GREEN`, `RED`, `Running`. */
+/**  Its status in words: `GREEN`, `RED`, `Running`, `Waiting for sign-off`. */
 status: string; 
-/**  How long ago it started, `25m ago`; a running one's time so far, `2m 22s`. */
+/**  How long ago it started, `25m ago`; an open one's time so far, `2m 22s`. */
 age: string; running: boolean } | 
 /**  The worktree as it is now. */
 { kind: "current" };
@@ -334,6 +356,11 @@ export type CurrentView = {
 	revision: ScanId,
 };
 
+export type CustomProvider = {
+	name: string,
+	target: Target,
+};
+
 /**  What a Detail describes, from the library's [`Target`]. */
 export type DetailTarget = "run" | "artifact" | "eval";
 
@@ -366,6 +393,9 @@ export type Draft = {
 	fields: ([string, FieldValue])[],
 };
 
+/**  The API a custom endpoint speaks. */
+export type EndpointApi = "openaiResponses" | "openaiChat" | "anthropic" | "gemini";
+
 export type Evidence = {
 	title: string,
 	text: string,
@@ -388,7 +418,9 @@ export type Failure =
 /**  What the call names is not loaded or no longer exists. */
 { kind: "missing"; message: string } | 
 /**  A sign-in, sign-out, listing or store call failed, with the CLI's own message. */
-{ kind: "account"; message: string };
+{ kind: "account"; message: string } | 
+/**  Reading or saving a machine-wide setting failed, with the CLI's own message. */
+{ kind: "setting"; message: string };
 
 export type Field = {
 	key: string,
@@ -489,12 +521,29 @@ export type HumanView = {
 /**  A cancellable job of one Human action, numbered by the frontend. */
 export type JobId = number;
 
-/**  Whether an API-key backend's key is in the environment; never its value. */
+/**  What saving a custom endpoint does with its key. */
+export type KeyInput = 
+/**  Save this key; it is never returned. */
+{ kind: "set"; key: string } | 
+/**  Keep the key the endpoint already has. */
+{ kind: "keep" } | 
+/**  No key. */
+{ kind: "none" };
+
+/**  Where a built-in provider's key comes from; never its value. */
+export type KeySource = 
+/**  Its environment variable, which is used first. */
+"environment" | 
+/**  Saved in Settings or with `artifactize login`. */
+"saved" | "absent";
+
 export type KeyStatus = {
 	provider: Provider,
-	/**  The environment variable the CLI reads. */
+	/**  The environment variable read first. */
 	variable: string,
-	present: boolean,
+	source: KeySource,
+	/**  Whether a key is saved here, also while the variable comes first. */
+	saved: boolean,
 };
 
 /**  One Tool log: one entry per run, in the order they started. */
@@ -639,8 +688,14 @@ export type PlanLine = {
 
 export type Profile = "runtime" | "agent" | "human";
 
-/**  A backend, as the CLI names it. */
-export type Provider = "openai" | "anthropic" | "codex";
+/**  A built-in provider, as the CLI names it. */
+export type Provider = "codex" | "openai" | "anthropic" | "gemini";
+
+/**  The providers of this machine. */
+export type Providers = {
+	keys: KeyStatus[],
+	custom: CustomProvider[],
+};
 
 export type Pushed = {
 	dryRun: boolean,
@@ -653,6 +708,29 @@ export type Pushed = {
 export type QueryView = {
 	text: string,
 	error: string | null,
+};
+
+/**  A newer release and how to update to it. */
+export type ReleaseNotice = {
+	running: string,
+	latest: string,
+	update: ReleaseUpdate,
+};
+
+/**  How to update this install, as [`release::Update`]. */
+export type ReleaseUpdate = 
+/**  Run this command. */
+{ kind: "command"; command: string } | 
+/**  Download this file and install it by hand, with the command when there is one. */
+{ kind: "download"; url: string; command: string | null } | 
+/**  See the release page: how the app was installed is unknown. */
+{ kind: "page"; url: string };
+
+/**  The release lookup as the header shows it, and when to ask again. */
+export type ReleaseView = {
+	notice: ReleaseNotice | null,
+	/**  Milliseconds until the app asks again ([`release::recheck_interval`]). */
+	recheckMs: number,
 };
 
 /**  `remote status`: never the token. */
@@ -759,6 +837,12 @@ export type SignedOut = {
 	status: CodexStatus,
 };
 
+/**  The idle grace in force, and the longest one accepted, in whole seconds. */
+export type SignoffGrace = {
+	seconds: number,
+	maxSeconds: number,
+};
+
 /**  What a graph or Detail shows: a saved Run, or a branch's worktree as it is now. */
 export type Source = { kind: "run"; run: string } | { kind: "current"; branch: BranchKey };
 
@@ -780,7 +864,7 @@ export type StateChanged = {
 };
 
 /**  Every status the monitor shows, most urgent first. */
-export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "SIGNOFFS_PENDING" | "GREEN" | "BASIS";
+export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "YELLOW" | "GREEN" | "BASIS";
 
 /**  A settled submission: how it stands, its notice and the completed request. */
 export type Submitted = {
@@ -788,6 +872,9 @@ export type Submitted = {
 	notice: Notice,
 	view: HumanView | null,
 };
+
+/**  What a custom provider reaches; an endpoint's key only as whether one is saved. */
+export type Target = { kind: "alias"; provider: Provider } | { kind: "endpoint"; api: EndpointApi; url: string; key?: boolean };
 
 export type TokenSource = 
 /**  ARTIFACTIZE_REMOTE_TOKEN. */

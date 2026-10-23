@@ -90,7 +90,7 @@ pub(super) async fn show(
     if !wait {
         return Ok(0);
     }
-    if view.run.status() == artifactize_core::types::RunStatus::Running {
+    if view.run.status().is_open() {
         writeln!(
             io::stderr().lock(),
             "Waiting timed out; Run {run_id} is still RUNNING."

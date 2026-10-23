@@ -25,7 +25,8 @@ fingerprint and the profile variant. `--history` lists every record, latest firs
 `show` prints the key's latest record as JSON: result, the actual `profile`, `options`
 (backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
 covers, `artifactKinds` (each covered name with `folder`, `file` or `graph`), usage and
-`producer` (`user@host` and artifactize version, plus the `reviewer` of a Human result).
+`producer` (`user@host` and artifactize version), and for a Human result `reviewer`, the
+person who submitted it.
 Records from a [shared remote review store](review-store.md) carry an `origin`
 (store, publisher, publication time). A missing key prints `null` and exits 4;
 `--history` prints all records as an array. Reading changes nothing.
@@ -40,20 +41,27 @@ and `run show`. How keys are built and what a hit returns is in
 
 ```sh
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
-artifactize models openai|anthropic|codex [--json]
+artifactize models PROVIDER [--json]
+artifactize login openai|anthropic|gemini|codex [--json]
+artifactize logout openai|anthropic|gemini|codex [--json]
+artifactize provider list [--json]
+artifactize provider add NAME (--alias PROVIDER | --api API --url URL [--key]) [--json]
+artifactize provider remove NAME [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
 `prune` works on the selected state's Runs across repositories, not only the current one.
 It removes the output of Runs that ended **GREEN, RED, ERROR or INCOMPLETE** and have
-nothing still running. SIGNOFFS_PENDING Runs are **always skipped**, even after their
+nothing still running. YELLOW Runs are **always skipped**, even after their
 sign-offs are submitted, and so are unfinished Runs. `--older-than` compares the Run's
 end time, as a whole number of `s`, `m`, `h`, `d` or `w`; without it every eligible Run is
-pruned. `--dry-run` returns `wouldRemove` without deleting; a real prune returns
-`removed`; both include `skippedRuns`. `prune` also cleans the
+pruned. `prune` also cleans the
 [Agent session store](../features/others/state.md#agent-sessions) down to its size bounds, whatever `--older-than`
-says: `removedSessions` lists what it deleted, and `--dry-run` lists
-`wouldRemoveSessions`. A dry run does not know which sessions a running `session send`
+says. Its text output prints one line per removed folder (`Removed PATH`, or `Would remove
+PATH` with `--dry-run`), per skipped Run (`Skipped Run ID`) and per removed session (`Removed
+Agent session ID`, or `Would remove Agent session ID`), then a note that the database and
+repository files were kept. With `--json` the same report has `removed` or `wouldRemove`,
+`skippedRuns`, and `removedSessions` or `wouldRemoveSessions`. A dry run does not know which sessions a running `session send`
 uses, so the real prune can delete fewer.
 
 ## Doctor, models and prune
@@ -68,8 +76,9 @@ the `supported` one. `--repo` also runs the checks of `config check`. Further ch
   error.
 - `sessions`: the [Agent session store](../features/others/state.md#agent-sessions): how many sessions and bytes,
   `maxBytes`, `targetBytes`, `enabled`, its `directory` and the state's `stateId`.
-- API keys: reported as present or absent, never checked or printed; a missing key is a
-  warning, since you need only the backends you use. A
+- `openai`, `anthropic`, `gemini`: each API key reported as present in its variable, saved,
+  or absent, never checked or printed; a missing key is a warning, since you need only the
+  backends you use. A
   [test endpoint](../features/agent.md#test-against-a-fake-provider) is a warning that names it as
   `testEndpoint`; an invalid one is a hard error.
 - `codex`: the sign-in, read without refreshing or going online. No sign-in is a warning;
@@ -78,18 +87,58 @@ the `supported` one. `--repo` also runs the checks of `config check`. Further ch
   [inside a repository](../features/others/state.md#state) is a warning, with the refusal message in `refused`, until a
   sign-in is stored there, then a hard error. Details name the `source` (`stored`, `file`
   or `none`), `expiresAt`, `expired` and any test endpoints.
+- `providers`: the [custom providers](../features/agent.md#custom-providers) of this machine,
+  each with what it reaches, never a key. A `$STATE/auth` inside a repository is a warning
+  while nothing is saved there, then a hard error.
 - The remote review store, also offline: its URL, share level and token source. A missing
   token is a warning; an invalid configuration (including plain HTTP to a non-loopback
   host) or an unsafe token file is a hard error.
+- `desktop`: whether the desktop app is installed, found without starting it: beside the
+  `artifactize` command, on `PATH`, or where this system's installers put it. Details name
+  its `path`. Without the app this is a warning that links the
+  [install page](https://artifactize.dev/#start); the commands work without it.
+- `release`: whether a newer release of artifactize is out, the one network lookup of
+  `doctor` ([newer releases](../getting-started/update.md#newer-releases)). A newer
+  release is a warning naming it as `latest`, with how to update the way this copy was
+  installed as `update`: a `command` to run, a file to `download` (with the `command` that
+  installs it, for the `.deb`), or the release `page` when the way is unknown; `channel`
+  names the way and `running` this copy's version. A failed lookup is a warning. The
+  Microsoft Store, a development build and `ARTIFACTIZE_NO_UPDATE_CHECK` look nothing up.
 
 Exit is 0 without hard errors, 1 with hard errors, and 2 for invocation errors.
 
-`models openai` and `models anthropic` list the models the API key can use; `models codex`
-lists those of the signed-in [Codex](../features/agent.md#codex) account. A test endpoint replaces
-the provider here too, and there is no fallback to another account or backend. Text lists
-tab-separated slug/name pairs; JSON is
-`{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`, in the
+`models PROVIDER` takes any name a profile's `backend` may use. `models openai`,
+`models anthropic` and `models gemini` list the models the API key can use; `models codex`
+lists those of the signed-in [Codex](../features/agent.md#codex) account; a custom provider lists
+what its alias or endpoint offers. A test endpoint replaces the provider here too, and there
+is no fallback to another account or backend. Text lists tab-separated slug/name pairs; JSON
+is `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`, in the
 provider's order.
+
+## Keys and custom providers
+
+`login openai|anthropic|gemini` reads an API key from stdin and saves it; `logout` with
+the same name forgets it. A key is read as `remote login` reads a
+[token](review-store.md#remote-review-store-client): one line, at most its first 8192 bytes,
+with surrounding whitespace dropped; at a terminal the input is hidden, and on Windows, if
+hiding fails, a warning says the key will be visible and reading goes on. The key's variable, when
+set, is still used first. `login codex` and `logout codex` are the
+[Codex sign-in](../features/agent.md#codex).
+
+`provider add NAME` saves a [custom provider](../features/agent.md#custom-providers), or
+replaces the one with that name: `--alias PROVIDER` for a built-in provider under another
+name, or `--api openai-responses|openai-chat|anthropic|gemini` with `--url` for an endpoint,
+optionally with `--key` to read its key from stdin the same way. An endpoint saved without
+`--key` has no key, also when it replaces one that had a key. `provider remove NAME` removes it. `provider list`
+prints each built-in key's `source` (`environment`, `saved` or `absent`; the variable comes
+first), whether a key is `saved` even while the variable is used, and every custom
+provider, never a key:
+
+```json
+{"keys":[{"provider":"openai","variable":"OPENAI_API_KEY","source":"environment","saved":true}],
+ "custom":{"local":{"kind":"endpoint","api":"openai-chat","url":"http://localhost:11434/v1","key":false},
+           "work":{"kind":"alias","provider":"codex"}}}
+```
 
 `prune` removes only the output folders inside `state/runs/<run-id>`: runtime `output`
 (and `tmp`, `home` and `cache` left by older versions) and leftover tool output. Run

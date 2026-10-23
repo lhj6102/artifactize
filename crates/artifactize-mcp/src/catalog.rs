@@ -11,6 +11,9 @@ const REQUEST_KEY_CHARS: usize = 128;
 const LOG_TAIL_LINES: usize = 200;
 /// Match the core literal-search bound to limit scanning input per request.
 const LOG_SEARCH_CHARS: usize = 2048;
+/// Match core's identifier bound for a backend name, so a name no declaration can use is
+/// refused before the provider lookup.
+const BACKEND_NAME_CHARS: usize = 64;
 
 pub(super) fn tools() -> Vec<Tool> {
     let scope = json!({"oneOf": [
@@ -24,8 +27,8 @@ pub(super) fn tools() -> Vec<Tool> {
     vec![
         tool(
             "verify_start",
-            "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Modes default off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Provisional sign-offs are not full approval.",
-            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"speculate":{"type":"boolean","default":false},"defer_human":{"type":"boolean","default":false}}),
+            "Submit a durable Run; acceptance is not approval. Same caller key returns the same attempt. Speculation defaults off; concurrency is unlimited unless jobs is explicitly given; backend limits still apply. Sign-offs the Run selected never hold up other evals (one outside the scope does, and the Run ends incomplete until the scope includes it): the Run stays waiting_human while one is claimed or its idle grace runs, then ends yellow when only sign-offs remain, which is not full approval.",
+            json!({"scope":scope,"jobs":{"type":"integer","minimum":1,"maximum":u32::MAX},"request_key":{"type":"string","pattern":format!("^[A-Za-z0-9._:-]{{1,{REQUEST_KEY_CHARS}}}$")},"speculate":{"type":"boolean","default":false}}),
             &["scope"],
             false,
         ),
@@ -143,8 +146,8 @@ pub(super) fn tools() -> Vec<Tool> {
         ),
         tool(
             "models",
-            "List models available from the named backend.",
-            json!({"provider":{"enum":["openai","anthropic","codex"]}}),
+            "List models available from the named backend: a built-in provider (codex, openai, anthropic, gemini) or a custom provider set up on this machine.",
+            json!({"provider":{"type":"string","pattern":format!("^[A-Za-z0-9][A-Za-z0-9_-]{{0,{}}}$", BACKEND_NAME_CHARS - 1)}}),
             &["provider"],
             true,
         ),

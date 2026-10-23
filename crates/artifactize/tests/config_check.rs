@@ -391,7 +391,7 @@ fn config_check_names_the_replacements_for_removed_backends() {
             assert!(error.contains("app/index.artf"), "{error}");
             assert!(
                 error.contains(&format!(
-                    r#"backend "{backend}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex""#
+                    r#"backend "{backend}" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, or "codex""#
                 )),
                 "{error}"
             );

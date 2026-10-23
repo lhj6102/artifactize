@@ -32,7 +32,8 @@ eval depends on changes its fingerprint. To narrow a folder's inputs:
 fingerprint = { files = ["src"], ignore = ["*.log"] }
 ```
 
-- `files`: 1–64 unique owner-relative paths of up to 1024 UTF-16 code units each,
+- `files`: 1–64 unique owner-relative paths of up to 1024 characters each (an emoji or another
+  character outside the Basic Multilingual Plane counts as two),
   default `["."]` (the owner's own files). Each must exist and stay inside the Artifact: paths into child Artifacts
   are rejected. Directory walks skip child Artifact folders and every
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
@@ -143,7 +144,7 @@ results still satisfy their own Run and keep their execution.
 ## Upgrading to 0.9
 
 For declaration, state-directory and terminal changes, see
-[Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09).
+[Install: Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
 Reuse-key v2 matches no pre-0.9 result, including script fingerprints and team
 review store records. The first full `verify` therefore reviews every executable
 eval once, Human sign-offs included; later Runs reuse normally.
@@ -160,7 +161,7 @@ not when files move or their content changes. It covers:
 - Input → consumer relations: child ownership (names, not child folder paths),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
-- Qualified eval IDs, owning Artifact, titles, optional `gate` and evaluation criteria: default
+- Qualified eval IDs, owning Artifact, titles and evaluation criteria: default
   profile kind, the full `payload` including instruction and owner context,
   `pass_schema`, `fail_schema`, and runtime `command`/`args`.
 

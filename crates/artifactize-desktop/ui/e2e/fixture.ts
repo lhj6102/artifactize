@@ -10,7 +10,7 @@ import { commandFields, runtimeProfile, type Operation } from "./native-fixtures
 import { waitingRun } from "./run-fixtures.ts";
 import {
   exists, makeDirectory, nativePath, parentOf, portablePath, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
-  type NativePath,
+  type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
 export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
@@ -125,6 +125,27 @@ export async function remoteStatus(fixture: Fixture): Promise<{ code: number; st
   return { code: status, stdout };
 }
 
+/** The sign-off idle grace in force, in seconds, as `limits --json` prints it. */
+export function signoffGrace(fixture: Fixture): number {
+  const result = runProgram(cli(), ["--state-dir", fixture.state, "limits", "--json"], { env: environment(fixture) });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return (JSON.parse(result.stdout) as { signoffIdleGraceSeconds: number }).signoffIdleGraceSeconds;
+}
+
+/** The providers this machine has set up, as `provider list --json` prints them with the app's `env`. */
+export async function providerList(fixture: Fixture, env: Environment = {}): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "provider", "list", "--json"],
+    { env: { ...environment(fixture), ...env } });
+  return { code: status, stdout };
+}
+
+/** `verify --all --wait --json` without blocking a provider served by the calling test. */
+export async function verifyAll(fixture: Fixture): Promise<{ code: number; stdout: string }> {
+  const { status, stdout } = await runProgramAsync(cli(), ["--state-dir", fixture.state, "--repo", fixture.repo, "verify", "--all", "--wait", "--json"],
+    { env: environment(fixture) });
+  return { code: status, stdout };
+}
+
 /** The saved requests, as `request list --json` prints them. */
 export function requests(fixture: Fixture): Saved[] {
   const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "request", "list", "--json"],
@@ -182,6 +203,45 @@ export function createGraph(): Fixture {
   });
 }
 
+/** A repository whose only eval is a runtime check that runs until its test writes `gate`,
+ * and a state with no Run yet. */
+export function createHeld(): Fixture & { gate: NativePath } {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const gate = nativePath(root, "held.gate");
+    writeText(nativePath(makeDirectory(nativePath(repo, "held")), "index.artf"), `name = "held"
+
+[evals.check]
+title = "Check held"
+profile = { kind = "runtime", ${commandFields("talk", portablePath(gate))} }
+
+[evals.check.payload]
+instruction = """
+Run until the test opens the gate."""
+`);
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    return { root, repo, state: nativePath(root, "state"), gate };
+  });
+}
+
+/** A repository whose only eval is a sign-off, and a state with no Run yet. */
+export function createSignoffOnly(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    humanExample(repo, "notes", "approved", "Notes approved");
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    return { root, repo, state: nativePath(root, "state") };
+  });
+}
+
+/** The newest saved Run's status, as `run list --json` prints it. */
+export function newestRunStatus(fixture: Fixture): string | null {
+  const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--json"],
+    { env: environment(fixture) });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return (JSON.parse(result.stdout) as { status: string }[])[0]?.status ?? null;
+}
+
 /** A fresh repository and state with one Run waiting for the Human sign-off. */
 export async function create(signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<Fixture> {
   return prepareFixture(async (root) => {
@@ -219,13 +279,16 @@ instruction = ${JSON.stringify(`Review ${title}.`)}
 `);
 }
 
+/** A Run that ended YELLOW at once: with no idle grace, nothing holds it open for its sign-off. */
 function deferredHuman(fixture: Fixture): string {
+  const limited = runProgram(cli(), ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"], { env: environment(fixture) });
+  if (limited.status !== 0) throw new Error(limited.stderr || limited.stdout || "cannot set the sign-off idle grace");
   const submitted = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state,
-    "verify", "--all", "--defer-human", "--wait", "--json"], { env: environment(fixture) });
+    "verify", "--all", "--wait", "--json"], { env: environment(fixture) });
   if (submitted.status !== 5) throw new Error(submitted.stderr || submitted.stdout || "Human deferral did not complete");
   const saved = JSON.parse(submitted.stdout) as { status: string; requests: Saved[] };
   const run = saved.requests[0]?.runId;
-  if (saved.status !== "SIGNOFFS_PENDING" || !run || saved.requests.some((request) => request.runId !== run || request.status !== "DEFERRED")) {
+  if (saved.status !== "YELLOW" || !run || saved.requests.some((request) => request.runId !== run || request.status !== "DEFERRED")) {
     throw new Error(`unexpected deferred Human result: ${submitted.stdout}`);
   }
   settleRuns(cli(), fixture.repo, fixture.state);
@@ -564,24 +627,30 @@ export async function createStates(): Promise<Fixture> {
  * A fresh repository whose one Artifact `app` has an eval for each of `names`, all verified
  * GREEN: an Artifact whose Detail has a tab for each of several evals.
  */
-export function createEvals(names: string[]): Fixture {
+/** An Artifact `app` with one runtime eval per name. With `input`, the first eval also reads
+ * an Artifact of that name, which has one runtime eval `ready` of its own. */
+export function createEvals(names: string[], input?: string): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
     const evals = names
       .map(
-        (name) => `
+        (name, index) => `
   [evals.${name}]
   title = "Check ${name}"
   profile = ${runtimeProfile()}
 
   [evals.${name}.payload]
   instruction = """
-  Check ${name}."""
+  Check ${name}.${input && index === 0 ? ` Read {${input}}.` : ""}"""
   `,
       )
       .join("");
     writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), `name = "app"\n${evals}`);
+    if (input) {
+      writeText(nativePath(makeDirectory(nativePath(repo, input)), "index.artf"),
+        `name = "${input}"\n[evals.ready]\ntitle = "Check ready"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ready."\n`);
+    }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");

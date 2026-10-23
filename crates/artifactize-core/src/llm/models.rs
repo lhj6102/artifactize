@@ -1,8 +1,9 @@
 use std::{path::Path, time::Duration};
 
-use rig_core::providers::{anthropic, openai};
+use rig_core::providers::{anthropic, gemini, openai};
 use serde::Serialize;
 
+use super::Api;
 use crate::config::Backend;
 
 /// Model discovery is interactive metadata, not a review; stop a stalled listing
@@ -21,47 +22,61 @@ pub struct Listing {
     pub models: Vec<ListedModel>,
 }
 
-/// `state` and `repo` locate Codex credentials; the API-key backends ignore them.
+/// `state` holds saved keys, custom providers and Codex credentials; `repo` keeps them
+/// outside the reviewed repository.
 pub async fn list(
     backend: Backend,
     state: Option<&Path>,
     repo: Option<&Path>,
 ) -> Result<Listing, String> {
-    let base = super::base_url(backend)?;
-    let models = if backend == Backend::Codex {
-        super::codex::models(&base, state, repo).await?
+    let route =
+        super::route(&backend, state, repo, "to list models").map_err(|failure| failure.message)?;
+    let models = if route.api == Api::Codex {
+        super::codex::models(&route.base, state, repo).await?
     } else {
-        list_at(backend, &super::api_key(backend, "to list models")?, &base).await?
+        let key = route.key.as_ref().map_or("", |key| key.expose());
+        list_at(route.api, key, &route.base).await?
     };
     Ok(Listing { backend, models })
 }
 
-async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedModel>, String> {
+async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, String> {
     let http = rig_reqwest::ReqwestClient::from(super::http_client()?);
     let request = async {
-        match backend {
-            Backend::Openai => {
+        match api {
+            Api::OpenaiResponses | Api::OpenaiChat => {
                 openai::OpenAIConfig::new(key.to_owned())
                     .with_base_url(base)
                     .connect(http)
                     .list_models()
                     .await
             }
-            Backend::Anthropic => {
+            Api::Anthropic => {
                 anthropic::AnthropicConfig::new(key.to_owned())
                     .with_base_url(base)
                     .connect(http)
                     .list_models()
                     .await
             }
-            Backend::Codex => unreachable!("Codex lists its own models"),
+            Api::Gemini => {
+                gemini::GeminiConfig::new(key.to_owned())
+                    .with_base_url(base)
+                    .connect(http)
+                    .list_models()
+                    .await
+            }
+            Api::Codex => unreachable!("Codex lists its own models"),
         }
     };
     let models = tokio::time::timeout(LIST_TIMEOUT, request)
         .await
         .map_err(|_| "Model listing timed out.".to_owned())?
         .map_err(|error| {
-            let text = super::diagnostic_hiding(&error, &[key]);
+            let sent: Vec<&str> = Some(key)
+                .filter(|key| !key.is_empty())
+                .into_iter()
+                .collect();
+            let text = super::diagnostic_hiding(&error, &sent);
             if text == crate::secret::WITHHELD {
                 format!("Model listing failed: {text}")
             } else {
@@ -97,7 +112,7 @@ mod tests {
             .to_string(),
         )])
         .await;
-        let models = list_at(Backend::Openai, "openai-key", &openai.base)
+        let models = list_at(Api::OpenaiResponses, "openai-key", &openai.base)
             .await
             .unwrap();
         assert_eq!(
@@ -128,7 +143,7 @@ mod tests {
             ),
         ])
         .await;
-        let models = list_at(Backend::Anthropic, "anthropic-key", &anthropic.base)
+        let models = list_at(Api::Anthropic, "anthropic-key", &anthropic.base)
             .await
             .unwrap();
         assert_eq!(
@@ -148,7 +163,7 @@ mod tests {
 
     #[tokio::test]
     async fn model_listing_errors_do_not_expose_api_keys() {
-        for backend in [Backend::Openai, Backend::Anthropic] {
+        for backend in [Api::OpenaiResponses, Api::Anthropic] {
             let server = Server::new(vec![MockHttpResponse::error(
                 rig_core::http_client::StatusCode::UNAUTHORIZED,
                 json!({"error":{"message":"Invalid secret-key", "type":"authentication_error"}})
@@ -172,7 +187,7 @@ mod tests {
                 .to_string(),
         )])
         .await;
-        let error = list_at(Backend::Openai, "secret-key-value", &server.base)
+        let error = list_at(Api::OpenaiResponses, "secret-key-value", &server.base)
             .await
             .err()
             .unwrap();

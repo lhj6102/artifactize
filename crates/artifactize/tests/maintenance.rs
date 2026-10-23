@@ -108,6 +108,7 @@ fn doctor(state: &Path, path: &Path) -> Command {
         .env("PATH", path)
         .env_remove("OPENAI_API_KEY")
         .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("GEMINI_API_KEY")
         .env_remove("ARTIFACTIZE_CODEX_AUTH_FILE")
         .env("HTTPS_PROXY", "http://127.0.0.1:1")
         .env("HTTP_PROXY", "http://127.0.0.1:1");
@@ -122,10 +123,12 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let bin = root.path().join("bin");
     fs::create_dir(&bin).unwrap();
     let absent = result(&mut doctor(&state, &bin), 0);
-    for name in ["openai", "anthropic"] {
+    for name in ["openai", "anthropic", "gemini"] {
         assert_eq!(check(&absent, name)["status"], "WARN");
         assert_eq!(check(&absent, name)["details"]["present"], false);
     }
+    assert_eq!(check(&absent, "providers")["status"], "PASS");
+    assert_eq!(check(&absent, "providers")["details"]["custom"], json!({}));
     assert_eq!(check(&absent, "codex")["status"], "WARN");
     assert_eq!(check(&absent, "codex")["details"]["source"], "none");
     // 0.5.0 removed the chatgpt and claude backends and their checks.
@@ -144,9 +147,34 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "sessions",
             "openai",
             "anthropic",
+            "gemini",
+            "providers",
             "codex",
-            "remote"
+            "remote",
+            "desktop",
+            "release"
         ]
+    );
+    // A test build may sit beside an app build, so the check's form depends on this machine.
+    let desktop = check(&absent, "desktop");
+    match desktop["status"].as_str().unwrap() {
+        "PASS" => assert!(desktop["details"]["path"].is_string()),
+        "WARN" => {
+            assert_eq!(desktop["details"], json!({"path":null}));
+            assert!(
+                desktop["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("https://artifactize.dev/#start")
+            );
+        }
+        status => panic!("desktop check {status}"),
+    }
+    // A newer release or a failed lookup only warns; this build names its own version.
+    assert_ne!(check(&absent, "release")["status"], "FAIL");
+    assert_eq!(
+        check(&absent, "release")["details"]["running"],
+        env!("CARGO_PKG_VERSION")
     );
     assert_eq!(check(&absent, "limits")["details"], json!({"backends":{}}));
     let sessions = &check(&absent, "sessions")["details"];
@@ -289,6 +317,7 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
     for (backend, variable) in [
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),
+        ("gemini", "GEMINI_API_KEY"),
     ] {
         let failure = result(
             command(&state)

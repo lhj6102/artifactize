@@ -163,3 +163,16 @@ fn credential_storage_keeps_current_and_legacy_workspace_markers_as_boundaries()
         }
     }
 }
+
+#[test]
+fn a_saved_key_passes_the_checks_of_a_typed_one() {
+    use super::providers::ApiKey;
+    assert!(serde_json::from_str::<ApiKey>(r#""sk-valid-0123""#).is_ok());
+    let long = format!("\"{}\"", "k".repeat(4097));
+    for saved in [r#""""#, r#""has space""#, long.as_str()] {
+        assert!(
+            serde_json::from_str::<ApiKey>(saved).is_err(),
+            "{saved:.20}"
+        );
+    }
+}

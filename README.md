@@ -1,11 +1,15 @@
 [![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
 [![License](https://img.shields.io/github/license/lhj6102/artifactize)](LICENSE)
-[![README in Korean](https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-blue)](assets/readme/README.kr.md)
+
+English · [한국어](assets/readme/README.kr.md)
 
 # Build together on an Artifact Graph.
 
-Artifactize brings human and agent work together and keeps your project consistent.
+<p align="center">
+  <img src="assets/others/roles.en.gif" width="800"
+       alt="Animation, collaborate in Artifactize: three roles pass one Artifact Graph between them. As Director, three people and two AI agents decide what to build and add a node; as Builder, five AI agents build it; as Evaluator, four AI agents and one person check the nodes one by one. The new node is RED, so the graph goes back to the Builder to fix, then to the Evaluator again, and it turns GREEN. The Director adds another node and changes one, and the Builder and the Evaluator go back and forth again until GREEN.">
+</p>
 
 **Who is it for?**
 
@@ -83,13 +87,14 @@ The [full installation guide](https://artifactize.dev/docs/getting-started/insta
 explains the alternatives—the PowerShell install script, AppImage, Cargo and building
 from source—along with prerequisites, updates and uninstalling.
 
-Once installed, take the
-[5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
-It uses an example project and needs no AI account or provider access key (API key).
-With [Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html), ask your coding
-assistant in your own words to set up and run these checks. Its
-[plugin](https://artifactize.dev/docs/agent-plugin/plugin.html) gives Claude Code and
-Codex these instructions and Artifactize's tools in one install:
+### Quick start with Arti
+
+We recommend starting with a conversation with Arti, Artifactize's guide inside your
+coding assistant. Arti explains Artifactize in terms of your own project, helps you
+move the tests and reviews you already have, or sets up a new project with you.
+Its [plugin](https://artifactize.dev/docs/agent-plugin/plugin.html) gives Claude Code
+and Codex [Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html)'s
+instructions and Artifactize's tools in one install:
 
 ```text
 /plugin marketplace add lhj6102/artifactize          # Claude Code, in a session
@@ -97,6 +102,19 @@ Codex these instructions and Artifactize's tools in one install:
 codex plugin marketplace add lhj6102/artifactize     # Codex, in a terminal
 codex plugin add artifactize@artifactize
 ```
+
+**With your coding agent**, start with one of these (in Codex, write
+`$artifactize:hey-arti` instead):
+
+```text
+/artifactize:hey-arti Explain Artifactize and tell me how we could apply it to this project
+/artifactize:hey-arti Help me move our existing tests and reviews into Artifactize
+/artifactize:hey-arti Help me start this project with Artifactize from the beginning
+```
+
+To try Artifactize without an AI account first, take the
+[5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
+It uses an example project and needs no provider access key (API key).
 
 ## Learn more
 

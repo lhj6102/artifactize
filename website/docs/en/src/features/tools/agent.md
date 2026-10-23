@@ -13,7 +13,8 @@ at 8 MiB. Calls require a JSON object of at most 64 KiB before any process or ou
 directory is created. Validation errors show at most five bounded, escaped
 instance/schema paths (under 4 KiB), never argument values.
 
-Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
+Descriptions must be nonblank and at most 4000 characters long, where an emoji or another
+character outside the Basic Multilingual Plane counts as two, and support only
 `{artifactName}` interpolation (the canonical Artifact ID). Built-in references
 take `builtin`, optional `args` and optional `description`. Without `args`, `read`,
 `list`, `glob`, `grep` and `view_image` take the model's input below; with `args`,
@@ -45,7 +46,8 @@ Paths are relative logical paths from the tool's declaring Artifact, including
 its children; omitted paths mean its root. Another Artifact's files are read with
 that Artifact's own tools, which an eval admits when it references the Artifact. They never accept
 absolute paths, traversal components or symlinks. Logical paths are at most
-4096 UTF-16 code units and reject ASCII controls, backslashes, colons and empty
+4096 characters (an emoji or another character outside the Basic Multilingual Plane
+counts as two) and reject ASCII controls, backslashes, colons and empty
 or `.`/`..` components. The lone `.` is accepted as
 a file Artifact's virtual root for list/glob/grep; other dot components are
 rejected. A tool reaches only the Artifacts in its own eval's scope, never those of
@@ -122,7 +124,7 @@ folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and
 `input_schema`. `executionPaths` is
 omitted when empty. Declared execution paths are up to 64 unique workspace-relative
-files/directories of up to 1024 UTF-16 code units each, resolved without symlinks or copying. This remains
+files/directories of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two), resolved without symlinks or copying. This remains
 workspace-relative for file Artifacts; it is not relative to their cwd or target.
 
 When an Agent review starts, artifactize records the SHA-256 of each execution path
@@ -148,7 +150,6 @@ exactly one nonblank text block, such as
 `{"isError":true,"content":[{"type":"text","text":"Choose a smaller range."}]}`.
 These reach the reviewer unchanged. Nonzero exit, crash, malformed/truncated
 JSON, and process failures yield generic errors; stderr is never forwarded.
-There are no observation receipts.
 
 ### Image results
 

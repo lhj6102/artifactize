@@ -25,6 +25,7 @@ use crate::{
         Capacity, Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend,
     },
     tools,
+    types::RunStatus,
 };
 
 /// OS owner death and released machine-wide slots have no reliable writer notification.
@@ -92,14 +93,17 @@ impl Stops {
 
     /// The stop of the backend the request's Agent review uses, if any.
     fn of(&self, request: &Request) -> Option<StoppedBackend> {
-        let backend = request.options.backend?;
+        let backend = request.options.backend.as_ref()?;
         let stopped = self.0.lock().unwrap();
-        stopped.iter().find(|stop| stop.backend == backend).cloned()
+        stopped
+            .iter()
+            .find(|stop| &stop.backend == backend)
+            .cloned()
     }
 
     /// Whether `backend` stopped, asked later.
     fn check(&self, backend: &crate::config::Backend) -> Box<dyn FnOnce() -> bool + Send> {
-        let (stops, backend) = (self.clone(), *backend);
+        let (stops, backend) = (self.clone(), backend.clone());
         Box::new(move || {
             let stopped = stops.0.lock().unwrap();
             stopped.iter().any(|stop| stop.backend == backend)
@@ -114,7 +118,7 @@ impl Stops {
         let mut stopped = self.0.lock().unwrap();
         if Code::stops_backend(code) && !stopped.iter().any(|stop| &stop.backend == backend) {
             stopped.push(StoppedBackend {
-                backend: *backend,
+                backend: backend.clone(),
                 error_code: (*code).try_into().expect("backend stopping failure"),
                 eval_id: request.eval_id.clone(),
                 request_id: request.id.clone(),
@@ -293,7 +297,11 @@ impl Scheduler<'_, '_> {
             .graph()
             .map(|graph| graph.evals().iter().map(|eval| eval.id.clone()).collect())
             .unwrap_or_default();
-        let deferred = modes::deferred(&self.config, self.run, self.requests);
+        let deferred = modes::deferred(self.run, self.requests);
+        // Nothing but unclaimed sign-offs has been left since then; `None` while anything else
+        // runs or waits, or a reviewer holds a claim.
+        let mut idle_since: Option<tokio::time::Instant> = None;
+        let grace = self.limits.signoff_idle_grace();
         let mut admissions: Vec<_> = self.requests.iter().map(|_| Admission::Idle).collect();
         let stops = Stops::new(self.run.stopped_backends.clone());
         loop {
@@ -418,11 +426,13 @@ impl Scheduler<'_, '_> {
                     .graph
                     .evaluate_for_run(&evidence, self.run.modes.speculate);
                 // Failures cancel transitively, including tasks, joined waits and sign-offs.
+                // Without speculation a cached result is taken before its gates resolve, even
+                // behind RED, so only work this Run started past a pending sign-off is cancelled.
                 for (request, admission) in self.requests.iter_mut().zip(admissions.iter_mut()) {
                     let eval = &evaluation.evals[request.eval_id.as_str()];
-                    if (self.run.modes.speculate || self.run.modes.defer_human)
-                        && eval.readiness == crate::graph::Readiness::Blocked
+                    if eval.readiness == crate::graph::Readiness::Blocked
                         && !admission.blocked()
+                        && (self.run.modes.speculate || !crate::query::reused(request))
                     {
                         evidence.remove(&request.eval_id);
                         if admission.running() {
@@ -471,7 +481,7 @@ impl Scheduler<'_, '_> {
                         && !admissions[index].blocked()
                     {
                         // Ready work owns capacity; speculative tasks yield before any ready task.
-                        let backend = current.options.backend;
+                        let backend = current.options.backend.as_ref();
                         let jobs_full = !matches!(admissions[index], Admission::Joining)
                             && self.run.jobs.is_some_and(|limit| {
                                 admissions.iter().filter(|state| state.uses_job()).count() >= limit
@@ -480,7 +490,8 @@ impl Scheduler<'_, '_> {
                             matches!(admissions[index], Admission::Capacity)
                                 && admissions.iter().enumerate().any(|(active, state)| {
                                     state.running()
-                                        && self.requests[active].options.backend == Some(backend)
+                                        && self.requests[active].options.backend.as_ref()
+                                            == Some(backend)
                                 })
                         });
                         if jobs_full || backend_full {
@@ -491,7 +502,8 @@ impl Scheduler<'_, '_> {
                                     matches!(state, Admission::Running { stop: None, .. })
                                         && evaluation.evals[request.eval_id.as_str()].readiness
                                             == crate::graph::Readiness::Wait
-                                        && (!backend_full || request.options.backend == backend)
+                                        && (!backend_full
+                                            || request.options.backend.as_ref() == backend)
                                 })
                             {
                                 admissions[active].stop(modes::Stop::Yield);
@@ -549,10 +561,8 @@ impl Scheduler<'_, '_> {
                         }
                         continue;
                     }
-                    // Deferral asks for a sign-off only once its gates are met, never
-                    // speculatively.
-                    if self.run.modes.defer_human
-                        && request.profile.kind() == ProfileKind::Human
+                    // A sign-off is asked for only once its gates are met, never speculatively.
+                    if request.profile.kind() == ProfileKind::Human
                         && eval.readiness != crate::graph::Readiness::Ready
                     {
                         continue;
@@ -653,7 +663,7 @@ impl Scheduler<'_, '_> {
                             .options
                             .backend
                             .as_ref()
-                            .and_then(|name| Some((*name, self.limits.limit(*backend)?))),
+                            .and_then(|name| Some((name.clone(), self.limits.limit(backend)?))),
                         _ => None,
                     };
                     let mut claim = claim(
@@ -710,12 +720,13 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::Full => {
                             let (backend, limit) = limited.as_ref().expect("a limited backend");
-                            full.insert(*backend);
+                            full.insert(backend.clone());
                             let newly_waiting = !matches!(admissions[index], Admission::Capacity);
                             admissions[index] = Admission::Capacity;
                             if newly_waiting {
-                                request.queue =
-                                    Some(crate::store::QueueReason::Slot { backend: *backend });
+                                request.queue = Some(crate::store::QueueReason::Slot {
+                                    backend: backend.clone(),
+                                });
                                 request.blocked_reason = Some(format!(
                                     "Waiting for a free {backend} slot: all {limit} are in use on this machine (limits.json)."
                                 ));
@@ -758,6 +769,12 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::WaitHuman(id) => {
                             admissions[index] = Admission::Idle;
+                            if self.run.state.status() == RunStatus::Running {
+                                // Saved before the request, so no reader sees a sign-off wait
+                                // in a Run that is not yet WAITING_HUMAN.
+                                self.run.state = crate::store::RunState::WaitingHuman;
+                                self.receipts.save_run(self.run).await?;
+                            }
                             request.execution_id = Some(id);
                             request.state = if deferred_human {
                                 crate::store::RequestState::Deferred
@@ -875,6 +892,10 @@ impl Scheduler<'_, '_> {
                         request.started_at = Some(execution.started_at);
                     }
                     request.state = crate::store::RequestState::Running;
+                    if human && self.run.state.status() == RunStatus::Running {
+                        // Saved before the sign-off request exists, as for a joined one.
+                        self.run.state = crate::store::RunState::WaitingHuman;
+                    }
                     self.receipts.save_run(self.run).await?;
                     self.receipts.save_request(request).await?;
                     let config = self.config.clone();
@@ -977,15 +998,35 @@ impl Scheduler<'_, '_> {
             if !cancelled && evidence.len() != completed {
                 continue;
             }
-            let human_wait = self
+            let signoffs: Vec<_> = self
                 .requests
                 .iter()
-                .any(|request| request.status() == crate::types::RequestStatus::WaitingHuman);
+                .filter(|request| request.status().is_human_wait())
+                .map(|request| request.id.clone())
+                .collect();
+            let human_wait = !signoffs.is_empty();
+            if human_wait && !cancelled && self.run.state.status() == RunStatus::Running {
+                self.run.state = crate::store::RunState::WaitingHuman;
+                self.receipts.save_run(self.run).await?;
+            }
             let admission_wait = admissions.iter().any(Admission::waiting);
-            if self.tasks.is_empty() && (!admission_wait || cancelled) && (cancelled || !human_wait)
-            {
+            let idle = self.tasks.is_empty() && (!admission_wait || cancelled);
+            if idle && (cancelled || !human_wait) {
                 break;
             }
+            // Only sign-offs are left: the Run stays open while one is claimed, and ends once
+            // none has been for its idle grace. One submitted since this loop last looked is
+            // taken on the next turn, never ended over.
+            let grace_due = if idle && !self.receipts.signoff_attended(signoffs).await? {
+                let due = *idle_since.get_or_insert_with(tokio::time::Instant::now) + grace;
+                if tokio::time::Instant::now() >= due {
+                    break;
+                }
+                Some(due)
+            } else {
+                idle_since = None;
+                None
+            };
             if let Some(control) = &mut self.run.control {
                 let activity = if cancelled {
                     crate::runs::Activity::Cancelling
@@ -1052,6 +1093,8 @@ impl Scheduler<'_, '_> {
                 _ = self.cancellation.cancelled(), if !cancelled => {},
                 _ = changes.next_state(), if !cancelled => {},
                 _ = reconcile.tick(), if waiting_external && !cancelled => {},
+                _ = tokio::time::sleep_until(grace_due.unwrap_or_else(tokio::time::Instant::now)),
+                    if grace_due.is_some() && !cancelled => {},
                 _ = tokio::time::sleep_until(remote_due),
                     if human_wait && self.remote.is_some() && !self.run.force && !cancelled => {},
             }

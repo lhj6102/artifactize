@@ -14,7 +14,8 @@ type RunView = {
 const EXIT_BOUND = 30000;
 const RECONCILE_INTERVAL = 25;
 const pause = new Int32Array(new SharedArrayBuffer(4));
-const TERMINAL = ["GREEN", "RED", "ERROR", "INCOMPLETE", "SIGNOFFS_PENDING"];
+const OPEN = ["RUNNING", "WAITING_HUMAN"];
+const TERMINAL = ["GREEN", "RED", "ERROR", "INCOMPLETE", "YELLOW"];
 const VIEW_CODES = [0, 1, 2, 4, 5];
 
 /** Discover only fixture-owned state databases, never processes or arbitrary paths. */
@@ -66,7 +67,7 @@ export function settleRuns(program: NativePath, repo: NativePath, state: NativeP
   };
   for (const { id } of runs) {
     try {
-      if (show(id).status === "RUNNING") {
+      if (OPEN.includes(show(id).status)) {
         const cancelled = invoke("run", "cancel", id);
         if (cancelled.status !== 0) throw new Error(cancelled.stderr || `cannot cancel fixture Run ${id}`);
       }

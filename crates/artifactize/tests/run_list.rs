@@ -165,7 +165,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
-    // Submission returns while the owned Run remains RUNNING with its Human request open.
+    // Submission returns while the owned Run stays WAITING_HUMAN with its sign-off open.
     let other = query(&second, &state, &["verify", "--all"], 0);
     let last = query(
         &first,
@@ -189,7 +189,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ]
         .map(|(run, created)| {
             let id = run["id"].as_str().unwrap();
-            if run["status"] != "RUNNING" {
+            if run["status"] != "WAITING_HUMAN" {
                 support::runs::finished_worker(
                     &state,
                     &first,
@@ -264,10 +264,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         }
         assert_eq!(summary["counts"], counts(saved));
     }
-    assert_eq!(
-        all[1]["counts"],
-        json!({"GREEN":1,"RED":1,"WAITING_HUMAN":1})
-    );
+    assert_eq!(all[1]["counts"], json!({"GREEN":1,"RED":1,"DEFERRED":1}));
     for saved in [&selected, &last, &other] {
         let shown = query(
             &first,
@@ -275,7 +272,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             &["run", "show", saved["id"].as_str().unwrap()],
             0,
         );
-        if saved["status"] == "RUNNING" {
+        if saved["status"] == "WAITING_HUMAN" {
             assert_eq!(shown["id"], saved["id"]);
             assert_eq!(shown["requests"], saved["requests"]);
             assert_eq!(shown["definitions"], saved["definitions"]);
@@ -360,7 +357,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     );
     let text =
         String::from_utf8(output(&first, &state, &["run", "list", "--all"], 0).stdout).unwrap();
-    assert!(text.contains("WAITING_HUMAN=1"));
+    assert!(text.contains("DEFERRED=1"));
     assert!(text.contains(selected["id"].as_str().unwrap()));
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 }

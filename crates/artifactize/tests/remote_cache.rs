@@ -496,7 +496,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
         .unwrap();
     let waiting = RunChild::new(waiting, &bob.state, &repo);
     let saved = waiting.human_waiting();
-    assert_eq!(saved.requests[0].status().as_str(), "WAITING_HUMAN");
+    assert_eq!(saved.requests[0].status().as_str(), "DEFERRED");
 
     // A token without the human scope keeps the sign-off local. Each signer's own verify
     // records the request and stops waiting at once.

@@ -16,12 +16,13 @@ import { scenarios as requests } from "./cases/requests.ts";
 import { scenarios as search } from "./cases/search.ts";
 import { scenarios as palette } from "./cases/palette.ts";
 import { scenarios as branches } from "./cases/branches.ts";
+import { scenarios as release } from "./cases/release.ts";
 import type { Scenario } from "./scenario.ts";
 
 export const scenarios: Scenario[] = [
   ...accounts, ...settings, ...currentGraph, ...graph, ...navigation, ...states,
   ...detailContent, ...catalogLayout, ...monitor, ...review, ...canonicalReview, ...humanSubmitFocus, ...launch,
-  ...requests, ...search, ...palette, ...branches,
+  ...requests, ...search, ...palette, ...branches, ...release,
 ];
 
 const ids = new Set<string>();

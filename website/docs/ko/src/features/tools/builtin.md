@@ -51,7 +51,7 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
 | `view_image` | `{path}` | — | — | 이미지 |
 | `section` | — | `[file]`(모델이 `heading`을 넘김) 또는 `[file, heading]` | `[file, heading]` | Markdown 섹션 하나 |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help` |
-| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 방향 있는 관계를 담은 트리. Human: 데스크톱 뷰어 |
+| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 입력에서 사용처로 이어지는 관계를 담은 트리. Human: 데스크톱 뷰어 |
 | `open` | — | — | `[file, folder 또는 URL]`(실행) | 없음. 기본 애플리케이션으로 엽니다 |
 
 `args`가 없으면 Agent 도구는 모델의 입력을 받습니다. `read`, `list`, `glob`, `grep`,
@@ -68,18 +68,20 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
   선언한 제목은 비어 있으면 안 됩니다. 파일은 최대 8 MiB, 출력하는 섹션은 최대 64 KiB입니다.
 - **`help`**는 `program subcommand... --help`를 실행하고 stdout을 먼저 출력한 뒤 stderr를 이어서 출력하며,
   UTF-8로 읽고 터미널 색 코드와 탭, LF, CR을 뺀 ASCII 제어 문자를 지웁니다(DEL은 남깁니다).
-  program은 글자 그대로의 프로그램 이름이나 경로입니다. 경로 없는 이름은 `PATH`(Windows에서는
+  program에는 실행할 프로그램 이름이나 경로를 적으며, 적은 값을 바꾸지 않고 그대로 씁니다. 경로 없는 이름은 `PATH`(Windows에서는
   `PATHEXT`도)로 찾습니다. 범위가 정해진 명령 도구 실행 파일과 달리 help는 일반적인 프로그램
   찾기를 쓰므로 절대 경로, 상위 폴더 기준 상대 경로, 실행 파일 심볼릭 링크를 받습니다. 상대
   경로는 선언한 Artifact 폴더에서 시작하고, 하위 명령 인자는 범위 해석 없이 그대로 넘깁니다.
   프로그램은 그 폴더에서 빈 stdin으로 실행되며, 별도의 출력·임시 디렉터리를 받지 않습니다.
   Agent용 `help`는 작성자의 환경을 쓰되, `ARTIFACTIZE_*` 변수는 대소문자를 가리지 않고 모두 뺍니다. Human용 `help`는 `ARTIFACTIZE_REMOTE_TOKEN` 같은 자격 증명과 `ARTIFACTIZE_*`
   변수를 포함한 리뷰어의 전체 환경에서 실행됩니다. 10초 안에 끝나고, 종료 코드 0이어야 하며, stdout과
-  stderr를 합쳐 최대 64 KiB까지 출력해야 합니다. 종료 코드가 0이 아니면 stdout 대신 종료 상태와 프로그램의 stderr를 그대로 담은 오류를 돌려줍니다. 실제 프로그램을 실행하므로 신뢰하는
+  stderr를 합쳐 최대 64 KiB까지 출력해야 합니다. 종료 코드가 0이 아니면 stdout 대신 종료 상태와 프로그램의 stderr를 그대로 담은 오류를 돌려줍니다. `open`과 달리
+  `help`가 실행한 프로그램은 `help` 명령이 끝날 때 함께 종료됩니다. 정상 종료든 시간 초과든 취소든, 그 프로그램과 그
+  프로그램이 백그라운드로 띄운 프로그램을 멈춥니다. 스스로 분리(detach)한 프로그램은 예외입니다. 실제 프로그램을 실행하므로 신뢰하는
   프로그램만 적으세요.
 - **`open`**(Human 전용)은 파일, 폴더, `http://`/`https://` URL 하나를 데스크톱의 기본
   애플리케이션으로 엽니다. Linux와 WSL에서는 `xdg-open`, macOS에서는 `open`, Windows에서는
-  Windows 셸(ShellExecute)을 씁니다. 대상은 셸을 거치지 않고 인자 하나로 넘깁니다. `file:`이나
+  대상에 지정된 기본 애플리케이션을 씁니다. 대상은 셸을 거치지 않고 인자 하나로 넘깁니다. `file:`이나
   `mailto:` 같은 다른 URL 스킴은 거부합니다. 결과에는 애플리케이션을 시작했다는 사실만 기록되며,
   실행한 애플리케이션은 자동으로 종료되지 않으므로 리뷰어가 직접 관리합니다. Linux, WSL, macOS에서는 여는 프로그램 자체가
   3초 안에 성공으로 끝나야 하며, 여는 프로그램이 없거나, 시간이 초과되거나, 0이 아닌 코드로
@@ -95,8 +97,8 @@ Artifact 범위 안의 논리적 경로이며, 다른 내장 도구와 마찬가
 
 형식은 확장자가 아니라 파일 내용으로 정합니다. PNG, JPEG, WebP를 지원하고, GIF, BMP, 애니메이션
 PNG와 그 밖의 형식은 거부합니다. 파일은 최대 **4 MiB**입니다.
-[이미지 결과 규약](agent.md#image-results)에서 명령 도구의 정리 방식과 같은 MIME 유형·크기 검사를
-설명합니다. 호출별 출력 디렉터리의 파일을 이미지 결과로 돌려줄 수 있는 것은 명령 도구뿐입니다.
+명령 도구와 똑같이 적용되는 이미지 정리 방식과 MIME 유형·크기 검사는
+[이미지 결과 규약](agent.md#image-results)에서 설명합니다. 호출별 출력 디렉터리의 파일을 이미지 결과로 돌려줄 수 있는 것은 명령 도구뿐입니다.
 
 ### 현재 프로젝트 그래프 {#current-project-graph}
 
@@ -163,8 +165,8 @@ artifactize-tools help cargo build          # cargo build --help
 artifactize-tools open notes.md             # or an http(s) URL
 ```
 
-리뷰 중이 아닐 때는 Artifact 범위가 없으므로 현재 디렉터리를 범위로 삼습니다. read/list/glob/grep/section/open의
-파일 시스템 대상은 상대 경로여야 하고 그 아래에 있어야 합니다. `.`은 그 디렉터리 자체를 가리키며
+리뷰 중이 아닐 때는 Artifact 범위가 없으므로 현재 디렉터리를 범위로 삼습니다. read/list/glob/grep/section/open으로
+여는 파일이나 폴더는 현재 디렉터리 아래에 있어야 하며, 상대 경로로 지정해야 합니다. `.`은 그 디렉터리 자체를 가리키며
 list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링크는 링크가 안쪽을 가리키더라도
 거부합니다. `help`의 프로그램과 인자에는 이 규칙이 적용되지 않으며, [`help`](#tools)에서처럼
 찾습니다. URL은 `open`만 받으며, `http://`나 `https://`만 됩니다.
@@ -179,7 +181,7 @@ list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링�
 ```
 
 명령줄에서 `help`는 터미널 환경에서 `ARTIFACTIZE_*` 변수를 모두 뺀 환경으로, 별도의
-임시·출력 디렉터리 없이 프로그램을 실행합니다. 도구 오류는 stderr에 출력하고 종료 코드 1을 돌려주며, 명령을 잘못 사용한 경우에는 종료 코드 2를 돌려줍니다. `artifactize tools --help`(또는 `artifactize-tools --help`)는
+임시·출력 디렉터리 없이 프로그램을 실행합니다. 그 밖의 동작은 위의 `help`와 같습니다. 도구 오류는 stderr에 출력하고 종료 코드 1을 돌려주며, 명령을 잘못 사용한 경우에는 종료 코드 2를 돌려줍니다. `artifactize tools --help`(또는 `artifactize-tools --help`)는
 도구 목록을, `artifactize tools SUBCOMMAND --help`는 도구 하나의 설명을 보여 줍니다.
 `artifactize tools help PROGRAM SUBCOMMAND...`는 다릅니다. `PROGRAM SUBCOMMAND... --help`를
 실행해서 그 프로그램의 도움말을 출력합니다.

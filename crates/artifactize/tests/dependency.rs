@@ -51,11 +51,8 @@ impl Fixture {
     }
 
     async fn verify(&self, speculate: bool) -> store::RunView {
-        self.verify_with(artifactize_core::runs::RunModes {
-            speculate,
-            defer_human: false,
-        })
-        .await
+        self.verify_with(artifactize_core::runs::RunModes { speculate })
+            .await
     }
 
     async fn verify_with(&self, modes: artifactize_core::runs::RunModes) -> store::RunView {
@@ -558,16 +555,13 @@ fn a_human_eval_waits_for_its_artifacts_machine_evals_and_is_blocked_by_their_fa
 
 #[tokio::test]
 async fn every_verify_mode_blocks_a_signoff_whose_machine_sibling_is_red() {
-    for (speculate, defer_human) in [(false, false), (true, false), (false, true), (true, true)] {
+    for speculate in [false, true] {
         let fixture = Fixture::new();
         signoffs(&fixture, false);
         let run = fixture
-            .verify_with(artifactize_core::runs::RunModes {
-                speculate,
-                defer_human,
-            })
+            .verify_with(artifactize_core::runs::RunModes { speculate })
             .await;
-        let context = format!("speculate={speculate}, defer_human={defer_human}");
+        let context = format!("speculate={speculate}");
         assert_eq!(
             statuses(&run),
             BTreeMap::from([

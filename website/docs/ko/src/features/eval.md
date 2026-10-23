@@ -12,8 +12,8 @@
 | [Human](human.md) | 대기 중인 요청을 맡아 승인을 제출하는 사람 | 스키마로 검사한 소유자 필드와 함께 GREEN 또는 RED |
 | [Runtime](runtime.md) | 선언한 프로그램과 인자 목록 | 종료 코드 0이면 GREEN, 그 밖이면 RED |
 
-실행에 실패했거나 모델 결과가 잘못되면 RED가 아니라 **ERROR**입니다. RED는 검사가 실제로
-Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종류든
+실행에 실패했거나 모델 결과가 잘못되면 RED가 아니라 **ERROR**입니다. RED는 실제 검사 결과
+Artifact가 통과 조건을 충족하지 못했다는 뜻입니다. 어느 종류든
 [입력과 기준](fingerprint.md#the-reuse-key)이 그대로인 동안은 재사용할 수 있습니다.
 
 리뷰 기준은 `payload.instruction`에 쓰세요. Agent와 Human eval에서는 `pass_schema`와
@@ -31,12 +31,9 @@ Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종�
 `app/ui`도 마찬가지입니다. 하지만 `spec`의 eval이 참조하는 다른 Artifact에는 접근할 수 없습니다. 도구 인자에 Artifact를 적는다고
 입력이 늘어나지는 않습니다.
 
-eval이 읽을 수 있는 범위는 [재사용 키](fingerprint.md#the-reuse-key)가 포함하는 범위보다
-넓습니다. 키에는 대상 Artifact와 바로 아래의 자식 Artifact, 이름으로 가리킨 입력만 들어가므로, `app/ui`의 자식 Artifact 안에서
-변경이 생겼다는 이유만으로 `app/review`를 다시 리뷰하지는 않습니다. 실행 게이트는 형제 eval의 참조가
-아니라 이 eval이 참조한 Artifact와 대상 Artifact의 자식으로 정해집니다. eval의 Artifact와 순환으로 묶인
-Artifact는 게이트가 되지 않으므로, 형제나 순환으로 묶인 대상이 RED여도 막히지 않습니다. 다만 [Human eval](artifact.md#human-sign-offs)은 같은 Artifact의 자동 검사 eval이 모두 GREEN이 된 뒤에 시작합니다. 선언
-방법은 [Artifact](artifact.md)를 보세요.
+eval이 읽을 수 있는 범위는 재사용 여부를 판단하는 범위나, 실행 전에 결과가 나와야 하는
+Artifact의 범위보다 넓습니다. 재사용 여부는 [재사용 키](fingerprint.md#the-reuse-key)를, 실행
+전에 결과가 나와야 하는 Artifact는 [eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
 `artifactize verify library/tests --wait`는 eval 하나로 [Run](run.md)을 시작합니다. 먼저
 `artifactize status library/tests`로 무엇을 재사용할 수 있고 무엇을 리뷰해야 하는지 확인하세요.

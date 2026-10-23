@@ -261,7 +261,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     assert_eq!(press(&mut review, KeyCode::Enter).await, Action::None);
     let details = screen(&mut review);
-    assert!(details.contains("WAITING_HUMAN · unclaimed"), "{details}");
+    assert!(details.contains("DEFERRED · unclaimed"), "{details}");
     assert!(details.contains("fail_release (output)") && details.contains("open_release (launch)"));
     assert_eq!(fixture.claim(&id).await, None, "opening claims nothing");
 
@@ -349,7 +349,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     assert!(matches!(review.mode(), Mode::Form(_)));
     let view = store::read_request(&fixture.state, &id).await.unwrap();
-    assert_eq!(view.request.status().as_str(), "WAITING_HUMAN");
+    assert_eq!(view.request.status().as_str(), "DEFERRED");
     press(&mut review, KeyCode::Esc).await;
     press(&mut review, KeyCode::Char('g')).await;
     // The constant is the form's own: not shown, yet submitted below.
@@ -389,7 +389,7 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
         let saved = store::read_run(&fixture.state, &run).await.unwrap();
         assert_eq!(
             saved.run.status(),
-            artifactize_core::types::RunStatus::Running
+            artifactize_core::types::RunStatus::WaitingHuman
         );
         let control = saved.run.control.unwrap();
         let artifactize_core::runs::Worker::Admitted { owner } = control.worker else {

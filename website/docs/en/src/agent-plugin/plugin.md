@@ -48,8 +48,9 @@ for the `artifactize` server. Ask in your own words, or invoke the skill as
 where `<project>` is the directory the session started in.
 
 **Codex:** start a new Codex session in your project directory. The server runs as
-`artifactize mcp` in the plugin's folder, and Hey Arti names your project with each
-call ([how the server finds the project](mcp.md#which-project)). Ask in your own
+`artifactize mcp` in the plugin's folder; when a tool answers that no project is
+named, Hey Arti passes your session's project folder with each later call
+([how the server finds the project](mcp.md#which-project)). Ask in your own
 words, or mention the skill as `$artifactize:hey-arti`.
 
 ## Updates
@@ -58,7 +59,7 @@ The plugin follows this repository's `main` branch, which holds released version
 Update it with `/plugin marketplace update artifactize` in Claude Code (or turn on
 auto-update for the marketplace in `/plugin`), or
 `codex plugin marketplace upgrade artifactize` in Codex. The
-[installation page](../getting-started/install.md#update) shows how to update the
+[Update and uninstall](../getting-started/update.md#update) page shows how to update the
 `artifactize` program itself.
 
 ## Without the plugin

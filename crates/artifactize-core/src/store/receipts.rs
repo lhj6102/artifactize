@@ -337,7 +337,7 @@ pub struct Request {
 }
 
 /// What a queued request waits for besides a job slot of its Run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum QueueReason {
     /// A free machine-wide slot of this backend (`limits.json`).

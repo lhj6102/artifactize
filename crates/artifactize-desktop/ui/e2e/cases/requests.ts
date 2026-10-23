@@ -28,7 +28,7 @@ function opening(browser: WebdriverIO.Browser, requestId: string) {
     return opened?.querySelector("h3")?.textContent?.trim() === "release/signoff · A person approves the release"
       && opened.querySelector(".instruction .text")?.textContent?.trim() === "Read the release notes and approve them."
       && opened.querySelector(".stage")?.textContent?.trim() === "CLAIM"
-      && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `);
+      && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `);
   }, requestId);
   return { human, exists };
 }
@@ -102,7 +102,7 @@ export const scenarios: Scenario[] = [
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => signoff(fixture).claim === null, "released");
       await waitFor(browser, async () =>
-        (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `)
+        (await human().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `)
         && await human().$("button*=Claim").isEnabled(), "the loaded review shows the release and offers Claim again");
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed here after the release");
@@ -179,7 +179,7 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$("#field-reason").isExisting()), "composition did not switch the verdict");
       assert.ok(!(await browser.$('[role="alertdialog"]').isExisting()), "composition did not leave or quit");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "composition did not release the claim");
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN", "composition submitted nothing");
+      assert.equal(signoff(fixture).status, "DEFERRED", "composition submitted nothing");
       await nativeInput(browser, { type: "commit", text: "안녕" });
       try {
         // The engine's commit API can mark compositionend untrusted. Native

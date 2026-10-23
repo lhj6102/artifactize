@@ -231,7 +231,7 @@ fn queued_for_a_slot_or_jobs_differs_from_waiting_for_an_artifact() {
                 "blockedReason":"Waiting for a free codex slot: all 2 are in use on this machine (limits.json).",
                 "queue":{"kind":"slot","backend":"codex"},
             }),
-            Queue::Slot(crate::config::Backend::Codex),
+            Queue::Slot(crate::config::Provider::Codex.into()),
             "queued · codex slots full",
         ),
         (
@@ -497,16 +497,17 @@ fn artifact_rows_roll_up_current_eval_rows_and_mark_changes_after_the_run() {
             runtime("docs/matches-cli"),
         ],
     );
+    let provisional = json!({"result":{"verdict":"GREEN"},"completedAt":"2026-01-01T00:00:02Z"});
     let mut requests = vec![
-        // Approved after the Run ended at 00:05.
+        // Approved after the Run ended at 00:05; what relies on it ran provisionally before.
         request(
             "code-style/approved",
             "GREEN",
             json!({"profile":{"kind":"human"},"completedAt":"2026-01-01T00:06:00Z"}),
         ),
-        request("cli/follows-style", "WAIT_DEPENDENCY", json!({})),
-        request("cli/lint", "WAIT_DEPENDENCY", json!({})),
-        request("docs/matches-cli", "WAIT_DEPENDENCY", json!({})),
+        request("cli/follows-style", "PROVISIONAL", provisional.clone()),
+        request("cli/lint", "PROVISIONAL", provisional.clone()),
+        request("docs/matches-cli", "PROVISIONAL", provisional),
     ];
     let (mut run, saved_requests) = saved(definitions.clone(), false, requests.clone());
     run.run.validation = serde_json::from_value(json!({"satisfied":false,"artifacts":[
@@ -520,16 +521,15 @@ fn artifact_rows_roll_up_current_eval_rows_and_mark_changes_after_the_run() {
         "✓ approved  GREEN  6m 00s *"
     );
     assert!(find(&nodes, "a:code-style").done());
-    // The upstream completed after the Run: cli is no longer waiting.
+    // The sign-off arrived after the Run: the provisional results downstream now stand.
     assert_eq!(
         line(&nodes, "e:cli/follows-style"),
-        "○ follows-style  not reviewed *"
+        "✓ follows-style  GREEN  2s *"
     );
-    assert_eq!(line(&nodes, "a:cli"), "○ cli  not reviewed  0/2 *");
-    // docs still waits for cli exactly as at Run end.
+    assert_eq!(line(&nodes, "a:cli"), "✓ cli  2/2 *");
     assert_eq!(
         line(&nodes, "e:docs/matches-cli"),
-        "○ matches-cli  not run: waited for cli … waiting"
+        "✓ matches-cli  GREEN  2s *"
     );
     let detail = detail(
         &run,
@@ -1427,6 +1427,7 @@ fn human(eval: &str, status: &str, extra: Value) -> RequestView {
 #[test]
 fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
     let late = json!({"completedAt":"2026-01-01T00:06:00Z"});
+    let provisional = |at: &str| json!({"result":{"verdict":"GREEN"},"completedAt":at});
     // (a) One of two Human evals of a is approved later: a changes, b still waits for a.
     let pair = definitions(
         &[(&["a"], &[]), (&["b"], &[0])],
@@ -1434,8 +1435,8 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
     );
     let requests = vec![
         human("a/one", "GREEN", late.clone()),
-        human("a/two", "WAITING_HUMAN", json!({})),
-        request("b/x", "WAIT_DEPENDENCY", json!({})),
+        human("a/two", "DEFERRED", json!({})),
+        request("b/x", "PROVISIONAL", provisional("2026-01-01T00:00:02Z")),
     ];
     let (run, requests) = saved(pair, false, requests);
     let nodes = tree(&run, &requests, now());
@@ -1464,30 +1465,31 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
             ),
         ]
     );
-    assert_eq!(
-        line(&nodes, "e:b/x"),
-        "○ x  not run: waited for a ? in progress"
-    );
+    assert_eq!(line(&nodes, "e:b/x"), "○ x  PROVISIONAL · sign-offs remain");
+    assert_eq!(line(&nodes, "a:b"), "… b  done, but waits for a  0/1");
 
-    // (b) a's late GREEN opens the gate of b's reused GREEN: b completes, c can run.
+    // (b) a's late GREEN makes b's and c's provisional results stand.
     let three = definitions(
         &[(&["a"], &[]), (&["b"], &[0]), (&["c"], &[1])],
         vec![runtime("a/one"), runtime("b/x"), runtime("c/x")],
     );
+    let mut reused_provisional = reused();
+    reused_provisional["result"] = json!({"verdict":"GREEN"});
+    reused_provisional["completedAt"] = json!("2026-01-01T00:00:01Z");
     let requests = vec![
         human("a/one", "GREEN", late.clone()),
-        request("b/x", "GREEN", reused()),
-        request("c/x", "WAIT_DEPENDENCY", json!({})),
+        request("b/x", "PROVISIONAL", reused_provisional.clone()),
+        request("c/x", "PROVISIONAL", provisional("2026-01-01T00:00:02Z")),
     ];
     let (run, requests) = saved(three.clone(), false, requests);
     let nodes = tree(&run, &requests, now());
     assert_eq!(line(&nodes, "a:b"), "✓ b  1/1 *");
-    assert_eq!(line(&nodes, "e:b/x"), "✓ x  GREEN · reused");
-    assert_eq!(line(&nodes, "a:c"), "○ c  not reviewed  0/1 *");
-    assert_eq!(line(&nodes, "e:c/x"), "○ x  not reviewed *");
+    assert_eq!(line(&nodes, "e:b/x"), "✓ x  GREEN · reused *");
+    assert_eq!(line(&nodes, "a:c"), "✓ c  1/1 *");
+    assert_eq!(line(&nodes, "e:c/x"), "✓ x  GREEN  2s *");
 
     // A later claim alone changes the Human row, nothing downstream.
-    let mut waiting = human("a/one", "WAITING_HUMAN", json!({}));
+    let mut waiting = human("a/one", "DEFERRED", json!({}));
     waiting.claim = Some(crate::store::HumanClaim {
         request_id: waiting.request.id.clone(),
         reviewer: "hj".parse().unwrap(),
@@ -1495,8 +1497,8 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
     });
     let requests = vec![
         waiting,
-        request("b/x", "WAIT_DEPENDENCY", json!({})),
-        request("c/x", "WAIT_DEPENDENCY", json!({})),
+        request("b/x", "PROVISIONAL", reused_provisional),
+        request("c/x", "PROVISIONAL", provisional("2026-01-01T00:00:02Z")),
     ];
     let (run, requests) = saved(three, false, requests);
     let nodes = tree(&run, &requests, now());

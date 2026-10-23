@@ -14,11 +14,13 @@ pub enum State {
     Preparing,
     Running,
     Waiting,
+    /// Open while its sign-offs are claimed or its idle grace runs.
+    WaitingHuman,
     Cancelling,
     Green,
     Red,
     Incomplete,
-    SignoffsPending,
+    Yellow,
     Error,
     Cancelled,
 }
@@ -29,7 +31,7 @@ impl State {
             Self::Green
                 | Self::Red
                 | Self::Incomplete
-                | Self::SignoffsPending
+                | Self::Yellow
                 | Self::Error
                 | Self::Cancelled
         )
@@ -82,7 +84,7 @@ fn state_for(status: RunStatus, control: Option<&super::Control>, counts: &Count
         RunStatus::Green => State::Green,
         RunStatus::Red => State::Red,
         RunStatus::Incomplete => State::Incomplete,
-        RunStatus::SignoffsPending => State::SignoffsPending,
+        RunStatus::Yellow => State::Yellow,
         RunStatus::Error
             if control
                 .is_some_and(|control| control.failure_code == Some(FailureCode::Cancelled)) =>
@@ -90,6 +92,12 @@ fn state_for(status: RunStatus, control: Option<&super::Control>, counts: &Count
             State::Cancelled
         }
         RunStatus::Error => State::Error,
+        RunStatus::WaitingHuman
+            if control.is_some_and(|control| control.cancellation_requested) =>
+        {
+            State::Cancelling
+        }
+        RunStatus::WaitingHuman => State::WaitingHuman,
         RunStatus::Running => {
             if let Some(control) = control {
                 if control.cancellation_requested {
@@ -139,7 +147,7 @@ pub async fn status(context: &Context, id: &RunId) -> Result<RunObservation, Str
             super::Worker::Admitted { owner } => Some(owner),
             super::Worker::Legacy => None,
         });
-    if saved.status == RunStatus::Running
+    if saved.status.is_open()
         && owner.is_some()
         && !crate::process::is_alive(owner).map_err(|e| e.to_string())?
     {

@@ -39,6 +39,12 @@ pub(super) fn apply(transaction: &Transaction<'_>) -> Result<(), Error> {
                 transaction.execute_batch(super::receipts::REVISIONS)?;
                 version += 1;
             }
+            9 => {
+                // A Run that ended with only sign-offs left is YELLOW, no longer SIGNOFFS_PENDING.
+                transaction.execute_batch("UPDATE runs SET data=json_set(data,'$.status','YELLOW') WHERE status='SIGNOFFS_PENDING' AND json_valid(data);
+                    UPDATE runs SET status='YELLOW' WHERE status='SIGNOFFS_PENDING';")?;
+                version += 1;
+            }
             version => return Err(Error::Invalid(super::schema_error(version))),
         }
         transaction.pragma_update(None, "user_version", version)?;

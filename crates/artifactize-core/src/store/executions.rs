@@ -260,7 +260,7 @@ impl ExecutionOptions {
                 max_tool_calls,
                 max_tokens,
             } => {
-                options.backend = Some(*backend);
+                options.backend = Some(backend.clone());
                 options.model = Some(model.clone());
                 options.reasoning = *reasoning;
                 options.timeout_ms = *timeout_ms;
@@ -718,7 +718,7 @@ impl Receipts {
                 let data: Option<String> = db
                     .query_row(
                         &format!(
-                            "SELECT e.data FROM executions e LEFT JOIN runs r ON r.id=json_extract(e.data,'$.provenance.runId') WHERE e.id=? AND {} AND (r.id IS NULL OR r.status!='RUNNING' OR coalesce(json_extract(r.data,'$.modes.speculate'),0)=0 OR json_extract(r.data,'$.control.activity')='publishing')",
+                            "SELECT e.data FROM executions e LEFT JOIN runs r ON r.id=json_extract(e.data,'$.provenance.runId') WHERE e.id=? AND {} AND (r.id IS NULL OR r.status NOT IN ('RUNNING','WAITING_HUMAN') OR coalesce(json_extract(r.data,'$.modes.speculate'),0)=0 OR json_extract(r.data,'$.control.activity')='publishing')",
                             history::RECORD
                         ),
                         [execution_id],

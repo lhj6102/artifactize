@@ -87,11 +87,13 @@ block; fixed `read`, `section` and `help` return text blocks:
   Human, it runs in the reviewer's whole environment, `ARTIFACTIZE_*` variables included,
   such as an `ARTIFACTIZE_REMOTE_TOKEN` credential. It must finish within 10 seconds, exit 0 and
   print at most 64 KiB, stdout and stderr together. If it exits nonzero, the tool fails
-  with the exit status and the program's stderr as it is, without its stdout. It runs a real program, so name
-  only programs you trust.
+  with the exit status and the program's stderr as it is, without its stdout. Unlike `open`,
+  nothing it starts outlives it: when help ends, by finishing, timing out or being cancelled,
+  it stops the program and the background programs it started, except ones that detach
+  themselves. It runs a real program, so name only programs you trust.
 - **`open`** (Human only) opens one file, folder or `http://`/`https://` URL in the
-  desktop's default application: `xdg-open` on Linux and WSL, `open` on macOS, the
-  Windows shell (ShellExecute) on Windows. The target is passed as one argument,
+  desktop's default application: through `xdg-open` on Linux and WSL, `open` on macOS,
+  and the default application for the target on Windows. The target is passed as one argument,
   never through a shell. Other URL schemes, such as `file:` or `mailto:`, are
   refused. The result only records that the application was
   started; the application belongs to the reviewer and keeps running.
@@ -214,8 +216,8 @@ syntax and limits. The current directory is not a declared Artifact, so `artifac
 
  From the command line, `help` runs the
 program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
-with no private temporary or output directory. A tool error goes to stderr with exit
-1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
+with no private temporary or output directory; otherwise it runs as `help` above. A tool
+error goes to stderr with exit 1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
 `artifactize tools SUBCOMMAND --help` describes one. `artifactize tools help PROGRAM
 SUBCOMMAND...` is different: it runs `PROGRAM SUBCOMMAND... --help` and prints that
 program's help.

@@ -312,7 +312,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     root.track(&state, &repo);
     let waiting = verify(&repo, &state).await;
     let request = &waiting.requests[0];
-    assert_eq!(request.status().as_str(), "WAITING_HUMAN");
+    assert_eq!(request.status().as_str(), "DEFERRED");
     let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     human::claim(&receipts, &request.id, &"alice".parse().unwrap())
         .await
@@ -462,7 +462,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
     assert_eq!(
         request.options.backend,
-        Some(artifactize_core::config::Backend::Anthropic)
+        Some(artifactize_core::config::Provider::Anthropic.into())
     );
     assert_eq!(request.options.max_tokens, Some(500));
     let shown = cli(&state, &["cache", "show", &key.value]);

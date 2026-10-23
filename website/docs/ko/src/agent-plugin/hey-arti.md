@@ -32,7 +32,7 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
   첫 단계로 eval이 한두 개 있는 Artifact 하나를 제안합니다.
 - **새 프로젝트 구성하기**: 아래에 설명한 순서대로 진행합니다.
 - **큰 저장소에 점진적으로 도입하기**: 문제가 가장 큰 영역만 선언하고,
-  나머지는 넓은 리뷰 하나로 묶지 않고 선언하지 않은 채 두며, 첫 영역의
+  나머지 영역은 그 전체를 대상으로 하는 리뷰 하나로 묶지 않고 선언하지 않은 채 두며, 첫 영역의
   판정을 신뢰할 수 있게 되면 다음 영역을 추가합니다.
 - **기존 설정 점검하기**: `config_check`와 `config_graph`를 실행하고,
   결과를 [모범 사례](#the-practices-it-recommends)와 대조하고, 문제점과 해결 방안을 먼저 설명한 뒤 수정해도 되는지 사용자에게 묻습니다.
@@ -84,11 +84,11 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
 - **라이브러리와 그 사용처**: 라이브러리에 테스트를 두고, 라이브러리를 쓰는 코드의 리뷰에서는
   `{library}`를 참조합니다.
 - **명세와 앱**: 앱에는 앱의 테스트를 실행하는 Runtime eval과 `{spec}`을 기준으로 리뷰하는 Agent eval을 둡니다.
-- **앱과 E2E 테스트**: 테스트 모음을 실행하는 eval은 앱에 선언하며, 그 인자에 `{e2e-tests}`가 들어갑니다. 테스트 코드의 eval은 그 스타일과 범위를 리뷰합니다.
+- **앱과 E2E 테스트**: 테스트 모음을 실행하는 eval은 앱에 선언하며, 그 인자에 `{e2e-tests}`가 들어갑니다. 테스트 코드의 eval에서는 코드 스타일을 리뷰하고, 테스트가 각 기능을 충분히 검증하는지 확인합니다.
 - **문서와 에셋**: 문서가 설명하는 코드와 문서 내용이 맞는지 리뷰합니다. 각
   에셋은 각각 별도의 파일 Artifact이며, 필요하면 사람의 승인을 받습니다.
-- **모노레포 계약**: UI와 API에 각각 검사를 두고, 통합 eval에서
-  두 구성 요소와 그 사이의 계약을 참조합니다.
+- **모노레포의 연동 규약**: UI와 API에 각각 검사를 두고, 통합 eval에서
+  두 구성 요소와 그 사이의 인터페이스 규약을 참조합니다.
 - **생성된 파일**: 생성기와 그 입력을 리뷰하거나, 생성기를
   참조해 출력을 리뷰합니다.
 - **규칙 문서**: 규칙 문서는 대개 Human 승인을 받는 Artifact로 선언하며,
@@ -110,12 +110,11 @@ eval의 지시문, 결과 스키마, Runtime 명령을 바꾸면 그
 
 ## MCP를 먼저 쓰기 {#use-mcp-first}
 
-Arti는 `config_graph`로 Artifact, eval, 의존성을 찾습니다. `impact:true`를 쓰면 그 입력을 쓰는 하위 Artifact 중 영향을 받을 수 있는 대상도 넓게 포함합니다. `config_check`로 선언을 검증하며, `status`로 각 eval을 실행할지, 기존 결과를 재사용할지, 대기할지 예측합니다. `tools_check`는
-도구와 세션을 정적으로 살펴봅니다. Arti는 확인 결과를 파싱하기 전에 이어지는 페이지를
-모두 읽습니다. [MCP 레퍼런스](mcp.md)에 이 도구들과 MCP가
-[일부러 빼놓은 것](mcp.md#deliberately-absent)이 나와 있습니다. MCP가 등록되지 않았다면
-CLI 대체 명령은 `artifactize config check`, `artifactize config graph`,
-`artifactize status --all`, `artifactize tools check`입니다.
+프로젝트에 어떤 Artifact, eval, 의존성이 선언되어 있고 변경이 어디에 영향을 주는지, 선언이
+올바른지, 어떤 eval을 실행하거나 재사용하거나 대기시킬지, 도구와 세션이 제대로 설정되어
+있는지 Arti에게 물어보세요. Arti는 artifactize의 [MCP 도구](mcp.md)가 등록되어 있으면 그것으로,
+없으면 `artifactize config check`, `artifactize config graph`, `artifactize status --all`,
+`artifactize tools check`로 확인해 답합니다.
 
 ## 도구 세션 {#tool-sessions}
 
@@ -134,8 +133,9 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **완전한
-승인이 아닙니다**.
+Arti는 요청마다 [추측 실행](../features/run.md#speculation)을 요청할 수 있습니다. Run이 선택한 승인은 다른 eval을 막지
+않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, scope에 해당 Artifact를 추가하거나
+선택 범위를 `{"kind": "all"}`로 넓히지 않으면 Run은 INCOMPLETE로 끝납니다. YELLOW는 **완전한 승인이 아니라** 사람의 승인이 아직 남아 있다는 뜻이며, 그 승인은 사람이 직접 제출해야 합니다.
 
 Arti는 각 결과를 다음과 같이 다룹니다.
 
@@ -146,7 +146,7 @@ Arti는 각 결과를 다음과 같이 다룹니다.
 - **BLOCKED**: 그 eval을 실행하기 전에 통과해야 할 상위 검사가 실패했습니다. 보통 해당 eval이 입력으로 쓰는 Artifact에서 RED나 ERROR가 난 경우입니다. Arti는 그 입력을 먼저 고친 뒤 다시 검증합니다.
 - **ERROR**: 검사를 실행할 수 없었습니다. Arti는 `request_logs`나 `session_show`를 읽고
   필요한 프로그램이 없는 등 실행을 막은 원인을 해결하며, 판정 자체를 고치지는 않습니다.
-- **SIGNOFFS_PENDING**: 나머지는 모두 통과했고 사람의 승인만 남았습니다.
+- **YELLOW**: 나머지는 모두 통과했고 사람의 승인만 남았습니다.
   완전한 승인이 아니며, Arti는 사람에게 넘깁니다(아래).
 - **INCOMPLETE**: 필요한 증거가 없습니다. 예를 들어 CI가 기존 리뷰를
   재사용하기만 하는 경우입니다. Arti는 `verify`로 빠진 eval을 실행해 부족한 증거를 확보합니다.

@@ -78,10 +78,7 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
     assert_ne!(fingerprint(), baseline);
     fs::write(
         repo.path().join(".artf"),
-        GRAPH.replace(
-            "title = 'Review graph'",
-            "gate = 'blocking'\ntitle = 'Review graph'",
-        ),
+        GRAPH.replace("Review the project structure.", "Review the new structure."),
     )
     .unwrap();
     assert_ne!(fingerprint(), baseline);

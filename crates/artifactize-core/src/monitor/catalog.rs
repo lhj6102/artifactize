@@ -5,7 +5,6 @@ use super::model::Status;
 use crate::{
     repository::{self, Identity, Worktree},
     store::{CatalogRun, Signoff},
-    types::RunStatus,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -35,7 +34,7 @@ impl Badge {
         self.waiting.extend(run.waiting.iter().cloned());
         self.red += run.red;
         self.error += run.error;
-        self.running += u64::from(run.status == RunStatus::Running);
+        self.running += u64::from(run.status.is_open());
     }
     /// Status glyphs and counts in the urgency order of the header, Runs and the tree:
     /// `!1 ✗2 ◐1 ?1`.

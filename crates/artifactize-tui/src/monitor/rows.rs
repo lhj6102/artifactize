@@ -36,8 +36,10 @@ pub(super) fn color(tone: Tone) -> Color {
         Tone::Green => Color::Green,
         Tone::Red => Color::Red,
         Tone::Error => Color::Magenta,
-        Tone::Running | Tone::Queued => Color::Yellow,
-        Tone::Human => Color::Cyan,
+        // In progress is blue, darker while it waits for a person; yellow is only a Run that
+        // ended with sign-offs left.
+        Tone::Running | Tone::Queued => Color::LightBlue,
+        Tone::Human => Color::Blue,
         Tone::Blocked => Color::LightRed,
         Tone::Muted => Color::DarkGray,
     }

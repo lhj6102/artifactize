@@ -14,8 +14,11 @@
   --green: #16833a;
   --red: #c4322a;
   --error: #c2410c;
+  /* An open Run is blue, a shade deeper while it waits for a person; yellow is a Run that
+     ended with only sign-offs left. */
   --running: #1e6fd9;
-  --human: #a3570b;
+  --human: #1650a8;
+  --yellow: #9a6700;
   --queued: #6b7280;
   --blocked: #a21caf;
   /* The graphs' lights: a Run's, then a Current's. */
@@ -52,7 +55,8 @@
     --red: #f2675d;
     --error: #f0883e;
     --running: #6cb6ff;
-    --human: #e0a145;
+    --human: #4c8ff0;
+    --yellow: #e3b341;
     --queued: #9ba1ad;
     --blocked: #d68ef0;
     --light-green: #4ac26b;
@@ -169,6 +173,7 @@ kbd {
 .tone-error { color: var(--error); }
 .tone-running { color: var(--running); }
 .tone-human { color: var(--human); }
+.tone-yellow { color: var(--yellow); }
 .tone-queued { color: var(--queued); }
 .tone-blocked { color: var(--blocked); }
 .tone-muted { color: var(--muted); }
@@ -359,4 +364,9 @@ kbd {
 .chip:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
+}
+.settings-dialog {
+  top: 64px;
+  width: min(900px, 94vw);
+  max-height: calc(100vh - 80px);
 }

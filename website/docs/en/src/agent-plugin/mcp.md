@@ -77,7 +77,7 @@ Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 
 | Tool | Arguments | Answer |
 | --- | --- | --- |
-| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate`, `defer_human` | Submits the Run; compact Run observation, not approval |
+| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate` | Submits the Run; compact Run observation, not approval |
 | `verify_status` | `run` | Saved state, counts, elapsed seconds and `next_check` |
 | `verify_wait` | `run`, optional `seconds` | Waits for the Run's end or the bound; default 30, integer 0–40; observing takes under 45 seconds, after the first call's roots question, if any |
 | `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Follows changes for up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
@@ -109,15 +109,15 @@ backend limits in `limits.json`. An optional `jobs` (1–4294967295) is the same
 per-Run cap as CLI `--jobs`; add it only when unrestricted concurrency causes
 trouble. The Run omits `jobs` when unlimited.
 
-Both mode arguments default false and mean the same as CLI `--speculate` and
-`--defer-human`.
-`speculate` starts requested downstream work within the usual scheduling limits before
-upstream judgment; an upstream RED/ERROR cancels only the work it makes invalid. `defer_human`
-permits provisional progress and returns terminal `signoffs_pending` when only
-deferred sign-offs remain. `verify_result` reports verdict `SIGNOFFS_PENDING`;
-this is not full approval (the CLI watcher exits 5). Explicit `gate = "blocking"`
-still blocks. Request states such as `DEFERRED` and `PROVISIONAL` are the same as in
-the CLI. Later sign-offs do not re-run the machine work.
+`speculate` defaults false and means the same as CLI `--speculate`: it starts requested
+runtime and Agent work within the usual scheduling limits before upstream judgment; an
+upstream RED/ERROR cancels only the work it makes invalid. Sign-offs the Run selected never
+hold up other evals (one outside the selection does, and the Run ends INCOMPLETE until the
+scope includes it): the Run is `waiting_human` from its first sign-off request, stays open while one is
+claimed or its [idle grace](../features/others/state.md#sign-off-idle-grace) runs, and ends
+`yellow` when only sign-offs remain. `verify_result` then reports verdict `YELLOW`; this
+is not full approval (the CLI watcher exits 5). Request states such as `DEFERRED` and
+`PROVISIONAL` are the same as in the CLI. Later sign-offs do not re-run the machine work.
 
 A running answer is smaller than 2 KiB. Waiting is ordinary state, not an error.
 `verify_wait` treats runtime, Agent and Human evals equally: it does **not** return
@@ -147,7 +147,7 @@ listed below. They return the same JSON as their CLI counterpart, split into det
 | `session_show` | **`reference`**, `summary` (default false) | `session show REF [--summary]` |
 | `tools_check` | `eval`, or `artifact`/`audience`/`tool` | Static `tools check`; `audience` is `agent` or `human` |
 | `doctor` | none | `doctor` |
-| `models` | **`provider`** (`openai`, `anthropic`, `codex`) | `models PROVIDER` |
+| `models` | **`provider`** (a built-in provider, `openai`, `anthropic`, `gemini` or `codex`, or a custom provider's name: 1–64 ASCII letters, digits, `_` or `-`, starting with a letter or digit) | `models PROVIDER` |
 | `remote_status` | none | `remote status` |
 | `cache_show` | **`key`**, `history` (default false) | `cache show KEY [--history]` |
 
@@ -158,7 +158,7 @@ JSON null (or an empty array for history), just as in CLI JSON output. Static
 trusted fingerprint commands and consult the configured review store; declared
 commands are not an OS sandbox. MCP exposes no login/logout actions and never
 returns credentials. `models`, `doctor` and `remote_status` may check backend
-readiness. Codex model listing can renew artifactize-owned tokens or remove the
+readiness, and `doctor` looks up a [newer release](../getting-started/update.md#newer-releases) as the CLI does. Codex model listing can renew artifactize-owned tokens or remove the
 stored sign-in after a terminal refresh rejection, just as the CLI does.
 
 ### Detail pages
@@ -178,9 +178,10 @@ not preserved. Reinvoke the **same tool with the same arguments**, adding
 selects the next group of Run records; it is distinct from the cursor continuing
 one group's JSON. `verify_result` instead pages its structured `findings` array.
 
-A cursor works only with the same tool and arguments while the saved evidence is
-unchanged; time passing alone does not expire it. Otherwise it is rejected: start that
-inspection again from the first page. A failed
+A cursor works only with the same tool and arguments. Each later page runs the inspection
+again, and the cursor works only while that answer is unchanged: a new Run or result, but
+also a changed file, model list or backend check, rejects it. Time passing alone does not
+expire it. When a cursor is rejected, start that inspection again from the first page. A failed
 tool call returns MCP `isError:true` with `{code,message}`. `operation_failed` carries
 the CLI's error message, cut to its first 2,048 characters; `response_too_large` means
 the answer does not fit a detail page, so narrow the inspection (for example a

@@ -128,10 +128,15 @@ export const scenarios: Scenario[] = [
           // Where the shown rows sit in the whole transcript, as its scrollbar draws it.
           at: pane.querySelector<HTMLElement>(".track .thumb")?.style.top ?? null };
       });
+      assert.ok((await transcript()).own, "the transcript has its own scrolling box");
+      // Away from the beginning first, so returning to it is a move of the transcript's own box.
+      await aside(browser).$("button*=Bottom").click();
+      await browser.waitUntil(async () => {
+        const shown = await transcript();
+        return shown.status === null && shown.rows > 0 && shown.at !== null && shown.at !== "0%";
+      }, { timeout: 15000, timeoutMsg: `the Agent log scrolled to its end: ${JSON.stringify(await transcript())}` });
       const bottom = await transcript();
-      assert.ok(bottom.own, "the transcript has its own scrolling box");
       await aside(browser).$("button*=Top").click();
-      assert.notEqual(bottom.at, "0%", "the Agent log opened away from its beginning");
       await browser.waitUntil(async () => {
         const shown = await transcript();
         return shown.status === null && shown.rows > 0 && shown.at === "0%";

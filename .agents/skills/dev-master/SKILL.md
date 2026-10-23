@@ -18,7 +18,7 @@ you to continue the dev-master cycle, start the next run from step 1.
   or publish a release.
 - `dev` is where work comes together. Merging a ready pull request may turn it
   RED; that is expected, and this cycle brings it back to GREEN. Its states:
-  RED (an eval fails), SIGNOFFS_PENDING (only Human sign-offs remain) and GREEN
+  RED (an eval fails), YELLOW (only Human sign-offs remain) and GREEN
   (verify GREEN and CI green). Changes reach `dev` only as merged pull requests,
   so every `dev` commit has passed CI; never push to `dev` directly.
 - `dev-green` is a lightweight tag on the latest GREEN `dev` commit. Only you
@@ -41,15 +41,17 @@ Then verify:
 
 ```sh
 env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
-  cargo run -q -p artifactize -- verify --all --speculate --defer-human --wait
+  cargo run -q -p artifactize -- verify --all --speculate --wait
 ```
 
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
 candidate from this tree. The command prints the Run ID, the Run's outcome on
 `Execution:`, and ends with `Validation: SATISFIED` or `Validation: NOT
 SATISFIED`, the latter followed by `Unmet obligation:` lines. The exit code is
-the outcome: 0 GREEN (`Validation: SATISFIED`), 5 SIGNOFFS_PENDING, 1 RED,
-2 ERROR, 4 INCOMPLETE.
+the outcome: 0 GREEN (`Validation: SATISFIED`), 5 YELLOW, 1 RED,
+2 ERROR, 4 INCOMPLETE. Sign-offs never hold up the machine evals; once only
+sign-offs are left, the Run waits while one is claimed and ends YELLOW after its
+idle grace (2 minutes) with none claimed.
 Read a Run and its failing evals with
 `"$scratch/target/debug/artifactize" run show RUN_ID --json`.
 
@@ -90,14 +92,14 @@ Take the non-draft ones in number order. Each pull request ends with a note:
 <!-- artifactize-board
 role: dev-worker
 from: <dev-green SHA the branch started from>
-verify: <Run ID> <GREEN or SIGNOFFS_PENDING> <SHA of the verified commit>
+verify: <Run ID> <GREEN or YELLOW> <SHA of the verified commit>
 -->
 ```
 
 Merge one when all of these hold:
 
 1. **Verify GREEN on its head.** The note says GREEN for the current
-   `headRefOid`. Otherwise (SIGNOFFS_PENDING, an older commit, no note),
+   `headRefOid`. Otherwise (YELLOW, an older commit, no note),
    verify the head yourself in `.claude/worktrees/pr-N`
    (`git fetch origin pull/N/head` and `git worktree add --detach … FETCH_HEAD`);
    unchanged results are reused. When it is GREEN, update the note's `verify`
@@ -123,7 +125,7 @@ Check out the new `origin/dev` in `.claude/worktrees/dev-master` and verify.
   says `role: dev-master` and `from:` that head, wait for CI
   (`gh pr checks N --watch`) and merge it under the rules of step 2.
 - **Newly waiting pull requests:** before verifying again, run step 2 again.
-- **SIGNOFFS_PENDING:** list the pending sign-offs for the owner and go to
+- **YELLOW:** list the pending sign-offs for the owner and go to
   step 5 without moving `dev-green`. The next run verifies again and reuses the
   signed-off results.
 - **GREEN:** go to step 4 if the verified commit is still `origin/dev`'s head

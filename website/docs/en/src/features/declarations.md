@@ -69,7 +69,6 @@ by ID, not by their position in the TOML source.
 | `views.agent_sessions.<name>.start`, `.stop` | Tool-session commands: required `command` and `args`, optional `execution_paths`; no other fields |
 | `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
 | `evals.<id>.title` | Required nonblank title |
-| `evals.<id>.gate` | Optional `"blocking"`; keeps a Human sign-off strict under `--defer-human`. Omission follows the request mode; no other values |
 | `evals.<id>.mutex` | Optional list of at most 64 unique hierarchical mutex tags; runtime and Agent evals only; no default |
 | `evals.<id>.profile` | Required `runtime`, `agent` or `human` profile |
 | `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
@@ -82,7 +81,7 @@ to declare.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
-`profile_variants`, `gate` and `mutex`.
+`profile_variants` and `mutex`.
 Other keys, and camelCase spellings such as `timeoutMs` for `timeout_ms`, are rejected.
 JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
 keep their standard names. Owner-defined payload fields keep their chosen names. They are kept with the eval
@@ -136,9 +135,8 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-There is no converter. Have an agent rewrite the declarations and commit the new
-`.artf` files. Families are removed: generate any repeated declarations with your
-own project generator and commit its `.artf` output. Older fields such as
+To migrate, follow [Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
+Older fields such as
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
@@ -203,8 +201,9 @@ Patterns, formats, nested objects, lists inside groups, `$ref` and combinators
 such as `anyOf` are refused: a person could not enter them. Agent schemas keep the
 full validator.
 
-Schemas are limited to 8 MiB. An Agent's raw final response is limited to 1 MiB;
-the normalized result is limited to 256000 UTF-16 code units. Invalid final
+Schemas are limited to 8 MiB. An Agent's final response is checked once complete: over
+1 MiB it is invalid. The result artifactize keeps from it is limited to 256000 characters, where an emoji or
+another character outside the Basic Multilingual Plane counts as two. Invalid final
 responses get one bounded repair attempt, not silent field removal. The
 [Human submission interface](../cli/index.md#command-reference) separately bounds
 its input and reports validation errors without settling the request.
@@ -306,11 +305,11 @@ reviewed, also with `fingerprint = false`:
 Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/install.md#upgrading-from-011).
+[upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 ## Eval mutex tags
 
-A runtime or Agent eval can declare `mutex` beside `gate` and `profile`:
+A runtime or Agent eval can declare `mutex` beside `profile`:
 
 ```toml
 [evals.suite-passes]
@@ -347,26 +346,6 @@ only reads test code need not wait because another eval runs those tests. There
 are no implicit tags. Mutex tags are execution options, not evaluation criteria;
 changing them changes neither fingerprints nor reuse keys, and cached results
 can still be reused while a conflicting eval runs.
-
-## Human gate policy
-
-`gate = "blocking"` is an optional eval field, not a profile or global setting.
-It preserves a Human eval's pending gate under `verify --defer-human`. Omission
-retains ordinary strict behavior in default Runs and permits deferral only when
-that request opts in. On runtime or Agent evals it has no additional
-effect: only Human sign-offs can be deferred. Gate policy changes scheduling,
-not the judgment definition or its reuse key.
-
-```toml
-[evals.signoff]
-title = "The delivery is approved"
-gate = "blocking"
-profile = { kind = "human" }
-payload.instruction = "Approve the delivery before dependent work proceeds."
-```
-
-See [verify modes](../cli/index.md#verify-modes) and
-[deferred sign-offs](human.md#deferred-sign-offs).
 
 ## Eval dependencies
 
@@ -420,7 +399,7 @@ are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
-file/directory paths of up to 1024 UTF-16 code units each. They must exist without symlink traversal on every call;
+file/directory paths of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two). They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
 bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after
@@ -456,8 +435,10 @@ review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare
 (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
-`config check` checks the names and syntax of the profile each eval declares; references
-that appear only in a `profile_variants` entry are checked when that variant is selected, so
+`config check` checks the names and syntax of the profile each eval declares. The syntax and
+path rules above apply to every `profile_variants` entry too, so a malformed reference such
+as `{app}/../outside` in any variant fails `config check`. Whether a reference that appears
+only in a variant names an existing Artifact is checked when that variant is selected, so
 run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
 exists, and that no symbolic link is followed, is checked when the command is prepared.
 

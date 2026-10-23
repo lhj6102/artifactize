@@ -12,7 +12,7 @@ use super::Saved;
 use crate::{
     graph::EvalStatus,
     store::RequestView,
-    types::{ArtifactName, EvalId, RequestStatus, RunStatus},
+    types::{ArtifactName, EvalId, RequestStatus},
 };
 
 /// Where a done eval's GREEN came from.
@@ -330,7 +330,7 @@ impl<'a> States<'a> {
             #[cfg(any(test, feature = "test-support"))]
             derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
-            running: run.status() == RunStatus::Running,
+            running: run.status().is_open(),
             views: RefCell::new(HashMap::new()),
             effective: RefCell::new(HashMap::new()),
             completions: RefCell::new(HashMap::new()),
@@ -497,6 +497,8 @@ impl<'a> States<'a> {
         }
         match status {
             Some(RequestStatus::Deferred) => EvalStatus::Deferred,
+            // A provisional result stands once nothing it relies on is pending any more.
+            Some(RequestStatus::Provisional) if self.pending(eval).is_empty() => EvalStatus::Green,
             Some(RequestStatus::Provisional) => EvalStatus::Provisional,
             Some(RequestStatus::Green) => EvalStatus::Green,
             Some(RequestStatus::Red) => EvalStatus::Red,
@@ -525,12 +527,16 @@ impl<'a> States<'a> {
         };
         let request = &view.request;
         match request.status() {
-            RequestStatus::Provisional => EvalView::Done(Source::Provisional),
-            RequestStatus::Green => EvalView::Done(if crate::query::reused(request) {
-                Source::Reused
-            } else {
-                Source::Executed
-            }),
+            RequestStatus::Provisional if self.effective(eval) == EvalStatus::Provisional => {
+                EvalView::Done(Source::Provisional)
+            }
+            RequestStatus::Provisional | RequestStatus::Green => {
+                EvalView::Done(if crate::query::reused(request) {
+                    Source::Reused
+                } else {
+                    Source::Executed
+                })
+            }
             RequestStatus::Red => EvalView::Failed { verdict: true },
             RequestStatus::Error => EvalView::Failed { verdict: false },
             RequestStatus::Running => EvalView::InProgress(Activity::Running),
@@ -578,7 +584,7 @@ impl<'a> States<'a> {
             return EvalView::NotRun(NotRun::Unreviewed);
         }
         EvalView::InProgress(Activity::Queued(
-            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue {
+            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue.clone() {
                 Queue::Slot(backend)
             } else if request.execution_id.is_some() {
                 Queue::Joined
@@ -588,6 +594,30 @@ impl<'a> States<'a> {
                 Queue::Ready
             },
         ))
+    }
+
+    /// The Artifacts of this Eval's gates that pass only provisionally: a sign-off not yet
+    /// submitted, or a result that relies on one.
+    fn pending(&self, eval: &EvalId) -> Vec<ArtifactName> {
+        let mut artifacts: Vec<_> = self
+            .index
+            .gates
+            .get(eval)
+            .into_iter()
+            .flatten()
+            .filter(|&&gate| {
+                matches!(
+                    self.effective(gate),
+                    EvalStatus::Deferred | EvalStatus::Provisional
+                )
+            })
+            .map(|gate| self.index.targets[gate])
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        artifacts
+            .sort_by_key(|artifact| (self.completion(artifact).rank(), self.position(artifact)));
+        artifacts.into_iter().cloned().collect()
     }
 
     /// Only this Eval's gates contribute waits; its own Artifact and cycle peers never do.
@@ -708,6 +738,14 @@ impl<'a> States<'a> {
             if matches!(self.view(eval), EvalView::Done(_)) && self.effective(eval) == wanted {
                 for id in self.unmet(eval) {
                     if (!blocked || self.gate_blocks(eval, &id)) && !x.contains(&id) {
+                        x.push(id);
+                    }
+                }
+            }
+            // A provisional result waits for the sign-offs it relies on.
+            if !blocked && self.effective(eval) == EvalStatus::Provisional {
+                for id in self.pending(eval) {
+                    if !x.contains(&id) {
                         x.push(id);
                     }
                 }
