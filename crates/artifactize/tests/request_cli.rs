@@ -151,11 +151,7 @@ impl Fixture {
                                         }) {
                                             return;
                                         }
-                                        assert_eq!(
-                                            view.run.status().as_str(),
-                                            "RUNNING",
-                                            "{view:?}"
-                                        );
+                                        assert!(view.run.status().is_open(), "{view:?}");
                                         changes.next_reconciled().await;
                                     }
                                 },
@@ -196,7 +192,7 @@ impl Fixture {
                 .as_array()
                 .unwrap()
                 .iter()
-                .find(|r| r["status"] == "WAITING_HUMAN")
+                .find(|r| r["status"] == "DEFERRED")
             {
                 return request.clone();
             }
@@ -244,7 +240,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["status"] == "WAITING_HUMAN")
+        .find(|r| r["status"] == "DEFERRED")
         .unwrap();
     let id = waiting["id"].as_str().unwrap();
     assert!(waiting["humanDefinition"]["eval"].is_object());
@@ -317,7 +313,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         );
         assert_eq!(
             fixture.json(&["request", "show", id], 0)["status"],
-            "WAITING_HUMAN"
+            "DEFERRED"
         );
     }
     let fields = fixture.root.path().join("fields.json");
@@ -399,7 +395,7 @@ fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["status"] == "WAITING_HUMAN")
+        .find(|r| r["status"] == "DEFERRED")
         .unwrap()["id"]
         .as_str()
         .unwrap();
@@ -469,7 +465,7 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let run_id = waiting["runId"].as_str().unwrap();
     assert_eq!(
         fixture.json(&["run", "show", run_id], 0)["status"],
-        "RUNNING"
+        "WAITING_HUMAN"
     );
     // The sibling's saved result, not merely Human admission, orders the submission.
     fixture.request_state(run_id, "sibling/check", "GREEN");
@@ -512,10 +508,42 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
 }
 
 #[test]
+fn status_predicts_deferral_only_for_a_selected_signoff() {
+    let fixture = Fixture::new(false);
+    let action = |args: &[&str], eval: &str| {
+        let output = fixture
+            .command()
+            .args(["status", "--json"])
+            .args(args)
+            .output()
+            .unwrap();
+        let status = parse(&output);
+        status["evals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == eval)
+            .unwrap_or_else(|| panic!("{eval} in {status}"))["action"]
+            .clone()
+    };
+    // Outside the selection, the sign-off is not asked for, so what relies on it waits.
+    assert_eq!(action(&["parent"], "parent/check"), "wait");
+    // Selected, it is asked for and deferred, so what relies on it runs at once.
+    assert_eq!(
+        action(&["parent", "--recursive"], "parent/check"),
+        "execute"
+    );
+    assert_eq!(
+        action(&["parent", "--recursive"], "child/review"),
+        "execute"
+    );
+}
+
+#[test]
 fn submission_leaves_human_claim_and_submission_available() {
     let fixture = Fixture::new(false);
     let run = fixture.json(&["verify", "--all"], 0);
-    assert_eq!(run["status"], "RUNNING");
+    assert_eq!(run["status"], "WAITING_HUMAN");
     assert_eq!(run["waitTimedOut"], false);
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
@@ -547,6 +575,12 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
     let child = fixture.start();
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
+    // The sign-off holds up nothing: the dependent check runs before anyone signs off.
+    fixture.request_state(
+        waiting["runId"].as_str().unwrap(),
+        "parent/check",
+        "PROVISIONAL",
+    );
     fixture.json(&["request", "claim", id], 0);
     fixture.json(
         &[
@@ -561,7 +595,7 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
         0,
     );
     let run = finish(child, 1);
-    assert_eq!(run["executionsStarted"], 0);
+    assert_eq!(run["executionsStarted"], 1);
     assert!(
         run["requests"]
             .as_array()
@@ -574,6 +608,12 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
     let child = fixture.start();
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
+    // The sign-off holds up nothing: the dependent check runs before anyone signs off.
+    fixture.request_state(
+        waiting["runId"].as_str().unwrap(),
+        "parent/check",
+        "PROVISIONAL",
+    );
     fixture.json(&["request", "claim", id], 0);
     fs::write(fixture.repo.join("child/fingerprint"), "changed\n").unwrap();
     fixture.json(
@@ -589,16 +629,21 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
         2,
     );
     let run = finish(child, 2);
-    assert_eq!(run["executionsStarted"], 0);
+    assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["status"], "ERROR");
 
     let fixture = Fixture::new(false);
     let child = fixture.start();
-    fixture.waiting();
+    let waiting = fixture.waiting();
+    fixture.request_state(
+        waiting["runId"].as_str().unwrap(),
+        "parent/check",
+        "PROVISIONAL",
+    );
     support::runs::cancel_active(&fixture.state, &fixture.repo);
     let run = finish(child, 2);
     assert_eq!(run["status"], "ERROR");
     assert_eq!(run["waitTimedOut"], false);
     assert_eq!(run["error"], "Run was cancelled.");
-    assert_eq!(run["executionsStarted"], 0);
+    assert_eq!(run["executionsStarted"], 1);
 }

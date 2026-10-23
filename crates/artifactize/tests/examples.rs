@@ -548,14 +548,14 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         &["verify", "--wait", "--eval", "spec/signoff", "--json"],
         4,
     );
-    assert_ne!(statuses(&early)["spec/signoff"], "WAITING_HUMAN");
+    assert_ne!(statuses(&early)["spec/signoff"], "DEFERRED");
     assert!(
         session
             .json(&repo, &["request", "list", "--json"], 0)
             .as_array()
             .unwrap()
             .iter()
-            .all(|request| request["status"] != "WAITING_HUMAN")
+            .all(|request| request["status"] != "DEFERRED")
     );
     let provider = support::FakeProvider::start(|request| {
         support::openai::completed(
@@ -593,12 +593,12 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {
         let listed = session.json(&repo, &["request", "list", "--json"], 0);
-        // The request is saved QUEUED first, then turns WAITING_HUMAN.
+        // The request is saved QUEUED first, then turns DEFERRED.
         if let Some(request) = listed
             .as_array()
             .unwrap()
             .iter()
-            .find(|request| request["status"] == "WAITING_HUMAN")
+            .find(|request| request["status"] == "DEFERRED")
         {
             break request["runId"].as_str().unwrap().to_owned();
         }

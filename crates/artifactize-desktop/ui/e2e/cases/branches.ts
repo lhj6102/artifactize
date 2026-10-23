@@ -4,15 +4,15 @@
 // in another process; and a review left for a branch without being closed.
 import assert from "node:assert/strict";
 import {
-  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, ended, orderRuns, requests, signOff, signoff,
-  verifyWaiting,
+  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHeld, createHistory, createSharedBranch, ended, newestRunStatus,
+  orderRuns, requests, signOff, signoff, verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-import { exists, nativePath, readText, removeTree, type NativePath } from "../platform.ts";
+import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
@@ -32,6 +32,39 @@ function kept(state: NativePath): unknown[] | null {
 const FIRST = '[aria-label="Branches"] > [role="treeitem"]:first-child';
 
 export const scenarios: Scenario[] = [
+  // UX journey: J-LIVE; UX edges: E-BRANCH-RUNNING E-BRANCH-RUN-END
+  scenario<{ gate: NativePath }>(
+    "branches-run-executing",
+    "starts a branch's timeline with a Run another process starts while its eval still runs, Running and its time so far, folded the same, and ends it",
+    async () => {
+      const fixture = createHeld();
+      // No Run yet: the branch is listed because the monitor is opened on its repository.
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: { gate: fixture.gate } };
+    },
+    async (browser, { fixture, data: { gate } }) => {
+      await listed(browser, "repo  master");
+      // Another process starts a Run whose only eval runs until the gate opens.
+      assert.equal(artifactize(fixture, "verify", "--all"), 0);
+      await waitFor(browser, () => newestRunStatus(fixture) === "RUNNING", "the Run is executing");
+      const run = () => branch(browser, "repo  master");
+      if ((await run())?.expanded) {
+        await browser.$(`${FIRST} button.chevron`).click();
+        await waitFor(browser, async () => (await run())?.expanded === false, "the branch folded");
+      }
+      await waitFor(browser, async () => /^Running \d+[smh]( \d+[smh])?$/.test((await run())?.latest ?? ""),
+        "folded, the branch reads Running and its time so far");
+      await browser.$(`${FIRST} button.chevron`).click();
+      await waitFor(browser, async () => (await run())?.expanded === true, "the branch expanded");
+      const shown = (await run())!;
+      assert.ok(!shown.chips.some((chip) => chip.id === "current"), `the Current gone while the Run runs: ${JSON.stringify(shown.chips)}`);
+      assert.match(shown.chips[0].text, /^Running \d+[smh]( \d+[smh])?$/, `the open entry reads its time so far: ${shown.chips[0].text}`);
+      // The gate opens: the eval ends, the Run ends GREEN and the Current leads again.
+      writeText(gate, "open");
+      await waitFor(browser, () => newestRunStatus(fixture) === "GREEN", "the Run ended GREEN");
+      await waitFor(browser, async () => (await run())?.chips[0]?.id === "current", "the timeline starts with the Current again");
+      assert.match((await run())!.chips[1].text, /^GREEN \d+[smhd]( \d+[smh])? ago$/);
+    },
+  ),
   // UX journey: J-BRANCH-RUNS; UX edges: E-PANE-FOLD E-PANE-SELECT E-PANE-OLDER E-PANE-CHIP E-CURRENT-CHIP
   scenario<{ runs: string[] }>(
     "branches-timeline",
@@ -144,7 +177,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([run, first]),
         "the timeline starts with the Run in progress, the Current gone");
       const running = (await branch(browser, "repo  master"))!.chips[0];
-      assert.match(running.text, /^Running \d+[smh]( \d+[smh])?$/, `the running entry reads its time so far, not a time ago: ${running.text}`);
+      assert.match(running.text, /^Waiting for sign-off \d+[smh]( \d+[smh])?$/, `the open entry reads its time so far, not a time ago: ${running.text}`);
       assert.equal(running.sub, run);
       // Its sign-off is given elsewhere: the Run ends, its entry shows its final status and age.
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "release/signoff");
@@ -252,7 +285,7 @@ export const scenarios: Scenario[] = [
       removeTree(plain.folder);
       await waitFor(browser, async () => (await names()).length === 3, "the deleted folder gone");
       assert.deepEqual(await names(), ["repo  master", "repo  scope-one", "repo  scope-two"]);
-      const reviews = requests(fixture).filter((request) => runs.includes(request.runId) && request.status === "WAITING_HUMAN").map((request) => request.id);
+      const reviews = requests(fixture).filter((request) => runs.includes(request.runId) && request.status === "DEFERRED").map((request) => request.id);
       assert.equal(reviews.length, 2, "each worktree's Run waits for a person");
       // Git alone, in another process: a new branch's worktree and a detached one appear
       // within seconds, without a reload.
@@ -302,7 +335,7 @@ export const scenarios: Scenario[] = [
       assert.ok((await height()) > empty, "the stack grew upward by its row");
       // A click opens it in the Main area.
       await openWaiting(browser, id);
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed`),
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · DEFERRED · unclaimed`),
         "the clicked review open");
       // Submitted elsewhere, it stops waiting: its row goes and the bar reads (0) again.
       signOff(fixture, id, "{}");
@@ -349,7 +382,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await selected()) === last, "the bottom review selected");
       await waitFor(browser, visible, "the list scrolled the selected review into view");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "its Review shown");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${last} · WAITING_HUMAN`), "the scrolled-to review open");
+      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${last} · DEFERRED`), "the scrolled-to review open");
     },
   ),
 
@@ -365,7 +398,7 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       await openWaiting(browser, id);
       const review = () => browser.$('[aria-label="Human review"]');
-      await waitFor(browser, async () => (await review().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed`), "the review open");
+      await waitFor(browser, async () => (await review().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed`), "the review open");
       // Its eval and Artifact read above it.
       assert.equal(await browser.$('section.panel[aria-label="Main area"] .crumb').getText(), "release/signoff · A person approves the release · Artifact release");
       await review().click();

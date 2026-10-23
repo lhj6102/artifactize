@@ -70,7 +70,7 @@ root:
 
 ```sh
 env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
-  cargo run -q -p artifactize -- verify --all --speculate --defer-human --wait
+  cargo run -q -p artifactize -- verify --all --speculate --wait
 ```
 
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
@@ -82,7 +82,7 @@ the outcome:
 | Exit | Outcome | Next |
 |---|---|---|
 | 0 | GREEN (`Validation: SATISFIED`) | open the pull request |
-| 5 | SIGNOFFS_PENDING: only Human sign-offs remain | open the pull request; name the sign-offs |
+| 5 | YELLOW: only Human sign-offs remain | open the pull request; name the sign-offs |
 | 1 | RED | fix, verify again |
 | 2 | ERROR | read it; fix or retry, verify again |
 | 4 | INCOMPLETE | read the listed obligations, verify again |
@@ -110,7 +110,7 @@ How to resolve a RED:
 - **A provider "server overloaded" ERROR is not a finding.** Run verify again;
   finished results are reused.
 
-Verify again after every fix until the outcome is GREEN or SIGNOFFS_PENDING.
+Verify again after every fix until the outcome is GREEN or YELLOW.
 Unchanged results are reused, so a rerun costs only what changed.
 
 ## 4. Open the pull request into dev
@@ -130,7 +130,7 @@ artifactize.dev read:
 <!-- artifactize-board
 role: dev-worker
 from: <full SHA of the dev-green commit you started from>
-verify: <Run ID> <GREEN or SIGNOFFS_PENDING> <full SHA of the commit you verified>
+verify: <Run ID> <GREEN or YELLOW> <full SHA of the commit you verified>
 -->
 ```
 

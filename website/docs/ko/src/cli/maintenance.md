@@ -50,7 +50,7 @@ artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 
 `prune`은 현재 저장소만이 아니라 선택한 상태에 있는 모든 저장소의 Run을 다룹니다.
 **GREEN, RED, ERROR, INCOMPLETE**로 끝났고 아직 실행 중인 작업이 없는 Run의 출력을
-지웁니다. SIGNOFFS_PENDING Run은 승인이 모두 제출된 뒤에도 **항상 건너뛰며**, 끝나지 않은
+지웁니다. YELLOW Run은 승인이 모두 제출된 뒤에도 **항상 건너뛰며**, 끝나지 않은
 Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `prune`은 `--older-than`과 상관없이
 [Agent 세션 저장소](../features/others/state.md#agent-sessions)도 크기 한도까지 줄입니다. 텍스트
 형식으로는 지운 폴더마다 `Removed PATH`(`--dry-run`이면 `Would remove PATH`), 건너뛴 Run마다

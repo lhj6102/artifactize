@@ -9,11 +9,13 @@ Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED�
 eval이 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
-검사가 준비되면 artifactize는 사람의 결정이 필요한 작업을 **WAITING_HUMAN 요청**으로
-저장합니다. 사람이 판정을 제출할 때까지는 Run의 `--jobs` 실행 자리도, `--max-executions` 예산도
-쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 기본 모드에서는 Human 승인이 제출될 때까지 시간
-제한 없이 Run이 대기하며, 승인이 제출되면 그 승인에 의존하는 검사가 같은 Run 안에서 이어서 실행됩니다. 진행
-상황을 지켜보거나 터미널을 닫아도 승인이나 거부가 제출되지는 않습니다. 제출, 지켜보기, 직접 취소는
+검사가 준비되면 artifactize는 사람의 결정이 필요한 작업을 **DEFERRED 요청**으로
+저장합니다. 이 요청은 다른 작업을 막지 않습니다. 사람이 판정을 제출할 때까지는 Run의 `--jobs` 실행 자리도,
+`--max-executions` 예산도 쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 그 승인에 의존하는 검사는 바로
+실행하며, 그 검사의 GREEN 결과는 승인이 GREEN이 될 때까지 PROVISIONAL로 표시되고, 검사 자체의 RED나 ERROR는
+그대로 표시됩니다. 다른 작업이 아직 실행 중일 수 있으니, 최종 상태를
+리뷰하려면 그 작업이 끝날 때까지 기다리세요. 모든 승인은 `review`, monitor, 데스크톱, 요청 목록에 나오고, 담당
+지정과 해제, 도구 실행, 판정 제출 때 Human 권한을 확인합니다. 막힌 승인은 사람에게 보여 주지 않습니다. 진행 상황을 지켜보거나 터미널을 닫아도 승인이나 거부가 제출되지는 않습니다. 제출, 지켜보기, 직접 취소는
 [Run 수명 주기](run.md#submit-observe-and-cancel)에서 설명합니다.
 
 리뷰어가 요청을 **맡으면**(`claim`) 그 리뷰어가 담당자로 지정됩니다. 이와 별개로, 다른 Run에서 같은 입력과
@@ -55,37 +57,20 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 `request list`와 `request show`의 필드, Run 요약은 [레퍼런스](tools/human.md#in-a-review)에
 있습니다.
 
-## 미룬 승인 {#deferred-sign-offs}
+## 승인과 Run {#sign-offs-and-the-run}
 
-사람의 승인을 나중에 받더라도 자동 검사를 먼저 진행하려면 `verify --defer-human`을 고르세요. 머신 설정이
-아니라 요청마다 정하며, 기본으로 꺼져 있습니다. 승인 대기 중에도 자동 검사는 계속 실행되고,
-같은 Artifact의 자동 검사 eval이 GREEN이 되면 다른 작업의 완료 여부와 관계없이 승인을
-요청합니다. 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요. 자동 검사 작업만 따로
-앞당기려면 `--speculate`를 쓰세요.
-
-미룬 승인에는 DEFERRED 표시가 붙지만, 리뷰어가 처리하는 방법은 일반 승인과 같습니다. `review`, monitor, 데스크톱,
-요청 목록에 WAITING_HUMAN 요청과 함께 나오고, 담당 지정과 해제, 도구 실행, 판정 제출 때도 일반 승인과 똑같이 Human 권한을
-확인합니다. 막힌 승인은 사람에게 보여 주지 않습니다. Run이 어떻게 끝나는지(SIGNOFFS_PENDING,
-종료 코드 5)와 다음 verify가 결과를 어떻게 재사용하는지는
-[추측 실행과 미룬 승인](run.md#speculation-and-deferred-sign-offs)에 있습니다. 이 재사용에는
-fingerprint가 필요하므로 `fingerprint = false`면 재사용하지 않습니다.
+리뷰어가 승인 하나를 맡고 있는 동안, 그리고 남은
+작업이 승인뿐이 된 뒤 유휴 유예 시간(따로 [바꾸지](others/state.md#sign-off-idle-grace) 않았다면 2분) 동안
+Run은 종료되지 않고 **WAITING_HUMAN** 상태를 유지합니다. 그 시간 안에 승인을 맡아 제출하면 Run은 그 결과에 따라 GREEN이나
+RED로 끝납니다. 아무도 맡지 않으면 Run은 **YELLOW**(종료 코드 5)로 끝나며, 승인만 남았다는 뜻입니다. 그 뒤에도
+승인을 제출할 수 있고, 다음 verify가 그 결과를 재사용합니다. 자세한 내용은
+[승인과 Run 종료](run.md#sign-offs-and-the-end-of-a-run)에 있습니다. 이 재사용에는 fingerprint가 필요하므로
+`fingerprint = false`면 재사용하지 않습니다.
 
 같은 워크트리에서 같은 eval에 더 새로운 요청이 오면, 재사용 키가 다른 이전 DEFERRED 승인은
-끝나고 Review에서 사라집니다. 이전 승인이 종료되는 조건과 리뷰 합류 방식, Run이 끝난 뒤 승인을 제출하는 방법은 [Run 규칙](run.md#speculation-and-deferred-sign-offs)을 보세요.
+끝나고 Review에서 사라집니다. 이전 승인이 종료되는 조건과 리뷰 합류 방식, Run이 끝난 뒤 승인을 제출하는 방법은 [Run 규칙](run.md#sign-offs-and-the-end-of-a-run)을 보세요.
 
-승인이 반려될 때 그 결과에 의존하는 많은 작업을 다시 해야 한다면, 승인이 끝날 때까지 그 작업을 막도록 게이트를 직접 지정하세요.
-
-```toml
-[evals.release]
-title = "The release is approved"
-gate = "blocking"
-profile = { kind = "human" }
-payload.instruction = "Review the release before dependent work proceeds."
-```
-
-`gate`가 없으면 Human eval은 요청의 기본 모드를 따릅니다. CI에서는
-`verify --all --wait --reuse-only agent,human`을 써서 필요한 승인이 모두 있어야 통과하게 하세요. 승인을 미루거나 추측
-실행을 하더라도, 재사용할 수 있는 Human eval의 실제 GREEN 결과가 있어야 합니다.
+CI 설정은 [대기 중인 승인을 병합 게이트에서 빼기](team/ci.md#keep-pending-sign-offs-out-of-the-merge-gate)를 보세요.
 
 ## Human 도구 {#human-tools}
 

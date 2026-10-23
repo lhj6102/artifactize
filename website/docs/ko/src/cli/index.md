@@ -26,7 +26,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 
 | 명령 | 플래그 | 출력 | 종료 코드 |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N`(필요할 때만), `--fingerprint-jobs N`(CPU 수), `--max-executions N`, `--wait` 또는 `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate`, `--defer-human` | Run ID 또는 `{run,state}`. `--wait`면 최종 텍스트/JSON, `--watch`면 JSON 줄 이벤트 | 접수되면 0. `--wait`나 `--watch`면 Run 결과 |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N`(필요할 때만), `--fingerprint-jobs N`(CPU 수), `--max-executions N`, `--wait` 또는 `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate` | Run ID 또는 `{run,state}`. `--wait`면 최종 텍스트/JSON, `--watch`면 JSON 줄 이벤트 | 접수되면 0. `--wait`나 `--watch`면 Run 결과 |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N`(CPU 수). 기본은 `--all` | 텍스트 또는 JSON | 충족하면 0, 아니면 1 |
 | `mcp` | | [MCP stdio 프로토콜](../agent-plugin/mcp.md). 진단은 stderr | 정상적으로 연결이 끊기면 0 |
 | `config check` | | 텍스트 또는 JSON | 0 |
@@ -68,6 +68,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `remote push` | `--dry-run` | 텍스트 또는 JSON | 0 |
 | `models PROVIDER` | 기본 provider나 커스텀 provider | 텍스트 또는 JSON | 0 |
 | `doctor` | | 텍스트 또는 JSON | 준비됐으면 0, 심각한 오류면 1 |
+| `limits` | `--signoff-idle-grace SECONDS`(0–86400) | 지금 적용되는 머신 전체 한도. 텍스트 또는 JSON | 0 |
 | `prune` | `--older-than DURATION`, `--dry-run` | 텍스트 또는 JSON | 0 |
 | `monitor [PATH]` | ALL에서 시작. PATH나 `--repo PATH`는 처음 고를 저장소만 정함. `--all`은 경로와 함께 쓸 수 없음 | 터미널 UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값, `--repo`와 함께 쓸 수 없음), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
@@ -78,10 +79,10 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `server rm KEY` | | JSON | 0 |
 
 Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 2 ERROR 또는
-취소, 4 INCOMPLETE, 5 SIGNOFFS_PENDING(승인만 남았다는 뜻이지 승인되었다는 뜻이 아님)입니다.
+취소, 4 INCOMPLETE, 5 YELLOW(승인만 남았다는 뜻이지 승인되었다는 뜻이 아님)입니다.
 옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 진행 상황을 지켜보는
-명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING
-상태의 Run이 끝날 때까지 상태를 계속 확인합니다. Run이 끝나기 전에 이 명령의 제한 시간이 지나면 현재 Run을 출력하고 3으로
+명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING이나
+WAITING_HUMAN 상태의 Run이 끝날 때까지 상태를 계속 확인합니다. Run이 끝나기 전에 이 명령의 제한 시간이 지나면 현재 Run을 출력하고 3으로
 종료하며, Run은 계속 실행됩니다. 모든 명령은 사용법 오류(알 수 없는 옵션, 반복할 수 없는 옵션의 반복, 충돌하거나 빠진 옵션과 값)나 동작 오류가 나면 종료 코드 2로 끝납니다. 오류는 stderr에 텍스트로, 또는
 `--json`이면 stdout에 `{"error":"..."}`로 나옵니다(stdout을 프로토콜에만 쓰는 `mcp`는
 예외). 도구 실패에는 두 가지 예외가 있습니다. 현재 디렉터리 도구(`tools read`, `list`, `glob`,
@@ -146,25 +147,24 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 
 ## Verify 모드 {#verify-modes}
 
-`--speculate`와 `--defer-human`은 요청마다 따로 켜는 스위치이며, 둘 다 기본으로 꺼져
-있습니다. 접수된 Run은 `modes: {speculate, defer_human}`을 기록하며, 같은
-`--request-key`로 다시 시도하면 처음 요청의 모드를 그대로 씁니다.
+`--speculate`는 요청마다 켜는 스위치이며, 기본으로 꺼져 있습니다. 접수된 Run은
+`modes: {speculate}`를 기록하며, 같은 `--request-key`로 다시 시도하면 처음 요청의 선택을 그대로 씁니다.
 
-| 모드 | 실행과 확정 방식 |
+| 모드 | 실행 방식 |
 |---|---|
-| 둘 다 없음 | 의존성의 GREEN 결과가 나올 때까지 대기. Run은 사람의 승인이 제출될 때까지 대기 |
-| `--defer-human` | 자동 검사 게이트가 정해질 때까지 대기. 미룰 수 있는 승인은 건너뛰고 잠정 결과로 진행 |
-| `--speculate` | 게이트 조건 충족 여부가 확인되기 전에도 요청한 모든 종류의 eval을 시작. Run은 사람이 승인을 제출할 때까지 대기 |
-| 둘 다 | 자동 리뷰는 미리 시작하고, 미룰 수 있는 승인은 그 승인의 선행 조건을 충족하면 요청 |
+| 기본 | 의존성에 GREEN 결과가 생기면 eval을 시작 |
+| `--speculate` | 게이트가 정해지기 전에 Runtime과 Agent 리뷰를 시작 |
 
-어느 모드에서든 Human eval은 같은 Artifact의 Human이 아닌 eval이 모두 GREEN이 된 뒤에만
-요청되며, 그중 하나라도 RED나 ERROR면 BLOCKED가 됩니다. `--speculate`에서는 새로 준비된 작업을
+어느 쪽이든 승인은 아무것도 막지 않습니다. 승인은 같은 Artifact의 Human이 아닌 eval이 모두 GREEN이
+되고 자기 게이트를 충족한 뒤에만 요청하며, 추측 실행으로 요청하지 않습니다. 그중 하나라도 RED나 ERROR면
+BLOCKED가 됩니다. 그 승인에 의존하는 eval은 먼저 실행하되, 결과는 승인이 끝날 때까지 잠정 결과로 표시합니다. `--speculate`에서는 새로 준비된 작업을
 실행할 `--jobs`나 백엔드 자리가 모자라면 artifactize가 실행 중인 추측 실행 리뷰를 중단할 수 있습니다. 그 리뷰는 나중에
-다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 이 모드들은 실행 순서를 바꿀 뿐 승인 여부를
+다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 추측 실행은 실행 순서를 바꿀 뿐 승인 여부를
 바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
-1 RED, 2 ERROR, 4 INCOMPLETE, 5 SIGNOFFS_PENDING입니다.
-[실행 모드](../features/run.md#speculation-and-deferred-sign-offs)에서 스케줄링, 취소, 잠정
-결과, 엄격한 Human 게이트, 나중에 제출한 승인 결과를 재사용하는 방법을 설명합니다.
+1 RED, 2 ERROR, 4 INCOMPLETE, 5 YELLOW입니다.
+Run이 승인 대기 상태를 얼마나 오래 유지하는지, 승인 결과를 나중에 어떻게 재사용하는지는
+[승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)에서, 추측 실행의 스케줄링과 취소는
+[추측 실행](../features/run.md#speculation)에서 설명합니다.
 
 ## Runtime CLI {#runtime-cli}
 
@@ -178,7 +178,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 정책과 각 요청의 force 여부가 기록됩니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,
 실행 중인 작업에도 합류하지 않습니다. `--force`로 새로 실행한 eval의 결과가 GREEN이나 RED면 그 키의 가장 최근 기록으로 추가되고, 리뷰
 저장소가 설정되어 있으면 게시되어 이후 Run이 재사용합니다. 의존성은 로컬 기록을 계속
-재사용할 수 있지만, `--force`로 실행한 Run은 저장소에서 아무것도 읽지 않습니다. 추측 실행과 승인 미루기도
+재사용할 수 있지만, `--force`로 실행한 Run은 저장소에서 아무것도 읽지 않습니다. 추측 실행과 대기 중인 승인도
 최종 검증 요건을 면제하지 않습니다.
 
 동시에 실행되는 Run이 언제 같은 리뷰에 합류하는지, `--force`가 이를 어떻게 바꾸는지는
@@ -277,8 +277,8 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
 | `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
 | `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 대기 중 |
-| `WAITING_HUMAN` | 사람의 처리가 필요한 Human 요청이 있음 | — |
-| `DEFERRED` | 사람의 처리가 필요한 미룬 승인 요청이 있음 | eval 중 하나가 `DEFERRED` |
+| `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있음 | — |
+| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있음 | eval 중 하나가 `DEFERRED` |
 | `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |
 | `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
 | `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |

@@ -49,12 +49,23 @@ impl Scratch {
 }
 
 async fn execute(command: Command) -> Outcome {
-    timeout(
+    let cancellation = CancellationToken::new();
+    let execution = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
+    tokio::pin!(execution);
+    match timeout(
         support::os::patience(TEST_TIMEOUT + Duration::from_secs(2)),
-        runtime::execute(command, CancellationToken::new(), |_| async { Ok(()) }),
+        &mut execution,
     )
     .await
-    .expect("runner must settle")
+    {
+        Ok(outcome) => outcome,
+        Err(_) => {
+            // Settle the execution and its supervisor before the fixture folders go.
+            cancellation.cancel();
+            execution.await;
+            panic!("runner must settle");
+        }
+    }
 }
 
 fn completed(outcome: Outcome) -> runtime::ReviewResult {

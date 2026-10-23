@@ -142,7 +142,6 @@ impl Server {
                     jobs: args.jobs.map(|limit| limit as usize),
                     modes: runs::RunModes {
                         speculate: args.speculate,
-                        defer_human: args.defer_human,
                     },
                     ..Default::default()
                 };

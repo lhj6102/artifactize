@@ -13,7 +13,7 @@ import { branch, entriesFocused, expand, mainTitle, waiting } from "../pane.ts";
 
 /** How many Human reviews this case's state holds waiting, read through the public CLI. */
 function waitingReviews(fixture: Fixture): number {
-  return requests(fixture).filter((request) => request.status === "WAITING_HUMAN").length;
+  return requests(fixture).filter((request) => request.status === "DEFERRED").length;
 }
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -155,7 +155,7 @@ export const scenarios: Scenario[] = [
       // failure is not closure. The native helper only accepts a terminal window outcome.
       await sessionEndedByApp(browser, () => browser.keys(["u"]));
       await browser.waitUntil(() => signoff(fixture).claim === null, { timeout: 15000, timeoutMsg: "released on quit" });
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN");
+      assert.equal(signoff(fixture).status, "DEFERRED");
     },
   ),
 

@@ -75,6 +75,6 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
     )
     .unwrap();
     assert!(text.contains(bad.run.id.as_str()), "{text}");
-    assert!(text.contains("A running Run cannot be completed"), "{text}");
+    assert!(text.contains("An open Run cannot be completed"), "{text}");
     assert!(!text.contains("read failed"), "{text}");
 }

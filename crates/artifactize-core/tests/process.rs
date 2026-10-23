@@ -30,13 +30,23 @@ fn command(program: &str, args: &[&str]) -> Command {
 }
 
 async fn execute(command: Command) -> process::Output {
-    timeout(
+    let cancellation = CancellationToken::new();
+    let execution = process::run(command, cancellation.clone(), |_| async { Ok(()) });
+    tokio::pin!(execution);
+    match timeout(
         support::os::patience(TEST_TIMEOUT + Duration::from_secs(2)),
-        process::run(command, CancellationToken::new(), |_| async { Ok(()) }),
+        &mut execution,
     )
     .await
-    .expect("runner must settle")
-    .unwrap()
+    {
+        Ok(output) => output.unwrap(),
+        Err(_) => {
+            // Settle the process and its supervisor before the fixture folders go.
+            cancellation.cancel();
+            let _ = execution.await;
+            panic!("runner must settle");
+        }
+    }
 }
 
 #[tokio::test]
@@ -231,7 +241,7 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         )
         .await
         .unwrap();
-        assert_eq!(run.requests[0].status(), RequestStatus::WaitingHuman);
+        assert_eq!(run.requests[0].status(), RequestStatus::Deferred);
         let Worker::Admitted { owner } = run.run.control.unwrap().worker else {
             panic!("the fixture worker was admitted");
         };
@@ -267,7 +277,7 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         )
         .await
         .unwrap();
-        assert_eq!(later.requests[0].status(), RequestStatus::WaitingHuman);
+        assert_eq!(later.requests[0].status(), RequestStatus::Deferred);
         assert_ne!(run.run.id, later.run.id);
         let Worker::Admitted { owner } = later.run.control.unwrap().worker else {
             panic!("the later fixture worker was admitted");

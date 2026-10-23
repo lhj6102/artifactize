@@ -1,12 +1,14 @@
 <script lang="ts">
-  // Settings: what the CLI configures, through the same library calls, in two tabs. Providers
+  // Settings: what the CLI configures, through the same library calls, in three tabs. Providers
   // holds the Codex (ChatGPT) sign-in, the built-in providers' keys, the custom providers and
-  // the models each lists; Remote holds the shared review store. Secrets are never shown; a
-  // typed key or token leaves the state as soon as it is submitted.
+  // the models each lists; Remote holds the shared review store; Limits holds the sign-off idle
+  // grace. Secrets are never shown; a typed key or token leaves the state as soon as it is
+  // submitted.
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { useIpc } from "../ipc/client";
   import { useCommands } from "../shell/commands.svelte";
+  import LimitsTab from "./LimitsTab.svelte";
   import ProvidersTab from "./ProvidersTab.svelte";
   import RemoteStore from "./RemoteStore.svelte";
   import { SettingsState, setSettingsState } from "./settings-state.svelte";
@@ -18,6 +20,7 @@
   const TABS = [
     { id: "providers", label: "Providers" },
     { id: "remote", label: "Remote" },
+    { id: "limits", label: "Limits" },
   ] as const;
 
   /** Read every time Settings opens: another process may have signed in or out, or saved a
@@ -30,7 +33,8 @@
   function tabKey(event: KeyboardEvent) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    s.tab = s.tab === "providers" ? "remote" : "providers";
+    const at = TABS.findIndex((tab) => tab.id === s.tab);
+    s.tab = TABS[(at + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length].id;
     document.getElementById(`settings-tab-${s.tab}`)?.focus();
   }
 
@@ -76,14 +80,18 @@
     <div class="spacer"></div>
     {#if onclose}<button class="button" onclick={onclose}>Close <kbd>Esc</kbd></button>{/if}
   </header>
-  <p class="lead">The same settings as the CLI's <code>login</code>, <code>provider</code>, <code>models</code> and <code>remote</code> commands.</p>
+  <p class="lead">The same settings as the CLI's <code>login</code>, <code>provider</code>, <code>models</code>, <code>remote</code> and <code>limits</code> commands.</p>
   {#if s.tab === "providers"}
     <div id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
     </div>
-  {:else}
+  {:else if s.tab === "remote"}
     <div id="settings-panel-remote" role="tabpanel" aria-labelledby="settings-tab-remote">
       <RemoteStore />
+    </div>
+  {:else}
+    <div id="settings-panel-limits" role="tabpanel" aria-labelledby="settings-tab-limits">
+      <LimitsTab />
     </div>
   {/if}
 </div>
@@ -168,6 +176,9 @@
     min-width: 0;
     flex: 1;
   }
+  .settings :global(.narrow) {
+    flex: 0 0 auto;
+  }
   .settings :global(.login) {
     display: grid;
     grid-template-columns: max-content minmax(0, 420px);
@@ -193,7 +204,7 @@
     font-size: 11px;
   }
   .settings :global(.warn) {
-    color: var(--human);
+    color: var(--yellow);
   }
   .settings :global(.notice) {
     color: var(--green);

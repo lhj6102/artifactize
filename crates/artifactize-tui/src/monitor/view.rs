@@ -68,8 +68,10 @@ fn color(status: Status) -> Style {
         Status::Green => Color::Green,
         Status::Red => Color::Red,
         Status::Error => Color::Magenta,
-        Status::Running => Color::Yellow,
-        Status::WaitingHuman | Status::Deferred | Status::SignoffsPending => Color::Cyan,
+        // An open Run is blue: lighter while it runs, darker while it waits for a person.
+        Status::Running => Color::LightBlue,
+        Status::WaitingHuman | Status::Deferred => Color::Blue,
+        Status::Yellow => Color::Yellow,
         Status::Blocked | Status::BudgetExhausted | Status::Incomplete => Color::LightRed,
         _ => Color::Gray,
     })

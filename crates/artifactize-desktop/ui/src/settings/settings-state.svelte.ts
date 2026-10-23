@@ -14,6 +14,7 @@ import {
   type Pushed,
   type RemoteStatus,
   type Share,
+  type SignoffGrace,
   type Target,
 } from "../ipc/client";
 
@@ -60,7 +61,7 @@ export const principalOf = (status: RemoteStatus | null) =>
 /** What the Settings modal holds: the snapshots it read, what is typed and what is under way,
  * and the library commands that change them. */
 export class SettingsState {
-  tab = $state<"providers" | "remote">("providers");
+  tab = $state<"providers" | "remote" | "limits">("providers");
   /** Numbers the remote-store calls: only the newest answer is shown. */
   remoteCalls = $state(0);
   /** Outstanding store reads or mutations, for the section's accessible busy state. */
@@ -91,6 +92,13 @@ export class SettingsState {
   share = $state<Share>("summary");
   token = $state("");
   working = $state(false);
+  /** The sign-off idle grace in force, as limits.json holds it. */
+  grace = $state.raw<SignoffGrace | null>(null);
+  /** The seconds typed for it; filled in with the one in force whenever that is read. */
+  graceSeconds = $state<number | null>(null);
+  graceError = $state<string | null>(null);
+  graceNotice = $state<string | null>(null);
+  graceSaving = $state(false);
 
   readonly #commands: Commands;
 
@@ -102,7 +110,38 @@ export class SettingsState {
   /** Read everything again: another process may have signed in, saved a key or changed a
    * custom provider. */
   async load() {
-    await Promise.all([this.loadProviders(), this.loadCodex(), this.loadRemote()]);
+    await Promise.all([this.loadProviders(), this.loadCodex(), this.loadRemote(), this.loadGrace()]);
+  }
+
+  /** The grace in force, and the seconds field set to it. */
+  #showGrace(grace: SignoffGrace) {
+    this.grace = grace;
+    this.graceSeconds = grace.seconds;
+  }
+
+  async loadGrace() {
+    try {
+      this.#showGrace(await call(this.#commands.signoffGrace()));
+      this.graceError = null;
+    } catch (failure) {
+      this.graceError = message(failure);
+    }
+  }
+
+  async saveGrace() {
+    // Whether the number is a grace the library accepts is the library's answer, shown on Save.
+    if (this.graceSeconds === null) return;
+    this.graceSaving = true;
+    this.graceError = null;
+    this.graceNotice = null;
+    try {
+      this.#showGrace(await call(this.#commands.signoffGraceSet(this.graceSeconds)));
+      this.graceNotice = "Saved. Runs started from now on wait this long.";
+    } catch (failure) {
+      this.graceError = message(failure);
+    } finally {
+      this.graceSaving = false;
+    }
   }
 
   async loadProviders() {

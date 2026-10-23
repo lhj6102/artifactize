@@ -51,7 +51,7 @@ artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 
 `prune` works on the selected state's Runs across repositories, not only the current one.
 It removes the output of Runs that ended **GREEN, RED, ERROR or INCOMPLETE** and have
-nothing still running. SIGNOFFS_PENDING Runs are **always skipped**, even after their
+nothing still running. YELLOW Runs are **always skipped**, even after their
 sign-offs are submitted, and so are unfinished Runs. `--older-than` compares the Run's
 end time, as a whole number of `s`, `m`, `h`, `d` or `w`; without it every eligible Run is
 pruned. `prune` also cleans the

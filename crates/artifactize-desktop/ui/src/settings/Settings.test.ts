@@ -1,6 +1,7 @@
 // Settings against a mocked command boundary: the Providers tab (key sources without values,
-// saved keys, custom providers, the Codex sign-in states and model listings) and the Remote tab
-// (the store's masked token, which leaves the screen's state when submitted).
+// saved keys, custom providers, the Codex sign-in states and model listings), the Remote tab
+// (the store's masked token, which leaves the screen's state when submitted) and the Limits tab
+// (the sign-off idle grace the next Runs take).
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
@@ -30,6 +31,7 @@ function backend(options: {
 }) {
   const calls: Calls = [];
   let remote = none;
+  let grace = 120;
   const environment = new Set(["openai"]);
   const saved = new Set<string>();
   const source = (provider: string): KeySource => (environment.has(provider) ? "environment" : saved.has(provider) ? "saved" : "absent");
@@ -92,6 +94,17 @@ function backend(options: {
       case "remote_logout":
         remote = none;
         return none;
+      case "signoff_grace":
+        return { seconds: grace, maxSeconds: 86400 };
+      case "signoff_grace_set": {
+        // The library's own refusal, as the IPC returns it.
+        const seconds = payload.seconds as number;
+        if (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400) {
+          throw { kind: "setting", message: "The sign-off idle grace must be whole seconds, at most 86400." };
+        }
+        grace = seconds;
+        return { seconds: grace, maxSeconds: 86400 };
+      }
       default:
         return null;
     }
@@ -264,6 +277,30 @@ describe("Settings", () => {
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent).toMatch(/Read-only Codex auth file/));
     expect(screen.getByRole("button", { name: "Sign in with ChatGPT" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Sign out of Codex" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows the sign-off idle grace in force and saves a new one for later Runs", async () => {
+    const calls = backend({});
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(screen.getByRole("tab", { name: "Limits" }));
+    await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("2 minutes"));
+    const seconds = screen.getByLabelText<HTMLInputElement>("Seconds");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(seconds.value).toBe("120");
+    // Unchanged, nothing can be saved; past the library's bound, the field keeps it from Save.
+    expect(save.hasAttribute("disabled")).toBe(true);
+    await fireEvent.input(seconds, { target: { value: "90000" } });
+    await fireEvent.click(save);
+    expect(calls.some((call) => call.cmd === "signoff_grace_set")).toBe(false);
+    expect(screen.getByTestId("grace-status").textContent).toBe("2 minutes");
+    await fireEvent.input(seconds, { target: { value: "300" } });
+    await fireEvent.click(save);
+    await screen.findByText("Saved. Runs started from now on wait this long.");
+    expect(calls.filter((call) => call.cmd === "signoff_grace_set").at(-1)?.args).toEqual({ seconds: 300 });
+    expect(screen.getByTestId("grace-status").textContent).toBe("5 minutes");
+    await fireEvent.input(seconds, { target: { value: "0" } });
+    await fireEvent.click(save);
+    await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("0 seconds"));
   });
 
   it("lists models and shows the CLI's error for a provider without its key", async () => {

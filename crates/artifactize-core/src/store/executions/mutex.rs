@@ -64,7 +64,7 @@ fn live(db: &rusqlite::Connection, execution: &Execution) -> Result<bool, Error>
             },
         )
         .optional()?;
-    let Some((RunStatus::Running, control)) = run else {
+    let Some((_, control)) = run.filter(|(status, _)| status.is_open()) else {
         return Ok(false);
     };
     let control = control

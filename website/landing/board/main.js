@@ -437,7 +437,7 @@ function verifyCell(pr) {
   const verify = pr.note?.verify;
   if (!verify) return h('td', {}, [badge('none', 'not recorded')]);
   const tone = verify.outcome === 'GREEN' ? 'good' : 'wait';
-  const label = verify.outcome === 'GREEN' ? 'GREEN' : 'sign-offs pending';
+  const label = verify.outcome === 'GREEN' ? 'GREEN' : 'YELLOW: sign-offs pending';
   const stale = (pr.state === 'open' || pr.state === 'draft') && !sameCommit(verify.commit, pr.headSha);
   return h('td', { title: `Run ${verify.run} on ${short(verify.commit)}` }, [
     badge(tone, label),

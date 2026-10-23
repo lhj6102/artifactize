@@ -59,10 +59,11 @@ that makes the transition happen and checks where it leads.
     **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
-- **Settings**: a modal over the screen with two tabs. **Providers** lists the built-in providers
+- **Settings**: a modal over the screen with three tabs. **Providers** lists the built-in providers
   (Codex, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
   the chosen one's setup on the right: the Codex account, an API key, or a custom provider's form,
-  each with its Models. **Remote** is the shared review store (URL, share level and token).
+  each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
+  sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
   by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
 - **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
@@ -258,7 +259,7 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-SET-TAB | Settings | choose the Providers or Remote tab | that tab shown |
+| E-SET-TAB | Settings | choose the Providers, Remote or Limits tab | that tab shown |
 | E-SET-PROVIDER | Providers | choose a provider in the list | its setup shown on the right |
 | E-SET-KEY | an API-key provider (OpenAI, Anthropic, Gemini) | open | its key shown as set from the environment, saved or not set, never its value |
 | E-SET-KEY-SAVE | an API-key provider | paste a key, then Save key | the key saved and the field cleared; shown as saved, or still set from the environment when its variable is set, since that is used first |
@@ -276,6 +277,8 @@ that makes the transition happen and checks where it leads.
 | E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
 | E-SET-REMOTE-PUSH | Remote, store signed in | Push (dry run) or Push results | push result shown |
 | E-SET-REMOTE-LOGOUT | Remote, store signed in | Sign out of the store | store signed out |
+| E-SET-GRACE | Limits | open | the sign-off idle grace in force shown, 2 minutes unless changed |
+| E-SET-GRACE-SAVE | Limits | enter a number of seconds, then Save | the new grace shown, saved for the Runs started afterwards |
 
 ## Journeys as paths
 
@@ -346,3 +349,4 @@ E-PANE-SELECT.
 - J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
 - J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS
 - J-SET-REMOTE: E-SET-TAB → E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT
+- J-SET-SIGNOFF-GRACE: E-SET-TAB → E-SET-GRACE → E-SET-GRACE-SAVE

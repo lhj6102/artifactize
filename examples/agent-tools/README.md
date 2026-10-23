@@ -121,13 +121,14 @@ GREEN: a person signs off only on what the machine evals already pass. Run
 `spec/review` first, as above. Once its GREEN result is saved:
 
 ```sh
-artifactize verify --eval spec/signoff  # reuses spec/review, records a WAITING_HUMAN request, and waits
+artifactize verify --eval spec/signoff  # reuses spec/review, records a sign-off request, and waits
 ```
 
 If `spec/review` has no current GREEN result, the sign-off is not requested: it
 waits, or is BLOCKED when the review is RED or ERROR.
 
-While `verify` waits, in a second terminal:
+While `verify` waits, in a second terminal (claim within 2 minutes, or the Run ends YELLOW
+and the next `verify` reuses your later sign-off):
 
 ```sh
 artifactize request list --run RUN_ID   # shows the REQUEST_ID of spec/signoff

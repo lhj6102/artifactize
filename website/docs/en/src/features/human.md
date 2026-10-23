@@ -9,13 +9,16 @@ they are still running, the Human eval waits (`WAIT_DEPENDENCY`); when one of th
 or ERROR, it is BLOCKED and its reason names them. See
 [Human sign-offs](artifact.md#human-sign-offs).
 
-When the check is ready, artifactize saves a **WAITING_HUMAN request**: work
-waiting for a person's decision. Waiting for that person uses neither a Run's
-`--jobs` execution slot nor its `--max-executions` budget, even if that budget is
-zero. In the normal mode, the Run waits without a Human timeout; a submitted
-sign-off lets dependent checks continue in the same Run. Watching or closing a
-terminal does not make the decision. The [Run lifecycle](run.md#submit-observe-and-cancel)
-explains submission, watching and explicit cancellation.
+When the check is ready, artifactize saves a **DEFERRED request**: work waiting for a
+person's decision that holds up nothing else. Waiting for that person uses neither a
+Run's `--jobs` execution slot nor its `--max-executions` budget, even if that budget is
+zero. Checks that rely on the sign-off run at once; their GREEN results stay PROVISIONAL
+until it is GREEN, while their own RED or ERROR shows as it is. Since other work may still run, wait for it to finish if you want to review the
+final state. Every sign-off is listed in `review`, monitor, desktop and request listings,
+and claim, tools, release and submission check Human authority; a blocked sign-off is never
+offered to a person. Watching or closing a terminal does not make the decision. The
+[Run lifecycle](run.md#submit-observe-and-cancel) explains submission, watching and
+explicit cancellation.
 
 A **reviewer claim** reserves the request for the person reviewing it. Separately,
 when another Run, even from a different checkout, needs the same sign-off with the same
@@ -61,42 +64,23 @@ never records a Human request or waits: a Human eval reuses a sign-off or is
 The [reference](tools/human.md#in-a-review) has the `request list` and
 `request show` fields and Run summaries.
 
-## Deferred sign-offs
+## Sign-offs and the Run
 
-Choose `verify --defer-human` when people should sign off without steering each
-execution. It is per request, not a machine setting, and defaults off. Machine work
-continues past pending sign-offs, and a sign-off is requested as soon as its own
-Artifact's machine evals are GREEN, possibly while other work still runs; wait for
-that work to finish if you want to review the final state. `--speculate` can
-independently speed machine work.
-
-For a reviewer, a deferred sign-off is an ordinary one marked DEFERRED: it is
-listed with WAITING_HUMAN requests in `review`, monitor, desktop and request
-listings, and claim, tools, release and submission check Human authority the same
-way. A blocked sign-off is never offered to a person. How the Run ends
-(SIGNOFFS_PENDING, exit 5) and how the next verify reuses the result are in
-[Speculation and deferred sign-offs](run.md#speculation-and-deferred-sign-offs);
-that reuse needs fingerprints, so `fingerprint = false` disables it.
+A Run stays **WAITING_HUMAN** while a reviewer holds a claim on one of its
+sign-offs, and for an idle grace (2 minutes unless
+[changed](others/state.md#sign-off-idle-grace)) after nothing else is left. Claim the
+sign-off in that time and submit it, and the Run ends GREEN or RED with it; left
+unclaimed, the Run ends **YELLOW** (exit 5): only sign-offs remain. The sign-off can still
+be submitted afterwards, and the next verify reuses it. The details are in
+[Sign-offs and the end of a Run](run.md#sign-offs-and-the-end-of-a-run); that reuse needs
+fingerprints, so `fingerprint = false` disables it.
 
 A newer request for the same eval in the same working tree retires earlier
 DEFERRED sign-offs with a different reuse key, removing them from Review. See
-[the Run rules](run.md#speculation-and-deferred-sign-offs) for retirement, joining
+[the Run rules](run.md#sign-offs-and-the-end-of-a-run) for retirement, joining
 and submitting a sign-off after its Run ends.
 
-For a sign-off whose rejection would waste substantial downstream work, retain
-the strict pending gate explicitly:
-
-```toml
-[evals.release]
-title = "The release is approved"
-gate = "blocking"
-profile = { kind = "human" }
-payload.instruction = "Review the release before dependent work proceeds."
-```
-
-Without `gate`, a Human eval follows the request's default mode. CI remains
-strict with `verify --all --wait --reuse-only agent,human`: neither deferral nor
-speculation substitutes for actual reusable Human GREEN evidence.
+For CI, see [Keep pending sign-offs out of the merge gate](team/ci.md#keep-pending-sign-offs-out-of-the-merge-gate).
 
 ## Human tools
 

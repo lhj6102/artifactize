@@ -196,6 +196,10 @@ export const commands = {
 	remoteLogout: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_logout")),
 	/**  `remote push`: re-send local GREEN/RED results the store does not have yet. */
 	remotePush: (dryRun: boolean) => typedError<Pushed, Failure>(__TAURI_INVOKE("remote_push", { dryRun })),
+	/**  `limits`: the idle grace Runs started now take. */
+	signoffGrace: () => typedError<SignoffGrace, Failure>(__TAURI_INVOKE("signoff_grace")),
+	/**  `limits --signoff-idle-grace SECONDS`: the Runs started afterwards take it. */
+	signoffGraceSet: (seconds: number) => typedError<SignoffGrace, Failure>(__TAURI_INVOKE("signoff_grace_set", { seconds })),
 };
 
 /** Events */
@@ -288,9 +292,9 @@ export type CardView = {
 
 /**  One entry of a branch's timeline: a Run, or the branch's Current. */
 export type Chip = { kind: "run"; id: string; mark: Mark; 
-/**  Its status in words: `GREEN`, `RED`, `Running`. */
+/**  Its status in words: `GREEN`, `RED`, `Running`, `Waiting for sign-off`. */
 status: string; 
-/**  How long ago it started, `25m ago`; a running one's time so far, `2m 22s`. */
+/**  How long ago it started, `25m ago`; an open one's time so far, `2m 22s`. */
 age: string; running: boolean } | 
 /**  The worktree as it is now. */
 { kind: "current" };
@@ -414,7 +418,9 @@ export type Failure =
 /**  What the call names is not loaded or no longer exists. */
 { kind: "missing"; message: string } | 
 /**  A sign-in, sign-out, listing or store call failed, with the CLI's own message. */
-{ kind: "account"; message: string };
+{ kind: "account"; message: string } | 
+/**  Reading or saving a machine-wide setting failed, with the CLI's own message. */
+{ kind: "setting"; message: string };
 
 export type Field = {
 	key: string,
@@ -831,6 +837,12 @@ export type SignedOut = {
 	status: CodexStatus,
 };
 
+/**  The idle grace in force, and the longest one accepted, in whole seconds. */
+export type SignoffGrace = {
+	seconds: number,
+	maxSeconds: number,
+};
+
 /**  What a graph or Detail shows: a saved Run, or a branch's worktree as it is now. */
 export type Source = { kind: "run"; run: string } | { kind: "current"; branch: BranchKey };
 
@@ -852,7 +864,7 @@ export type StateChanged = {
 };
 
 /**  Every status the monitor shows, most urgent first. */
-export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "SIGNOFFS_PENDING" | "GREEN" | "BASIS";
+export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "DEFERRED" | "PROVISIONAL" | "YELLOW" | "GREEN" | "BASIS";
 
 /**  A settled submission: how it stands, its notice and the completed request. */
 export type Submitted = {

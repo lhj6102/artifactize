@@ -24,8 +24,9 @@ default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
-sets the cooperative claim name (normally the user name). `-h` or `--help` (also
-after a mode) and `help`, or `help MODE` for one mode, print help on stderr and exits 2, as invalid arguments do. The app
+sets the cooperative claim name (normally the user name). `-h` or `--help`, also
+after a mode (`artifactize-desktop monitor --help`), and `artifactize-desktop help [MODE]` print
+help on stderr and exit 2, as invalid arguments do. The app
 exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
@@ -363,6 +364,11 @@ paths or sensitive literals: Summary is not secret redaction. Choose according
 to the team's privacy needs. Signing out removes local configuration, **not the server
 token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
 See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
+
+**Limits** is the sign-off idle grace: how long a Run with only unclaimed sign-offs left
+stays open before it ends YELLOW, 2 minutes unless changed. Save a new value in seconds
+(0–86400) for the Runs started afterwards. It is the same machine-wide
+[setting](../features/others/state.md#sign-off-idle-grace) as `artifactize limits`.
 
 Settings uses the same accounts and store operations as the CLI; credentials do
 not belong in `.artf`.

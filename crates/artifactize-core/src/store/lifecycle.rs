@@ -273,7 +273,11 @@ impl From<ExecutionState> for RequestState {
 #[derive(Debug, Clone)]
 pub enum RunState {
     Running,
-    SignoffsPending {
+    /// Still open: a sign-off was requested, and the Run ends once nothing but unclaimed
+    /// sign-offs is left for its idle grace.
+    WaitingHuman,
+    /// Ended with every result but its sign-offs GREEN and a sign-off unsubmitted.
+    Yellow {
         at: Timestamp,
     },
     Green {
@@ -299,11 +303,12 @@ impl RunState {
         error: Option<String>,
     ) -> Result<Self, String> {
         match status {
-            RunStatus::Running if at.is_none() && error.is_none() => Ok(Self::Running),
-            RunStatus::Running => {
-                Err("A running Run cannot be completed or carry an error.".into())
+            RunStatus::Running | RunStatus::WaitingHuman if at.is_some() || error.is_some() => {
+                Err("An open Run cannot be completed or carry an error.".into())
             }
-            RunStatus::Green | RunStatus::Red | RunStatus::SignoffsPending
+            RunStatus::Running => Ok(Self::Running),
+            RunStatus::WaitingHuman => Ok(Self::WaitingHuman),
+            RunStatus::Green | RunStatus::Red | RunStatus::Yellow
                 if error.is_some() || at.is_none() =>
             {
                 Err(
@@ -311,7 +316,7 @@ impl RunState {
                         .into(),
                 )
             }
-            RunStatus::SignoffsPending => Ok(Self::SignoffsPending {
+            RunStatus::Yellow => Ok(Self::Yellow {
                 at: at.expect("validated completion time"),
             }),
             RunStatus::Green => Ok(Self::Green {
@@ -333,7 +338,8 @@ impl RunState {
     pub fn status(&self) -> RunStatus {
         match self {
             Self::Running => RunStatus::Running,
-            Self::SignoffsPending { .. } => RunStatus::SignoffsPending,
+            Self::WaitingHuman => RunStatus::WaitingHuman,
+            Self::Yellow { .. } => RunStatus::Yellow,
             Self::Green { .. } => RunStatus::Green,
             Self::Red { .. } => RunStatus::Red,
             Self::Error { .. } => RunStatus::Error,
@@ -342,8 +348,8 @@ impl RunState {
     }
     pub fn completed_at(&self) -> Option<Timestamp> {
         match self {
-            Self::Running => None,
-            Self::SignoffsPending { at }
+            Self::Running | Self::WaitingHuman => None,
+            Self::Yellow { at }
             | Self::Green { at }
             | Self::Red { at }
             | Self::Error { at, .. }

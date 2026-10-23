@@ -146,9 +146,9 @@ artifactize owns the Run: closing the terminal, disconnecting or ending the agen
 turn does not stop it; only `verify_cancel` requests cancellation. See
 [Run](../features/run.md) and [streaming](mcp.md#streaming-and-focused-diagnosis).
 
-Arti may ask for [speculation or deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
-per request, never to get around a required person: SIGNOFFS_PENDING is **not full
-approval**.
+Arti may ask for [speculation](../features/run.md#speculation) per request. A sign-off never
+holds up other evals, and a Run that ends YELLOW is **not full approval**: a required person
+still signs off.
 
 How Arti treats each result:
 
@@ -160,7 +160,7 @@ How Arti treats each result:
   input it uses. Arti fixes that first, then verifies again.
 - **ERROR**: the check could not run. Arti reads `request_logs` or `session_show` and
   repairs the cause, such as a missing program, never the verdict.
-- **SIGNOFFS_PENDING**: everything else passed and a person's sign-off waits. It is
+- **YELLOW**: everything else passed and a person's sign-off waits. It is
   not full approval; Arti hands off (below).
 - **INCOMPLETE**: required evidence is missing, for example where CI only reuses
   existing reviews. Arti gets that evidence with a verify that runs the missing evals.

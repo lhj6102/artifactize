@@ -305,12 +305,12 @@ async fn release(context: &runs::Context, state: &Path, id: &RunId) -> Result<()
     subscribed(state, async |changes| {
         let result = tokio::time::timeout(crate::support::os::patience(CLEANUP_BOUND), async {
             let saved = artifactize_core::store::read_run(state, id).await?;
-            if saved.run.status() == artifactize_core::types::RunStatus::Running {
+            if saved.run.status().is_open() {
                 // This is an explicit fixture cleanup stimulus, never an observation barrier.
                 runs::cancel(context, id).await?;
                 loop {
                     let saved = artifactize_core::store::read_run(state, id).await?;
-                    if saved.run.status() != artifactize_core::types::RunStatus::Running {
+                    if !saved.run.status().is_open() {
                         break;
                     }
                     changes.next_reconciled().await;
@@ -351,7 +351,7 @@ pub async fn terminal(state: &Path, id: &RunId) -> artifactize_core::store::RunV
         let result = tokio::time::timeout(crate::support::os::patience(OBSERVATION_BOUND), async {
             loop {
                 let view = artifactize_core::store::read_run(state, id).await?;
-                if view.run.status() != artifactize_core::types::RunStatus::Running {
+                if !view.run.status().is_open() {
                     return Ok::<_, String>(view);
                 }
                 latest = Some(view);
@@ -383,9 +383,11 @@ pub async fn human_waiting(state: &Path, id: &RunId) -> artifactize_core::store:
                 if view.run.control.as_ref().is_some_and(|control| {
                     matches!(control.worker, runs::Worker::Admitted { .. })
                         && control.activity == runs::Activity::Waiting
-                }) && view.requests.iter().any(|request| {
-                    request.status() == artifactize_core::types::RequestStatus::WaitingHuman
-                }) {
+                }) && view
+                    .requests
+                    .iter()
+                    .any(|request| request.status().is_human_wait())
+                {
                     return Ok::<_, String>(view);
                 }
                 changes.next_reconciled().await;

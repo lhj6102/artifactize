@@ -74,7 +74,7 @@ codex mcp get artifactize
 
 | 도구 | 인자 | 답 |
 | --- | --- | --- |
-| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate`, `defer_human` | Run을 제출. Run 상태 요약이며 승인 결과가 아님 |
+| `verify_start` | `scope`, 선택적으로 `request_key`, `jobs`, `speculate` | Run을 제출. Run 상태 요약이며 승인 결과가 아님 |
 | `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
 | `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 도달할 때까지 대기. 기본 30, 정수 0–40. 첫 호출에서 root를 물어야 한다면 그 답을 받은 뒤 대기하며, 한 번의 확인은 45초 안에 끝남 |
 | `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 지켜봄. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 호출이 끝나면 간단한 상태 요약을 반환함 |
@@ -106,12 +106,11 @@ eval 결과 재사용은 유지됩니다.
 Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 추가하세요. 동시 실행 상한이 없는
 Run에는 `jobs` 필드가 없습니다.
 
-두 모드 인자는 기본값이 false이며 CLI의 `--speculate`, `--defer-human`과 뜻이 같습니다.
-`speculate`를 쓰면 요청된 하위 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. `defer_human`을
-쓰면 미룰 수 있는 Human 승인이 대기 중이어도 자동 검사를 계속 진행하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
-돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
-이는 완전한 승인이 아닙니다. CLI에서 진행 상황을 지켜보는 명령은 종료 코드 5로 끝납니다. `gate = "blocking"`을 직접 지정한
-Human eval은 이때도 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
+`speculate`는 기본값이 false이며 CLI의 `--speculate`와 뜻이 같습니다. 요청된 Runtime과 Agent 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. 승인은 다른
+eval을 막지 않습니다. 첫 승인을 요청한 때부터 Run은 `waiting_human`이며, 승인을 맡고 있거나
+[유휴 유예 시간](../features/others/state.md#sign-off-idle-grace)이 남은 동안 종료되지 않고 대기하다가, 승인만 남으면
+`yellow`로 끝납니다. 이때 `verify_result`는 판정 `YELLOW`를 보고하며, 이는 완전한 승인이 아닙니다. CLI에서 진행 상황을
+지켜보는 명령은 종료 코드 5로 끝납니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기 상태는 오류가 아니라 정상입니다.
 `verify_wait`는 Runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로

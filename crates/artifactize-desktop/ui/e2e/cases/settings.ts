@@ -1,10 +1,14 @@
 // Settings through the real app and CLI: the modal over the screen, where each provider key
-// comes from (never its value), saved keys and custom providers as the CLI sees them, and a
-// remote store's HTTP identity, persisted sign-in, status, dry run and logout.
+// comes from (never its value), saved keys and custom providers as the CLI sees them, a
+// remote store's HTTP identity, persisted sign-in, status, dry run and logout, and the
+// sign-off idle grace both read and set.
 import assert from "node:assert/strict";
-import { create, createOutside, environment, providerList, remoteStatus, verifyAll, type Fixture } from "../fixture.ts";
+import {
+  artifactize, create, createOutside, createSignoffOnly, environment, newestRunStatus, providerList, remoteStatus, signoffGrace, verifyAll,
+  type Fixture,
+} from "../fixture.ts";
 import { clickOption } from "../input.ts";
-import { press, typeText } from "../keys.ts";
+import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -36,6 +40,17 @@ async function openSettings(browser: WebdriverIO.Browser) {
   await browser.$("button=Settings").waitForExist({ timeout: 15000 });
   await browser.$("button=Settings").click();
   await browser.waitUntil(() => settingsOpen(browser), { timeout: 15000, timeoutMsg: "Settings opens" });
+}
+
+/** Settings opened again on its Limits tab; an open Settings is closed first, so it reads again. */
+async function showLimits(browser: WebdriverIO.Browser) {
+  if (await settingsOpen(browser)) {
+    await browser.$("button=Settings").click();
+    await browser.waitUntil(async () => !(await settingsOpen(browser)), { timeout: 15000, timeoutMsg: "Settings closes" });
+  }
+  await openSettings(browser);
+  await browser.$("button=Limits").click();
+  await browser.waitUntil(async () => (await browser.$('[role="tab"][aria-selected="true"]').getText()) === "Limits", { timeout: 15000, timeoutMsg: "the Limits tab shows" });
 }
 
 /** The names the Providers tab lists, in order. */
@@ -203,6 +218,42 @@ export const scenarios: Scenario[] = [
       await choose(browser, "Anthropic");
       await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "Set from ANTHROPIC_API_KEY", { timeout: 15000, timeoutMsg: "the Anthropic key is set from its variable" });
       assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(key), "the Anthropic fixture value is nowhere in the page");
+    },
+  ),
+  // UX journey: J-SET-SIGNOFF-GRACE
+  // UX edges: E-SET-TAB E-SET-GRACE E-SET-GRACE-SAVE
+  scenario(
+    "settings-signoff-grace",
+    "settings: shows the sign-off idle grace, saves a new one the CLI reads, and a later Run ends by it",
+    async () => {
+      const fixture = createSignoffOnly();
+      return { fixture, env: settingsEnvironment(fixture), data: null };
+    },
+    async (browser, { fixture }) => {
+      const shown = () => browser.execute(() => document.querySelector('[data-testid="grace-status"]')?.textContent ?? null);
+      await showLimits(browser);
+      await browser.waitUntil(async () => (await shown()) === "2 minutes", { timeout: 15000, timeoutMsg: "the default idle grace" });
+      assert.equal(await browser.$("#grace-seconds").getValue(), "120");
+      await fill(browser, "#grace-seconds", "300");
+      await browser.$("button=Save").click();
+      await browser.waitUntil(async () => (await shown()) === "5 minutes", { timeout: 15000, timeoutMsg: "the saved idle grace" });
+      assert.equal(signoffGrace(fixture), 300, "the CLI reads what Settings saved");
+      // Set by the CLI, it shows when Settings is shown again.
+      assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "45"), 0);
+      await showLimits(browser);
+      await browser.waitUntil(async () => (await shown()) === "45 seconds", { timeout: 15000, timeoutMsg: "the idle grace the CLI set" });
+      // A day's grace from the CLI, then none from Settings: a Run started afterwards with only
+      // its unclaimed sign-off left ends YELLOW at once, which only the saved 0 allows.
+      assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "86400"), 0);
+      await showLimits(browser);
+      await browser.waitUntil(async () => (await shown()) === "1440 minutes", { timeout: 15000, timeoutMsg: "the day the CLI set" });
+      await fill(browser, "#grace-seconds", "0");
+      await browser.$("button=Save").click();
+      await browser.waitUntil(async () => (await shown()) === "0 seconds", { timeout: 15000, timeoutMsg: "no idle grace saved" });
+      assert.equal(artifactize(fixture, "verify", "--all"), 0);
+      await browser.waitUntil(async () => newestRunStatus(fixture) === "YELLOW", {
+        timeout: 15000, timeoutMsg: "the Run started after the save ends YELLOW without a grace",
+      });
     },
   ),
   // UX journey: J-SET-CUSTOM; UX edges: E-SET-CUSTOM-NEW E-SET-CUSTOM-SAVE E-SET-CUSTOM-REMOVE

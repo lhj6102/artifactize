@@ -140,7 +140,7 @@ cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --eval spec/review --tool coverage_spec --args '{}'
 artifactize verify --eval spec/review --wait    # the machine review comes first
-artifactize verify --eval spec/signoff --wait   # records a WAITING_HUMAN request and waits
+artifactize verify --eval spec/signoff --wait   # records a sign-off request and waits
 # In a second terminal, in the same directory:
 export ARTIFACTIZE_STATE_HOME="STATE_DIRECTORY"  # copy the first terminal's path
 artifactize request list --run RUN_ID    # shows REQUEST_ID
@@ -154,8 +154,10 @@ artifactize run show RUN_ID
 씁니다. `request unclaim REQUEST_ID`는 담당을 해제합니다. `artifactize
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
-Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
-의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run이 끝날 때까지 대기하며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
+옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run을 지켜봅니다. 승인만
+남으면 Run은 담당자가 정해지기 전에는 최대 2분간, 정해진 뒤에는 승인이 끝날 때까지 종료되지 않습니다. 앞선
+자동 리뷰가 여전히 유효하면 GREEN 승인이 제출되는 즉시 `verify --wait`가 종료 코드 0으로 끝납니다. Run이
+이미 YELLOW(종료 코드 5)로 끝난 뒤에 요청을 맡더라도, 승인을 제출하면 다음 `verify`에서 그 승인을 재사용합니다.
 
 ## Monitor {#monitor}
 

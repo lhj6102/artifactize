@@ -23,9 +23,9 @@
 [`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰의
 진행 과정과 대화, 도구 호출 내역은 [저장된 세션](#agent-sessions)에서 확인할 수 있습니다.
 
-**업그레이드.** 스키마 6, 7, 8 형식으로 저장된 상태는 artifactize 명령으로 처음 열 때 현재 스키마 9로
-자동 업그레이드됩니다. Run, ID, 캐시 결과, Human 승인은 그대로 남습니다. 업그레이드에는 쓰기
-권한이 필요하고 되돌릴 수 없습니다. 스키마 6~8만 지원하는 이전 바이너리로는 업그레이드된 상태를 열 수 없으므로, 이전 버전으로 돌아갈 수도 있다면 먼저 상태 디렉터리를 백업하세요. 스키마 1~5의 상태는
+**업그레이드.** 스키마 6, 7, 8, 9 형식으로 저장된 상태는 artifactize 명령으로 처음 열 때 현재 스키마 10으로
+자동 업그레이드됩니다. Run, ID, 캐시 결과, Human 승인은 그대로 남고, SIGNOFFS_PENDING으로 끝난 Run은
+YELLOW로 읽힙니다. 업그레이드에는 쓰기 권한이 필요하고 되돌릴 수 없습니다. 스키마 6~9만 지원하는 이전 바이너리로는 업그레이드된 상태를 열 수 없으므로, 이전 버전으로 돌아갈 수도 있다면 먼저 상태 디렉터리를 백업하세요. 스키마 1~5의 상태는
 다음 메시지와 함께 거부됩니다(종료 코드 2).
 
 ```text
@@ -113,6 +113,24 @@ slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 Q
 
 [백엔드를 멈추는](../agent.md#stopping-a-backend) 실패가 나면, 그 Run에서 대기 중이던 요청은 그
 백엔드에서 시작하지 않습니다.
+
+## 승인 유휴 유예 시간 {#sign-off-idle-grace}
+
+`limits.json`으로 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 종료되기까지의 대기 시간도
+설정합니다([승인과 Run 종료](../run.md#sign-offs-and-the-end-of-a-run)).
+
+```json
+{"signoffIdleGraceSeconds": 120}
+```
+
+값은 0–86400초이며, 필드나 파일이 없으면 120입니다. 0이면 그런 Run은 바로 끝납니다. 백엔드 한도와
+마찬가지로 이 상태를 쓰는 모든 Run에 적용되고 Run이 시작할 때 읽으므로, 바꾼 값은 그 뒤에 시작한
+Run에만 적용됩니다. `artifactize limits`(데스크톱 Settings에서도 가능)로 확인하거나 바꾸며, 파일의 다른
+필드는 그대로 둡니다.
+
+```sh
+artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
+```
 
 ## Agent 세션 {#agent-sessions}
 

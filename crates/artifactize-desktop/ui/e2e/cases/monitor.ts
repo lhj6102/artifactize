@@ -75,7 +75,7 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
     await openTab(browser, "e:release/signoff");
     await human().waitForExist({ timeout: 15000, timeoutMsg: "this case's Human Detail" });
     const id = signoff(fixture).id;
-    await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `), {
+    await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `), {
       timeout: 15000, timeoutMsg: "the default Human Detail identifies this case's exact waiting request without Technical",
     });
     assert.equal(await human().$(".instruction .text").getText(), instruction, "the selected Human eval's default instruction");
@@ -134,7 +134,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await mainTitle(browser), `Run ${run}`);
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[run, true]]);
       const headline = await browser.$(`${MAIN} button.headline`).getText();
-      assert.match(headline, /RUNNING/);
+      assert.match(headline, /WAITING_HUMAN/);
       assert.match(headline, /validation pending/);
       // What needs attention is the Run's own, in its Main area above its graph: the Waiting
       // stack in the Pane names the same sign-off.
@@ -169,11 +169,11 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       const meta = () => human().$(".meta").getText();
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
-      await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · WAITING_HUMAN · claimed by bob · read-only · waiting `) &&
+      await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · DEFERRED · claimed by bob · read-only · waiting `) &&
         (await human().getText()).includes("Claimed by bob. Read-only until released.") && !(await human().$("button*=Claim").isExisting()),
       { timeout: 12000, timeoutMsg: "the opened Human Detail displays bob's exact claim and is read-only" });
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
-      await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · WAITING_HUMAN · unclaimed · waiting `) &&
+      await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `) &&
         await human().$("button*=Claim").isEnabled(), { timeout: 12000, timeoutMsg: "bob's release is rendered in the same open Human Detail and Claim is offered again" });
 
       await human().click();
@@ -211,7 +211,7 @@ export const scenarios: Scenario[] = [
       ]);
       assert.equal((await toolLog()).noticeError, false);
       const saved = signoff(fixture);
-      assert.equal(saved.status, "WAITING_HUMAN", "tool output is not a Human verdict");
+      assert.equal(saved.status, "DEFERRED", "tool output is not a Human verdict");
       assert.equal(saved.claim?.reviewer, "alice");
       assert.ok(await human().isExisting(), "the same Human Detail remains open");
     },
@@ -403,7 +403,7 @@ export const scenarios: Scenario[] = [
       ]);
       assert.equal((await toolLog()).notice, "fail_release failed; a tool error is not a verdict.");
       const saved = signoff(fixture);
-      assert.equal(saved.status, "WAITING_HUMAN", "a failed tool is not a Human verdict");
+      assert.equal(saved.status, "DEFERRED", "a failed tool is not a Human verdict");
       assert.equal(saved.result, null);
       assert.equal(saved.claim?.reviewer, "alice", "the same Human review remains claimed");
       assert.ok(await human().isExisting(), "the same Human Detail remains open after the tool error");
@@ -468,7 +468,7 @@ export const scenarios: Scenario[] = [
       const alert = await browser.$('[role="alert"]');
       await alert.waitForExist({ timeout: 15000 });
       assert.match(await alert.getText(), /reason/);
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN");
+      assert.equal(signoff(fixture).status, "DEFERRED");
       // The form keeps what was entered and stays editable, to be corrected.
       assert.equal(await reason().getValue(), "no");
       await fill(browser, "#field-reason", "not good enough");
@@ -486,7 +486,7 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#field-reason", "a correctable reason");
       assert.equal(await reason().getValue(), "a correctable reason");
       const saved = signoff(fixture);
-      assert.equal(saved.status, "WAITING_HUMAN");
+      assert.equal(saved.status, "DEFERRED");
       assert.equal(saved.result, null, "switching did not submit the rejected draft");
       assert.equal(saved.claim?.reviewer, "alice", "the same review remains claimed and editable");
       // A GREEN result failing its schema the same way: the required comment left empty.
@@ -498,7 +498,7 @@ export const scenarios: Scenario[] = [
         const shown = await browser.$('[role="alert"]');
         return await shown.isExisting() && /comment/.test(await shown.getText()) && (await shown.getText()) !== before;
       }, { timeout: 15000, timeoutMsg: "the GREEN result's failing path shown" });
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN", "the invalid GREEN result was not submitted");
+      assert.equal(signoff(fixture).status, "DEFERRED", "the invalid GREEN result was not submitted");
       await fill(browser, "#field-comment", "checked again");
       assert.equal(await browser.$("#field-comment").getValue(), "checked again", "the GREEN form stays correctable");
     },
@@ -904,7 +904,7 @@ export const scenarios: Scenario[] = [
       ]);
       // None of it is a review's evidence: the sign-off still waits, unclaimed, its own Tool log empty.
       const saved = signoff(fixture);
-      assert.deepEqual([saved.status, saved.claim, saved.result], ["WAITING_HUMAN", null, null]);
+      assert.deepEqual([saved.status, saved.claim, saved.result], ["DEFERRED", null, null]);
       assert.ok(requests(fixture).every((request) => request.claim === null), "no request was claimed");
       await openTab(browser, "e:release/signoff");
       await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 15000 });
@@ -990,7 +990,7 @@ export const scenarios: Scenario[] = [
       // Confirm the window's actual terminal state, never an arbitrary driver exception.
       await sessionEndedByApp(browser, () => browser.keys(["u"]));
       await browser.waitUntil(() => signoff(fixture).claim === null, { timeout: 15000, timeoutMsg: "released on quit" });
-      assert.equal(signoff(fixture).status, "WAITING_HUMAN");
+      assert.equal(signoff(fixture).status, "DEFERRED");
     },
   ),
 ];

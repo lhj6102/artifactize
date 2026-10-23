@@ -31,10 +31,27 @@ and keeps the answer in `release-check.json` in the [state directory](#state); t
 carries nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn
 the lookup off.
 
+### Upgrading to 0.16
+
+The state is upgraded to schema 10 on first use; a Run that ended SIGNOFFS_PENDING now
+reads as YELLOW. An older artifactize cannot open the upgraded state, so keep a backup
+before switching versions.
+
+A sign-off the Run selected no longer holds up other evals, so `verify --defer-human`, MCP
+`defer_human` and the eval field `gate = "blocking"` are removed: drop the flag from
+scripts and the field from declarations, both of which are now refused with that advice.
+A Run is **WAITING_HUMAN** from its first sign-off request and ends **YELLOW** (exit 5,
+formerly SIGNOFFS_PENDING) when only unsubmitted sign-offs remain. Before that it waits
+for a claimed sign-off, and for an
+[idle grace](../features/others/state.md#sign-off-idle-grace) of 2 minutes for an
+unclaimed one; scripts that waited for exit 5 at once may set it to 0 with
+`artifactize limits --signoff-idle-grace 0`. CI with `--reuse-only agent,human` is
+unchanged. See [Sign-offs and the end of a Run](../features/run.md#sign-offs-and-the-end-of-a-run).
+
 ### Upgrading from 0.11
 
 The state's format of saved review data (its schema) is upgraded automatically on first use,
-from schemas 6 to 8 to the current schema 9; existing Runs, cache records and Human approvals
+from schemas 6 to 9 to the current schema 10; existing Runs, cache records and Human approvals
 are kept. An older artifactize cannot open the upgraded state, so keep a backup before
 switching versions.
 
@@ -46,9 +63,10 @@ is the explicit cancellation action. The foreground Human deadline and
 
 Gate bypass (`--ignore-gates` and `review_policy`, including
 `review_policy.dependency_gates`) is removed; even an empty `review_policy` table fails
-configuration validation, so delete it. Per-request `--speculate` and `--defer-human`
-replace it, both off by default and neither waiving final approval; deferred sign-offs
-end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../features/run.md).
+configuration validation, so delete it. To run checks before their gates resolve, add
+`--speculate` to the verify request; it never waives final approval. Sign-offs no longer
+hold up other evals (see [Upgrading to 0.16](#upgrading-to-016)). See
+[Runs and status](../features/run.md).
 Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
 selects that repository initially.
 

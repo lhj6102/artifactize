@@ -79,22 +79,33 @@ def stop_child(process):
         raise ProcessExitError(f"Owned child group {process.pid} did not settle") from error
 
 
-def _stop_child(process):
-    owners = []
+def group_members(group):
+    """The live members of a process group, by saved identity."""
+    members = []
     for stat in Path("/proc").glob("[0-9]*/stat"):
         try:
             fields = stat.read_text().rsplit(")", 1)[1].split()
-            if int(fields[2]) == process.pid and fields[0] not in {"Z", "X", "x"}:
-                owners.append({"pid": int(stat.parent.name), "start_time": int(fields[19])})
+            if int(fields[2]) == group and fields[0] not in {"Z", "X", "x"}:
+                members.append({"pid": int(stat.parent.name), "start_time": int(fields[19])})
         except (FileNotFoundError, ProcessLookupError):
             continue
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait(timeout=EXIT_BOUND)
-    for owner in owners:
-        wait_for_exit(owner)
+    return members
+
+
+def _stop_child(process):
+    # A member forked while the group was scanned is still in it: signal and scan again
+    # until no member is left, so none outlives teardown.
+    while True:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=EXIT_BOUND)
+        members = group_members(process.pid)
+        if not members:
+            return
+        for member in members:
+            wait_for_exit(member)
 
 
 def close_child(process):

@@ -151,7 +151,7 @@ fn waiting_request(fixture: &Fixture) -> Value {
     loop {
         let list = fixture.json(&["request", "list"], 0);
         let mut requests = list.as_array().unwrap().iter();
-        if let Some(request) = requests.find(|r| r["status"] == "WAITING_HUMAN") {
+        if let Some(request) = requests.find(|r| r["status"] == "DEFERRED") {
             return request.clone();
         }
         assert!(Instant::now() < deadline, "Human request did not appear");
@@ -175,7 +175,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         waiting["runId"].as_str().unwrap(),
     );
     let running = fixture.json(&["run", "show", run, "--wait", "--timeout-ms", "50"], 3);
-    assert_eq!(running["status"], "RUNNING");
+    assert_eq!(running["status"], "WAITING_HUMAN");
     fixture.json(&["request", "claim", id], 0);
     fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 0);
     assert_eq!(
@@ -188,7 +188,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         (vec!["verify", "--wait", "green"], 0, "GREEN"),
         (vec!["verify", "--wait", "red"], 1, "RED"),
         (vec!["verify", "--wait", "broken"], 2, "ERROR"),
-        (vec!["verify", "human"], 0, "RUNNING"),
+        (vec!["verify", "human"], 0, "WAITING_HUMAN"),
         (
             vec!["verify", "--wait", "human", "--reuse-only", "human"],
             4,
@@ -201,7 +201,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         let shown = fixture.json(&["run", "show", id], 0);
         assert_eq!(shown["status"], saved["status"]);
         assert_eq!(shown["requests"], saved["requests"]);
-        if status != "RUNNING" {
+        if status != "WAITING_HUMAN" {
             fixture.json(&["run", "show", id, "--wait"], code);
         }
     }

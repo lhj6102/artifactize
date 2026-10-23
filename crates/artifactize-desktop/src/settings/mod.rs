@@ -1,11 +1,14 @@
-//! Settings: the accounts, keys and stores the CLI configures, through the same library calls
-//! (`login`/`logout`, `provider`, `models`, `remote login|logout|status|push`). Nothing here stores,
-//! validates or reaches a service on its own; secrets never come back to the frontend.
+//! Settings: the accounts, keys, stores and limits the CLI configures, through the same library
+//! calls (`login`/`logout`, `provider`, `models`, `remote login|logout|status|push`, `limits`).
+//! Nothing here stores, validates or reaches a service on its own; secrets never come back to
+//! the frontend.
 mod codex;
+mod limits;
 mod providers;
 mod remote;
 
 pub use codex::*;
+pub use limits::*;
 pub use providers::*;
 pub use remote::*;
 

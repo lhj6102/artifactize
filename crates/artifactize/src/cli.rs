@@ -118,6 +118,13 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Show the machine-wide limits; with --signoff-idle-grace, change it first.
+    Limits {
+        /// Seconds a Run with nothing but unclaimed sign-offs left stays open (0–86400), for
+        /// the Runs started afterwards.
+        #[arg(long, value_name = "SECONDS", value_parser = seconds)]
+        signoff_idle_grace: Option<std::time::Duration>,
+    },
     /// List the models a built-in or custom provider offers to your key or account.
     Models {
         /// The provider, as an Agent profile's backend names it.
@@ -158,8 +165,8 @@ pub enum Command {
         /// Start reviews before unresolved dependency gates; cancel blocked work.
         #[arg(long)]
         speculate: bool,
-        /// Run past pending sign-offs and finish with SIGNOFFS_PENDING (exit 5).
-        #[arg(long)]
+        /// Removed in 0.16.0: a sign-off never holds up other evals.
+        #[arg(long, hide = true)]
         defer_human: bool,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
@@ -581,4 +588,11 @@ where
         .into_iter()
         .map(|text| text.parse::<T>())
         .collect()
+}
+
+/// Whole seconds as a duration, read at the command line.
+fn seconds(text: &str) -> Result<std::time::Duration, String> {
+    text.parse::<u64>()
+        .map(std::time::Duration::from_secs)
+        .map_err(|error| error.to_string())
 }

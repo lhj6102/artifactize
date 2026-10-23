@@ -36,7 +36,7 @@ search for it literally (`"type:style"`):
 | `reviewer:` | part of the claimant's name; unclaimed requests never match |
 | `tag:` | part of a tag of the eval's Artifact (`tags` in its declaration, as saved with the Run) |
 | `kind:` | the eval kind: `runtime`, `agent` or `human` |
-| `status:` | the request status, such as `waiting_human`, `green`, `red` or `error` |
+| `status:` | the request status, such as `waiting_human` (which includes `deferred` sign-offs), `green`, `red` or `error` |
 | `is:mine` | claimed by you (`$USER` or `--reviewer`) |
 | `is:claimed` | claimed by anyone |
 | `is:unclaimed` | a waiting Human request no one has claimed |
@@ -269,8 +269,7 @@ focused pane needs more room.
   keeps an `At Run end` field.
 
 Scope badges and the header share `!N ✗N ◐N ?N` attention counters: requests in
-ERROR and RED, Runs still running, and sign-offs waiting for a person, deferred ones
-included. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
+ERROR and RED, Runs still open, and sign-offs waiting for a person. These cover the catalog, not just the visible Run page. Followers of one Human execution count as
 one waiting sign-off.
 
 ### Artifacts and evals
@@ -306,14 +305,14 @@ upstream asks for a retry rather than blocking as RED does. A finished Run can
 still have an open Human request. These view states explain saved request states;
 they do not rename the states in JSON.
 
-The Run's [execution modes](../features/run.md#speculation-and-deferred-sign-offs)
-also explain its display. With `--speculate`, a downstream eval can be READY or
-running while upstream judgment is still pending; a later upstream RED/ERROR
-blocks or cancels that speculative work. With `--defer-human`, sign-offs appear
-as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A finished
-**SIGNOFFS_PENDING** Run means only those sign-offs remain. Their later submissions
-change current requests, not the historical Run-end verdict; strict Human gates
-still remain strict.
+How a Run treats [sign-offs](../features/run.md#sign-offs-and-the-end-of-a-run) and
+[speculation](../features/run.md#speculation) also explains its display. Sign-offs appear
+as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A Run waiting for a
+claimed sign-off or its idle grace is **WAITING_HUMAN**, a darker blue than RUNNING since
+both are still open; a Run that ended **YELLOW** has only those sign-offs left. Their later
+submissions change current requests, not the historical Run-end verdict. With
+`--speculate`, a downstream eval can be READY or running while upstream judgment is still
+pending; a later upstream RED/ERROR blocks or cancels that speculative work.
 
 What an eval waits for follows [Eval dependencies](../features/artifact.md#eval-dependencies).
 A row groups those gates into at most two unmet Artifacts, then `+N`, with each

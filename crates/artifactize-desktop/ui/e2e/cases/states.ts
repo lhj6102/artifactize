@@ -98,7 +98,7 @@ export const scenarios: Scenario[] = [
         ["a:red", "red", /RED/, "✗", "RED"],
         ["a:crash", "crash", /ERROR/, "!", "ERROR"],
         ["a:down", "down", /blocked by red/, "⊘", "BLOCKED"],
-        ["a:gate", "gate", /Human/, "?", "WAITING_HUMAN"],
+        ["a:gate", "gate", /Human/, "?", "DEFERRED"],
         ["a:fine", "fine", /GREEN/, "✓", "GREEN"],
       ] as const;
       const painted = new Set<string>();

@@ -53,6 +53,11 @@ tests to run, declare a [Runtime eval](runtime.md) for it. Each `{name}` referen
 the tools it can read it with (and a file Artifact's path), so the instruction need not
 name tools.
 
+The reviewer only reviews: it never implements or repairs anything, and it runs only the
+declared Artifact tools. It judges tests by reading them, whether they cover what the
+criteria ask, without running them or importing the code under test. To check that a test
+suite passes, declare a [runtime eval](runtime.md) that runs it.
+
 Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
 an invalid result, artifactize asks once for a correction; a still-invalid result
 makes the review ERROR. [Agent responses](tools/agent-responses.md) describes

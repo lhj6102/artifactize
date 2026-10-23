@@ -21,7 +21,7 @@ pub enum Status {
     Incomplete,
     Deferred,
     Provisional,
-    SignoffsPending,
+    Yellow,
     Green,
     Basis,
 }
@@ -44,7 +44,7 @@ impl Status {
             Self::Incomplete => "INCOMPLETE",
             Self::Deferred => "DEFERRED",
             Self::Provisional => "PROVISIONAL",
-            Self::SignoffsPending => "SIGNOFFS_PENDING",
+            Self::Yellow => "YELLOW",
             Self::Green => "GREEN",
             Self::Basis => "BASIS",
         }
@@ -57,7 +57,7 @@ impl Status {
             Self::Red => "✗",
             Self::Error => "!",
             Self::Running => "◐",
-            Self::WaitingHuman | Self::Deferred | Self::SignoffsPending => "?",
+            Self::WaitingHuman | Self::Deferred | Self::Yellow => "?",
             Self::Provisional => "○",
             Self::Queued => "·",
             Self::Blocked => "⊘",
@@ -76,9 +76,9 @@ impl Status {
             Self::Error => "operational failure, not a verdict",
             Self::Running => "executing",
             Self::WaitingHuman => "waiting for a Human submission",
-            Self::Deferred => "sign-off deferred; execution may proceed",
+            Self::Deferred => "waiting for a Human sign-off; other evals go on",
             Self::Provisional => "criteria met; dependent sign-offs remain",
-            Self::SignoffsPending => "only sign-offs remain",
+            Self::Yellow => "ended with only sign-offs left",
             Self::Blocked => "blocked by a RED dependency",
             Self::WaitDependency => "waiting for current GREEN dependency evidence",
             Self::BudgetExhausted => "maxExecutions reached before it started",
@@ -97,11 +97,12 @@ impl From<RunStatus> for Status {
     fn from(status: RunStatus) -> Self {
         match status {
             RunStatus::Running => Self::Running,
+            RunStatus::WaitingHuman => Self::WaitingHuman,
             RunStatus::Green => Self::Green,
             RunStatus::Red => Self::Red,
             RunStatus::Error => Self::Error,
             RunStatus::Incomplete => Self::Incomplete,
-            RunStatus::SignoffsPending => Self::SignoffsPending,
+            RunStatus::Yellow => Self::Yellow,
         }
     }
 }
