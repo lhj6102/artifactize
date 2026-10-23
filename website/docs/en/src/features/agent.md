@@ -6,8 +6,8 @@ verdict.
 
 ## Agent reviews
 
-Agent evals use one explicit model and backend, with no bundled catalog, aliases,
-credential search or fallback:
+There is no bundled model catalog, alias, credential search or fallback:
+
 
 ```toml
 # Inside [evals.review]
@@ -27,30 +27,29 @@ artifactize models anthropic --json
 artifactize models codex
 ```
 
-`reasoning` is optional. When present, OpenAI and Codex receive exactly
-`reasoning.effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Anthropic receives
-adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
-`max`). Other values are rejected, never remapped. A model that does not support
+`reasoning` is optional. OpenAI and Codex accept `none`, `minimal`, `low`, `medium`,
+`high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`. Other values
+are a declaration error and are never changed into another value. A model that does not support
 the requested setting fails at the provider; artifactize does not substitute a
 model or lower effort. If the response reports a model ID, it must match exactly.
 
-Agent evals share runtime evals' dependency gates, reuse-key claims, reuse and final
-fingerprint recheck. The backend, model, reasoning and limits are execution
+Agent evals wait for their inputs and reuse results the same way runtime evals do, and
+their inputs are checked again when the review ends. The backend, model, reasoning and limits are execution
 options, not part of the reuse key: a result another model or profile produced for
 the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was.
 
-The evaluator's system prompt holds the review rules. Its user message contains only the
-eval title and ID, target Artifact and instruction. Artifact references expand to the
-Artifact ID and its available tools; a file Artifact also includes its workspace-relative
-target path. Instructions therefore need not repeat tool names.
+Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
+receives the eval's title and ID, its target and your instruction; artifactize adds the
+general review rules. Each `{name}` reference tells the reviewer that Artifact's name and
+the tools it can read it with (and a file Artifact's path), so the instruction need not
+name tools.
 
 Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
 an invalid result, artifactize asks once for a correction; a still-invalid result
-makes the review ERROR. [Agent responses](tools/agent-responses.md) specifies
-the backend formats, owner-field validation, repair and limits.
+makes the review ERROR. [Agent responses](tools/agent-responses.md) describes
+the result, its validation and the correction turn.
 
-The rig adapter, retries, tool results and usage counters are in
-[Agent backends](#agent-backends).
+Retries, tool results and usage counters are in [Agent backends](#agent-backends).
 
 ## Agent profile limits
 
@@ -60,7 +59,9 @@ An Agent profile can bound its review with `max_tokens` and `max_tool_calls`:
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
 ```
 
-Each optional budget accepts an integer from 1 through 9007199254740991.
+A model service measures the text it reads and writes in **tokens**, small pieces of
+words; they have nothing to do with sign-in or review store tokens. Each optional budget
+accepts an integer from 1 through 9007199254740991.
 Omission leaves that budget unlimited. These are client-side review budgets,
 not provider generation parameters. `max_tokens` adds each successful response's
 reported `total_tokens`, including reported cache reads/writes, across every
@@ -83,21 +84,19 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 
 [Agent reviews](#agent-reviews) above shows the Agent profile, the backends and
 `reasoning`. `models` output uses the JSON envelope described under
-[Local diagnostics and maintenance](others/state.md#doctor-models-and-prune).
+[Local diagnostics and maintenance](../cli/maintenance.md#doctor-models-and-prune).
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
-responses are ERROR, even if they contain a JSON verdict. Artifactize handles
-retries as described below; the [provider transport reference](others/state.md#provider-transport)
-covers API settings and replay behavior.
+responses are ERROR, even if they contain a JSON verdict. An Anthropic answer is also
+capped at 16384 output tokens per turn, apart from the review's `max_tokens`. Artifactize
+handles retries as described below.
 
 ### Retries and error codes
 
-Every request replays the whole conversation (no server-side state), so any turn can
-be retried. A turn is retried, up to three attempts in all, when an attempt fails
-with a rate limit or a transient error before it produced any output or reported any
-usage. A retry waits as long as the provider asks with `retry-after-ms` or
-`Retry-After` (seconds or an HTTP date), else 250 ms and then 500 ms. When the
+A turn is retried, up to three attempts in all, when it fails with a rate limit or a
+temporary error before it produced any output or used any tokens. A retry waits as long
+as the provider asks, else 250 ms and then 500 ms. When the
 provider asks for a wait that reaches or exceeds the review's deadline, the review
 fails at once with the original `RATE_LIMIT` or `TRANSIENT` classification. A failure after output or usage is never retried, so nothing
 is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
@@ -105,17 +104,13 @@ is paid for twice. Each attempt is saved in `usage` with its counters, `error` a
 
 ### Prompt caching
 
-Each Agent review gets a random session id, saved on its request as `sessionId`
-(`verify --wait --json`, `run show`, `request show`). Every request of the review, its turns,
-retries and repair turn, sends it as `prompt_cache_key` on `openai` and `codex`, and
-`codex` also as the `session-id` header. The provider can then serve the conversation
-prefix that each turn replays from its prompt cache. Every review, including a forced
-re-review, starts a new session. `anthropic` caches by prefix and sends no session.
-The `cacheReadTokens` counter of each attempt in `usage` shows the cached input.
-A [follow-up](#saved-conversations) to a saved review reuses its session id and
-conversation prefix. Cache hits still depend on the provider: follow-ups remove the
-structured output format for plain-text answers, which invalidates Anthropic's
-format-dependent prompt cache.
+Providers cache the part of a conversation that each turn repeats, so later turns
+of a review cost less. See how much was cached in the `cacheReadTokens` counter of each
+attempt in `usage` (`verify --wait --json`, `run show`, `request show`, `session show
+--summary`). Each review, including a forced one, starts fresh; a
+[follow-up](#saved-conversations) continues its review's conversation and can use its
+cache. Whether the cache hits is up to the provider: an `anthropic` follow-up usually
+does not, because its answer is plain text instead of a verdict.
 
 A failed Agent review records one of these `errorCode` values:
 
@@ -132,6 +127,10 @@ A failed Agent review records one of these `errorCode` values:
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
+
+If a provider's error message repeats part of the credential artifactize sent, the
+message is replaced by `[withheld: it contained part of the credential sent]` wherever it is shown or saved.
+Owner fields and command output are not masked this way.
 
 Ctrl-C interrupts a `verify --wait` watcher, not the Agent reviews it observes;
 the Run continues. Explicit cancellation requests stop the Run's owned work.
@@ -153,14 +152,9 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 The next Run admits the backend again.
 
-Only tools from the eval's scope are exposed, and they run sequentially. Command
-tools run in the author's [environment](declarations.md#runtime-execution-library),
-each call with its own private output and temporary directories. Built-in tools run
-inside artifactize and get no per-call directories; `help` runs its program in the
-environment artifactize itself was given. Tool results keep text, JSON and validated base64 image blocks rather than flattening
-structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
-image requests fail with the provider error. Duplicate provider call IDs fail
-closed. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
+Only tools from the eval's scope are exposed, and they run one at a time;
+[Agent tools](tools/agent.md#agent-tools) says what each receives and returns. PNG/JPEG/WebP results are sent to every backend; a model without image
+support fails with the provider's error. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
 the attempts move to `reusedUsage`, never counted as spent. Counters
 are provider-reported (including reported zero), not inferred totals or costs.
 Anthropic `inputTokens` is its native uncached input; cache read/write counters are
@@ -168,14 +162,11 @@ separate. OpenAI input already includes its cache reads. Never sum every counter
 Unreported fields stay absent. The request keeps the verdict, result and usage; the
 messages, reasoning and tool calls, with their arguments and results, are only in the
 review's [saved conversation](#saved-conversations), and
-[`session show --summary`](#session-summary) counts them.
+[`session show --summary`](../cli/index.md#session-summary) counts them.
 
-Owner validation before relying on a provider: run one real review per backend
-(OpenAI key, Anthropic key, Codex sign-in) with an accessible exact model ID and a
-declared tool.
-These real reviews are still pending for the owner. Automated tests use fake HTTP
-transports or a [fake provider](#test-against-a-fake-provider) and make no real
-inference requests.
+Before you rely on a backend, run one small review with it, using an exact model ID
+your account can use and one declared tool, and check its result with `run show`. To
+test tools and schemas without a model, use a [fake provider](#test-against-a-fake-provider).
 
 ## Saved conversations
 
@@ -183,17 +174,11 @@ artifactize keeps each Agent review's conversation on this machine, so you can r
 what the reviewer saw and said, and ask it a follow-up in the same conversation, much
 like continuing a chat. The recorded verdict never changes.
 
-**What is saved.** Each review session gets one owner-only file under
-`$STATE/agent-sessions/` ([layout](others/state.md#agent-sessions)).
-It holds the system prompt and instructions, every turn's messages, each tool call
-with its arguments and full result and whether it failed, the repair turn (the prompt
-that asked for it and the answer it replaced), each provider attempt with its token
-counters, and the encrypted reasoning items (Responses
-`reasoning.encrypted_content`, Anthropic thinking signatures) needed to replay the
-conversation exactly. It also records the backend, model, reasoning, provider
-parameters, budgets and tool definitions, the [`sessionId`](#prompt-caching), and the
-Run and request ids. Every backend is saved, `anthropic` included. The session is the
-only record of a review's tool calls: the request keeps its verdict, result and usage.
+**What is saved.** Each review session is kept in one file only your account can read
+([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
+call with its result, the correction turn, token counts and the settings the review
+used. It is the only record of a review's tool calls: the request keeps its verdict,
+result and usage.
 Saving never fails a review: a write error is reported on stderr and the review goes
 on without it.
 
@@ -217,132 +202,13 @@ state database. A request that reuses a result names the review that produced it
 (as `producer.session`), never the conversation, so a teammate's verdict tells you
 whose state holds its conversation.
 
-**Reading.** `REF` is the `ref`, a request id (`run-FiVNCV-1`) or a `sessionId`:
-
-```sh
-artifactize session show run-FiVNCV-1
-```
-
-```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
-Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
-Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
-
-── System
-You are an artifactize evaluator. …
-
-── User (turn 1)
-Eval: Review notes (notes/review)
-Target Artifact: notes
-Instruction: Check Artifact notes (tools: read_notes). …
-
-── Assistant (turn 1)
-[reasoning] Reading the notes
-[tool call read_notes] {"path":"notes.md"}
-
-── User (turn 2)
-[tool result read_notes]
-{"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
-
-── Assistant (turn 2)
-{"result":{"verdict":"GREEN","verdictFields":{}}}
-
-── Repair prompt (turn 3)
-Your final response did not match the required schema: …
-
-── Assistant (turn 3)
-{"result":{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}}
-
-── Result: {"covered":["R1"],"verdict":"GREEN"}
-```
-
-Text output cuts tool results after 2000 characters and shows only reasoning
-summaries. `--json` prints the stored events as they are, which is also the
-conversation's replayable export.
-
-### Session summary
-
-`--summary` counts what the conversation spent and did, from the session file alone:
-its turns (provider requests) with the tokens of each and in total, the tool calls per
-tool with how many failed, the follow-ups, and the backend, model and time span. A
-failed call returned an error, or never ran because a budget, the deadline or the end
-of the review stopped it first.
-
-```sh
-artifactize session show run-FiVNCV-1 --summary
-```
-
-```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
-Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
-Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
-Time: 2026-10-06T09:14:02.118604115Z to 2026-10-06T09:16:41.502330019Z (159.4 s)
-Turns: 5 · follow-ups: 1
-Tokens: input 21410 · output 1318 · cache read 15872 · reasoning 704
-  turn 1: input 3920 · output 212 · cache read 0 · reasoning 128
-  turn 2: input 4310 · output 260 · cache read 3840 · reasoning 160
-  turn 3: input 4402 · output 96 · cache read 4224 · reasoning 64
-  follow-up 1, turn 1: input 4366 · output 410 · cache read 3840 · reasoning 224
-  follow-up 1, turn 2: input 4412 · output 340 · cache read 3968 · reasoning 128
-Tool calls: 3 (1 failed)
-  read_notes: 2
-  search_notes: 1 (1 failed)
-```
-
-A turn that took several attempts says so, for example `(2 attempts)`. Token counters
-are the ones the provider reported, summed over the turn's attempts; a counter no
-attempt reported is left out. `--json` prints the same as one object: `backend`,
-`model`, `reasoning`, `startedAt`, `endedAt`, `durationMs`, `followUps`, `turns` (each
-with `followUp` when it answered one, `turn`, `attempts` and `tokens`), `tokens`,
-`toolCalls` (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`,
-`requestId` and `reference`.
-
-**Following up.**
-
-```sh
-artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
-```
-
-```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
-
-notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
-```
-
-A follow-up continues the saved conversation with the same model and current
-project tools. Its answer is plain text; it does not change the recorded verdict,
-result or reuse. The header warns when reviewed inputs have changed. Each question
-gets fresh profile budgets, and questions to one session run in order. See the
-[follow-up replay reference](others/state.md#follow-up-replay)
-for caching, stored messages and compatibility details.
-
-A reference to another machine or state fails with where it lives, for example
-`Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
-5d0e…`. A session the size-bound collection deleted reports `was removed by the
-session GC`, and one that was never saved `was not saved`.
-
-**Retention.** The session store is bounded by size in
-[`limits.json`](others/state.md#agent-sessions) (`agentSessions`):
-once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
-it is at or below `targetBytes` (768 MiB). This runs once a `verify` Run has scheduled
-and settled its evals (a Run that fails earlier skips it) and in `artifactize prune`,
-and never touches the session of a request that is still running
-or one a `session send` holds. `doctor` shows the store's size. `"enabled": false`
-stops saving new conversations.
-
-**Privacy.** A conversation contains everything the reviewer read through its tools,
-including file contents, and everything it wrote. It stays on this machine in
-owner-only files and is never uploaded, including to the team review store. A
-follow-up sends the conversation to the review's own backend, as each review turn
-does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
-`$STATE/agent-sessions` to remove what is saved.
+Read a saved conversation with `session show`, count it with `session show --summary` and
+ask it a follow-up with `session send`; see [Agent sessions](../cli/index.md#agent-sessions).
 
 ## Codex
 
-`codex` reviews with the Codex models of a ChatGPT plan, such as `gpt-6-luna` and
-`gpt-6.1-sol`, through the Codex Responses endpoint
-(`https://chatgpt.com/backend-api/codex/responses`). It follows the protocol of Pi's
-`openai-codex` provider.
+`codex` reviews with the Codex models of your ChatGPT plan, such as `gpt-6-luna` and
+`gpt-6.1-sol`.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
@@ -352,48 +218,37 @@ artifactize verify --all --wait
 artifactize logout codex    # delete artifactize's tokens; their revocation is attempted
 ```
 
-- **Sign-in.** `login codex` uses the Codex OAuth client with PKCE, as the Codex
-  CLI does. If another process holds callback port 1455, sign-in asks for the full
-  redirect URL instead of waiting for a callback. Copy the URL starting
-  `http://localhost:1455/auth/callback?code=` from the address bar after a failed
-  load, or DevTools → Network if the page keeps loading, and paste it into the
-  terminal or desktop sign-in. See [sign-in setup](../getting-started/install.md#backends)
-  for the browser flow.
-  It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`
-  (0700 directory, 0600 single-link file, never followed through a symlink, replaced
-  atomically). Use the same `--state-dir` for `login`, `models` and `verify`.
+- **Sign-in.** `login codex` opens ChatGPT's sign-in page in your browser, as the
+  Codex CLI does, and returns to artifactize when you have signed in. The browser steps,
+  the pasted-address fallback and the five-minute limit are in
+  [sign-in setup](../getting-started/install.md#backends).
+  It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`, readable
+  only by you. Use the same `--state-dir` for `login`, `models` and `verify`.
   Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git
   work tree, an artifactize workspace or `--repo`, `login codex` refuses and names the
   folder, and `doctor` warns
   ([State](others/state.md#state)). Use a state directory outside
-  it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token under a lock five minutes before it
-  expires, so concurrent Runs refresh it once. When the server rejects the refresh
-  token for good, the tokens are deleted and the review says to sign in again.
+  it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token before it expires. When
+  the server rejects the refresh token for good, the tokens are deleted and the review says to sign in again.
 - **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example
-  to `~/.codex/auth.json`, artifactize reads that file's `tokens.access_token` (and
+  to `~/.codex/auth.json` (a regular file of at most 1 MiB; anything else is refused and
+  gives no sign-in), artifactize reads that file's `tokens.access_token` (and
   `tokens.account_id`) on every turn instead of its own tokens. It never writes,
   copies or refreshes the file. Once the token has a minute or less left, reviews
   fail with a message to sign in with Codex again, for example with `codex login`. `logout codex` leaves
   the file alone.
-- **Requests.** Each turn streams one Responses request with `store:false`,
-  `include: ["reasoning.encrypted_content"]`, the review's tools as function tools and
-  the review's system prompt as `instructions`. When `reasoning` is set it sends
-  `reasoning: {"effort": <reasoning>, "summary": "auto"}`, with `max` passed as is. The
-  headers name the bearer token, `ChatGPT-Account-Id`, `originator: artifactize`,
-  `OpenAI-Beta: responses=experimental` and the review's `session-id`
-  ([prompt caching](#prompt-caching)). Retries, budgets, tool results and usage work
-  as for `openai`.
+- **Requests.** The provider keeps nothing of the conversation; the `reasoning` you
+  declare is sent as is, `max` included, with reasoning summaries shown in Monitor.
+  Retries, budgets, tool results, [prompt caching](#prompt-caching) and usage work as
+  for `openai`.
 - **Errors.** A usage limit is `QUOTA`: it names the plan and when it resets, and
   stops `codex` for the Run. A plain HTTP 429 is a `RATE_LIMIT`, retried. HTTP 401
   and 403 are `AUTHENTICATION` and say how to sign in again. A token endpoint that is
   unreachable or failing during a refresh is `TRANSIENT`.
-- **Reuse.** Like any backend, `codex` records its backend, model, reasoning and
-  limits on each result, outside the reuse key: a `codex` result and an `openai` or
-  `anthropic` result for the same eval and fingerprints reuse each other.
-- **Models.** `models codex` asks `GET <root>/models?client_version=0.160.0`, the
-  catalog that the Codex release whose protocol artifactize follows receives. It lists
-  the models whose `visibility` is `list`, as the Codex model picker does, in server
-  order. A profile may name any model your account can use, listed or not.
+
+- **Models.** `models codex` lists the models the Codex model picker shows for your
+  account, in the server's order. A profile may name any model your account can use,
+  listed or not.
 
 ## Test against a fake provider
 
@@ -466,8 +321,6 @@ export ARTIFACTIZE_OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=dummy
 ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all --wait
 ```
 
-To exercise a tool, answer the first request with a `function_call` output item
-(`call_id`, `name`, JSON-encoded `arguments`). Its `response.completed` event must
-follow `response.output_item.added` and `response.output_item.done` events for the
-call. The next request's `input` then carries the tool's `function_call_output`.
-Answer that one with the verdict message.
+To try a command tool on its own, without a model, use
+[`tools check --execute`](../cli/index.md#tool-diagnostics); its input and output follow the
+[command tool protocol](tools/agent.md).

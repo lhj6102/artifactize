@@ -1,8 +1,10 @@
 # Fingerprints and reuse
 
-A fingerprint says what an Artifact's reviews depend on. An eval's earlier result
-is reused when the eval is unchanged and the fingerprints of the Artifacts it
-depends on are unchanged, so review cost follows the size of a change.
+Run `artifactize verify --all --wait` twice: the second time every eval reports
+`GREEN (reused …)` and nothing runs again. Change one file and verify again: only the evals
+that depend on that file run. A fingerprint says what an Artifact's reviews depend on. An
+eval's earlier result is reused when the eval is unchanged and the fingerprints of the
+Artifacts it depends on are unchanged, so review cost follows the size of a change.
 
 ## Fingerprints
 
@@ -38,8 +40,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   declaration and fails discovery.
   A neighboring file Artifact's target remains in the folder's hash; it creates
   no automatic child relation.
-- `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without
-  negation. They always exclude, like the built-in ignores `.git`,
+- `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
+  negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
   exclude more, with git semantics: every one from the repository root (`--repo`)
   down through the Artifact and walked directories applies. A pattern is relative
@@ -53,7 +55,7 @@ file Artifact. Omit the field for its default; use a script if the fingerprint
 needs to cover more than the file.
 
 The old `dependencies` fingerprint option is rejected: a fingerprint covers only its own
-Artifact. Walk limits and manifests are in the [reference](declarations.md#artifactsum); the script form is under
+Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the script form is under
 [fingerprint scripts](declarations.md#fingerprint-scripts).
 
 ## The reuse key
@@ -65,11 +67,9 @@ An eval depends on its target Artifact and on what the target directly connects:
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
-script can read a file of any Artifact it names in its args. The key is
-
-```text
-hash(Eval definition hash, sorted (Artifact name, kind, fingerprint) of each covered Artifact)
-```
+script can read a file of any Artifact it names in its args. So a result is reviewed
+again when the eval's criteria change, or the name, kind or fingerprint of its target or of
+an Artifact it covers changes.
 
 Artifact names and kinds (`folder`, `file` or `graph`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses
@@ -79,8 +79,8 @@ Changing a covered Artifact's name changes the key. Differently named targets ca
 still share a result when their evaluation criteria and complete covered Artifact
 maps match: the key does not separately identify which covered Artifact is the target.
 For example, two Artifacts whose identical evals reference each other can share results.
-The **Eval definition hash** is lowercase SHA-256 of canonical JSON with recursively
-sorted keys over the **evaluation criteria**:
+The **Eval definition hash** changes whenever one of the eval's **evaluation
+criteria** changes:
 
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
@@ -99,20 +99,19 @@ have a fingerprint. Omission supplies artifactsum for folder and file Artifacts,
 including basis Artifacts of those kinds; graph Artifacts always supply their
 structural graph fingerprint. If a folder or file Artifact declares
 `fingerprint = false`, the eval has no reuse: every `verify` reviews it
-again. For an unforced READY Runtime/Agent eval, `status` names the disabled target
-or dependency in its execution reason. A READY Human eval instead gives the
-request-awaiting-claim-and-submission reason; forced, blocked and waiting evals
-use their respective execution, gate or wait reasons.
+again. `status` explains each eval's state and action; see
+[Status states](../cli/index.md#status-states).
 
 ## Completed result reuse
 
-A successful end-of-review recheck adds the GREEN or RED result to its key's
-history: its self-contained `executions` row gets its completion time, size and last
-use ([State](others/state.md#state)). Errors and cancellation are
-never recorded there. When a key holds more than one record,
+A GREEN or RED result whose inputs were unchanged at the end of its review is kept
+for its key ([cache inspection](../cli/maintenance.md#cache-inspection)). Errors and
+cancellations are never kept. When a key holds more than one record,
 the most recent by completion time is reused, GREEN or RED. Results from different
-profiles therefore reuse each other: a review that `--profile fast` produced
-satisfies the declared profile, and the other way around.
+profiles therefore reuse each other when their criteria and inputs are the same: a review
+that an Agent variant such as `--profile fast` produced satisfies the declared profile, and
+the other way around. A runtime variant whose command or arguments differ has its own key,
+and may name other inputs.
 
 Records retain their producing profile and provenance; the [Run result
 reference](run.md#verify-and-runs) owns the audit-field and source-kind inventory.
@@ -130,7 +129,7 @@ selection can supply cached evidence without running. Results remain readable
 after the source repository is deleted; external paths embedded in result text
 are not made portable.
 
-With a [team review store](team/reference.md#remote-review-store-client),
+With a [team review store](../cli/review-store.md#remote-review-store-client),
 `verify` also asks the store for every key and reuses whichever record completed
 last, the local latest or the store's latest; a store that cannot be reached leaves
 the local latest.
@@ -152,14 +151,12 @@ eval once, Human sign-offs included; later Runs reuse normally.
 ## Graph fingerprint
 
 The root [`.artf` graph Artifact](declarations.md#graph-artifact)
-uses `graph:<sha256>`, computed from one canonical, name-based extraction of the
-whole project's current declarations. Objects and relations are sorted; child
-folder locations and repository paths are not identities. Extraction includes:
+uses `graph:<sha256>`, which changes when the project's structure or criteria change,
+not when files move or their content changes. It covers:
 
 - Artifact names and kinds, `basis`, and fingerprint coverage: artifactsum `files`
   and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
-  The graph Artifact has a graph-coverage marker, not its own recursively embedded
-  digest.
+  
 - Input → consumer relations: child ownership (names, not child folder paths),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
@@ -175,8 +172,6 @@ suffixes remain meaningful; a relocation that preserves those logical declaratio
 and ownership does not change the graph fingerprint. Execution options are still
 saved in ordinary state records.
 
-This is only a fingerprint algorithm. Existing reuse keys, Runs, status and review
-flows decide whether to reuse or review again. The graph is evaluated against
-current state, never a stored diff or structural history. A graph eval title
-change invalidates its graph fingerprint even though titles are excluded from the
-ordinary Eval definition hash. Both built-in `graph` tools use this same extraction.
+A graph review always looks at the current structure, never a diff against an earlier
+one. Changing a graph eval's title reviews the graph again, although a title change does
+not do that for other evals.

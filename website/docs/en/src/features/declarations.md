@@ -1,7 +1,16 @@
 # Declarations (.artf)
 
-The exact rules for TOML declarations, folder and file Artifacts, fingerprints,
-Eval dependencies, scoped references and the runtime execution environment.
+Write an `index.artf` inside the folder you want to review (or a `NAME.artf` beside the
+file), then check it:
+
+```sh
+artifactize config check
+```
+
+It prints `Folder configuration is valid.`, or the error and exits 2: a mistake inside
+a declaration names its file, line and column, while a problem found on disk, such as a
+missing target file, names only the path. This page has the exact rules for declarations, folder
+and file Artifacts, fingerprints, references and how commands run;
 [Artifacts and evals](artifact.md) introduces them.
 
 ## Migrating removed dependency declarations
@@ -43,8 +52,9 @@ crates/app/tests/
 examples/
 ```
 
-Names, eval IDs, tool/session names and profile variant names match
-`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Artifact names are globally unique. Evals are
+Names, eval IDs, tool/session names and profile variant names start with a letter or
+digit and have at most 64 letters, digits, underscores or hyphens
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
 by ID, not by their position in the TOML source.
@@ -66,16 +76,18 @@ by ID, not by their position in the TOML source.
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals; a Human eval's take only [form shapes](#human-result-schemas) |
 | `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind |
 
-[Tool sessions](tools/agent.md#tool-sessions) keep a harness alive for one review.
-Artifactize owns their start, stop, cleanup and crash recovery; declarations expose
-no lifecycle or cleanup-timing options. The linked reference gives the full contract.
+[Tool sessions](tools/agent.md#tool-sessions) keep a harness running for one review.
+Artifactize starts, stops and cleans them up; there are no lifecycle or timing options
+to declare.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
 `profile_variants`, `gate` and `mutex`.
-Unknown fields and camelCase spellings at these typed boundaries are rejected.
+Other keys, and camelCase spellings such as `timeoutMs` for `timeout_ms`, are rejected.
 JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
-keep their standard names. Owner-defined payload fields keep their chosen names.
+keep their standard names. Owner-defined payload fields keep their chosen names. They are kept with the eval
+and change its reuse key, but an Agent sees only `payload.instruction`, so write
+everything the reviewer needs there.
 `--json`, tool protocols and stored state keep their existing camelCase fields,
 such as `timeoutMs`, `passSchema`, `agentTools` and `blockedBy`; they are not
 declaration syntax.
@@ -107,10 +119,9 @@ TOML has no null value. Omit optional fields; do not use `null`. A schema may sa
 `type = "null"`, but literal null values such as a null `const` cannot be written.
 Unquoted TOML dates/times and non-finite numbers (`inf`, `nan`) are rejected
 anywhere, including payloads and schemas, because they have no JSON equivalent.
-Quote dates to use them as strings. Declaration errors name the `.artf` file,
-line and column when parsing or validating their contents, including syntax,
-deserialization, semantic validation and cross-Artifact reference errors. Field validation and unsupported-value errors
-also name the typed key path, such as `evals.check.profile.args`.
+Quote dates to use them as strings. A declaration error names the `.artf` file, line and column, whether the TOML does not
+parse, a value has the wrong type, or a field or reference is invalid. A wrong value also
+names its key, such as `evals.check.profile.args`.
 
 `config check` validates without executing fingerprint scripts or hashing files.
 Use it after rewriting declarations. Legacy declaration and ignore files are not
@@ -142,7 +153,11 @@ supplies `verdict`. For example, the `summary` schema above accepts
 A Human supplies just `{"summary":"All requirements are covered."}` as their form
 fields, with GREEN selected separately.
 
-The result envelope is deliberately narrower than a general JSON Schema:
+These schemas are JSON Schema: rules for which fields a result may have and which
+values they take. The schema of the whole result object, the **result envelope**, allows
+less than general JSON Schema does, including for references (`$ref`, which points to
+another schema) and composition (`allOf`, `anyOf`, `oneOf` and `not`, which combine
+schemas):
 
 - `type`, when present, must be `"object"`. `additionalProperties`, when present,
   must be `false`; artifactize forces both object type and closed properties in
@@ -233,8 +248,8 @@ always the current extracted graph. Otherwise ordinary Artifact rules apply:
 `basis = true` explicitly declares no own review obligations and cannot own evals;
 it does not satisfy unmet dependencies. A no-eval graph without `basis = true`
 remains UNREVIEWED, as any no-eval Artifact does. No source file is
-created or required. Ordinary Artifact cycles are allowed; extraction is flat and
-includes the graph Artifact's own declaration without recursive fingerprinting.
+created or required. Ordinary Artifact cycles are allowed, and the graph fingerprint also covers the graph
+Artifact's own declaration.
 
 The [graph fingerprint](fingerprint.md#graph-fingerprint)
 changes with structural definitions, not source file bytes or evaluation
@@ -267,31 +282,31 @@ root stay relative to the containing folder. Default artifactsum covers only the
 target file. A workspace can have only file Artifacts; it does not need a folder
 declaration.
 
-Omit `fingerprint` to hash the file. An explicit artifactsum form must be
-`fingerprint = { files = ["hero.png"] }` for `hero.png.artf`: only the target
-filename is allowed. `fingerprint = {}` and `files = ["."]` are rejected, as is
-`fingerprint.ignore`, even an empty list. Script fingerprints and
-`fingerprint = false` remain available.
+Omit `fingerprint` to hash the file; the [file-Artifact form](fingerprint.md#artifactsum)
+of artifactsum names only the target, and scripts and `fingerprint = false` work too.
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
 its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
-`execution_paths` stay workspace-relative provenance pins for all three kinds.
+`execution_paths`, the project-relative paths of tool files whose hashes are recorded
+to show which version ran, work the same for all three kinds.
 
-The target must remain an existing regular file with no symlink traversal, not
-just at discovery. It is validated at fingerprint preparation/recheck, before
-reuse, at eval start/end and on every Agent/Human tool call, including with
-`fingerprint = false`. A file invalid before eval admission produces
-ERROR/PREPARATION_FAILED. If accepting a completed Runtime/Agent result discovers
-that a target has become invalid, it records ERROR/INPUT_CHANGED instead of a
-semantic verdict. A Human action first reloads its recorded scope and declarations;
-if discovery or reconnection fails, for example because a file target is missing
-or invalid, the action fails without settling the waiting request. A changed
-fingerprint value after successful Human reconnection still settles
-ERROR/INPUT_CHANGED for a keyed request. Preparation failures abort before reuse
-or execution; tool calls return an error without running the tool.
+The target must stay a regular file, not a symbolic link, for as long as it is
+reviewed, also with `fingerprint = false`:
+
+- missing or invalid before its eval starts: the eval is ERROR/PREPARATION_FAILED;
+- missing or invalid when a Runtime or Agent review ends: ERROR/INPUT_CHANGED instead
+  of a verdict;
+- missing or invalid during a Human review: tools and submission fail, the request keeps
+  waiting, and you restore the file and try again;
+- changed contents: detected only through a fingerprint, so with `fingerprint = false`
+  an edit to the file is not noticed; otherwise a Runtime or Agent review, or a
+  sign-off, ends ERROR/INPUT_CHANGED;
+- a tool call on a missing or invalid target returns an error without running the tool.
+
+Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
+[upgrade reference](../getting-started/install.md#upgrading-from-011).
 
 ## Eval mutex tags
 
@@ -314,25 +329,24 @@ Omitting `mutex` (or declaring `mutex = []`) adds no constraint.
 Two evals conflict if any of their tags are equal or one is an ancestor of the
 other. `use-computer` conflicts with every descendant;
 `use-computer:db` conflicts with `use-computer:db:users`, but not with
-`use-computer:browser` or `use-computer:database`. All an eval's tags are acquired
-together, so partial acquisition cannot deadlock. It waits until no conflicting
-eval is running. This rule adds no priority, ordering or scheduling optimization.
+`use-computer:browser` or `use-computer:database`. Give the same tag, or an ancestor and its
+descendant, to evals that must not run together, such as two that drive the same display.
+An eval whose tag is held shows `QUEUED` with the holder named (below) and starts when it
+is released; tags add no priority or ordering, and evals waiting on each other's tags
+cannot deadlock.
 
-Held tags are recorded atomically with execution ownership in the machine's
-shared state store. They apply across Runs, worktrees and verify processes using
-that store, not only within a Run. A waiting request stays `QUEUED`; its
-`blockedReason` identifies the holding eval and Run. Waiting consumes no execution
-budget, backend slot or job slot. `timeout_ms` starts when the eval actually
-starts, not while it waits. Tags are released on completion or cancellation, and
-dead process owners or ended Runs cannot retain them. Separate explicitly chosen
-state directories are isolated stores, not a shared lock namespace.
+Tags apply to every Run, worktree and `verify` on the same state, not only within a Run;
+a different `--state-dir` has its own tags. A waiting request stays `QUEUED`, and its
+`blockedReason` names the eval and Run that hold the tag. Waiting uses no execution
+budget, backend slot or job slot, and `timeout_ms` starts only when the eval starts.
+Tags are released when the eval ends or is cancelled, also when its process dies or
+its Run ends.
 
 Tags describe the eval's own command or tools, never its Artifact: an Agent that
 only reads test code need not wait because another eval runs those tests. There
 are no implicit tags. Mutex tags are execution options, not evaluation criteria;
 changing them changes neither fingerprints nor reuse keys, and cached results
-can still be reused while a conflicting eval runs. Human try-claim behavior is
-not implemented.
+can still be reused while a conflicting eval runs.
 
 ## Human gate policy
 
@@ -363,22 +377,10 @@ Artifacts, cycles, scheduling and the Human prerequisites.
 
 ## Artifactsum
 
-[Fingerprints and reuse](fingerprint.md#artifactsum)
-describes `files` and `ignore`. Omitting `fingerprint` uses artifactsum. For a
-folder, `fingerprint = {}` does the same. A file Artifact's explicit artifactsum
-form must list its target filename. `fingerprint = false` disables reuse;
-`fingerprint = true` is rejected.
-
-The value is `artifactsum:` plus the SHA-256 over each input file's owner-relative
-path and the SHA-256 of its bytes, in path order. It covers only the Artifact's own
-files: a dependency's change reaches an eval through the dependency's fingerprint
-in the [reuse key](fingerprint.md#the-reuse-key). Folder walks
-exclude child Artifact folders and every `*.artf` file. Explicitly listing a
-`.artf` file in `fingerprint.files` fails `config check`, even if the file does not
-exist. Discovery also rejects non-regular `.artf` entries, including directories;
-a directory named `bundle.artf` is not an ordinary hashable input. File Artifacts
-hash only their target by default. Tags are not hashed and do not change the Eval definition hash or
-reuse key.
+Omitting `fingerprint` uses artifactsum; for a folder, `fingerprint = {}` does the same.
+`fingerprint = false` disables reuse and `fingerprint = true` is rejected. What it covers,
+`files`, `ignore` and the file-Artifact form are in
+[Fingerprints and reuse](fingerprint.md#artifactsum). Tags are not hashed.
 
 Walks follow scoped path rules. Symlinks and special files fail closed unless they
 are ignored. Every applicable `.gitignore` is read as rule metadata even when it is
@@ -386,33 +388,22 @@ itself ignored as content, so it must be a regular file, not a symlink, and at m
 1 MiB. Nothing is followed out of the owner, and a walk stops with an error
 after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
-therefore never cause `INPUT_CHANGED`. Artifactsum records a manifest with the
-execution: per-file digests (16 hex digits) and the inputs digest. A file map that
-would exceed 64 KiB is dropped from the manifest but still covered by the
-fingerprint. `status` diffs this manifest against the current one, and the key's
-recorded `fingerprints` against current dependency fingerprints.
+therefore never cause `INPUT_CHANGED`. Each result remembers which files it covered, so `status` can tell you which files
+changed since then (`path`, `+path`, `-path`) and which dependency changed; a very large
+folder may show only that something changed.
 
 ## Fingerprint scripts
 
 Before executing evals, `verify` computes fingerprints in their selected required
 dependency closure, including dependencies whose evals are not selected.
-Up to `--fingerprint-jobs N`
-fingerprints are computed at once (default: the CPUs available to the process),
-in `status` as in `verify`. A Run shares that bound between preparation and its
-Runtime/Agent end-of-review rechecks. **Human tool actions and submissions are
-separate operations**: each creates its own CPU-sized fingerprint parallelism,
-independent of the Run's `--fingerprint-jobs` setting.
-Values are keyed by Artifact, not completion order. A failure reports the first
-failing Artifact in name order and cancels fingerprints after it. Scripts run in
-separate private output directories. `--fingerprint-jobs 1` serializes that Run's
-preparation and Runtime/Agent rechecks, not all Human checks or other Runs.
+How many are computed at once is set by
+[`--fingerprint-jobs`](../cli/index.md#runtime-cli). A failure reports the first failing
+Artifact in name order and stops the rest. Each script gets its own private output
+folder.
 
-Every executable eval on an Artifact receives the same literal value, saved on
-its request and in the Run's Artifact validation. artifactize adds no repository,
-eval, profile, tool-view, dependency or content salt to script output. The eval's
-[reuse key](fingerprint.md#the-reuse-key) combines it with the
-Artifact names and kinds (`folder`/`file`/`graph`), dependency fingerprints and Eval
-definition hash. Physical paths never enter the reuse key. Artifactsum
+The script's output is used unchanged as the Artifact's fingerprint, the same for
+every eval of the Artifact, and saved with each request. How it combines with the
+criteria and dependencies is in [the reuse key](fingerprint.md#the-reuse-key). Artifactsum
 failures abort preparation in the same way.
 
 The command runs from its owner's working directory with JSON on stdin:
@@ -449,61 +440,43 @@ mandatory at preparation, eval start/end and tool calls, including for unkeyed
 evals. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
-## Scoped input library
+## Artifact references in commands
 
-`config::read_workspace_config` (also used by `config check`) resolves nearest
-child ownership, validates explicit references, and returns typed
-input-to-consumer `relations` for graph scheduling. Instruction references resolve
-a global Artifact name. Backslash-escaped braces, doubled
-braces, `${variables}`, nested/JSON groups and unmatched braces stay literal.
-Payloads are never changed and references never expand file content.
+Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
+`{name}`, `{name}/path` or `--flag={name}/path`. `{owner}/child/path` starts at a folder
+Artifact; a file reference is the file itself and takes no path. Each one becomes an
+absolute path when the command runs. In instructions and runtime arguments a reference
+makes the eval depend on that Artifact; in a fingerprint script it only lets the script
+read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
+doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
+never builds a command line from a string. An eval may read its target and the Artifacts it references, with
+their children. The instructions of the referenced Artifacts' evals are not added to its
+review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
-`scope::eval_scope` admits the target and explicit references plus their child
-closure, not the referenced Artifacts' eval instructions.
-`Scope::resolve_path` follows logical child paths to canonical Artifact
-ids; `Scope::resolve_input` additionally requires existing files/directories
-without symlink traversal. Logical paths reject absolute paths, traversal, empty
-components, backslashes, colons, ASCII controls and lengths above 4096 UTF-16 code units.
-Declared paths (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`)
-are shorter: up to 1024 units each.
+Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
+colons or control characters, or be longer than 4096 characters; paths you declare
+(`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
+`config check` checks the names and syntax of the profile each eval declares; references
+that appear only in a `profile_variants` entry are checked when that variant is selected, so
+run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
+exists, and that no symbolic link is followed, is checked when the command is prepared.
 
-Before preparing a runtime command, call `scope::resolve_argv` with the admitted
-scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to
-absolute scoped input paths and add dependencies even without instruction
-references. Use `{owner}/child/path` for logical paths starting at a folder owner.
-A file reference resolves to the file itself. Other arguments (including escaped
-references) remain literal, and the command is never interpolated. `config check`
-validates names and syntax but does not open runtime operands or execute programs.
-Input existence and symlink checks happen during argument preparation. Graph
-closure, runtime CLI execution and the Agent tool registry use these resolvers.
+## Runtime execution
 
-## Runtime execution library
-
-`runtime::Command::prepare(program, args, workspace, run_dir, timeout_ms)` prepares
-one invocation for `runtime::execute`. Arguments are literal; the runner never adds
-a shell. The default cwd is the canonical workspace; a scoped caller can set
-`command.cwd` to the Artifact's working directory (the containing folder for a
-file Artifact). `process::run` is the lower-level API for resolved commands with
-a complete explicit environment. `verify` uses the owner working directory as cwd.
+Artifactize runs the program with its arguments as written, without a shell, in the
+Artifact's folder (the containing folder for a file Artifact).
 
 Commands run in the author's own terminal environment, so a project declares them as
 it would type them: the whole environment of the `artifactize` process is passed on,
 including the real home and cache locations (`HOME`, `XDG_*`, and on Windows
 `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and the system variables), so toolchains
 that resolve through them, such as `cargo` or `pnpm` behind a version manager, work as
-in a terminal. What is artifactize's own stays out: every `ARTIFACTIZE_*` variable of the
-caller (its credentials such as `ARTIFACTIZE_REMOTE_TOKEN`, and its settings) is
-removed, and the command receives only the variables artifactize sets for it. Each
-prepared runtime command gets a fresh owner-only directory below the caller's external
-`run_dir`, with owner-only `output` and `tmp` subdirectories (0700 on Unix, a protected
-owner-only DACL on Windows). Children receive
-`ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`, and
-`TMPDIR`/`TMP`/`TEMP` pointing at the private temporary directory, which is removed
-when the command ends. Existing output ancestors are canonicalized before creation; output
-inside the canonical workspace, including through symlinks, is rejected. The
-caller owns the run directory; prepared output persists after execution for
-receipts and explicit pruning. Failed preparation removes its newly owned
-invocation directory, not the caller's root.
+in a terminal. Artifactize's own variables stay out: every `ARTIFACTIZE_*` variable of the
+caller (credentials such as `ARTIFACTIZE_REMOTE_TOKEN`, and settings) is removed. The
+command gets `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR` (a private folder for its
+output, kept after the Run until you prune it), `ARTIFACTIZE_TMP_DIR`, and
+`TMPDIR`/`TMP`/`TEMP` pointing at a private temporary folder removed when the command ends.
+Only you can read these folders, and they are never inside the reviewed project.
 
 Because commands see the author's environment, a result depends on it like any
 terminal command does, and it is not part of the
@@ -511,31 +484,19 @@ terminal command does, and it is not part of the
 does not invalidate a cached result. A fingerprint that must change with a tool's
 version has to read that version.
 
-The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms.
-It covers inert-child registration and execution without a reset. Each stdout
-and stderr **saved audit** retains the first 128 KiB. Runtime evals also retain
-full raw streams in private Run output, including the tail, until those captures
-are pruned or removed; `request logs`/MCP `request_logs` read bounded
-tail/range/search excerpts. Once a capture is gone, only the bounded saved audit
-may remain: paging cannot recover its missing tail. This is the skill's "until
-pruning" availability boundary, not a promise that every cleanup command removes
-all captures. Current `artifactize prune` removes recognized scratch
-subdirectories but leaves raw stream files and completion markers in invocation
-roots. It supplies no raw-capture retention policy; keep that current command
-scope distinct from pruning or deleting Run output itself.
-Missing, partial and older/remote audit-only evidence are reported explicitly. Runtime
-results decode UTF-8 lossily, remove ANSI CSI sequences and C0 controls except tab,
-LF and CR (DEL is preserved), and retain the truncation flag and actual exit
-status/duration. Low-level process results remain unmodified bytes.
+The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms. The
+result keeps the first 128 KiB of stdout and of stderr, with a flag when it was cut, and
+the exit status and duration. Text is read as UTF-8 (invalid bytes replaced), with
+terminal color codes and ASCII control characters other than tab, LF and CR removed (DEL is kept). The full
+streams stay in the Run's output, where `request logs` and MCP `request_logs` read their
+end, a range or matching lines. Once a capture is deleted, only the saved first 128 KiB
+remains. `artifactize prune` removes the Run's `output` folder but keeps these stream
+captures. Evidence that is missing, partial, or saved only by an older or remote
+artifactize is reported as such.
 
-Cancellation and timeout stop the owned child tree. On Unix, artifactize sends
-SIGTERM to its process group, then SIGKILL after at most one second. On Windows,
-it attempts Ctrl-Break for the console group, then terminates the owned Job
-Object after the grace period. Ordinary leader exit also cleans up the group or
-job. Capture stops waiting at most one second after cleanup if a pipe remains open.
-Dropping the caller cancels the supervisor, which still cleans up and reaps the
-leader. Configured programs are trusted local code, **not an OS sandbox**: they
-can use ordinary OS access, must keep reviewed input unchanged, and descendants
-that deliberately leave the owned process group or job may escape cleanup. These
-controls do not promise confinement or detection of every adversarial transient
-write.
+When the command ends, whether normally, by cancellation or by a timeout, the programs
+it started are stopped too, so nothing it started in the background outlives it; use an
+Agent [tool session](tools/agent.md#tool-sessions) or a Human
+[launch tool](tools/human.md#running) for a helper that must keep running. Commands are trusted local code, **not a sandbox**: they can do
+whatever your account can, must not change the reviewed input, and a program that
+deliberately detaches from the command may keep running.

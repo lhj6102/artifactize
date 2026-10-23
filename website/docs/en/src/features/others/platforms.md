@@ -1,9 +1,12 @@
 # Operating systems
 
-artifactize runs on Linux (x86_64 and aarch64), macOS (Apple silicon and Intel) and
-Windows (x64). WSL 2 runs the Linux build. [Install](../../getting-started/install.md)
-has the channels for each. A project, its declarations and its reviews are the same
-on every OS; this page lists what differs.
+Declare each command and path once, the same way for every OS: artifactize runs it on
+Linux (x86_64 and aarch64), macOS (Apple silicon and Intel) and Windows (x64), and WSL 2
+runs the Linux build. Before a review, `artifactize tools check` reports a tool whose
+program cannot be found; during a review, a Runtime eval whose program cannot start is
+ERROR rather than RED, and a tool whose program cannot start returns a tool error while
+the review goes on. [Install](../../getting-started/install.md) has the channels for
+each OS. This page lists what differs between them.
 
 ## Project commands run as declared
 
@@ -11,23 +14,19 @@ Runtime evals, fingerprint scripts, command Agent tools and command Human tools 
 their `command` with `args` as one argument vector on every OS. There is no shell and
 no per-OS variant of a declaration. A project declares commands that exist where it is
 reviewed: an eval that runs `python3` or `grep` needs them on every reviewer's `PATH`.
-For reading, searching and opening files, the [built-in tools](../tools/builtin.md) work
-everywhere without an external program.
+For reading and searching files, the [built-in tools](../tools/builtin.md) work
+everywhere without an external program. `open` uses the system opener: `open` on macOS,
+the default application on Windows, and `xdg-open` on Linux and WSL, which must be
+installed.
 
-Runtime evals, fingerprint scripts and command Agent tools also run in the author's own
-environment: `artifactize` passes on its whole environment (the home and cache variables of
-each OS, and on Windows the system variables too), so a toolchain behind a version manager
-resolves as in a terminal. Only `ARTIFACTIZE_*` variables are withheld, and each run gets a
-private `TMPDIR` (`TMP` and `TEMP` as well) of its own. See the
-[runtime environment](../declarations.md#runtime-execution-library). Command Human tools
-inherit the reviewer's complete environment, `ARTIFACTIZE_*` variables included, and get no
-private temporary or output directories ([Human tools](../tools/human.md)).
+Commands run in your own environment, as described in
+[Runtime execution](../declarations.md#runtime-execution). What differs by OS: on Windows
+the system variables are passed on too.
 
-On Linux, the desktop app started from its AppImage (directly or through `install.sh`'s
-launcher) runs with the bundle's directories first in `PATH`, `LD_LIBRARY_PATH` and
-similar lists, and with variables of the bundle's own, so that it loads its bundled
-libraries. Every program the app starts gets the environment the app was started with:
-those entries and variables are left out, and system programs load their own libraries.
+On Linux, programs the desktop app starts from its AppImage get the environment the app
+was started with, minus the settings the AppImage adds. A variable you had set that the
+AppImage overwrote, such as `GTK_THEME`, is removed rather than restored; set it again in
+the command if it needs it.
 
 ## Program lookup
 
@@ -50,14 +49,13 @@ lookup, including absolute paths, parent-relative paths and executable symlinks.
 Its subcommand arguments are forwarded unchanged, not resolved as scoped file
 operands. It runs a trusted program, not an operation confined to Artifact files.
 
-Windows batch files (`.cmd`, `.bat`) run directly, without a shell string: the Rust
-standard library quotes each argument for `cmd.exe` and refuses an argument it cannot
-pass safely. The error reads `Process arguments could not be passed safely`, and
-nothing runs.
+Windows batch files (`.cmd`, `.bat`) can be a command, but not every character can
+reach them as an argument. artifactize refuses such an argument instead of passing it
+changed. The error reads
+`Process arguments could not be passed safely`, and nothing runs.
 
-Tool sessions use process groups on Unix and kill-on-close Jobs on Windows.
-Artifactize owns their cleanup and recovery; the cross-platform
-[tool-session contract](../tools/agent.md#tool-sessions) explains the guarantees
+Tool sessions are stopped and cleaned up the same way on every OS; the
+[tool-session contract](../tools/agent.md#tool-sessions) explains what that covers
 and the limits of trusted commands.
 
 ## Paths
@@ -95,9 +93,8 @@ accepts `xdg-open`'s exit status 4. `login codex` also prints its sign-in URL fo
 ## Desktop console launches
 
 On Windows, launching `artifactize` without arguments from Start or Explorer shows
-help plus a terminal hint and waits for Enter if this process is the console's
-only attached process and both stdin and stdout are consoles. It never pauses
-with arguments, from an existing terminal, or with redirected input/output. Linux
+help plus a terminal hint and waits for Enter, so the window does not close at once. It
+never pauses with arguments, in a terminal you opened, or in a script. Linux
 and macOS retain the ordinary no-argument help and immediate exit.
 
 The Microsoft Store package has two visible entries, **Artifactize** for the desktop

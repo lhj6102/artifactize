@@ -50,7 +50,8 @@ Configure other CI services through their equivalent secret/environment settings
   A review that only the store holds is then not reused, so the Run is INCOMPLETE.
 - A rejected token, a TLS failure or an invalid configuration fails the job (exit 2),
   so a misconfiguration is never skipped silently.
-- `ARTIFACTIZE_REMOTE=off` disables the store for one command.
+- `ARTIFACTIZE_REMOTE=off` disables the store for one command. A `remote.json` that
+  cannot be read still fails the command: fix or remove it first.
 
 The [team walkthrough](walkthrough.md#5-ci-reuses-both) runs this end to end.
 

@@ -18,13 +18,12 @@ sign-off lets dependent checks continue in the same Run. Watching or closing a
 terminal does not make the decision. The [Run lifecycle](run.md#submit-observe-and-cancel)
 explains submission, watching and explicit cancellation.
 
-A **reviewer claim** reserves the request for the person reviewing it. This is
-different from artifactize's automatic **reuse-key lock**, which prevents two Runs
-from starting the same matching review simultaneously. Another Run, even from a
-different checkout, can join the existing waiting review; its request is called
-a **follower**. Human actions on a follower go to the original request and
-repository. `--force` bypasses that automatic reuse-key lock, not the need for a
-person to claim the request before acting.
+A **reviewer claim** reserves the request for the person reviewing it. Separately,
+when another Run, even from a different checkout, needs the same sign-off with the same
+inputs and profile, it joins the waiting review instead of asking again; its request is
+called a **follower**, and Human actions on it go to the original request and repository.
+`--force` asks for a new sign-off instead of joining, but a person still claims it before
+acting.
 
 Sign-offs reuse by default when their [reviewed inputs](fingerprint.md) still
 match. A later `verify` can reuse the submitted result and review its consumers.
@@ -51,21 +50,8 @@ artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true
 artifactize review [REQUEST_ID]
 ```
 
-Claim, unclaim, tool and submit default the reviewer to `$USER`; `--reviewer NAME`
-can select the same explicit reviewer for each action. Reviewer names are local
-cooperative locks, not authenticated accounts. Only the claimant can run tools,
-submit or unclaim. `request claim` prints the claim and `request unclaim` the
-released claim; unclaiming a request someone else holds, or one that no longer
-waits, exits 2. Tool names are `<operation>_<artifactId>` and take no free arguments.
-Text output prints captured text or a launch notice; `--json` prints the tool
-result. A tool failure exits 2 and does not invent a verdict.
-
-Submission requires `--verdict GREEN|RED`. `--fields` and `--fields-file` are
-mutually exclusive JSON objects of owner fields (default `{}`), not verdict
-wrappers. Files must be regular files; fields and the complete result are bounded
-at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
-leave the request correctable. A successful submission exits 0, even for RED;
-it does not start a separate verifier.
+Every option, output and exit code of these commands is in
+[Human requests](../cli/index.md#human-requests).
 
 The [Run exit codes](../cli/index.md#command-reference) distinguish interrupted
 observation, explicit cancellation and missing review obligations.
@@ -73,15 +59,17 @@ observation, explicit cancellation and missing review obligations.
 never records a Human request or waits: a Human eval reuses a sign-off or is
 [not executed](../cli/index.md#reuse-only), as CI wants.
 
-The [reference](tools/human.md#human-reviews) has the library API, the
-`request list` and `request show` fields and Run summaries.
+The [reference](tools/human.md#in-a-review) has the `request list` and
+`request show` fields and Run summaries.
 
 ## Deferred sign-offs
 
-Choose `verify --defer-human` for a workflow where a person reviews the final
-state rather than steering each execution. It is per request, not a machine
-setting, and defaults off. `--speculate` can independently speed machine work;
-combining it with deferral still asks for deferrable sign-offs last.
+Choose `verify --defer-human` when people should sign off without steering each
+execution. It is per request, not a machine setting, and defaults off. Machine work
+continues past pending sign-offs, and a sign-off is requested as soon as its own
+Artifact's machine evals are GREEN, possibly while other work still runs; wait for
+that work to finish if you want to review the final state. `--speculate` can
+independently speed machine work.
 
 For a reviewer, a deferred sign-off is an ordinary one marked DEFERRED: it is
 listed with WAITING_HUMAN requests in `review`, monitor, desktop and request
@@ -113,8 +101,8 @@ speculation substitutes for actual reusable Human GREEN evidence.
 
 ## Human tools
 
-`views.human_tools` is a separate safe-name map of predefined tools. The reviewer runs
-them; they take no free arguments. A [built-in tool](tools/builtin.md)
+List the reviewer's tools under `views.human_tools`, one named entry per tool. The
+reviewer runs them; they take no free arguments. A [built-in tool](tools/builtin.md)
 works the same on Linux, macOS and Windows: `open` opens a file, folder or `http(s)`
 URL in the desktop's default application; `graph` launches the current project
 graph viewer. `read`, `list`, `section` and `help` print text in the terminal.

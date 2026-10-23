@@ -1,7 +1,9 @@
 # CLI
 
-Every command, its flags, output and exit codes, then the details of `verify`
-policy, budgets, selection files and profile variants.
+Run `artifactize verify --all --wait` in a project to review it: it names the Run, waits
+for it and prints each eval's outcome, then exits 0 when everything is GREEN. This page lists
+every command with its flags, output and exit codes, then the details of `verify` policy,
+budgets, selection files and profile variants.
 
 ## Command reference
 
@@ -23,7 +25,8 @@ to that program, not artifactize.
 `verify --evals app/lint,app/tests` or `verify --artifacts app,docs`.
 `--evals` and `--artifacts` may each be repeated; their values add up in order,
 duplicates dropped.
-`help [COMMAND]` and `-h`/`--help` print help. `-V`/`--version` prints the version
+`help [COMMAND]` and `-h`/`--help` print help, as does `artifactize` with no command
+(exit 0; still text with `--json`). `-V`/`--version` prints the version
 on the root command and on `artifactize tools`.
 
 | Command | Flags | Output | Exit |
@@ -59,17 +62,17 @@ on the root command and on `artifactize tools`.
 | `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
 | `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | `Signed in with Codex.`; JSON `{"provider":"codex","signed_in":true}` | 0 |
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
-| `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
-| `remote logout` | | text or JSON | 0 |
-| `remote status` | | text or JSON | 0 signed in, 1 not |
+| `remote login URL` | `--share summary\|full` (summary); token on stdin | `Signed in to URL as NAME (scopes: …).`; JSON `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
+| `remote logout` | | `Signed out of the remote review store.` plus a note that the server keeps the token valid until `server token revoke`; JSON `{"signedIn":false}` | 0 |
+| `remote status` | | URL, share, token source, reachability, then principal and scopes or the error; JSON below | 0 signed in, 1 not |
 | `remote push` | `--dry-run` | text or JSON | 0 |
 | `models openai\|anthropic\|codex` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor [PATH]` | starts on ALL; PATH or `--repo PATH` selects only the initial repository; `--all` conflicts with a path | terminal UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
-| `server run` | `--listen ADDR` (`127.0.0.1:8417`) | `Listening on http://ADDR/`; JSON `{"listen":ADDR}` | 0 |
-| `server token add NAME` | `--scopes read,publish,human` | the token, once, and a reminder to store it; JSON `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
+| `server run` | `--listen ADDR` (`127.0.0.1:8417`): a numeric `IP:PORT` (`[::1]:8417` for IPv6), no hostnames; port 0 picks a free port, which the output names | `Listening on http://ADDR/`; JSON `{"listen":ADDR}` | 0 |
+| `server token add NAME --scopes SCOPES` | `--scopes` (required, no default; a comma list of `read`, `publish`, `human`) | the token, once, and a reminder to store it; JSON `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | text or JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON (also without `--json`) | 0 |
 | `server rm KEY` | | JSON | 0 |
@@ -118,31 +121,17 @@ non-ASCII text and longer names are rejected with exit 2 **before opening the
 token store**. This name is a display label, not the bearer secret.
 
 `session show` and `session send` read and continue an Agent review's
-[saved conversation](../features/agent.md#saved-conversations). `REF` is the
-request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request
-id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
-review that produced it. `show` prints the conversation as text, and with `--json` the
-stored events as they are: `{"reference","file","events"}`. `show --summary` prints
-the [session summary](../features/agent.md#session-summary), computed from the
-session file alone: the backend, model and time span, the turns with their tokens and
-the total, the tool calls per tool with how many failed, and the follow-ups; `--json`
-prints `{"reference","sessionId","requestId","backend","model","reasoning","startedAt","endedAt","durationMs","followUps","turns","tokens","toolCalls"}`.
-`send` prints the answer under a header naming the session, the follow-up number and
-the model, and `files changed since this review` when an Artifact the review covered
-changed; `--json` prints `{"reference","sessionId","requestId","send","filesChanged","answer","usage"}`.
-Both exit 2 for a reference to another machine or state, a session the GC removed, one
-that was not saved, a request that is still running (`send`), and a failed follow-up.
+[saved conversation](../features/agent.md#saved-conversations); their arguments, output
+and errors are in [Agent sessions](#agent-sessions).
 
-Commands opening an existing state apply supported additive schema upgrades with write
-access. Schemas 6 to 8 upgrade to 9 (6 → 7 → 8 → 9, each step additive) while preserving Runs,
-cache and Human approvals; schemas 1–5 and versions above 9 are refused ([State](../features/others/state.md#state)).
-`doctor` reports an incompatible schema as a hard error and exits 1.
+Every command that opens an older state upgrades it as described in
+[State](../features/others/state.md#state); a state it cannot open exits 2, and `doctor`
+reports it as a hard error and exits 1.
 
 ## Submission and watching
 
 Plain `verify` submits, prints the Run ID and exits 0 on acceptance; add `--wait` where
-a script needs the outcome's exit code. A repeated `--request-key` returns its original
-Run. [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel) owns the
+a script needs the outcome's exit code. A repeated `--request-key` returns its original Run; a key is 1–128 ASCII letters, digits, `.`, `_`, `:` or `-`, and any other key exits 2. [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel) owns the
 details.
 
 ```sh
@@ -150,6 +139,13 @@ artifactize verify --all --request-key build-42
 artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
+
+`verify --wait` names the Run on stderr, waits for it to end, then prints each eval's
+outcome and exits with the Run's [exit code](#command-reference). Up to 64 KiB of the
+Run's own diagnostics and any Run error also go to stderr, with `--json` too. The
+[runtime-relations example](../getting-started/examples.md) shows GREEN, RED and
+blocked evals side by side.
+
 
 ## Verify modes
 
@@ -162,11 +158,13 @@ with the same `--request-key` retains the first request's modes.
 | Neither | Wait for dependency GREEN evidence; the owned Run waits for people |
 | `--defer-human` | Wait for machine gates; run past deferrable sign-offs provisionally |
 | `--speculate` | Start all requested kinds before unresolved gates; wait for people |
-| Both | Start machine reviews speculatively; ask for deferrable sign-offs last |
+| Both | Start machine reviews speculatively; ask for deferrable sign-offs once their own prerequisites pass |
 
 In every mode, a Human eval is asked only once every other non-Human eval of its
 own Artifact is GREEN, and is BLOCKED when one of them is RED or ERROR.
-These modes change execution order, not approval. `verify --wait` uses the
+With `--speculate`, newly ready work can interrupt a running speculative review to free
+`--jobs` or backend capacity; that review starts again later and uses another
+`--max-executions` start. These modes change execution order, not approval. `verify --wait` uses the
 ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5
 SIGNOFFS_PENDING. [Execution modes](../features/run.md#speculation-and-deferred-sign-offs)
 explains scheduling, cancellation, provisional results, strict Human gates and
@@ -174,22 +172,10 @@ later sign-off reuse.
 
 ## Runtime CLI
 
-These development examples require a source checkout, Rust and the platform
-build prerequisites from [Installation](../getting-started/install.md#build-from-source-all-platforms).
-Run them from the repository root; `cargo run` builds the CLI from that checkout.
-For an installed CLI, use `artifactize` directly with your own project's path.
-
-```sh
-cargo run -q -p artifactize -- --repo crates/artifactize-core/tests/fixtures/runtime verify --all --wait
-cargo run -q -p artifactize -- run show RUN_ID
-```
-
-The fixture intentionally includes GREEN, RED, a timeout ERROR, RED-blocked and
-ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
 
 [Runs, status and validation](../features/run.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-See the [upgrade reference](../getting-started/install.md#removed-gate-bypass-settings)
+See the [upgrade reference](../getting-started/install.md#upgrading-from-011)
 for removed legacy gate-bypass settings. `--force` marks only explicitly
 selected executable evals for a fresh review, not recursive dependencies; it
 neither expands
@@ -200,18 +186,17 @@ published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
 Speculation and deferral never waive final requirements.
 
-[In-flight sharing](../features/others/state.md#state) explains when concurrent
-Runs join the same execution, and how profile identity, takeover and `--force`
-affect that automatic sharing.
+[Runs share work](../features/others/state.md#state) explains when concurrent Runs
+join the same review and how `--force` changes that.
 
 There is no default eval-concurrency cap: every READY eval starts as soon as it is
-ready. Add `--jobs N` (minimum 1) only when that concurrency causes trouble; it
+ready. Add `--jobs N` (1–4294967295) only when that concurrency causes trouble; it
 then bounds the evals of this Run. Agent reviews are still
 bounded machine-wide per backend by `$STATE/limits.json`
 ([Backend capacity](../features/others/state.md#backend-capacity)); a request waiting for a backend slot
 holds no optional `--jobs` slot and no executor start.
 
-`--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
+`--fingerprint-jobs N` (on `verify` and `status`, 1–4294967295) bounds how many
 fingerprints are computed at once; the default is the number of CPUs available to
 the process. In `verify`, one shared bound covers preparation and Runtime/Agent
 end-of-review rechecks, independently of `--jobs`, which bounds evals. Human tool
@@ -219,8 +204,7 @@ actions and submissions separately use CPU-sized fingerprint parallelism and do
 not inherit this setting. Results and output do not depend on the bound or on
 completion order.
 
-`verify --max-executions N` sets a nonnegative, shared per-Run executor-start
-budget (unlimited when omitted); it is not an Artifact declaration field.
+`verify --max-executions N` sets a shared per-Run executor-start budget of 0–18446744073709551615 (unlimited when omitted); it is not an Artifact declaration field.
 The Run records an explicit `jobs` cap (the field is absent when unlimited),
 `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
@@ -229,11 +213,11 @@ joined waiters
 consume none. Failures in initial executor preparation consume no start. Agent
 `execution_paths` pinning happens after a start is charged: a pinning failure still
 consumes that start and records ERROR/PREPARATION_FAILED without calling the model.
-Zero permits reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
-its own Run's remaining budget. Exhaustion never interrupts running evals, but
+Zero permits reuse, joining and Human reviews; a Run that has to run a review again
+because the Run it joined failed uses its own remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
-error. There are no reservations, refunds, admission pools or restart ledger.
+error.
 
 Human waiting and cancellation follow [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel);
 the [Human guide](../features/human.md) covers claims, tools and sign-offs.
@@ -250,14 +234,10 @@ for every executable eval included by the selection and recursion policy before
 applying variants.
 Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
-Run, and source declarations are never rewritten. The library accepts
-`project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
-qualified-eval-to-name map); mappings outside that pre-variant included scope fail.
-With `--recursive`, variants apply to executable dependencies already in that
-scope. Runtime variant arguments then rebuild scoped references and dependency
-gates, and the included scope is recomputed. Dependencies newly included through
-those variant arguments retain their default profiles; the named variant is not
-applied again to the expanded scope. The selected
+Run, and source declarations are never rewritten. With `--recursive`, the variant also
+applies to the dependencies already selected. For example, if `app/review --profile fast`
+runs a runtime variant whose arguments name `{fixtures}`, then `fixtures`' evals join the
+Run with their default profiles, not `fast`. The selected
 variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
 variant changes the command or args. Stored request `profile` and `options`
@@ -271,7 +251,7 @@ variant with identical settings shows no marker and is identified by its saved
 
 `verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent`
 and `human`. An Eval of a listed kind may only reuse a result: a completed record of its
-reuse key in the local cache, or in the [review store](../features/team/reference.md) when one is
+reuse key in the local cache, or in the [review store](review-store.md) when one is
 configured. When there is none, the eval is not executed: no executor start, no
 provider call, no Human request, and no waiting, not even for a live execution of
 the key. A forced eval reads no cached result, so `--force` on a listed kind never
@@ -302,9 +282,32 @@ For which evals wait or block, including dependency cycles, see
 [Eval dependencies](../features/artifact.md#eval-dependencies).
 
 Status uses `execute`, `reuse`, `wait` and `blocked` actions. Requests, validation
-and status carry `blockedBy` qualified Eval IDs. The monitor groups gate Evals by
-Artifact under `Waits for`. Tags, file kinds and paths remain visible in graph,
-status and monitor output.
+and status carry `blockedBy` qualified Eval IDs. Tags, file kinds and paths appear
+in graph and status output; [Monitor](../tui/index.md#monitor) shows them on screen.
+
+### Status states
+
+`status` prints a state for each Artifact and eval. A state describes the current
+files and declarations, not a saved verdict: a saved GREEN whose reuse key still matches
+shows as `PASS`, and the action says what `verify` would do next.
+
+| State | Eval | Artifact |
+|---|---|---|
+| `PASS` | a GREEN result matches its current reuse key and its gates are met | its evals are `PASS` and the Artifacts it depends on are satisfied |
+| `RED` | a RED result matches its current reuse key | one of its evals is `RED` |
+| `BLOCKED` | a gate is RED | one of its evals is `BLOCKED` |
+| `WAIT_DEPENDENCY` | a gate has no current result yet | one of its evals is waiting |
+| `WAITING_HUMAN` | a Human request waits for a person | — |
+| `DEFERRED` | a deferred sign-off waits for a person | one of its evals is `DEFERRED` |
+| `PROVISIONAL` | GREEN, but a gate is still `DEFERRED` or `PROVISIONAL` | one of its evals is `PROVISIONAL` |
+| `STALE` | it was reviewed before, but no result matches its current reuse key (an earlier error, a keyless result or `--force` included) | one of its evals is `STALE` |
+| `UNREVIEWED` | it was never reviewed | none of its evals was reviewed, or it has no evals |
+| `INCOMPLETE` | — | its own evals are `PASS`, but an Artifact it depends on is not satisfied |
+| `BASIS` | — | a basis Artifact whose dependencies are satisfied |
+
+An Artifact shows the first of `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`,
+`PROVISIONAL`, `STALE` and `UNREVIEWED` that one of its evals has. `ERROR` belongs to Run
+output; `status` reports an eval whose last attempt failed as `STALE`.
 
 ## Saved Run evidence and terminal views
 
@@ -318,14 +321,14 @@ and [Human reviews](../tui/index.md#review).
 
 ## Current-directory tools
 
-`artifactize tools` also exposes the [standalone scoped tools](../features/tools/builtin.md#artifactize-tools-cli),
-using the same CLI definition and runner as `artifactize-tools`. These tools use
-the current directory, not `--repo`; the linked reference explains their path,
-URL and executable lookup rules. `artifactize tools --help` lists both `check`
-and these tools, and `artifactize tools SUBCOMMAND --help` documents each one.
+`artifactize tools read|list|glob|grep|section|help|open ...` runs the built-in tools on
+the current directory; non-Store installs also have them as `artifactize-tools`. They print
+text or JSON on stdout, exit 1 with the error on stderr when a tool fails and 2 on invalid
+usage. `artifactize tools --help` lists them, and `artifactize tools check` checks declared
+review tools instead. Every subcommand, its scope rules and limits are in
+[`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli).
 
-
-### Agent streaming and runtime logs
+## Agent streaming and runtime logs
 
 `verify SELECTOR --watch` submits and immediately follows the saved Run;
 `run watch RUN_ID` attaches later. Both emit flushed JSON lines, regardless of
@@ -351,8 +354,225 @@ queries return at most 200 lines per stream and a bounded byte budget, with
 `next_start` for continuation. Tail and range are exclusive. `search` is a literal,
 case-sensitive 1–2048-byte string. Lines longer than 2048 raw bytes are marked
 `clipped` with bounded head/tail text. Full raw runtime streams, including tails beyond the 128 KiB saved
-audit, stay in Run output. Current `prune` leaves raw stream files and completion
-markers in invocation roots; it supplies no raw-log retention policy. Missing or
+audit, stay in Run output. `prune` keeps these raw logs, and nothing deletes them on a schedule. Missing or
 older/remote audit-only evidence is labeled explicitly. See the shared
-[runtime retention reference](../features/declarations.md#runtime-execution-library). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
+[runtime retention reference](../features/declarations.md#runtime-execution). See [MCP focused diagnosis](../agent-plugin/mcp.md#streaming-and-focused-diagnosis)
 for the shared evidence/event schemas and client delivery limits.
+
+## Tool diagnostics
+
+```sh
+artifactize tools check                         # every Agent/Human eval's scope
+artifactize tools check app/review              # same as --eval app/review
+artifactize tools check --artifact app --audience agent
+artifactize tools check --execute --artifact app --audience agent --tool read --args '{"path":"README.md"}'
+artifactize tools check --execute --artifact app --audience human --tool inspect
+artifactize tools check --execute --eval app/review --tool coverage_app --args '{}'
+```
+
+`tools check` discovers and validates declarations, resolves executable availability,
+scoped argv operands and declared execution paths, and prints JSON scopes, schemas
+and per-tool readiness checks. It is static by default: it runs no project tool or
+fingerprint script and creates no state or output folder. A positional selector or `--eval`
+selects one Agent/Human eval and cannot be combined with `--artifact` or
+`--audience`. Explicit execution requires `--tool` and either an eval selector or
+both `--artifact` and `--audience`. With `--artifact`, the short operation name or
+its published name is accepted, and the scope is that Artifact and its children.
+With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
+in the eval's own scope, so a tool whose operands name another Artifact runs as it
+would in that eval's review.
+`--args` is valid only for Agent execution; Human schemas admit only an empty
+object and Human commands take no free arguments. A check never creates a Run,
+verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
+execution); Human calls use the reviewer's real environment. Exit codes are
+0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
+invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are
+JSON even without `--json`.
+
+## Run list
+
+`run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
+as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
+current directory when omitted); `--repo-only` makes that default explicit, and
+`--all` includes every repository in the shared state. `--limit N` (default 50) and `--offset N` (default 0), each 0–4294967295, page the filtered results; a value out of range exits 2. Each row includes the Run
+ID, repository, creation/completion timestamps, status, and request counts by
+verdict/state (absent states have zero requests). Unreadable requests do not count;
+`unreadable` names damaged records and their reasons while valid evidence stays
+available. See [state troubleshooting](../features/others/state.md#unreadable-records). Reads do not run owner code,
+create missing state, or require a repository to still exist. There is no
+separate `history` command.
+
+## Config graph
+
+`config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
+including cycle peers. `--impact` includes downstream consumers and their required
+inputs: conservative structural reachability, not an exact reuse-key prediction.
+MCP `config_graph` exposes the same definitions with single/multiple Artifact or
+eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
+input-to-consumer relations. Full JSON includes resolved static Artifact/eval
+definitions (profiles, payloads, schemas and tool views), tags,
+child/instruction/argv relation metadata, cycle markers and
+dependency-first strongly connected components (SCCs): groups of Artifacts that
+mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
+workspace-relative target `path`. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)
+shows them on screen.
+Component IDs refer to the full graph and may be
+noncontiguous in a selected projection. `config check` keeps its static validity
+confirmation and JSON Artifact/eval counts. There is one text or full JSON output
+level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
+command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
+
+## Human requests
+
+Claim, unclaim, tool and submit default the reviewer to `$USER` (then `$LOGNAME` on
+Linux and macOS, `%USERNAME%` on Windows); pass `--reviewer NAME` when none is set. `--reviewer NAME`
+can select the same explicit reviewer for each action. Reviewer names are local
+cooperative locks, not authenticated accounts. Only the claimant can run tools,
+submit or unclaim. `request claim` prints the claim and `request unclaim` the
+released claim; unclaiming a request someone else holds, or one that no longer
+waits, exits 2. Tool names are `<operation>_<artifactId>` and take no free arguments.
+Text output prints captured text or a launch notice; `--json` prints the tool
+result. A tool failure exits 2 and does not invent a verdict.
+
+Submission requires `--verdict GREEN|RED`. `--fields` and `--fields-file` are
+mutually exclusive JSON objects of owner fields (default `{}`), not verdict
+wrappers. Files must be regular files; fields and the complete result are bounded
+at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
+leave the request correctable. A successful submission exits 0, even for RED;
+it does not start a separate verifier.
+
+Before a tool runs or a submission is saved, the reviewed files and declarations are
+checked again. If a fingerprint changed or cannot be computed, the request ends ERROR
+(`INPUT_CHANGED` or `FINGERPRINT_RECHECK_FAILED`) with no verdict and the command exits 2;
+run `verify` again for a new request. If the eval's declarations or scope changed, the
+submission is refused with exit 2 and the request keeps waiting: restore the
+declarations to submit, or verify again.
+
+Claiming again as the same reviewer returns the existing claim and exits 0, so a claim is
+safe to repeat. A submission is accepted only once; repeating it exits 2. After an
+uncertain submission, such as an interrupted command, check the request with
+`request show` before submitting again.
+
+## Agent sessions
+
+**Reading.** `REF` is the `ref`, a request id (`run-FiVNCV-1`) or a `sessionId`:
+
+```sh
+artifactize session show run-FiVNCV-1
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
+Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
+Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
+
+── System
+You are an artifactize evaluator. …
+
+── User (turn 1)
+Eval: Review notes (notes/review)
+Target Artifact: notes
+Instruction: Check Artifact notes (tools: read_notes). …
+
+── Assistant (turn 1)
+[reasoning] Reading the notes
+[tool call read_notes] {"path":"notes.md"}
+
+── User (turn 2)
+[tool result read_notes]
+{"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
+
+── Assistant (turn 2)
+{"result":{"verdict":"GREEN","verdictFields":{}}}
+
+── Repair prompt (turn 3)
+Your final response did not match the required schema: …
+
+── Assistant (turn 3)
+{"result":{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}}
+
+── Result: {"covered":["R1"],"verdict":"GREEN"}
+```
+
+Text output cuts tool results after 2000 characters and shows only reasoning
+summaries. `--json` prints `{"reference", "file", "events"}`: the reference, the session
+file, and the stored events as they are, which is also the conversation's replayable
+export.
+
+### Session summary
+
+`--summary` counts what the conversation spent and did, from the session file alone:
+its turns (provider requests) with the tokens of each and in total, the tool calls per
+tool with how many failed, the follow-ups, and the backend, model and time span. A
+failed call returned an error, or never ran because a budget, the deadline or the end
+of the review stopped it first.
+
+```sh
+artifactize session show run-FiVNCV-1 --summary
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
+Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
+Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
+Time: 2026-10-06T09:14:02.118604115Z to 2026-10-06T09:16:41.502330019Z (159.4 s)
+Turns: 5 · follow-ups: 1
+Tokens: input 21410 · output 1318 · cache read 15872 · reasoning 704
+  turn 1: input 3920 · output 212 · cache read 0 · reasoning 128
+  turn 2: input 4310 · output 260 · cache read 3840 · reasoning 160
+  turn 3: input 4402 · output 96 · cache read 4224 · reasoning 64
+  follow-up 1, turn 1: input 4366 · output 410 · cache read 3840 · reasoning 224
+  follow-up 1, turn 2: input 4412 · output 340 · cache read 3968 · reasoning 128
+Tool calls: 3 (1 failed)
+  read_notes: 2
+  search_notes: 1 (1 failed)
+```
+
+A turn that took several attempts says so, for example `(2 attempts)`. Token counters
+are the ones the provider reported, summed over the turn's attempts; a counter no
+attempt reported is left out. `--json` prints the same as one object: `backend`,
+`model`, `reasoning`, `startedAt`, `endedAt`, `durationMs`, `followUps`, `turns` (each
+with `followUp` when it answered one, `turn`, `attempts` and `tokens`), `tokens`,
+`toolCalls` (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`,
+`requestId` and `reference`.
+
+**Following up.**
+
+```sh
+artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna · files changed since this review
+
+notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
+```
+
+With `--json`, `send` prints `{"reference", "sessionId", "requestId", "send", "filesChanged",
+"answer", "usage"}`: `send` is the follow-up number, `filesChanged` whether reviewed inputs
+changed (null when unknown), `answer` the text and `usage` the token counts of each attempt.
+
+A follow-up continues the saved conversation with the same model and current
+project tools. Its answer is plain text; it does not change the recorded verdict,
+result or reuse. The header warns when reviewed inputs have changed. Each question
+gets fresh profile budgets, and questions to one session run in order. See the
+[follow-up replay reference](../features/others/state.md#follow-up-replay)
+for caching, stored messages and compatibility details.
+
+A reference to another machine or state fails with where it lives, for example
+`Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
+5d0e…`. A session the automatic cleanup of old saved conversations deleted reports `was removed
+by the session GC`, and one that was never saved `was not saved`. `session show` and
+`session send` exit 2 for these, for a request that is still running (`send`) and for a
+failed follow-up.
+
+**Retention.** Old conversations are deleted once the store grows past its size limit;
+[Agent sessions](../features/others/state.md#agent-sessions) gives the limits and how to
+change them.
+
+**Privacy.** A conversation contains everything the reviewer read through its tools,
+including file contents, and everything it wrote. It stays on this machine in
+owner-only files and is never uploaded, including to the team review store. A
+follow-up sends the conversation to the review's own backend, as each review turn
+does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
+`$STATE/agent-sessions` to remove what is saved.

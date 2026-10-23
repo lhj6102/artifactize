@@ -12,9 +12,9 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 ```
 
 A terminal UI that searches saved requests and reviews the waiting Human ones, with the
-same lifecycle as `request`: it claims, runs tools, unclaims and submits in-process, and
-publishes a submission to the remote review store exactly like `request submit`. It also
-runs on its own, for example in a second terminal or tmux pane.
+same steps as `request`: it claims, runs tools, unclaims and submits, and publishes a
+submission to the remote review store exactly like `request submit`. Run it in a second
+terminal or tmux pane beside your work.
 
 Without an ID it lists the requests its search finds across every repository in the state,
 newest Run first, with their eval, request, status, claim, age and repository; Enter opens
@@ -44,10 +44,14 @@ search for it literally (`"type:style"`):
 Claims exist only on waiting Human requests, so `is:` matches nothing else. An unknown key
 or value is an error that names the choices, and lists nothing.
 
-`/` edits the search; the list follows as you type. Tab completes the last term: a key, or
+`/` edits the search; the list follows as you type. Typing adds to the end and
+Backspace removes the last character; the cursor keys do not move within the search. Tab completes the last term: a key, or
 after a key a value of the requests the rest of the search finds (repository folders, evals,
-requests, claimants, tags), or a kind, status or `is:` value; the footer names the
-candidates. Enter keeps the
+requests, claimants, tags), or a kind, status or `is:` value. With one candidate Tab inserts
+it; with several it adds only what they share and does not cycle, and the footer names up to
+six of them (then `+N`), so type more to choose. Pasted text is added to the end as one
+line, with control characters turned into spaces. Changing or completing the search returns
+to its first page. Enter or ↓ keeps the
 search, Esc restores the one before editing, and Ctrl-U clears it. Empty search
 includes every request kind, not just the initial waiting Humans. A page lists 100 requests;
 PgDn shows older ones and PgUp newer.
@@ -85,7 +89,7 @@ scrollable Runtime-evidence pane, beside or below its sections depending on widt
 
 ### Shared Human Detail
 
-The monitor and standalone `review` use **one Human review component**. Opening
+The monitor and standalone `review` show a Human review the same way. Opening
 or previewing a request claims nothing. The instruction comes first, below one
 line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
@@ -99,19 +103,17 @@ scrolls it. While Technical is shown the instruction stays expanded, so hide
 Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens the Tools and
 Tool log column to 60% of the available width;
-the selected tool shows its action and description. A command tool shows its resolved command line. A recorded per-tool resolution
-error shows the declaration and its reason; a request-wide resolution failure
-instead falls back to the declared command without displaying that explanation.
+the selected tool shows its action and description. A command tool shows its resolved command line. If a tool's command could not be
+worked out, for example because its program is missing, it shows the declaration and why.
+If the review's declarations could not be read at all, every tool shows its command as
+declared, without a reason; running the tool then reports the error. Fix the declaration
+and verify again.
 A built-in shows an action on a logical target instead: for example, opening
 `notes.md`, printing a Markdown section, or listing a directory, not a shell
 command line.
 
-The way to the tools is always on screen: the footer lists the keys of the
-focused area (for example `Tab tools, Enter run`, or `↑↓ tool · Enter run · Tab
-fields` with Tools focused), the Tools pane title names its key (`Tools (1) · Tab`,
-`Shift-Tab` while a form field takes Tab), and before a claim the one-line tools
-summary says `Tab or click: tools`. A click on a tool row focuses the Tools pane
-and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
+The footer always lists the keys of the focused area. With the mouse, a click on a
+tool row selects it, and a click on the selected tool or on `[Run tool ⏎]` runs it.
 
 | Key | Human Detail action |
 |---|---|
@@ -132,7 +134,8 @@ While a Human lifecycle job is busy, ordinary PgUp/PgDn scroll the Tool log
 regardless of the focused area. Normal editing and focus switching pause until
 the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
-- **Claim.** The reviewer defaults to `$USER` unless selected with `--reviewer`.
+- **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
+  `--reviewer NAME`, while Monitor always uses the default.
   Tool and verdict actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only; leaving Detail keeps your claim.
 - **Tools.** ↑/↓ selects; `j`/`k` also selects while not editing. Running a tool
@@ -182,27 +185,33 @@ the job ends; Ctrl-PgUp/PgDn still scroll the instruction.
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. The same verdict reopens the draft. Within the same state identity, refresh and
+  draft kept, then leave Detail. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
 
-Outside a form or work, `q` quits from Detail too. In either UI, Ctrl-C
-requests cancellation of any active Human lifecycle job: claim, tool, submission
-(including publication) or release. It stays in the UI while that job is busy;
-once no job is busy, Ctrl-C invokes quitting, including from a form.
-Standalone `review` lists claims
-this session took without submitting: `k` keeps them and quits, `u` releases them
-and quits, and Esc stays. If a release fails, Review stays open, shows the error and
-keeps the claims that failed; press `u` to try again or `k` to quit keeping them. Ctrl-C again at this standalone quit prompt exits while
-keeping outstanding claims. The quit prompt sets a form aside without dropping its
-draft. Monitor keeps claims on exit; release with `u` first if you want to give
-one back. Esc never quits either UI.
+Outside a form or work, `q` quits from Detail too. Ctrl-C first cancels a busy claim,
+tool, submission or release; once nothing is busy, it quits, also from a form. Esc
+never quits.
+
+When standalone `review` quits while this session holds claims it has not submitted,
+it asks what to do with them:
+
+| Key | Action |
+|---|---|
+| `k`, `n` or `q` | Keep the claims and quit |
+| `u`, `r` or `y` | Release the claims and quit (here `r` releases rather than refreshes) |
+| Esc | Stay |
+| Ctrl-C | Quit, keeping the claims |
+
+If a release fails, Review stays open with the error and keeps those claims. Monitor
+keeps claims when it quits; release one with `u` first to give it back.
 
 After a standalone submission the list returns. A page emptied by reviews goes
 back to the nearest earlier page that still lists requests; `review` exits only
-when no request matches the search any more. Monitor keeps the completed result open in Detail. Both use the
-same in-process lifecycle jobs; monitor does not launch the standalone command.
+when no request matches the search any more. That exit does not ask about claims this
+session still holds outside the search: they stay claimed, so release them first with
+`u` if you narrowed the search. Monitor keeps the completed result open in Detail.
 
 ## Monitor
 
@@ -223,21 +232,11 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-At every terminal width, the focused pane fills the width between its immediate
-neighbours: **Compact + Full + Preview**. Both side panes have the same fixed
-width, borders included:
-
-| Terminal width | Each side pane |
-|---|---|
-| Fewer than 100 columns | 16 columns |
-| 100–139 columns | 28 columns |
-| 140 columns or more | 36 columns |
-
-Full takes the remaining width after the side panes. Scope has no left neighbour,
-so it shows Full + Preview; Detail has no right neighbour, so it shows Tree
-Compact + Detail Full. No neighbour is hidden at narrower breakpoints. If the
-terminal cannot fit even the sides, they are clipped equally rather than dropping
-a level. Widen the terminal when the focused pane needs more room.
+The screen always shows **Compact + Full + Preview**: each side pane is 16 columns
+below 100 terminal columns, 28 up to 139 and 36 from 140, and the focused pane takes
+the middle. Scope shows Full + Preview, and Detail shows Tree Compact + Detail Full.
+No level is hidden on a narrow terminal, so on a very small one the focused pane can
+shrink to nothing; widen the terminal when it needs more room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate
@@ -384,9 +383,9 @@ Detail depends on the eval kind:
   standalone Review. Only public reasoning summaries appear,
   when the provider supplies them; private reasoning stays hidden. Missing or
   remote conversations explain why they cannot be shown here. Use `session show
-  --json` for the complete saved record. See the
-  [transcript reader reference](../features/others/state.md#transcript-reader)
-  for storage, streaming and history behavior.
+  --json` for the complete saved record. Streaming text is replaced by the final text, and output that stopped early is
+  labeled. Resizing keeps your place, and long conversations open quickly and can be
+  scrolled to the start. Later `session send` answers stay readable after the review ends.
 - **Runtime:** saved stdout/stderr, exit code and capture truncation beside the
   sections when Detail has at least 90 inner-content columns (92 including its
   outer borders); in a narrower pane the evidence stacks below. Running,
@@ -400,9 +399,13 @@ Detail depends on the eval kind:
 Browsing is read-only. If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
-settings are restored on exit. See the
-[local reader reference](../features/others/state.md#local-readers) for
-subscription and recovery behavior.
+settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
+latest. A waiting Human review's Detail shows the tool commands of the declarations as they
+were when you first opened it, without claiming the review or running anything. A refresh
+keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
+open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
+commands shown are updated after one. A follower opens its
+original request.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims
@@ -416,7 +419,6 @@ A single saved Run that cannot be read, or contradicts itself, is different: Mon
 lists it with its own error, without a **read failed** notice, and does not open its
 tree. The other Runs stay available.
 
-Draft retention applies only within the same state identity. If Monitor detects
-that a replacement state database has a different identity, it cancels active
-Human work, closes Detail and clears cached reviews and in-memory drafts before
-showing the replacement state. Do not expect the old state's draft to carry over.
+If the state directory is replaced while Monitor is open, for example by restoring a
+backup, Monitor cancels Human work in progress, closes Detail and discards unsaved
+drafts; they do not carry over to the replacement state.

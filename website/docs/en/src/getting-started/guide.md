@@ -137,8 +137,8 @@ artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true
 artifactize run show RUN_ID
 ```
 
-`claim`, `tool` and `submit` use `$USER` as the reviewer unless you pass
-`--reviewer NAME`; `request unclaim REQUEST_ID` gives a claim back. `artifactize
+`claim`, `tool` and `submit` use your user name (`$USER`) as the reviewer unless you
+pass `--reviewer NAME`; `request unclaim REQUEST_ID` gives a claim back. `artifactize
 review` does the same in a terminal UI: it lists waiting requests and previews the
 instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
 Enter (or a click) runs one at once. `g`/`r` opens the GREEN/RED fields; Ctrl-S

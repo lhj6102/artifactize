@@ -1,21 +1,13 @@
 # Hey Arti: shape a project's reviews
 
-**Arti is artifactize's Forward Deployed Engineer.** Given to your coding assistant,
-it learns your project and recommends how to shape it into Artifacts and evals, so
-that reviews stay meaningful and reusable. It works like a good waiter: it knows the
-menu and which combinations work, listens before recommending, confirms the order,
-and leaves the cooking to artifactize. It does not build or run your application,
-and it never approves anything in a person's place. (The name comes from
-*Artifactizer*.)
+Ask your coding assistant "Hey Arti, how should this project be reviewed?". Arti
+learns your project, asks what matters to you, and proposes Artifacts and evals so that
+reviews stay meaningful and reusable; it changes declarations only once you agree. It does
+not build or run your application, and it never approves anything in a person's place.
 
 Its instruction guide, called a **skill**, is
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md),
-in the plugin's `agent-plugin/skills/` folder. There is one body, not separate instructions per
-host. It is short on purpose: these docs are its **source of truth**. It maps each
-concept to the page that owns it and has Arti read a page before explaining or
-writing what it is unsure of; when a page and the skill disagree, the page wins.
-Then come how Arti treats you as its client, its work processes by situation, and
-the best practices and examples it draws from.
+and comes with the [plugin](plugin.md).
 
 ## Get the skill
 

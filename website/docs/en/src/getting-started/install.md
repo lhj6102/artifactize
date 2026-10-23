@@ -1,20 +1,13 @@
 # Install artifactize
 
-Every install provides `artifactize`, with its [built-in tools](../features/tools/builtin.md#artifactize-tools-cli)
-available as `artifactize tools`. Non-Store channels also provide those tools as the
-standalone `artifactize-tools` command.
-Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
-prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
-silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum, and the
-[desktop app](#desktop-app): one macOS disk image for both Mac CPUs, signed and
-notarized by Apple, and a Linux AppImage and `.deb` for x86_64; the Windows zip
-carries the app beside the commands. Stable releases are also published on
-[crates.io](https://crates.io/crates/artifactize), Homebrew and the
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D). It is open source under the
+Pick your OS in the table below, install from one channel, then open a new terminal and
+run `artifactize --version`: it prints the installed version, such as `artifactize 0.15.0`.
+
+artifactize is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
-Before v1, the Linux build gates a release; the macOS and Windows archives and the
-desktop app are attached as soon as they build.
+If a release has no download for your system yet, install with Cargo or
+[build from source](#build-from-source-all-platforms).
 
 ## Prerequisites
 
@@ -43,8 +36,9 @@ Only `cargo install` needs a Rust toolchain: the latest stable Rust, from
 
 ## Install
 
-Pick your OS. Install from one channel only; the Store uses the `artifactize tools`
-facade, while other channels also install the standalone tools command.
+Pick your OS and install from one channel only. Every install provides `artifactize`,
+with its [built-in tools](../features/tools/builtin.md#artifactize-tools-cli) as `artifactize tools`;
+all but the Store also add them as the `artifactize-tools` command.
 
 Start by downloading the app for your OS. If you prefer the command line, or the
 app does not fit your system, choose an alternative:
@@ -71,18 +65,11 @@ from macOS 11; Apple has notarized it.
 **Windows.** Install Artifactize from its
 [Microsoft Store page](https://apps.microsoft.com/detail/9PB6W4LL165D) (x64), then
 open a new terminal and run `artifactize --version`. Microsoft signs Store packages, so
-Smart App Control lets them run, and the Store keeps them up to date. The package
-provides `artifactize` as an app execution alias;
-its tools run as `artifactize tools read FILE`, `artifactize tools list`, and so on.
-Other channels also provide the standalone `artifactize-tools` command. It adds two
-Start menu entries: **Artifactize** opens the [desktop app](#desktop-app), and
-**Artifactize CLI** shows the command's help and a hint to open Windows Terminal or
-PowerShell, then waits for Enter when it owns the console alone; terminal launches
-and redirected input/output never pause. The Store package uses Windows' default
-AppData virtualization: the app and the command keep their own package-private state
-rather than sharing Runs, sign-in and cache with zip or Cargo installs.
-Windows removes that private state when you uninstall the Store app. See
-[State](../features/others/state.md#state) for the Windows overlay caveat.
+Smart App Control lets them run, and the Store keeps them up to date. The Start
+menu's **Artifactize** entry opens the [desktop app](#desktop-app). The Store version's
+[Start menu entries](../features/others/platforms.md#desktop-console-launches) and its
+[separate state](../features/others/state.md#state) are described with the other
+Windows differences.
 
 **Linux.** On x86_64 Ubuntu 22.04, Debian 12 or later, download
 [Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)
@@ -113,11 +100,11 @@ checksum and refuses a mismatch. It runs both new binaries before replacing anyt
 then installs them to `~/.local/bin`. It uses `curl` or `wget`, never `sudo`, and
 never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
 the line to add. It also warns about another `artifactize` or `artifactize-tools` on
-`PATH` that would run instead. On x86_64 Linux with glibc it also installs the
-[desktop app](#desktop-app) from the same release, checked the same way: it unpacks
-the AppImage once into `~/.local/share/artifactize/desktop` (no FUSE needed), adds an
-`artifactize-desktop` launcher beside the commands and an **Artifactize** menu entry.
-On aarch64 or musl systems such as Alpine it installs the commands only. Two
+`PATH` that would run instead. On most x86_64 Linux distributions (Ubuntu, Debian, Fedora and others) it also
+installs the [desktop app](#desktop-app) from the same release, checked the same way,
+into `~/.local/share/artifactize/desktop`, with an `artifactize-desktop` launcher beside
+the commands and an **Artifactize** menu entry. On ARM Linux and on Alpine it installs
+the commands only. Two
 environment variables change what it does; a
 prerelease installs only when `ARTIFACTIZE_VERSION` names it:
 
@@ -237,30 +224,20 @@ placeholder version `0.0.0-dev`.
 ### Desktop app
 
 The [desktop app](../desktop/index.md) shows every live branch with its Runs and what it
-would run now, and the Human reviews waiting, in one window. It shows the Runs that `artifactize verify` starts, so the commands come with it: the
-Microsoft Store, `install.ps1`, `install.sh`, the Homebrew cask and the `.deb` put
-`artifactize` on `PATH`. From the disk image or an AppImage run on its own, the app
-sets up the commands on first launch (below). TUI and MCP already come with the ordinary
-`artifactize` binary; they need no additional product install.
+would run now, and the Human reviews waiting, in one window. From the disk image or an AppImage, the app sets up the `artifactize` commands on first
+launch (below).
 
-The [downloads](#download-the-app) install it, and so do `install.ps1` on Windows,
-`install.sh` on macOS and x86_64 Linux, and the Homebrew cask on macOS. Each release
-attaches the disk image and `.deb` under versioned names too
-(`artifactize-desktop-vVERSION-universal-apple-darwin.dmg`,
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb`), and an AppImage:
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
-executable and run it; it needs glibc 2.35 or later. First launch copies the commands
-to a stable per-user directory and links them in `~/.local/bin`, without
-administrator rights.
+Install it from the [downloads](#download-the-app). Each release also attaches an
+AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. Make the AppImage
+executable and run it; it needs glibc 2.35 or later.
 
 Each file has a `.sha256` checksum beside it. Run the app as `artifactize-desktop`, or
 open **Artifactize** from your applications menu or the Start menu.
 
-The app checks standard terminal command locations and its inherited `PATH` in the
-background, without running shell startup files. On macOS this includes the system's
-`/etc/paths` and `/etc/paths.d` entries, which new login terminals use. An existing
-command from Homebrew, an install script, `.deb` or the Store is left alone;
-there is no setting to choose. Otherwise:
+On first launch the app checks whether a terminal already finds `artifactize`. If
+Homebrew, an install script, the `.deb` or the Store installed it, nothing changes.
+Otherwise it sets the commands up, and you then open a new terminal and run
+`artifactize --version`:
 
 - **macOS:** the app writes its absolute `Contents/MacOS` directory to
   `/etc/paths.d/artifactize` through the system administrator prompt. Open a new
@@ -296,9 +273,7 @@ cargo install --path crates/artifactize-desktop --locked --bin artifactize-deskt
 artifactize-desktop
 ```
 
-The frontend must be built before Cargo: the normal app embeds `ui/dist`. Keep
-the default Cargo features and do not enable the test-only `e2e` feature for a
-normal app. Install the CLI from the same checkout too, as above: the app shows the
+Build the frontend before the Cargo install, in this order. Install the CLI from the same checkout too, as above: the app shows the
 Runs that `artifactize verify` starts. The app uses the same state home and credentials as the unpackaged
 CLI, not the Store app's private state.
 
@@ -329,9 +304,10 @@ plugin.
 
 ### Upgrading from 0.11
 
-State schemas 6 to 8 are upgraded additively to the current schema 9 on first use. Existing
-Runs, cache records and Human approvals are preserved. An older binary limited to schemas 6 to 8
-cannot open the upgraded state; keep a backup before switching versions.
+The state's format of saved review data (its schema) is upgraded automatically on first use,
+from schemas 6 to 8 to the current schema 9; existing Runs, cache records and Human approvals
+are kept. An older artifactize cannot open the upgraded state, so keep a backup before
+switching versions.
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
@@ -339,8 +315,10 @@ or interrupting a watcher leaves the Run running; `artifactize run cancel RUN_ID
 is the explicit cancellation action. The foreground Human deadline and
 `verify --timeout-ms` are removed. `--request-key` makes retries return the same Run.
 
-Gate bypass (`--ignore-gates` and `review_policy`) is removed. Per-request
-`--speculate` and `--defer-human` replace it, both off by default; deferred sign-offs
+Gate bypass (`--ignore-gates` and `review_policy`, including
+`review_policy.dependency_gates`) is removed; even an empty `review_policy` table fails
+configuration validation, so delete it. Per-request `--speculate` and `--defer-human`
+replace it, both off by default and neither waiving final approval; deferred sign-offs
 end with `SIGNOFFS_PENDING` and `--wait` exit 5. See [Runs and status](../features/run.md).
 Plain `artifactize monitor` starts on ALL; `monitor .`, a positional path or `--repo`
 selects that repository initially.
@@ -353,12 +331,9 @@ file. There is no converter. Have an agent rewrite and commit the files, remove 
 legacy markers and run `artifactize config check`. Families are removed; use your own generator if
 you want templates and commit its `.artf` output. See [Declarations (.artf)](../features/declarations.md).
 
-The original 0.9 transition introduced state schema 6 and required replacing
-pre-schema-6 state. Current versions preserve existing schema-6 or schema-7 state
-by upgrading it automatically to schema 9, including Runs, cache records and Human
-approvals. Only schemas 1–5 require a new state: they are refused with exit 2, and
-`artifactize doctor` reports a hard error and exits 1. For those older states, set
-`ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new directory, or move the old one away.
+A state from before 0.9 (schemas 1–5) is refused: set `ARTIFACTIZE_STATE_HOME` or
+`--state-dir` to a new directory, or move the old one away. Later states upgrade by
+themselves ([State](../features/others/state.md#state)).
 Reuse-key v2 matches no pre-0.9 result, even in
 a team review store or with a script fingerprint. The first full `verify` reviews
 every eval once, Human sign-offs included. See [Upgrading to 0.9](../features/fingerprint.md#upgrading-to-09).
@@ -414,12 +389,11 @@ In PowerShell, set a key with `$env:OPENAI_API_KEY = "..."`.
 a sign-in URL and opens it in the default browser (`xdg-open` on Linux and WSL, `open`
 on macOS, the default browser on Windows). Finish in a browser on the same machine:
 the browser returns to `localhost:1455`. On WSL 2, a Windows browser works too; copy
-the printed URL into it if nothing opens. Artifactize reserves both IPv4 and IPv6
-loopback addresses (IPv4 only if the host has no IPv6). If another process, such as
-a Codex CLI or app sign-in, holds port 1455, artifactize skips its callback listener
-and asks for a pasted redirect instead. On another machine, use the same fallback.
+the printed URL into it if nothing opens. If another program, such as a Codex CLI or app sign-in, is using port 1455,
+artifactize asks you to paste the address instead. On another machine, use the same fallback.
 Paste the full URL starting `http://localhost:1455/auth/callback?code=` into the
-terminal, or the desktop sign-in's paste field. Find it in the browser's address bar
+terminal, or the desktop sign-in's paste field. Sign-in must finish within five minutes;
+after that, run `login codex` again. Find it in the browser's address bar
 after the failed load, or in DevTools → Network if the page keeps loading.
 `logout codex` deletes artifactize's tokens
 and asks the server to revoke them; it warns when the revocation is not confirmed. To use the tokens of an existing Codex sign-in instead, set
@@ -502,21 +476,10 @@ touches active Runs, database rows or the repository. To remove retained unpacka
 state, delete the state directory that `artifactize doctor` prints on its first line.
 
 Uninstall does not remove your project files, exported files, or state explicitly
-placed outside AppData with `--state-dir` or an environment override. Files written
-by user-configured commands outside the package-private view can remain too; the
-Windows packaging test measured a Runtime child's new AppData file in the real
-location. Remove those separately if you no longer need them. Existing unvirtualized
+placed outside AppData with `--state-dir` or an environment override. Files your evals' commands wrote, including in AppData, stay too; remove them
+separately if you no longer need them. Existing unvirtualized
 AppData files are also outside the Store package's cleanup; see the
 [Windows behavior and overlay caveat](../features/others/state.md#state).
 
 Next, take the [Quick start](guide.md): a five-minute tour that needs no model.
 
-#### Removed gate-bypass settings
-
-`review_policy` and `review_policy.dependency_gates` are removed; even an empty
-policy table fails configuration validation as an unknown field. The old
-`--ignore-gates` CLI flag and `VerifyOptions.ignore_gates` library option are also
-removed. Choose [speculation and deferred sign-offs](../features/run.md#speculation-and-deferred-sign-offs)
-per verification request instead; neither mode waives final approval obligations.
-Old saved keys are ignored on read, so removing the legacy policy needs no state
-migration.

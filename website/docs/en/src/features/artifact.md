@@ -1,8 +1,21 @@
 # Artifact
 
-An Artifact is anything you review: code, docs, designs, images. A folder or a
-single file declares its evals in a static TOML `.artf` file. artifactize reads
-these declarations into one dependency graph.
+An Artifact is anything you review: code, docs, designs, images. Declare one by adding
+an `index.artf` to a folder (or `notes.md.artf` beside a file):
+
+```toml
+name = "docs"
+
+[evals.links]
+title = "Links resolve"
+profile = { kind = "runtime", command = "python3", args = ["check_links.py"] }
+payload.instruction = "Check that every link in the docs resolves."
+```
+
+Then run `artifactize config check`; it prints `Folder configuration is valid.` or the
+error: with its file, line and column for a mistake inside a declaration, or with the
+path for a problem such as a missing target file. artifactize reads these declarations into one
+dependency graph.
 
 ## Artifact Graph
 
@@ -26,7 +39,7 @@ structure to an agent or opens it in Desktop for a person.
 
 A folder with an `index.artf` is an Artifact. `name` is required; `basis`,
 `views`, `fingerprint` and `tags` are optional. For older declarations,
-see the [legacy policy upgrade reference](../getting-started/install.md#removed-gate-bypass-settings).
+see the [legacy policy upgrade reference](../getting-started/install.md#upgrading-from-011).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
@@ -113,25 +126,31 @@ reviews delay the consumer Eval; RED input reviews block it. `--speculate` lets
 work start before unresolved input gates, without approving missing requirements.
 Final GREEN still requires all required evidence, including upstream reviews.
 
-An Eval is blocked, never an Artifact. Its execution gates are the actual Evals
-of its referenced Artifacts and its Artifact's nearest marked children. A RED
+Gates apply to each Eval. An Artifact shows ERROR or RED if one of its Evals is, else BLOCKED if one is blocked. An
+Eval's execution gates are the Evals of its referenced Artifacts and of its Artifact's
+nearest child Artifacts. A RED
 or BLOCKED gate blocks it in turn, so blocking propagates along these Eval gates.
 A RED Eval of a child blocks every Eval of its parent. An intermediate Artifact
 with no Evals supplies no execution gates: referring to it does not gate execution
 on its own inputs or children. Those still belong to the final approval obligations,
 so the consumer may execute without the Run being able to finish GREEN.
 
-An Eval's own Artifact and its dependency-cycle peers are excluded from these
-gates, apart from the [Human sibling prerequisite](#human-sign-offs). Cycles follow
-Eval references and children: a child that references its parent, directly or
-through a chain, is its parent's cycle peer. A reference to a cycle peer carries
-the cycle's external gates; a reference to another cycle carries every Eval of
-that cycle. These gates also determine waiting and speculative cancellation.
+Artifacts whose evals reference each other, directly or through a chain, form a
+**cycle**; a child that references its parent forms one with it. Evals in a cycle do not
+gate each other. For example, if `docs`'s eval references `cli` and `cli`'s eval
+references `docs`, a RED `cli/tests` does not block `docs/matches-cli` or replace its
+verdict. Both run independently and must pass before consumers outside the cycle can
+proceed.
 
-For example, if `docs`'s eval references `cli` and `cli`'s eval references `docs`,
-they form a cycle: a RED `cli/tests` does not block `docs/matches-cli` or replace
-its verdict. Both run independently and must pass before consumers outside the
-cycle can proceed.
+An eval that references a cycle peer still waits for that cycle's outside inputs: if
+`cli`'s eval also references `core`, a RED `core/tests` blocks `cli/tests` and also
+`docs/matches-cli`, which references `cli`. An eval of these Artifacts that references
+no cycle peer, input or child is not held back by them, though the Run still needs all of
+their results to finish GREEN. An eval
+elsewhere that references `docs` waits for every eval of `docs` and `cli`. An Eval's
+own Artifact is likewise not a gate for it, apart from the
+[Human sibling prerequisite](#human-sign-offs). These gates also decide what waits and
+which speculative work is cancelled.
 
 A BLOCKED Eval's reason names the RED Evals at the root of the block, for example
 `Dependency verdict RED: core/tests`, never Evals that were merely still running.

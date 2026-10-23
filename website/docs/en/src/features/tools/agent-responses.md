@@ -1,32 +1,23 @@
 # Agent responses
 
-Wire formats and validation used by an Agent eval. For setup and everyday use, see
-[Agent evals and backends](../agent.md).
+Declare what a GREEN or RED result holds with `pass_schema` and `fail_schema`
+([owner schemas](../declarations.md#owner-result-schemas)). This page says what the Agent
+must return, how artifactize checks it, and what you see in `run show` when it fails. For
+setup and everyday use, see [Agent evals and backends](../agent.md).
 
 ## Final output and validation
 
-The final answer uses each backend's structured output: Responses `text.format` for OpenAI
-and Codex, and Messages `output_config.format` for Anthropic. The wire answer is an object
-with a `result` field holding `verdict` followed by `verdictFields`, the owner fields.
-Both alternatives put the same discriminator first, so constrained key ordering cannot
-select a verdict merely because an owner field sorts before it. The stored result stays
-a flat object containing `"verdict":"GREEN"` or `"verdict":"RED"` and permitted owner fields.
-Tools remain available before the final answer, and follow-up answers remain plain text.
+The Agent may call its tools first, then gives its final answer in the provider's
+structured output, constrained to your [owner schemas](../declarations.md#owner-result-schemas).
+The saved result is one object with `"verdict":"GREEN"` or `"verdict":"RED"` and the owner
+fields that verdict's schema allows, side by side. Follow-up answers from
+`session send` are plain text.
 
-Every structured object is closed and every field is required; optional owner fields use
-null placeholders, which are removed when the original field does not accept null.
-Unsupported validation constraints become field descriptions and are still enforced by
-local validation against the original owner schema. Values outside the providers' common
-structural subset (such as open maps or recursive references) travel as JSON-encoded text
-in that field and are decoded before validation. Native arrays and closed objects remain
-structured, including item limits on Responses; Anthropic's unsupported item limits are
-checked locally. If a Responses format would exceed its nesting, property or enum
-limits, the whole verdict travels as JSON-encoded text inside `verdictFields` instead; the
-same original owner schema still validates the decoded object.
-One tools-disabled repair is allowed for invalid final output, within the original
-deadline. The repair turn names the error and, when the output was a JSON object, up
-to five failing instance paths with their messages, each bounded to 200 characters,
-as a Human submission's error does:
+Artifactize validates the answer against the owner schema itself, so every JSON Schema
+keyword you declare is enforced, even those a provider cannot constrain. If the answer
+does not match, the Agent is told what was wrong and gets one more chance, without tools:
+it must answer from what it has already gathered, and asking for a tool then also ends the
+review with `INVALID_RESULT`. The saved conversation shows that message:
 
 ```text
 Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema
@@ -34,8 +25,9 @@ Your final response did not match the required schema: schema_mismatch: result m
 Return only one JSON object matching the schema.
 ```
 
-If the repaired output is still invalid, the review is ERROR, and the saved error
-keeps only the error code, never the model's output. `max_tokens` and `max_tool_calls` are
-enforced client-side before further tools execute; neither becomes a provider
-request parameter.
-
+If that answer is still invalid, the review ends ERROR with `INVALID_RESULT`. Read what
+the Agent answered with [`session show`](../../cli/index.md#agent-sessions), make the schema
+and the instruction agree (for example, say in the instruction what each field must
+contain), then verify again. `max_tokens` and `max_tool_calls` are counted by
+artifactize, which stops further tool calls when a budget runs out; they are not sent to
+the provider.

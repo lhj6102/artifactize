@@ -1,31 +1,22 @@
 # artifactize 설치 {#install-artifactize}
 
-어떤 방법으로 설치하든 `artifactize`가 설치되며, 그 [내장 도구](../features/tools/builtin.md#artifactize-tools-cli)는
-`artifactize tools`로 쓸 수 있습니다. Store가 아닌 채널은 이 도구들을
-독립 실행형 `artifactize-tools` 명령으로도 제공합니다.
-모든 [GitHub 릴리스](https://github.com/lhj6102/artifactize/releases)에는
-Linux(정적 링크, x86_64와 aarch64), macOS(Apple
-실리콘과 Intel), Windows(x64)용 미리 빌드된 바이너리가 각 압축 파일의 SHA-256 체크섬과 함께 첨부되고,
-[데스크톱 앱](#desktop-app)도 첨부됩니다. 데스크톱 앱은 두 Mac CPU 모두에서 쓰는 macOS 디스크 이미지 하나(Apple의 서명과
-공증을 받음)와 x86_64용 Linux AppImage 및 `.deb`이며, Windows zip에는
-명령과 함께 앱이 들어 있습니다. 안정 릴리스는
-[crates.io](https://crates.io/crates/artifactize), Homebrew,
-[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D)에도 게시됩니다.
-[Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로 공개된 오픈 소스입니다.
+아래 표에서 OS를 고르고 한 가지 방법으로 설치한 다음, 새 터미널을 열고 `artifactize --version`을
+실행하세요. `artifactize 0.15.0`처럼 설치된 버전이 출력됩니다.
 
-v1 전까지는 Linux 빌드가 릴리스의 관문입니다. macOS와 Windows 압축 파일, 그리고
-데스크톱 앱은 빌드되는 대로 첨부됩니다.
+artifactize는 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE)으로
+공개된 오픈 소스입니다.
+
+사용 중인 시스템에 맞는 설치 파일이 릴리스에 아직 없다면 Cargo로 설치하거나
+[소스에서 빌드](#build-from-source-all-platforms)하세요.
 
 ## 사전 요구 사항 {#prerequisites}
 
 - Linux(x86_64 또는 aarch64), macOS(Apple 실리콘 또는 Intel), 또는 Windows(x64). WSL 2에서는
   Linux 빌드가 실행됩니다.
 - 예제 프로젝트는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 씁니다.
-  두 명령 모두 터미널에서 쓸 수 있어야 합니다. 프로젝트는 선언된
-  명령을 모든 OS에서 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
-- 선택 사항으로, 쓰려는 Agent 백엔드마다 하나씩: `OPENAI_API_KEY`,
-  `ANTHROPIC_API_KEY`, 또는 Codex가 포함된 ChatGPT 요금제. Runtime eval과 Human eval에는
-  아무것도 필요 없습니다.
+  두 명령 모두 터미널에서 쓸 수 있어야 합니다. artifactize는 모든 OS에서
+  프로젝트에 선언된 명령을 적힌 그대로 실행합니다. [운영체제](../features/others/platforms.md)를 보세요.
+- Agent eval을 쓰려면 백엔드마다 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, Codex가 포함된 ChatGPT 요금제 중 필요한 것을 준비하세요(선택 사항). Runtime eval과 Human eval에는 이런 인증 정보가 필요하지 않습니다.
 
 `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
 예제를 시작하기 전에 필요한 도구를 찾을 수 있는지 확인하세요.
@@ -35,18 +26,19 @@ python3 --version
 grep --help
 ```
 
-Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라도 명령을 찾을 수 없다면
-그 도구를 설치하거나 그 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
+Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라도 명령을 찾을 수 없다는 오류가
+나오면, 그 도구를 설치하거나 도구가 설치된 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
 
 Rust 툴체인은 `cargo install`에만 필요합니다.
-[rustup](https://rustup.rs)으로 받은 최신 안정 Rust와 C 컴파일러가 필요합니다(SQLite를 소스에서 빌드합니다).
+[rustup](https://rustup.rs)으로 받은 Rust 최신 안정 버전과 C 컴파일러가 필요합니다(SQLite를 소스에서 빌드합니다).
 
 ## 설치 {#install}
 
-OS를 고르세요. 한 채널로만 설치하세요. Store는 `artifactize tools`
-진입점을 쓰고, 다른 채널은 독립 실행형 도구 명령도 함께 설치합니다.
+OS를 고르고 한 가지 방법으로만 설치하세요. 어떤 방법으로 설치하든 `artifactize`가 설치되며, 그
+[내장 도구](../features/tools/builtin.md#artifactize-tools-cli)는 `artifactize tools`로 쓸 수
+있습니다. Store 이외의 방법으로 설치하면 이 도구가 `artifactize-tools` 명령으로도 함께 설치됩니다.
 
-먼저 OS에 맞는 앱을 내려받는 것으로 시작하세요. 명령줄이 더 편하거나
+먼저 OS에 맞는 앱을 내려받으세요. 명령줄이 더 편하거나
 앱이 시스템에 맞지 않는다면 다른 방법을 고르세요.
 
 | OS | 기본: 앱 | 명령줄 | 기타 |
@@ -64,25 +56,17 @@ cask도 앱을 함께 설치합니다. Homebrew formula, Cargo, 소스 빌드는
 **macOS.**
 [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg)를 내려받아
 열고 **Artifactize**를 응용 프로그램 폴더로 끌어다 놓은 뒤 앱을 한 번 여세요.
-명령이 없다면 관리자 권한 확인 창을 승인해 새 터미널에서 `artifactize`를 쓸 수 있게 하세요
-([자세히](#desktop-app)). 이미지 하나가 macOS 11부터 Apple 실리콘과 Intel에서 실행되며,
-Apple의 공증을 받았습니다.
+명령을 찾을 수 없다면 관리자 권한 요청을 승인한 뒤 새 터미널에서 `artifactize`를 쓰세요
+([자세히](#desktop-app)). Apple의 공증을 받은 이 디스크 이미지 하나로
+macOS 11 이상의 Apple 실리콘 Mac과 Intel Mac을 모두 지원합니다.
 
 **Windows.**
 [Microsoft Store 페이지](https://apps.microsoft.com/detail/9PB6W4LL165D)(x64)에서 Artifactize를 설치한 뒤
 새 터미널을 열고 `artifactize --version`을 실행하세요. Microsoft가 Store 패키지에 서명하므로
-스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 이 패키지는
-`artifactize`를 앱 실행 별칭으로 제공하며,
-그 도구는 `artifactize tools read FILE`, `artifactize tools list` 같은 식으로 실행합니다.
-다른 채널은 독립 실행형 `artifactize-tools` 명령도 제공합니다. 시작 메뉴 항목도
-두 개 추가됩니다. **Artifactize**는 [데스크톱 앱](#desktop-app)을 열고,
-**Artifactize CLI**는 명령의 도움말과 Windows Terminal 또는
-PowerShell을 열라는 안내를 보여 준 뒤, 콘솔을 혼자 쓰고 있을 때는 Enter를 기다립니다. 터미널에서 실행하거나
-입출력을 리디렉션한 경우에는 멈추지 않습니다. Store 패키지는 Windows의 기본
-AppData 가상화를 씁니다. 그래서 앱과 명령은 zip이나 Cargo 설치와 Run, 로그인, 캐시를 공유하지 않고
-패키지 전용 상태를 따로 유지합니다.
-Store 앱을 제거하면 Windows가 그 전용 상태도 지웁니다. Windows 오버레이 주의 사항은
-[상태](../features/others/state.md#state)를 보세요.
+스마트 앱 컨트롤이 실행을 허용하고, Store가 패키지를 최신 상태로 유지합니다. 시작 메뉴에서 **Artifactize**를 선택하면 [데스크톱 앱](#desktop-app)이 열립니다. Store 버전의
+[시작 메뉴 항목](../features/others/platforms.md#desktop-console-launches)과
+[별도로 유지하는 상태](../features/others/state.md#state)는 Windows에서 달라지는 다른 동작과 함께
+설명합니다.
 
 **Linux.** x86_64 Ubuntu 22.04, Debian 12 이상에서는
 [Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)를 내려받아
@@ -107,17 +91,16 @@ curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-이 [스크립트](https://artifactize.dev/install.sh)는 최신 안정 GitHub 릴리스에서 OS와
+이 [스크립트](https://artifactize.dev/install.sh)는 GitHub의 최신 안정 릴리스에서 OS와
 CPU에 맞는 압축 파일을 고르고, 그 SHA-256을 릴리스의 체크섬과 비교해
-일치하지 않으면 거부합니다. 무엇이든 교체하기 전에 새 바이너리 두 개를 실행해 보고,
-그다음 `~/.local/bin`에 설치합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
+일치하지 않으면 설치하지 않습니다. 기존 파일을 교체하기 전에 새 바이너리 두 개가 실행되는지
+확인한 뒤 `~/.local/bin`에 설치합니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
 셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
 추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
-`PATH`에 있으면 경고도 합니다. glibc를 쓰는 x86_64 Linux에서는 같은 릴리스의
-[데스크톱 앱](#desktop-app)도 같은 방식으로 확인해 설치합니다.
-AppImage를 `~/.local/share/artifactize/desktop`에 한 번 풀고(FUSE 불필요),
-명령 옆에 `artifactize-desktop` 실행 파일과 **Artifactize** 메뉴 항목을 추가합니다.
-Alpine 같은 aarch64 또는 musl 시스템에서는 명령만 설치합니다. 두
+`PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은
+릴리스의 [데스크톱 앱](#desktop-app)도 같은 방식으로 확인해
+`~/.local/share/artifactize/desktop`에 설치하고, `artifactize` 명령과 같은 디렉터리에 `artifactize-desktop` 실행 파일을
+추가하며, 애플리케이션 메뉴에 **Artifactize** 항목을 만듭니다. ARM Linux와 Alpine에서는 명령만 설치합니다. 두
 환경 변수로 동작을 바꿀 수 있습니다.
 사전 릴리스는 `ARTIFACTIZE_VERSION`으로 그 버전을 지정했을 때만 설치됩니다.
 
@@ -130,25 +113,23 @@ curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/b
 
 [Homebrew](https://brew.sh/)는 macOS 패키지 관리자로, 명령줄 도구를
 대신 설치하고 업데이트해 줍니다. 터미널에서 `brew`를 쓸 수 없다면 먼저
-[Homebrew 설치 안내](https://docs.brew.sh/Installation)를 따르세요. 그다음 실행하세요.
+[Homebrew 설치 안내](https://docs.brew.sh/Installation)를 따르세요. 그다음 아래 명령을 실행하세요.
 
 ```sh
 brew install lhj6102/tap/artifactize
 artifactize --version
 ```
 
-`lhj6102/tap` Homebrew tap의 formula는 Mac의 CPU에 맞는 두 명령을 설치하고
-안정 릴리스를 따라갑니다. 데스크톱 앱은 같은 tap의 cask입니다. cask는
-앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로
-앱과 두 명령을 모두 얻습니다(formula가 설치되어 있다면 먼저 제거하세요.
-cask가 formula를 대신합니다).
+`lhj6102/tap` Homebrew tap의 formula는 Mac의 CPU에 맞는 두 명령을 설치하며
+안정 릴리스로만 업데이트됩니다. 데스크톱 앱은 같은 tap의 cask로 제공됩니다. cask는
+앱에 들어 있는 `artifactize`와 `artifactize-tools`를 Homebrew의 PATH에 연결하므로, 이 명령 하나로 앱과 두 CLI 명령을 모두 설치할 수 있습니다. cask가 formula를 대신하므로, formula가 설치되어 있다면 먼저 제거하세요.
 
 ```sh
 brew install --cask lhj6102/tap/artifactize
 ```
 
-설치 스크립트는 macOS에서도 Linux와 똑같은 확인 과정과 환경
-변수로 동작합니다. 명령은 `~/.local/bin`에 설치되는데, 새 Mac에서는 이 디렉터리가
+macOS에서도 설치 스크립트는 Linux와 같은 확인 과정을 거치고 같은 환경
+변수를 씁니다. 명령은 `~/.local/bin`에 설치되는데, 새 Mac에서는 이 디렉터리가
 `PATH`에 없습니다. 스크립트가 `~/.zshrc` 같은 셸 시작 파일에 추가할 줄을
 출력합니다. 데스크톱 앱도 `~/Applications/Artifactize.app`으로 설치합니다.
 
@@ -178,29 +159,29 @@ artifactize --version   # in a new terminal
 바이너리 두 개를 실행해 본 다음, `artifactize.exe`, `artifactize-tools.exe`, 데스크톱
 앱의 `artifactize-desktop.exe`를 `%LOCALAPPDATA%\Programs\artifactize`에 설치합니다. 그리고 그
 디렉터리를 사용자 `Path`에 추가하고 앱의 **Artifactize** 시작 메뉴 바로 가기를 추가합니다.
-설치 후에는 새 터미널을 여세요. `install.sh`와 같은 환경 변수를 읽습니다.
+설치 후에는 새 터미널을 여세요. 쓸 수 있는 환경 변수는 `install.sh`와 같습니다.
 
 **스마트 앱 컨트롤.** 설치 스크립트가 쓰는 릴리스 zip은 코드 서명이 되어 있지 않습니다.
 스마트 앱 컨트롤이 켜진 컴퓨터에서는 이전 릴리스가 실행되었더라도 Windows가 새 릴리스를
-차단할 수 있습니다. Windows가 새 바이너리를 차단하면 스크립트는 무엇이든 교체하기 전에
-멈춥니다. 이전 `artifactize`와 `artifactize-tools`는 설치된 채로
+차단할 수 있습니다. Windows가 새 바이너리를 차단하면 스크립트는 기존 파일을 하나도
+교체하지 않고 멈춥니다. 이전 `artifactize`와 `artifactize-tools`는 설치된 채로
 실행할 수 있고, `Path`도 바뀌지 않습니다. 애플리케이션 제어
 정책을 우회하지 말고 Microsoft Store에서 설치하세요.
 
-**winget 자체 패키지**는 아직 없습니다. `lhj6102.Artifactize`가
+**winget 자체 패키지**는 아직 없습니다. `lhj6102.Artifactize` 패키지가
 [winget](https://learn.microsoft.com/windows/package-manager/winget/)
-저장소에 아직 받아들여지지 않았습니다. 위의 Store 패키지나 설치 스크립트를 쓰세요.
+저장소에 아직 등록되지 않았습니다. 위의 Store 패키지나 설치 스크립트를 쓰세요.
 
-**WSL.** WSL 2 안에서 artifactize는 Linux 빌드입니다. 배포판 안에
+**WSL.** WSL 2 안에서는 artifactize의 Linux 빌드를 씁니다. 배포판 안에
 [Linux](#linux) 안내대로 설치하세요. Windows 설치와는 별개이며
-자기만의 상태를 유지합니다. 내장 `open`과 `login codex`는 Windows 프로그램이 아니라
+상태도 따로 저장합니다. 내장 `open`과 `login codex`는 Windows 프로그램이 아니라
 배포판의 `xdg-open`을 씁니다.
 [파일과 브라우저 열기](../features/others/platforms.md#opening-files-and-the-browser)를 보세요.
 
 ### Cargo (모든 플랫폼) {#cargo-all-platforms}
 
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall)로 같은
-미리 빌드된 바이너리를 `~/.cargo/bin`에 받습니다.
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall)로 앞의 설치 방법과
+같은 사전 빌드 바이너리를 `~/.cargo/bin`에 내려받습니다.
 
 ```sh
 cargo binstall artifactize artifactize-tools
@@ -219,9 +200,9 @@ cargo install artifactize@<version> artifactize-tools@<version> --locked   # a p
 
 ### 소스에서 빌드 (모든 플랫폼) {#build-from-source-all-platforms}
 
-소스에서 빌드하려면 체크아웃에서 설치하세요. 체크아웃의 `rust-toolchain.toml`이
-안정 Rust를 선택합니다. 예제 프로젝트와 [빠른 시작](guide.md)도
-체크아웃을 씁니다.
+소스에서 빌드하려면 저장소를 복제한 뒤 그 디렉터리에서 다음 명령으로 설치하세요. 복제한 저장소의 `rust-toolchain.toml`에 따라
+Rust 안정 버전이 쓰입니다. 예제 프로젝트와 [빠른 시작](guide.md)을
+따라 하려면 복제한 저장소가 필요합니다.
 
 ```sh
 git clone https://github.com/lhj6102/artifactize
@@ -230,44 +211,33 @@ cargo install --path crates/artifactize --locked
 cargo install --path crates/artifactize-tools --locked
 ```
 
-릴리스는 태그에서 버전을 가져오므로, 체크아웃에서 빌드하면
-임시 버전 `0.0.0-dev`를 보고합니다.
+릴리스 빌드는 태그에서 버전을 가져오며, 복제한 저장소에서 빌드하면 임시 버전 `0.0.0-dev`가
+출력됩니다.
 
 ### 데스크톱 앱 {#desktop-app}
 
-[데스크톱 앱](../desktop/index.md)은 살아 있는 모든 브랜치와 그 Run, 그리고 지금 실행한다면
-무엇이 실행될지, 대기 중인 Human 리뷰를 한 창에서 보여 줍니다. 앱은 `artifactize verify`가 시작한 Run을 보여 주므로 명령도 함께 제공됩니다.
-Microsoft Store, `install.ps1`, `install.sh`, Homebrew cask, `.deb`는
-`artifactize`를 `PATH`에 넣습니다. 디스크 이미지나 단독으로 실행한 AppImage에서는 앱이
-첫 실행 때 명령을 설정합니다(아래 참조). TUI와 MCP는 이미 일반
-`artifactize` 바이너리에 들어 있으므로 따로 설치할 제품이 없습니다.
+[데스크톱 앱](../desktop/index.md)은 현재 브랜치 목록과 각 브랜치의 Run, 지금 verify하면
+실행할 작업, 대기 중인 Human 리뷰를 한 창에 보여 줍니다. 디스크 이미지나 AppImage로
+실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
-[내려받기](#download-the-app)로 앱을 설치할 수 있고, Windows의 `install.ps1`,
-macOS와 x86_64 Linux의 `install.sh`, macOS의 Homebrew cask도 앱을 설치합니다. 각 릴리스에는
-디스크 이미지와 `.deb`가 버전이 붙은 이름으로도 첨부되고
-(`artifactize-desktop-vVERSION-universal-apple-darwin.dmg`,
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.deb`), AppImage도 첨부됩니다:
-`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`. AppImage에
-실행 권한을 주고 실행하세요. glibc 2.35 이상이 필요합니다. 첫 실행 때 명령을
-사용자별 고정 디렉터리에 복사하고 `~/.local/bin`에 링크하며,
-관리자 권한은 필요 없습니다.
+[내려받기](#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
+`artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. AppImage에
+실행 권한을 주고 실행하세요. glibc 2.35 이상이 필요합니다.
 
-각 파일 옆에는 `.sha256` 체크섬이 있습니다. 앱은 `artifactize-desktop`으로 실행하거나
+각 파일 옆에는 `.sha256` 체크섬이 있습니다. `artifactize-desktop` 명령으로 앱을 실행하거나
 응용 프로그램 메뉴 또는 시작 메뉴에서 **Artifactize**를 여세요.
 
-앱은 표준 터미널 명령 위치와 물려받은 `PATH`를
-백그라운드에서 셸 시작 파일을 실행하지 않고 확인합니다. macOS에서는 새 로그인 터미널이 쓰는
-시스템의 `/etc/paths`와 `/etc/paths.d` 항목도 포함합니다. Homebrew, 설치 스크립트, `.deb`, Store로
-이미 설치된 명령은 그대로 둡니다.
-고를 설정은 없습니다. 그 밖의 경우:
+앱은 첫 실행 때 터미널이 이미 `artifactize`를 찾을 수 있는지 확인합니다. Homebrew, 설치
+스크립트, `.deb`, Store로 설치했다면 아무것도 바꾸지 않습니다. 그렇지 않으면 명령을 설정하며,
+그다음 새 터미널을 열고 `artifactize --version`을 실행하면 됩니다.
 
-- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 자신의 절대 경로 `Contents/MacOS` 디렉터리를
-  `/etc/paths.d/artifactize`에 씁니다. 그다음 새
+- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 앱 내부 `Contents/MacOS` 디렉터리의 절대 경로를
+  `/etc/paths.d/artifactize`에 기록합니다. 그다음 새
   터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
   설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 옮겼다면
-  다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 확인 창을
-  취소하면 그 번들 위치에 대해 앱 상태에 기억되므로, 실행할 때마다
-  묻지 않습니다.
+  다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 요청을
+  취소하면 앱이 설치된 위치별로 취소 여부를 앱 상태에 저장하므로, 같은 위치에서 다시
+  실행할 때는 묻지 않습니다.
 - **Linux AppImage:** 명령은
   `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin`에 복사되고 `~/.local/bin`에서 링크됩니다.
   임시 AppImage 마운트가 사라진 뒤에도 계속 동작하며, 더
@@ -281,9 +251,9 @@ macOS와 x86_64 Linux의 `install.sh`, macOS의 Homebrew cask도 앱을 설치�
 
 #### 소스에서 데스크톱 앱 빌드 {#build-the-desktop-app-from-source}
 
-위의 소스 빌드용 Rust 사전 요구 사항에 더해 Node.js 24,
+위에서 설명한 소스 빌드에 필요한 Rust 도구 외에 Node.js 24,
 `crates/artifactize-desktop/ui/package.json`에 적힌 버전의 pnpm, 그리고
-OS별 [Tauri 네이티브 사전 요구 사항](https://v2.tauri.app/start/prerequisites/)을 설치하세요.
+OS별로 [Tauri 빌드에 필요한 도구와 라이브러리](https://v2.tauri.app/start/prerequisites/)를 설치하세요.
 Linux에는 WebKitGTK 4.1, GTK 3, librsvg 개발 패키지가 필요하고, macOS에는
 Xcode 명령줄 도구가, Windows에는 C++ 빌드 도구와 WebView2가 필요합니다.
 저장소 루트에서 실행하세요.
@@ -295,16 +265,15 @@ cargo install --path crates/artifactize-desktop --locked --bin artifactize-deskt
 artifactize-desktop
 ```
 
-프런트엔드는 Cargo보다 먼저 빌드해야 합니다. 일반 앱은 `ui/dist`를 내장하기 때문입니다.
-기본 Cargo 기능을 유지하고, 일반 앱에서는 테스트 전용 `e2e` 기능을 켜지 마세요.
-위와 같이 같은 체크아웃에서 CLI도 설치하세요. 앱은
+이 순서대로, Cargo로 설치하기 전에 프런트엔드를 빌드하세요.
+앞에서처럼 같은 저장소에서 CLI도 설치하세요. 앱은
 `artifactize verify`가 시작한 Run을 보여 줍니다. 앱은 Store 앱의 전용 상태가 아니라
-패키지되지 않은 CLI와 같은 상태 홈과 자격 증명을 씁니다.
+패키지되지 않은 CLI와 같은 상태 디렉터리와 자격 증명을 씁니다.
 
 ### Claude Code와 Codex용 플러그인 {#plugin-for-claude-code-and-codex}
 
 [플러그인](../agent-plugin/plugin.md)은 Claude Code나 Codex에 Hey Arti 스킬과
-artifactize MCP 서버를 추가합니다. 먼저 위 채널 중 하나로 `artifactize` 프로그램을
+artifactize MCP 서버를 추가합니다. 먼저 위 설치 방법 중 하나로 `artifactize` 프로그램을
 설치한 다음
 [플러그인 페이지](../agent-plugin/plugin.md#add-the-plugin-to-your-assistant)를 따르세요.
 
@@ -319,28 +288,29 @@ artifactize MCP 서버를 추가합니다. 먼저 위 채널 중 하나로 `arti
 | `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
 | `cargo install` | `cargo install artifactize artifactize-tools --locked`. 체크아웃에서는 `git pull` 후 `cargo install --path`를 반복하세요 |
 
-설치 스크립트와 Cargo는 릴리스가 게시되는 즉시 받습니다. Homebrew와
-Microsoft Store는 안정 릴리스만 따라가며, Microsoft가 검토하는 동안 Store 업데이트가
+설치 스크립트나 Cargo를 쓰면 릴리스가 게시되는 즉시 그 버전을 설치할 수 있습니다. Homebrew와
+Microsoft Store는 안정 릴리스만 제공하며, Microsoft가 검토하는 동안 Store 업데이트가
 늦어질 수 있습니다. 업데이트해도 상태는 유지됩니다.
 
 플러그인 업데이트 방법은 [플러그인 페이지](../agent-plugin/plugin.md#updates)에 있습니다.
 
 ### 0.11에서 업그레이드 {#upgrading-from-011}
 
-상태 스키마 6~8은 처음 사용할 때 현재 스키마 9로 추가 방식으로 업그레이드됩니다. 기존
-Run, 캐시 기록, Human 승인은 보존됩니다. 스키마 6~8만 다룰 수 있는 이전 바이너리는
+저장된 리뷰 데이터의 형식(스키마)은 처음 사용할 때 스키마 6~8에서 현재 스키마 9로 자동으로
+업그레이드되며, 기존 Run, 캐시 기록, Human 승인은 그대로 남습니다. 이전 버전의 artifactize는
 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
 
-이제 `artifactize verify`는 지속되는 Run을 제출하고, 그 ID를 출력한 뒤 접수되면 종료합니다.
+이제 `artifactize verify`는 터미널을 닫아도 계속 실행되는 Run을 제출하고, Run ID를 출력한 뒤 접수되면 종료합니다.
 검증 종료 코드가 필요한 스크립트와 CI에는 `--wait`를 추가하세요. 터미널을 닫거나
-지켜보는 명령을 중단해도 Run은 계속 실행됩니다. `artifactize run cancel RUN_ID`가
-명시적인 취소 동작입니다. 포그라운드 Human 마감 시간과
+지켜보는 명령을 중단해도 Run은 계속 실행됩니다. Run을 취소하려면
+`artifactize run cancel RUN_ID`를 실행하세요. 포그라운드 Human 제한 시간과
 `verify --timeout-ms`는 제거되었습니다. `--request-key`를 쓰면 재시도해도 같은 Run이 반환됩니다.
 
-관문 우회(`--ignore-gates`와 `review_policy`)는 제거되었습니다. 요청별
-`--speculate`와 `--defer-human`이 이를 대신하며, 둘 다 기본으로 꺼져 있습니다. 미룬 승인은
-`SIGNOFFS_PENDING`으로 끝나고 `--wait`는 5로 종료합니다. [Run과 status](../features/run.md)를 보세요.
-그냥 `artifactize monitor`는 ALL에서 시작합니다. `monitor .`, 위치 인자 경로, 또는 `--repo`는
+게이트 우회(`review_policy.dependency_gates`를 포함한 `--ignore-gates`와 `review_policy`)는
+제거되었습니다. 빈 `review_policy` 테이블도 설정 검사에 실패하니 지우세요. 요청마다 고르는
+`--speculate`와 `--defer-human`이 이를 대신하며, 둘 다 기본으로 꺼져 있고 어느 쪽도 최종 승인을
+면제하지 않습니다. 승인을 미루면 Run은 `SIGNOFFS_PENDING`으로 끝나고 `--wait`는 5로 종료합니다. [Run과 status](../features/run.md)를 보세요.
+인자 없이 실행한 `artifactize monitor`는 ALL에서 시작합니다. `monitor .`, 위치 인자 경로, 또는 `--repo`는
 처음에 그 저장소를 선택합니다.
 
 ### 0.9로 업그레이드 {#upgrading-to-09}
@@ -351,25 +321,22 @@ snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예
 예전 표시를 제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
 필요하다면 직접 만든 생성기를 쓰고 그 `.artf` 출력을 커밋하세요. [선언 (.artf)](../features/declarations.md)을 보세요.
 
-원래의 0.9 전환은 상태 스키마 6을 도입했고, 스키마 6 이전의
-상태를 교체해야 했습니다. 현재 버전은 기존 스키마 6 또는 스키마 7 상태를
-자동으로 스키마 9로 업그레이드해 Run, 캐시 기록, Human
-승인을 보존합니다. 새 상태가 필요한 것은 스키마 1~5뿐입니다. 이 스키마는 종료 코드 2로 거부되고,
-`artifactize doctor`는 치명적 오류를 보고하고 1로 종료합니다. 이런 이전 상태라면
-`ARTIFACTIZE_STATE_HOME`이나 `--state-dir`을 새 디렉터리로 설정하거나, 이전 디렉터리를 다른 곳으로 옮기세요.
+0.9 이전의 상태(스키마 1~5)는 거부합니다. `ARTIFACTIZE_STATE_HOME`이나 `--state-dir`을 새
+디렉터리로 설정하거나, 이전 디렉터리를 다른 곳으로 옮기세요. 그 뒤의 상태는 자동으로
+업그레이드됩니다([상태](../features/others/state.md#state)).
 재사용 키 v2는 0.9 이전의 어떤 결과와도 일치하지 않습니다.
-팀 리뷰 저장소에 있거나 스크립트 fingerprint를 쓰는 경우도 마찬가지입니다. 첫 전체 `verify`는
-Human 승인을 포함해 모든 eval을 한 번씩 리뷰합니다. [0.9로 업그레이드](../features/fingerprint.md#upgrading-to-09)를 보세요.
+팀 리뷰 저장소에 있거나 스크립트 fingerprint를 쓰는 경우도 마찬가지입니다. 업그레이드 후 처음으로 전체 `verify`를
+실행하면 Human 승인을 포함해 모든 eval을 한 번씩 리뷰합니다. [0.9로 업그레이드](../features/fingerprint.md#upgrading-to-09)를 보세요.
 
-이제 Monitor는 eval의 Detail을 모달이 아니라 자기 패널에서 엽니다. 독립 실행형
-Review도 같은 Human Detail을 씁니다. 요청 맡기는 명시적으로 하며, 도구 실행과 제출은
-대신 요청을 맡지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
+이제 Monitor는 eval의 Detail을 모달이 아니라 전용 패널에서 엽니다. 독립 실행형
+Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, 도구를 실행하거나
+결과를 제출해도 요청을 맡은 것으로 처리되지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
 현재 조작 방법은 [Human 리뷰와 Monitor](../features/human.md)를 보세요.
 
 0.5.0은 `chatgpt`와 `claude` Agent 백엔드를 `login chatgpt`,
 `logout chatgpt`, 내부 `mcp` 명령과 함께 제거하고, ChatGPT 요금제
-사용자를 위한 `codex`를 추가합니다. `config check`는 제거된 백엔드를 아직 선언한
-eval이나 프로필 변형마다 대체할 것을 알려 줍니다. artifactize는 이전 릴리스가 저장한 ChatGPT
+사용자를 위한 `codex`를 추가합니다. `config check`는 제거된 백엔드를 아직 쓰는
+eval이나 프로필 변형을 찾아 대신 쓸 백엔드를 안내합니다. artifactize는 이전 릴리스가 저장한 ChatGPT
 토큰을 더 이상 쓰지 않습니다. ChatGPT 설정에서 artifactize 연결을 끊은 다음
 상태 디렉터리에서 `auth/chatgpt.json`, `auth/chatgpt-registration.json`, `auth/chatgpt.lock`을
 삭제하세요.
@@ -381,20 +348,20 @@ Run, 저장된 Agent 대화, 로그인을 포함한 모든 상태는 한
 [상태](../features/others/state.md#state)에 그 내용,
 상태 위치를 옮기는 환경 변수, Store 버전의 전용 사본이 정리되어 있습니다.
 
-`--state-dir PATH`는 명령 하나에 대해 상태 전체를 옮깁니다. `login`, `verify`, `request`, `run`,
+`--state-dir PATH`는 그 명령 하나에서만 상태 위치 전체를 바꿉니다. `login`, `verify`, `request`, `run`,
 `monitor`에 같은 값을 쓰세요. 상태는 리뷰 대상 저장소 밖에 있어야 합니다.
-`auth/` 아래의 토큰도 모든 git 작업 트리나
-artifactize 프로젝트 안에서는 거부됩니다. `$HOME`에 있는 dotfiles 저장소나 체크아웃 안의 gitignore된 폴더가 그런 예입니다.
-`ARTIFACTIZE_CODEX_AUTH_FILE`은 저장소가 필요 없습니다
+`auth/` 아래의 토큰도 git 워크트리나
+artifactize 프로젝트 안에는 둘 수 없습니다. `$HOME`에 있는 dotfiles 저장소나 체크아웃 안의 gitignore된 폴더가 그런 예입니다.
+`ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰면 토큰을 따로 저장할 곳이 필요 없습니다
 ([상태](../features/others/state.md#state)).
 
 ## 백엔드 {#backends}
 
-Agent eval은 정확히 하나의 백엔드와 하나의 정확한 모델 ID를 지정합니다. 모델
-카탈로그도 없고, 다른 백엔드나 모델로 대체되지도 않습니다.
+Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. artifactize는
+모델 목록을 따로 제공하지 않으며, 지정한 백엔드나 모델을 다른 것으로 바꾸지도 않습니다.
 
-**백엔드**는 Artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는
-연결입니다. **API 키**는 그 서비스의 비밀 계정 자격 증명입니다.
+**백엔드**는 artifactize가 Agent 리뷰를 모델 서비스로 보낼 때 쓰는
+연결입니다. **API 키**는 그 서비스에서 계정을 인증할 때 쓰는 비공개 인증 정보입니다.
 API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys)이나
 [Anthropic Console](https://console.anthropic.com/settings/keys)에서 키를 만든 다음, 해당 명령의
 `...`를 그 키로 바꾸세요. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
@@ -410,15 +377,14 @@ PowerShell에서는 `$env:OPENAI_API_KEY = "..."`로 키를 설정하세요.
 
 `login codex`는 Codex CLI와 같은 방식으로 ChatGPT 계정에 로그인합니다.
 로그인 URL을 출력하고 기본 브라우저로 엽니다(Linux와 WSL에서는 `xdg-open`, macOS에서는 `open`,
-Windows에서는 기본 브라우저). 같은 머신의 브라우저에서 마치세요.
-브라우저가 `localhost:1455`로 돌아옵니다. WSL 2에서는 Windows 브라우저도 쓸 수 있습니다. 아무것도 열리지 않으면
-출력된 URL을 브라우저에 복사하세요. Artifactize는 IPv4와 IPv6
-루프백 주소를 모두 예약합니다(호스트에 IPv6가 없으면 IPv4만). Codex CLI나 앱 로그인 같은
-다른 프로세스가 포트 1455를 쓰고 있으면, artifactize는 콜백 리스너를 건너뛰고
-리디렉션 URL을 붙여 넣으라고 요청합니다. 다른 머신에서도 같은 대체 방법을 쓰세요.
+Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우저에서 마치세요.
+로그인이 끝나면 브라우저가 `localhost:1455`로 이동합니다. WSL 2에서는 Windows 브라우저도 쓸 수 있습니다. 아무것도 열리지 않으면
+출력된 URL을 브라우저에 복사하세요. Codex CLI나 앱 로그인 같은 다른 프로그램이 포트 1455를 쓰고
+있으면, artifactize는 주소를 붙여 넣으라고 요청합니다. 다른 머신에서 로그인할 때도 URL을 붙여 넣는 방법을 쓰세요.
 `http://localhost:1455/auth/callback?code=`로 시작하는 전체 URL을
-터미널이나 데스크톱 로그인의 붙여 넣기 칸에 넣으세요. 이 URL은 로드에 실패한 뒤 브라우저 주소 표시줄에서,
-또는 페이지가 계속 로딩 중이면 개발자 도구 → Network에서 찾을 수 있습니다.
+터미널이나 데스크톱 로그인의 붙여 넣기 칸에 넣으세요. 로그인은 5분 안에 마쳐야 하며, 그 뒤에는
+`login codex`를 다시 실행하세요. 페이지 로드에 실패했다면 브라우저 주소 표시줄에서,
+페이지가 계속 로딩 중이라면 개발자 도구 → Network에서 이 URL을 찾을 수 있습니다.
 `logout codex`는 artifactize의 토큰을 삭제하고
 서버에 토큰 폐기를 요청합니다. 폐기가 확인되지 않으면 경고합니다. 대신 기존 Codex 로그인의 토큰을 쓰려면
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`을 설정하세요. artifactize는 그 파일을 읽기만 합니다.
@@ -429,9 +395,9 @@ artifactize doctor                 # state and its schema, API-key presence, Cod
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
-`doctor`는 어떤 제공자도 호출하지 않고 Run도 만들지 않습니다. 모든 백엔드가 선택 사항이므로
+`doctor`는 어떤 provider도 호출하지 않고 Run도 만들지 않습니다. 모든 백엔드가 선택 사항이므로
 키나 로그인이 없으면 경고로 처리합니다. 쓸 수 없는 상태나 잘못된 설정 같은
-치명적 오류가 있을 때만 1로 종료합니다.
+심각한 오류가 있을 때만 1로 종료합니다.
 
 ## 정리와 제거 {#cleanup-and-uninstall}
 
@@ -495,26 +461,13 @@ Artifactize를 마우스 오른쪽 버튼으로 클릭해 제거하세요. `inst
 
 **Store 앱**을 제거하면 Run, 저장된 결과, 로그인, 캐시를 포함한
 패키지 전용 상태가 제거됩니다. 다른 설치 방법은 상태 디렉터리를 남겨 두므로,
-나중에 패키지되지 않은 버전을 설치하면 그 Run과 결과를 다시 찾습니다. `prune`은 활성 Run,
-데이터베이스 행, 저장소를 건드리지 않습니다. 남아 있는 패키지되지 않은 상태를 제거하려면
+나중에 패키지되지 않은 버전을 설치하면 그 Run과 결과를 다시 볼 수 있습니다. `prune`은 활성 Run,
+데이터베이스 행, 저장소를 건드리지 않습니다. 패키지되지 않은 버전이 남긴 상태를 지우려면
 `artifactize doctor`가 첫 줄에 출력하는 상태 디렉터리를 삭제하세요.
 
-제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수 재정의로
-AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. 사용자가 설정한 명령이
-패키지 전용 뷰 밖에 쓴 파일도 남을 수 있습니다.
-Windows 패키징 테스트에서 Runtime 자식 프로세스가 새로 만든 AppData 파일이 실제
-위치에 생기는 것을 확인했습니다. 더 필요 없다면 따로 제거하세요. 가상화되지 않은 기존
+제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수로 경로를 지정해 AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 만든 파일은 AppData 안에 있더라도 남으니,
+더 이상 필요하지 않으면 따로 지우세요. 가상화되지 않은 기존
 AppData 파일도 Store 패키지의 정리 대상이 아닙니다.
 [Windows 동작과 오버레이 주의 사항](../features/others/state.md#state)을 보세요.
 
 다음으로 [빠른 시작](guide.md)을 해 보세요. 모델이 필요 없는 5분짜리 둘러보기입니다.
-
-#### 제거된 관문 우회 설정 {#removed-gate-bypass-settings}
-
-`review_policy`와 `review_policy.dependency_gates`는 제거되었습니다. 빈
-정책 테이블조차 알 수 없는 필드로 설정 검증에 실패합니다. 예전
-`--ignore-gates` CLI 플래그와 `VerifyOptions.ignore_gates` 라이브러리 옵션도
-제거되었습니다. 대신 검증 요청마다 [추측 실행과 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을
-고르세요. 어느 모드도 최종 승인 의무를 면제하지 않습니다.
-예전에 저장된 키는 읽을 때 무시되므로, 예전 정책을 제거하는 데 상태
-마이그레이션은 필요 없습니다.

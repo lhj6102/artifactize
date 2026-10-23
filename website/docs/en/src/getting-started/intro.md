@@ -20,9 +20,9 @@ model or API key.
 
 ## Where to go next
 
-- **[Features](/docs/features/artifact.html):** Artifacts and their Graph, evals,
-  fingerprints, Runs, tools and team sharing. These features work through the same
-  library in every interface.
+- **[Features](/docs/features/artifact.html):** declare Artifacts and evals, decide
+  what to reuse, run and follow verification, give reviewers tools and share results with
+  a team. They work the same in the CLI, the desktop app and the agent plugin.
 - **[Desktop](/docs/desktop/index.html):** browse Runs and handle Human reviews in a window.
 - **[Agent plugin](/docs/agent-plugin/hey-arti.html):** give Arti the portable skill and
   connect your coding host through [MCP](/docs/agent-plugin/mcp.html).

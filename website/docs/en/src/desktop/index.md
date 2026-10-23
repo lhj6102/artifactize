@@ -1,11 +1,9 @@
 # Desktop
 
-The desktop app is a window onto the same machine-wide state as the CLI and TUI.
-It is the artifactize app of this machine, not of one repository: one screen shows
-every live branch of every project with Runs here and every Human review waiting for
-a person. Browse Runs, see what each branch would run now, inspect evidence and handle
-Human sign-offs without a second review engine or a separate evidence store. A change
-made in the app or with the CLI shows in the other. Every release ships it beside the
+Open the app to see, on one screen, every live branch of every project with Runs on
+this machine and every Human review waiting for a person. Browse Runs, see what each
+branch would run now, inspect evidence and handle Human sign-offs. The app works on the
+same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
 commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
@@ -26,7 +24,9 @@ default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
-sets the cooperative claim name (normally the user name). Invalid arguments exit 2.
+sets the cooperative claim name (normally the user name). `-h`, `--help` or `help`
+(also after a mode) prints help on stderr and exits 2, as invalid arguments do. The app
+exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
 Ctrl+K, F1 or the **Commands** button opens a searchable command palette; Enter runs a
@@ -91,8 +91,10 @@ eval, ignoring case; `repo:` and `branch:` match part of that one field.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
 and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
-mouse. Enter without an open suggestion returns to the list. Esc closes suggestions,
-then puts back `sort:recent`, then returns to the list.
+mouse. Enter without an open suggestion returns to the list. A query that cannot be
+read, such as an unknown key, shows its error in place of the branches, and neither list
+shows entries until it is fixed. Esc closes suggestions, then puts back `sort:recent`,
+then returns to the list.
 
 ### Waiting reviews
 
@@ -154,7 +156,7 @@ approves nothing.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
-own. Above 500 Artifacts in view, the boxes described below take only clicks.
+own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms
 the camera. **Zoom In**, **Zoom Out** and **Fit View** also change its viewport.
 These gestures move the camera, not the divider or the Detail. A graph shows whole
@@ -166,14 +168,11 @@ the whole canvas, the same whether the Detail floats over it or not.
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
 the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
-pannable, zoomable minimap helps navigate the graph, and above **80 Artifacts** only
-elements in view are rendered: panning or zooming draws those it brings into view.
-A graph of **more than 500 Artifacts** draws its edges on a canvas below the
-Artifacts and has no minimap. While more than 500 Artifacts are in view, they are
-painted as boxes in their lights, and a click on one opens its Detail; zoom in until
-fewer are in view to see them as named nodes that Tab and Enter reach again. A new snapshot or scan relights a
-graph in place, and lays it out again only when its Artifacts or edges change, keeping
-the graph shown until the new layout is ready. An Artifact's Detail draws at most 16
+pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
+graph has no minimap, and while more than 500 are in view they are colored boxes without names
+that open only with a click. Zoom in until fewer are in view to see names again and reach
+them with Tab and Enter. When a Run changes, the graph's colors update in
+place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
 
 ### Detail
@@ -183,8 +182,8 @@ with the graph still visible behind it, never beside the Pane. It leaves the cam
 where it is: pan to bring an Artifact under it into view.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
-background, **Close** or Esc closes it. On a Human review's Detail all three step
-back the same way: they cancel active work first, then leave the form, and only then
+background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only
+when you are not editing or running something; the others step back the same way: they cancel active work first, then leave the form, and only then
 close the Detail. Drag the Detail's left edge to resize it, between a readable column
 and leaving some graph visible; it keeps that width, also in the next launch.
 
@@ -234,9 +233,10 @@ expands or folds it. Only public reasoning summaries are shown, not hidden reaso
 
 Ctrl+O, or the palette's **Open a request by ID**, opens a saved request of any
 repository in the Main area: a waiting Human review actionable, as from the Pane, and
-any other request read-only. A read-only request with a log switches between its
-Summary and its Agent or Runtime log, as an eval's chip does, and `t` shows or hides
-its **Debug** facts; **Close** returns to the Pane. It follows its request's changes
+any other request read-only. A finished Human request opens read-only in the Human
+review view, where `t` shows or hides Technical. Another read-only request with a log
+switches between its Summary and its Agent or Runtime log, as an eval's chip does, and
+`t` shows or hides its **Debug** information; **Close** returns to the Pane. It follows its request's changes
 made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
 ## Human reviews
@@ -287,12 +287,10 @@ Schema errors identify the failing path and leave the form correctable. Input-me
 composition, including Korean, belongs to the text field and never fires shortcuts.
 Esc cancels active work, then leaves the form, then leaves the review.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
-GREEN and RED keep separate drafts. A review opened from the Pane and the same
-request's chip in a Run's Detail share one review state, Tool log included, within
-this app session, rather than creating independent forms. This holds while the state
-stays the same: when the app finds its state database replaced, it closes open
-Details, forgets cached reviews, drafts and Tool logs, and cancels running Human tool
-and submit jobs.
+GREEN and RED keep separate drafts. Opening the same request from the Pane or from
+its chip in a Run's Detail shows the same draft and Tool log. If the state directory is
+replaced, for example by restoring a backup, open reviews close, running Human tools and
+submissions are cancelled, and unsaved drafts and Tool logs are discarded.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.
@@ -310,7 +308,9 @@ this window took Human claims it has not submitted or released itself, choose
 claim leaves it held for this reviewer; it is not a verdict. The prompt lists the
 claims this window took, as this window last saw them: a claim released or settled
 from the CLI or another window can still be listed, and a claim taken before the
-window opened is not.
+window opened is not. Quitting cancels tools that are still producing output and any
+review work in progress; programs a launch tool opened keep running, so close them
+yourself.
 
 ## Settings
 
@@ -341,8 +341,8 @@ when shown. Reopen it or use the palette's **Refresh settings** command to reloa
   and arguments, and Agent execution-path metadata. Those declarations can contain
   paths or sensitive literals: Summary is not secret redaction. Choose according
   to the team's privacy needs. Signing out removes local configuration, **not the server
-  token**; a store administrator must [revoke it](../features/team/reference.md#review-store-server).
-  See [sharing and push behavior](../features/team/reference.md#remote-review-store-client).
+  token**; a store administrator must [revoke it](../cli/review-store.md#review-store-server).
+  See [sharing and push behavior](../cli/review-store.md#remote-review-store-client).
 
 Settings uses the same accounts and store operations as the CLI; credentials do
 not belong in `.artf`.

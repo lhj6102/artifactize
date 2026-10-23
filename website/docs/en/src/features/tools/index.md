@@ -107,14 +107,14 @@ args = ["board"]
 Start reads the usual JSON envelope, writes shared state into the private
 `ARTIFACTIZE_SESSION_DIR`, prints one readiness line and stays running. Bound
 calls and stop receive the same directory; each review gets a separate session.
-The agent never starts, stops or names an instance. Artifactize owns preparation,
-stop and process cleanup, including errors and cancellation. A reused review starts
-nothing. Sessions are not [saved Agent conversations](../agent.md#saved-conversations).
-See [Tool sessions](agent.md#tool-sessions) for the lifecycle and recovery contract.
+The agent never starts, stops or names an instance; artifactize stops and cleans up
+every session, also on errors and cancellation. A reused review starts nothing. Sessions
+are not [saved Agent conversations](../agent.md#saved-conversations). See
+[Tool sessions](agent.md#tool-sessions) for what a harness implements.
 
 ## Check a declaration before reviewing
 
 `artifactize tools check` checks availability and declarations without executing
 project commands. To try a specific tool, use the explicit
-[execution form](agent.md#tool-diagnostics); it creates no Run, review or cache
+[execution form](../../cli/index.md#tool-diagnostics); it creates no Run, review or cache
 entry. A bound Agent tool gets a fresh owned harness for that diagnostic call.
