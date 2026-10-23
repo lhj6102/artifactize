@@ -247,10 +247,12 @@ async fn latest(source: &Source, state: &Path, now: SystemTime) -> Result<Versio
 }
 
 /// Whether an answer from `checked_at` (seconds since the epoch) is still current at `now`.
-/// One from the future, after the clock went back, is not.
+/// One from the future, after the clock went back, is not, nor a time no clock can show.
 fn fresh(checked_at: u64, now: SystemTime) -> bool {
-    let checked = UNIX_EPOCH + Duration::from_secs(checked_at);
-    now.duration_since(checked).is_ok_and(|age| age < INTERVAL)
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(checked_at))
+        .and_then(|checked| now.duration_since(checked).ok())
+        .is_some_and(|age| age < INTERVAL)
 }
 
 /// The kept answer; a missing or unreadable one is none.

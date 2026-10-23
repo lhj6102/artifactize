@@ -156,3 +156,12 @@ fn a_development_build_and_the_store_are_not_looked_up() {
         Some(Outcome::Unchecked(Unchecked::Store))
     );
 }
+
+#[test]
+fn an_answer_kept_at_an_impossible_time_is_not_current() {
+    assert!(fresh(
+        at(0).duration_since(UNIX_EPOCH).unwrap().as_secs(),
+        at(DAY - 1)
+    ));
+    assert!(!fresh(u64::MAX, at(0)));
+}
