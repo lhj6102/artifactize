@@ -69,6 +69,8 @@ export class SettingsState {
   providersError = $state<string | null>(null);
   providersNotice = $state<string | null>(null);
   choice = $state.raw<Choice>({ kind: "builtin", provider: "codex" });
+  /** The name `models` and an eval's `backend` use for the chosen provider. */
+  backend = $derived(this.choice.kind === "builtin" ? this.choice.provider : this.choice.kind === "custom" ? this.choice.name : null);
   /** A built-in provider's key while typed; cleared the moment it is submitted. */
   key = $state("");
   draft = $state<Draft>(blank());
@@ -96,11 +98,6 @@ export class SettingsState {
     this.#commands = commands;
   }
 
-  /** The name `models` and an eval's `backend` use for the chosen provider. */
-  get backend(): string | null {
-    const choice = this.choice;
-    return choice.kind === "builtin" ? choice.provider : choice.kind === "custom" ? choice.name : null;
-  }
 
   /** Read everything again: another process may have signed in, saved a key or changed a
    * custom provider. */

@@ -121,7 +121,7 @@ Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기
 Run은 artifactize가 관리합니다. MCP 요청 처리를 중단하거나, MCP 연결을 닫거나,
 지켜보기를 멈추거나, 에이전트 턴을 끝내도 Run은 취소되지 않습니다. Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 RED/INCOMPLETE/ERROR/취소됨은 잘못된 도구 호출이 아니라 저장된 Run 결과입니다.
-Human 요청을 맡거나 놓고 판정을 제출하는 일은 사람이 직접 하며, MCP에는 이 기능이 없습니다.
+Human 요청의 담당 지정·해제와 판정 제출은 사람이 직접 하며, MCP에는 이 기능이 없습니다.
 
 ## 확인 도구 {#inspection-tools}
 
@@ -141,7 +141,7 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `session_show` | **`reference`**, `summary`(기본 false) | `session show REF [--summary]` |
 | `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`. `audience`는 `agent` 또는 `human` |
 | `doctor` | 없음 | `doctor` |
-| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름) | `models PROVIDER` |
+| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름. 이름은 ASCII 영문자, 숫자, `_`, `-` 1–64자이며 영문자나 숫자로 시작) | `models PROVIDER` |
 | `remote_status` | 없음 | `remote status` |
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 

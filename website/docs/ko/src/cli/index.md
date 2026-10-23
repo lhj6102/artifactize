@@ -60,7 +60,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도. 읽기 전용 인증 파일은 건드리지 않음 | `Signed out of Codex.`. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 로컬 로그아웃 뒤 0 |
 | `logout openai\|anthropic\|gemini` | 저장한 키를 지움. 변수는 건드리지 않음 | `Forgot the saved PROVIDER API key.`. JSON은 `{"provider":…,"saved":false}` | 0 |
 | `provider list` | | 기본 provider마다 키 출처와 커스텀 provider 전체. 키 값은 출력하지 않음. 텍스트 또는 JSON | 0 |
-| `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 `--key`(키는 stdin) | `Saved custom provider NAME.`. JSON은 `{"provider":NAME,"saved":true}` | 0 |
+| `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 선택 항목 `--key`(키는 stdin. 없으면 엔드포인트에 키가 없음) | `Saved custom provider NAME.`. JSON은 `{"provider":NAME,"saved":true}` | 0 |
 | `provider remove NAME` | | `Removed custom provider NAME.`. JSON은 `{"provider":NAME,"saved":false}` | 0 |
 | `remote login URL` | `--share summary\|full`(summary). 토큰은 stdin으로 | `Signed in to URL as NAME (scopes: …).`. JSON은 `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.`와 함께, 서버에서는 `server token revoke` 전까지 토큰이 유효하다는 안내. JSON은 `{"signedIn":false}` | 0 |

@@ -51,11 +51,13 @@ artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 `prune`은 현재 저장소만이 아니라 선택한 상태에 있는 모든 저장소의 Run을 다룹니다.
 **GREEN, RED, ERROR, INCOMPLETE**로 끝났고 아직 실행 중인 작업이 없는 Run의 출력을
 지웁니다. SIGNOFFS_PENDING Run은 승인이 모두 제출된 뒤에도 **항상 건너뛰며**, 끝나지 않은
-Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `--dry-run`은 지우지
-않고 `wouldRemove`를 돌려주고, 실제로 정리하면 `removed`를 돌려줍니다. 둘 다
-`skippedRuns`를 포함합니다. `prune`은 `--older-than`과 상관없이
-[Agent 세션 저장소](../features/others/state.md#agent-sessions)도 크기 한도까지 줄입니다.
-지운 세션은 `removedSessions`에, `--dry-run`이면 `wouldRemoveSessions`에 나옵니다. 미리
+Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `prune`은 `--older-than`과 상관없이
+[Agent 세션 저장소](../features/others/state.md#agent-sessions)도 크기 한도까지 줄입니다. 텍스트
+출력은 지운 폴더마다 `Removed PATH`(`--dry-run`이면 `Would remove PATH`), 건너뛴 Run마다
+`Skipped Run ID`, 지운 세션마다 `Removed Agent session ID`(`--dry-run`이면 `Would remove Agent
+session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저장소 파일은 그대로 두었다고 알립니다.
+`--json`이면 같은 내용을 `removed` 또는 `wouldRemove`, `skippedRuns`, `removedSessions` 또는
+`wouldRemoveSessions`로 돌려줍니다. 미리
 보기에서는 실행 중인 `session send`가 쓰는 세션을 확인할 수 없으므로, 실제 정리에서는 이보다
 적게 지울 수 있습니다.
 
@@ -101,14 +103,17 @@ provider가 준 순서대로 `{"backend":"openai","models":[{"slug":"model-id","
 
 ## 키와 커스텀 provider {#keys-and-custom-providers}
 
-`login openai|anthropic|gemini`는 stdin에서 API 키를 읽어 저장합니다. 터미널에서 입력하면 화면에
-표시되지 않습니다. 같은 이름으로 `logout`을 실행하면 저장한 키를 지웁니다. 키 변수가 설정되어 있으면
+`login openai|anthropic|gemini`는 stdin에서 API 키를 읽어 저장합니다. 키는 `remote login`이
+[토큰](review-store.md#remote-review-store-client)을 읽을 때와 같이 한 줄을 처음 8192바이트까지만 읽고 앞뒤
+공백을 지웁니다. 터미널에서는 입력이 화면에 나타나지 않으며, Windows에서 입력을 숨기는 데 실패하면 키가
+화면에 보인다고 경고한 뒤 계속 읽습니다. 같은 이름으로 `logout`을 실행하면 저장한 키를 지웁니다. 키 변수가 설정되어 있으면
 그 변수를 먼저 씁니다. `login codex`와 `logout codex`는 [Codex 로그인](../features/agent.md#codex)입니다.
 
 `provider add NAME`은 [커스텀 provider](../features/agent.md#custom-providers)를 저장하며, 같은 이름이
 있으면 바꿉니다. `--alias PROVIDER`는 기본 provider를 다른 이름으로 쓰고, 엔드포인트는
-`--api openai-responses|openai-chat|anthropic|gemini`와 `--url`로 지정하며 `--key`를 주면 키를
-stdin에서 읽습니다. `provider remove NAME`은 삭제합니다. `provider list`는 기본 provider마다 키의
+`--api openai-responses|openai-chat|anthropic|gemini`와 `--url`로 지정합니다. `--key`는 선택 사항이며,
+주면 같은 방식으로 키를 stdin에서 읽습니다. `--key` 없이 저장한 엔드포인트에는 키가 없으며, 키가 있던
+엔드포인트를 바꿀 때도 마찬가지입니다. `provider remove NAME`은 삭제합니다. `provider list`는 기본 provider마다 키의
 `source`(`environment`, `saved`, `absent` 중 하나이며 변수를 먼저 봅니다), 변수를 쓰는 동안에도 키가 저장되어 있는지(`saved`), 커스텀
 provider 전체를 출력하며, 키 값은 출력하지
 않습니다.

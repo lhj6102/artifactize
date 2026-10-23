@@ -54,11 +54,13 @@ It removes the output of Runs that ended **GREEN, RED, ERROR or INCOMPLETE** and
 nothing still running. SIGNOFFS_PENDING Runs are **always skipped**, even after their
 sign-offs are submitted, and so are unfinished Runs. `--older-than` compares the Run's
 end time, as a whole number of `s`, `m`, `h`, `d` or `w`; without it every eligible Run is
-pruned. `--dry-run` returns `wouldRemove` without deleting; a real prune returns
-`removed`; both include `skippedRuns`. `prune` also cleans the
+pruned. `prune` also cleans the
 [Agent session store](../features/others/state.md#agent-sessions) down to its size bounds, whatever `--older-than`
-says: `removedSessions` lists what it deleted, and `--dry-run` lists
-`wouldRemoveSessions`. A dry run does not know which sessions a running `session send`
+says. Its text output prints one line per removed folder (`Removed PATH`, or `Would remove
+PATH` with `--dry-run`), per skipped Run (`Skipped Run ID`) and per removed session (`Removed
+Agent session ID`, or `Would remove Agent session ID`), then a note that the database and
+repository files were kept. With `--json` the same report has `removed` or `wouldRemove`,
+`skippedRuns`, and `removedSessions` or `wouldRemoveSessions`. A dry run does not know which sessions a running `session send`
 uses, so the real prune can delete fewer.
 
 ## Doctor, models and prune
@@ -103,15 +105,19 @@ provider's order.
 
 ## Keys and custom providers
 
-`login openai|anthropic|gemini` reads an API key from stdin (hidden when typed in a
-terminal) and saves it; `logout` with the same name forgets it. The key's variable, when
+`login openai|anthropic|gemini` reads an API key from stdin and saves it; `logout` with
+the same name forgets it. A key is read as `remote login` reads a
+[token](review-store.md#remote-review-store-client): one line, at most its first 8192 bytes,
+with surrounding whitespace dropped; at a terminal the input is hidden, and on Windows, if
+hiding fails, a warning says the key will be visible and reading goes on. The key's variable, when
 set, is still used first. `login codex` and `logout codex` are the
 [Codex sign-in](../features/agent.md#codex).
 
 `provider add NAME` saves a [custom provider](../features/agent.md#custom-providers), or
 replaces the one with that name: `--alias PROVIDER` for a built-in provider under another
 name, or `--api openai-responses|openai-chat|anthropic|gemini` with `--url` for an endpoint,
-with `--key` to read its key from stdin. `provider remove NAME` removes it. `provider list`
+optionally with `--key` to read its key from stdin the same way. An endpoint saved without
+`--key` has no key, also when it replaces one that had a key. `provider remove NAME` removes it. `provider list`
 prints each built-in key's `source` (`environment`, `saved` or `absent`; the variable comes
 first), whether a key is `saved` even while the variable is used, and every custom
 provider, never a key:

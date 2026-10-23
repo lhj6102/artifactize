@@ -65,7 +65,7 @@ on the root command and on `artifactize tools`.
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
 | `logout openai\|anthropic\|gemini` | forgets the saved key; the variable is untouched | `Forgot the saved PROVIDER API key.`; JSON `{"provider":…,"saved":false}` | 0 |
 | `provider list` | | each built-in key's source and every custom provider, never a key; text or JSON | 0 |
-| `provider add NAME` | `--alias PROVIDER`, or `--api API --url URL` with `--key` (key on stdin) | `Saved custom provider NAME.`; JSON `{"provider":NAME,"saved":true}` | 0 |
+| `provider add NAME` | `--alias PROVIDER`, or `--api API --url URL` with optional `--key` (key on stdin; without it the endpoint has no key) | `Saved custom provider NAME.`; JSON `{"provider":NAME,"saved":true}` | 0 |
 | `provider remove NAME` | | `Removed custom provider NAME.`; JSON `{"provider":NAME,"saved":false}` | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | `Signed in to URL as NAME (scopes: …).`; JSON `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
 | `remote logout` | | `Signed out of the remote review store.` plus a note that the server keeps the token valid until `server token revoke`; JSON `{"signedIn":false}` | 0 |
