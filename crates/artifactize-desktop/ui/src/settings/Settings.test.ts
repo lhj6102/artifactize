@@ -67,9 +67,15 @@ function backend(options: {
         return none;
       case "signoff_grace":
         return { seconds: grace, maxSeconds: 86400 };
-      case "signoff_grace_set":
-        grace = payload.seconds as number;
+      case "signoff_grace_set": {
+        // The library's own refusal, as the IPC returns it.
+        const seconds = payload.seconds as number;
+        if (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400) {
+          throw { kind: "setting", message: "The sign-off idle grace must be whole seconds, at most 86400." };
+        }
+        grace = seconds;
         return { seconds: grace, maxSeconds: 86400 };
+      }
       default:
         return null;
     }
@@ -158,14 +164,16 @@ describe("Settings", () => {
     const seconds = screen.getByLabelText<HTMLInputElement>("Seconds");
     const save = screen.getByRole("button", { name: "Save" });
     expect(seconds.value).toBe("120");
-    // Unchanged or out of bounds, nothing can be saved.
+    // Unchanged, nothing can be saved; past the library's bound, the field keeps it from Save.
     expect(save.hasAttribute("disabled")).toBe(true);
     await fireEvent.input(seconds, { target: { value: "90000" } });
-    expect(save.hasAttribute("disabled")).toBe(true);
+    await fireEvent.click(save);
+    expect(calls.some((call) => call.cmd === "signoff_grace_set")).toBe(false);
+    expect(screen.getByTestId("grace-status").textContent).toBe("2 minutes");
     await fireEvent.input(seconds, { target: { value: "300" } });
     await fireEvent.click(save);
     await screen.findByText("Saved. Runs started from now on wait this long.");
-    expect(calls.find((call) => call.cmd === "signoff_grace_set")?.args).toEqual({ seconds: 300 });
+    expect(calls.filter((call) => call.cmd === "signoff_grace_set").at(-1)?.args).toEqual({ seconds: 300 });
     expect(screen.getByTestId("grace-status").textContent).toBe("5 minutes");
     await fireEvent.input(seconds, { target: { value: "0" } });
     await fireEvent.click(save);

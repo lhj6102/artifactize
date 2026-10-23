@@ -189,6 +189,45 @@ export function createGraph(): Fixture {
   });
 }
 
+/** A repository whose only eval is a runtime check that runs until its test writes `gate`,
+ * and a state with no Run yet. */
+export function createHeld(): Fixture & { gate: NativePath } {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const gate = nativePath(root, "held.gate");
+    writeText(nativePath(makeDirectory(nativePath(repo, "held")), "index.artf"), `name = "held"
+
+[evals.check]
+title = "Check held"
+profile = { kind = "runtime", ${commandFields("talk", portablePath(gate))} }
+
+[evals.check.payload]
+instruction = """
+Run until the test opens the gate."""
+`);
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    return { root, repo, state: nativePath(root, "state"), gate };
+  });
+}
+
+/** A repository whose only eval is a sign-off, and a state with no Run yet. */
+export function createSignoffOnly(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    humanExample(repo, "notes", "approved", "Notes approved");
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    return { root, repo, state: nativePath(root, "state") };
+  });
+}
+
+/** The newest saved Run's status, as `run list --json` prints it. */
+export function newestRunStatus(fixture: Fixture): string | null {
+  const result = runProgram(cli(), ["--repo", fixture.repo, "--state-dir", fixture.state, "run", "list", "--json"],
+    { env: environment(fixture) });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return (JSON.parse(result.stdout) as { status: string }[])[0]?.status ?? null;
+}
+
 /** A fresh repository and state with one Run waiting for the Human sign-off. */
 export async function create(signoff: SignoffDefinition = DEFAULT_SIGNOFF): Promise<Fixture> {
   return prepareFixture(async (root) => {

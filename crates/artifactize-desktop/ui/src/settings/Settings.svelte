@@ -181,18 +181,10 @@
     }
   }
 
-  /** Whole seconds within the accepted bound; anything else cannot be saved. */
-  const graceValid = $derived(
-    s.grace !== null &&
-      s.graceSeconds !== null &&
-      Number.isInteger(s.graceSeconds) &&
-      s.graceSeconds >= 0 &&
-      s.graceSeconds <= s.grace.maxSeconds,
-  );
-
   async function saveGrace(event: SubmitEvent) {
     event.preventDefault();
-    if (!graceValid || s.graceSeconds === null) return;
+    // Whether the number is a grace the library accepts is the library's answer, shown on Save.
+    if (s.graceSeconds === null) return;
     s.graceSaving = true;
     s.graceError = null;
     s.graceNotice = null;
@@ -427,7 +419,7 @@
       <button
         class="button"
         type="submit"
-        disabled={s.graceSaving || !graceValid || s.graceSeconds === s.grace?.seconds}>Save</button
+        disabled={s.graceSaving || s.grace === null || s.graceSeconds === null || s.graceSeconds === s.grace.seconds}>Save</button
       >
     </form>
     <p id="grace-help" class="muted">

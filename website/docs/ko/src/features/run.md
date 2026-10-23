@@ -57,8 +57,8 @@ Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선�
 접수된 대로 실행합니다. 선언을 다 고친 다음 새 Run을 제출하세요(이전 Run이 아직 실행 중이면
 취소하세요). 접수된 Run의 대상이 바뀌지는 않습니다.
 
-승인은 다른 eval을 막지 않으며, Run은 [승인과 Run 종료](#sign-offs-and-the-end-of-a-run)에 적힌
-동안만 승인을 위해 열려 있습니다. Human 대기 제한 시간이나 `verify --timeout-ms`는 없으며, 모든 eval
+승인은 다른 eval을 막지 않습니다. Run은 [승인과 Run 종료](#sign-offs-and-the-end-of-a-run)에 설명한
+조건을 충족하는 동안 종료되지 않습니다. Human 대기 제한 시간이나 `verify --timeout-ms`는 없으며, 모든 eval
 종류가 같은 확정 규칙을 따릅니다. 선택 기능인 [추측 실행](#speculation)은 실행 순서를 바꿀 뿐, Human의
 결정 권한을 바꾸지 않습니다.
 

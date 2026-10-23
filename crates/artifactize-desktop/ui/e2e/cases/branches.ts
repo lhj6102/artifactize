@@ -4,14 +4,14 @@
 // in another process; and a review left for a branch without being closed.
 import assert from "node:assert/strict";
 import {
-  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHistory, createSharedBranch, ended, orderRuns, requests, signOff, signoff,
-  verifyWaiting,
+  addFolder, addWaiting, addWorktrees, artifactize, changeNotes, create, createChain, createHeld, createHistory, createSharedBranch, ended, newestRunStatus,
+  orderRuns, requests, signOff, signoff, verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { exists, nativePath, readText, removeTree, type NativePath } from "../platform.ts";
+import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, leans } from "../pane.ts";
@@ -31,6 +31,39 @@ function kept(state: NativePath): unknown[] | null {
 const FIRST = '[aria-label="Branches"] > [role="treeitem"]:first-child';
 
 export const scenarios: Scenario[] = [
+  // UX journey: J-LIVE; UX edges: E-BRANCH-RUNNING E-BRANCH-RUN-END
+  scenario<{ gate: NativePath }>(
+    "branches-run-executing",
+    "starts a branch's timeline with a Run another process starts while its eval still runs, Running and its time so far, folded the same, and ends it",
+    async () => {
+      const fixture = createHeld();
+      // No Run yet: the branch is listed because the monitor is opened on its repository.
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: { gate: fixture.gate } };
+    },
+    async (browser, { fixture, data: { gate } }) => {
+      await listed(browser, "repo  master");
+      // Another process starts a Run whose only eval runs until the gate opens.
+      assert.equal(artifactize(fixture, "verify", "--all"), 0);
+      await waitFor(browser, () => newestRunStatus(fixture) === "RUNNING", "the Run is executing");
+      const run = () => branch(browser, "repo  master");
+      if ((await run())?.expanded) {
+        await browser.$(`${FIRST} button.chevron`).click();
+        await waitFor(browser, async () => (await run())?.expanded === false, "the branch folded");
+      }
+      await waitFor(browser, async () => /^Running \d+[smh]( \d+[smh])?$/.test((await run())?.latest ?? ""),
+        "folded, the branch reads Running and its time so far");
+      await browser.$(`${FIRST} button.chevron`).click();
+      await waitFor(browser, async () => (await run())?.expanded === true, "the branch expanded");
+      const shown = (await run())!;
+      assert.ok(!shown.chips.some((chip) => chip.id === "current"), `the Current gone while the Run runs: ${JSON.stringify(shown.chips)}`);
+      assert.match(shown.chips[0].text, /^Running \d+[smh]( \d+[smh])?$/, `the open entry reads its time so far: ${shown.chips[0].text}`);
+      // The gate opens: the eval ends, the Run ends GREEN and the Current leads again.
+      writeText(gate, "open");
+      await waitFor(browser, () => newestRunStatus(fixture) === "GREEN", "the Run ended GREEN");
+      await waitFor(browser, async () => (await run())?.chips[0]?.id === "current", "the timeline starts with the Current again");
+      assert.match((await run())!.chips[1].text, /^GREEN \d+[smhd]( \d+[smh])? ago$/);
+    },
+  ),
   // UX journey: J-BRANCH-RUNS; UX edges: E-PANE-FOLD E-PANE-SELECT E-PANE-OLDER E-PANE-CHIP E-CURRENT-CHIP
   scenario<{ runs: string[] }>(
     "branches-timeline",

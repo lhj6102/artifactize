@@ -322,7 +322,7 @@ unchanged. See [Sign-offs and the end of a Run](../features/run.md#sign-offs-and
 ### Upgrading from 0.11
 
 The state's format of saved review data (its schema) is upgraded automatically on first use,
-from schemas 6 to 8 to the current schema 9; existing Runs, cache records and Human approvals
+from schemas 6 to 9 to the current schema 10; existing Runs, cache records and Human approvals
 are kept. An older artifactize cannot open the upgraded state, so keep a backup before
 switching versions.
 

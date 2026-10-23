@@ -2,7 +2,9 @@
 // a remote store's HTTP identity, persisted sign-in, status, dry run and logout, and the
 // sign-off idle grace both read and set.
 import assert from "node:assert/strict";
-import { artifactize, create, createOutside, environment, remoteStatus, signoff, signoffGrace, type Fixture } from "../fixture.ts";
+import {
+  artifactize, create, createOutside, createSignoffOnly, environment, newestRunStatus, remoteStatus, signoff, signoffGrace, type Fixture,
+} from "../fixture.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle, openWaiting } from "../pane.ts";
@@ -94,11 +96,12 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX journey: J-SET-SIGNOFF-GRACE
+  // UX edges: E-SET-GRACE E-SET-GRACE-SAVE
   scenario(
     "settings-signoff-grace",
-    "settings: shows the sign-off idle grace the CLI reads and saves a new one the CLI then reads",
+    "settings: shows the sign-off idle grace, saves a new one the CLI reads, and a later Run ends by it",
     async () => {
-      const fixture = createOutside();
+      const fixture = createSignoffOnly();
       return { fixture, env: settingsEnvironment(fixture), data: null };
     },
     async (browser, { fixture }) => {
@@ -116,6 +119,19 @@ export const scenarios: Scenario[] = [
       await browser.$("button=Settings").click();
       await browser.$("button=Settings").click();
       await browser.waitUntil(async () => (await shown()) === "45 seconds", { timeout: 15000, timeoutMsg: "the idle grace the CLI set" });
+      // A day's grace from the CLI, then none from Settings: a Run started afterwards with only
+      // its unclaimed sign-off left ends YELLOW at once, which only the saved 0 allows.
+      assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "86400"), 0);
+      await browser.$("button=Settings").click();
+      await browser.$("button=Settings").click();
+      await browser.waitUntil(async () => (await shown()) === "1440 minutes", { timeout: 15000, timeoutMsg: "the day the CLI set" });
+      await fill(browser, "#grace-seconds", "0");
+      await browser.$("button=Save").click();
+      await browser.waitUntil(async () => (await shown()) === "0 seconds", { timeout: 15000, timeoutMsg: "no idle grace saved" });
+      assert.equal(artifactize(fixture, "verify", "--all"), 0);
+      await browser.waitUntil(async () => newestRunStatus(fixture) === "YELLOW", {
+        timeout: 15000, timeoutMsg: "the Run started after the save ends YELLOW without a grace",
+      });
     },
   ),
   // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT
