@@ -68,7 +68,7 @@ Run도 건너뜁니다. `--older-than`은 Run이 끝난 시각과 비교하며, 
 - `sessions`: [Agent 세션 저장소](../features/others/state.md#agent-sessions)입니다. 세션 수와
   바이트 수, `maxBytes`, `targetBytes`, `enabled`, 저장 위치 `directory`, 상태의
   `stateId`가 나옵니다.
-- API 키: 있는지 없는지만 알려 주고, 확인하거나 출력하지는 않습니다. 사용하는 백엔드의
+- API 키: 설정되어 있는지만 알려 주며, 키가 유효한지 검사하거나 값을 출력하지는 않습니다. 사용하는 백엔드의
   키만 있으면 되므로, 키가 없으면 오류가 아니라 경고로 처리합니다. [테스트 엔드포인트](../features/agent.md#test-against-a-fake-provider)를
   쓰면 어떤 엔드포인트인지 `testEndpoint`로 알려 주는 경고가 나오고, 잘못된 엔드포인트는 심각한 오류입니다.
 - `codex`: 로그인 정보를 갱신하거나 온라인에 접속하지 않고 읽습니다. 로그인하지 않았으면

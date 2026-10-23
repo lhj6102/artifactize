@@ -256,7 +256,7 @@ cargo install --path crates/artifactize-tools --locked
 
 위의 소스 빌드용 Rust 사전 요구 사항에 더해 Node.js 24,
 `crates/artifactize-desktop/ui/package.json`에 적힌 버전의 pnpm, 그리고
-OS별 [Tauri 네이티브 사전 요구 사항](https://v2.tauri.app/start/prerequisites/)을 설치하세요.
+OS별로 [Tauri 빌드에 필요한 도구와 라이브러리](https://v2.tauri.app/start/prerequisites/)를 설치하세요.
 Linux에는 WebKitGTK 4.1, GTK 3, librsvg 개발 패키지가 필요하고, macOS에는
 Xcode 명령줄 도구가, Windows에는 C++ 빌드 도구와 WebView2가 필요합니다.
 저장소 루트에서 실행하세요.

@@ -12,8 +12,8 @@ Agent는 먼저 도구를 호출할 수 있고, 그다음 provider의 구조화�
 결과는 `"verdict":"GREEN"`이나 `"verdict":"RED"`와, 그 판정의 스키마가 허용하는 소유자 필드를
 함께 담은 객체 하나입니다. `session send`의 follow-up 답변은 일반 텍스트입니다.
 
-artifactize가 직접 답을 소유자 스키마로 검사하므로, provider가 제한하지 못하는 키워드를
-포함해 선언한 JSON Schema 키워드가 모두 적용됩니다. 답이 스키마에 맞지 않으면 Agent에게 무엇이
+artifactize가 직접 소유자 스키마에 따라 답을 검사하므로, provider가 검증하지 못하는 키워드까지
+포함해 선언한 JSON Schema 제약 조건이 모두 적용됩니다. 답이 스키마에 맞지 않으면 Agent에게 무엇이
 잘못됐는지 알리고 도구 없이 한 번 더 기회를 줍니다. Agent는 이미 모은 정보로 답해야 하며, 이때
 도구를 요청해도 리뷰는 `INVALID_RESULT`로 끝납니다. 저장된 대화에 그 메시지가 나옵니다.
 

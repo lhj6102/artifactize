@@ -128,7 +128,7 @@ Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 R
 실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
 쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
-eval이 직접 또는 여러 단계를 거쳐 서로를 참조하는 Artifact들은 **순환**을 이룹니다. 부모를
+한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로 돌아오면 이 Artifact들은 **순환**을 이룹니다. 부모를
 참조하는 자식도 부모와 순환을 이룹니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
 `docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면, `cli/tests`가 RED여도
 `docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
