@@ -66,7 +66,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `prune` | `--older-than DURATION`, `--dry-run` | 텍스트 또는 JSON | 0 |
 | `monitor [PATH]` | ALL에서 시작. PATH나 `--repo PATH`는 처음 고를 저장소만 정함. `--all`은 경로와 함께 쓸 수 없음 | 터미널 UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값, `--repo`와 함께 쓸 수 없음), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
-| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트 0이면 빈 포트를 골라 출력에 알려 줌 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
+| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트가 0이면 사용 가능한 포트를 선택하고 그 번호를 출력함 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
 | `server token add NAME --scopes SCOPES` | `--scopes`(필수, 기본값 없음. `read`, `publish`, `human`을 쉼표로 이은 목록) | 토큰을 한 번 출력하고 저장해 두라고 안내. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
 | `server token list` | | 텍스트 또는 JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
