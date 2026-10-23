@@ -58,10 +58,13 @@ function running(): string {
   return runProgramOk(cli(), ["--version"]).trim().split(" ")[1];
 }
 
-/** The app's release lookup has answered at least once and the window shows its answer. */
+/** The app's release lookup has answered at least once, none of its calls failed, and the
+ * window shows its answer. */
 async function lookedUp(browser: WebdriverIO.Browser): Promise<void> {
-  await browser.waitUntil(async () => ((await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0) >= 1,
+  const calls = async () => (await checkpoint(browser)).activity.commands.releaseNotice;
+  await browser.waitUntil(async () => ((await calls())?.completed ?? 0) >= 1,
     { timeout: 15000, timeoutMsg: "the app looked up the latest release" });
+  assert.equal((await calls())?.failed, 0, "the app's release lookup succeeded");
   await afterRender(browser);
 }
 

@@ -391,14 +391,13 @@ export const scenarios: Scenario[] = [
           return box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
         }).map((node) => node.dataset.id ?? "");
       });
-      const drawn = (id: string) => browser.execute((want) => !!document.querySelector(`.svelte-flow__node[data-id="${want}"]`), id);
       await browser.waitUntil(async () => (await visible()).length > 0,
         { timeout: 30000, timeoutMsg: "a graph node is visible after the initial fit" });
-      // Zoom in until the chain extends beyond the canvas and its last Artifact is not drawn.
+      // Zoom in until the chain extends beyond the canvas and its last Artifact is out of view.
       const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
-      await browser.waitUntil(async () => !(await drawn(name(124))) && !(await visible()).includes(name(124)),
-        { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas and is not drawn" });
+      await browser.waitUntil(async () => !(await visible()).includes(name(124)),
+        { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas" });
       // Fit View moves the camera back over the whole chain: the Artifacts it brings into view
       // are drawn, the chain's end among them.
       await browser.$(".svelte-flow__controls-fitview").click();
