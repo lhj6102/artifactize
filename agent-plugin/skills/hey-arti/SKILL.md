@@ -23,7 +23,7 @@ needs, in their terms, and link the page for the rest.
 
 | Concept, for the user | Page |
 |---|---|
-| An **Artifact** is a part of the project that gets reviewed: a folder or one file. | [Artifact](https://artifactize.dev/docs/features/artifact.html), [Declarations](https://artifactize.dev/docs/features/declarations.html) |
+| An **Artifact** is a part of the project that gets reviewed: a folder, one file, or the project's graph itself (declared by the repository-root `.artf`). | [Artifact](https://artifactize.dev/docs/features/artifact.html), [Declarations](https://artifactize.dev/docs/features/declarations.html) |
 | An **eval** is one check on an Artifact that ends in a verdict: a command (runtime), a model (Agent) or a person (Human). | [Eval](https://artifactize.dev/docs/features/eval.html), [Runtime](https://artifactize.dev/docs/features/runtime.html), [Agent](https://artifactize.dev/docs/features/agent.html), [Human](https://artifactize.dev/docs/features/human.html) |
 | An eval names each input it uses as `{name}`; when an input changes, only the evals that use it run again and the rest is reused. | [Eval dependencies](https://artifactize.dev/docs/features/artifact.html#eval-dependencies), [Fingerprint](https://artifactize.dev/docs/features/fingerprint.html) |
 | The user only asks for **verify**; artifactize decides the order, what to reuse and what to run. | [Evaluation Run](https://artifactize.dev/docs/features/run.html) |

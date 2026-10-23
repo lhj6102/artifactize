@@ -325,7 +325,8 @@ yourself.
 Settings opens as a modal over the screen; Esc, its **Close** or the **Settings** button
 again closes it, and the screen beneath stays as it was. It reloads account, key and store
 information each time it opens; the palette's **Refresh settings** command reloads it too.
-It has two tabs, **Providers** and **Remote** (← and → switch between them).
+It has three tabs, **Providers**, **Remote** and **Limits**; while the tab list has focus, ← and →
+cycle through them.
 
 **Providers** lists the built-in providers on the left (Codex, OpenAI, Anthropic, Gemini),
 then your custom providers by name, then **+ Custom provider**. Choosing one shows its setup

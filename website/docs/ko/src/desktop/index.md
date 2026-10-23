@@ -288,7 +288,7 @@ Human 리뷰에 있고 편집이나 작업이 진행 중이면 종료하지 않�
 Settings는 화면 위에 모달 창으로 열립니다. Esc를 누르거나 **Close**를 누르거나 **Settings**
 버튼을 다시 누르면 닫히고, 아래 화면은 열기 전 그대로입니다. 열 때마다 계정, 키, 저장소 정보를
 다시 불러오며, 팔레트의 **Refresh settings** 명령으로도 다시 불러올 수 있습니다. 탭은
-**Providers**와 **Remote** 두 개이고, ←와 →로 오갈 수 있습니다.
+**Providers**, **Remote**, **Limits** 세 개이며, 탭 목록에 초점이 있을 때 ←와 →로 차례로 오갈 수 있습니다.
 
 **Providers** 탭 왼쪽에는 기본 provider(Codex, OpenAI, Anthropic, Gemini)가 차례로 나오고, 그 아래에
 직접 추가한 커스텀 provider의 이름과 **+ Custom provider**가 나옵니다. 하나를 고르면 오른쪽에 그
