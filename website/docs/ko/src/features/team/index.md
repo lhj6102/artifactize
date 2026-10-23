@@ -38,8 +38,8 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 
 **TLS 리버스 프록시**는 저장소 앞에서 암호화된
 HTTPS 연결을 받아 로컬로 전달하는 서버입니다. **터널**은 연결을 다른
-암호화된 연결 안에 담아 전달합니다. 다음은 저장소 호스트에 이미 SSH 계정이 있는 팀원을 위한
-완전한 SSH 터널 설정입니다.
+암호화된 연결 안에 담아 전달합니다. 저장소 호스트에 이미 SSH 계정이 있다면
+다음 절차에 따라 SSH 터널을 설정하세요.
 
 1. 위처럼 그 호스트에서 `artifactize server run`을 계속 실행해 두세요.
 2. 팀원의 컴퓨터에서 터미널을 열고 `you@reviews-host`를

@@ -4,10 +4,10 @@ Open the app to see, on one screen, every live branch of every project with Runs
 this machine and every Human review waiting for a person. Browse Runs, see what each
 branch would run now, inspect evidence and handle Human sign-offs. The app works on the
 same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
-commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
+commands; see [Desktop app](../getting-started/install-options.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
-[installation guide](../getting-started/install.md#desktop-app).
+[installation guide](../getting-started/install-options.md#desktop-app).
 
 ## Open the app
 
@@ -177,8 +177,7 @@ neighbours on each side, failing ones first, and counts the rest.
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it, never beside the Pane. It leaves the camera
-where it is: pan to bring an Artifact under it into view.
+with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only

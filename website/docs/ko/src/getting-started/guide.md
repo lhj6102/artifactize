@@ -1,6 +1,6 @@
 # 가이드 (모델 불필요) {#guide-no-model-needed}
 
-이 둘러보기는 저장소의 예제 프로젝트를 사용합니다. 저장소의 로컬 사본인 체크아웃에서
+이 가이드에서는 저장소에 포함된 예제 프로젝트로 실습합니다. 저장소의 로컬 사본인 체크아웃에서
 직접 빌드하지 않았다면, 먼저 버전 관리 프로그램인 **Git**으로 사본을 만드세요
 (`git --version`이 응답하지 않으면 [Git 받기](https://git-scm.com/downloads)).
 `git clone`으로 저장소를 새 `artifactize` 폴더에 내려받은 다음, `cd`로 그 폴더에 들어가세요.
@@ -10,12 +10,26 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
+예제는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 쓰므로 두 명령
+모두 터미널에서 쓸 수 있어야 합니다. `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
+터미널이 두 명령을 찾는지 확인하세요.
+
+```sh
+python3 --version
+grep --help
+```
+
+Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라도 명령을 찾을 수 없다는 오류가
+나오면, 그 도구를 설치하거나 도구가 설치된 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
+artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대로 실행합니다.
+[운영체제](../features/others/platforms.md)를 보세요.
+
 리뷰받는 작업 단위 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
 부르는 검사들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
-artifactize의 **상태(state)** 는 Run과 결과를 저장하는 곳입니다.
+artifactize는 Run과 결과 같은 **상태(state)** 데이터를 상태 디렉터리에 저장합니다.
 이 둘러보기의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 폴더를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
@@ -75,8 +89,8 @@ status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에�
 
 `hero.png.artf` 같은 사이드카는 옆에 있는 파일을 독립된
 Artifact로 선언합니다. 사이드카에는 `name`이 필요하고, 폴더와 같은 TOML 스키마를 쓰며, 기본적으로
-그 파일만 해시합니다. 내장 도구는 그 파일과, 그 eval에 명시적으로 제공된 입력만 보며
-관련 없는 형제 파일은 보지 않습니다. 공용 검사기처럼 다른 Artifact를 쓰는 eval은
+그 파일만 해시합니다. 내장 도구는 대상 파일과 eval에 명시적으로 제공한 입력에만
+접근할 수 있으며, 같은 폴더의 다른 파일에는 접근할 수 없습니다. 공용 검사기처럼 다른 Artifact를 쓰는 eval은
 그 Artifact를 `{house-style}`처럼 이름으로 가리킵니다.
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요. [posts 예제](https://github.com/lhj6102/artifactize/tree/main/examples/posts)는
 Markdown 사이드카 세 개와 공용 스타일 검사기 하나를 씁니다. 이전
@@ -94,7 +108,7 @@ cd ../runtime-relations    # continue the tour below
 각 파일 Artifact의 해시에는 그 파일만 들어갑니다. 참조된 `house-style` Artifact가
 검사기와 금지어를 담고 있으므로, 공용 부분이 바뀌면 세 글 모두 기존 리뷰의
 [재사용 키](../features/fingerprint.md#the-reuse-key)가 무효가 됩니다. 재사용 키는
-검사의 기준과 리뷰된 입력을 식별하도록 기록된 값으로, 이전 결과가 여전히 적용되는지를 결정합니다.
+검사 기준과 리뷰한 입력을 구분하는 값이며, 이 값을 기준으로 이전 결과를 계속 쓸 수 있는지 판단합니다.
 이 예제의 README는 글 하나를 RED로 만들고 나머지 두 개는 재사용하는 방법을 보여 줍니다.
 
 Runtime eval은 지시문이나 인자에서 입력을 직접 참조합니다. 예를 들어
@@ -107,8 +121,10 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 ## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
 
 앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
-[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된
-모델 자격 증명, 사용할 모델의 정확한 ID, 프로필을 설정하세요.
+[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된 대로
+`examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
+다른 백엔드를 쓰려면 `verify`에 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
+자격 증명이 없으면 리뷰는 ERROR로 기록되고 대기 명령은 2로 종료합니다.
 Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두
 GREEN이 된 뒤에만 요청되므로 `spec/review`가 먼저 실행됩니다. 두 터미널은 같은 임시 상태 디렉터리를 써야 합니다. 아래의
 대기 명령을 시작하기 전에 첫 번째 터미널의 값을
@@ -140,10 +156,6 @@ review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 �
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 Run은 artifactize가 관리하며 Human 결과도 다른 결과와 똑같이 받아 처리하므로, Human 결과가 제출되면
 의존하는 eval들이 같은 Run 안에서 이어서 진행됩니다. 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run이 끝날 때까지 대기하며, 앞선 자동 리뷰가 여전히 유효하면 GREEN 승인이 들어오는 즉시 종료 코드 0으로 끝납니다.
-
-실제 Agent 리뷰를 하려면 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣은 다음
-`artifactize verify --eval spec/review --wait`를 실행하세요. 다른 백엔드를 쓰려면 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
-자격 증명이 없으면 리뷰는 ERROR로 기록되고 대기 명령은 2로 종료합니다. [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)를 보세요.
 
 ## Monitor {#monitor}
 

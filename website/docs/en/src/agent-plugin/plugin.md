@@ -59,7 +59,7 @@ The plugin follows this repository's `main` branch, which holds released version
 Update it with `/plugin marketplace update artifactize` in Claude Code (or turn on
 auto-update for the marketplace in `/plugin`), or
 `codex plugin marketplace upgrade artifactize` in Codex. The
-[installation page](../getting-started/install.md#update) shows how to update the
+[Update and uninstall](../getting-started/update.md#update) page shows how to update the
 `artifactize` program itself.
 
 ## Without the plugin

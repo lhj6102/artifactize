@@ -12,8 +12,8 @@
 | [Human](human.md) | 대기 중인 요청을 맡아 승인을 제출하는 사람 | 스키마로 검사한 소유자 필드와 함께 GREEN 또는 RED |
 | [Runtime](runtime.md) | 선언한 프로그램과 인자 목록 | 종료 코드 0이면 GREEN, 그 밖이면 RED |
 
-실행에 실패했거나 모델 결과가 잘못되면 RED가 아니라 **ERROR**입니다. RED는 검사가 실제로
-Artifact를 판단해서 통과시키지 않았다는 뜻입니다. 어느 종류든
+실행에 실패했거나 모델 결과가 잘못되면 RED가 아니라 **ERROR**입니다. RED는 실제 검사 결과
+Artifact가 통과 조건을 충족하지 못했다는 뜻입니다. 어느 종류든
 [입력과 기준](fingerprint.md#the-reuse-key)이 그대로인 동안은 재사용할 수 있습니다.
 
 리뷰 기준은 `payload.instruction`에 쓰세요. Agent와 Human eval에서는 `pass_schema`와

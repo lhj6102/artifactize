@@ -34,7 +34,7 @@ artifactize models codex
 
 Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
-들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필로 실행해 얻은 결과도 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
+들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
 제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 대상을
@@ -89,9 +89,9 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 턴이 사용량 제한이나 일시적인 오류로 실패했고, 아직 아무것도 출력하지 않았고 토큰도 쓰지
-않았다면 provider가 요청한 시간만큼 기다리며 자동으로 몇 번 다시 시도합니다. 출력이나 사용량이
+않았다면 provider가 요청한 시간만큼 대기한 뒤 자동으로 몇 번 다시 시도합니다. 출력이나 사용량이
 생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
-provider가 리뷰의 남은 시간보다 오래 기다리라고 하면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
+provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 끝난 결과는 재사용되므로 실패한 리뷰만
 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
@@ -150,14 +150,14 @@ eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 �
 도구 호출과 그 인자, 결과는 리뷰의 [저장된 대화](#saved-conversations)에만 있습니다.
 [`session show --summary`](../cli/index.md#session-summary)가 이를 집계합니다.
 
-백엔드를 믿고 쓰기 전에, 계정에서 쓸 수 있는 정확한 모델 ID와 선언한 도구 하나로 작은 리뷰를
+백엔드를 본격적으로 쓰기 전에, 계정에서 쓸 수 있는 정확한 모델 ID와 선언한 도구 하나로 간단한 시험용 리뷰를
 한 번 실행하고 `run show`로 결과를 확인하세요. 모델 없이 도구와 스키마를 시험하려면
 [가짜 provider](#test-against-a-fake-provider)를 쓰세요.
 
 ## 저장된 대화 {#saved-conversations}
 
-artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그래서 채팅을 이어 가듯 리뷰어가
-무엇을 보고 무엇을 말했는지 읽고, 같은 대화에 이어서 질문할 수 있습니다. 기록된 판정은 절대
+artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그래서 저장된 대화에서 리뷰어가
+무엇을 보고 어떤 답변을 했는지 확인하고, 채팅하듯 이어서 질문할 수 있습니다. 기록된 판정은 절대
 바뀌지 않습니다.
 
 **저장되는 내용.** 리뷰 세션은 내 계정만 읽을 수 있는 곳에 저장합니다
@@ -201,7 +201,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 - **로그인.** `login codex`는 Codex CLI처럼 브라우저에서 ChatGPT 로그인 페이지를 열고,
   로그인하면 artifactize로 돌아옵니다. 브라우저 단계, 주소를 붙여 넣는 대체 방법, 5분 제한은
-  [로그인 설정](../getting-started/install.md#backends)에 있습니다. 토큰과 ChatGPT 계정 ID는
+  [로그인 설정](../getting-started/backends.md)에 있습니다. 토큰과 ChatGPT 계정 ID는
   나만 읽을 수 있는 `$STATE/auth/codex.json`에 저장합니다. `login`, `models`, `verify`에는 같은
   `--state-dir`을 쓰세요. 토큰은 절대 저장소 안에 저장하지 않습니다. `$STATE/auth`가 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더 경로를 알려 주며 로그인을 거부하고
   `doctor`는 경고합니다([상태](others/state.md#state)). 저장소 바깥의 상태 디렉터리나

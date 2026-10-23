@@ -160,8 +160,8 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 
 ## Human 승인 {#human-sign-offs}
 
-Human 판정은 기본적으로 artifactsum을 통해 재사용되며, `fingerprint = false`면 재사용되지 않습니다. 다음은
-Human 승인이 있는 파일 하나짜리 프로젝트와, Bob을 위한 그 사본입니다. `WALK`가 아직 공유 디렉터리를
+Human 판정은 기본적으로 artifactsum을 통해 재사용되며, `fingerprint = false`면 재사용되지 않습니다. 아래 명령으로
+Human 승인이 필요한 파일 하나짜리 프로젝트를 만들고, Bob이 쓸 복사본도 준비하세요. `WALK`가 아직 공유 디렉터리를
 가리키고 있는 Alice의 터미널로 돌아가세요.
 
 ```sh

@@ -27,7 +27,7 @@ artifactize config check
 ## 선언 검사 {#declaration-validation}
 
 `index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 이름이 확장자까지
-정확히 `<filename>`인 옆 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
+정확히 `<filename>`이고 같은 폴더에 있는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
 
@@ -118,8 +118,7 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-변환기는 없습니다. 에이전트에게 선언을 다시 쓰게 하고 새 `.artf` 파일을 커밋하세요. family는
-없어졌으니, 반복되는 선언은 프로젝트의 생성기로 만들고 그 `.artf` 출력을 커밋하세요.
+옮기는 방법은 [0.9로 업그레이드](../getting-started/update.md#upgrading-to-09)를 보세요.
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors`, 도구 메타데이터 `observation` 같은 예전 필드는
 거부하며, 새 필드의 별칭이 아닙니다. artifactsum 형식의 예전 `dependencies` 옵션도
@@ -183,7 +182,7 @@ Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습�
 ## 그래프 Artifact {#graph-artifact}
 
 저장소 루트에 이름 없는 `.artf`를 두면 프로젝트 전체의 Artifact Graph를 선언합니다.
-이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 옆 파일을 선언합니다. 다른
+이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 같은 폴더의 그 파일을 선언합니다. 다른
 디렉터리에 이름 없는 `.artf`가 있으면 선언 오류입니다. 루트 `.artf`는 `index.artf`처럼
 `.artfignore` 패턴이 그 파일 이름을 가리켜도 읽습니다. 그래프 Artifact는 하나만 둘 수
 있습니다.
@@ -219,8 +218,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 [그래프 fingerprint](fingerprint.md#graph-fingerprint)는 소스 파일 내용이나 eval 실행 옵션이
-아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 결과는
-현재 상태만 기준으로 리뷰하거나 재사용합니다.
+아니라 구조에 관한 정의가 바뀔 때 바뀝니다. 차이 비교, 이력, 자동 리뷰 정책은 없습니다. 현재
+그래프를 리뷰해 결과를 만들거나, 현재 그래프에 맞는 기존 결과를 재사용합니다.
 
 ## 파일 Artifact {#file-artifacts}
 
@@ -235,7 +234,7 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
-실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
+실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 같은 폴더의 다른 파일에 접근할 수 있는 것은 아닙니다.
 내장 도구와 범위가 정해진 argv 참조로는 대상 파일과 참조한 Artifact에만 접근할 수 있습니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
 Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 가상 루트 안의 경로는 대상 파일이
@@ -263,7 +262,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 파일을 되돌려 놓은 뒤 다시 verify하세요.
 
-어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에서 확인하세요.
+어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에서 확인하세요.
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
@@ -355,8 +354,8 @@ Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도�
 명령은 그 Artifact의 작업 디렉터리에서 stdin으로 JSON `{"version":1,"artifactId":"example"}`을
 받아 실행됩니다. 경로 없는 명령은 PATH에서 찾고, 절대 경로 실행 파일은 그대로 실행합니다.
 `./fingerprint.sh`처럼 `/`가 든 상대 경로 실행 파일은 폴더 Artifact의 허용된 범위 안에서
-찾습니다. 파일 Artifact라면 들어 있는 폴더 아래에서 찾으며 상관없는 옆 파일을 가리킬 수도
-있습니다. 어느 쪽이든 상위 경로로 올라가거나 심볼릭 링크를 거치는 경로는 거부합니다. 인자는 범위가 정해진
+찾습니다. 파일 Artifact라면 대상 파일이 있는 폴더 아래에서 찾으며, 같은 폴더의 다른 파일을
+가리킬 수도 있습니다. 어느 쪽이든 상위 경로로 올라가거나 심볼릭 링크를 거치는 경로는 거부합니다. 인자는 범위가 정해진
 Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 Artifact 이름입니다. 스크립트에서는
 참조한 Artifact와 그 자식까지 접근할 수 있지만, 이 참조로 그래프에 관계가 추가되지는 않습니다.
 `config check`는 모르는 참조와 형식이 잘못된 참조를 거부하며, 존재 여부와 심볼릭 링크는 명령을
