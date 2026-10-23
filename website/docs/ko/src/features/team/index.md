@@ -19,8 +19,8 @@ artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 **루프백**(`127.0.0.1`)에서 대기하므로, 같은 컴퓨터의 프로그램만 직접 연결할 수 있습니다.
 암호화되지 않은 네트워크로 토큰을 보내지 않고 팀원이 연결하게 하려면
 [아래의 안전한 연결 설정](#connect-teammates-securely)을 쓰세요.
-저장소는 SQLite 명령줄 도구로 백업하세요. 아래 명령은 위 상태 디렉터리의
-데이터베이스를 읽어 별도의 백업 파일에 쓰는 전체 예입니다.
+저장소는 SQLite 명령줄 도구로 백업하세요. 아래 명령 하나로 위 상태 디렉터리의
+데이터베이스를 읽어 별도의 파일에 백업할 수 있습니다.
 
 ```sh
 sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/artifactize-reviews.sqlite'"
