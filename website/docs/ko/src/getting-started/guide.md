@@ -10,6 +10,20 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
+예제는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 쓰므로 두 명령
+모두 터미널에서 쓸 수 있어야 합니다. `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
+터미널이 두 명령을 찾는지 확인하세요.
+
+```sh
+python3 --version
+grep --help
+```
+
+Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라도 명령을 찾을 수 없다는 오류가
+나오면, 그 도구를 설치하거나 도구가 설치된 디렉터리를 `PATH`에 추가한 뒤 계속하세요.
+artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대로 실행합니다.
+[운영체제](../features/others/platforms.md)를 보세요.
+
 리뷰받는 작업 단위 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
 부르는 검사들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장

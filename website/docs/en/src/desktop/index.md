@@ -4,10 +4,10 @@ Open the app to see, on one screen, every live branch of every project with Runs
 this machine and every Human review waiting for a person. Browse Runs, see what each
 branch would run now, inspect evidence and handle Human sign-offs. The app works on the
 same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
-commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
+commands; see [Desktop app](../getting-started/install-options.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
-[installation guide](../getting-started/install.md#desktop-app).
+[installation guide](../getting-started/install-options.md#desktop-app).
 
 ## Open the app
 

@@ -199,7 +199,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 - **로그인.** `login codex`는 Codex CLI처럼 브라우저에서 ChatGPT 로그인 페이지를 열고,
   로그인하면 artifactize로 돌아옵니다. 브라우저 단계, 주소를 붙여 넣는 대체 방법, 5분 제한은
-  [로그인 설정](../getting-started/install.md#backends)에 있습니다. 토큰과 ChatGPT 계정 ID는
+  [로그인 설정](../getting-started/backends.md)에 있습니다. 토큰과 ChatGPT 계정 ID는
   나만 읽을 수 있는 `$STATE/auth/codex.json`에 저장합니다. `login`, `models`, `verify`에는 같은
   `--state-dir`을 쓰세요. 토큰은 절대 저장소 안에 저장하지 않습니다. `$STATE/auth`가 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더 경로를 알려 주며 로그인을 거부하고
   `doctor`는 경고합니다([상태](others/state.md#state)). 저장소 바깥의 상태 디렉터리나

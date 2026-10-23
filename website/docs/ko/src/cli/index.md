@@ -168,7 +168,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 선택자, 게이트, 결과, 출력은 [Run, 상태, 검증](../features/run.md#verify-and-runs)에서
 다룹니다.
 
-없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)를
+없어진 예전 게이트 우회 설정은 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)를
 보세요. `--force`는 직접 선택한 실행 가능한 eval만 새로 리뷰하도록 표시하며, 재귀로 포함된
 의존성에는 적용되지 않습니다. 실행 범위를 넓히거나 게이트를 건너뛰지도 않습니다. Run에는 결정된
 정책과 각 요청의 force 여부가 기록됩니다. 강제로 실행하는 eval은 캐시 결과를 읽지 않고,

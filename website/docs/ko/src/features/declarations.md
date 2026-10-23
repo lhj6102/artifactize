@@ -263,7 +263,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 파일을 되돌려 놓은 뒤 다시 verify하세요.
 
-어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/install.md#upgrading-from-011)에서 확인하세요.
+어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에서 확인하세요.
 
 ## eval mutex 태그 {#eval-mutex-tags}
 

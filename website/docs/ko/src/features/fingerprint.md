@@ -126,7 +126,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 ## 0.9로 업그레이드 {#upgrading-to-09}
 
 선언, 상태 디렉터리, 터미널 변경은
-[설치: 0.9로 업그레이드](../getting-started/install.md#upgrading-to-09)를 보세요. 재사용 키 v2로는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 이전 결과를 하나도 재사용할 수 없습니다.
+[설치: 0.9로 업그레이드](../getting-started/update.md#upgrading-to-09)를 보세요. 재사용 키 v2로는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 이전 결과를 하나도 재사용할 수 없습니다.
 그래서 처음 전체 `verify`를 할 때 Human 승인을 포함해 실행 가능한 eval을 모두 한 번 리뷰하고,
 그 뒤 Run부터는 평소처럼 재사용합니다.
 

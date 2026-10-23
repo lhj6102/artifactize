@@ -37,7 +37,7 @@ Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람�
 
 `index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `basis`, `views`,
 `fingerprint`, `tags`는 선택입니다. 예전 선언은
-[예전 정책 업그레이드 안내](../getting-started/install.md#upgrading-from-011)를 보세요.
+[예전 정책 업그레이드 안내](../getting-started/update.md#upgrading-from-011)를 보세요.
 
 eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[evals.heading]`은 eval ID
 `usage/heading`이 됩니다. `id` 필드는 선언하지 마세요. eval마다 `title`과, `kind`가 `runtime`,

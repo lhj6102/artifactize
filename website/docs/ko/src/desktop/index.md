@@ -3,10 +3,10 @@
 앱을 열면 이 머신에 Run이 기록된 모든 프로젝트의 현재 브랜치와 사람의 승인이 필요한 모든 Human
 리뷰가 한 화면에 나옵니다. Run을 살펴보고, 각 브랜치에서 지금 검증하면 무엇이 실행될지 보고, 증거를
 확인하고, Human 승인을 처리하세요. 앱은 CLI, TUI와 같은 상태를 쓰므로 한쪽에서 한 변경이
-다른 쪽에도 보입니다. 앱은 릴리스마다 명령과 함께 배포되며, 설치 방법은 [데스크톱 앱](../getting-started/install.md#desktop-app)을 보세요.
+다른 쪽에도 보입니다. 앱은 릴리스마다 명령과 함께 배포되며, 설치 방법은 [데스크톱 앱](../getting-started/install-options.md#desktop-app)을 보세요.
 
 첫 실행 때의 명령 설정, PATH 세부 사항, 업데이트, 정리는
-[설치 안내](../getting-started/install.md#desktop-app)를 보세요.
+[설치 안내](../getting-started/install-options.md#desktop-app)를 보세요.
 
 ## 앱 열기 {#open-the-app}
 

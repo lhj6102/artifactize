@@ -11,6 +11,20 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
+The examples use `python3` to run Python checks and `grep` to search text, so both
+commands must be available in your terminal. `PATH` is the list of directories your
+terminal searches for commands. Check that it finds them:
+
+```sh
+python3 --version
+grep --help
+```
+
+These should print a Python version and grep's help. If either command is not
+found, install that tool or add its directory to `PATH` before continuing. Projects
+run their declared commands as given on every OS; see
+[Operating systems](../features/others/platforms.md).
+
 Each reviewed piece is an **Artifact**. Its `index.artf` is a text configuration
 file listing its checks, called **evals**. It uses **TOML**, a readable `key = value`
 format. A **fingerprint** identifies the reviewed inputs; the built-in

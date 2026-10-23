@@ -306,7 +306,7 @@ reviewed, also with `fingerprint = false`:
 Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/install.md#upgrading-from-011).
+[upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 ## Eval mutex tags
 
