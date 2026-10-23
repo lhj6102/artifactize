@@ -96,7 +96,9 @@ machine evals are GREEN and no gate holds it. It never holds up other evals: wha
 on it runs at once, and its results stay PROVISIONAL until the sign-off is GREEN. Other
 machine work may still be running when it is requested; to review the final state, wait
 until it has finished. Its request shows DEFERRED. Neither DEFERRED nor PROVISIONAL is
-approval.
+approval. This holds for sign-offs the Run selected. A sign-off outside the selection is
+an obligation like any other: what relies on it waits for a reusable approval, and without
+one the Run ends INCOMPLETE. Select it too, for example with `--recursive` or `--all`.
 
 From its first sign-off request the Run is **WAITING_HUMAN**: still open, as a RUNNING Run
 is. Once nothing but sign-offs is left, it stays open while a reviewer holds a claim on one

@@ -309,7 +309,7 @@ The state is upgraded to schema 10 on first use; a Run that ended SIGNOFFS_PENDI
 reads as YELLOW. An older artifactize cannot open the upgraded state, so keep a backup
 before switching versions.
 
-A sign-off no longer holds up other evals in any Run, so `verify --defer-human`, MCP
+A sign-off the Run selected no longer holds up other evals, so `verify --defer-human`, MCP
 `defer_human` and the eval field `gate = "blocking"` are removed: drop the flag from
 scripts and the field from declarations, both of which are now refused with that advice.
 A Run is **WAITING_HUMAN** from its first sign-off request and ends **YELLOW** (exit 5,

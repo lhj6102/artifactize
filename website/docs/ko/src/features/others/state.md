@@ -113,8 +113,8 @@ slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 Q
 
 ## 승인 유휴 유예 시간 {#sign-off-idle-grace}
 
-`limits.json`에서는 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 끝나기 전에 얼마나 열려 있을지도
-정합니다([승인과 Run 종료](../run.md#sign-offs-and-the-end-of-a-run)).
+`limits.json`으로 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 종료되기까지의 대기 시간도
+설정합니다([승인과 Run 종료](../run.md#sign-offs-and-the-end-of-a-run)).
 
 ```json
 {"signoffIdleGraceSeconds": 120}

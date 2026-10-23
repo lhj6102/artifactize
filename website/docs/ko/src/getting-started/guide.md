@@ -140,8 +140,8 @@ review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 �
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run을 지켜봅니다. 승인만
 남으면 Run은 담당자가 정해지기 전에는 최대 2분간, 정해진 뒤에는 승인이 끝날 때까지 종료되지 않습니다. 앞선
-자동 리뷰가 여전히 유효하면 GREEN 승인이 제출되는 즉시 `verify --wait`가 종료 코드 0으로 끝납니다. 그보다 늦게 맡으면 Run은
-이미 YELLOW(종료 코드 5)로 끝났지만, 그래도 제출하면 다음 `verify`가 그 승인을 재사용합니다.
+자동 리뷰가 여전히 유효하면 GREEN 승인이 제출되는 즉시 `verify --wait`가 종료 코드 0으로 끝납니다. Run이
+이미 YELLOW(종료 코드 5)로 끝난 뒤에 요청을 맡더라도, 승인을 제출하면 다음 `verify`에서 그 승인을 재사용합니다.
 
 실제 Agent 리뷰를 하려면 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣은 다음
 `artifactize verify --eval spec/review --wait`를 실행하세요. 다른 백엔드를 쓰려면 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
