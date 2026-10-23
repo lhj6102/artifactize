@@ -2,18 +2,21 @@
 //
 //   node assets/others/capture.mts         render every figure in every language into this folder
 //   node assets/others/capture.mts check   render them again elsewhere and compare with the saved ones
+//   node assets/others/capture.mts gif     a tool: a saved GIF's length, or its frame about `at` seconds in
 //
 // Each figure is an HTML page in this folder that takes ?lang=; graph-example.html in en, ko and
-// zh becomes graph-example.en.png, graph-example.ko.png and graph-example.zh.png, and roles.html,
-// in English only, becomes roles.en.png. The README and the landing page use those images, never
-// the HTML.
+// zh becomes graph-example.en.png, graph-example.ko.png and graph-example.zh.png. roles.html
+// moves: in English only, it becomes the looping roles.en.gif. The README and the landing page
+// use those images, never the HTML.
 //
 // Linux only, like the other capture scripts. Rendering uses headless Google Chrome (or Chromium; CHROME names another binary) through the
 // DevTools protocol, with no packages to install. A small local server serves this folder, the
 // landing page's brand fonts at /fonts/, as the landing page does, and the brand images at /brand/. The page sets
-// data-ready once its fonts are loaded; the picture is taken then, at twice the figure's size.
+// data-ready once its fonts are loaded; a still is taken then, at twice the figure's size. A
+// moving figure draws itself with figure.frame(t) as a pure function of time: it is stopped, one
+// picture is taken for each frame of its loop, and ffmpeg turns them into the GIF.
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
@@ -22,10 +25,11 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const fonts = join(here, "..", "..", "website", "landing", "fonts");
 const brand = join(here, "..", "brand");
-/** The figures and the languages each is rendered in. */
-const FIGURES = [
+/** The figures and the languages each is rendered in; a moving one names its GIF's frame rate
+ * and width. */
+const FIGURES: { page: string; width: number; height: number; languages: string[]; motion?: { fps: number; width: number } }[] = [
   { page: "graph-example", width: 1600, height: 900, languages: ["en", "ko", "zh"] },
-  { page: "roles", width: 1440, height: 600, languages: ["en"] },
+  { page: "roles", width: 1440, height: 600, languages: ["en"], motion: { fps: 20, width: 1200 } },
 ];
 const SCALE = 2;
 const WAIT = 30000;
@@ -120,6 +124,40 @@ async function chrome(profile: string): Promise<{ browser: ChildProcess; page: P
   return { browser, page: new Page(socket), socket };
 }
 
+/** Run `command`, failing with its output when it fails. */
+function run(command: string, args: string[]): void {
+  const result = spawnSync(command, args, { encoding: "utf8" });
+  if (result.error) throw new Error(`${command} could not start: ${result.error.message}`);
+  if (result.status !== 0) throw new Error(`${command} failed:\n${result.stderr}`);
+}
+
+/** Film the moving figure on `page` into the looping GIF `gif`: stop it, draw and photograph each
+ * frame of its loop, then let ffmpeg build one palette for the whole loop and encode with it. */
+async function film(page: Page, motion: { fps: number; width: number }, gif: string): Promise<void> {
+  const work = mkdtempSync(join(tmpdir(), "artifactize-figure-frames-"));
+  try {
+    const seconds = await page.send("Runtime.evaluate", { expression: "figure.stop(), figure.seconds", returnByValue: true });
+    const frames = Math.round(seconds.result.value * motion.fps);
+    mkdirSync(join(work, "frames"));
+    for (let index = 0; index < frames; index++) {
+      await page.send("Runtime.evaluate", { expression: `figure.frame(${index / motion.fps})` });
+      const shot = await page.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(join(work, "frames", `${String(index).padStart(4, "0")}.png`), Buffer.from(shot.data, "base64"));
+    }
+    const input = ["-framerate", String(motion.fps), "-i", join(work, "frames", "%04d.png")];
+    const scaled = `scale=${motion.width}:-1:flags=lanczos`;
+    const palette = join(work, "palette.png");
+    // One thread each, so the same frames always give the same bytes.
+    run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-threads", "1", ...input,
+      "-vf", `${scaled},palettegen=max_colors=256:stats_mode=full:reserve_transparent=0`, "-update", "1", palette]);
+    run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-threads", "1", ...input, "-i", palette,
+      "-filter_complex", `[0:v]${scaled}[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+      "-loop", "0", gif]);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 /** Render every figure in every language into `output`; answer the files written. */
 async function render(output: string): Promise<string[]> {
   const profile = mkdtempSync(join(tmpdir(), "artifactize-figures-chrome-"));
@@ -129,7 +167,9 @@ async function render(output: string): Promise<string[]> {
   try {
     await page.send("Page.enable");
     for (const figure of FIGURES) {
-      await page.send("Emulation.setDeviceMetricsOverride", { width: figure.width, height: figure.height, deviceScaleFactor: SCALE, mobile: false });
+      // A GIF is scaled down from its frames anyway: they are taken at the figure's own size.
+      const scale = figure.motion ? 1 : SCALE;
+      await page.send("Emulation.setDeviceMetricsOverride", { width: figure.width, height: figure.height, deviceScaleFactor: scale, mobile: false });
       for (const language of figure.languages) {
         const loaded = page.event("Page.loadEventFired");
         await page.send("Page.navigate", { url: `${origin}/${figure.page}.html?lang=${language}` });
@@ -143,6 +183,12 @@ async function render(output: string): Promise<string[]> {
           returnByValue: true,
         });
         if (ready.exceptionDetails) throw new Error(`${figure.page}.html?lang=${language}: ${ready.exceptionDetails.exception?.description ?? ready.exceptionDetails.text}`);
+        if (figure.motion) {
+          const name = `${figure.page}.${language}.gif`;
+          await film(page, figure.motion, join(output, name));
+          written.push(name);
+          continue;
+        }
         const shot = await page.send("Page.captureScreenshot", { format: "png" });
         const name = `${figure.page}.${language}.png`;
         writeFileSync(join(output, name), Buffer.from(shot.data, "base64"));
@@ -180,12 +226,44 @@ async function check(): Promise<number> {
   }
 }
 
+/** The `gif` tool: without `at`, a saved GIF's length and frame count; with `at`, its frame about
+ * `at` seconds in, as a PNG. */
+function gif(): void {
+  const request = JSON.parse(readFileSync(0, "utf8")) as { args: { name: string; at?: number } };
+  const { name, at } = request.args;
+  const gifs = FIGURES.filter((figure) => figure.motion).flatMap((figure) => figure.languages.map((language) => `${figure.page}.${language}.gif`));
+  const answer = (content: object[], isError = false) => console.log(JSON.stringify(isError ? { isError, content } : { content }));
+  if (!gifs.includes(name)) {
+    answer([{ type: "text", text: `No GIF ${name}; choose one of ${gifs.join(", ")}.` }], true);
+    return;
+  }
+  const file = join(here, name);
+  const probe = spawnSync("ffprobe", ["-v", "error", "-count_frames", "-select_streams", "v:0",
+    "-show_entries", "stream=width,height,nb_read_frames:format=duration", "-of", "csv=p=0", file], { encoding: "utf8" });
+  if (probe.status !== 0) throw new Error(`ffprobe could not read ${name}: ${probe.stderr}`);
+  const [width, height, frames, seconds] = probe.stdout.trim().split(/[,\n]/);
+  const length = Number(seconds);
+  if (at === undefined) {
+    answer([{ type: "text", text: `${name}: ${length.toFixed(1)} s loop, ${frames} frames, ${width}×${height}. Ask for a frame with at (seconds).` }]);
+    return;
+  }
+  if (at < 0 || at > length) {
+    answer([{ type: "text", text: `${name} is ${length.toFixed(1)} s long; choose at from 0 to ${length.toFixed(1)}.` }], true);
+    return;
+  }
+  const frame = spawnSync("ffmpeg", ["-v", "error", "-ss", String(at), "-i", file, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"], { maxBuffer: 1 << 26 });
+  if (frame.status !== 0 || frame.stdout.length === 0) throw new Error(`ffmpeg could not read ${name} at ${at} s`);
+  answer([{ type: "text", text: `${name}, at ${at} s of ${length.toFixed(1)} s.` }, { type: "image", mimeType: "image/png", data: frame.stdout.toString("base64") }]);
+}
+
 const mode = process.argv[2];
 if (mode === "check") {
   process.exitCode = await check();
+} else if (mode === "gif") {
+  gif();
 } else if (mode === undefined) {
   for (const name of await render(here)) console.log(`rendered assets/others/${name}`);
 } else {
-  console.error(`Unknown mode ${mode}: run with no mode to render, or with check to compare.`);
+  console.error(`Unknown mode ${mode}: run with no mode to render, with check to compare, or with gif as a tool.`);
   process.exitCode = 2;
 }

@@ -78,7 +78,7 @@ the Open Graph title and the start of the descriptions. Check these criteria:
   Nothing is left out, added, softened or strengthened.
 - K-SAME-TARGETS: Every Korean link reaches the same target as its English counterpart, except that
   documentation links (/docs/...) reach the same page of the Korean documentation (/docs/ko/...),
-  links to the landing page reach /ko/, the hero's example graph is graph-example.ko.png, the role image stays roles.en.png and the
+  links to the landing page reach /ko/, the hero's example graph is graph-example.ko.png, the role animation stays roles.en.gif and the
   canonical and Open Graph URLs are https://artifactize.dev/ko/. The development board (/board/)
   and the privacy page (/privacy/) are English only, and their Korean links say so. Commands, copy
   targets and code are unchanged; only comments in code may be translated. Both pages link to

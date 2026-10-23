@@ -1,7 +1,10 @@
 <!doctype html>
-<!-- Collaborating in Artifactize: the work splits into three roles around it, and each role
-     shows its team of five, people and AI agents. capture.mts renders it into
-     roles.en.png; the README and the landing page use that image. -->
+<!-- Collaborate in Artifactize, in motion: three roles around Artifactize, each with its team of
+     five people and AI agents. Pieces of work leave the Director, are built by the Builder and
+     checked by the Evaluator, passing through Artifactize each time; most checks are the agents'
+     own, and now and then a person signs one off. The scene is a pure function of time,
+     figure.frame(t), so capture.mts renders the same frames every time into roles.gif; opened
+     directly, the page plays itself. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -10,166 +13,268 @@
      /brand/. -->
 <link rel="stylesheet" href="/fonts/fonts.css">
 <style>
+  /* The landing page's dark theme. */
   :root {
-    --bg: #F7F9FC;
-    --line: #D9DFE8;
-    --text: #0F141B;
-    --dim: #586276;
-    --agent: #7C3AED;
-    --agent-tint: #F1EAFE;
-    --human: #C26A0A;
-    --human-tint: #FFF4E6;
+    --bg: #090B0F;
+    --panel: #10141B;
+    --line: #262E3B;
+    --text: #EAF0F7;
+    --ice: #D5DEEA;
+    --dim: #8B96A8;
+    --green: #3EE08F;
+    --amber: #F5B84B;
+    --violet: #B49CFF;
     --display: 'Space Grotesk', 'Pretendard Variable', sans-serif;
     --sans: 'Pretendard Variable', sans-serif;
   }
-
-  * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); }
-  body { color: var(--text); }
-
-  .figure {
-    position: relative;
-    width: 1440px;
-    height: 600px;
-    background: var(--bg);
-  }
-
-  .links {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-  .links path { fill: none; stroke: var(--line); stroke-width: 2.4; stroke-linecap: round; }
-
-  /* ---------- Artifactize in the middle ---------- */
-
-  .center {
-    position: absolute;
-    left: 520px;
-    top: 262px;
-    width: 400px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .center img { width: 200px; height: 200px; }
-  .center small {
-    margin-top: 8px;
-    color: var(--dim);
-    font: 500 24px/1 var(--sans);
-  }
-  .center p {
-    margin: 8px 0 0;
-    font: 700 52px/1 var(--display);
-    letter-spacing: -0.03em;
-  }
-
-  /* ---------- The three roles around it ---------- */
-
-  .role {
-    position: absolute;
-    width: 400px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .role.director { left: 520px; top: 44px; }
-  .role.builder { left: 110px; top: 286px; }
-  .role.evaluator { left: 930px; top: 286px; }
-  .role h2 {
-    margin: 0;
-    font: 700 56px/1 var(--display);
-    letter-spacing: -0.03em;
-  }
-  .role p {
-    margin: 12px 0 0;
-    color: var(--dim);
-    font: 500 24px/1 var(--sans);
-  }
-
-  /* The team that takes the role: five members, people and AI agents. */
-  .who {
-    display: flex;
-    gap: 12px;
-    margin-top: 20px;
-  }
-  .who span {
-    display: grid;
-    place-items: center;
-    width: 60px;
-    height: 60px;
-    border: 2.6px solid currentColor;
-    border-radius: 50%;
-  }
-  .who .human { color: var(--human); background: var(--human-tint); }
-  .who .agent { color: var(--agent); background: var(--agent-tint); }
-  .who svg { width: 32px; height: 32px; }
+  svg.scene { display: block; width: 1440px; height: 600px; }
+  .title { fill: var(--text); font: 700 44px var(--display); letter-spacing: -0.03em; }
+  .desc { fill: var(--dim); font: 500 20px var(--sans); }
+  .kicker { fill: var(--dim); font: 500 20px var(--sans); }
+  .brand { fill: var(--text); font: 700 44px var(--display); letter-spacing: -0.03em; }
+  .link { fill: none; stroke: #3A4556; stroke-width: 2.4; stroke-linecap: round; }
+  .spark { fill: var(--ice); }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<svg class="scene" viewBox="0 0 1440 600" aria-hidden="true">
   <defs>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#3EE08F" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#3EE08F" stop-opacity="0"/>
+    </radialGradient>
     <symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></g></symbol>
     <symbol id="i-agent" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></g></symbol>
   </defs>
+
+  <!-- The lines from each role into Artifactize, and the sparks that keep flowing along them. -->
+  <path class="link" id="to-director" d="M720 162 V200"/>
+  <path class="link" id="to-builder" d="M602 320 C 540 320 520 358 448 358"/>
+  <path class="link" id="to-evaluator" d="M838 320 C 900 320 920 358 992 358"/>
+  <g id="sparks"></g>
+
+  <!-- Artifactize: a halo that brightens as work passes, two turning rings and the icon. -->
+  <circle id="halo" cx="720" cy="320" r="150" fill="url(#halo)"/>
+  <circle id="ring-inner" cx="720" cy="320" r="120" fill="none" stroke="#3A4556" stroke-width="2" stroke-dasharray="2 9" stroke-linecap="round"/>
+  <circle id="ring-outer" cx="720" cy="320" r="138" fill="none" stroke="#262E3B" stroke-width="1.5" stroke-dasharray="46 16"/>
+  <image id="icon" href="/brand/artifactize-icon.svg" x="645" y="245" width="150" height="150"/>
+  <text class="kicker" x="720" y="500" text-anchor="middle">Collaborate in</text>
+  <text class="brand" x="720" y="548" text-anchor="middle">Artifactize</text>
+
+  <!-- The three roles. -->
+  <text class="title" x="720" y="58" text-anchor="middle">Director</text>
+  <text class="desc" x="720" y="90" text-anchor="middle">Decides what to build</text>
+  <text class="title" x="290" y="282" text-anchor="middle">Builder</text>
+  <text class="desc" x="290" y="314" text-anchor="middle">Builds the pieces</text>
+  <text class="title" x="1150" y="282" text-anchor="middle">Evaluator</text>
+  <text class="desc" x="1150" y="314" text-anchor="middle">Checks each piece</text>
+  <g id="teams"></g>
+
+  <g id="pieces"></g>
 </svg>
 
-<div class="figure">
-  <!-- Each role joins Artifactize: the Director from above, the Builder and the Evaluator from
-       either side. -->
-  <svg class="links" viewBox="0 0 1440 600" aria-hidden="true">
-    <path d="M720 228 V292"/>
-    <path d="M480 370 H630"/>
-    <path d="M814 370 H960"/>
-  </svg>
-
-  <section class="role director">
-    <h2>Director</h2>
-    <p>Decides what to build</p>
-    <div class="who">
-      <span class="human"><svg><use href="#i-person"/></svg></span>
-      <span class="human"><svg><use href="#i-person"/></svg></span>
-      <span class="human"><svg><use href="#i-person"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-    </div>
-  </section>
-
-  <section class="role builder">
-    <h2>Builder</h2>
-    <p>Builds the pieces</p>
-    <div class="who">
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-    </div>
-  </section>
-
-  <section class="role evaluator">
-    <h2>Evaluator</h2>
-    <p>Checks each piece</p>
-    <div class="who">
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="agent"><svg><use href="#i-agent"/></svg></span>
-      <span class="human"><svg><use href="#i-person"/></svg></span>
-    </div>
-  </section>
-
-  <div class="center">
-    <img src="/brand/artifactize-icon.svg" alt="">
-    <small>Collaborate in</small>
-    <p>Artifactize</p>
-  </div>
-</div>
-
 <script>
-  // capture.mts waits for this before taking the picture.
-  document.fonts.ready.then(() => { document.documentElement.dataset.ready = "en"; });
+  const SVG = "http://www.w3.org/2000/svg";
+  /** The loop's length in seconds; every motion repeats a whole number of times in it. */
+  const SECONDS = 8;
+  /** A new piece leaves the Director this often; the fourth piece of each loop gets a person's sign-off. */
+  const EVERY = 2;
+  const PIECES = SECONDS / EVERY;
+  const SIGNED_OFF = 2;
+  const HUB = { x: 720, y: 320, r: 120 };
+  const COLOURS = { person: "#F5B84B", agent: "#B49CFF", idea: "#D5DEEA", built: "#B49CFF", checked: "#3EE08F" };
+
+  // ---------- Building the scene ----------
+
+  const make = (name, attributes, parent) => {
+    const element = document.createElementNS(SVG, name);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+    parent?.append(element);
+    return element;
+  };
+
+  /** Each role's team, left to right, at the centre of its row. */
+  const TEAMS = {
+    director: { x: 720, y: 134, members: ["person", "person", "person", "agent", "agent"] },
+    builder: { x: 290, y: 358, members: ["agent", "agent", "agent", "agent", "agent"] },
+    evaluator: { x: 1150, y: 358, members: ["agent", "agent", "agent", "agent", "person"] },
+  };
+  const badges = {};
+  for (const [role, team] of Object.entries(TEAMS)) {
+    badges[role] = team.members.map((kind, index) => {
+      const x = team.x + (index - 2) * 60;
+      const group = make("g", { transform: `translate(${x} ${team.y})`, color: COLOURS[kind] }, document.getElementById("teams"));
+      const pulse = make("circle", { r: 24, fill: "none", stroke: COLOURS[kind], "stroke-width": 2, opacity: 0 }, group);
+      const disc = make("circle", { r: 24, fill: "#10141B", stroke: COLOURS[kind], "stroke-width": 2 }, group);
+      make("use", { href: kind === "person" ? "#i-person" : "#i-agent", x: -13, y: -13, width: 26, height: 26 }, group);
+      return { kind, group, pulse, disc };
+    });
+  }
+
+  const paths = {
+    director: document.getElementById("to-director"),
+    builder: document.getElementById("to-builder"),
+    evaluator: document.getElementById("to-evaluator"),
+  };
+  // The Director's line runs from the role into Artifactize; the others run from Artifactize out.
+  const along = (role, fraction) => {
+    const path = paths[role];
+    const point = path.getPointAtLength(path.getTotalLength() * Math.min(Math.max(fraction, 0), 1));
+    return { x: point.x, y: point.y };
+  };
+
+  const SPARKS_PER_LINE = 3;
+  const sparks = [];
+  for (const role of Object.keys(paths)) {
+    for (let index = 0; index < SPARKS_PER_LINE; index++) {
+      sparks.push({ role, index, element: make("circle", { class: "spark", r: 3 }, document.getElementById("sparks")) });
+    }
+  }
+
+  /** One piece of work: a glowing tile, a short trail behind it and a check mark once checked. */
+  const pieces = [];
+  for (let index = 0; index < PIECES; index++) {
+    const group = make("g", {}, document.getElementById("pieces"));
+    const trail = [5, 4, 3, 2, 1].map((step) => make("rect", { x: -6, y: -6, width: 12, height: 12, rx: 3, opacity: 0.1 * (6 - step) }, group));
+    const tile = make("g", { filter: "url(#glow)" }, group);
+    const body = make("rect", { x: -13, y: -13, width: 26, height: 26, rx: 7 }, tile);
+    const check = make("path", { d: "m-6.5 0.5 4.5 4.5 8.5-9", fill: "none", stroke: "#04130B", "stroke-width": 2.6, "stroke-linecap": "round", "stroke-linejoin": "round" }, tile);
+    pieces.push({ index, group, trail, tile, body, check });
+  }
+
+  // ---------- Motion ----------
+
+  const ease = (x) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
+  const progress = (u, start, end) => ease(Math.min(Math.max((u - start) / (end - start), 0), 1));
+  /** A soft rise and fall, 0 outside [start, start + width]. */
+  const bump = (u, start, width) => {
+    const x = (u - start) / width;
+    return x <= 0 || x >= 1 ? 0 : Math.sin(Math.PI * x);
+  };
+  const onRing = (degrees) => ({ x: HUB.x + HUB.r * Math.cos((degrees * Math.PI) / 180), y: HUB.y + HUB.r * Math.sin((degrees * Math.PI) / 180) });
+  const mix = (a, b, x) => {
+    const channels = (hex) => [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+    const [from, to] = [channels(a), channels(b)];
+    return `rgb(${from.map((value, index) => Math.round(value + (to[index] - value) * x)).join(",")})`;
+  };
+
+  /** A piece's journey, `u` seconds after it leaves: where it is, how big, which colour. */
+  const STAGES = [
+    // [end, what happens]
+    [0.4, "appears below the Director"],
+    [1.1, "goes down into Artifactize"],
+    [1.4, "turns along Artifactize to the Builder's side"],
+    [2.0, "goes out to the Builder"],
+    [2.9, "is built"],
+    [3.5, "comes back into Artifactize"],
+    [4.0, "turns along Artifactize to the Evaluator's side"],
+    [4.6, "goes out to the Evaluator"],
+    [5.3, "is checked"],
+    [5.8, "comes back into Artifactize"],
+    [6.0, "joins the project"],
+  ];
+  const LIFE = STAGES.at(-1)[0];
+  function journey(u) {
+    if (u < 0 || u >= LIFE) return null;
+    let place;
+    let scale = 1;
+    if (u < 0.4) { place = along("director", 0); scale = progress(u, 0, 0.4); }
+    else if (u < 1.1) place = along("director", progress(u, 0.4, 1.1));
+    else if (u < 1.4) place = onRing(-90 - 90 * progress(u, 1.1, 1.4));
+    else if (u < 2.0) place = along("builder", progress(u, 1.4, 2.0));
+    else if (u < 2.9) place = along("builder", 1);
+    else if (u < 3.5) place = along("builder", 1 - progress(u, 2.9, 3.5));
+    else if (u < 4.0) place = onRing(180 - 180 * progress(u, 3.5, 4.0));
+    else if (u < 4.6) place = along("evaluator", progress(u, 4.0, 4.6));
+    else if (u < 5.3) place = along("evaluator", 1);
+    else if (u < 5.8) place = along("evaluator", 1 - progress(u, 5.3, 5.8));
+    else {
+      const x = progress(u, 5.8, 6.0);
+      place = { x: HUB.x + HUB.r * (1 - x), y: HUB.y };
+      scale = 1 - x;
+    }
+    const built = progress(u, 2.1, 2.8);
+    const checked = progress(u, 5.0, 5.25);
+    const colour = checked > 0 ? mix(COLOURS.built, COLOURS.checked, checked) : mix(COLOURS.idea, COLOURS.built, built);
+    return { ...place, scale, colour, checked };
+  }
+
+  /** Draw the scene at `t` seconds into the loop. */
+  function frame(t) {
+    t = ((t % SECONDS) + SECONDS) % SECONDS;
+    const glow = { director: [0, 0, 0, 0, 0], builder: [0, 0, 0, 0, 0], evaluator: [0, 0, 0, 0, 0] };
+    let halo = 0;
+
+    for (const piece of pieces) {
+      const u = (((t - piece.index * EVERY) % SECONDS) + SECONDS) % SECONDS;
+      const now = journey(u);
+      piece.group.setAttribute("display", now ? "inline" : "none");
+      if (now) {
+        piece.tile.setAttribute("transform", `translate(${now.x.toFixed(2)} ${now.y.toFixed(2)}) scale(${now.scale.toFixed(3)})`);
+        piece.body.setAttribute("fill", now.colour);
+        piece.check.setAttribute("opacity", now.checked.toFixed(3));
+        piece.trail.forEach((rect, step) => {
+          const behind = journey(u - 0.03 * (5 - step));
+          rect.setAttribute("display", behind ? "inline" : "none");
+          if (behind) {
+            rect.setAttribute("transform", `translate(${behind.x.toFixed(2)} ${behind.y.toFixed(2)}) scale(${behind.scale.toFixed(3)})`);
+            rect.setAttribute("fill", behind.colour);
+          }
+        });
+      }
+      // Who works on it: the Director's team as it leaves, the Builder's while it is built, the
+      // Evaluator's agents while it is checked and, for the signed-off piece, the person last.
+      glow.director.forEach((_, i) => { glow.director[i] = Math.max(glow.director[i], bump(u, -0.1 + i * 0.08, 0.5)); });
+      glow.builder.forEach((_, i) => { glow.builder[i] = Math.max(glow.builder[i], bump(u, 2.0 + i * 0.15, 0.4)); });
+      for (let i = 0; i < 4; i++) glow.evaluator[i] = Math.max(glow.evaluator[i], bump(u, 4.6 + i * 0.1, 0.35));
+      if (piece.index === SIGNED_OFF) glow.evaluator[4] = Math.max(glow.evaluator[4], bump(u, 4.85, 0.5));
+      halo = Math.max(halo, bump(u, 1.05, 0.4), bump(u, 3.45, 0.6), 1.4 * bump(u, 5.75, 0.6));
+    }
+
+    for (const [role, team] of Object.entries(badges)) {
+      team.forEach((badge, i) => {
+        const x = glow[role][i];
+        badge.disc.setAttribute("fill", mix("#10141B", badge.kind === "person" ? "#4A3510" : "#2E2550", x));
+        badge.group.setAttribute("filter", x > 0.05 ? "url(#glow)" : "none");
+        badge.pulse.setAttribute("r", (24 + 12 * x).toFixed(2));
+        badge.pulse.setAttribute("opacity", (0.6 * x).toFixed(3));
+      });
+    }
+
+    document.getElementById("halo").setAttribute("opacity", (0.35 + 0.65 * Math.min(halo, 1)).toFixed(3));
+    document.getElementById("ring-inner").setAttribute("transform", `rotate(${(360 * t / SECONDS).toFixed(2)} 720 320)`);
+    document.getElementById("ring-outer").setAttribute("transform", `rotate(${(-360 * t / SECONDS).toFixed(2)} 720 320)`);
+
+    // Sparks drift along every line into Artifactize, one crossing every EVERY / SPARKS_PER_LINE seconds.
+    for (const spark of sparks) {
+      const phase = ((t / EVERY + spark.index / SPARKS_PER_LINE) % 1);
+      const point = along(spark.role, spark.role === "director" ? phase : 1 - phase);
+      spark.element.setAttribute("cx", point.x.toFixed(2));
+      spark.element.setAttribute("cy", point.y.toFixed(2));
+      spark.element.setAttribute("opacity", (0.7 * Math.sin(Math.PI * phase)).toFixed(3));
+    }
+  }
+
+  // Opened directly, the page plays; capture.mts stops it and draws each frame itself.
+  let playing = requestAnimationFrame(function play(now) {
+    frame(now / 1000);
+    playing = requestAnimationFrame(play);
+  });
+  window.figure = {
+    seconds: SECONDS,
+    frame,
+    stop() { cancelAnimationFrame(playing); },
+  };
+
+  // capture.mts waits for this before taking the pictures: the fonts and the icon are in.
+  const icon = new Image();
+  icon.src = "/brand/artifactize-icon.svg";
+  Promise.all([document.fonts.ready, icon.decode()]).then(() => { document.documentElement.dataset.ready = "en"; });
 </script>
 </body>
 </html>

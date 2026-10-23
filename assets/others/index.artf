@@ -3,7 +3,20 @@ name = "others"
 [views.agent_tools]
 list = { builtin = "list" }
 read = { builtin = "read" }
-view_image = { description = "View an image saved in {artifactName}, such as graph-example.en.png or roles.en.png.", builtin = "view_image" }
+view_image = { description = "View an image saved in {artifactName}, such as graph-example.en.png.", builtin = "view_image" }
+
+[views.agent_tools.gif]
+description = "A moving figure saved in {artifactName}, roles.en.gif: without at, its length in seconds and frame count; with at, its frame about at seconds in, as an image."
+command = "node"
+args = ["capture.mts", "gif"]
+protocol = "json"
+
+[views.agent_tools.gif.input_schema]
+type = "object"
+properties.name = { enum = ["roles.en.gif"] }
+properties.at = { type = "number", minimum = 0 }
+required = ["name"]
+additionalProperties = false
 
 [evals.renders-html]
 title = "The saved images are what their HTML renders now"
@@ -54,23 +67,30 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.shows-roles.payload]
 instruction = """
-{others} holds roles.html and the image capture.mts renders from it, roles.en.png. The README \
-and the landing page use it in place of a sentence saying that Artifactize brings human and \
-agent work together. Its point is that people and AI agents collaborate in Artifactize through \
-three roles: Director above and Builder and Evaluator on either side of the Artifactize icon. \
-Each role has a short line on what it does and its team of five, as person and agent icons: \
-three people and two agents direct, five agents build, and four agents and one person evaluate. Read roles.html and view \
-the image. Judge:
-- Meaning: the three roles are what the figure is about; each role's line says plainly what it \
-does (W-INTRO-PLAIN-LANGUAGE of {writer-introduction}), and the figure shows nothing beyond \
-the roles, their teams and Artifactize.
+{others} holds roles.html and the looping GIF capture.mts renders from it, roles.en.gif. The \
+README and the landing page use it in place of a sentence saying that Artifactize brings human \
+and agent work together. Its point is that people and AI agents collaborate in Artifactize \
+through three roles: Director above and Builder and Evaluator on either side of the \
+Artifactize icon. Each role has a short line on what it does and its team of five, as person \
+and agent icons: three people and two agents direct, five agents build, and four agents and \
+one person evaluate. In motion, pieces of work leave the Director, pass through Artifactize to \
+the Builder, which builds them, and through it again to the Evaluator, which checks them; \
+checked pieces return into Artifactize. Most checks are the agents' alone, and now and then \
+the person signs one off. Read roles.html, ask gif for the GIF's length and view enough frames \
+to follow a piece through every step. Judge:
+- Meaning: the three roles are what the figure is about, and the motion shows work passing \
+between them through Artifactize in that order; each role's line says plainly what it does \
+(W-INTRO-PLAIN-LANGUAGE of {writer-introduction}), and the figure shows nothing beyond the \
+roles, their teams, the work passing between them and Artifactize.
 - Clarity: a first-time reader tells the person from the AI agent without labels, because \
-each keeps one icon and one color across the figure.
+each keeps one icon and one color across the figure, and sees which team works on a piece \
+while it is with that role.
 - Layout: the roles form a balanced triangle around Artifactize, each joined to it by a line; \
-no text or icon is clipped, overlaps another or is too small to read at half size, and there \
-are no large empty areas.
+in every frame, no text or icon is clipped, overlaps another or is too small to read at half \
+size, and there are no large empty areas. The loop's last frame leads into its first without \
+a jump.
 Submit GREEN when all three hold. Otherwise submit RED with one finding per problem, naming \
-the image or the HTML line and saying what to change in roles.html.
+the moment in the GIF or the HTML line and saying what to change in roles.html.
 """
 
 [evals.shows-roles.pass_schema]

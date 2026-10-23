@@ -7,8 +7,8 @@ English · [한국어](assets/readme/README.kr.md)
 # Build together on an Artifact Graph.
 
 <p align="center">
-  <img src="assets/others/roles.en.png" width="800"
-       alt="Collaborate in Artifactize: the work splits into three roles around it. As Director, three people and two AI agents decide what to build; as Builder, five AI agents build the pieces; as Evaluator, four AI agents and one person check each piece.">
+  <img src="assets/others/roles.en.gif" width="800"
+       alt="Animation, collaborate in Artifactize: three roles surround Artifactize. As Director, three people and two AI agents decide what to build; as Builder, five AI agents build the pieces; as Evaluator, four AI agents and one person check each piece. Pieces of work pass from role to role through Artifactize.">
 </p>
 
 **Who is it for?**
