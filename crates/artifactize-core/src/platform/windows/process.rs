@@ -35,8 +35,8 @@ use windows_sys::Win32::{
             TerminateJobObject,
         },
         Threading::{
-            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED,
-            DETACHED_PROCESS, GetProcessTimes, OpenProcess, OpenThread,
+            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
+            CREATE_SUSPENDED, DETACHED_PROCESS, GetProcessTimes, OpenProcess, OpenThread,
             PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread,
             THREAD_SUSPEND_RESUME, WaitForSingleObject,
         },
@@ -355,6 +355,14 @@ pub(crate) fn spawn_watched(command: Command) -> io::Result<tokio::process::Chil
     spawn_detached(command)
 }
 
+/// A host probe such as Git runs without a console window. A console program started by a
+/// process that has no console, such as the desktop app, would otherwise get a window of its
+/// own until it exits. The probe's output goes through pipes, so the window shows nothing.
+pub(crate) fn hide_console_window(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
 /// The creation time, in 100 ns intervals since 1601. A process that has exited counts as
 /// not found, as does one this user may not query: artifactize records only its own
 /// processes and children, so such a PID was reused by another user's or a system process.
@@ -515,6 +523,64 @@ mod tests {
 
         // Closing the job's last handle would end this process too; it closes at exit.
         std::mem::forget(job);
+    }
+}
+
+#[cfg(test)]
+mod console_tests {
+    use windows_sys::Win32::{
+        System::{Console::GetConsoleWindow, Threading::DETACHED_PROCESS},
+        UI::WindowsAndMessaging::IsWindowVisible,
+    };
+
+    const WINDOW_PROBE: &str = "platform::windows::process::console_tests::console_window_probe";
+    const HIDDEN: &str = "console window: hidden";
+
+    /// The desktop app has no console, so the probe runs from a detached process: the case in
+    /// which Windows gives a console program a window of its own.
+    #[test]
+    fn a_probe_from_a_process_without_a_console_shows_no_window() {
+        use std::os::windows::process::CommandExt;
+
+        let mut parent = crate::test_os::test_command(
+            "platform::windows::process::console_tests::detached_parent_probe",
+            &[],
+        );
+        parent.arg("--ignored").creation_flags(DETACHED_PROCESS);
+        let output = parent.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(HIDDEN),
+            "{output:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "launched detached by the console window test"]
+    fn detached_parent_probe() {
+        // SAFETY: GetConsoleWindow only reads this process's console attachment.
+        assert!(
+            unsafe { GetConsoleWindow() }.is_null(),
+            "the parent has no console"
+        );
+        let exe = std::env::current_exe().unwrap();
+        let stdout = crate::platform::program::tool_output(
+            exe.to_str().unwrap(),
+            ["--exact", WINDOW_PROBE, "--ignored", "--nocapture"].map(std::ffi::OsStr::new),
+        )
+        .expect("the window probe runs");
+        print!("{}", String::from_utf8_lossy(&stdout));
+    }
+
+    #[test]
+    #[ignore = "launched as a host probe by the detached parent"]
+    fn console_window_probe() {
+        // SAFETY: both calls only read; IsWindowVisible accepts a null window.
+        let visible = unsafe { IsWindowVisible(GetConsoleWindow()) } != 0;
+        println!(
+            "console window: {}",
+            if visible { "visible" } else { "hidden" }
+        );
     }
 }
 

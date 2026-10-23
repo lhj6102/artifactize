@@ -1,5 +1,8 @@
 name = "desktop"
 
+[views.human_tools]
+app = { description = "Build the desktop app from this tree and open its branch with your own artifactize state, removing the build output when the window closes.", kind = "launch", command = "node", args = ["harness/app.mts"] }
+
 # The app runs headless for the whole review. start builds a candidate into its own
 # session (or snapshots an explicitly prepared one); it never consumes shared Cargo output names.
 [views.agent_tools]

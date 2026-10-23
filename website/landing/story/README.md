@@ -14,8 +14,10 @@ A sticky graphic beside the steps of `index.html` (above them on phones): native
 ## Change the story
 
 - **Copy**: edit the step's `<section data-step="id">` in `index.html` (heading, text, and the `.sr` line that
-  describes the graphic). A translation copies the HTML; a `#story-strings` JSON block renames the graphic's
-  words, such as node labels and badge text (format in `main.js`).
+  describes the graphic), in English and in the Korean element beside it (`data-locale`; see
+  `website/README.md`), and the rail link's text in both. The graphic, including the rail links' `data-short`
+  step titles it shows, stays English; a `#story-strings` JSON block could rename its words, such as node
+  labels and badge text (format in `main.js`).
 - **Add a step**: add a `<section data-step="new" id="step-new">` and a rail link to `#step-new` in `index.html`,
   and `{ id: 'new', layout: '…' }` at the same position in `steps` in `scenario.js`. List only what changes:
   `add`, `emerge`, `split`, `merge`, `remove`, `connect`, `connectAs`, `show`, `hide`, `relabel`, `ripple`, `mark`.

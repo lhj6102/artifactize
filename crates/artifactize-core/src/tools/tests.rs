@@ -84,6 +84,25 @@ fn command() -> Value {
     })
 }
 
+/// A call of `inspect_a` that owns what it needs, to run as a task, and the token that
+/// cancels it.
+fn owned_call(
+    fixture: &Fixture,
+) -> (
+    CancellationToken,
+    impl std::future::Future<Output = ToolResult> + Send + 'static,
+) {
+    let config = read_workspace_config(&fixture.repo).unwrap();
+    let output = fixture.output.clone();
+    let cancellation = CancellationToken::new();
+    let token = cancellation.clone();
+    let work = async move {
+        let registry = Registry::new(&config, "a/review").unwrap();
+        registry.call("inspect_a", json!({}), &output, token).await
+    };
+    (cancellation, work)
+}
+
 fn text(result: &ToolResult) -> &str {
     let [Content::Text { text }] = result.content() else {
         panic!("expected text: {result:?}")
@@ -619,36 +638,39 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
         "import json,os,socket,sys,threading\njson.load(sys.stdin)\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()",
         listener.local_addr().unwrap().port()
     ));
-    let mut call = Box::pin(fixture.call(json!({})));
-    let ready = async {
-        use tokio::io::AsyncReadExt;
-        let (mut socket, _) = listener.accept().await.unwrap();
-        let mut pid = String::new();
-        socket.read_to_string(&mut pid).await.unwrap();
-        pid.parse::<u32>().unwrap()
-    };
-    tokio::pin!(ready);
-    // Keep the runtime runnable so its paused clock cannot auto-advance while
-    // the OS admits the child and the child acknowledges receiving its input.
-    let pid = loop {
-        tokio::select! {
-            result = &mut call => panic!("tool completed before readiness: {result:?}"),
-            pid = &mut ready => break pid,
-            _ = tokio::task::yield_now() => {},
-        }
-    };
-    tokio::time::advance(TIMEOUT).await;
-    // Cleanup also waits for OS I/O; do not auto-advance its independent deadline.
-    let result = loop {
-        tokio::select! {
-            result = &mut call => break result,
-            _ = tokio::task::yield_now() => {},
-        }
-    };
-    assert!(result.is_error());
-    assert_eq!(text(&result), "Agent tool timed out.");
-    assert!(crate::test_os::gone(pid));
     let config = read_workspace_config(&fixture.repo).unwrap();
+    let (cancellation, work) = owned_call(&fixture);
+    crate::test_os::scoped(cancellation, work, async |call| {
+        let ready = async {
+            use tokio::io::AsyncReadExt;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut pid = String::new();
+            socket.read_to_string(&mut pid).await.unwrap();
+            pid.parse::<u32>().unwrap()
+        };
+        tokio::pin!(ready);
+        // Keep the runtime runnable so its paused clock cannot auto-advance while
+        // the OS admits the child and the child acknowledges receiving its input.
+        let pid = loop {
+            tokio::select! {
+                result = &mut *call => panic!("tool completed before readiness: {result:?}"),
+                pid = &mut ready => break pid,
+                _ = tokio::task::yield_now() => {},
+            }
+        };
+        tokio::time::advance(TIMEOUT).await;
+        // Cleanup also waits for OS I/O; do not auto-advance its independent deadline.
+        let result = loop {
+            tokio::select! {
+                result = &mut *call => break result.unwrap(),
+                _ = tokio::task::yield_now() => {},
+            }
+        };
+        assert!(result.is_error());
+        assert_eq!(text(&result), "Agent tool timed out.");
+        assert!(crate::test_os::gone(pid));
+    })
+    .await;
     let registry = Registry::new(&config, "a/review").unwrap();
     let cancel = CancellationToken::new();
     cancel.cancel();
@@ -721,33 +743,30 @@ async fn dropping_call_cleans_process_before_removing_directories() {
         .await
         .unwrap();
     fixture.script(&format!("import os,socket,threading\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()", listener.local_addr().unwrap().port()));
-    let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
-    let mut call = Box::pin(registry.call(
-        "inspect_a",
-        json!({}),
-        &fixture.output,
-        CancellationToken::new(),
-    ));
-    let pid = tokio::select! {
-        result = &mut call => panic!("unexpected completion: {result:?}"),
-        result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            use tokio::io::AsyncReadExt;
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut pid = String::new();
-            socket.read_to_string(&mut pid).await.unwrap();
-            pid.parse::<u32>().unwrap()
-        }) => result.unwrap(),
-    };
-    drop(call);
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        while fixture.output_entries() != [fixture.output.join("retained")] {
-            tokio::task::yield_now().await;
-        }
+    let (cancellation, work) = owned_call(&fixture);
+    crate::test_os::scoped(cancellation, work, async |call| {
+        let pid = tokio::select! {
+            result = &mut *call => panic!("unexpected completion: {result:?}"),
+            result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                use tokio::io::AsyncReadExt;
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut pid = String::new();
+                socket.read_to_string(&mut pid).await.unwrap();
+                pid.parse::<u32>().unwrap()
+            }) => result.unwrap(),
+        };
+        // Dropping the caller is what is under test: abort it rather than cancel it.
+        call.abort();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while fixture.output_entries() != [fixture.output.join("retained")] {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(crate::test_os::gone(pid));
     })
-    .await
-    .unwrap();
-    assert!(crate::test_os::gone(pid));
+    .await;
 }
 
 #[test]

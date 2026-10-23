@@ -1,13 +1,16 @@
 # artifactize.dev
 
-The site for artifactize: the landing page at `/` and the docs at `/docs/`, both
+The site for artifactize: the landing page at `/` and the docs at `/docs/` (Korean
+at `/ko/` and `/docs/ko/`), all
 deployed from this directory to Cloudflare Workers (static assets).
 
 | Path | Contents |
 |---|---|
-| `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. The development board at `/board/` (`landing/board/`, native ES modules with JSDoc types) reads the repository's branches, pull requests, `dev-green` tag and releases from GitHub's public API in the visitor's browser, so it stays live without a redeploy; the note it reads in pull request bodies is defined by the development skills in `.agents/skills/`. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), `404.html`, `_headers`, the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json`, `story/README.md` and the `*.artf` declarations out of the deployed site. The brand images and favicons are copied from `../assets/brand/` at build time. |
-| `docs/` | The user docs as an [mdBook](https://rust-lang.github.io/mdBook/): `book.toml`, `src/` (`SUMMARY.md` and the chapters) and `theme/`. Built into `dist/docs/`. |
+| `landing/` | The landing page, copied to `dist/` as is except `index.html`, which holds the English and Korean pages (see [Landing page languages](#landing-page-languages)): a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. The development board at `/board/` (`landing/board/`, native ES modules with JSDoc types) reads the repository's branches, pull requests, `dev-green` tag and releases from GitHub's public API in the visitor's browser, so it stays live without a redeploy; the note it reads in pull request bodies is defined by the development skills in `.agents/skills/`. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), `404.html`, `_headers`, `_redirects` (the Korean docs' former `/docs/kr/` addresses), the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json`, `story/README.md` and the `*.artf` declarations out of the deployed site. The brand images and favicons are copied from `../assets/brand/` at build time, and the hero's example graph images from `../assets/others/`. |
+| `docs/` | The user docs as two [mdBook](https://rust-lang.github.io/mdBook/) books sharing `theme/`: `en/` (built into `dist/docs/`) and its Korean translation `ko/` (built into `dist/docs/ko/`), each with `book.toml` and `src/` (`SUMMARY.md` and the chapters). |
 | `build.sh` | Builds everything into `dist/` (gitignored) and checks every internal link. |
+| `layout.py` | Copies the landing page, brand assets and demo GIFs into a destination shared by the build and preview, and writes the landing page in each language. |
+| `preview.py` | Opens a private landing-only HTTP preview in your browser, without mdBook or other Python dependencies. |
 | `check-links.py` | The internal link check that `build.sh` runs over `dist/`. |
 | `../assets/brand/` | The sole brand source, generated images, generator, minimum tool requirements, Artifact declarations and social card template. |
 | `make-media.sh` | Re-creates the promo media in `landing/media/` from the promo master (not the social card). |
@@ -16,8 +19,23 @@ deployed from this directory to Cloudflare Workers (static assets).
 
 ## Build and preview
 
-The build needs mdBook 0.5.4 (the version `build.sh` and the workflow pin) and
-`python3`:
+To try just this tree's landing page, run the **preview** Human tool in the landing
+Artifact's Detail, or run this from the workspace root:
+
+```sh
+python3 website/preview.py
+```
+
+It lays out the page and its shared assets in a private temporary directory, serves
+`http://127.0.0.1` on an available port and opens that URL in your default browser.
+Only Python's standard library is needed. `/docs/` is not included; unknown paths
+return the landing page's `404.html` with status 404. Ctrl+C or SIGTERM stops it;
+after 30 minutes without a request it exits by itself. Both paths remove its
+temporary files. Run the tool again to restart it. Root-absolute asset links need
+HTTP, so do not open `landing/index.html` with `file://`.
+
+For the full site, including docs, the build needs mdBook 0.5.4 (the version
+`build.sh` and the workflow pin) and `python3`:
 
 ```sh
 cargo install mdbook --version 0.5.4 --locked --root ~/.local   # or a release binary
@@ -32,20 +50,38 @@ python3 -m http.server -d website/dist 8080                      # http://localh
 
 The docs are the single source for the user guide and the reference; the README
 links into them at `https://artifactize.dev/docs/`. Write chapters in
-`docs/src/` and list each one in `docs/src/SUMMARY.md`.
+`docs/en/src/` and list each one in `docs/en/src/SUMMARY.md`.
+
+`docs/ko/src/` is the Korean translation and keeps the same files, order and
+meaning, with every link reaching the same target (English `/docs/` links become
+`/docs/ko/`) and code, commands and output unchanged. Each Korean heading carries
+its English anchor, `## 설치 {#install}`, so links and the language switch land on
+the same section in both books. Change both books together.
 
 `docs/theme/` restyles mdBook in the brand palette:
 
 - `index.hbs` is mdBook 0.5.4's default template with a few marked
   (`artifactize:`) changes: the wordmark linking to `/`, links to the landing
-  page and GitHub, the Dark and Light themes only, previous/next cards and the
-  shared fonts. After an mdBook upgrade, re-apply these marks to the new default
+  page and GitHub, the language switch to the same page in the other book, the
+  Dark and Light themes only, previous/next cards and the shared fonts. Its labels
+  follow the book's `language`. After an mdBook upgrade, re-apply these marks to the new default
   template (`mdbook init --theme` writes it).
 - `css/variables.css` defines the dark (`navy`, the default) and light themes;
   `artifactize.css` styles the chrome and content; `highlight.css` and
   `tomorrow-night.css` color code from the same variables.
 - The fonts come from `/fonts/fonts.css`, shared with the landing page;
   `theme/fonts/fonts.css` only keeps mdBook from bundling its default fonts.
+
+## Landing page languages
+
+`landing/index.html` is the landing page in English (`/`) and Korean (`/ko/`); `layout.py`
+writes one page per language. An element with `data-locale="en"` appears only on the English
+page and one with `data-locale="ko"` only on the Korean page; elements without it appear on
+both. On the Korean page, `data-ko-ATTR="value"` gives the element's `ATTR` that value, for
+example `data-ko-href` or `data-ko-alt`. Put the Korean element right after its English one
+and change both together; the landing Artifact's `translates-ko` eval compares them. The words
+`site.js` writes come from its table for the page's `<html lang>`. The project sentence "Build together on an Artifact Graph." and the scroll story's graphic
+stay English; the board, the privacy page and `404.html` are English only.
 
 ## Brand assets
 
@@ -56,8 +92,8 @@ generated outputs. The generator derives the cropped header mark, README PNG,
 standalone square favicons, opaque Apple icon and 1200×630 social card in that
 same folder. The template's text is outlined from the bundled fonts; rendering
 uses 8× supersampling and LANCZOS with no timestamps or image metadata. `build.sh`
-copies the assets to their existing served URLs and injects the favicons into a temporary mdBook
-source; no generated copies are committed under `landing/` or `docs/theme/`.
+copies the assets to their existing served URLs and injects the favicons into a temporary copy
+of each book; no generated copies are committed under `landing/` or `docs/theme/`.
 
 ```sh
 python3 assets/brand/build-icons.py
@@ -131,8 +167,9 @@ checksum), runs `build.sh` on pull requests and pushes that touch `website/` or
 `assets/`, and
 on pushes to `main` deploys `website/dist` with
 `wrangler deploy --config website/wrangler.toml`. The Worker serves the
-`artifactize.dev` custom domain; unknown paths get `dist/docs/404.html` under
-`/docs/` and `dist/404.html` elsewhere. `workflow_dispatch` redeploys `main` by
+`artifactize.dev` custom domain; unknown paths get `dist/docs/ko/404.html` under
+`/docs/ko/`, `dist/docs/404.html` elsewhere under `/docs/` and `dist/404.html`
+elsewhere. `workflow_dispatch` redeploys `main` by
 hand from the Actions tab. The Rust CI workflow skips changes that touch only
 `website/`.
 

@@ -1,7 +1,26 @@
 // artifactize.dev: the theme toggle, play/pause and captions for the promo video on
-// pages that have it, the install tabs, the story's scroll cue and the desktop
+// pages that have it, the install downloads and tabs, the story's scroll cue and the desktop
 // recordings. The promo pauses while it is off screen and never autoplays under
 // reduced motion.
+
+// The words this script writes, in the page's language (<html lang>); English otherwise.
+var WORDS = {
+  en: {
+    useDark: 'Use the dark theme',
+    useLight: 'Use the light theme',
+    copy: 'Copy',
+    copied: 'Copied',
+    pressToCopy: function (keys) { return 'Press ' + keys + ' to copy'; },
+  },
+  ko: {
+    useDark: '다크 테마 사용',
+    useLight: '라이트 테마 사용',
+    copy: '복사',
+    copied: '복사됨',
+    pressToCopy: function (keys) { return keys + '를 눌러 복사하세요'; },
+  },
+};
+var TEXT = WORDS[document.documentElement.lang] || WORDS.en;
 
 // Theme toggle: dark (the docs' "navy") or light. It writes the docs'
 // localStorage key, so the choice carries across the site.
@@ -11,7 +30,7 @@
   var root = document.documentElement;
   function sync() {
     var light = root.getAttribute('data-theme') === 'light';
-    button.setAttribute('aria-label', light ? 'Use the dark theme' : 'Use the light theme');
+    button.setAttribute('aria-label', light ? TEXT.useDark : TEXT.useLight);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', light ? '#FFFFFF' : '#090B0F');
   }
@@ -84,24 +103,33 @@
   }
 })();
 
-// Install tabs: show the command for the visitor's OS first. Without JS every panel
-// shows; with it, the tabs pick one, and arrow keys, Home/End or a sideways swipe
-// switch between them.
+// Install: the visitor's OS gets the primary download button and its command tab
+// first. Without JS no download stands out and every command panel shows; with it,
+// the tabs pick one, and arrow keys, Home/End or a sideways swipe switch between them.
 (function () {
   var install = document.querySelector('[data-install]');
   if (!install) return;
-  var list = install.querySelector('[role="tablist"]');
-  var tabs = Array.prototype.slice.call(install.querySelectorAll('[role="tab"]'));
-  if (!list || !tabs.length) return;
 
+  // A phone gets no download highlight and the Linux commands.
   function detect() {
     var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
     var agent = navigator.userAgent || '';
     if (/win/i.test(platform) || /Windows/.test(agent)) return 'windows';
-    if (/iPhone|iPad|iPod|Android/.test(agent)) return 'linux';
+    if (/iPhone|iPad|iPod|Android/.test(agent)) return '';
     if (/mac/i.test(platform) || /Macintosh|Mac OS X/.test(agent)) return 'macos';
     return 'linux';
   }
+  var os = detect();
+
+  Array.prototype.forEach.call(install.querySelectorAll('.download'), function (link) {
+    if (link.getAttribute('data-os') !== os) return;
+    link.classList.remove('btn-ghost');
+    link.classList.add('btn-primary');
+  });
+
+  var list = install.querySelector('[role="tablist"]');
+  var tabs = Array.prototype.slice.call(install.querySelectorAll('[role="tab"]'));
+  if (!list || !tabs.length) return;
 
   function select(tab, focus) {
     tabs.forEach(function (t) {
@@ -148,8 +176,7 @@
   }, { passive: true });
 
   list.hidden = false;
-  var os = detect();
-  select(tabs.filter(function (t) { return t.getAttribute('data-os') === os; })[0] || tabs[0], false);
+  select(tabs.filter(function (t) { return t.getAttribute('data-os') === (os || 'linux'); })[0] || tabs[0], false);
 })();
 
 // Copy buttons for the install commands. The panel's data-copy holds the exact command,
@@ -174,7 +201,7 @@
       status.textContent = '';
       setTimeout(function () { status.textContent = message; }, 50);
       timer = setTimeout(function () {
-        button.textContent = 'Copy';
+        button.textContent = TEXT.copy;
         button.removeAttribute('data-state');
         status.textContent = '';
       }, ms);
@@ -188,7 +215,7 @@
         selection.removeAllRanges();
         selection.addRange(range);
       }
-      show('Press ' + keys + ' to copy', 'select', 4000);
+      show(TEXT.pressToCopy(keys), 'select', 4000);
     }
 
     button.addEventListener('click', function () {
@@ -197,10 +224,11 @@
         return;
       }
       navigator.clipboard.writeText(text).then(function () {
-        show('Copied', 'copied', 2000);
+        show(TEXT.copied, 'copied', 2000);
       }, selectCommand);
     });
     // The class makes room for the button.
+    button.textContent = TEXT.copy;
     panel.classList.add('copyable');
     button.hidden = false;
   });

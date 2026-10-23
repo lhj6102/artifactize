@@ -1,4 +1,5 @@
-// Immutable executable inputs. App/driver lifetimes belong exclusively to WDIO's Tauri service.
+// Invocation-owned build inputs for the Human app launcher and WDIO test runners.
+// Test app/driver lifetimes belong exclusively to WDIO's Tauri service.
 import {
   absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
   makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, readText, removeTree, runStep, scratchDirectory,
@@ -39,21 +40,43 @@ function testWindows(): unknown[] {
 /** Build independent release/e2e bundles and check the bundler's actual input graph.
  * The release bundle must not contain the test-only frontend plugin, while the E2E
  * bundle must include it. Neither bundle is written to ui/dist or borrowed. */
-async function frontend(root: NativePath): Promise<Environment> {
+async function frontend(root: NativePath, selected: "production" | "e2e" = "e2e"): Promise<Environment> {
   const env = cargoEnvironment(root);
-  for (const mode of ["production", "e2e"] as const) {
+  for (const mode of selected === "e2e" ? ["production", "e2e"] : ["production"]) {
     const dist = nativePath(root, `frontend-${mode}`);
     const frontend = packageCommand(["-C", ui, "build", "--mode", mode, "--outDir", dist, "--manifest"]);
-    await runStep(frontend.program, frontend.args, { env, cwd: workspace });
+    await runStep(frontend.program, frontend.args, { env, cwd: workspace, forwardInterrupts: selected === "production" });
     const manifest = readJson(nativePath(dist, ".vite", "manifest.json")) as Record<string, unknown>;
     const plugin = Object.keys(manifest).some((key) => key.includes("/@wdio/tauri-plugin/"));
     if (plugin !== (mode === "e2e")) throw new Error(`${mode} frontend has the wrong WebDriver plugin inputs`);
   }
-  const dist = nativePath(root, "frontend-e2e");
-  const app = { withGlobalTauri: true, windows: testWindows() };
+  const dist = nativePath(root, `frontend-${selected}`);
+  const app = selected === "e2e" ? { withGlobalTauri: true, windows: testWindows() } : {};
   // frontendDist takes a URL or a folder. A URL makes the app browse it instead of embedding
   // and serving the frontend, so the folder is given in a form that cannot be a URL.
   return { ...env, TAURI_CONFIG: JSON.stringify({ build: { frontendDist: pathNotUrl(dist) }, app }) };
+}
+
+/** Production app and installed-app sidecars, with no WebDriver feature or fixture state.
+ * The caller owns the returned root until the app exits. */
+export async function prepareApp(): Promise<{ root: NativePath; app: NativePath }> {
+  if (!exists(nativePath(ui, "node_modules"))) {
+    throw new Error("UI dependencies are missing; run: pnpm -C crates/artifactize-desktop/ui install --frozen-lockfile");
+  }
+  const root = resourceRoot();
+  try {
+    console.log(`Building the production desktop app in ${root}`);
+    const env = await frontend(root, "production");
+    // Keep both commands beside the app, just as in an installed distribution. Source
+    // builds do not register them on PATH or change the person's command installation.
+    await runStep("cargo", ["build", "--locked", "-p", "artifactize-desktop", "-p", "artifactize", "-p", "artifactize-tools", "--bins"],
+      { env, cwd: workspace, forwardInterrupts: true });
+    return { root, app: nativePath(root, "target", "debug", executableName("artifactize-desktop")) };
+  } catch (error) {
+    removeTree(root);
+    console.log(`Build failed; removed ${root}`);
+    throw error;
+  }
 }
 
 function save(root: NativePath, cli: NativePath, app: NativePath, observer: NativePath): Candidate {

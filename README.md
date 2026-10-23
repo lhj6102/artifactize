@@ -1,6 +1,7 @@
 [![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
 [![License](https://img.shields.io/github/license/lhj6102/artifactize)](LICENSE)
+[![README in Korean](https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-blue)](assets/readme/README.kr.md)
 
 # Build together on an Artifact Graph.
 
@@ -11,6 +12,11 @@ Artifactize brings human and agent work together and keeps your project consiste
 - People who want to build together with others, reviewing efficiently and developing in modules.
 - People who want to trust changes made by AI agents without overseeing every step.
 - People who want code, documents, images, and running applications to stay consistent as the project grows.
+
+<p align="center">
+  <img src="assets/others/graph-example.en.png" width="800"
+       alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command.">
+</p>
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -37,42 +43,45 @@ called a Run ID; closing the command window doesn't stop it.
 
 ## Install
 
-Pick the default method for your operating system. These downloads are ready to
-run; you do not need Rust’s build tools.
+Download the app for your operating system. It brings the `artifactize` command
+with it, so you do not need Rust’s build tools.
 
-### Linux
+- **macOS**: [Download Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg),
+  one disk image for Apple silicon and Intel. Drag Artifactize to Applications and
+  open it once to set up the Terminal command.
+- **Windows**: [Get Artifactize from the Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D)
+  (x64), then open a new terminal.
+- **Linux**: [Download the .deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)
+  for x86_64 Ubuntu 22.04, Debian 12 or later, and open it with your software
+  installer or run `sudo apt install ./Artifactize-amd64.deb`.
+
+### From the command line
+
+**Linux** (x86_64 and aarch64; also WSL 2 on Windows), with the desktop app on x86_64:
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
 ```
 
-### macOS
+**macOS**, with [Homebrew](https://brew.sh/):
 
 ```sh
 brew install lhj6102/tap/artifactize
 ```
 
-> This uses [Homebrew](https://brew.sh/). For the desktop app with the commands, use
-> `brew install --cask lhj6102/tap/artifactize` instead. Without Homebrew, use the install
-> script, which installs both: `curl -fsSL https://artifactize.dev/install.sh | sh`
+For the desktop app with the commands, use `brew install --cask lhj6102/tap/artifactize`
+instead. Without Homebrew, the install script installs both:
+`curl -fsSL https://artifactize.dev/install.sh | sh`
 
-### Windows
-
-Install [Artifactize from the Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D),
-or in a terminal:
+**Windows**, from the Microsoft Store; then open a new terminal:
 
 ```powershell
 winget install 9PB6W4LL165D --source msstore
 ```
 
-Open a new terminal afterwards. If you use Linux inside Windows through WSL 2, use
-the Linux method.
-
-The Linux install script and the Microsoft Store install the
-[desktop app](https://artifactize.dev/docs/getting-started/install.html#desktop-app) too. The
-[full installation guide](https://artifactize.dev/docs/getting-started/install.html)
-explains the alternatives—the PowerShell install script, disk image, `.deb`, Cargo
-and building from source—along with prerequisites, updates and uninstalling.
+The [full installation guide](https://artifactize.dev/docs/getting-started/install.html)
+explains the alternatives—the PowerShell install script, AppImage, Cargo and building
+from source—along with prerequisites, updates and uninstalling.
 
 Once installed, take the
 [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).

@@ -58,19 +58,20 @@ pub(crate) async fn open_desktop(target: &std::ffi::OsStr) -> std::io::Result<()
     artifactize_tools::opener::open(target).await
 }
 
-/// A short, synchronous host-tool probe; no shell is added.
+/// A short, synchronous host-tool probe; no shell is added and no console window opens.
 pub(crate) fn tool_output<'a>(
     program: &str,
     args: impl IntoIterator<Item = &'a std::ffi::OsStr>,
 ) -> Option<Vec<u8>> {
     let cwd = std::env::current_dir().ok()?;
     let program = resolve(std::ffi::OsStr::new(program), &cwd).ok()?;
-    let output = std::process::Command::new(program)
+    let mut command = std::process::Command::new(program);
+    command
         .args(args)
         .env_clear()
         .envs(super::environment::snapshot())
-        .stdin(std::process::Stdio::null())
-        .output()
-        .ok()?;
+        .stdin(std::process::Stdio::null());
+    super::hide_console_window(&mut command);
+    let output = command.output().ok()?;
     output.status.success().then_some(output.stdout)
 }

@@ -15,22 +15,21 @@ if [ "$found" != "mdbook v$MDBOOK_VERSION" ]; then
 fi
 
 rm -rf dist
-mkdir -p dist
-cp -R landing/. dist/
-# Brand assets are committed only once, outside the website source tree.
+python3 layout.py dist
 brand="$PWD/../assets/brand"
-cp "$brand"/favicon.{svg,png} "$brand/apple-touch-icon.png" dist/
-cp "$brand"/artifactize-icon{,-mark}.svg "$brand/artifactize-icon-h56.png" \
-    "$brand/og.jpg" dist/media/
-# The landing page shows the desktop demos the capture script records into assets/demos/.
-cp "$PWD/../assets/demos/review-loop.gif" "$PWD/../assets/demos/graph-growth.gif" dist/media/
 
-# Inject the same favicons into an isolated mdBook source, never docs/theme/.
-# mdBook fingerprints the copies and rewrites links in every generated page.
+# Each language is its own book sharing docs/theme/: English at /docs/, Korean
+# at /docs/ko/. Inject the same favicons into an isolated copy of the theme,
+# never docs/theme/. mdBook fingerprints the copies and rewrites links in every
+# generated page. English builds first because mdBook empties its destination.
 book=$(mktemp -d)
 trap 'rm -rf "$book"' EXIT
-cp -R docs/. "$book/"
-cp "$brand"/favicon.{svg,png} "$book/theme/"
-"$MDBOOK" build "$book" --dest-dir "$PWD/dist/docs"
+for lang in en ko; do
+    cp -R "docs/$lang" "$book/$lang"
+    cp -R docs/theme "$book/$lang/theme"
+    cp "$brand"/favicon.{svg,png} "$book/$lang/theme/"
+done
+"$MDBOOK" build "$book/en" --dest-dir "$PWD/dist/docs"
+"$MDBOOK" build "$book/ko" --dest-dir "$PWD/dist/docs/ko"
 python3 check-links.py dist
 echo "built $(find dist -type f | wc -l) files into website/dist"
