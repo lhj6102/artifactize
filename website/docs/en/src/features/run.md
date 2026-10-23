@@ -230,6 +230,7 @@ Each eval's action says what `verify` would do with it:
 | `execute` | no result, and its dependencies are GREEN through results that exist now | `The current eval and fingerprints have no completed cached result.` |
 | `blocked` | no result, and a dependency is RED | `Dependency verdict RED: core/tests` |
 | `wait` | no result, and a dependency's result exists only after verify runs it | `Waiting for current GREEN dependency evidence: core/tests` |
+| `wait` | its dependencies are ready and the same review is already running; verify joins that execution instead of starting another | `The current eval and fingerprints have a live execution.` |
 
 Status cannot say whether a `wait` eval will execute. Text ends with, for example, `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on a merged
 checkout answers what verify will re-review there without running it. Force still

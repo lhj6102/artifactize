@@ -100,16 +100,15 @@ Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 
 
 ### 식별자 인자 {#identity-arguments}
 
-Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는 상태를 읽기 전에
-검사합니다. ASCII 글자, 숫자, `-`, `_`, `.`로 이뤄진 1–200자여야 하며 점만으로 이뤄질 수는
-없습니다. `cache show`, `cache rm`, `server rm`의 재사용 키 인자는 정확히 64자의 소문자
+Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)는 ASCII 글자,
+숫자, `-`, `_`, `.`로 이뤄진 1–200자여야 하며 점만으로 이뤄질 수는 없습니다. `cache show`, `cache rm`, `server rm`의 재사용 키 인자는 정확히 64자의 소문자
 16진수여야 합니다. 형식이 잘못된 식별자를 지정하면 사용법 오류로 처리하고 종료 코드 2로 끝납니다. 형식은 맞지만 없는
 캐시 키라면 `cache show`는 `null`(`--history`면 `[]`)을 출력하고 4로 종료하며, `cache rm`은
 `removed: false`를 알립니다.
 
 `server token add NAME`과 `server token revoke NAME`은 글자, 숫자, `-`, `_`, `.`로 이뤄진
 1–64자의 ASCII를 받습니다. 빈 이름, 공백, 슬래시, ASCII가 아닌 글자, 너무 긴 이름은
-**토큰 저장소를 열기 전에** 거부하고 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
+거부되며 2로 종료합니다. 이 이름은 표시용이며, 인증에 쓰는
 비밀 토큰이 아닙니다.
 
 `session show`와 `session send`는 Agent 리뷰의
