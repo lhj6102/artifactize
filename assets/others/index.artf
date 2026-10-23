@@ -74,8 +74,9 @@ through three roles that pass one Artifact Graph between them: Director above, B
 Evaluator on either side, and the Artifactize logo along the bottom. Each role shows only its \
 name and its team of five, as person and agent icons: three people and two agents direct, five \
 agents build, and four agents and one person evaluate; the motion shows what each role does. \
-The scene is 16:9. The graph is abstract on purpose: unnamed nodes in columns, linked left to \
-right like a DAG, with nothing around them. In motion, the graph moves to whichever role has it, tagged with why it is passed (build, \
+The scene is 16:9. The graph is abstract on purpose: unnamed nodes fanning out from one node \
+on the left to the right, each link a single bend, with nothing around them. In motion, the \
+graph glides to whichever role has it, tagged with why it is passed (build, \
 verify, RED or GREEN). The Director adds a node; the Builder builds it; the Evaluator checks \
 the nodes one by one and finds the new one RED; the Builder fixes it; the Evaluator checks it \
 again, the person signing off, and it is GREEN. The Director then adds another node and \

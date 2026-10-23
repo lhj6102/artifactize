@@ -4,7 +4,7 @@
      builds it and the Evaluator checks it node by node; a RED sends it back to the Builder, and
      the fixed node is checked again until GREEN. Then the Director adds a node and changes
      another, and the Builder and the Evaluator go back and forth again. The graph is abstract:
-     unnamed nodes in columns, linked left to right, nothing around them. A node is dashed when new or changed,
+     one node on the left fanning out to the right, nothing around them. A node is dashed when new or changed,
      white when built, then GREEN or RED once checked. The scene is 16:9 and a
      pure function of time, figure.frame(t), so capture.mts renders the same frames every time
      into roles.en.gif; opened directly, the page plays itself. -->
@@ -79,7 +79,7 @@
   // ---------- The story, second by second ----------
 
   /** Where the graph rests beside each role. */
-  const SPOTS = { director: { x: 720, y: 330 }, builder: { x: 566, y: 540 }, evaluator: { x: 874, y: 540 } };
+  const SPOTS = { director: { x: 720, y: 348 }, builder: { x: 566, y: 540 }, evaluator: { x: 874, y: 540 } };
   /** The passes: from one role to another between `start` and `end`, tagged with why. */
   const PASSES = [
     { from: "director", to: "builder", start: 1.4, end: 2.2, tag: "build" },
@@ -95,22 +95,22 @@
   ];
   const TAGS = { build: "#B49CFF", verify: "#6AA8FF", RED: "#FF5D5D", GREEN: "#3EE08F" };
 
-  /** The graph's nodes in four columns, left to right, and each one's states over the loop: five
-   * built at the start, one added in each round, and one changed in the second. The Evaluator
-   * checks them column by column. At the loop's end everything returns to the first state, so
+  /** The graph's nodes, one on the left fanning out to the right, and each one's states over the
+   * loop: five built at the start, a leaf added in each round, and a branch changed in the
+   * second. The Evaluator checks them column by column. At the loop's end everything returns to the first state, so
    * the loop starts again. */
   const NODES = {
-    a: { x: -160, y: -55, states: [[0, "built"], [4.15, "green"], [18.3, "built"]] },
-    b: { x: -160, y: 55, states: [[0, "built"], [4.4, "green"], [18.3, "built"]] },
-    c: { x: -55, y: 0, states: [[0, "built"], [4.65, "green"], [18.3, "built"]] },
-    d: { x: 50, y: -55, states: [[0, "built"], [4.9, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
-    e: { x: 50, y: 55, states: [[0, "built"], [5.15, "green"], [18.3, "built"]] },
-    f: { x: 155, y: -55, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.45, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
-    g: { x: 155, y: 55, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
+    a: { x: -115, y: 0, states: [[0, "built"], [4.15, "green"], [18.3, "built"]] },
+    b: { x: -5, y: -62, states: [[0, "built"], [4.4, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
+    c: { x: -5, y: 62, states: [[0, "built"], [4.65, "green"], [18.3, "built"]] },
+    d: { x: 115, y: -96, states: [[0, "built"], [4.9, "green"], [18.3, "built"]] },
+    e: { x: 115, y: -32, states: [[0, "built"], [5.15, "green"], [18.3, "built"]] },
+    f: { x: 115, y: 32, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.45, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
+    g: { x: 115, y: 96, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
   };
   /** The graph is drawn this much larger than its coordinates. */
   const GRAPH_SCALE = 1.2;
-  const EDGES = [["a", "c"], ["b", "c"], ["c", "d"], ["c", "e"], ["d", "f"], ["d", "g"], ["e", "g"]];
+  const EDGES = [["a", "b"], ["a", "c"], ["b", "d"], ["b", "e"], ["c", "f"], ["c", "g"]];
   const RADIUS = 22;
   /** How each state looks: fill, outline, and whether the outline is dashed. */
   const LOOKS = {
@@ -166,12 +166,15 @@
     });
   }
 
-  // Each link leaves its node's right side and enters the next one's left side, level at both ends.
+  // Each link is one bend: it leaves its node towards the next one's row and enters that node
+  // level from the left.
   const edges = EDGES.map(([from, to]) => {
     const [a, b] = [NODES[from], NODES[to]];
-    const [x1, x2] = [a.x + RADIUS + 3, b.x - RADIUS - 4];
-    const middle = (x1 + x2) / 2;
-    return { from, to, line: make("path", { class: "edge", d: `M${x1} ${a.y} C ${middle} ${a.y} ${middle} ${b.y} ${x2} ${b.y}` }, byId("edges")) };
+    const bend = { x: a.x + 0.3 * (b.x - a.x), y: b.y };
+    const away = Math.hypot(bend.x - a.x, bend.y - a.y);
+    const start = { x: a.x + ((RADIUS + 3) * (bend.x - a.x)) / away, y: a.y + ((RADIUS + 3) * (bend.y - a.y)) / away };
+    const end = { x: b.x - RADIUS - 4, y: b.y };
+    return { from, to, line: make("path", { class: "edge", d: `M${start.x.toFixed(2)} ${start.y.toFixed(2)} Q ${bend.x} ${bend.y} ${end.x} ${end.y}` }, byId("edges")) };
   });
   for (const node of Object.values(NODES)) {
     node.group = make("g", { transform: `translate(${node.x} ${node.y})` }, byId("nodes"));
@@ -194,22 +197,21 @@
     return `rgb(${from.map((value, index) => Math.round(value + (to[index] - value) * x)).join(",")})`;
   };
 
-  /** Where the graph is at `t`: resting beside a role, or thrown in an arc from one to the next. */
+  /** Where the graph is at `t`: resting beside a role, or gliding along a low arc to the next. */
   function graph(t) {
     const pass = PASSES.find((candidate) => t >= candidate.start && t < candidate.end);
     if (!pass) {
       const last = [...PASSES].reverse().find((candidate) => t >= candidate.end) ?? PASSES.at(-1);
-      return { ...SPOTS[last.to], tilt: 0, scale: 1, pass: null };
+      return { ...SPOTS[last.to], pass: null };
     }
     const x = progress(t, pass.start, pass.end);
     const [a, b] = [SPOTS[pass.from], SPOTS[pass.to]];
-    const control = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) - 100 };
+    const control = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) - 40 };
     const point = {
       x: (1 - x) ** 2 * a.x + 2 * (1 - x) * x * control.x + x ** 2 * b.x,
       y: (1 - x) ** 2 * a.y + 2 * (1 - x) * x * control.y + x ** 2 * b.y,
     };
-    const lift = Math.sin(Math.PI * x);
-    return { ...point, tilt: Math.sign(b.x - a.x) * 6 * lift, scale: 1 - 0.08 * lift, pass, lift };
+    return { ...point, pass, lift: Math.sin(Math.PI * x) };
   }
 
   /** A node's look at `t`: its state, blended into the next over a quarter second (the loop's
@@ -237,7 +239,7 @@
     t = ((t % SECONDS) + SECONDS) % SECONDS;
 
     const place = graph(t);
-    byId("graph").setAttribute("transform", `translate(${place.x.toFixed(2)} ${place.y.toFixed(2)}) rotate(${place.tilt.toFixed(2)}) scale(${(GRAPH_SCALE * place.scale).toFixed(3)})`);
+    byId("graph").setAttribute("transform", `translate(${place.x.toFixed(2)} ${place.y.toFixed(2)}) scale(${GRAPH_SCALE})`);
     const tag = byId("tag");
     tag.setAttribute("display", place.pass ? "inline" : "none");
     if (place.pass) {
@@ -248,7 +250,7 @@
       box.setAttribute("x", (-width / 2).toFixed(2));
       box.setAttribute("width", width.toFixed(2));
       box.setAttribute("fill", TAGS[place.pass.tag]);
-      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 130).toFixed(2)})`);
+      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 168).toFixed(2)})`);
       tag.setAttribute("opacity", Math.min(1, place.lift * 2.5).toFixed(3));
     }
 
