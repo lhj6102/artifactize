@@ -163,8 +163,8 @@ artifactize-tools help cargo build          # cargo build --help
 artifactize-tools open notes.md             # or an http(s) URL
 ```
 
-리뷰 중이 아닐 때는 Artifact 범위가 없으므로 현재 디렉터리를 범위로 삼습니다. read/list/glob/grep/section/open의
-파일 시스템 대상은 상대 경로여야 하고 그 아래에 있어야 합니다. `.`은 그 디렉터리 자체를 가리키며
+리뷰 중이 아닐 때는 Artifact 범위가 없으므로 현재 디렉터리를 범위로 삼습니다. read/list/glob/grep/section/open으로
+여는 파일이나 폴더는 현재 디렉터리 아래에 있어야 하며, 상대 경로로 지정해야 합니다. `.`은 그 디렉터리 자체를 가리키며
 list/glob/grep의 기본값입니다. 절대 경로 대상, `..`, 심볼릭 링크는 링크가 안쪽을 가리키더라도
 거부합니다. `help`의 프로그램과 인자에는 이 규칙이 적용되지 않으며, [`help`](#tools)에서처럼
 찾습니다. URL은 `open`만 받으며, `http://`나 `https://`만 됩니다.
