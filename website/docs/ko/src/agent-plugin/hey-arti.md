@@ -133,8 +133,8 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **완전한
-승인이 아닙니다**.
+Arti는 요청마다 [추측 실행이나 미룬 승인](../features/run.md#speculation-and-deferred-sign-offs)을 요청할 수 있지만, 필요한 Human 승인을 건너뛰려고 쓰지는 않습니다. SIGNOFFS_PENDING은 **사람의 승인이
+아직 남아 있는 상태입니다**.
 
 Arti는 각 결과를 다음과 같이 다룹니다.
 
