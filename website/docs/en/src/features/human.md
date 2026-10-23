@@ -81,9 +81,7 @@ DEFERRED sign-offs with a different reuse key, removing them from Review. See
 [the Run rules](run.md#sign-offs-and-the-end-of-a-run) for retirement, joining
 and submitting a sign-off after its Run ends.
 
-CI stays strict with `verify --all --wait --reuse-only agent,human`: it requests no
-sign-off, and neither a pending sign-off nor speculation substitutes for actual reusable
-Human GREEN evidence.
+For CI, see [Keep pending sign-offs out of the merge gate](team/ci.md#keep-pending-sign-offs-out-of-the-merge-gate).
 
 ## Human tools
 

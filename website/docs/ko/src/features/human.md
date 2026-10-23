@@ -70,9 +70,7 @@ RED로 끝납니다. 아무도 맡지 않으면 Run은 **YELLOW**(종료 코드 
 같은 워크트리에서 같은 eval에 더 새로운 요청이 오면, 재사용 키가 다른 이전 DEFERRED 승인은
 끝나고 Review에서 사라집니다. 이전 승인이 종료되는 조건과 리뷰 합류 방식, Run이 끝난 뒤 승인을 제출하는 방법은 [Run 규칙](run.md#sign-offs-and-the-end-of-a-run)을 보세요.
 
-CI에서는 `verify --all --wait --reuse-only agent,human`을 써서 필요한 승인이 모두 있어야 통과하게 하세요.
-이 명령은 승인을 요청하지 않으며, 대기 중인 승인이나 추측 실행이 재사용할 수 있는 Human eval의 실제 GREEN
-결과를 대신하지 못합니다.
+CI 설정은 [대기 중인 승인을 병합 게이트에서 빼기](team/ci.md#keep-pending-sign-offs-out-of-the-merge-gate)를 보세요.
 
 ## Human 도구 {#human-tools}
 

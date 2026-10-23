@@ -148,7 +148,6 @@ exactly one nonblank text block, such as
 `{"isError":true,"content":[{"type":"text","text":"Choose a smaller range."}]}`.
 These reach the reviewer unchanged. Nonzero exit, crash, malformed/truncated
 JSON, and process failures yield generic errors; stderr is never forwarded.
-There are no observation receipts.
 
 ### Image results
 

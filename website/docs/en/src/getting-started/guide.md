@@ -109,9 +109,12 @@ See [Eval dependencies](../features/artifact.md#eval-dependencies).
 
 ## Optional: Agent tools and the Human flow
 
-The tour above needs no model. This optional part does: first set up the model
-credentials, exact model and profile described in the
-[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
+The tour above needs no model. This optional part does: first put an exact model ID in
+the profile you use in `examples/agent-tools/spec/index.artf` and set up its credentials,
+as the [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)
+describes. For the Anthropic or Codex backend, add `--profile anthropic` or
+`--profile codex` to the `verify` command below. Without credentials the review is
+recorded as ERROR and the waiting command exits 2.
 A Human eval is requested only once every other non-Human eval of its Artifact is
 GREEN, so `spec/review` runs first. Both terminals must use the same temporary state directory. Before starting the
 waiting command below, print the first terminal's value with
@@ -148,10 +151,6 @@ With only the sign-off left, the Run waits 2 minutes for a claim and then while 
 it, so `verify --wait` exits 0 here once the GREEN sign-off arrives, provided the preceding
 machine review is still valid. Claim later and the Run has already ended YELLOW (exit 5);
 submit anyway, and the next `verify` reuses your sign-off.
-
-For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
-then run `artifactize verify --eval spec/review --wait`, adding `--profile anthropic` or `--profile codex` for the other backends. Without
-credentials the review is recorded as ERROR and the waiting command exits 2. See the [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
 
 ## Monitor
 

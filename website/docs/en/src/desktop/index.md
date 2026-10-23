@@ -24,8 +24,9 @@ default, selects none, and every branch is listed either way. `review` opens the
 newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
-sets the cooperative claim name (normally the user name). `-h`, `--help` or `help`
-(also after a mode) prints help on stderr and exits 2, as invalid arguments do. The app
+sets the cooperative claim name (normally the user name). `-h` or `--help`, also
+after a mode (`artifactize-desktop monitor --help`), and `artifactize-desktop help [MODE]` print
+help on stderr and exit 2, as invalid arguments do. The app
 exits 0 when you quit and 1 if it cannot start.
 
 Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.

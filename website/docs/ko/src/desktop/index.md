@@ -23,7 +23,8 @@ artifactize-desktop graph --repo PATH
 가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`로
 상태 디렉터리를 지정하며, 지정하지 않으면 공유 상태 디렉터리를 씁니다. `--reviewer NAME`은
-협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. `-h`, `--help`, `help`(모드 뒤에 써도 됨)는 잘못된 인자와
+협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. `-h`나 `--help`(모드 뒤에도
+쓸 수 있음, 예: `artifactize-desktop monitor --help`)와 `artifactize-desktop help [MODE]`는 잘못된 인자와
 마찬가지로 stderr에 도움말을 출력하고 2로 종료합니다. 앱을 정상적으로 닫으면 종료 코드는 0이고, 시작하지 못하면
 1입니다.
 
@@ -306,8 +307,8 @@ Settings는 Main area에 나옵니다. **Settings** 버튼이나 Ctrl+,를 다�
   필요한 개인정보 보호 수준에 맞춰 공유 수준을 고르세요. 로그아웃은 로컬 설정을 제거할 뿐, **서버
   토큰은 제거하지 않습니다**. 저장소 관리자가 [그 토큰을 폐기](../cli/review-store.md#review-store-server)해야 합니다.
   [공유와 푸시 동작](../cli/review-store.md#remote-review-store-client)을 보세요.
-- **Sign-off idle grace:** 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 끝나기 전에 얼마나 열려 있는지
-  보여 주고(바꾸지 않았다면 2분), 그 뒤에 시작하는 Run에 쓸 새 값을 초 단위(0–86400)로 저장합니다.
+- **Sign-off idle grace:** 아무도 맡지 않은 승인만 남았을 때 Run이 YELLOW로 종료되기까지의 대기
+  시간을 보여 주고(바꾸지 않았다면 2분), 그 뒤에 시작하는 Run에 쓸 새 값을 초 단위(0–86400)로 저장합니다.
   `artifactize limits`와 같은 머신 전체 [설정](../features/others/state.md#sign-off-idle-grace)입니다.
 
 Settings에서 하는 계정과 저장소 관리 작업은 CLI와 같습니다. 자격 증명은

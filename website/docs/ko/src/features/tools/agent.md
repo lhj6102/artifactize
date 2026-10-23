@@ -149,8 +149,8 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 손상되어 표시되지 않을 수 있습니다. 형식은 확장자가 아니라 파일 내용으로 판단하며, 각각
 `image/png`, `image/jpeg`, `image/webp`와 맞아야 합니다. 잘못된 base64, MIME 불일치, GIF/BMP 같은
 지원하지 않는 형식, 애니메이션 PNG는 거부합니다. base64로 인코딩한 뒤에도 정리한 도구 결과 전체
-8 MiB 한도가 그대로 적용됩니다. [`view_image`](builtin.md#view_image)는 같은 내장 이미지 형태를
-돌려주고 같은 바이트/형식 한도를 쓰지만, 파일은 허용된 Artifact 범위에서 읽습니다.
+8 MiB 한도가 그대로 적용됩니다. [`view_image`](builtin.md#view_image)는 같은 형식의 이미지 블록을
+돌려주고 같은 파일 크기 제한과 형식 검사 규칙을 쓰지만, 파일은 허용된 Artifact 범위에서 읽습니다.
 
 `plain`에서는 선언한 `input_schema.properties`의 최상위 항목만 argv 자리 표시자로 쓸 수
 있습니다. 인자 전체를 `{query}`로 쓸 수도 있고, `--query={query}`처럼 인자 일부에 넣을 수도 있습니다. 문자열은 그대로
