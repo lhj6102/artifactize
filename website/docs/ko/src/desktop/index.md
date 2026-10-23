@@ -185,8 +185,8 @@ eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 
 결과(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
 **Execution options**, **Execution metadata**, **Fingerprint**도 함께 표시합니다.
 Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 재사용할 결과를
-보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact나 Human이 아닌 eval의 Summary에서
-`t`로 보이거나 숨깁니다. 로그가 있는 eval은 칩 아래에서
+보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact의 Summary나 Human이 아닌 eval의
+Summary에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 로그가 있는 eval은 칩 아래에서
 먼저 보이는 Summary와 로그 사이를 오갈 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
 항목은 굵고 진한 글씨로 강조됩니다. 로그는 Agent eval의 **Agent log**(대화. 별도의 스크롤 막대가 있음) 또는 Runtime eval의 **Runtime log**(저장된 stdout/stderr. 실시간
 로그 스트림이 아님)입니다. 대화가 없거나 원격에만 있으면

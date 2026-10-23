@@ -94,8 +94,8 @@ Runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키�
 eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부분을 검사하는 eval에서 그 Artifact를 `{name}`으로
 참조하세요. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
 
-자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact의 파일에는 자식 폴더가 포함되므로,
-자식은 부모의 모든 eval이 참조한 것으로 간주합니다. 부모의 각 eval은 Artifact로 선언된 가장
+자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact에는 자식 폴더의 내용도 포함되므로,
+부모의 모든 eval이 자식 Artifact를 참조하는 것으로 간주합니다. 부모의 각 eval은 Artifact로 선언된 가장
 가까운 하위 폴더의 eval에 의존합니다.
 
 예를 들어 애플리케이션의 E2E 테스트를 실행하는 eval은 애플리케이션 Artifact에 선언합니다.
