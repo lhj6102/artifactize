@@ -74,11 +74,12 @@ through three roles that pass one Artifact Graph between them: Director above, B
 Evaluator on either side, and the Artifactize logo along the bottom. Each role has a short \
 line on what it does and its team of five, as person and agent icons: three people and two \
 agents direct, five agents build, and four agents and one person evaluate. The scene is 16:9. \
-In motion, the graph's card moves to whichever role has it, tagged with why it is passed \
-(build, verify, RED or GREEN). The Director adds Docs; the Builder builds it; the Evaluator \
-checks the nodes one by one and finds Docs RED; the Builder fixes it; the Evaluator checks it \
-again, the person signing off, and it is GREEN. The Director then adds Tests and changes \
-Design, and the Builder and the Evaluator go back and forth again, Tests RED and then GREEN. \
+The graph is abstract on purpose: unnamed nodes and their links, with nothing around them. \
+In motion, the graph moves to whichever role has it, tagged with why it is passed (build, \
+verify, RED or GREEN). The Director adds a node; the Builder builds it; the Evaluator checks \
+the nodes one by one and finds the new one RED; the Builder fixes it; the Evaluator checks it \
+again, the person signing off, and it is GREEN. The Director then adds another node and \
+changes one, and the Builder and the Evaluator go back and forth again, RED and then GREEN. \
 A node is dashed when new or changed, white when built, then GREEN or RED once checked; only \
 the white nodes are checked again. Read roles.html, ask gif for the GIF's length and view \
 enough frames to follow every step. Judge:

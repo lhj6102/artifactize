@@ -3,8 +3,9 @@
      with its team of five people and AI agents. The Director adds to the graph, the Builder
      builds it and the Evaluator checks it node by node; a RED sends it back to the Builder, and
      the fixed node is checked again until GREEN. Then the Director adds a node and changes
-     another, and the Builder and the Evaluator go back and forth again. A node is dashed when
-     new or changed, white when built, then GREEN or RED once checked. The scene is 16:9 and a
+     another, and the Builder and the Evaluator go back and forth again. The graph is abstract:
+     unnamed nodes and their links, nothing around them. A node is dashed when new or changed,
+     white when built, then GREEN or RED once checked. The scene is 16:9 and a
      pure function of time, figure.frame(t), so capture.mts renders the same frames every time
      into roles.en.gif; opened directly, the page plays itself. -->
 <html lang="en">
@@ -30,8 +31,7 @@
   .desc { fill: var(--dim); font: 500 28px var(--sans); }
   .kicker { fill: var(--dim); font: 500 28px var(--sans); }
   .brand { fill: var(--text); font: 700 42px var(--display); letter-spacing: -0.03em; }
-  .edge { stroke: #3A4556; stroke-width: 2.4; }
-  .node-name { font: 700 24px var(--sans); }
+  .edge { stroke: #4A5568; stroke-width: 3; }
   .tag-text { font: 700 22px var(--mono); }
 </style>
 </head>
@@ -55,9 +55,8 @@
   <text class="desc" x="1280" y="512" text-anchor="middle">Checks each piece</text>
   <g id="teams"></g>
 
-  <!-- The Artifact Graph on its card, and the tag naming what it is passed for. -->
-  <g id="card">
-    <rect x="-200" y="-140" width="400" height="280" rx="22" fill="#10141B" stroke="#2C3544" stroke-width="2"/>
+  <!-- The Artifact Graph, and the tag naming what it is passed for. -->
+  <g id="graph">
     <g id="edges"></g>
     <g id="nodes"></g>
   </g>
@@ -82,7 +81,7 @@
 
   // ---------- The story, second by second ----------
 
-  /** Where the card rests beside each role. */
+  /** Where the graph rests beside each role. */
   const SPOTS = { director: { x: 720, y: 380 }, builder: { x: 548, y: 540 }, evaluator: { x: 892, y: 540 } };
   /** The passes: from one role to another between `start` and `end`, tagged with why. */
   const PASSES = [
@@ -99,23 +98,28 @@
   ];
   const TAGS = { build: "#B49CFF", verify: "#6AA8FF", RED: "#FF5D5D", GREEN: "#3EE08F" };
 
-  /** The graph's nodes, placed on the card, and each one's states over the loop. At the loop's
-   * end everything returns to the first state, so the loop starts again. */
+  /** The graph's nodes, around its centre, and each one's states over the loop: five built at
+   * the start, one added in each round, and one changed in the second. At the loop's end
+   * everything returns to the first state, so the loop starts again. */
   const NODES = {
-    problem: { name: "Problem", x: -95, y: -84, states: [[0, "built"], [4.3, "green"], [18.3, "built"]] },
-    design: { name: "Design", x: 95, y: -84, states: [[0, "built"], [4.7, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
-    code: { name: "Code", x: -95, y: 2, states: [[0, "built"], [5.1, "green"], [18.3, "built"]] },
-    docs: { name: "Docs", x: 95, y: 2, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.5, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
-    tests: { name: "Tests", x: 0, y: 88, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
+    a: { x: -120, y: -60, states: [[0, "built"], [4.15, "green"], [18.3, "built"]] },
+    b: { x: -20, y: -105, states: [[0, "built"], [4.4, "green"], [18.3, "built"]] },
+    c: { x: 105, y: -75, states: [[0, "built"], [4.65, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
+    d: { x: -50, y: 15, states: [[0, "built"], [4.9, "green"], [18.3, "built"]] },
+    e: { x: 80, y: 30, states: [[0, "built"], [5.15, "green"], [18.3, "built"]] },
+    f: { x: -130, y: 95, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.45, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
+    g: { x: 45, y: 120, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
   };
-  const EDGES = [["problem", "design"], ["design", "code"], ["design", "docs"], ["code", "docs"], ["code", "tests"]];
-  /** How each state looks: fill, outline, name colour, and whether the outline is dashed. */
+  /** The graph is drawn this much larger than its coordinates. */
+  const GRAPH_SCALE = 1.2;
+  const EDGES = [["a", "b"], ["b", "c"], ["a", "d"], ["b", "d"], ["c", "e"], ["d", "e"], ["d", "f"], ["e", "g"], ["d", "g"]];
+  /** How each state looks: fill, outline, and whether the outline is dashed. */
   const LOOKS = {
-    hidden: { fill: "#10141B", stroke: "#10141B", text: "#10141B", opacity: 0 },
-    new: { fill: "#10141B", stroke: "#8B96A8", text: "#8B96A8", opacity: 1, dashed: true },
-    built: { fill: "#EAF0F7", stroke: "#EAF0F7", text: "#090B0F", opacity: 1 },
-    green: { fill: "#3EE08F", stroke: "#3EE08F", text: "#04130B", opacity: 1 },
-    red: { fill: "#FF5D5D", stroke: "#FF5D5D", text: "#1A0505", opacity: 1 },
+    hidden: { fill: "#090B0F", stroke: "#090B0F", opacity: 0 },
+    new: { fill: "#090B0F", stroke: "#8B96A8", opacity: 1, dashed: true },
+    built: { fill: "#EAF0F7", stroke: "#EAF0F7", opacity: 1 },
+    green: { fill: "#3EE08F", stroke: "#3EE08F", opacity: 1 },
+    red: { fill: "#FF5D5D", stroke: "#FF5D5D", opacity: 1 },
   };
 
   /** When each team works: [role, first member's start, step between members, members]. The
@@ -123,7 +127,7 @@
   const WORK = [
     ["director", 0.5, 0.1, [0, 1, 2, 3, 4]],
     ["builder", 2.3, 0.14, [0, 1, 2, 3, 4]],
-    ["evaluator", 4.05, 0.4, [0, 1, 2, 3]],
+    ["evaluator", 4.0, 0.36, [0, 1, 2, 3]],
     ["builder", 6.65, 0.1, [0, 1, 2, 3, 4]],
     ["evaluator", 8.25, 0.08, [0, 1, 2, 3]],
     ["evaluator", 8.4, 0, [4]],
@@ -169,10 +173,8 @@
   }));
   for (const node of Object.values(NODES)) {
     node.group = make("g", { transform: `translate(${node.x} ${node.y})` }, byId("nodes"));
-    node.ring = make("rect", { x: -86, y: -32, width: 172, height: 64, rx: 16, fill: "none", stroke: "#6AA8FF", "stroke-width": 3, opacity: 0 }, node.group);
-    node.box = make("rect", { x: -79, y: -25, width: 158, height: 50, rx: 13, "stroke-width": 2.4 }, node.group);
-    node.label = make("text", { class: "node-name", y: 8.5, "text-anchor": "middle" }, node.group);
-    node.label.textContent = node.name;
+    node.ring = make("circle", { r: 33, fill: "none", stroke: "#6AA8FF", "stroke-width": 3, opacity: 0 }, node.group);
+    node.dot = make("circle", { r: 22, "stroke-width": 3 }, node.group);
   }
 
   // ---------- Motion ----------
@@ -190,8 +192,8 @@
     return `rgb(${from.map((value, index) => Math.round(value + (to[index] - value) * x)).join(",")})`;
   };
 
-  /** Where the card is at `t`: resting beside a role, or thrown in an arc from one to the next. */
-  function card(t) {
+  /** Where the graph is at `t`: resting beside a role, or thrown in an arc from one to the next. */
+  function graph(t) {
     const pass = PASSES.find((candidate) => t >= candidate.start && t < candidate.end);
     if (!pass) {
       const last = [...PASSES].reverse().find((candidate) => t >= candidate.end) ?? PASSES.at(-1);
@@ -221,7 +223,6 @@
     return {
       fill: mix(before.fill, after.fill, turn),
       stroke: mix(before.stroke, after.stroke, turn),
-      text: mix(before.text, after.text, turn),
       opacity: before.opacity + (after.opacity - before.opacity) * turn,
       dashed: after.dashed && turn > 0.5,
       ring: checked && start < 18 ? bump(t, start - 0.3, 0.55) : 0,
@@ -233,8 +234,8 @@
   function frame(t) {
     t = ((t % SECONDS) + SECONDS) % SECONDS;
 
-    const place = card(t);
-    byId("card").setAttribute("transform", `translate(${place.x.toFixed(2)} ${place.y.toFixed(2)}) rotate(${place.tilt.toFixed(2)}) scale(${place.scale.toFixed(3)})`);
+    const place = graph(t);
+    byId("graph").setAttribute("transform", `translate(${place.x.toFixed(2)} ${place.y.toFixed(2)}) rotate(${place.tilt.toFixed(2)}) scale(${(GRAPH_SCALE * place.scale).toFixed(3)})`);
     const tag = byId("tag");
     tag.setAttribute("display", place.pass ? "inline" : "none");
     if (place.pass) {
@@ -245,7 +246,7 @@
       box.setAttribute("x", (-width / 2).toFixed(2));
       box.setAttribute("width", width.toFixed(2));
       box.setAttribute("fill", TAGS[place.pass.tag]);
-      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 172).toFixed(2)})`);
+      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 200).toFixed(2)})`);
       tag.setAttribute("opacity", Math.min(1, place.lift * 2.5).toFixed(3));
     }
 
@@ -255,10 +256,9 @@
       looks[key] = now;
       node.group.setAttribute("opacity", now.opacity.toFixed(3));
       node.group.setAttribute("transform", `translate(${node.x} ${node.y}) scale(${now.pop.toFixed(3)})`);
-      node.box.setAttribute("fill", now.fill);
-      node.box.setAttribute("stroke", now.stroke);
-      node.box.setAttribute("stroke-dasharray", now.dashed ? "7 6" : "none");
-      node.label.setAttribute("fill", now.text);
+      node.dot.setAttribute("fill", now.fill);
+      node.dot.setAttribute("stroke", now.stroke);
+      node.dot.setAttribute("stroke-dasharray", now.dashed ? "6 5" : "none");
       node.ring.setAttribute("opacity", now.ring.toFixed(3));
     }
     for (const edge of edges) edge.line.setAttribute("opacity", Math.min(looks[edge.from].opacity, looks[edge.to].opacity).toFixed(3));
