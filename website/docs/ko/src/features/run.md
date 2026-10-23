@@ -88,8 +88,8 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 eval도 바로 실행하며, 그 eval의 GREEN 결과는 승인이 GREEN이 될 때까지 PROVISIONAL로 표시됩니다. 그 eval 자체의
 RED나 ERROR는 그대로 표시됩니다. 승인을 요청할 때 다른
 자동 검사 작업이 아직 실행 중일 수 있으니, 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요.
-요청은 DEFERRED로 표시됩니다. DEFERRED도 PROVISIONAL도 승인이 아닙니다. 이는 Run이 선택한 승인에
-해당합니다. 선택하지 않은 승인도 최종 검증 요건에 포함되므로, 그 승인에 의존하는 eval은
+요청은 DEFERRED로 표시됩니다. DEFERRED도 PROVISIONAL도 승인이 아닙니다. 이는 해당 Run에서 실행하도록
+선택한 승인에 해당합니다. 선택하지 않은 승인도 최종 검증 요건에 포함되므로, 그 승인에 의존하는 eval은
 재사용할 승인 결과가 있어야 실행되고, 그런 결과가 없으면 Run은 INCOMPLETE로 끝납니다. `--recursive`나 `--all` 등으로 그 승인도
 선택하세요.
 
@@ -238,7 +238,7 @@ summary}`를 알려 줍니다. 텍스트로는 `Fingerprint changed since Run RU
 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
 대상 Artifact에 속한 파일의 변경을 `path`(바뀜), `+path`(추가), `-path`(삭제)로 보여 주고, `dependencies`는
 fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
-줍니다. fingerprint를 스크립트로 계산했거나 매니페스트에 파일 목록이 없으면, 대상의 변경 내역은 `fingerprint changed`나 `inputs changed`로만 표시할 수 있습니다. 그 eval 정의가 캐시된 적이 없거나
+줍니다. fingerprint를 스크립트로 계산했거나 파일 목록을 남기지 않은 이전 기록처럼 파일별 변경 내역을 알 수 없으면, 대상의 변경 내역은 `fingerprint changed`나 `inputs changed`로만 표시합니다. 그 eval 정의가 캐시된 적이 없거나
 강제로 실행한 eval이면 설명이 나오지 않습니다. 강제로 실행하지 않은 READY Runtime/Agent eval에 키가 없으면,
 실행 사유에 `fingerprint = false`를 선언한 대상이나 의존성이 나옵니다. READY인 Human eval은 키가
 없어도 "Record a request awaiting a Human claim and submission"이라고 나옵니다. 막혔거나

@@ -270,9 +270,9 @@ changed since its last GREEN or RED result with the same criteria, and reports
 `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a `Fingerprint changed since Run RUN_ID: ...` line, for example `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. `files`
 lists the target's own files as `path` (changed), `+path` (added) or
 `-path` (removed); `dependencies` lists the children and named Artifacts
-whose fingerprint changed, as `name`, `+name` or `-name`. A script
-fingerprint, or a manifest whose file map was dropped, can only report `fingerprint changed`
-or `inputs changed` for the target. No explanation appears when that eval definition has
+whose fingerprint changed, as `name`, `+name` or `-name`. When the
+per-file details are not available, as with a script fingerprint or an older record that
+kept no file list, it reports only `fingerprint changed` or `inputs changed` for the target. No explanation appears when that eval definition has
 never been cached, or for forced evals. For an unforced READY Runtime/Agent eval
 without a key, the execution reason names the target or dependency declaring
 `fingerprint = false`. A READY Human eval instead says "Record a request awaiting

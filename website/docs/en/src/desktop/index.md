@@ -21,7 +21,8 @@ artifactize-desktop graph --repo PATH
 Without arguments the app opens with nothing chosen, whatever the current directory.
 `--repo PATH` selects and expands the branch of that folder and shows its newest entry; `--all`, the
 default, selects none, and every branch is listed either way. `review` opens the
-newest waiting Human review, `review REQUEST_ID` that request. `graph` requires
+newest waiting Human review, `review REQUEST_ID` that request; it selects and expands no
+branch, even with `--repo`. `graph` requires
 `--repo` and shows that branch's [Current](#current). `--state-dir PATH` chooses a
 state directory; otherwise the app uses the shared state home. `--reviewer NAME`
 sets the cooperative claim name (normally the user name). `-h` or `--help`, also
@@ -37,7 +38,8 @@ keys of what has focus. Ctrl+R or F5 reloads the state from disk, scans the bran
 again and, on a Current, scans its worktree again. While a Human review has the
 keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
 form open: it opens or switches to RED once claimed, and says the review must be
-claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
+claimed first otherwise. In a completed, read-only Human review Ctrl+R does nothing. In
+either, F5 or the palette's **Refresh** reloads the state.
 The app follows the system's light or dark appearance.
 
 When a [newer release](../getting-started/update.md#newer-releases) is out, the header
@@ -80,7 +82,7 @@ with its status, age and Run ID. The first entry is **Current**, the worktree as
 now; while a Run is in progress, that Run takes Current's place, and Current returns when
 the Run ends. **Older runs** at the end brings
 older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
-of branches can be expanded; the one the app was started for starts expanded.
+of branches can be expanded; the one `monitor` or `graph` was started for starts expanded.
 
 The ☆ at the end of a branch's name stars it: starred branches are listed first,
 each group in the search's order, and stay starred the next time you open the app.
@@ -221,7 +223,8 @@ result, with findings as numbered items headed by their `item` and `where`; then
 **Execution options**, **Execution metadata** and **Fingerprint** when it has them.
 On a Current it shows whether the eval would run or be reused and why, and the result
 it would reuse. Other facts fold under **Debug**, which `t` shows or hides on an
-Artifact's or a non-Human eval's Summary. An eval with a log switches below the chips
+Artifact's or an eval's read-only Summary, a Current's Human eval included; in a Human review
+you can submit, `t` toggles **Technical** instead. An eval with a log switches below the chips
 between its Summary, shown first, and its log, a plain-text choice whose chosen view
 is bold and higher-contrast: an Agent eval's **Agent log** (its conversation, with
 its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr, not a
@@ -325,7 +328,8 @@ yourself.
 Settings opens as a modal over the screen; Esc, its **Close** or the **Settings** button
 again closes it, and the screen beneath stays as it was. It reloads account, key and store
 information each time it opens; the palette's **Refresh settings** command reloads it too.
-It has two tabs, **Providers** and **Remote** (← and → switch between them).
+It has three tabs, **Providers**, **Remote** and **Limits**; while the tab list has focus, ← and →
+cycle through them.
 
 **Providers** lists the built-in providers on the left (Codex, OpenAI, Anthropic, Gemini),
 then your custom providers by name, then **+ Custom provider**. Choosing one shows its setup

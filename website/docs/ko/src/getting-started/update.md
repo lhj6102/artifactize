@@ -25,16 +25,16 @@ artifactize는 업데이트를 직접 내려받거나 설치하지 않습니다.
 위 표의 업데이트 방법을 안내하고, 설치 방식을 확인할 수 없으면 릴리스 페이지를 안내합니다.
 Microsoft Store로 설치했다면 Store가 업데이트하므로 아무것도 표시하지 않습니다.
 
-GitHub에서 최신 릴리스 정보를 하루에 한 번까지만 조회하고, 그 결과를
-[상태 디렉터리](#state)의 `release-check.json`에 보관합니다. 요청에는 artifactize 버전 말고는
+GitHub에 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 말고는
 아무것도 담기지 않습니다. 확인을 끄려면 `ARTIFACTIZE_NO_UPDATE_CHECK=1`을 설정하세요.
 
 ### 0.16으로 업그레이드 {#upgrading-to-016}
 
-처음 사용할 때 상태를 스키마 10으로 업그레이드하며, SIGNOFFS_PENDING으로 끝난 Run은 이제 YELLOW로
+저장된 리뷰 데이터의 형식(스키마)은 처음 사용할 때 스키마 6~9에서 현재 스키마 10으로 자동으로
+업그레이드되며, 기존 Run, 캐시 기록, Human 승인은 그대로 남고 SIGNOFFS_PENDING으로 끝난 Run은 이제 YELLOW로
 처리합니다. 이전 버전의 artifactize는 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
 
-이제 Run이 선택한 승인은 다른 eval을 막지 않으므로 `verify --defer-human`, MCP `defer_human`, eval 필드
+이제 이번 Run의 실행 대상으로 선택한 승인 요청은 다른 eval의 실행을 막지 않으므로 `verify --defer-human`, MCP `defer_human`, eval 필드
 `gate = "blocking"`은 제거되었습니다. 스크립트에서는 플래그를, 선언에서는 필드를 지우세요. 이 플래그나 필드를
 사용하면 삭제하라는 오류 메시지가 표시됩니다. Run은 첫 승인을 요청한 때부터 **WAITING_HUMAN**이며, 제출되지 않은 승인만
 남으면 **YELLOW**(종료 코드 5, 이전의 SIGNOFFS_PENDING)로 끝납니다. 담당자가 맡은 승인이 제출될 때까지는 Run을
@@ -46,9 +46,7 @@ GitHub에서 최신 릴리스 정보를 하루에 한 번까지만 조회하고,
 
 ### 0.11에서 업그레이드 {#upgrading-from-011}
 
-저장된 리뷰 데이터의 형식(스키마)은 처음 사용할 때 스키마 6~9에서 현재 스키마 10으로 자동으로
-업그레이드되며, 기존 Run, 캐시 기록, Human 승인은 그대로 남습니다. 이전 버전의 artifactize는
-업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
+상태는 [0.16](#upgrading-to-016)과 같은 방식으로 업그레이드됩니다.
 
 이제 `artifactize verify`는 터미널을 닫아도 계속 실행되는 Run을 제출하고, Run ID를 출력한 뒤 접수되면 종료합니다.
 검증 종료 코드가 필요한 스크립트와 CI에는 `--wait`를 추가하세요. 터미널을 닫거나
@@ -172,6 +170,6 @@ Artifactize를 마우스 오른쪽 버튼으로 클릭해 제거하세요. `inst
 `artifactize doctor`가 첫 줄에 출력하는 상태 디렉터리를 삭제하세요.
 
 제거해도 프로젝트 파일, 내보낸 파일, `--state-dir`이나 환경 변수로 경로를 지정해 AppData 밖에 명시적으로 둔 상태는 지워지지 않습니다. eval의 명령이 만든 파일은 AppData 안에 있더라도 남으니,
-더 이상 필요하지 않으면 따로 지우세요. 가상화되지 않은 기존
-AppData 파일도 Store 패키지의 정리 대상이 아닙니다.
-[Windows 동작과 오버레이 주의 사항](../features/others/state.md#state)을 보세요.
+더 이상 필요하지 않으면 따로 지우세요. Store 앱을 설치하기 전부터 AppData에
+있던 파일(예: 이전에 패키지되지 않은 버전이 남긴 상태)도 남습니다. Store 앱이 AppData를 어떻게 함께 쓰는지는
+[상태](../features/others/state.md#state)를 보세요.

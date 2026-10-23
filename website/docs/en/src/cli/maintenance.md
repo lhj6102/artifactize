@@ -25,7 +25,8 @@ fingerprint and the profile variant. `--history` lists every record, latest firs
 `show` prints the key's latest record as JSON: result, the actual `profile`, `options`
 (backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
 covers, `artifactKinds` (each covered name with `folder`, `file` or `graph`), usage and
-`producer` (`user@host` and artifactize version, plus the `reviewer` of a Human result).
+`producer` (`user@host` and artifactize version), and for a Human result `reviewer`, the
+person who submitted it.
 Records from a [shared remote review store](review-store.md) carry an `origin`
 (store, publisher, publication time). A missing key prints `null` and exits 4;
 `--history` prints all records as an array. Reading changes nothing.

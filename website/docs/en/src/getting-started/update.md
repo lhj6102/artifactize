@@ -26,16 +26,16 @@ is out, the [desktop app](../desktop/index.md#open-the-app) shows it in its head
 table above for the way that copy was installed, or the release page when the way is
 unknown. A Microsoft Store install shows nothing: the Store updates it.
 
-To learn of a release, artifactize asks GitHub for the latest release at most once a day
-and keeps the answer in `release-check.json` in the [state directory](#state); the request
-carries nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn
-the lookup off.
+To learn of a release, artifactize asks GitHub for the latest release; the request carries
+nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn the lookup
+off.
 
 ### Upgrading to 0.16
 
-The state is upgraded to schema 10 on first use; a Run that ended SIGNOFFS_PENDING now
-reads as YELLOW. An older artifactize cannot open the upgraded state, so keep a backup
-before switching versions.
+The state's format of saved review data (its schema) is upgraded automatically on first use,
+from schemas 6 to 9 to the current schema 10; existing Runs, cache records and Human approvals
+are kept, and a Run that ended SIGNOFFS_PENDING now reads as YELLOW. An older artifactize
+cannot open the upgraded state, so keep a backup before switching versions.
 
 A sign-off the Run selected no longer holds up other evals, so `verify --defer-human`, MCP
 `defer_human` and the eval field `gate = "blocking"` are removed: drop the flag from
@@ -50,10 +50,7 @@ unchanged. See [Sign-offs and the end of a Run](../features/run.md#sign-offs-and
 
 ### Upgrading from 0.11
 
-The state's format of saved review data (its schema) is upgraded automatically on first use,
-from schemas 6 to 9 to the current schema 10; existing Runs, cache records and Human approvals
-are kept. An older artifactize cannot open the upgraded state, so keep a backup before
-switching versions.
+The state upgrades as for [0.16](#upgrading-to-016).
 
 `artifactize verify` now submits a durable Run, prints its ID and exits on acceptance.
 Add `--wait` to scripts and CI that need the validation exit code. Closing a terminal
@@ -180,6 +177,6 @@ state, delete the state directory that `artifactize doctor` prints on its first 
 
 Uninstall does not remove your project files, exported files, or state explicitly
 placed outside AppData with `--state-dir` or an environment override. Files your evals' commands wrote, including in AppData, stay too; remove them
-separately if you no longer need them. Existing unvirtualized
-AppData files are also outside the Store package's cleanup; see the
-[Windows behavior and overlay caveat](../features/others/state.md#state).
+separately if you no longer need them. Files that were already in AppData before the Store
+app was installed, such as the state of an earlier unpackaged install, stay as well; see
+[State](../features/others/state.md#state) for how the Store app shares AppData.

@@ -16,7 +16,7 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 ```
 
 `backend`에는 기본 provider(`openai`, `anthropic`, `gemini`, `codex`)나, eval을 실행하는
-컴퓨터에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
+머신에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
 `gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
 그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
@@ -43,15 +43,12 @@ Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
-제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 대상을
-수정하지 않고 리뷰만 하며, 테스트도 실행하지 않고 코드를 읽어 판단합니다. 테스트를 실행해야
-하는 검사라면 [Runtime eval](runtime.md)을 선언하세요. `{name}`
+제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 리뷰만
+합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트는 실행하거나 테스트
+대상 코드를 불러오지 않고, 읽어서 평가 기준이 요구하는 내용을 다루는지 판단합니다. 테스트 묶음이
+통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요. `{name}`
 참조마다 리뷰어에게 그 Artifact의 이름과 읽을 때 쓸 도구(파일 Artifact라면 경로도)를 알려
 주므로, 지시문에 도구 이름을 적을 필요는 없습니다.
-
-리뷰어는 리뷰만 합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트는
-실행하거나 테스트 대상 코드를 불러오지 않고, 읽어서 평가 기준이 요구하는 내용을 다루는지 판단합니다.
-테스트 묶음이 통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요.
 
 Agent 리뷰는 스키마로 검사한 GREEN 또는 RED 판정을 돌려줍니다. 모델이 잘못된 결과를 돌려주면
 artifactize가 한 번 고쳐 달라고 요청하고, 그래도 잘못되면 리뷰는 ERROR가 됩니다.
@@ -234,7 +231,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 ## 커스텀 provider {#custom-providers}
 
-프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 컴퓨터마다
+프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 머신마다
 따로 설정합니다. 커스텀 provider는 Agent 프로필의 `backend`에 쓸 수 있는 이름으로, 데스크톱 앱의
 **Settings → Providers**에서 **+ Custom provider**를 누르거나 `artifactize provider`로 추가합니다.
 필요한 만큼 추가할 수 있으며, 종류는 둘 중 하나입니다.
@@ -266,7 +263,7 @@ URL은 요청을 보낼 API 루트로, 기본 provider의 루트(`https://api.op
 profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 ```
 
-이 컴퓨터에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
+이 머신에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
 오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
 저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.

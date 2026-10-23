@@ -20,7 +20,7 @@ artifactize-desktop graph --repo PATH
 인자가 없으면 현재 디렉터리와 상관없이 아무것도 고르지 않은 채 앱이 열립니다.
 `--repo PATH`는 그 폴더의 브랜치를 고르고 펼친 뒤 가장 최근 항목을 보여 줍니다. 기본값인 `--all`은
 아무것도 고르지 않으며, 어느 쪽이든 모든 브랜치가 나열됩니다. `review`는
-가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `graph`에는
+가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `review`는 `--repo`를 주어도 브랜치를 고르거나 펼치지 않습니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`로
 상태 디렉터리를 지정하며, 지정하지 않으면 공유 상태 디렉터리를 씁니다. `--reviewer NAME`은
 협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. `-h`나 `--help`(모드 뒤에도
@@ -32,7 +32,7 @@ artifactize-desktop graph --repo PATH
 Ctrl+K나 F1을 누르거나 **Commands** 버튼을 클릭하면 명령을 검색할 수 있는 팔레트가 열립니다. Enter를 누르면 명령이 실행되고, Esc를 누르면 팔레트가 닫힙니다. Ctrl+,를 누르거나 **Settings** 버튼을 클릭하면 화면 위에 [Settings](#settings)가 열립니다. Ctrl+O를 누르면 ID로 요청을 열 수 있습니다. `?`를 누르면 지금 초점이 있는 곳에서 쓸 수 있는 키가 나옵니다. Ctrl+R 또는 F5를 누르면 디스크에서 상태를 다시 읽고 브랜치를 다시 스캔합니다. Current에서는 해당 워크트리도 다시 스캔합니다. 키보드 초점이
 Human 리뷰에 있고 진행 중인 작업이 없으면, 양식이 열려 있든 아니든 Ctrl+R은 새로 고침 대신 RED 명령으로 동작합니다.
 요청을 맡았으면 RED를 열거나 RED로 바꾸고, 그렇지 않으면 먼저 리뷰를 맡아야 한다고
-알려 줍니다. 이때 상태를 다시 읽으려면 F5나 팔레트의 **Refresh**를 쓰세요.
+알려 줍니다. 완료되어 읽기 전용인 Human 리뷰에서는 Ctrl+R이 아무 동작도 하지 않습니다. 두 경우 모두 상태를 다시 읽으려면 F5나 팔레트의 **Refresh**를 쓰세요.
 앱은 시스템의 라이트 모드 또는 다크 모드 설정을 따릅니다.
 
 [새 릴리스](../getting-started/update.md#newer-releases)가 나오면 헤더의 **Settings** 앞에
@@ -70,7 +70,7 @@ Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무
 상태, 경과 시간, Run ID가 붙습니다. 맨 앞 항목은 워크트리의 지금 상태인 **Current**입니다. Run이
 진행 중이면 그 Run이 Current 자리에 오고, Run이 끝나면 Current가 돌아옵니다. 끝의 **Older runs**는
 더 오래된 Run을 가져옵니다. 항목을 클릭하면 회색의 둥근 배지로 표시되며 Main area에 나옵니다. 브랜치는
-몇 개든 펼칠 수 있으며, 앱을 시작할 때 지정한 브랜치는 펼친 채로 시작합니다.
+몇 개든 펼칠 수 있으며, `monitor`나 `graph`로 시작할 때 지정한 브랜치는 펼친 채로 시작합니다.
 
 브랜치 이름 끝의 ☆로 별표를 붙입니다. 별표 붙은 브랜치가 먼저 나열되고,
 별표 붙은 브랜치와 나머지 브랜치는 각각 검색 순서대로 정렬됩니다. 별표는 앱을 다시 열어도 남아 있습니다.
@@ -195,8 +195,8 @@ eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 
 결과(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
 **Execution options**, **Execution metadata**, **Fingerprint**도 함께 표시합니다.
 Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 재사용할 결과를
-보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact의 Summary나 Human이 아닌 eval의
-Summary에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 로그가 있는 eval은 칩 아래에서
+보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact나 eval의 읽기 전용
+Summary(Current의 Human eval 포함)에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 판정을 제출할 수 있는 Human 리뷰에서는 `t`가 **Technical**을 표시하거나 숨깁니다. 로그가 있는 eval은 칩 아래에서
 먼저 보이는 Summary와 로그 사이를 오갈 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
 항목은 굵고 진한 글씨로 강조됩니다. 로그는 Agent eval의 **Agent log**(대화. 별도의 스크롤 막대가 있음) 또는 Runtime eval의 **Runtime log**(저장된 stdout/stderr. 실시간
 로그 스트림이 아님)입니다. 대화가 없거나 원격에만 있으면
@@ -288,7 +288,7 @@ Human 리뷰에 있고 편집이나 작업이 진행 중이면 종료하지 않�
 Settings는 화면 위에 모달 창으로 열립니다. Esc를 누르거나 **Close**를 누르거나 **Settings**
 버튼을 다시 누르면 닫히고, 아래 화면은 열기 전 그대로입니다. 열 때마다 계정, 키, 저장소 정보를
 다시 불러오며, 팔레트의 **Refresh settings** 명령으로도 다시 불러올 수 있습니다. 탭은
-**Providers**와 **Remote** 두 개이고, ←와 →로 오갈 수 있습니다.
+**Providers**, **Remote**, **Limits** 세 개이며, 탭 목록에 초점이 있을 때 ←와 →로 차례로 오갈 수 있습니다.
 
 **Providers** 탭 왼쪽에는 기본 provider(Codex, OpenAI, Anthropic, Gemini)가 차례로 나오고, 그 아래에
 직접 추가한 커스텀 provider의 이름과 **+ Custom provider**가 나옵니다. 하나를 고르면 오른쪽에 그
@@ -308,9 +308,8 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
   값 자체는 보여 주지 않습니다. 키를 붙여 넣고 **Save key**를 누르면 `artifactize login`처럼
   저장하고, **Remove saved key**로 지웁니다. 환경 변수가 설정되어 있으면 그 키를 먼저 씁니다. 이때
   함께 저장한 키는 보관되지만 쓰이지 않는다고 표시되며, 지울 수도 있습니다.
-- **커스텀 provider:** **+ Custom provider**를 누르면 빈 양식이 열립니다. 이름을 정하고, 기본 provider에
-  연결할지(별칭이라 그 provider의 로그인이나 키를 씀) 엔드포인트에 연결할지(API, URL, 선택 키)를
-  고른 다음 **Save**를 누르세요. 필요한 만큼 추가할 수 있고, 목록에서 하나를 고르면 양식에서 바꾸거나
+- **커스텀 provider:** **+ Custom provider**를 누르면 빈 양식이 열립니다. 이름을 정하고, 기본 provider의 별칭(그 provider의 로그인이나 키를 씀)과
+  엔드포인트(API, URL, 키(선택 사항)) 중 연결 대상을 고른 다음 **Save**를 누르세요. 필요한 만큼 추가할 수 있고, 목록에서 하나를 고르면 양식에서 바꾸거나
   **Remove provider**로 삭제할 수 있습니다. 엔드포인트에 저장한 키는 보여 주지 않습니다. 키 칸을 비워 두면
   저장된 키를 그대로 쓰고, **No key**를 체크하면 키 없이 저장합니다. eval에서는 `backend`에 이 이름을
   씁니다. [커스텀 provider](../features/agent.md#custom-providers)를 보세요.

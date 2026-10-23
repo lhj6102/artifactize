@@ -24,7 +24,7 @@ artifactize cache rm KEY
 `show`는 그 키의 가장 최근 기록을 JSON으로 출력합니다. 결과, 실제로 쓴 `profile`,
 `options`(백엔드, 모델, reasoning, 제한, 변형), 키가 포함하는 각 Artifact의 `fingerprints`,
 `artifactKinds`(포함한 이름마다 `folder`, `file`, `graph` 중 하나), 사용량, `producer`
-(`user@host`와 artifactize 버전, Human 결과라면 `reviewer`까지)가 나옵니다.
+(`user@host`와 artifactize 버전)가 나오고, Human 결과에는 그 결과를 제출한 사람인 `reviewer`도 따로 나옵니다.
 [공유 원격 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
 붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
 출력합니다. 읽기만 하므로 아무것도 바뀌지 않습니다.
@@ -84,7 +84,7 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
   [저장소 안에](../features/others/state.md#state) 있으면 거부 메시지를 `refused`에 담은
   경고가 나오고, 그곳에 로그인 정보가 저장되어 있으면 심각한 오류가 됩니다. 세부 정보에는 `source`
   (`stored`, `file`, `none`), `expiresAt`, `expired`, 테스트 엔드포인트가 나옵니다.
-- `providers`: 이 컴퓨터에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
+- `providers`: 이 머신에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
   연결되는 곳을 보여 줍니다. 키 값은 보여 주지 않습니다. `$STATE/auth`가 저장소 안에 있으면, 저장한 것이
   없는 동안에는 경고이고 저장한 것이 있으면 심각한 오류입니다.
 - 원격 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.

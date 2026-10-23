@@ -146,9 +146,10 @@ artifactize owns the Run: closing the terminal, disconnecting or ending the agen
 turn does not stop it; only `verify_cancel` requests cancellation. See
 [Run](../features/run.md) and [streaming](mcp.md#streaming-and-focused-diagnosis).
 
-Arti may ask for [speculation](../features/run.md#speculation) per request. A sign-off never
-holds up other evals, and a Run that ends YELLOW is **not full approval**: a required person
-still signs off.
+Arti may ask for [speculation](../features/run.md#speculation) per request. A sign-off the Run
+selected never holds up other evals; one outside the selection does, and the Run ends
+INCOMPLETE until the scope includes its Artifact or is `{"kind": "all"}`. A Run that ends
+YELLOW is **not full approval**: a required person still signs off.
 
 How Arti treats each result:
 

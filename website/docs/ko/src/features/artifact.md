@@ -24,8 +24,7 @@ Artifact를 eval의 입력으로 지정하며, 그 fingerprint가 바뀌면 재�
 무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
 Artifact가 모든 검사의 의존성이 되지는 않습니다.
 
-실행 게이트는 eval마다 그 eval이 참조하는 Artifact에 따라 정해집니다. 자식 폴더는 부모 내용의 일부이므로 부모의 모든
-eval이 참조하는 것으로 간주합니다. [eval 의존성](#eval-dependencies)을 보세요.
+실행 게이트는 eval마다 정해집니다. [eval 의존성](#eval-dependencies)을 보세요.
 
 그래프 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
@@ -45,7 +44,7 @@ eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[eva
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
 Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent나 Human은 소유자 필드와 함께 GREEN이나
-RED를 돌려줍니다. 각 eval의 의존성은 그 eval이 참조하는 Artifact와 대상 Artifact의 자식으로 정해집니다.
+RED를 돌려줍니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
 `guide` Artifact이며, 그 README에서 자식, `{artifact}` 참조, basis Artifact를 설명합니다.
@@ -119,9 +118,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. eval의 실행 게이트는 참조한 Artifact의 eval과, 그 eval의
-대상 Artifact에서 가장 가까운 자식 Artifact의 eval입니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로,
-막힘은 이 eval 게이트를 따라 퍼집니다. 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
+하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로, 막힘은 이 eval
+게이트를 따라 퍼지며, 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
 실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
 쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.

@@ -183,8 +183,10 @@ would run now, and the Human reviews waiting, in one window. From the disk image
 launch (below).
 
 Install it from the [downloads](install.md#download-the-app). Each release also attaches an
-AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`, which needs
-glibc 2.35 or later. In the folder you downloaded it to, make it executable and run it:
+AppImage, `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`, where `VERSION` is
+the release's version, as in the file you downloaded. It needs glibc 2.35 or later, the Linux
+system C library; `ldd --version` prints yours on its first line. In the folder you downloaded
+it to, make it executable and run it, with your file's name:
 
 ```sh
 chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
