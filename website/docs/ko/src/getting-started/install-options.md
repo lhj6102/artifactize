@@ -194,8 +194,8 @@ cargo install --path crates/artifactize-tools --locked
   다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 요청을
   취소하면 앱이 설치된 위치별로 취소 여부를 앱 상태에 저장하므로, 같은 위치에서 다시
   실행할 때는 묻지 않습니다.
-- **Linux AppImage:** 명령은
-  `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin`에 복사되고 `~/.local/bin`에서 링크됩니다.
+- **Linux AppImage:** 명령 실행 파일을
+  `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin`에 복사하고, `~/.local/bin`에 그 파일을 가리키는 링크를 만듭니다.
   임시 AppImage 마운트가 사라진 뒤에도 계속 동작하며, 더
   새 AppImage를 실행하면 앱의 복사본이 갱신됩니다. 앱이 만들지 않은 `~/.local/bin`의
   파일이나 링크는 절대 교체하지 않습니다. 셸이 아직

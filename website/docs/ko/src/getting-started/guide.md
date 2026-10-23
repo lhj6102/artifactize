@@ -89,8 +89,8 @@ status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에�
 
 `hero.png.artf` 같은 사이드카는 옆에 있는 파일을 독립된
 Artifact로 선언합니다. 사이드카에는 `name`이 필요하고, 폴더와 같은 TOML 스키마를 쓰며, 기본적으로
-그 파일만 해시합니다. 내장 도구는 그 파일과, 그 eval에 명시적으로 제공된 입력만 보며
-관련 없는 형제 파일은 보지 않습니다. 공용 검사기처럼 다른 Artifact를 쓰는 eval은
+그 파일만 해시합니다. 내장 도구는 대상 파일과 eval에 명시적으로 제공한 입력에만
+접근할 수 있으며, 같은 폴더의 다른 파일에는 접근할 수 없습니다. 공용 검사기처럼 다른 Artifact를 쓰는 eval은
 그 Artifact를 `{house-style}`처럼 이름으로 가리킵니다.
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요. [posts 예제](https://github.com/lhj6102/artifactize/tree/main/examples/posts)는
 Markdown 사이드카 세 개와 공용 스타일 검사기 하나를 씁니다. 이전
