@@ -71,3 +71,4 @@ Both graphs, a Run's and the Current, take the pointer: Tab reaches their Artifa
 - **J-SET-CODEX**: signs in to or out of the Codex (ChatGPT) account through the browser; when the browser cannot return, the redirect URL can be pasted; a sign-in in progress can be cancelled.
 - **J-SET-MODELS**: lists the models a chosen backend offers.
 - **J-SET-REMOTE**: signs in to a shared review store with its URL, share level and token, shows its status, pushes results (or a dry run), and signs out.
+- **J-SET-SIGNOFF-GRACE**: shows how long a Run with only sign-offs left, and none of them claimed, waits before it ends (2 minutes unless changed), and changes it for the Runs started afterwards.
