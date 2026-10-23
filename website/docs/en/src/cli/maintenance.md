@@ -81,6 +81,10 @@ the `supported` one. `--repo` also runs the checks of `config check`. Further ch
 - The remote review store, also offline: its URL, share level and token source. A missing
   token is a warning; an invalid configuration (including plain HTTP to a non-loopback
   host) or an unsafe token file is a hard error.
+- `desktop`: whether the desktop app is installed, found without starting it: beside the
+  `artifactize` command, on `PATH`, or where this system's installers put it. Details name
+  its `path`. Without the app this is a warning that links the
+  [install page](https://artifactize.dev/#start); the commands work without it.
 - `release`: whether a newer release of artifactize is out, the one network lookup of
   `doctor` ([newer releases](../getting-started/install.md#newer-releases)). A newer
   release is a warning naming it as `latest`, with how to update the way this copy was

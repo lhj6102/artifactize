@@ -13,15 +13,15 @@ including the [machine prerequisites of a Human sign-off](artifact.md#human-sign
 ## Verify and Runs
 
 `verify` takes exactly one [selector](../cli/index.md#command-reference): Artifacts,
-qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks; an individual eval selector
-asks to run just that check. The Run still needs valid results for every piece
+qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks. Pieces that depend on one
+another in a loop are **cycle peers**; their checks review the selected piece, so an Artifact
+selector runs its cycle peers' checks too. An individual eval selector asks to run just that check. The Run still needs valid results for every piece
 those checks rely on, following their links as far as needed. This linked group is
 the **dependency closure**; its required results are **final obligations**, even
 when you did not ask to execute them in this Run.
 
 `--recursive` also selects every check in that group, including other checks on
-the selected Artifact, in configuration order. Pieces that depend on one another
-in a loop are **cycle peers**, and are included together. `--all` already selects
+the selected Artifact, in configuration order. `--all` already selects
 every check and the obligations of pieces that have no checks. A file Artifact
 selector selects its own evals, never those of the surrounding folder.
 
@@ -43,6 +43,10 @@ remaining requests become `BUDGET_EXHAUSTED` and the Run ends INCOMPLETE
 ([details](../cli/index.md#runtime-cli)). A runtime or Agent request joining another Run's review counts against an explicit `--jobs`; a Human request joining a sign-off and a cache hit do not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
 QUEUED can mean awaiting admission, a backend slot, a joined execution, or an
 explicit Run jobs cap; backend-slot waiting does not consume that jobs cap.
+Waiting work starts in the Run's **scheduling order**: READY evals first, and among them
+the eval at the head of the longest chain of evals that wait on one another, so the work
+that needs the most steps to finish starts soonest. The order you select or declare evals
+in only breaks ties.
 
 When there is room for only some work, a Run starts READY evals first and, among them,
 those with the longest chain of evals still waiting on them, so the longest path through

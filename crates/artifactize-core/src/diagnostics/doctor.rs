@@ -122,7 +122,15 @@ pub enum Details {
         #[serde(rename = "testAuthEndpoint", skip_serializing_if = "Option::is_none")]
         test_auth_endpoint: Option<String>,
     },
+    /// The installed desktop app, or `null` without one.
+    Desktop {
+        #[serde(with = "crate::platform::path_serde::option")]
+        path: Option<PathBuf>,
+    },
 }
+
+/// Where a person without the desktop app installs it.
+const DESKTOP_INSTALL_PAGE: &str = "https://artifactize.dev/#start";
 
 impl DoctorReport {
     fn add(&mut self, name: &'static str, status: CheckStatus, message: &str, details: Details) {
@@ -326,6 +334,24 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             }
         }
         Err(error) => report.add("remote", CheckStatus::Fail, &error, Details::None),
+    }
+    // The commands work without the app, so a missing app only warns.
+    match crate::platform::desktop_app::installed() {
+        Some(path) => report.add(
+            "desktop",
+            CheckStatus::Pass,
+            &format!(
+                "The desktop app is installed: {}.",
+                crate::platform::path_text(&path)
+            ),
+            Details::Desktop { path: Some(path) },
+        ),
+        None => report.add(
+            "desktop",
+            CheckStatus::Warn,
+            &format!("The desktop app is not installed; install it from {DESKTOP_INSTALL_PAGE}."),
+            Details::Desktop { path: None },
+        ),
     }
     let (status, message, details) = release_check(release::check(&state).await);
     report.add("release", status, &message, details);

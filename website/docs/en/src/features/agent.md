@@ -40,7 +40,9 @@ the same eval, Artifact kinds and fingerprints is reused, and its record shows w
 
 Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
 receives the eval's title and ID, its target and your instruction; artifactize adds the
-general review rules. Each `{name}` reference tells the reviewer that Artifact's name and
+general review rules. The reviewer only reviews: it never changes or repairs what it
+reviews, and it judges tests by reading them, without running them. When a check needs
+tests to run, declare a [Runtime eval](runtime.md) for it. Each `{name}` reference tells the reviewer that Artifact's name and
 the tools it can read it with (and a file Artifact's path), so the instruction need not
 name tools.
 
@@ -95,11 +97,12 @@ handles retries as described below.
 ### Retries and error codes
 
 A turn that fails with a rate limit or a temporary error before it produced any output
-or used any tokens is retried a few times, waiting as long as the provider asks. A failure
-after output or usage is never retried, so nothing is paid for twice. When the provider
-asks for a wait past the review's deadline, the review ends as ERROR with `RATE_LIMIT` or
-`TRANSIENT`; run `verify` again later, and finished results are reused. Each attempt is
-saved in the request's `usage` with its counters, `error` and `errorCode`.
+or used any tokens is retried automatically a few times, waiting as long as the provider
+asks. A failure after output or usage is never retried, so nothing is paid for twice.
+When the retries do not help, or the provider asks to wait past the review's deadline,
+the review ends ERROR with `RATE_LIMIT` or `TRANSIENT`. Wait a moment and run `verify`
+again: finished results are reused, so only the failed reviews run. Each attempt is saved
+in `usage` with its counters, `error` and `errorCode`.
 
 ### Prompt caching
 
@@ -173,8 +176,8 @@ artifactize keeps each Agent review's conversation on this machine, so you can r
 what the reviewer saw and said, and ask it a follow-up in the same conversation, much
 like continuing a chat. The recorded verdict never changes.
 
-**What is saved.** Each review session is kept in one file only your account can read
-([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
+**What is saved.** Each review session is kept where only your account can read it
+([store](others/state.md#agent-sessions)): the instructions, every message, each tool
 call with its result, the correction turn, token counts and the settings the review
 used. It is the only record of a review's tool calls: the request keeps its verdict,
 result and usage.

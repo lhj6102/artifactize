@@ -539,9 +539,12 @@ mod console_tests {
     /// which Windows gives a console program a window of its own.
     #[test]
     fn a_probe_from_a_process_without_a_console_shows_no_window() {
-        let output = crate::test_os::windows_detached_probe(
+        let mut parent = crate::test_os::test_command(
             "platform::windows::process::console_tests::detached_parent_probe",
         );
+        let output = crate::test_os::detached_launch(parent.arg("--ignored"))
+            .output()
+            .unwrap();
         assert!(output.status.success(), "{output:?}");
         assert!(
             String::from_utf8_lossy(&output.stdout).contains(HIDDEN),

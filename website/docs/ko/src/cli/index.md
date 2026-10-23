@@ -214,8 +214,8 @@ JSON 배열을 줄 단위 형식으로 다시 읽지는 않습니다. 상대 경
 
 `verify ... --profile NAME`은 선택과 재귀 정책으로 포함된 모든 실행 가능한 eval에 대해, 선언된
 `profile_variants` 항목 하나를 통째로 고릅니다. 변형은 그다음에 적용됩니다. 실행 가능한
-eval마다 이름 규칙에 맞춰 프로필 변형을 64개까지 선언할 수 있으며, 각 변형의 리뷰어 종류는
-기본 프로필과 같아야 합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
+eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 수 있으며, 각 변형은 원래 리뷰어 종류를
+유지합니다. 없는 변형 이름을 주면 Run을 만들기 전에 실패하며, 원본 선언 파일은 수정하지 않습니다.
 `--recursive`를 주면 이미 선택된 의존성에도 변형이 적용됩니다. 예를 들어 `app/review
 --profile fast`가 실행하는 Runtime 변형의 인자에 `{fixtures}`가 있으면, `fixtures`의 eval은
 `fast`가 아니라 기본 프로필로 Run에 들어옵니다. 고른 변형은 실행 옵션일 뿐 재사용 키에 들어가지
@@ -251,7 +251,8 @@ eval마다 이름 규칙에 맞춰 프로필 변형을 64개까지 선언할 수
 
 `artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
 범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
-합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
+합니다. Artifact 선택자는 그 Artifact를 리뷰하는, 순환으로 묶인 대상의 eval도 함께 실행합니다.
+`--force`는 그래도 직접 선택한 eval만 새로 리뷰하도록 표시합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
 관계를 맺지 않습니다.
 
 의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
@@ -295,8 +296,8 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 ## 현재 디렉터리 도구 {#current-directory-tools}
 
 `artifactize tools read|list|glob|grep|section|help|open ...`은 내장 도구를 현재
-디렉터리에서 실행합니다. Store 이외의 방법으로 설치하면 `artifactize-tools`
-명령으로도 실행할 수 있습니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
+디렉터리에서 실행합니다. Store 이외의 방법으로 설치하면 `artifactize-tools` 명령도
+함께 설치됩니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
 사용법이 잘못되면 2로 종료합니다. `artifactize tools --help`가 도구 목록을 보여 주며,
 `artifactize tools check`는 이와 달리 선언된 리뷰 도구를 점검합니다. 하위 명령별 범위
 규칙과 제한은 [`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli)에
@@ -347,8 +348,10 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
-`--args`는 Agent 실행에서만 쓸 수 있습니다. Human 스키마는 빈 객체만 받고, Human 명령에는 임의의
-인자를 넘길 수 없습니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
+`--args`는 Agent 실행에서만 쓸 수 있고, 생략하면 Agent 도구는 `{}`를 받습니다. Human 스키마는 빈
+객체만 받고, Human 명령에는 임의의 인자를 넘길 수 없습니다. `--execute`를 쓰면 보고서의
+`result`에 도구의 응답이 함께 담깁니다. `content`가 들어 있고, 도구가 실패하면 `isError: true`이며
+종료 코드는 1입니다. 점검은 Run, 판정, 캐시 항목을 만들지 않습니다. Agent 호출은 작성자의
 환경에서 별도의 임시 출력 폴더(실행 뒤 삭제)를 쓰고, Human 호출은 리뷰어의 실제 환경을 씁니다.
 종료 코드는 준비 완료나 성공이면 0, 선언·사전 점검·도구·정리 실패면 1, 호출이 잘못되면
 2입니다. `--repo`, `--state-dir`, `--json`을 받으며, `--json`이 없어도 보고서는 JSON입니다.
@@ -403,8 +406,8 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%`을 씁니다. 모두 �
 도구를 실행하거나 제출을 저장하기 전에 리뷰한 파일과 선언을 다시 확인합니다. fingerprint가
 바뀌었거나 계산할 수 없으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`나
 `FINGERPRINT_RECHECK_FAILED`)로 끝나고 명령은 종료 코드 2로 끝납니다. 새 요청을 받으려면
-`verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 종료 코드 2로 거부하고
-요청은 대기 상태로 남습니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
+`verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 거부하고 종료 코드 2로
+끝나며, 요청은 대기 상태로 남습니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
 
 이미 맡은 요청에 같은 리뷰어로 `request claim`을 다시 실행해도 기존 담당 정보를 돌려주고 0으로
 종료하므로, 담당 지정은 반복해도 안전합니다. 제출은 한 번만 받으며, 다시 제출하면 종료 코드 2로 끝납니다. 명령이 중단되는 등 제출

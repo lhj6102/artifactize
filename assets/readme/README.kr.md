@@ -1,8 +1,8 @@
 [![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
 [![License](https://img.shields.io/github/license/lhj6102/artifactize)](../../LICENSE)
-[![README in Korean](https://img.shields.io/badge/README-%ED%95%9C%EA%B5%AD%EC%96%B4-blue)](README.kr.md)
-[![README in English](https://img.shields.io/badge/README-English-blue)](../../README.md)
+
+[English](../../README.md) · 한국어
 
 # Build together on an Artifact Graph.
 
@@ -84,13 +84,14 @@ winget install 9PB6W4LL165D --source msstore
 다른 방법(PowerShell 설치 스크립트, AppImage, Cargo, 소스에서 빌드)과
 사전 요구 사항, 업데이트, 제거 방법을 설명합니다.
 
-설치를 마쳤다면
-[5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
-예제 프로젝트를 쓰므로 AI 계정이나 API 키가 필요 없습니다.
-[Hey Arti](https://artifactize.dev/docs/ko/agent-plugin/hey-arti.html)를 쓰면 코딩
-어시스턴트에게 평소 말투로 이런 검사를 설정하고 실행해 달라고 요청할 수 있습니다.
+### Arti와 함께 빠르게 시작하기
+
+Arti와 대화하면서 시작해 보기를 권합니다. Arti는 코딩 어시스턴트 안에서 Artifactize를 안내합니다.
+지금 프로젝트를 예로 들어 Artifactize를 설명하고, 기존 테스트와 리뷰를 옮기거나
+새 프로젝트를 준비하도록 돕습니다.
 [플러그인](https://artifactize.dev/docs/ko/agent-plugin/plugin.html) 하나만 설치하면 Claude Code와
-Codex에서 이 안내를 참고하고 Artifactize 도구를 쓸 수 있습니다.
+Codex에서 [Hey Arti](https://artifactize.dev/docs/ko/agent-plugin/hey-arti.html)의 안내를
+받으며 Artifactize 도구를 쓸 수 있습니다.
 
 ```text
 /plugin marketplace add lhj6102/artifactize          # Claude Code, 세션 안에서
@@ -98,6 +99,19 @@ Codex에서 이 안내를 참고하고 Artifactize 도구를 쓸 수 있습니�
 codex plugin marketplace add lhj6102/artifactize     # Codex, 터미널에서
 codex plugin add artifactize@artifactize
 ```
+
+**코딩 에이전트에게** 이렇게 말을 걸어 보세요(Codex에서는 `$artifactize:hey-arti`로
+쓰세요).
+
+```text
+/artifactize:hey-arti 아티팩타이즈에 대해 설명해주고 이 프로젝트에 어떻게 적용하면 좋을지 얘기해줘
+/artifactize:hey-arti 지금 있는 테스트와 리뷰를 아티팩타이즈로 옮기도록 도와줘
+/artifactize:hey-arti 이 프로젝트를 아티팩타이즈로 처음부터 시작하도록 도와줘
+```
+
+AI 계정 없이 먼저 써 보고 싶다면
+[5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
+예제 프로젝트를 쓰므로 API 키도 필요 없습니다.
 
 ## 더 알아보기
 
@@ -136,4 +150,4 @@ core가 통과했고, cli의 테스트가 실패해 docs는 막혔으며, releas
 
 **Review:** 예시 리뷰어가 승인 요청 목록에서 release 승인 요청을 열고 리뷰를 맡은 다음, notes 도구를 실행하고 GREEN 양식을 열어 둔 화면입니다.
 
-<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 검토 지침, notes 도구, 도구 로그, GREEN 양식.">
+<img src="../screenshots/review.png" width="1200" alt="실제 Artifactize 데스크톱 Review: 예제에서 리뷰어가 맡은 승인 요청과 리뷰 지침, notes 도구, 도구 로그, GREEN 양식.">

@@ -31,7 +31,7 @@ artifactize config graph
 
 PowerShell에서는 첫 줄을
 `$env:ARTIFACTIZE_STATE_HOME = (New-Item -ItemType Directory (Join-Path $env:TEMP (New-Guid))).FullName`으로 바꾸세요.
-이 명령은 Windows 임시 디렉터리 아래에 고유한 이름의 폴더를 만들고
+이 명령은 Windows 임시 디렉터리 아래에 고유한 이름의 디렉터리를 만들고
 그 경로를 위와 같은 환경 변수에 저장합니다. `artifactize` 명령은 그대로입니다.
 
 `config check`는 프로젝트 프로그램을 실행하지 않고 선언을 검증합니다.
