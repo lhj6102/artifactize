@@ -110,8 +110,8 @@ Run에는 `jobs` 필드가 없습니다.
 
 두 모드 인자는 기본값이 false이며 CLI의 `--speculate`, `--defer-human`과 뜻이 같습니다.
 `speculate`는 상위 판단 전에 요청된 하위 작업을 일반 스케줄링 한도 안에서
-시작하며, 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. `defer_human`은
-잠정적인 진행을 허용하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
+시작하며, 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. `defer_human`을
+쓰면 미룰 수 있는 Human 승인이 대기 중이어도 자동 검사를 계속 진행하며, 미룬 승인만 남으면 종료 상태 `signoffs_pending`을
 돌려줍니다. `verify_result`는 판정 `SIGNOFFS_PENDING`을 보고하며,
 이는 완전한 승인이 아닙니다(CLI 지켜보기는 5로 종료). `gate = "blocking"`을 직접 지정한
 Human eval은 이때도 승인될 때까지 그에 의존하는 작업을 막습니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.

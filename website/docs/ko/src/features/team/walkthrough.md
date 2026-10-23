@@ -181,8 +181,8 @@ TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 
-Alice의 `verify --wait`는 요청을 기록할 Run을 제출한 뒤, 포그라운드에서 진행 상황을 보여 주며 Run이 끝날 때까지 대기합니다. 두 번째 터미널에서 같은 디렉터리와 같은
-`ARTIFACTIZE_STATE_HOME`으로 Alice는 요청을 맡고
+Alice의 `verify --wait`는 요청을 기록할 Run을 제출한 뒤, 포그라운드에서 진행 상황을 보여 주며 Run이 끝날 때까지 대기합니다. Alice는 두 번째 터미널에서 같은 디렉터리로 이동하고
+`ARTIFACTIZE_STATE_HOME`을 같은 값으로 설정한 뒤 요청을 맡아
 승인합니다. Alice의 토큰에는 `human` 범위가 있으므로 `request submit`이
 승인을 게시하고, Alice의 `verify --wait`는 GREEN으로 끝납니다.
 

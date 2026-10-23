@@ -121,8 +121,8 @@ Human 요청, 다른 백엔드는 계속 실행됩니다. [eval mutex 태그](..
 
 ## Agent 세션 {#agent-sessions}
 
-Agent 리뷰마다 대화가 상태 아래에 저장되어
-[`session show`와 `session send`](../agent.md#saved-conversations)에 쓰입니다.
+Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
+[`session show`와 `session send`](../agent.md#saved-conversations)로 읽거나 이어서 질문할 수 있습니다.
 `limits.json`으로 대화 저장 여부와 저장 공간의 크기를 정합니다.
 
 ```json

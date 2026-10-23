@@ -210,8 +210,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `--state-dir`을 쓰세요. 토큰은 절대 저장소 안에 저장하지 않습니다. `$STATE/auth`가 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더 경로를 알려 주며 로그인을 거부하고
   `doctor`는 경고합니다([상태](others/state.md#state)). 저장소 바깥의 상태 디렉터리나
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 전에
-  갱신합니다. 서버가 갱신 토큰을 영구히 거부하면 토큰을 지우고, 리뷰는 다시
-  로그인하라고 알립니다.
+  갱신합니다. 서버가 갱신 토큰을 더 이상 허용하지 않으면 artifactize는 저장된 토큰을 지우고, 리뷰는 다시
+  로그인하라는 오류로 끝납니다.
 - **이미 있는 Codex 로그인 쓰기.** `ARTIFACTIZE_CODEX_AUTH_FILE`을 예를 들어
   `~/.codex/auth.json`(1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로
   쓰이지 않습니다)으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의
