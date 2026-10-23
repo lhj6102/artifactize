@@ -55,17 +55,17 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.shows-roles.payload]
 instruction = """
 {others} holds roles.html and the image capture.mts renders from it, roles.en.png. It shows \
-three roles around the Artifactize icon and name, Director, Builder and Evaluator, and for each \
-role the share people and AI agents take of it, shown only by a person icon and an agent icon. \
-The README and the landing page use it in place of a sentence saying that Artifactize brings \
-human and agent work together. Read roles.html and view the image. Judge:
-- Consistency: each role's percentages add up to 100, its bar is split in the same proportions \
-and order as its icons, and the person and the agent keep one color and one icon each across \
-the figure. The caption says the shares are illustrative.
-- Clarity: a first-time reader tells the person icon from the AI agent icon without labels, \
-and the layout reads as three roles around one project.
-- Layout: no text is clipped, overlaps an icon, bar, line or other text, or is too small to \
-read at half size; the figure is balanced, without large empty areas.
+three roles, Director, Builder and Evaluator, each with one bar split into the shares people \
+and AI agents take of it, told apart only by a person icon and an agent icon. The README and \
+the landing page use it in place of a sentence saying that Artifactize brings human and agent \
+work together. Read roles.html and view the image. Judge:
+- Meaning: people and agents share directing half and half, agents do all of the building, \
+and agents do most of the evaluating while people do a small part; each share's width matches \
+that, and the figure shows nothing beyond it.
+- Clarity: a first-time reader tells the person from the AI agent without labels, because \
+each keeps one icon and one color across the figure.
+- Layout: no text or icon is clipped, overlaps another or is too small to read at half size; \
+the figure is balanced, without large empty areas.
 Submit GREEN when all three hold. Otherwise submit RED with one finding per problem, naming \
 the image or the HTML line and saying what to change in roles.html.
 """

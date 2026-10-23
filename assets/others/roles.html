@@ -1,180 +1,85 @@
 <!doctype html>
-<!-- Who does what around Artifactize: how people and AI agents share directing, building and
-     evaluating. capture.mts renders it into roles.en.png; the README and the landing page use
-     that image. The shares are illustrative, not measured. -->
+<!-- Who does the work: how people and AI agents share directing, building and evaluating.
+     capture.mts renders it into roles.en.png; the README and the landing page use that image. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Roles around Artifactize</title>
-<!-- The landing page's brand fonts and the brand icon; capture.mts serves them at /fonts/ and
-     /brand/. -->
+<title>Roles of people and agents</title>
+<!-- The landing page's brand fonts; capture.mts serves them at /fonts/. -->
 <link rel="stylesheet" href="/fonts/fonts.css">
 <style>
   :root {
     --bg: #F7F9FC;
-    --line: #D9DFE8;
     --text: #0F141B;
-    --dim: #586276;
     --agent: #7C3AED;
-    --agent-tint: #F1EAFE;
     --human: #C26A0A;
-    --human-tint: #FFF4E6;
-    --track: #E6EAF0;
     --display: 'Space Grotesk', 'Pretendard Variable', sans-serif;
-    --sans: 'Pretendard Variable', sans-serif;
   }
 
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); }
-  body { color: var(--text); font-family: var(--sans); }
+  body { color: var(--text); }
 
   .figure {
-    position: relative;
-    width: 1600px;
-    height: 760px;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    align-content: center;
+    row-gap: 44px;
+    width: 1200px;
+    height: 480px;
+    padding: 0 80px;
     background: var(--bg);
   }
 
-  .links {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-  .links path { fill: none; stroke: var(--line); stroke-width: 2; stroke-linecap: round; }
-
-  /* ---------- The project in the middle ---------- */
-
-  .center {
-    position: absolute;
-    left: 600px;
-    top: 330px;
-    width: 400px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .center img { width: 250px; height: 250px; }
-  .center p {
-    margin: 6px 0 0;
-    font: 700 60px/1 var(--display);
-    letter-spacing: -0.03em;
-  }
-
-  /* ---------- The roles ---------- */
-
-  .role {
-    position: absolute;
-    width: 400px;
-  }
-  .role h2 {
-    margin: 0 0 26px;
-    font: 700 56px/1 var(--display);
-    letter-spacing: -0.03em;
-  }
-  .role.director { left: 600px; top: 62px; text-align: center; }
-  .role.director .shares { justify-content: center; }
-  .role.builder { left: 120px; top: 392px; }
-  .role.evaluator { left: 1080px; top: 392px; }
-
-  .shares {
-    display: flex;
-    gap: 44px;
+  h2 {
     margin: 0;
-    padding: 0;
-    list-style: none;
+    align-self: center;
+    font: 700 52px/1 var(--display);
+    letter-spacing: -0.03em;
   }
-  .shares li {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    font: 700 44px/1 var(--display);
-    letter-spacing: -0.02em;
-  }
-  .badge {
-    display: grid;
-    place-items: center;
-    width: 64px;
-    height: 64px;
-    border: 2.6px solid currentColor;
-    border-radius: 50%;
-  }
-  .badge svg { width: 34px; height: 34px; }
-  .human .badge { color: var(--human); background: var(--human-tint); }
-  .agent .badge { color: var(--agent); background: var(--agent-tint); }
 
+  /* One bar per role: each share is as wide as its part of the role and shows who takes it. */
   .bar {
     display: flex;
-    gap: 4px;
-    height: 16px;
-    margin-top: 26px;
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--track);
+    gap: 6px;
+    height: 76px;
   }
-  .bar i.human { background: var(--human); }
-  .bar i.agent { background: var(--agent); }
-
-  .caption {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 40px;
-    margin: 0;
-    color: var(--dim);
-    font: 500 20px/1 var(--sans);
-    text-align: center;
+  .bar span {
+    display: grid;
+    place-items: center;
+    border-radius: 38px;
+    color: #FFFFFF;
   }
+  .bar .human { background: var(--human); }
+  .bar .agent { background: var(--agent); }
+  .bar svg { width: 40px; height: 40px; }
 </style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></g></symbol>
-    <symbol id="i-agent" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></g></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></g></symbol>
+    <symbol id="i-agent" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></g></symbol>
   </defs>
 </svg>
 
 <div class="figure">
-  <svg class="links" viewBox="0 0 1600 760" aria-hidden="true">
-    <path d="M800 270 V340"/>
-    <path d="M530 455 H650"/>
-    <path d="M950 455 H1070"/>
-  </svg>
-
-  <!-- Each role lists who takes which share of it, in the order its bar fills. -->
-  <section class="role director">
-    <h2>Director</h2>
-    <ul class="shares">
-      <li class="human"><span class="badge"><svg><use href="#i-person"/></svg></span>50%</li>
-      <li class="agent"><span class="badge"><svg><use href="#i-agent"/></svg></span>50%</li>
-    </ul>
-    <div class="bar"><i class="human" style="flex:50"></i><i class="agent" style="flex:50"></i></div>
-  </section>
-
-  <section class="role builder">
-    <h2>Builder</h2>
-    <ul class="shares">
-      <li class="agent"><span class="badge"><svg><use href="#i-agent"/></svg></span>100%</li>
-    </ul>
-    <div class="bar"><i class="agent" style="flex:100"></i></div>
-  </section>
-
-  <section class="role evaluator">
-    <h2>Evaluator</h2>
-    <ul class="shares">
-      <li class="agent"><span class="badge"><svg><use href="#i-agent"/></svg></span>90%</li>
-      <li class="human"><span class="badge"><svg><use href="#i-person"/></svg></span>10%</li>
-    </ul>
-    <div class="bar"><i class="agent" style="flex:90"></i><i class="human" style="flex:10"></i></div>
-  </section>
-
-  <div class="center">
-    <img src="/brand/artifactize-icon.svg" alt="">
-    <p>Artifactize</p>
+  <h2>Director</h2>
+  <div class="bar">
+    <span class="human" style="flex:50"><svg><use href="#i-person"/></svg></span>
+    <span class="agent" style="flex:50"><svg><use href="#i-agent"/></svg></span>
   </div>
 
-  <p class="caption">Illustrative role allocation</p>
+  <h2>Builder</h2>
+  <div class="bar">
+    <span class="agent" style="flex:100"><svg><use href="#i-agent"/></svg></span>
+  </div>
+
+  <h2>Evaluator</h2>
+  <div class="bar">
+    <span class="agent" style="flex:90"><svg><use href="#i-agent"/></svg></span>
+    <span class="human" style="flex:10"><svg><use href="#i-person"/></svg></span>
+  </div>
 </div>
 
 <script>

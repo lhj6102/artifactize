@@ -8,7 +8,7 @@ English · [한국어](assets/readme/README.kr.md)
 
 <p align="center">
   <img src="assets/others/roles.en.png" width="800"
-       alt="Illustrative role allocation around Artifactize: people and AI agents share directing half and half, AI agents do all of the building, and AI agents do 90% of the evaluating while people do 10%.">
+       alt="How people and AI agents share the work: people and agents direct half and half, agents do all of the building, and agents do most of the evaluating while people do a small part.">
 </p>
 
 **Who is it for?**
