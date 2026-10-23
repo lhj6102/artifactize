@@ -199,8 +199,8 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 기록합니다. 준비된 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작
 한 번으로 셉니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
 재확인, 캐시 적중, 합류해서 대기 중인 요청도 마찬가지입니다. 실행기 준비 초기에 실패한 경우는 시작
-횟수에 넣지 않습니다. Agent의 `execution_paths` 고정은 시작 횟수를 센 뒤에 하므로, 고정에
-실패해도 그 시작은 시작 횟수에 포함되며, 모델을 부르지 않고 ERROR/PREPARATION_FAILED를 기록합니다.
+횟수에 넣지 않습니다. 시작 횟수를 센 다음 Agent의 `execution_paths`를 고정하므로, 고정에
+실패한 실행도 시작 횟수에 포함하며 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
 실행해야 하면, 다시 실행하는 리뷰는 그 리뷰가 속한 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로

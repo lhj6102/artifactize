@@ -183,8 +183,8 @@ artifactize --version   # in a new terminal
 
 ### Cargo (모든 플랫폼) {#cargo-all-platforms}
 
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall)로 같은
-미리 빌드된 바이너리를 `~/.cargo/bin`에 받습니다.
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall)로 앞의 설치 방법과
+같은 사전 빌드 바이너리를 `~/.cargo/bin`에 내려받습니다.
 
 ```sh
 cargo binstall artifactize artifactize-tools
