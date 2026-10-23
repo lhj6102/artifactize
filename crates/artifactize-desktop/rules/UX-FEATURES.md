@@ -22,6 +22,7 @@ other light.
 - **J-REFRESH**: Ctrl+R or F5 reloads the state from disk, scans the branches again and, on a Current, scans its worktree again.
 - **J-QUIT**: `q` outside a field, or closing the window, quits. With Human review claims held by this window it asks first: Esc stays, `u` releases the claims and quits.
 - **J-OPEN-ID**: the palette's "Open a request by ID", or Ctrl+O, opens a saved request in the main area: a waiting Human review actionable, any other request read-only.
+- **J-UPDATE**: when a newer stable release of artifactize is out, the header shows `{version} available` before Settings. A click on it opens a dialog with the running and the new version and how to update the way this app was installed: the command to run, as text that can be selected and copied, or the file to download and install by hand; when the way is unknown, the release page. A link opens in the browser; Esc or Close closes the dialog. A Microsoft Store install never shows it: the Store updates the app. The app looks up the latest release on GitHub when it starts and once a day while it runs, the same lookup `artifactize doctor` reuses, and never downloads or installs anything itself.
 
 ## Left pane
 
