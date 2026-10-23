@@ -108,7 +108,7 @@ Artifact의 eval은 코드 스타일과 테스트가 각 기능을 얼마나 충
 
 ## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
 
-앞의 둘러보기에는 모델이 필요 없지만, 이 선택 단계에는 모델이 필요합니다. 먼저
+앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된
 모델 자격 증명, 정확한 모델, 프로필을 설정하세요.
 Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두

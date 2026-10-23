@@ -88,8 +88,8 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 추측 실행은 요청한 Runtime, Agent, Human eval을 게이트가 정해지기 전에 `--jobs`, 백엔드 수용량,
 `--max-executions` 한도 안에서 시작합니다. Human eval은 같은 Artifact의 Human이 아닌 다른 eval이
 모두 GREEN이 되기 전에는 절대 요청하지 않습니다. 준비된 작업이 먼저 실행됩니다. 준비된 작업에 추측 실행 리뷰가 쓰고 있는 자리가 필요하면 그 리뷰를 중단했다가 나중에 다시 시작하며, 시작할 때마다 `--max-executions`로 정한 실행 횟수에 포함됩니다. 상위 eval이 RED나 ERROR가
-되면 그 결과로 무효가 된 작업, 즉 그 eval에 의존하는 eval 중 그 eval과 같은 Artifact에 속하지 않고 같은 순환에도 들지 않는 eval만
-바로 취소하고, 재사용할 수 있는 취소 결과를 남기지 않은 채 BLOCKED로 표시합니다. GREEN이면 같은
+되면 그 결과로 무효가 된 하위 작업만 바로 취소합니다. 취소 대상은 실패한 상위 eval에 의존하는 eval이며, 실패한 eval과 같은 Artifact에
+속하거나 같은 순환에 드는 eval은 제외합니다. 취소한 eval은 재사용할 수 있는 결과를 남기지 않고 BLOCKED로 표시합니다. GREEN이면 같은
 파일로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.
 

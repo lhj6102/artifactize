@@ -124,8 +124,8 @@ provider의 오류 메시지에 artifactize가 보낸 자격 증명의 일부가
 주거나 저장하는 모든 곳에서 `[withheld: it contained part of the credential sent]`로 바뀝니다. 소유자 필드와
 명령 출력은 이렇게 가리지 않습니다.
 
-Ctrl-C는 `verify --wait`의 지켜보기만 멈출 뿐, 지켜보던 Agent 리뷰는 멈추지 않으며 Run은
-계속됩니다. 직접 취소를 요청해야 Run의 작업이 멈춥니다.
+Ctrl-C로 `verify --wait`를 중단해도 진행 상황 표시만 멈추며, Agent 리뷰와 Run은
+계속 실행됩니다. 직접 취소를 요청해야 Run의 작업이 멈춥니다.
 
 ### 백엔드 멈추기 {#stopping-a-backend}
 
