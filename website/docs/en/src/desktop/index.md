@@ -39,6 +39,14 @@ form open: it opens or switches to RED once claimed, and says the review must be
 claimed first otherwise. There, F5 or the palette's **Refresh** reloads the state.
 The app follows the system's light or dark appearance.
 
+When a [newer release](../getting-started/install.md#newer-releases) is out, the header
+shows `VERSION available` before **Settings**. A click on it opens a dialog with this
+app's version and how to update the way it was installed: the command to run, as text
+you can select and copy, or the file to download and install by hand, or, when the way
+is unknown, the release page. A link opens in your browser; Esc or **Close** closes the
+dialog. The app looks the release up when it starts and once a day while it runs, and
+never updates itself. A Microsoft Store install never shows it: the Store updates the app.
+
 Hovering only highlights; information opens on a click.
 
 ## Pane

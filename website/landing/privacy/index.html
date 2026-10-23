@@ -50,11 +50,14 @@
 
 <main id="main" class="wrap privacy">
   <h1>Privacy policy</h1>
-  <p class="effective">Effective date: <time datetime="2026-10-20">2026-10-20</time></p>
+  <p class="effective">Effective date: <time datetime="2026-10-23">2026-10-23</time></p>
   <p>Artifactize is an open-source command-line tool, licensed under <a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">Apache-2.0</a> and published by Hyukjin LIM (<a href="https://github.com/lhj6102">lhj6102</a>). For privacy questions, <a href="https://github.com/lhj6102/artifactize/issues">contact the publisher through GitHub issues</a>. Do not post secrets in public issues.</p>
 
   <h2>The publisher collects nothing</h2>
-  <p>Artifactize has no telemetry, analytics, automatic crash reporting, publisher accounts or automatic update checks. No server operated by the publisher receives data from the tool.</p>
+  <p>Artifactize has no telemetry, analytics, automatic crash reporting or publisher accounts. No server operated by the publisher receives data from the tool. Its one automatic request asks GitHub whether a newer release is out, as described below.</p>
+
+  <h2>Newer-release check</h2>
+  <p>The desktop app and <code>artifactize doctor</code> ask GitHub's public API (<code>api.github.com</code>) for the latest Artifactize release at most once a day, to tell you when a newer one is out and how to update it. The request carries no project or account data; GitHub receives your IP address and a user agent naming the Artifactize version, under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>. The answer is kept as <code>release-check.json</code> in the state directory. Artifactize never downloads or installs an update itself. Microsoft Store installs make no such request, since the Store updates them, and setting <code>ARTIFACTIZE_NO_UPDATE_CHECK=1</code> turns the check off.</p>
 
   <h2>Local data</h2>
   <p>Run history, review results, reuse caches, captured output and saved Agent conversations stay in your local state directory unless you choose to share them. Codex sign-in tokens and shared review server credentials are stored there too.</p>

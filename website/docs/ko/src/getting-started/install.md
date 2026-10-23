@@ -294,6 +294,22 @@ Microsoft Store는 안정 릴리스만 제공하며, Microsoft가 검토하는 �
 
 플러그인 업데이트 방법은 [플러그인 페이지](../agent-plugin/plugin.md#updates)에 있습니다.
 
+### 새 릴리스 알림 {#newer-releases}
+
+artifactize는 업데이트를 직접 내려받거나 설치하지 않습니다. 새 안정 릴리스가 나오면
+[데스크톱 앱](../desktop/index.md#open-the-app)은 헤더에 이를 표시하고,
+`artifactize doctor`는 `release` 검사에서 경고합니다. 둘 다 그 복사본을 설치한 방법에 맞춰
+위 표의 업데이트 방법을 알려 주고, 설치 방법을 알 수 없으면 릴리스 페이지를 안내합니다.
+Microsoft Store로 설치했다면 Store가 업데이트하므로 아무것도 표시하지 않습니다.
+
+설치 방법은 실행 파일이 있는 위치로 판단합니다. `install.sh`와 `install.ps1`은 설치한 명령
+옆에 자기 이름을 적은 `.artifactize-receipt` 파일도 남깁니다. 그래서 같은 폴더에 직접 압축을
+푼 명령을 설치 스크립트로 설치한 것으로 잘못 판단하지 않습니다.
+
+새 릴리스는 GitHub에 최신 릴리스를 하루에 한 번까지만 물어서 확인하고, 그 결과를
+[상태 디렉터리](#state)의 `release-check.json`에 보관합니다. 요청에는 artifactize 버전 말고는
+아무것도 담기지 않습니다. 확인을 끄려면 `ARTIFACTIZE_NO_UPDATE_CHECK=1`을 설정하세요.
+
 ### 0.11에서 업그레이드 {#upgrading-from-011}
 
 저장된 리뷰 데이터의 형식(스키마)은 처음 사용할 때 스키마 6~8에서 현재 스키마 9로 자동으로
@@ -391,12 +407,12 @@ Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우�
 [Codex](../features/agent.md#codex)를 보세요.
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, newer release
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
 `doctor`는 어떤 provider도 호출하지 않고 Run도 만들지 않습니다. 모든 백엔드가 선택 사항이므로
-키나 로그인이 없으면 경고로 처리합니다. 쓸 수 없는 상태나 잘못된 설정 같은
+키나 로그인이 없으면 경고로 처리합니다. [새 릴리스](#newer-releases)가 나온 경우도 경고입니다. 쓸 수 없는 상태나 잘못된 설정 같은
 심각한 오류가 있을 때만 1로 종료합니다.
 
 ## 정리와 제거 {#cleanup-and-uninstall}

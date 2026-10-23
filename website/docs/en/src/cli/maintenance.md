@@ -81,6 +81,13 @@ the `supported` one. `--repo` also runs the checks of `config check`. Further ch
 - The remote review store, also offline: its URL, share level and token source. A missing
   token is a warning; an invalid configuration (including plain HTTP to a non-loopback
   host) or an unsafe token file is a hard error.
+- `release`: whether a newer release of artifactize is out, the one network lookup of
+  `doctor` ([newer releases](../getting-started/install.md#newer-releases)). A newer
+  release is a warning naming it as `latest`, with how to update the way this copy was
+  installed as `update`: a `command` to run, a file to `download` (with the `command` that
+  installs it, for the `.deb`), or the release `page` when the way is unknown; `channel`
+  names the way and `running` this copy's version. A failed lookup is a warning. The
+  Microsoft Store, a development build and `ARTIFACTIZE_NO_UPDATE_CHECK` look nothing up.
 
 Exit is 0 without hard errors, 1 with hard errors, and 2 for invocation errors.
 

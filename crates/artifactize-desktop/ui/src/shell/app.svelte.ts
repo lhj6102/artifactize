@@ -11,6 +11,7 @@ import { Registry } from "./commands.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { Leaving } from "./leaving.svelte";
+import { Release } from "./release.svelte";
 
 export class AppState {
   readonly activity = new Activity();
@@ -25,6 +26,8 @@ export class AppState {
   /** The Pane's selection, what the Main area shows and its open Detail. */
   readonly monitor = new MonitorState();
   readonly leaving = new Leaving(this.ipc);
+  /** A newer release and its dialog. */
+  readonly release = new Release(this.ipc);
   /** The numbers of this window's cancellable Human jobs. */
   readonly jobs = new Jobs();
   /** What the command palette lists: each part of the window registers its commands here. */

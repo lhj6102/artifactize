@@ -9,6 +9,7 @@
   import LeaveDialog from "./review/LeaveDialog.svelte";
   import Palette from "./shell/Palette.svelte";
   import Help from "./shell/Help.svelte";
+  import ReleaseDialog from "./shell/ReleaseDialog.svelte";
   import { useCommands } from "./shell/commands.svelte";
   import { chord, composing, editable, plain } from "./shell/keys";
   import { HELP } from "./shell/shortcuts";
@@ -20,7 +21,9 @@
   setActivity(app.activity);
   const commands = app.ipc;
   setAppState(app);
-  const { browse, current, leaving, monitor: m } = app;
+  const { browse, current, leaving, monitor: m, release } = app;
+  /** The library looks releases up at most once a day; asking hourly finds a new one that day. */
+  const RELEASE_INTERVAL_MS = 60 * 60 * 1000;
 
   onMount(() => {
     const hideActivity = exposeActivity(app.activity);
@@ -33,6 +36,8 @@
     void browse.navigate({ full: true });
     // Ages and running times redraw from the snapshot; nothing is read.
     const clock = setInterval(() => void browse.redraw(), 1000);
+    void release.look();
+    const releases = setInterval(() => void release.look(), RELEASE_INTERVAL_MS);
     const unchanged = onStateChanged((resync) => browse.refresh(resync));
     // What Human tools print, for whichever review or Artifact shows it.
     const unlogged = onHumanToolLog((logs) => app.logged(logs));
@@ -44,6 +49,7 @@
     return () => {
       hideActivity();
       clearInterval(clock);
+      clearInterval(releases);
       unchanged();
       unlogged();
       unlisten?.();
@@ -86,7 +92,7 @@
   ]);
 
   /** No dialog is open: window keys belong to the screen. */
-  const free = () => !app.palette && !app.help && !app.asking && leaving.taken === null;
+  const free = () => !app.palette && !app.help && !app.asking && !release.open && leaving.taken === null;
 
   function keydown(event: KeyboardEvent) {
     if (event.defaultPrevented || composing(event)) return;
@@ -130,6 +136,9 @@
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
     {#if app.launch}<span class="muted" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
+    {#if release.notice}
+      <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
+    {/if}
     <button class="button" aria-pressed={m.settings} onclick={settings}>Settings</button>
     <button class="button" onclick={() => (app.palette = true)}>
       Commands <kbd>Ctrl+K</kbd>
@@ -146,6 +155,7 @@
 
 <Palette bind:open={app.palette} />
 <Help bind:open={app.help} sections={help} />
+<ReleaseDialog {release} />
 <LeaveDialog
   taken={leaving.taken}
   onstay={() => leaving.stay()}

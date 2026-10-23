@@ -158,7 +158,7 @@ JSON null (or an empty array for history), just as in CLI JSON output. Static
 trusted fingerprint commands and consult the configured review store; declared
 commands are not an OS sandbox. MCP exposes no login/logout actions and never
 returns credentials. `models`, `doctor` and `remote_status` may check backend
-readiness. Codex model listing can renew artifactize-owned tokens or remove the
+readiness, and `doctor` looks up a [newer release](../getting-started/install.md#newer-releases) as the CLI does. Codex model listing can renew artifactize-owned tokens or remove the
 stored sign-in after a terminal refresh rejection, just as the CLI does.
 
 ### Detail pages

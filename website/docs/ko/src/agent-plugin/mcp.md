@@ -152,7 +152,7 @@ CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. �
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
 명령은 OS 샌드박스 안에서 실행되지 않습니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며
 자격 증명을 돌려주는 일도 없습니다. `models`, `doctor`, `remote_status`는 백엔드
-준비 상태를 확인할 수 있습니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 영구히 거부되면 저장된 로그인 정보를 지울 수 있습니다.
+준비 상태를 확인할 수 있고, `doctor`는 CLI와 마찬가지로 [새 릴리스](../getting-started/install.md#newer-releases)도 확인합니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 영구히 거부되면 저장된 로그인 정보를 지울 수 있습니다.
 
 ### 세부 페이지 {#detail-pages}
 

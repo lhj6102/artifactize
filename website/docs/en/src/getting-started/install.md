@@ -302,6 +302,23 @@ Microsoft reviews it. Updating keeps your state.
 The [plugin page](../agent-plugin/plugin.md#updates) shows how to update the
 plugin.
 
+### Newer releases
+
+artifactize never downloads or installs an update itself. When a newer stable release
+is out, the [desktop app](../desktop/index.md#open-the-app) shows it in its header and
+`artifactize doctor` warns about it (its `release` check), each with the update from the
+table above for the way that copy was installed, or the release page when the way is
+unknown. A Microsoft Store install shows nothing: the Store updates it.
+
+artifactize tells the way from where its executable is. `install.sh` and `install.ps1`
+also leave a `.artifactize-receipt` file naming themselves beside the commands they
+install, so commands unpacked by hand into the same folder are not mistaken for theirs.
+
+To learn of a release, artifactize asks GitHub for the latest release at most once a day
+and keeps the answer in `release-check.json` in the [state directory](#state); the request
+carries nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn
+the lookup off.
+
 ### Upgrading from 0.11
 
 The state's format of saved review data (its schema) is upgraded automatically on first use,
@@ -401,12 +418,12 @@ and asks the server to revoke them; it warns when the revocation is not confirme
 See [Codex](../features/agent.md#codex).
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, newer release
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
 `doctor` calls no provider and creates no Run. Missing keys or sign-ins are
-warnings, because every backend is optional. It exits 1 only for hard errors such as unusable state
+warnings, because every backend is optional; so is a [newer release](#newer-releases). It exits 1 only for hard errors such as unusable state
 or invalid configuration.
 
 ## Cleanup and uninstall
