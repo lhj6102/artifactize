@@ -140,7 +140,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 {"content":[{"type":"image","mimeType":"image/png","path":"screenshots/board.png"}]}
 ```
 
-두 번째 형태의 파일은 요청의 `context.outputDir` 아래에 쓰세요. 상대 경로는 `context.outputDir`을 기준으로 해석하며,
+두 번째 형식으로 파일 경로를 반환하려면 해당 파일을 요청의 `context.outputDir` 아래에 저장하세요. 상대 경로는 `context.outputDir`을 기준으로 해석하며,
 절대 경로도 이 디렉터리 안을 가리킬 때만 허용합니다. 상위 경로로 올라가는 경로, 어느
 구성 요소에서든 심볼릭 링크를 거치는 경로, 특수 파일, 그 출력 디렉터리 밖의 파일은 거부합니다. artifactize는
 호출의 출력을 지우기 전에 이미지 바이트를 읽어 결과에 담으므로, 돌려받는 결과는 로컬 파일 경로가 아니라 이미지

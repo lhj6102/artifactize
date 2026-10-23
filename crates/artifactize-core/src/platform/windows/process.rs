@@ -529,8 +529,7 @@ mod tests {
 #[cfg(test)]
 mod console_tests {
     use windows_sys::Win32::{
-        System::{Console::GetConsoleWindow, Threading::DETACHED_PROCESS},
-        UI::WindowsAndMessaging::IsWindowVisible,
+        System::Console::GetConsoleWindow, UI::WindowsAndMessaging::IsWindowVisible,
     };
 
     const WINDOW_PROBE: &str = "platform::windows::process::console_tests::console_window_probe";
@@ -540,14 +539,9 @@ mod console_tests {
     /// which Windows gives a console program a window of its own.
     #[test]
     fn a_probe_from_a_process_without_a_console_shows_no_window() {
-        use std::os::windows::process::CommandExt;
-
-        let mut parent = crate::test_os::test_command(
+        let output = crate::test_os::windows_detached_probe(
             "platform::windows::process::console_tests::detached_parent_probe",
-            &[],
         );
-        parent.arg("--ignored").creation_flags(DETACHED_PROCESS);
-        let output = parent.output().unwrap();
         assert!(output.status.success(), "{output:?}");
         assert!(
             String::from_utf8_lossy(&output.stdout).contains(HIDDEN),

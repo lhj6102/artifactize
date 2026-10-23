@@ -3167,6 +3167,18 @@ pub fn windows_marker(directory: &Path) -> tokio::process::Command {
     command
 }
 
+/// Run this library test binary's ignored probe `test` as a detached process, with no console,
+/// as the desktop app runs; its output is returned.
+#[cfg(windows)]
+pub fn windows_detached_probe(test: &str) -> std::process::Output {
+    use std::os::windows::process::CommandExt;
+    let mut command = test_command(test, &[]);
+    command
+        .arg("--ignored")
+        .creation_flags(windows_sys::Win32::System::Threading::DETACHED_PROCESS);
+    command.output().unwrap()
+}
+
 #[cfg(windows)]
 pub fn windows_exit(code: u32) -> tokio::process::Command {
     let mut command = self_test("platform::windows::process::exit_tests::exit_probe");
