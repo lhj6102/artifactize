@@ -99,9 +99,11 @@ handles retries as described below.
 
 ### Retries and error codes
 
-A turn that hits a rate limit or a temporary provider error before producing any output
-is retried automatically a few times, waiting as long as the provider asks. A failure
-after output is never retried, so nothing is paid for twice. When the retries run out,
+A turn that hits a rate limit or a temporary provider error is retried automatically, at
+most twice (three attempts in all), waiting as long as the provider asks, but only while
+the provider has neither streamed any output nor reported any usage for it. A failure
+after either is never retried, so nothing is paid for twice, even when no answer text
+appeared. When the retries run out,
 or the provider asks for a wait longer than the review has left, the eval ends ERROR
 with `RATE_LIMIT` or `TRANSIENT` as its `errorCode`: run `verify` again later, and
 finished results are reused. Each attempt is saved in `usage` with its counters, `error`

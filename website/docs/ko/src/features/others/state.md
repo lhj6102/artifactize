@@ -20,8 +20,8 @@
 
 상태에는 모든 Run과 그 요청, 판정, 각 eval이 어떻게 실행됐는지, 시작할 때의 정의가 남습니다.
 `run list`, `run show`, `request list`, `request show`,
-[`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰가
-어떻게 진행됐는지, 그 대화와 도구 호출은 [저장된 세션](#agent-sessions)에 있습니다.
+[`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰의
+진행 과정과 대화, 도구 호출 내역은 [저장된 세션](#agent-sessions)에서 확인할 수 있습니다.
 
 **업그레이드.** 스키마 6, 7, 8, 9 형식으로 저장된 상태는 artifactize 명령으로 처음 열 때 현재 스키마 10으로
 자동 업그레이드됩니다. Run, ID, 캐시 결과, Human 승인은 그대로 남고, SIGNOFFS_PENDING으로 끝난 Run은

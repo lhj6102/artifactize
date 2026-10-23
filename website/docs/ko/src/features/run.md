@@ -33,7 +33,9 @@ eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Arti
 READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본 상한이 없습니다**. 머신이 감당하기
 어려울 만큼 프로세스가 많아지는 등 한꺼번에 실행하는 것이 문제를 일으킬 때만 `--jobs N`(최소
 1)을 쓰세요. `--jobs`나 백엔드 한도 때문에 일부만 실행할 수 있으면 나머지는 이유와 함께 QUEUED로
-표시되고, 앞선 작업이 끝나는 대로 시작합니다. `--max-executions`는 다릅니다. Run에서 시작할 수 있는 리뷰의 총수를 제한합니다. 한도에 도달하면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로 끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
+표시되고, 앞선 작업이 끝나는 대로 시작합니다. 빈 자리를 받는 순서는 eval을 지정한 순서가 아닙니다. READY인
+작업이 먼저이고, 그중에서도 그 eval을 기다리는 eval의 사슬이 가장 긴 것이 먼저 시작해 가장 많은 작업을 풀어 줍니다.
+순위가 같을 때만 요청 순서를 따릅니다. `--max-executions`는 다릅니다. Run에서 시작할 수 있는 리뷰의 총수를 제한합니다. 한도에 도달하면 남은 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 INCOMPLETE로 끝납니다([자세히](../cli/index.md#runtime-cli)). 다른 Run의 리뷰에 합류한 Runtime이나 Agent 요청은 직접 지정한
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기 중이거나, 백엔드 자리가 나지 않았거나, 합류한 실행이 아직 끝나지 않았거나, 직접 정한 Run의 동시 실행 상한에 걸렸을 때 표시됩니다. 백엔드 자리가
 빌 때까지 대기 중인 요청은 Run의 `--jobs` 동시 실행 수에 포함되지 않습니다.

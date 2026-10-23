@@ -37,7 +37,10 @@ when they have valid results too, from an earlier Run or the cache.
 Every READY eval starts as soon as it is ready, with **no default concurrency cap**.
 Set `--jobs N` (minimum 1) only when running everything at once causes trouble, such as
 more processes than your machine handles well. When `--jobs` or a backend limit leaves room for only some work, the rest shows as
-QUEUED with its reason and starts as earlier work finishes. `--max-executions` is
+QUEUED with its reason and starts as earlier work finishes. Which work gets a free slot
+does not follow the order you named evals in: READY work goes first, and among it the eval
+with the longest chain of evals still waiting on it, so the work that unblocks the most
+starts earliest; only ties keep the request order. `--max-executions` is
 different: it caps how many reviews the Run starts in total, and once it is used up the
 remaining requests become `BUDGET_EXHAUSTED` and the Run ends INCOMPLETE
 ([details](../cli/index.md#runtime-cli)). A runtime or Agent request joining another Run's review counts against an explicit `--jobs`; a Human request joining a sign-off and a cache hit do not. Agent reviews also need their [backend's slot](others/state.md#backend-capacity).
