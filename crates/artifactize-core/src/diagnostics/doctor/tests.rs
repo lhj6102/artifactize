@@ -59,7 +59,7 @@ fn typed_details_preserve_null_and_flat_auth_wire_forms() {
     );
     let codex = Details::Codex {
         status: auth::codex::Status::Absent,
-        test_endpoint: Some("http://localhost".into()),
+        test_endpoint: Some("http://localhost".parse().unwrap()),
         test_auth_endpoint: None,
     };
     assert_eq!(

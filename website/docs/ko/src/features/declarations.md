@@ -241,9 +241,9 @@ Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니�
 있는 폴더를 기준으로 지정합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
 Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 
-파일을 해시하려면 `fingerprint`를 생략하세요. artifactsum의
-[파일 Artifact 형식](fingerprint.md#artifactsum)은 대상만 적으며, 스크립트나
-`fingerprint = false`도 쓸 수 있습니다.
+파일을 해시하려면 `fingerprint`를 생략하세요. 파일 Artifact의
+[artifactsum 설정](fingerprint.md#artifactsum)에는 대상 파일만 적으며, 스크립트나
+`fingerprint = false`를 선택할 수도 있습니다.
 
 JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로세스의 작업 디렉터리는 그
 파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"graph"`가

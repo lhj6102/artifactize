@@ -81,7 +81,7 @@ pub enum Details {
     ApiKey {
         present: bool,
         #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
-        test_endpoint: Option<String>,
+        test_endpoint: Option<llm::TestEndpoint>,
     },
     Providers {
         custom: std::collections::BTreeMap<Backend, auth::providers::CustomView>,
@@ -121,9 +121,9 @@ pub enum Details {
         #[serde(flatten)]
         status: auth::codex::Status,
         #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
-        test_endpoint: Option<String>,
+        test_endpoint: Option<llm::TestEndpoint>,
         #[serde(rename = "testAuthEndpoint", skip_serializing_if = "Option::is_none")]
-        test_auth_endpoint: Option<String>,
+        test_auth_endpoint: Option<llm::TestEndpoint>,
     },
     /// The installed desktop app, or `null` without one.
     Desktop {

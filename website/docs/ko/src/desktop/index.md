@@ -216,7 +216,7 @@ Ctrl+O 또는 팔레트의 **Open a request by ID**는 어느
 저장소의 저장된 요청이든 Main area에 엽니다. 대기 중인 Human 리뷰는 Pane에서 열 때처럼 조작할 수 있고,
 다른 요청은 읽기 전용입니다. 완료된 Human 요청을 열면 Human 리뷰 화면이 읽기 전용으로 표시되며,
 `t`를 누르면 Technical이 표시되거나 숨겨집니다. 로그가 있는 다른 읽기 전용 요청은 eval의 칩처럼 Summary와 Agent log
-또는 Runtime log 사이를 오가며, `t`를 누르면 **Debug** 정보가 표시되거나 숨겨집니다. **Close**는 Pane으로 돌아갑니다. 다른 곳에서 일어난
+또는 Runtime log 사이를 오가며, `t`를 누르면 **Debug** 정보가 표시되거나 숨겨집니다. **Close**를 누르면 Pane으로 돌아갑니다. 다른 곳에서 일어난
 요청의 변경도 화면에 반영되며, Ctrl+R이나 F5로 다시 열지 않고 다시 읽을 수 있습니다.
 
 ## Human 리뷰 {#human-reviews}
