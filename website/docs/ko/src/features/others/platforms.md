@@ -91,7 +91,7 @@ Windows에서 시작 메뉴나 탐색기로 인자 없이 `artifactize`를 실�
 스크립트에서 실행하면 멈추지 않습니다. Linux와
 macOS는 평소처럼 인자 없이 도움말을 보여 주고 바로 종료합니다.
 
-Microsoft Store 패키지에는 보이는 항목이 두 개 있습니다. 데스크톱
+Microsoft Store 패키지를 설치하면 항목 두 개가 표시됩니다. 데스크톱
 앱용 **Artifactize**와 이 도움말 실행용 **Artifactize CLI**이며, 명령 별칭은
 `artifactize` 하나입니다. 도구 명령은 `artifactize tools`로 쓸 수 있습니다. Store 이외의 방법으로
 설치하면 독립 실행형 `artifactize-tools` 명령도 함께 설치됩니다.
