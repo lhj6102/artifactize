@@ -43,7 +43,7 @@ artifactize --state-dir "$WALK/server" server run      # Listening on http://127
 ```
 
 `server run`은 별도 터미널에서 계속 실행해 두세요. 이 워크스루는 같은 머신의
-프로그램만 연결합니다. 서로 다른 머신라면 먼저
+프로그램만 연결합니다. 서로 다른 머신에서 실행한다면 먼저
 [안전한 연결 설정](index.md#connect-teammates-securely)을 따르세요.
 
 ## 2. Alice가 먼저 리뷰하기 {#2-alice-reviews-first}

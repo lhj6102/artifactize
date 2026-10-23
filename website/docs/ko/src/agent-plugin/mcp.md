@@ -106,8 +106,9 @@ eval 결과 재사용은 유지됩니다.
 Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 추가하세요. 동시 실행 상한이 없는
 Run에는 `jobs` 필드가 없습니다.
 
-`speculate`는 기본값이 false이며 CLI의 `--speculate`와 뜻이 같습니다. 요청된 Runtime과 Agent 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. 승인은 다른
-eval을 막지 않습니다. 첫 승인을 요청한 때부터 Run은 `waiting_human`이며, 승인을 맡고 있거나
+`speculate`는 기본값이 false이며 CLI의 `--speculate`와 뜻이 같습니다. 요청된 Runtime과 Agent 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. Run이 선택한 승인은
+다른 eval을 막지 않습니다(선택 범위 밖의 승인은 막으며, scope에 그 승인을 넣을 때까지 Run은 INCOMPLETE로 끝납니다).
+첫 승인을 요청한 때부터 Run은 `waiting_human`이며, 승인을 맡고 있거나
 [유휴 유예 시간](../features/others/state.md#sign-off-idle-grace)이 남은 동안 종료되지 않고 대기하다가, 승인만 남으면
 `yellow`로 끝납니다. 이때 `verify_result`는 판정 `YELLOW`를 보고하며, 이는 완전한 승인이 아닙니다. CLI에서 진행 상황을
 지켜보는 명령은 종료 코드 5로 끝납니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
