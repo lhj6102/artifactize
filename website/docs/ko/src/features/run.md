@@ -114,7 +114,7 @@ fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은 판정 
 verify를 다시 실행하면 Human 증거가 확보될 때까지 대기합니다. Run과 결과를 보여 주는 화면은 SIGNOFFS_PENDING인 Run을, 실행은
 끝났지만 최종 검증 요건은 충족하지 못한 상태로 표시합니다.
 
-텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint 적중이나 합류한 실행처럼 다른 요청의 실행에서 가져온 결과에는 출처 Run을 표시합니다. [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
+텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint가 일치해 이전 결과를 재사용하거나 실행 중인 리뷰에 합류한 경우에는 결과를 처음 만든 Run을 표시합니다. [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
 
 ```text
   web/tests [run-x05qFq-5]: GREEN

@@ -40,7 +40,9 @@ the same eval, Artifact kinds and fingerprints is reused, and its record shows w
 
 Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
 receives the eval's title and ID, its target and your instruction; artifactize adds the
-general review rules. Each `{name}` reference tells the reviewer that Artifact's name and
+general review rules. The reviewer only reviews: it never changes or repairs what it
+reviews, and it judges tests by reading them, without running them. When a check needs
+tests to run, declare a [Runtime eval](runtime.md) for it. Each `{name}` reference tells the reviewer that Artifact's name and
 the tools it can read it with (and a file Artifact's path), so the instruction need not
 name tools.
 
@@ -95,7 +97,8 @@ handles retries as described below.
 ### Retries and error codes
 
 A turn that hits a rate limit or a temporary provider error before it produced any output
-is retried a few times, waiting as long as the provider asks. When it still fails, or the
+or the provider reported any token use is retried, up to three attempts within the
+review's deadline, waiting as long as the provider asks. When it still fails, or the
 provider asks for a wait past the review's deadline, the review ends as ERROR with
 `RATE_LIMIT` or `TRANSIENT`; run `verify` again later, and finished results are reused. A
 failure after output is never retried, so nothing is paid for twice. Each attempt is saved in `usage` with its counters, `error` and

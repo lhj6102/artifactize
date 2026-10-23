@@ -295,8 +295,8 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 ## 현재 디렉터리 도구 {#current-directory-tools}
 
 `artifactize tools read|list|glob|grep|section|help|open ...`은 내장 도구를 현재
-디렉터리에서 실행합니다. Store가 아닌 설치에는 `artifactize-tools`라는 이름으로도 들어
-있습니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
+디렉터리에서 실행합니다. Store 이외의 방법으로 설치하면 `artifactize-tools` 명령도
+함께 설치됩니다. stdout에 텍스트나 JSON을 출력하고, 도구가 실패하면 stderr에 오류를 남기고 1로,
 사용법이 잘못되면 2로 종료합니다. `artifactize tools --help`가 도구 목록을 보여 주며,
 `artifactize tools check`는 이와 달리 선언된 리뷰 도구를 점검합니다. 하위 명령별 범위
 규칙과 제한은 [`artifactize-tools`](../features/tools/builtin.md#artifactize-tools-cli)에
