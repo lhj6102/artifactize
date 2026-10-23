@@ -160,8 +160,9 @@
 
 <Panel title={human ? "Human review" : (detail?.title ?? "Detail")} wholeTitle focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
   {#snippet actions()}
-    <!-- The one window-level control; a Human review has its own Close among its controls. -->
-    {#if !human}<button class="button small" onclick={onback}>Close <kbd>Esc</kbd></button>{/if}
+    <!-- The one window-level control, on every tab: on a Human review's it first cancels the
+         review's running work, then leaves its form, as Esc does. -->
+    <button class="button small" onclick={onback}>Close <kbd>Esc</kbd></button>
   {/snippet}
   <div class="detail" class:tabbed>
     {#if tabbed && row}
