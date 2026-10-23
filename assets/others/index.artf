@@ -5,6 +5,19 @@ list = { builtin = "list" }
 read = { builtin = "read" }
 view_image = { description = "View an image saved in {artifactName}, such as graph-example.en.png.", builtin = "view_image" }
 
+[views.agent_tools.gif]
+description = "A moving figure saved in {artifactName}, roles.en.gif: without at, its length in seconds and frame count; with at, its frame about at seconds in, as an image."
+command = "node"
+args = ["capture.mts", "gif"]
+protocol = "json"
+
+[views.agent_tools.gif.input_schema]
+type = "object"
+properties.name = { enum = ["roles.en.gif"] }
+properties.at = { type = "number", minimum = 0 }
+required = ["name"]
+additionalProperties = false
+
 [evals.renders-html]
 title = "The saved images are what their HTML renders now"
 profile = { kind = "runtime", command = "node", args = ["capture.mts", "check"], timeout_ms = 300000 }
@@ -43,6 +56,57 @@ required = ["summary"]
 additionalProperties = false
 
 [evals.explains-graph.fail_schema]
+type = "object"
+properties.findings = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
+required = ["findings"]
+additionalProperties = false
+
+[evals.shows-roles]
+title = "The role figure shows people and agents collaborating in three roles, cleanly"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+
+[evals.shows-roles.payload]
+instruction = """
+{others} holds roles.html and the looping GIF capture.mts renders from it, roles.en.gif. The \
+README and the landing page use it in place of a sentence saying that Artifactize brings human \
+and agent work together. Its point is that people and AI agents collaborate in Artifactize \
+through three roles that pass one Artifact Graph between them: Director above, Builder and \
+Evaluator on either side, and along the bottom the line "Collaborate in" with the Artifactize \
+icon and name, the figure's title. Each role shows only its \
+name and its team of five, as person and agent icons: three people and two agents direct, five \
+agents build, and four agents and one person evaluate; the motion shows what each role does. \
+The scene is 16:9. The graph is abstract on purpose: unnamed nodes fanning out from one node \
+on the left to the right, each link a single bend, with nothing around them. In motion, the \
+graph glides to whichever role has it, tagged with why it is passed (build, \
+verify, RED or GREEN). The Director adds a node; the Builder builds it; the Evaluator checks \
+the nodes one by one and finds the new one RED; the Builder fixes it; the Evaluator checks it \
+again, the person signing off, and it is GREEN. The Director then adds another node and \
+changes one, and the Builder and the Evaluator go back and forth again, RED and then GREEN. \
+A node is dashed when new or changed, white when built, then GREEN or RED once checked; only \
+the white nodes are checked again. Read roles.html, ask gif for the GIF's length and view \
+enough frames to follow every step. Judge:
+- Meaning: the three roles are what the figure is about, and the motion shows the graph \
+passing between them in that order, the Builder and the Evaluator going back and forth until \
+GREEN, so a first-time reader sees what each role does without a caption; its few words follow \
+W-INTRO-PLAIN-LANGUAGE of {writer-introduction}; and the figure shows nothing beyond the roles, \
+their teams, the graph, why it is passed and that title line.
+- Clarity: a first-time reader tells the person from the AI agent without labels, because \
+each keeps one icon and one color across the figure; sees which team works while it has the \
+graph; and can tell each state of a node from its look.
+- Layout: the roles form a balanced triangle around where the graph travels; in every frame, \
+no text or icon is clipped, overlaps another or is too small to read at half size, and there \
+are no large empty areas. The loop's last frame leads into its first without a jump.
+Submit GREEN when all three hold. Otherwise submit RED with one finding per problem, naming \
+the moment in the GIF or the HTML line and saying what to change in roles.html.
+"""
+
+[evals.shows-roles.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.shows-roles.fail_schema]
 type = "object"
 properties.findings = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["where", "change"], additionalProperties = false } }
 required = ["findings"]
