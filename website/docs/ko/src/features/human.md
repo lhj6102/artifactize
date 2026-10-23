@@ -4,10 +4,8 @@ Human eval은 사람에게 리뷰를 요청하고 GREEN이나 RED 판정을 받�
 선언한 Human 도구를 실행하고, `artifactize request` 명령이나 `artifactize review` 터미널 UI로
 판정을 제출합니다.
 
-Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이고 의존성 게이트도 충족됐을
-때만 준비됩니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인합니다. 그 자동 검사 eval 중
-하나라도 RED나 ERROR면 Human eval은 BLOCKED가 되고 사유에 그 eval이 나옵니다. 같은 Artifact의
-다른 Human eval은 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을
+사람은 Artifact의 자동 검사 eval을 이미 통과한 것만 승인합니다. 그 전까지 Human eval은
+BLOCKED이고, 사유에 무엇을 기다리는지 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
 검사가 준비되면 artifactize는 사람의 결정이 필요한 작업을 **WAITING_HUMAN 요청**으로

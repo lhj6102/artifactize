@@ -12,7 +12,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 해시하고, 스크립트를 고를 수도 있습니다. 루트 그래프 Artifact는 항상
 [구조 기반 그래프 fingerprint](#graph-fingerprint)를 쓰며, `fingerprint`를 선언해 그 값을
 바꾸거나 끌 수 없습니다. 아래 방식으로 계산한 폴더·파일 Artifact의 fingerprint에는 도구 선언이나 다른 Artifact의
-값이 들어가지 않습니다. 의존성은 [재사용 키](#the-reuse-key)를 통해 들어갑니다.
+값이 들어가지 않습니다. 의존하는 Artifact의 fingerprint는 [재사용 키](#the-reuse-key)에 반영됩니다.
 
 - 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,

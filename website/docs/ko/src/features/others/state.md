@@ -20,8 +20,8 @@
 
 상태에는 모든 Run과 그 요청, 판정, 각 eval이 어떻게 실행됐는지, 시작할 때의 정의가 남습니다.
 `run list`, `run show`, `request list`, `request show`,
-[`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰가
-어떻게 진행됐는지, 그 대화와 도구 호출은 [저장된 세션](#agent-sessions)에 있습니다.
+[`cache list`](../../cli/maintenance.md#cache-inspection)로 읽을 수 있습니다. Agent 리뷰의
+진행 과정과 대화, 도구 호출 내역은 [저장된 세션](#agent-sessions)에서 확인할 수 있습니다.
 
 **업그레이드.** 스키마 6, 7, 8 형식으로 저장된 상태는 artifactize 명령으로 처음 열 때 현재 스키마 9로
 자동 업그레이드됩니다. Run, ID, 캐시 결과, Human 승인은 그대로 남습니다. 업그레이드에는 쓰기
@@ -153,8 +153,7 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 
 ### follow-up 재생 {#follow-up-replay}
 
-`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 저장된 대화를
-다시 보내므로 provider가 캐시를 재사용할 수 있습니다. 현재 프로젝트의 도구를 다시 제공하며,
+`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 현재 프로젝트의 도구를 다시 제공하며,
 리뷰 뒤에 그 리뷰가 다룬 Artifact 중 하나가 바뀌었다면 헤더에 그 사실을 표시하고 모델에도 알립니다. 질문은 새 리뷰가 아니라
 follow-up입니다. 모델은 일반 텍스트로 답하고, 도구를 쓸 수 있으며, 기록된 판정은 절대 바뀌지
 않습니다. `session show`는 질문을 쓴 그대로 보여 줍니다.
