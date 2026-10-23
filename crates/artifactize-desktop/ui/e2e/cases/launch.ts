@@ -98,13 +98,13 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${initialRun}`, "the branch's running Run shown");
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[initialRun, true]], "its one Run, shown");
       await graphShown(browser, "a:release");
-      // The shown Run's own verdicts: release waits for its Human, ship waits, docs is GREEN.
+      // The shown Run's own verdicts: release waits for its Human, ship is done but held by that sign-off, docs is GREEN.
       for (const [id, label] of [["a:release", "release: in progress"], ["a:ship", "ship: waiting"], ["a:docs", "docs: GREEN"]]) {
         await waitFor(browser, async () => (await browser.$(nodeAt(id)).getAttribute("aria-label")) === label, `${id} drawn as ${label}`);
       }
       for (const [artifact, path, glyph, status] of [
         ["release", "e:release/signoff", "?", /Human sign-off · unclaimed/],
-        ["ship", "e:ship/check", "…", /waits for release/],
+        ["ship", "e:ship/check", "○", /PROVISIONAL · sign-offs remain/],
         ["docs", "e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
       ] as const) {
         await openArtifact(browser, `a:${artifact}`, `Artifact ${artifact}`);

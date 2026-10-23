@@ -91,14 +91,15 @@ export const scenarios: Scenario[] = [
       assert.equal((await branch(browser, "repo  master"))?.selected, true, "its branch selected");
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "its header says when it was scanned");
       await graphShown(browser, "a:release");
-      // Nothing was ever verified: what has no inputs would run, what reads release waits.
+      // Nothing was ever verified: every Artifact would run. ship reads release, whose only eval
+      // is a sign-off, and a sign-off holds up nothing.
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify({
-        "a:docs": "docs: would run (1 eval)", "a:release": "release: would run (1 eval)", "a:ship": "ship: waiting",
+        "a:docs": "docs: would run (1 eval)", "a:release": "release: would run (1 eval)", "a:ship": "ship: would run (1 eval)",
       }), `each Artifact marked by what verify would do: ${JSON.stringify(await drawn())}`);
       await waitFor(browser, async () => JSON.stringify((await drawn()).edges) === JSON.stringify({ "a:release>a:ship": "run" }),
         `the relation carries what its source would do: ${JSON.stringify(await drawn())}`);
       const appearance = await graphAppearance(browser);
-      assert.notEqual(appearance.nodes["a:release"].dot, appearance.nodes["a:ship"].dot, "would run and waiting are painted apart");
+      assert.equal(appearance.nodes["a:release"].dot, appearance.nodes["a:ship"].dot, "both would run, painted alike");
       assert.deepEqual(await browser.execute((root) => [...document.querySelectorAll(`${root} [aria-label="Legend"] li`)].map((item) => item.textContent?.trim()), CURRENT),
         ["reused", "would run", "waiting", "blocked by upstream"], "its own legend");
       assert.deepEqual(savedRuns(fixture), [], "scanning saved no Run");
@@ -143,7 +144,7 @@ export const scenarios: Scenario[] = [
       }
       assert.deepEqual(criteria, {
         "release/signoff": {
-          target: "release", title: "A person approves the release", gate: null,
+          target: "release", title: "A person approves the release",
           criteria: { kind: "human" }, payload: { instruction: "Read the release notes and approve them." },
           passSchema: { type: "object", properties: { approved: { const: true },
             comment: { type: "string", minLength: 1, description: "What you checked." } },
@@ -154,10 +155,10 @@ export const scenarios: Scenario[] = [
             steps: { type: "array", items: { type: "string" } } },
             required: ["reason"], additionalProperties: false },
         },
-        "ship/check": { target: "ship", title: "Ship the release", gate: null,
+        "ship/check": { target: "ship", title: "Ship the release",
           criteria: { kind: "runtime", command, args: [script, "pass"] },
           payload: { instruction: "Ship {release}." }, passSchema: null, failSchema: null },
-        "docs/lint": { target: "docs", title: "Docs build", gate: null,
+        "docs/lint": { target: "docs", title: "Docs build",
           criteria: { kind: "runtime", command, args: [script, "pass"] },
           payload: { instruction: "Build the docs." }, passSchema: null, failSchema: null },
       }, "every independently declared criterion and owner schema is exposed");
@@ -229,6 +230,8 @@ Summarize {docs}."""
         const { nodes, edges } = await drawn();
         return nodes["a:digest"] === "digest: waiting" && edges["a:docs>a:digest"] !== undefined;
       }, "the added digest Artifact and its relation from docs drawn");
+      const waiting = await graphAppearance(browser);
+      assert.notEqual(waiting.nodes["a:docs"].dot, waiting.nodes["a:digest"].dot, "would run and waiting are painted apart");
       assert.ok((await structure()).split("\n").some((line) => line.startsWith("docs → digest ")), "the structure text lists the added relation");
       assert.equal(await camera(browser), moved, "the new layout left the person's camera");
       await browser.$(CURRENT).$("button=Refresh").waitForEnabled({ timeout: 15000 });
@@ -312,13 +315,13 @@ Summarize {docs}."""
       assert.deepEqual((await drawn()).nodes, allReused, "no scan without a choice, a Refresh or a Run's end");
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await drawn()).nodes["a:release"] === "release: would run (1 eval)", "release would run again");
-      assert.equal((await drawn()).nodes["a:ship"], "ship: waiting", "ship waits for it");
+      assert.equal((await drawn()).nodes["a:ship"], "ship: would run (1 eval)", "ship, reading the changed notes, would run again without waiting for the sign-off");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;
-      // Its look once release and its relation are painted would run, and ship waiting.
+      // Its look once release, ship and their relation are painted would run.
       let look = await graphAppearance(browser);
-      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "waiting" }, { "a:release>a:ship": "run" }),
-        { timeout: 15000, timeoutMsg: "would run and waiting painted in their legend colours" })
+      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "run" }, { "a:release>a:ship": "run" }),
+        { timeout: 15000, timeoutMsg: "would run painted in its legend colour" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
       const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look };
       assert.ok(before.at, "the header names the scan before the Run");

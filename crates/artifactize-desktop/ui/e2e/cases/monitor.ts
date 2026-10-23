@@ -134,7 +134,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await mainTitle(browser), `Run ${run}`);
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[run, true]]);
       const headline = await browser.$(`${MAIN} button.headline`).getText();
-      assert.match(headline, /RUNNING/);
+      assert.match(headline, /WAITING_HUMAN/);
       assert.match(headline, /validation pending/);
       // What needs attention is the Run's own, in its Main area above its graph: the Waiting
       // stack in the Pane names the same sign-off.
