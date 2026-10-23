@@ -250,7 +250,8 @@
       box.setAttribute("x", (-width / 2).toFixed(2));
       box.setAttribute("width", width.toFixed(2));
       box.setAttribute("fill", TAGS[place.pass.tag]);
-      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${(place.y - 186).toFixed(2)})`);
+      // Above the graph, but never higher than just below the Director's team.
+      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${Math.max(place.y - 186, 202).toFixed(2)})`);
       tag.setAttribute("opacity", Math.min(1, place.lift * 2.5).toFixed(3));
     }
 
