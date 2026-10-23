@@ -134,8 +134,8 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 `summary.reused.otherProfile`)이 붙습니다. 설정이
 같은 변형의 결과에는 표시가 붙지 않으며, 저장된 `options.variant`에 변형 이름이 있습니다.
 `Usage`(사용량이 보고됐을 때만 출력)는 이 Run의 실제 사용량과, 재사용한 실행들의 원래 사용량 합계인
-`saved`를 나눠 보여 줍니다. JSON verify와 `run show`에는 같은 수치가 `summary.executed`,
-`summary.reused`, Run 수준의 `usage: {spent, saved}`로 들어 있고, `summary.usage`는
+`saved`를 나눠 보여 줍니다. `verify`의 JSON 출력과 `run show`에는 같은 수치가 `summary.executed`,
+`summary.reused`, Run 단위의 `usage: {spent, saved}`로 들어 있고, `summary.usage`는
 `usage.spent`와 같습니다.
 
 JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그 요청에서 리뷰를 직접 실행했거나 아직 결과가
