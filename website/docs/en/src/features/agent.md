@@ -47,7 +47,9 @@ the same eval, Artifact kinds and fingerprints is reused, and its record shows w
 
 Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
 receives the eval's title and ID, its target and your instruction; artifactize adds the
-general review rules. Each `{name}` reference tells the reviewer that Artifact's name and
+general review rules. The reviewer only reviews: it never changes or repairs what it
+reviews, and it judges tests by reading them, without running them. When a check needs
+tests to run, declare a [Runtime eval](runtime.md) for it. Each `{name}` reference tells the reviewer that Artifact's name and
 the tools it can read it with (and a file Artifact's path), so the instruction need not
 name tools.
 
@@ -101,13 +103,13 @@ handles retries as described below.
 
 ### Retries and error codes
 
-A turn is retried, up to three attempts in all, when it fails with a rate limit or a
-temporary error before it produced any output or used any tokens. A retry waits as long
-as the provider asks, else 250 ms and then 500 ms. When the
-provider asks for a wait that reaches or exceeds the review's deadline, the review
-fails at once with the original `RATE_LIMIT` or `TRANSIENT` classification. A failure after output or usage is never retried, so nothing
-is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
-`errorCode`.
+A turn that fails with a rate limit or a temporary error before it produced any output
+or used any tokens is retried automatically a few times, waiting as long as the provider
+asks. A failure after output or usage is never retried, so nothing is paid for twice.
+When the retries do not help, or the provider asks to wait past the review's deadline,
+the review ends ERROR with `RATE_LIMIT` or `TRANSIENT`. Wait a moment and run `verify`
+again: finished results are reused, so only the failed reviews run. Each attempt is saved
+in `usage` with its counters, `error` and `errorCode`.
 
 ### Prompt caching
 
@@ -181,8 +183,8 @@ artifactize keeps each Agent review's conversation on this machine, so you can r
 what the reviewer saw and said, and ask it a follow-up in the same conversation, much
 like continuing a chat. The recorded verdict never changes.
 
-**What is saved.** Each review session is kept in one file only your account can read
-([layout](others/state.md#agent-sessions)): the instructions, every message, each tool
+**What is saved.** Each review session is kept where only your account can read it
+([store](others/state.md#agent-sessions)): the instructions, every message, each tool
 call with its result, the correction turn, token counts and the settings the review
 used.
 Saving never fails a review: a write error is reported on stderr and the review goes
@@ -227,7 +229,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - **Sign-in.** `login codex` opens ChatGPT's sign-in page in your browser, as the
   Codex CLI does, and returns to artifactize when you have signed in. The browser steps,
   the pasted-address fallback and the five-minute limit are in
-  [sign-in setup](../getting-started/install.md#backends).
+  [sign-in setup](../getting-started/backends.md).
   It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`, readable
   only by you. Use the same `--state-dir` for `login`, `models` and `verify`.
   Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git

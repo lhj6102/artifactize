@@ -4,10 +4,9 @@ Human eval은 사람에게 리뷰를 요청하고 GREEN이나 RED 판정을 받�
 선언한 Human 도구를 실행하고, `artifactize request` 명령이나 `artifactize review` 터미널 UI로
 판정을 제출합니다.
 
-Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이고 의존성 게이트도 충족됐을
-때만 준비됩니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인합니다. 그 자동 검사 eval 중
-하나라도 RED나 ERROR면 Human eval은 BLOCKED가 되고 사유에 그 eval이 나옵니다. 같은 Artifact의
-다른 Human eval은 이 조건에 들어가지 않습니다. [Human 승인](artifact.md#human-sign-offs)을
+사람은 Artifact의 자동 검사 eval을 이미 통과한 것만 승인합니다. 자동 검사 eval이 아직 실행 중이면
+Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED나 ERROR면 BLOCKED가 되며 사유에 그
+eval이 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
 검사가 준비되면 artifactize는 사람의 결정이 필요한 작업을 **WAITING_HUMAN 요청**으로
@@ -25,8 +24,8 @@ Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN이�
 승인은 [리뷰한 입력](fingerprint.md)이 그대로면 기본으로 재사용합니다. 이후 `verify`는 제출된
 결과를 재사용하고 그 결과를 쓰는 eval을 리뷰할 수 있습니다. 대상이나 포함한 의존성에
 `fingerprint = false`가 있으면 승인은 현재 Run에만 적용되므로, 다음 Run에서는 사람이
-다시 판정해야 합니다. Run의 검증은 그 시점에 있는 결과로 정해지며, 나중에 승인을 제출해도 지난 Run에 기록된 판정은
-바뀌지 않습니다.
+다시 판정해야 합니다. Run의 검증 결과는 그 시점에 확보된 결과를 기준으로 확정되며, 나중에 승인을 제출해도 지난 Run의
+판정은 바뀌지 않습니다.
 
 아래 명령 표기에서 대괄호는 생략할 수 있는 부분이며, 대괄호는 입력하지 않습니다. 대문자로 쓴
 부분은 바꿔 넣을 값입니다. `REQUEST_ID`에는 `request list`가 출력한 실제 요청 ID를 넣고, `NAME`에는

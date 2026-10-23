@@ -103,7 +103,12 @@ scrolls it. While Technical is shown the instruction stays expanded, so hide
 Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens the Tools and
 Tool log column to 60% of the available width;
-the selected tool shows its action and description. A command tool shows its resolved command line. If a tool's command could not be
+the selected tool shows its action and description. For a waiting review, a command tool
+shows its resolved command line, worked out from the declarations when you first open the
+review, without claiming it or running anything. A refresh keeps it; reopening the review
+keeps it in Monitor, and in standalone Review until you open another Human request there; a
+tool run updates it. A review that no longer waits keeps the command lines worked out
+while it waited; opened fresh, it shows its commands as declared. If a tool's command could not be
 worked out, for example because its program is missing, it shows the declaration and why.
 If the review's declarations could not be read at all, every tool shows its command as
 declared, without a reason; running the tool then reports the error. Fix the declaration
@@ -205,7 +210,9 @@ it asks what to do with them:
 | Esc | Stay |
 | Ctrl-C | Quit, keeping the claims |
 
-If a release fails, Review stays open with the error and keeps those claims. Monitor
+The list is the claims taken in this session, so it can still show one you released or
+submitted elsewhere; keeping quits without touching it. If a release fails, Review stays
+open with the error and keeps those claims. Monitor
 keeps claims when it quits; release one with `u` first to give it back.
 
 After a standalone submission the list returns. A page emptied by reviews goes
@@ -394,15 +401,11 @@ Detail depends on the eval kind:
   the completed result open. Outside editing or work,
   `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
-Browsing is read-only. If publishing to the team store fails after submission,
+If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
-latest. A waiting Human review's Detail shows the tool commands of the declarations as they
-were when you first opened it, without claiming the review or running anything. A refresh
-keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
-open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
-commands shown are updated after one.
+latest.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

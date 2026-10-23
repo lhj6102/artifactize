@@ -4,10 +4,10 @@ Open the app to see, on one screen, every live branch of every project with Runs
 this machine and every Human review waiting for a person. Browse Runs, see what each
 branch would run now, inspect evidence and handle Human sign-offs. The app works on the
 same state as the CLI and TUI, so a change made in one shows in the others. Every release ships it beside the
-commands; see [Desktop app](../getting-started/install.md#desktop-app) to install it.
+commands; see [Desktop app](../getting-started/install-options.md#desktop-app) to install it.
 
 For first-launch command setup, PATH details, updates and cleanup, see the
-[installation guide](../getting-started/install.md#desktop-app).
+[installation guide](../getting-started/install-options.md#desktop-app).
 
 ## Open the app
 
@@ -67,8 +67,9 @@ A folded branch shows its newest Run under its name: a dot in its status colour,
 its status and how long ago it ran (a running one, its time so far). Click a branch
 to expand it and show its newest entry; the chevron before its name expands or folds
 it without showing anything. Expanded, its timeline lists its Runs newest first, each
-with its status, age and Run ID. While a Run is in progress it comes first; otherwise
-the **Current** does, the worktree as it is now. **Older runs** at the end brings
+with its status, age and Run ID. The first entry is **Current**, the worktree as it is
+now; while a Run is in progress, that Run takes Current's place, and Current returns when
+the Run ends. **Older runs** at the end brings
 older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
 of branches can be expanded; the one the app was started for starts expanded.
 
@@ -90,7 +91,7 @@ reviews alike. A plain word matches part of a project, a branch or a waiting rev
 eval, ignoring case; `repo:` and `branch:` match part of that one field.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
-and values: ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
+and values; in an empty field or after a space, ↓ opens the key suggestions. ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the
 mouse. Enter without an open suggestion returns to the list. A query that cannot be
 read, such as an unknown key, shows its error in place of the branches, and neither list
 shows entries until it is fixed. Esc closes suggestions, then puts back `sort:recent`,
@@ -157,10 +158,11 @@ approves nothing.
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does; they have no other keys of their
 own.
-Drag the graph background to pan; wheel, pinch or a background double-click zooms,
-and so do **Zoom In** and **Zoom Out**. A graph shows whole when it first appears, and
-from then on only you move it: working with the Detail keeps the view where you left it.
-**Fit View** shows the whole graph again.
+Drag the graph background to pan; wheel, pinch or a background double-click zooms.
+**Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
+whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
+appears; after that only you move its camera: the Detail, new results, scans and layouts
+leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
@@ -175,8 +177,7 @@ neighbours on each side, failing ones first, and counts the rest.
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it, never beside the Pane. It leaves the camera
-where it is: pan to bring an Artifact under it into view.
+with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only

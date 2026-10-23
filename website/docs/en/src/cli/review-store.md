@@ -28,8 +28,7 @@ loopback. Token commands work on the same file while the server runs, and take
 effect immediately.
 
 Token names are bounded ASCII display labels, not secrets; the
-[CLI identity rules](index.md#identity-arguments) give the syntax and
-pre-store validation.
+[CLI identity rules](index.md#identity-arguments) give the syntax.
 
 `token add` prints a random bearer token once; the store cannot show it again, so save it then.
 `--scopes` is required and has no default; omitting it exits 2. Scopes are `read`

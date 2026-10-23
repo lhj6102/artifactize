@@ -40,10 +40,12 @@ artifactize models codex
 
 Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
-들어가지 않습니다. 같은 eval, Artifact 종류, fingerprint에 대해 다른 모델이나 프로필로 실행해 얻은 결과도 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
+들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
-제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. `{name}`
+제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 대상을
+수정하지 않고 리뷰만 하며, 테스트도 실행하지 않고 코드를 읽어 판단합니다. 테스트를 실행해야
+하는 검사라면 [Runtime eval](runtime.md)을 선언하세요. `{name}`
 참조마다 리뷰어에게 그 Artifact의 이름과 읽을 때 쓸 도구(파일 Artifact라면 경로도)를 알려
 주므로, 지시문에 도구 이름을 적을 필요는 없습니다.
 
@@ -93,11 +95,11 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 턴이 사용량 제한이나 일시적인 오류로 실패했고, 아직 아무것도 출력하지 않았고 토큰도 쓰지
-않았다면 모두 세 번까지 시도합니다. 재시도 전에는 provider가 요청한 시간만큼 대기하고, 요청이
-없으면 250ms, 그다음 500ms를 대기합니다. provider가 요청한 대기 시간이 리뷰의 남은
-시간 이상이면 재시도하지 않고 기존 `RATE_LIMIT` 또는 `TRANSIENT` 오류로 바로 끝납니다. 출력이나 사용량이
-생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 시도마다 수치, `error`,
-`errorCode`가 `usage`에 저장됩니다.
+않았다면 provider가 요청한 시간만큼 대기한 뒤 자동으로 몇 번 다시 시도합니다. 출력이나 사용량이
+생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
+provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
+ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 끝난 결과는 재사용되므로 실패한 리뷰만
+다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
@@ -147,26 +149,27 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 실행됩니다. 각 도구가 무엇을 받고
 돌려주는지는 [Agent 도구](tools/agent.md#agent-tools)에 있습니다. PNG/JPEG/WebP 결과는 모든 백엔드에
-보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는 성공했을 때와 ERROR일 때 모두 저장합니다. 캐시가 적중하면 해당 시도의 사용량을 `reusedUsage`로 옮겨 기록하고, 새로 쓴 사용량에 포함하지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나
+보내며, 이미지를 지원하지 않는 모델은 provider의 오류로 실패합니다. 요청의 시도별 `usage`는 성공했을 때와 ERROR일 때 모두 저장합니다. 캐시가 적중하면 해당 시도의 사용량을 `reusedUsage`에 기록하고, 이번 실행에서 발생한 사용량에는 포함하지 않습니다. 수치는 provider가 보고한 값(0으로 보고한 경우 포함)이며, 추정한 합계나
 비용이 아닙니다. Anthropic의 `inputTokens`는 캐시하지 않은 입력만 센 값이고 캐시 읽기·쓰기
 수치는 따로 있습니다. OpenAI의 입력에는 캐시 읽기가 이미 포함되어 있습니다. 모든 수치를 더하지
 마세요. 보고되지 않은 필드는 빠집니다. 요청에는 판정, 결과, 사용량이 남고, 메시지, reasoning,
 도구 호출과 그 인자, 결과는 리뷰의 [저장된 대화](#saved-conversations)에만 있습니다.
 [`session show --summary`](../cli/index.md#session-summary)가 이를 집계합니다.
 
-백엔드를 믿고 쓰기 전에, 계정에서 쓸 수 있는 정확한 모델 ID와 선언한 도구 하나로 작은 리뷰를
+백엔드를 본격적으로 쓰기 전에, 계정에서 쓸 수 있는 정확한 모델 ID와 선언한 도구 하나로 간단한 시험용 리뷰를
 한 번 실행하고 `run show`로 결과를 확인하세요. 모델 없이 도구와 스키마를 시험하려면
 [가짜 provider](#test-against-a-fake-provider)를 쓰세요.
 
 ## 저장된 대화 {#saved-conversations}
 
-artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그래서 채팅을 이어 가듯 리뷰어가
-무엇을 보고 무엇을 말했는지 읽고, 같은 대화에 이어서 질문할 수 있습니다. 기록된 판정은 절대
+artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그래서 저장된 대화에서 리뷰어가
+무엇을 보고 어떤 답변을 했는지 확인하고, 채팅하듯 이어서 질문할 수 있습니다. 기록된 판정은 절대
 바뀌지 않습니다.
 
-**저장되는 내용.** 리뷰 세션마다 내 계정만 읽을 수 있는 파일 하나에 저장합니다
-([구성](others/state.md#agent-sessions)). 지시문, 모든 메시지, 도구 호출과 그 결과, 수정 요청 턴,
-토큰 수, 리뷰에 쓴 설정이 들어 있습니다. 저장에 실패해도 리뷰는 실패하지 않습니다. 쓰기 오류는 stderr에 출력하고 리뷰는 저장
+**저장되는 내용.** 리뷰 세션은 내 계정만 읽을 수 있는 곳에 저장합니다
+([저장소](others/state.md#agent-sessions)). 지시문, 모든 메시지, 도구 호출과 그 결과, 수정 요청 턴,
+토큰 수, 리뷰에 쓴 설정이 들어 있습니다. 리뷰의 도구 호출은 세션에만 기록되며, 요청에는 판정,
+결과, 사용량만 남습니다. 저장에 실패해도 리뷰는 실패하지 않습니다. 쓰기 오류는 stderr에 출력하고 리뷰는 저장
 없이 계속됩니다.
 
 **참조.** 대화가 저장된 요청을 `verify --wait --json`, `run show`, `request show`로 확인하면 `session` 필드가 나옵니다.
@@ -204,7 +207,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 - **로그인.** `login codex`는 Codex CLI처럼 브라우저에서 ChatGPT 로그인 페이지를 열고,
   로그인하면 artifactize로 돌아옵니다. 브라우저 단계, 주소를 붙여 넣는 대체 방법, 5분 제한은
-  [로그인 설정](../getting-started/install.md#backends)에 있습니다. 토큰과 ChatGPT 계정 ID는
+  [로그인 설정](../getting-started/backends.md)에 있습니다. 토큰과 ChatGPT 계정 ID는
   나만 읽을 수 있는 `$STATE/auth/codex.json`에 저장합니다. `login`, `models`, `verify`에는 같은
   `--state-dir`을 쓰세요. 토큰은 절대 저장소 안에 저장하지 않습니다. `$STATE/auth`가 git 워크트리, artifactize 작업 공간, `--repo` 안에 있으면 `login codex`는 그 폴더 경로를 알려 주며 로그인을 거부하고
   `doctor`는 경고합니다([상태](others/state.md#state)). 저장소 바깥의 상태 디렉터리나

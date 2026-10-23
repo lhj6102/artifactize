@@ -11,6 +11,20 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
+The examples use `python3` to run Python checks and `grep` to search text, so both
+commands must be available in your terminal. `PATH` is the list of directories your
+terminal searches for commands. Check that it finds them:
+
+```sh
+python3 --version
+grep --help
+```
+
+These should print a Python version and grep's help. If either command is not
+found, install that tool or add its directory to `PATH` before continuing. Projects
+run their declared commands as given on every OS; see
+[Operating systems](../features/others/platforms.md).
+
 Each reviewed piece is an **Artifact**. Its `index.artf` is a text configuration
 file listing its checks, called **evals**. It uses **TOML**, a readable `key = value`
 format. A **fingerprint** identifies the reviewed inputs; the built-in
@@ -109,11 +123,13 @@ See [Eval dependencies](../features/artifact.md#eval-dependencies).
 
 ## Optional: Agent tools and the Human flow
 
-The tour above needs no model. This optional part does: first set up the model
-credentials, exact model and profile described in the
-[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
-Add `--profile anthropic` or `--profile codex` to `verify` for another backend; without
-credentials the review is recorded as ERROR and the waiting command exits 2.
+The tour above needs no model. This optional part does: first put an exact model ID
+in the profile you use in `examples/agent-tools/spec/index.artf` and set up its
+credentials, as the
+[agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)
+describes. Add `--profile anthropic` or `--profile codex` to `verify` for the other
+backends. Without credentials the review is recorded as ERROR and the waiting command
+exits 2.
 A Human eval is requested only once every other non-Human eval of its Artifact is
 GREEN, so `spec/review` runs first. Both terminals must use the same temporary state directory. Before starting the
 waiting command below, print the first terminal's value with

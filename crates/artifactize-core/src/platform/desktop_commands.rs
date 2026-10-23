@@ -33,15 +33,14 @@ pub fn setup(state: &Path) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     {
         let _ = state;
-        if super::environment::var("APPIMAGE").is_none_or(|path| path.is_empty()) {
+        let Some(appimage) = super::environment::var("APPIMAGE").filter(|path| !path.is_empty())
+        else {
             return Ok(()); // Includes .deb and install.sh's extracted AppImage.
-        }
+        };
         let home = super::home_directory().ok_or_else(|| io::Error::other("no home directory"))?;
-        let data = super::environment::var("XDG_DATA_HOME")
-            .filter(|path| !path.is_empty())
-            .map(std::path::PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| home.join(".local/share"));
+        let data = super::desktop_app::data_home(super::environment::var, &home);
+        // `doctor` finds an AppImage started directly by this record, whoever owns the commands.
+        super::desktop_app::record_appimage(&data.join("artifactize"), Path::new(&appimage))?;
         let executable = std::env::current_exe()?;
         let bin = executable
             .parent()

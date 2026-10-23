@@ -12,7 +12,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 해시하고, 스크립트를 고를 수도 있습니다. 루트 그래프 Artifact는 항상
 [구조 기반 그래프 fingerprint](#graph-fingerprint)를 쓰며, `fingerprint`를 선언해 그 값을
 바꾸거나 끌 수 없습니다. 아래 방식으로 계산한 폴더·파일 Artifact의 fingerprint에는 도구 선언이나 다른 Artifact의
-값이 들어가지 않습니다. 의존하는 Artifact의 정보는 fingerprint가 아니라 [재사용 키](#the-reuse-key)에 반영됩니다.
+값이 들어가지 않습니다. 의존하는 Artifact의 fingerprint는 [재사용 키](#the-reuse-key)에 반영됩니다.
 
 - 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
   `artifactsum:`을 붙입니다. 폴더라면 `fingerprint = {}`도 됩니다. 폴더는 그 안의 파일을,
@@ -40,8 +40,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 - `ignore`: 그 Artifact의 폴더를 기준으로 한 `.gitignore` 형식의 glob 패턴을 최대 64개 지정할 수 있으며, 패턴은
   중복될 수 없고 부정 패턴은 쓸 수 없습니다. 비어 있거나, `#`로 시작하거나, 제어 문자가 든 패턴은 안 됩니다. 이 패턴에 맞는 파일은
   `.git`, `__pycache__/`, `*.pyc`, `target/`, `node_modules/` 같은 내장 ignore처럼 항상 제외합니다. `.gitignore`에
-  적힌 패턴과 일치하는 파일도 git과 같은 규칙에 따라 제외합니다. 저장소 루트(`--repo`)부터 Artifact와 훑는 디렉터리까지의
-  `.gitignore`가 모두 적용됩니다. 패턴은 그 파일이 있는 폴더를 기준으로 하고, 부정 패턴도 쓸 수
+  적힌 패턴과 일치하는 파일도 git과 같은 규칙에 따라 제외합니다. 저장소 루트(`--repo`)에서 Artifact까지의 경로와
+  탐색 중인 하위 디렉터리에 있는 `.gitignore`를 모두 적용합니다. 패턴은 그 파일이 있는 폴더를 기준으로 하고, 부정 패턴도 쓸 수
   있으며, 하위 디렉터리의 `.gitignore` 규칙이 상위 디렉터리의 규칙보다 우선합니다. `files`에 직접 적은 파일은
   선언 파일이 아니라면 어떤 패턴으로도 제외되지 않습니다.
 
@@ -126,7 +126,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 ## 0.9로 업그레이드 {#upgrading-to-09}
 
 선언, 상태 디렉터리, 터미널 변경은
-[설치: 0.9로 업그레이드](../getting-started/install.md#upgrading-to-09)를 보세요. 재사용 키 v2로는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 이전 결과를 하나도 재사용할 수 없습니다.
+[설치: 0.9로 업그레이드](../getting-started/update.md#upgrading-to-09)를 보세요. 재사용 키 v2로는 스크립트 fingerprint와 팀 리뷰 저장소 기록을 포함해 0.9 이전 결과를 하나도 재사용할 수 없습니다.
 그래서 처음 전체 `verify`를 할 때 Human 승인을 포함해 실행 가능한 eval을 모두 한 번 리뷰하고,
 그 뒤 Run부터는 평소처럼 재사용합니다.
 
@@ -139,12 +139,12 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 - Artifact 이름과 종류, `basis`, fingerprint 범위: artifactsum의 `files`와 `ignore`, 스크립트의
   `command`, `args`, `files`, 또는 `fingerprint = false`.
 - 입력 Artifact와 그것을 쓰는 쪽 사이의 관계: 부모·자식 관계(자식 폴더 경로가 아니라 이름), 지시문 참조,
-  Runtime argv 참조(eval ID, argv 위치, 논리적 접미 경로 포함)와 그 입력 대상.
-- eval ID, 소유 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과 소유자
-  맥락을 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
+  Runtime argv 참조(eval ID, argv 위치, 인자의 Artifact 참조 뒤에 붙인 하위 경로 포함)와 그 입력 대상.
+- eval ID, eval을 선언한 Artifact, 제목, 선택 항목 `gate`, 평가 기준: 기본 프로필 종류, 지시문과
+  소유자가 제공한 추가 정보를 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
 
-평가 실행 옵션은 빠집니다. 여기에는 백엔드, 모델, reasoning과 fingerprint 스크립트 시간 제한을 비롯한 모든 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그가 포함됩니다. 모든 도구 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용도 빠집니다. 선언한 범위 경로와 범위가 정해진
-인자의 접미 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프
+평가 실행 옵션은 빠집니다. 여기에는 백엔드, 모델, reasoning과 fingerprint 스크립트 시간 제한을 비롯한 모든 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그가 포함됩니다. 모든 도구 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용도 빠집니다. 선언한 범위 경로와, 범위가 정해진
+인자의 Artifact 참조 뒤에 붙인 하위 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프
 fingerprint는 바뀌지 않습니다. 실행 옵션은 그래프 fingerprint에서 빠질 뿐, 일반 상태 기록에는 그대로 저장됩니다.
 
 그래프 리뷰는 항상 이전 구조와의 차이가 아니라 현재 구조를 봅니다. 그래프 eval의 제목을 바꾸면

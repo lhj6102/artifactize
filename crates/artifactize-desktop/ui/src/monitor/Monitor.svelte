@@ -299,6 +299,12 @@
     if (inside) void focus("main");
   }
 
+  /** Close of a request or a review in the Main area returns to the Pane; a review first
+   * cancels its running work, then leaves its form, as Esc in it does. */
+  function closeMain() {
+    if (review === undefined || review.escape()) void focus("pane");
+  }
+
   /** Esc in the Main area closes its Detail, else steps back to the Pane. */
   function back() {
     if (m.opened) closeDetail();
@@ -394,8 +400,8 @@
           onkeydown={mainKey}
         >
           {#snippet actions()}
-            {#if shown.kind === "request"}
-              <button class="button small" onclick={() => void focus("pane")}>Close <kbd>Esc</kbd></button>
+            {#if (shown.kind === "request" || shown.kind === "review") && !m.settings}
+              <button class="button small" onclick={closeMain}>Close <kbd>Esc</kbd></button>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}

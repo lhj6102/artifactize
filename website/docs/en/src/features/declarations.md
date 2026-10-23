@@ -136,9 +136,8 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-There is no converter. Have an agent rewrite the declarations and commit the new
-`.artf` files. Families are removed: generate any repeated declarations with your
-own project generator and commit its `.artf` output. Older fields such as
+To migrate, follow [Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
+Older fields such as
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
 they are not aliases for the new fields. The artifactsum form's old `dependencies`
@@ -306,7 +305,7 @@ reviewed, also with `fingerprint = false`:
 Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/install.md#upgrading-from-011).
+[upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 ## Eval mutex tags
 
@@ -456,8 +455,10 @@ review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare
 (`fingerprint.files`, `fingerprint.script.files` and `execution_paths`) are limited to 1024.
-`config check` checks the names and syntax of the profile each eval declares; references
-that appear only in a `profile_variants` entry are checked when that variant is selected, so
+`config check` checks the names and syntax of the profile each eval declares. The syntax and
+path rules above apply to every `profile_variants` entry too, so a malformed reference such
+as `{app}/../outside` in any variant fails `config check`. Whether a reference that appears
+only in a variant names an existing Artifact is checked when that variant is selected, so
 run `status SELECTOR --profile NAME` before relying on a variant. Whether a referenced file
 exists, and that no symbolic link is followed, is checked when the command is prepared.
 

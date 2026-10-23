@@ -3,7 +3,7 @@
 # with the shared theme in ../theme/.
 [book]
 title = "Artifactize 문서"
-description = "개성 있는 팀원과 그 에이전트를 위한 AI 네이티브 협업 계층입니다. Artifact마다 eval을 두고, 모든 리뷰는 유효한 동안 재사용합니다."
+description = "저마다 다르게 일하는 팀원들이 에이전트와 함께 협업하도록 돕는 AI 네이티브 도구입니다. Artifact마다 eval을 두고, 모든 리뷰는 유효한 동안 재사용합니다."
 authors = ["Hyukjin LIM"]
 language = "ko"
 src = "src"

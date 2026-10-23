@@ -15,8 +15,10 @@ else (on Windows) `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifac
 output under `PATH/runs`. Saved Runs stay readable after their repository is removed.
 
 The state may not live inside the reviewed repository or another artifactize
-workspace (a folder with a `.artf` declaration, a legacy `artifactize.json` or
-`.artifactizeignore`, or above one): a command refuses it before writing. If you can
+workspace: a command refuses it before writing when the state folder or any folder
+above it holds a `.artf` declaration, a legacy `artifactize.json` or
+`.artifactizeignore`. A parent folder that only contains project folders is fine,
+for example `/work/.state` beside `/work/app/index.artf`. If you can
 search a parent folder but not list it, artifactize cannot see every declaration in it,
 so keep the state outside your projects.
 
@@ -144,7 +146,7 @@ Each Agent review's conversation is saved under the state, for
 |---|---|---|
 | `enabled` | `true` | `false` saves no new conversation; saved ones stay readable |
 | `maxBytes` | 1 GiB | The store's size that starts a cleanup; at least 1 |
-| `targetBytes` | 768 MiB, or three quarters of `maxBytes` when that is 768 MiB or less | The size a cleanup brings the store down to; must be lower than `maxBytes` |
+| `targetBytes` | 768 MiB when `maxBytes` is larger, otherwise 3 × ⌊`maxBytes` ÷ 4⌋ bytes | The size a cleanup brings the store down to; must be lower than `maxBytes` |
 
 A cleanup runs when a `verify` Run has finished its evals, and on `prune`. When the
 conversations take more than `maxBytes`, it deletes the oldest sessions until they take
@@ -153,9 +155,8 @@ conversations take more than `maxBytes`, it deletes the oldest sessions until th
 cleanup that fails during `verify` is reported on stderr and leaves the Run as it is. An
 invalid `agentSessions` value fails `verify` and `prune` (exit 2), and `doctor` reports it.
 
-The store is `$STATE/agent-sessions/`, readable only by you, with one JSON Lines file per
-session named by its `sessionId`. `session show --json` prints its events; each has a
-`kind`:
+The store is `$STATE/agent-sessions/`, readable only by you. `session show --json` prints
+a session's events; each has a `kind`:
 
 | `kind` | Holds |
 |---|---|
@@ -174,7 +175,7 @@ conversation and its tool calls, which
 ### Follow-up replay
 
 `session send` asks the saved review a question with the same backend, model and
-reasoning, replaying the saved conversation so the provider can reuse its cache. The
+reasoning, continuing its saved conversation. The
 project's current tools are offered again, and if a covered Artifact changed since the
 review, the header and the model are told. The question is a follow-up, not a new review:
 the model answers in plain text, may use the tools, and the recorded verdict never changes.

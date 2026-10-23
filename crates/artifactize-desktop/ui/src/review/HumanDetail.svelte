@@ -203,13 +203,12 @@
       {:else if review.notice}
         <p class="notice" class:error={review.notice.error} role="status">{review.notice.text}</p>
       {/if}
-      <div class="buttons">
-        {#if !review.busy && !review.settled && review.owned}
+      <!-- Close belongs to the pane that shows the review, in its header. -->
+      {#if !review.busy && !review.settled && review.owned}
+        <div class="buttons">
           <button class="button" onclick={() => void review.release()}>Release</button>
-        {/if}
-        <span class="spacer"></span>
-        <button class="button" onclick={() => void back()}>Close</button>
-      </div>
+        </div>
+      {/if}
     </footer>
   {/if}
 </section>
@@ -351,8 +350,5 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-  }
-  .spacer {
-    flex: 1;
   }
 </style>
