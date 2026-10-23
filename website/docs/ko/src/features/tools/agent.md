@@ -12,8 +12,8 @@
 만들기 전에 이를 확인합니다. 인자 검사에 실패하면 오류 메시지에 이스케이프 처리한 인스턴스·스키마 경로를 최대 다섯 개(총 4 KiB 미만)
 표시하며, 인자 값은 표시하지 않습니다.
 
-설명은 비어 있지 않아야 하고, UTF-16 코드 단위 4000개 이하여야 합니다. 일반 텍스트라면 대략
-4000자이고, 이모지 같은 일부 문자는 2개로 셉니다. 설명은 `{artifactName}`
+설명은 비어 있지 않아야 하고, 4000자 이하여야 하며(이모지처럼 기본 다국어 평면 밖의 문자는
+2자로 셉니다), `{artifactName}`
 치환(정규 Artifact ID)만 지원합니다. 내장 도구 참조는 `builtin`, 선택 항목인 `args`와
 `description`을 받습니다. `args`가 없으면 `read`, `list`, `glob`, `grep`, `view_image`는 아래의
 모델 입력을 받습니다. `args`가 있으면 `read`, `list`, `section`, `help`는 고정된 대상에 대해
@@ -140,7 +140,7 @@ JSON 명령은 `mimeType`과, `data`(표준 base64 바이트)나 `path`(출력 �
 {"content":[{"type":"image","mimeType":"image/png","path":"screenshots/board.png"}]}
 ```
 
-두 번째 형태의 파일은 요청의 `context.outputDir` 아래에 쓰세요. 상대 경로는 `context.outputDir`을 기준으로 해석하며,
+두 번째 형식으로 파일 경로를 반환하려면 해당 파일을 요청의 `context.outputDir` 아래에 저장하세요. 상대 경로는 `context.outputDir`을 기준으로 해석하며,
 절대 경로도 이 디렉터리 안을 가리킬 때만 허용합니다. 상위 경로로 올라가는 경로, 어느
 구성 요소에서든 심볼릭 링크를 거치는 경로, 특수 파일, 그 출력 디렉터리 밖의 파일은 거부합니다. artifactize는
 호출의 출력을 지우기 전에 이미지 바이트를 읽어 결과에 담으므로, 돌려받는 결과는 로컬 파일 경로가 아니라 이미지
@@ -196,8 +196,8 @@ protocol = "json"
 ```
 
 `start`와 `stop`에는 `command`와 `args`가 필요하고, 선택 필드는 `execution_paths`뿐입니다. 실행 파일을 찾는 방식과 argv에 적용하는 범위는 명령 도구와 같습니다. stdin으로는 명령 도구와 같은 형식의 JSON 요청을 받으며, `args: {}`를 씁니다. `description`,
-`protocol`, `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은 자기
-Artifact에 있는 세션을 가리켜야 하며, 내장 도구와 Human 도구는 `session`을 받지 않습니다. 도구
+`protocol`, `timeout_ms`, 동시 실행 옵션은 받지 않습니다. 명령 도구의 `session`은 그 명령
+도구와 같은 Artifact에 선언한 세션을 가리켜야 하며, 내장 도구와 Human 도구는 `session`을 받지 않습니다. 도구
 이름처럼, eval이 쓸 수 있는 세션의 `<session>_<artifact>` 이름도 겹치면 안 됩니다. 겹치면
 `config check`는 통과하지만 리뷰는 `PREPARATION_FAILED`로 실패하니, 세션이나 Artifact의 이름을
 바꾸세요.

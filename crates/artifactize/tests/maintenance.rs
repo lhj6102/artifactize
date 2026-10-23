@@ -151,7 +151,8 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "providers",
             "codex",
             "remote",
-            "desktop"
+            "desktop",
+            "release"
         ]
     );
     // A test build may sit beside an app build, so the check's form depends on this machine.
@@ -169,6 +170,12 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         }
         status => panic!("desktop check {status}"),
     }
+    // A newer release or a failed lookup only warns; this build names its own version.
+    assert_ne!(check(&absent, "release")["status"], "FAIL");
+    assert_eq!(
+        check(&absent, "release")["details"]["running"],
+        env!("CARGO_PKG_VERSION")
+    );
     assert_eq!(check(&absent, "limits")["details"], json!({"backends":{}}));
     let sessions = &check(&absent, "sessions")["details"];
     assert_eq!(

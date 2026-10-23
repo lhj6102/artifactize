@@ -8,7 +8,8 @@
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
 # the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
-# %LOCALAPPDATA%\Programs\artifactize and adds that directory to the user Path. When the
+# %LOCALAPPDATA%\Programs\artifactize with a .artifactize-receipt naming this script, so
+# artifactize can tell how to update it, and adds that directory to the user Path. When the
 # release zip carries the desktop app, it installs artifactize-desktop.exe beside them (the
 # app shows the Runs that artifactize.exe starts) and adds an Artifactize Start menu shortcut.
 # Needs no administrator rights. Works in Windows PowerShell 5.1 and PowerShell 7.
@@ -187,6 +188,8 @@
     foreach ($command in $files) {
         Say "installed $command $version to $(Join-Path $dir "$command.exe")"
     }
+    # artifactize reads it to name this script as the way to update the commands beside it.
+    Set-Content -LiteralPath (Join-Path $dir '.artifactize-receipt') -Value 'install.ps1' -Encoding ascii
     if ($files -contains 'artifactize-desktop') {
         $programs = [Environment]::GetFolderPath('Programs')
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $programs 'Artifactize.lnk'))

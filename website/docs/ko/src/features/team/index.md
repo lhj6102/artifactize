@@ -1,7 +1,7 @@
 # 팀으로 일하기 {#working-as-a-team}
 
-여러 머신과 CI는 공유 리뷰 저장소 하나,
-`artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))를 통해 서로의 판정을 재사용할 수 있습니다. 각 머신은
+`artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 공유 리뷰 저장소를 하나 운영하면
+여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 각 머신은
 각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
 돌려주므로, 강제로 다시 리뷰하는 등 새 리뷰를 수행하면 모든 팀원이 이전 판정 대신 새 판정을 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
 
@@ -30,8 +30,8 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 (이 예에서는 `/srv/backups`). `-readonly`를 쓰면 원본 경로를 잘못 입력해도
 그 위치에 빈 데이터베이스가 새로 생기지 않습니다.
 
-서버와 클라이언트는 함께 업그레이드하세요. 0.9의 재사용 키 v2는 더 오래된 기록과 일치하지 않으므로, Human 승인을 포함한
-모든 실행 가능한 eval에 새 리뷰가 한 번씩 필요합니다. 전체 레퍼런스는 [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)를
+서버와 클라이언트는 함께 업그레이드하세요. 0.9의 재사용 키 v2는 이전 기록과 일치하지 않으므로, Human 승인을 포함해
+실행 가능한 모든 eval을 한 번씩 새로 리뷰해야 합니다. 전체 레퍼런스는 [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)를
 보세요.
 
 ## 팀원을 안전하게 연결하기 {#connect-teammates-securely}

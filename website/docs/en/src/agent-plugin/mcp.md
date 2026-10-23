@@ -158,7 +158,7 @@ JSON null (or an empty array for history), just as in CLI JSON output. Static
 trusted fingerprint commands and consult the configured review store; declared
 commands are not an OS sandbox. MCP exposes no login/logout actions and never
 returns credentials. `models`, `doctor` and `remote_status` may check backend
-readiness. Codex model listing can renew artifactize-owned tokens or remove the
+readiness, and `doctor` looks up a [newer release](../getting-started/update.md#newer-releases) as the CLI does. Codex model listing can renew artifactize-owned tokens or remove the
 stored sign-in after a terminal refresh rejection, just as the CLI does.
 
 ### Detail pages
@@ -178,9 +178,10 @@ not preserved. Reinvoke the **same tool with the same arguments**, adding
 selects the next group of Run records; it is distinct from the cursor continuing
 one group's JSON. `verify_result` instead pages its structured `findings` array.
 
-A cursor works only with the same tool and arguments while the saved evidence is
-unchanged; time passing alone does not expire it. Otherwise it is rejected: start that
-inspection again from the first page. A failed
+A cursor works only with the same tool and arguments. Each later page runs the inspection
+again, and the cursor works only while that answer is unchanged: a new Run or result, but
+also a changed file, model list or backend check, rejects it. Time passing alone does not
+expire it. When a cursor is rejected, start that inspection again from the first page. A failed
 tool call returns MCP `isError:true` with `{code,message}`. `operation_failed` carries
 the CLI's error message, cut to its first 2,048 characters; `response_too_large` means
 the answer does not fit a detail page, so narrow the inspection (for example a

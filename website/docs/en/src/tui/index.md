@@ -191,7 +191,7 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   button is an exception: when idle it returns directly to the tree with the form
   retained; while busy it cancels the work first. Esc closes
   one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
+  draft kept, then leave Detail. In standalone `review`, Close works like Esc. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
@@ -240,11 +240,12 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-The screen always shows **Compact + Full + Preview**: each side pane is 16 columns
-below 100 terminal columns, 28 up to 139 and 36 from 140, and the focused pane takes
-the middle. Scope shows Full + Preview, and Detail shows Tree Compact + Detail Full.
-No level is hidden on a narrow terminal, so on a very small one the focused pane can
-shrink to nothing; widen the terminal when it needs more room.
+The screen always shows **Compact + Full + Preview**, the focused pane in the middle
+with the room the side panes leave. Scope shows Full + Preview, and Detail shows Tree
+Compact + Detail Full. Each side pane is 16 columns wide in a terminal narrower than 100
+columns, 28 from 100 columns and 36 from 140. In a terminal too narrow for them, the side panes
+share its width and the focused pane can shrink to nothing; widen the terminal when the
+focused pane needs more room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate

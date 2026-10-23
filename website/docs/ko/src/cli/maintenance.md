@@ -94,6 +94,13 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
   같은 폴더, `PATH`, 이 시스템의 설치 프로그램이 앱을 두는 위치에서 찾고, 세부 정보의 `path`에 앱
   위치가 나옵니다. 앱이 없으면 [설치 페이지](https://artifactize.dev/#start) 링크와 함께 경고가
   나옵니다. 명령은 앱 없이도 동작합니다.
+- `release`: artifactize의 새 릴리스가 나왔는지 확인합니다. `doctor`가 네트워크에 접속하는
+  유일한 검사입니다([새 릴리스 알림](../getting-started/update.md#newer-releases)). 새 릴리스가
+  있으면 경고를 표시하고, `latest`에는 최신 버전을, `update`에는 현재 artifactize의 설치 방식에
+  맞는 업데이트 방법을 담습니다. 실행할 `command`, 내려받을 파일 `download`(`.deb`는 설치할 `command`
+  포함), 설치 방법을 알 수 없으면 릴리스 `page`입니다. `channel`은 설치 방식을, `running`은 지금
+  실행 중인 artifactize의 버전을 나타냅니다. 확인에 실패해도 경고입니다. Microsoft Store 설치, 개발 빌드,
+  `ARTIFACTIZE_NO_UPDATE_CHECK`를 설정한 경우에는 확인하지 않습니다.
 
 심각한 오류가 없으면 0, 있으면 1, 호출이 잘못되었으면 2로 종료합니다.
 

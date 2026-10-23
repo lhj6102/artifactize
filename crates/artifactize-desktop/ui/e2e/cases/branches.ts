@@ -11,10 +11,11 @@ import { git } from "../environment.ts";
 import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { exists, nativePath, readText, removeTree, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, selectBranch, showRun, waiting, leans } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -186,6 +187,27 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await names(), [last, ...before.slice(0, -1)]);
       const starred = (await branch(browser, last))!;
       assert.ok(starred.starred && starred.star === "★", `its star is on: ${JSON.stringify(starred)}`);
+      // A second star: the starred branches keep the search's order among themselves, before
+      // the others, with sort:recent and with sort:name alike.
+      const second = before.at(-2)!;
+      const unstarred = before[0];
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${(await branch(browser, second))!.label}`)}]`).click();
+      const recent = [second, last, unstarred];
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(recent), `both starred first, in sort:recent order: ${JSON.stringify(await names())}`);
+      const query = async (text: string) => {
+        const read = await checkpoint(browser);
+        await fill(browser, SEARCH, text);
+        await commandsRendered(browser, read);
+      };
+      const byName = (list: string[]) => [...list].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+      await query("sort:name");
+      const named = [...byName([second, last]), unstarred];
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(named), `both starred first, in sort:name order: ${JSON.stringify(await names())}`);
+      await query("sort:recent");
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(recent), "sort:recent again");
+      // Taking the second star away lists it with the others again.
+      await browser.$(`button[aria-label=${JSON.stringify(`Star ${(await branch(browser, second))!.label}`)}]`).click();
+      await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify([last, ...before.slice(0, -1)]), `only ${last} starred again: ${JSON.stringify(await names())}`);
       // Kept in the state directory, for the next monitor of this user.
       await waitFor(browser, async () => kept(fixture.state)?.length === 1, "the star saved");
     },

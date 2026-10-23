@@ -16,6 +16,7 @@ mod graph;
 mod human;
 mod ids;
 mod launch;
+mod release;
 mod request;
 mod settings;
 mod status;
@@ -61,6 +62,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             tools::artifact_tools,
             tools::artifact_tool_run,
             request::request_detail,
+            release::release_notice,
+            release::release_open,
             human::human_taken,
             transcript::transcript_open,
             transcript::transcript_window,
