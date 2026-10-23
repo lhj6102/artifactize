@@ -401,7 +401,7 @@ mod tests {
         .unwrap();
         let saved = Limits::set_signoff_idle_grace(&state, Duration::ZERO).unwrap();
         assert_eq!(saved.signoff_idle_grace(), Duration::ZERO);
-        assert_eq!(saved.limit(Backend::Codex), Some(4));
+        assert_eq!(saved.limit(&crate::config::Provider::Codex.into()), Some(4));
         assert_eq!(saved.agent_sessions().max_bytes, 4000);
         assert_eq!(saved.agent_sessions().target_bytes, 3000);
         assert!(
