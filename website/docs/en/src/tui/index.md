@@ -396,16 +396,15 @@ Detail depends on the eval kind:
   the completed result open. Outside editing or work,
   `q` quits, `?` shows monitor help and `!` opens the next attention item.
 
-Browsing is read-only. If publishing to the team store fails after submission,
+If publishing to the team store fails after submission,
 Detail shows the completed local result
 and the publication failure rather than asking you to submit again. Terminal
 settings are restored on exit. Monitor and Review update on their own when a Run changes, within five seconds at the
 latest. A waiting Human review's Detail shows the tool commands of the declarations as they
 were when you first opened it, without claiming the review or running anything. A refresh
 keeps them; reopening the review keeps them in Monitor, and in standalone Review until you
-open another Human request there, after which they are worked out again. Each tool run checks the review's declarations again, and the
-commands shown are updated after one. A follower opens its
-original request.
+open another Human request there, after which they are worked out again. The commands shown are
+updated after each tool run.
 
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims

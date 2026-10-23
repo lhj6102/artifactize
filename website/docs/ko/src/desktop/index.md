@@ -158,8 +158,7 @@ Run이 바뀌면 그래프의 색이 그 자리에서 바뀌고, Artifact나 간
 ### Detail {#detail}
 
 Artifact를 클릭하면 그 **Detail**이 열립니다. 그래프 오른쪽 위에 떠 있으며
-뒤로 그래프가 계속 보이고, Pane 옆에 붙지 않습니다. 보기 영역은 그대로 두므로,
-Detail 아래에 가려진 Artifact를 보려면 이동하세요.
+뒤로 그래프가 계속 보이고, Pane 옆에 붙지 않습니다.
 다른 Artifact를 클릭하면
 그 Artifact의 Detail이 표시됩니다. 그래프
 배경, **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는

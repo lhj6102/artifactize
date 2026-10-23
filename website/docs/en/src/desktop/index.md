@@ -178,8 +178,7 @@ neighbours on each side, failing ones first, and counts the rest.
 ### Detail
 
 A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it, never beside the Pane. It leaves the camera
-where it is: pan to bring an Artifact under it into view.
+with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only

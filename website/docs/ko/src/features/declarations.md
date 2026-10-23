@@ -118,8 +118,7 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 .artifactizeignore was renamed to .artfignore.
 ```
 
-변환기는 없습니다. 에이전트에게 선언을 다시 쓰게 하고 새 `.artf` 파일을 커밋하세요. family는
-없어졌으니, 반복되는 선언은 프로젝트의 생성기로 만들고 그 `.artf` 출력을 커밋하세요.
+옮기는 방법은 [0.9로 업그레이드](../getting-started/update.md#upgrading-to-09)를 보세요.
 `staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
 `reviewPolicy.maxConcurrentExecutors`, 도구 메타데이터 `observation` 같은 예전 필드는
 거부하며, 새 필드의 별칭이 아닙니다. artifactsum 형식의 예전 `dependencies` 옵션도
@@ -238,8 +237,8 @@ artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf`
 실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 다른 옆 파일에 접근할 수 있는 것은 아닙니다.
 내장 도구와 범위가 정해진 argv 참조로는 대상 파일과 참조한 Artifact에만 접근할 수 있습니다. `{name}`은 폴더가
 아니라 대상 파일 경로가 되며, 파일 참조에는 `/path`를 붙일 수 없습니다. `list .`는 파일
-Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 그 루트 안의 경로는 들어 있는
-폴더를 기준으로 합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
+Artifact의 가상 루트를 가리키며 대상 파일 이름을 보여 줍니다. 가상 루트 안의 경로는 대상 파일이
+있는 폴더를 기준으로 지정합니다. 기본 artifactsum은 대상 파일만 포함합니다. 작업 공간에 파일
 Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 
 파일을 해시하려면 `fingerprint`를 생략하세요. artifactsum의

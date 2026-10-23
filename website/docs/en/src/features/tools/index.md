@@ -15,7 +15,8 @@ show images or sections see only their admitted Artifact scope, not the whole
 machine. `graph` reads every current declaration of the project, whichever
 Artifacts the eval admits. `help` runs a real program found by ordinary lookup,
 and declared command tools are trusted programs too: neither is **an OS
-sandbox**.
+sandbox**: they run with your permissions and can reach files and credentials outside
+the declared Artifacts.
 
 ```toml
 [views.agent_tools]
