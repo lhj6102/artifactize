@@ -42,6 +42,7 @@ pub struct CommandTool {
     #[serde(default = "empty_schema")]
     pub input_schema: Arc<Value>,
     pub protocol: ToolProtocol,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<crate::scope::Argument>,
     #[serde(
@@ -123,6 +124,7 @@ pub struct ToolSession {
     deny_unknown_fields
 )]
 pub struct SessionCommand {
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<crate::scope::Argument>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -236,6 +238,7 @@ impl<'de> Deserialize<'de> for HumanTool {
 pub struct HumanCommandTool {
     pub description: String,
     pub kind: HumanToolKind,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     #[serde(deserialize_with = "crate::scope::human_arguments")]
     pub args: Vec<crate::scope::Argument>,

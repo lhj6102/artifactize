@@ -247,6 +247,7 @@ pub enum Profile {
     },
     Human {},
     Runtime {
+        #[serde(serialize_with = "crate::platform::serialize_program")]
         command: String,
         args: Vec<crate::scope::Argument>,
         #[serde(
@@ -728,7 +729,7 @@ impl From<Fingerprint> for Value {
                 timeout_ms,
             } => serde_json::json!({
                 "script": {
-                    "command": command,
+                    "command": crate::platform::program_text(&command),
                     "args": args,
                     "files": files,
                     "timeoutMs": timeout_ms.map(|value| value.as_millis()),

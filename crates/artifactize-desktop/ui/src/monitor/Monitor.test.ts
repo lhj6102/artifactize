@@ -44,19 +44,26 @@ afterEach(() => {
 /** The fixed instant of the scan with this revision. */
 const scannedAt = (revision: number) => Date.UTC(2026, 9, 21, 9, 0, revision);
 
-const current = (revision: number): CurrentView => ({
+const current = (revision: number, checking = 0): CurrentView => ({
   branch: branchKey("main"),
   scannedAt: scannedAt(revision),
   fingerprint: `graph:revision-${revision}`,
-  structure: `app → graph; criteria revision ${revision}`,
-  tree: [],
   revision,
+  scanning: checking > 0,
+  checking,
+  artifacts: 2,
+  failure: null,
 });
 
+/** The structure text of the scan with this revision. */
+const structure = (revision: number) => `app → graph; criteria revision ${revision}`;
+
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
-function backend(launch: LaunchView, snapshot: () => BrowseView) {
+function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }) {
   const calls: { command: string; args: unknown }[] = [];
   let scans = 0;
+  /** The newest step the backend holds. */
+  let shown: CurrentView | null = null;
   let stage: "claim" | "review" = "claim";
   mockIPC(
     (command, args) => {
@@ -68,7 +75,12 @@ function backend(launch: LaunchView, snapshot: () => BrowseView) {
         case "redraw":
           return snapshot();
         case "current_scan":
-          return current(++scans);
+          shown = steps.view(++scans);
+          return shown;
+        case "current_view":
+          return shown;
+        case "current_structure":
+          return structure(scans);
         case "graph":
           return {
             source: (args as { source: unknown }).source,
@@ -99,14 +111,19 @@ function backend(launch: LaunchView, snapshot: () => BrowseView) {
   );
   const navigations = () => calls.filter((call) => call.command === "browse").map((call) => (call.args as { navigate: Navigate }).navigate);
   const scanned = () => calls.filter((call) => call.command === "current_scan").length;
-  return { calls, navigations, scanned };
+  /** The running scan publishes `view`. */
+  const publish = async (view: CurrentView) => {
+    shown = view;
+    await emit("current-changed", { branch: view.branch });
+  };
+  return { calls, navigations, scanned, publish };
 }
 
 const monitor = (request: string | null = null): LaunchView => ({ mode: "monitor", state: "/state", reviewer: "alice", request });
 
 it("opens on the Current of the branch it was started for, and scans it again on Refresh, Ctrl+R and F5", async () => {
   const main = branch("main", [{ kind: "current" }]);
-  const { scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
+  const { calls, scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
   render(App);
   /** The header names the time of the scan with this revision. */
   const header = async (revision: number) => {
@@ -121,17 +138,38 @@ it("opens on the Current of the branch it was started for, and scans it again on
   // The launched branch opens expanded; its Current is the entry shown.
   expect(screen.getByRole("button", { name: /^Current\b/ }).getAttribute("aria-pressed")).toBe("true");
   await fireEvent.click(screen.getByText(/Structure and evaluation criteria/));
-  expect(screen.getByText("app → graph; criteria revision 1")).toBeTruthy();
+  await waitFor(() => expect(screen.getByText(structure(1))).toBeTruthy());
   await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(screen.getByText("app → graph; criteria revision 2")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(structure(2))).toBeTruthy());
   await header(2);
   await fireEvent.keyDown(window, { key: "r", ctrlKey: true });
-  await waitFor(() => expect(screen.getByText("app → graph; criteria revision 3")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(structure(3))).toBeTruthy());
   await fireEvent.keyDown(window, { key: "F5" });
-  await waitFor(() => expect(screen.getByText("app → graph; criteria revision 4")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(structure(4))).toBeTruthy());
   expect(scanned()).toBe(4);
+  // Only a person's refresh asks for the files as they are now, even past a scan still running.
+  expect(calls.filter((call) => call.command === "current_scan").map((call) => (call.args as { refresh: boolean }).refresh))
+    .toEqual([false, true, true, true]);
   // Each manual refresh also read the state again with every cache dropped.
   expect(navigations().filter((step) => step.resync)).toHaveLength(2);
+});
+
+it("draws a Current's graph at once, counting the Artifacts still being checked until its scan ends", async () => {
+  const main = branch("main", [{ kind: "current" }]);
+  const { publish } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }), {
+    view: (scan) => current(scan, 2),
+  });
+  render(App);
+  await waitFor(() => expect(screen.getByText("Checking 2 of 2 Artifacts…")).toBeTruthy());
+  await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
+  expect(screen.getByRole("button", { name: "Refresh" }).hasAttribute("disabled")).toBe(true);
+  await publish(current(2, 1));
+  await waitFor(() => expect(screen.getByText("Checking 1 of 2 Artifacts…")).toBeTruthy());
+  await publish({ ...current(3), failure: "Fingerprint script for Artifact app failed." });
+  await waitFor(() => expect(screen.getByText("Fingerprint script for Artifact app failed.")).toBeTruthy());
+  // The graph stays.
+  expect(screen.getByLabelText("app: reused")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Refresh" }).hasAttribute("disabled")).toBe(false);
 });
 
 it("expands a clicked branch to its timeline, moves through timelines and the Waiting stack with the keys, and opens a review", async () => {

@@ -159,7 +159,7 @@ choice.
 
 | Mode | Dispatch |
 |---|---|
-| Default | Start an eval once its dependencies have GREEN evidence |
+| Default | Start an eval once no execution gate blocks it; a selected sign-off still pending does not hold back what depends on it, whose GREEN results stay PROVISIONAL until it is approved |
 | `--speculate` | Start runtime and Agent reviews before unresolved gates |
 
 Sign-offs are never started speculatively; when they are asked for and how what relies on

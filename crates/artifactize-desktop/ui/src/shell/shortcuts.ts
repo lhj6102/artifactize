@@ -45,7 +45,7 @@ const GRAPH: Section = {
     ["Esc", "Close the Detail, then back to the Pane"],
     [
       "Colours",
-      "Run: green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked. Current: teal reused · blue would run · grey waiting · dark red blocked",
+      "Run: green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked. Current: teal reused · blue would run · grey waiting · dark red blocked · pale grey checking",
     ],
   ],
 };

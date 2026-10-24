@@ -111,6 +111,9 @@ it. So a person who asked for a sign-off has time to claim it, also when every o
 was reused, and one reviewer's submission leaves the next time to claim theirs. The Run
 then ends:
 
+- **INCOMPLETE** when an execution budget ran out or a `--reuse-only` eval had no result
+  to reuse, whatever the other results, a RED one included;
+- otherwise **ERROR** when any result is ERROR;
 - **GREEN** when every result, sign-offs included, is GREEN;
 - **RED** when any result, a sign-off included, is RED;
 - **YELLOW** (exit 5) when every other result is GREEN and a sign-off is still

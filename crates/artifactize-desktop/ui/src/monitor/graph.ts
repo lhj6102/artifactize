@@ -13,13 +13,14 @@ export const WORDS: Record<Light, string> = {
   blocked: "blocked by upstream",
   run: "would run",
   reused: "reused",
+  checking: "checking",
 };
 
 /** Legend order: as a Run goes, then what went wrong. */
 export const LEGEND: Light[] = ["green", "active", "waiting", "red", "error", "blocked"];
 
 /** A Current's legend: what verify would do with each Artifact now. */
-export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked"];
+export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked", "checking"];
 
 export type Point = { x: number; y: number };
 

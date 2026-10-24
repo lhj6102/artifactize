@@ -307,6 +307,6 @@ describe("SourceGraph", () => {
     expect(node("a:graph")?.textContent?.trim()).toBe("graph");
     expect(node("a:app")?.dataset.light).toBe("reused");
     const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")].map((item) => item.textContent?.trim());
-    expect(legend).toEqual(["reused", "would run", "waiting", "blocked by upstream"]);
+    expect(legend).toEqual(["reused", "would run", "waiting", "blocked by upstream", "checking"]);
   });
 });

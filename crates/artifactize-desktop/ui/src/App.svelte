@@ -5,7 +5,7 @@
   import { Dialog } from "bits-ui";
   import { onMount, tick } from "svelte";
   import brandMark from "../../../../assets/brand/artifactize-icon-mark.svg";
-  import { call, message, onHumanToolLog, onStateChanged } from "./ipc/client";
+  import { call, message, onCurrentChanged, onHumanToolLog, onStateChanged } from "./ipc/client";
   import Monitor from "./monitor/Monitor.svelte";
   import LeaveDialog from "./review/LeaveDialog.svelte";
   import Palette from "./shell/Palette.svelte";
@@ -40,6 +40,8 @@
     const unchanged = onStateChanged((resync) => browse.refresh(resync));
     // What Human tools print, for whichever review or Artifact shows it.
     const unlogged = onHumanToolLog((logs) => app.logged(logs));
+    // Each step of the shown Current's scan.
+    const unscanned = onCurrentChanged((branch) => void current.changed(branch));
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
@@ -51,6 +53,7 @@
       unwatched();
       unchanged();
       unlogged();
+      unscanned();
       unlisten?.();
     };
   });
@@ -62,7 +65,7 @@
   /** Read the state afresh and scan the branches again; a shown Current is scanned again too. */
   async function refresh() {
     const shown = m.shown;
-    if (shown.kind === "current") void current.scan(shown.branch);
+    if (shown.kind === "current") void current.scan(shown.branch, true);
     const read = await browse.reload();
     // E2E builds only: witness this refresh once its own read succeeded and settled on screen.
     if (import.meta.env.MODE === "e2e" && read) {

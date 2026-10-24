@@ -12,13 +12,14 @@ const LABELS: Record<VerdictLight, string> = {
 };
 
 /** What verify would do with a Current's Artifact, and its legend's words. */
-export type CurrentLight = "reused" | "run" | "waiting" | "blocked";
+export type CurrentLight = "reused" | "run" | "waiting" | "blocked" | "checking";
 
 const CURRENT_LABELS: Record<CurrentLight, string> = {
   reused: "reused",
   run: "would run",
   waiting: "waiting",
   blocked: "blocked by upstream",
+  checking: "checking",
 };
 
 export function graphAppearance(browser: WebdriverIO.Browser) {

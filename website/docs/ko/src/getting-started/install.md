@@ -69,6 +69,6 @@ codex plugin add artifactize@artifactize
 
 ## 다음 단계 {#next}
 
-- [가이드](guide.md): 모델 없이 예제 프로젝트로 해 보는 5분짜리 둘러보기입니다.
+- [가이드](guide.md): 모델 없이 예제 프로젝트를 실행해 보는 5분짜리 실습입니다.
 - [백엔드와 로그인](backends.md): Agent eval을 모델 서비스에 연결합니다.
 - [업데이트와 제거](update.md): 업데이트, 업그레이드 안내, 상태가 저장되는 곳, 제거 방법을 다룹니다.

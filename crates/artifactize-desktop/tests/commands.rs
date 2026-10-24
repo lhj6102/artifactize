@@ -722,12 +722,13 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
     "run-agent-1".into()
 }
 
-/// A failure bound for transcript jobs, never the ordering or success condition.
-const TRANSCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// A failure bound for background jobs (transcripts, Current scans), never the ordering or
+/// success condition.
+const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Read windows of `handle` until its indexing settles.
 fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Value) -> Value {
-    let deadline = std::time::Instant::now() + TRANSCRIPT_TIMEOUT;
+    let deadline = std::time::Instant::now() + JOB_TIMEOUT;
     let mut movement = movement;
     loop {
         let view = invoke(
@@ -1078,6 +1079,26 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     );
 }
 
+/// Scan `branch`'s Current and read its newest step until the scan ends.
+fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, Value) {
+    let first = invoke(
+        window,
+        "current_scan",
+        json!({"branch": branch, "refresh": false}),
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + JOB_TIMEOUT;
+    let mut view = first.clone();
+    while view["scanning"] == json!(true) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the scan did not end: {view}"
+        );
+        view = invoke(window, "current_view", json!({"branch": branch})).unwrap();
+    }
+    (first, view)
+}
+
 #[test]
 fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let root = os::tempdir();
@@ -1111,13 +1132,17 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(view["branches"][0]["chips"], json!([{"kind": "current"}]));
 
     let structure = artifactize_core::graph_structure::read(&fixture.repo).unwrap();
-    let scanned = invoke(&viewer, "current_scan", json!({"branch": branch})).unwrap();
-    assert_eq!(scanned["fingerprint"], structure.fingerprint().as_str());
-    assert_eq!(scanned["structure"], structure.tree());
-    assert_eq!(scanned["tree"][1]["children"][0]["name"], "review");
+    // The first step is the graph, its evals still being checked, the rest come as they are
+    // known.
+    let (first, scanned) = scan_current(&viewer, &branch);
+    assert_eq!(first["fingerprint"], structure.fingerprint().as_str());
+    assert_eq!(first["artifacts"], 2);
+    assert!(scanned["revision"].as_u64() >= first["revision"].as_u64());
+    assert_eq!(scanned["checking"], 0);
+    assert_eq!(scanned["failure"], Value::Null);
     assert_eq!(
-        scanned["tree"][1]["children"][0]["text"][0]["text"],
-        "would run"
+        invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
+        structure.tree()
     );
     // Never verified: the Human eval would run; the Artifact without evals is reused.
     let source = json!({"kind": "current", "branch": branch});
@@ -1192,18 +1217,22 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
         "name = 'app'\nbasis = true\n",
     )
     .unwrap();
-    let again = invoke(&viewer, "current_scan", json!({"branch": branch})).unwrap();
+    let (again, _) = scan_current(&viewer, &branch);
     assert_ne!(again["fingerprint"], scanned["fingerprint"]);
     assert!(again["revision"].as_u64() > scanned["revision"].as_u64());
     assert_eq!(
-        again["structure"],
+        invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
         artifactize_core::graph_structure::read(&fixture.repo)
             .unwrap()
             .tree()
     );
     // A branch the Pane does not list has no Current.
     let elsewhere = json!({"kind": "folder", "path": "/nowhere"});
-    let missing = invoke(&viewer, "current_scan", json!({"branch": elsewhere}));
+    let missing = invoke(
+        &viewer,
+        "current_scan",
+        json!({"branch": elsewhere, "refresh": false}),
+    );
     assert_eq!(missing.unwrap_err()["kind"], "missing");
 }
 

@@ -103,8 +103,9 @@ Combinations it recommends, with who owns each check and what it references:
 - **Rule documents**: the rules are an Artifact, often with a Human sign-off, read
   by the evals of the Artifacts they govern.
 
-It steers away from implicit dependencies, whole-repository reviews, anti-cheat
-evals, unrequested execution options, and weakening an eval to reach GREEN.
+It steers away from implicit dependencies, whole-repository reviews, evals added only
+to catch a builder cheating (such as hashing the tests to prove nobody edited them),
+unrequested execution options, and weakening an eval to reach GREEN.
 
 To show you a pattern, it points at the example that matches your situation: the
 [examples](../getting-started/examples.md) (runtime relations, Agent tools with a

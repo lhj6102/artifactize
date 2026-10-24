@@ -276,7 +276,7 @@ pub(crate) async fn spawn_now(command: Command) -> io::Result<Child> {
     let (gate, spawning) = spawn_gated(command)?;
     gate.admit()?;
     drop(gate);
-    spawning.await.map_err(io::Error::other)?
+    crate::task::joined(spawning.await).map_err(io::Error::other)?
 }
 
 /// Resume every thread of a process created suspended; it has exactly one. Its handle is
