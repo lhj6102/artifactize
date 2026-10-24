@@ -482,7 +482,8 @@ pub fn waiting_program(directory: &Path) -> String {
 /// `wait FILE` waits until a file exists, `needs FILE TEXT` prints TEXT and exits 0 unless the
 /// file exists, `print TEXT` prints, `eprint TEXT` prints to stderr, `cat FILE` prints a file's bytes,
 /// `hold FILE` starts a child that blocks until it is killed, appends the child's process id
-/// and waits for it, `start` starts such a child, prints its process id and goes on without
+/// and waits for it, `spawn FILE` starts such a child, appends its process id and goes on
+/// without waiting, `start` starts such a child, prints its process id and goes on without
 /// waiting, `child` runs the remaining steps in a child process and waits for it, `block`
 /// blocks until it is killed, `fill COUNT BYTE ECOUNT EBYTE` writes COUNT copies of the byte
 /// BYTE to stdout and ECOUNT of EBYTE to stderr at the same time, `cwd` prints the working
@@ -578,6 +579,7 @@ fn run(steps: Vec<String>) {
                 line(&path, &child.id().to_string());
                 child.wait().unwrap();
             }
+            "spawn" => line(&next(&mut steps), &blocking_child().id().to_string()),
             "start" => {
                 println!("{}", blocking_child().id());
                 std::io::stdout().flush().unwrap();

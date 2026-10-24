@@ -144,6 +144,23 @@ pub(crate) fn spawn_gated(command: Command) -> io::Result<(Gate, JoinHandle<io::
     spawn(command)
 }
 
+/// Spawn `command` as the leader of a new process group, running at once. Without the gate's
+/// `pre_exec` std starts it with `posix_spawn`, whose cost does not grow with this process's
+/// memory as `fork`'s copy of its page tables does.
+pub(crate) async fn spawn_now(command: Command) -> io::Result<Child> {
+    let mut command = CommandWrap::from(command);
+    command.wrap(ProcessGroup::leader());
+    let child = command.spawn()?;
+    // Unreaped until waited for, the leader keeps its /proc entry even if it already exited.
+    let pid = child
+        .id()
+        .ok_or_else(|| io::Error::other("the child was reaped before its identity was read"))?;
+    Ok(Child {
+        group: Some(crate::process::child_identity(pid)?),
+        child,
+    })
+}
+
 /// Spawn in a session of its own, for a desktop handoff that outlives artifactize.
 pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process::Child> {
     // SAFETY: the forked child calls only setsid, which is async-signal-safe.

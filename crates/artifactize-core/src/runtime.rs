@@ -106,9 +106,12 @@ impl Command {
         cancellation: CancellationToken,
     ) -> Result<Output, process::Error> {
         self.command.cwd = self.cwd;
-        process::run_with_input(self.command, Some(input), cancellation, |_| async {
-            Ok(())
-        })
+        process::run_unregistered(
+            self.command,
+            Some(input),
+            process::OUTPUT_LIMIT,
+            cancellation,
+        )
         .await
     }
 
@@ -120,14 +123,7 @@ impl Command {
         cancellation: CancellationToken,
     ) -> Result<Output, process::Error> {
         self.command.cwd = self.cwd;
-        process::run_with_input_limit(
-            self.command,
-            Some(input),
-            output_limit,
-            cancellation,
-            |_| async { Ok(()) },
-        )
-        .await
+        process::run_unregistered(self.command, Some(input), output_limit, cancellation).await
     }
 }
 

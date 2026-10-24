@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Retain bounded stdout/stderr audit per stream while continuing to drain the pipes.
-const OUTPUT_LIMIT: usize = 128 * 1024;
+pub(crate) const OUTPUT_LIMIT: usize = 128 * 1024;
 /// Give interrupted children one second to exit cooperatively before killing/reaping them.
 const CLEANUP_GRACE: Duration = Duration::from_secs(1);
 /// Drain process pipes in small bounded chunks without one read per byte.
@@ -118,9 +118,9 @@ pub(crate) fn tool_output<'a>(
     platform::program::tool_output(program, args)
 }
 
-/// Starts a built-in's program, such as `help`'s, through this process layer: admitted
-/// before it runs, kept in one process group or Job Object and cleaned up with its children,
-/// with exactly the environment given here.
+/// Starts a built-in's program, such as `help`'s, through this process layer: in one process
+/// group or Job Object from before it runs, cleaned up with its children, with exactly the
+/// environment given here.
 pub(crate) struct Launcher {
     pub env: BTreeMap<OsString, OsString>,
 }
@@ -140,16 +140,7 @@ impl artifactize_tools::launch::Launcher for Launcher {
                 env: self.env.clone(),
                 timeout: launch.timeout,
             };
-            let ready = |_| async { Ok(()) };
-            match run_with_input_limit(
-                command,
-                None,
-                launch.output_limit,
-                cancellation.clone(),
-                ready,
-            )
-            .await
-            {
+            match run_unregistered(command, None, launch.output_limit, cancellation.clone()).await {
                 Ok(output) => Ok(Finished {
                     status: output.status,
                     stdout: output.stdout,
@@ -261,7 +252,34 @@ where
             output_limit,
             Capture::default(),
             cancellation,
-            register,
+            Some(register),
+        ))
+        .await,
+    )?
+}
+
+/// A registration nobody makes: the type of [`run_inner`]'s and [`spawn_owned`]'s absent
+/// `register`.
+type Unregistered = fn(ChildIdentity) -> std::future::Ready<io::Result<()>>;
+
+/// Run a child nobody registers, such as a fingerprint script or a tool's protocol call: it
+/// runs at once, in its own process group or Job Object, and is cleaned up with its children.
+pub(crate) async fn run_unregistered(
+    command: Command,
+    input: Option<Vec<u8>>,
+    output_limit: usize,
+    cancellation: CancellationToken,
+) -> Result<Output, Error> {
+    let cancellation = cancellation.child_token();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    crate::task::joined(
+        tokio::spawn(run_inner(
+            command,
+            input,
+            output_limit,
+            Capture::default(),
+            cancellation,
+            None::<Unregistered>,
         ))
         .await,
     )?
@@ -295,7 +313,7 @@ pub(crate) async fn run_watched(
             OUTPUT_LIMIT,
             capture,
             cancellation,
-            |_| async { Ok(()) },
+            None::<Unregistered>,
         ))
         .await,
     )?
@@ -307,7 +325,7 @@ async fn run_inner<F, R>(
     output_limit: usize,
     Capture { logs, lines }: Capture,
     cancellation: CancellationToken,
-    register: F,
+    register: Option<F>,
 ) -> Result<Output, Error>
 where
     F: FnOnce(ChildIdentity) -> R,
@@ -409,14 +427,17 @@ where
     })
 }
 
-/// Gated spawn shared by one-shot calls and long-lived tool sessions. The caller must
-/// own this future in a supervisor so dropping a request cannot abandon admission.
+/// Spawn shared by one-shot calls and long-lived tool sessions. With `register` the child is
+/// held before exec until registered; the caller must own this future in a supervisor so
+/// dropping a request cannot abandon admission. Without it the child runs at once: the hold
+/// would protect nothing, and on Unix it costs a `fork`, which slows with this process's
+/// memory.
 pub(crate) async fn spawn_owned<F, R>(
     command: &Command,
     input: bool,
     cancellation: CancellationToken,
     deadline: Instant,
-    register: F,
+    register: Option<F>,
 ) -> Result<Child, Error>
 where
     F: FnOnce(ChildIdentity) -> R,
@@ -436,6 +457,9 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    let Some(register) = register else {
+        return platform::spawn_now(child).await.map_err(Error::Spawn);
+    };
     let (gate, mut spawning) = platform::spawn_gated(child).map_err(Error::Spawn)?;
     let admission = tokio::select! {
         biased;
@@ -706,7 +730,7 @@ where
                 lines: None,
             },
             cancellation,
-            register,
+            Some(register),
         ))
         .await,
     )?

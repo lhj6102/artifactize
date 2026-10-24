@@ -288,6 +288,30 @@ print('protocol:v1')
 }
 
 #[test]
+fn a_fingerprint_scripts_background_descendant_ends_with_it() {
+    let fixture = Fixture::new();
+    let marker = fixture.root.path().join("descendant");
+    // The descendant blocks until it is killed, so only artifactize's cleanup ends it.
+    fixture.write(
+        "index.artf",
+        json!({
+            "name":"test",
+            "fingerprint":fingerprint(&["spawn", &support::os::path_text(&marker), "print", "stable"]),
+            "evals":[eval("check", &["exit", "0"])],
+        }),
+    );
+    let output = fixture
+        .command()
+        .args(["status", "--all", "--json"])
+        .record_output()
+        .unwrap();
+    let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(status["evals"][0]["fingerprint"], "stable", "{status}");
+    let pid: u32 = fs::read_to_string(&marker).unwrap().trim().parse().unwrap();
+    support::os::wait_until(Duration::from_secs(5), || support::os::gone(pid));
+}
+
+#[test]
 fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     let fixture = Fixture::new();
     for (review, code) in [
