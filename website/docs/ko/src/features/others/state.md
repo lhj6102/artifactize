@@ -111,8 +111,8 @@ slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 Q
 실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 Runtime eval과 Human 요청, 다른 백엔드의 Agent 리뷰는 계속 진행됩니다. [eval mutex 태그](../declarations.md#eval-mutex-tags)가 겹치는 eval은 백엔드 자리를 차지하지 않은 채 별도로 대기합니다. `run cancel RUN_ID`는 그 Run에서 대기 중이던
 요청을 ERROR(`CANCELLED`)로 끝내고 그 자리를 비웁니다. `verify --wait`를 중단해도 지켜보기만 멈추며 Run은 계속 실행됩니다.
 
-[백엔드를 멈추는](../agent.md#stopping-a-backend) 실패가 나면, 그 Run에서 대기 중이던 요청은 그
-백엔드에서 시작하지 않습니다.
+오류로 [백엔드 사용이 중단되면](../agent.md#stopping-a-backend), 그 Run에서 대기 중이던 요청은 해당
+백엔드로 실행하지 않습니다.
 
 ## 승인 유휴 유예 시간 {#sign-off-idle-grace}
 

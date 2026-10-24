@@ -119,8 +119,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로, 막힘은 이 eval
-게이트를 따라 퍼지며, 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
+하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED이면 이에 의존하는 eval도
+차례로 차단되며, 자식 eval이 RED이면 부모의 모든 eval이 차단됩니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
 실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
 쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.

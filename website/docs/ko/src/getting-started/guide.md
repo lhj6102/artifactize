@@ -30,7 +30,7 @@ artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
 artifactize는 Run과 결과 같은 **상태(state)** 데이터를 상태 디렉터리에 저장합니다.
-이 둘러보기의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
+이 실습의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 디렉터리를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
 명령에도 그 설정을 넘겨 줍니다. 그다음 예제로 들어가 선언을 확인하세요.
@@ -120,7 +120,7 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 
 ## 선택 실습: Agent 도구와 Human 리뷰 절차 {#optional-agent-tools-and-the-human-flow}
 
-앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
+앞선 실습에는 모델이 필요 없지만, 이 선택 실습을 진행하려면 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된 대로
 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
 다른 백엔드를 쓰려면 `verify`에 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
