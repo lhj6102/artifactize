@@ -305,10 +305,28 @@ fn a_fingerprint_scripts_background_descendant_ends_with_it() {
         .args(["status", "--all", "--json"])
         .record_output()
         .unwrap();
+    let descendant = Descendant(fs::read_to_string(&marker).unwrap().trim().parse().unwrap());
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(status["evals"][0]["fingerprint"], "stable", "{status}");
-    let pid: u32 = fs::read_to_string(&marker).unwrap().trim().parse().unwrap();
-    support::os::wait_until(Duration::from_secs(5), || support::os::gone(pid));
+    support::os::wait_until(Duration::from_secs(5), || support::os::gone(descendant.0));
+}
+
+/// A process a fixture's script left behind, owned by the test from its PID marker on: ended
+/// and waited for when the test ends, whether artifactize's cleanup already ended it or not.
+struct Descendant(u32);
+
+impl Drop for Descendant {
+    fn drop(&mut self) {
+        if support::os::gone(self.0) {
+            return;
+        }
+        support::os::kill(self.0);
+        // No assertion here: a second panic while unwinding would abort the test binary.
+        let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
+        while !support::os::gone(self.0) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
 }
 
 #[test]
