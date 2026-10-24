@@ -45,7 +45,7 @@ examples/
 
 이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 글자나 숫자로 시작하고, 글자, 숫자, 밑줄,
 하이픈으로 이뤄진 64자 이하여야 합니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
-`combat::Code`처럼 앞에 space 하나와 `::`를 붙일 수 있습니다. space와 나머지 부분은 각각 같은
+`combat::Code`처럼 앞에 자신이 속한 묶음인 *space*의 이름과 `::`를 붙일 수 있습니다(`combat` space의 `Code`). space 이름과 나머지 부분은 각각 같은
 규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 보도록 돕는
 것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
 `artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
@@ -320,9 +320,9 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 `files`, `ignore`, 파일 Artifact 형식은 [Fingerprint와 재사용](fingerprint.md#artifactsum)에
 있습니다. 태그는 해시하지 않습니다.
 
-탐색은 범위가 정해진 경로 규칙을 따릅니다. ignore하지 않은 심볼릭 링크나 특수 파일이 있으면 탐색에 실패합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
-심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. Artifact의 범위 밖으로는 나가지
-않으며, 항목 10,000개나 1 GiB를 넘으면 오류와 함께 탐색을 멈춥니다. 해시는 준비 단계와 리뷰가
+artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일 중에 ignore하지 않은 심볼릭 링크나 특수 파일이 있으면 검증이 오류로 멈춥니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
+심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 해당 Artifact에 속하지 않은 파일은 읽지
+않으며, 항목 10,000개나 1 GiB를 넘으면 오류와 함께 멈춥니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
 파일이 생겨도 `INPUT_CHANGED`가 일어나지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
 `status`가 그 뒤로 바뀐 파일(`path`, `+path`, `-path`)과 바뀐 의존성을 알려 줄 수 있습니다.

@@ -9,7 +9,7 @@ import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
 import {
-  exists, makeDirectory, nativePath, parentOf, portablePath, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
+  exists, makeDirectory, nativePath, parentOf, portablePath, readTextIfExists, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
   type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
@@ -189,9 +189,10 @@ function declare(repo: NativePath, notes = "# Release notes\n- Ready to ship.\n"
   git(repo, "init", "-q", "--initial-branch=master", repo);
 }
 
-/** Submit every eval and observe its saved scheduler Human boundary. */
-export function verifyWaiting(fixture: Fixture): Promise<string> {
-  return waitingRun(cli(), fixture);
+/** Submit every eval (or those `selection` names) and observe its saved scheduler Human
+ * boundary. */
+export function verifyWaiting(fixture: Fixture, selection?: string[]): Promise<string> {
+  return waitingRun(cli(), fixture, selection);
 }
 
 /** Current declarations only: no verify and no saved Run. */
@@ -224,11 +225,15 @@ Run until the test opens the gate."""
   });
 }
 
-/** `slow`'s declaration: its fingerprint script waits for `gate`, or with `fail` fails. */
-function slowDeclaration(gate: NativePath, fail = false): string {
-  const script = fail ? commandFields("fail") : commandFields("fingerprint", portablePath(gate));
+/** A `createChecking` fixture: its gate, and the file its fingerprint script records each of
+ * its runs in. */
+export type Checking = Fixture & { gate: NativePath; runs: NativePath };
+
+/** `slow`'s declaration: its fingerprint script waits for the gate, or with `fail` fails. */
+function slowDeclaration(fixture: { gate: NativePath; runs: NativePath }, fail = false): string {
+  const script = fail ? commandFields("fail") : commandFields("fingerprint", portablePath(fixture.gate), portablePath(fixture.runs));
   return `name = "slow"
-fingerprint = { script = { ${script}, files = ["."], timeout_ms = 600000 } }
+fingerprint = { script = { ${script}, files = ["index.artf"], timeout_ms = 600000 } }
 
 [evals.check]
 title = "Check slow"
@@ -237,30 +242,50 @@ payload.instruction = "Check slow."
 `;
 }
 
-/** A repository and a state with no Run yet: `slow`'s fingerprint script answers only once
- * its test writes `gate`, so a Current keeps it being checked until then; `quick` hashes its
- * own files. */
-export function createChecking(): Fixture & { gate: NativePath } {
+/** A repository and a state with no Run yet. `slow`'s fingerprint script answers only once
+ * its test writes the gate, so a Current keeps it, and `quick` that reads it, being checked
+ * until then; `other`, on its own, waits for a person's sign-off. */
+export function createChecking(): Checking {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
-    const gate = nativePath(root, "fingerprint.gate");
-    writeText(nativePath(makeDirectory(nativePath(repo, "slow")), "index.artf"), slowDeclaration(gate));
+    const fixture = { root, repo, state: nativePath(root, "state"), gate: nativePath(root, "fingerprint.gate"), runs: nativePath(root, "fingerprint.runs") };
+    writeText(nativePath(makeDirectory(nativePath(repo, "slow")), "index.artf"), slowDeclaration(fixture));
     writeText(nativePath(makeDirectory(nativePath(repo, "quick")), "index.artf"), `name = "quick"
 fingerprint = { files = ["."] }
 
 [evals.check]
 title = "Check quick"
 profile = ${runtimeProfile()}
-payload.instruction = "Check quick."
+payload.instruction = "Check quick with {slow}."
+`);
+    writeText(nativePath(makeDirectory(nativePath(repo, "other")), "index.artf"), `name = "other"
+fingerprint = { files = ["."] }
+
+[evals.signoff]
+title = "A person approves other"
+profile = { kind = "human" }
+payload.instruction = "Approve other."
+
+[evals.signoff.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved", "comment"]
+additionalProperties = false
 `);
     git(repo, "init", "-q", "--initial-branch=master", repo);
-    return { root, repo, state: nativePath(root, "state"), gate };
+    return fixture;
   });
 }
 
+/** How many times the fingerprint script of a `createChecking` fixture ran. */
+export function fingerprintRuns(fixture: Checking): number {
+  return (readTextIfExists(fixture.runs) ?? "").split("\n").filter(Boolean).length;
+}
+
 /** Make `slow`'s fingerprint script of a `createChecking` fixture fail. */
-export function failFingerprint(fixture: Fixture, gate: NativePath): void {
-  writeText(nativePath(fixture.repo, "slow", "index.artf"), slowDeclaration(gate, true));
+export function failFingerprint(fixture: Checking): void {
+  writeText(nativePath(fixture.repo, "slow", "index.artf"), slowDeclaration(fixture, true));
 }
 
 /** A repository whose only eval is a sign-off, and a state with no Run yet. */

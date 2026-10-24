@@ -96,6 +96,9 @@ impl From<VerifyAction> for Plan {
     }
 }
 
+/// Why an eval is still being checked.
+const CHECKING: &str = "Still being checked: a fingerprint its key needs, or the plan of an eval it waits for, is not known yet.";
+
 /// One eval of the scan.
 #[derive(Debug, Clone)]
 pub struct CurrentEval {
@@ -330,7 +333,11 @@ fn project(
                             kind: eval.profile.kind(),
                             plan,
                             state: eval.state,
-                            reason: eval.reason.clone(),
+                            reason: if plan == Plan::Check {
+                                CHECKING.into()
+                            } else {
+                                eval.reason.clone()
+                            },
                             card: card(instruction, &eval.profile, plan, reused, now),
                             facts,
                         }

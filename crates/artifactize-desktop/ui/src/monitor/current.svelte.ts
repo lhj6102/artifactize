@@ -19,6 +19,8 @@ export class Current {
   text = $state.raw<{ fingerprint: string; text: string } | null>(null);
   /** Each request; only the newest one shows what it found. */
   #scans = 0;
+  /** The branch last asked for: its steps are read even before its request answers. */
+  #branch: BranchKey | null = null;
 
   /** The scan still runs, or its first step has not come yet. */
   get scanning(): boolean {
@@ -43,6 +45,7 @@ export class Current {
       this.structure = false;
       this.text = null;
     }
+    this.#branch = branch;
     this.#asking = true;
     try {
       const view = await call(this.ipc.currentScan(branch));
@@ -56,13 +59,15 @@ export class Current {
     }
   }
 
-  /** `branch`'s scan published a step or ended: read it when it is the branch shown. */
+  /** `branch`'s scan published a step or ended: read it when it is the branch asked for. A
+   * fast scan can end before its request answers, so this does not wait for that answer. */
   async changed(branch: BranchKey): Promise<void> {
-    if (!this.of(branch)) return;
+    const asked = () => this.#branch !== null && keyOf(this.#branch) === keyOf(branch);
+    if (!asked()) return;
     const scan = this.#scans;
     try {
       const view = await call(this.ipc.currentView(branch));
-      if (scan === this.#scans && this.of(branch)) this.#show(view);
+      if (scan === this.#scans && asked()) this.#show(view);
     } catch {
       // The state was replaced meanwhile; the next scan shows it.
     }
@@ -95,6 +100,7 @@ export class Current {
   /** Nothing of a branch is shown any more. */
   clear(): void {
     this.#scans += 1;
+    this.#branch = null;
     this.view = null;
     this.#failed = null;
     this.#asking = false;

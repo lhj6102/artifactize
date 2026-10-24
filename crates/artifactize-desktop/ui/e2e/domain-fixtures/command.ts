@@ -1,11 +1,11 @@
 // Declared portable programs used by real runtime evaluations and Human tools.
 import { randomUUID } from "node:crypto";
-import { absolutePath, exists, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
+import { absolutePath, appendText, exists, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
 
 /** How often a stand-in looks for the gate its test opens: a poll, never a wait for time. */
 const GATE_POLL = 20;
 
-const [operation, argument] = process.argv.slice(2);
+const [operation, argument, record] = process.argv.slice(2);
 
 /** Until the test writes `gate`, or its fixture is gone. */
 async function opened(gate: NativePath): Promise<void> {
@@ -46,7 +46,9 @@ switch (operation) {
     break;
   }
   case "fingerprint":
-    // A fingerprint script that answers once its test opens the gate.
+    // A fingerprint script that records each of its runs, then answers once its test opens
+    // the gate.
+    appendText(absolutePath(record), "run\n");
     await opened(absolutePath(argument));
     process.stdout.write("fixture:v1\n");
     break;

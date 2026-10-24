@@ -54,8 +54,9 @@ examples/
 
 Names, eval IDs, tool/session names and profile variant names start with a letter or
 digit and have at most 64 letters, digits, underscores or hyphens
-(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). An Artifact name may also start with one space
-and `::`, such as `combat::Code`: the space and the rest each have that form, and the whole
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). An Artifact name may also start with the name
+of a *space*, a group it belongs to, and `::`, such as `combat::Code` in the space
+`combat`: the space name and the rest each have that form, and the whole
 name has at most 64 bytes. A space only groups names for people; it is part of the name,
 so `{combat::Code}`, `combat::Code/check` and `artifactize verify combat::Code` spell it
 whole, and evals use Artifacts of other spaces as they use any other. `a::b::c` is
@@ -369,11 +370,12 @@ Omitting `fingerprint` uses artifactsum; for a folder, `fingerprint = {}` does t
 `files`, `ignore` and the file-Artifact form are in
 [Fingerprints and reuse](fingerprint.md#artifactsum). Tags are not hashed.
 
-Walks follow scoped path rules. Symlinks and special files fail closed unless they
-are ignored. Every applicable `.gitignore` is read as rule metadata even when it is
-itself ignored as content, so it must be a regular file, not a symlink, and at most
-1 MiB. Nothing is followed out of the owner, and a walk stops with an error
-after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
+Artifactsum reads the files below the Artifact by the scoped path rules. A symlink or
+special file it would read stops verification with an error unless it is ignored. Every
+applicable `.gitignore` is read for its rules even when it is itself ignored as content,
+so it must be a regular file, not a symlink, and at most 1 MiB. Artifactsum never reads a
+file outside the Artifact it belongs to, and it stops with an error after 10,000 entries
+or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
 therefore never cause `INPUT_CHANGED`. Each result remembers which files it covered, so `status` can tell you which files
 changed since then (`path`, `+path`, `-path`) and which dependency changed; a very large

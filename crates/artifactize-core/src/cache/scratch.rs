@@ -95,9 +95,11 @@ fn sweep_once(root: &Path) {
 /// Remove from `root` every fingerprint directory and lock whose process ended, and every
 /// directory without a lock untouched for [`UNLOCKED_AGE`] before `now`.
 fn sweep(root: &Path, now: SystemTime) -> io::Result<()> {
+    use crate::platform::{EntryName, FileKind};
+    let directory = crate::platform::open_directory(root)?;
     let mut directories = BTreeSet::new();
     let mut locks = BTreeSet::new();
-    for entry in fs::read_dir(root)? {
+    for entry in crate::platform::read_dir(&directory)? {
         let entry = entry?;
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
@@ -105,12 +107,12 @@ fn sweep(root: &Path, now: SystemTime) -> io::Result<()> {
         let Some(rest) = name.strip_prefix(PREFIX) else {
             continue;
         };
-        let kind = entry.file_type()?;
-        match rest.strip_suffix(LOCK) {
-            Some(_) if kind.is_file() => {
+        // Links and reparse points are never followed, nor removed.
+        match (rest.strip_suffix(LOCK), entry.file_type()?) {
+            (Some(_), FileKind::File) => {
                 locks.insert(name);
             }
-            None if kind.is_dir() => {
+            (None, FileKind::Directory) => {
                 directories.insert(name);
             }
             _ => {}
@@ -127,28 +129,29 @@ fn sweep(root: &Path, now: SystemTime) -> io::Result<()> {
         if file.try_lock().is_err() {
             continue;
         }
-        let directory = lock.strip_suffix(LOCK).expect("a lock's name");
-        directories.remove(directory);
-        match fs::remove_dir_all(root.join(directory)) {
+        let owned = lock.strip_suffix(LOCK).expect("a lock's name");
+        directories.remove(owned);
+        match fs::remove_dir_all(root.join(owned)) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(_) => continue,
         }
         let _ = fs::remove_file(&path);
     }
-    for directory in directories {
-        if locks.contains(&format!("{directory}{LOCK}")) {
+    for name in directories {
+        if locks.contains(&format!("{name}{LOCK}")) {
             continue;
         }
-        let path = root.join(&directory);
-        let untouched = fs::symlink_metadata(&path)
-            .and_then(|metadata| metadata.modified())
+        let untouched = EntryName::new(name.as_ref())
+            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))
+            .and_then(|entry| crate::platform::open_entry(&directory, &entry))
+            .and_then(|opened| opened.metadata()?.modified())
             .is_ok_and(|modified| {
                 now.duration_since(modified)
                     .is_ok_and(|age| age >= UNLOCKED_AGE)
             });
         if untouched {
-            let _ = fs::remove_dir_all(path);
+            let _ = fs::remove_dir_all(root.join(name));
         }
     }
     Ok(())
@@ -160,7 +163,7 @@ mod tests {
 
     #[test]
     fn a_held_directory_stays_and_an_ended_ones_is_removed() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         let held = Scratch::create(root.path()).unwrap();
         fs::write(held.path().join("output"), "in use").unwrap();
         // What a killed process leaves: a directory and its lock, nobody holding it.
@@ -168,7 +171,7 @@ mod tests {
         let ended_lock = root.path().join("fingerprint-killed.lock");
         fs::create_dir_all(ended_directory.join("runtime-x/tmp")).unwrap();
         fs::write(&ended_lock, "").unwrap();
-        sweep(root.path(), SystemTime::now()).unwrap();
+        sweep(root.path(), SystemTime::UNIX_EPOCH).unwrap();
         assert!(held.path().join("output").exists());
         assert!(!ended_directory.exists());
         assert!(!ended_lock.exists());
@@ -180,17 +183,19 @@ mod tests {
 
     #[test]
     fn a_directory_without_a_lock_is_removed_once_untouched_for_a_day() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         let unlocked = root.path().join("fingerprint-before");
         fs::create_dir(&unlocked).unwrap();
         let other = root.path().join("runtime-other");
         fs::create_dir(&other).unwrap();
-        sweep(root.path(), SystemTime::now()).unwrap();
+        // Times relative to the directory's own: no clock is read.
+        let made = fs::metadata(&unlocked).unwrap().modified().unwrap();
+        sweep(root.path(), made + UNLOCKED_AGE - Duration::from_secs(1)).unwrap();
         assert!(
             unlocked.exists(),
             "it may belong to an older build still running"
         );
-        sweep(root.path(), SystemTime::now() + UNLOCKED_AGE).unwrap();
+        sweep(root.path(), made + UNLOCKED_AGE).unwrap();
         assert!(!unlocked.exists());
         assert!(other.exists(), "only fingerprint directories are swept");
     }

@@ -50,6 +50,11 @@ async fn a_scan_shows_the_graph_first_every_artifact_checking_then_what_verify_w
         [("app".into(), Plan::Check), ("notes".into(), Plan::Check)]
     );
     assert_eq!(first.artifacts[0].text(), "checking");
+    assert!(
+        first.artifacts[0].evals[0]
+            .reason
+            .starts_with("Still being checked")
+    );
     assert_eq!(edges(first), [("notes".into(), "app".into())]);
     assert_eq!(first.structure, current.structure);
     // Once every fingerprint is in, nothing is being checked.

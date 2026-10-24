@@ -206,8 +206,8 @@ with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only
-when you are not editing or running something; the others step back the same way: they cancel active work first, then leave the form, and only then
-close the Detail. Drag the Detail's left edge to resize it, between a readable column
+when you are not editing or running something, and the others first step back as
+[Esc does in a review](#human-reviews). Drag the Detail's left edge to resize it, between a readable column
 and leaving some graph visible; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`: the
@@ -267,8 +267,9 @@ made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
 A waiting review opened from the Pane, or by ID, fills the Main area as a Human
 review, its eval and Artifact above it. Choosing a branch or a timeline entry leaves it without
-closing it: an open form keeps its draft and running review work goes on. Esc,
-after cancelling running work and leaving the form, returns to the Pane.
+closing it: an open form keeps its draft and running review work goes on.
+Esc steps back one stage at a time: it cancels running work, then leaves the form, then
+leaves the review, back to the Pane or, on a Detail, closing the Detail.
 
 Opening a review claims nothing. Press `c` to claim and `u` to release. Another
 person's claim prevents your actions. Claims are cooperative reviewer locks, not
@@ -309,7 +310,6 @@ does not submit; Ctrl+S or activating the **Submit** button submits, including
 Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
-Esc cancels active work, then leaves the form, then leaves the review.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
 GREEN and RED keep separate drafts. Opening the same request from the Pane or from
 its chip in a Run's Detail shows the same draft and Tool log. If the state directory is

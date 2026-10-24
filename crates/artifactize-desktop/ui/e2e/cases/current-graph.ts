@@ -4,7 +4,8 @@
 // of a Run start.
 import assert from "node:assert/strict";
 import {
-  changeNotes, create, createChecking, createEvals, createGraph, createMixed, ended, failFingerprint, requests, savedRuns, signOff, signoff, verifyWaiting,
+  changeNotes, create, createChecking, createEvals, createGraph, createMixed, ended, failFingerprint, fingerprintRuns, requests, savedRuns, signOff, signoff,
+  verifyWaiting,
 } from "../fixture.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
@@ -103,7 +104,7 @@ export const scenarios: Scenario[] = [
       const appearance = await graphAppearance(browser);
       assert.equal(appearance.nodes["a:release"].dot, appearance.nodes["a:ship"].dot, "both would run, painted alike");
       assert.deepEqual(await browser.execute((root) => [...document.querySelectorAll(`${root} [aria-label="Legend"] li`)].map((item) => item.textContent?.trim()), CURRENT),
-        ["reused", "would run", "waiting", "blocked by upstream"], "its own legend");
+        ["reused", "would run", "waiting", "blocked by upstream", "checking"], "its own legend");
       assert.deepEqual(savedRuns(fixture), [], "scanning saved no Run");
 
       // A click on release opens its Detail over the Current: its eval would run, and its tools.
@@ -363,35 +364,74 @@ Summarize {docs}."""
     },
   ),
 
-  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS
-  // UX edges: E-CURRENT-CHIP E-CURRENT-CHECKED E-CURRENT-REFRESH E-CURRENT-FAILED E-GRAPH-RECOLOUR
-  scenario<{ gate: NativePath }>(
+  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS J-DETAIL J-DETAIL-SUMMARY
+  // UX edges: E-CURRENT-CHIP E-CURRENT-CHECKED E-REFRESH E-CURRENT-REFRESH E-CURRENT-RUN-END E-CURRENT-EVALS E-CURRENT-TAB E-CURRENT-CLOSE E-CURRENT-FAILED E-GRAPH-RECOLOUR
+  scenario<{ gate: NativePath; runs: NativePath }>(
     "current-checking",
-    "draws a Current's graph at once, an Artifact being checked until its fingerprint is in, and keeps the graph when its scan fails",
+    "draws a Current's graph at once, its Artifacts being checked until their fingerprints are in, shows its running scan instead of starting over, and keeps the graph when a scan fails",
     async () => {
       const fixture = createChecking();
-      return { fixture, args: ["--repo", fixture.repo], data: { gate: fixture.gate } };
+      return { fixture, args: ["--repo", fixture.repo], data: { gate: fixture.gate, runs: fixture.runs } };
     },
-    async (browser, { fixture, data: { gate } }) => {
+    async (browser, { fixture, data: { gate, runs } }) => {
+      const checking = { ...fixture, gate, runs };
       const { drawn } = current(browser);
+      /** currentScan requests the app made, from its read-only command activity. */
+      const requested = async () => (await checkpoint(browser)).activity.commands.currentScan?.started ?? 0;
+      const nodes = async () => JSON.stringify((await drawn()).nodes);
+      const failure = () => browser.execute((root) => document.querySelector(`${root} .failure`)?.textContent ?? "", CURRENT);
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
-      // quick's own fingerprint is in; slow's script still waits for its gate.
-      const checking = { "a:quick": "quick: would run (1 eval)", "a:slow": "slow: checking" };
-      await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(checking), `slow still being checked: ${JSON.stringify(await drawn())}`);
-      assert.equal(await scanned(browser), "Checking 1 of 2 Artifacts…", "the header counts what is still being checked");
+      // other's own fingerprint is in; slow's script waits for its gate, and quick reads slow.
+      const waiting = JSON.stringify({ "a:other": "other: would run (1 eval)", "a:quick": "quick: checking", "a:slow": "slow: checking" });
+      await waitFor(browser, async () => (await nodes()) === waiting, `slow and quick still being checked: ${await nodes()}`);
+      assert.equal(await scanned(browser), "Checking 2 of 3 Artifacts…", "the header counts what is still being checked");
       let look = await graphAppearance(browser);
-      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:quick": "run", "a:slow": "checking" }, {}),
+      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:other": "run", "a:quick": "checking", "a:slow": "checking" }, {}),
         { timeout: 15000, timeoutMsg: "checking painted in its legend colour" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
+      // slow's Detail says it is still being checked, and why.
+      await openArtifact(browser, "a:slow", "Artifact slow");
+      assert.deepEqual(await evalRows(browser), [{ name: "check", status: "checking" }]);
+      await openTab(browser, "e:slow/check", { row: true });
+      await waitFor(browser, async () => (await summary(browser)).status.startsWith("… checking Still being checked"),
+        `slow's plan: ${JSON.stringify(await summary(browser))}`);
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "slow's Detail closed");
+      // Choosing the Current again, F5 and the end of a Run of the branch all show the scan
+      // still running: its fingerprint script runs once.
+      assert.equal(fingerprintRuns(checking), 1);
+      const before = await requested();
+      await chooseChip(browser, "repo  master", "current");
+      await press(browser, ["F5"], async () => (await requested()) >= before + 2, "F5 asked for the Current again");
+      const run = await verifyWaiting(fixture, ["--artifacts", "other"]);
+      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === run, "the Run in progress starts the row");
+      const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "other/signoff");
+      assert.ok(request);
+      signOff(fixture, request.id);
+      await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === "current", "the Run ended: the row starts with the Current");
+      await waitFor(browser, async () => (await requested()) >= before + 3, "the Run's end asked for the Current again");
+      assert.equal(await scanned(browser), "Checking 2 of 3 Artifacts…", "the same scan, still checking");
+      assert.equal(fingerprintRuns(checking), 1, "nothing started over");
+      // The fingerprint comes in: each Artifact is coloured in place, and the scan ends.
       writeText(gate, "go");
-      await waitFor(browser, async () => (await drawn()).nodes["a:slow"] === "slow: would run (1 eval)", "slow coloured once its fingerprint is in");
+      const known = JSON.stringify({ "a:other": "other: reused", "a:quick": "quick: waiting", "a:slow": "slow: would run (1 eval)" });
+      await waitFor(browser, async () => (await nodes()) === known, "every Artifact known")
+        .catch(async (error: Error) => { throw new Error(`${error.message}: ${await nodes()}; ${await scanned(browser)}; ${await failure()}`); });
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the header says when it was scanned");
+      // Chosen again once it ended, the Current scans again, every Artifact checked again.
+      removeTree(gate);
+      await chooseChip(browser, "repo  master", "current");
+      await waitFor(browser, async () => (await scanned(browser)) === "Checking 2 of 3 Artifacts…", "scanned again");
+      const rechecked = await drawn();
+      assert.deepEqual([rechecked.nodes["a:quick"], rechecked.nodes["a:slow"]], ["quick: checking", "slow: checking"]);
+      await waitFor(browser, () => fingerprintRuns(checking) === 2, "the new scan ran the fingerprint script again");
+      writeText(gate, "go");
+      await waitFor(browser, async () => (await nodes()) === known, "known again");
       // A fingerprint that fails ends the next scan; what it showed stays.
-      failFingerprint(fixture, gate);
+      failFingerprint(checking);
+      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the scan ended");
       await browser.$(CURRENT).$("button=Refresh").click();
-      const failure = () => browser.execute((root) => document.querySelector(`${root} .failure`)?.textContent ?? "", CURRENT);
       await waitFor(browser, async () => /Fingerprint script for Artifact slow failed/.test(await failure()), "the scan's failure shown");
-      assert.deepEqual(Object.keys((await drawn()).nodes).sort(), ["a:quick", "a:slow"], "the graph stays");
+      assert.deepEqual(Object.keys((await drawn()).nodes).sort(), ["a:other", "a:quick", "a:slow"], "the graph stays");
     },
   ),
 
