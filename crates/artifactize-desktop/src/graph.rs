@@ -35,6 +35,8 @@ pub enum Light {
     Run,
     /// On a Current: every eval's result would be reused.
     Reused,
+    /// On a Current: what would happen is still being checked.
+    Checking,
 }
 
 impl From<monitor::Light> for Light {
@@ -58,6 +60,7 @@ impl From<monitor::live::Plan> for Light {
             Plan::Blocked => Self::Blocked,
             Plan::Wait => Self::Waiting,
             Plan::Reuse => Self::Reused,
+            Plan::Check => Self::Checking,
         }
     }
 }

@@ -3,12 +3,14 @@
 // and its own Human tools, the structure text, and the scans a Refresh, a choice and the end
 // of a Run start.
 import assert from "node:assert/strict";
-import { changeNotes, create, createEvals, createGraph, createMixed, ended, requests, savedRuns, signOff, signoff, verifyWaiting } from "../fixture.ts";
+import {
+  changeNotes, create, createChecking, createEvals, createGraph, createMixed, ended, failFingerprint, requests, savedRuns, signOff, signoff, verifyWaiting,
+} from "../fixture.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
-import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText } from "../platform.ts";
+import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { camera, detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
@@ -323,8 +325,9 @@ Summarize {docs}."""
       await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "run" }, { "a:release>a:ship": "run" }),
         { timeout: 15000, timeoutMsg: "would run painted in its legend colour" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
+      // A scan's last step comes as it ends; the header names when once it has.
+      await waitFor(browser, async () => (await scannedAt(browser)) !== null, "the scan before the Run ended");
       const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look };
-      assert.ok(before.at, "the header names the scan before the Run");
       assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -336,11 +339,11 @@ Summarize {docs}."""
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // A scan of its own after the one before the Run, drawn in the reused colours again. Its
-      // freshness is the completed-scan generation: once that scan has rendered, the header
-      // names that scan's own instant, not the one before.
-      assert.ok((await scans()) > before.scans, "the Run's end completed a new scan");
+      // A scan of its own after the one before the Run, drawn in the reused colours again. Once
+      // that scan has ended, the header names its own instant, not the one before.
+      assert.ok((await scans()) > before.scans, "the Run's end started a new scan");
       await commandsRendered(browser, before.checkpoint);
+      await waitFor(browser, async () => ![null, before.at].includes(await scannedAt(browser)), "the header names the new scan once it ended");
       const instant = await scannedAt(browser);
       assert.ok(instant && instant !== before.at, `the header names the new scan, not ${before.at}: ${instant}`);
       const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString(), instant);
@@ -357,6 +360,38 @@ Summarize {docs}."""
       assert.notEqual(before.look.edges[edge].stroke, reusedLook.edges[edge].stroke, "would run's relation is stroked unlike reused");
       assert.notEqual(after.edges[edge].stroke, before.look.edges[edge].stroke, "the relation's stroke changed");
       assert.equal(after.edges[edge].stroke, reusedLook.edges[edge].stroke, "the relation stroked as reused");
+    },
+  ),
+
+  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS
+  // UX edges: E-CURRENT-CHIP E-CURRENT-CHECKED E-CURRENT-REFRESH E-CURRENT-FAILED E-GRAPH-RECOLOUR
+  scenario<{ gate: NativePath }>(
+    "current-checking",
+    "draws a Current's graph at once, an Artifact being checked until its fingerprint is in, and keeps the graph when its scan fails",
+    async () => {
+      const fixture = createChecking();
+      return { fixture, args: ["--repo", fixture.repo], data: { gate: fixture.gate } };
+    },
+    async (browser, { fixture, data: { gate } }) => {
+      const { drawn } = current(browser);
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
+      // quick's own fingerprint is in; slow's script still waits for its gate.
+      const checking = { "a:quick": "quick: would run (1 eval)", "a:slow": "slow: checking" };
+      await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(checking), `slow still being checked: ${JSON.stringify(await drawn())}`);
+      assert.equal(await scanned(browser), "Checking 1 of 2 Artifacts…", "the header counts what is still being checked");
+      let look = await graphAppearance(browser);
+      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:quick": "run", "a:slow": "checking" }, {}),
+        { timeout: 15000, timeoutMsg: "checking painted in its legend colour" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
+      writeText(gate, "go");
+      await waitFor(browser, async () => (await drawn()).nodes["a:slow"] === "slow: would run (1 eval)", "slow coloured once its fingerprint is in");
+      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the header says when it was scanned");
+      // A fingerprint that fails ends the next scan; what it showed stays.
+      failFingerprint(fixture, gate);
+      await browser.$(CURRENT).$("button=Refresh").click();
+      const failure = () => browser.execute((root) => document.querySelector(`${root} .failure`)?.textContent ?? "", CURRENT);
+      await waitFor(browser, async () => /Fingerprint script for Artifact slow failed/.test(await failure()), "the scan's failure shown");
+      assert.deepEqual(Object.keys((await drawn()).nodes).sort(), ["a:quick", "a:slow"], "the graph stays");
     },
   ),
 

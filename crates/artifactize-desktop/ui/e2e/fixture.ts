@@ -224,6 +224,45 @@ Run until the test opens the gate."""
   });
 }
 
+/** `slow`'s declaration: its fingerprint script waits for `gate`, or with `fail` fails. */
+function slowDeclaration(gate: NativePath, fail = false): string {
+  const script = fail ? commandFields("fail") : commandFields("fingerprint", portablePath(gate));
+  return `name = "slow"
+fingerprint = { script = { ${script}, files = ["."], timeout_ms = 600000 } }
+
+[evals.check]
+title = "Check slow"
+profile = ${runtimeProfile()}
+payload.instruction = "Check slow."
+`;
+}
+
+/** A repository and a state with no Run yet: `slow`'s fingerprint script answers only once
+ * its test writes `gate`, so a Current keeps it being checked until then; `quick` hashes its
+ * own files. */
+export function createChecking(): Fixture & { gate: NativePath } {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const gate = nativePath(root, "fingerprint.gate");
+    writeText(nativePath(makeDirectory(nativePath(repo, "slow")), "index.artf"), slowDeclaration(gate));
+    writeText(nativePath(makeDirectory(nativePath(repo, "quick")), "index.artf"), `name = "quick"
+fingerprint = { files = ["."] }
+
+[evals.check]
+title = "Check quick"
+profile = ${runtimeProfile()}
+payload.instruction = "Check quick."
+`);
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    return { root, repo, state: nativePath(root, "state"), gate };
+  });
+}
+
+/** Make `slow`'s fingerprint script of a `createChecking` fixture fail. */
+export function failFingerprint(fixture: Fixture, gate: NativePath): void {
+  writeText(nativePath(fixture.repo, "slow", "index.artf"), slowDeclaration(gate, true));
+}
+
 /** A repository whose only eval is a sign-off, and a state with no Run yet. */
 export function createSignoffOnly(): Fixture {
   return prepareFixture((root) => {

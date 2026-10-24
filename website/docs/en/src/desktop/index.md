@@ -154,14 +154,19 @@ or the pending-evals control reveals the unfinished checks behind an upstream wa
 
 A branch's **Current** scans its worktree as it is now, as
 [`artifactize status`](../features/run.md#status-and-static-graph) does, and draws
-the graph of its current declarations without needing a Run. Each Artifact is coloured
-reused (every eval's result would be reused without evaluation), would run, waiting or
-blocked; like a Run's Artifact, its node shows only its name, and its accessible name
-says which, with how many of its evals would run. Its header says when it was scanned. It scans again
+the graph of its current declarations without needing a Run. The graph appears as soon as
+the declarations are read, every Artifact still being checked; as the fingerprints come in,
+each Artifact is coloured reused (every eval's result would be reused without evaluation),
+would run, waiting or blocked. An Artifact is known once its own fingerprints and those of
+what it waits for are in, so the graph fills in from the Artifacts nothing else feeds. Like a
+Run's Artifact, its node shows only its name, and its accessible name says which, with how
+many of its evals would run, or that it is still being checked. While the scan runs, its
+header says how many Artifacts are still being checked; then when it was scanned. If a
+fingerprint fails, the header says why and the graph stays as it was. It scans again
 when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
 the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
-While a scan of the branch is still running, choosing its Current again or a Run's end waits for
-that scan and shows what it finds instead of starting over.
+While a scan of the branch is still running, choosing its Current again or a Run's end shows
+that scan instead of starting over.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it
@@ -207,7 +212,7 @@ and leaving some graph visible; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`: the
 Artifact's own chip, then one per eval with its verdict's glyph and colour, on a
-Current whether it would run or be reused.
+Current whether it would run, would be reused or is still being checked.
 
 The Artifact's chip shows it between its neighbours, drawn with the graph's nodes and
 edges: the Artifacts its evals use on the left, the Artifacts whose evals use it on
@@ -229,7 +234,7 @@ An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
 result, with findings as numbered items headed by their `item` and `where`; then
 **Execution options**, **Execution metadata** and **Fingerprint** when it has them.
-On a Current it shows whether the eval would run or be reused and why, and the result
+On a Current it shows whether the eval would run, would be reused or is still being checked and why, and the result
 it would reuse. Other facts fold under **Debug**, which `t` shows or hides on an
 Artifact's or an eval's read-only Summary, a Current's Human eval included; in a Human review
 you can submit, `t` toggles **Technical** instead. An eval with a log switches below the chips

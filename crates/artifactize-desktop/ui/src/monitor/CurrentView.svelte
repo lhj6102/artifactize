@@ -1,8 +1,9 @@
 <script lang="ts">
   // A branch's Current: its worktree as it is now, scanned as `artifactize status` does. The
-  // header says when it was scanned; Refresh scans again. The graph marks each Artifact reused,
-  // would run (with how many evals), waiting or blocked; the structure text below it lists
-  // every criterion and labeled relation.
+  // graph comes first, every Artifact still being checked, and marks each Artifact reused, would
+  // run (with how many evals), waiting or blocked as the scan learns it. The header counts the
+  // Artifacts still being checked, then says when it was scanned; Refresh scans again. The
+  // structure text below lists every criterion and labeled relation, read when expanded.
   import type { BranchKey } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
 
@@ -28,7 +29,7 @@
 <section class="current" aria-label="Current">
   <header>
     <span class="when" role="status">
-      {#if current.scanning}Scanning…{:else if scanned}Scanned at <time datetime={scanned.at}>{scanned.local}</time>{/if}
+      {#if current.scanning}{#if view?.scanning && view.checking > 0}Checking {view.checking} of {view.artifacts} Artifacts…{:else}Scanning…{/if}{:else if scanned}Scanned at <time datetime={scanned.at}>{scanned.local}</time>{/if}
     </span>
     <button class="button small" disabled={current.scanning} onclick={() => void current.scan(branch)}>Refresh</button>
   </header>
@@ -41,9 +42,9 @@
         <SourceGraph source={{ kind: "current", branch }} revision={view.revision} {opened} {onopen} {onclose} />
       {/await}
     </div>
-    <details bind:open={current.structure}>
+    <details open={current.structure} ontoggle={(event) => void current.expand(event.currentTarget.open)}>
       <summary>Structure and evaluation criteria · {view.fingerprint}</summary>
-      <pre>{view.structure}</pre>
+      {#if current.structure}<pre>{current.text?.text ?? "Reading…"}</pre>{/if}
     </details>
   {:else if !current.error}<p class="note">Scanning the worktree…</p>{/if}
 </section>

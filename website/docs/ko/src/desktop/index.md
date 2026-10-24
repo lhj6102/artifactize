@@ -132,14 +132,19 @@ Detail이 열리며, 저장된 검증과 충족되지 않은 최종 검증 요�
 
 브랜치의 **Current**는
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
-Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는
+Run 없이 현재 선언의 그래프를 그립니다. 선언을 읽는 즉시 그래프가 나타나고, 처음에는 모든 Artifact가
+확인 중(checking)으로 표시됩니다. fingerprint가 들어오는 대로 각 Artifact는
 reused(모든 eval의 결과가 평가 없이 재사용됨), would run, waiting,
-blocked 중 어느 상태인지에 따라 다른 색으로 표시됩니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
-그 Artifact의 상태와 실행될 eval 수를 담습니다. 머리말은 언제 스캔했는지 알려 줍니다.
+blocked 중 어느 상태인지에 따라 다른 색으로 바뀝니다. Artifact는 자신의 fingerprint와 자신이 기다리는
+Artifact들의 fingerprint가 모두 들어와야 상태가 정해지므로, 그래프는 다른 Artifact에 기대지 않는 Artifact부터
+채워집니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
+그 Artifact의 상태와 실행될 eval 수, 또는 아직 확인 중이라는 사실을 담습니다. 스캔이 진행되는 동안 머리말은
+아직 확인 중인 Artifact 수를 알려 주고, 스캔이 끝나면 언제 스캔했는지 알려 줍니다. fingerprint가 실패하면
+머리말이 그 이유를 알려 주고 그래프는 그대로 남습니다.
 다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, Pane에 보이는 브랜치의 Run이 끝날 때 다시 스캔합니다.
 검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 그 브랜치의 스캔이 아직 진행 중이면, Current를 다시 고르거나 Run이 끝나도 처음부터 다시 스캔하지 않고
-진행 중인 스캔이 끝나기를 기다려 그 결과를 보여 줍니다.
+진행 중인 스캔을 보여 줍니다.
 **Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
 관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
@@ -181,7 +186,7 @@ Artifact를 클릭하면 그 **Detail**이 열립니다. 그래프 오른쪽 위
 Detail을 닫습니다. Detail의 왼쪽 가장자리를 드래그해, 내용을 읽기 편하면서도 그래프가 조금 보이는 너비로 조절하세요. 그 폭은 다음 실행에서도 유지됩니다.
 
 Artifact의 Detail에는 Artifact 이름과 eval을 경로 형태로 나열한 칩 `[icon] {name} / [eval] …`이 있습니다.
-Artifact를 나타내는 칩 하나와 eval마다 판정의 기호와 색을 표시하는 칩이 하나씩 있으며, Current에서는 실행 또는 재사용 여부를 보여 줍니다.
+Artifact를 나타내는 칩 하나와 eval마다 판정의 기호와 색을 표시하는 칩이 하나씩 있으며, Current에서는 실행될지, 재사용될지, 아직 확인 중인지를 보여 줍니다.
 
 Artifact 칩에서는 그 Artifact를 가운데 두고 이웃과의 관계를 그래프의 노드와 간선으로 보여 줍니다.
 왼쪽에는 이 Artifact의 eval이 사용하는 Artifact가, 오른쪽에는 이 Artifact를
@@ -202,7 +207,7 @@ eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 
 또는 재사용으로 절약한 시간과 토큰, 지시문,
 결과(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
 **Execution options**, **Execution metadata**, **Fingerprint**도 함께 표시합니다.
-Current에서는 eval이 실행될지 재사용될지와 그 이유, 그리고 재사용할 결과를
+Current에서는 eval이 실행될지, 재사용될지, 아직 확인 중인지와 그 이유, 그리고 재사용할 결과를
 보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact나 eval의 읽기 전용
 Summary(Current의 Human eval 포함)에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 판정을 제출할 수 있는 Human 리뷰에서는 `t`가 **Technical**을 표시하거나 숨깁니다. 로그가 있는 eval은 칩 아래에서
 먼저 보이는 Summary와 로그 사이를 오갈 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한

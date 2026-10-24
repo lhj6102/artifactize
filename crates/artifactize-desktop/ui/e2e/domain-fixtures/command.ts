@@ -1,11 +1,22 @@
 // Declared portable programs used by real runtime evaluations and Human tools.
 import { randomUUID } from "node:crypto";
-import { absolutePath, exists, readText, replaceText, serveLoopback, writeText } from "../platform.ts";
+import { absolutePath, exists, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
 
 /** How often a stand-in looks for the gate its test opens: a poll, never a wait for time. */
 const GATE_POLL = 20;
 
 const [operation, argument] = process.argv.slice(2);
+
+/** Until the test writes `gate`, or its fixture is gone. */
+async function opened(gate: NativePath): Promise<void> {
+  await new Promise<void>((done) => {
+    const poll = setInterval(() => {
+      if (!exists(gate) && exists(absolutePath(gate, ".."))) return;
+      clearInterval(poll);
+      done();
+    }, GATE_POLL);
+  });
+}
 switch (operation) {
   case "report":
     for (let line = 0; line < 80; line += 1) {
@@ -29,17 +40,16 @@ switch (operation) {
     // then, once its test opens the gate (or its fixture is gone), one on each stream.
     const gate = absolutePath(argument);
     process.stdout.write("opened the stand-in\n");
-    await new Promise<void>((done) => {
-      const poll = setInterval(() => {
-        if (!exists(gate) && exists(absolutePath(gate, ".."))) return;
-        clearInterval(poll);
-        done();
-      }, GATE_POLL);
-    });
+    await opened(gate);
     process.stdout.write("chose: B\n");
     process.stderr.write("warning: B is slower\n");
     break;
   }
+  case "fingerprint":
+    // A fingerprint script that answers once its test opens the gate.
+    await opened(absolutePath(argument));
+    process.stdout.write("fixture:v1\n");
+    break;
   case "hold":
     // The product's declared runtime deadline, not an elapsed-time assertion,
     // terminates this command and produces an operational ERROR on every OS.
