@@ -8,7 +8,13 @@ export function visibleCenter(browser: WebdriverIO.Browser, element: WebdriverIO
     const box = target.getBoundingClientRect();
     const point = { x: Math.floor(box.left + box.width / 2), y: Math.floor(box.top + box.height / 2) };
     const hit = document.elementFromPoint(point.x, point.y);
-    if (!box.width || !box.height || !hit || !target.contains(hit)) throw new Error("the pointer target's centre is not visible");
+    if (!box.width || !box.height || !hit || !target.contains(hit)) {
+      // What lies at the centre instead, so a failure says what covers the target.
+      const covering = hit && `${hit.tagName.toLowerCase()}.${hit.getAttribute("class") ?? ""}[${hit.getAttribute("aria-label") ?? ""}] ${(hit.textContent ?? "").trim().slice(0, 60)}`;
+      throw new Error(`the pointer target's centre is not visible: ${JSON.stringify({
+        point, box: [box.left, box.top, box.width, box.height], viewport: [innerWidth, innerHeight], hit: covering,
+      })}`);
+    }
     return point;
   }, element as unknown as HTMLElement);
 }
