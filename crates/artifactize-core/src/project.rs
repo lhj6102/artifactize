@@ -3,11 +3,11 @@
 pub mod selection;
 
 mod status;
-pub(crate) use status::scan_config;
 pub use status::{
     ArtifactCondition, ArtifactState, Counts, EvalCondition, EvalState, StatusView, VerifyAction,
     status,
 };
+pub(crate) use status::{Progress, scan};
 
 pub(crate) mod verify;
 pub use verify::{VerifyOptions, verify};

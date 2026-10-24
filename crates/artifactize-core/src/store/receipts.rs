@@ -1003,7 +1003,7 @@ pub(super) fn regular_files_with_retry(
     Ok(())
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastRequest {
     pub run_id: RunId,

@@ -13,13 +13,16 @@ pub(super) fn assemble(
         selected_eval_ids,
         included_eval_ids,
         fingerprints,
-        all_keys,
+        known,
+    } = snapshot;
+    let Known {
         cached,
         previous,
-        mut latest,
+        latest,
         waiting,
         unreadable,
-    } = snapshot;
+        keys: all_keys,
+    } = known;
     let selected_ids: BTreeSet<_> = selected_eval_ids.iter().collect();
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
     let keys: BTreeMap<_, _> = all_keys
@@ -67,7 +70,7 @@ pub(super) fn assemble(
     }
     let planned = graph.evaluate(&planned);
     let deferred: BTreeSet<_> = waiting
-        .into_iter()
+        .iter()
         .filter(|view| view.request.status() == crate::types::RequestStatus::Deferred)
         .filter(|view| {
             matches!(
@@ -75,7 +78,7 @@ pub(super) fn assemble(
                 Some(Claim::WaitHuman(id)) if Some(id) == view.request.execution_id.as_ref()
             )
         })
-        .map(|view| view.request.eval_id)
+        .map(|view| view.request.eval_id.clone())
         .collect();
     let mut shown_evidence = evidence.clone();
     for id in &deferred {
@@ -90,7 +93,7 @@ pub(super) fn assemble(
         .collect();
     let mut counts = Counts::default();
     let mut artifacts = Vec::new();
-    for id in &required {
+    for id in required {
         let artifact = &evaluation.artifacts[id.as_str()];
         let status = ArtifactCondition::from(shown.artifacts[id.as_str()].status);
         let own = &graph.artifacts()[id.as_str()];
@@ -232,7 +235,7 @@ pub(super) fn assemble(
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
                     } else {
-                        match cache::eval_key(config, eval, &fingerprints) {
+                        match cache::eval_key(config, eval, fingerprints) {
                             Ok(_) => {
                                 "The current eval and fingerprints have no completed cached result."
                                     .into()
@@ -291,7 +294,7 @@ pub(super) fn assemble(
                 })
                 .collect(),
             key: all_keys.get(&eval.id).map(|key| key.value.clone()),
-            last: latest.remove(eval.id.as_str()),
+            last: latest.get(eval.id.as_str()).cloned(),
             changes: keys.get(&eval.id).and_then(|key| {
                 previous
                     .get(&(eval.id.clone(), key.eval_def_hash.clone()))
@@ -307,12 +310,12 @@ pub(super) fn assemble(
         });
     }
     Ok(StatusView {
-        unreadable,
+        unreadable: unreadable.clone(),
         selection: selection.clone(),
         recursive: options.recursive,
         force: options.force,
-        selected_eval_ids,
-        included_eval_ids,
+        selected_eval_ids: selected_eval_ids.to_vec(),
+        included_eval_ids: included_eval_ids.to_vec(),
         satisfied: obligations.is_empty(),
         obligations,
         artifacts,

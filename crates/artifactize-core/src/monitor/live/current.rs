@@ -8,22 +8,27 @@ use crate::{
         ArtifactCondition, EvalCondition, EvalState, StatusView, VerifyAction, VerifyOptions,
         selection::Selection,
     },
-    store::{Execution, ExecutionResult},
+    store::{Claim, Execution, ExecutionResult},
     types::{ArtifactName, EvalId, Fingerprint},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 
 /// What verify would do now. Declared in precedence order: an Artifact takes the first plan
-/// any of its evals has (one to run before blocked before waiting before reused).
+/// any of its evals has (one to run before one still being checked before blocked before
+/// waiting before reused).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Plan {
     /// Evaluated again: at least one eval has no result to reuse.
     Run,
+    /// Not known yet: a fingerprint it needs, or the plan of an eval it waits for, is still
+    /// being computed.
+    Check,
     /// Cannot be evaluated: an upstream eval is RED.
     Blocked,
     /// Waits: for its dependencies' evidence, or a live execution.
@@ -34,10 +39,12 @@ pub enum Plan {
 }
 
 impl Plan {
-    /// The plan as a Current names it: `reused`, `would run`, `waiting` or `blocked`.
+    /// The plan as a Current names it: `reused`, `would run`, `checking`, `waiting` or
+    /// `blocked`.
     pub fn word(self) -> &'static str {
         match self {
             Self::Run => "would run",
+            Self::Check => "checking",
             Self::Blocked => "blocked",
             Self::Wait => "waiting",
             Self::Reuse => "reused",
@@ -49,6 +56,7 @@ impl Plan {
     pub fn glyph(self) -> &'static str {
         match self {
             Self::Run => "○",
+            Self::Check => "…",
             Self::Blocked => Status::Blocked.glyph(),
             Self::Wait => Status::Wait.glyph(),
             Self::Reuse => "↻",
@@ -58,6 +66,7 @@ impl Plan {
     pub fn tone(self) -> Tone {
         match self {
             Self::Run => Tone::Running,
+            Self::Check => Tone::Muted,
             Self::Blocked => Tone::Blocked,
             Self::Wait => Tone::Queued,
             Self::Reuse => Tone::Green,
@@ -132,8 +141,8 @@ pub struct CurrentEdge {
 pub struct Current {
     pub scanned_at: OffsetDateTime,
     pub fingerprint: Fingerprint,
-    /// Every Artifact, eval criterion and labeled relation as text.
-    pub structure: String,
+    /// Every Artifact, eval criterion and labeled relation as text, shared by a scan's steps.
+    pub structure: Arc<str>,
     /// In name order.
     pub artifacts: Vec<CurrentArtifact>,
     pub edges: Vec<CurrentEdge>,
@@ -141,13 +150,15 @@ pub struct Current {
 
 /// Scan the workspace at `repo` as it is now against the state at `state`, as `artifactize
 /// status` does: it hashes files and may run fingerprint scripts or ask the review store, and
-/// records nothing.
+/// records nothing. `publish` gets the graph as soon as the declarations are read, every
+/// Artifact still being checked, then again each time fingerprints come in.
 pub async fn scan(
     repo: &Path,
     state: &Path,
     cancellation: CancellationToken,
+    publish: impl FnMut(Current) + Send,
 ) -> Result<Current, String> {
-    let current = read(repo, state, cancellation).await;
+    let current = read(repo, state, cancellation, publish).await;
     // What the scan read is several times what it keeps: give it back, or a long-lived
     // monitor keeps the largest scan's memory after the scan is gone.
     crate::platform::release_free_memory();
@@ -158,22 +169,39 @@ async fn read(
     repo: &Path,
     state: &Path,
     cancellation: CancellationToken,
+    mut publish: impl FnMut(Current) + Send,
 ) -> Result<Current, String> {
     // One read of the declarations serves both: the structure depends on them alone.
     let config = crate::config::read_workspace_config(repo).map_err(|error| error.to_string())?;
     let structure = graph_structure::extract(&config);
-    let (status, reused) = crate::project::scan_config(
+    // Every step of the scan shows the same declarations: describe them once.
+    let declared = Declared {
+        tree: structure.tree().into(),
+        fingerprint: structure.fingerprint(),
+        structure: &structure,
+    };
+    let (status, cached) = crate::project::scan(
         config,
         Some(state),
         &Selection::All,
         &VerifyOptions::default(),
         cancellation,
+        Some(&mut |progress: crate::project::Progress<'_>| {
+            publish(project(
+                &declared,
+                &progress.view,
+                progress.cached,
+                &progress.checking,
+                OffsetDateTime::now_utc(),
+            ));
+        }),
     )
     .await?;
     Ok(project(
-        &structure,
+        &declared,
         &status,
-        &reused,
+        &cached,
+        &BTreeSet::new(),
         OffsetDateTime::now_utc(),
     ))
 }
@@ -221,11 +249,20 @@ fn card(
     }
 }
 
-/// The scan of `structure` as `status` found it, with the results it would `reuse`.
-pub(crate) fn project(
-    structure: &Structure,
+/// The declarations a scan read, as every one of its steps shows them.
+struct Declared<'s> {
+    structure: &'s Structure,
+    tree: Arc<str>,
+    fingerprint: Fingerprint,
+}
+
+/// The scan of `declared` as `status` found it, with the claims it found, the evals still
+/// being `checking` marked so.
+fn project(
+    declared: &Declared<'_>,
     status: &StatusView,
-    reused: &BTreeMap<EvalId, Execution>,
+    cached: &BTreeMap<EvalId, Claim>,
+    checking: &BTreeSet<&EvalId>,
     now: OffsetDateTime,
 ) -> Current {
     let mut by_target: BTreeMap<&ArtifactName, Vec<&EvalState>> = BTreeMap::new();
@@ -242,9 +279,19 @@ pub(crate) fn project(
                     .into_iter()
                     .flatten()
                     .map(|eval| {
-                        let plan = Plan::from(eval.action);
-                        let declared = structure.evals.get(&eval.id);
+                        let plan = if checking.contains(&eval.id) {
+                            Plan::Check
+                        } else {
+                            Plan::from(eval.action)
+                        };
+                        let reused = match cached.get(&eval.id) {
+                            Some(Claim::Reuse(execution)) => Some(&**execution),
+                            _ => None,
+                        };
                         let instruction = declared
+                            .structure
+                            .evals
+                            .get(&eval.id)
                             .and_then(|declared| declared.payload.as_ref())
                             .map_or("", |payload| payload.instruction.as_str());
                         let mut facts = vec![("Profile", profile(&eval.profile))];
@@ -284,7 +331,7 @@ pub(crate) fn project(
                             plan,
                             state: eval.state,
                             reason: eval.reason.clone(),
-                            card: card(instruction, &eval.profile, plan, reused.get(&eval.id), now),
+                            card: card(instruction, &eval.profile, plan, reused, now),
                             facts,
                         }
                     })
@@ -309,7 +356,8 @@ pub(crate) fn project(
         .iter()
         .map(|artifact| (&artifact.name, artifact.plan))
         .collect();
-    let pairs: BTreeSet<(&ArtifactName, &ArtifactName)> = structure
+    let pairs: BTreeSet<(&ArtifactName, &ArtifactName)> = declared
+        .structure
         .relations
         .iter()
         .filter(|relation| relation.source != relation.target)
@@ -327,9 +375,12 @@ pub(crate) fn project(
         .collect();
     Current {
         scanned_at: now,
-        fingerprint: structure.fingerprint(),
-        structure: structure.tree(),
+        fingerprint: declared.fingerprint.clone(),
+        structure: declared.tree.clone(),
         artifacts,
         edges,
     }
 }
+
+#[cfg(test)]
+mod tests;

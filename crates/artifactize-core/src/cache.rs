@@ -1,6 +1,7 @@
 //! Fingerprints, reuse keys, execution ownership, reuse, and end-of-review rechecks.
 
 mod content;
+mod scratch;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -272,6 +273,30 @@ pub async fn prepare<'a>(
     parallelism: &Parallelism,
     cancellation: CancellationToken,
 ) -> Result<BTreeMap<&'a ArtifactName, PreparedFingerprint>, String> {
+    let mut prepared = BTreeMap::new();
+    prepare_each(
+        config,
+        artifacts,
+        output_root,
+        parallelism,
+        cancellation,
+        |id, fingerprint| {
+            prepared.insert(id, fingerprint);
+        },
+    )
+    .await?;
+    Ok(prepared)
+}
+
+/// [`prepare`], handing each fingerprint to `ready` as soon as it is computed.
+pub(crate) async fn prepare_each<'a>(
+    config: &RepoConfig,
+    artifacts: impl IntoIterator<Item = &'a ArtifactName>,
+    output_root: &Path,
+    parallelism: &Parallelism,
+    cancellation: CancellationToken,
+    mut ready: impl FnMut(&'a ArtifactName, PreparedFingerprint),
+) -> Result<(), String> {
     let artifacts: Vec<_> = artifacts.into_iter().collect();
     for id in &artifacts {
         scope::validate_file_target(&config.root, &config.artifacts[*id])
@@ -298,13 +323,10 @@ pub async fn prepare<'a>(
             (index, result)
         })
         .collect();
-    let mut prepared = BTreeMap::new();
     let mut failure: Option<(usize, String)> = None;
     while let Some((index, result)) = running.next().await {
         match result {
-            Ok(fingerprint) => {
-                prepared.insert(ids[index], fingerprint);
-            }
+            Ok(fingerprint) => ready(ids[index], fingerprint),
             Err(error) if failure.as_ref().is_none_or(|(first, _)| index < *first) => {
                 for token in &tokens[index + 1..] {
                     token.cancel();
@@ -316,7 +338,7 @@ pub async fn prepare<'a>(
     }
     match failure {
         Some((_, error)) => Err(error),
-        None => Ok(prepared),
+        None => Ok(()),
     }
 }
 
@@ -568,10 +590,7 @@ async fn script(
     let input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
     let output_root =
         workspace::prepare_directory(output_root, &config.root).map_err(|e| e.to_string())?;
-    let disposable = tempfile::Builder::new()
-        .prefix("fingerprint-")
-        .tempdir_in(output_root)
-        .map_err(|e| e.to_string())?;
+    let disposable = scratch::Scratch::create(&output_root).map_err(|e| e.to_string())?;
     let result = async {
         let mut command = runtime::Command::prepare(
             program,
