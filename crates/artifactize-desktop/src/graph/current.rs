@@ -211,6 +211,8 @@ pub(crate) fn shape(current: &Current) -> Shape {
             .map(|artifact| GraphNode {
                 id: node_id(&artifact.name),
                 name: artifact.name.to_string(),
+                space: artifact.name.space().map(str::to_owned),
+                label: artifact.name.local().to_owned(),
                 light: artifact.plan.into(),
                 note: Some(artifact.text()),
             })

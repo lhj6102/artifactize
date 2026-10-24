@@ -374,6 +374,24 @@ export function createChain(count: number): Fixture {
   });
 }
 
+/** A repository verified GREEN once, two of its Artifacts in the space `combat`:
+ * `combat::Spec` → `combat::Code` → `docs`, each with a runtime check. */
+export function createSpaces(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    for (const [folder, name, input] of [["spec", "combat::Spec", ""], ["code", "combat::Code", " Read {combat::Spec}."], ["docs", "docs", " Read {combat::Code}."]]) {
+      writeText(nativePath(makeDirectory(nativePath(repo, folder)), "index.artf"),
+        `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`);
+    }
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
 /**
  * Give the saved Runs `runs` and their requests explicit creation times, oldest first, a minute
  * apart and ending a minute ago: their order never depends on the clock's resolution or on how

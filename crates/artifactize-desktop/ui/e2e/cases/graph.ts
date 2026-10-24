@@ -4,7 +4,7 @@
 // Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, requests, savedRuns, signOff, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, createSpaces, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
@@ -175,6 +175,59 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the background click closed the Detail" });
       await press(browser, ["Escape"], () => entriesFocused(browser), "back to the Pane");
       assert.equal((await branch(browser, "repo  master"))?.selected, true, "the same branch stays selected");
+    },
+  ),
+
+  // UX journey: J-GRAPH-SPACES; UX edges: E-GRAPH-SPACES E-MON-DETAIL-ARTIFACT E-GRAPH-SPACE-BACKGROUND
+  scenario<{ run: string }>(
+    "graph-spaces",
+    "draws a space's Artifacts in one box labelled with the space by the rest of their names, an edge leaving the box like any other, and closes the Detail on a click on the box",
+    async () => ended(createSpaces()),
+    async (browser, { data }) => {
+      await shownRun(browser, data.run);
+      await graphShown(browser, "a:combat::Code");
+      /** The box of `combat` and every Artifact as drawn: its rectangle, text and spoken name. */
+      const drawn = () => browser.execute(() => {
+        const rect = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
+        const box = document.querySelector<HTMLElement>('.graph .svelte-flow__node[data-space="combat"]');
+        return {
+          box: box && { rect: rect(box), text: box.textContent?.trim() ?? "", boxes: document.querySelectorAll(".graph .svelte-flow__node[data-space]").length },
+          nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".graph .svelte-flow__node[data-light]")]
+            .filter((node) => !node.closest('aside[aria-label="Detail"]'))
+            .map((node) => [node.dataset.id ?? "", { rect: rect(node), text: node.textContent?.trim() ?? "", label: node.getAttribute("aria-label") ?? "" }])),
+        };
+      });
+      let shown: Awaited<ReturnType<typeof drawn>> | undefined;
+      await browser.waitUntil(async () => {
+        shown = await drawn();
+        return shown.box !== null && Object.keys(shown.nodes).length === 3;
+      }, { timeout: 15000, timeoutMsg: "the combat box and three Artifacts drawn" });
+      const { box, nodes } = shown!;
+      assert.ok(box);
+      assert.equal(box.text, "combat", "the box is labelled with the space");
+      assert.equal(box.boxes, 1, "one box: docs has no space");
+      const within = (inner: DOMRect, outer: DOMRect) =>
+        inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
+      for (const [id, label] of [["a:combat::Spec", "Spec"], ["a:combat::Code", "Code"]]) {
+        assert.equal(nodes[id].text, label, `${id} shows the rest of its name`);
+        assert.ok(nodes[id].label.startsWith(`${id.slice(2)}: `), `${id} is read aloud whole: ${nodes[id].label}`);
+        assert.ok(within(nodes[id].rect, box.rect), `${id} sits in the box`);
+      }
+      assert.equal(nodes["a:docs"].text, "docs");
+      const docs = nodes["a:docs"].rect;
+      assert.ok(docs.left >= box.rect.right || docs.right <= box.rect.left || docs.top >= box.rect.bottom || docs.bottom <= box.rect.top,
+        "docs stands outside the box");
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:combat::Code": "green", "a:docs": "green" }, { "a:combat::Code>a:docs": "green" }),
+        { timeout: 15000, timeoutMsg: "the edge from combat::Code out of the box to docs is drawn and lit like any other" });
+
+      // The Detail names the Artifact whole; a click on the box's label closes it.
+      await openArtifact(browser, "a:combat::Code", "Artifact combat::Code");
+      const label = await browser.execute(() => {
+        const at = document.querySelector('.graph .svelte-flow__node[data-space="combat"]')!.getBoundingClientRect();
+        return { x: Math.round(at.left + 8), y: Math.round(at.top + 8) };
+      });
+      await browser.action("pointer").move({ x: label.x, y: label.y }).down().up().perform();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "a click on the box closed the Detail" });
     },
   ),
 
