@@ -172,8 +172,10 @@ Arti names waiting requests with `request_list`/`request_show` and gives you the
 criteria and `artifactize review REQUEST_ID` (or your usual review interface). It
 never claims, approves or submits a Human review. It continues independent work, or
 yields with a short handoff naming the repository, Run, waiting requests and next
-action, then resumes by observing the same Run. Yielding is not cancellation, and no
-keep-alive turns or polling loops are needed.
+action. While the Run is open, it resumes by observing that Run. Once the Run ended
+YELLOW, its verdict is final and your later sign-off updates only the request, so Arti
+verifies again and the new Run reuses your sign-off. Yielding is not cancellation, and
+no keep-alive turns or polling loops are needed.
 
 ## Team and CI
 
