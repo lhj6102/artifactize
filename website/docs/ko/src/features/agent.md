@@ -20,8 +20,8 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 `gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
 그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
-지웁니다. 변수가 설정되어 있으면 항상 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
-납니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
+지웁니다. 변수가 설정되어 있으면 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
+납니다. 유효한 유니코드가 아닌 값은 설정되지 않은 것으로 보아 저장한 키를 씁니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
 `provider`와 `effort`는 설정에서 쓸 수 있는 별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
 없어졌으며, 아직 이를 선언한 프로필이 있으면 `config check`가 대신 쓸 백엔드를 알려 줍니다.
 

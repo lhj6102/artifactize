@@ -5,7 +5,7 @@ use crate::{
     graph_structure::{self, Structure},
     monitor::model::{self, Card, Status, Tone},
     project::{
-        ArtifactCondition, EvalCondition, StatusView, VerifyAction, VerifyOptions,
+        ArtifactCondition, EvalCondition, EvalState, StatusView, VerifyAction, VerifyOptions,
         selection::Selection,
     },
     store::{Execution, ExecutionResult},
@@ -147,6 +147,18 @@ pub async fn scan(
     state: &Path,
     cancellation: CancellationToken,
 ) -> Result<Current, String> {
+    let current = read(repo, state, cancellation).await;
+    // What the scan read is several times what it keeps: give it back, or a long-lived
+    // monitor keeps the largest scan's memory after the scan is gone.
+    crate::platform::release_free_memory();
+    current
+}
+
+async fn read(
+    repo: &Path,
+    state: &Path,
+    cancellation: CancellationToken,
+) -> Result<Current, String> {
     let structure = graph_structure::read(repo)?;
     let (status, reused) = crate::project::scan(
         repo,
@@ -214,15 +226,19 @@ pub(crate) fn project(
     reused: &BTreeMap<EvalId, Execution>,
     now: OffsetDateTime,
 ) -> Current {
+    let mut by_target: BTreeMap<&ArtifactName, Vec<&EvalState>> = BTreeMap::new();
+    for eval in &status.evals {
+        by_target.entry(&eval.target).or_default().push(eval);
+    }
     let artifacts: Vec<CurrentArtifact> = status
         .artifacts
         .iter()
         .map(|artifact| {
             let evals: Vec<CurrentEval> =
-                status
-                    .evals
-                    .iter()
-                    .filter(|eval| eval.target == artifact.id)
+                by_target
+                    .get(&artifact.id)
+                    .into_iter()
+                    .flatten()
                     .map(|eval| {
                         let plan = Plan::from(eval.action);
                         let declared = structure.evals.get(&eval.id);

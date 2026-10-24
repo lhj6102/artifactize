@@ -21,8 +21,19 @@ use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{
     Child, hide_console_window, kill_saved_group, kill_saved_session, process_start_time,
-    running_process_start_time, spawn_detached, spawn_gated, spawn_run, spawn_watched,
+    running_process_start_time, spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched,
 };
+
+/// Give the heap memory freed so far back to the system. glibc keeps freed memory in its
+/// arenas for reuse, so a long-lived process that once read much stays that large; macOS's
+/// allocator returns it by itself.
+pub(crate) fn release_free_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only releases memory that is already free, under glibc's own locks.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
 
 /// No Windows-style pending sharing disposition survives group cleanup.
 pub(crate) fn remove_abandoned_directory(path: &Path) -> io::Result<()> {
