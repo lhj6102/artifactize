@@ -3244,10 +3244,12 @@ pub fn script_file(path: &Path) -> (String, Vec<String>) {
 
 /// The native Windows Ctrl-C termination status is an ordinary signed process exit code.
 /// Only Windows has this status code and distinguishes it from Unix signal termination.
+/// The compiled stand-in's `exit` utility returns it, given as an argument.
 #[cfg(windows)]
 pub fn control_c_exit() -> (String, Vec<String>, i32) {
     let code = windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
-    (shell(), vec!["-c".into(), format!("exit {code}")], code)
+    let program = stand_in_bin("fixture").to_str().unwrap().to_owned();
+    (program, vec!["exit".into(), code.to_string()], code)
 }
 
 /// The standalone shell fixture, even on hosts where the real shell is available.
