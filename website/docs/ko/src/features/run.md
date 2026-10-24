@@ -46,7 +46,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 
 Run은 요청한 쪽과 상관없이 artifactize가 관리합니다. 옵션 없는 `verify`는 Run을 제출하고 Run ID
 (`--json`이면 `{"run","state"}`)를 출력한 뒤, 승인 여부와 관계없이 Run이 **접수**되면 0으로 종료합니다.
-`verify --wait`는 stderr에 Run ID를 출력하고, 결과가 확정될 때까지 지켜본 다음 저장된 결과를
+`verify --wait`는 stderr에 Run ID를 출력한 뒤 결과가 확정될 때까지 대기하고, 저장된 결과를
 보여 줍니다. 터미널을 닫거나 지켜보는 명령을 중단해도 지켜보기만 멈출 뿐 Run은 계속 실행됩니다. Run을 취소하는
 방법은 `run cancel RUN_ID`뿐입니다. 요청이 기록되면 바로 0으로 종료하고, 그 뒤 Run은 새 작업을
 시작하지 않고, 실행 중인 작업을 멈추고, 이미 저장된 결과는 남긴 채 ERROR/CANCELLED로 끝납니다.
