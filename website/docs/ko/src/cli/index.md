@@ -307,9 +307,9 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 
 ## Agent 스트리밍과 Runtime 로그 {#agent-streaming-and-runtime-logs}
 
-`verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`는 실시간
-상태와 개수, `kind: eval_result`는 저장된 요청의 간단한 결과, `kind: outcome`은 Run의 최종
-검증입니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보는 명령은 Run 결과에 맞는 종료 코드로 끝나며, 중단하면
+`verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`
+이벤트에는 실시간 상태와 개수가, `kind: eval_result` 이벤트에는 저장된 요청의 간단한 결과가,
+`kind: outcome` 이벤트에는 Run의 최종 검증 결과가 담깁니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보는 명령은 Run 결과에 맞는 종료 코드로 끝나며, 중단하면
 130으로 끝나고 지켜보기만 멈춥니다. 다시 연결하면 완료된 eval을 다시 보여 줄 뿐, 지난 이벤트를
 그대로 재생하지는 않습니다. 자세한 내용이 필요하면 결과의 `next_cursor`를 MCP
 `verify_result`에 넘겨 다음 내용을 읽거나 저장된 Run을 살펴보세요.
