@@ -52,10 +52,11 @@ that makes the transition happen and checks where it leads.
   - **Run**: the shown Run's headline and what needs attention above the **Run graph**; while
     loading, on an error or with an empty graph the graph's place stays and says so.
   - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: a
-    header saying when it was scanned, a Refresh button, the **Current graph** and, below it,
-    the expandable **Structure and evaluation criteria** text (every criterion and labeled
+    header saying how many Artifacts are still being checked while the scan runs, when it was
+    scanned once it ends, or why it failed, a Refresh button, the **Current graph** and, below
+    it, the expandable **Structure and evaluation criteria** text (every criterion and labeled
     relation). It scans again when chosen again, on Refresh and when a Run of the branch ends;
-    while a scan of the branch is still running, these wait for it instead of starting over.
+    while a scan of the branch is still running, these show that scan instead of starting over.
   - **Review**: a waiting Human review opened from the Pane, its eval and Artifact above the
     **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
@@ -67,10 +68,12 @@ that makes the transition happen and checks where it leads.
   sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
   by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
-- **Current graph**: the current declarations' Artifacts and relations, each Artifact coloured
-  by what verify would do now: reused (every eval's result would be reused without
-  evaluation), would run, waiting, blocked. A node shows only its name, as on a Run graph;
-  read aloud it says which, would run with how many of its evals would run.
+- **Current graph**: the current declarations' Artifacts and relations, drawn as soon as the
+  declarations are read, each Artifact first still being checked and then coloured, as soon as
+  the scan knows, by what verify would do now: reused (every eval's result would be reused
+  without evaluation), would run, waiting, blocked. A node shows only its name, as on a Run
+  graph; read aloud it says which, would run with how many of its evals would run, or that it
+  is still being checked.
 - On both graphs the Artifacts of one space, named `space::name`, sit together in a box
   labelled with the space, each node showing its name without the space and read aloud whole;
   Artifacts without a space stand outside every box. A box is not an Artifact: Tab passes it by
@@ -84,7 +87,7 @@ that makes the transition happen and checks where it leads.
   [eval] …`: the Artifact's own chip (the Artifact icon before its name, read aloud as
   "Artifact {name}"; only the name is cut short when long, the Detail's title showing it
   whole), then a `/` and one chip per eval with its verdict's glyph and colour, on a Current
-  whether it would run or be reused; an Artifact without evals has its own chip only, without
+  whether it would run, would be reused or is still being checked; an Artifact without evals has its own chip only, without
   the `/`. Eval chips that do not fit on one line wrap onto further lines within the Detail,
   the `/` staying with the Artifact's chip. The Artifact's tab draws it between its
   neighbours with its graph's nodes and edges (the Artifacts its evals use on its left, those
@@ -96,7 +99,7 @@ that makes the transition happen and checks where it leads.
   eval's tab shows its Summary (its status, beside it in grey what running it took and spent:
   time, tokens in `k` or `M` and model, or what reuse saved; its instruction; its result, each
   owner field by name and a list as numbered items; execution options, metadata and
-  fingerprint, every other fact under Debug), on a Current whether it would run or be reused
+  fingerprint, every other fact under Debug), on a Current whether it would run, would be reused or is still being checked
   and why and the result it would reuse, or, switched below the tabs, its Agent log or Runtime
   log; in a Run a Human eval's tab holds its Human review. Everything in the Detail,
   transcript and log lines, long words and code included, wraps or scrolls within its width.
@@ -200,11 +203,13 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-CURRENT-CHIP | Pane | choose a branch's Current (a click on it, ↓ or ↑ onto it, or a branch selected without a Run in progress), also when it is already shown | Current: the worktree scanned again, its header saying when; the Current graph with each Artifact coloured reused, would run, waiting or blocked, its name read aloud with which (would run with its count of evals) |
-| E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | Current scanned again, its header the new time, the graph recoloured in place |
-| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | Current scanned again and its graph and structure text updated |
+| E-CURRENT-CHIP | Pane | choose a branch's Current (a click on it, ↓ or ↑ onto it, or a branch selected without a Run in progress), also when it is already shown | Current: the scan of the branch still running shown as it is, else the worktree scanned again with every Artifact being checked again, read aloud so; its header saying how many Artifacts are still being checked; the Current graph, drawn whole the first time it is shown (E-GRAPH-FIRST), its camera kept otherwise (E-GRAPH-CAMERA-KEPT) |
+| E-CURRENT-CHECKED | Current, its scan running | the scan learns what verify would do with Artifacts | Current: those Artifacts coloured in place reused, would run, waiting or blocked, each name read aloud with which (would run with its count of evals); the header's count lower, and once none remain, the header saying when it was scanned |
+| E-CURRENT-FAILED | Current, its scan running | the scan fails | Current: the header saying why, the graph staying as it was |
+| E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; the graph recoloured in place |
+| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; its structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
-| E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan ends | the graph, nodes and edges recoloured in place |
+| E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, nodes and edges recoloured in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
@@ -218,9 +223,9 @@ that makes the transition happen and checks where it leads.
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-MON-DETAIL-ARTIFACT | Run graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab: its chips as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip; no `/` without evals), the Artifact between its neighbours, its evals listed with their verdicts, its Tools and Tool log, then its path, every other fact (what it waits for included) folded under Debug |
-| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current: its eval chips and listed evals saying whether each would run or be reused, the Artifact between its neighbours, its Tools and Tool log, its path, the rest under Debug |
+| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current: its eval chips and listed evals saying whether each would run, would be reused or is still being checked, the Artifact between its neighbours, its Tools and Tool log, its path, the rest under Debug |
 | E-MON-DETAIL-TAB | Detail of an Artifact of a Run | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's tab shown: its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
-| E-CURRENT-TAB | Detail of an Artifact of a Current | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's Summary: whether it would run or be reused and why, and the result it would reuse |
+| E-CURRENT-TAB | Detail of an Artifact of a Current | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's Summary: whether it would run, would be reused or is still being checked and why, and the result it would reuse |
 | E-MON-DETAIL-NEIGHBOUR | Detail of an Artifact, on its Artifact tab | click a neighbour drawn beside it | Detail of that Artifact, on its Artifact tab, between its own neighbours |
 | E-MON-DETAIL-SWITCH | Detail | click another Artifact of the graph | Detail of that Artifact, on its Artifact tab |
 | E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened |
@@ -319,8 +324,9 @@ E-PANE-SELECT.
 - J-RESIZE: E-MON-RESIZE
   E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-WIDTH → E-MON-DETAIL-BACK → E-MON-DETAIL-ARTIFACT
 - J-MAIN-RUN: E-PANE-CHIP → E-MON-NOTICE
-- J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH
-  E-CURRENT-CHIP → E-CURRENT-RUN-END
+- J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-CHECKED → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH → E-CURRENT-CHECKED
+  E-CURRENT-CHIP → E-CURRENT-RUN-END → E-CURRENT-CHECKED
+  E-CURRENT-CHIP → E-CURRENT-FAILED
 - J-MAIN-REVIEW: E-REVIEW-OPEN → E-MAIN-REVIEW-LEAVE → E-REVIEW-OPEN
 - J-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-LOG → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
   E-MON-DETAIL-RUN → E-MON-DETAIL-BACK
