@@ -6,7 +6,13 @@ import { dispatchInput } from "./input.ts";
 export function visibleCenter(browser: WebdriverIO.Browser, element: WebdriverIO.Element): Promise<{ x: number; y: number }> {
   return browser.execute((target: HTMLElement) => {
     const box = target.getBoundingClientRect();
-    const point = { x: Math.floor(box.left + box.width / 2), y: Math.floor(box.top + box.height / 2) };
+    // A whole pixel inside the box: flooring the centre of a 1px divider at x 126.33 gives 126,
+    // just outside it.
+    const inside = (start: number, size: number) => {
+      const centre = Math.floor(start + size / 2);
+      return centre >= start ? centre : Math.ceil(start);
+    };
+    const point = { x: inside(box.left, box.width), y: inside(box.top, box.height) };
     const hit = document.elementFromPoint(point.x, point.y);
     if (!box.width || !box.height || !hit || !target.contains(hit)) {
       // What lies at the centre instead, so a failure says what covers the target.
