@@ -42,13 +42,14 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         evals: Vec::new(),
         relations: Vec::new(),
     };
+    let mut schemas = super::schemas::Schemas::default();
     walk(
         &root,
         &ignored,
         Reach::Workspace,
         targets,
         &mut |found: Found<'_>| {
-            let declaration = declaration(&found)?;
+            let declaration = declaration(&found, &mut schemas)?;
             declare(&mut config, found, declaration)
         },
     )?;
@@ -305,12 +306,15 @@ pub(super) fn walk<E: From<ConfigError>>(
 }
 
 /// Parse and validate the declaration a walk found, as its kind declares it.
-pub(super) fn declaration(found: &Found<'_>) -> Result<ArtifactDeclaration, ConfigError> {
+pub(super) fn declaration(
+    found: &Found<'_>,
+    schemas: &mut super::schemas::Schemas,
+) -> Result<ArtifactDeclaration, ConfigError> {
     let file = found.file;
     let source = &found.source;
     match found.kind {
         ArtifactKind::Folder => {
-            parse_declaration(source).map_err(|error| ConfigError::new(file, error))
+            parse_declaration_in(source, schemas).map_err(|error| ConfigError::new(file, error))
         }
         ArtifactKind::Graph => {
             let table: toml::Table =
@@ -322,8 +326,8 @@ pub(super) fn declaration(found: &Found<'_>) -> Result<ArtifactDeclaration, Conf
                     "The graph Artifact cannot declare fingerprint.",
                 ));
             }
-            let mut declaration =
-                parse_declaration(source).map_err(|error| ConfigError::new(file, error))?;
+            let mut declaration = parse_declaration_in(source, schemas)
+                .map_err(|error| ConfigError::new(file, error))?;
             declaration.fingerprint = Some(Fingerprint::Graph);
             Ok(declaration)
         }
@@ -333,8 +337,8 @@ pub(super) fn declaration(found: &Found<'_>) -> Result<ArtifactDeclaration, Conf
                 .file_name()
                 .and_then(|target| target.to_str())
                 .expect("a walk names file Artifacts by their UTF-8 target");
-            let mut declaration =
-                parse_declaration(source).map_err(|error| ConfigError::new(file, error))?;
+            let mut declaration = parse_declaration_in(source, schemas)
+                .map_err(|error| ConfigError::new(file, error))?;
             let value =
                 toml::de::DeTable::parse(source).map_err(|error| ConfigError::new(file, error))?;
             if value.get_ref().get("fingerprint").is_none() {

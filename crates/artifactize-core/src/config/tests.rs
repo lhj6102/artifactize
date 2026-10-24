@@ -853,3 +853,62 @@ fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
         );
     }
 }
+
+#[test]
+fn one_read_keeps_each_distinct_schema_once_and_still_checks_it() {
+    let workspace = crate::test_os::tempdir();
+    let chain = |name: &str, kind: &str, limit: u32| {
+        format!(
+            r#"name = "{name}"
+
+[views.agent_tools.view]
+description = "View {{artifactName}}."
+protocol = "json"
+command = "node"
+args = ["view.mjs"]
+input_schema = {{ type = "object", properties.depth = {{ type = "{kind}", maximum = {limit} }} }}
+
+[evals.review]
+title = "Review"
+profile = {{ kind = "human" }}
+payload = {{ instruction = "Review {{{name}}}." }}
+pass_schema = {{ type = "object", properties.note = {{ type = "string" }}, additionalProperties = false }}
+"#
+        )
+    };
+    let write = |name: &str, kind: &str, limit: u32| {
+        std::fs::create_dir_all(workspace.path().join(name)).unwrap();
+        std::fs::write(
+            workspace.path().join(name).join(CONFIG_FILE),
+            chain(name, kind, limit),
+        )
+        .unwrap();
+    };
+    for (name, limit) in [("a", 3), ("b", 3), ("c", 4)] {
+        write(name, "integer", limit);
+    }
+    let config = read_workspace_config(workspace.path()).unwrap();
+    let schema = |name: &str| match &config.artifacts[name].views.agent_tools["view"] {
+        AgentTool::Command(tool) => tool.input_schema.clone(),
+        AgentTool::Builtin(_) => unreachable!("a command tool"),
+    };
+    assert!(std::sync::Arc::ptr_eq(&schema("a"), &schema("b")));
+    assert!(!std::sync::Arc::ptr_eq(&schema("a"), &schema("c")));
+    assert_eq!(schema("c")["properties"]["depth"]["maximum"], 4);
+    let verdicts: Vec<_> = config
+        .evals
+        .iter()
+        .map(|eval| std::ptr::from_ref(eval.declaration.pass_schema().unwrap()))
+        .collect();
+    assert_eq!(verdicts.len(), 3);
+    assert!(verdicts.windows(2).all(|pair| pair[0] == pair[1]));
+    // A schema declared again is checked as the first one was.
+    write("b", "whole", 3);
+    write("c", "whole", 3);
+    let error = read_workspace_config(workspace.path()).unwrap_err();
+    assert!(error.path.ends_with("b/index.artf"), "{error}");
+    assert!(
+        error.message.contains("Invalid tool inputSchema"),
+        "{error}"
+    );
+}

@@ -136,6 +136,7 @@ pub(crate) fn read_artifact_scope(
         evals: Vec::new(),
         relations: Vec::new(),
     };
+    let mut schemas = super::schemas::Schemas::default();
     walk(
         &root,
         &ignored,
@@ -146,7 +147,7 @@ pub(crate) fn read_artifact_scope(
             if own && (found.kind != site.kind || found.path != site.path) {
                 return Err(moved());
             }
-            let declaration = declaration(&found)?;
+            let declaration = declaration(&found, &mut schemas)?;
             if own && &declaration.name != name {
                 return Err(moved());
             }
