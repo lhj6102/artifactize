@@ -377,9 +377,16 @@ Summarize {docs}."""
       const checking = { ...fixture, gate, runs };
       const { drawn } = current(browser);
       /** currentScan requests the app made, from its read-only command activity. */
-      const requested = async () => (await checkpoint(browser)).activity.commands.currentScan?.started ?? 0;
+      const scans = async () => (await checkpoint(browser)).activity.commands.currentScan ?? { started: 0, completed: 0 };
+      const requested = async () => (await scans()).started;
       const nodes = async () => JSON.stringify((await drawn()).nodes);
       const failure = () => browser.execute((root) => document.querySelector(`${root} .failure`)?.textContent ?? "", CURRENT);
+      /** Every request answered, and the Current shows the same scan still checking, no failure. */
+      const stillChecking = async (what: string) => {
+        await waitFor(browser, async () => { const { started, completed } = await scans(); return started === completed; }, `${what}: answered`);
+        assert.equal(await failure(), "", `${what}: no failure shown`);
+        assert.equal(await scanned(browser), "Checking 2 of 3 Artifacts…", `${what}: the same scan, still checking`);
+      };
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
       // other's own fingerprint is in; slow's script waits for its gate, and quick reads slow.
       const waiting = JSON.stringify({ "a:other": "other: would run (1 eval)", "a:quick": "quick: checking", "a:slow": "slow: checking" });
@@ -401,7 +408,10 @@ Summarize {docs}."""
       assert.equal(fingerprintRuns(checking), 1);
       const before = await requested();
       await chooseChip(browser, "repo  master", "current");
+      await waitFor(browser, async () => (await requested()) >= before + 1, "choosing the Current asked for it again");
+      await stillChecking("chosen again");
       await press(browser, ["F5"], async () => (await requested()) >= before + 2, "F5 asked for the Current again");
+      await stillChecking("F5");
       const run = await verifyWaiting(fixture, ["--artifacts", "other"]);
       await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === run, "the Run in progress starts the row");
       const request = requests(fixture).find((saved) => saved.runId === run && saved.evalId === "other/signoff");
@@ -409,7 +419,7 @@ Summarize {docs}."""
       signOff(fixture, request.id);
       await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === "current", "the Run ended: the row starts with the Current");
       await waitFor(browser, async () => (await requested()) >= before + 3, "the Run's end asked for the Current again");
-      assert.equal(await scanned(browser), "Checking 2 of 3 Artifacts…", "the same scan, still checking");
+      await stillChecking("the Run's end");
       assert.equal(fingerprintRuns(checking), 1, "nothing started over");
       // The fingerprint comes in: each Artifact is coloured in place, and the scan ends.
       writeText(gate, "go");
