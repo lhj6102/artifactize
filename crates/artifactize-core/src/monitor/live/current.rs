@@ -237,14 +237,8 @@ fn card(
         took: reused
             .and_then(|execution| model::span(execution.started_at, execution.completed_at(), now)),
         tokens: reused
-            .and_then(|execution| execution.usage.as_ref())
-            .map(|attempts| {
-                attempts
-                    .iter()
-                    .filter_map(|attempt| attempt.usage.get("totalTokens"))
-                    .sum::<u64>()
-            })
-            .filter(|tokens| *tokens > 0),
+            .and_then(|execution| execution.usage.as_deref())
+            .and_then(model::attempt_tokens),
         model: match profile {
             Profile::Agent { model, .. } => Some(model.to_string()),
             _ => None,
