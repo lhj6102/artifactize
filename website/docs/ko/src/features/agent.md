@@ -95,8 +95,8 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
-턴이 사용량 제한이나 일시적인 오류로 실패했고, 아직 아무것도 출력하지 않았고 토큰도 쓰지
-않았다면 provider가 요청한 시간만큼 대기한 뒤 자동으로 몇 번 다시 시도합니다. 출력이나 사용량이
+턴이 아무것도 출력하거나 토큰을 쓰기 전에 사용량 제한이나 일시적인 오류로 실패하면,
+provider가 요청한 시간만큼 기다렸다가 자동으로 몇 번 다시 시도합니다. 출력이나 사용량이
 생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 끝난 결과는 재사용되므로 실패한 리뷰만
@@ -297,7 +297,7 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
   `remote push`하지 마세요.
 - 테스트 엔드포인트가 설정되어 있는 동안 `doctor`는 경고하고 이를 `testEndpoint`로 알립니다.
 
-가짜 provider는 요청받은 모델의 응답을 해당 provider의 전송 형식에 맞춰 `text/event-stream`으로 스트리밍합니다.
+가짜 provider는 요청에 지정된 모델의 응답을 해당 provider의 전송 형식에 맞춰 `text/event-stream`으로 스트리밍합니다.
 `openai`라면 `response.completed` 이벤트 하나면 됩니다. GREEN 스키마가 `{"verdict":"GREEN"}`만으로 충족되는 리뷰는 이 가짜 provider로 통과시킬 수 있습니다. `pass_schema`에 다른 필드가 필요하면
 가짜 provider의 `text` 응답에 그 필드의 유효한 값을 넣으세요. 그러지 않으면 응답이 스키마에 맞지
 않아 artifactize가 한 번 수정을 요청하고, 수정한 응답도 맞지 않으면 `INVALID_RESULT`가 됩니다.
