@@ -20,7 +20,11 @@ mod mutex;
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
+mod site;
 pub use mutex::MutexTag;
+pub(crate) use site::read_artifact_scope;
+pub use site::{ScopeReadError, Site, read_sites};
+use site::{declaration_of, folder_of};
 mod plain;
 mod stored;
 mod tools;
@@ -1084,10 +1088,7 @@ impl Artifact {
 
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
-        match self.kind {
-            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
-            ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
-        }
+        folder_of(self.kind, &self.path)
     }
 
     pub fn file_name(&self) -> Option<&str> {
@@ -1097,14 +1098,14 @@ impl Artifact {
     }
 
     pub fn declaration_path(&self) -> PathBuf {
-        match self.kind {
-            ArtifactKind::Graph => PathBuf::from(".artf"),
-            ArtifactKind::Folder => logical_join(&self.path, std::ffi::OsStr::new(CONFIG_FILE)),
-            ArtifactKind::File => {
-                let mut path = self.path.as_os_str().to_owned();
-                path.push(".artf");
-                PathBuf::from(path)
-            }
+        declaration_of(self.kind, &self.path)
+    }
+
+    /// Where it is declared.
+    pub fn site(&self) -> Site {
+        Site {
+            kind: self.kind,
+            path: self.path.clone(),
         }
     }
 }

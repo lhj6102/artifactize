@@ -46,12 +46,52 @@ impl Runs {
             HumanTool::Builtin(tool) => (Some(tool.builtin), "", tool.args.as_slice()),
         };
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let place = |id: &str| {
+            let artifact = artifacts.get(id)?;
+            Some(Place {
+                path: artifact.path.value()?.clone(),
+                file: artifact.kind.value() == Some(&crate::config::ArtifactKind::File),
+            })
+        };
+        Self::of(builtin, command, &args, &place, owner)
+    }
+
+    /// The same of a Human tool of `owner` in declarations read now, within `artifacts`.
+    pub(super) fn declared(
+        artifacts: &BTreeMap<ArtifactName, crate::config::Artifact>,
+        owner: &ArtifactName,
+        tool: &crate::config::HumanTool,
+    ) -> Self {
+        use crate::config::HumanTool;
+        let (builtin, command, args) = match tool {
+            HumanTool::Command(tool) => (None, tool.command.as_str(), tool.args.as_slice()),
+            HumanTool::Builtin(tool) => (Some(tool.builtin), "", tool.args.as_slice()),
+        };
+        let args: Vec<String> = args.iter().map(ToString::to_string).collect();
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let place = |id: &str| {
+            let artifact = artifacts.get(id)?;
+            Some(Place {
+                path: artifact.path.clone(),
+                file: artifact.kind == crate::config::ArtifactKind::File,
+            })
+        };
+        Self::of(builtin, command, &args, &place, owner)
+    }
+
+    fn of(
+        builtin: Option<Builtin>,
+        command: &str,
+        args: &[&str],
+        place: &dyn Fn(&str) -> Option<Place>,
+        owner: &ArtifactName,
+    ) -> Self {
         let target = || {
             args.first()
-                .map(|arg| logical(artifacts, owner, arg))
+                .map(|arg| logical(place, owner, arg))
                 .unwrap_or_default()
         };
-        match (builtin, args.as_slice()) {
+        match (builtin, args) {
             (Some(Builtin::Open), [url]) if artifactize_tools::builtin::is_url(url) => {
                 Self::OpenUrl((*url).to_owned())
             }
@@ -101,6 +141,13 @@ impl Runs {
     }
 }
 
+/// Where a target's Artifact is, as a definition knows it.
+struct Place {
+    path: std::path::PathBuf,
+    /// A file Artifact: a path below it is in its folder.
+    file: bool,
+}
+
 /// A folder target ends in `/`, so it reads as a folder.
 fn folder(path: &str) -> String {
     if path.ends_with('/') {
@@ -113,30 +160,22 @@ fn folder(path: &str) -> String {
 /// A builtin target as a repository-relative logical path: `{artifactPath}[/path]`,
 /// `{name}[/path]` or a path in the owner. A target the definition cannot place is shown as
 /// declared.
-fn logical(
-    artifacts: &BTreeMap<ArtifactName, Artifact>,
-    owner: &ArtifactName,
-    arg: &str,
-) -> String {
+fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &str) -> String {
     let (id, rest) = match arg.strip_prefix('{').and_then(|arg| arg.split_once('}')) {
         Some(("artifactPath", rest)) => (owner.as_str(), rest),
         Some((name, rest)) => (name, rest),
         None => (owner.as_str(), arg),
     };
     let rest = rest.strip_prefix('/').unwrap_or(rest);
-    let Some(artifact) = artifacts.get(id) else {
+    let Some(artifact) = place(id) else {
         return arg.to_owned();
     };
-    let Some(path) = artifact.path.value() else {
-        return arg.to_owned();
+    let path = crate::platform::path_text(&artifact.path);
+    let base = if rest.is_empty() || !artifact.file {
+        path.as_str()
+    } else {
+        path.rsplit_once('/').map_or("", |(parent, _)| parent)
     };
-    let path = crate::platform::path_text(path);
-    let base =
-        if rest.is_empty() || artifact.kind.value() != Some(&crate::config::ArtifactKind::File) {
-            path.as_str()
-        } else {
-            path.rsplit_once('/').map_or("", |(parent, _)| parent)
-        };
     match (base, rest) {
         ("", "") => ROOT.to_owned(),
         ("", rest) => rest.to_owned(),
