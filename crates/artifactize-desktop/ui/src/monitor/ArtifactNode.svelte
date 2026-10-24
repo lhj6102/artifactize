@@ -1,15 +1,16 @@
 <script lang="ts">
-  // One Artifact of a graph: its name and how it is lit, nothing about its evals.
+  // One Artifact of a graph: its name (in a space's box, without the space) and how it is lit,
+  // nothing about its evals.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
   import type { Light } from "../ipc/client";
 
-  let { data, selected }: NodeProps & { data: { name: string; light: Light; open: boolean } } = $props();
+  let { data, selected }: NodeProps & { data: { label: string; light: Light; open: boolean } } = $props();
 </script>
 
 <div class="artifact light-{data.light}" class:selected class:open={data.open}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="dot" aria-hidden="true"></span>
-  <span class="name">{data.name}</span>
+  <span class="name">{data.label}</span>
   <Handle type="source" position={Position.Right} isConnectable={false} />
 </div>
 

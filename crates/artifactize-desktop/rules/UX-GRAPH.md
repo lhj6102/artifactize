@@ -70,6 +70,10 @@ that makes the transition happen and checks where it leads.
   by what verify would do now: reused (every eval's result would be reused without
   evaluation), would run, waiting, blocked. A node shows only its name, as on a Run graph;
   read aloud it says which, would run with how many of its evals would run.
+- On both graphs the Artifacts of one space, named `space::name`, sit together in a box
+  labelled with the space, each node showing its name without the space and read aloud whole;
+  Artifacts without a space stand outside every box. A box is not an Artifact: Tab passes it by
+  and a click on it is a click on the background.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does; they have no other keys of their own. Hovering only highlights.
 - **Detail**: floats over a graph docked toward its right edge, with a gap, and shows a Run or
@@ -204,6 +208,8 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
+| E-GRAPH-SPACES | Pane | choose an entry whose graph has Artifacts named `space::name` | its Run graph or Current graph, each space's Artifacts in one box labelled with the space, each node showing the rest of its name and read aloud whole, the edges between spaces drawn and coloured like any other |
+| E-GRAPH-SPACE-BACKGROUND | Run graph or Current graph with a space's box, the Detail open | click the box's background | where a click on the graph's background leads: E-MON-DETAIL-BACK or E-CURRENT-CLOSE, and with a Human review in the Detail running work or editing its form first E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
 ## Detail
@@ -327,6 +333,7 @@ E-PANE-SELECT.
   E-CURRENT-EVALS → E-CURRENT-TAB
 - J-GRAPH-COLOURS: E-PANE-CHIP → E-GRAPH-RECOLOUR
   E-CURRENT-CHIP → E-CURRENT-RUN-END
+- J-GRAPH-SPACES: E-GRAPH-SPACES → E-MON-DETAIL-ARTIFACT → E-GRAPH-SPACE-BACKGROUND
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE

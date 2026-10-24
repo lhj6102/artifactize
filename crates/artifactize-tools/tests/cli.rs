@@ -58,7 +58,7 @@ fn subcommands_share_scoped_files_and_exit_codes() {
         );
     }
     let missing = call(root.path(), &["section", "notes.md", "Absent"]);
-    assert_eq!(missing.status.code(), Some(1));
+    assert_eq!(os::exit_code(&missing), 1);
     let error = String::from_utf8(missing.stderr).unwrap();
     assert!(error.contains("First\nChild\nNext"), "{error}");
     for sub in ["read", "list", "glob", "grep", "section", "open"] {
@@ -67,15 +67,15 @@ fn subcommands_share_scoped_files_and_exit_codes() {
             "section" => vec![sub, "../outside", "First"],
             _ => vec![sub, "../outside"],
         };
-        assert_eq!(call(root.path(), &args).status.code(), Some(1), "{sub}");
+        assert_eq!(os::exit_code(&call(root.path(), &args)), 1, "{sub}");
         let index = if matches!(sub, "glob" | "grep") { 2 } else { 1 };
         let absolute = root.path().join("notes.md");
         args[index] = absolute.to_str().unwrap();
-        assert_eq!(call(root.path(), &args).status.code(), Some(1), "{sub}");
+        assert_eq!(os::exit_code(&call(root.path(), &args)), 1, "{sub}");
     }
     let help = text(call(root.path(), &["--help"]));
     assert!(help.contains("symlinks are refused"));
-    assert_eq!(call(root.path(), &["unknown"]).status.code(), Some(2));
+    assert_eq!(os::exit_code(&call(root.path(), &["unknown"])), 2);
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn searches_validate_cli_patterns_and_keep_the_declared_flags() {
     fs::write(root.path().join("notes.md"), "ALPHA\nbeta\n").unwrap();
     for args in [["grep", "", "."], ["glob", "", "."], ["grep", "[", "."]] {
         let output = call(root.path(), &args);
-        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        assert_eq!(os::exit_code(&output), 1, "{args:?}");
         assert!(!output.stderr.is_empty(), "{args:?}");
     }
     let output = text(call(
@@ -112,7 +112,7 @@ fn symlink_inputs_are_not_followed() {
         vec!["open", "link.md"],
     ] {
         let output = call(root.path(), &args);
-        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(os::exit_code(&output), 1);
     }
 }
 
@@ -130,7 +130,7 @@ fn help_resolves_path_and_enforces_output_bounds() {
     };
     assert_eq!(text(run("sub")), "stub help: sub|--help\n");
     let large = run("large");
-    assert_eq!(large.status.code(), Some(1));
+    assert_eq!(os::exit_code(&large), 1);
     assert!(String::from_utf8(large.stderr).unwrap().contains("64 KiB"));
 }
 

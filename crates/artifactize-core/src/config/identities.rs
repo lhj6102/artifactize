@@ -125,7 +125,8 @@ identity!(HubEpoch, |value: &str| !value.is_empty()
     ));
 
 // An instruction or argv reference names an Artifact.
-identity!(ReferenceName, name);
+identity!(ReferenceName, |value: &str| super::artifact_name(value, "")
+    .is_ok());
 impl From<&crate::types::ArtifactName> for ReferenceName {
     fn from(value: &crate::types::ArtifactName) -> Self {
         // Artifact names and reference names have the same declaration grammar.

@@ -4,7 +4,8 @@ A Human eval asks a person for a GREEN or RED sign-off. The reviewer claims the
 waiting request, runs the Human tools you declared and submits a verdict, either
 with `artifactize request` commands or in the `artifactize review` terminal UI.
 
-A person signs off only on what the machine evals of the Artifact already pass. While
+A person signs off only on what the machine evals of the Artifact already pass; a GREEN
+verdict counts even while it shows PROVISIONAL on an outstanding upstream sign-off. While
 they are still running, the Human eval waits (`WAIT_DEPENDENCY`); when one of them is RED
 or ERROR, it is BLOCKED and its reason names them. See
 [Human sign-offs](artifact.md#human-sign-offs).

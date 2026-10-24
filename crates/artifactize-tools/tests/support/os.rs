@@ -6,6 +6,7 @@
 )]
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -285,14 +286,128 @@ fn main() {
     )
 }
 
-/// The environment an environment-recording program wrote to `record`, which is removed.
+/// The environment an environment-recording program wrote to `record`.
 pub fn recorded_environment(record: &Path) -> std::collections::BTreeMap<String, String> {
     let text = fs::read_to_string(record).unwrap();
-    fs::remove_file(record).unwrap();
     text.lines()
         .map(|line| {
             let (name, value) = line.split_once('=').unwrap();
             (name.to_owned(), value.to_owned())
         })
         .collect()
+}
+
+/// The code `output`'s process exited with; a process a signal ended has none and fails here.
+pub fn exit_code(output: &std::process::Output) -> i32 {
+    output
+        .status
+        .code()
+        .unwrap_or_else(|| panic!("the process ended without an exit code: {}", output.status))
+}
+
+// The environment of an AppImage, which exists only on Linux: the person's own, and what the
+// AppImage runtime, its GTK hook and AppRun make of it.
+
+/// The person's environment before the AppImage started: their opener's directory first.
+pub fn appimage_person(root: &Path) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("PATH".into(), path_list([root.join("bin")])),
+        (
+            "XDG_DATA_DIRS".into(),
+            path_list([
+                "/usr/local/share/",
+                "/usr/share/",
+                "/var/lib/flatpak/exports/share",
+            ]),
+        ),
+        ("AUTHOR_VARIABLE".into(), "from-the-terminal".into()),
+        (RECORD.into(), text(&root.join("record"))),
+    ])
+}
+
+/// What the AppImage runtime, the linuxdeploy GTK hook and AppRun make of `person`, for the
+/// bundle `bundle`, in the forms they write it: with doubled slashes, and with an empty last
+/// entry where the person had no value.
+pub fn appimage_bundled(
+    bundle: &Path,
+    person: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let b = text(bundle);
+    let mut environment = person.clone();
+    environment.extend(
+        [
+            ("APPDIR", b.clone()),
+            ("APPIMAGE", format!("{b}.AppImage")),
+            ("ARGV0", "./Artifactize.AppImage".into()),
+            ("OWD", "/home/someone".into()),
+            ("GTK_THEME", "Adwaita:light".into()),
+            ("GTK_DATA_PREFIX", b.clone()),
+            ("GTK_EXE_PREFIX", format!("{b}//usr")),
+            ("GTK_PATH", format!("{b}//usr/lib/gtk-3.0")),
+            ("GIO_MODULE_DIR", format!("{b}//usr/lib/gio/modules")),
+            (
+                "GDK_PIXBUF_MODULE_FILE",
+                format!("{b}//usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"),
+            ),
+            (
+                "GSETTINGS_SCHEMA_DIR",
+                path_list([
+                    format!("{b}/usr/share/glib-2.0/schemas/"),
+                    format!("{b}//usr/share/glib-2.0/schemas"),
+                ]),
+            ),
+            (
+                "XDG_DATA_DIRS",
+                prepended(
+                    [
+                        format!("{b}/usr/share/"),
+                        format!("{b}/usr/share"),
+                        "/usr/share".into(),
+                    ],
+                    &person["XDG_DATA_DIRS"],
+                ),
+            ),
+            (
+                "PATH",
+                prepended(
+                    [
+                        format!("{b}/usr/bin/"),
+                        format!("{b}/usr/sbin/"),
+                        format!("{b}/bin/"),
+                    ],
+                    &person["PATH"],
+                ),
+            ),
+            (
+                "LD_LIBRARY_PATH",
+                path_list([format!("{b}/usr/lib/"), format!("{b}/lib/"), String::new()]),
+            ),
+            (
+                "PERLLIB",
+                path_list([
+                    format!("{b}/usr/share/perl5/"),
+                    format!("{b}/usr/lib/perl5/"),
+                    String::new(),
+                ]),
+            ),
+            ("PYTHONHOME", format!("{b}/usr/")),
+            ("PYTHONDONTWRITEBYTECODE", "1".into()),
+        ]
+        .map(|(name, value)| (name.to_owned(), value)),
+    );
+    environment
+}
+
+/// The path list `list` with `entries` before its own.
+fn prepended<const N: usize>(entries: [String; N], list: &str) -> String {
+    path_list(
+        entries
+            .into_iter()
+            .map(PathBuf::from)
+            .chain(std::env::split_paths(list)),
+    )
+}
+
+fn text(path: &Path) -> String {
+    path.to_str().unwrap().to_owned()
 }

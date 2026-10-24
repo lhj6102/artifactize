@@ -45,6 +45,11 @@ examples/
 
 이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 글자나 숫자로 시작하고, 글자, 숫자, 밑줄,
 하이픈으로 이뤄진 64자 이하여야 합니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
+`combat::Code`처럼 앞에 space 하나와 `::`를 붙일 수 있습니다. space와 나머지 부분은 각각 같은
+규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 보도록 돕는
+것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
+`artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
+Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
 전체에서 하나뿐이어야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
@@ -255,8 +260,11 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 - Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED로 끝납니다.
 - Human 리뷰 중에 없거나 잘못됨: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
   놓고 다시 시도하세요.
-- 내용이 바뀜: 파일 내용의 변경은 fingerprint로 확인하므로, 파일 Artifact나 그 eval이 의존하는 Artifact 중 하나라도 `fingerprint = false`면 내용이 바뀌어도 감지하지 못합니다.
-  그 밖에는 Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다.
+- 내용이 바뀜: eval에 온전한 재사용 키가 있고 그 변경이 eval이 포함하는 fingerprint를 바꿀 때만
+  감지합니다. 이 파일이나 eval이 포함하는 다른 Artifact에 `fingerprint = false`가 있으면 재사용 키가
+  없어 변경을 감지하지 못하고, 변경해도 값이 그대로인 스크립트 fingerprint도 감지하지 못합니다. 그 밖에는
+  Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다. 일반 파일인지, 심볼릭 링크가
+  아닌지에 대한 위의 검사는 어느 경우든 적용합니다.
 - 없거나 잘못된 대상에 대한 도구 호출은 도구를 실행하지 않고 오류를 돌려줍니다.
 
 파일을 되돌려 놓은 뒤 다시 verify하세요.

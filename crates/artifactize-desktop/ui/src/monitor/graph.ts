@@ -23,6 +23,9 @@ export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked"];
 
 export type Point = { x: number; y: number };
 
+/** Every Artifact node's box; names longer than fit are cut with an ellipsis. */
+export const NODE = { width: 168, height: 44 };
+
 /** `shape` with the lights of `update`, one per node and per edge in its order; `shape` itself
  * when none changed, so that a view of it need not paint again. */
 export function relight(shape: Shape, update: Extract<Update, { kind: "lights" }>): Shape {

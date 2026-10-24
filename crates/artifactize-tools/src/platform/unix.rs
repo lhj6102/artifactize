@@ -114,9 +114,12 @@ mod tests {
     use super::*;
     use std::os::unix::process::ExitStatusExt;
 
+    /// A Unix wait status holds a normal exit's code in bits 8–15.
+    const EXIT_CODE_SHIFT: i32 = 8;
+
     /// An exit status with `code`, in the wait-status encoding `from_raw` takes.
     fn exited(code: i32) -> ExitStatus {
-        ExitStatus::from_raw(code << 8)
+        ExitStatus::from_raw(code << EXIT_CODE_SHIFT)
     }
 
     #[test]

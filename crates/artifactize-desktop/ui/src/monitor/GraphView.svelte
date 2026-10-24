@@ -9,13 +9,18 @@
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
   // while at most that many are; with more in view, they are boxes on the canvas, which a click
   // opens as it opens an element.
+  //
+  // Each space's Artifacts sit in its box, drawn behind them, which a click passes to the
+  // background.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import type { Shape } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
+  import SpaceNode from "./SpaceNode.svelte";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { NODE } from "./layout";
+  import { boxes } from "./spaces";
   import { area, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
@@ -44,7 +49,7 @@
 
   const flow = useSvelteFlow();
   const camera = useViewport();
-  const nodeTypes = { artifact: ArtifactNode };
+  const nodeTypes = { artifact: ArtifactNode, space: SpaceNode };
   /** A positive zoom floor clips sufficiently long graphs in the split canvas. Zero lets
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
@@ -59,6 +64,17 @@
 
   /** Where every Artifact is, indexed by area. */
   const laid = $derived(scene(positions));
+  /** Each space's box around its Artifacts; few, so always kept as elements. */
+  const spaces = $derived(boxes(graph, positions));
+  /** The whole graph, the spaces' boxes included, as Fit View fits it. */
+  const bounds = $derived.by(() => {
+    const all = [laid.bounds, ...spaces];
+    if (spaces.length === 0) return laid.bounds;
+    const [left, top] = [Math.min(...all.map((box) => box.x)), Math.min(...all.map((box) => box.y))];
+    const right = Math.max(...all.map((box) => box.x + box.width));
+    const bottom = Math.max(...all.map((box) => box.y + box.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  });
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
   const large = $derived(graph.nodes.length > DRAWN);
   /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
@@ -74,7 +90,23 @@
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() => {
     const keep = drawn === null ? null : new Set(drawn === "" ? [] : drawn.split(",").map((number) => laid.ids[Number(number)]));
-    return graph.nodes
+    const behind = spaces.map((box): Node => ({
+      id: `space:${box.space}`,
+      type: "space",
+      position: { x: box.x, y: box.y },
+      width: box.width,
+      height: box.height,
+      measured: v.initialized ? { width: box.width, height: box.height } : undefined,
+      data: { space: box.space },
+      draggable: false,
+      connectable: false,
+      selectable: false,
+      focusable: false,
+      zIndex: -1,
+      ariaLabel: `Space ${box.space}`,
+      domAttributes: { "data-space": box.space },
+    }));
+    const artifacts = graph.nodes
       .filter((node) => positions.has(node.id) && (keep === null || keep.has(node.id)))
       .map((node) => ({
         id: node.id,
@@ -87,12 +119,13 @@
         width: NODE.width,
         height: NODE.height,
         measured: v.initialized ? { width: NODE.width, height: NODE.height } : undefined,
-        data: { name: node.name, light: node.light, open: node.id === opened },
+        data: { label: node.label, light: node.light, open: node.id === opened },
         draggable: false,
         connectable: false,
         ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}`,
         domAttributes: { "data-light": node.light },
       }));
+    return [...behind, ...artifacts];
   });
   // A large graph's edges are all on the canvas.
   let edges = $derived.by<Edge[]>(() =>
@@ -146,7 +179,7 @@
   function fitAll() {
     const now = v.canvas ? area(v.canvas.clientWidth, v.canvas.clientHeight) : null;
     if (now) v.area = now;
-    if (v.area) void flow.setViewport(whole(laid.bounds, v.area, FIT), { duration: 0 });
+    if (v.area) void flow.setViewport(whole(bounds, v.area, FIT), { duration: 0 });
   }
 
   /** The large graph's picture, painted around the view and moved as the camera pans. */
@@ -178,8 +211,13 @@
 
   /** A click on the background: an Artifact painted there opens, as a click on an element
    * does; anywhere else closes the Detail. */
-  function background(event: MouseEvent) {
-    const box = (event.currentTarget as Element | null)?.closest(".canvas")?.getBoundingClientRect();
+  function background(event: MouseEvent | TouchEvent) {
+    const box = v.canvas?.getBoundingClientRect();
+    // A touch has no pointer position to find a painted Artifact at.
+    if (!(event instanceof MouseEvent)) {
+      onclose();
+      return;
+    }
     const camera = flow.getViewport();
     const point = box && { x: (event.clientX - box.left - camera.x) / camera.zoom, y: (event.clientY - box.top - camera.y) / camera.zoom };
     const id = painted && point ? hit(laid, point) : null;
@@ -221,7 +259,7 @@
         first();
       }}
       proOptions={{ hideAttribution: true }}
-      onnodeclick={({ node }) => onopen(node.id)}
+      onnodeclick={({ node, event }) => (node.type === "space" ? background(event) : onopen(node.id))}
       onpaneclick={({ event }) => background(event)}
     >
       <Controls showLock={false} showFitView={false}>

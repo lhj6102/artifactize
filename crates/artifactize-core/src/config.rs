@@ -39,7 +39,8 @@ pub use tools::{
 };
 
 use location::Location;
-pub(crate) use validation::identifier;
+pub use validation::SPACE_SEPARATOR;
+pub(crate) use validation::{artifact_name, identifier};
 use validation::{path, paths, positive_integer, present, script, tags, text, timeout};
 
 /// Format version for artifactize configuration documents.
@@ -830,7 +831,7 @@ impl ArtifactDeclaration {
     ) -> Result<(), String> {
         location
             .child("name")
-            .check(identifier(&self.name, "Artifact name"))?;
+            .check(artifact_name(&self.name, "Artifact name"))?;
         location.child("tags").check(tags(&self.tags))?;
         for eval in &self.evals {
             eval.validate(&location.child("evals").key(&eval.id), schemas)
@@ -1003,7 +1004,7 @@ fn validate_identity_locations(
     {
         location
             .child("name")
-            .check(identifier(name, "Artifact name"))?;
+            .check(artifact_name(name, "Artifact name"))?;
     }
     if let Some(evals) = document
         .get_ref()

@@ -35,7 +35,9 @@ structure to an agent or opens it in Desktop for a person.
 
 ## Folder configuration
 
-A folder with an `index.artf` is an Artifact. `name` is required; `basis`,
+A folder with an `index.artf` is an Artifact. `name` is required, optionally with a
+space that groups it with others, `combat::Code` (see
+[names](declarations.md)); `basis`,
 `views`, `fingerprint` and `tags` are optional. For older declarations,
 see the [legacy policy upgrade reference](../getting-started/update.md#upgrading-from-011).
 
@@ -157,7 +159,9 @@ every one of them.
 
 A Human Eval starts only when every other non-Human Eval of its own Artifact is
 GREEN, on top of its dependency gates: a person signs off only on what the machine
-Evals already pass. Until then it waits. When one of those machine Evals is RED or
+Evals already pass. Until then it waits. A machine Eval whose own verdict is GREEN
+counts even while it shows PROVISIONAL because a sign-off it depends on is still
+outstanding. When one of those machine Evals is RED or
 ERROR, the Human Eval does not start and is BLOCKED, and its reason names them, for
 example `Sibling machine eval RED: spec/review`. Other Human Evals of the same
 Artifact are not part of this condition, so two sign-offs never wait for each other.

@@ -112,7 +112,7 @@ const served = (shape: Shape): Graph => ({ source: { kind: "run", run: "run-a" }
 
 async function drawn() {
   const graph = served({
-    nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const, note: null })),
+    nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, space: null, label: name, light: "green" as const, note: null })),
     edges: [{ source: "a:release", target: "a:ship", light: "green" }],
   });
   mockIPC((command) => command === "graph" ? graph : null);
@@ -168,7 +168,7 @@ it("keeps a camera the person moved, and fits the whole graph into the whole can
 });
 
 it("fits a graph drawn in a hidden screen once its canvas first has a size", async () => {
-  const graph = served({ nodes: [{ id: "a:docs", name: "docs", light: "green", note: null }], edges: [] });
+  const graph = served({ nodes: [{ id: "a:docs", name: "docs", space: null, label: "docs", light: "green", note: null }], edges: [] });
   mockIPC((command) => command === "graph" ? graph : null);
   renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("docs: GREEN");
