@@ -373,9 +373,10 @@ Omitting `fingerprint` uses artifactsum; for a folder, `fingerprint = {}` does t
 Artifactsum reads the files below the Artifact by the scoped path rules. A symlink or
 special file it would read stops verification with an error unless it is ignored. Every
 applicable `.gitignore` is read for its rules even when it is itself ignored as content,
-so it must be a regular file, not a symlink, and at most 1 MiB. Artifactsum never reads a
-file outside the Artifact it belongs to, and it stops with an error after 10,000 entries
-or 1 GiB. Hashing runs on preparation and end-of-review
+so it must be a regular file, not a symlink, and at most 1 MiB. Artifactsum never hashes a
+file outside the Artifact it belongs to; to know what is ignored, it also reads the
+`.gitignore` files of the folders above it, up to the repository root. It stops with an
+error after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
 therefore never cause `INPUT_CHANGED`. Each result remembers which files it covered, so `status` can tell you which files
 changed since then (`path`, `+path`, `-path`) and which dependency changed; a very large
@@ -411,12 +412,12 @@ flags, wrappers or entry-file rules.
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
 file/directory paths of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two). They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
-bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
+raw output bounded to 128 KiB per stream, and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after
 each invocation. Stdout must be exactly 1–128 ASCII characters from
 `[A-Za-z0-9._:-]`, optionally followed by one LF, or one CRLF on Windows. No other
 whitespace is allowed; the value is not trimmed. Nonzero exit, malformed output,
-timeout, cancellation, missing files or cleanup failure abort preparation with an
+more than 128 KiB on stdout or on stderr (even after a valid fingerprint), timeout, cancellation, missing files or cleanup failure abort preparation with an
 operational error, without starting any eval or falling back to uncached review.
 Stderr is not forwarded as a fingerprint diagnostic.
 

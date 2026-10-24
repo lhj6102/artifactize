@@ -1,11 +1,27 @@
-use super::{Currents, Fresh, Request, Stage};
-use crate::ids::ScanId;
-use artifactize_core::monitor::live::Place;
+use super::{Currents, Fresh, Request, Stage, view};
+use crate::{browse::BranchKey, ids::ScanId};
+use artifactize_core::monitor::live::{Current, Place};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 fn place() -> Place {
     Place::Folder("repo".into())
+}
+
+/// A scan step that found no Artifacts.
+fn empty() -> Current {
+    Current {
+        scanned_at: time::OffsetDateTime::UNIX_EPOCH,
+        fingerprint: "v1:empty".parse().unwrap(),
+        structure: "".into(),
+        artifacts: Vec::new(),
+        edges: Vec::new(),
+    }
+}
+
+/// Why the branch's last scan failed, as the window reads it.
+fn failure(currents: &Currents) -> Option<String> {
+    view(currents, BranchKey::new(&place())).unwrap().failure
 }
 
 /// The scan a request started.
@@ -34,6 +50,7 @@ fn a_request_while_the_scan_runs_shows_it_and_gets_its_outcome() {
         !token.is_cancelled(),
         "a second request never stops the scan"
     );
+    assert!(currents.publish(&place(), scan, empty()));
     assert!(matches!(
         currents.end(&place(), scan, Some("the worktree is unreadable".into())),
         Some(None)
@@ -43,10 +60,14 @@ fn a_request_while_the_scan_runs_shows_it_and_gets_its_outcome() {
         *shown.borrow_and_update(),
         Stage::Ended(Err("the worktree is unreadable".into()))
     );
+    assert_eq!(
+        failure(&currents).as_deref(),
+        Some("the worktree is unreadable")
+    );
     // Once it ended, the next request scans again, its failure forgotten.
     let (next, ..) = started(currents.request(&place(), false));
     assert!(next > scan);
-    assert!(currents.failed.lock().unwrap().is_empty());
+    assert_eq!(failure(&currents), None);
 }
 
 #[test]
