@@ -49,7 +49,7 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
     .map_err(|error| error.to_string())?;
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Vec::new());

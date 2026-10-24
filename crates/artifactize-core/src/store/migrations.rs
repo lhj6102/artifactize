@@ -59,7 +59,7 @@ pub(super) fn open_existing(state: &Path) -> Result<(), String> {
             state.join(super::DATABASE),
             OpenFlags::SQLITE_OPEN_READ_WRITE,
         )?;
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+        super::wait_when_busy(&db)?;
         let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         apply(&transaction)?;
         transaction.commit()?;

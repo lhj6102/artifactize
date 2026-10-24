@@ -90,7 +90,7 @@ pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Un
     let repo = repo.map(crate::platform::path_text);
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !super::receipts::schema_initialized(&transaction)? {
                 return Ok(Vec::new());

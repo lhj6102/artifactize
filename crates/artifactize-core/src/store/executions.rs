@@ -622,7 +622,7 @@ async fn read_claims<K: Ord + Send + 'static>(
     };
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -659,7 +659,7 @@ pub async fn read_latest_cached(
     let keys = keys.to_vec();
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
