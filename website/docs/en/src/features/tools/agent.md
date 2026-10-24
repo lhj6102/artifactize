@@ -8,7 +8,7 @@ that Artifact from an eval: the eval's Agent then sees it as `NAME_ARTIFACT`. Ch
 Command fields `description`, `protocol`, `command` and `args` are required.
 `input_schema` defaults to `{"type":"object","additionalProperties":false}`
 (empty arguments only). Supplied schemas must have root `type: "object"`. Standard JSON Schema works,
-including local `$ref` and composition; references to files or URLs do not. Schema defaults never change arguments. Declarations/schemas are capped
+including local `$ref` and composition; references to files or URLs do not. Schema defaults never change arguments. Each schema is capped
 at 8 MiB. Calls require a JSON object of at most 64 KiB before any process or output
 directory is created. Validation errors show at most five bounded, escaped
 instance/schema paths (under 4 KiB), never argument values.

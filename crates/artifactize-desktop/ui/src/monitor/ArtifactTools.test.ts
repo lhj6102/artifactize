@@ -78,3 +78,44 @@ it("routes a Tool log to the Artifact of its worktree only", () => {
   // The same worktree and Artifact are one owner, whichever Detail asks again.
   expect(app.artifactTools("/work/main", "notes")).toBe(main);
 });
+
+it("shares one read between the Details that open the Artifact while it runs", async () => {
+  let reads = 0;
+  let answer: (tools: ToolView[]) => void = () => {};
+  mockIPC((command) => {
+    if (command !== "artifact_tools") return null;
+    reads += 1;
+    return new Promise<ToolView[]>((resolve) => (answer = resolve));
+  });
+  const tools = new AppState().artifactTools("/work/main", "notes");
+  const first = tools.load(branchKey("main"));
+  const second = tools.load(branchKey("main"));
+  await waitFor(() => expect(reads).toBe(1));
+  answer([notes]);
+  await Promise.all([first, second]);
+  expect(tools.tools).toEqual([notes]);
+  expect(reads).toBe(1);
+});
+
+it("reads the tools again after a run only when the run failed", async () => {
+  let reads = 0;
+  let notice = { text: "Started open.", error: false };
+  mockIPC((command) => {
+    if (command === "artifact_tools") {
+      reads += 1;
+      return [notes];
+    }
+    if (command === "artifact_tool_run") return notice;
+    return null;
+  });
+  renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "notes" });
+  const tools = await screen.findByRole("region", { name: "Tools of notes" });
+  const run = await within(tools).findByRole("button", { name: "▶ open" });
+  await fireEvent.click(run);
+  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("Started open."));
+  expect(reads).toBe(1);
+  notice = { text: "open_notes did not run.", error: true };
+  await fireEvent.click(run);
+  await waitFor(() => expect(reads).toBe(2));
+  expect(within(tools).getByRole("status").textContent).toBe("open_notes did not run.");
+});

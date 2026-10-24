@@ -373,7 +373,7 @@ impl<'a> Registry<'a> {
         let tool = CommandTool {
             session: None,
             description: String::new(),
-            input_schema: json!({"type":"object"}),
+            input_schema: std::sync::Arc::new(json!({"type":"object"})),
             protocol: ToolProtocol::Json,
             command: command.command.clone(),
             args: command.args.clone(),

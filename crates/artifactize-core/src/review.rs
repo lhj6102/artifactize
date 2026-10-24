@@ -382,68 +382,88 @@ pub fn tools(request: &Request) -> Vec<Tool> {
 /// The command line a tool would run, or why it cannot be resolved.
 pub type Resolved = Result<CommandLine, String>;
 
-/// The Human tools Artifact `artifact` itself declares in the workspace at `repo` as it is now,
-/// named like the registry, each with the command line it would run (a builtin has none).
-/// Listing reads the declarations only: no request, claim or Run is involved.
-pub fn artifact_tools(
-    repo: &std::path::Path,
-    artifact: &crate::types::ArtifactName,
-) -> Result<Vec<(Tool, Option<Resolved>)>, String> {
-    let config = crate::config::read_workspace_config(repo).map_err(|error| error.to_string())?;
-    let registry = crate::tools::human::Registry::for_artifact(&config, artifact.as_str())?;
-    let scope =
-        crate::scope::artifact_scope(&config, &[artifact]).map_err(|error| error.to_string())?;
-    // The scope's declarations in the saved definitions' shape, as a request records them.
-    let artifacts: std::collections::BTreeMap<_, crate::store::definitions::Artifact> =
-        serde_json::to_value(&scope.artifacts)
-            .and_then(serde_json::from_value)
-            .map_err(|error| error.to_string())?;
-    Ok(declared(&artifacts)
-        .into_iter()
-        .filter(|tool| &tool.artifact == artifact)
-        .map(|tool| {
-            let command = registry
-                .is_command(&tool.name)
-                .then(|| registry.command(&tool.name));
-            (tool, command)
-        })
-        .collect())
+/// One Artifact's declarations in a workspace as it is now: its own and those of the Artifacts
+/// it composes, and nothing else. Its own Human tools are listed and run from them, for no
+/// review: no request, claim or Run is involved.
+pub struct ArtifactDeclarations {
+    config: crate::config::RepoConfig,
+    artifact: crate::types::ArtifactName,
 }
 
-/// Run tool `tool` of Artifact `artifact` at once in the workspace at `repo` as it is now, for
-/// no review: nobody claims anything and nothing is recorded. Its output reaches `run`'s Tool
-/// log; a launched program's keeps arriving until it exits. A refusal ends the run with it.
-pub async fn run_artifact_tool(
-    repo: &std::path::Path,
-    artifact: &crate::types::ArtifactName,
-    tool: &ToolName,
-    cancel: CancellationToken,
-    run: log::Run,
-) -> Result<ToolResult, String> {
-    let config = match crate::config::read_workspace_config(repo) {
-        Ok(config) => config,
-        Err(error) => {
-            run.end(log::End::Failed(error.to_string()));
-            return Err(error.to_string());
-        }
-    };
-    let registry = match crate::tools::human::Registry::for_artifact(&config, artifact.as_str()) {
-        Ok(registry) => registry,
-        Err(error) => {
+impl ArtifactDeclarations {
+    /// Read Artifact `artifact`'s declarations in the workspace at `repo`, where `site` (from
+    /// [`crate::config::read_sites`]) says it is declared. A site that no longer declares it
+    /// is [`crate::config::ScopeReadError::Moved`].
+    pub fn read(
+        repo: &std::path::Path,
+        artifact: &crate::types::ArtifactName,
+        site: &crate::config::Site,
+    ) -> Result<Self, crate::config::ScopeReadError> {
+        Ok(Self {
+            config: crate::config::read_artifact_scope(repo, artifact, site)?,
+            artifact: artifact.clone(),
+        })
+    }
+
+    /// The Human tools the Artifact itself declares, named like the registry, each with the
+    /// command line it would run (a builtin has none).
+    pub fn tools(&self) -> Result<Vec<(Tool, Option<Resolved>)>, String> {
+        let registry =
+            crate::tools::human::Registry::for_artifact(&self.config, self.artifact.as_str())?;
+        let artifact = &self.config.artifacts[&self.artifact];
+        let mut tools: Vec<_> = artifact
+            .views
+            .human_tools
+            .iter()
+            .map(|(operation, declaration)| {
+                let name: ToolName = format!("{operation}_{}", self.artifact)
+                    .parse()
+                    .expect("validated tool and Artifact names");
+                let command = registry.is_command(&name).then(|| registry.command(&name));
+                let tool = Tool {
+                    name,
+                    artifact: self.artifact.clone(),
+                    kind: declaration.kind(),
+                    description: declaration
+                        .description()
+                        .replace("{artifactName}", self.artifact.as_str()),
+                    declared: Runs::declared(&self.config.artifacts, &self.artifact, declaration),
+                };
+                (tool, command)
+            })
+            .collect();
+        tools.sort_by(|(a, _), (b, _)| a.name.cmp(&b.name));
+        Ok(tools)
+    }
+
+    /// Run tool `tool` of the Artifact at once. Its output reaches `run`'s Tool log; a
+    /// launched program's keeps arriving until it exits. A refusal ends the run with it.
+    pub async fn run_tool(
+        &self,
+        tool: &ToolName,
+        cancel: CancellationToken,
+        run: log::Run,
+    ) -> Result<ToolResult, String> {
+        let artifact = &self.artifact;
+        let registry =
+            match crate::tools::human::Registry::for_artifact(&self.config, artifact.as_str()) {
+                Ok(registry) => registry,
+                Err(error) => {
+                    run.end(log::End::Failed(error.clone()));
+                    return Err(error);
+                }
+            };
+        // Only the Artifact's own tools: one of a child it includes belongs to that child's Detail.
+        if !registry
+            .list()
+            .any(|entry| &entry.name == tool && &entry.artifact_id == artifact)
+        {
+            let error = format!("{artifact} declares no Human tool {tool}.");
             run.end(log::End::Failed(error.clone()));
             return Err(error);
         }
-    };
-    // Only the Artifact's own tools: one of a child it includes belongs to that child's Detail.
-    if !registry
-        .list()
-        .any(|entry| &entry.name == tool && &entry.artifact_id == artifact)
-    {
-        let error = format!("{artifact} declares no Human tool {tool}.");
-        run.end(log::End::Failed(error.clone()));
-        return Err(error);
+        Ok(registry.call_logged(tool, cancel, run).await)
     }
-    Ok(registry.call_logged(tool, cancel, run).await)
 }
 
 /// The Human tools `artifacts` declare, named like the registry, sorted by name.

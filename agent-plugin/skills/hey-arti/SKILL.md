@@ -169,11 +169,12 @@ and never act for them. Do other independent work, or yield with a short handoff
 Repository: <path>
 Run: <returned ID>
 Waiting requests: <IDs, evals and why a person is needed>
-Next action: person reviews; then observe this same Run
+Next action: person reviews; then observe this Run while it is open, or verify again once it ended YELLOW
 ```
 
-Yielding is not cancelling. Resume by observing the same Run; no keep-alive turns
-or polling loops.
+Yielding is not cancelling. While the Run is open, resume by observing it. Once it
+ended YELLOW its verdict is final, and a later sign-off updates only its request, so
+verify again: the new Run reuses that sign-off. No keep-alive turns or polling loops.
 
 ## 4. Best practices and references
 

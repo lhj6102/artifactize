@@ -167,7 +167,7 @@ them runs is in [Sign-offs and the end of a Run](../features/run.md#sign-offs-an
 With `--speculate`, newly ready work can interrupt a running speculative review to free
 `--jobs` or backend capacity; that review starts again later and uses another
 `--max-executions` start. Speculation changes execution order, not approval. `verify --wait`
-uses the ordinary outcome codes: 0 GREEN, 1 RED, 2 ERROR, 4 INCOMPLETE or 5 YELLOW.
+exits with the usual [Run outcome codes](#command-reference).
 [Speculation](../features/run.md#speculation) explains its scheduling and cancellation.
 
 ## Runtime CLI
@@ -206,13 +206,14 @@ completion order.
 
 `verify --max-executions N` sets a shared per-Run executor-start budget of 0–18446744073709551615 (unlimited when omitted); it is not an Artifact declaration field.
 The Run records an explicit `jobs` cap (the field is absent when unlimited),
-`fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
-Runtime or Agent invocation consumes one start, even when it fails to spawn or
-later returns ERROR. Human waiting, claim and tool actions consume no starts. Fingerprint preparation/rechecks, cache hits, and
-joined waiters
-consume none. Failures in initial executor preparation consume no start. Agent
-`execution_paths` pinning happens after a start is charged: a pinning failure still
-consumes that start and records ERROR/PREPARATION_FAILED without calling the model.
+`fingerprintJobs`, `maxExecutions` and `executionsStarted`. A Runtime or Agent
+review counts one start once it is ready to run, even when its program then fails to
+start or the review later ends ERROR. Waiting for a person, claiming and Human tools count
+none, nor do computing or rechecking fingerprints, reusing a saved result or joining a
+review already running. A review that fails before it is ready to run counts none. One
+step comes after its start is counted: recording the hashes of an Agent review's
+`execution_paths` tool files. When that fails, the start still counts and the review ends
+ERROR/PREPARATION_FAILED without calling the model.
 Zero permits reuse, joining and Human reviews; a Run that has to run a review again
 because the Run it joined failed uses its own remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE

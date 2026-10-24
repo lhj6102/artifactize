@@ -113,6 +113,7 @@ pub struct App {
     transcripts: transcript::Transcripts,
     settings: settings::Settings,
     generation: generation::Generation,
+    sites: tools::Sites,
 }
 
 impl App {
@@ -125,6 +126,7 @@ impl App {
             transcripts: transcript::Transcripts::default(),
             settings: settings::Settings::default(),
             generation: generation::Generation::default(),
+            sites: tools::Sites::default(),
         }
     }
 

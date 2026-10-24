@@ -1260,3 +1260,41 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
         json!({"text": "notes_release did not run.", "error": true})
     );
 }
+
+#[test]
+fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Monitor);
+    let branch = branch(&window);
+    let list = |artifact: &str| {
+        invoke(
+            &window,
+            "artifact_tools",
+            json!({"branch": branch, "artifact": artifact}),
+        )
+    };
+    assert_eq!(
+        list("release").unwrap()[0]["action"],
+        "prints release/notes.md"
+    );
+    // The folder moves: its tools are read where it is declared now.
+    fs::create_dir_all(fixture.repo.join("archive")).unwrap();
+    fs::rename(
+        fixture.repo.join("release"),
+        fixture.repo.join("archive/release"),
+    )
+    .unwrap();
+    assert_eq!(
+        list("release").unwrap()[0]["action"],
+        "prints archive/release/notes.md"
+    );
+    // Renamed, it declares another Artifact. Only its own declarations are read: ship's
+    // reference to the old name, which a whole-workspace read refuses, is not.
+    let file = fixture.repo.join("archive/release/index.artf");
+    let renamed = fs::read_to_string(&file)
+        .unwrap()
+        .replace(r#"name = "release""#, r#"name = "notes""#);
+    fs::write(&file, renamed).unwrap();
+    assert_eq!(list("release").unwrap_err()["kind"], "missing");
+    assert_eq!(list("notes").unwrap()[0]["name"], "notes_notes");
+}

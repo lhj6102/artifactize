@@ -179,7 +179,7 @@ cargo install --path crates/artifactize-tools --locked
 [내려받기](install.md#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
 `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. `VERSION`은 릴리스 버전이며,
 내려받은 파일 이름에 들어 있습니다. Linux의 시스템 C 라이브러리인 glibc 2.35 이상이 필요하며,
-`ldd --version`을 실행하면 첫 줄에 설치된 버전이 나옵니다. 파일을 내려받은 폴더에서, 아래 명령의 파일 이름을 실제 파일 이름으로 바꾸어 실행 권한을 준 뒤 실행하세요.
+`ldd --version`을 실행하면 첫 줄에 설치된 버전이 나옵니다. 파일을 내려받은 폴더에서 아래 명령의 파일 이름을 실제 파일 이름으로 바꾼 뒤, 그 파일에 실행 권한을 주고 실행하세요.
 
 ```sh
 chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
