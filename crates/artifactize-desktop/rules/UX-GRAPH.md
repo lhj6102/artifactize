@@ -209,7 +209,7 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
 | E-GRAPH-SPACES | Pane | choose an entry whose graph has Artifacts named `space::name` | its Run graph or Current graph, each space's Artifacts in one box labelled with the space, each node showing the rest of its name and read aloud whole, the edges between spaces drawn and coloured like any other |
-| E-GRAPH-SPACE-BACKGROUND | Run graph or Current graph with a space's box, the Detail open | click the box's background | the graph, the Detail closed |
+| E-GRAPH-SPACE-BACKGROUND | Run graph or Current graph with a space's box, the Detail open | click the box's background | where a click on the graph's background leads: E-MON-DETAIL-BACK or E-CURRENT-CLOSE, and with a Human review in the Detail running work or editing its form first E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
 ## Detail

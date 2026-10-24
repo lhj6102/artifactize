@@ -168,7 +168,7 @@ CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. �
 이어 붙인 텍스트를 JSON으로 파싱하세요. JSON은 공백 없이 직렬화되므로, CLI가 보기 좋게 출력할 때 넣는 공백은
 보존되지 않습니다. 이전 페이지의 `cursor`를 더해 **같은 도구를 같은 인자로** 다시 호출하세요.
 offset은 UTF-8 바이트 오프셋입니다. `run_list.offset`은
-다음 Run 기록 묶음을 고르며, 한 묶음의 JSON을 이어 가는 cursor와는 다릅니다.
+다음 Run 기록 묶음을 지정하고, cursor는 같은 묶음의 JSON에서 다음 조각을 읽을 때 씁니다.
 `verify_result`는 대신 구조화된 `findings` 배열을 페이지 단위로 넘깁니다.
 
 cursor는 같은 도구와 같은 인자에서만 동작합니다. 다음 페이지를 읽을 때마다 확인을 다시
