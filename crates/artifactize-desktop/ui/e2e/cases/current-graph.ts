@@ -405,7 +405,7 @@ Summarize {docs}."""
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "slow's Detail closed");
       // Choosing the Current again, F5 and the end of a Run of the branch all show the scan
       // still running: its fingerprint script runs once.
-      assert.equal(fingerprintRuns(checking), 1);
+      await waitFor(browser, () => fingerprintRuns(checking) === 1, "the scan started the fingerprint script once");
       const before = await requested();
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await requested()) >= before + 1, "choosing the Current asked for it again");
