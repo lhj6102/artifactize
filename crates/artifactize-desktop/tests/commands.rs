@@ -915,8 +915,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     assert_eq!(
         before["nodes"],
         json!([
-            {"id": "a:release", "name": "release", "light": "active", "note": null},
-            {"id": "a:ship", "name": "ship", "light": "waiting", "note": null},
+            {"id": "a:release", "name": "release", "space": null, "label": "release", "light": "active", "note": null},
+            {"id": "a:ship", "name": "ship", "space": null, "label": "ship", "light": "waiting", "note": null},
         ])
     );
     assert_eq!(
@@ -1129,8 +1129,8 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(
         graph["nodes"],
         json!([
-            {"id": "a:app", "name": "app", "light": "reused", "note": "reused"},
-            {"id": "a:graph", "name": "graph", "light": "run", "note": "would run (1 eval)"},
+            {"id": "a:app", "name": "app", "space": null, "label": "app", "light": "reused", "note": "reused"},
+            {"id": "a:graph", "name": "graph", "space": null, "label": "graph", "light": "run", "note": "would run (1 eval)"},
         ])
     );
     assert_eq!(

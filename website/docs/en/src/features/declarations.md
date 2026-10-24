@@ -302,9 +302,12 @@ reviewed, also with `fingerprint = false`:
   of a verdict;
 - missing or invalid during a Human review: tools and submission fail, the request keeps
   waiting, and you restore the file and try again;
-- changed contents: detected only through a fingerprint, so with `fingerprint = false`
-  an edit to the file is not noticed; otherwise a Runtime or Agent review, or a
-  sign-off, ends ERROR/INPUT_CHANGED;
+- changed contents: noticed only when the eval has a complete reuse key and the edit
+  changes a fingerprint it covers. With `fingerprint = false` on the file or on any other
+  Artifact the eval covers, it has no reuse key and an edit is not noticed, and a script
+  fingerprint whose value an edit leaves unchanged does not notice it either; otherwise a
+  Runtime or Agent review, or a sign-off, ends ERROR/INPUT_CHANGED. The regular-file and
+  no-symlink checks above apply either way;
 - a tool call on a missing or invalid target returns an error without running the tool.
 
 Verify again once the file is back.
