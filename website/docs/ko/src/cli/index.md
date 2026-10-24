@@ -159,8 +159,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)를 보세요. `--speculate`에서는 새로 준비된 작업을
 실행할 `--jobs`나 백엔드 자리가 모자라면 artifactize가 실행 중인 추측 실행 리뷰를 중단할 수 있습니다. 그 리뷰는 나중에
 다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 추측 실행은 실행 순서를 바꿀 뿐 승인 여부를
-바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
-1 RED, 2 ERROR, 4 INCOMPLETE, 5 YELLOW입니다.
+바꾸지 않습니다. `verify --wait`는 평소와 같은 [Run 결과 종료 코드](#command-reference)로 끝납니다.
 추측 실행의 스케줄링과 취소는 [추측 실행](../features/run.md#speculation)에서 설명합니다.
 
 ## Runtime CLI {#runtime-cli}
@@ -196,10 +195,12 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 `verify --max-executions N`은 Run 하나에서 실행기를 시작할 수 있는 횟수를 0–18446744073709551615
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
-기록합니다. 준비를 마친 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작 횟수에 1회로 집계됩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
-재확인, 캐시 적중, 합류해서 대기 중인 요청도 마찬가지입니다. 실행기 준비 초기에 실패한 경우는 시작
-횟수에 넣지 않습니다. 시작 횟수를 센 다음 Agent의 `execution_paths`를 고정하므로, 고정에
-실패한 실행도 시작 횟수에 포함하며 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
+기록합니다. Runtime이나 Agent 리뷰는 실행할 준비가 끝나면 시작 횟수에 1회로 들어가며, 그 뒤 프로그램이
+시작되지 못하거나 리뷰가 ERROR로 끝나도 마찬가지입니다. 사람을 기다리는 시간, 담당 지정, Human 도구는 시작
+횟수에 들어가지 않고, fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에 합류하는 것도
+마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. 시작 횟수를 센 뒤에
+하는 단계가 하나 있는데, Agent 리뷰의 `execution_paths` 도구 파일 해시를 기록하는 일입니다. 이 단계가
+실패해도 시작 횟수는 그대로 남고, 리뷰는 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED로 끝납니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
 실행해야 하면, 다시 실행하는 리뷰는 그 리뷰가 속한 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로

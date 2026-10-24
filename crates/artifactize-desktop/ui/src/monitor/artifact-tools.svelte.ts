@@ -25,8 +25,16 @@ export class ArtifactTools {
     readonly ipc: Commands = commands,
   ) {}
 
-  /** Read what the Artifact declares in the worktree now, on `branch`. */
-  async load(branch: BranchKey): Promise<void> {
+  /** The read still running: another Detail opening the Artifact shares it. */
+  #loading: Promise<void> | null = null;
+
+  /** Read what the Artifact declares in the worktree now, on `branch`, unless a read is running. */
+  load(branch: BranchKey): Promise<void> {
+    this.#loading ??= this.#read(branch).finally(() => (this.#loading = null));
+    return this.#loading;
+  }
+
+  async #read(branch: BranchKey): Promise<void> {
     try {
       this.tools = await call(this.ipc.artifactTools(branch, this.artifact));
       this.error = null;
@@ -47,8 +55,9 @@ export class ArtifactTools {
     } finally {
       if (this.busy?.job === job) this.busy = null;
     }
-    // Declarations may have changed; show what the next run resolves.
-    await this.load(branch);
+    // A run that went through found its tool still declared, and the list stands; a failed
+    // one may have met changed declarations, so show what they declare now.
+    if (this.notice?.error) await this.load(branch);
   }
 
   cancel(): void {

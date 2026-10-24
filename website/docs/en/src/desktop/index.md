@@ -313,7 +313,8 @@ The verdict is already recorded; retry publication with Settings' **Push results
 `q` quits outside a text field, except while the keyboard is in a Human review that
 is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
 such as after closing Commands, `q` starts quitting even while that review stays
-open. Closing the window also starts quitting. If
+open. While Settings is open, `q` does nothing: close Settings first, or choose
+**Quit** in Commands. Closing the window also starts quitting. If
 this window took Human claims it has not submitted or released itself, choose
 **Stay** (Esc), **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a
 claim leaves it held for this reviewer; it is not a verdict. The prompt lists the

@@ -133,8 +133,8 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행](../features/run.md#speculation)을 요청할 수 있습니다. Run이 선택한 승인은 다른 eval을 막지
-않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, scope에 해당 Artifact를 추가하거나
+Arti는 요청마다 [추측 실행](../features/run.md#speculation)을 요청할 수 있습니다. 이번 Run에서 실행 대상으로 선택한 승인 요청은
+다른 eval의 실행을 막지 않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, scope에 해당 Artifact를 추가하거나
 선택 범위를 `{"kind": "all"}`로 넓히지 않으면 Run은 INCOMPLETE로 끝납니다. YELLOW는 **완전한 승인이 아니라** 사람의 승인이 아직 남아 있다는 뜻이며, 그 승인은 사람이 직접 제출해야 합니다.
 
 Arti는 각 결과를 다음과 같이 다룹니다.
@@ -155,7 +155,7 @@ Arti는 각 결과를 다음과 같이 다룹니다.
 
 Arti는 `request_list`/`request_show`로 대기 중인 요청과 그 리뷰 기준을 알려 주고,
 `artifactize review REQUEST_ID`(또는 평소 쓰는 리뷰 인터페이스)로 요청을 여는 방법을 안내합니다.
-Human 리뷰를 절대 맡거나, 승인하거나, 제출하지 않습니다. 독립적인 작업을 계속하거나, 저장소, Run, 대기 중인 요청, 다음 할 일을 짧게 정리해 사용자에게 넘긴 뒤, 나중에 같은 Run을 확인하며 다시 이어 갑니다. 사용자에게 넘기고 응답을 마쳐도
+Human 리뷰를 절대 맡거나, 승인하거나, 제출하지 않습니다. 독립적인 작업을 계속하거나, 저장소, Run, 대기 중인 요청, 다음 할 일을 짧게 정리해 사용자에게 넘깁니다. Run이 아직 열려 있으면 나중에 그 Run을 확인하며 다시 이어 갑니다. Run이 YELLOW로 끝났다면 그 결과는 바뀌지 않고, 나중에 제출한 승인은 요청에만 반영되므로, Arti는 verify를 다시 실행해 새 Run이 그 승인을 재사용하게 합니다. 사용자에게 넘기고 응답을 마쳐도
 Run은 취소되지 않으므로, 연결을 유지하려고 대화를 이어 가거나 상태를 반복해서 조회할 필요가 없습니다.
 
 ## 팀과 CI {#team-and-ci}

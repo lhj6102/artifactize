@@ -98,8 +98,8 @@ Agent 리뷰가 그 백엔드의 사용량 한도나 구독 요금제가 허용�
 ```
 
 키는 프로필에 적는 백엔드 이름(`openai`, `anthropic`, `gemini`, `codex`, 또는
-[커스텀 provider](../agent.md#custom-providers) 이름)이고 한도는 1–100000입니다. 항목이 없는
-백엔드나 파일이 없는 머신은 무제한입니다. `verify`는 시작할 때 이 파일을 읽습니다. 파일은 artifactize가
+[커스텀 provider](../agent.md#custom-providers) 이름)이고 한도는 1–100000입니다. 이 파일에
+항목이 없는 백엔드는 동시 실행 수를 제한하지 않으며, 파일 자체가 없으면 어떤 백엔드도 제한하지 않습니다. `verify`는 시작할 때 이 파일을 읽습니다. 파일은 artifactize가
 지원하는 필드만 담은 64 KiB 이하의 일반 UTF-8 JSON 파일이어야 합니다. 그렇지 않으면 `verify`가 Run을
 만들기 전에 멈추고(종료 코드 2), `doctor`는 심각한 오류로 알립니다.
 

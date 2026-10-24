@@ -43,7 +43,7 @@ fn response(backend: &str, value: &Value) -> MockHttpResponse {
 async fn native_red_arrays_and_backend_constraints_reach_the_wire() {
     for backend in ["openai", "anthropic"] {
         let mut fixture = Fixture::new(backend);
-        *fixture.config.evals[0].declaration.fail_schema_mut() = json!({
+        fixture.config.evals[0].declaration.set_fail_schema(json!({
             "type":"object", "additionalProperties":false,
             "properties":{"violations":{
                 "type":"array", "minItems":1, "maxItems":20,
@@ -52,7 +52,7 @@ async fn native_red_arrays_and_backend_constraints_reach_the_wire() {
             }}, "required":["violations"]
         })
         .as_object()
-        .cloned();
+        .cloned());
         let result = json!({"verdict":"RED","violations":[{"where":"src/lib.rs:1"}]});
         let (review, http) = fixture
             .run(vec![response(backend, &native(result.clone()))])
@@ -115,7 +115,7 @@ async fn native_red_arrays_and_backend_constraints_reach_the_wire() {
 async fn nullable_placeholders_and_json_encoded_shapes_preserve_owner_results() {
     for backend in ["openai", "anthropic"] {
         let mut fixture = Fixture::new(backend);
-        *fixture.config.evals[0].declaration.pass_schema_mut() = json!({
+        fixture.config.evals[0].declaration.set_pass_schema(json!({
             "type":"object", "additionalProperties":false,
             "properties":{
                 "optional":{"type":"string"},
@@ -128,7 +128,7 @@ async fn nullable_placeholders_and_json_encoded_shapes_preserve_owner_results() 
             },
             "$defs":{"label":{"type":"string","minLength":2}},
             "required":["nested","open","label","choice","constant"]
-        }).as_object().cloned();
+        }).as_object().cloned());
         let wire = native(json!({
             "verdict":"GREEN", "optional":null, "nested":{"note":null},
             "nullable":null, "choice":3, "constant":{"tag":"p"}, "open":"{\"dynamic\":3}", "label":"\"ok\""
@@ -158,12 +158,14 @@ async fn nullable_placeholders_and_json_encoded_shapes_preserve_owner_results() 
 async fn unsupported_constraints_are_locally_enforced_and_repaired_with_the_same_format() {
     for backend in ["openai", "anthropic"] {
         let mut fixture = Fixture::new(backend);
-        *fixture.config.evals[0].declaration.pass_schema_mut() = json!({
-            "type":"object", "additionalProperties":false,
-            "properties":{"summary":{"type":"string","minLength":2}}, "required":["summary"]
-        })
-        .as_object()
-        .cloned();
+        fixture.config.evals[0].declaration.set_pass_schema(
+            json!({
+                "type":"object", "additionalProperties":false,
+                "properties":{"summary":{"type":"string","minLength":2}}, "required":["summary"]
+            })
+            .as_object()
+            .cloned(),
+        );
         let good = json!({"verdict":"GREEN","summary":"ok"});
         let (review, http) = fixture
             .run(vec![
@@ -210,12 +212,14 @@ async fn responses_schema_limits_keep_valid_owner_results_representable() {
         ),
     ] {
         let mut fixture = Fixture::new("openai");
-        *fixture.config.evals[0].declaration.pass_schema_mut() = json!({
-            "type":"object", "additionalProperties":false,
-            "properties":{"detail":detail}, "required":["detail"]
-        })
-        .as_object()
-        .cloned();
+        fixture.config.evals[0].declaration.set_pass_schema(
+            json!({
+                "type":"object", "additionalProperties":false,
+                "properties":{"detail":detail}, "required":["detail"]
+            })
+            .as_object()
+            .cloned(),
+        );
         let result = json!({"verdict":"GREEN","detail":value});
         let wire = native(json!(result.to_string()));
         let (review, http) = fixture.run(vec![response("openai", &wire)]).await;

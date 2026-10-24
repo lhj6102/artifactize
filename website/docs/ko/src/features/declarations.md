@@ -255,7 +255,7 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 - Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED로 끝납니다.
 - Human 리뷰 중에 없거나 잘못됨: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
   놓고 다시 시도하세요.
-- 내용이 바뀜: 파일 내용의 변경은 fingerprint로 확인하므로, `fingerprint = false`면 내용이 바뀌어도 감지하지 못합니다.
+- 내용이 바뀜: 파일 내용의 변경은 fingerprint로 확인하므로, 파일 Artifact나 그 eval이 의존하는 Artifact 중 하나라도 `fingerprint = false`면 내용이 바뀌어도 감지하지 못합니다.
   그 밖에는 Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다.
 - 없거나 잘못된 대상에 대한 도구 호출은 도구를 실행하지 않고 오류를 돌려줍니다.
 

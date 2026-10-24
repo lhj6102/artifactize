@@ -20,8 +20,13 @@ mod mutex;
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
 use discovery::{logical_join, read_regular_text};
+mod site;
 pub use mutex::MutexTag;
+pub(crate) use site::read_artifact_scope;
+pub use site::{ScopeReadError, Site, read_sites};
+use site::{declaration_of, folder_of};
 mod plain;
+mod schemas;
 mod stored;
 mod tools;
 pub(crate) mod validation;
@@ -387,8 +392,9 @@ struct EvalBody {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     profile_variants: BTreeMap<ProfileVariantName, Profile>,
     payload: EvalPayload,
-    pass_schema: Option<Map<String, Value>>,
-    fail_schema: Option<Map<String, Value>>,
+    /// Each shared with every equal verdict schema in the same read.
+    pass_schema: Option<std::sync::Arc<Map<String, Value>>>,
+    fail_schema: Option<std::sync::Arc<Map<String, Value>>>,
 }
 
 impl EvalDeclaration {
@@ -402,22 +408,22 @@ impl EvalDeclaration {
         &self.body.profile_variants
     }
     pub fn pass_schema(&self) -> Option<&Map<String, Value>> {
-        self.body.pass_schema.as_ref()
+        self.body.pass_schema.as_deref()
     }
     pub fn fail_schema(&self) -> Option<&Map<String, Value>> {
-        self.body.fail_schema.as_ref()
+        self.body.fail_schema.as_deref()
     }
     #[cfg(test)]
     pub(crate) fn profile_mut(&mut self) -> &mut Profile {
         &mut self.body.profile
     }
     #[cfg(test)]
-    pub(crate) fn pass_schema_mut(&mut self) -> &mut Option<Map<String, Value>> {
-        &mut self.body.pass_schema
+    pub(crate) fn set_pass_schema(&mut self, schema: Option<Map<String, Value>>) {
+        self.body.pass_schema = schema.map(std::sync::Arc::new);
     }
     #[cfg(test)]
-    pub(crate) fn fail_schema_mut(&mut self) -> &mut Option<Map<String, Value>> {
-        &mut self.body.fail_schema
+    pub(crate) fn set_fail_schema(&mut self, schema: Option<Map<String, Value>>) {
+        self.body.fail_schema = schema.map(std::sync::Arc::new);
     }
     pub(crate) fn select_profile(&mut self, name: &ProfileVariantName) -> Result<(), String> {
         self.body.profile = self
@@ -464,8 +470,8 @@ impl EvalDeclaration {
             payload: fields
                 .payload
                 .ok_or("Eval payload is required for runtime, agent and human profiles.")?,
-            pass_schema: fields.pass_schema,
-            fail_schema: fields.fail_schema,
+            pass_schema: fields.pass_schema.map(std::sync::Arc::new),
+            fail_schema: fields.fail_schema.map(std::sync::Arc::new),
         };
         Ok(Self {
             id,
@@ -477,7 +483,11 @@ impl EvalDeclaration {
 }
 
 impl EvalDeclaration {
-    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+    fn validate(
+        &self,
+        location: &Location<'_, '_>,
+        schemas: &mut schemas::Schemas,
+    ) -> Result<(), String> {
         location
             .child("title")
             .check(text(&self.title, "Eval title"))?;
@@ -492,13 +502,13 @@ impl EvalDeclaration {
             .check(mutex::validate(&self.mutex))?;
         self.profile().validate(&location.child("profile"))?;
         for (key, schema) in [
-            ("pass_schema", self.pass_schema()),
-            ("fail_schema", self.fail_schema()),
+            ("pass_schema", &self.body.pass_schema),
+            ("fail_schema", &self.body.fail_schema),
         ] {
             if let Some(schema) = schema {
                 location
                     .child(key)
-                    .check(crate::agent::verdict::validate_schema(schema))?;
+                    .check(schemas.check(schema, crate::agent::verdict::validate_schema))?;
                 // A person enters a Human result in a form: only shapes it can enter.
                 if self.profile().kind() == ProfileKind::Human {
                     location
@@ -544,7 +554,11 @@ pub struct Views {
 }
 
 impl Views {
-    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+    fn validate(
+        &self,
+        location: &Location<'_, '_>,
+        schemas: &mut schemas::Schemas,
+    ) -> Result<(), String> {
         for (name, session) in &self.agent_sessions {
             let sessions = location.child("agent_sessions");
             sessions
@@ -571,9 +585,10 @@ impl Views {
                     .error(format!("Unknown tool session: {session}")));
             }
             tools.key(name).check(identifier(name, "Agent tool name"))?;
-            tools
-                .child(name)
-                .check(tool.validate().map_err(|e| format!("Tool {name}: {e}")))?;
+            tools.child(name).check(
+                tool.validate(schemas)
+                    .map_err(|e| format!("Tool {name}: {e}")),
+            )?;
         }
         for (name, tool) in &self.human_tools {
             let tools = location.child("human_tools");
@@ -791,13 +806,34 @@ pub struct ArtifactDeclaration {
 }
 
 impl ArtifactDeclaration {
-    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+    /// Keep each of its schemas once in `schemas`, shared with the equal ones already read.
+    fn share(&mut self, schemas: &mut schemas::Schemas) {
+        for tool in self.views.agent_tools.values_mut() {
+            if let AgentTool::Command(tool) = tool {
+                tool.input_schema = schemas.tool(&tool.input_schema);
+            }
+        }
+        for eval in &mut self.evals {
+            for schema in [&mut eval.body.pass_schema, &mut eval.body.fail_schema]
+                .into_iter()
+                .flatten()
+            {
+                *schema = schemas.verdict(schema);
+            }
+        }
+    }
+
+    fn validate(
+        &self,
+        location: &Location<'_, '_>,
+        schemas: &mut schemas::Schemas,
+    ) -> Result<(), String> {
         location
             .child("name")
             .check(identifier(&self.name, "Artifact name"))?;
         location.child("tags").check(tags(&self.tags))?;
         for eval in &self.evals {
-            eval.validate(&location.child("evals").key(&eval.id))
+            eval.validate(&location.child("evals").key(&eval.id), schemas)
                 .map_err(|message| format!("Eval {}: {message}", eval.id))?;
         }
         if self.basis == Some(true) && !self.evals.is_empty() {
@@ -805,7 +841,7 @@ impl ArtifactDeclaration {
                 .child("basis")
                 .error(format!("Basis Artifact {} cannot own Evals.", self.name)));
         }
-        self.views.validate(&location.child("views"))?;
+        self.views.validate(&location.child("views"), schemas)?;
         if let Some(fingerprint) = &self.fingerprint {
             fingerprint.validate(&location.child("fingerprint"))?;
         }
@@ -829,6 +865,14 @@ fn declared_evals<'de, D: serde::Deserializer<'de>>(
 
 /// Validate an Artifact declaration without opening scripts or declared inputs.
 pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
+    parse_declaration_in(source, &mut schemas::Schemas::default())
+}
+
+/// [`parse_declaration`] as one of a read's declarations, its schemas shared through `schemas`.
+fn parse_declaration_in(
+    source: &str,
+    schemas: &mut schemas::Schemas,
+) -> Result<ArtifactDeclaration, String> {
     let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
     let span = table.span();
     let document = toml::Spanned::new(span, toml::de::DeValue::Table(table.into_inner()));
@@ -938,13 +982,14 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
                 .deserialize::<ToolSession>()?;
         }
     }
-    let declaration =
+    let mut declaration =
         ArtifactDeclaration::deserialize(toml::de::ValueDeserializer::from(document.clone()))
             .map_err(|mut error| {
                 error.set_input(Some(source));
                 error.to_string()
             })?;
-    declaration.validate(&location)?;
+    declaration.share(schemas);
+    declaration.validate(&location, schemas)?;
     Ok(declaration)
 }
 
@@ -1084,10 +1129,7 @@ impl Artifact {
 
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
-        match self.kind {
-            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
-            ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
-        }
+        folder_of(self.kind, &self.path)
     }
 
     pub fn file_name(&self) -> Option<&str> {
@@ -1097,14 +1139,14 @@ impl Artifact {
     }
 
     pub fn declaration_path(&self) -> PathBuf {
-        match self.kind {
-            ArtifactKind::Graph => PathBuf::from(".artf"),
-            ArtifactKind::Folder => logical_join(&self.path, std::ffi::OsStr::new(CONFIG_FILE)),
-            ArtifactKind::File => {
-                let mut path = self.path.as_os_str().to_owned();
-                path.push(".artf");
-                PathBuf::from(path)
-            }
+        declaration_of(self.kind, &self.path)
+    }
+
+    /// Where it is declared.
+    pub fn site(&self) -> Site {
+        Site {
+            kind: self.kind,
+            path: self.path.clone(),
         }
     }
 }
