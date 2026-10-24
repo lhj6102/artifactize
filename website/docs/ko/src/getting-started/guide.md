@@ -118,7 +118,7 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 테스트 코드 리뷰가 끝난 뒤에 실행되고, 관련 없는 애플리케이션 eval은 그동안에도 실행할 수 있습니다.
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
-## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
+## 선택 실습: Agent 도구와 Human 리뷰 절차 {#optional-agent-tools-and-the-human-flow}
 
 앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된 대로
