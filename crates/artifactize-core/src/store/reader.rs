@@ -132,9 +132,7 @@ impl Reader {
                 rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
             )
             .map_err(|error| error.to_string())?;
-            connection
-                .busy_timeout(super::SQLITE_BUSY_TIMEOUT)
-                .map_err(|error| error.to_string())?;
+            super::wait_when_busy(&connection).map_err(|error| error.to_string())?;
             let check = platform::open_no_follow(File::options().read(true), &state.join(DATABASE))
                 .map_err(|error| error.to_string())?;
             if platform::file_identity(&check).map_err(|error| error.to_string())? != identity {

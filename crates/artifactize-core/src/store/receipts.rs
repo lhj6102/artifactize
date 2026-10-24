@@ -735,7 +735,7 @@ impl Receipts {
             let state_id = state_id.clone();
             let initialized = connection
                 .call(move |db| -> Result<(), Error> {
-                    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+                    super::wait_when_busy(db)?;
                     db.pragma_update(None, "foreign_keys", true)?;
                     let version: u32 =
                         db.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -772,7 +772,7 @@ impl Receipts {
                 )))) if error.code == rusqlite::ErrorCode::DatabaseBusy
                     && tokio::time::Instant::now() < deadline =>
                 {
-                    // Concurrent first opens can race when enabling WAL despite busy_timeout.
+                    // Concurrent first opens can race when enabling WAL despite the busy handler.
                     tokio::time::sleep(INITIALIZATION_RETRY_INTERVAL).await;
                 }
                 Err(error) => return connection.finish(Err(error.to_string())).await,
@@ -933,7 +933,7 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+        super::wait_when_busy(&db)?;
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
     let version = read().map_err(|e| e.to_string())?;
@@ -958,7 +958,7 @@ pub fn read_state_id(state: &Path) -> Result<Option<crate::types::StateId>, Stri
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+        super::wait_when_busy(&db)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(None);
@@ -1036,7 +1036,7 @@ pub async fn read_latest_requests(
     let repo = repo.to_path_buf();
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -1097,7 +1097,7 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
         let id: RunId = id.parse()?;
         connection
             .call(move |db| -> Result<RunView, Error> {
-                db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+                super::wait_when_busy(db)?;
                 let transaction = db.transaction()?;
                 if !schema_initialized(&transaction)? {
                     return Err(Error::Invalid("Run not found.".into()));

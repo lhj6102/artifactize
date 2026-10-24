@@ -121,10 +121,7 @@ async fn open(path: &Path) -> Result<Connection, String> {
     )
     .await
     .map_err(|error| error.to_string())?;
-    if let Err(error) = connection
-        .call(|db| db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT))
-        .await
-    {
+    if let Err(error) = connection.call(|db| crate::store::wait_when_busy(db)).await {
         crate::store::connection::close(connection).await?;
         return Err(error.to_string());
     }

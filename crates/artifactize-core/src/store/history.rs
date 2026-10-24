@@ -73,7 +73,7 @@ async fn open(state: &Path, writable: bool) -> Result<Option<NotifyingConnection
     let connection = NotifyingConnection::new(connection, &state);
     let initialized = connection
         .call(|db| -> Result<bool, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             schema_initialized(&transaction)
         })

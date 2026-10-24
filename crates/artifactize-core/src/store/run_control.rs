@@ -247,7 +247,7 @@ fn snapshot(state: &std::path::Path, id: &RunId) -> Result<Observation, Error> {
         state.join(super::DATABASE),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
-    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+    super::wait_when_busy(&db)?;
     let transaction = db.transaction()?;
     if !super::receipts::schema_initialized(&transaction)? {
         return Err(Error::Invalid("Run not found.".into()));
