@@ -35,7 +35,9 @@ structure to an agent or opens it in Desktop for a person.
 
 ## Folder configuration
 
-A folder with an `index.artf` is an Artifact. `name` is required; `basis`,
+A folder with an `index.artf` is an Artifact. `name` is required, optionally with a
+space that groups it with others, `combat::Code` (see
+[names](declarations.md)); `basis`,
 `views`, `fingerprint` and `tags` are optional. For older declarations,
 see the [legacy policy upgrade reference](../getting-started/update.md#upgrading-from-011).
 

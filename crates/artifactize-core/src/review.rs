@@ -214,7 +214,7 @@ impl Tool {
     /// The name tool `name` has in `artifact`, which declares it.
     pub fn operation_of<'a>(name: &'a ToolName, artifact: &crate::types::ArtifactName) -> &'a str {
         name.as_str()
-            .strip_suffix(&format!("_{artifact}"))
+            .strip_suffix(&format!("_{}", artifact.tool_suffix()))
             .unwrap_or(name.as_str())
     }
 
@@ -471,7 +471,7 @@ fn declared(
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
                     };
                     Some(Tool {
-                        name: format!("{operation}_{id}").parse().ok()?,
+                        name: format!("{operation}_{}", id.tool_suffix()).parse().ok()?,
                         artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),

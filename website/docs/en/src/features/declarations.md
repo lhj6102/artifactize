@@ -54,7 +54,12 @@ examples/
 
 Names, eval IDs, tool/session names and profile variant names start with a letter or
 digit and have at most 64 letters, digits, underscores or hyphens
-(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact names are globally unique. Evals are
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). An Artifact name may also start with one space
+and `::`, such as `combat::Code`: the space and the rest each have that form, and the whole
+name has at most 64 bytes. A space only groups names for people; it is part of the name,
+so `{combat::Code}`, `combat::Code/check` and `artifactize verify combat::Code` spell it
+whole, and evals use Artifacts of other spaces as they use any other. `a::b::c` is
+rejected. Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
 by ID, not by their position in the TOML source.

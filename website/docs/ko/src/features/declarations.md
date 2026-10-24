@@ -45,6 +45,11 @@ examples/
 
 이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 글자나 숫자로 시작하고, 글자, 숫자, 밑줄,
 하이픈으로 이뤄진 64자 이하여야 합니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
+`combat::Code`처럼 앞에 space 하나와 `::`를 붙일 수 있습니다. space와 나머지 부분은 각각 같은
+규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 보도록 돕는
+것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
+`artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
+Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
 전체에서 하나뿐이어야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.

@@ -34,7 +34,8 @@ Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람�
 
 ## 폴더 설정 {#folder-configuration}
 
-`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `basis`, `views`,
+`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `combat::Code`처럼 앞에
+space를 붙여 다른 Artifact와 묶을 수 있습니다([이름](declarations.md) 참고). `basis`, `views`,
 `fingerprint`, `tags`는 선택입니다. 예전 선언은
 [예전 정책 업그레이드 안내](../getting-started/update.md#upgrading-from-011)를 보세요.
 

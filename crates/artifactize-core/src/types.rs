@@ -148,16 +148,42 @@ macro_rules! identity {
         }
     };
 }
-/// An Artifact name or a local Eval id: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
+/// A local Eval id: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
 fn name(value: &str) -> bool {
     crate::config::identifier(value, "").is_ok()
 }
 
-identity!(ArtifactName, name);
+/// An Artifact name: a local Eval id's form, optionally prefixed by one `space::`.
+fn artifact_name(value: &str) -> bool {
+    crate::config::artifact_name(value, "").is_ok()
+}
+
+identity!(ArtifactName, artifact_name);
+impl ArtifactName {
+    /// The space a `space::name` belongs to; `None` for an unprefixed name.
+    pub fn space(&self) -> Option<&str> {
+        self.0
+            .split_once(crate::config::SPACE_SEPARATOR)
+            .map(|(space, _)| space)
+    }
+
+    /// The name without its space: `Code` of `combat::Code`, the whole of an unprefixed one.
+    pub fn local(&self) -> &str {
+        self.0
+            .split_once(crate::config::SPACE_SEPARATOR)
+            .map_or(&self.0, |(_, local)| local)
+    }
+
+    /// The name as a model's tool name spells it: `::` becomes `__`, since tool names hold
+    /// only `[A-Za-z0-9_-]`. A spelling two names share is a registry collision.
+    pub fn tool_suffix(&self) -> String {
+        self.0.replace(crate::config::SPACE_SEPARATOR, "__")
+    }
+}
 // A workspace-qualified Eval id: the Artifact name, `/`, and the Eval's local id.
-identity!(EvalId, |value: &str| value
-    .split_once('/')
-    .is_some_and(|(artifact, eval)| name(artifact) && name(eval)));
+identity!(EvalId, |value: &str| value.split_once('/').is_some_and(
+    |(artifact, eval)| artifact_name(artifact) && name(eval)
+));
 /// Caller attempt keys are bounded independently of path-segment identities.
 const MAX_REQUEST_KEY_BYTES: usize = 128;
 identity!(RequestKey, |value: &str| (1..=MAX_REQUEST_KEY_BYTES)
