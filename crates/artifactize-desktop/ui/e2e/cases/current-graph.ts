@@ -201,8 +201,11 @@ export const scenarios: Scenario[] = [
       const moved = await camera(browser);
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";
+      /** The last scan ended: a scan still running would be shown as it is, not started over. */
+      const scanEnded = () => browser.$(CURRENT).$("button=Refresh").waitForEnabled({ timeout: 15000 });
       for (const [index, keys] of [null, [primaryModifier, "r"], ["F5"]].entries()) {
         const title = `Current docs criterion ${index}`;
+        await scanEnded();
         writeText(declaration, readText(declaration).replace(/title = "[^"]*"/, `title = "${title}"`));
         assert.doesNotMatch(await structure(), new RegExp(title), "the change shows only after a scan");
         if (keys) await press(browser, keys, async () => (await structure()).includes(title), `scanned again with ${keys.join("+")}`);
@@ -217,6 +220,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await camera(browser), moved, "the scans left the person's camera");
       // A scan also redraws the structure: an Artifact that reads docs adds a node and an edge,
       // and removing it takes both away.
+      await scanEnded();
       const digest = makeDirectory(nativePath(fixture.repo, "digest"));
       writeText(nativePath(digest, "index.artf"), `name = "digest"
 
@@ -237,7 +241,7 @@ Summarize {docs}."""
       assert.notEqual(waiting.nodes["a:docs"].dot, waiting.nodes["a:digest"].dot, "would run and waiting are painted apart");
       assert.ok((await structure()).split("\n").some((line) => line.startsWith("docs → digest ")), "the structure text lists the added relation");
       assert.equal(await camera(browser), moved, "the new layout left the person's camera");
-      await browser.$(CURRENT).$("button=Refresh").waitForEnabled({ timeout: 15000 });
+      await scanEnded();
       removeTree(digest);
       await browser.$(CURRENT).$("button=Refresh").click();
       await waitFor(browser, async () => (await drawn()).nodes["a:digest"] === undefined, "the removed digest Artifact dropped");
