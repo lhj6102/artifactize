@@ -139,6 +139,8 @@ pub(crate) async fn scan(
     ),
     String,
 > {
+    // Options are checked before anything is read.
+    super::fingerprint_parallelism(options)?;
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     scan_config(config, state_dir, selection, options, cancellation).await
 }
