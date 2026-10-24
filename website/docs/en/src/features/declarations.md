@@ -297,9 +297,9 @@ reviewed, also with `fingerprint = false`:
   of a verdict;
 - missing or invalid during a Human review: tools and submission fail, the request keeps
   waiting, and you restore the file and try again;
-- changed contents: detected only through a fingerprint, so with `fingerprint = false`
-  an edit to the file is not noticed; otherwise a Runtime or Agent review, or a
-  sign-off, ends ERROR/INPUT_CHANGED;
+- changed contents: detected only through fingerprints, so an edit to the file is not
+  noticed when it, or any Artifact its eval depends on, has `fingerprint = false`;
+  otherwise a Runtime or Agent review, or a sign-off, ends ERROR/INPUT_CHANGED;
 - a tool call on a missing or invalid target returns an error without running the tool.
 
 Verify again once the file is back.
