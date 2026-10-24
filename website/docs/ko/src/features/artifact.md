@@ -165,7 +165,7 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 ASCII 제어 문자가 없고 비어 있지 않은 고유한 문자열이며 64개까지입니다. `status`,
 `config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그를 바꿔도 fingerprint, eval 정의
 해시, 재사용 키, 의존 관계, `verify`와 `status`로 선택하는 대상은 바뀌지 않습니다. 이런 명령에는 태그로
-거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. 태그로 걸러 보는 곳은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
+거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. `artifactize review`에서 `tag:` 검색어를 쓸 때만 태그로 결과를 걸러 볼 수 있습니다.
 
 프로젝트에 템플릿이 필요하면 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은
 [선언 검사](declarations.md#declaration-validation)에 있습니다.

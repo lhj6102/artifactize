@@ -40,6 +40,37 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
   }
 }
 
+/** A rectangle wholly inside another. */
+const within = (inner: DOMRect, outer: DOMRect) =>
+  inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
+
+/** Two rectangles that do not meet. */
+const apart = (one: DOMRect, other: DOMRect) =>
+  one.left >= other.right || one.right <= other.left || one.top >= other.bottom || one.bottom <= other.top;
+
+/** The spaces' boxes and the Artifacts of the graph under `root`, once its four Artifacts and
+ * two boxes are drawn: each box's rectangle and text, each Artifact's rectangle, text and
+ * spoken name. */
+async function spacesDrawn(browser: WebdriverIO.Browser, root: string) {
+  const read = () => browser.execute((under) => {
+    const rect = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
+    const of = (selector: string) => [...document.querySelectorAll<HTMLElement>(`${under} ${selector}`)]
+      .filter((node) => !node.closest('aside[aria-label="Detail"]'));
+    return {
+      boxes: Object.fromEntries(of(".svelte-flow__node[data-space]")
+        .map((box) => [box.dataset.space ?? "", { rect: rect(box), text: box.textContent?.trim() ?? "" }])),
+      nodes: Object.fromEntries(of(".svelte-flow__node[data-light]")
+        .map((node) => [node.dataset.id ?? "", { rect: rect(node), text: node.textContent?.trim() ?? "", label: node.getAttribute("aria-label") ?? "" }])),
+    };
+  }, root);
+  let shown: Awaited<ReturnType<typeof read>> | undefined;
+  await browser.waitUntil(async () => {
+    shown = await read();
+    return Object.keys(shown.nodes).length === 4 && Object.keys(shown.boxes).length === 2;
+  }, { timeout: 15000, timeoutMsg: "two boxes and four Artifacts drawn" });
+  return shown!;
+}
+
 export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
@@ -181,46 +212,31 @@ export const scenarios: Scenario[] = [
   // UX journey: J-GRAPH-SPACES; UX edges: E-GRAPH-SPACES E-MON-DETAIL-ARTIFACT E-GRAPH-SPACE-BACKGROUND
   scenario<{ run: string }>(
     "graph-spaces",
-    "draws a space's Artifacts in one box labelled with the space by the rest of their names, an edge leaving the box like any other, and closes the Detail on a click on the box",
+    "draws each space's Artifacts in one box labelled with the space by the rest of their names, edges between spaces and out of them like any other, and closes the Detail on a click on a box",
     async () => ended(createSpaces()),
     async (browser, { data }) => {
       await shownRun(browser, data.run);
       await graphShown(browser, "a:combat::Code");
-      /** The box of `combat` and every Artifact as drawn: its rectangle, text and spoken name. */
-      const drawn = () => browser.execute(() => {
-        const rect = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
-        const box = document.querySelector<HTMLElement>('.graph .svelte-flow__node[data-space="combat"]');
-        return {
-          box: box && { rect: rect(box), text: box.textContent?.trim() ?? "", boxes: document.querySelectorAll(".graph .svelte-flow__node[data-space]").length },
-          nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".graph .svelte-flow__node[data-light]")]
-            .filter((node) => !node.closest('aside[aria-label="Detail"]'))
-            .map((node) => [node.dataset.id ?? "", { rect: rect(node), text: node.textContent?.trim() ?? "", label: node.getAttribute("aria-label") ?? "" }])),
-        };
-      });
-      let shown: Awaited<ReturnType<typeof drawn>> | undefined;
-      await browser.waitUntil(async () => {
-        shown = await drawn();
-        return shown.box !== null && Object.keys(shown.nodes).length === 3;
-      }, { timeout: 15000, timeoutMsg: "the combat box and three Artifacts drawn" });
-      const { box, nodes } = shown!;
-      assert.ok(box);
-      assert.equal(box.text, "combat", "the box is labelled with the space");
-      assert.equal(box.boxes, 1, "one box: docs has no space");
-      const within = (inner: DOMRect, outer: DOMRect) =>
-        inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
-      for (const [id, label] of [["a:combat::Spec", "Spec"], ["a:combat::Code", "Code"]]) {
+      const { boxes, nodes } = await spacesDrawn(browser, ".graph");
+      assert.deepEqual(Object.keys(boxes).sort(), ["combat", "inventory"], "one box per space: docs has none");
+      for (const [space, box] of Object.entries(boxes)) assert.equal(box.text, space, `the ${space} box is labelled with its space`);
+      for (const [id, space, label] of [["a:combat::Spec", "combat", "Spec"], ["a:combat::Code", "combat", "Code"], ["a:inventory::Code", "inventory", "Code"]]) {
         assert.equal(nodes[id].text, label, `${id} shows the rest of its name`);
         assert.ok(nodes[id].label.startsWith(`${id.slice(2)}: `), `${id} is read aloud whole: ${nodes[id].label}`);
-        assert.ok(within(nodes[id].rect, box.rect), `${id} sits in the box`);
+        assert.ok(within(nodes[id].rect, boxes[space].rect), `${id} sits in the ${space} box`);
+        for (const [other, box] of Object.entries(boxes)) {
+          if (other !== space) assert.ok(apart(nodes[id].rect, box.rect), `${id} stands outside the ${other} box`);
+        }
       }
       assert.equal(nodes["a:docs"].text, "docs");
-      const docs = nodes["a:docs"].rect;
-      assert.ok(docs.left >= box.rect.right || docs.right <= box.rect.left || docs.top >= box.rect.bottom || docs.bottom <= box.rect.top,
-        "docs stands outside the box");
-      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:combat::Code": "green", "a:docs": "green" }, { "a:combat::Code>a:docs": "green" }),
-        { timeout: 15000, timeoutMsg: "the edge from combat::Code out of the box to docs is drawn and lit like any other" });
+      for (const box of Object.values(boxes)) assert.ok(apart(nodes["a:docs"].rect, box.rect), "docs stands outside every box");
+      assert.ok(apart(boxes.combat.rect, boxes.inventory.rect), "the boxes do not meet");
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser),
+        { "a:combat::Code": "green", "a:inventory::Code": "green", "a:docs": "green" },
+        { "a:combat::Code>a:inventory::Code": "green", "a:inventory::Code>a:docs": "green" }),
+      { timeout: 15000, timeoutMsg: "the edges from combat into inventory and out of inventory to docs are drawn and lit like any other" });
 
-      // The Detail names the Artifact whole; a click on the box's label closes it.
+      // The Detail names the Artifact whole; a click on a box's label closes it.
       await openArtifact(browser, "a:combat::Code", "Artifact combat::Code");
       const label = await browser.execute(() => {
         const at = document.querySelector('.graph .svelte-flow__node[data-space="combat"]')!.getBoundingClientRect();
@@ -228,6 +244,45 @@ export const scenarios: Scenario[] = [
       });
       await browser.action("pointer").move({ x: label.x, y: label.y }).down().up().perform();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "a click on the box closed the Detail" });
+    },
+  ),
+
+  // UX journeys: J-GRAPH-SPACES J-DETAIL; UX edges: E-GRAPH-SPACES E-GRAPH-TAB E-CURRENT-EVALS E-CURRENT-CLOSE
+  scenario<Record<string, never>>(
+    "graph-spaces-keyboard",
+    "Tabs past the spaces' boxes of a branch's Current to every Artifact, opening nothing, and opens each one's Detail with Enter",
+    async () => {
+      // Its Run ended, so the branch's newest entry, shown at launch, is its Current.
+      const fixture = createSpaces();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const current = 'section[aria-label="Current"]';
+      await browser.$(`${current} .svelte-flow__node[data-space="inventory"]`)
+        .waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn with its boxes" });
+      assert.deepEqual(Object.keys((await spacesDrawn(browser, current)).boxes).sort(), ["combat", "inventory"], "the Current draws the same boxes");
+      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
+      const expected = ["a:combat::Code", "a:combat::Spec", "a:docs", "a:inventory::Code"];
+      const visited = new Set<string>();
+      // A bound on traversing this small fixture's controls, not a claimed tab order.
+      for (let attempt = 0; attempt < 40 && visited.size < expected.length; attempt += 1) {
+        await tab(browser);
+        const focused = await browser.execute(() => {
+          const node = document.activeElement?.closest('section[aria-label="Current"] .svelte-flow__node');
+          return node ? { id: node.getAttribute("data-id") ?? "", space: node.getAttribute("data-space") } : null;
+        });
+        if (!focused) continue;
+        assert.equal(focused.space, null, `Tab passes the ${focused.space} box by`);
+        if (visited.has(focused.id)) continue;
+        assert.ok(expected.includes(focused.id), `Tab reached an Artifact of the Current: ${focused.id}`);
+        assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
+        const name = focused.id.slice(2);
+        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail with its whole name`);
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Current's Detail closes");
+        visited.add(focused.id);
+      }
+      assert.deepEqual([...visited].sort(), expected, "every Artifact, and no box, is reachable with Tab");
     },
   ),
 

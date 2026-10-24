@@ -48,8 +48,8 @@ codex plugin add artifactize@artifactize
 
 **Codex:** 프로젝트 디렉터리에서 새 Codex 세션을 시작하세요. 서버는
 플러그인 폴더에서 `artifactize mcp`로 실행되며, 도구가 프로젝트를 지정하지 않았다고 답하면 Hey Arti가
-그 뒤의 호출마다 세션의 프로젝트 폴더를 넘깁니다([서버가 프로젝트를 찾는 방법](mcp.md#which-project)). 평소 말투로 요청하거나,
-스킬을 `$artifactize:hey-arti`로 언급하세요.
+그 뒤의 호출마다 세션의 프로젝트 폴더를 넘깁니다([서버가 프로젝트를 찾는 방법](mcp.md#which-project)). 평소 말투로 요청하거나
+`$artifactize:hey-arti`를 입력해 스킬을 호출하세요.
 
 ## 업데이트 {#updates}
 

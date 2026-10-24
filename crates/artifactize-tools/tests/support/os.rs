@@ -285,10 +285,9 @@ fn main() {
     )
 }
 
-/// The environment an environment-recording program wrote to `record`, which is removed.
+/// The environment an environment-recording program wrote to `record`.
 pub fn recorded_environment(record: &Path) -> std::collections::BTreeMap<String, String> {
     let text = fs::read_to_string(record).unwrap();
-    fs::remove_file(record).unwrap();
     text.lines()
         .map(|line| {
             let (name, value) = line.split_once('=').unwrap();

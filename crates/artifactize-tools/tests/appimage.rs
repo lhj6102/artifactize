@@ -108,8 +108,13 @@ fn opened_with(
     test: &str,
     environment: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
+    // No record of an earlier opener: only this run's can be read.
+    let record = root.join("record");
+    if let Err(error) = std::fs::remove_file(&record) {
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound, "{error}");
+    }
     os::rerun_as(program, test, environment);
-    os::recorded_environment(&root.join("record"))
+    os::recorded_environment(&record)
 }
 
 /// A bundle holding a copy of this test binary where the app's executable would be, a copy

@@ -101,7 +101,13 @@ fn a_node_names_its_space_and_shows_the_rest_of_its_name() {
     let nodes: Vec<_> = shown
         .nodes
         .iter()
-        .map(|item| (item.name.as_str(), item.space.as_deref(), item.label.as_str()))
+        .map(|item| {
+            (
+                item.name.as_str(),
+                item.space.as_deref(),
+                item.label.as_str(),
+            )
+        })
         .collect();
     assert_eq!(
         nodes,

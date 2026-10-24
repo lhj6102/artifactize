@@ -374,13 +374,18 @@ export function createChain(count: number): Fixture {
   });
 }
 
-/** A repository verified GREEN once, two of its Artifacts in the space `combat`:
- * `combat::Spec` → `combat::Code` → `docs`, each with a runtime check. */
+/** A repository verified GREEN once, its Artifacts in two spaces and none:
+ * `combat::Spec` → `combat::Code` → `inventory::Code` → `docs`, each with a runtime check. */
 export function createSpaces(): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
-    for (const [folder, name, input] of [["spec", "combat::Spec", ""], ["code", "combat::Code", " Read {combat::Spec}."], ["docs", "docs", " Read {combat::Code}."]]) {
+    for (const [folder, name, input] of [
+      ["spec", "combat::Spec", ""],
+      ["code", "combat::Code", " Read {combat::Spec}."],
+      ["inventory", "inventory::Code", " Read {combat::Code}."],
+      ["docs", "docs", " Read {inventory::Code}."],
+    ]) {
       writeText(nativePath(makeDirectory(nativePath(repo, folder)), "index.artf"),
         `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`);
     }
