@@ -1,6 +1,6 @@
 # Artifact {#artifact}
 
-Artifact는 리뷰하는 대상이면 무엇이든 될 수 있습니다. 코드, 문서, 디자인, 이미지 모두
+리뷰할 대상이라면 무엇이든 Artifact로 선언할 수 있습니다. 코드, 문서, 디자인, 이미지 모두
 Artifact입니다. 폴더에 `index.artf`를 추가하면(파일이라면 옆에 `notes.md.artf`를 두면)
 Artifact를 선언할 수 있습니다.
 
