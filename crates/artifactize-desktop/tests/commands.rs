@@ -1081,7 +1081,12 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
 
 /// Scan `branch`'s Current and read its newest step until the scan ends.
 fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, Value) {
-    let first = invoke(window, "current_scan", json!({"branch": branch})).unwrap();
+    let first = invoke(
+        window,
+        "current_scan",
+        json!({"branch": branch, "refresh": false}),
+    )
+    .unwrap();
     let deadline = std::time::Instant::now() + JOB_TIMEOUT;
     let mut view = first.clone();
     while view["scanning"] == json!(true) {
@@ -1223,7 +1228,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     );
     // A branch the Pane does not list has no Current.
     let elsewhere = json!({"kind": "folder", "path": "/nowhere"});
-    let missing = invoke(&viewer, "current_scan", json!({"branch": elsewhere}));
+    let missing = invoke(
+        &viewer,
+        "current_scan",
+        json!({"branch": elsewhere, "refresh": false}),
+    );
     assert_eq!(missing.unwrap_err()["kind"], "missing");
 }
 

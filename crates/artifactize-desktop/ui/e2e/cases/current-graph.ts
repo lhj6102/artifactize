@@ -201,11 +201,13 @@ export const scenarios: Scenario[] = [
       const moved = await camera(browser);
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
       let previousTitle = "Docs build";
-      /** The last scan ended: a scan still running would be shown as it is, not started over. */
+      /** The last scan ended: Refresh is offered again. */
       const scanEnded = () => browser.$(CURRENT).$("button=Refresh").waitForEnabled({ timeout: 15000 });
+      // Ctrl+R and F5 come at once, the previous scan maybe still running: what they were
+      // pressed for shows all the same.
       for (const [index, keys] of [null, [primaryModifier, "r"], ["F5"]].entries()) {
         const title = `Current docs criterion ${index}`;
-        await scanEnded();
+        if (!keys) await scanEnded();
         writeText(declaration, readText(declaration).replace(/title = "[^"]*"/, `title = "${title}"`));
         assert.doesNotMatch(await structure(), new RegExp(title), "the change shows only after a scan");
         if (keys) await press(browser, keys, async () => (await structure()).includes(title), `scanned again with ${keys.join("+")}`);
@@ -425,19 +427,21 @@ Summarize {docs}."""
       await waitFor(browser, async () => (await requested()) >= before + 3, "the Run's end asked for the Current again");
       await stillChecking("the Run's end");
       assert.equal(fingerprintRuns(checking), 1, "nothing started over");
-      // The fingerprint comes in: each Artifact is coloured in place, and the scan ends.
+      // The fingerprint comes in: each Artifact is coloured in place, and the scan ends. F5
+      // asked for the files as they are now, so one scan more follows, then the Current ends.
       writeText(gate, "go");
       const known = JSON.stringify({ "a:other": "other: reused", "a:quick": "quick: waiting", "a:slow": "slow: would run (1 eval)" });
       await waitFor(browser, async () => (await nodes()) === known, "every Artifact known")
         .catch(async (error: Error) => { throw new Error(`${error.message}: ${await nodes()}; ${await scanned(browser)}; ${await failure()}`); });
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the header says when it was scanned");
+      assert.equal(fingerprintRuns(checking), 2, "the scan F5 asked for followed the one running, once");
       // Chosen again once it ended, the Current scans again, every Artifact checked again.
       removeTree(gate);
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await scanned(browser)) === "Checking 2 of 3 Artifacts…", "scanned again");
       const rechecked = await drawn();
       assert.deepEqual([rechecked.nodes["a:quick"], rechecked.nodes["a:slow"]], ["quick: checking", "slow: checking"]);
-      await waitFor(browser, () => fingerprintRuns(checking) === 2, "the new scan ran the fingerprint script again");
+      await waitFor(browser, () => fingerprintRuns(checking) === 3, "the new scan ran the fingerprint script again");
       writeText(gate, "go");
       await waitFor(browser, async () => (await nodes()) === known, "known again");
       // A fingerprint that fails ends a running scan; what it showed stays.

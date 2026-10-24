@@ -34,7 +34,7 @@ export class Current {
 
   /** Scan `branch` again, or show its scan still running; another branch's scan shown is
    * dropped at once. */
-  async scan(branch: BranchKey): Promise<void> {
+  async scan(branch: BranchKey, refresh = false): Promise<void> {
     const scan = ++this.#scans;
     if (this.view && !this.of(branch)) {
       this.view = null;
@@ -44,7 +44,7 @@ export class Current {
     this.#branch = branch;
     this.#asking = true;
     try {
-      const view = await call(this.ipc.currentScan(branch));
+      const view = await call(this.ipc.currentScan(branch, refresh));
       if (scan !== this.#scans) return;
       this.#show(view);
       this.#failed = null;

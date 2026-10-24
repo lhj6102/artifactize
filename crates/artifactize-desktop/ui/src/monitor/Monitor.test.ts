@@ -123,7 +123,7 @@ const monitor = (request: string | null = null): LaunchView => ({ mode: "monitor
 
 it("opens on the Current of the branch it was started for, and scans it again on Refresh, Ctrl+R and F5", async () => {
   const main = branch("main", [{ kind: "current" }]);
-  const { scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
+  const { calls, scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
   render(App);
   /** The header names the time of the scan with this revision. */
   const header = async (revision: number) => {
@@ -147,6 +147,9 @@ it("opens on the Current of the branch it was started for, and scans it again on
   await fireEvent.keyDown(window, { key: "F5" });
   await waitFor(() => expect(screen.getByText(structure(4))).toBeTruthy());
   expect(scanned()).toBe(4);
+  // Only a person's refresh asks for the files as they are now, even past a scan still running.
+  expect(calls.filter((call) => call.command === "current_scan").map((call) => (call.args as { refresh: boolean }).refresh))
+    .toEqual([false, true, true, true]);
   // Each manual refresh also read the state again with every cache dropped.
   expect(navigations().filter((step) => step.resync)).toHaveLength(2);
 });

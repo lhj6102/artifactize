@@ -31,7 +31,7 @@
     <span class="when" role="status">
       {#if current.scanning}{#if view?.scanning && view.checking > 0}Checking {view.checking} of {view.artifacts} Artifacts…{:else}Scanning…{/if}{:else if scanned}Scanned at <time datetime={scanned.at}>{scanned.local}</time>{/if}
     </span>
-    <button class="button small" disabled={current.scanning} onclick={() => void current.scan(branch)}>Refresh</button>
+    <button class="button small" disabled={current.scanning} onclick={() => void current.scan(branch, true)}>Refresh</button>
   </header>
   {#if current.error}<p class="failure">{current.error}</p>{/if}
   {#if view}

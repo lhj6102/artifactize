@@ -166,7 +166,8 @@ fingerprint fails, the header says why and the graph stays as it was. It scans a
 when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
 the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
 While a scan of the branch is still running, choosing its Current again or a Run's end shows
-that scan instead of starting over.
+that scan instead of starting over. **Refresh** or Ctrl+R/F5 shows it too, then scans once
+more when it ends, so a change you made meanwhile shows.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it

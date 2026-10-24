@@ -1,7 +1,8 @@
 //! A branch's Current: its worktree as it is now, scanned by the library's
 //! [`live::scan`] as `artifactize status` does. A scan runs on its own: each step it publishes
 //! is kept for the branch's graph and Details and announced to the window, and a request
-//! while the branch's scan still runs shows that scan instead of starting over.
+//! while the branch's scan still runs shows that scan instead of starting over. A refresh
+//! asked meanwhile is for files as they are now, so a new scan follows once that one ends.
 use super::{GraphEdge, GraphNode, Shape, Source, node_id};
 use crate::{
     App, Failure,
@@ -42,21 +43,26 @@ enum Stage {
     Ended(Result<(), String>),
 }
 
-/// A scan running for a branch: its number, how to stop it, and how far it is.
+/// A scan running for a branch: its number, how to stop it, how far it is, and whether a
+/// refresh asked while it ran wants a new scan after it.
 struct Running {
     scan: crate::ids::ScanId,
     token: CancellationToken,
     stage: watch::Receiver<Stage>,
+    again: bool,
+}
+
+/// A scan to run: its number, how to stop it, and where it tells how far it is.
+struct Fresh {
+    scan: crate::ids::ScanId,
+    token: CancellationToken,
+    stage: watch::Sender<Stage>,
 }
 
 /// What a scan request does: show the branch's scan still running, or run a new one.
 enum Request {
     Join(watch::Receiver<Stage>),
-    Run {
-        scan: crate::ids::ScanId,
-        token: CancellationToken,
-        stage: watch::Sender<Stage>,
-    },
+    Run(Fresh),
 }
 
 /// The shown Current of `branch` changed: a scan published a step, or ended.
@@ -115,15 +121,22 @@ impl Currents {
     /// Show the scan of `place` still running, or start one. Starting over would throw away
     /// every fingerprint the running scan has computed, and a scan reads the review store
     /// afresh once its fingerprints are in, so the one running also sees a Run that ended
-    /// meanwhile.
-    fn request(&self, place: &Place) -> Request {
+    /// meanwhile. A `refresh` is for the files as they are now, which the running scan may
+    /// have read before they changed: a new scan follows it.
+    fn request(&self, place: &Place, refresh: bool) -> Request {
         let mut running = self.running.lock().expect("scans lock");
         // A scan whose task is gone without ending (its sender dropped) is not waited for.
-        if let Some(scan) = running.get(place)
+        if let Some(scan) = running.get_mut(place)
             && scan.stage.has_changed().is_ok()
         {
+            scan.again |= refresh;
             return Request::Join(scan.stage.clone());
         }
+        Request::Run(self.start(&mut running, place))
+    }
+
+    /// Note a new scan of `place` as running.
+    fn start(&self, running: &mut BTreeMap<Place, Running>, place: &Place) -> Fresh {
         let scan = crate::ids::ScanId::allocate(&self.scans);
         let token = CancellationToken::new();
         let (stage, receiver) = watch::channel(Stage::Started);
@@ -133,10 +146,11 @@ impl Currents {
                 scan,
                 token: token.clone(),
                 stage: receiver,
+                again: false,
             },
         );
         self.failed.lock().expect("failures lock").remove(place);
-        Request::Run { scan, token, stage }
+        Fresh { scan, token, stage }
     }
 
     /// Keep a step of scan `scan` of `place`, unless the state was replaced since.
@@ -164,24 +178,31 @@ impl Currents {
         true
     }
 
-    /// Scan `scan` of `place` ended, failing with `failure`; nothing is kept for a scan of a
-    /// replaced state.
-    fn end(&self, place: &Place, scan: crate::ids::ScanId, failure: Option<String>) -> bool {
+    /// Scan `scan` of `place` ended, failing with `failure`, and the scan a refresh asked for
+    /// meanwhile, if any, starts; `None` for a scan of a replaced state, of which nothing is
+    /// kept.
+    fn end(
+        &self,
+        place: &Place,
+        scan: crate::ids::ScanId,
+        failure: Option<String>,
+    ) -> Option<Option<Fresh>> {
         let mut running = self.running.lock().expect("scans lock");
-        if running
-            .get(place)
-            .is_none_or(|running| running.scan != scan)
-        {
-            return false;
-        }
+        let again = match running.get(place) {
+            Some(running) if running.scan == scan => running.again,
+            _ => return None,
+        };
         running.remove(place);
+        if again {
+            return Some(Some(self.start(&mut running, place)));
+        }
         if let Some(failure) = failure {
             self.failed
                 .lock()
                 .expect("failures lock")
                 .insert(place.clone(), failure);
         }
-        true
+        Some(None)
     }
 
     /// Tell the window that `branch`'s Current changed.
@@ -472,37 +493,43 @@ pub(crate) fn detail(
 
 /// Scan `branch`'s worktree as it is now, answering with the scan's first step: the graph,
 /// every Artifact still being checked. Each later step is announced by [`CurrentChanged`].
-/// While the branch's scan still runs, this answers with that scan instead.
+/// While the branch's scan still runs, this answers with that scan instead; when the person
+/// asked to `refresh`, a new scan follows it.
 #[tauri::command]
 #[specta::specta]
 pub async fn current_scan(
     app: tauri::State<'_, App>,
     branch: BranchKey,
+    refresh: bool,
 ) -> Result<CurrentView, Failure> {
     let place = branch.to_place();
     let listed = app.browse.branch(&place)?;
-    let mut stage = match app.currents.request(&place) {
+    let mut stage = match app.currents.request(&place, refresh) {
         Request::Join(stage) => stage,
-        Request::Run { scan, token, stage } => {
-            let receiver = stage.subscribe();
+        Request::Run(fresh) => {
+            let receiver = fresh.stage.subscribe();
             let currents = app.currents.clone();
             let state = app.launch.state.clone();
             let key = branch.clone();
             tauri::async_runtime::spawn(async move {
-                let found = live::scan(&listed.workspace, &state, token, |current| {
-                    if currents.publish(&place, scan, current) {
-                        stage.send_replace(Stage::Published);
+                let mut next = Some(fresh);
+                while let Some(Fresh { scan, token, stage }) = next.take() {
+                    let found = live::scan(&listed.workspace, &state, token, |current| {
+                        if currents.publish(&place, scan, current) {
+                            stage.send_replace(Stage::Published);
+                            currents.announce(&key);
+                        }
+                    })
+                    .await;
+                    let outcome = found.map(|current| {
+                        currents.publish(&place, scan, current);
+                    });
+                    if let Some(again) = currents.end(&place, scan, outcome.clone().err()) {
                         currents.announce(&key);
+                        next = again;
                     }
-                })
-                .await;
-                let outcome = found.map(|current| {
-                    currents.publish(&place, scan, current);
-                });
-                if currents.end(&place, scan, outcome.clone().err()) {
-                    currents.announce(&key);
+                    stage.send_replace(Stage::Ended(outcome));
                 }
-                stage.send_replace(Stage::Ended(outcome));
             });
             receiver
         }

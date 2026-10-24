@@ -207,7 +207,7 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-CHECKED | Current, its scan running | the scan learns what verify would do with Artifacts | Current: those Artifacts coloured in place reused, would run, waiting or blocked, each name read aloud with which (would run with its count of evals); the header's count lower, and once none remain, the header saying when it was scanned |
 | E-CURRENT-FAILED | Current, its scan running | the scan fails | Current: the header saying why, the graph staying as it was |
 | E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; the graph recoloured in place |
-| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; its structure text updated |
+| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again; its structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, nodes and edges recoloured in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |

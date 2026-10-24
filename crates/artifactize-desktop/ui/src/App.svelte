@@ -65,7 +65,7 @@
   /** Read the state afresh and scan the branches again; a shown Current is scanned again too. */
   async function refresh() {
     const shown = m.shown;
-    if (shown.kind === "current") void current.scan(shown.branch);
+    if (shown.kind === "current") void current.scan(shown.branch, true);
     const read = await browse.reload();
     // E2E builds only: witness this refresh once its own read succeeded and settled on screen.
     if (import.meta.env.MODE === "e2e" && read) {

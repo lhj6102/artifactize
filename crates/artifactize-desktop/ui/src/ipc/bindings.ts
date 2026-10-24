@@ -108,9 +108,10 @@ export const commands = {
 	/**
 	 *  Scan `branch`'s worktree as it is now, answering with the scan's first step: the graph,
 	 *  every Artifact still being checked. Each later step is announced by [`CurrentChanged`].
-	 *  While the branch's scan still runs, this answers with that scan instead.
+	 *  While the branch's scan still runs, this answers with that scan instead; when the person
+	 *  asked to `refresh`, a new scan follows it.
 	 */
-	currentScan: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch })),
+	currentScan: (branch: BranchKey, refresh: boolean) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch, refresh })),
 	/**  The newest step of `branch`'s Current, without scanning. */
 	currentView: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_view", { branch })),
 	/**  Every Artifact, eval criterion and labeled relation of `branch`'s Current as text. */
