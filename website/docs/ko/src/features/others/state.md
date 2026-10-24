@@ -70,8 +70,8 @@ Run은 취소되지 않습니다. `--force`를 쓰면 항상 따로 실행합니
 그 사실을 표시합니다. status와 Run 목록은 그런 기록을 `unreadable` 아래에 `kind`, `id`,
 `reason`과 함께 알리고, 증거를 읽는 명령은 stderr에 `Unreadable ...` 줄을 출력합니다. 개수가
 모자란다고 그 리뷰가 통과했다는 뜻은 아닙니다. 진단할 수 있도록 상태를 그대로 두고, 새 증거가
-필요하면 다시 verify하세요. `doctor`는 상태가 열리고 지원하는 스키마인지만 확인하며 기록을
-고치지는 않습니다.
+필요하면 다시 verify하세요. `doctor`는 상태 데이터를 열 수 있는지와 해당 스키마를 지원하는지만 확인하며,
+기록을 고치지는 않습니다.
 
 ## 캐시 제한 {#cache-limits}
 
@@ -146,7 +146,7 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 |---|---|---|
 | `enabled` | `true` | `false`면 새 대화를 저장하지 않음. 이미 저장된 대화는 계속 읽을 수 있음 |
 | `maxBytes` | 1 GiB | 이 크기를 넘으면 정리를 시작함. 1 이상 |
-| `targetBytes` | `maxBytes`가 768 MiB보다 크면 768 MiB, 아니면 3 × ⌊`maxBytes` ÷ 4⌋바이트 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
+| `targetBytes` | `maxBytes`가 768 MiB보다 크면 768 MiB, 아니면 `maxBytes`를 4로 나눈 몫(소수점 이하 버림)에 3을 곱한 바이트 수 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
 
 정리는 `verify` Run이 eval을 마쳤을 때와 `prune`을 실행할 때 합니다. 대화가 `maxBytes`보다
 많은 공간을 쓰면, 가장 오래된 세션부터 지워 `targetBytes` 이하로 줄입니다. 실행 중인 리뷰의

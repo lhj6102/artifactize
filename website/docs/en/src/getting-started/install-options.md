@@ -37,9 +37,6 @@ and GTK 3, which apt pulls in. On aarch64 or another distribution, use the
 
 ## Command line
 
-[Installation](install.md#from-the-command-line) has the default command for each OS;
-here are the details and the alternatives.
-
 ### Linux
 
 ```sh

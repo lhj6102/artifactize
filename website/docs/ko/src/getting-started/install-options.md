@@ -36,9 +36,6 @@ WebKitGTK 4.1과 GTK 3가 필요합니다. aarch64나 다른 배포판에서는 
 
 ## 명령줄 {#command-line}
 
-OS별 기본 명령은 [설치](install.md#from-the-command-line)에 있습니다. 여기서는 자세한 내용과
-다른 방법을 설명합니다.
-
 ### Linux {#linux}
 
 ```sh
