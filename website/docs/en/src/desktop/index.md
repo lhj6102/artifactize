@@ -160,6 +160,8 @@ blocked; like a Run's Artifact, its node shows only its name, and its accessible
 says which, with how many of its evals would run. Its header says when it was scanned. It scans again
 when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
 the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
+While a scan of the branch is still running, choosing its Current again or a Run's end waits for
+that scan and shows what it finds instead of starting over.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it

@@ -159,9 +159,11 @@ async fn read(
     state: &Path,
     cancellation: CancellationToken,
 ) -> Result<Current, String> {
-    let structure = graph_structure::read(repo)?;
-    let (status, reused) = crate::project::scan(
-        repo,
+    // One read of the declarations serves both: the structure depends on them alone.
+    let config = crate::config::read_workspace_config(repo).map_err(|error| error.to_string())?;
+    let structure = graph_structure::extract(&config);
+    let (status, reused) = crate::project::scan_config(
+        config,
         Some(state),
         &Selection::All,
         &VerifyOptions::default(),

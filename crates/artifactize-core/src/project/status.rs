@@ -139,8 +139,25 @@ pub(crate) async fn scan(
     ),
     String,
 > {
-    let parallelism = super::fingerprint_parallelism(options)?;
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
+    scan_config(config, state_dir, selection, options, cancellation).await
+}
+
+/// [`scan`] of a workspace configuration already read.
+pub(crate) async fn scan_config(
+    config: crate::config::RepoConfig,
+    state_dir: Option<&Path>,
+    selection: &Selection,
+    options: &VerifyOptions,
+    cancellation: CancellationToken,
+) -> Result<
+    (
+        StatusView,
+        BTreeMap<crate::config::EvalId, store::Execution>,
+    ),
+    String,
+> {
+    let parallelism = super::fingerprint_parallelism(options)?;
     let config = select_profiles(
         config,
         selection,

@@ -54,7 +54,8 @@ that makes the transition happen and checks where it leads.
   - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: a
     header saying when it was scanned, a Refresh button, the **Current graph** and, below it,
     the expandable **Structure and evaluation criteria** text (every criterion and labeled
-    relation). It scans again when chosen again, on Refresh and when a Run of the branch ends.
+    relation). It scans again when chosen again, on Refresh and when a Run of the branch ends;
+    while a scan of the branch is still running, these wait for it instead of starting over.
   - **Review**: a waiting Human review opened from the Pane, its eval and Artifact above the
     **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
@@ -172,7 +173,7 @@ that makes the transition happen and checks where it leads.
 | E-MON-RUNS-MOVE | Pane entries focused, a timeline entry selected | ↓ or ↑ | the next or previous entry shown in the Main area and in its pill, the list scrolling to show it |
 | E-MON-RUNS-OLDER | Pane entries focused, the oldest listed entry of a timeline selected, older Runs existing | ↓ | older Runs listed below it, the selection staying; ↓ again moves into them |
 | E-MON-RUNS-GRAPH | Pane entries focused, a branch or a timeline entry selected | Enter | Main area focused, on the shown view |
-| E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open | Esc | Pane entries focused, the same entry selected |
+| E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open, no Human review in it running work or editing its form (those take E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM first) | Esc | Pane entries focused, the same entry selected |
 | E-REVIEW-OPEN | Pane, a waiting review in the Waiting stack | click it, or Enter on it selected | Review of that request in the Main area |
 | E-PANE-WORKTREES | Pane | a worktree of a listed project is added or removed (or its folder deleted), in another process | within seconds and without a reload, its branch appears in the Branches or goes from them |
 | E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its timeline starts with that Run, `Running` and its time so far, the Current gone; folded, its status line says the same |

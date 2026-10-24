@@ -1,6 +1,7 @@
 //! A branch's Current: its worktree as it is now, scanned by the library's
 //! [`live::scan`] as `artifactize status` does. The last scan of each branch is kept for its
-//! graph and Details; scanning a branch again cancels its scan still running.
+//! graph and Details; a request while the branch's scan is still running waits for that scan
+//! instead of starting over.
 use super::{GraphEdge, GraphNode, Shape, Source, node_id};
 use crate::{
     App, Failure,
@@ -20,6 +21,7 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
 };
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 /// A branch's last scan, its number among this app's scans, and the shape of its graph.
@@ -31,11 +33,31 @@ pub struct Shown {
     pub shape: crate::ids::ShapeKey,
 }
 
+/// How a scan ended, once it has: `Err` holds why it failed.
+type Ended = Option<Result<(), String>>;
+
+/// A scan running for a branch: its number, how to stop it, and when it ends.
+struct Running {
+    scan: crate::ids::ScanId,
+    token: CancellationToken,
+    ended: watch::Receiver<Ended>,
+}
+
+/// What a scan request does: wait for the branch's scan still running, or run a new one.
+enum Request {
+    Join(watch::Receiver<Ended>),
+    Run {
+        scan: crate::ids::ScanId,
+        token: CancellationToken,
+        ended: watch::Sender<Ended>,
+    },
+}
+
 /// The last scan of each branch, and the scans running.
 #[derive(Default)]
 pub struct Currents {
     shown: Mutex<BTreeMap<Place, Shown>>,
-    running: Mutex<BTreeMap<Place, (crate::ids::ScanId, CancellationToken)>>,
+    running: Mutex<BTreeMap<Place, Running>>,
     scans: std::sync::atomic::AtomicU32,
     /// The last graph shape handed out.
     shapes: Mutex<crate::ids::ShapeKey>,
@@ -53,26 +75,39 @@ impl Currents {
             })
     }
 
-    /// Start a scan of `place`, cancelling the one still running.
-    fn start(&self, place: &Place) -> (crate::ids::ScanId, CancellationToken) {
+    /// Join the scan of `place` still running, or start one. Starting over would throw away
+    /// every fingerprint the running scan has computed, and a scan reads the review store
+    /// only after its fingerprints, so the one running also sees a Run that ended meanwhile.
+    fn request(&self, place: &Place) -> Request {
+        let mut running = self.running.lock().expect("scans lock");
+        // A scan whose task is gone without ending (its sender dropped) is not waited for.
+        if let Some(scan) = running.get(place)
+            && scan.ended.has_changed().is_ok()
+        {
+            return Request::Join(scan.ended.clone());
+        }
         let scan = crate::ids::ScanId::allocate(&self.scans);
         let token = CancellationToken::new();
-        if let Some((_, old)) = self
-            .running
-            .lock()
-            .expect("scans lock")
-            .insert(place.clone(), (scan, token.clone()))
-        {
-            old.cancel();
-        }
-        (scan, token)
+        let (ended, receiver) = watch::channel(None);
+        running.insert(
+            place.clone(),
+            Running {
+                scan,
+                token: token.clone(),
+                ended: receiver,
+            },
+        );
+        Request::Run { scan, token, ended }
     }
 
-    /// Scan `scan` of `place` ended: keep what it found unless a newer scan started.
-    fn end(&self, place: &Place, scan: crate::ids::ScanId, found: Option<Current>) -> bool {
+    /// Scan `scan` of `place` ended: keep what it found unless the state was replaced since.
+    fn end(&self, place: &Place, scan: crate::ids::ScanId, found: Option<Current>) {
         let mut running = self.running.lock().expect("scans lock");
-        if running.get(place).is_none_or(|(at, _)| *at != scan) {
-            return false;
+        if running
+            .get(place)
+            .is_none_or(|running| running.scan != scan)
+        {
+            return;
         }
         running.remove(place);
         if let Some(current) = found {
@@ -90,13 +125,12 @@ impl Currents {
                 },
             );
         }
-        true
     }
 
     /// Forget every scan of a replaced state and cancel those running.
     pub fn reset(&self) {
-        for (_, token) in self.running.lock().expect("scans lock").values() {
-            token.cancel();
+        for (_, running) in std::mem::take(&mut *self.running.lock().expect("scans lock")) {
+            running.token.cancel();
         }
         self.shown.lock().expect("currents lock").clear();
     }
@@ -324,8 +358,8 @@ pub(crate) fn detail(
     })
 }
 
-/// Scan `branch`'s worktree as it is now. Scanning it again cancels this scan, which then
-/// answers with the newer one's view once that one ends.
+/// Scan `branch`'s worktree as it is now. While its scan is still running, this waits for that
+/// scan and answers with what it finds.
 #[tauri::command]
 #[specta::specta]
 pub async fn current_scan(
@@ -334,17 +368,35 @@ pub async fn current_scan(
 ) -> Result<CurrentView, Failure> {
     let place = branch.to_place();
     let listed = app.browse.branch(&place)?;
-    let (scan, token) = app.currents.start(&place);
-    let found = live::scan(&listed.workspace, &app.launch.state, token).await;
-    match found {
-        Ok(current) => {
-            app.currents.end(&place, scan, Some(current));
-        }
-        Err(error) => {
-            if app.currents.end(&place, scan, None) {
-                return Err(Failure::Read(error));
+    match app.currents.request(&place) {
+        Request::Join(mut ended) => match ended.wait_for(Option::is_some).await {
+            Ok(outcome) => outcome
+                .clone()
+                .expect("waited for an outcome")
+                .map_err(Failure::Read)?,
+            Err(_) => {
+                return Err(Failure::Read(
+                    "The scan stopped before it ended; choose Current again.".into(),
+                ));
             }
+        },
+        Request::Run { scan, token, ended } => {
+            let outcome = match live::scan(&listed.workspace, &app.launch.state, token).await {
+                Ok(current) => {
+                    app.currents.end(&place, scan, Some(current));
+                    Ok(())
+                }
+                Err(error) => {
+                    app.currents.end(&place, scan, None);
+                    Err(error)
+                }
+            };
+            ended.send_replace(Some(outcome.clone()));
+            outcome.map_err(Failure::Read)?;
         }
     }
     Ok(view(branch, &app.currents.shown(&place)?))
 }
+
+#[cfg(test)]
+mod tests;
