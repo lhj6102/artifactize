@@ -230,8 +230,8 @@ Run until the test opens the gate."""
 export type Checking = Fixture & { gate: NativePath; runs: NativePath };
 
 /** `slow`'s declaration: its fingerprint script waits for the gate, or with `fail` fails. */
-function slowDeclaration(fixture: { gate: NativePath; runs: NativePath }, fail = false): string {
-  const script = fail ? commandFields("fail") : commandFields("fingerprint", portablePath(fixture.gate), portablePath(fixture.runs));
+function slowDeclaration(fixture: { gate: NativePath; runs: NativePath }): string {
+  const script = commandFields("fingerprint", portablePath(fixture.gate), portablePath(fixture.runs));
   return `name = "slow"
 fingerprint = { script = { ${script}, files = ["index.artf"], timeout_ms = 600000 } }
 
@@ -284,10 +284,6 @@ export function fingerprintRuns(fixture: Checking): number {
 }
 
 /** Make `slow`'s fingerprint script of a `createChecking` fixture fail. */
-export function failFingerprint(fixture: Checking): void {
-  writeText(nativePath(fixture.repo, "slow", "index.artf"), slowDeclaration(fixture, true));
-}
-
 /** A repository whose only eval is a sign-off, and a state with no Run yet. */
 export function createSignoffOnly(): Fixture {
   return prepareFixture((root) => {

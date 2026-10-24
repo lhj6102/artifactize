@@ -47,10 +47,11 @@ switch (operation) {
   }
   case "fingerprint":
     // A fingerprint script that records each of its runs, then answers once its test opens
-    // the gate.
+    // the gate: it fails when the gate says so.
     appendText(absolutePath(record), "run\n");
     await opened(absolutePath(argument));
-    process.stdout.write("fixture:v1\n");
+    if (exists(absolutePath(argument)) && readText(absolutePath(argument)) === "fail") process.exitCode = 1;
+    else process.stdout.write("fixture:v1\n");
     break;
   case "hold":
     // The product's declared runtime deadline, not an elapsed-time assertion,

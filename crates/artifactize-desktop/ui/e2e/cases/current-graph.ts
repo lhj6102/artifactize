@@ -4,7 +4,7 @@
 // of a Run start.
 import assert from "node:assert/strict";
 import {
-  changeNotes, create, createChecking, createEvals, createGraph, createMixed, ended, failFingerprint, fingerprintRuns, requests, savedRuns, signOff, signoff,
+  changeNotes, create, createChecking, createEvals, createGraph, createMixed, ended, fingerprintRuns, requests, savedRuns, signOff, signoff,
   verifyWaiting,
 } from "../fixture.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
@@ -436,12 +436,29 @@ Summarize {docs}."""
       await waitFor(browser, () => fingerprintRuns(checking) === 2, "the new scan ran the fingerprint script again");
       writeText(gate, "go");
       await waitFor(browser, async () => (await nodes()) === known, "known again");
-      // A fingerprint that fails ends the next scan; what it showed stays.
-      failFingerprint(checking);
-      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the scan ended");
+      // A fingerprint that fails ends a running scan; what it showed stays.
+      removeTree(gate);
       await browser.$(CURRENT).$("button=Refresh").click();
+      await waitFor(browser, async () => (await scanned(browser)) === "Checking 2 of 3 Artifacts…", "scanning again");
+      /** What a person sees of the graph: where each Artifact is and its light, each relation, all painted. */
+      const visible = async () => {
+        const { nodes, edges } = await graphAppearance(browser);
+        return {
+          nodes: Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, { at: node.at, light: node.light, painted: node.painted }])),
+          edges: Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, { light: edge.light, painted: edge.painted }])),
+        };
+      };
+      let shown = await visible();
+      await waitFor(browser, async () => {
+        shown = await visible();
+        return JSON.stringify(Object.keys(shown.nodes).sort()) === JSON.stringify(["a:other", "a:quick", "a:slow"]) &&
+          shown.nodes["a:slow"].light === "checking" && Object.keys(shown.edges).length > 0 &&
+          Object.values({ ...shown.nodes, ...shown.edges }).every((item) => item.painted);
+      }, "the running scan's graph drawn")
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });
+      writeText(gate, "fail");
       await waitFor(browser, async () => /Fingerprint script for Artifact slow failed/.test(await failure()), "the scan's failure shown");
-      assert.deepEqual(Object.keys((await drawn()).nodes).sort(), ["a:other", "a:quick", "a:slow"], "the graph stays");
+      assert.deepEqual(await visible(), shown, "the graph stays as it was: its Artifacts in place, its relations, all drawn");
     },
   ),
 
