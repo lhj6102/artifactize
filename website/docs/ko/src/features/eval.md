@@ -32,7 +32,7 @@ Artifact가 통과 조건을 충족하지 못했다는 뜻입니다. 어느 종�
 입력이 늘어나지는 않습니다.
 
 eval이 읽을 수 있는 범위는 재사용 여부를 판단하는 범위나, 실행 전에 결과가 나와야 하는
-Artifact의 범위보다 넓습니다. 재사용 여부는 [재사용 키](fingerprint.md#the-reuse-key)를, 실행
+Artifact의 범위보다 넓을 수 있습니다. 재사용 여부는 [재사용 키](fingerprint.md#the-reuse-key)를, 실행
 전에 결과가 나와야 하는 Artifact는 [eval 의존성](artifact.md#eval-dependencies)을 보세요.
 
 `artifactize verify library/tests --wait`는 eval 하나로 [Run](run.md)을 시작합니다. 먼저

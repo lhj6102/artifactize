@@ -195,6 +195,7 @@ fn run(path: &Path) -> CatalogRun {
         repo_path: path.to_path_buf(),
         repository: Identity::default(),
         status: RunStatus::Green,
+        comment: None,
         red: 0,
         error: 0,
         waiting: Vec::new(),

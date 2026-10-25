@@ -25,6 +25,8 @@ pub struct CatalogRun {
     pub repo_path: PathBuf,
     pub repository: Identity,
     pub status: RunStatus,
+    /// What the requester said it is working on (`verify --comment`).
+    pub comment: Option<crate::types::RunComment>,
     pub red: u64,
     pub error: u64,
     pub waiting: Vec<Signoff>,
@@ -106,6 +108,7 @@ pub(super) fn in_snapshot(
                         repo_path: run.repo_path,
                         repository: run.repository,
                         status,
+                        comment: run.comment,
                         red: 0,
                         error: 0,
                         waiting: Vec::new(),

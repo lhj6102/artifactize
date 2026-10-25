@@ -59,6 +59,8 @@ function backend(options: {
         return null;
       case "provider_custom_save": {
         const name = payload.name as string;
+        // As the library refuses it: a provider needs a name.
+        if (name === "") throw { kind: "invalid", message: "A custom provider needs a name." };
         const target = payload.target as CustomProvider["target"];
         const key = payload.key as { kind: string };
         const saved = custom.find((one) => one.name === name)?.target;
@@ -301,6 +303,15 @@ describe("Settings", () => {
     await fireEvent.input(seconds, { target: { value: "0" } });
     await fireEvent.click(save);
     await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("0 seconds"));
+  });
+
+  it("asks the library to save a custom provider without a name, and shows its refusal", async () => {
+    const calls = backend({});
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("A custom provider needs a name.");
+    expect(calls.filter((call) => call.cmd === "provider_custom_save").map((call) => call.args.name)).toEqual([""]);
   });
 
   it("lists models and shows the CLI's error for a provider without its key", async () => {

@@ -6,6 +6,7 @@ use super::{Branch, Discovery, Labels, Place, branches};
 use crate::{
     changes::Changed,
     monitor::{Node, Origin, model},
+    platform::Footprint,
     store::{self, CatalogRun, RequestView, RunView, Unreadable, reader::Reader},
     types::RunId,
 };
@@ -31,8 +32,9 @@ pub struct Input {
     pub changed: Changed,
 }
 
-/// The open Run: its view, its requests and their projected tree.
-pub type Opened = (RunView, Vec<RequestView>, Arc<Vec<Node>>);
+/// The open Run: its view, its requests, their projected tree and a share in the Run's memory.
+/// Keep the share with the rest, after it, so the memory goes back once nothing shows the Run.
+pub type Opened = (RunView, Vec<RequestView>, Arc<Vec<Node>>, Footprint);
 
 /// One consistent read.
 pub struct Snapshot {
@@ -98,11 +100,18 @@ impl Loader {
                     .open
                     .as_ref()
                     .filter(|id| runs.iter().any(|run| &run.id == *id));
+                if open.is_none() {
+                    // Nothing shows a Run: the one held goes, and with its last share its memory.
+                    cache.close();
+                }
                 // The open Run is read when it is new here or a hint named it.
                 let read = open.filter(|id| input.force || !cache.holds(id) || changed.run(id));
                 let opened = match read {
                     Some(id) => match cache.selected(db, state, id, input.force) {
-                        Ok(opened) => Ok(opened),
+                        Ok(opened) => Ok(opened.map(|(run, requests)| {
+                            let footprint = cache.footprint().expect("the Run just read is held");
+                            (run, requests, footprint)
+                        })),
                         // The Run's definitions do not decode: it is listed with why, not opened.
                         Err(store::receipts::Error::Unreadable(record)) => Err(record),
                         Err(error) => return Err(error),
@@ -120,12 +129,12 @@ impl Loader {
             Err(record) => (None, Some(record)),
         };
         // No read transaction survives heavy projection or Git discovery.
-        let opened = opened.map(|(run, requests)| {
+        let opened = opened.map(|(run, requests, footprint)| {
             let nodes = Arc::new(model::tree(&run, &requests, OffsetDateTime::now_utc()));
-            (run, requests, nodes)
+            (run, requests, nodes, footprint)
         });
         let (runs, mut unreadable) = self.facts.clone().expect("read above");
-        if let Some((run, _, _)) = &opened {
+        if let Some((run, _, _, _)) = &opened {
             unreadable.extend(run.unreadable.iter().cloned());
         }
         unreadable.extend(unopened);

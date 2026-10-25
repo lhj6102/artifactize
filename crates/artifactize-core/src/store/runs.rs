@@ -22,6 +22,9 @@ pub struct RunSummary {
     pub created_at: crate::types::Timestamp,
     pub completed_at: Option<crate::types::Timestamp>,
     pub status: crate::types::RunStatus,
+    /// What the requester said it is working on (`verify --comment`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<crate::types::RunComment>,
     pub counts: BTreeMap<crate::types::RequestStatus, u64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unreadable: Vec<super::Unreadable>,
@@ -149,11 +152,11 @@ fn listed(
 ) -> Result<Vec<RunSummary>, Error> {
     let mut statement = db.prepare_cached(
         "WITH page AS (
-         SELECT id,repo,json_extract(data,'$.createdAt') created,json_extract(data,'$.completedAt') completed,status,rowid serial
+         SELECT id,repo,json_extract(data,'$.createdAt') created,json_extract(data,'$.completedAt') completed,status,rowid serial,json_extract(data,'$.comment') comment
          FROM runs WHERE (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1)))
          ORDER BY json_extract(data,'$.createdAt') DESC,rowid DESC LIMIT ?2 OFFSET ?3)
-         SELECT id,repo,created,completed,status,0,serial FROM page UNION ALL
-         SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status,1,rowid FROM runs
+         SELECT id,repo,created,completed,status,0,serial,comment FROM page UNION ALL
+         SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status,1,rowid,json_extract(data,'$.comment') FROM runs
          WHERE id=?4 AND id NOT IN (SELECT id FROM page)
          AND (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1))) ORDER BY 3 DESC,7 DESC",
     )?;
@@ -165,6 +168,11 @@ fn listed(
                 created_at: row.get(2)?,
                 completed_at: row.get(3)?,
                 status: row.get(4)?,
+                // Only a comment that reads is shown; the Run's audit reports a record that
+                // does not.
+                comment: row
+                    .get::<_, Option<String>>(7)?
+                    .and_then(|comment| comment.parse().ok()),
                 counts: BTreeMap::new(),
                 unreadable: Vec::new(),
             })

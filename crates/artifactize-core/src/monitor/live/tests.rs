@@ -17,6 +17,7 @@ fn run(id: &str, repo: &Path, identity: Identity, day: i64, status: RunStatus) -
         repo_path: repo.to_path_buf(),
         repository: identity,
         status,
+        comment: None,
         red: 0,
         error: 0,
         waiting: Vec::new(),
@@ -238,6 +239,7 @@ fn branch(project: &str, name: &str, latest: Option<i64>) -> Branch {
                     status: chip.status,
                     created_at: chip.created_at,
                     completed_at: None,
+                    comment: None,
                 }]
             })
             .unwrap_or_default(),

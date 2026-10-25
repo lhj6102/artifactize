@@ -71,7 +71,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은 프로필을 이름별로 최대 64개 선언. 각 항목에는 프로필 전체를 씀 |
 
 [도구 세션](tools/agent.md#tool-sessions)을 쓰면 리뷰 하나가 진행되는 동안 테스트 하네스를 계속 실행해 둘 수 있습니다.
-시작, 종료, 정리는 artifactize가 관리하므로 세션을 얼마나 오래 실행하고 언제 시작하거나 끝낼지 따로 설정할 필요가 없습니다.
+시작, 종료, 정리는 artifactize가 관리하며, 세션을 얼마나 오래 실행하고 언제 시작하거나 끝낼지 선언하는 옵션은 없습니다.
 
 선언 키는 모두 snake_case입니다: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
@@ -147,7 +147,7 @@ covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필�
   `$ref`로 선언하지 않은 최상위 필드를 허용할 수 없습니다.
 - 최상위의 `allOf`, `anyOf`, `oneOf`, `not`은 거부합니다. 조합은 소유자 필드 안에서 하세요.
   중첩 객체, 배열, 로컬 참조는 스키마 검사기가 지원합니다.
-- 다음 예약된 이름은 선언하거나 필수로 정할 수 없습니다: `verdict`, `reference`,
+- 다음 이름은 예약되어 있으므로 필드로 선언하거나 필수 항목으로 지정할 수 없습니다: `verdict`, `reference`,
   `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`,
   `stderr`, `durationMs`, `exitCode`. 감사·실행 데이터는 소유자 필드 밖에 있습니다.
 - 한 판정의 스키마를 생략하면 그 판정에서는 **소유자 필드를 하나도 허용하지 않습니다**.

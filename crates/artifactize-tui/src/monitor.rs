@@ -201,6 +201,9 @@ pub struct Monitor {
     refreshed: Option<OffsetDateTime>,
     error: Option<String>,
     notice: Option<String>,
+    /// The shown Run's share in its memory, replaced after the Run and its tree so the memory
+    /// of a Run no longer shown goes back to the system.
+    footprint: Option<artifactize_core::platform::Footprint>,
 }
 
 impl Monitor {
@@ -241,6 +244,7 @@ impl Monitor {
             refreshed: None,
             error: None,
             notice: None,
+            footprint: None,
         }
     }
 
@@ -319,6 +323,7 @@ impl Monitor {
             .map(|run| run.id.clone());
         if self.open.is_none() {
             self.run = None;
+            self.footprint = None;
         }
     }
     #[cfg(test)]
@@ -370,6 +375,7 @@ impl Monitor {
         self.list.select(None);
         self.open = None;
         self.run = None;
+        self.footprint = None;
         Action::Refresh
     }
     fn select_run(&mut self, index: usize) -> Action {

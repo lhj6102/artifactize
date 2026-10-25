@@ -392,21 +392,31 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         !project.state.join("state.sqlite").exists(),
         "zero cap was rejected before Run reservation"
     );
+    let multiline = client
+        .rpc(
+            "tools/call",
+            json!({"name":"verify_start","arguments":{"scope":{"kind":"all"},"comment":"two\nlines"}}),
+        )
+        .await;
+    assert_eq!(multiline["result"]["isError"], true);
+    assert!(
+        !project.state.join("state.sqlite").exists(),
+        "a comment on more than one line was rejected before Run reservation"
+    );
     let started = client
         .call(
             "verify_start",
-            json!({"scope":{"kind":"all"},"request_key":"mcp-attempt"}),
+            json!({"scope":{"kind":"all"},"request_key":"mcp-attempt","comment":"Fixing the login form"}),
         )
         .await;
     assert!(serde_json::to_vec(&started).unwrap().len() < COMPACT_BYTES);
     let run: RunId = started["run"].as_str().unwrap().parse().unwrap();
+    let saved = store::read_run(&project.state, &run).await.unwrap().run;
+    assert_eq!(saved.jobs, None);
     assert_eq!(
-        store::read_run(&project.state, &run)
-            .await
-            .unwrap()
-            .run
-            .jobs,
-        None
+        saved.comment.as_deref(),
+        Some("Fixing the login form"),
+        "the Run keeps the comment it was requested with"
     );
     project
         .state(

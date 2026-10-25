@@ -81,6 +81,11 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 식별하려고 붙이는 키입니다. 같은 키로 다시 요청하면 같은 Run을 돌려주므로, 응답을 놓쳤을 때 다시 시도하려면 같은
 키를 쓰고 무언가를 고친 뒤에는 새 키를 쓰세요. eval 결과 재사용은 이 키와 상관없습니다.
 
+[코멘트](../cli/index.md#submission-and-watching)에는 요청하는 쪽이 지금 하는 일, 예를 들어
+에이전트가 맡은 작업을 적습니다. Run에 저장되어 `run list`, `run show`, 터미널의 Monitor와 데스크톱
+앱에서 사람에게 보입니다. 앞뒤 공백 없는 한 줄, 1–200자이며 Run의 동작은 바꾸지 않습니다.
+같은 요청 키로 다시 시도하면 처음 Run과 그 코멘트를 그대로 돌려줍니다.
+
 ### 승인과 Run 종료 {#sign-offs-and-the-end-of-a-run}
 
 승인 요청은 그 승인의 선행 조건, 즉 같은 Artifact의 다른 자동 검사 eval이 GREEN이 되고(다른 승인 때문에 PROVISIONAL로
@@ -203,7 +208,7 @@ artifactize --repo PROJECT config check --json
 구분합니다. JSON에서는 eval마다 [재사용 키](fingerprint.md#the-reuse-key)를 이루는 값도
 보여 줍니다. `evalDefHash`, 대상의 `fingerprint`, `fingerprints`(eval이 의존하는 각
 Artifact와 현재 fingerprint, 없으면 null), 이를 합친 `key`(fingerprint를 끈 경우 null)이며,
-`verify`가 Run의 키로 쓸 값과 같습니다. 동작 개수는 실행에 포함된 eval만 셉니다. 종료 코드
+`verify`가 Run의 키로 쓸 값과 같습니다. 동작별 개수를 집계할 때는 실행에 포함된 eval만 셉니다. 종료 코드
 0은 현재 검증 요건을 모두 충족했다는 뜻이고, 1은 아직 충족하지 못한 요건이 남았다는 뜻이며, 입력이나 상태가 잘못되면 2입니다.
 
 status도 verify와 같은 격리와 검사 규칙을 적용하며, `--fingerprint-jobs` 한도 안에서

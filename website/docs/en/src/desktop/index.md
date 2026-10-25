@@ -78,7 +78,8 @@ A folded branch shows its newest Run under its name: a dot in its status colour,
 its status and how long ago it ran (a running one, its time so far). Click a branch
 to expand it and show its newest entry; the chevron before its name expands or folds
 it without showing anything. Expanded, its timeline lists its Runs newest first, each
-with its status, age and Run ID. The first entry is **Current**, the worktree as it is
+with its status, age and Run ID, and the [comment](../cli/index.md#submission-and-watching)
+its verify was requested with, if any, cut short to one line. The first entry is **Current**, the worktree as it is
 now; while a Run is in progress, that Run takes Current's place, and Current returns when
 the Run ends. **Older runs** at the end brings
 older Runs. A click on an entry shows it in the Main area, in a grey pill. Any number
@@ -139,7 +140,8 @@ as successful evidence.
 ### Run
 
 A Run chosen in the Pane fills the Main area with the graph of its Artifacts and their verdicts,
-under the Run's headline and what needs attention. Node and relation colours show
+under the Run's headline, the Run's comment in full when it has one, and what needs
+attention. Node and relation colours show
 review states (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked)
 and recolour in place as results arrive. Inspect dependencies through the graph's
 input-to-consumer relations and **Waits for** under an Artifact's or eval's

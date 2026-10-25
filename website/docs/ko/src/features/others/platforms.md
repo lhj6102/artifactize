@@ -48,8 +48,8 @@ Windows 배치 파일(`.cmd`, `.bat`)도 명령으로 쓸 수 있지만, 모든 
 없습니다. artifactize는 그런 인자를 바꿔서 넘기지 않고 거부합니다. 오류 메시지는
 `Process arguments could not be passed safely`이고, 아무것도 실행되지 않습니다.
 
-도구 세션은 모든 OS에서 같은 방식으로 멈추고 정리합니다. 어디까지 정리하는지와 신뢰하는 명령에 어떤 한계가 있는지는
-[도구 세션 계약](../tools/agent.md#tool-sessions)에서 설명합니다.
+도구 세션은 모든 OS에서 같은 방식으로 멈추고 정리합니다. 세션을 끝낼 때 어떤 프로세스까지 정리하는지,
+샌드박스 없이 실행하는 명령에서 무엇을 조심해야 하는지는 [도구 세션 계약](../tools/agent.md#tool-sessions)에서 설명합니다.
 
 ## 경로 {#paths}
 

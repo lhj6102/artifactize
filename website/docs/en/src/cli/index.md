@@ -31,7 +31,7 @@ on the root command and on `artifactize tools`.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate` | Run ID or `{run,state}`; final text/JSON with `--wait`; JSON-line events with `--watch` | 0 accepted; outcome with `--wait` or `--watch` |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N` (opt-in), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait` or `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Run ID or `{run,state}`; final text/JSON with `--wait`; JSON-line events with `--watch` | 0 accepted; outcome with `--wait` or `--watch` |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `mcp` | | [MCP stdio protocol](../agent-plugin/mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
@@ -138,8 +138,15 @@ Plain `verify` submits, prints the Run ID and exits 0 on acceptance; add `--wait
 a script needs the outcome's exit code. A repeated `--request-key` returns its original Run; a key is 1–128 ASCII letters, digits, `.`, `_`, `:` or `-`, and any other key exits 2. [Submit, observe and cancel](../features/run.md#submit-observe-and-cancel) owns the
 details.
 
+`--comment TEXT` records a short note on what you are working on with the Run, for the
+people watching it; it changes nothing the Run does. A comment is 1–200 characters on one
+line, without control characters or leading or trailing spaces; any other text exits 2.
+`verify --wait` prints it on a `Comment:` line, `run list` in its `COMMENT` column (`-` for
+none) and the JSON of `verify`, `run list` and `run show` as `comment`.
+
 ```sh
 artifactize verify --all --request-key build-42
+artifactize verify --all --comment "Fixing the login form"
 artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
@@ -400,8 +407,9 @@ JSON even without `--json`.
 as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
 current directory when omitted); `--repo-only` makes that default explicit, and
 `--all` includes every repository in the shared state. `--limit N` (default 50) and `--offset N` (default 0), each 0–4294967295, page the filtered results; a value out of range exits 2. Each row includes the Run
-ID, repository, creation/completion timestamps, status, and request counts by
-verdict/state (absent states have zero requests). Unreadable requests do not count;
+ID, repository, creation/completion timestamps, status, request counts by
+verdict/state (absent states have zero requests) and the Run's
+[comment](#submission-and-watching), if any. Unreadable requests do not count;
 `unreadable` names damaged records and their reasons while valid evidence stays
 available. See [state troubleshooting](../features/others/state.md#unreadable-records). Reads do not run owner code,
 create missing state, or require a repository to still exist. There is no

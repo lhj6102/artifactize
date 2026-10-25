@@ -13,7 +13,7 @@ mod waiting;
 mod tests;
 
 pub use current::{Current, CurrentArtifact, CurrentEdge, CurrentEval, Plan, scan};
-pub use loader::{Input, Loader, Snapshot};
+pub use loader::{Input, Loader, Opened, Snapshot};
 pub use query::{DEFAULT, Query, Sort, complete, show};
 pub use starred::{star, starred};
 pub use waiting::{Waiting, waiting};
@@ -108,6 +108,8 @@ pub struct Chip {
     pub status: RunStatus,
     pub created_at: Timestamp,
     pub completed_at: Option<Timestamp>,
+    /// What the requester said it is working on (`verify --comment`).
+    pub comment: Option<crate::types::RunComment>,
 }
 
 /// A live branch and its Runs.
@@ -290,6 +292,7 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             status: run.status,
             created_at: run.created_at,
             completed_at: run.completed_at,
+            comment: run.comment.clone(),
         });
         if newest.as_ref().is_none_or(|(at, _)| run.created_at >= *at) {
             *newest = Some((run.created_at, relative));
