@@ -482,7 +482,8 @@ pub fn waiting_program(directory: &Path) -> String {
 /// `wait FILE` waits until a file exists, `needs FILE TEXT` prints TEXT and exits 0 unless the
 /// file exists, `print TEXT` prints, `eprint TEXT` prints to stderr, `cat FILE` prints a file's bytes,
 /// `hold FILE` starts a child that blocks until it is killed, appends the child's process id
-/// and waits for it, `start` starts such a child, prints its process id and goes on without
+/// and waits for it, `spawn FILE` starts such a child, appends its process id and goes on
+/// without waiting, `start` starts such a child, prints its process id and goes on without
 /// waiting, `child` runs the remaining steps in a child process and waits for it, `block`
 /// blocks until it is killed, `fill COUNT BYTE ECOUNT EBYTE` writes COUNT copies of the byte
 /// BYTE to stdout and ECOUNT of EBYTE to stderr at the same time, `cwd` prints the working
@@ -578,6 +579,7 @@ fn run(steps: Vec<String>) {
                 line(&path, &child.id().to_string());
                 child.wait().unwrap();
             }
+            "spawn" => line(&next(&mut steps), &blocking_child().id().to_string()),
             "start" => {
                 println!("{}", blocking_child().id());
                 std::io::stdout().flush().unwrap();
@@ -2444,6 +2446,19 @@ pub fn run_test_in(
         .unwrap()
 }
 
+/// Prepare a child that runs this test binary's ignored tests: the ones a launcher test
+/// runs, with [`run`], in the environment it declares. The support module's own probes need
+/// their own environment and are skipped.
+pub fn ignored_tests(environment: &[(&str, std::ffi::OsString)]) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args(["--ignored", "--skip", "support::"]);
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    worker::prepare_probe(&mut command);
+    command
+}
+
 /// Prepare an exact child probe for a caller to customize before owning it with start/finish.
 pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
@@ -3242,10 +3257,12 @@ pub fn script_file(path: &Path) -> (String, Vec<String>) {
 
 /// The native Windows Ctrl-C termination status is an ordinary signed process exit code.
 /// Only Windows has this status code and distinguishes it from Unix signal termination.
+/// The compiled stand-in's `exit` utility returns it, given as an argument.
 #[cfg(windows)]
 pub fn control_c_exit() -> (String, Vec<String>, i32) {
     let code = windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
-    (shell(), vec!["-c".into(), format!("exit {code}")], code)
+    let program = stand_in_bin("fixture").to_str().unwrap().to_owned();
+    (program, vec!["exit".into(), code.to_string()], code)
 }
 
 /// The standalone shell fixture, even on hosts where the real shell is available.

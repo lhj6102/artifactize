@@ -302,7 +302,7 @@ async fn supervise_inner(
         true,
         cancellation.clone(),
         deadline,
-        move |leader| async move { admitted.register(leader).await },
+        Some(move |leader| async move { admitted.register(leader).await }),
     )
     .await;
     let mut child = match child {

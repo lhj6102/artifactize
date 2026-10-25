@@ -231,6 +231,31 @@ fn typed_durations_keep_the_display_units_and_clamp_clock_skew() {
     }
 }
 
+/// The tokens a Request's saved attempts spent, `None` for none. The counts are
+/// read from the state, so a sum past `u64::MAX` saturates instead of panicking.
+pub(crate) fn attempt_tokens(attempts: &[crate::llm::Attempt]) -> Option<u64> {
+    let tokens = attempts
+        .iter()
+        .filter_map(|attempt| attempt.usage.get("totalTokens"))
+        .fold(0u64, |total, tokens| total.saturating_add(*tokens));
+    (tokens > 0).then_some(tokens)
+}
+
+#[test]
+fn attempt_tokens_saturate_on_saved_counts() {
+    let attempt = |tokens: u64| -> crate::llm::Attempt {
+        serde_json::from_value(serde_json::json!({ "usage": { "totalTokens": tokens } }))
+            .expect("a saved attempt")
+    };
+    assert_eq!(attempt_tokens(&[]), None);
+    assert_eq!(attempt_tokens(&[attempt(0)]), None);
+    assert_eq!(attempt_tokens(&[attempt(14), attempt(8)]), Some(22));
+    assert_eq!(
+        attempt_tokens(&[attempt(u64::MAX), attempt(1)]),
+        Some(u64::MAX)
+    );
+}
+
 /// Saved RFC 3339 times; an open end is measured to `now`.
 pub(crate) fn span(
     start: crate::types::Timestamp,
@@ -928,14 +953,7 @@ pub fn card(view: &RequestView, now: OffsetDateTime) -> Card {
     } else {
         request.usage.as_ref()
     };
-    let tokens = attempts
-        .map(|attempts| {
-            attempts
-                .iter()
-                .filter_map(|attempt| attempt.usage.get("totalTokens"))
-                .sum::<u64>()
-        })
-        .filter(|tokens| *tokens > 0);
+    let tokens = attempts.and_then(|attempts| attempt_tokens(attempts));
     Card {
         instruction: request.payload.instruction().to_owned(),
         result: result.map(entries),

@@ -14,7 +14,7 @@ artifactize config check
 
 `kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성 eval을 지우세요. 필요한 Artifact는 해당 Artifact를 입력으로 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에서 `{name}`으로 참조하세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
-`"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 관련 없는 형제 eval은 그대로 실행됩니다.
+`"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 같은 Artifact에 선언된 eval이라도 그 입력을 쓰지 않으면 입력에 필요한 eval이 끝나기 전에도 실행됩니다.
 
 자식 폴더는 부모의 모든 eval이 참조하는 것으로 간주합니다. 그 밖의 Artifact의 리뷰가 먼저
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
@@ -45,6 +45,11 @@ examples/
 
 이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 글자나 숫자로 시작하고, 글자, 숫자, 밑줄,
 하이픈으로 이뤄진 64자 이하여야 합니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
+`combat::Code`처럼 앞에 Artifact를 묶어 구분하는 *space*의 이름과 `::`를 붙일 수 있습니다(`combat` space의 `Code`). space 이름과 나머지 부분은 각각 같은
+규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 보도록 돕는
+것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
+`artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
+Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
 전체에서 하나뿐이어야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
@@ -255,8 +260,11 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 - Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED로 끝납니다.
 - Human 리뷰 중에 없거나 잘못됨: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
   놓고 다시 시도하세요.
-- 내용이 바뀜: 파일 내용의 변경은 fingerprint로 확인하므로, `fingerprint = false`면 내용이 바뀌어도 감지하지 못합니다.
-  그 밖에는 Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다.
+- 내용이 바뀜: eval에 온전한 재사용 키가 있고 그 변경이 eval이 포함하는 fingerprint를 바꿀 때만
+  감지합니다. 이 파일이나 eval이 포함하는 다른 Artifact에 `fingerprint = false`가 있어 재사용 키가
+  없거나, 파일을 바꿔도 스크립트로 계산한 fingerprint가 그대로이면 변경을 감지하지 못합니다. 그 밖에는
+  Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다. 일반 파일인지, 심볼릭 링크가
+  아닌지에 대한 위의 검사는 어느 경우든 적용합니다.
 - 없거나 잘못된 대상에 대한 도구 호출은 도구를 실행하지 않고 오류를 돌려줍니다.
 
 파일을 되돌려 놓은 뒤 다시 verify하세요.
@@ -312,9 +320,9 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 `files`, `ignore`, 파일 Artifact 형식은 [Fingerprint와 재사용](fingerprint.md#artifactsum)에
 있습니다. 태그는 해시하지 않습니다.
 
-탐색은 범위가 정해진 경로 규칙을 따릅니다. ignore하지 않은 심볼릭 링크나 특수 파일이 있으면 탐색에 실패합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
-심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. Artifact의 범위 밖으로는 나가지
-않으며, 항목 10,000개나 1 GiB를 넘으면 오류와 함께 탐색을 멈춥니다. 해시는 준비 단계와 리뷰가
+artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일 중에 ignore하지 않은 심볼릭 링크나 특수 파일이 있으면 검증이 오류로 멈춥니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
+심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 해당 Artifact에 속하지 않은 파일은 해시하지
+않습니다. 다만 무엇을 제외할지 알기 위해 저장소 루트까지 그 위 폴더들의 `.gitignore`도 읽습니다. 항목 10,000개나 1 GiB를 넘으면 오류와 함께 멈춥니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
 파일이 생겨도 `INPUT_CHANGED`가 일어나지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
 `status`가 그 뒤로 바뀐 파일(`path`, `+path`, `-path`)과 바뀐 의존성을 알려 줄 수 있습니다.
@@ -344,10 +352,10 @@ Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 A
 
 `fingerprint.script.files`는 Artifact 기준의 고유한 파일·디렉터리 경로를 64개까지 받으며, 각
 경로는 1024자까지입니다(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다). 호출할 때마다 각 경로가 존재하고 심볼릭 링크를 거치지 않는지
-확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 원본 출력의 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
+확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 스트림마다 128 KiB인 원본 출력 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
 디렉터리는 실행이 끝나면 지웁니다. stdout은 `[A-Za-z0-9._:-]`로 이뤄진 1–128자의 ASCII여야
 하며, 그 뒤에 LF 하나(Windows에서는 CRLF 하나)만 올 수 있습니다. 그 밖의 공백은 허용하지 않고
-앞뒤 공백을 지워 주지도 않습니다. 종료 코드가 0이 아니거나, 출력 형식이 잘못됐거나, 시간이 초과됐거나, 취소됐거나, 파일이 없거나, 정리에 실패하면 동작 오류로 준비를 멈춥니다. eval을 시작하지 않으며, 캐시 없이 리뷰하는 방식으로 전환하지도 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
+앞뒤 공백을 지워 주지도 않습니다. 종료 코드가 0이 아니거나, 출력 형식이 잘못됐거나, stdout이나 stderr가 128 KiB를 넘었거나(올바른 fingerprint를 출력했더라도), 시간이 초과됐거나, 취소됐거나, 파일이 없거나, 정리에 실패하면 동작 오류로 준비를 멈춥니다. eval을 시작하지 않으며, 캐시 없이 리뷰하는 방식으로 전환하지도 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
 
 Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면

@@ -902,6 +902,18 @@ export const scenarios: Scenario[] = [
         { text: "▶ HH:MM:SS · fail · release", kind: "start", error: false },
         { text: "■ exit 1", kind: "end", error: true },
       ]);
+      // Every earlier run stays in the Tool log after the later ones, and after the Detail is
+      // closed and opened again while the app runs.
+      const ends = async () => Promise.all(["notes", "open", "talk", "fail"].map(async (tool) => (await runIn(browser, DETAIL, tool))?.at(-1)?.text ?? null));
+      const kept = ["■ exit 0", "■ exit 0", "■ exit 0", "■ exit 1"];
+      assert.deepEqual(await ends(), kept, "every run kept after the later ones");
+      await browser.$(DETAIL).$("button*=Close").click();
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "release's Detail closed" });
+      await openArtifact(browser, "a:release", "Artifact release");
+      await browser.waitUntil(async () => JSON.stringify(await ends()) === JSON.stringify(kept),
+        { timeout: 15000, timeoutMsg: "every run kept after the Detail was opened again" });
+      assert.deepEqual((await runIn(browser, DETAIL, "notes"))?.map((row) => row.text), ["▶ HH:MM:SS · notes · release", "# Release notes", "- Ready to ship.", "■ exit 0"],
+        "the first run whole");
       // None of it is a review's evidence: the sign-off still waits, unclaimed, its own Tool log empty.
       const saved = signoff(fixture);
       assert.deepEqual([saved.status, saved.claim, saved.result], ["DEFERRED", null, null]);

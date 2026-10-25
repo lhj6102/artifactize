@@ -89,7 +89,7 @@ impl std::str::FromStr for Query {
         let mut query = Self::default();
         let mut sorted = false;
         for (word, quoted) in search::words(text) {
-            let Some((name, value)) = word.split_once(':').filter(|_| !quoted) else {
+            let Some((name, value)) = search::filter(&word).filter(|_| !quoted) else {
                 query.terms.push(Term::Text(word.to_lowercase()));
                 continue;
             };

@@ -20,7 +20,8 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 `GEMINI_API_KEY`, or else the key saved with `artifactize login openai|anthropic|gemini`
 (or in the desktop app's Settings), and never search for other credentials. A key is 1–4096
 printable ASCII characters without spaces; surrounding whitespace is trimmed. A set variable is
-always the key in use: an invalid value is an error, never a reason to use the saved key; `codex` uses a
+the key in use: an invalid value is an error, never a reason to use the saved key. A value that
+is not valid Unicode counts as unset, so the saved key is used. `codex` uses a
 ChatGPT sign-in (see [Codex](#codex)). `provider` and `effort` are not config aliases.
 0.5.0 removed the `chatgpt` (Sign in with ChatGPT) and `claude` (Claude CLI) backends;
 `config check` names the replacements for any profile that still declares one.

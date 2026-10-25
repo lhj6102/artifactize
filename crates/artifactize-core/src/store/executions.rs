@@ -622,7 +622,7 @@ async fn read_claims<K: Ord + Send + 'static>(
     };
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -659,7 +659,7 @@ pub async fn read_latest_cached(
     let keys = keys.to_vec();
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -868,11 +868,8 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction =
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                let published = settle(&transaction, &execution, &request)?;
+                settle(&transaction, &execution, &request)?;
                 transaction.commit()?;
-                if published {
-                    history::collect_after(db);
-                }
                 Ok(())
             })
             .await
@@ -948,7 +945,6 @@ impl Receipts {
                 }
                 super::human::settle_waiting(&transaction, &mirrored)?;
                 transaction.commit()?;
-                history::collect_after(db);
                 Ok(Some(mirrored))
             })
             .await
@@ -958,12 +954,12 @@ impl Receipts {
 
 /// Save a finished execution and its request; a GREEN/RED with a key joins the key's history.
 /// A claimed or Human execution updates its active row; a forced or unkeyed one is inserted,
-/// or replaces the RUNNING row its limited start inserted. True when it joined the history.
+/// or replaces the RUNNING row its limited start inserted.
 pub(super) fn settle(
     db: &rusqlite::Connection,
     execution: &Execution,
     request: &Request,
-) -> Result<bool, Error> {
+) -> Result<(), Error> {
     if request.status() != execution.status().into()
         || request.execution_id.as_ref() != Some(&execution.id)
         || request.result() != execution.result()
@@ -1016,6 +1012,5 @@ pub(super) fn settle(
             ],
         )?;
     }
-    update_request(db, request)?;
-    Ok(record.is_some())
+    update_request(db, request)
 }

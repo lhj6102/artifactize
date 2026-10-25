@@ -114,9 +114,9 @@ provider가 준 순서대로 `{"backend":"openai","models":[{"slug":"model-id","
 
 ## 키와 커스텀 provider {#keys-and-custom-providers}
 
-`login openai|anthropic|gemini`는 stdin에서 API 키를 읽어 저장합니다. 키는 `remote login`이
-[토큰](review-store.md#remote-review-store-client)을 읽을 때와 같이 한 줄을 처음 8192바이트까지만 읽고 앞뒤
-공백을 지웁니다. 터미널에서는 입력이 화면에 나타나지 않으며, Windows에서 입력을 숨기는 데 실패하면 키가
+`login openai|anthropic|gemini`는 stdin에서 API 키를 읽어 저장합니다. API 키도 `remote login`의
+[토큰](review-store.md#remote-review-store-client) 입력과 마찬가지로 한 줄에서 처음 8192바이트까지만 읽은 뒤 앞뒤
+공백을 제거합니다. 터미널에서는 입력이 화면에 나타나지 않으며, Windows에서 입력을 숨기는 데 실패하면 키가
 화면에 보인다고 경고한 뒤 계속 읽습니다. 같은 이름으로 `logout`을 실행하면 저장한 키를 지웁니다. 키 변수가 설정되어 있으면
 그 변수를 먼저 씁니다. `login codex`와 `logout codex`는 [Codex 로그인](../features/agent.md#codex)입니다.
 

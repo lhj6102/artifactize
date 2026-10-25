@@ -30,6 +30,7 @@
   --light-blocked: #7f1d1d;
   --light-run: #1e6fd9;
   --light-reused: #0f766e;
+  --light-checking: #d4d8de;
   --radius: 8px;
   --gap: 12px;
   --pad: 16px;
@@ -67,6 +68,7 @@
     --light-blocked: #9b2c2c;
     --light-run: #6cb6ff;
     --light-reused: #2dd4bf;
+    --light-checking: #4a4f59;
   }
 }
 
@@ -94,6 +96,9 @@
 }
 .light-reused {
   --light: var(--light-reused);
+}
+.light-checking {
+  --light: var(--light-checking);
 }
 
 * {

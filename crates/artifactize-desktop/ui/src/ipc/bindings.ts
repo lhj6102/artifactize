@@ -106,10 +106,16 @@ export const commands = {
 	 */
 	neighbours: (source: Source, node: string) => typedError<Neighbours, Failure>(__TAURI_INVOKE("neighbours", { source, node })),
 	/**
-	 *  Scan `branch`'s worktree as it is now. Scanning it again cancels this scan, which then
-	 *  answers with the newer one's view once that one ends.
+	 *  Scan `branch`'s worktree as it is now, answering with the scan's first step: the graph,
+	 *  every Artifact still being checked. Each later step is announced by [`CurrentChanged`].
+	 *  While the branch's scan still runs, this answers with that scan instead; when the person
+	 *  asked to `refresh`, a new scan follows it.
 	 */
-	currentScan: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch })),
+	currentScan: (branch: BranchKey, refresh: boolean) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch, refresh })),
+	/**  The newest step of `branch`'s Current, without scanning. */
+	currentView: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_view", { branch })),
+	/**  Every Artifact, eval criterion and labeled relation of `branch`'s Current as text. */
+	currentStructure: (branch: BranchKey) => typedError<string, Failure>(__TAURI_INVOKE("current_structure", { branch })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.
@@ -204,6 +210,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	currentChanged: makeEvent<CurrentChanged>("current-changed"),
 	humanToolLog: makeEvent<HumanToolLog>("human-tool-log"),
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
 	stateChanged: makeEvent<StateChanged>("state-changed"),
@@ -342,18 +349,26 @@ export type Connection =
 /**  The store sent no HTTP response. */
 { state: "unreachable"; error: string };
 
-/**  A branch's Current as the Main area shows it. */
+/**  The shown Current of `branch` changed: a scan published a step, or ended. */
+export type CurrentChanged = {
+	branch: BranchKey,
+};
+
+/**  A branch's Current as the Main area shows it; its structure text is read on its own. */
 export type CurrentView = {
 	branch: BranchKey,
-	/**  When it was scanned, at milliseconds since the Unix epoch. */
+	/**  When this step was scanned, at milliseconds since the Unix epoch. */
 	scannedAt: number | null,
 	fingerprint: string,
-	/**  Every Artifact, eval criterion and labeled relation as text. */
-	structure: string,
-	/**  Each Artifact with its evals, as the Detail's chips and lists show them. */
-	tree: TreeNode[],
-	/**  Grows with each scan: the graph and an open Detail read again when it does. */
+	/**  Grows with each step: the graph and an open Detail read again when it does. */
 	revision: ScanId,
+	/**  The branch's scan is still running. */
+	scanning: boolean,
+	/**  How many Artifacts are still being checked, of how many. */
+	checking: number,
+	artifacts: number,
+	/**  Why the branch's last scan failed; what it published before stays shown. */
+	failure: string | null,
 };
 
 export type CustomProvider = {
@@ -481,6 +496,10 @@ export type GraphNode = {
 	/**  The Artifact row's tree id, `a:<artifact>`. */
 	id: string,
 	name: string,
+	/**  The space of a `space::name`, which the graph draws its Artifacts together in. */
+	space: string | null,
+	/**  What the node shows: the name without its space. */
+	label: string,
 	light: Light,
 	/**  Under the name: on a Current what verify would do, `would run (2 evals)`. */
 	note: string | null,
@@ -577,7 +596,9 @@ export type Light =
 /**  On a Current: at least one eval would run. */
 "run" | 
 /**  On a Current: every eval's result would be reused. */
-"reused";
+"reused" | 
+/**  On a Current: what would happen is still being checked. */
+"checking";
 
 /**
  *  One tool run: its start line's facts, what it printed as it ran, and its end line once it
@@ -774,8 +795,8 @@ export type RunPanel = {
 };
 
 /**
- *  A scan of a branch's Current, numbered by the backend as it starts one: a later scan
- *  has a higher number.
+ *  A scan of a branch's Current, or a step it published, numbered by the backend: a later
+ *  one has a higher number.
  */
 export type ScanId = number;
 

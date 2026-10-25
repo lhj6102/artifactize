@@ -85,7 +85,7 @@ pub(super) struct Request {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Session {
-    pub reference: String,
+    pub reference: artifactize_core::inspect::session::Selector,
     #[serde(default)]
     pub summary: bool,
 }

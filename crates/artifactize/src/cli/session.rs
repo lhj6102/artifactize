@@ -14,7 +14,7 @@ use artifactize_core::agent::{
     self,
     session::{self, Conversation, Summary},
 };
-use artifactize_core::inspect::session::{Located, locate, send};
+use artifactize_core::inspect::session::{Located, Selector, locate, send};
 
 #[derive(Debug, Subcommand)]
 pub enum SessionCommand {
@@ -22,7 +22,7 @@ pub enum SessionCommand {
     Show {
         /// A session reference, request id or session id.
         #[arg(value_name = "REF")]
-        reference: String,
+        reference: Selector,
         /// Print the conversation's turns, tokens, tool calls and follow-ups instead,
         /// computed from the saved session.
         #[arg(long)]
@@ -32,7 +32,7 @@ pub enum SessionCommand {
     Send {
         /// A session reference, request id or session id.
         #[arg(value_name = "REF")]
-        reference: String,
+        reference: Selector,
         /// The message to send.
         message: String,
     },

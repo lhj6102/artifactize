@@ -113,7 +113,7 @@ fn running(state: &Path) -> Result<BTreeSet<SessionId>, String> {
     let read = || -> Result<BTreeSet<SessionId>, rusqlite::Error> {
         let db =
             rusqlite::Connection::open_with_flags(&database, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT)?;
+        crate::store::wait_when_busy(&db)?;
         let initialized: bool = db.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='requests')",
             [],

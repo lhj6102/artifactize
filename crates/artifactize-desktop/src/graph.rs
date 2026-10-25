@@ -35,6 +35,8 @@ pub enum Light {
     Run,
     /// On a Current: every eval's result would be reused.
     Reused,
+    /// On a Current: what would happen is still being checked.
+    Checking,
 }
 
 impl From<monitor::Light> for Light {
@@ -58,6 +60,7 @@ impl From<monitor::live::Plan> for Light {
             Plan::Blocked => Self::Blocked,
             Plan::Wait => Self::Waiting,
             Plan::Reuse => Self::Reused,
+            Plan::Check => Self::Checking,
         }
     }
 }
@@ -68,6 +71,10 @@ pub struct GraphNode {
     /// The Artifact row's tree id, `a:<artifact>`.
     pub id: crate::ids::NodeKey,
     pub name: String,
+    /// The space of a `space::name`, which the graph draws its Artifacts together in.
+    pub space: Option<String>,
+    /// What the node shows: the name without its space.
+    pub label: String,
     pub light: Light,
     /// Under the name: on a Current what verify would do, `would run (2 evals)`.
     pub note: Option<String>,
@@ -126,6 +133,8 @@ fn shape(graph: &monitor::Graph) -> Shape {
             .map(|node| GraphNode {
                 id: node.id.clone().into(),
                 name: node.name.to_string(),
+                space: node.name.space().map(str::to_owned),
+                label: node.name.local().to_owned(),
                 light: node.light.into(),
                 note: None,
             })

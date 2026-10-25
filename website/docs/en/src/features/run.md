@@ -92,7 +92,8 @@ after fixes. Eval-result reuse does not depend on it.
 ### Sign-offs and the end of a Run
 
 A sign-off is requested as soon as its own prerequisites pass: its Artifact's other
-machine evals are GREEN and no gate holds it. It never holds up other evals: what relies
+machine evals are GREEN (a GREEN still PROVISIONAL on another sign-off counts) and no gate
+holds it. It never holds up other evals: what relies
 on it runs at once, and its GREEN results stay PROVISIONAL until the sign-off is GREEN;
 its own RED or ERROR shows as it is. Other
 machine work may still be running when it is requested; to review the final state, wait
@@ -110,6 +111,9 @@ it. So a person who asked for a sign-off has time to claim it, also when every o
 was reused, and one reviewer's submission leaves the next time to claim theirs. The Run
 then ends:
 
+- **INCOMPLETE** when an execution budget ran out or a `--reuse-only` eval had no result
+  to reuse, whatever the other results, a RED one included;
+- otherwise **ERROR** when any result is ERROR;
 - **GREEN** when every result, sign-offs included, is GREEN;
 - **RED** when any result, a sign-off included, is RED;
 - **YELLOW** (exit 5) when every other result is GREEN and a sign-off is still

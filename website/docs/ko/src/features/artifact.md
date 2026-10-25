@@ -1,6 +1,6 @@
 # Artifact {#artifact}
 
-Artifact는 리뷰하는 대상이면 무엇이든 될 수 있습니다. 코드, 문서, 디자인, 이미지 모두
+리뷰할 대상이라면 무엇이든 Artifact로 선언할 수 있습니다. 코드, 문서, 디자인, 이미지 모두
 Artifact입니다. 폴더에 `index.artf`를 추가하면(파일이라면 옆에 `notes.md.artf`를 두면)
 Artifact를 선언할 수 있습니다.
 
@@ -34,7 +34,8 @@ Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람�
 
 ## 폴더 설정 {#folder-configuration}
 
-`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `basis`, `views`,
+`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `combat::Code`처럼 앞에
+space를 붙여 다른 Artifact와 묶을 수 있습니다([이름](declarations.md) 참고). `basis`, `views`,
 `fingerprint`, `tags`는 선택입니다. 예전 선언은
 [예전 정책 업그레이드 안내](../getting-started/update.md#upgrading-from-011)를 보세요.
 
@@ -118,8 +119,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED면 그 eval도 막히므로, 막힘은 이 eval
-게이트를 따라 퍼지며, 자식의 eval이 RED면 부모의 모든 eval이 막힙니다. eval이
+하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED이면 이에 의존하는 eval도
+차례로 차단되며, 자식 eval이 RED이면 부모의 모든 eval이 차단됩니다. eval이
 없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
 실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
 쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
@@ -137,15 +138,17 @@ payload.instruction = "Run {e2e-tests} against {app}."
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
 
-BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval이
-나오며, 아직 실행 중이었을 뿐인 eval은 나오지 않습니다. 추측 실행하는 Run에서는 상위 eval의 ERROR도
+BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval만
+표시하고, 단순히 실행 중인 eval은 표시하지 않습니다. 추측 실행하는 Run에서는 상위 eval의 ERROR도
 그에 의존하는 작업을 막으며, 사유는 `Dependency ERROR: …`로 나옵니다. `blockedBy`에도 같은 eval이 나오고, 확정된 Run에는
 그 eval이 모두 나옵니다.
 
 ### Human 승인 {#human-sign-offs}
 
 Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
-시작합니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다. 그
+시작합니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
+자동 검사 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
+통과한 것으로 칩니다. 그
 자동 검사 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
 `Sibling machine eval RED: spec/review`처럼 그 eval이 나옵니다. 같은 Artifact의 다른 Human
 eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`와
@@ -164,7 +167,7 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 ASCII 제어 문자가 없고 비어 있지 않은 고유한 문자열이며 64개까지입니다. `status`,
 `config graph`, `monitor`와 그 JSON의 Artifact 출력에 나옵니다. 태그를 바꿔도 fingerprint, eval 정의
 해시, 재사용 키, 의존 관계, `verify`와 `status`로 선택하는 대상은 바뀌지 않습니다. 이런 명령에는 태그로
-거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. 태그로 걸러 보는 곳은 `artifactize review` 검색의 `tag:` 검색어뿐입니다.
+거르는 기능이 없고, 태그로 관계를 정하는 규칙도 없습니다. `artifactize review`에서 `tag:` 검색어를 쓸 때만 태그로 결과를 걸러 볼 수 있습니다.
 
 프로젝트에 템플릿이 필요하면 `.artf` 파일을 직접 생성해서 커밋하세요. 선언 찾기와 검사 규칙은
 [선언 검사](declarations.md#declaration-validation)에 있습니다.

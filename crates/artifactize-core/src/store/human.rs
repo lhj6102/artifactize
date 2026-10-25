@@ -333,7 +333,7 @@ impl Receipts {
                 execution.reviewer = Some(reviewer.clone());
                 execution.provenance.completed_at = request.completed_at();
                 request.provenance = Some(execution.provenance.clone());
-                let published = executions::settle(&transaction, &execution, &request)?;
+                executions::settle(&transaction, &execution, &request)?;
                 let followers = {
                     let mut statement = transaction.prepare(
                         "SELECT data FROM requests WHERE execution_id=? AND status IN ('WAITING_HUMAN','DEFERRED')",
@@ -352,9 +352,6 @@ impl Receipts {
                 }
                 unclaim(&transaction, &request.id)?;
                 transaction.commit()?;
-                if published {
-                    super::history::collect_after(db);
-                }
                 Ok(request)
             })
             .await

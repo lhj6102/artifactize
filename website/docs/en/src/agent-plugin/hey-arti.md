@@ -103,8 +103,9 @@ Combinations it recommends, with who owns each check and what it references:
 - **Rule documents**: the rules are an Artifact, often with a Human sign-off, read
   by the evals of the Artifacts they govern.
 
-It steers away from implicit dependencies, whole-repository reviews, anti-cheat
-evals, unrequested execution options, and weakening an eval to reach GREEN.
+It steers away from implicit dependencies, whole-repository reviews, evals added only
+to catch a builder cheating (such as hashing the tests to prove nobody edited them),
+unrequested execution options, and weakening an eval to reach GREEN.
 
 To show you a pattern, it points at the example that matches your situation: the
 [examples](../getting-started/examples.md) (runtime relations, Agent tools with a
@@ -172,8 +173,10 @@ Arti names waiting requests with `request_list`/`request_show` and gives you the
 criteria and `artifactize review REQUEST_ID` (or your usual review interface). It
 never claims, approves or submits a Human review. It continues independent work, or
 yields with a short handoff naming the repository, Run, waiting requests and next
-action, then resumes by observing the same Run. Yielding is not cancellation, and no
-keep-alive turns or polling loops are needed.
+action. While the Run is open, it resumes by observing that Run. Once the Run ended
+YELLOW, its verdict is final and your later sign-off updates only the request, so Arti
+verifies again and the new Run reuses your sign-off. Yielding is not cancellation, and
+no keep-alive turns or polling loops are needed.
 
 ## Team and CI
 

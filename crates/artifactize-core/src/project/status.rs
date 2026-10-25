@@ -100,17 +100,35 @@ pub struct Counts {
 
 /// All effects needed by the status projection have finished before this is assembled.
 struct Snapshot<'a> {
-    required: BTreeSet<&'a crate::config::ArtifactName>,
-    selected_eval_ids: Vec<crate::config::EvalId>,
-    included_eval_ids: Vec<crate::config::EvalId>,
-    fingerprints: BTreeMap<&'a crate::config::ArtifactName, cache::PreparedFingerprint>,
-    all_keys: BTreeMap<&'a crate::config::EvalId, cache::Key>,
+    required: &'a BTreeSet<&'a crate::config::ArtifactName>,
+    selected_eval_ids: &'a [crate::config::EvalId],
+    included_eval_ids: &'a [crate::config::EvalId],
+    fingerprints: &'a BTreeMap<&'a crate::config::ArtifactName, cache::PreparedFingerprint>,
+    known: &'a Known<'a>,
+}
+
+/// What the store and the remote review store say about the keys a scan computed so far.
+#[derive(Default)]
+struct Known<'c> {
     cached: BTreeMap<crate::config::EvalId, Claim>,
     previous: BTreeMap<(crate::config::EvalId, crate::types::DefinitionHash), store::Execution>,
     latest: BTreeMap<crate::config::EvalId, LastRequest>,
     waiting: Vec<store::RequestView>,
     unreadable: Vec<store::Unreadable>,
+    /// Every key computed so far, by eval.
+    keys: BTreeMap<&'c crate::config::EvalId, cache::Key>,
 }
+
+/// What a scan knows part way: the status as far as its fingerprints go, the results it found
+/// to reuse, and the evals whose action may still change.
+pub(crate) struct Progress<'a> {
+    pub view: StatusView,
+    pub cached: &'a BTreeMap<crate::config::EvalId, Claim>,
+    pub checking: BTreeSet<&'a crate::config::EvalId>,
+}
+
+/// Where a scan hands what it knows part way.
+pub(crate) type Publish<'p> = &'p mut (dyn for<'a> FnMut(Progress<'a>) + Send);
 
 /// Prepare current fingerprints without executing evals or changing saved evidence.
 pub async fn status(
@@ -120,27 +138,25 @@ pub async fn status(
     options: &VerifyOptions,
     cancellation: CancellationToken,
 ) -> Result<StatusView, String> {
-    scan(repo, state_dir, selection, options, cancellation)
+    // Options are checked before anything is read.
+    super::fingerprint_parallelism(options)?;
+    let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
+    scan(config, state_dir, selection, options, cancellation, None)
         .await
         .map(|(view, _)| view)
 }
 
-/// [`status`], with the completed results it found to reuse, by eval.
+/// [`status`] of a workspace configuration already read, with the claims it found by eval.
+/// With `publish`, what it knows is handed there as its fingerprints come in.
 pub(crate) async fn scan(
-    repo: &Path,
+    config: crate::config::RepoConfig,
     state_dir: Option<&Path>,
     selection: &Selection,
     options: &VerifyOptions,
     cancellation: CancellationToken,
-) -> Result<
-    (
-        StatusView,
-        BTreeMap<crate::config::EvalId, store::Execution>,
-    ),
-    String,
-> {
+    publish: Option<Publish<'_>>,
+) -> Result<(StatusView, BTreeMap<crate::config::EvalId, Claim>), String> {
     let parallelism = super::fingerprint_parallelism(options)?;
-    let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     let config = select_profiles(
         config,
         selection,
@@ -161,103 +177,285 @@ pub(crate) async fn scan(
         .map(|eval| eval.id.clone())
         .collect();
     let state = store::state_dir(state_dir)?;
-    let latest = store::read_latest_requests(&state, &config.root).await?;
-    let selected_ids: BTreeSet<_> = selected_eval_ids.iter().collect();
-    let fingerprints = cache::prepare(
-        &config,
-        cache::fingerprint_targets(&config, &required),
-        &state,
-        &parallelism,
-        cancellation.clone(),
-    )
-    .await?;
-    let all_keys = cache::eval_keys(&config, &fingerprints);
-    let keys: BTreeMap<_, _> = all_keys
-        .iter()
-        .filter(|(id, _)| !(options.force && selected_ids.contains(*id)))
-        .map(|(id, key)| (*id, key))
-        .collect();
-    let mut cached = store::read_profiled_executions(
-        &state,
-        config
-            .evals
-            .iter()
-            .filter_map(|eval| {
-                keys.get(&eval.id).map(|key| {
-                    (
-                        eval.id.clone(),
-                        key.value.clone(),
-                        eval.declaration.profile().into(),
-                    )
-                })
-            })
-            .collect(),
-    )
-    .await?;
     // Read-only: a store record that completed after the local latest counts as reuse without
     // being mirrored, as verify would take it before claiming. --force reads nothing from the
     // store, so its prediction has none.
-    if !options.force
-        && let Some(remote) = Session::open(Some(&state), Some(&config.root))?
-    {
-        let all: Vec<_> = keys
-            .values()
-            .map(|key| key.value.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        for execution in remote.lookup(&all).await? {
-            let key = execution.key.clone().expect("remote key");
-            for (id, _) in keys.iter().filter(|(_, candidate)| candidate.value == key) {
-                let newer = match cached.get(*id) {
-                    Some(Claim::Reuse(local)) => execution.completed_after(local),
-                    _ => true,
-                };
-                if newer {
-                    cached.insert((*id).clone(), Claim::Reuse(Box::new(execution.clone())));
-                }
-            }
+    let remote = if options.force {
+        None
+    } else {
+        Session::open(Some(&state), Some(&config.root))?
+    };
+    let scope = Scope {
+        config: &config,
+        graph: &graph,
+        selection,
+        options,
+        required: &required,
+        selected_eval_ids: &selected_eval_ids,
+        included_eval_ids: &included_eval_ids,
+        state: &state,
+        remote: remote.as_deref(),
+    };
+    let targets = cache::fingerprint_targets(&config, &required);
+    let fingerprints = match publish {
+        None => {
+            cache::prepare(&config, targets, &state, &parallelism, cancellation.clone()).await?
         }
-    }
-    let claim = |id: &crate::types::EvalId| cached.get(id);
-    // Explain changed keys against the newest cached result for the same Eval definition.
-    let stale: Vec<_> = keys
-        .iter()
-        .filter(|(id, _)| !matches!(claim(id), Some(Claim::Reuse(_))))
-        .map(|(id, key)| ((*id).clone(), key.eval_def_hash.clone()))
-        .collect();
-    let previous = store::read_latest_cached(&state, &stale).await?;
-    let waiting = store::read_waiting(&state, Some(&config.root)).await?;
-    let unreadable = store::read_unreadable(&state, Some(&config.root)).await?;
+        Some(publish) => {
+            scope
+                .progressively(targets, &parallelism, cancellation.clone(), publish)
+                .await?
+        }
+    };
+    // Read once every fingerprint is in, so a Run that ended meanwhile counts.
+    let known = scope.read(&fingerprints).await?;
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
-    let reused = cached
-        .iter()
-        .filter_map(|(id, claim)| match claim {
-            Claim::Reuse(execution) => Some((id.clone(), (**execution).clone())),
-            _ => None,
-        })
-        .collect();
-    view::assemble(
-        &config,
-        &graph,
-        selection,
-        options,
-        Snapshot {
-            required,
-            selected_eval_ids,
-            included_eval_ids,
-            fingerprints,
-            all_keys,
-            cached,
-            previous,
-            latest,
-            waiting,
-            unreadable,
-        },
-    )
-    .map(|view| (view, reused))
+    let view = scope.assemble(&fingerprints, &known)?;
+    Ok((view, known.cached))
+}
+
+/// What one scan reads against.
+struct Scope<'a> {
+    config: &'a crate::config::RepoConfig,
+    graph: &'a Graph<'a>,
+    selection: &'a Selection,
+    options: &'a VerifyOptions,
+    required: &'a BTreeSet<&'a crate::config::ArtifactName>,
+    selected_eval_ids: &'a [crate::config::EvalId],
+    included_eval_ids: &'a [crate::config::EvalId],
+    state: &'a Path,
+    remote: Option<&'a Session>,
+}
+
+type Fingerprints<'a> = BTreeMap<&'a crate::config::ArtifactName, cache::PreparedFingerprint>;
+
+impl<'a> Scope<'a> {
+    /// Prepare the fingerprints, handing `publish` what is known each time some come in: first
+    /// the graph with every eval being checked, then each action as soon as it cannot change.
+    async fn progressively(
+        &self,
+        targets: BTreeSet<&'a crate::config::ArtifactName>,
+        parallelism: &cache::Parallelism,
+        cancellation: CancellationToken,
+        publish: Publish<'_>,
+    ) -> Result<Fingerprints<'a>, String> {
+        let mut fingerprints = Fingerprints::new();
+        let first = Known::default();
+        publish(Progress {
+            view: self.assemble(&fingerprints, &first)?,
+            cached: &first.cached,
+            checking: self.checking(&fingerprints, &first.cached),
+        });
+        let mut known = self.read(&fingerprints).await?;
+        let (ready, mut arrived) = tokio::sync::mpsc::unbounded_channel();
+        // A failed store read stops the fingerprints nobody would read any more.
+        let preparation = cancellation.child_token();
+        // Dependency first: an eval's action is known once its gates' are, so what is upstream
+        // is fingerprinted first and the graph fills in from there.
+        let targets = self
+            .graph
+            .components()
+            .iter()
+            .flat_map(|component| &component.artifacts)
+            .filter_map(|id| targets.get(*id).copied());
+        let preparing = cache::prepare_each(
+            self.config,
+            targets,
+            self.state,
+            parallelism,
+            preparation.clone(),
+            move |id, fingerprint| {
+                let _ = ready.send((id, fingerprint));
+            },
+        );
+        let publishing = async {
+            while let Some((id, fingerprint)) = arrived.recv().await {
+                let started = tokio::time::Instant::now();
+                fingerprints.insert(id, fingerprint);
+                while let Ok((id, fingerprint)) = arrived.try_recv() {
+                    fingerprints.insert(id, fingerprint);
+                }
+                self.absorb(&mut known, &fingerprints).await?;
+                publish(Progress {
+                    view: self.assemble(&fingerprints, &known)?,
+                    cached: &known.cached,
+                    checking: self.checking(&fingerprints, &known.cached),
+                });
+                // Publishing takes from the fingerprints' time: leave them as long again.
+                tokio::time::sleep(started.elapsed()).await;
+            }
+            Ok::<_, String>(())
+        };
+        let publishing = async {
+            let published = publishing.await;
+            if published.is_err() {
+                preparation.cancel();
+            }
+            published
+        };
+        let (prepared, published) = tokio::join!(preparing, publishing);
+        prepared?;
+        published?;
+        Ok(fingerprints)
+    }
+
+    /// What the store says about `fingerprints`, read afresh.
+    async fn read(&self, fingerprints: &Fingerprints<'a>) -> Result<Known<'a>, String> {
+        let mut known = Known {
+            latest: store::read_latest_requests(self.state, &self.config.root).await?,
+            waiting: store::read_waiting(self.state, Some(&self.config.root)).await?,
+            unreadable: store::read_unreadable(self.state, Some(&self.config.root)).await?,
+            ..Known::default()
+        };
+        self.absorb(&mut known, fingerprints).await?;
+        Ok(known)
+    }
+
+    /// Look up the keys `fingerprints` complete that `known` has not looked up yet.
+    async fn absorb(
+        &self,
+        known: &mut Known<'a>,
+        fingerprints: &Fingerprints<'a>,
+    ) -> Result<(), String> {
+        let new: BTreeMap<&'a crate::config::EvalId, cache::Key> = self
+            .config
+            .evals
+            .iter()
+            .filter(|eval| !known.keys.contains_key(&eval.id))
+            .filter_map(|eval| {
+                Some((
+                    &eval.id,
+                    cache::eval_key(self.config, eval, fingerprints).ok()?,
+                ))
+            })
+            .collect();
+        let selected: BTreeSet<_> = self.selected_eval_ids.iter().collect();
+        let keys: BTreeMap<_, _> = new
+            .iter()
+            .filter(|(id, _)| !(self.options.force && selected.contains(**id)))
+            .map(|(id, key)| (*id, key))
+            .collect();
+        let mut cached = store::read_profiled_executions(
+            self.state,
+            self.config
+                .evals
+                .iter()
+                .filter_map(|eval| {
+                    keys.get(&eval.id).map(|key| {
+                        (
+                            eval.id.clone(),
+                            key.value.clone(),
+                            eval.declaration.profile().into(),
+                        )
+                    })
+                })
+                .collect(),
+        )
+        .await?;
+        if let Some(remote) = self.remote {
+            let all: Vec<_> = keys
+                .values()
+                .map(|key| key.value.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            for execution in remote.lookup(&all).await? {
+                let key = execution.key.clone().expect("remote key");
+                for (id, _) in keys.iter().filter(|(_, candidate)| candidate.value == key) {
+                    let newer = match cached.get(*id) {
+                        Some(Claim::Reuse(local)) => execution.completed_after(local),
+                        _ => true,
+                    };
+                    if newer {
+                        cached.insert((*id).clone(), Claim::Reuse(Box::new(execution.clone())));
+                    }
+                }
+            }
+        }
+        // Explain changed keys against the newest cached result for the same Eval definition.
+        let stale: Vec<_> = keys
+            .iter()
+            .filter(|(id, _)| !matches!(cached.get(**id), Some(Claim::Reuse(_))))
+            .map(|(id, key)| ((*id).clone(), key.eval_def_hash.clone()))
+            .collect();
+        known
+            .previous
+            .extend(store::read_latest_cached(self.state, &stale).await?);
+        known.cached.extend(cached);
+        known.keys.extend(new);
+        Ok(())
+    }
+
+    fn assemble(
+        &self,
+        fingerprints: &Fingerprints<'a>,
+        known: &Known<'a>,
+    ) -> Result<StatusView, String> {
+        view::assemble(
+            self.config,
+            self.graph,
+            self.selection,
+            self.options,
+            Snapshot {
+                required: self.required,
+                selected_eval_ids: self.selected_eval_ids,
+                included_eval_ids: self.included_eval_ids,
+                fingerprints,
+                known,
+            },
+        )
+    }
+
+    /// The evals whose action may still change: a fingerprint their key needs is not in yet,
+    /// or, unless they reuse a result, the action of an eval they wait for may still change.
+    fn checking(
+        &self,
+        fingerprints: &Fingerprints<'a>,
+        cached: &BTreeMap<crate::config::EvalId, Claim>,
+    ) -> BTreeSet<&'a crate::config::EvalId> {
+        let evals: BTreeMap<_, _> = self
+            .config
+            .evals
+            .iter()
+            .map(|eval| (&eval.id, eval))
+            .collect();
+        let mut settled = BTreeSet::new();
+        let mut checking = BTreeSet::new();
+        // Dependency first, so an eval's gates are decided before it; gates in its own cycle
+        // are not, and the cycle stays being checked until every fingerprint is in.
+        for component in self.graph.components() {
+            for artifact in component
+                .artifacts
+                .iter()
+                .filter(|id| self.required.contains(*id))
+            {
+                for id in &self.graph.artifacts()[*artifact].evals {
+                    let keyed =
+                        cache::dependencies(self.config, evals[id])
+                            .into_iter()
+                            .all(|input| {
+                                self.config.artifacts[input].fingerprint.is_none()
+                                    || fingerprints.contains_key(input)
+                            });
+                    let decided = keyed
+                        && (matches!(cached.get(*id), Some(Claim::Reuse(_)))
+                            || self
+                                .graph
+                                .gates(id)
+                                .iter()
+                                .all(|gate| settled.contains(gate)));
+                    if decided {
+                        settled.insert(*id);
+                    } else {
+                        checking.insert(*id);
+                    }
+                }
+            }
+        }
+        checking
+    }
 }
 
 impl Counts {

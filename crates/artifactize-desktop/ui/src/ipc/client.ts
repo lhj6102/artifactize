@@ -1,6 +1,6 @@
 // The frontend's only door to the backend: typed commands that throw a typed failure, and
 // event subscriptions that always clean up.
-import type { Failure, KeyedLog } from "./bindings";
+import type { BranchKey, Failure, KeyedLog } from "./bindings";
 import { commands as bindings, events } from "./bindings";
 import { getActivity, observeCommands } from "./activity.svelte";
 
@@ -72,3 +72,7 @@ export const onHumanToolLog = (callback: (logs: KeyedLog[]) => void) =>
 
 export const onSessionChanged = (callback: (session: string) => void) =>
   subscribe(events.sessionChanged.listen, (payload) => callback(payload.session));
+
+/** A branch's Current changed: its scan published a step, or ended. */
+export const onCurrentChanged = (callback: (branch: BranchKey) => void) =>
+  subscribe(events.currentChanged.listen, (payload) => callback(payload.branch));

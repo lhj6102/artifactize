@@ -36,9 +36,6 @@ WebKitGTK 4.1과 GTK 3가 필요합니다. aarch64나 다른 배포판에서는 
 
 ## 명령줄 {#command-line}
 
-OS별 기본 명령은 [설치](install.md#from-the-command-line)에 있습니다. 여기서는 자세한 내용과
-다른 방법을 설명합니다.
-
 ### Linux {#linux}
 
 ```sh
@@ -179,7 +176,7 @@ cargo install --path crates/artifactize-tools --locked
 [내려받기](install.md#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
 `artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage`도 첨부됩니다. `VERSION`은 릴리스 버전이며,
 내려받은 파일 이름에 들어 있습니다. Linux의 시스템 C 라이브러리인 glibc 2.35 이상이 필요하며,
-`ldd --version`을 실행하면 첫 줄에 설치된 버전이 나옵니다. 내려받은 폴더에서 내려받은 파일 이름으로 실행 권한을 주고 실행하세요.
+`ldd --version`을 실행하면 첫 줄에 설치된 버전이 나옵니다. 파일을 내려받은 폴더에서 아래 명령의 파일 이름을 실제 파일 이름으로 바꾼 뒤, 그 파일에 실행 권한을 주고 실행하세요.
 
 ```sh
 chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
@@ -196,8 +193,8 @@ chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
 - **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 앱 내부 `Contents/MacOS` 디렉터리의 절대 경로를
   `/etc/paths.d/artifactize`에 기록합니다. 그다음 새
   터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
-  설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 옮겼다면
-  다시 실행해, 사라진 이전 위치를 가리키는 항목을 고치세요. 권한 요청을
+  설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 다른 위치로
+  옮겼다면 다시 실행해 이전 설치 경로가 저장된 설정을 갱신하세요. 권한 요청을
   취소하면 앱이 설치된 위치별로 취소 여부를 앱 상태에 저장하므로, 같은 위치에서 다시
   실행할 때는 묻지 않습니다.
 - **Linux AppImage:** 명령 실행 파일을

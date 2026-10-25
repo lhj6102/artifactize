@@ -28,7 +28,10 @@ notes = { builtin = "read", args = ["{artifactPath}/notes.md"] }
 ```
 
 An eval sees the tools of the Artifacts it actually references. Tool names become
-`<operation>_<artifactName>`, so `read` declared on `spec` is `read_spec`.
+`<operation>_<artifactName>`, so `read` declared on `spec` is `read_spec`. A tool
+name holds no `:`, so a space's `::` becomes `__`: `read` on `combat::Spec` is
+`read_combat__Spec`. Two tools that would get the same name, such as `read` on
+`combat::Spec` and on `combat__Spec` in one eval's scope, are an error.
 
 ## Build your own tool Artifact
 

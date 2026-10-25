@@ -112,7 +112,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
                     files,
                     ..
                 }) => Coverage::Script {
-                    command: command.clone(),
+                    command: crate::platform::program_text(command),
                     args: args.clone(),
                     files: files.clone(),
                 },
@@ -136,7 +136,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
                 Profile::Agent { .. } => Criteria::Agent,
                 Profile::Human {} => Criteria::Human,
                 Profile::Runtime { command, args, .. } => Criteria::Runtime {
-                    command: command.clone(),
+                    command: crate::platform::program_text(command),
                     args: args.clone(),
                 },
             };

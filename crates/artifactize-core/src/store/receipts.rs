@@ -735,7 +735,7 @@ impl Receipts {
             let state_id = state_id.clone();
             let initialized = connection
                 .call(move |db| -> Result<(), Error> {
-                    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+                    super::wait_when_busy(db)?;
                     db.pragma_update(None, "foreign_keys", true)?;
                     let version: u32 =
                         db.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -772,7 +772,7 @@ impl Receipts {
                 )))) if error.code == rusqlite::ErrorCode::DatabaseBusy
                     && tokio::time::Instant::now() < deadline =>
                 {
-                    // Concurrent first opens can race when enabling WAL despite busy_timeout.
+                    // Concurrent first opens can race when enabling WAL despite the busy handler.
                     tokio::time::sleep(INITIALIZATION_RETRY_INTERVAL).await;
                 }
                 Err(error) => return connection.finish(Err(error.to_string())).await,
@@ -933,7 +933,7 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+        super::wait_when_busy(&db)?;
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
     let version = read().map_err(|e| e.to_string())?;
@@ -958,7 +958,7 @@ pub fn read_state_id(state: &Path) -> Result<Option<crate::types::StateId>, Stri
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+        super::wait_when_busy(&db)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(None);
@@ -1003,7 +1003,7 @@ pub(super) fn regular_files_with_retry(
     Ok(())
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastRequest {
     pub run_id: RunId,
@@ -1036,31 +1036,50 @@ pub async fn read_latest_requests(
     let repo = repo.to_path_buf();
     let result = connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            super::wait_when_busy(db)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
             }
             let latest = {
                 let mut statement = transaction.prepare(
-                    "SELECT data,run_data FROM (
-                SELECT q.eval_id,q.data,r.data AS run_data,
+                    "SELECT data,run_id FROM (
+                SELECT q.eval_id,q.data,q.run_id,
                     row_number() OVER (PARTITION BY q.eval_id ORDER BY r.rowid DESC) AS rank
                 FROM requests q JOIN runs r ON r.id=q.run_id
                 WHERE r.repo=?
             ) WHERE rank=1 ORDER BY eval_id",
                 )?;
+                // A Run's record is large and most latest requests share a few Runs: read and
+                // decode each Run once, not once per eval.
+                let mut run_data = transaction.prepare("SELECT data FROM runs WHERE id=?")?;
+                let mut readable = std::collections::BTreeMap::<String, bool>::new();
                 statement
                     .query_map([crate::platform::path_text(&repo)], |row| {
                         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                     })?
                     .filter_map(|row| match row {
                         Err(error) => Some(Err(error)),
-                        Ok((data, run_data)) => {
-                            super::unreadable::evidence::<Run>("run", &run_data)
-                                .and_then(|_| {
-                                    super::unreadable::evidence::<Request>("request", &data)
-                                })
+                        Ok((data, run)) => {
+                            let run_readable = match readable.get(&run) {
+                                Some(known) => *known,
+                                None => {
+                                    let known = match run_data
+                                        .query_row([&run], |row| row.get::<_, String>(0))
+                                    {
+                                        Ok(run_data) => {
+                                            super::unreadable::evidence::<Run>("run", &run_data)
+                                                .is_some()
+                                        }
+                                        Err(error) => return Some(Err(error)),
+                                    };
+                                    readable.insert(run, known);
+                                    known
+                                }
+                            };
+                            run_readable
+                                .then(|| super::unreadable::evidence::<Request>("request", &data))
+                                .flatten()
                                 .map(|request| {
                                     Ok((
                                         request.eval_id.clone(),
@@ -1097,7 +1116,7 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
         let id: RunId = id.parse()?;
         connection
             .call(move |db| -> Result<RunView, Error> {
-                db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+                super::wait_when_busy(db)?;
                 let transaction = db.transaction()?;
                 if !schema_initialized(&transaction)? {
                     return Err(Error::Invalid("Run not found.".into()));

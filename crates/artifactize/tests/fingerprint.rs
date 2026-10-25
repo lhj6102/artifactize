@@ -288,6 +288,48 @@ print('protocol:v1')
 }
 
 #[test]
+fn a_fingerprint_scripts_background_descendant_ends_with_it() {
+    let fixture = Fixture::new();
+    let marker = fixture.root.path().join("descendant");
+    // The descendant blocks until it is killed, so only artifactize's cleanup ends it.
+    fixture.write(
+        "index.artf",
+        json!({
+            "name":"test",
+            "fingerprint":fingerprint(&["spawn", &support::os::path_text(&marker), "print", "stable"]),
+            "evals":[eval("check", &["exit", "0"])],
+        }),
+    );
+    let output = fixture
+        .command()
+        .args(["status", "--all", "--json"])
+        .record_output()
+        .unwrap();
+    let descendant = Descendant(fs::read_to_string(&marker).unwrap().trim().parse().unwrap());
+    let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(status["evals"][0]["fingerprint"], "stable", "{status}");
+    support::os::wait_until(Duration::from_secs(5), || support::os::gone(descendant.0));
+}
+
+/// A process a fixture's script left behind, owned by the test from its PID marker on: ended
+/// and waited for when the test ends, whether artifactize's cleanup already ended it or not.
+struct Descendant(u32);
+
+impl Drop for Descendant {
+    fn drop(&mut self) {
+        if support::os::gone(self.0) {
+            return;
+        }
+        support::os::kill(self.0);
+        // No assertion here: a second panic while unwinding would abort the test binary.
+        let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
+        while !support::os::gone(self.0) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+#[test]
 fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     let fixture = Fixture::new();
     for (review, code) in [

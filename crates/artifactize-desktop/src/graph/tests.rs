@@ -87,3 +87,34 @@ fn an_artifact_the_run_lacks_has_no_neighbours() {
     assert!(near.shape.nodes.is_empty() && near.shape.edges.is_empty());
     assert_eq!((near.more_uses, near.more_used_by), (0, 0));
 }
+
+#[test]
+fn a_node_names_its_space_and_shows_the_rest_of_its_name() {
+    let graph = monitor::Graph {
+        nodes: vec![
+            node("combat::Code", monitor::Light::Red),
+            node("docs", monitor::Light::Green),
+        ],
+        edges: vec![edge("combat::Code", "docs")],
+    };
+    let shown = shape(&graph);
+    let nodes: Vec<_> = shown
+        .nodes
+        .iter()
+        .map(|item| {
+            (
+                item.name.as_str(),
+                item.space.as_deref(),
+                item.label.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        nodes,
+        [
+            ("combat::Code", Some("combat"), "Code"),
+            ("docs", None, "docs")
+        ]
+    );
+    assert_eq!(String::from(shown.nodes[0].id.clone()), "a:combat::Code");
+}

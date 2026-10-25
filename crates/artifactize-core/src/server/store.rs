@@ -115,7 +115,7 @@ impl Store {
             .map_err(|e| e.to_string())?;
         connection
             .call(|db| -> Result<(), Error> {
-                db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT)?;
+                crate::store::wait_when_busy(db)?;
                 let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
                 if version > SCHEMA_VERSION {
                     return Err(Error::Invalid(format!(

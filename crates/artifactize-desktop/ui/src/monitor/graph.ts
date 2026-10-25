@@ -13,15 +13,19 @@ export const WORDS: Record<Light, string> = {
   blocked: "blocked by upstream",
   run: "would run",
   reused: "reused",
+  checking: "checking",
 };
 
 /** Legend order: as a Run goes, then what went wrong. */
 export const LEGEND: Light[] = ["green", "active", "waiting", "red", "error", "blocked"];
 
 /** A Current's legend: what verify would do with each Artifact now. */
-export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked"];
+export const CURRENT_LEGEND: Light[] = ["reused", "run", "waiting", "blocked", "checking"];
 
 export type Point = { x: number; y: number };
+
+/** Every Artifact node's box; names longer than fit are cut with an ellipsis. */
+export const NODE = { width: 168, height: 44 };
 
 /** `shape` with the lights of `update`, one per node and per edge in its order; `shape` itself
  * when none changed, so that a view of it need not paint again. */

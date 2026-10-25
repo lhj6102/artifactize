@@ -28,8 +28,10 @@ Built-in tools behave the same on Linux, macOS and Windows, except for how a pat
 spelling on disk is checked (see [Paths](../others/platforms.md#paths)) and that Windows
 junctions and other reparse points are refused like symbolic links. They need nothing
 else installed, not even the [`artifactize-tools`](#artifactize-tools-cli) command, except
-`open`, which uses the system's opener (`xdg-open` on Linux), and `help`, which runs the
-program it asks; that command and `artifactize tools` offer the filesystem/program tools
+`open`, which uses the system's opener (`xdg-open` on Linux), `help`, which runs the
+program it asks, and the Human `graph` tool, which opens the
+[desktop app](../../desktop/index.md#open-the-app) and fails when `artifactize-desktop` is
+not installed (the Agent `graph` tool needs nothing). That command and `artifactize tools` offer the filesystem/program tools
 to scripts and runtime evals. The project-aware `graph` tool is available only as a
 declared review tool in artifactize, not in the standalone tools CLI.
 

@@ -40,9 +40,10 @@ pub(crate) use os::{
     STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
     exit_signal, file_identity, hide_console_window, home_directory, host_name, ipc, is_owner_only,
     is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
-    private_options, private_tempdir_in, process_start_time, remove_abandoned_directory,
-    resolve_system_aliases, restrict_file, running_process_start_time, spawn_detached, spawn_gated,
-    spawn_run, spawn_watched, sync_dir, transient_file_access,
+    private_options, private_tempdir_in, process_start_time, release_free_memory,
+    remove_abandoned_directory, resolve_system_aliases, restrict_file, running_process_start_time,
+    spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched, sync_dir,
+    transient_file_access,
 };
 pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
@@ -193,6 +194,19 @@ pub(crate) fn path_kind(path: &std::path::Path) -> std::io::Result<FileKind> {
     }
 }
 
+/// A declared program as text: a path among its spellings is written with `/`.
+pub(crate) fn program_text(command: &str) -> String {
+    path_text(std::path::Path::new(command))
+}
+
+/// Serialize a declared program as [`program_text`].
+pub(crate) fn serialize_program<S: serde::Serializer>(
+    command: &str,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&program_text(command))
+}
+
 /// Render serialized path lists with portable separators, just like single saved paths.
 pub(crate) fn serialize_paths<S: serde::Serializer>(
     paths: &[std::path::PathBuf],
@@ -204,6 +218,17 @@ pub(crate) fn serialize_paths<S: serde::Serializer>(
         .map(|path| path_text(path))
         .collect::<Vec<_>>()
         .serialize(serializer)
+}
+
+#[cfg(test)]
+mod program_tests {
+    #[test]
+    fn a_declared_program_is_written_with_forward_slashes() {
+        assert_eq!(super::program_text("pnpm"), "pnpm");
+        assert_eq!(super::program_text("tools/run.sh"), "tools/run.sh");
+        #[cfg(windows)]
+        assert_eq!(super::program_text(r"tools\run.cmd"), "tools/run.cmd");
+    }
 }
 
 #[cfg(test)]

@@ -152,15 +152,14 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 
 | 모드 | 실행 방식 |
 |---|---|
-| 기본 | 의존성에 GREEN 결과가 생기면 eval을 시작 |
+| 기본 | 실행 게이트가 막지 않으면 eval을 시작. 선택한 승인이 아직 대기 중이어도 그에 의존하는 eval은 바로 실행되며, GREEN 결과는 승인 결과가 GREEN이 될 때까지 PROVISIONAL로 표시됨 |
 | `--speculate` | 게이트가 정해지기 전에 Runtime과 Agent 리뷰를 시작 |
 
 승인은 추측 실행으로 요청하지 않습니다. 승인을 언제 요청하는지, 그 승인에 의존하는 eval이 어떻게 실행되는지는
 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)를 보세요. `--speculate`에서는 새로 준비된 작업을
 실행할 `--jobs`나 백엔드 자리가 모자라면 artifactize가 실행 중인 추측 실행 리뷰를 중단할 수 있습니다. 그 리뷰는 나중에
 다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 추측 실행은 실행 순서를 바꿀 뿐 승인 여부를
-바꾸지 않습니다. `verify --wait`는 평소와 같은 결과 종료 코드를 씁니다. 0 GREEN,
-1 RED, 2 ERROR, 4 INCOMPLETE, 5 YELLOW입니다.
+바꾸지 않습니다. `verify --wait`는 평소와 같은 [Run 결과 종료 코드](#command-reference)로 끝납니다.
 추측 실행의 스케줄링과 취소는 [추측 실행](../features/run.md#speculation)에서 설명합니다.
 
 ## Runtime CLI {#runtime-cli}
@@ -196,10 +195,12 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 `verify --max-executions N`은 Run 하나에서 실행기를 시작할 수 있는 횟수를 0–18446744073709551615
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
-기록합니다. 준비를 마친 Runtime이나 Agent 실행은 시작에 실패하거나 나중에 ERROR가 되더라도 시작 횟수에 1회로 집계됩니다. Human 대기, 담당 지정, 도구 실행은 시작 횟수에 들어가지 않습니다. fingerprint 준비와
-재확인, 캐시 적중, 합류해서 대기 중인 요청도 마찬가지입니다. 실행기 준비 초기에 실패한 경우는 시작
-횟수에 넣지 않습니다. 시작 횟수를 센 다음 Agent의 `execution_paths`를 고정하므로, 고정에
-실패한 실행도 시작 횟수에 포함하며 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED를 기록합니다.
+기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
+프로그램을 시작하지 못하거나 리뷰가 ERROR로 끝나도 이 횟수는 유지합니다. 사람을 기다리는 시간, 담당 지정, Human 도구는 시작
+횟수에 들어가지 않고, fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에 합류하는 것도
+마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. Agent 리뷰에서는
+시작 횟수를 센 뒤 `execution_paths`에 지정한 도구 파일의 해시를 기록합니다. 이 단계가
+실패해도 시작 횟수는 그대로 남고, 리뷰는 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED로 끝납니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
 실행해야 하면, 다시 실행하는 리뷰는 그 리뷰가 속한 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
@@ -306,9 +307,9 @@ Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다
 
 ## Agent 스트리밍과 Runtime 로그 {#agent-streaming-and-runtime-logs}
 
-`verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`는 실시간
-상태와 개수, `kind: eval_result`는 저장된 요청의 간단한 결과, `kind: outcome`은 Run의 최종
-검증입니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보는 명령은 Run 결과에 맞는 종료 코드로 끝나며, 중단하면
+`verify SELECTOR --watch`는 Run을 제출한 직후부터 진행 상황을 보여 주고, `run watch RUN_ID`로는 나중에 진행 상황 보기를 시작할 수 있습니다. 둘 다 `--json`과 상관없이 JSON 줄을 바로바로 내보냅니다. `kind: update`
+이벤트에는 실시간 상태와 개수가, `kind: eval_result` 이벤트에는 저장된 요청의 간단한 결과가,
+`kind: outcome` 이벤트에는 Run의 최종 검증 결과가 담깁니다. `--watch`와 `--wait`는 함께 쓸 수 없습니다. 지켜보는 명령은 Run 결과에 맞는 종료 코드로 끝나며, 중단하면
 130으로 끝나고 지켜보기만 멈춥니다. 다시 연결하면 완료된 eval을 다시 보여 줄 뿐, 지난 이벤트를
 그대로 재생하지는 않습니다. 자세한 내용이 필요하면 결과의 `next_cursor`를 MCP
 `verify_result`에 넘겨 다음 내용을 읽거나 저장된 Run을 살펴보세요.

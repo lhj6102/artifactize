@@ -114,8 +114,8 @@ that an Agent variant such as `--profile fast` produced satisfies the declared p
 the other way around. A runtime variant whose command or arguments differ has its own key,
 and may name other inputs.
 
-Records retain their producing profile and provenance; the [Run result
-reference](run.md#verify-and-runs) owns the audit-field and source-kind inventory.
+A reused result still names the command or model that produced it and where it came
+from; [Verify and Runs](run.md#verify-and-runs) shows where `run show` lists both.
 
 Before accepting reuse, artifactize validates admitted file targets again:
 they must exist as regular files without symlink traversal. `fingerprint = false`

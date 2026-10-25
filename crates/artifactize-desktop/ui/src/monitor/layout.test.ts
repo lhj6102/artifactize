@@ -9,6 +9,7 @@ import type { Shape } from "../ipc/client";
 import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
+import { boxes, type SpaceBox } from "./spaces";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
 const elk = vi.hoisted(() => ({ loads: 0, starts: 0, layouts: 0 }));
@@ -48,7 +49,7 @@ async function byElk(graph: Shape): Promise<Map<string, Point>> {
 }
 
 const shape = (names: string[], pairs: [string, string][]): Shape => ({
-  nodes: names.map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null })),
+  nodes: names.map((name) => ({ id: `a:${name}`, name, space: null, label: name, light: "waiting", note: null })),
   edges: pairs.map(([source, target]) => ({ source: `a:${source}`, target: `a:${target}`, light: "waiting" })),
 });
 
@@ -185,5 +186,80 @@ describe("layered", () => {
     expect(overlaps(placed)).toEqual([]);
     expect(aspect(placed)).toBeGreaterThan(0.5);
     expect(aspect(placed)).toBeLessThan(4);
+  });
+});
+
+describe("spaces", () => {
+  /** `graph` with each Artifact named `space::name` in that space. */
+  const spaced = (graph: Shape): Shape => ({
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const [space, label] = node.name.includes("::") ? node.name.split("::") : [null, node.name];
+      return { ...node, space, label };
+    }),
+  });
+  const inside = (at: Point, box: SpaceBox) =>
+    at.x >= box.x && at.y >= box.y && at.x + NODE.width <= box.x + box.width && at.y + NODE.height <= box.y + box.height;
+  const meets = (one: SpaceBox, other: { x: number; y: number; width: number; height: number }) =>
+    one.x < other.x + other.width && other.x < one.x + one.width && one.y < other.y + other.height && other.y < one.y + one.height;
+
+  /** Each space's box holds its own Artifacts and no other, and no two boxes meet. */
+  function grouped(graph: Shape, placed: Map<string, Point>): SpaceBox[] {
+    const drawn = boxes(graph, placed);
+    for (const box of drawn) {
+      for (const node of graph.nodes) {
+        const at = placed.get(node.id)!;
+        if (node.space === box.space) expect(inside(at, box), `${node.name} in ${box.space}`).toBe(true);
+        else expect(meets(box, { ...at, ...NODE }), `${node.name} outside ${box.space}`).toBe(false);
+      }
+      for (const other of drawn) if (other !== box) expect(meets(box, other), `${box.space} apart from ${other.space}`).toBe(false);
+    }
+    return drawn;
+  }
+
+  it("lays out each space's Artifacts together in its box, a space right of the spaces it uses", async () => {
+    //   base ─> combat::Spec ─> combat::Code ─> docs
+    //                └──────> inventory::Code ─┘        lone
+    const graph = spaced(
+      shape(
+        ["base", "combat::Spec", "combat::Code", "inventory::Code", "docs", "lone"],
+        [
+          ["base", "combat::Spec"],
+          ["combat::Spec", "combat::Code"],
+          ["combat::Spec", "inventory::Code"],
+          ["combat::Code", "docs"],
+          ["inventory::Code", "docs"],
+        ],
+      ),
+    );
+    const placed = await layout(graph);
+    expect(placed.size).toBe(graph.nodes.length);
+    expect(overlaps(placed)).toEqual([]);
+    const [combat, inventory] = grouped(graph, placed);
+    expect([combat.space, inventory.space]).toEqual(["combat", "inventory"]);
+    expect(inventory.x).toBeGreaterThanOrEqual(combat.x + combat.width);
+    expect(backward(graph, placed)).toEqual([]);
+  });
+
+  it("lays out a whole catalog with a space per skill, its spaces packed rather than one tall column", async () => {
+    const whole = catalog();
+    const graph: Shape = {
+      ...whole,
+      nodes: whole.nodes.map((node) => {
+        const skill = /^[tc](\d+)-/.exec(node.name)?.[1];
+        return skill === undefined ? node : { ...node, name: `s${skill}::${node.name}`, space: `s${skill}`, label: node.name };
+      }),
+    };
+    const placed = await layout(graph);
+    expect(placed.size).toBe(graph.nodes.length);
+    expect(overlaps(placed)).toEqual([]);
+    expect(aspect(placed)).toBeLessThan(4);
+    expect(aspect(placed)).toBeGreaterThan(0.25);
+    // Every box against every other is slow at a catalog's size: a sample of them is checked.
+    const drawn = boxes(graph, placed);
+    expect(drawn.length).toBeGreaterThan(500);
+    for (const box of drawn.filter((_, at) => at % 50 === 0)) {
+      for (const other of drawn) if (other !== box) expect(meets(box, other)).toBe(false);
+    }
   });
 });

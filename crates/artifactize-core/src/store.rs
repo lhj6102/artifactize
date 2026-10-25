@@ -54,9 +54,39 @@ pub use requests::{
     read_run_requests, read_session_request, read_waiting, read_waiting_originals,
 };
 
-/// Let concurrent readers/writers finish short SQLite transactions without an
-/// immediate busy error, while limiting how long one database operation can block.
-pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// How long one database operation waits for the state other processes are writing before it
+/// fails. Several Runs, the monitor and MCP servers share one state; a Run's write waits behind
+/// theirs rather than failing the Run, while a lock that never frees still ends in an error.
+pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How often a busy operation tries again. SQLite's own busy timeout backs off to 100 ms
+/// between tries, so under steady writes from other connections, which try every 1–2 ms when
+/// they start waiting, a long waiter rarely finds the lock free and runs out its time while
+/// the others commit (#372). Trying at this pace keeps every waiter in the race.
+const SQLITE_BUSY_POLL: std::time::Duration = std::time::Duration::from_millis(1);
+
+/// Make `db` wait for a busy database, trying every [`SQLITE_BUSY_POLL`] for up to
+/// [`SQLITE_BUSY_TIMEOUT`].
+pub(crate) fn wait_when_busy(db: &rusqlite::Connection) -> rusqlite::Result<()> {
+    db.busy_handler(Some(busy))
+}
+
+/// SQLite's busy handler: `tries` counts the earlier calls for this one wait, which runs on
+/// the calling thread, so the wait's start is kept per thread.
+fn busy(tries: i32) -> bool {
+    thread_local! {
+        static SINCE: std::cell::Cell<std::time::Instant> = std::cell::Cell::new(std::time::Instant::now());
+    }
+    let now = std::time::Instant::now();
+    if tries == 0 {
+        SINCE.set(now);
+    }
+    if now.duration_since(SINCE.get()) >= SQLITE_BUSY_TIMEOUT {
+        return false;
+    }
+    std::thread::sleep(SQLITE_BUSY_POLL);
+    true
+}
 
 /// Allow four short backoffs for a pending-delete handle to close, bounding the extra
 /// latency of a real file-access failure to 80ms. This is a retry policy, not a test deadline.

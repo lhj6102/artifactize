@@ -4,7 +4,8 @@ Human eval은 사람에게 리뷰를 요청하고 GREEN이나 RED 판정을 받�
 선언한 Human 도구를 실행하고, `artifactize request` 명령이나 `artifactize review` 터미널 UI로
 판정을 제출합니다.
 
-사람은 Artifact의 자동 검사 eval을 이미 통과한 것만 승인합니다. 자동 검사 eval이 아직 실행 중이면
+사람은 Artifact의 자동 검사 eval을 이미 통과한 것만 승인합니다. 상위 승인이 남아 있어
+PROVISIONAL로 보이는 GREEN 판정도 통과한 것으로 칩니다. 자동 검사 eval이 아직 실행 중이면
 Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED나 ERROR면 BLOCKED가 되며 사유에 그
 eval이 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
@@ -59,8 +60,8 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 
 ## 승인과 Run {#sign-offs-and-the-run}
 
-리뷰어가 승인 하나를 맡고 있는 동안, 그리고 남은
-작업이 승인뿐이 된 뒤 유휴 유예 시간(따로 [바꾸지](others/state.md#sign-off-idle-grace) 않았다면 2분) 동안
+리뷰어가 승인 요청을 맡고 있거나, 남은 작업이 승인뿐인 상태에서 유휴 유예 시간(따로
+[바꾸지](others/state.md#sign-off-idle-grace) 않았다면 2분)이 지나지 않았다면
 Run은 종료되지 않고 **WAITING_HUMAN** 상태를 유지합니다. 그 시간 안에 승인을 맡아 제출하면 Run은 그 결과에 따라 GREEN이나
 RED로 끝납니다. 아무도 맡지 않으면 Run은 **YELLOW**(종료 코드 5)로 끝나며, 승인만 남았다는 뜻입니다. 그 뒤에도
 승인을 제출할 수 있고, 다음 verify가 그 결과를 재사용합니다. 자세한 내용은

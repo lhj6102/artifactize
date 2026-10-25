@@ -69,7 +69,7 @@
       position: { x, y },
       width: NODE.width,
       height: NODE.height,
-      data: { name: item.name, light: item.light, open: item.id === node },
+      data: { label: item.name, light: item.light, open: item.id === node },
       draggable: false,
       connectable: false,
       ariaLabel: `Artifact ${item.name}`,

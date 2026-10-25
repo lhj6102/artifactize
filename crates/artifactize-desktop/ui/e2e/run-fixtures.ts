@@ -9,12 +9,12 @@ const OPEN_UNTIL_SUBMITTED = "86400";
 
 /** Wait for the scheduler's authoritative Human boundary, not a file-write hint. The state's
  * idle grace keeps the Run open however long the test takes before it claims the sign-off. */
-export async function waitingRun(program: NativePath, fixture: Fixture): Promise<string> {
+export async function waitingRun(program: NativePath, fixture: Fixture, selection: string[] = ["--all"]): Promise<string> {
   const limited = runProgram(program, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", OPEN_UNTIL_SUBMITTED], {
     env: environment(fixture),
   });
   if (limited.status !== 0) throw new Error(limited.stderr || limited.stdout || "cannot set the sign-off idle grace");
-  const submitted = runProgram(program, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", "--all", "--json"], {
+  const submitted = runProgram(program, ["--repo", fixture.repo, "--state-dir", fixture.state, "verify", ...selection, "--json"], {
     env: environment(fixture),
   });
   if (submitted.status !== 0) throw new Error(submitted.stderr || submitted.stdout || "verify submission failed");

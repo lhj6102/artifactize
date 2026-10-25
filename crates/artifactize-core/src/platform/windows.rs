@@ -25,12 +25,15 @@ use windows_sys::Win32::{
 
 pub(crate) use process::{
     Child, hide_console_window, kill_saved_group, kill_saved_session, process_start_time,
-    running_process_start_time, spawn_detached, spawn_gated, spawn_run, spawn_watched,
+    running_process_start_time, spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched,
 };
 pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
     private_options, private_pipe, private_tempdir_in, restrict_file, user_identity,
 };
+
+/// The Windows heap returns freed memory by itself.
+pub(crate) fn release_free_memory() {}
 
 /// Owner death closes every Job handle, but descendant termination and handle
 /// release are asynchronous. Recovery cannot query those now-closed Jobs, so it

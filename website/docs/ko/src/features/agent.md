@@ -20,8 +20,8 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 `gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
 그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
-지웁니다. 변수가 설정되어 있으면 항상 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
-납니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
+지웁니다. 변수가 설정되어 있으면 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
+납니다. 유효한 유니코드가 아닌 값은 설정되지 않은 것으로 보아 저장한 키를 씁니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
 `provider`와 `effort`는 설정에서 쓸 수 있는 별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
 없어졌으며, 아직 이를 선언한 프로필이 있으면 `config check`가 대신 쓸 백엔드를 알려 줍니다.
 
@@ -44,8 +44,8 @@ Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
 제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 리뷰만
-합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트는 실행하거나 테스트
-대상 코드를 불러오지 않고, 읽어서 평가 기준이 요구하는 내용을 다루는지 판단합니다. 테스트 묶음이
+합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트를 실행하거나 테스트
+대상 코드를 불러오지 않고, 테스트 코드를 읽어 평가 기준에서 요구하는 사항을 충분히 검증하는지 판단합니다. 테스트 묶음이
 통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요. `{name}`
 참조마다 리뷰어에게 그 Artifact의 이름과 읽을 때 쓸 도구(파일 Artifact라면 경로도)를 알려
 주므로, 지시문에 도구 이름을 적을 필요는 없습니다.
@@ -95,12 +95,11 @@ ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마�
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
-턴이 사용량 제한이나 일시적인 오류로 실패했고, 아직 아무것도 출력하지 않았고 토큰도 쓰지
-않았다면 provider가 요청한 시간만큼 대기한 뒤 자동으로 몇 번 다시 시도합니다. 출력이나 사용량이
+출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
+provider가 요청한 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
 생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
-ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 끝난 결과는 재사용되므로 실패한 리뷰만
-다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
+ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
@@ -297,7 +296,7 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
   `remote push`하지 마세요.
 - 테스트 엔드포인트가 설정되어 있는 동안 `doctor`는 경고하고 이를 `testEndpoint`로 알립니다.
 
-가짜 provider는 요청받은 모델의 응답을 해당 provider의 전송 형식에 맞춰 `text/event-stream`으로 스트리밍합니다.
+가짜 provider는 요청에 지정된 모델의 응답을 해당 provider의 전송 형식에 맞춰 `text/event-stream`으로 스트리밍합니다.
 `openai`라면 `response.completed` 이벤트 하나면 됩니다. GREEN 스키마가 `{"verdict":"GREEN"}`만으로 충족되는 리뷰는 이 가짜 provider로 통과시킬 수 있습니다. `pass_schema`에 다른 필드가 필요하면
 가짜 provider의 `text` 응답에 그 필드의 유효한 값을 넣으세요. 그러지 않으면 응답이 스키마에 맞지
 않아 artifactize가 한 번 수정을 요청하고, 수정한 응답도 맞지 않으면 `INVALID_RESULT`가 됩니다.

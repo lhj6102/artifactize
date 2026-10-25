@@ -270,6 +270,15 @@ pub(crate) fn spawn_gated(
     Ok((gate, spawning))
 }
 
+/// Spawn `command` as [`spawn_gated`] does and admit it at once: it joins its job before it
+/// runs.
+pub(crate) async fn spawn_now(command: Command) -> io::Result<Child> {
+    let (gate, spawning) = spawn_gated(command)?;
+    gate.admit()?;
+    drop(gate);
+    crate::task::joined(spawning.await).map_err(io::Error::other)?
+}
+
 /// Resume every thread of a process created suspended; it has exactly one. Its handle is
 /// held by the spawning task, so the PID cannot be reused meanwhile.
 fn resume(pid: u32) -> io::Result<()> {

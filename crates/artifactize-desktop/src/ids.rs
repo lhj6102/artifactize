@@ -33,8 +33,8 @@ numbered!(
 );
 
 numbered!(
-    /// A scan of a branch's Current, numbered by the backend as it starts one: a later scan
-    /// has a higher number.
+    /// A scan of a branch's Current, or a step it published, numbered by the backend: a later
+    /// one has a higher number.
     ScanId
 );
 

@@ -261,7 +261,32 @@ fn tree_names(window: &WebviewWindow<MockRuntime>, view: &Value) -> Vec<String> 
         .collect()
 }
 
+/// The command tests run in a child without the remote store variables, so a developer's
+/// `ARTIFACTIZE_REMOTE` never adds a network input to their `verify` and submissions; a
+/// remote comes only from the state a test writes.
 #[test]
+fn command_tests_run_without_an_inherited_remote_store() {
+    // The publication test isolates its own remote and stays out of this child.
+    let mut command = os::ignored_tests(&[]);
+    for variable in [
+        "ARTIFACTIZE_REMOTE",
+        "ARTIFACTIZE_REMOTE_TOKEN",
+        "ARTIFACTIZE_REMOTE_SHARE",
+    ] {
+        command.env_remove(variable);
+    }
+    // Many tests, so no probe deadline: the output drains while they run.
+    let output = os::run(&mut command);
+    assert!(
+        output.status.success(),
+        "command tests failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -337,6 +362,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -376,6 +402,7 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -497,6 +524,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -625,6 +653,7 @@ fn restore(backup: &Path, state: &Path) {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -722,12 +751,13 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
     "run-agent-1".into()
 }
 
-/// A failure bound for transcript jobs, never the ordering or success condition.
-const TRANSCRIPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// A failure bound for background jobs (transcripts, Current scans), never the ordering or
+/// success condition.
+const JOB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Read windows of `handle` until its indexing settles.
 fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Value) -> Value {
-    let deadline = std::time::Instant::now() + TRANSCRIPT_TIMEOUT;
+    let deadline = std::time::Instant::now() + JOB_TIMEOUT;
     let mut movement = movement;
     loop {
         let view = invoke(
@@ -748,6 +778,7 @@ fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Valu
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
     let fixture = fixture();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -827,6 +858,7 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_request_opened_by_id_that_is_not_a_human_review_opens_a_read_only_detail() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -841,6 +873,7 @@ fn a_request_opened_by_id_that_is_not_a_human_review_opens_a_read_only_detail() 
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
     let fixture = fixture();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -863,6 +896,7 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
@@ -893,6 +927,7 @@ fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
@@ -915,8 +950,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     assert_eq!(
         before["nodes"],
         json!([
-            {"id": "a:release", "name": "release", "light": "active", "note": null},
-            {"id": "a:ship", "name": "ship", "light": "waiting", "note": null},
+            {"id": "a:release", "name": "release", "space": null, "label": "release", "light": "active", "note": null},
+            {"id": "a:ship", "name": "ship", "space": null, "label": "ship", "light": "waiting", "note": null},
         ])
     );
     assert_eq!(
@@ -1018,6 +1053,7 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     // A private, absent path cannot become an installed command through the user's PATH.
     // Neither eval needs an executable: broken errors on launch, and after must not launch.
@@ -1078,7 +1114,28 @@ fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     );
 }
 
+/// Scan `branch`'s Current and read its newest step until the scan ends.
+fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, Value) {
+    let first = invoke(
+        window,
+        "current_scan",
+        json!({"branch": branch, "refresh": false}),
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + JOB_TIMEOUT;
+    let mut view = first.clone();
+    while view["scanning"] == json!(true) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the scan did not end: {view}"
+        );
+        view = invoke(window, "current_view", json!({"branch": branch})).unwrap();
+    }
+    (first, view)
+}
+
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let root = os::tempdir();
     let repo = root.path().join("repo");
@@ -1111,13 +1168,17 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(view["branches"][0]["chips"], json!([{"kind": "current"}]));
 
     let structure = artifactize_core::graph_structure::read(&fixture.repo).unwrap();
-    let scanned = invoke(&viewer, "current_scan", json!({"branch": branch})).unwrap();
-    assert_eq!(scanned["fingerprint"], structure.fingerprint().as_str());
-    assert_eq!(scanned["structure"], structure.tree());
-    assert_eq!(scanned["tree"][1]["children"][0]["name"], "review");
+    // The first step is the graph, its evals still being checked, the rest come as they are
+    // known.
+    let (first, scanned) = scan_current(&viewer, &branch);
+    assert_eq!(first["fingerprint"], structure.fingerprint().as_str());
+    assert_eq!(first["artifacts"], 2);
+    assert!(scanned["revision"].as_u64() >= first["revision"].as_u64());
+    assert_eq!(scanned["checking"], 0);
+    assert_eq!(scanned["failure"], Value::Null);
     assert_eq!(
-        scanned["tree"][1]["children"][0]["text"][0]["text"],
-        "would run"
+        invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
+        structure.tree()
     );
     // Never verified: the Human eval would run; the Artifact without evals is reused.
     let source = json!({"kind": "current", "branch": branch});
@@ -1129,8 +1190,8 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(
         graph["nodes"],
         json!([
-            {"id": "a:app", "name": "app", "light": "reused", "note": "reused"},
-            {"id": "a:graph", "name": "graph", "light": "run", "note": "would run (1 eval)"},
+            {"id": "a:app", "name": "app", "space": null, "label": "app", "light": "reused", "note": "reused"},
+            {"id": "a:graph", "name": "graph", "space": null, "label": "graph", "light": "run", "note": "would run (1 eval)"},
         ])
     );
     assert_eq!(
@@ -1192,22 +1253,27 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
         "name = 'app'\nbasis = true\n",
     )
     .unwrap();
-    let again = invoke(&viewer, "current_scan", json!({"branch": branch})).unwrap();
+    let (again, _) = scan_current(&viewer, &branch);
     assert_ne!(again["fingerprint"], scanned["fingerprint"]);
     assert!(again["revision"].as_u64() > scanned["revision"].as_u64());
     assert_eq!(
-        again["structure"],
+        invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
         artifactize_core::graph_structure::read(&fixture.repo)
             .unwrap()
             .tree()
     );
     // A branch the Pane does not list has no Current.
     let elsewhere = json!({"kind": "folder", "path": "/nowhere"});
-    let missing = invoke(&viewer, "current_scan", json!({"branch": elsewhere}));
+    let missing = invoke(
+        &viewer,
+        "current_scan",
+        json!({"branch": elsewhere, "refresh": false}),
+    );
     assert_eq!(missing.unwrap_err()["kind"], "missing");
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -1259,4 +1325,43 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
         refused,
         json!({"text": "notes_release did not run.", "error": true})
     );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Monitor);
+    let branch = branch(&window);
+    let list = |artifact: &str| {
+        invoke(
+            &window,
+            "artifact_tools",
+            json!({"branch": branch, "artifact": artifact}),
+        )
+    };
+    assert_eq!(
+        list("release").unwrap()[0]["action"],
+        "prints release/notes.md"
+    );
+    // The folder moves: its tools are read where it is declared now.
+    fs::create_dir_all(fixture.repo.join("archive")).unwrap();
+    fs::rename(
+        fixture.repo.join("release"),
+        fixture.repo.join("archive/release"),
+    )
+    .unwrap();
+    assert_eq!(
+        list("release").unwrap()[0]["action"],
+        "prints archive/release/notes.md"
+    );
+    // Renamed, it declares another Artifact. Only its own declarations are read: ship's
+    // reference to the old name, which a whole-workspace read refuses, is not.
+    let file = fixture.repo.join("archive/release/index.artf");
+    let renamed = fs::read_to_string(&file)
+        .unwrap()
+        .replace(r#"name = "release""#, r#"name = "notes""#);
+    fs::write(&file, renamed).unwrap();
+    assert_eq!(list("release").unwrap_err()["kind"], "missing");
+    assert_eq!(list("notes").unwrap()[0]["name"], "notes_notes");
 }

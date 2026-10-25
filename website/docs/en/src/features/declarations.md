@@ -54,7 +54,13 @@ examples/
 
 Names, eval IDs, tool/session names and profile variant names start with a letter or
 digit and have at most 64 letters, digits, underscores or hyphens
-(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact names are globally unique. Evals are
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). An Artifact name may also start with the name
+of a *space*, a group it belongs to, and `::`, such as `combat::Code` in the space
+`combat`: the space name and the rest each have that form, and the whole
+name has at most 64 bytes. A space only groups names for people; it is part of the name,
+so `{combat::Code}`, `combat::Code/check` and `artifactize verify combat::Code` spell it
+whole, and evals use Artifacts of other spaces as they use any other. `a::b::c` is
+rejected. Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
 by ID, not by their position in the TOML source.
@@ -297,9 +303,12 @@ reviewed, also with `fingerprint = false`:
   of a verdict;
 - missing or invalid during a Human review: tools and submission fail, the request keeps
   waiting, and you restore the file and try again;
-- changed contents: detected only through a fingerprint, so with `fingerprint = false`
-  an edit to the file is not noticed; otherwise a Runtime or Agent review, or a
-  sign-off, ends ERROR/INPUT_CHANGED;
+- changed contents: noticed only when the eval has a complete reuse key and the edit
+  changes a fingerprint it covers. With `fingerprint = false` on the file or on any other
+  Artifact the eval covers, it has no reuse key and an edit is not noticed, and a script
+  fingerprint whose value an edit leaves unchanged does not notice it either; otherwise a
+  Runtime or Agent review, or a sign-off, ends ERROR/INPUT_CHANGED. The regular-file and
+  no-symlink checks above apply either way;
 - a tool call on a missing or invalid target returns an error without running the tool.
 
 Verify again once the file is back.
@@ -361,11 +370,13 @@ Omitting `fingerprint` uses artifactsum; for a folder, `fingerprint = {}` does t
 `files`, `ignore` and the file-Artifact form are in
 [Fingerprints and reuse](fingerprint.md#artifactsum). Tags are not hashed.
 
-Walks follow scoped path rules. Symlinks and special files fail closed unless they
-are ignored. Every applicable `.gitignore` is read as rule metadata even when it is
-itself ignored as content, so it must be a regular file, not a symlink, and at most
-1 MiB. Nothing is followed out of the owner, and a walk stops with an error
-after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
+Artifactsum reads the files below the Artifact by the scoped path rules. A symlink or
+special file it would read stops verification with an error unless it is ignored. Every
+applicable `.gitignore` is read for its rules even when it is itself ignored as content,
+so it must be a regular file, not a symlink, and at most 1 MiB. Artifactsum never hashes a
+file outside the Artifact it belongs to; to know what is ignored, it also reads the
+`.gitignore` files of the folders above it, up to the repository root. It stops with an
+error after 10,000 entries or 1 GiB. Hashing runs on preparation and end-of-review
 rechecks. Files a review writes into ignored paths, such as Python's `__pycache__`,
 therefore never cause `INPUT_CHANGED`. Each result remembers which files it covered, so `status` can tell you which files
 changed since then (`path`, `+path`, `-path`) and which dependency changed; a very large
@@ -401,12 +412,12 @@ flags, wrappers or entry-file rules.
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
 file/directory paths of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two). They must exist without symlink traversal on every call;
 their contents are never hashed. Commands share the runtime environment, cancellation,
-bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
+raw output bounded to 128 KiB per stream, and a 30,000 ms default timeout (`timeout_ms` accepts
 1–2,147,483,647). Private output and temporary directories are removed after
 each invocation. Stdout must be exactly 1–128 ASCII characters from
 `[A-Za-z0-9._:-]`, optionally followed by one LF, or one CRLF on Windows. No other
 whitespace is allowed; the value is not trimmed. Nonzero exit, malformed output,
-timeout, cancellation, missing files or cleanup failure abort preparation with an
+more than 128 KiB on stdout or on stderr (even after a valid fingerprint), timeout, cancellation, missing files or cleanup failure abort preparation with an
 operational error, without starting any eval or falling back to uncached review.
 Stderr is not forwarded as a fingerprint diagnostic.
 

@@ -120,7 +120,7 @@ impl Record {
             && valid_hash(&self.eval_def_hash)
             && !self.fingerprints.is_empty()
             && self.fingerprints.iter().all(|(name, fingerprint)| {
-                crate::config::identifier(name, "Artifact name").is_ok()
+                crate::config::artifact_name(name, "Artifact name").is_ok()
                     && valid_fingerprint(fingerprint)
             })
             && (self.artifact_kinds.is_empty()

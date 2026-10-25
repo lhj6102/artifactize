@@ -154,12 +154,20 @@ or the pending-evals control reveals the unfinished checks behind an upstream wa
 
 A branch's **Current** scans its worktree as it is now, as
 [`artifactize status`](../features/run.md#status-and-static-graph) does, and draws
-the graph of its current declarations without needing a Run. Each Artifact is coloured
-reused (every eval's result would be reused without evaluation), would run, waiting or
-blocked; like a Run's Artifact, its node shows only its name, and its accessible name
-says which, with how many of its evals would run. Its header says when it was scanned. It scans again
+the graph of its current declarations without needing a Run. The graph appears as soon as
+the declarations are read, every Artifact still being checked; as the fingerprints come in,
+each Artifact is coloured reused (every eval's result would be reused without evaluation),
+would run, waiting or blocked. An Artifact is known once its own fingerprints and those of
+what it waits for are in, so the graph fills in from the Artifacts nothing else feeds. Like a
+Run's Artifact, its node shows only its name, and its accessible name says which, with how
+many of its evals would run, or that it is still being checked. While the scan runs, its
+header says how many Artifacts are still being checked; then when it was scanned. If a
+fingerprint fails, the header says why and the graph stays as it was. It scans again
 when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
 the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
+While a scan of the branch is still running, choosing its Current again or a Run's end shows
+that scan instead of starting over. **Refresh** or Ctrl+R/F5 shows it too, then scans once
+more when it ends, so a change you made meanwhile shows.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it
@@ -178,7 +186,13 @@ leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
+the left, its edges still drawn to each Artifact that uses it. Artifacts whose
+[names](../features/declarations.md) share a space, such as `combat::Spec` and
+`combat::Code`, sit together in one box labelled `combat`, each node showing the rest of
+its name (`Code`); read aloud and in the Detail an Artifact keeps its whole name. Artifacts
+without a space stand outside every box, and edges between spaces are drawn and coloured
+like any other. A box is not an Artifact: Tab passes it by, and a click on it closes the
+Detail as a click on the background does. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
 graph has no minimap, and while more than 500 are in view they are colored boxes without names
 that open only with a click. Zoom in until fewer are in view to see names again and reach
@@ -193,13 +207,13 @@ with the graph still visible behind it, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only
-when you are not editing or running something; the others step back the same way: they cancel active work first, then leave the form, and only then
-close the Detail. Drag the Detail's left edge to resize it, between a readable column
+when you are not editing or running something, and the others first step back as
+[Esc does in a review](#human-reviews). Drag the Detail's left edge to resize it, between a readable column
 and leaving some graph visible; it keeps that width, also in the next launch.
 
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`: the
 Artifact's own chip, then one per eval with its verdict's glyph and colour, on a
-Current whether it would run or be reused.
+Current whether it would run, would be reused or is still being checked.
 
 The Artifact's chip shows it between its neighbours, drawn with the graph's nodes and
 edges: the Artifacts its evals use on the left, the Artifacts whose evals use it on
@@ -221,7 +235,7 @@ An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its
 result, with findings as numbered items headed by their `item` and `where`; then
 **Execution options**, **Execution metadata** and **Fingerprint** when it has them.
-On a Current it shows whether the eval would run or be reused and why, and the result
+On a Current it shows whether the eval would run, would be reused or is still being checked and why, and the result
 it would reuse. Other facts fold under **Debug**, which `t` shows or hides on an
 Artifact's or an eval's read-only Summary, a Current's Human eval included; in a Human review
 you can submit, `t` toggles **Technical** instead. An eval with a log switches below the chips
@@ -254,8 +268,9 @@ made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
 A waiting review opened from the Pane, or by ID, fills the Main area as a Human
 review, its eval and Artifact above it. Choosing a branch or a timeline entry leaves it without
-closing it: an open form keeps its draft and running review work goes on. Esc,
-after cancelling running work and leaving the form, returns to the Pane.
+closing it: an open form keeps its draft and running review work goes on.
+Esc steps back one stage at a time: it cancels running work, then leaves the form, then
+leaves the review, back to the Pane or, on a Detail, closing the Detail.
 
 Opening a review claims nothing. Press `c` to claim and `u` to release. Another
 person's claim prevents your actions. Claims are cooperative reviewer locks, not
@@ -296,7 +311,6 @@ does not submit; Ctrl+S or activating the **Submit** button submits, including
 Enter while that button has keyboard focus.
 Schema errors identify the failing path and leave the form correctable. Input-method
 composition, including Korean, belongs to the text field and never fires shortcuts.
-Esc cancels active work, then leaves the form, then leaves the review.
 Leaving a form keeps its verdict's draft; reopening it restores that draft, and
 GREEN and RED keep separate drafts. Opening the same request from the Pane or from
 its chip in a Run's Detail shows the same draft and Tool log. If the state directory is
@@ -313,7 +327,8 @@ The verdict is already recorded; retry publication with Settings' **Push results
 `q` quits outside a text field, except while the keyboard is in a Human review that
 is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
 such as after closing Commands, `q` starts quitting even while that review stays
-open. Closing the window also starts quitting. If
+open. While Settings is open, `q` does nothing: close Settings first, or choose
+**Quit** in Commands. Closing the window also starts quitting. If
 this window took Human claims it has not submitted or released itself, choose
 **Stay** (Esc), **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a
 claim leaves it held for this reviewer; it is not a verdict. The prompt lists the

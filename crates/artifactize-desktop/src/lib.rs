@@ -29,7 +29,7 @@ pub use ids::{JobId, SignInId, TranscriptHandle};
 pub use launch::{Launch, Mode};
 
 use specta_typescript::Typescript;
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 use tauri::Manager;
 use tauri_specta::{Builder, collect_commands, collect_events};
 
@@ -59,6 +59,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             graph::graph,
             graph::neighbours,
             graph::current::current_scan,
+            graph::current::current_view,
+            graph::current::current_structure,
             tools::artifact_tools,
             tools::artifact_tool_run,
             request::request_detail,
@@ -90,7 +92,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
         .events(collect_events![
             watch::StateChanged,
             watch::SessionChanged,
-            human::log::HumanToolLog
+            human::log::HumanToolLog,
+            graph::current::CurrentChanged
         ])
 }
 
@@ -109,10 +112,11 @@ pub struct App {
     pub launch: Launch,
     browse: browse::Browse,
     human: human::Reviews,
-    currents: graph::current::Currents,
+    currents: Arc<graph::current::Currents>,
     transcripts: transcript::Transcripts,
     settings: settings::Settings,
     generation: generation::Generation,
+    sites: tools::Sites,
 }
 
 impl App {
@@ -121,10 +125,11 @@ impl App {
             browse: browse::Browse::new(launch.repo.clone()),
             launch,
             human: human::Reviews::default(),
-            currents: graph::current::Currents::default(),
+            currents: Arc::default(),
             transcripts: transcript::Transcripts::default(),
             settings: settings::Settings::default(),
             generation: generation::Generation::default(),
+            sites: tools::Sites::default(),
         }
     }
 
@@ -171,6 +176,9 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
             watch::spawn(app.handle().clone(), state);
             if let Some(events) = app.state::<App>().human.take_events() {
                 human::log::forward(app.handle().clone(), events);
+            }
+            if let Some(changes) = app.state::<App>().currents.take_changes() {
+                graph::current::forward(app.handle().clone(), changes);
             }
             Ok(())
         })

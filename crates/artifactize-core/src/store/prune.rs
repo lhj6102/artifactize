@@ -100,8 +100,7 @@ pub fn prune(
         OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .map_err(|e| e.to_string())?;
-    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)
-        .map_err(|e| e.to_string())?;
+    super::wait_when_busy(&db).map_err(|e| e.to_string())?;
     let transaction = db.transaction().map_err(|e| e.to_string())?;
     let version: u32 = transaction
         .pragma_query_value(None, "user_version", |row| row.get(0))

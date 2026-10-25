@@ -30,7 +30,7 @@ artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
 artifactize는 Run과 결과 같은 **상태(state)** 데이터를 상태 디렉터리에 저장합니다.
-이 둘러보기의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
+이 실습의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 디렉터리를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
 명령에도 그 설정을 넘겨 줍니다. 그다음 예제로 들어가 선언을 확인하세요.
@@ -66,7 +66,7 @@ artifactize verify --all --wait
 artifactize run show RUN_ID
 ```
 
-이 명령은 저장된 Run을 구조화된 텍스트 기록인 JSON으로 출력합니다. `argv`는
+이 명령은 저장된 Run의 기록을 구조화된 텍스트 형식인 JSON으로 출력합니다. `argv`는
 프로그램에 전달된 인자 목록이고, `stdout`은 그 프로그램이 출력한 텍스트입니다.
 기록에는 리뷰된 입력을 식별하는 fingerprint도 들어 있습니다.
 
@@ -118,9 +118,9 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 테스트 코드 리뷰가 끝난 뒤에 실행되고, 관련 없는 애플리케이션 eval은 그동안에도 실행할 수 있습니다.
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
 
-## 선택: Agent 도구와 Human 흐름 {#optional-agent-tools-and-the-human-flow}
+## 선택 실습: Agent 도구와 Human 리뷰 절차 {#optional-agent-tools-and-the-human-flow}
 
-앞선 둘러보기에는 모델이 필요 없지만, 선택 사항인 이 단계를 진행하려면 모델이 필요합니다. 먼저
+앞선 실습에는 모델이 필요 없지만, 이 선택 실습을 진행하려면 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된 대로
 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
 다른 백엔드를 쓰려면 `verify`에 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
@@ -154,7 +154,7 @@ artifactize run show RUN_ID
 씁니다. `request unclaim REQUEST_ID`는 담당을 해제합니다. `artifactize
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
-옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 포그라운드에서 Run을 지켜봅니다. 승인만
+옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 Run이 끝날 때까지 포그라운드에서 진행 상황을 표시합니다. 승인만
 남으면 Run은 담당자가 정해지기 전에는 최대 2분간, 정해진 뒤에는 승인이 끝날 때까지 종료되지 않습니다. 앞선
 자동 리뷰가 여전히 유효하면 GREEN 승인이 제출되는 즉시 `verify --wait`가 종료 코드 0으로 끝납니다. Run이
 이미 YELLOW(종료 코드 5)로 끝난 뒤에 요청을 맡더라도, 승인을 제출하면 다음 `verify`에서 그 승인을 재사용합니다.

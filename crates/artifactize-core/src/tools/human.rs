@@ -179,7 +179,7 @@ impl<'a> Registry<'a> {
         let mut tools = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.human_tools {
-                let name: crate::config::ToolName = format!("{operation}_{id}")
+                let name: crate::config::ToolName = format!("{operation}_{}", id.tool_suffix())
                     .parse()
                     .expect("validated tool and Artifact names");
                 let entry = RegisteredTool {

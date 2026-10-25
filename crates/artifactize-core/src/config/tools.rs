@@ -1,8 +1,8 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Bound serialized declarations before validating or sending tool schemas to a provider.
-const MAX_DECLARATION_BYTES: usize = 8 * 1024 * 1024;
 /// Keep descriptions usable in provider tool listings, measured as JSON client UTF-16 units.
 const MAX_DESCRIPTION_CHARS: usize = 4000;
 
@@ -38,9 +38,11 @@ pub struct CommandTool {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<super::ToolOperationName>,
     pub description: String,
+    /// Shared with every declaration of an equal schema in the same read.
     #[serde(default = "empty_schema")]
-    pub input_schema: Value,
+    pub input_schema: Arc<Value>,
     pub protocol: ToolProtocol,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<crate::scope::Argument>,
     #[serde(
@@ -98,7 +100,7 @@ impl TryFrom<CommandToolInput> for CommandTool {
         Ok(Self {
             session: input.session,
             description: input.description,
-            input_schema: input.input_schema,
+            input_schema: Arc::new(input.input_schema),
             protocol: input.protocol,
             command: input.command,
             args: input.args,
@@ -122,6 +124,7 @@ pub struct ToolSession {
     deny_unknown_fields
 )]
 pub struct SessionCommand {
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<crate::scope::Argument>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -166,10 +169,8 @@ pub struct BuiltinTool {
 pub use artifactize_tools::Builtin;
 
 impl AgentTool {
-    pub(super) fn validate(&self) -> Result<(), String> {
-        if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > MAX_DECLARATION_BYTES {
-            return Err("Tool declaration exceeds 8 MiB.".into());
-        }
+    /// Its description and input schema are bounded, as a provider receives them.
+    pub(super) fn validate(&self, schemas: &mut super::schemas::Schemas) -> Result<(), String> {
         match self {
             Self::Command(tool) => {
                 description(&tool.description)?;
@@ -178,8 +179,9 @@ impl AgentTool {
                     return Err("Tool command must not contain placeholders.".into());
                 }
                 paths(&tool.execution_paths, "execution_paths")?;
-                crate::tools::schema::compile(&tool.input_schema)?;
-                Ok(())
+                schemas.check(&tool.input_schema, |schema| {
+                    crate::tools::schema::compile(schema).map(drop)
+                })
             }
             Self::Builtin(tool) => {
                 if let Some(value) = &tool.description {
@@ -199,7 +201,7 @@ impl AgentTool {
     }
     pub fn input_schema(&self) -> Value {
         match self {
-            Self::Command(tool) => tool.input_schema.clone(),
+            Self::Command(tool) => Value::clone(&tool.input_schema),
             Self::Builtin(tool) => match &tool.args {
                 Some(args) => crate::tools::builtin::fixed_schema(tool.builtin, args),
                 None => crate::tools::builtin::input_schema(tool.builtin),
@@ -236,6 +238,7 @@ impl<'de> Deserialize<'de> for HumanTool {
 pub struct HumanCommandTool {
     pub description: String,
     pub kind: HumanToolKind,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     #[serde(deserialize_with = "crate::scope::human_arguments")]
     pub args: Vec<crate::scope::Argument>,
