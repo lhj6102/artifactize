@@ -78,6 +78,8 @@ struct Selected {
     run: Run,
     index: DefinitionIndex,
     rows: BTreeMap<RequestId, Kept>,
+    /// The cache's share in the Run's memory; last, so it goes after what it covers.
+    footprint: crate::platform::Footprint,
 }
 
 /// What a request row and the rows it shows were at, so a later read decodes only what changed:
@@ -269,6 +271,16 @@ impl Cache {
             .as_ref()
             .is_some_and(|selected| &selected.run.id == id)
     }
+    /// A share in the opened Run's memory, for whoever keeps what [`Cache::selected`] returned.
+    pub fn footprint(&self) -> Option<crate::platform::Footprint> {
+        self.selected
+            .as_ref()
+            .map(|selected| selected.footprint.clone())
+    }
+    /// Let the opened Run go: nothing shows it any more.
+    pub fn close(&mut self) {
+        self.selected = None;
+    }
     /// The Run records the last [`Cache::catalog`] read could not decode.
     pub fn unreadable_runs(&self) -> Vec<super::Unreadable> {
         self.unreadable_runs.clone()
@@ -347,6 +359,7 @@ impl Cache {
                     index: DefinitionIndex::new(&run),
                     run,
                     rows: BTreeMap::new(),
+                    footprint: crate::platform::Footprint::new(),
                 };
                 (opened, true)
             }

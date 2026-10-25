@@ -34,6 +34,8 @@ pub struct Selected {
     pub graph: monitor::Graph,
     /// Names the graph's shape: it stays while only lights change.
     pub shape: crate::ids::ShapeKey,
+    /// This view's share in the Run's memory; last, so it goes after what it covers.
+    _footprint: artifactize_core::platform::Footprint,
 }
 
 /// Chips a branch's row holds at first, and how many more each reach of its oldest end adds:
@@ -273,17 +275,20 @@ impl Browse {
             // The graph is drawn from every accepted snapshot: it is built here, off the
             // window's thread, along with the tree.
             let result = worker.load(input).map(|mut snapshot| {
-                let selected = snapshot.opened.take().map(|(run, requests, tree)| {
-                    let graph = monitor::graph(&tree);
-                    // The same Run with the same Artifacts and edges keeps its shape.
-                    let kept = before
-                        .as_ref()
-                        .filter(|before| {
-                            before.run.run.id == run.run.id && before.graph.same_shape(&graph)
-                        })
-                        .map(|before| before.shape);
-                    (run, requests, tree, graph, kept)
-                });
+                let selected = snapshot
+                    .opened
+                    .take()
+                    .map(|(run, requests, tree, footprint)| {
+                        let graph = monitor::graph(&tree);
+                        // The same Run with the same Artifacts and edges keeps its shape.
+                        let kept = before
+                            .as_ref()
+                            .filter(|before| {
+                                before.run.run.id == run.run.id && before.graph.same_shape(&graph)
+                            })
+                            .map(|before| before.shape);
+                        (run, requests, tree, graph, kept, footprint)
+                    });
                 (snapshot, selected)
             });
             (worker, result)
@@ -335,7 +340,7 @@ impl Browse {
             shown.waiting = waiting;
         }
         match (selected, snapshot.open, open) {
-            (Some((run, requests, tree, graph, kept)), _, _) => {
+            (Some((run, requests, tree, graph, kept, footprint)), _, _) => {
                 let shape = kept.unwrap_or_else(|| shown.shapes.next());
                 shown.opened = Opened::Loaded(Arc::new(Selected {
                     run,
@@ -343,6 +348,7 @@ impl Browse {
                     tree,
                     graph,
                     shape,
+                    _footprint: footprint,
                 }));
             }
             (None, false, Some(id)) => shown.opened = Opened::Missing(id),

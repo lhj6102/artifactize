@@ -290,11 +290,12 @@ pub(crate) async fn collect(state: &Path) -> Result<(), String> {
 /// A record as collection weighs it.
 struct Record {
     id: crate::types::ExecutionId,
-    checkout: Option<String>,
-    eval: Option<String>,
+    checkout: Option<std::path::PathBuf>,
+    /// The eval it reviewed; a saved id that no longer reads is no eval's latest record.
+    eval: Option<crate::types::EvalId>,
     human: bool,
     bytes: i64,
-    last_used: String,
+    last_used: crate::types::Timestamp,
     held: bool,
 }
 
@@ -312,8 +313,10 @@ fn collect_within(db: &mut rusqlite::Connection, caps: Caps) -> Result<(), Error
         .query_map([], |row| {
             Ok(Record {
                 id: row.get(0)?,
-                checkout: row.get(1)?,
-                eval: row.get(2)?,
+                checkout: row.get::<_, Option<String>>(1)?.map(Into::into),
+                eval: row
+                    .get::<_, Option<String>>(2)?
+                    .and_then(|eval| eval.parse().ok()),
                 human: row.get(3)?,
                 bytes: row.get(4)?,
                 last_used: row.get(5)?,
@@ -331,7 +334,7 @@ fn collect_within(db: &mut rusqlite::Connection, caps: Caps) -> Result<(), Error
                 reused.insert((checkout.clone(), eval.clone()))
                     && *present
                         .entry(checkout.clone())
-                        .or_insert_with(|| Path::new(checkout).is_dir())
+                        .or_insert_with(|| checkout.is_dir())
             }
             _ => false,
         };

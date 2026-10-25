@@ -48,6 +48,45 @@ pub(crate) use os::{
 pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
+/// A share in a large read's memory, such as an opened Run's: everyone who keeps part of the
+/// read keeps a share, declared after what it keeps so that it is dropped last. When the last
+/// share goes, the read's memory has been freed, and it is given back to the system then, once
+/// (see [`release_free_memory`]), rather than staying with a long-lived process.
+#[derive(Debug, Clone)]
+pub struct Footprint {
+    _release: std::sync::Arc<Release>,
+}
+
+impl Footprint {
+    pub(crate) fn new() -> Self {
+        Self {
+            _release: std::sync::Arc::new(Release),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Release;
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        #[cfg(test)]
+        RELEASES.with(|count| count.set(count.get() + 1));
+        release_free_memory();
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static RELEASES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How often this thread gave a large read's memory back to the system.
+#[cfg(test)]
+pub(crate) fn releases() -> usize {
+    RELEASES.with(std::cell::Cell::get)
+}
+
 /// A file's identity on its volume. Two open files with equal identities are the same file,
 /// whatever paths reached them; a replaced file gets a new identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
