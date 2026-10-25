@@ -139,7 +139,7 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 
 ```sh
 artifactize verify --all --request-key build-42
-artifactize verify --all --comment "로그인 폼 수정 중"
+artifactize verify --all --comment "Fixing the login form"
 artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
