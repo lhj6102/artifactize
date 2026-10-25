@@ -51,9 +51,10 @@ receives the eval's title and ID, its target and your instruction; artifactize a
 general review rules. The reviewer only reviews: it never implements or repairs anything,
 and it runs only the declared Artifact tools. It judges tests by reading them, whether they
 cover what the criteria ask, without running them or importing the code under test. To check
-that a test suite passes, declare a [Runtime eval](runtime.md) that runs it. Each `{name}`
-reference tells the reviewer that Artifact's name and the tools it can read it with (and a
-file Artifact's path), so the instruction need not name tools.
+that a test suite passes, declare a [Runtime eval](runtime.md) that runs it. A `{name}`
+reference reaches the reviewer as the bare name. After the instruction, artifactize lists the
+target and each referenced Artifact once, with its role (`target` or `input`) and the names of
+the tools that read it, so the instruction need not name tools.
 
 Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
 an invalid result, artifactize asks once for a correction; a still-invalid result
