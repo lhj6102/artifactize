@@ -4,7 +4,7 @@
 
 [English](../../README.md) · 한국어
 
-홈페이지: [artifactize.dev](https://artifactize.dev/ko/)
+홈페이지: [artifactize.dev](https://artifactize.dev)
 
 # Build together on an Artifact Graph.
 
