@@ -1,6 +1,7 @@
 <script lang="ts">
-  // The shown Run: its headline (a click opens the Run's Detail), what needs attention, and the
-  // graph of its Artifacts (a click on one opens its Detail).
+  // The shown Run: its headline (a click opens the Run's Detail), the comment it was requested
+  // with in full, what needs attention, and the graph of its Artifacts (a click on one opens its
+  // Detail).
   import type { RunPanel } from "../ipc/client";
   import { tone } from "../shell/tone";
 
@@ -29,6 +30,9 @@
     <span class="status {tone(run.mark.status)}">{run.mark.glyph} {run.mark.status}</span>
     <span class="text">{run.headline}</span>
   </button>
+  {#if run.comment}
+    <p class="comment">{run.comment}</p>
+  {/if}
   {#if run.attention.length > 0}
     <ul class="attention">
       {#each run.attention as line, at (at)}
@@ -85,6 +89,11 @@
   }
   .headline .text {
     color: var(--muted);
+  }
+  .comment {
+    margin: 0;
+    padding: 0 var(--pad) 8px;
+    overflow-wrap: anywhere;
   }
   .attention {
     list-style: none;

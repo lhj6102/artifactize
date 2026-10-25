@@ -98,6 +98,8 @@ pub enum Chip {
         /// How long ago it started, `25m ago`; an open one's time so far, `2m 22s`.
         age: String,
         running: bool,
+        /// What its requester said it is working on (`verify --comment`).
+        comment: Option<String>,
     },
     /// The worktree as it is now.
     Current,
@@ -226,6 +228,8 @@ pub struct RunPanel {
     pub mark: Mark,
     /// Validation at Run end, counts, time and tokens.
     pub headline: String,
+    /// What its requester said it is working on (`verify --comment`), in full.
+    pub comment: Option<String>,
     /// Counts alone, for a narrow pane.
     pub counts: String,
     pub attention: Vec<Attention>,
@@ -352,6 +356,7 @@ fn branch(branch: &Branch, limit: usize, starred: bool, now: OffsetDateTime) -> 
                 // An ended Run reads as when it was; a running one as its time so far.
                 age: if running { age } else { format!("{age} ago") },
                 running,
+                comment: chip.comment.as_ref().map(ToString::to_string),
             }
         })
         .collect();
@@ -401,6 +406,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
             node: NodeId::run(&run.run.id).into(),
             mark: strip.status.into(),
             headline: strip.headline.clone(),
+            comment: progress.comment.clone(),
             counts: monitor::counts(progress.counts.iter().copied()),
             attention: strip
                 .attention

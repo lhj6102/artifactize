@@ -302,7 +302,9 @@ export type Chip = { kind: "run"; id: string; mark: Mark;
 /**  Its status in words: `GREEN`, `RED`, `Running`, `Waiting for sign-off`. */
 status: string; 
 /**  How long ago it started, `25m ago`; an open one's time so far, `2m 22s`. */
-age: string; running: boolean } | 
+age: string; running: boolean; 
+/**  What its requester said it is working on (`verify --comment`). */
+comment: string | null } | 
 /**  The worktree as it is now. */
 { kind: "current" };
 
@@ -787,6 +789,8 @@ export type RunPanel = {
 	mark: Mark,
 	/**  Validation at Run end, counts, time and tokens. */
 	headline: string,
+	/**  What its requester said it is working on (`verify --comment`), in full. */
+	comment: string | null,
 	/**  Counts alone, for a narrow pane. */
 	counts: string,
 	attention: Attention[],

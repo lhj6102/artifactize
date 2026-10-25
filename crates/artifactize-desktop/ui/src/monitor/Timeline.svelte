@@ -1,6 +1,7 @@
 <script lang="ts">
   // An expanded branch's timeline, newest first: the Run in progress or else the Current, then
-  // its Runs, joined by a line through their dots. The entry shown in the Main area is marked;
+  // its Runs, joined by a line through their dots. A Run requested with a comment shows it,
+  // cut short to one line, under its Run ID. The entry shown in the Main area is marked;
   // **Older runs** at the end brings older Runs in below the oldest.
   import type { BranchView, Chip } from "../ipc/client";
   import { toneColour } from "../shell/tone";
@@ -50,6 +51,9 @@
         <span class="status">{chip.kind === "run" ? chip.status : "Current"}</span>
         <span class="age">{chip.kind === "run" ? chip.age : ""}</span>
         <span class="sub">{chip.kind === "run" ? chip.id : "Working tree"}</span>
+        {#if chip.kind === "run" && chip.comment}
+          <span class="sub note">{chip.comment}</span>
+        {/if}
       </button>
     </li>
   {/each}
