@@ -54,8 +54,19 @@ case $target in
     *-apple-darwin) if [ -z "${APPLE_CERTIFICATE:-}" ]; then export APPLE_SIGNING_IDENTITY=-; fi ;;
 esac
 
+# Hosted macOS runners lose stapler's HTTP/3 (UDP 443) connections to Apple's ticket
+# service, which fails with Error 68 (actions/runner-images#14924); over TCP it answers. Only a
+# disposable Actions runner gets its outbound UDP 443 blocked, never a developer's machine.
+stapler_over_tcp() {
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then
+        echo "block return out quick proto udp from any to any port 443" | sudo -n pfctl -f - 2>/dev/null
+        sudo -n pfctl -E 2>/dev/null || true
+    fi
+}
+
 bundles=
 for format in $formats; do bundles="$bundles${bundles:+,}${format%%:*}"; done
+case $target in *-apple-darwin) stapler_over_tcp ;; esac
 # The prebuilt Tauri CLI pinned in the desktop UI's package.json (pnpm install puts it there).
 (cd "$crate" && ui/node_modules/.bin/tauri build --ci --target "$target" --bundles "$bundles" --config tauri.bundle.json)
 rm -rf "$crate/binaries"
