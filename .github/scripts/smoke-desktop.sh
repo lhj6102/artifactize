@@ -202,6 +202,10 @@ case $format in
         check_commands "$app/Contents/MacOS"
         if [ "${DESKTOP_SIGNED:-false}" = true ]; then
             spctl --assess --type execute --verbose "$app"
+            # Hosted macOS runners lose stapler's HTTP/3 (UDP 443) connections to Apple's ticket
+            # service, which fails with Error 68 (actions/runner-images#14924); over TCP it answers.
+            echo "block return out quick proto udp from any to any port 443" | sudo -n pfctl -f - 2>/dev/null
+            sudo -n pfctl -E 2>/dev/null || true
             xcrun stapler validate "$app"
             echo "dmg: Gatekeeper accepts the notarized app"
         else
