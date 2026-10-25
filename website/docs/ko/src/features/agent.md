@@ -224,8 +224,8 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `AUTHENTICATION`이며 다시 로그인하는 방법을 알려 줍니다. 토큰을 갱신할 때 토큰 엔드포인트에
   연결하지 못하거나 오류 응답을 받으면 `TRANSIENT`로 분류합니다.
 
-- **모델.** `models codex`는 Codex 모델 선택기가 내 계정에 보여 주는 모델을 서버가 준 순서대로
-  나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.
+- **모델.** `models codex`는 지금 계정으로 Codex 모델 선택기에서 고를 수 있는 모델을 서버가 보내 준
+  순서대로 나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.
 
 ## 커스텀 provider {#custom-providers}
 
