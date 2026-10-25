@@ -81,7 +81,7 @@ codex mcp get artifactize
 | `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 지적 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
 | `verify_cancel` | `run` | 명시적 취소 확인. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
 
-`comment`에는 에이전트가 지금 하는 일을 짧게 적습니다. 터미널 모니터, 데스크톱 앱과 `run_show`에서
+`comment`에는 에이전트가 지금 하는 일을 짧게 적습니다. 터미널의 Monitor, 데스크톱 앱과 `run_show`에서
 Run과 함께 사람에게 보이며 Run의 동작은 바꾸지 않습니다. 제어 문자와 앞뒤 공백 없는 한 줄,
 1–200자여야 하고, 그 밖의 값은 Run을 접수하기 전에 거부됩니다.
 
