@@ -71,18 +71,29 @@ case $target in *-apple-darwin) stapler_over_tcp ;; esac
 (cd "$crate" && ui/node_modules/.bin/tauri build --ci --target "$target" --bundles "$bundles" --config tauri.bundle.json)
 rm -rf "$crate/binaries"
 
+# Hosted macOS runners sometimes report the disk-image service busy (hdiutil exits 16); that
+# is the runner, not the image, so retry the mount only.
+attach() {
+    i=0
+    until hdiutil attach -nobrowse "$@" >/dev/null; do
+        i=$((i + 1))
+        [ "$i" -lt 5 ] || { echo "build-desktop.sh: hdiutil cannot mount the image" >&2; exit 1; }
+        sleep 5
+    done
+}
+
 # Tauri staples the notarized app once and carries on when Apple has not published the ticket
 # yet, so the dmg can hold an unstapled app. Staple it inside the dmg until Apple answers,
 # then rebuild and re-sign the image.
 staple_dmg() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/artifactize-staple.XXXXXXXX")
-    hdiutil attach -nobrowse -readonly -mountpoint "$work/mount" "$1" >/dev/null
+    attach -readonly -mountpoint "$work/mount" "$1"
     stapled=true
     xcrun stapler validate -q "$work/mount/Artifactize.app" >/dev/null 2>&1 || stapled=false
     hdiutil detach -quiet "$work/mount"
     if [ "$stapled" = true ]; then rm -rf "$work"; return; fi
     hdiutil convert -quiet "$1" -format UDRW -o "$work/rw.dmg"
-    hdiutil attach -nobrowse -mountpoint "$work/mount" "$work/rw.dmg" >/dev/null
+    attach -mountpoint "$work/mount" "$work/rw.dmg"
     attempt=1
     until xcrun stapler staple -q "$work/mount/Artifactize.app"; do
         [ "$attempt" -lt 20 ] || { hdiutil detach -quiet "$work/mount"; echo "build-desktop.sh: Apple has no ticket to staple" >&2; exit 1; }
