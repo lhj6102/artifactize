@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use rusqlite::{OpenFlags, OptionalExtension, params};
+use rusqlite::{OpenFlags, params};
 use serde::Serialize;
 use tokio_rusqlite::Connection;
 
@@ -13,9 +13,10 @@ use super::{
     receipts::{Error, NotifyingConnection, schema_initialized},
 };
 
-/// Bound retained cache history, including many tiny results; eviction preserves execution audit.
+/// Bound the history no checkout reuses now: records a newer one of the same eval and checkout
+/// replaced, and the records of checkouts that are gone. Eviction preserves execution audit.
 pub const MAX_ENTRIES: i64 = 10_000;
-/// Bound cached JSON payload bytes independently of the record-count ceiling.
+/// Bound those records' JSON payload bytes independently of the record-count ceiling.
 pub const MAX_BYTES: i64 = 1024 * 1024 * 1024;
 /// Refuse one oversized reusable record rather than letting it monopolize cache storage.
 pub const MAX_ENTRY_BYTES: usize = 16 * 1024 * 1024;
@@ -257,44 +258,118 @@ pub(super) fn touch(
     Ok(())
 }
 
-/// Report a failed collection; the completed execution it followed is saved already.
-pub(super) fn collect_after(db: &mut rusqlite::Connection) {
-    if let Err(error) = collect(db) {
-        use std::io::Write;
-        let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
-    }
+/// The caps [`collect`] keeps the history no checkout reuses now within.
+#[derive(Debug, Clone, Copy)]
+struct Caps {
+    entries: i64,
+    bytes: i64,
 }
 
-/// Drop least-recently-used records from the history while it is above its caps, and records
-/// over the entry limit, skipping keys with an active execution and records an in-flight
-/// request waits for.
-fn collect(db: &mut rusqlite::Connection) -> Result<(), Error> {
-    loop {
-        // Each eviction has its own short transaction; execution and receipt rows stay.
-        let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let (entries, bytes): (i64, i64) = transaction.query_row(
-            "SELECT count(*),coalesce(sum(bytes),0) FROM executions WHERE completed_at IS NOT NULL",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )?;
-        let over_capacity = entries > MAX_ENTRIES || bytes > MAX_BYTES;
-        let candidate: Option<crate::types::ExecutionId> = transaction
-            .query_row(
-                "SELECT e.id FROM executions e WHERE e.completed_at IS NOT NULL AND (? OR e.bytes>?)
-             AND NOT EXISTS(SELECT 1 FROM executions a WHERE a.key=e.key AND a.status IN ('RUNNING','WAITING_HUMAN'))
-             AND NOT EXISTS(SELECT 1 FROM requests q WHERE q.execution_id=e.id AND q.status IN ('QUEUED','RUNNING','WAITING_HUMAN'))
-             ORDER BY e.last_used,e.key,e.completed_at LIMIT 1",
-                params![over_capacity, MAX_ENTRY_BYTES as i64],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let Some(execution_id) = candidate else {
-            return Ok(transaction.commit()?);
-        };
-        transaction.execute(
-            "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL WHERE id=?",
-            [execution_id],
-        )?;
-        transaction.commit()?;
-    }
+const CAPS: Caps = Caps {
+    entries: MAX_ENTRIES,
+    bytes: MAX_BYTES,
+};
+
+/// Collect the key history once a Run has finished. The newest record of each eval in each
+/// checkout that still exists is what that checkout's next verify reuses, so it stays whatever
+/// the caps: one large project evicts neither another project's results nor its own. The
+/// other records stay within [`MAX_ENTRIES`] and [`MAX_BYTES`], the least recently used
+/// leaving first and Human sign-offs last. Records of a key with an active execution, and
+/// records an in-flight request waits for, stay as well.
+pub(crate) async fn collect(state: &Path) -> Result<(), String> {
+    let Some(connection) = open(state, true).await? else {
+        return Ok(());
+    };
+    let result = connection
+        .call(|db| collect_within(db, CAPS))
+        .await
+        .map_err(|e| e.to_string());
+    connection.finish(result).await
 }
+
+/// A record as collection weighs it.
+struct Record {
+    id: crate::types::ExecutionId,
+    checkout: Option<String>,
+    eval: Option<String>,
+    human: bool,
+    bytes: i64,
+    last_used: String,
+    held: bool,
+}
+
+fn collect_within(db: &mut rusqlite::Connection, caps: Caps) -> Result<(), Error> {
+    let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    // Latest first: the first record seen of an eval in a checkout is the one it reuses.
+    let records = transaction
+        .prepare(&format!(
+            "SELECT e.id,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),
+             coalesce(json_extract(e.data,'$.profile.kind')='human',0),e.bytes,e.last_used,
+             EXISTS(SELECT 1 FROM executions a WHERE a.key=e.key AND a.status IN ('RUNNING','WAITING_HUMAN'))
+             OR EXISTS(SELECT 1 FROM requests q WHERE q.execution_id=e.id AND q.status IN ('QUEUED','RUNNING','WAITING_HUMAN'))
+             FROM executions e WHERE {RECORD} ORDER BY {LATEST}"
+        ))?
+        .query_map([], |row| {
+            Ok(Record {
+                id: row.get(0)?,
+                checkout: row.get(1)?,
+                eval: row.get(2)?,
+                human: row.get(3)?,
+                bytes: row.get(4)?,
+                last_used: row.get(5)?,
+                held: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut reused = std::collections::BTreeSet::new();
+    let mut present = std::collections::BTreeMap::new();
+    let mut history = Vec::new();
+    let mut evicted = Vec::new();
+    for record in records {
+        let newest = match (&record.checkout, &record.eval) {
+            (Some(checkout), Some(eval)) => {
+                reused.insert((checkout.clone(), eval.clone()))
+                    && *present
+                        .entry(checkout.clone())
+                        .or_insert_with(|| Path::new(checkout).is_dir())
+            }
+            _ => false,
+        };
+        if record.held {
+            continue;
+        }
+        if record.bytes > MAX_ENTRY_BYTES as i64 {
+            evicted.push(record.id);
+        } else if !newest {
+            history.push(record);
+        }
+    }
+    // Human sign-offs leave last; among the rest the least recently used leave first.
+    history.sort_by(|a, b| {
+        b.human
+            .cmp(&a.human)
+            .then_with(|| b.last_used.cmp(&a.last_used))
+    });
+    let (mut entries, mut bytes) = (0, 0);
+    for record in history {
+        if entries < caps.entries && bytes + record.bytes <= caps.bytes {
+            entries += 1;
+            bytes += record.bytes;
+        } else {
+            evicted.push(record.id);
+        }
+    }
+    {
+        // Execution and receipt rows stay; only their place in the history goes.
+        let mut evict = transaction.prepare(
+            "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL WHERE id=?",
+        )?;
+        for id in &evicted {
+            evict.execute([id])?;
+        }
+    }
+    Ok(transaction.commit()?)
+}
+
+#[cfg(test)]
+mod tests;

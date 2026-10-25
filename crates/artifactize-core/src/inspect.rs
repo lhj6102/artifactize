@@ -65,6 +65,10 @@ pub fn remote_output(status: Option<&crate::auth::remote::Status>) -> Value {
     }
 }
 
-pub async fn session_show(state: &Path, reference: &str, summary: bool) -> Result<Value, String> {
-    session::show(state, reference, summary).await
+pub async fn session_show(
+    state: &Path,
+    selector: &session::Selector,
+    summary: bool,
+) -> Result<Value, String> {
+    session::show(state, selector, summary).await
 }

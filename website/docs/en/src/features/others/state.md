@@ -89,12 +89,16 @@ does not repair records.
 
 ## Cache limits
 
-Saving a new reusable result removes the least recently reused records to stay within
-**10,000 records** and **1 GiB** of saved results. One record may take at most
-**16 MiB**; a larger result still reaches its own Run and any Run waiting for it, but is
-not kept for later reuse. Reuse counts as use; inspecting does not. Records of a review
-that is running, or that another Run still needs, are kept, so the limits can be exceeded
-for a while. A cleanup failure is printed on stderr and never changes a verdict.
+When a `verify` Run ends, the saved results are cleaned up. The newest result of each eval
+in each project folder (or worktree) that still exists always stays, because that folder's
+next `verify` reuses it, so a large project removes neither another project's results nor
+its own. The other results, older ones a newer result of the same eval replaced and those
+of folders that are gone, stay within **10,000 records** and **1 GiB**: the least recently
+reused leave first, and sign-offs only after every other result. One record may take at
+most **16 MiB**; a larger result still reaches its own Run and any Run waiting for it, but
+is not kept for later reuse. Reuse counts as use; inspecting does not. Records of a review
+that is running, or that another Run still needs, are kept as well. A cleanup failure is
+printed on stderr and never changes a verdict.
 
 These limits cover reuse only: saved Runs and their output files stay, and nothing
 expires with age. Use `artifactize prune` to remove finished Runs' output.

@@ -7,6 +7,43 @@ use crate::{
 pub use send::{Sent, send};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+
+/// What names a saved conversation: its full reference, or a bare id, which is read as a
+/// request id and else as a session id (the two have the same form).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "String")]
+pub enum Selector {
+    Reference(SessionRef),
+    Id {
+        request: crate::types::RequestId,
+        session: crate::types::SessionId,
+    },
+}
+
+impl std::str::FromStr for Selector {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        if let Some(reference) = SessionRef::parse(text) {
+            return Ok(Self::Reference(reference));
+        }
+        match (text.parse(), text.parse()) {
+            (Ok(request), Ok(session)) => Ok(Self::Id { request, session }),
+            _ => Err(format!(
+                "{text} is not a session reference, a request id or a session id."
+            )),
+        }
+    }
+}
+
+impl TryFrom<String> for Selector {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, String> {
+        text.parse()
+    }
+}
+
 /// The review whose conversation a reference names, in this state.
 pub struct Located {
     /// The request whose Agent review ran as the session.
@@ -58,30 +95,33 @@ fn here(state: &Path, reference: &SessionRef) -> Result<(), String> {
 }
 
 /// Resolve a full reference, a request id or a session id to its review's request.
-pub async fn locate(state: &Path, text: &str) -> Result<Located, String> {
-    let mut view = if let Some(reference) = SessionRef::parse(text) {
-        here(state, &reference)?;
-        let view = store::read_request(state, &reference.request_id)
-            .await
-            .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
-        if view.request.session_id.as_ref() != Some(&reference.session_id) {
-            return Err(format!(
-                "Request {} did not run session {}.",
-                reference.request_id, reference.session_id
-            ));
+pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String> {
+    let mut view = match selector {
+        Selector::Reference(reference) => {
+            here(state, reference)?;
+            let view = store::read_request(state, &reference.request_id)
+                .await
+                .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
+            if view.request.session_id.as_ref() != Some(&reference.session_id) {
+                return Err(format!(
+                    "Request {} did not run session {}.",
+                    reference.request_id, reference.session_id
+                ));
+            }
+            view
         }
-        view
-    } else {
-        match store::read_request(state, text).await {
-            Ok(view) => view,
-            Err(_) => store::read_session_request(state, text)
-                .await?
-                .ok_or_else(|| {
-                    format!(
-                        "No Agent request or session {text} in this state ({}).",
-                        crate::platform::path_text(state)
-                    )
-                })?,
+        Selector::Id { request, session } => {
+            match store::read_request(state, request.as_str()).await {
+                Ok(view) => view,
+                Err(_) => store::read_session_request(state, session.as_str())
+                    .await?
+                    .ok_or_else(|| {
+                        format!(
+                            "No Agent request or session {session} in this state ({}).",
+                            crate::platform::path_text(state)
+                        )
+                    })?,
+            }
         }
     };
     let mut reused_by = None;
@@ -114,8 +154,8 @@ pub async fn locate(state: &Path, text: &str) -> Result<Located, String> {
 }
 
 /// Project the same saved events or summary that `session show --json` prints.
-pub async fn show(state: &Path, text: &str, summary: bool) -> Result<Value, String> {
-    let located = locate(state, text).await?;
+pub async fn show(state: &Path, selector: &Selector, summary: bool) -> Result<Value, String> {
+    let located = locate(state, selector).await?;
     let conversation = located.load()?;
     if summary {
         let mut value = json!(Summary::new(&conversation));
