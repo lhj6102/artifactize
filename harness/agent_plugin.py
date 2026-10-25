@@ -43,10 +43,6 @@ EXIT_SECONDS = 30
 SESSION_VARIABLES = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID")
 
 
-class Survivors(Exception):
-    """Processes of a host command are still running after being killed."""
-
-
 def started(argv, env, cwd, **pipes):
     """Start a host command as the leader of its own process group, so that `ended` can end
     every process it starts."""
@@ -58,8 +54,7 @@ def started(argv, env, cwd, **pipes):
 
 def ended(process):
     """End every process still in the host command's group, reap its leader, and return only
-    once no member of the group is left, so none outlives the scratch configuration; raise
-    Survivors when some are still there after EXIT_SECONDS."""
+    once no member of the group is left, so none outlives the scratch configuration."""
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -72,7 +67,12 @@ def ended(process):
         except ProcessLookupError:
             return
         if time.monotonic() > deadline:
-            raise Survivors(f"host command {process.pid}'s processes did not exit after being killed")
+            # Keep the scratch configuration the survivors may still use: os._exit skips the
+            # enclosing TemporaryDirectory's removal, which sys.exit would run.
+            sys.stdout.flush()
+            sys.stderr.write(f"host command {process.pid}'s processes did not exit after being killed; its scratch configuration is kept\n")
+            sys.stderr.flush()
+            os._exit(1)
         time.sleep(0.01)
 
 
@@ -174,9 +174,8 @@ def main(host, plugin, catalog_path):
     plugin_id = listed_plugin(host, json.loads(catalog_path.read_text(encoding="utf-8")), root, plugin)
     # Agent Plugins finds skills only in skills/<name>/SKILL.md, one level down.
     expected = {path.parent.name for path in plugin.glob("skills/*/SKILL.md")}
-    scratch = Path(tempfile.mkdtemp(prefix="agent-plugin-"))
-    survived = False
-    try:
+    with tempfile.TemporaryDirectory(prefix="agent-plugin-") as scratch:
+        scratch = Path(scratch)
         # Copy only the catalog and the plugin folder: like a host's plugin cache,
         # the installed plugin must need nothing else from the repository.
         market = scratch / "marketplace"
@@ -190,13 +189,6 @@ def main(host, plugin, catalog_path):
         env = {key: value for key, value in os.environ.items() if key not in SESSION_VARIABLES}
         env["CLAUDE_CONFIG_DIR" if host == "claude" else "CODEX_HOME"] = str(config)
         skills, enabled, server = (claude if host == "claude" else codex)(market, project, env, plugin_id)
-    except Survivors as survivors:
-        # They may still use the scratch configuration, so it stays for them.
-        survived = True
-        sys.exit(f"{survivors}; its scratch configuration stays at {scratch}")
-    finally:
-        if not survived:
-            shutil.rmtree(scratch)
     launch = {key: (server or {}).get(key) for key in LAUNCH[host]}
     problems = [message for failed, message in (
         (skills != expected, f"skills: loaded {sorted(skills)}, the plugin folder has {sorted(expected)}"),

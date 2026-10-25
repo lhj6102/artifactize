@@ -261,7 +261,32 @@ fn tree_names(window: &WebviewWindow<MockRuntime>, view: &Value) -> Vec<String> 
         .collect()
 }
 
+/// The command tests run in a child without the remote store variables, so a developer's
+/// `ARTIFACTIZE_REMOTE` never adds a network input to their `verify` and submissions; a
+/// remote comes only from the state a test writes.
 #[test]
+fn command_tests_run_without_an_inherited_remote_store() {
+    // The publication test isolates its own remote and stays out of this child.
+    let mut command = os::ignored_tests(&[]);
+    for variable in [
+        "ARTIFACTIZE_REMOTE",
+        "ARTIFACTIZE_REMOTE_TOKEN",
+        "ARTIFACTIZE_REMOTE_SHARE",
+    ] {
+        command.env_remove(variable);
+    }
+    // Many tests, so no probe deadline: the output drains while they run.
+    let output = os::run(&mut command);
+    assert!(
+        output.status.success(),
+        "command tests failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -337,6 +362,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -376,6 +402,7 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -497,6 +524,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -625,6 +653,7 @@ fn restore(backup: &Path, state: &Path) {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -749,6 +778,7 @@ fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Valu
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
     let fixture = fixture();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -828,6 +858,7 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_request_opened_by_id_that_is_not_a_human_review_opens_a_read_only_detail() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Review);
@@ -842,6 +873,7 @@ fn a_request_opened_by_id_that_is_not_a_human_review_opens_a_read_only_detail() 
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
     let fixture = fixture();
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -864,6 +896,7 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
@@ -894,6 +927,7 @@ fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);
@@ -1019,6 +1053,7 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
     // A private, absent path cannot become an installed command through the user's PATH.
     // Neither eval needs an executable: broken errors on launch, and after must not launch.
@@ -1100,6 +1135,7 @@ fn scan_current(window: &WebviewWindow<MockRuntime>, branch: &Value) -> (Value, 
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let root = os::tempdir();
     let repo = root.path().join("repo");
@@ -1237,6 +1273,7 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
@@ -1291,6 +1328,7 @@ fn an_artifacts_own_tools_run_in_its_worktree_without_a_review_or_claim() {
 }
 
 #[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
     let fixture = fixture();
     let window = window(&fixture, Mode::Monitor);
