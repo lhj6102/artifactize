@@ -158,6 +158,7 @@ fn a_hinted_runs_row_replaces_its_own_and_a_new_run_is_listed_last() {
         repo_path: "/repo".into(),
         repository: Default::default(),
         status,
+        comment: None,
         red: 0,
         error: 0,
         waiting: Vec::new(),

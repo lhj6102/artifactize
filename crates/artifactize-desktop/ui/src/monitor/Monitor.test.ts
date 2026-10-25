@@ -7,7 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import type { BrowseView, CurrentView, LaunchView, Navigate } from "../ipc/client";
+import type { BrowseView, CurrentView, LaunchView, Navigate, RunPanel } from "../ipc/client";
 import App from "../App.svelte";
 import { branch, branchKey, browseView, runChip, waitingRow } from "./fixtures";
 import { greenForm, humanView } from "../review/fixtures";
@@ -173,7 +173,7 @@ it("draws a Current's graph at once, counting the Artifacts still being checked 
 });
 
 it("expands a clicked branch to its timeline, moves through timelines and the Waiting stack with the keys, and opens a review", async () => {
-  const feature = branch("feat/x", [runChip("run-2", "RUNNING", true), runChip("run-1", "GREEN")]);
+  const feature = branch("feat/x", [runChip("run-2", "RUNNING", true, "Fixing the login form"), runChip("run-1", "GREEN")]);
   const main = branch("main", [{ kind: "current" }, runChip("run-0", "RED")]);
   const { navigations, scanned } = backend(monitor(), () => browseView(1, { branches: [feature, main], waiting: [waitingRow("run-0-1")] }));
   render(App);
@@ -191,7 +191,7 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   expect(header()).toBe("Run run-2");
   const timeline = screen.getByRole("group", { name: "Runs of app feat/x" });
   expect(within(timeline).getAllByRole("button").map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-    "Running 5m run-2",
+    "Running 5m run-2 Fixing the login form",
     "GREEN 5m ago run-1",
   ]);
   // ↓ enters the timeline, then steps to the older Run; ← goes back to the branch, ← again folds it.
@@ -220,6 +220,27 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   await fireEvent.keyDown(entries, { key: "Enter" });
   await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Review"));
   expect(screen.getByRole("heading", { name: "Waiting (1)" })).toBeTruthy();
+});
+
+it("shows the comment a Run was requested with in full under its headline", async () => {
+  const comment = "Fixing the login form so a wrong password says which field is wrong";
+  const run: RunPanel = {
+    id: "run-2",
+    node: "run:run-2",
+    mark: { status: "RUNNING", glyph: "◐" },
+    headline: "validation pending · 5m",
+    comment,
+    counts: "◐1",
+    attention: [],
+    more: 0,
+  };
+  const feature = branch("feat/x", [runChip("run-2", "RUNNING", true, comment)]);
+  backend(monitor(), () => browseView(1, { branches: [feature], run }));
+  render(App);
+  const entries = await screen.findByRole("group", { name: "Pane entries" });
+  await fireEvent.click(await within(entries).findByRole("button", { name: /^app \/ feat\/x/ }));
+  const main = screen.getByLabelText("Main area");
+  await waitFor(() => expect(within(main).getByText(comment).tagName).toBe("P"));
 });
 
 it("stars a branch from its entry, and takes a star away", async () => {

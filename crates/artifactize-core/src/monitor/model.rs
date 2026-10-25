@@ -97,12 +97,16 @@ pub struct RunRow {
     pub age: String,
     /// Wall time of a finished Run.
     pub took: String,
+    /// What the requester said it is working on, or empty.
+    pub comment: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct Progress {
     pub status: Status,
     pub repo: String,
+    /// What the requester said it is working on (`verify --comment`).
+    pub comment: Option<String>,
     pub validation: String,
     pub timing: String,
     /// Elapsed time of a running Run, or how long a finished one took.
@@ -302,6 +306,7 @@ pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
                 .completed_at
                 .and_then(|end| span(run.created_at, Some(end), now))
                 .unwrap_or_default(),
+            comment: run.comment.as_deref().unwrap_or_default().to_owned(),
         })
         .collect()
 }
@@ -373,6 +378,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
     Progress {
         status: run.status().into(),
         repo: crate::platform::path_text(&run.repo_path),
+        comment: run.comment.as_ref().map(ToString::to_string),
         // The saved snapshot; the tree shows the current state.
         validation: match validation.and_then(|v| v.satisfied.value()) {
             None => "pending".into(),
@@ -990,6 +996,7 @@ pub fn detail(
             detail.title = format!("Run {}", run.run.id);
             detail.summary = format!("{} · {}", progress.status, strip.headline);
             detail.push("Status", progress.status.as_str());
+            detail.push("Comment", progress.comment.clone().unwrap_or_default());
             detail.push("Validation", progress.validation.as_str());
             detail.push(
                 "Counts",

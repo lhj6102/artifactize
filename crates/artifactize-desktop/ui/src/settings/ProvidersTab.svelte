@@ -33,9 +33,6 @@
     const choice = s.choice;
     return choice.kind === "builtin" ? (s.providers?.keys.find((key) => key.provider === choice.provider) ?? null) : null;
   });
-  const canSave = $derived(
-    !s.saving && s.draft.name.trim() !== "" && (s.draft.kind === "alias" || s.draft.url.trim() !== ""),
-  );
 
   function saveKey(event: SubmitEvent, provider: Provider) {
     event.preventDefault();
@@ -95,7 +92,7 @@
           <label for="provider-key">API key</label>
           <input id="provider-key" class="input" type="password" bind:value={s.key} autocomplete="off" spellcheck="false" />
           <div class="row">
-            <button class="button primary" type="submit" disabled={s.saving || !s.key.trim()}>Save key</button>
+            <button class="button primary" type="submit" disabled={s.saving}>Save key</button>
             {#if keyStatus?.saved}
               <button class="button" type="button" disabled={s.saving} onclick={() => void s.removeKey(provider)}>Remove saved key</button>
             {/if}
@@ -155,7 +152,7 @@
             <label><input type="checkbox" bind:checked={s.draft.noKey} /> No key</label>
           {/if}
           <div class="row">
-            <button class="button primary" type="submit" disabled={!canSave}>Save</button>
+            <button class="button primary" type="submit" disabled={s.saving}>Save</button>
             {#if s.choice.kind === "custom"}
               {@const name = s.choice.name}
               <button class="button" type="button" disabled={s.saving} onclick={() => void s.removeCustom(name)}>Remove provider</button>

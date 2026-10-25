@@ -15,7 +15,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -27,6 +27,9 @@ function kept(state: NativePath): unknown[] | null {
   const file = nativePath(state, "starred-branches.json");
   return exists(file) ? JSON.parse(readText(file)) as unknown[] : null;
 }
+
+/** A comment longer than a timeline entry's line, as an agent working on a task gives it. */
+const COMMENT = "Fixing the login form so that a wrong password says which field is wrong, then checking the error messages read the same on every platform";
 
 /** The first row of the Branches: its chevron, and its Older runs button while it shows one. */
 const FIRST = '[aria-label="Branches"] > [role="treeitem"]:first-child';
@@ -65,12 +68,12 @@ export const scenarios: Scenario[] = [
       assert.match((await run())!.chips[1].text, /^GREEN \d+[smhd]( \d+[smh])? ago$/);
     },
   ),
-  // UX journey: J-BRANCH-RUNS; UX edges: E-PANE-FOLD E-PANE-SELECT E-PANE-OLDER E-PANE-CHIP E-CURRENT-CHIP
+  // UX journeys: J-BRANCH-RUNS J-MAIN-RUN; UX edges: E-PANE-FOLD E-PANE-SELECT E-PANE-OLDER E-PANE-CHIP E-CURRENT-CHIP
   scenario<{ runs: string[] }>(
     "branches-timeline",
-    "folds a branch to its newest Run's status, expands it on a click to its Runs newest first after its Current, brings older Runs with Older runs, and shows a clicked entry",
+    "folds a branch to its newest Run's status, expands it on a click to its Runs newest first after its Current, each with its comment cut short to one line, brings older Runs with Older runs, and shows a clicked entry with its comment in full",
     async () => {
-      const { fixture, runs } = createHistory(24);
+      const { fixture, runs } = createHistory(24, COMMENT);
       return { fixture, data: { runs } };
     },
     async (browser, { data: { runs } }) => {
@@ -101,6 +104,11 @@ export const scenarios: Scenario[] = [
         assert.equal(chip.sub, chip.id, `${chip.id} names its Run`);
         assert.ok(leans(chip.dot, 1), `${chip.id}'s dot is green: ${JSON.stringify(chip)}`);
       }
+      // The newest Run was requested with a comment: below its Run ID, on one line, cut short.
+      const [commented, ...plain] = shown.chips.slice(1);
+      assert.ok(commented.noteOneLine && commented.noteCut && COMMENT.startsWith(commented.note.replace(/…$/, "")),
+        `the comment under its Run ID, cut short to one line: ${JSON.stringify(commented)}`);
+      assert.deepEqual(plain.map((chip) => chip.note), plain.map(() => ""), "a Run without a comment shows none");
       // Drawn as a timeline: the Current a ring, a line joining each dot to the next, and a
       // grey pill around the shown entry only.
       const look = await browser.execute((first: string) => {
@@ -138,8 +146,13 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$(`${FIRST} button.older`).isExisting(), false, "no Older runs once every Run is listed");
       assert.equal(await mainTitle(browser), "Current · repo  master", "Older runs chooses nothing");
 
-      // A click on an entry shows that Run, the only one marked.
+      // A click on the commented Run shows its comment in full under its headline.
+      await showRun(browser, "repo  master", newest[0]);
+      await waitFor(browser, async () => (await runComment(browser))?.text === COMMENT, "the Run's comment under its headline");
+      assert.ok((await runComment(browser))!.whole, "the whole comment is drawn, not cut short");
+      // A click on an entry shows that Run, the only one marked; without a comment it shows none.
       await showRun(browser, "repo  master", runs[0]);
+      assert.equal(await runComment(browser), null, "a Run without a comment shows none");
       await graphShown(browser, "a:n000");
       shown = (await branch(browser, "repo  master"))!;
       assert.deepEqual(shown.chips.filter((chip) => chip.filled).map((chip) => chip.id), [runs[0]], "only the clicked entry is marked");

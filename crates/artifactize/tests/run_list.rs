@@ -177,6 +177,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             "checkout/review",
             "--profile",
             "brief",
+            "--comment",
+            "Checking out — étape 2",
         ],
         0,
     );
@@ -259,12 +261,24 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         .iter()
         .zip([&last, &other, &selected])
     {
-        for field in ["id", "repoPath", "createdAt", "completedAt", "status"] {
+        for field in [
+            "id",
+            "repoPath",
+            "createdAt",
+            "completedAt",
+            "status",
+            "comment",
+        ] {
             assert_eq!(summary[field], saved[field], "{field}");
         }
         assert_eq!(summary["counts"], counts(saved));
     }
     assert_eq!(all[1]["counts"], json!({"GREEN":1,"RED":1,"DEFERRED":1}));
+    assert_eq!(all[0]["comment"], "Checking out — étape 2");
+    assert!(
+        all[1].get("comment").is_none(),
+        "a Run without a comment lists none"
+    );
     for saved in [&selected, &last, &other] {
         let shown = query(
             &first,
@@ -358,6 +372,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let text =
         String::from_utf8(output(&first, &state, &["run", "list", "--all"], 0).stdout).unwrap();
     assert!(text.contains("DEFERRED=1"));
+    assert!(text.contains("\tChecking out — étape 2\n"), "{text}");
     assert!(text.contains(selected["id"].as_str().unwrap()));
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 }
@@ -379,6 +394,14 @@ fn listing_missing_state_is_inert_and_flags_are_validated() {
         vec!["run", "list", "--limit", "4294967296"],
     ] {
         assert!(query(&repo, &state, &args, 2)["error"].is_string());
+    }
+    let long = "x".repeat(201);
+    for comment in ["", " padded", "two\nlines", long.as_str()] {
+        assert!(
+            query(&repo, &state, &["verify", "--all", "--comment", comment], 2)["error"]
+                .is_string(),
+            "{comment:?}"
+        );
     }
     assert!(!state.exists());
 }

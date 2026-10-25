@@ -32,13 +32,14 @@ impl Follow {
     }
 }
 
-/// Execution-only arguments, separate from selection and dependency policy.
+/// Per-request arguments, separate from selection and dependency policy.
 pub(super) struct VerifyLimits {
     pub modes: artifactize_core::runs::RunModes,
     pub jobs: Option<u32>,
     pub max_executions: Option<u64>,
     pub follow: Follow,
     pub request_key: Option<artifactize_core::types::RequestKey>,
+    pub comment: Option<artifactize_core::types::RunComment>,
     pub reuse_only: Vec<artifactize_core::config::ProfileKind>,
 }
 
@@ -54,6 +55,7 @@ pub(super) async fn verify(
         max_executions,
         follow,
         request_key,
+        comment,
         reuse_only,
     } = limits;
     let selection = selection.resolve()?;
@@ -62,6 +64,7 @@ pub(super) async fn verify(
         jobs: jobs.map(|limit| limit as usize),
         max_executions,
         reuse_only: reuse_only.into_iter().collect(),
+        comment,
         ..policy.options()
     };
     let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));

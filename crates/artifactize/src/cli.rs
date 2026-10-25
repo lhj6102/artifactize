@@ -158,6 +158,9 @@ pub enum Command {
         /// Retry-safe caller attempt key (1–128 ASCII letters/digits/._:-).
         #[arg(long, value_name = "KEY")]
         request_key: Option<artifactize_core::types::RequestKey>,
+        /// A short note on what you are working on, shown with the Run (1–200 characters).
+        #[arg(long, value_name = "TEXT")]
+        comment: Option<artifactize_core::types::RunComment>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
         /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]

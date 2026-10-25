@@ -25,8 +25,11 @@ pub(super) async fn list(
         print_json(&runs)?;
     } else {
         let mut out = io::stdout().lock();
-        writeln!(out, "ID\tREPO\tCREATED\tCOMPLETED\tSTATUS\tREQUEST COUNTS")
-            .map_err(|e| e.to_string())?;
+        writeln!(
+            out,
+            "ID\tREPO\tCREATED\tCOMPLETED\tSTATUS\tREQUEST COUNTS\tCOMMENT"
+        )
+        .map_err(|e| e.to_string())?;
         for run in runs {
             let counts = run
                 .counts
@@ -36,14 +39,15 @@ pub(super) async fn list(
                 .join(" ");
             writeln!(
                 out,
-                "{}\t{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 run.id,
                 artifactize_core::platform::path_text(&run.repo_path),
                 run.created_at,
                 run.completed_at
                     .map_or_else(|| "-".to_owned(), |time| time.to_string()),
                 run.status,
-                counts
+                counts,
+                run.comment.as_deref().unwrap_or("-")
             )
             .map_err(|e| e.to_string())?;
             for unreadable in &run.unreadable {

@@ -143,6 +143,7 @@ impl Server {
                     modes: runs::RunModes {
                         speculate: args.speculate,
                     },
+                    comment: args.comment,
                     ..Default::default()
                 };
                 encode(runs::start(context, &args.scope.0, &options, args.request_key).await?)

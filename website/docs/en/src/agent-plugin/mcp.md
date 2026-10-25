@@ -77,12 +77,17 @@ Registration supplies tools, not the [Hey Arti skill](hey-arti.md).
 
 | Tool | Arguments | Answer |
 | --- | --- | --- |
-| `verify_start` | `scope`, optional `request_key`, `jobs`, `speculate` | Submits the Run; compact Run observation, not approval |
+| `verify_start` | `scope`, optional `request_key`, `comment`, `jobs`, `speculate` | Submits the Run; compact Run observation, not approval |
 | `verify_status` | `run` | Saved state, counts, elapsed seconds and `next_check` |
 | `verify_wait` | `run`, optional `seconds` | Waits for the Run's end or the bound; default 30, integer 0–40; observing takes under 45 seconds, after the first call's roots question, if any |
 | `verify_watch` | `run`; optional standard `_meta.progressToken` on the tool call | Follows changes for up to 30 seconds; progress messages contain JSON Run events; compact observation at return |
 | `verify_result` | `run`, optional `cursor` | Verdict and up to 20 concise findings, `next_cursor`; `ready:false` while active |
 | `verify_cancel` | `run` | Explicit cancellation acknowledgement; observe settlement for cleanup |
+
+`comment` is a short note on what the agent is working on now, shown to people with the
+Run in the terminal monitor, the desktop app and `run_show`; it changes nothing the Run does.
+It is 1–200 characters on one line, without control characters or leading or trailing spaces;
+other text is refused before the Run is accepted.
 
 `scope` is the shared Selection JSON envelope, tagged by `kind`:
 

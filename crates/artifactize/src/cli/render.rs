@@ -30,6 +30,9 @@ pub(super) fn verify(
             artifactize_core::platform::path_text(&view.run.state_dir)
         )
         .map_err(|e| e.to_string())?;
+        if let Some(comment) = &view.run.comment {
+            writeln!(stdout, "Comment: {comment}").map_err(|e| e.to_string())?;
+        }
         if let Some(error) = view.run.error() {
             writeln!(stdout, "Reason: {error}").map_err(|e| e.to_string())?;
         }
