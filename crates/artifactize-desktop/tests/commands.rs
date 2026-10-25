@@ -2,11 +2,11 @@
 //! A Human sign-off with a built-in tool and owner schemas waits; a runtime Eval
 //! references it. Built-in tools and runtime Evals run alike on every OS.
 use artifactize_core::project::{VerifyOptions, selection::Selection};
-use artifactize_desktop::{Launch, Mode};
+use artifactize_desktop::{App, Launch, Mode};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 use tauri::{
-    WebviewWindow,
+    Manager, WebviewWindow,
     ipc::{CallbackFn, InvokeBody},
     test::{INVOKE_KEY, MockRuntime, mock_builder, mock_context, noop_assets},
     webview::InvokeRequest,
@@ -114,10 +114,10 @@ fn verify(repo: &Path, state: &Path) {
     });
 }
 
-/// Keep the mock app alive without leaking it or its transcript readers.
+/// Keep the mock app alive without leaking it, its transcript readers or its Current scans.
 struct Window {
     window: WebviewWindow<MockRuntime>,
-    _app: tauri::App<MockRuntime>,
+    app: tauri::App<MockRuntime>,
 }
 
 impl std::ops::Deref for Window {
@@ -130,8 +130,11 @@ impl std::ops::Deref for Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
-        // Destroy the window before the app, including when an assertion panics.
+        // Stop the Current scans and destroy the window before the app and the fixture's
+        // folders go, including when an assertion panics or a scan outlives its wait.
+        let stopped = self.app.state::<App>().close();
         let _ = self.window.destroy();
+        tauri::async_runtime::block_on(stopped);
     }
 }
 
@@ -152,7 +155,7 @@ fn window(fixture: &Fixture, mode: Mode) -> Window {
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();
-    Window { window, _app: app }
+    Window { window, app }
 }
 
 /// Invoke `command` with `args` through the IPC handler; an error is the serialized failure.

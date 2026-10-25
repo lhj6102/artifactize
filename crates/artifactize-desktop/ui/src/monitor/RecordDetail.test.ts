@@ -9,6 +9,9 @@ import RecordDetail from "./RecordDetail.svelte";
 
 afterEach(cleanup);
 
+/** Every fold closed, as a caller starts them. */
+const folded = { technical: false, pending: false, log: false, debug: false };
+
 const card = (change: Partial<CardView> = {}): CardView => ({
   instruction: "Check that the tests follow the test rules.",
   result: null,
@@ -72,6 +75,7 @@ const detail = (change: Partial<DetailView> = {}): DetailView => ({
 
 it("shows the status with what running it cost, the instruction and the result's findings", () => {
   render(RecordDetail, {
+    ...folded,
     detail: detail({
       card: card({
         result: [
@@ -95,14 +99,14 @@ it("shows the status with what running it cost, the instruction and the result's
 });
 
 it("marks a reused result REUSED in the status colour and shows what reuse saved", () => {
-  render(RecordDetail, { detail: detail({ mark: { status: "GREEN", glyph: "✓" }, card: card({ reused: true }) }) });
+  render(RecordDetail, { ...folded, detail: detail({ mark: { status: "GREEN", glyph: "✓" }, card: card({ reused: true }) }) });
   const status = screen.getByText("✓ GREEN · REUSED");
   expect(status.classList.contains("tone-green")).toBe(true);
   expect(screen.getByText("saved 3m 12s · saved 48.2k tokens · gpt-6.1-sol")).toBeTruthy();
 });
 
 it("shows execution options, what running it took and spent, and the fingerprint; every other fact folds under Debug", async () => {
-  render(RecordDetail, { detail: detail({ card: card({ tokens: 1_250_000 }) }) });
+  render(RecordDetail, { ...folded, detail: detail({ card: card({ tokens: 1_250_000 }) }) });
   const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
   expect(headings).toEqual(["Execution options", "Execution metadata", "Fingerprint"]);
   expect(screen.getByText("timeoutMs 60000")).toBeTruthy();
@@ -124,6 +128,7 @@ it("shows execution options, what running it took and spent, and the fingerprint
 
 it("shows a runtime eval's exit code and no tokens or model", () => {
   render(RecordDetail, {
+    ...folded,
     detail: detail({ profile: "runtime", mark: { status: "GREEN", glyph: "✓" }, card: card({ exitCode: 0, tokens: null, model: null, took: "41s" }) }),
   });
   // Beside the status and in the metadata: the time only.
@@ -134,6 +139,7 @@ it("shows a runtime eval's exit code and no tokens or model", () => {
 
 it("shows an Artifact's path, and its other facts only under Debug", async () => {
   render(RecordDetail, {
+    ...folded,
     detail: detail({
       node: "a:app",
       target: "artifact",
@@ -172,6 +178,7 @@ it("shows an Artifact's path, and its other facts only under Debug", async () =>
 
 it("says on a Current whether an eval would run or be reused and why, with the result it would reuse", () => {
   render(RecordDetail, {
+    ...folded,
     detail: detail({
       source: { kind: "current", branch: { kind: "branch", common: "/work/app/.git", branch: "main" } },
       mark: null,

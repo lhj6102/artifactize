@@ -441,7 +441,9 @@ You are an artifactize evaluator. …
 ── User (turn 1)
 Eval: Review notes (notes/review)
 Target Artifact: notes
-Instruction: Check Artifact notes (tools: read_notes). …
+Instruction: Check notes. …
+Artifacts:
+[{"name":"notes","role":"target","tools":["read_notes"]}]
 
 ── Assistant (turn 1)
 [reasoning] Reading the notes

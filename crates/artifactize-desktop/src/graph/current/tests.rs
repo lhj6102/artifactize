@@ -80,6 +80,23 @@ fn a_scan_whose_task_is_gone_is_not_waited_for() {
 }
 
 #[test]
+fn stopping_cancels_the_running_scan_and_ends_once_its_task_lets_go() {
+    let currents = Currents::default();
+    let (_, token, stage) = started(currents.request(&place(), false));
+    let mut stopped = std::pin::pin!(currents.stop());
+    assert!(token.is_cancelled());
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(stopped.as_mut().poll(&mut context).is_pending());
+    // Its last step is not the end: the task still holds its stage.
+    stage.send_replace(Stage::Ended(Err("cancelled".into())));
+    assert!(stopped.as_mut().poll(&mut context).is_pending());
+    drop(stage);
+    assert!(stopped.as_mut().poll(&mut context).is_ready());
+    // A later request scans again rather than joining the stopped scan.
+    started(currents.request(&place(), false));
+}
+
+#[test]
 fn a_replaced_state_stops_the_scan_and_keeps_nothing_it_finds() {
     let currents = Currents::default();
     let (scan, token, _stage) = started(currents.request(&place(), false));
