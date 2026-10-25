@@ -524,12 +524,13 @@ pub(crate) async fn execute(
             remote.publish_request(receipts, request).await?;
         }
     }
-    receipts.finish(&run, &requests).await?;
-    // The reuse history is collected once per Run; a failure only warns.
+    // The reuse history is collected once per Run, before it ends so that whoever waits for
+    // the end also sees a failure, which only warns.
     if let Err(error) = store::history::collect(&run.state_dir).await {
         use std::io::Write;
         let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
     }
+    receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.
     let state = run.state_dir.clone();
     let bounds = limits.agent_sessions();
