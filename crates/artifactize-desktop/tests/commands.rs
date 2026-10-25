@@ -275,7 +275,8 @@ fn command_tests_run_without_an_inherited_remote_store() {
     ] {
         command.env_remove(variable);
     }
-    let output = os::finish(os::start(&mut command), "command tests");
+    // Many tests, so no probe deadline: the output drains while they run.
+    let output = os::run(&mut command);
     assert!(
         output.status.success(),
         "command tests failed:\n{}\n{}",

@@ -2447,11 +2447,11 @@ pub fn run_test_in(
 }
 
 /// Prepare a child that runs this test binary's ignored tests: the ones a launcher test
-/// runs in the environment it declares, owned with start/finish like an exact probe. The
-/// support module's own probes need their own environment and are skipped.
+/// runs, with [`run`], in the environment it declares. The support module's own probes need
+/// their own environment and are skipped.
 pub fn ignored_tests(environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
-    command.args(["--ignored", "--nocapture", "--skip", "support::"]);
+    command.args(["--ignored", "--skip", "support::"]);
     for (name, value) in environment {
         command.env(name, value);
     }
