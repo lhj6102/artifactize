@@ -13,18 +13,19 @@
 
   let {
     detail,
-    technical = $bindable(false),
-    pending = $bindable(false),
-    log = $bindable(false),
-    debug = $bindable(false),
+    technical = $bindable(),
+    pending = $bindable(),
+    log = $bindable(),
+    debug = $bindable(),
   }: {
     detail: DetailView;
-    technical?: boolean;
-    pending?: boolean;
+    // The folds belong to the caller, which binds them.
+    technical: boolean;
+    pending: boolean;
     /** The log rather than the Summary. */
-    log?: boolean;
+    log: boolean;
     /** Debug unfolded. */
-    debug?: boolean;
+    debug: boolean;
   } = $props();
 
   const agent = $derived(detail.profile === "agent" && detail.request !== null);

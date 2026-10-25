@@ -12,7 +12,7 @@
     onfocus,
     onkeydown,
     notice = null,
-    noticeOpen = $bindable(false),
+    noticeOpen = $bindable(),
     actions,
     children,
     label,
@@ -24,10 +24,6 @@
     element?: HTMLElement;
     onfocus?: () => void;
     onkeydown?: (event: KeyboardEvent) => void;
-    /** What went wrong last: it takes the header's room between the title and the actions. */
-    notice?: string | null;
-    /** The notice shows in full rather than cut to one line. */
-    noticeOpen?: boolean;
     actions?: Snippet;
     children: Snippet;
     label?: string;
@@ -35,7 +31,15 @@
     attach?: Attachment<HTMLElement>;
     /** The title wraps to show a long name whole rather than cut to one line. */
     wholeTitle?: boolean;
-  } = $props();
+  } & (
+    | { notice?: null; noticeOpen?: undefined }
+    | {
+        /** What went wrong last: it takes the header's room between the title and the actions. */
+        notice: string | null;
+        /** The notice shows in full rather than cut to one line; the caller owns it. */
+        noticeOpen: boolean;
+      }
+  ) = $props();
 </script>
 
 <!-- Keys from the pane's focusable rows and controls bubble up to its handler. -->
