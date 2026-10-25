@@ -1613,7 +1613,9 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         [],
     )
     .unwrap();
-    fixture.seed_entries(10_000, 1);
+    // Every seed is a record of the repository's one eval: the newest stays as what its next
+    // verify reuses, and the cap bounds the other 10,000.
+    fixture.seed_entries(10_001, 1);
     // The oldest seed holds the repository's key.
     let current = key(&original, 0);
     db.execute(
@@ -1652,7 +1654,8 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         &fixture.command(&repo, &["verify", "--wait", "--all"], 0),
         0,
     );
-    assert_eq!(fixture.records(), 10_000);
+    // The new record is the eval's newest now; of the rest, the least recently used left.
+    assert_eq!(fixture.records(), 10_001);
     assert_eq!(
         fixture.command(
             &repo,
@@ -1672,7 +1675,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
                 .is_object()
         );
     }
-    assert_eq!(fixture.count("executions"), 10_002);
+    assert_eq!(fixture.count("executions"), 10_003);
     assert_eq!(
         fixture.command(&repo, &["run", "show", original["id"].as_str().unwrap()], 0),
         original
@@ -1697,7 +1700,9 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         [],
     )
     .unwrap();
-    fixture.seed_entries(65, 16 * MIB);
+    // The newest seed stays as what the repository's next verify reuses; seeds 0 and 1 are
+    // held below; the cap bounds the other 66.
+    fixture.seed_entries(69, 16 * MIB);
     db.execute(
         "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES ('active','0000000000000000000000000000000000000000000000000000000000000000','seed','WAITING_HUMAN',1,1,'{}')",
         [],
@@ -1719,16 +1724,10 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
                 .contains("in use")
         );
     }
-    // The new entry takes 65 seeded 16 MiB entries over 1 GiB.
+    // Another checkout's Run ends: its own newest record stays, and 66 seeded 16 MiB records
+    // are over 1 GiB, so the two least recently used leave.
     let first = fixture.publish("first", "2000-01-02T00:00:00Z");
-    assert_eq!(fixture.records(), 64);
-    assert!(
-        fixture
-            .observed()
-            .query_row::<i64, _, _>("SELECT sum(bytes) FROM executions", [], |row| row.get(0))
-            .unwrap()
-            <= 1024 * MIB
-    );
+    assert_eq!(fixture.records(), 68);
     for key in [
         "0000000000000000000000000000000000000000000000000000000000000000",
         "0000000000000000000000000000000000000000000000000000000000000001",
@@ -1750,7 +1749,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
             Value::Null
         );
     }
-    assert_eq!(fixture.count("executions"), 68);
+    assert_eq!(fixture.count("executions"), 72);
     assert_eq!(fixture.count("requests"), 3);
     assert_eq!(
         fixture
@@ -1795,7 +1794,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         .unwrap();
     let third = fixture.publish("third", "2000-01-04T00:00:00Z");
     assert_eq!(keys(), sorted(vec![second, third]));
-    assert_eq!(fixture.count("executions"), 70);
+    assert_eq!(fixture.count("executions"), 74);
 }
 
 #[test]
