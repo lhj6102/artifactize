@@ -416,7 +416,7 @@ impl ArtifactDeclarations {
             .human_tools
             .iter()
             .map(|(operation, declaration)| {
-                let name: ToolName = format!("{operation}_{}", self.artifact)
+                let name: ToolName = format!("{operation}_{}", self.artifact.tool_suffix())
                     .parse()
                     .expect("validated tool and Artifact names");
                 let command = registry.is_command(&name).then(|| registry.command(&name));
