@@ -208,7 +208,7 @@ artifactize --repo PROJECT config check --json
 구분합니다. JSON에서는 eval마다 [재사용 키](fingerprint.md#the-reuse-key)를 이루는 값도
 보여 줍니다. `evalDefHash`, 대상의 `fingerprint`, `fingerprints`(eval이 의존하는 각
 Artifact와 현재 fingerprint, 없으면 null), 이를 합친 `key`(fingerprint를 끈 경우 null)이며,
-`verify`가 Run의 키로 쓸 값과 같습니다. 동작 개수는 실행에 포함된 eval만 셉니다. 종료 코드
+`verify`가 Run의 키로 쓸 값과 같습니다. 동작별 개수를 집계할 때는 실행에 포함된 eval만 셉니다. 종료 코드
 0은 현재 검증 요건을 모두 충족했다는 뜻이고, 1은 아직 충족하지 못한 요건이 남았다는 뜻이며, 입력이나 상태가 잘못되면 2입니다.
 
 status도 verify와 같은 격리와 검사 규칙을 적용하며, `--fingerprint-jobs` 한도 안에서

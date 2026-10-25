@@ -29,7 +29,8 @@ that makes the transition happen and checks where it leads.
     sits over the branch's newest Run, its status dot and word on the left and its age on the
     right (a running one its time so far), or `No Runs yet`. Expanded, its **timeline** sits
     under the name instead: one entry per Run, newest first, each a dot in its status colour,
-    its status word, its age on the right and its Run ID below, joined by a line through the
+    its status word, its age on the right and its Run ID below, then the comment the Run was
+    requested with (`verify --comment`), if any, cut short to one line, joined by a line through the
     dots, starting with the Run in progress on the branch, or else with the **Current**, a
     ring rather than a dot, reading `Working tree` below. The entry shown in the Main area
     sits in a grey pill. **Older runs** at a timeline's end, while older Runs exist, brings
@@ -49,7 +50,8 @@ that makes the transition happen and checks where it leads.
 - **Main area**: shows one view at a time, with what went wrong (such as Runs that cannot be
   read) as the **notice**, one line in its header that neither moves nor hides what is below.
   - **Nothing chosen**: no branch or review chosen yet; the graph's place says so.
-  - **Run**: the shown Run's headline and what needs attention above the **Run graph**; while
+  - **Run**: the shown Run's headline, its comment in full when it has one, and what needs
+    attention above the **Run graph**; while
     loading, on an error or with an empty graph the graph's place stays and says so.
   - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: a
     header saying how many Artifacts are still being checked while the scan runs, when it was

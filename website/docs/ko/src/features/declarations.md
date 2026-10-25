@@ -147,7 +147,7 @@ covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필�
   `$ref`로 선언하지 않은 최상위 필드를 허용할 수 없습니다.
 - 최상위의 `allOf`, `anyOf`, `oneOf`, `not`은 거부합니다. 조합은 소유자 필드 안에서 하세요.
   중첩 객체, 배열, 로컬 참조는 스키마 검사기가 지원합니다.
-- 다음 예약된 이름은 선언하거나 필수로 정할 수 없습니다: `verdict`, `reference`,
+- 다음 이름은 예약되어 있으므로 필드로 선언하거나 필수 항목으로 지정할 수 없습니다: `verdict`, `reference`,
   `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`,
   `stderr`, `durationMs`, `exitCode`. 감사·실행 데이터는 소유자 필드 밖에 있습니다.
 - 한 판정의 스키마를 생략하면 그 판정에서는 **소유자 필드를 하나도 허용하지 않습니다**.
