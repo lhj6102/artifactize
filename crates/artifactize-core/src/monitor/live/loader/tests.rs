@@ -114,12 +114,12 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     );
     let mut open = input(&state, &repo, Some("run-large"), Changed::Nothing);
     open.force = true;
-    let (opened, requests, _) = loader.load(open).unwrap().opened.unwrap();
+    let (opened, requests, _, _) = loader.load(open).unwrap().opened.unwrap();
     assert_eq!(requests.len(), LARGE);
 
     // A write to the open Run reads its changed request again, never its definitions.
     fail(&receipts, &large_requests, "run-large-a7").await;
-    let (reread, requests, _) = loader
+    let (reread, requests, _, _) = loader
         .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
         .unwrap()
         .opened
@@ -180,4 +180,74 @@ fn a_hinted_runs_row_replaces_its_own_and_a_new_run_is_listed_last() {
         rows.iter().map(|run| run.id.as_str()).collect::<Vec<_>>(),
         ["run-1"]
     );
+}
+
+#[tokio::test]
+async fn a_run_no_longer_shown_gives_its_memory_back_once_its_last_share_goes() {
+    let root = crate::test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir(&repo).unwrap();
+    let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
+    let (first, first_requests) = run("run-first", &repo, &state, 3);
+    let (second, second_requests) = run("run-second", &repo, &state, 3);
+    receipts.create_run(&first, &first_requests).await.unwrap();
+    receipts
+        .create_run(&second, &second_requests)
+        .await
+        .unwrap();
+    let mut loader = Loader::default();
+    let released = crate::platform::releases;
+    let before = released();
+    let shown = loader
+        .load(input(&state, &repo, Some("run-first"), Changed::Nothing))
+        .unwrap()
+        .opened
+        .unwrap();
+
+    // Reading the shown Run again keeps it: nothing goes back.
+    fail(&receipts, &first_requests, "run-first-a0").await;
+    let reread = loader
+        .load(input(&state, &repo, Some("run-first"), hinted("run-first")))
+        .unwrap()
+        .opened
+        .unwrap();
+    drop(reread);
+    assert_eq!(released(), before);
+
+    // Another Run shown: the loader lets the first go, but its view still holds it.
+    let next = loader
+        .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
+        .unwrap()
+        .opened
+        .unwrap();
+    assert_eq!(released(), before);
+    drop(shown);
+    assert_eq!(
+        released(),
+        before + 1,
+        "the first Run's memory goes back once"
+    );
+
+    // No Run shown: once its view is gone, the loader lets the second go too.
+    drop(next);
+    assert_eq!(released(), before + 1);
+    let closed = loader
+        .load(input(&state, &repo, None, Changed::Nothing))
+        .unwrap();
+    assert!(closed.opened.is_none());
+    assert_eq!(
+        released(),
+        before + 2,
+        "the second Run's memory goes back once"
+    );
+
+    // Shown again, it is read in full, definitions included.
+    let reopened = loader
+        .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
+        .unwrap()
+        .opened
+        .unwrap();
+    assert_eq!(reopened.1.len(), 3);
+    assert_eq!(released(), before + 2);
 }

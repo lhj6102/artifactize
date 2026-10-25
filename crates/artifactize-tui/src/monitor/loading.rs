@@ -83,6 +83,7 @@ impl Monitor {
                     self.tree = Default::default();
                     self.folds = Default::default();
                     self.framed = None;
+                    self.footprint = None;
                     self.serial = self.serial.next();
                 }
                 self.origin = snapshot.origin;
@@ -107,7 +108,7 @@ impl Monitor {
                 self.set_runs(snapshot.runs);
                 self.page_tail = false;
                 let changed = snapshot.selected.is_some();
-                if let Some((run, requests, nodes)) = snapshot.selected {
+                if let Some((run, requests, nodes, footprint)) = snapshot.selected {
                     let first = self
                         .run
                         .as_ref()
@@ -117,6 +118,7 @@ impl Monitor {
                     }
                     self.run = Some((run, requests));
                     self.sync_projected_tree(first, nodes);
+                    self.footprint = Some(footprint);
                 }
                 self.refreshed = Some(now);
                 let unreadable = self

@@ -3,10 +3,10 @@
 //!
 //! [`Loader`] is the UI-agnostic seam: the terminal monitor and the desktop app both read
 //! their catalog, Runs page and selected Run through it.
-use super::{Node, Scope, catalog, model};
+use super::{Scope, catalog, model};
 use crate::{
     changes::Changed,
-    store::{self, RequestView, RunSummary, RunView, reader::Reader},
+    store::{self, RunSummary, reader::Reader},
     types::RunId,
 };
 use std::{path::PathBuf, sync::Arc};
@@ -109,8 +109,9 @@ pub struct Snapshot {
     pub scope: Scope,
     pub runs: Vec<RunSummary>,
     pub selected_id: Option<RunId>,
-    /// The selected Run when it was read again: its requests and projected tree.
-    pub selected: Option<(RunView, Vec<RequestView>, Arc<Vec<Node>>)>,
+    /// The selected Run when it was read again: its requests, projected tree and a share in its
+    /// memory, kept after the rest so the memory goes back once nothing shows the Run.
+    pub selected: Option<super::live::Opened>,
 }
 
 /// A persistent, read-only snapshot worker with its caches. Call [`Loader::load`] on a
@@ -246,6 +247,10 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
                 }
             });
         let selected_id = selected.map(|run| run.id.clone());
+        if selected_id.is_none() {
+            // Nothing shows a Run: the one held goes, and with its last share its memory.
+            cache.close();
+        }
         let mut runs = runs;
         // The shown Run is read again when a hint named it; another Run is read in full.
         let shown = |id: &RunId| input.displayed.as_ref() == Some(id);
@@ -255,7 +260,10 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
             .filter(|id| !shown(id) || input.full || changed.run(id) || !cache.holds(id));
         let selected = match read {
             Some(id) => match cache.selected(db, state, id, !shown(id)) {
-                Ok(selected) => selected,
+                Ok(selected) => selected.map(|(run, requests)| {
+                    let footprint = cache.footprint().expect("the Run just read is held");
+                    (run, requests, footprint)
+                }),
                 // The Run's own record does not decode: it is listed with why, and not opened.
                 Err(store::receipts::Error::Unreadable(record)) => {
                     let run = runs.iter_mut().find(|run| &run.id == id);
@@ -289,9 +297,9 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
         });
     };
     // No read transaction survives heavy projection or live-file reads.
-    let selected = selected.map(|(run, requests)| {
+    let selected = selected.map(|(run, requests, footprint)| {
         let nodes = Arc::new(model::tree(&run, &requests, OffsetDateTime::now_utc()));
-        (run, requests, nodes)
+        (run, requests, nodes, footprint)
     });
     reader.require_current(&input.state)?;
     Ok(Snapshot {
