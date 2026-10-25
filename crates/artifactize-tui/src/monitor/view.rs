@@ -222,17 +222,21 @@ fn cap(columns: usize) -> u16 {
     u16::try_from(columns).unwrap_or(u16::MAX)
 }
 /// The Runs table's columns, in the order `run_cells` builds them: glyph, status, id, age,
-/// counts, took and workspace. Only those a narrow table drops are named.
+/// counts, took, workspace and comment. Only those a narrow table drops or cuts are named.
 const STATUS: usize = 1;
 const COUNTS: usize = 4;
 const TOOK: usize = 5;
 const WORKSPACE: usize = 6;
+const COMMENT: usize = 7;
+const COLUMNS: usize = 8;
+/// The fewest columns a cut comment keeps, `…` included; with less room it is left out.
+const COMMENT_MIN: usize = 8;
 /// What a narrow table drops, in this order, until it fits: where the Run ran, how long it
 /// took, its counts, then the status word. The glyph (which carries the status), the id and the
 /// age identify the Run and always stay.
 const DROPPED: [usize; 4] = [WORKSPACE, TOOK, COUNTS, STATUS];
-/// Runs columns: glyph, status, id, age, counts, took and workspace.
-fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
+/// Runs columns: glyph, status, id, age, counts, took, workspace and comment.
+fn run_cells(row: &model::RunRow, workspace: bool) -> [String; COLUMNS] {
     let name = row.repo.file_name().map_or_else(
         || crate::platform::path_text(&row.repo),
         |name| name.to_string_lossy().into(),
@@ -253,22 +257,30 @@ fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
         } else {
             String::new()
         },
+        plain(&row.comment).into_owned(),
     ]
 }
 /// Column widths of non-empty columns; narrow widths drop workspace, took, counts and then
-/// the status word, so glyph, id and age always remain.
-fn run_widths(rows: &[[String; 7]], available: usize) -> [usize; 7] {
-    let mut widths = [0usize; 7];
+/// the status word, so glyph, id and age always remain. The comment takes the room left over,
+/// cut short to fit, and is left out when that room is too small.
+fn run_widths(rows: &[[String; COLUMNS]], available: usize) -> [usize; COLUMNS] {
+    let mut widths = [0usize; COLUMNS];
     for row in rows {
         for (column, cell) in row.iter().enumerate() {
             widths[column] = widths[column].max(width(cell));
         }
     }
+    let comment = std::mem::take(&mut widths[COMMENT]);
     for column in DROPPED {
         if total(&widths) <= available {
             break;
         }
         widths[column] = 0;
+    }
+    // One more column separates the comment from the others.
+    let room = available.saturating_sub(total(&widths) + 1);
+    if comment > 0 && room >= COMMENT_MIN.min(comment) {
+        widths[COMMENT] = comment.min(room);
     }
     widths
 }
@@ -527,7 +539,8 @@ impl Monitor {
                         .map(|(column, cell)| match column {
                             0 => Cell::from(glyph(row.status.into())),
                             1 => Cell::from(status(row.status.into())),
-                            5 | 6 => Cell::from(Span::raw(cell.clone()).dark_gray()),
+                            TOOK | WORKSPACE => Cell::from(Span::raw(cell.clone()).dark_gray()),
+                            COMMENT => Cell::from(fit(cell, widths[COMMENT])),
                             _ => Cell::from(cell.clone()),
                         }),
                 )

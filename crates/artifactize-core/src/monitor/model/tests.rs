@@ -52,6 +52,41 @@ fn eval_detail_keeps_request_instruction_and_result_outside_technical() {
 }
 
 #[test]
+fn run_detail_shows_the_comment_the_run_was_requested_with() {
+    let run = |comment: Option<&str>| -> RunView {
+        let mut run = json!({
+            "id":"run-1",
+            "repoPath":crate::test_os::temp_root().join("repo"),
+            "stateDir":crate::test_os::temp_root().join("state"),
+            "status":"RUNNING",
+            "createdAt":"2026-01-01T00:00:00Z",
+            "completedAt":null,
+            "selection":{"kind":"all"},
+            "definitions":{"artifacts":{},"evals":[]},
+            "validation":null,
+            "requests":[]
+        });
+        if let Some(comment) = comment {
+            run["comment"] = json!(comment);
+        }
+        serde_json::from_value(run).unwrap()
+    };
+    let commented = run(Some("Fixing the login form"));
+    let now = commented.run.created_at.time();
+    let shown = detail(&commented, &[], &Target::Run, now);
+    assert_eq!(shown.field("Comment"), Some("Fixing the login form"));
+    assert_eq!(
+        Section::of("Comment"),
+        Section::What,
+        "shown without unfolding Technical"
+    );
+    assert_eq!(
+        detail(&run(None), &[], &Target::Run, now).field("Comment"),
+        None
+    );
+}
+
+#[test]
 fn artifact_detail_groups_waits_without_dropping_equal_eval_names() {
     let run: RunView = serde_json::from_value(json!({
         "id":"run-1",

@@ -192,6 +192,19 @@ identity!(RequestKey, |value: &str| (1..=MAX_REQUEST_KEY_BYTES)
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
     ));
 
+/// A verify comment is a short note on one line, counted in characters, not bytes.
+pub const MAX_RUN_COMMENT_CHARS: usize = 200;
+// What the requester says it is working on: shown to people, never used for reuse or results.
+identity!(
+    RunComment,
+    |value: &str| (1..=MAX_RUN_COMMENT_CHARS).contains(&value.chars().count())
+        && !value.chars().any(char::is_control)
+        && value.trim() == value,
+    |_: &str| format!(
+        "A verify comment is 1–{MAX_RUN_COMMENT_CHARS} characters on one line, without control characters or leading or trailing spaces."
+    )
+);
+
 identity!(RunId, segment);
 identity!(RequestId, segment);
 // Stored mirrors predate typed identities and can be 207 bytes: the unchanged
@@ -552,6 +565,32 @@ mod tests {
             assert!(
                 db.query_row("SELECT ?", [label], |row| row.get::<_, ReviewerId>(0))
                     .is_err()
+            );
+        }
+    }
+    #[test]
+    fn run_comments_are_one_trimmed_line_of_at_most_200_characters() {
+        let longest = "가".repeat(MAX_RUN_COMMENT_CHARS);
+        for comment in ["Fixing the login form", "x", longest.as_str()] {
+            let parsed: RunComment = comment.parse().unwrap();
+            let wire = serde_json::to_string(comment).unwrap();
+            assert_eq!(serde_json::from_str::<RunComment>(&wire).unwrap(), parsed);
+        }
+        let long = "x".repeat(MAX_RUN_COMMENT_CHARS + 1);
+        for comment in [
+            "",
+            " ",
+            " lead",
+            "trail ",
+            "two\nlines",
+            "tab\there",
+            "\u{1b}[31m",
+            &long,
+        ] {
+            let error = comment.parse::<RunComment>().unwrap_err();
+            assert!(
+                error.starts_with("A verify comment is 1–200 characters"),
+                "{error}"
             );
         }
     }

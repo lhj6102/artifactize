@@ -321,6 +321,7 @@ fn waiting_badges_deduplicate_execution_and_original_request() {
         repo_path: "deleted/a".into(),
         repository: Default::default(),
         status: crate::types::RunStatus::Running,
+        comment: None,
         red: 1,
         error: 0,
         waiting: vec![store::Signoff::Execution("execution-1".parse().unwrap())],

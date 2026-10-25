@@ -33,6 +33,8 @@ pub struct VerifyOptions {
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
     pub force: bool,
+    /// What the requester is working on, shown with the Run; it changes nothing it does.
+    pub comment: Option<crate::types::RunComment>,
 }
 
 /// Submit to artifactize and observe settlement. Cancelling this future/token only stops watching.
@@ -95,6 +97,7 @@ pub(crate) async fn reserve(
             modes: options.modes.clone(),
             control: Some(crate::runs::Control::starting()?),
             request_key: request_key.cloned(),
+            comment: options.comment.clone(),
             id: id.parse()?,
             repo_path: config.root.clone(),
             repository: crate::repository::identify(&config.root),
@@ -223,6 +226,7 @@ pub(crate) async fn execute(
         profile: run.profile.clone(),
         recursive: run.recursive,
         force: run.force,
+        comment: run.comment.clone(),
     };
     let repo = &run.repo_path;
     let state_dir = Some(run.state_dir.as_path());

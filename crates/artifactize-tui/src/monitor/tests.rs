@@ -300,6 +300,7 @@ pub(super) fn summary(id: &str, green: u64) -> RunSummary {
         created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         completed_at: None,
         status: crate::types::RunStatus::Red,
+        comment: None,
         counts: BTreeMap::from([
             (crate::types::RequestStatus::Green, green),
             (crate::types::RequestStatus::Red, 1),
@@ -649,6 +650,7 @@ fn header_names_the_selected_scope_and_counts_attention_globally() {
             repo_path: "work/alpha".into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
+            comment: None,
             red: 2,
             error: 1,
             waiting: Vec::new(),
@@ -741,6 +743,30 @@ fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
 }
 
 #[test]
+fn runs_pane_shows_a_runs_comment_in_the_room_left_and_cuts_it_short() {
+    let (_monitor_root, mut monitor) = monitor();
+    let mut commented = summary("run-a", 2);
+    commented.comment = Some("Fixing the login form validation".parse().unwrap());
+    monitor.set_runs(vec![commented, summary("run-b", 1)]);
+    let at = now();
+    let text = sized_at(&mut monitor, 200, 20, at);
+    assert!(text.contains("Fixing the login form validation"), "{text}");
+    let text = sized_at(&mut monitor, 110, 20, at);
+    assert!(
+        text.contains("✗1 ✓2"),
+        "the other columns keep their room: {text}"
+    );
+    assert!(
+        text.contains("Fixing") && text.contains('…') && !text.contains("validation"),
+        "{text}"
+    );
+    // Without room for the comment the narrow table is as before.
+    let text = sized_at(&mut monitor, 54, 20, at);
+    assert!(text.contains("run-a 1m 05s"), "{text}");
+    assert!(!text.contains("Fixing"), "{text}");
+}
+
+#[test]
 fn review_key_hands_off_only_waiting_human_requests() {
     let (view, requests) = live();
     let (_monitor_root, mut monitor) = monitor();
@@ -794,6 +820,7 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
             repo_path: format!("work/{long}").into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
+            comment: None,
             red: 0,
             error: 1,
             waiting: Vec::new(),
@@ -884,6 +911,7 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
             repo_path: path.into(),
             repository: Default::default(),
             status: crate::types::RunStatus::Running,
+            comment: None,
             red: 0,
             error: 1,
             waiting: Vec::new(),

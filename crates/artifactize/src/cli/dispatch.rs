@@ -102,6 +102,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             wait,
             watch,
             request_key,
+            comment,
             reuse_only,
             speculate,
             defer_human,
@@ -119,6 +120,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                     max_executions,
                     follow: workflow::Follow::from_flags(wait, watch),
                     request_key,
+                    comment,
                     reuse_only,
                 },
             )
