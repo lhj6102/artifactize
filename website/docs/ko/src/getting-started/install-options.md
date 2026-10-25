@@ -28,8 +28,8 @@ cask도 앱을 함께 설치합니다. Homebrew formula, Cargo, 소스 빌드는
 Store가 패키지를 최신 상태로 유지합니다. 시작 메뉴에서 **Artifactize**를 선택하면
 [데스크톱 앱](#desktop-app)이 열립니다. Store 버전의
 [시작 메뉴 항목](../features/others/platforms.md#desktop-console-launches)과
-[별도로 유지하는 상태](../features/others/state.md#state)는 Windows에서 달라지는 다른 동작과 함께
-설명합니다.
+[Store 버전만 따로 쓰는 상태 저장 위치](../features/others/state.md#state)는 Windows에서만 다른 동작들과
+함께 설명합니다.
 
 **Linux.** `.deb`는 세 명령을 모두 `/usr/bin`에 설치하며, apt가 함께 설치하는
 WebKitGTK 4.1과 GTK 3가 필요합니다. aarch64나 다른 배포판에서는 [설치 스크립트](#linux)를 쓰세요.
