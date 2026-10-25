@@ -67,7 +67,12 @@ def ended(process):
         except ProcessLookupError:
             return
         if time.monotonic() > deadline:
-            sys.exit(f"host command {process.pid}'s processes did not exit after being killed")
+            # Keep the scratch configuration the survivors may still use: os._exit skips the
+            # enclosing TemporaryDirectory's removal, which sys.exit would run.
+            sys.stdout.flush()
+            sys.stderr.write(f"host command {process.pid}'s processes did not exit after being killed; its scratch configuration is kept\n")
+            sys.stderr.flush()
+            os._exit(1)
         time.sleep(0.01)
 
 
