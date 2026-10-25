@@ -2446,6 +2446,19 @@ pub fn run_test_in(
         .unwrap()
 }
 
+/// Prepare a child that runs this test binary's ignored tests: the ones a launcher test
+/// runs, with [`run`], in the environment it declares. The support module's own probes need
+/// their own environment and are skipped.
+pub fn ignored_tests(environment: &[(&str, std::ffi::OsString)]) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args(["--ignored", "--skip", "support::"]);
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    worker::prepare_probe(&mut command);
+    command
+}
+
 /// Prepare an exact child probe for a caller to customize before owning it with start/finish.
 pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
