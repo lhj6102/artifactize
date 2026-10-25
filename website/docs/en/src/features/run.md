@@ -89,6 +89,12 @@ A [`--request-key`](../cli/index.md#submission-and-watching) names a caller's at
 repeating it returns the same Run, so keep it to retry a lost answer and use a new one
 after fixes. Eval-result reuse does not depend on it.
 
+A [comment](../cli/index.md#submission-and-watching) says what the requester is working
+on, for example an agent's current task: the Run keeps it and shows it to people in
+`run list`, `run show`, the terminal monitor and the desktop app. It is one line of 1–200
+characters without leading or trailing spaces, and it changes nothing the Run does. A retry
+with the same request key returns the first Run and its comment.
+
 ### Sign-offs and the end of a Run
 
 A sign-off is requested as soon as its own prerequisites pass: its Artifact's other

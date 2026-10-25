@@ -249,9 +249,10 @@ focused pane needs more room.
   Space shows or hides them. The selected scope stays visible. Non-Git and deleted
   paths stay listed. Runs record optional `commonDir`, `worktreePath` and `branch`
   alongside their `repoPath` workspace.
-- **Runs.** The selected scope's Runs appear newest first, with age, duration and
-  request counts (`✓` GREEN, `✗` RED, `!` ERROR, `?` waiting Human, `◐` running).
-  Narrow panes drop secondary columns. Scope filtering happens before paging;
+- **Runs.** The selected scope's Runs appear newest first, with age, duration,
+  request counts (`✓` GREEN, `✗` RED, `!` ERROR, `?` waiting Human, `◐` running) and
+  the Run's `verify --comment` last, cut short with `…` to the room left.
+  Narrow panes drop secondary columns, the comment first. Scope filtering happens before paging;
   Down/`j` past the last Run loads older Runs, and Up/`k` at the first Run of an
   older page loads the newer page and selects its last Run.
 - **Run tree.** The selected Run's saved definitions, recorded evidence and current
@@ -259,7 +260,7 @@ focused pane needs more room.
   time, counts and only the token total for usage. It shows `validation pending`
   while running, then **SATISFIED / NOT SATISFIED at Run end**. Up to three attention
   lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
-  **Run** row opens validation and unmet obligations, counts, errors, waiting and
+  **Run** row opens its comment, validation and unmet obligations, counts, errors, waiting and
   running work, timing, budgets, executed/reused counts and full spent/saved
   usage in Detail. Validation stays as it was at Run end, while the tree's rows show the
   requests as they stand now, including a later Human submission: a dim `*` marks a row

@@ -26,7 +26,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 
 | 명령 | 플래그 | 출력 | 종료 코드 |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N`(필요할 때만), `--fingerprint-jobs N`(CPU 수), `--max-executions N`, `--wait` 또는 `--watch`, `--request-key KEY`, `--reuse-only KINDS`, `--speculate` | Run ID 또는 `{run,state}`. `--wait`면 최종 텍스트/JSON, `--watch`면 JSON 줄 이벤트 | 접수되면 0. `--wait`나 `--watch`면 Run 결과 |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N`(필요할 때만), `--fingerprint-jobs N`(CPU 수), `--max-executions N`, `--wait` 또는 `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Run ID 또는 `{run,state}`. `--wait`면 최종 텍스트/JSON, `--watch`면 JSON 줄 이벤트 | 접수되면 0. `--wait`나 `--watch`면 Run 결과 |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N`(CPU 수). 기본은 `--all` | 텍스트 또는 JSON | 충족하면 0, 아니면 1 |
 | `mcp` | | [MCP stdio 프로토콜](../agent-plugin/mcp.md). 진단은 stderr | 정상적으로 연결이 끊기면 0 |
 | `config check` | | 텍스트 또는 JSON | 0 |
@@ -132,8 +132,14 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 만든 Run을 돌려줍니다. 키는 ASCII 글자, 숫자, `.`, `_`, `:`, `-`로 이뤄진 1–128자이며, 조건에 맞지 않는 키를 쓰면 명령이 종료 코드 2로 끝납니다. 자세한 내용은
 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)에 있습니다.
 
+`--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
+볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
+조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
+열(없으면 `-`)에 보여 주고, `verify`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+
 ```sh
 artifactize verify --all --request-key build-42
+artifactize verify --all --comment "로그인 폼 수정 중"
 artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
@@ -365,7 +371,8 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `--repo-only`는 이 기본값을 명시하고, `--all`은 공유 상태의 모든 저장소를 포함합니다.
 `--limit N`(기본 50)과 `--offset N`(기본 0)은 각각 0–4294967295 범위로, 걸러 낸 결과를
 페이지로 나눕니다. 범위를 벗어난 값을 지정하면 종료 코드 2로 끝납니다. 각 행에는 Run ID, 저장소, 생성·완료
-시각, 상태, 판정과 상태별 요청 수(해당 상태가 없으면 0)가 나옵니다. 읽을 수 없는 요청은 세지
+시각, 상태, 판정과 상태별 요청 수(해당 상태가 없으면 0), Run의
+[코멘트](#submission-and-watching)(있을 때)가 나옵니다. 읽을 수 없는 요청은 세지
 않으며, `unreadable`에 손상된 기록과 그 이유가 나오고 유효한 증거는 그대로 볼 수 있습니다.
 [상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
 프로젝트 코드를 실행하지 않고, 없는 상태를 만들지 않으며, 저장소가 지금 남아 있지 않아도
