@@ -46,7 +46,7 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 
 | 경로 | 범위 | 쓰는 명령 |
 |---|---|---|
-| `GET /v1/whoami` | 범위 제한 없음 | `remote login`, `remote status` |
+| `GET /v1/whoami` | 필요한 범위가 없습니다 | `remote login`, `remote status` |
 | `POST /v1/lookup` | `read` | `verify`, `status`, `remote push` |
 | `PUT /v1/entries/{key}` | `publish`(Human 승인이면 `human`도) | `verify`, `request submit`, `remote push` |
 
@@ -103,7 +103,7 @@ configured.`(JSON은 `{"configured":false}`)를 출력하고 1로 종료합니�
 유효합니다. 토큰은 출력하지도, 로그에 남기지도 않습니다.
 
 저장소가 설정되어 있으면 `verify`는 각 리뷰를 실행하기 전에 저장소를 조회하고, 로컬 결과와 저장소 결과 중 더 나중에 완료된 쪽을 재사용합니다. 저장소 결과는 `origin`과 함께 로컬 상태로
-복사되므로 `run show`, `cache`, monitor에 재사용으로 나옵니다. 아직 결과가 없거나 사람의
+복사되므로 `run show`, `cache`, Monitor에 재사용으로 나옵니다. 아직 결과가 없거나 사람의
 승인 여부가 아직 결정되지 않은 리뷰가 있으면 verify는 약 1초마다 저장소를 다시 확인합니다. 다른 곳에서
 누군가 게시한 승인이 들어오면 대기 중인 요청은 그 승인을 재사용해 완료되고, 해당 요청에서 대기 중이던 Human 승인 작업은 ERROR(`SUPERSEDED`)로 끝납니다. 텍스트 출력에는 결과의 출처가 나옵니다.
 

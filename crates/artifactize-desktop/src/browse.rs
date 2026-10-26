@@ -126,10 +126,8 @@ pub struct Browse {
 #[derive(Debug, Clone, Default, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Navigate {
-    /// Show this Run in the Main area.
-    pub run: Option<crate::ids::RunKey>,
-    /// Show no Run: the Main area shows a Current, a review or Settings.
-    pub close: bool,
+    /// Which Run the Main area shows after this step.
+    pub run: RunStep,
     /// The pane's search, when it changed.
     pub query: Option<String>,
     /// Reach further back in this branch's Runs.
@@ -140,6 +138,19 @@ pub struct Navigate {
     pub full: bool,
     /// Read everything again, after a resync hint or a manual refresh.
     pub resync: bool,
+}
+
+/// What a step does to the Run shown in the Main area.
+#[derive(Debug, Clone, Default, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RunStep {
+    /// Leave the shown Run as it is.
+    #[default]
+    Keep,
+    /// Show this Run.
+    Open { id: crate::ids::RunKey },
+    /// Show no Run: the Main area shows a Current, a review or Settings.
+    Close,
 }
 
 /// A branch starred, or its star taken away.
@@ -217,13 +228,15 @@ impl Browse {
                 Err(error) => shown.unstarred = Some(error),
             }
         }
-        if let Some(id) = step.run.clone() {
-            let id: RunId = id.into_inner();
-            if shown.opened.id() != Some(&id) {
-                shown.opened = Opened::Loading(id);
+        match &step.run {
+            RunStep::Keep => {}
+            RunStep::Open { id } => {
+                let id: RunId = id.clone().into_inner();
+                if shown.opened.id() != Some(&id) {
+                    shown.opened = Opened::Loading(id);
+                }
             }
-        } else if step.close {
-            shown.opened = Opened::None;
+            RunStep::Close => shown.opened = Opened::None,
         }
         if let Some(query) = &step.query
             && *query != shown.query.text

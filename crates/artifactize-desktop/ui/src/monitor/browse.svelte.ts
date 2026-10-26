@@ -4,7 +4,7 @@
 import { call, commands, message, type Commands } from "../ipc/client";
 import type { BranchKey, BrowseView, Completion, Navigate } from "../ipc/client";
 
-const still: Navigate = { run: null, close: false, query: null, older: null, star: null, full: false, resync: false };
+const still: Navigate = { run: { kind: "keep" }, query: null, older: null, star: null, full: false, resync: false };
 
 export class Browse {
   constructor(readonly ipc: Commands = commands) {}
@@ -45,12 +45,12 @@ export class Browse {
 
   /** Show Run `run` in the Main area. */
   open(run: string): Promise<boolean> {
-    return this.navigate({ run });
+    return this.navigate({ run: { kind: "open", id: run } });
   }
 
   /** Show no Run: the Main area shows a Current, a review or Settings. */
   close(): Promise<boolean> {
-    return this.navigate({ close: true });
+    return this.navigate({ run: { kind: "close" } });
   }
 
   /** Search the Pane with `query`, as typed. */

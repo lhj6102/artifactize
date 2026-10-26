@@ -9,34 +9,38 @@ use tokio_util::sync::CancellationToken;
 /// Bound only the internal handoff, not a verification's lifetime.
 const ADMISSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> {
+/// Wait until this process is the Run's admitted worker. Only the Run's compact control is
+/// read, never its definitions or requests, so admission costs the same for any catalog.
+async fn admission(context: &Context, id: &RunId) -> Result<(), String> {
     let identity = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
     let mut changes = crate::changes::Subscription::new(&context.state).await;
     let admitted = async {
+        let mut current = store::run_control::observe(&context.state, id).await?;
         loop {
-            let run = store::read_run(&context.state, id).await?.run;
-            if !run.status().is_open() {
+            if !current.status.is_open() {
                 return Err("Run already settled before admission.".into());
             }
-            let worker = run.control.as_ref().map(|control| control.worker);
+            let worker = current.control.as_ref().map(|control| control.worker);
             match worker {
                 Some(Worker::Admitted { owner }) if owner == identity => {
-                    return Ok::<_, String>(run);
+                    return Ok::<_, String>(());
                 }
                 Some(Worker::Starting { launcher })
                 | Some(Worker::Admitted { owner: launcher }) => {
                     if process::is_alive(Some(launcher)).map_err(|e| e.to_string())? {
                         changes.next_reconciled().await;
+                        current = store::run_control::observe(&context.state, id).await?;
                     } else {
-                        // The submitter may commit admission and exit while this saved
-                        // graph is decoded. A dead old identity is not a rejected handoff:
-                        // compare fresh, compact SQLite control before refusing it.
-                        let current = store::run_control::observe(&context.state, id).await?;
-                        if current.status.is_open()
-                            && current.control.as_ref().map(|control| control.worker) == worker
+                        // The submitter may commit admission and exit after this control was
+                        // read. A dead old identity is not a rejected handoff: read the control
+                        // again before refusing it.
+                        let fresh = store::run_control::observe(&context.state, id).await?;
+                        if fresh.status.is_open()
+                            && fresh.control.as_ref().map(|control| control.worker) == worker
                         {
                             return Err("Run worker identity was not admitted.".into());
                         }
+                        current = fresh;
                     }
                 }
                 _ => return Err("Run worker identity was not admitted.".into()),
@@ -49,8 +53,8 @@ async fn admission(context: &Context, id: &RunId) -> Result<store::Run, String> 
         .and_then(std::convert::identity);
     let closed = changes.close().await;
     match (result, closed) {
-        (Ok(run), Ok(())) => Ok(run),
-        (Err(error), Ok(())) | (Ok(_), Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) | (Ok(()), Err(error)) => Err(error),
         (Err(error), Err(close)) => {
             Err(format!("{error}; closing admission subscription: {close}"))
         }
@@ -81,8 +85,8 @@ async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> R
         }
     };
     let handed = receipts
-        .control(id, move |run| {
-            let control = run.control.as_mut().ok_or("Run has no worker control.")?;
+        .control(id, move |_, control| {
+            let control = control.as_mut().ok_or("Run has no worker control.")?;
             if !matches!(control.worker, Worker::Admitted { owner } if owner == supervisor) {
                 return Err("Run supervision identity changed.".into());
             }
@@ -94,15 +98,23 @@ async fn supervise_open(context: &Context, id: &RunId, receipts: &Receipts) -> R
         fail(receipts, id, FailureCode::SpawnFailed, error).await?;
     }
     child.wait().await.map_err(|e| e.to_string())?;
-    let view = store::read_run(&context.state, id).await?;
-    if view.run.status().is_open() {
-        recover(&context.state, &view).await?;
+    // Only a Run its executor left open is read whole, to settle it.
+    if store::run_control::observe(&context.state, id)
+        .await?
+        .status
+        .is_open()
+    {
+        let view = store::read_run(&context.state, id).await?;
+        if view.run.status().is_open() {
+            recover(&context.state, &view).await?;
+        }
     }
     Ok(())
 }
 
 pub async fn execute(context: &Context, id: &RunId) -> Result<(), String> {
-    let run = admission(context, id).await?;
+    admission(context, id).await?;
+    let run = store::read_run_record(&context.state, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
     let mut changes = crate::changes::Subscription::new(&context.state).await;
     let result = execute_admitted(context, id, run, &mut changes, &receipts).await;
@@ -131,11 +143,11 @@ async fn execute_admitted(
     {
         cancellation.cancel();
     }
+    // Cancellation is in the Run's compact control: watching for it never decodes the Run.
     let observing = async {
         loop {
-            let view = store::read_run(&context.state, id).await?;
-            if view
-                .run
+            let current = store::run_control::observe(&context.state, id).await?;
+            if current
                 .control
                 .as_ref()
                 .is_some_and(|control| control.cancellation_requested)

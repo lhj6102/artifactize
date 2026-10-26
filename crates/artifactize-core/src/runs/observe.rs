@@ -79,7 +79,11 @@ fn counts(states: impl IntoIterator<Item = (RequestStatus, u64)>) -> Counts {
             counts
         })
 }
-fn state_for(status: RunStatus, control: Option<&super::Control>, counts: &Counts) -> State {
+pub(super) fn state_for(
+    status: RunStatus,
+    control: Option<&super::Control>,
+    counts: &Counts,
+) -> State {
     match status {
         RunStatus::Green => State::Green,
         RunStatus::Red => State::Red,

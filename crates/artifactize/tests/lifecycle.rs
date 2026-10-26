@@ -194,15 +194,12 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
         [execution],
     )
     .unwrap();
+    // The listing reads columns alone, so it lists the Run without auditing its records;
+    // `run show` and `status` report them.
     let listed: Value = serde_json::from_str(&cli(&repo, &state, &["run", "list"], true)).unwrap();
     assert_eq!(listed.as_array().unwrap().len(), 1);
-    assert_eq!(listed[0]["unreadable"].as_array().unwrap().len(), 2);
-    let text = cli(&repo, &state, &["run", "list"], false);
-    for id in [request.id.as_str(), execution.as_str()] {
-        assert!(text.contains(id), "{text}");
-    }
-    assert!(text.contains("matching result"), "{text}");
-    assert!(text.contains("cannot carry a verdict result"), "{text}");
+    assert!(listed[0].get("unreadable").is_none(), "{listed}");
+    assert_eq!(listed[0]["counts"], json!({"GREEN": 2}));
     let shown: Value = serde_json::from_str(&cli(
         &repo,
         &state,
@@ -213,6 +210,12 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     assert_eq!(shown["requests"].as_array().unwrap().len(), 1);
     assert_eq!(shown["requests"][0]["evalId"], "app/healthy");
     assert_eq!(shown["unreadable"].as_array().unwrap().len(), 2);
+    let text = shown["unreadable"].to_string();
+    for id in [request.id.as_str(), execution.as_str()] {
+        assert!(text.contains(id), "{text}");
+    }
+    assert!(text.contains("matching result"), "{text}");
+    assert!(text.contains("cannot carry a verdict result"), "{text}");
     let requests = store::read_requests(&state, Some(&first.run.id))
         .await
         .unwrap();
@@ -411,6 +414,59 @@ fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
 }
 
 #[tokio::test]
+async fn run_list_reads_no_records_so_damaged_definitions_and_requests_still_list() {
+    let root = support::os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    support::declaration::write(repo.join("index.artf"), json!({
+        "name":"app", "evals":[
+            {"id":"one","title":"One","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["one"]}},
+            {"id":"two","title":"Two","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["two"]}}
+        ]
+    }).to_string()).unwrap();
+    let run = verify(&repo, &state).await;
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    // Neither record is JSON any more: a listing that decoded them could not count them.
+    db.execute(
+        "UPDATE run_definitions SET data='not json' WHERE run_id=?",
+        [&run.run.id],
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE requests SET data='not json' WHERE id=?",
+        [&run.requests[0].id],
+    )
+    .unwrap();
+    let listed: Value =
+        serde_json::from_str(&cli(&repo, &state, &["run", "list", "--limit", "1"], true)).unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["id"], run.run.id.as_str());
+    assert_eq!(listed[0]["status"], "GREEN");
+    assert_eq!(listed[0]["counts"], json!({"GREEN": 2}));
+    assert!(listed[0].get("unreadable").is_none(), "{listed}");
+    // Showing the Run reads it whole and refuses definitions that do not read.
+    let shown = Command::new(support::os::cli())
+        .arg("--repo")
+        .arg(&repo)
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["run", "show", run.run.id.as_str(), "--json"])
+        .record_output()
+        .unwrap();
+    assert!(!shown.status.success());
+    let error = format!(
+        "{}{}",
+        String::from_utf8_lossy(&shown.stdout),
+        String::from_utf8_lossy(&shown.stderr)
+    );
+    assert!(
+        error.contains(&format!("Unreadable run {}", run.run.id)),
+        "{error}"
+    );
+}
+
+#[tokio::test]
 async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
@@ -428,6 +484,8 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         [&bad.run.id],
     )
     .unwrap();
+    // The listing reads columns alone: it still lists both Runs, and `status` reports the
+    // one whose record does not read.
     let listed: Value = serde_json::from_str(&cli(&repo, &state, &["run", "list"], true)).unwrap();
     assert_eq!(listed.as_array().unwrap().len(), 2);
     let corrupted = listed
@@ -436,19 +494,10 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
         .iter()
         .find(|run| run["id"] == bad.run.id.as_str())
         .unwrap();
-    assert_eq!(corrupted["unreadable"][0]["kind"], "run");
-    assert_eq!(corrupted["unreadable"][0]["id"], bad.run.id.as_str());
-    assert!(
-        corrupted["unreadable"][0]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("An open Run cannot be completed")
-    );
-    for args in [["run", "list"].as_slice(), ["status"].as_slice()] {
-        let text = cli(&repo, &state, args, false);
-        assert!(text.contains(bad.run.id.as_str()), "{text}");
-        assert!(text.contains("An open Run cannot be completed"), "{text}");
-    }
+    assert_eq!(corrupted["status"], "RUNNING");
+    let text = cli(&repo, &state, &["status"], false);
+    assert!(text.contains(bad.run.id.as_str()), "{text}");
+    assert!(text.contains("An open Run cannot be completed"), "{text}");
     let status: Value = serde_json::from_str(&cli(&repo, &state, &["status"], true)).unwrap();
     assert_eq!(status["unreadable"][0]["id"], bad.run.id.as_str());
     assert_eq!(

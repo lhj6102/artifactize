@@ -1,7 +1,6 @@
 # 가이드 (모델 불필요) {#guide-no-model-needed}
 
-이 가이드에서는 저장소에 포함된 예제 프로젝트로 실습합니다. 저장소의 로컬 사본인 체크아웃에서
-직접 빌드하지 않았다면, 먼저 버전 관리 프로그램인 **Git**으로 사본을 만드세요
+이 가이드에서는 저장소에 포함된 예제 프로젝트로 실습합니다. 저장소를 아직 로컬에 복제하지 않았다면, 먼저 버전 관리 프로그램인 **Git**으로 내려받으세요
 (`git --version`이 응답하지 않으면 [Git 받기](https://git-scm.com/downloads)).
 `git clone`으로 저장소를 새 `artifactize` 폴더에 내려받은 다음, `cd`로 그 폴더에 들어가세요.
 
@@ -10,7 +9,7 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
-예제는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 쓰므로 두 명령
+예제는 Python으로 된 eval을 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 쓰므로 두 명령
 모두 터미널에서 쓸 수 있어야 합니다. `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
 터미널이 두 명령을 찾는지 확인하세요.
 
@@ -24,12 +23,10 @@ Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라�
 artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대로 실행합니다.
 [운영체제](../features/others/platforms.md)를 보세요.
 
-리뷰받는 작업 단위 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
-부르는 검사들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
-형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
-**artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
+리뷰할 작업 단위마다 **Artifact**를 선언합니다. Artifact의 `index.artf`는 텍스트 설정 파일이며, 여기에 **eval**이라는 리뷰 항목을 나열합니다. 이 파일은 읽기 쉬운 `key = value` 형식의 **TOML**로 작성합니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
+**artifactsum**은 파일 내용으로 그 값을 계산해 artifactize가 변경을 알아차리게 합니다.
 
-artifactize는 Run과 결과 같은 **상태(state)** 데이터를 상태 디렉터리에 저장합니다.
+artifactize는 Run과 결과를 상태 디렉터리에 저장하며, 이 기록을 **상태(state)** 라고 합니다.
 이 실습의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 디렉터리를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
@@ -49,9 +46,9 @@ PowerShell에서는 첫 줄을
 그 경로를 위와 같은 환경 변수에 저장합니다. `artifactize` 명령은 그대로입니다.
 
 `config check`는 프로젝트 프로그램을 실행하지 않고 선언을 검증합니다.
-`status`는 검사 두 개가 실행되고, 세 번째 검사는 그 결과가 나올 때까지 대기한다고 예측합니다.
-프로젝트에 필요한 검사가 아직 모두 통과하지 않았으므로 종료 코드는 1입니다. `config graph`는
-Artifact들과 그 입력 관계를 보여 줍니다. 이제 세 검사를 모두 실행하고
+`status`는 eval 두 개가 실행되고, 세 번째 eval은 앞선 결과가 나올 때까지 실행을 미룬다고 보여 줍니다.
+프로젝트에 필요한 eval이 아직 모두 통과하지 않았으므로 종료 코드는 1입니다. `config graph`는
+Artifact들과 그 입력 관계를 보여 줍니다. 이제 세 eval을 모두 실행하고
 결과를 기다리세요.
 
 ```sh
@@ -66,11 +63,11 @@ artifactize verify --all --wait
 artifactize run show RUN_ID
 ```
 
-이 명령은 저장된 Run의 기록을 구조화된 텍스트 형식인 JSON으로 출력합니다. `argv`는
+이 명령은 저장된 Run을 JSON(구조화된 텍스트 기록) 형식으로 출력합니다. `argv`는
 프로그램에 전달된 인자 목록이고, `stdout`은 그 프로그램이 출력한 텍스트입니다.
 기록에는 리뷰된 입력을 식별하는 fingerprint도 들어 있습니다.
 
-같은 검사를 다시 실행하세요.
+같은 eval을 다시 실행하세요.
 
 ```sh
 artifactize verify --all --wait
@@ -81,7 +78,7 @@ artifactize status
 status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에서도 같은 임시 상태
 디렉터리를 쓰도록 이 터미널을 열어 두세요.
 
-[runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 검사를 RED로 만드는 방법도 보여 줍니다. 각 폴더는
+[runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 eval이 RED가 되는 상황을 만드는 방법도 보여 줍니다. 각 폴더는
 그 안의 `index.artf` 파일에서 Artifact로 선언됩니다. `fingerprint`를 생략하면 파일 변경 여부를 확인하는 내장 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
 구분은 [선언 (.artf)](../features/declarations.md)을 보세요.
 
@@ -105,7 +102,7 @@ artifactize status         # all three post reviews are reused
 cd ../runtime-relations    # continue the tour below
 ```
 
-각 파일 Artifact의 해시에는 그 파일만 들어갑니다. 참조된 `house-style` Artifact가
+파일 Artifact의 기본 fingerprint는 그 파일 하나만 해시해 계산합니다. 참조된 `house-style` Artifact가
 검사기와 금지어를 담고 있으므로, 공용 부분이 바뀌면 세 글 모두 기존 리뷰의
 [재사용 키](../features/fingerprint.md#the-reuse-key)가 무효가 됩니다. 재사용 키는
 검사 기준과 리뷰한 입력을 구분하는 값이며, 이 값을 기준으로 이전 결과를 계속 쓸 수 있는지 판단합니다.
@@ -155,7 +152,7 @@ artifactize run show RUN_ID
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 Run이 끝날 때까지 포그라운드에서 진행 상황을 표시합니다. 승인만
-남으면 Run은 담당자가 정해지기 전에는 최대 2분간, 정해진 뒤에는 승인이 끝날 때까지 종료되지 않습니다. 앞선
+남았을 때 담당자가 2분 안에 요청을 맡으면, 그 담당자가 승인을 맡고 있는 동안 Run이 계속 열려 있습니다. 앞선
 자동 리뷰가 여전히 유효하면 GREEN 승인이 제출되는 즉시 `verify --wait`가 종료 코드 0으로 끝납니다. Run이
 이미 YELLOW(종료 코드 5)로 끝난 뒤에 요청을 맡더라도, 승인을 제출하면 다음 `verify`에서 그 승인을 재사용합니다.
 
@@ -171,7 +168,7 @@ Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 �
 로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 화면을 살펴보기만 해서는 프로젝트에 선언된 명령이 실행되지 않습니다.
 
 Human 요청 담당 지정, 도구, 판정 양식은
-[Human 리뷰와 monitor](../tui/index.md#monitor)를 보세요.
+[Human 리뷰와 Monitor](../tui/index.md#monitor)를 보세요.
 
 ## 팀 리뷰 저장소 (선택) {#team-review-store-optional}
 

@@ -1,6 +1,9 @@
 //! Shared change-driven Run stream. Notifications are hints; saved state is authority.
 use super::{Context, Finding, RunObservation, RunResultPage};
-use crate::types::{RequestId, RequestStatus, RunId};
+use crate::{
+    store,
+    types::{RequestId, RequestStatus, RunId},
+};
 use serde::Serialize;
 use std::{collections::BTreeMap, future::Future, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -37,7 +40,8 @@ where
         let mut seen: BTreeMap<RequestId, RequestStatus> = BTreeMap::new();
         let mut previous = None;
         loop {
-            let view = super::view(context, id).await?;
+            // The compact observation checks the repository and settles a Run whose worker
+            // died; only results not yet emitted are read.
             let current = super::status(context, id).await?;
             // Ignore elapsed time: reconciliation must not invent progress.
             let signature = (current.state, current.counts.clone());
@@ -45,15 +49,15 @@ where
                 emit(RunEvent::Update(current.clone())).await?;
                 previous = Some(signature);
             }
-            for request in &view.requests {
+            for request in store::read_new_results(&context.state, id, seen.clone()).await? {
                 if (request.result().is_some() || request.error().is_some())
                     && seen.get(&request.id) != Some(&request.status())
                 {
-                    emit(RunEvent::EvalResult(super::result::finding(request))).await?;
+                    emit(RunEvent::EvalResult(super::result::finding(&request))).await?;
                     seen.insert(request.id.clone(), request.status());
                 }
             }
-            let ended = super::observe::state(&view.run, &view.requests).is_terminal();
+            let ended = current.state.is_terminal();
             last = Some(current);
             if ended {
                 emit(RunEvent::Outcome(super::result(context, id, None).await?)).await?;

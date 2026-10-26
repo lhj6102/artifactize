@@ -22,11 +22,11 @@ payload.instruction = "Check that every link in the docs resolves."
 **Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. `{spec}` 같은 참조는 그
 Artifact를 eval의 입력으로 지정하며, 그 fingerprint가 바뀌면 재사용 키에 그 Artifact를 포함한 리뷰만
 무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
-Artifact가 모든 검사의 의존성이 되지는 않습니다.
+Artifact가 모든 eval이 의존하는 대상이 되지는 않습니다.
 
 실행 게이트는 eval마다 정해집니다. [eval 의존성](#eval-dependencies)을 보세요.
 
-그래프 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
+Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
 관계를 포함합니다. 프로젝트의 리뷰 구조를 사람이 리뷰할 때 쓰세요. 문법은
 [선언](declarations.md#graph-artifact)에 있고, [graph 도구](tools/builtin.md#current-project-graph)는
@@ -44,8 +44,7 @@ eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[eva
 `agent`, `human` 중 하나인 `profile`이 있습니다. 모든 eval에는 `payload.instruction`이 필요하며,
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
-Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent나 Human은 소유자 필드와 함께 GREEN이나
-RED를 돌려줍니다.
+Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent eval과 Human eval은 소유자 필드를 포함한 GREEN 또는 RED 판정을 돌려줍니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
 `guide` Artifact이며, 그 README에서 자식, `{artifact}` 참조, basis Artifact를 설명합니다.
@@ -115,7 +114,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 실행할 수 있습니다.
 
 모든 eval은 입력의 판정과 상관없이 그 대상을 판단할 수 있습니다. 옵션 없는 `verify`는
-효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 대기 중이면 그 입력을 쓰는 eval도 대기하고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 결과가 GREEN이 되려면 상위 리뷰를
+효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 끝나지 않았으면 그 입력을 쓰는 eval은 실행을 미루고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 결과가 GREEN이 되려면 상위 리뷰를
 포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
@@ -131,9 +130,9 @@ payload.instruction = "Run {e2e-tests} against {app}."
 `docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
 쓰는 eval이 진행하려면 둘 다 통과해야 합니다.
 
-순환으로 묶인 대상을 참조하는 eval도 순환 밖 입력의 검사 결과가 나올 때까지 대기합니다. `cli`의 eval이
+순환에 속한 Artifact를 참조하는 eval도 순환 밖 입력의 eval 결과가 나올 때까지 실행을 미룹니다. `cli`의 eval이
 `core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
-`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환으로 묶인 대상이나 입력, 자식을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환으로 묶인 대상과 입력, 자식의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
+`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환에 속한 Artifact나 입력, 자식을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환에 속한 Artifact와 입력, 자식의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
@@ -146,13 +145,13 @@ BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실�
 ### Human 승인 {#human-sign-offs}
 
 Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
-시작합니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
-자동 검사 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
+시작합니다. 사람은 자동 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
+자동 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
 통과한 것으로 칩니다. 그
-자동 검사 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
+자동 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
 `Sibling machine eval RED: spec/review`처럼 그 eval이 나옵니다. 같은 Artifact의 다른 Human
 eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`와
-`--speculate` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 검사 eval이
+`--speculate` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 eval이
 GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}

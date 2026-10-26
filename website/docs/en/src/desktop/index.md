@@ -232,7 +232,9 @@ Run is shown, with no claim, and records nothing as a review's evidence. While o
 runs, the Artifact's other tool buttons wait and a **Cancel** button beside its name
 stops it; closing the Detail does not stop it, and its output keeps arriving in the
 Artifact's Tool log, shown when the Detail opens again. Its runs stay in that Tool
-log while the app runs. The graph's nodes carry no tool buttons.
+log while the app runs. The graph's nodes carry no tool buttons. The Tools show only while
+the Pane's search still lists the branch: if the search hides it, clear or widen the
+search to bring them back.
 
 An eval's chip shows its **Summary**: its status, with what running it took and
 spent (time, tokens in `k` or `M`, model) or what reuse saved; its instruction; its

@@ -366,7 +366,10 @@ pub(super) fn outcome_code(run: &artifactize_core::store::Run) -> u8 {
 }
 
 pub(super) fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
+    // Buffered: a large document is written in blocks, not one write per line.
+    let mut stdout = io::BufWriter::new(io::stdout().lock());
     serde_json::to_writer_pretty(&mut stdout, value).map_err(|e| e.to_string())?;
-    writeln!(stdout).map_err(|e| e.to_string())
+    writeln!(stdout)
+        .and_then(|()| stdout.flush())
+        .map_err(|e| e.to_string())
 }

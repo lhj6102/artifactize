@@ -409,9 +409,9 @@ current directory when omitted); `--repo-only` makes that default explicit, and
 `--all` includes every repository in the shared state. `--limit N` (default 50) and `--offset N` (default 0), each 0–4294967295, page the filtered results; a value out of range exits 2. Each row includes the Run
 ID, repository, creation/completion timestamps, status, request counts by
 verdict/state (absent states have zero requests) and the Run's
-[comment](#submission-and-watching), if any. Unreadable requests do not count;
-`unreadable` names damaged records and their reasons while valid evidence stays
-available. See [state troubleshooting](../features/others/state.md#unreadable-records). Reads do not run owner code,
+[comment](#submission-and-watching), if any. `run list` does not check for damaged
+records; `status` and `run show` name them and their reasons. See
+[state troubleshooting](../features/others/state.md#unreadable-records). Reads do not run owner code,
 create missing state, or require a repository to still exist. There is no
 separate `history` command.
 

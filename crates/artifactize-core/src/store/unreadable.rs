@@ -62,15 +62,6 @@ pub(super) fn skipped(unreadable: &Unreadable) {
     let _ = writeln!(std::io::stderr().lock(), "{unreadable}");
 }
 
-pub(super) fn in_run(
-    db: &rusqlite::Connection,
-    run: &crate::types::RunId,
-) -> Result<Vec<Unreadable>, Error> {
-    Ok(in_runs(db, std::slice::from_ref(run))?
-        .remove(run)
-        .unwrap_or_default())
-}
-
 /// Existing-state audit for current-input status and the monitor, without rejecting a listing.
 pub async fn read_unreadable(state: &Path, repo: Option<&Path>) -> Result<Vec<Unreadable>, String> {
     super::receipts::check_files(state)?;

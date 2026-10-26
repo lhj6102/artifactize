@@ -147,11 +147,17 @@ impl App {
         generation
     }
 
-    /// A closing window cancels running Human tools and Current scans, as quitting the
-    /// terminal UI does; the returned future ends once the scans have stopped.
+    /// A closing window cancels running Human tools, Current scans and a Codex sign-in in
+    /// progress, as quitting the terminal UI does; the returned future ends once the scans and
+    /// the sign-ins have stopped.
     pub fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
         self.human.cancel_all();
-        self.currents.stop()
+        let scans = self.currents.stop();
+        let sign_ins = self.settings.close();
+        async move {
+            scans.await;
+            sign_ins.await;
+        }
     }
 }
 

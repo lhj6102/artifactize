@@ -175,21 +175,21 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
     .map(|body| body.deserialize::<Value>().unwrap())
 }
 
-const STILL: fn() -> Value = || json!({"run": null, "close": false, "query": null, "older": null, "full": true, "resync": false});
+const STILL: fn() -> Value = || json!({"run": {"kind": "keep"}, "query": null, "older": null, "full": true, "resync": false});
 
 /// Show Run `run` in the Main area.
 fn open_run(run: &str) -> Value {
-    json!({"run": run, "close": false, "query": null, "older": null, "full": false, "resync": false})
+    json!({"run": {"kind": "open", "id": run}, "query": null, "older": null, "full": false, "resync": false})
 }
 
 /// Star `branch`, or take its star away.
 fn star(branch: &Value, on: bool) -> Value {
-    json!({"run": null, "close": false, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
+    json!({"run": {"kind": "keep"}, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
 }
 
 /// Read the state afresh with the pane's search `query`.
 fn search(query: &str) -> Value {
-    json!({"run": null, "close": false, "query": query, "older": null, "full": true, "resync": false})
+    json!({"run": {"kind": "keep"}, "query": query, "older": null, "full": true, "resync": false})
 }
 
 /// The waiting Human reviews the Pane lists, read afresh.

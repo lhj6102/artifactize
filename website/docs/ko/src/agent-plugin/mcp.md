@@ -11,18 +11,16 @@
 
 ## 어느 프로젝트인가 {#which-project}
 
-각 도구 호출은 프로젝트 하나를 다룹니다. 그 프로젝트는 다음 항목을 위에서부터 확인해 처음 찾은 것으로 정합니다.
+각 도구 호출은 프로젝트 하나를 다룹니다. 프로젝트를 정할 때는 다음 항목을 차례로 확인하고, 가장 먼저 찾은 값을 씁니다.
 
-1. 도구 호출의 `project` 인자로 준 프로젝트 폴더의 절대 경로(모든 도구에서 받음)
+1. 도구 호출의 `project` 인자로 준 프로젝트 폴더의 절대 경로(모든 도구가 이 인자를 받습니다)
 2. 서버를 시작할 때 준 `--repo PATH`
 3. 호스트의 첫 로컬 [MCP root](https://modelcontextprotocol.io/specification/2025-06-18/client/roots).
    첫 호출 때 물으며(답은 최대 10초 대기), 호스트의 root가 바뀐 뒤 다시 묻습니다.
 4. 호스트가 root를 주지 않으면 서버를 시작한 디렉터리. 단, 그 디렉터리가 서버를 실행한
    플러그인의 폴더라면 제외합니다.
 
-이 방법으로도 프로젝트를 정할 수 없으면, 서버는 `project` 인자가 필요하다는 오류를 돌려줍니다. root가 있는 호스트가
-제때 답하지 않거나 로컬 폴더를 지정하지 않은 경우, 또는 서버가 플러그인의
-폴더에 있는 경우입니다.
+이 방법으로도 프로젝트를 정할 수 없으면, 서버는 `project` 인자가 필요하다는 오류를 돌려줍니다. 이 오류는 root를 지원하는 호스트가 제때 답하지 않거나 로컬 폴더를 지정하지 않았을 때, 또는 서버가 플러그인 폴더에서 시작됐을 때 납니다.
 
 최신 버전과 이전 버전의 MCP 호스트에서 모두 동작합니다. 프로토콜 메시지는 stdout으로,
 진단 정보는 stderr로 출력합니다. 제한 시간 안에서 실행되는 `verify_watch` 호출은 표준 MCP 진행 알림도 보낼 수 있습니다. 자세한 내용은
@@ -32,8 +30,7 @@
 
 [설치 설정](../getting-started/install.md)을 마친 다음, **프로젝트 디렉터리**에서
 코딩 호스트를 실행하세요.
-이 서버는 HTTP 리뷰 저장소(`artifactize server`)가 아니며, 토큰 인자나 호스트 시간 제한
-변경이 필요 없습니다.
+이 서버는 HTTP 리뷰 저장소(`artifactize server`)가 아니므로, 토큰을 인자로 넘길 필요도, 호스트의 시간 제한을 바꿀 필요도 없습니다.
 
 Claude Code와 Codex에서는 [플러그인](plugin.md)이 Hey Arti 스킬과 함께
 이 서버를 등록합니다. 아래 명령은 수동 등록입니다. 이 명령으로
@@ -74,18 +71,18 @@ codex mcp get artifactize
 
 | 도구 | 인자 | 답 |
 | --- | --- | --- |
-| `verify_start` | `scope`, 선택적으로 `request_key`, `comment`, `jobs`, `speculate` | Run을 제출. Run 상태 요약이며 승인 결과가 아님 |
+| `verify_start` | `scope`, 선택적으로 `request_key`, `comment`, `jobs`, `speculate` | Run을 제출합니다. Run 상태 요약이며 승인 결과는 아닙니다 |
 | `verify_status` | `run` | 저장된 상태, 개수, 경과 초, `next_check` |
-| `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 도달할 때까지 대기. 기본 30, 정수 0–40. 첫 호출에서 root를 물어야 한다면 그 답을 받은 뒤 대기하며, 한 번의 확인은 45초 안에 끝남 |
-| `verify_watch` | `run`. 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 지켜봄. 진행 메시지에는 JSON Run 이벤트가 들어 있음. 호출이 끝나면 간단한 상태 요약을 반환함 |
-| `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 지적 사항 최대 20개, `next_cursor`. 실행 중이면 `ready:false` |
-| `verify_cancel` | `run` | 명시적 취소 확인. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
+| `verify_wait` | `run`, 선택적으로 `seconds` | Run이 끝나거나 한도에 도달할 때까지 대기합니다. 기본값은 30이며 0–40의 정수입니다. 첫 호출에서 root를 물어야 한다면 그 답을 받은 뒤 대기하며, 한 번의 확인은 45초 안에 끝납니다 |
+| `verify_watch` | `run`, 그리고 도구 호출에 선택적으로 표준 `_meta.progressToken` | 최대 30초 동안 변경을 지켜봅니다. 진행 메시지에는 JSON Run 이벤트가 들어 있습니다. 호출이 끝나면 간단한 상태 요약을 반환합니다 |
+| `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 지적 사항 최대 20개, `next_cursor`를 돌려줍니다. 실행 중이면 `ready:false`입니다 |
+| `verify_cancel` | `run` | 명시적 취소 확인입니다. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
 
 `comment`에는 에이전트가 지금 하는 일을 짧게 적습니다. 터미널의 Monitor, 데스크톱 앱과 `run_show`에서
 Run과 함께 사람에게 보이며 Run의 동작은 바꾸지 않습니다. 제어 문자와 앞뒤 공백 없는 한 줄,
 1–200자여야 하고, 그 밖의 값은 Run을 접수하기 전에 거부됩니다.
 
-`scope`는 `kind` 필드로 선택 유형을 구분하는 공용 Selection JSON 객체입니다.
+`scope`에는 선택 종류를 `kind` 필드에 지정한 공통 선택(Selection) JSON 객체를 전달합니다.
 
 ```json
 {"kind":"all"}
@@ -134,16 +131,16 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | --- | --- | --- |
 | `status` | `scope`(기본 all) | `status --all` 또는 선택한 status |
 | `config_check` | 없음 | `config check` |
-| `config_graph` | `scope`(기본 all), `impact`(false) | `config graph [ARTIFACT] [--impact]`. MCP는 eval/여러 개 선택도 받음 |
+| `config_graph` | `scope`(기본 all), `impact`(false) | `config graph [ARTIFACT] [--impact]`. MCP는 eval/여러 개 선택도 받습니다 |
 | `request_logs` | **`id`**, `stream`(`stdout`/`stderr`/`both`), `tail`, `start`, `end`, `search` | 해당 플래그를 쓴 `request logs ID` |
 | `run_list` | `limit`(0–20, 기본 20), `offset`(0–4294967295, 기본 0) | 이 저장소에 대한 `run list --limit 20 --offset N`, 최신 순 |
 | `run_show` | **`run`** | `run show RUN` |
 | `request_list` | `run` | 이 저장소로 제한된 `request list [--run RUN]` |
 | `request_show` | **`id`** | `request show ID` |
 | `session_show` | **`reference`**, `summary`(기본 false) | `session show REF [--summary]` |
-| `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`. `audience`는 `agent` 또는 `human` |
+| `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`입니다. `audience`는 `agent` 또는 `human`입니다 |
 | `doctor` | 없음 | `doctor` |
-| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름. 이름은 ASCII 영문자, 숫자, `_`, `-` 1–64자이며 영문자나 숫자로 시작) | `models PROVIDER` |
+| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름입니다. 이름은 ASCII 영문자, 숫자, `_`, `-`로 된 1–64자이며 영문자나 숫자로 시작합니다) | `models PROVIDER` |
 | `remote_status` | 없음 | `remote status` |
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 
@@ -184,7 +181,7 @@ cursor는 같은 도구와 같은 인자에서만 동작합니다. 다음 페이
 ## 일부러 빼놓은 것 {#deliberately-absent}
 
 자격 증명 로그인/로그아웃, Human 담당 지정/제출/담당 해제, prune, 캐시 제거,
-원격 푸시, 대화형 monitor/review, 저장소 서버, 프로젝트 도구 실행,
+원격 푸시, 대화형 Monitor/review, 저장소 서버, 프로젝트 도구 실행,
 Agent 세션 follow-up은 없습니다. 이런 동작은 CLI와 일반 Human 리뷰 인터페이스에서 하세요.
 
 
@@ -195,10 +192,10 @@ Agent 세션 follow-up은 없습니다. 이런 동작은 CLI와 일반 Human 리
 이 호출이 대기하는 동안 artifactize는 Run이 바뀔 때마다
 `notifications/progress`를 보냅니다. 알림의 `message`는 JSON 객체입니다.
 
-- `{"kind":"update","data":...}`: 간결한 실시간 상태/개수. **승인이 아닙니다**.
+- `{"kind":"update","data":...}`: 간결한 실시간 상태/개수입니다. **승인이 아닙니다**.
 - `{"kind":"eval_result","data":...}`: 저장된 요청/eval 상태 하나와 간결한
-  요약. 재사용된 결과와 잠정 결과를 포함하며, **Run 판정이 아닙니다**.
-- `{"kind":"outcome","data":...}`: `verify_result`의 스키마를 쓰는 최종 Run 검증.
+  요약입니다. 재사용된 결과와 잠정 결과를 포함하며, **Run 판정이 아닙니다**.
+- `{"kind":"outcome","data":...}`: `verify_result`의 스키마를 쓰는 최종 Run 검증입니다.
   남은 지적 사항은 그 `next_cursor`를 `verify_result`에 넘겨 읽으세요.
 
 연결할 때마다 기준 상태와 이미 완료된 eval을 다시 보내므로, 필요하면

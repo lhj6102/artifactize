@@ -187,7 +187,7 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   expect(header()).toBe("Nothing chosen");
   // A click on a branch expands it and shows its newest entry: the Run in progress.
   await fireEvent.click(name(/^app \/ feat\/x/));
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-2" }));
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-2" } }));
   expect(header()).toBe("Run run-2");
   const timeline = screen.getByRole("group", { name: "Runs of app feat/x" });
   expect(within(timeline).getAllByRole("button").map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
@@ -198,7 +198,7 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   entries.focus();
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-1" }));
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } }));
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await waitFor(() => expect(screen.queryByRole("group", { name: "Runs of app feat/x" })).toBeNull());
@@ -211,7 +211,7 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   expect(screen.getByRole("group", { name: "Runs of app main" })).toBeTruthy();
   await fireEvent.keyDown(entries, { key: "ArrowRight" });
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-0" }));
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-0" } }));
   // ↓ again only selects the waiting review; Enter opens it as Review.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   const waiting = within(screen.getByRole("listbox", { name: "Waiting reviews" })).getByRole("option");
@@ -272,7 +272,7 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
   entries.focus();
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
-  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: "run-1" }));
+  await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } }));
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().filter((step) => step.older)).toHaveLength(asked + 1));
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Run run-1");

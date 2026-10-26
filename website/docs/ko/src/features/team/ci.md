@@ -4,7 +4,7 @@
 CI 작업은 러너 머신에서 여러 명령을 차례로 실행하며,
 개발자의 Agent/Human 승인 결과를 재사용할 뿐 그 결정을 직접 내려서는 안 됩니다.
 
-CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실행하세요. 테스트는 실행하되 리뷰 결과는 캐시나 팀 저장소에서 재사용하므로, CI에서는 모델을 호출하거나 사람의 승인을 요청한 채 대기하지 않습니다.
+CI 단계로 `artifactize verify --all --wait --reuse-only agent,human`을 실행하세요. 테스트는 실행하되 리뷰 결과는 캐시나 팀 리뷰 저장소에서 재사용하므로, CI에서는 모델을 호출하지 않고 사람에게 승인을 요청하지도 않습니다.
 선택한 모든 eval이 GREEN이면 종료 코드는 0이며, RED(1), ERROR(2), INCOMPLETE(4)이면
 CI 작업은 실패로 처리됩니다. 모든 종료 코드는 [명령 레퍼런스](../../cli/index.md#command-reference)에 있습니다. Agent 리뷰나
 Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않고](../../cli/index.md#reuse-only) Run이 INCOMPLETE로 남으므로,
@@ -12,13 +12,13 @@ Human 승인에 재사용할 결과가 없으면 그 eval은 [실행되지 않�
 
 ## 대기 중인 승인을 병합 게이트에서 빼기 {#keep-pending-sign-offs-out-of-the-merge-gate}
 
-승인은 자동 검사를 막지 않으므로, 개발자의 `verify`는 사람이 자리를 비운 동안에도 자동 검사를 끝냅니다.
-YELLOW(종료 코드 5), DEFERRED 승인, PROVISIONAL 자동 검사 결과는 모두 승인이 끝났다는 뜻이 아닙니다. CI의
+승인은 자동 eval을 막지 않으므로, 개발자의 `verify`는 사람이 자리를 비운 동안에도 자동 eval을 끝냅니다.
+YELLOW(종료 코드 5), DEFERRED 승인, PROVISIONAL 자동 eval 결과는 모두 승인이 끝났다는 뜻이 아닙니다. CI의
 `--reuse-only agent,human` 게이트를 유지하세요. 필요한 승인이 없으면 승인을 요청하지 않고 Run이
 INCOMPLETE로 남으며, 통과로 간주되지 않습니다.
-사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 검사 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. verify가 접수됐다는 것만으로 CI가 성공했다고 보지 마세요.
+사람이 GREEN을 제출하면 CI는 바뀌지 않은 자동 eval 결과와 승인을 재사용합니다. RED는 의존하는 eval을 막습니다. verify가 접수됐다는 것만으로 CI가 성공했다고 보지 마세요.
 
-## 팀 저장소의 판정 재사용하기 {#reuse-verdicts-from-the-team-store}
+## 팀 리뷰 저장소의 판정 재사용하기 {#reuse-verdicts-from-the-team-store}
 
 아래 YAML은 완전한 워크플로가 아니라 **GitHub Actions 단계 하나**입니다. 리뷰된 커밋을
 체크아웃하고 러너에서 `artifactize`를 쓸 수 있게 한 다음

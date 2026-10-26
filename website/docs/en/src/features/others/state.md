@@ -81,9 +81,10 @@ store, and there are no settings for this.
 
 A single saved record can be unreadable while the rest of the state is fine.
 Artifactize then skips it as evidence instead of inventing a verdict: its requests are
-left out of Run counts, and an unreadable Run is shown as unreadable. Status and Run
-listings report each one under `unreadable` with its `kind`, `id` and `reason`, and the
-commands that read evidence print an `Unreadable ...` line on stderr. Missing counts do
+left out of the Run's summary, and an unreadable Run is shown as unreadable. `status` and
+`run show` report each one under `unreadable` with its `kind`, `id` and `reason`, and the
+commands that read evidence print an `Unreadable ...` line on stderr. `run list` does not
+check for them. Missing counts do
 not mean those reviews passed: keep the state for diagnosis and verify again when you
 need fresh evidence. `doctor` checks that the state opens and has a supported schema; it
 does not repair records.

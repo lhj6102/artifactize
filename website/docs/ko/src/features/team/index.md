@@ -1,6 +1,6 @@
 # 팀으로 일하기 {#working-as-a-team}
 
-`artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 공유 리뷰 저장소를 하나 운영하면
+`artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 팀 리뷰 저장소를 하나 운영하면
 여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 각 머신은
 각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
 돌려주므로, 강제로 다시 리뷰하는 등 새 리뷰를 수행하면 모든 팀원이 이전 판정 대신 새 판정을 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
@@ -14,11 +14,10 @@ artifactize --state-dir /srv/artifactize server token add ci --scopes read
 artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 ```
 
-`token add`는 각 토큰을 한 번만 출력하니 비공개로 보관하세요. `server run`은
-**루프백**(`127.0.0.1`)에서 대기하므로, 같은 머신의 프로그램만 직접 연결할 수 있습니다.
+`token add`는 각 토큰을 한 번만 출력하니 비공개로 보관하세요. `server run`은 **루프백** 주소(`127.0.0.1`)에서만 연결을 받으므로, 같은 머신의 프로그램만 직접 연결할 수 있습니다.
 암호화되지 않은 네트워크로 토큰을 보내지 않고 팀원이 연결하게 하려면
 [아래의 안전한 연결 설정](#connect-teammates-securely)을 쓰세요.
-저장소는 SQLite 명령줄 도구로 백업하세요. 아래 명령 하나로 위 상태 디렉터리의
+SQLite 명령줄 도구를 사용해 저장소를 백업하세요. 아래 명령 하나로 위 상태 디렉터리의
 데이터베이스를 읽어 별도의 파일에 백업할 수 있습니다.
 
 ```sh
