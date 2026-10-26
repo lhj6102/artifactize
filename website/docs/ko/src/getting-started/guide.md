@@ -108,7 +108,7 @@ cd ../runtime-relations    # continue the tour below
 이 예제의 README는 글 하나를 RED로 만들고 나머지 두 개는 재사용하는 방법을 보여 줍니다.
 
 Runtime eval은 지시문이나 인자에서 입력을 직접 참조합니다. 예를 들어
-애플리케이션의 eval은 `{e2e-tests}`를 입력으로 삼아 E2E 테스트 모음을 실행합니다. 테스트 코드
+애플리케이션의 eval은 `{e2e-tests}`를 입력으로 삼아, 실제로 동작하는 애플리케이션을 검사하는 종단 간(E2E) 테스트 모음을 실행합니다. 테스트 코드
 Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을 충분히 검증하는지도 확인합니다. 그 애플리케이션 eval만
 테스트 코드 리뷰가 끝난 뒤에 실행되고, 관련 없는 애플리케이션 eval은 그동안에도 실행할 수 있습니다.
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.

@@ -10,8 +10,8 @@ Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED�
 eval이 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
-eval이 준비되면 artifactize는 사람의 결정이 필요한 작업을 **DEFERRED 요청**으로
-저장합니다. 이 요청은 다른 작업을 막지 않습니다. 사람이 판정을 제출할 때까지는 Run의 `--jobs` 실행 자리도,
+eval 준비가 끝나면 artifactize는 사람이 판정해야 하는 요청을 **DEFERRED** 상태로
+기록합니다. 이 요청은 다른 작업을 막지 않습니다. 사람이 판정을 제출할 때까지는 Run의 `--jobs` 실행 자리도,
 `--max-executions` 예산도 쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 그 승인에 의존하는 eval은 바로
 실행하며, 그 eval의 GREEN 결과는 승인이 GREEN이 될 때까지 PROVISIONAL로 표시되고, eval 자체의 RED나 ERROR는
 그대로 표시됩니다. 다른 작업이 아직 실행 중일 수 있으니, 최종 상태를

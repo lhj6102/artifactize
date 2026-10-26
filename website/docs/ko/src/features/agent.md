@@ -38,7 +38,7 @@ artifactize models codex
 커스텀 provider는 그 API가 받는 값을 따르며, 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 Runtime eval과 똑같이 입력의 eval 결과가 나올 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝날 때 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
+Agent eval도 Runtime eval처럼 입력 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
