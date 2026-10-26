@@ -28,7 +28,7 @@ artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일 내용으로 그 값을 계산해 artifactize가 변경을 알아차리게 합니다.
 
-artifactize는 Run과 결과 같은 **상태(state)** 데이터를 상태 디렉터리에 저장합니다.
+artifactize는 Run과 결과 같은 기록, 곧 **상태(state)** 를 상태 디렉터리에 저장합니다.
 이 실습의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 디렉터리를 만들고
 artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
