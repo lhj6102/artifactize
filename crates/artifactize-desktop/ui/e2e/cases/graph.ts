@@ -48,17 +48,17 @@ const within = (inner: DOMRect, outer: DOMRect) =>
 const apart = (one: DOMRect, other: DOMRect) =>
   one.left >= other.right || one.right <= other.left || one.top >= other.bottom || one.bottom <= other.top;
 
-/** The spaces' boxes and the Artifacts of the graph under `root`, once its four Artifacts and
- * two boxes are drawn: each box's rectangle and text, each Artifact's rectangle, text and
- * spoken name. */
+/** The spaces' regions and the Artifacts of the graph under `root`, once its four Artifacts and
+ * two regions are drawn: each region's box, text and outline, each Artifact's rectangle, text
+ * and spoken name. */
 async function spacesDrawn(browser: WebdriverIO.Browser, root: string) {
   const read = () => browser.execute((under) => {
     const rect = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
     const of = (selector: string) => [...document.querySelectorAll<HTMLElement>(`${under} ${selector}`)]
       .filter((node) => !node.closest('aside[aria-label="Detail"]'));
     return {
-      boxes: Object.fromEntries(of(".svelte-flow__node[data-space]")
-        .map((box) => [box.dataset.space ?? "", { rect: rect(box), text: box.textContent?.trim() ?? "" }])),
+      regions: Object.fromEntries(of(".svelte-flow__node[data-space]")
+        .map((region) => [region.dataset.space ?? "", { rect: rect(region), text: region.textContent?.trim() ?? "", outline: region.querySelector("svg path")?.getAttribute("d") ?? "" }])),
       nodes: Object.fromEntries(of(".svelte-flow__node[data-light]")
         .map((node) => [node.dataset.id ?? "", { rect: rect(node), text: node.textContent?.trim() ?? "", label: node.getAttribute("aria-label") ?? "" }])),
     };
@@ -66,8 +66,8 @@ async function spacesDrawn(browser: WebdriverIO.Browser, root: string) {
   let shown: Awaited<ReturnType<typeof read>> | undefined;
   await browser.waitUntil(async () => {
     shown = await read();
-    return Object.keys(shown.nodes).length === 4 && Object.keys(shown.boxes).length === 2;
-  }, { timeout: 15000, timeoutMsg: "two boxes and four Artifacts drawn" });
+    return Object.keys(shown.nodes).length === 4 && Object.keys(shown.regions).length === 2;
+  }, { timeout: 15000, timeoutMsg: "two regions and four Artifacts drawn" });
   return shown!;
 }
 
@@ -212,45 +212,48 @@ export const scenarios: Scenario[] = [
   // UX journey: J-GRAPH-SPACES; UX edges: E-GRAPH-SPACES E-MON-DETAIL-ARTIFACT E-GRAPH-SPACE-BACKGROUND
   scenario<{ run: string }>(
     "graph-spaces",
-    "draws each space's Artifacts in one box labelled with the space by the rest of their names, edges between spaces and out of them like any other, and closes the Detail on a click on a box",
+    "draws each space's Artifacts in one region labelled with the space by the rest of their names, its rounded outline following them, edges between spaces and out of them like any other, and closes the Detail on a click on a region",
     async () => ended(createSpaces()),
     async (browser, { data }) => {
       await shownRun(browser, data.run);
       await graphShown(browser, "a:combat::Code");
-      const { boxes, nodes } = await spacesDrawn(browser, ".graph");
-      assert.deepEqual(Object.keys(boxes).sort(), ["combat", "inventory"], "one box per space: docs has none");
-      for (const [space, box] of Object.entries(boxes)) assert.equal(box.text, space, `the ${space} box is labelled with its space`);
+      const { regions, nodes } = await spacesDrawn(browser, ".graph");
+      assert.deepEqual(Object.keys(regions).sort(), ["combat", "inventory"], "one region per space: docs has none");
+      for (const [space, region] of Object.entries(regions)) {
+        assert.equal(region.text, space, `the ${space} region is labelled with its space`);
+        assert.match(region.outline, /^M .* A .* Z$/, `the ${space} region is drawn as a rounded outline`);
+      }
       for (const [id, space, label] of [["a:combat::Spec", "combat", "Spec"], ["a:combat::Code", "combat", "Code"], ["a:inventory::Code", "inventory", "Code"]]) {
         assert.equal(nodes[id].text, label, `${id} shows the rest of its name`);
         assert.ok(nodes[id].label.startsWith(`${id.slice(2)}: `), `${id} is read aloud whole: ${nodes[id].label}`);
-        assert.ok(within(nodes[id].rect, boxes[space].rect), `${id} sits in the ${space} box`);
-        for (const [other, box] of Object.entries(boxes)) {
-          if (other !== space) assert.ok(apart(nodes[id].rect, box.rect), `${id} stands outside the ${other} box`);
+        assert.ok(within(nodes[id].rect, regions[space].rect), `${id} sits in the ${space} region`);
+        for (const [other, region] of Object.entries(regions)) {
+          if (other !== space) assert.ok(apart(nodes[id].rect, region.rect), `${id} stands outside the ${other} region`);
         }
       }
       assert.equal(nodes["a:docs"].text, "docs");
-      for (const box of Object.values(boxes)) assert.ok(apart(nodes["a:docs"].rect, box.rect), "docs stands outside every box");
-      assert.ok(apart(boxes.combat.rect, boxes.inventory.rect), "the boxes do not meet");
+      for (const region of Object.values(regions)) assert.ok(apart(nodes["a:docs"].rect, region.rect), "docs stands outside every region");
+      assert.ok(apart(regions.combat.rect, regions.inventory.rect), "the regions do not meet");
       await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser),
         { "a:combat::Code": "green", "a:inventory::Code": "green", "a:docs": "green" },
         { "a:combat::Code>a:inventory::Code": "green", "a:inventory::Code>a:docs": "green" }),
       { timeout: 15000, timeoutMsg: "the edges from combat into inventory and out of inventory to docs are drawn and lit like any other" });
 
-      // The Detail names the Artifact whole; a click on a box's label closes it.
+      // The Detail names the Artifact whole; a click on a region's label closes it.
       await openArtifact(browser, "a:combat::Code", "Artifact combat::Code");
       const label = await browser.execute(() => {
-        const at = document.querySelector('.graph .svelte-flow__node[data-space="combat"]')!.getBoundingClientRect();
-        return { x: Math.round(at.left + 8), y: Math.round(at.top + 8) };
+        const at = document.querySelector('.graph .svelte-flow__node[data-space="combat"] .label')!.getBoundingClientRect();
+        return { x: Math.round(at.left + 8), y: Math.round(at.top + at.height / 2) };
       });
       await browser.action("pointer").move({ x: label.x, y: label.y }).down().up().perform();
-      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "a click on the box closed the Detail" });
+      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "a click on the region closed the Detail" });
     },
   ),
 
   // UX journeys: J-GRAPH-SPACES J-DETAIL; UX edges: E-GRAPH-SPACES E-GRAPH-TAB E-CURRENT-EVALS E-CURRENT-CLOSE
   scenario<Record<string, never>>(
     "graph-spaces-keyboard",
-    "Tabs past the spaces' boxes of a branch's Current to every Artifact, opening nothing, and opens each one's Detail with Enter",
+    "Tabs past the spaces' regions of a branch's Current to every Artifact, opening nothing, and opens each one's Detail with Enter",
     async () => {
       // Its Run ended, so the branch's newest entry, shown at launch, is its Current.
       const fixture = createSpaces();
@@ -259,8 +262,8 @@ export const scenarios: Scenario[] = [
     async (browser) => {
       const current = 'section[aria-label="Current"]';
       await browser.$(`${current} .svelte-flow__node[data-space="inventory"]`)
-        .waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn with its boxes" });
-      assert.deepEqual(Object.keys((await spacesDrawn(browser, current)).boxes).sort(), ["combat", "inventory"], "the Current draws the same boxes");
+        .waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn with its regions" });
+      assert.deepEqual(Object.keys((await spacesDrawn(browser, current)).regions).sort(), ["combat", "inventory"], "the Current draws the same regions");
       await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
       await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
       const expected = ["a:combat::Code", "a:combat::Spec", "a:docs", "a:inventory::Code"];
@@ -273,7 +276,7 @@ export const scenarios: Scenario[] = [
           return node ? { id: node.getAttribute("data-id") ?? "", space: node.getAttribute("data-space") } : null;
         });
         if (!focused) continue;
-        assert.equal(focused.space, null, `Tab passes the ${focused.space} box by`);
+        assert.equal(focused.space, null, `Tab passes the ${focused.space} region by`);
         if (visited.has(focused.id)) continue;
         assert.ok(expected.includes(focused.id), `Tab reached an Artifact of the Current: ${focused.id}`);
         assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
@@ -282,7 +285,7 @@ export const scenarios: Scenario[] = [
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Current's Detail closes");
         visited.add(focused.id);
       }
-      assert.deepEqual([...visited].sort(), expected, "every Artifact, and no box, is reachable with Tab");
+      assert.deepEqual([...visited].sort(), expected, "every Artifact, and no region, is reachable with Tab");
     },
   ),
 

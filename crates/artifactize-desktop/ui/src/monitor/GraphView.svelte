@@ -10,7 +10,7 @@
   // while at most that many are; with more in view, they are boxes on the canvas, which a click
   // opens as it opens an element.
   //
-  // Each space's Artifacts sit in its box, drawn behind them, which a click passes to the
+  // Each space's Artifacts sit in its region, drawn behind them, which a click passes to the
   // background.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
@@ -20,7 +20,7 @@
   import SpaceNode from "./SpaceNode.svelte";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { NODE } from "./layout";
-  import { boxes } from "./spaces";
+  import { regions } from "./spaces";
   import { area, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
@@ -64,9 +64,9 @@
 
   /** Where every Artifact is, indexed by area. */
   const laid = $derived(scene(positions));
-  /** Each space's box around its Artifacts; few, so always kept as elements. */
-  const spaces = $derived(boxes(graph, positions));
-  /** The whole graph, the spaces' boxes included, as Fit View fits it. */
+  /** Each space's region around its Artifacts; few, so always kept as elements. */
+  const spaces = $derived(regions(graph, positions));
+  /** The whole graph, the spaces' regions included, as Fit View fits it. */
   const bounds = $derived.by(() => {
     const all = [laid.bounds, ...spaces];
     if (spaces.length === 0) return laid.bounds;
@@ -90,21 +90,21 @@
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() => {
     const keep = drawn === null ? null : new Set(drawn === "" ? [] : drawn.split(",").map((number) => laid.ids[Number(number)]));
-    const behind = spaces.map((box): Node => ({
-      id: `space:${box.space}`,
+    const behind = spaces.map((region): Node => ({
+      id: `space:${region.space}`,
       type: "space",
-      position: { x: box.x, y: box.y },
-      width: box.width,
-      height: box.height,
-      measured: v.initialized ? { width: box.width, height: box.height } : undefined,
-      data: { space: box.space },
+      position: { x: region.x, y: region.y },
+      width: region.width,
+      height: region.height,
+      measured: v.initialized ? { width: region.width, height: region.height } : undefined,
+      data: { space: region.space, outline: region.outline, label: region.label },
       draggable: false,
       connectable: false,
       selectable: false,
       focusable: false,
       zIndex: -1,
-      ariaLabel: `Space ${box.space}`,
-      domAttributes: { "data-space": box.space },
+      ariaLabel: `Space ${region.space}`,
+      domAttributes: { "data-space": region.space },
     }));
     const artifacts = graph.nodes
       .filter((node) => positions.has(node.id) && (keep === null || keep.has(node.id)))
@@ -315,6 +315,10 @@
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
+  }
+  /* A space's region takes the pointer only within its outline and on its label. */
+  .canvas :global(.svelte-flow__node-space) {
+    pointer-events: none;
   }
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);

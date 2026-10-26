@@ -191,11 +191,13 @@ Every graph is laid out at once, upstream on the left. An Artifact that a great 
 others use (such as one criteria file every review reads) stands in its own column on
 the left, its edges still drawn to each Artifact that uses it. Artifacts whose
 [names](../features/declarations.md) share a space, such as `combat::Spec` and
-`combat::Code`, sit together in one box labelled `combat`, each node showing the rest of
-its name (`Code`); read aloud and in the Detail an Artifact keeps its whole name. Artifacts
-without a space stand outside every box, and edges between spaces are drawn and coloured
-like any other. A box is not an Artifact: Tab passes it by, and a click on it closes the
-Detail as a click on the background does. Above 40 nodes, a
+`combat::Code`, sit together in one region labelled `combat`, each node showing the rest
+of its name (`Code`); read aloud and in the Detail an Artifact keeps its whole name. A
+region's rounded outline follows its Artifacts, and a graph with spaces is laid out with
+more room between its Artifacts and between its spaces. Artifacts without a space stand
+outside every region, and edges between spaces are drawn and coloured like any other. A
+region is not an Artifact: Tab passes it by, and a click on it closes the Detail as a click
+on the background does. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
 graph has no minimap, and while more than 500 are in view they are colored boxes without names
 that open only with a click. Zoom in until fewer are in view to see names again and reach
