@@ -134,6 +134,19 @@ Run에만 적용됩니다. `artifactize limits`(데스크톱 Settings에서도 �
 artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
 ```
 
+## Agent 재실행 {#agent-redispatches}
+
+`limits.json`으로 provider의 답변이 나오기 시작한 뒤 실패한 Agent 리뷰를 Run 안에서 몇 번
+[다시 실행](../agent.md#retries-and-error-codes)할지도 정합니다.
+
+```json
+{"agentRedispatches": 1}
+```
+
+값은 0–5이며, 필드나 파일이 없으면 1입니다. 0이면 이전처럼 첫 실패에서 리뷰가 ERROR로 끝납니다.
+다시 실행할 때마다 처음 실행과 똑같이 비용이 듭니다. 다른 한도와 마찬가지로 이 상태를 쓰는 모든 Run에
+적용되고 Run이 시작할 때 읽습니다. `artifactize limits`로 확인할 수 있습니다.
+
 ## Agent 세션 {#agent-sessions}
 
 Agent 리뷰의 대화는 상태 디렉터리에 저장되며,

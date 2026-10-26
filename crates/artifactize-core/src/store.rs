@@ -49,7 +49,7 @@ pub use executions::{
 pub use receipts::OwnedReceipts;
 pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
-    DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
+    DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Redispatch, Request, Run, RunView,
     StoppedBackend, read_latest_requests, read_state_id, schema_error, state_schema,
 };
 pub use requests::read_request_repo;

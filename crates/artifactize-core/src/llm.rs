@@ -126,6 +126,18 @@ pub struct Attempt {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_code: Option<Code>,
+    /// The review's dispatch that spent it: 1, or a later one after the provider's output
+    /// failed ([`Failure::output_failed`]). Saved only when later than the first.
+    #[serde(default = "first_dispatch", skip_serializing_if = "is_first_dispatch")]
+    pub dispatch: usize,
+}
+
+fn first_dispatch() -> usize {
+    1
+}
+
+fn is_first_dispatch(dispatch: &usize) -> bool {
+    *dispatch == first_dispatch()
 }
 
 /// A classified provider failure, with the wait the provider asked for, if any.
@@ -133,11 +145,15 @@ struct Classified {
     code: Code,
     message: String,
     retry_after: Option<Duration>,
+    output_failed: bool,
 }
 
 impl From<Classified> for Failure {
     fn from(classified: Classified) -> Self {
-        Self::new(classified.code, classified.message)
+        Self {
+            output_failed: classified.output_failed,
+            ..Self::new(classified.code, classified.message)
+        }
     }
 }
 
@@ -147,6 +163,7 @@ impl From<Failure> for Classified {
             code: failure.code,
             message: failure.message,
             retry_after: None,
+            output_failed: failure.output_failed,
         }
     }
 }
@@ -354,6 +371,7 @@ impl Client {
                     },
                     message: error.message,
                     retry_after: None,
+                    output_failed: false,
                 })?;
                 model.stream_observed(request, observed)
             }
@@ -428,6 +446,7 @@ impl Client {
             code,
             message,
             retry_after: retry_after(error),
+            output_failed: false,
         }
     }
 
@@ -557,7 +576,7 @@ impl Client {
             let result = result.and_then(|response| {
                 validate_response(&response, context.model)
                     .map(|()| response)
-                    .map_err(|message| Classified::from(Failure::new(Code::ProviderError, message)))
+                    .map_err(Classified::from)
             });
             attempts.push(Attempt {
                 turn: context.number,
@@ -565,13 +584,22 @@ impl Client {
                 usage: counters.into(),
                 error: result.as_ref().err().map(|failure| failure.message.clone()),
                 error_code: result.as_ref().err().map(|failure| failure.code),
+                dispatch: first_dispatch(),
             });
             let failure = match result {
                 Ok(response) => return Ok(response),
                 Err(failure) => failure,
             };
             if !failure.code.retryable() || emitted || used_tokens || attempt == ATTEMPTS {
-                return Err(failure.into());
+                let failure = Failure::from(failure);
+                // A stream that broke off after its output began was a sound request.
+                return Err(
+                    if failure.code == Code::Transient && (emitted || used_tokens) {
+                        failure.of_output()
+                    } else {
+                        failure
+                    },
+                );
             }
             let wait = failure
                 .retry_after
@@ -628,26 +656,33 @@ fn add_cache_usage(
     );
 }
 
-/// A delivered response is usable only from the requested model and when it finished.
-fn validate_response(response: &CompletionResponse, model: &str) -> Result<(), String> {
+/// A delivered response is usable only from the requested model and when it finished. One
+/// stopped at the output cap (`Length`) is a failure of the provider's output.
+fn validate_response(response: &CompletionResponse, model: &str) -> Result<(), Failure> {
     if response
         .model
         .as_deref()
         .is_some_and(|actual| actual != model)
     {
-        return Err(format!(
-            "Provider model mismatch: requested {model:?}, received {:?}.",
-            response.model
+        return Err(Failure::new(
+            Code::ProviderError,
+            format!(
+                "Provider model mismatch: requested {model:?}, received {:?}.",
+                response.model
+            ),
         ));
     }
-    if !matches!(
-        response.finish_reason(),
-        Some(FinishReason::Stop | FinishReason::ToolCalls)
-    ) {
-        return Err(format!(
-            "Provider response was incomplete: {:?}.",
-            response.finish_reason()
-        ));
+    let finish = response.finish_reason();
+    if !matches!(finish, Some(FinishReason::Stop | FinishReason::ToolCalls)) {
+        let failure = Failure::new(
+            Code::ProviderError,
+            format!("Provider response was incomplete: {finish:?}."),
+        );
+        return Err(if matches!(finish, Some(FinishReason::Length)) {
+            failure.of_output()
+        } else {
+            failure
+        });
     }
     Ok(())
 }

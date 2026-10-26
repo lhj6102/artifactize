@@ -504,6 +504,21 @@ fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
     .collect()
 }
 
+/// Each attempt's `dispatch`: `None` for the first dispatch, which is not saved.
+fn dispatches(request: &Value) -> Vec<Option<u64>> {
+    request["usage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|attempt| attempt["dispatch"].as_u64())
+        .collect()
+}
+
+/// The saved session's `attempt` events of the session `id`.
+fn session_attempts(project: &Project, id: &Value) -> Vec<Value> {
+    attempt_events(project, &json!({ "sessionId": id }))
+}
+
 #[test]
 fn a_response_rejected_after_delivery_fails_its_billed_attempt_with_its_counters() {
     let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
@@ -513,32 +528,55 @@ fn a_response_rejected_after_delivery_fails_its_billed_attempt_with_its_counters
     for (name, backend) in CAPPED {
         let review = request(&run, &format!("{name}/review"));
         assert_eq!(review["errorCode"], "PROVIDER_ERROR", "{backend}: {review}");
+        // Billed output is not retried within its turn; the review is dispatched once more.
         let usage = review["usage"].as_array().unwrap();
-        assert_eq!(usage.len(), 1, "{backend}: billed output is not retried");
-        let attempt = &usage[0];
-        assert_eq!(
-            attempt["errorCode"], "PROVIDER_ERROR",
-            "{backend}: {attempt}"
+        assert_eq!(usage.len(), 2, "{backend}: {review}");
+        assert_eq!(dispatches(review), [None, Some(2)], "{backend}");
+        for attempt in usage {
+            assert_eq!(
+                attempt["errorCode"], "PROVIDER_ERROR",
+                "{backend}: {attempt}"
+            );
+            assert_eq!(attempt["error"], review["error"], "{backend}");
+            assert_eq!(
+                attempt["usage"]["outputTokens"], 128,
+                "{backend}: {attempt}"
+            );
+        }
+        let redispatches = review["redispatches"].as_array().unwrap();
+        assert_eq!(redispatches.len(), 1, "{backend}: {review}");
+        assert_eq!(redispatches[0]["errorCode"], "PROVIDER_ERROR", "{backend}");
+        assert_eq!(redispatches[0]["error"], review["error"], "{backend}");
+        assert_ne!(
+            redispatches[0]["sessionId"], review["sessionId"],
+            "{backend}"
         );
-        assert_eq!(attempt["error"], review["error"], "{backend}");
-        assert_eq!(
-            attempt["usage"]["outputTokens"], 128,
-            "{backend}: {attempt}"
-        );
-        let events = attempt_events(&project, review);
-        assert_eq!(events.len(), 1, "{backend}");
-        assert_eq!(events[0]["errorCode"], "PROVIDER_ERROR", "{backend}");
-        assert_eq!(events[0]["usage"], attempt["usage"], "{backend}");
+        for (events, attempt) in [
+            (
+                session_attempts(&project, &redispatches[0]["sessionId"]),
+                &usage[0],
+            ),
+            (attempt_events(&project, review), &usage[1]),
+        ] {
+            assert_eq!(events.len(), 1, "{backend}");
+            assert_eq!(events[0]["errorCode"], "PROVIDER_ERROR", "{backend}");
+            assert_eq!(events[0]["usage"], attempt["usage"], "{backend}");
+        }
     }
-    assert_eq!(provider.requests().len(), CAPPED.len());
+    assert_eq!(provider.requests().len(), 2 * CAPPED.len());
+}
+
+/// An unfinished result, then whitespace in deltas that pass the stop point together.
+fn degenerate_deltas() -> Vec<String> {
+    let mut deltas = vec![r#"{"verdict":"GREEN","findings":["#.to_owned()];
+    deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
+    deltas
 }
 
 #[test]
 fn a_response_that_degenerates_into_whitespace_stops_with_its_own_code() {
     let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
-    // An unfinished result, then whitespace in deltas that pass the stop point together.
-    let mut deltas = vec![r#"{"verdict":"GREEN","findings":["#.to_owned()];
-    deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
+    let deltas = degenerate_deltas();
     let provider = FakeProvider::start(move |request| capped(request, &deltas, 128_000));
     let run = project.run(&provider, &["--all"], 2);
     for (name, backend) in CAPPED {
@@ -553,14 +591,112 @@ fn a_response_that_degenerates_into_whitespace_stops_with_its_own_code() {
         );
         assert_eq!(
             attempts(review),
-            [(1, 1, json!("DEGENERATE_OUTPUT"))],
-            "{backend}: billed output is not retried"
+            [
+                (1, 1, json!("DEGENERATE_OUTPUT")),
+                (1, 1, json!("DEGENERATE_OUTPUT"))
+            ],
+            "{backend}: one attempt in each of two dispatches"
         );
         let events = attempt_events(&project, review);
         assert_eq!(events.len(), 1, "{backend}");
         assert_eq!(events[0]["errorCode"], "DEGENERATE_OUTPUT", "{backend}");
     }
-    assert_eq!(provider.requests().len(), CAPPED.len());
+    assert_eq!(provider.requests().len(), 2 * CAPPED.len());
+}
+
+/// A streamed answer that breaks off with an overload after its first text.
+fn interrupted(request: &Request) -> Reply {
+    let mut events = vec![
+        json!({"type":"response.output_item.added","output_index":0,
+            "item":{"type":"message","id":"msg_fake","role":"assistant","status":"in_progress",
+                "content":[]}}),
+        json!({"type":"response.output_text.delta","item_id":"msg_fake","output_index":0,
+            "content_index":0,"delta":r#"{"verdict":"#}),
+        json!({"type":"error","code":"server_is_overloaded",
+            "message":"Our servers are currently overloaded. Please try again later.",
+            "param":null}),
+    ];
+    for (index, event) in events.iter_mut().enumerate() {
+        event["sequence_number"] = json!(index);
+    }
+    if request.path.starts_with("/backend-api/codex") {
+        codex::stream(events)
+    } else {
+        Reply::Events(events)
+    }
+}
+
+#[test]
+fn a_failed_provider_output_is_dispatched_again_in_a_fresh_session() {
+    let project = Project::new(&[("notes", agent("openai"))]);
+    type Failure = fn(&Request) -> Reply;
+    let failures: [(Failure, &str); 3] = [
+        (
+            |request| capped(request, &degenerate_deltas(), 128_000),
+            "DEGENERATE_OUTPUT",
+        ),
+        (
+            |request| capped(request, &[r#"{"verdict":"GR"#.to_owned()], 128),
+            "PROVIDER_ERROR",
+        ),
+        (interrupted, "TRANSIENT"),
+    ];
+    for (failure, code) in failures {
+        let failed = std::sync::Mutex::new(false);
+        let provider = FakeProvider::start(move |request| {
+            if !std::mem::replace(&mut *failed.lock().unwrap(), true) {
+                return failure(request);
+            }
+            pass(request)
+        });
+        let run = project.run(&provider, &["--all", "--force"], 0);
+        let review = request(&run, "notes/review");
+        assert_eq!(review["status"], "GREEN", "{code}: {run}");
+        assert_eq!(
+            attempts(review),
+            [
+                (1, 1, json!(code)),
+                (1, 1, Value::Null),
+                (2, 1, Value::Null)
+            ],
+            "{code}: the failed dispatch's attempt is kept"
+        );
+        assert_eq!(dispatches(review), [None, Some(2), Some(2)], "{code}");
+        let redispatches = review["redispatches"].as_array().unwrap();
+        assert_eq!(redispatches.len(), 1, "{code}: {review}");
+        assert_eq!(redispatches[0]["errorCode"], code);
+        assert_ne!(redispatches[0]["sessionId"], review["sessionId"], "{code}");
+        assert_eq!(
+            session_attempts(&project, &redispatches[0]["sessionId"]).len(),
+            1,
+            "{code}"
+        );
+        let calls = provider.requests();
+        assert_eq!(calls.len(), 3, "{code}");
+        // The new dispatch starts the conversation over rather than continuing it.
+        assert!(!replayed(&calls[1]), "{code}");
+        assert_eq!(calls[0].body["input"], calls[1].body["input"], "{code}");
+    }
+
+    // With no redispatches, the failed output ends the review as before.
+    fs::write(
+        project.state.join("limits.json"),
+        r#"{"agentRedispatches":0}"#,
+    )
+    .unwrap();
+    let failed = std::sync::Mutex::new(false);
+    let provider = FakeProvider::start(move |request| {
+        if !std::mem::replace(&mut *failed.lock().unwrap(), true) {
+            return capped(request, &degenerate_deltas(), 128_000);
+        }
+        pass(request)
+    });
+    let run = project.run(&provider, &["--all", "--force"], 2);
+    let review = request(&run, "notes/review");
+    assert_eq!(review["errorCode"], "DEGENERATE_OUTPUT", "{review}");
+    assert_eq!(attempts(review), [(1, 1, json!("DEGENERATE_OUTPUT"))]);
+    assert!(review.get("redispatches").is_none(), "{review}");
+    assert_eq!(provider.requests().len(), 1);
 }
 
 #[test]
