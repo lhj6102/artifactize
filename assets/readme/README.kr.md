@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="../others/roles.en.gif" width="800"
-       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 노드를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 노드를 하나씩 검사합니다. 새 노드가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 노드는 GREEN이 됩니다. 이어서 Director가 노드를 하나 더 추가하고 하나를 바꾸면, 노드가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
+       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 저마다 검사를 갖춘 프로젝트 조각인 Artifact로 이루어집니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
 </p>
 
 **누구를 위한 도구인가요?**

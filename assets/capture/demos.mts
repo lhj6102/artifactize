@@ -480,7 +480,8 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       }
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them, as the Current draws them. The graph drawn
-      // is this release's only once its nodes and edges are exactly these, never the previous one's.
+      // is this release's only once its Artifact nodes (not its spaces' boxes) and edges are
+      // exactly these, never the previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
         { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string }[] };
       const names = new Set(Object.keys(graph.artifacts));
@@ -492,19 +493,19 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       await browser.waitUntil(() => browser.execute((expected) => {
         const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
         return !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
-          && `${ids(".current .svelte-flow__node")}\n${ids(".current .svelte-flow__edge")}` === expected;
+          && `${ids(".current .svelte-flow__node[data-id^='a:']")}\n${ids(".current .svelte-flow__edge")}` === expected;
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: exactly this release's nodes and edges, every node drawn inside the
-      // canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
+      // Complete and still: exactly this release's Artifact nodes and edges, every node (space
+      // boxes included) drawn inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
       // over 300 ms.
       const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
           const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
-          if (`${ids(".current .svelte-flow__node")}\n${ids(".current .svelte-flow__edge")}` !== expected) return null;
+          if (`${ids(".current .svelte-flow__node[data-id^='a:']")}\n${ids(".current .svelte-flow__edge")}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
             const box = line.getBoundingClientRect();
