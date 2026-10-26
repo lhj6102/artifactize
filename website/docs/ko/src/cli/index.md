@@ -135,7 +135,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 `--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
 볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
-열(없으면 `-`)에 보여 주고, `verify`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+제출만 하는 `verify --json`은 `run`과 `state`만 출력합니다.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -204,9 +205,9 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
 프로그램을 시작하지 못하거나 리뷰가 ERROR로 끝나도 이 횟수는 유지합니다. 사람을 기다리는 시간, 담당 지정, Human 도구는 시작
 횟수에 들어가지 않고, fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에 합류하는 것도
-마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. Agent 리뷰에서는
-시작 횟수를 센 뒤 `execution_paths`에 지정한 도구 파일의 해시를 기록합니다. 이 단계가
-실패해도 시작 횟수는 그대로 남고, 리뷰는 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED로 끝납니다.
+마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. `execution_paths`에
+지정한 도구 파일을 읽지 못한 Agent 리뷰는 시작 횟수에 들어가고, 모델을 호출하지 않은 채
+ERROR/PREPARATION_FAILED로 끝납니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
 실행해야 하면, 다시 실행하는 리뷰는 그 리뷰가 속한 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
@@ -515,6 +516,9 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
+
+머리말에는 세션, follow-up 번호, 리뷰의 백엔드와 모델이 나오고, 리뷰 뒤에 리뷰한 파일이 바뀌었으면
+그 사실도 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이

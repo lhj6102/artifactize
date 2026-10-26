@@ -142,7 +142,8 @@ details.
 people watching it; it changes nothing the Run does. A comment is 1–200 characters on one
 line, without control characters or leading or trailing spaces; any other text exits 2.
 `verify --wait` prints it on a `Comment:` line, `run list` in its `COMMENT` column (`-` for
-none) and the JSON of `verify`, `run list` and `run show` as `comment`.
+none) and the JSON of `verify --wait`, `run list` and `run show` as `comment`; submit-only
+`verify --json` prints just `run` and `state`.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -217,9 +218,8 @@ The Run records an explicit `jobs` cap (the field is absent when unlimited),
 review counts one start once it is ready to run, even when its program then fails to
 start or the review later ends ERROR. Waiting for a person, claiming and Human tools count
 none, nor do computing or rechecking fingerprints, reusing a saved result or joining a
-review already running. A review that fails before it is ready to run counts none. One
-step comes after its start is counted: recording the hashes of an Agent review's
-`execution_paths` tool files. When that fails, the start still counts and the review ends
+review already running. A review that fails before it is ready to run counts none. An Agent
+review whose `execution_paths` tool files cannot be read counts its start and ends
 ERROR/PREPARATION_FAILED without calling the model.
 Zero permits reuse, joining and Human reviews; a Run that has to run a review again
 because the Run it joined failed uses its own remaining budget. Exhaustion never interrupts running evals, but
@@ -562,6 +562,9 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
+
+The header names the session, the follow-up number, and the review's backend and model,
+then whether reviewed files changed since the review.
 
 With `--json`, `send` prints `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`: `send` is the follow-up number, `filesChanged` whether reviewed inputs

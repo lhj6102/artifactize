@@ -100,9 +100,9 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
-responses are ERROR, even if they contain a JSON verdict. When the streamed text ends in
-4096 whitespace characters in a row, artifactize stops the response at once: a model that
-degenerates this way streams nothing else until its output cap. An Anthropic answer is also
+responses are ERROR, even if they contain a JSON verdict. An answer that turns into a long
+run of whitespace ends within seconds as ERROR with `DEGENERATE_OUTPUT`; run `verify`
+again, and if it keeps happening, try another model or `reasoning`. An Anthropic answer is also
 capped at 16384 output tokens per turn, apart from the review's `max_tokens`. Artifactize
 handles retries as described below.
 
@@ -138,7 +138,7 @@ A failed Agent review records one of these `errorCode` values:
 | `CANCELLED` | Explicit Run cancellation (`run cancel` or MCP `verify_cancel`) | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
-| `DEGENERATE_OUTPUT` | The streamed text ended in 4096 whitespace characters in a row, and artifactize stopped the response | no |
+| `DEGENERATE_OUTPUT` | The answer turned into a long run of whitespace, so the review stopped it | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
