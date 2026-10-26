@@ -185,8 +185,9 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   result past the 256000-byte Human result limit is refused as a whole with an
   error, leaving the draft unchanged. Esc steps back as the key table says; Monitor's
   Close returns to the tree when idle (in standalone `review` it works like Esc). GREEN
-  and RED each keep their own draft, also across refreshes and reopening the same
-  request; a request settled elsewhere ends editing on refresh.
+  and RED each keep their own draft across refreshes. Monitor keeps each request's drafts
+  while you view other requests; standalone `review` keeps them only until you open a
+  different request, which starts fresh. A request settled elsewhere ends editing on refresh.
 
 Outside a form or work, `q` quits from Detail too. Ctrl-C first cancels a busy claim,
 tool, submission or release; once nothing is busy, it quits, also from a form. Esc
