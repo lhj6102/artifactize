@@ -10,7 +10,7 @@ Homepage: [artifactize.dev](https://artifactize.dev)
 
 <p align="center">
   <img src="assets/others/roles.en.gif" width="800"
-       alt="Animation, collaborate in Artifactize: three roles pass one Artifact Graph between them. As Director, three people and two AI agents decide what to build and add a node; as Builder, five AI agents build it; as Evaluator, four AI agents and one person check the nodes one by one. The new node is RED, so the graph goes back to the Builder to fix, then to the Evaluator again, and it turns GREEN. The Director adds another node and changes one, and the Builder and the Evaluator go back and forth again until GREEN.">
+       alt="Animation, collaborate in Artifactize: three roles pass one Artifact Graph between them, made of Artifacts, the pieces of the project, each with its own checks. As Director, three people and two AI agents decide what to build and add an Artifact; as Builder, five AI agents build it; as Evaluator, four AI agents and one person check the Artifacts one by one. The new Artifact is RED, so the Artifact Graph goes back to the Builder to fix, then to the Evaluator again, and it turns GREEN. The Director adds another Artifact and changes one, and the Builder and the Evaluator go back and forth again until GREEN.">
 </p>
 
 **Who is it for?**

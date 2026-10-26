@@ -1,4 +1,4 @@
-name = "hey-arti"
+name = "agent::hey-arti"
 tags = ["type:skill"]
 
 [views.agent_tools]
@@ -11,9 +11,9 @@ open = { description = "Open SKILL.md of {artifactName} in the desktop's default
 title = "What the skill recommends exists in today's artifactize"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
-Read the skill {hey-arti} using read_hey-arti. Check that every declaration form,
-command, tool, status and behaviour it mentions or recommends matches {core}, {cli},
-{mcp} and {docs}. Judge accuracy only: the skill need not cover every feature, and
+Read the skill {agent::hey-arti} using read_agent__hey-arti. Check that every declaration form,
+command, tool, status and behaviour it mentions or recommends matches {engine::core}, {engine::cli},
+{engine::mcp} and {docs::en}. Judge accuracy only: the skill need not cover every feature, and
 an omission is not a finding. Submit GREEN when nothing it states is wrong or
 outdated; otherwise RED with concrete skill path:line findings.
 """
@@ -24,8 +24,8 @@ fail_schema = { type = "object", properties = { findings = { type = "array", ite
 title = "The skill helps the user like a restaurant's waiter"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
-Read the skill {hey-arti} using read_hey-arti. Judge whether it helps a developer
-the way a good waiter helps a guest, using {docs} only to understand the concepts.
+Read the skill {agent::hey-arti} using read_agent__hey-arti. Judge whether it helps a developer
+the way a good waiter helps a guest, using {docs::en} only to understand the concepts.
 It must not read as a list of artifactize's features. Check that it:
 - explains each concept briefly from the user's side (what an Artifact, an eval, a
   reference, a verdict and verify mean for their project), not how artifactize
@@ -52,7 +52,7 @@ profile = { kind = "human" }
 
 [evals.consultant.payload]
 instruction = """
-Open SKILL.md of {hey-arti} with the open tool and read it as a developer meeting it \
+Open SKILL.md of {agent::hey-arti} with the open tool and read it as a developer meeting it \
 for the first time. Submit GREEN when it reads like a Forward Deployed Engineer \
 consulting on your project rather than a technical manual of artifactize; otherwise \
 submit RED and list what to change."""

@@ -1,4 +1,4 @@
-name = "docs"
+name = "docs::en"
 fingerprint = { files = ["src"] }
 
 [views.agent_tools]
@@ -13,13 +13,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-core.payload]
 instruction = """
-Review {docs} against only {core}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {engine::core}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is Features (src/features/), including Artifact and its Graph, eval kinds, fingerprints and reuse, Runs, tools framework and lifecycle, team review store/CI and supporting topics. Getting Started introduces these shared features. Do not judge the endpoint-specific CLI, MCP, desktop, skill or terminal presentation here.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {core} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {engine::core} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -63,13 +63,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-tools.payload]
 instruction = """
-Review {docs} against only {tools}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {engine::tools}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is Tools inside Features (src/features/tools/), with the built-in tools, the artifactize-tools command endpoint and how an author builds and attaches custom tool Artifacts for agents and people. Judge the tools crate behavior, not implementation details of the separate shared lifecycle framework.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {tools} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {engine::tools} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -113,13 +113,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-desktop.payload]
 instruction = """
-Review {docs} against only {desktop}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {desktop::app}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is Desktop (src/desktop/), including launch, the Pane (branches, their Runs, search and waiting reviews), the Main area (Runs, Currents, graphs and Detail), Human review, keyboard/mouse interaction and Settings.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {desktop} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {desktop::app} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -163,13 +163,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-hey-arti.payload]
 instruction = """
-Review {docs} against only {hey-arti}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {agent::hey-arti}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is Hey Arti inside Agent plugin (src/agent-plugin/hey-arti.md), including Arti's role, using the canonical portable skill, interviewing and proposing a composition, the practices it recommends, MCP-first workflow, tool sessions, durable Runs, Human authority, team sharing and read-only CI.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {hey-arti} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {agent::hey-arti} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -213,13 +213,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-agent-plugin.payload]
 instruction = """
-Review {docs} against only {agent-plugin} and the marketplace catalogs {claude-marketplace} and {codex-marketplace} that list it. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {agent::plugin} and the marketplace catalogs {agent::claude-marketplace} and {agent::codex-marketplace} that list it. Start with src/SUMMARY.md in the docs.
 The owned documentation area is the plugin page inside Agent plugin (src/agent-plugin/plugin.md), including what the plugin provides, the prerequisite artifactize install, the install steps per host, how each host launches the MCP server, updates and the manual fallback.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {agent-plugin}, {claude-marketplace} and {codex-marketplace} to inspect them. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {agent::plugin}, {agent::claude-marketplace} and {agent::codex-marketplace} to inspect them. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -263,13 +263,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-mcp.payload]
 instruction = """
-Review {docs} against only {mcp}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {engine::mcp}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is MCP inside Agent plugin (src/agent-plugin/mcp.md), including registering the stdio endpoint, verification and inspection tools, bounds, detail paging, lifecycle and deliberately absent operations.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {mcp} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {engine::mcp} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -313,13 +313,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-cli.payload]
 instruction = """
-Review {docs} against only {cli}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {engine::cli}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is CLI (src/cli/), including every command, flag, default, output and exit behavior. Interactive terminal screens belong to the TUI area; the CLI area explains how to launch them. The current-directory tools (`artifactize-tools` and its `artifactize tools` spelling) belong to the Tools area; the CLI area lists them and links there.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {cli} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {engine::cli} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -363,13 +363,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-tui.payload]
 instruction = """
-Review {docs} against only {tui}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {engine::tui}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is TUI (src/tui/), including Monitor, Review, shared Human Detail, navigation, live evidence, forms, tools, search, claims and exit behavior.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs, glob_docs, grep_docs and read_docs for documentation, and the tools
-exposed by {tui} to inspect that Artifact. Tool paths are Artifact-relative.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {engine::tui} to inspect that Artifact. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that
@@ -418,7 +418,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Review the mdBook documentation {docs} in src/, starting from src/SUMMARY.md. These are this Artifact's self-evaluation criteria:
+Review the mdBook documentation {docs::en} in src/, starting from src/SUMMARY.md. These are this Artifact's self-evaluation criteria:
 - D-CONCISE-FEATURES: Explain the product's features concisely; unnecessary repetition and
   long-winded explanation fail this criterion.
 - D-PLAIN-DOCS: A reader who is not already an expert can understand the guide. Explain

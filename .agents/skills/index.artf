@@ -16,7 +16,7 @@ instruction = """
 Read dev-master/SKILL.md, dev-worker/SKILL.md and both agents/openai.yaml of {dev-skills}.
 Check that:
 - every artifactize command, flag, selector, exit code, outcome name and output line they
-  state matches {cli};
+  state matches {engine::cli};
 - every CI job, informational job and workflow trigger they mention matches the workflows
   of {release-automation};
 - the two skills agree with each other on the branch model, the dev-green tag, the verify

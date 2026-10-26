@@ -1,9 +1,9 @@
-name = "screenshots"
+name = "media::screenshots"
 
 # The review captures the scenes again into its own folder, outside the repository.
 [views.agent_sessions.capture]
-start = { command = "node", args = ["{screenshots-script}", "session"] }
-stop = { command = "node", args = ["{screenshots-script}", "stop"] }
+start = { command = "node", args = ["{media::screenshots-script}", "session"] }
+stop = { command = "node", args = ["{media::screenshots-script}", "stop"] }
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -13,7 +13,7 @@ view_image = { description = "View a screenshot saved in {artifactName}, such as
 session = "capture"
 description = "View a screenshot just captured from the current app by the screenshots' script: monitor.png, detail.png or review.png."
 command = "node"
-args = ["{screenshots-script}", "fresh"]
+args = ["{media::screenshots-script}", "fresh"]
 protocol = "json"
 
 [views.agent_tools.fresh.input_schema]
@@ -28,8 +28,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-capture.payload]
 instruction = """
-{screenshots} holds the screenshots {screenshots-script} captured from the desktop app, \
-built from {desktop-backend} and {desktop-ui} and driven through {desktop-e2e}. For each of monitor.png, detail.png and \
+{media::screenshots} holds the screenshots {media::screenshots-script} captured from the desktop app, \
+built from {desktop::backend} and {desktop::ui} and driven through {desktop::e2e}. For each of monitor.png, detail.png and \
 review.png, view the saved one with view_image and the one just captured from the current \
 app with fresh, and compare them. Ignore what differs on every capture: Run and request \
 IDs, times, durations, temporary paths and fingerprints. Submit GREEN when every pair shows \

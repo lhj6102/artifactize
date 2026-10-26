@@ -12,7 +12,7 @@ import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { command, runtimeProfile, script } from "../native-fixtures.ts";
 import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText, type NativePath } from "../platform.ts";
-import { camera, detail, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
+import { camera, detail, graphShown, nodeAt, openArtifact, openArtifactTab, openTab, summary } from "../graph-view.ts";
 import { branch, chooseChip, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
 import { currentHasColours, graphAppearance } from "./graph-appearance.ts";
@@ -254,10 +254,10 @@ Summarize {docs}."""
     },
   ),
 
-  // UX journeys: J-DETAIL-SUMMARY J-GRAPH-COLOURS; UX edges: E-CURRENT-CHIP E-CURRENT-EVALS E-CURRENT-TAB
+  // UX journeys: J-DETAIL J-DETAIL-SUMMARY J-GRAPH-COLOURS; UX edges: E-CURRENT-CHIP E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-ARTIFACT-TAB E-CURRENT-CLOSE
   scenario<{ run: string }>(
     "current-reused",
-    "marks an Artifact whose every eval would be reused, and its eval's tab says why with the result it would reuse",
+    "marks an Artifact whose every eval would be reused, its eval's tab says why with the result it would reuse, and its chip returns to its Artifact tab",
     async () => {
       const fixture = createEvals(["alpha", "beta"]);
       return { fixture, args: ["--repo", fixture.repo], data: { run: savedRuns(fixture)[0].id } };
@@ -278,6 +278,9 @@ Summarize {docs}."""
       assert.ok(shown.blocks.includes("Result"), `the result it would reuse: ${shown.blocks}`);
       assert.equal(shown.status, `↻ reused ${CACHED}`, "with why");
       assert.equal(shown.instruction, "Check beta.");
+      // app's own chip shows its Artifact tab again, listing what each eval would do.
+      await openArtifactTab(browser, "app");
+      assert.deepEqual(await evalRows(browser), [{ name: "alpha", status: "reused" }, { name: "beta", status: "reused" }]);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
     },
   ),
