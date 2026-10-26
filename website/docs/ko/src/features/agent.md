@@ -74,6 +74,7 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 `max_tool_calls`는 도구를 실행하기 전에 호출 시도를 세며, 성공한 호출뿐 아니라 모르는 도구,
 잘못된 호출, 실패한 호출도 포함합니다. 둘 중 하나라도 넘으면 `PROVIDER_BUDGET_EXCEEDED`로
 작업을 멈춥니다. 수정 요청을 할 때도 원래 리뷰의 제한 시간과 예산을 적용하며, 예산을 추가하지 않습니다.
+반면 재실행은 제한 시간과 예산을 새로 받아 리뷰를 처음부터 다시 합니다([재시도와 오류 코드](#retries-and-error-codes) 참고).
 
 ## Agent 도구 {#agent-tools}
 
@@ -107,7 +108,8 @@ provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
 `Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
 여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과를 기다렸다가 결과가 나오면
-이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 다시 실행할 때마다 비용이 듭니다. 각 실행의
+이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 실행마다 리뷰 제한 시간, `max_tokens`, `max_tool_calls`를
+새로 적용하므로, 두 번 실행된 요청은 예산을 최대 두 배까지 쓸 수 있습니다. 다시 실행할 때마다 비용이 듭니다. 각 실행의
 시도는 모두 `usage`에 남고, 두 번째 이후 실행의 시도에는 `dispatch`(2, 3, …)가 붙습니다. 실패한 실행은
 요청의 `redispatches`에 `sessionId`, 저장된 `session`, `errorCode`, `error`와 함께 남습니다. 요청의
 `sessionId`와 `session`은 마지막 실행의 것입니다. 다시 실행하는 횟수는 머신마다

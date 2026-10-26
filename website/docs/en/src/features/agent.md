@@ -83,8 +83,9 @@ overshoot, and is not a hard generation or spending cap.
 
 `max_tool_calls` counts attempted calls before invocation, including unknown,
 invalid or failed calls, not only successful tools. Exceeding either budget stops
-further work with `PROVIDER_BUDGET_EXCEEDED`. Repair remains within the original
-review deadline and budgets; it never adds a fresh allowance.
+further work with `PROVIDER_BUDGET_EXCEEDED`. Repair remains within the original review deadline and budgets; it never adds a fresh allowance.
+A redispatch is different: it starts the review again with its own deadline and budgets
+(see [Retries and error codes](#retries-and-error-codes)).
 
 ## Agent tools
 
@@ -123,7 +124,9 @@ continuation. This covers an answer that turned into whitespace (`DEGENERATE_OUT
 one that stopped at the model's output limit (`PROVIDER_ERROR`, `Provider response was
 incomplete: Some(Length)`), and a stream that broke off after its output began
 (`TRANSIENT`). The request stays RUNNING meanwhile, so evals that depend on it wait and
-go on once it settles; it ends ERROR only when the last dispatch fails. Every dispatch is
+go on once it settles; it ends ERROR only when the last dispatch fails. Each dispatch has
+its own review deadline, `max_tokens` and `max_tool_calls`, so a request dispatched twice can
+spend up to twice its budgets. Every dispatch is
 paid for: its attempts stay in `usage`, where each attempt of a later dispatch carries
 `dispatch` (2, 3, …), and the request lists the failed ones under `redispatches`, each
 with its `sessionId`, saved `session`, `errorCode` and `error`. The request's own
