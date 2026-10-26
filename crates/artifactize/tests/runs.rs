@@ -210,28 +210,24 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
     );
     fs::write(fixture.repo.join("release"), "release").unwrap();
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
-    let output = fixture
-        .command()
-        .args([
-            "verify",
-            "--all",
-            "--wait",
-            "--request-key",
-            "watch-attempt",
-        ])
-        .output()
-        .unwrap();
+    let output = support::os::run(fixture.command().args([
+        "verify",
+        "--all",
+        "--wait",
+        "--request-key",
+        "watch-attempt",
+    ]));
     assert_eq!(output.status.code(), Some(0));
     fs::remove_file(fixture.repo.join("release")).unwrap();
     fs::remove_file(fixture.repo.join("ready")).unwrap();
     let cancelled = fixture.submit(None);
     let active = fixture.controlled(&cancelled).await;
     let child = active.requests[1].child.as_ref().unwrap().pid.get();
-    let output = fixture
-        .command()
-        .args(["run", "cancel", cancelled.as_str()])
-        .output()
-        .unwrap();
+    let output = support::os::run(
+        fixture
+            .command()
+            .args(["run", "cancel", cancelled.as_str()]),
+    );
     assert!(output.status.success());
     assert_eq!(
         fixture.settled(&cancelled).await.run.status(),
@@ -246,13 +242,13 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
     support::os::wait_until(Duration::from_secs(30), || !support::os::running(child));
     assert!(!support::os::running(child));
     assert!(
-        fixture
-            .command()
-            .args(["run", "cancel", cancelled.as_str()])
-            .output()
-            .unwrap()
-            .status
-            .success()
+        support::os::run(
+            fixture
+                .command()
+                .args(["run", "cancel", cancelled.as_str()])
+        )
+        .status
+        .success()
     );
 }
 
@@ -356,7 +352,7 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
             "GREEN",
         ],
     ] {
-        let output = fixture.command().args(args).output().unwrap();
+        let output = support::os::run(fixture.command().args(args));
         assert!(
             output.status.success(),
             "{}",
@@ -416,11 +412,11 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         .unwrap();
     assert_eq!(moved.0, None);
     assert_eq!(migrated.requests.len(), before.requests.len());
-    let output = fixture
-        .command()
-        .args(["verify", "--all", "--wait", "--json"])
-        .output()
-        .unwrap();
+    let output = support::os::run(
+        fixture
+            .command()
+            .args(["verify", "--all", "--wait", "--json"]),
+    );
     assert_eq!(
         output.status.code(),
         Some(0),

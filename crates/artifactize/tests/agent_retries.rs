@@ -743,10 +743,8 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
 fn owned_cli_exit_probe() {
     let executable = support::os::cli();
     assert!(
-        Command::new(&executable)
-            .arg("--version")
-            .status()
-            .unwrap()
+        support::os::run(Command::new(&executable).arg("--version"))
+            .status
             .success(),
         "the published private CLI is executable"
     );

@@ -511,12 +511,7 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
 fn status_predicts_deferral_only_for_a_selected_signoff() {
     let fixture = Fixture::new(false);
     let action = |args: &[&str], eval: &str| {
-        let output = fixture
-            .command()
-            .args(["status", "--json"])
-            .args(args)
-            .output()
-            .unwrap();
+        let output = support::os::run(fixture.command().args(["status", "--json"]).args(args));
         let status = parse(&output);
         status["evals"]
             .as_array()
