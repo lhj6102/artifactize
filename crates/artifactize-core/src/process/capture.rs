@@ -279,25 +279,47 @@ pub(super) fn finish(
 /// released.
 #[cfg(test)]
 pub(crate) mod slow_disk {
-    use std::cell::RefCell;
+    use std::{cell::RefCell, sync::Arc};
 
     use tokio::sync::watch;
 
+    /// The release switch, and how many evidence writes wait for it.
+    type Hold = (watch::Receiver<bool>, Arc<()>);
+
     thread_local! {
-        static HOLD: RefCell<Option<watch::Receiver<bool>>> = const { RefCell::new(None) };
+        static HOLD: RefCell<Option<Hold>> = const { RefCell::new(None) };
     }
 
-    /// Hold the evidence writes of the runs on this thread until `true` is sent.
-    pub(crate) fn hold() -> watch::Sender<bool> {
+    /// A disk that holds every evidence write on this thread until it is released.
+    pub(crate) struct SlowDisk {
+        release: watch::Sender<bool>,
+        waiting: Arc<()>,
+    }
+
+    impl SlowDisk {
+        /// How many evidence writes wait for the release now.
+        pub(crate) fn waiting(&self) -> usize {
+            // Each waiting write holds one clone; the disk and the thread's hold hold two.
+            Arc::strong_count(&self.waiting) - 2
+        }
+
+        pub(crate) fn release(&self) {
+            self.release.send_replace(true);
+        }
+    }
+
+    pub(crate) fn hold() -> SlowDisk {
         let (release, held) = watch::channel(false);
-        HOLD.with(|hold| *hold.borrow_mut() = Some(held));
-        release
+        let waiting = Arc::new(());
+        HOLD.with(|hold| *hold.borrow_mut() = Some((held, waiting.clone())));
+        SlowDisk { release, waiting }
     }
 
     pub(super) async fn wait() {
         let held = HOLD.with(|hold| hold.borrow().clone());
-        if let Some(mut held) = held {
+        if let Some((mut held, waiting)) = held {
             let _ = held.wait_for(|released| *released).await;
+            drop(waiting);
         }
     }
 }

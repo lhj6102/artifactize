@@ -102,10 +102,25 @@ async fn many_short_runs_keep_their_exit_and_output_while_their_evidence_waits_f
         })
         .await;
     }
+    // Each stream waits on the disk, with stdout's first write or stderr's last flush, and on
+    // no pipe read that could take its time.
+    // The paused clock cannot time this wait out, so the watchdog reads the system's clock.
+    let waiting = std::time::Instant::now();
+    busy(async {
+        while disk.waiting() < 2 * RUNS {
+            assert!(
+                waiting.elapsed() < WATCHDOG,
+                "{} of the streams wait on the disk",
+                disk.waiting()
+            );
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
     // Every process has ended while none of its evidence is saved yet; twice as long passes
     // as any pipe may stay open, and less than the runs' deadline.
     tokio::time::advance(process::OUTPUT_CLOSE_GRACE * 2).await;
-    disk.send(true).unwrap();
+    disk.release();
     for (index, (directory, _, run)) in runs.into_iter().enumerate() {
         let output = busy(run).await.unwrap().unwrap();
         let expected = format!("run {index}\n").into_bytes();
