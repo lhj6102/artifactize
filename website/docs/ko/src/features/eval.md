@@ -16,7 +16,7 @@
 Artifact가 통과 조건을 충족하지 못했다는 뜻입니다. 어느 종류든
 [입력과 기준](fingerprint.md#the-reuse-key)이 그대로인 동안은 재사용할 수 있습니다.
 
-리뷰 기준은 `payload.instruction`에 쓰세요. Agent와 Human eval에서는 `pass_schema`와
+평가 기준은 `payload.instruction`에 쓰세요. Agent와 Human eval에서는 `pass_schema`와
 `fail_schema`가 소유자의 결과 필드를 정하고, 판정은 artifactize가 덧붙입니다. 추가 필드를 허용하지 않는 결과 형식,
 예약된 이름, 스키마를 생략했을 때 판정만 돌려주는 기본 응답은 [소유자 결과 스키마](declarations.md#owner-result-schemas)를
 보세요. Runtime eval은 소유자 스키마 대신 명령의 종료 상태를 씁니다. 이름을 붙인

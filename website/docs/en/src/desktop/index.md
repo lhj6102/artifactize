@@ -100,7 +100,9 @@ Esc there, with no Detail open, returns to the Pane.
 `/` or Ctrl+F focuses the search, whose starting query is `sort:recent`. Free text
 and `key:value` terms must all match, and they narrow the branches and the waiting
 reviews alike. A plain word matches part of a project, a branch or a waiting review's
-eval, ignoring case; `repo:` and `branch:` match part of that one field.
+eval, ignoring case; `repo:` and `branch:` match part of that one field. Quote a value
+that has spaces, as in `repo:"my project"`: spaces inside the quotes belong to the value
+instead of starting another term.
 `sort:recent` puts the branch with the most recent Run first and branches without
 Runs last; `sort:name` orders them by project and branch. Suggestions complete keys
 and values; in an empty field or after a space, ↓ opens the key suggestions. ↑/↓ chooses one, Tab or Enter takes it, and a click takes it with the

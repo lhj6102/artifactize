@@ -16,9 +16,9 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 `request submit`과 똑같이 팀 리뷰 저장소에 게시합니다. 작업 중인 터미널과 별도로 터미널이나 tmux 창을
 하나 더 열어 실행하세요.
 
-ID가 없으면 상태 안의 모든 저장소에서 검색 조건에 맞는 요청을
-최신 Run부터 eval, 요청, 상태, 맡은 사람, 경과 시간, 저장소와 함께 나열하며, Enter로
-고른 요청을 엽니다. 처음 검색어는 대기 중인 Human 승인을 뜻하는 `kind:human status:waiting_human`입니다.
+ID를 지정하지 않으면 상태 디렉터리에 기록된 모든 저장소에서 검색 조건에 맞는 요청을
+최신 Run부터 나열합니다. 각 요청에는 eval, 상태, 담당자, 경과 시간, 저장소가 표시되며,
+Enter를 누르면 선택한 요청이 열립니다. 처음 검색어는 대기 중인 Human 승인을 뜻하는 `kind:human status:waiting_human`입니다.
 `--repo PATH`는 그 저장소의 `repo:` 조건을 더하며, `--all`도 쓸 수 있고 이것이
 기본값입니다. 어느 저장소의 요청이든 ID로 열 수 있습니다.
 

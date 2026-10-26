@@ -89,7 +89,7 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 
 Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
 기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-ERROR입니다. 답변이 긴 공백으로만 이어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
+ERROR입니다. 응답이 긴 공백만으로 이루어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
 끝납니다. `verify`를 다시 실행하고, 계속 그러면 다른 모델이나 `reasoning`을 써 보세요.
 Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
