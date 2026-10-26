@@ -16,10 +16,12 @@
 // stands apart in its own column before the rest instead, its edges still drawn to every
 // Artifact that uses it.
 //
-// Artifacts named `space::name` are drawn together in their space's box. Each space, and the
+// Artifacts named `space::name` are drawn together in their space's region. Each space, and the
 // Artifacts without one, is laid out on its own as above; the spaces then stand in columns, a
 // space one column right of the furthest space it uses, those of one column packed in rows in
-// the tree's order. A graph without spaces is laid out as one, unchanged.
+// the tree's order. A graph with spaces gets more room throughout, so that its regions, their
+// names and the edges running between them read apart. A graph without spaces is laid out as
+// one, unchanged.
 import type { Shape } from "../ipc/client";
 import { NODE, type Point } from "./graph";
 import { SPACE, extent, spaces } from "./spaces";
@@ -29,10 +31,13 @@ export { NODE };
  * graph gets `layered`, which takes milliseconds at any size. */
 export const ELK_LIMIT = 1000;
 
-/** Room between layers, and between the Artifacts of one layer. */
-const GAP = { x: 72, y: 20 };
-/** Room between the packed parts of the graph. */
-const APART = 40;
+/** Room between layers (`x`), between the Artifacts of one layer (`y`), and between the packed
+ * parts of the graph (`apart`). */
+type Room = { x: number; y: number; apart: number };
+/** A graph's room. */
+const ROOM: Room = { x: 72, y: 20, apart: 40 };
+/** A graph with spaces': its spaces' regions take room of their own, and edges run between them. */
+const SPACED: Room = { x: 120, y: 36, apart: 80 };
 /** An Artifact used by more than this many is a shared input. A part of a real graph has a few
  * dozen Artifacts, and none uses one Artifact more than about ten times. */
 const SHARED = 64;
@@ -52,10 +57,13 @@ function largest(values: ArrayLike<number>): number {
 }
 
 /** Top-left positions of `graph`'s nodes: by ELK for at most `ELK_LIMIT` Artifacts, else by
- * `layered`; each space's Artifacts together, room left around them for its box. */
+ * `layered`; each space's Artifacts together, with more room, room left around them for its
+ * region. */
 export async function layout(graph: Shape): Promise<Map<string, Point>> {
-  const one = graph.nodes.length > ELK_LIMIT ? (part: Shape) => Promise.resolve(layered(part)) : elk;
-  if (graph.nodes.every((node) => node.space === null)) return one(graph);
+  const spaced = graph.nodes.some((node) => node.space !== null);
+  const room = spaced ? SPACED : ROOM;
+  const one = graph.nodes.length > ELK_LIMIT ? (part: Shape) => Promise.resolve(layered(part, room)) : (part: Shape) => elk(part, room);
+  if (!spaced) return one(graph);
   const order = new Map(graph.nodes.map((node, at) => [node.id, at]));
   const groups = spaces(graph)
     .flatMap((each) => (each.space === null ? apart(graph, each.nodes) : [each]))
@@ -72,7 +80,7 @@ export async function layout(graph: Shape): Promise<Map<string, Point>> {
       nodes.length === 1 ? new Map([[nodes[0].id, { x: 0, y: 0 }]]) : one({ nodes, edges: inner[at] }),
     ),
   );
-  // Each group's layout from its own top-left corner, and the room it takes with its box.
+  // Each group's layout from its own top-left corner, and the room it takes with its region.
   const parts = laid.map((places, at) => {
     const { left, top, width, height } = extent(places.values());
     const [pad, header] = groups[at].space === null ? [0, 0] : [SPACE.pad, SPACE.header];
@@ -100,11 +108,11 @@ export async function layout(graph: Shape): Promise<Map<string, Point>> {
   let x = 0;
   for (let at = 0; at <= largest(column); at += 1) {
     const members = parts.filter((_, each) => column[each] === at);
-    const corners = shelve(members);
+    const corners = shelve(members, room.apart);
     members.forEach((part, each) => {
       for (const [id, p] of part.places) placed.set(id, { x: x + corners[each].x + p.x - part.left, y: corners[each].y + p.y - part.top });
     });
-    x += largest(members.map((part, each) => corners[each].x + part.width)) + GAP.x;
+    x += largest(members.map((part, each) => corners[each].x + part.width)) + room.x;
   }
   return placed;
 }
@@ -161,9 +169,9 @@ function links(graph: Shape) {
 type Elk = { layout: (graph: object) => Promise<{ children?: { id: string; x?: number; y?: number }[] }> };
 let worker: Promise<Elk> | null = null;
 
-/** ELK's layout of `graph`, with the options the Graph has always given it; the shared inputs
- * and their edges are left out of it and stand in a column on its left. */
-async function elk(graph: Shape): Promise<Map<string, Point>> {
+/** ELK's layout of `graph`, with the options the Graph has always given it and `room`; the
+ * shared inputs and their edges are left out of it and stand in a column on its left. */
+async function elk(graph: Shape, room: Room): Promise<Map<string, Point>> {
   worker ??= Promise.all([import("elkjs/lib/elk-api.js"), import("elkjs/lib/elk-worker.min.js?url")]).then(
     ([{ default: ELK }, { default: workerUrl }]) => new ELK({ workerUrl }) as Elk,
   );
@@ -176,9 +184,9 @@ async function elk(graph: Shape): Promise<Map<string, Point>> {
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
-      "elk.layered.spacing.nodeNodeBetweenLayers": String(GAP.x),
-      "elk.spacing.nodeNode": String(GAP.y),
-      "elk.spacing.componentComponent": String(APART),
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(room.x),
+      "elk.spacing.nodeNode": String(room.y),
+      "elk.spacing.componentComponent": String(room.apart),
       // Keep the tree's order (upstream first) within a layer where crossings allow. With the
       // shared inputs left out it costs little: 3-15% more than without it at 1,000 Artifacts.
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
@@ -188,15 +196,16 @@ async function elk(graph: Shape): Promise<Map<string, Point>> {
       .filter((edge) => !inputs.has(edge.source) && !inputs.has(edge.target))
       .map((edge, index) => ({ id: `e${index}`, sources: [edge.source], targets: [edge.target] })),
   });
-  const left = inputs.size > 0 ? NODE.width + GAP.x + APART : 0;
+  const left = inputs.size > 0 ? NODE.width + room.x + room.apart : 0;
   return new Map([
-    ...[...inputs].map((id, row): [string, Point] => [id, { x: 0, y: row * (NODE.height + GAP.y) }]),
+    ...[...inputs].map((id, row): [string, Point] => [id, { x: 0, y: row * (NODE.height + room.y) }]),
     ...(laid.children ?? []).map((child): [string, Point] => [child.id, { x: left + (child.x ?? 0), y: child.y ?? 0 }]),
   ]);
 }
 
-/** Top-left positions of `graph`'s nodes, layered and packed in time about linear in its size. */
-export function layered(graph: Shape): Map<string, Point> {
+/** Top-left positions of `graph`'s nodes, layered and packed with `room` in time about linear
+ * in its size. */
+export function layered(graph: Shape, room: Room = ROOM): Map<string, Point> {
   const { count, from, to, shared } = links(graph);
 
   // The connected parts, apart from shared inputs and their edges.
@@ -230,7 +239,7 @@ export function layered(graph: Shape): Map<string, Point> {
 
   // Parts in the order of their first Artifact: upstream first, as the tree lists them.
   const parts = [...groups.values()].map((members) => layer(members, before, after));
-  return pack(inputs, parts, graph);
+  return pack(inputs, parts, graph, room);
 }
 
 /** Lay out one connected part in layers. */
@@ -317,12 +326,15 @@ function layer(members: number[], before: number[][], after: number[][]): Part {
 
 /** Place the shared inputs in a column on the left and pack the parts in rows right of it, in
  * their order, into a box about `ASPECT` wide; then place each Artifact in its part. */
-function pack(inputs: number[], parts: Part[], graph: Shape): Map<string, Point> {
-  const step = { x: NODE.width + GAP.x, y: NODE.height + GAP.y };
+function pack(inputs: number[], parts: Part[], graph: Shape, room: Room): Map<string, Point> {
+  const step = { x: NODE.width + room.x, y: NODE.height + room.y };
   const placed = new Map<string, Point>();
   inputs.forEach((node, row) => placed.set(graph.nodes[node].id, { x: 0, y: row * step.y }));
-  const left = inputs.length > 0 ? NODE.width + GAP.x + APART : 0;
-  const corners = shelve(parts.map((part) => ({ width: part.columns * step.x - GAP.x, height: part.rows * step.y - GAP.y })));
+  const left = inputs.length > 0 ? NODE.width + room.x + room.apart : 0;
+  const corners = shelve(
+    parts.map((part) => ({ width: part.columns * step.x - room.x, height: part.rows * step.y - room.y })),
+    room.apart,
+  );
   parts.forEach((part, each) => {
     const { x, y } = corners[each];
     part.members.forEach((node, at) => {
@@ -332,15 +344,16 @@ function pack(inputs: number[], parts: Part[], graph: Shape): Map<string, Point>
   return placed;
 }
 
-/** Top-left corners of `boxes` packed in rows, in their order, into a box about `ASPECT` wide. */
-function shelve(boxes: { width: number; height: number }[]): Point[] {
-  const area = boxes.reduce((sum, box) => sum + (box.width + APART) * (box.height + APART), 0);
+/** Top-left corners of `boxes` packed in rows, in their order, `apart` from each other, into a
+ * box about `ASPECT` wide. */
+function shelve(boxes: { width: number; height: number }[], apart: number): Point[] {
+  const area = boxes.reduce((sum, box) => sum + (box.width + apart) * (box.height + apart), 0);
   const width = Math.max(Math.sqrt(area * ASPECT), largest(boxes.map((box) => box.width)));
   let [x, y, tallest] = [0, 0, 0];
   return boxes.map((box) => {
-    if (x > 0 && x + box.width > width) [x, y, tallest] = [0, y + tallest + APART, 0];
+    if (x > 0 && x + box.width > width) [x, y, tallest] = [0, y + tallest + apart, 0];
     const corner = { x, y };
-    x += box.width + APART;
+    x += box.width + apart;
     tallest = Math.max(tallest, box.height);
     return corner;
   });

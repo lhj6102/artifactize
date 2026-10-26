@@ -214,15 +214,10 @@ conversation and its tool calls, which
 
 ### Follow-up replay
 
-`session send` asks the saved review a question with the same backend, model and
-reasoning, continuing its saved conversation. The
-project's current tools are offered again, and if a covered Artifact changed since the
-review, the header and the model are told. The question is a follow-up, not a new review:
-the model answers in plain text, may use the tools, and the recorded verdict never changes.
-`session show` prints your question as you wrote it.
-
-Questions, answers and tool calls are added to the same conversation, one question at a
-time, each with fresh profile budgets. A running review cannot be asked yet.
+[`session send`](../../cli/index.md#agent-sessions) asks a saved review a follow-up
+question. Questions, answers and tool calls are stored in the review's own session,
+after the review's conversation, so `session show` prints them with it, each question as
+you wrote it. A running review cannot be asked yet.
 
 ## Local diagnostics and maintenance
 

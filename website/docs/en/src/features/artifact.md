@@ -19,12 +19,14 @@ dependency graph.
 
 ## Artifact Graph
 
-The **Artifact Graph** connects inputs to the evals that consume them. A reference
-such as `{spec}` admits that Artifact to an eval; changes to its fingerprint
-invalidate only reviews whose keys cover it. Child folders organize inputs, but
-sharing a repository alone does not make every Artifact a dependency of every check.
+The **Artifact Graph** connects inputs to the evals that consume them. Writing a
+reference such as `{spec}` in an eval lets that eval read `spec`; when `spec` changes,
+only the evals that name it are reviewed again, and every other result is reused. Child
+folders organize inputs, but sharing a repository alone does not make every Artifact an
+input of every check.
 
-Execution gates belong to each eval; see [Eval dependencies](#eval-dependencies).
+Each eval also waits for the evals that judge the inputs it names; see
+[Eval dependencies](#eval-dependencies).
 
 The graph itself can be reviewed: a nameless root `.artf` declares the Graph
 Artifact. Its fingerprint covers extracted criteria and labeled relations, not
