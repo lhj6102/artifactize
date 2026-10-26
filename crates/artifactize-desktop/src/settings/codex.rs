@@ -42,9 +42,7 @@ impl SignIns {
     fn halt(&self, sign_in: SignIn) {
         sign_in.abort.abort();
         if let Some(task) = sign_in.task {
-            let mut stopped = self.stopped.lock().expect("sign-in lock");
-            stopped.retain(|task| !task.is_finished());
-            stopped.push(task);
+            self.stopped.lock().expect("sign-in lock").push(task);
         }
     }
 
@@ -62,8 +60,9 @@ impl SignIns {
         let stopped = std::mem::take(&mut *self.stopped.lock().expect("sign-in lock"));
         async move {
             for task in stopped {
-                // Aborted: how it ended does not matter, only that it has.
-                let _ = task.await;
+                // Stopped: whether it was cancelled or failed does not matter, only that it has
+                // ended; a panic is a bug and goes on here.
+                let _ = artifactize_core::task::joined(task.await);
             }
         }
     }
