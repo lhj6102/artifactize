@@ -450,6 +450,20 @@ impl RunStatus {
     pub fn is_open(self) -> bool {
         matches!(self, Self::Running | Self::WaitingHuman)
     }
+    /// The status a reader shows for a Run saved with this one: an open Run is WAITING_HUMAN
+    /// while one of its sign-off requests is unsubmitted, and RUNNING otherwise.
+    pub fn with_signoffs(self, signoff_open: bool) -> Self {
+        match self {
+            Self::Running | Self::WaitingHuman if signoff_open => Self::WaitingHuman,
+            Self::Running | Self::WaitingHuman => Self::Running,
+            ended => ended,
+        }
+    }
+    /// The status a Run is saved with: an open one is saved RUNNING, since WAITING_HUMAN
+    /// follows from its requests.
+    pub fn saved(self) -> Self {
+        self.with_signoffs(false)
+    }
 }
 status!(RequestStatus {
     Queued => "QUEUED",

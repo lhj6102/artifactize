@@ -272,9 +272,9 @@ JSON의 상태 이름을 바꾸지는 않습니다.
 
 이 표시가 뜻하는 바는 Run이 [승인](../features/run.md#sign-offs-and-the-end-of-a-run)과
 [추측 실행](../features/run.md#speculation)을 다루는 방식에 따라서도 달라집니다. 승인은 **DEFERRED**로 나오고 의존하는 작업은
-승인된 것이 아니라 **PROVISIONAL**일 수 있습니다. 맡은 승인이 처리 중이거나 유휴 유예 시간이
-아직 지나지 않아 종료되지 않은 Run은 **WAITING_HUMAN**이며, RUNNING과 마찬가지로 진행 중인 상태이므로 조금 더
-진한 파란색으로 표시됩니다. **YELLOW**로 끝난 Run은
+승인된 것이 아니라 **PROVISIONAL**일 수 있습니다. 제출되지 않은 승인 요청이 있는 진행 중인
+Run은 **WAITING_HUMAN**이며, RUNNING과 마찬가지로 진행 중인 상태이므로 조금 더 진한 파란색으로 표시됩니다.
+남은 승인이 모두 제출되면 다시 RUNNING으로 표시됩니다. **YELLOW**로 끝난 Run은
 그 승인만 남았다는 뜻입니다. 나중에 승인을 제출해도 Run 종료 때 기록한 판정은 바뀌지 않고 현재 요청에만
 반영됩니다. `--speculate`에서는 상위 eval의 판정이 아직 나오지 않았어도 하위 eval이 READY이거나 실행 중일 수 있습니다. 이후 상위 eval의 결과가 RED/ERROR이면 추측 실행 중인 하위 작업의 실행이 차단되거나 취소됩니다.
 

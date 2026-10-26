@@ -67,9 +67,9 @@ The [reference](tools/human.md#in-a-review) has the `request list` and
 
 ## Sign-offs and the Run
 
-A Run stays **WAITING_HUMAN** while a reviewer holds a claim on one of its
-sign-offs, and for an idle grace (2 minutes unless
-[changed](others/state.md#sign-off-idle-grace)) after nothing else is left. Claim the
+An open Run is **WAITING_HUMAN** while one of its sign-offs is unsubmitted. Once nothing
+else is left, it stays open while a reviewer holds a claim on one of them, and for an idle
+grace (2 minutes unless [changed](others/state.md#sign-off-idle-grace)). Claim the
 sign-off in that time and submit it, and the Run ends GREEN or RED with it; left
 unclaimed, the Run ends **YELLOW** (exit 5): only sign-offs remain. The sign-off can still
 be submitted afterwards, and the next verify reuses it. The details are in

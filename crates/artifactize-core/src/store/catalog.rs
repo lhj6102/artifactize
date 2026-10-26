@@ -163,6 +163,9 @@ pub(super) fn in_snapshot(
                 .push(execution.map_or(Signoff::Request(request), Signoff::Execution));
         }
     }
+    for run in catalog.values_mut() {
+        run.status = run.status.with_signoffs(!run.waiting.is_empty());
+    }
     Ok(Catalog {
         runs: order
             .into_iter()

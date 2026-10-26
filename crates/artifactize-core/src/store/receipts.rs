@@ -262,6 +262,15 @@ impl Run {
     pub fn status(&self) -> RunStatus {
         self.state.status()
     }
+    /// Show the Run WAITING_HUMAN while one of its requests, saved with `statuses`, is an
+    /// unsubmitted sign-off, and RUNNING otherwise while it is open.
+    pub(super) fn show_signoffs(
+        &mut self,
+        mut statuses: impl Iterator<Item = crate::types::RequestStatus>,
+    ) {
+        let open = statuses.any(crate::types::RequestStatus::is_human_wait);
+        self.state = self.state.clone().with_signoffs(open);
+    }
     pub fn completed_at(&self) -> Option<Timestamp> {
         self.state.completed_at()
     }

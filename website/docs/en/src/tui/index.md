@@ -304,9 +304,9 @@ they do not rename the states in JSON.
 
 How a Run treats [sign-offs](../features/run.md#sign-offs-and-the-end-of-a-run) and
 [speculation](../features/run.md#speculation) also explains its display. Sign-offs appear
-as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A Run waiting for a
-claimed sign-off or its idle grace is **WAITING_HUMAN**, a darker blue than RUNNING since
-both are still open; a Run that ended **YELLOW** has only those sign-offs left. Their later
+as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. An open Run with an
+unsubmitted sign-off request is **WAITING_HUMAN**, a darker blue than RUNNING since both are
+still open, and reads RUNNING again once its open sign-offs are submitted; a Run that ended **YELLOW** has only those sign-offs left. Their later
 submissions change current requests, not the historical Run-end verdict. With
 `--speculate`, a downstream eval can be READY or running while upstream judgment is still
 pending; a later upstream RED/ERROR blocks or cancels that speculative work.

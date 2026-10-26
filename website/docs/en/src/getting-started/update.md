@@ -40,7 +40,7 @@ cannot open the upgraded state, so keep a backup before switching versions.
 A sign-off the Run selected no longer holds up other evals, so `verify --defer-human`, MCP
 `defer_human` and the eval field `gate = "blocking"` are removed: drop the flag from
 scripts and the field from declarations, both of which are now refused with that advice.
-A Run is **WAITING_HUMAN** from its first sign-off request and ends **YELLOW** (exit 5,
+A Run is **WAITING_HUMAN** while it is open with a sign-off unsubmitted and ends **YELLOW** (exit 5,
 formerly SIGNOFFS_PENDING) when only unsubmitted sign-offs remain. Before that it waits
 for a claimed sign-off, and for an
 [idle grace](../features/others/state.md#sign-off-idle-grace) of 2 minutes for an

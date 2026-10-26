@@ -283,6 +283,9 @@ fn snapshot(state: &std::path::Path, id: &RunId) -> Result<Observation, Error> {
             })?
             .collect::<Result<_, _>>()?
     };
+    saved.status = saved
+        .status
+        .with_signoffs(saved.counts.keys().any(|status| status.is_human_wait()));
     saved.control = control
         .map(|text| serde_json::from_str(&text))
         .transpose()?;
