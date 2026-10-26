@@ -23,8 +23,7 @@ Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라�
 artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대로 실행합니다.
 [운영체제](../features/others/platforms.md)를 보세요.
 
-리뷰받는 작업 단위 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
-부르는 리뷰 항목들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
+리뷰할 작업 단위마다 **Artifact**를 선언합니다. Artifact의 `index.artf`는 텍스트 설정 파일이며, 여기에 **eval**이라는 리뷰 항목을 나열합니다. 이 파일은 읽기 쉬운 `key = value`
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일 내용으로 그 값을 계산해 artifactize가 변경을 알아차리게 합니다.
 

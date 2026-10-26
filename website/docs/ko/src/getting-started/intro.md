@@ -21,7 +21,7 @@ Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/i
 ## 다음으로 볼 곳 {#where-to-go-next}
 
 - **[기능](/docs/ko/features/artifact.html):** Artifact와 eval을 선언하고, 무엇을
-  재사용할지 정하고, 검증을 실행하고 진행 상황을 확인하며, 리뷰어에게 도구를 주고, 팀과 결과를 공유합니다.
+  재사용할지 정하고, 검증을 실행하고 진행 상황을 확인하며, 리뷰어가 사용할 도구를 제공하고, 팀과 결과를 공유합니다.
   CLI, 데스크톱 앱, 에이전트 플러그인에서 똑같이 동작합니다.
 - **[데스크톱](/docs/ko/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
 - **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** 여러 코딩 어시스턴트에서 쓸 수 있는 스킬인 Arti를 어시스턴트에 추가하고
