@@ -68,7 +68,7 @@ Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선�
 Run이 끝나면 지켜보는 명령도 그 Run의 결과에 맞는 종료 코드로 끝납니다. 종료 코드는 [CLI 레퍼런스](../cli/index.md#command-reference)에
 있습니다.
 
-최종 검증에는 필요한 범위 전체에서 실제 GREEN 증거나 직접 선언한 `basis = true`가 필요합니다.
+Run이 최종 검증을 통과하려면, 필요한 범위의 모든 대상에 실제 GREEN 증거가 있거나 그 Artifact를 직접 `basis = true`로 선언해야 합니다.
 basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 하위 작업이 대기합니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에 있습니다.

@@ -15,7 +15,7 @@ Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정�
 API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys),
 [Anthropic Console](https://console.anthropic.com/settings/keys),
 [Google AI Studio](https://aistudio.google.com/apikey)에서 키를 만든 다음 `artifactize login`으로
-저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 stdin으로 읽습니다. 데스크톱 앱의
+저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 artifactize가 stdin에서 키를 읽습니다. 데스크톱 앱의
 **Settings → Providers**에 붙여 넣어 저장해도 됩니다. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
 Codex는 대신 아래의 별도 브라우저 로그인을 씁니다.
 

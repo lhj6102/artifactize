@@ -15,7 +15,7 @@ cp -r examples/runtime-relations "$WALK/bob"
 printf 'WALK directory: %s\n' "$WALK"
 ```
 
-`mktemp -d`로 체크아웃 밖에 새 임시 폴더를 만듭니다. 생성된 폴더의 경로는 `WALK`에 저장되며 마지막 명령으로 출력됩니다. 그 값을 보관하세요.
+`mktemp -d`로 체크아웃 밖에 새 임시 폴더를 만듭니다. 생성된 폴더의 경로는 `WALK`에 저장되며 마지막 명령으로 출력됩니다. 출력된 `WALK` 경로를 복사해 두세요.
 
 서버, Alice, Bob, 로컬 CI 시연에는 각각 별도의 터미널을 쓰세요.
 **새 터미널마다** 다음을 실행하되, `COPIED_WALK_PATH`를 방금 출력된

@@ -82,7 +82,7 @@ codex mcp get artifactize
 Run과 함께 사람에게 보이며 Run의 동작은 바꾸지 않습니다. 제어 문자와 앞뒤 공백 없는 한 줄,
 1–200자여야 하고, 그 밖의 값은 Run을 접수하기 전에 거부됩니다.
 
-`scope`에는 선택 종류를 `kind` 필드에 지정한 공통 선택(Selection) JSON 객체를 전달합니다.
+`scope`에는 선택 종류를 `kind` 필드로 나타내는 공통 선택(Selection) JSON 객체를 전달합니다.
 
 ```json
 {"kind":"all"}
