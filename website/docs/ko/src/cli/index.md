@@ -135,7 +135,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 `--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
 볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
-열(없으면 `-`)에 보여 주고, `verify`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+`--wait`나 `--watch` 없이 `verify --json`을 실행하면 `run`과 `state`만 출력합니다.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -372,9 +373,8 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `--limit N`(기본 50)과 `--offset N`(기본 0)은 각각 0–4294967295 범위로, 걸러 낸 결과를
 페이지로 나눕니다. 범위를 벗어난 값을 지정하면 종료 코드 2로 끝납니다. 각 행에는 Run ID, 저장소, 생성·완료
 시각, 상태, 판정과 상태별 요청 수(해당 상태가 없으면 0), Run의
-[코멘트](#submission-and-watching)(있을 때)가 나옵니다. 요청 수는 기록을 읽지 않고 요청마다
-저장된 상태로 세므로, Run이 아무리 커도 한 페이지를 읽는 시간은 같습니다. 손상된 기록과 그
-이유는 `status`와 `run show`가 알려 줍니다. [상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
+[코멘트](#submission-and-watching)(있을 때)가 나옵니다. `run list`는 손상된 기록을 확인하지
+않으며, 손상된 기록과 그 이유는 `status`와 `run show`가 알려 줍니다. [상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
 프로젝트 코드를 실행하지 않고, 없는 상태를 만들지 않으며, 저장소가 지금 남아 있지 않아도
 됩니다. 별도의 `history` 명령은 없습니다.
 
