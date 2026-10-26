@@ -111,7 +111,7 @@ Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 �
 Run에는 `jobs` 필드가 없습니다.
 
 `speculate`는 기본값이 false이며 CLI의 `--speculate`와 뜻이 같습니다. 요청된 Runtime과 Agent 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다.
-자세한 내용은 [추측 실행](../features/run.md#speculation)에 있습니다. 승인을 기다리는 Run이 언제
+자세한 내용은 [추측 실행](../features/run.md#speculation)에 있습니다. 승인 대기 중인 Run이 언제
 `waiting_human`이 되고 언제 `yellow`로 끝나는지는 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)에 있습니다.
 `yellow` Run에서 `verify_result`는 판정 `YELLOW`를 보고하며, 이는 완전한 승인이 아닙니다.
 
