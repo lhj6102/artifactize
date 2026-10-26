@@ -79,7 +79,7 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
 - 기본 fingerprint(artifactsum)를 유지하고, 리뷰어에게는 필요한 읽기 전용
   도구만 주세요.
 
-Arti가 추천하는 조합마다 eval을 어느 Artifact에 선언하고 그 eval이 무엇을 참조하는지 아래에 정리했습니다.
+아래 표는 Arti가 추천하는 조합마다, eval을 선언할 Artifact와 그 eval이 참조할 대상을 안내합니다.
 
 - **라이브러리와 그 사용처**: 라이브러리에 테스트를 두고, 라이브러리를 쓰는 코드의 리뷰에서는
   `{library}`를 참조합니다.
@@ -132,7 +132,7 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 턴을 끝내도 Run은 멈추지 않으며, Run을 취소하는 방법은 `verify_cancel`뿐입니다.
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
-Arti는 요청마다 [추측 실행](../features/run.md#speculation)을 요청할 수 있습니다. 이번 Run에서 실행 대상으로 선택한 승인 요청은
+Arti는 verify 요청마다 [추측 실행](../features/run.md#speculation)을 켤 수 있습니다. 이번 Run에서 실행 대상으로 선택한 승인 요청은
 다른 eval의 실행을 막지 않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, scope에 해당 Artifact를 추가하거나
 선택 범위를 `{"kind": "all"}`로 넓히지 않으면 Run은 INCOMPLETE로 끝납니다. YELLOW는 **완전한 승인이 아니라** 사람의 승인이 아직 남아 있다는 뜻이며, 그 승인은 사람이 직접 제출해야 합니다.
 

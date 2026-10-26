@@ -26,11 +26,7 @@ summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 
 내장 도구는 Linux, macOS, Windows에서 똑같이 동작합니다. 다른 점은 디스크에 있는 경로 표기를
 확인하는 방식([경로](../others/platforms.md#paths) 참고)과, Windows의 junction과 그 밖의 reparse
-point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 URL을 기본 애플리케이션으로 여는 OS
-명령(Linux에서는 `xdg-open`)을 쓰는 `open`, 요청한 프로그램을 실행하는 `help`, 그리고
-[데스크톱 앱](../../desktop/index.md#open-the-app)을 여는 Human `graph` 도구를 빼면 따로 설치할
-것이 없으며(Human `graph`는 `artifactize-desktop`이 설치되어 있지 않으면 실패하고, Agent
-`graph`는 아무것도 필요 없습니다), [`artifactize-tools`](#artifactize-tools-cli) 명령도 필요 없습니다. 그 명령과
+point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 내장 도구는 대부분 따로 설치할 것이 없고, [`artifactize-tools`](#artifactize-tools-cli) 명령도 필요 없습니다. 예외는 세 가지입니다. `open`은 파일이나 URL을 기본 애플리케이션으로 여는 OS 명령(Linux에서는 `xdg-open`)을 쓰고, `help`는 요청한 프로그램을 실행합니다. Human `graph`는 [데스크톱 앱](../../desktop/index.md#open-the-app)을 열므로 `artifactize-desktop`이 설치되어 있지 않으면 실패합니다. Agent `graph`는 아무것도 필요 없습니다. 그 명령과
 `artifactize tools`는 스크립트와 Runtime eval에 파일 시스템과 프로그램 도구를 제공합니다. 현재
 프로젝트의 구조를 보여 주는 `graph` 도구는 artifactize의 리뷰 도구로 선언해야 쓸 수 있으며, 독립
 실행형 도구 CLI에는 없습니다.

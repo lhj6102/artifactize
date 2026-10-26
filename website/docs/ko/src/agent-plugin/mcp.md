@@ -32,8 +32,7 @@
 
 [설치 설정](../getting-started/install.md)을 마친 다음, **프로젝트 디렉터리**에서
 코딩 호스트를 실행하세요.
-이 서버는 HTTP 리뷰 저장소(`artifactize server`)가 아니며, 토큰 인자나 호스트 시간 제한
-변경이 필요 없습니다.
+이 서버는 HTTP 리뷰 저장소(`artifactize server`)가 아니므로, 토큰을 인자로 넘길 필요도, 호스트의 시간 제한을 바꿀 필요도 없습니다.
 
 Claude Code와 Codex에서는 [플러그인](plugin.md)이 Hey Arti 스킬과 함께
 이 서버를 등록합니다. 아래 명령은 수동 등록입니다. 이 명령으로

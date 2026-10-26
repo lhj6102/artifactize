@@ -43,11 +43,9 @@ crates/app/tests/
 examples/
 ```
 
-이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 글자나 숫자로 시작하고, 글자, 숫자, 밑줄,
-하이픈으로 이뤄진 64자 이하여야 합니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
+이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
 `combat::Code`처럼 앞에 Artifact를 묶어 구분하는 *space*의 이름과 `::`를 붙일 수 있습니다(`combat` space의 `Code`). space 이름과 나머지 부분은 각각 같은
-규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 보도록 돕는
-것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
+규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 볼 수 있게 도울 뿐이며, 그 자체로 전체 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
 `artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
 Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
 프로젝트 전체에서 중복되지 않아야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의

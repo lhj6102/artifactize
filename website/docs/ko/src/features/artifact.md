@@ -44,8 +44,7 @@ eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[eva
 `agent`, `human` 중 하나인 `profile`이 있습니다. 모든 eval에는 `payload.instruction`이 필요하며,
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
-Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent나 Human은 소유자 필드와 함께 GREEN이나
-RED를 돌려줍니다.
+Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent eval과 Human eval은 소유자 필드를 포함한 GREEN 또는 RED 판정을 돌려줍니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
 `guide` Artifact이며, 그 README에서 자식, `{artifact}` 참조, basis Artifact를 설명합니다.

@@ -77,8 +77,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 재사용할 증거가 없으면 실행하지 않고 INCOMPLETE로 남깁니다. [CLI](../cli/index.md#reuse-only)를
 보세요.
 
-[`--request-key`](../cli/index.md#submission-and-watching)는 호출하는 쪽이 요청 시도 하나를
-식별하려고 붙이는 키입니다. 같은 키로 다시 요청하면 같은 Run을 돌려주므로, 응답을 놓쳤을 때 다시 시도하려면 같은
+[`--request-key`](../cli/index.md#submission-and-watching)는 요청하는 쪽이 각 제출 시도를 구분하려고 지정하는 키입니다. 같은 키로 다시 요청하면 같은 Run을 돌려주므로, 응답을 놓쳤을 때 다시 시도하려면 같은
 키를 쓰고 무언가를 고친 뒤에는 새 키를 쓰세요. eval 결과 재사용은 이 키와 상관없습니다.
 
 [코멘트](../cli/index.md#submission-and-watching)에는 요청하는 쪽이 지금 하는 일, 예를 들어

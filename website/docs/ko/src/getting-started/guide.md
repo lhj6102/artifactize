@@ -81,7 +81,7 @@ artifactize status
 status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에서도 같은 임시 상태
 디렉터리를 쓰도록 이 터미널을 열어 두세요.
 
-[runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 검사를 RED로 만드는 방법도 보여 줍니다. 각 폴더는
+[runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 eval이 RED가 되는 상황을 만드는 방법도 보여 줍니다. 각 폴더는
 그 안의 `index.artf` 파일에서 Artifact로 선언됩니다. `fingerprint`를 생략하면 파일 변경 여부를 확인하는 내장 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
 구분은 [선언 (.artf)](../features/declarations.md)을 보세요.
 
@@ -105,7 +105,7 @@ artifactize status         # all three post reviews are reused
 cd ../runtime-relations    # continue the tour below
 ```
 
-각 파일 Artifact의 해시에는 그 파일만 들어갑니다. 참조된 `house-style` Artifact가
+파일 Artifact의 기본 fingerprint는 그 파일 하나만 해시해 계산합니다. 참조된 `house-style` Artifact가
 검사기와 금지어를 담고 있으므로, 공용 부분이 바뀌면 세 글 모두 기존 리뷰의
 [재사용 키](../features/fingerprint.md#the-reuse-key)가 무효가 됩니다. 재사용 키는
 검사 기준과 리뷰한 입력을 구분하는 값이며, 이 값을 기준으로 이전 결과를 계속 쓸 수 있는지 판단합니다.
