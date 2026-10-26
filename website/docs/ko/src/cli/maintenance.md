@@ -1,6 +1,6 @@
 # 캐시와 유지보수 {#cache-and-maintenance}
 
-`artifactize prune --older-than 30d --dry-run`을 실행하면, 끝난 지 30일이 지나 출력 폴더를 지울 대상인 Run 목록(`wouldRemove`)이 표시됩니다. 확인했으면 `--dry-run` 없이 다시 실행해 지우세요.
+`artifactize prune --older-than 30d --dry-run`은 완료된 지 30일이 넘은 Run 가운데 출력 폴더를 삭제할 대상을 미리 보여 줍니다(`wouldRemove`). 확인했으면 `--dry-run` 없이 다시 실행해 지우세요.
 이 페이지는 이 명령과 함께, 재사용할 결과를 살펴보고 지우는 명령과 이 머신의 설정을
 점검하는 명령을 다룹니다. 이 명령들이 다루는 대상은 [상태, 캐시, 제한](../features/others/state.md)에서
 설명합니다.
