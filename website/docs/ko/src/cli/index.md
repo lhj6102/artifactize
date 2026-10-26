@@ -297,8 +297,7 @@ Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PR
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
 
 저장된 증거가 있으면 `run show RUN_ID --json`과 `verify --wait --json`의 출력 객체 최상위에
-`evidence` 필드가 들어갑니다. Run 필드는 `run`으로 감싸지 않고 출력 객체에 바로 들어갑니다. `evidence`는 이
-Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다. 일부 eval만 실행한 Run에서 상위 eval의 결과를 캐시에서 가져와 쓴 경우가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
+`evidence` 필드가 들어갑니다. Run 필드는 `run`으로 감싸지 않고 출력 객체에 바로 들어갑니다. `evidence`에는 이 Run에서 새 요청을 만들지 않고 사용한 저장된 판정이 eval ID별로 담깁니다. 일부 eval만 실행한 Run에서 상위 eval의 결과를 캐시에서 가져와 쓴 경우가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
 보세요. 터미널에서 쓰는 키와 화면 배치는 [Monitor](../tui/index.md#monitor)와
 [Human 리뷰](../tui/index.md#review)에 있습니다.
 
