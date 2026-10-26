@@ -12,8 +12,8 @@ use std::{
 
 use thiserror::Error;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    time::{Instant, sleep, sleep_until, timeout},
+    io::AsyncWriteExt,
+    time::{Instant, sleep, sleep_until},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -26,8 +26,11 @@ use crate::{
 pub(crate) const OUTPUT_LIMIT: usize = 128 * 1024;
 /// Give interrupted children one second to exit cooperatively before killing/reaping them.
 const CLEANUP_GRACE: Duration = Duration::from_secs(1);
-/// Drain process pipes in small bounded chunks without one read per byte.
-const CAPTURE_BUFFER_BYTES: usize = 8192;
+
+mod capture;
+pub use capture::{CaptureError, StreamFailure};
+#[cfg(test)]
+pub(crate) use capture::{OUTPUT_CLOSE_GRACE, slow_disk};
 
 /// Arguments have already been resolved by the caller. No shell is added.
 #[derive(Debug, Clone)]
@@ -175,8 +178,10 @@ pub enum Error {
     Timeout,
     #[error("process was cancelled")]
     Cancelled,
-    #[error("process output pipes did not close after cleanup")]
-    OutputDidNotClose,
+    /// The process ended, but its output could not be captured to the end; the error keeps
+    /// how it ended and the output read.
+    #[error(transparent)]
+    Capture(Box<CaptureError>),
 }
 
 impl Error {
@@ -190,7 +195,7 @@ impl Error {
             | Self::Io(_)
             | Self::Timeout
             | Self::Cancelled
-            | Self::OutputDidNotClose => true,
+            | Self::Capture(_) => true,
         }
     }
 
@@ -352,11 +357,13 @@ where
     let stdout = child.stdout().take().expect("stdout is piped");
     let stderr = child.stderr().take().expect("stderr is piped");
     let stdin = child.stdin().take();
-    let reaped = CancellationToken::new();
+    // Cancelled once the process group is gone: from then on only a process outside it can
+    // hold the pipes.
+    let gone = CancellationToken::new();
     let feed = async {
         if let (Some(mut stdin), Some(input)) = (stdin, input) {
             tokio::select! {
-                _ = reaped.cancelled() => {},
+                _ = gone.cancelled() => {},
                 _ = cancellation.cancelled() => {},
                 _ = sleep_until(deadline) => {},
                 result = stdin.write_all(&input) => {
@@ -382,49 +389,34 @@ where
             // An ordinary main-process exit must not leave its descendants running.
             child.cleanup().await.map(|_| ())
         };
-        reaped.cancel();
+        gone.cancel();
         cleanup.map_err(Error::Cleanup)?;
         result
     };
     let (stdout_lines, stderr_lines) = lines.unzip();
-    let capture = async {
-        let read = async {
-            tokio::try_join!(
-                capture(
-                    stdout,
-                    output_limit,
-                    logs.as_ref().map(|dir| dir.join("runtime.stdout")),
-                    stdout_lines,
-                ),
-                capture(
-                    stderr,
-                    output_limit,
-                    logs.as_ref().map(|dir| dir.join("runtime.stderr")),
-                    stderr_lines,
-                )
+    let evidence = |name| logs.as_ref().map(|directory| directory.join(name));
+    let streams = async {
+        tokio::join!(
+            capture::capture(
+                stdout,
+                output_limit,
+                evidence("runtime.stdout"),
+                stdout_lines,
+                &gone
+            ),
+            capture::capture(
+                stderr,
+                output_limit,
+                evidence("runtime.stderr"),
+                stderr_lines,
+                &gone
             )
-        };
-        tokio::pin!(read);
-        tokio::select! {
-            result = &mut read => result.map_err(Error::Io),
-            _ = reaped.cancelled() => {
-                timeout(CLEANUP_GRACE, read).await
-                    .map_err(|_| Error::OutputDidNotClose)?
-                    .map_err(Error::Io)
-            }
-        }
+        )
     };
-    let (status, output, input) = tokio::join!(wait, capture, feed);
+    let (status, (stdout, stderr), input) = tokio::join!(wait, streams, feed);
     let status = status?;
     input?;
-    let ((stdout, stdout_truncated), (stderr, stderr_truncated)) = output?;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-        truncated: stdout_truncated || stderr_truncated,
-        duration: started.elapsed(),
-    })
+    capture::finish(status, stdout, stderr, started.elapsed())
 }
 
 /// Spawn shared by one-shot calls and long-lived tool sessions. With `register` the child is
@@ -572,11 +564,13 @@ pub(crate) fn launch_watched(
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
     tokio::spawn(async move {
-        // Nothing is retained: the lines go to the log, the rest is discarded.
+        // Nothing is retained: the lines go to the log, the rest is discarded. Nobody owns
+        // this program's group, so its pipes are read for as long as anything holds them.
+        let held = CancellationToken::new();
         let (status, _, _) = tokio::join!(
             child.wait(),
-            capture(stdout, 0, None, Some(run.lines(Stream::Stdout))),
-            capture(stderr, 0, None, Some(run.lines(Stream::Stderr))),
+            capture::capture(stdout, 0, None, Some(run.lines(Stream::Stdout)), &held),
+            capture::capture(stderr, 0, None, Some(run.lines(Stream::Stderr)), &held),
         );
         run.end(match status {
             Ok(status) => End::exited(&status),
@@ -734,52 +728,4 @@ where
         ))
         .await,
     )?
-}
-
-async fn capture(
-    mut pipe: impl AsyncRead + Unpin,
-    limit: usize,
-    path: Option<PathBuf>,
-    mut lines: Option<Lines>,
-) -> io::Result<(Vec<u8>, bool)> {
-    let mut log = path
-        .as_ref()
-        .map(|path| {
-            let mut options = platform::private_options();
-            options.write(true).create_new(true);
-            options.open(path).map(tokio::fs::File::from_std)
-        })
-        .transpose()?;
-    let mut output = Vec::new();
-    let mut buffer = [0; CAPTURE_BUFFER_BYTES];
-    let mut truncated = false;
-    loop {
-        let count = pipe.read(&mut buffer).await?;
-        if count == 0 {
-            if let Some(lines) = &mut lines {
-                lines.finish();
-            }
-            if let (Some(log), Some(path)) = (&mut log, &path) {
-                log.flush().await?;
-                let mut options = platform::private_options();
-                options.write(true).create_new(true);
-                let extension = path.extension().expect("stream extension");
-                options.open(
-                    path.with_extension(format!("{}.complete", extension.to_string_lossy())),
-                )?;
-            }
-            return Ok((output, truncated));
-        }
-        if let Some(log) = &mut log {
-            log.write_all(&buffer[..count]).await?;
-            // Make captured evidence available while the process is still running.
-            log.flush().await?;
-        }
-        if let Some(lines) = &mut lines {
-            lines.push(&buffer[..count]);
-        }
-        let retained = count.min(limit - output.len());
-        output.extend_from_slice(&buffer[..retained]);
-        truncated |= retained < count;
-    }
 }

@@ -260,6 +260,9 @@ pub(crate) fn serialize_paths<S: serde::Serializer>(
 }
 
 #[cfg(test)]
+mod process_tests;
+
+#[cfg(test)]
 mod program_tests {
     #[test]
     fn a_declared_program_is_written_with_forward_slashes() {
