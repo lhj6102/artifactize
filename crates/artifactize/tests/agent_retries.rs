@@ -433,6 +433,136 @@ fn failures_carry_specific_error_codes() {
     assert_eq!(request(&run, "notes/review")["errorCode"], "AUTHENTICATION");
 }
 
+/// The three backends the project reaches, one eval each.
+const CAPPED: [(&str, &str); 3] = [
+    ("gpt", "openai"),
+    ("luna", "codex"),
+    ("claude", "anthropic"),
+];
+
+/// A streamed answer of `deltas` that stops at the output cap after `output` tokens, in the
+/// requested backend's wire format.
+fn capped(request: &Request, deltas: &[String], output: u64) -> Reply {
+    if request.path == "/v1/messages" {
+        let mut events = vec![
+            json!({"type":"message_start","message":{"id":"msg_fake","type":"message",
+                "role":"assistant","model":request.body["model"],"content":[],
+                "stop_reason":null,"stop_sequence":null,
+                "usage":{"input_tokens":10,"output_tokens":0}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+        ];
+        events.extend(deltas.iter().map(|delta| {
+            json!({"type":"content_block_delta","index":0,
+                "delta":{"type":"text_delta","text":delta}})
+        }));
+        events.extend([
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},
+                "usage":{"output_tokens":output}}),
+            json!({"type":"message_stop"}),
+        ]);
+        return Reply::Events(events);
+    }
+    let mut message = openai::message(&deltas.concat());
+    message["status"] = json!("incomplete");
+    let mut events = vec![json!({"type":"response.output_item.added","output_index":0,
+        "item":{"type":"message","id":"msg_fake","role":"assistant","status":"in_progress",
+            "content":[]}})];
+    events.extend(deltas.iter().map(|delta| {
+        json!({"type":"response.output_text.delta","item_id":"msg_fake","output_index":0,
+            "content_index":0,"delta":delta})
+    }));
+    events.push(
+        json!({"type":"response.incomplete","response":{"id":"resp_fake",
+        "object":"response","created_at":1,"model":request.body["model"],"status":"incomplete",
+        "incomplete_details":{"reason":"max_output_tokens"},"output":[message],
+        "usage":openai::usage(10, output)}}),
+    );
+    for (index, event) in events.iter_mut().enumerate() {
+        event["sequence_number"] = json!(index);
+    }
+    if request.path.starts_with("/backend-api/codex") {
+        codex::stream(events)
+    } else {
+        Reply::Events(events)
+    }
+}
+
+/// The saved session's `attempt` events of `review`.
+fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
+    let session = review["sessionId"].as_str().unwrap();
+    fs::read_to_string(
+        project
+            .state
+            .join("agent-sessions")
+            .join(format!("{session}.jsonl")),
+    )
+    .unwrap()
+    .lines()
+    .map(|line| serde_json::from_str::<Value>(line).unwrap())
+    .filter(|event| event["kind"] == "attempt")
+    .collect()
+}
+
+#[test]
+fn a_response_rejected_after_delivery_fails_its_billed_attempt_with_its_counters() {
+    let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
+    let provider =
+        FakeProvider::start(|request| capped(request, &[r#"{"verdict":"GR"#.to_owned()], 128));
+    let run = project.run(&provider, &["--all"], 2);
+    for (name, backend) in CAPPED {
+        let review = request(&run, &format!("{name}/review"));
+        assert_eq!(review["errorCode"], "PROVIDER_ERROR", "{backend}: {review}");
+        let usage = review["usage"].as_array().unwrap();
+        assert_eq!(usage.len(), 1, "{backend}: billed output is not retried");
+        let attempt = &usage[0];
+        assert_eq!(
+            attempt["errorCode"], "PROVIDER_ERROR",
+            "{backend}: {attempt}"
+        );
+        assert_eq!(attempt["error"], review["error"], "{backend}");
+        assert_eq!(
+            attempt["usage"]["outputTokens"], 128,
+            "{backend}: {attempt}"
+        );
+        let events = attempt_events(&project, review);
+        assert_eq!(events.len(), 1, "{backend}");
+        assert_eq!(events[0]["errorCode"], "PROVIDER_ERROR", "{backend}");
+        assert_eq!(events[0]["usage"], attempt["usage"], "{backend}");
+    }
+    assert_eq!(provider.requests().len(), CAPPED.len());
+}
+
+#[test]
+fn a_response_that_degenerates_into_whitespace_stops_with_its_own_code() {
+    let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
+    // An unfinished result, then whitespace in deltas that pass the stop point together.
+    let mut deltas = vec![r#"{"verdict":"GREEN","findings":["#.to_owned()];
+    deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
+    let provider = FakeProvider::start(move |request| capped(request, &deltas, 128_000));
+    let run = project.run(&provider, &["--all"], 2);
+    for (name, backend) in CAPPED {
+        let review = request(&run, &format!("{name}/review"));
+        assert_eq!(
+            review["errorCode"], "DEGENERATE_OUTPUT",
+            "{backend}: {review}"
+        );
+        assert!(
+            review["error"].as_str().unwrap().contains("whitespace"),
+            "{backend}: {review}"
+        );
+        assert_eq!(
+            attempts(review),
+            [(1, 1, json!("DEGENERATE_OUTPUT"))],
+            "{backend}: billed output is not retried"
+        );
+        let events = attempt_events(&project, review);
+        assert_eq!(events.len(), 1, "{backend}");
+        assert_eq!(events[0]["errorCode"], "DEGENERATE_OUTPUT", "{backend}");
+    }
+    assert_eq!(provider.requests().len(), CAPPED.len());
+}
+
 #[test]
 fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
     let project = Project::new(&[
@@ -798,6 +928,7 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
                 &CompletionRequest::new(Message::user("literal replay")),
                 Turn {
                     number: 1,
+                    model: "fixture-model",
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
                 },
@@ -854,6 +985,7 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
                 &CompletionRequest::new(Message::user("fixture")),
                 Turn {
                     number: 1,
+                    model: "fixture-model",
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
                 },

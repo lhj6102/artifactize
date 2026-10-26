@@ -180,6 +180,7 @@ impl Turns<'_> {
                 request,
                 llm::Turn {
                     number: self.turn,
+                    model: self.model,
                     deadline: self.deadline,
                     cancellation: self.cancellation,
                 },
@@ -196,8 +197,6 @@ impl Turns<'_> {
             self.deadline,
             Instant::now(),
         )?;
-        llm::validate_response(&response, self.model)
-            .map_err(|message| Failure::new(Code::ProviderError, message))?;
         self.recorder.message(
             self.turn,
             &Message::Assistant {
