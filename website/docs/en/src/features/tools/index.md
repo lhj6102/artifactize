@@ -77,8 +77,9 @@ payload.instruction = "Review {app} and the implementation of {checker}; run its
 The Agent gets `inspect_checker`; the person gets `source_checker`. Both evals
 admit the referenced tool Artifact, so its relevant fingerprint participates in
 reuse. Give the tool its own real tests or reviews when needed; do not declare it
-`basis` just to bypass unfinished work. `execution_paths` can record which built
-binary ran, but those provenance pins do not themselves invalidate reuse.
+`basis` just to bypass unfinished work. `execution_paths` records which built
+binary ran; whether a change to the tool runs the review again depends only on the
+fingerprint.
 
 A `json` command reads one JSON request from stdin, containing `context` and
 `args`, and prints one JSON content object, such as
