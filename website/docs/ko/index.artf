@@ -67,7 +67,7 @@ additionalProperties = false
 
 [evals.follows-write-in-korean]
 title = "The Korean documentation follows the Korean writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-write-in-korean.payload]
 instruction = """
