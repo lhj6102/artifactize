@@ -10,8 +10,8 @@ Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED�
 eval이 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
-eval이 준비되면 artifactize는 사람의 결정이 필요한 작업을 **DEFERRED 요청**으로
-저장합니다. 이 요청은 다른 작업을 막지 않습니다. 사람이 판정을 제출할 때까지는 Run의 `--jobs` 실행 자리도,
+eval 준비가 끝나면 artifactize는 사람이 판정해야 하는 요청을 **DEFERRED** 상태로
+기록합니다. 이 요청은 다른 작업을 막지 않습니다. 사람이 판정을 제출할 때까지는 Run의 `--jobs` 실행 자리도,
 `--max-executions` 예산도 쓰지 않으며, 그 예산이 0이어도 마찬가지입니다. 그 승인에 의존하는 eval은 바로
 실행하며, 그 eval의 GREEN 결과는 승인이 GREEN이 될 때까지 PROVISIONAL로 표시되고, eval 자체의 RED나 ERROR는
 그대로 표시됩니다. 다른 작업이 아직 실행 중일 수 있으니, 최종 상태를
@@ -60,9 +60,9 @@ Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면
 
 ## 승인과 Run {#sign-offs-and-the-run}
 
-리뷰어가 승인 요청을 맡고 있거나, 남은 작업이 승인뿐인 상태에서 유휴 유예 시간(따로
-[바꾸지](others/state.md#sign-off-idle-grace) 않았다면 2분)이 지나지 않았다면
-Run은 종료되지 않고 **WAITING_HUMAN** 상태를 유지합니다. 그 시간 안에 승인을 맡아 제출하면 Run은 그 결과에 따라 GREEN이나
+진행 중인 Run은 제출되지 않은 승인이 하나라도 있는 동안 **WAITING_HUMAN**입니다. 남은 작업이 승인뿐이면
+리뷰어가 그중 하나를 맡고 있는 동안, 그리고 유휴 유예 시간(따로
+[바꾸지](others/state.md#sign-off-idle-grace) 않았다면 2분) 동안 Run은 종료되지 않습니다. 그 시간 안에 승인을 맡아 제출하면 Run은 그 결과에 따라 GREEN이나
 RED로 끝납니다. 아무도 맡지 않으면 Run은 **YELLOW**(종료 코드 5)로 끝나며, 승인만 남았다는 뜻입니다. 그 뒤에도
 승인을 제출할 수 있고, 다음 verify가 그 결과를 재사용합니다. 자세한 내용은
 [승인과 Run 종료](run.md#sign-offs-and-the-end-of-a-run)에 있습니다. 이 재사용에는 fingerprint가 필요하므로

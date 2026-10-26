@@ -162,7 +162,7 @@ fn listed(
     Ok(runs)
 }
 
-/// Fill in each Run's request counts by saved status.
+/// Fill in each Run's request counts by saved status, and the status they show it with.
 fn count(db: &rusqlite::Connection, runs: &mut [RunSummary]) -> Result<(), Error> {
     let ids: Vec<_> = runs.iter().map(|run| run.id.clone()).collect();
     let mut counts: BTreeMap<crate::types::RunId, BTreeMap<crate::types::RequestStatus, u64>> =
@@ -184,6 +184,9 @@ fn count(db: &rusqlite::Connection, runs: &mut [RunSummary]) -> Result<(), Error
     }
     for run in runs {
         run.counts = counts.remove(&run.id).unwrap_or_default();
+        run.status = run
+            .status
+            .with_signoffs(run.counts.keys().any(|status| status.is_human_wait()));
     }
     Ok(())
 }

@@ -273,8 +273,9 @@ impl From<ExecutionState> for RequestState {
 #[derive(Debug, Clone)]
 pub enum RunState {
     Running,
-    /// Still open: a sign-off was requested, and the Run ends once nothing but unclaimed
-    /// sign-offs is left for its idle grace.
+    /// Still open with a sign-off request unsubmitted. Readers derive it from the Run's
+    /// requests ([`RunStatus::with_signoffs`]); it is never saved, and an open Run is saved
+    /// RUNNING. The Run ends once nothing but unclaimed sign-offs is left for its idle grace.
     WaitingHuman,
     /// Ended with every result but its sign-offs GREEN and a sign-off unsubmitted.
     Yellow {
@@ -344,6 +345,15 @@ impl RunState {
             Self::Red { .. } => RunStatus::Red,
             Self::Error { .. } => RunStatus::Error,
             Self::Incomplete { .. } => RunStatus::Incomplete,
+        }
+    }
+    /// The state readers show while `signoff_open` says whether a sign-off request of the Run
+    /// is unsubmitted; an ended Run keeps its own.
+    pub fn with_signoffs(self, signoff_open: bool) -> Self {
+        match self.status().with_signoffs(signoff_open) {
+            RunStatus::WaitingHuman => Self::WaitingHuman,
+            RunStatus::Running => Self::Running,
+            _ => self,
         }
     }
     pub fn completed_at(&self) -> Option<Timestamp> {

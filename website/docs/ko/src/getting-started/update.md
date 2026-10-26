@@ -30,13 +30,12 @@ GitHub에서 최신 릴리스를 조회합니다. 요청에는 artifactize 버�
 
 ### 0.16으로 업그레이드 {#upgrading-to-016}
 
-저장된 리뷰 데이터의 형식(스키마)은 처음 사용할 때 스키마 6~9에서 현재 스키마 10으로 자동으로
-업그레이드되며, 기존 Run, 캐시 기록, Human 승인은 그대로 남고 SIGNOFFS_PENDING으로 끝난 Run은 이제 YELLOW로
-처리합니다. 이전 버전의 artifactize는 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
+처음 열면 스키마 6~9의 상태 데이터가 현재 스키마 10으로 자동 업그레이드됩니다. 기존 Run, 캐시 기록,
+Human 승인은 유지되며, `SIGNOFFS_PENDING`으로 끝난 Run은 YELLOW로 처리됩니다. 이전 버전의 artifactize는 업그레이드된 상태를 열 수 없으니, 버전을 바꾸기 전에 백업해 두세요.
 
 이제 이번 Run의 실행 대상으로 선택한 승인 요청은 다른 eval의 실행을 막지 않으므로 `verify --defer-human`, MCP `defer_human`, eval 필드
 `gate = "blocking"`은 제거되었습니다. 스크립트에서는 플래그를, 선언에서는 필드를 지우세요. 이 플래그나 필드를
-사용하면 삭제하라는 오류 메시지가 표시됩니다. Run은 첫 승인을 요청한 때부터 **WAITING_HUMAN**이며, 제출되지 않은 승인만
+사용하면 삭제하라는 오류 메시지가 표시됩니다. Run은 진행 중에 제출되지 않은 승인이 있는 동안 **WAITING_HUMAN**이며, 제출되지 않은 승인만
 남으면 **YELLOW**(종료 코드 5, 이전의 SIGNOFFS_PENDING)로 끝납니다. 담당자가 맡은 승인이 제출될 때까지는 Run을
 종료하지 않고, 아무도 맡지 않은 승인만 남으면 2분의 [유휴 유예 시간](../features/others/state.md#sign-off-idle-grace)이
 지난 뒤 종료합니다.

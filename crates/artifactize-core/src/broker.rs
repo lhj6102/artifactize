@@ -26,7 +26,6 @@ use crate::{
         Capacity, Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend,
     },
     tools,
-    types::RunStatus,
 };
 
 /// OS owner death and released machine-wide slots have no reliable writer notification.
@@ -766,12 +765,6 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::WaitHuman(id) => {
                             admissions[index] = Admission::Idle;
-                            if self.run.state.status() == RunStatus::Running {
-                                // Saved before the request, so no reader sees a sign-off wait
-                                // in a Run that is not yet WAITING_HUMAN.
-                                self.run.state = crate::store::RunState::WaitingHuman;
-                                self.receipts.save_run(self.run).await?;
-                            }
                             request.execution_id = Some(id);
                             request.state = if deferred_human {
                                 crate::store::RequestState::Deferred
@@ -888,10 +881,6 @@ impl Scheduler<'_, '_> {
                         request.started_at = Some(execution.started_at);
                     }
                     request.state = crate::store::RequestState::Running;
-                    if human && self.run.state.status() == RunStatus::Running {
-                        // Saved before the sign-off request exists, as for a joined one.
-                        self.run.state = crate::store::RunState::WaitingHuman;
-                    }
                     self.receipts.save_run(self.run).await?;
                     self.receipts.save_request(request).await?;
                     let config = self.config.clone();
@@ -1001,10 +990,6 @@ impl Scheduler<'_, '_> {
                 .map(|request| request.id.clone())
                 .collect();
             let human_wait = !signoffs.is_empty();
-            if human_wait && !cancelled && self.run.state.status() == RunStatus::Running {
-                self.run.state = crate::store::RunState::WaitingHuman;
-                self.receipts.save_run(self.run).await?;
-            }
             let admission_wait = admissions.iter().any(Admission::waiting);
             let idle = self.tasks.is_empty() && (!admission_wait || cancelled);
             if idle && (cancelled || !human_wait) {

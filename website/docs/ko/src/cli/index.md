@@ -145,8 +145,8 @@ artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
 
-`verify --wait`는 stderr에 Run ID를 출력하고, Run이 끝날 때까지 기다린 다음 eval마다 결과를
-출력하고 Run의 [종료 코드](#command-reference)로 종료합니다. Run 자체의 진단(최대 64 KiB)과
+`verify --wait`는 Run ID를 stderr에 출력한 뒤 Run이 끝나면 eval별 결과를 보여 주고,
+Run의 [종료 코드](#command-reference)를 반환합니다. Run 자체의 진단(최대 64 KiB)과
 Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 [runtime-relations 예제](../getting-started/examples.md)에서 GREEN, RED, 막힌 eval을 나란히
 볼 수 있습니다.
@@ -239,7 +239,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 `verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
 목록에 있는 종류의 eval은 결과를 재사용만 할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
-기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 부르거나 Human 요청을 만들지 않으며, 같은 재사용 키로 진행 중인 리뷰가 있어도 그 리뷰가 끝날 때까지 대기하지 않습니다.
+기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키로 진행 중인 리뷰가 있어도 그 리뷰가 끝날 때까지 대기하지 않습니다.
 강제로 실행하는 eval은 캐시 결과를 읽지 않으므로, 목록에 있는 종류에 `--force`를 주면 절대 실행되지
 않습니다. 목록에 없는 종류는 평소처럼 실행합니다. CI에서
 `artifactize verify --all --wait --reuse-only agent,human`을 쓰면 테스트는 실행하고 리뷰는

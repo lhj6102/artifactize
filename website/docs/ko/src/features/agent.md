@@ -38,7 +38,7 @@ artifactize models codex
 커스텀 provider에서는 해당 API가 지원하는 값을 쓸 수 있으며, 지원 여부는 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 Runtime eval과 똑같이 입력의 eval 결과가 나올 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝날 때 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
+Agent eval도 Runtime eval처럼 입력 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
@@ -90,7 +90,7 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 
 Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
 기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-ERROR입니다. 답변이 긴 공백으로만 이어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
+ERROR입니다. 응답이 긴 공백만으로 이루어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
 끝납니다. `verify`를 다시 실행하고, 계속 그러면 다른 모델이나 `reasoning`을 써 보세요.
 Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
@@ -107,8 +107,7 @@ provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 
 한 번 다시 실행합니다. 이전 대화를 이어 가지 않고 새 대화로 시작합니다. 답변이 공백으로만
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
 `Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
-여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과를 기다렸다가 결과가 나오면
-이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 실행마다 리뷰 제한 시간, `max_tokens`, `max_tool_calls`를
+여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과가 나올 때까지 실행을 보류하고, 결과가 나오면 이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 실행마다 리뷰 제한 시간, `max_tokens`, `max_tool_calls`를
 새로 적용하므로, 두 번 실행된 요청은 예산을 최대 두 배까지 쓸 수 있습니다. 다시 실행할 때마다 비용이 듭니다. 각 실행의
 시도는 모두 `usage`에 남고, 두 번째 이후 실행의 시도에는 `dispatch`(2, 3, …)가 붙습니다. 실패한 실행은
 요청의 `redispatches`에 `sessionId`, 저장된 `session`, `errorCode`, `error`와 함께 남습니다. 요청의
@@ -209,7 +208,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 
 ## Codex {#codex}
 
-`codex`는 내 ChatGPT 요금제로 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)을 사용해 리뷰합니다.
+`codex` 백엔드는 사용 중인 ChatGPT 요금제에서 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
@@ -240,7 +239,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   연결하지 못하거나 오류 응답을 받으면 `TRANSIENT`로 분류합니다.
 
 - **모델.** `models codex`는 지금 계정으로 Codex 모델 선택기에서 고를 수 있는 모델을 서버가 보내 준
-  순서대로 나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.
+  순서대로 나열합니다. 프로필에는 목록에 표시되지 않더라도 계정에서 사용할 수 있는 모델을 지정할 수 있습니다.
 
 ## 커스텀 provider {#custom-providers}
 

@@ -104,9 +104,10 @@ for sign-offs the Run selected. A sign-off outside the selection is
 an obligation like any other: what relies on it waits for a reusable approval, and without
 one the Run ends INCOMPLETE. Select it too, for example with `--recursive` or `--all`.
 
-From its first sign-off request the Run is **WAITING_HUMAN**: still open, as a RUNNING Run
-is. Once nothing but sign-offs is left, it stays open while a reviewer holds a claim on one
-of them, and ends when none has been claimed for its **idle grace**, 2 minutes unless
+While one of its sign-off requests is unsubmitted the Run is **WAITING_HUMAN**: still open,
+as a RUNNING Run is. An open Run without one is RUNNING, so when the last open sign-off is
+submitted while other work still runs, the Run reads RUNNING again. Once nothing but
+sign-offs is left, it stays open while a reviewer holds a claim on one of them, and ends when none has been claimed for its **idle grace**, 2 minutes unless
 [changed](others/state.md#sign-off-idle-grace). The grace counts from when the other work
 finished or the last claim was submitted or released, whichever is later; a new claim stops
 it. So a person who asked for a sign-off has time to claim it, also when every other result

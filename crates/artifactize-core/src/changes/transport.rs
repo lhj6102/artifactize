@@ -46,7 +46,6 @@ impl Endpoint {
         Ok(endpoint)
     }
     /// The private directory that holds the election lock.
-    #[cfg(test)]
     pub(super) fn directory(&self) -> &Path {
         &self.directory
     }

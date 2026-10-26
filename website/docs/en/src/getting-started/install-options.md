@@ -195,23 +195,18 @@ open **Artifactize** from your applications menu or the Start menu.
 
 On first launch the app checks whether a terminal already finds `artifactize`. If
 Homebrew, an install script, the `.deb` or the Store installed it, nothing changes.
-Otherwise it sets the commands up, and you then open a new terminal and run
+Otherwise it sets the commands up; then open a new terminal and run
 `artifactize --version`:
 
-- **macOS:** the app writes its absolute `Contents/MacOS` directory to
-  `/etc/paths.d/artifactize` through the system administrator prompt. Open a new
-  terminal afterwards and run `artifactize --version`. Both commands run from the
-  installed app, so updating the app updates them too. If you move the app, launch it
-  again to repair an entry pointing to the old, missing location. Cancelling the
-  prompt is remembered in the app's state for that bundle location; it will not ask
-  on every launch.
-- **Linux AppImage:** the commands are copied to
-  `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin` and linked from `~/.local/bin`.
-  They keep working after the temporary AppImage mount goes away, and launching a
-  newer AppImage refreshes the app's copies. Files or links in `~/.local/bin` that
-  the app did not create are never replaced. If your shell does not already search
+- **macOS:** approve the administrator prompt so terminals find the app's commands.
+  They run from the installed app, so updating the app updates them. If you move the
+  app, launch it once more to set them up again. If you cancel the prompt, the app
+  does not ask again on every launch.
+- **Linux AppImage:** the app installs the commands in `~/.local/bin`; they keep
+  working after the AppImage closes, and a newer AppImage updates them. It never
+  replaces a file there it did not create. If your shell does not search
   `~/.local/bin`, add `export PATH="$HOME/.local/bin:$PATH"` to its startup file and
-  open a new terminal. The app does not edit shell startup files.
+  open a new terminal.
 
 Setup errors are logged without stopping the app. Windows installers, `.deb` and
 `install.sh`'s extracted Linux app already provide the commands and need no setup.

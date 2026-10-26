@@ -228,6 +228,12 @@ impl Inbox {
     }
 }
 
+/// The OS directory outside `state` where its subscriptions meet. Every process using that
+/// state shares it, so only the owner of a temporary state removes it with the state.
+pub fn namespace(state: &Path) -> std::io::Result<std::path::PathBuf> {
+    Endpoint::new(state).map(|endpoint| endpoint.directory().to_owned())
+}
+
 /// Register before reading the baseline. Dirties arriving during that read stay queued.
 /// Drop requests cancellation; await [`Self::close`] before removing the subscribed state.
 pub struct Subscription {

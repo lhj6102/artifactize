@@ -66,8 +66,8 @@ sections); it has no claim, tools or forms.
 
 The list and Detail use [Reactive panes](#reactive-panes). With the list focused,
 it is Full and the selected request has a read-only Preview; Enter or → opens
-Detail beside a Compact list. The linked layout reference gives the widths and
-small-terminal behavior.
+Detail beside a Compact list. The linked section explains how the panes share a small
+terminal.
 The breadcrumb is `artifactize review › search › eval`. ↑/↓ or `j`/`k` selects a request;
 `r` refreshes the list. Tab opens the selected request with its Tools focused. Esc on the
 list stays there, never quits. The standalone UI has no `?` help overlay or `!` attention
@@ -233,12 +233,10 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-The screen always shows **Compact + Full + Preview**, the focused pane in the middle
-with the room the side panes leave. Scope shows Full + Preview, and Detail shows Tree
-Compact + Detail Full. Each side pane is 16 columns wide in a terminal narrower than 100
-columns, 28 from 100 columns and 36 from 140. In a terminal too narrow for them, the side panes
-share its width and the focused pane can shrink to nothing; widen the terminal when the
-focused pane needs more room.
+The focused pane sits in the middle, with Compact to its left and Preview to its right;
+Scope has no Compact and Detail no Preview. Side panes widen with the terminal, and in a
+narrow one the focused pane can shrink to nothing; widen the terminal when it needs more
+room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate
@@ -304,9 +302,9 @@ they do not rename the states in JSON.
 
 How a Run treats [sign-offs](../features/run.md#sign-offs-and-the-end-of-a-run) and
 [speculation](../features/run.md#speculation) also explains its display. Sign-offs appear
-as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. A Run waiting for a
-claimed sign-off or its idle grace is **WAITING_HUMAN**, a darker blue than RUNNING since
-both are still open; a Run that ended **YELLOW** has only those sign-offs left. Their later
+as **DEFERRED** and dependent work can be **PROVISIONAL**, not approved. An open Run with an
+unsubmitted sign-off request is **WAITING_HUMAN**, a darker blue than RUNNING since both are
+still open, and reads RUNNING again once its open sign-offs are submitted; a Run that ended **YELLOW** has only those sign-offs left. Their later
 submissions change current requests, not the historical Run-end verdict. With
 `--speculate`, a downstream eval can be READY or running while upstream judgment is still
 pending; a later upstream RED/ERROR blocks or cancels that speculative work.
@@ -405,8 +403,8 @@ latest.
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims
 can be stale, not current authority. Standalone non-Human Detail can hide the
-notice until you return to the list, and a failed Record reload can clear that
-previous Detail instead of retaining it. In Review, return to the request list
+notice until you return to the list, and a failed reload of that Detail can clear what
+it showed instead of keeping it. In Review, return to the request list
 and press `r`; in Monitor, request refresh from Scope, Runs or the tree.
 A successful read clears the failure notice.
 

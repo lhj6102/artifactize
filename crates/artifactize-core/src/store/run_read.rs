@@ -113,8 +113,9 @@ fn unreadable_executions(db: &rusqlite::Connection, id: &RunId) -> Result<Vec<Un
 pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     let id: RunId = id.parse()?;
     snapshot(state, move |db, state| {
-        let run = saved_run(db, state, &id)?;
+        let mut run = saved_run(db, state, &id)?;
         let (requests, mut unreadable) = saved_requests(db, &id)?;
+        run.show_signoffs(requests.iter().map(Request::status));
         unreadable.extend(unreadable_executions(db, &id)?);
         unreadable.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
         Ok(RunView {

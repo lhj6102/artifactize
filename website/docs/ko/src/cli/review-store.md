@@ -19,9 +19,8 @@ artifactize server rm KEY
 
 `artifactize server`는 [팀 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
 `--state-dir` 아래 별도의 `review-store.sqlite`에 둡니다. `state.sqlite`와는 다른 파일입니다.
-각 [재사용 키](../features/fingerprint.md#the-reuse-key)의 기록을 모두 보관하고, 조회하면
-누가 게시했는지, 기록이 어떤 순서로 도착했는지와 상관없이 완료 시각이 가장 늦은 기록을
-GREEN이든 RED이든 돌려줍니다. `server run`은 기본으로 루프백에서 일반 HTTP로 동작하고
+각 [재사용 키](../features/fingerprint.md#the-reuse-key)의 모든 기록을 보관하며, 조회할 때는 게시자나 도착 순서와 관계없이 완료 시각이 가장 늦은 기록을
+판정(GREEN 또는 RED)과 함께 돌려줍니다. `server run`은 기본으로 루프백에서 일반 HTTP로 동작하고
 (다른 주소에 바인딩하면 경고합니다) Ctrl-C로 멈춥니다. 클라이언트는 루프백이 아니면
 HTTPS를 요구하므로 앞에 TLS 프록시나 터널을 두세요. 서버 실행 중에도 토큰 관리 명령은
 같은 파일을 사용하며, 토큰 변경 사항은 즉시 반영됩니다.
