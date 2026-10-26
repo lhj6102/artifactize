@@ -135,7 +135,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 `--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
 볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
-열(없으면 `-`)에 보여 주고, `verify`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+`--wait` 없이 `verify`가 출력하는 JSON은 Run과 그 상태만 알려 줍니다.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -511,17 +512,19 @@ artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still ho
 ```
 
 ```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna · files changed since this review
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
+
+머리말에는 follow-up 번호와, `session show`처럼 리뷰의 backend, 모델, reasoning이 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이
 바뀌었는지(알 수 없으면 null), `answer`는 답변 텍스트, `usage`는 시도별 토큰 수입니다.
 
 follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
-텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
+텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 머리말에
 경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 캐시, 저장되는 메시지, 호환성은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
 보세요.

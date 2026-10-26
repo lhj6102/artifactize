@@ -335,7 +335,7 @@ impl Job {
                     })
                 {
                     return Outcome::SavedLocally {
-                        request: Box::new(view.request),
+                        request: Box::new(std::sync::Arc::unwrap_or_clone(view.request)),
                         error: error.clone(),
                     };
                 }

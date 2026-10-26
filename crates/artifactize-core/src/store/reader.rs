@@ -316,7 +316,8 @@ impl Cache {
         Ok(runs)
     }
     /// Read the opened Run `id`. Its definitions are decoded once, when it is first opened, and
-    /// a request is decoded again only when its row, its execution or its claim changed. None
+    /// a request is decoded again only when its row, its execution or its claim changed; the
+    /// others are shared with the snapshots read before, which may still be shown. None
     /// means nothing of the Run changed since the last read and `force` is unset. A Run whose
     /// own record or definitions do not decode is [`Error::Unreadable`].
     pub fn selected(
@@ -398,7 +399,7 @@ impl Cache {
             .map(|(request, marks)| {
                 let row = match fresh.remove(request) {
                     Some(row) => {
-                        let (view, unreadable) = row.read(&selected.index);
+                        let (view, unreadable) = row.read(&mut selected.index);
                         Kept {
                             marks: marks.clone(),
                             view,

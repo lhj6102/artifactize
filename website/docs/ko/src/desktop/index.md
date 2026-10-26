@@ -144,8 +144,9 @@ fingerprint를 모두 계산한 뒤에 정해지므로, 의존 대상이 없는 
 다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, Pane에 보이는 브랜치의 Run이 끝날 때 다시 스캔합니다.
 검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 그 브랜치의 스캔이 아직 진행 중이면, Current를 다시 고르거나 Run이 끝나도 처음부터 다시 스캔하지 않고
-진행 중인 스캔을 보여 줍니다. **Refresh**나 Ctrl+R/F5를 눌러도 진행 중인 스캔을 보여 주지만, 그 스캔이
-끝나면 한 번 더 스캔하므로 그사이에 바꾼 내용도 나타납니다.
+진행 중인 스캔을 보여 줍니다. 그동안 Current의 **Refresh** 버튼은 비활성화됩니다. 앱의 **Refresh** 명령이나
+Ctrl+R/F5를 누르면 진행 중인 스캔을 보여 주고, 그 스캔이 끝나면 한 번 더 스캔하므로 그사이에 바꾼 내용도
+나타납니다.
 **Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
 관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만

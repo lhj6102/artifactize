@@ -114,7 +114,10 @@ async fn refused_review_jobs_release_database_before_returning() {
     .unwrap();
     let id = view.request.id.clone();
     let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
-    receipts.create_run(&run, &[view.request]).await.unwrap();
+    receipts
+        .create_run(&run, &[view.request.as_ref().clone()])
+        .await
+        .unwrap();
     drop(receipts);
     let reviewer: crate::types::ReviewerId = "alice".parse().unwrap();
     let result = Submission::try_from(json!({"verdict":"GREEN"})).unwrap();
@@ -725,7 +728,7 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
     let instruction = (0..40)
         .map(|n| format!("criterion-{n}\n"))
         .collect::<String>();
-    review.shown.request_mut().unwrap().request.payload =
+    std::sync::Arc::make_mut(&mut review.shown.request_mut().unwrap().request).payload =
         serde_json::from_value(json!({"instruction":instruction})).unwrap();
     let draw = |review: &mut Review| {
         let mut terminal =
@@ -990,7 +993,8 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
 #[test]
 fn a_request_without_a_recorded_definition_never_offers_an_empty_form() {
     let mut review = super::tests::opened(Some("alice"), super::tests::demo());
-    review.shown.request_mut().unwrap().request.human_definition = None;
+    std::sync::Arc::make_mut(&mut review.shown.request_mut().unwrap().request).human_definition =
+        None;
     assert_eq!(review.control(Control::Green), Action::None);
     assert!(!review.editing());
     let screen = drawn(&mut review);

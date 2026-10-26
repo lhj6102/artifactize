@@ -551,7 +551,7 @@ impl Request {
 pub struct RunView {
     #[serde(flatten)]
     pub run: Run,
-    pub requests: Vec<Request>,
+    pub requests: Vec<std::sync::Arc<Request>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unreadable: Vec<super::Unreadable>,
 }
@@ -1145,10 +1145,11 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
                     statement
                         .query_map([&id], |row| row.get::<_, String>(0))?
                         .filter_map(|row| match row {
-                            Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                            Ok(data) => super::unreadable::evidence("request", &data)
+                                .map(|request| Ok(std::sync::Arc::new(request))),
                             Err(error) => Some(Err(Error::Sql(error))),
                         })
-                        .collect::<Result<Vec<Request>, Error>>()?
+                        .collect::<Result<Vec<_>, Error>>()?
                 };
                 let unreadable = super::unreadable::in_run(&transaction, &id)?;
                 transaction.commit()?;

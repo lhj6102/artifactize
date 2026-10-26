@@ -216,7 +216,7 @@ pub(super) async fn recover(state: &std::path::Path, view: &RunView) -> Result<(
             .requests
             .iter()
             .map(|view| {
-                let mut request = view.clone();
+                let mut request = store::Request::clone(view);
                 if !matches!(
                     request.status(),
                     RequestStatus::Green | RequestStatus::Red | RequestStatus::Error

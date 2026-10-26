@@ -61,7 +61,7 @@ async fn live_session_pty_fixture() {
             "sessionId":"fixture-session",
         }),
     );
-    view.request.run_id = run.id.clone();
+    std::sync::Arc::make_mut(&mut view.request).run_id = run.id.clone();
     let mut runtime = tests::request(
         "app/runtime",
         "GREEN",
@@ -70,9 +70,15 @@ async fn live_session_pty_fixture() {
             "result":{"verdict":"GREEN","exitCode":0,"stdout":"other modal unaffected","stderr":""},
         }),
     );
-    runtime.request.run_id = run.id.clone();
+    std::sync::Arc::make_mut(&mut runtime.request).run_id = run.id.clone();
     receipts
-        .create_run(&run, &[view.request.clone(), runtime.request.clone()])
+        .create_run(
+            &run,
+            &[
+                view.request.as_ref().clone(),
+                runtime.request.as_ref().clone(),
+            ],
+        )
         .await
         .unwrap();
     let saving = Saving {
@@ -91,7 +97,7 @@ async fn live_session_pty_fixture() {
             "initial row {n} 한글 e\u{301}"
         ))));
     }
-    view.request.session = recorder.reference().cloned();
+    std::sync::Arc::make_mut(&mut view.request).session = recorder.reference().cloned();
     receipts.save_request(&view.request).await.unwrap();
     let cancellation = tokio_util::sync::CancellationToken::new();
     let control = root.clone();

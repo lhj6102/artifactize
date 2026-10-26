@@ -21,6 +21,10 @@ impl Definitions {
     pub fn graph(&self) -> Option<&Graph> {
         self.0.as_deref()
     }
+    /// Another share in the decoded graph, for what keeps a place in it.
+    pub(crate) fn share(&self) -> Option<Arc<Graph>> {
+        self.0.clone()
+    }
     pub fn from_view(view: &crate::query::GraphView<'_>) -> Result<Self, serde_json::Error> {
         serde_json::from_value(serde_json::to_value(view)?)
     }
@@ -141,7 +145,7 @@ pub enum AgentTool {
 #[serde(rename_all = "camelCase")]
 pub struct CommandTool {
     pub description: String,
-    pub input_schema: Value,
+    pub input_schema: InputSchema,
     pub protocol: config::ToolProtocol,
     pub command: String,
     pub args: Vec<String>,
@@ -151,6 +155,27 @@ pub struct CommandTool {
     pub execution_paths: Field<Vec<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+/// A command tool's saved input schema, kept as compact JSON text and decoded only when read:
+/// a catalog of Artifacts saves one per tool, and a decoded schema takes about ten times its
+/// text's memory, while only a review that offers the tool reads it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputSchema(Box<str>);
+impl InputSchema {
+    pub fn value(&self) -> Value {
+        serde_json::from_str(&self.0).expect("kept as the text of a decoded value")
+    }
+}
+impl Serialize for InputSchema {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.value().serialize(serializer)
+    }
+}
+impl<'de> Deserialize<'de> for InputSchema {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let schema = Value::deserialize(deserializer)?;
+        Ok(Self(schema.to_string().into_boxed_str()))
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuiltinTool {
