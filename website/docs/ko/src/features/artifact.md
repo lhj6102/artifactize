@@ -22,7 +22,7 @@ payload.instruction = "Check that every link in the docs resolves."
 **Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. `{spec}` 같은 참조는 그
 Artifact를 eval의 입력으로 지정하며, 그 fingerprint가 바뀌면 재사용 키에 그 Artifact를 포함한 리뷰만
 무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
-Artifact가 모든 검사의 의존성이 되지는 않습니다.
+Artifact가 모든 eval이 의존하는 대상이 되지는 않습니다.
 
 실행 게이트는 eval마다 정해집니다. [eval 의존성](#eval-dependencies)을 보세요.
 
@@ -145,13 +145,13 @@ BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실�
 ### Human 승인 {#human-sign-offs}
 
 Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
-시작합니다. 사람은 자동 검사 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
-자동 검사 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
+시작합니다. 사람은 자동 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
+자동 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
 통과한 것으로 칩니다. 그
-자동 검사 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
+자동 eval 중 하나라도 RED나 ERROR면 Human eval은 시작하지 않고 BLOCKED가 되며, 사유에
 `Sibling machine eval RED: spec/review`처럼 그 eval이 나옵니다. 같은 Artifact의 다른 Human
 eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`와
-`--speculate` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 검사 eval이
+`--speculate` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 eval이
 GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}

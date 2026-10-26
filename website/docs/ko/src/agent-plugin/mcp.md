@@ -183,7 +183,7 @@ cursor는 같은 도구와 같은 인자에서만 동작합니다. 다음 페이
 ## 일부러 빼놓은 것 {#deliberately-absent}
 
 자격 증명 로그인/로그아웃, Human 담당 지정/제출/담당 해제, prune, 캐시 제거,
-원격 푸시, 대화형 monitor/review, 저장소 서버, 프로젝트 도구 실행,
+원격 푸시, 대화형 Monitor/review, 저장소 서버, 프로젝트 도구 실행,
 Agent 세션 follow-up은 없습니다. 이런 동작은 CLI와 일반 Human 리뷰 인터페이스에서 하세요.
 
 

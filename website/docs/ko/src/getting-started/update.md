@@ -56,7 +56,7 @@ GitHub에 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 �
 
 게이트 우회(`review_policy.dependency_gates`를 포함한 `--ignore-gates`와 `review_policy`)는
 제거되었습니다. 빈 `review_policy` 테이블도 설정 검사에 실패하니 지우세요. 의존하는 eval의 판정이 나오기
-전에 검사를 실행하려면 verify 요청에 `--speculate`를 붙이세요. 이 옵션도 최종 승인을 면제하지 않습니다. 승인은 이제 다른
+전에 eval을 실행하려면 verify 요청에 `--speculate`를 붙이세요. 이 옵션도 최종 승인을 면제하지 않습니다. 승인은 이제 다른
 eval을 막지 않습니다([0.16으로 업그레이드](#upgrading-to-016) 참고). [Run과 status](../features/run.md)를 보세요.
 인자 없이 실행한 `artifactize monitor`는 ALL에서 시작합니다. `monitor .`, 위치 인자 경로, 또는 `--repo`는
 처음에 그 저장소를 선택합니다.

@@ -10,7 +10,7 @@ git clone https://github.com/lhj6102/artifactize
 cd artifactize
 ```
 
-예제는 Python 검사를 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 쓰므로 두 명령
+예제는 Python으로 된 eval을 실행하는 데 `python3`를, 텍스트를 검색하는 데 `grep`을 쓰므로 두 명령
 모두 터미널에서 쓸 수 있어야 합니다. `PATH`는 터미널이 명령을 찾는 디렉터리 목록입니다.
 터미널이 두 명령을 찾는지 확인하세요.
 
@@ -25,7 +25,7 @@ artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대
 [운영체제](../features/others/platforms.md)를 보세요.
 
 리뷰받는 작업 단위 하나하나가 **Artifact**입니다. Artifact의 `index.artf`는 **eval**이라고
-부르는 검사들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
+부르는 리뷰 항목들을 나열한 텍스트 설정 파일입니다. 이 파일은 읽기 쉬운 `key = value`
 형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일로부터 그 값을 만들어 artifactize가 변경을 감지할 수 있게 합니다.
 
@@ -70,7 +70,7 @@ artifactize run show RUN_ID
 프로그램에 전달된 인자 목록이고, `stdout`은 그 프로그램이 출력한 텍스트입니다.
 기록에는 리뷰된 입력을 식별하는 fingerprint도 들어 있습니다.
 
-같은 검사를 다시 실행하세요.
+같은 eval을 다시 실행하세요.
 
 ```sh
 artifactize verify --all --wait
@@ -171,7 +171,7 @@ Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 �
 로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 화면을 살펴보기만 해서는 프로젝트에 선언된 명령이 실행되지 않습니다.
 
 Human 요청 담당 지정, 도구, 판정 양식은
-[Human 리뷰와 monitor](../tui/index.md#monitor)를 보세요.
+[Human 리뷰와 Monitor](../tui/index.md#monitor)를 보세요.
 
 ## 팀 리뷰 저장소 (선택) {#team-review-store-optional}
 

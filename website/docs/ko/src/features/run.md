@@ -7,7 +7,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 ## eval 실행 게이트 {#eval-execution-gates}
 
 `verify`는 eval마다 그 eval의 [실행 게이트](artifact.md#eval-dependencies)에 따라 실행 시점을
-정하며, 여기에는 [Human 승인의 자동 검사 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
+정하며, 여기에는 [Human 승인의 자동 eval 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
 `status`는 eval을 실행하지 않고 이 게이트를 보여 줍니다.
 
 ## Verify와 Run {#verify-and-runs}
@@ -20,14 +20,14 @@ Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는
 **의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
 않았더라도 마찬가지입니다.
 
-`--recursive`는 선택한 Artifact의 다른 검사를 포함해 그 묶음의 모든 검사를 설정 순서대로
+`--recursive`는 선택한 Artifact의 다른 eval을 포함해 그 묶음의 모든 eval을 설정 순서대로
 선택합니다. `--all`은
-이미 모든 검사를 선택하며, 검사가 없는 대상도 최종 검증 요건에 포함합니다. 파일 Artifact 선택자는 그 파일의 eval만
+이미 모든 eval을 선택하며, eval이 없는 대상도 최종 검증 요건에 포함합니다. 파일 Artifact 선택자는 그 파일의 eval만
 선택하며, 그 파일이 들어 있는 폴더의 eval은 선택하지 않습니다.
 
 예를 들어 `code/tests`가 `plan`에 의존하고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고 가정합니다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로
 끝날 수 없습니다. `verify --eval code/tests --recursive`는 `code/style`과 `plan/signoff` 같은
-묶음의 다른 검사도 선택해서, 실행하거나 결과를 재사용할 수 있게 합니다. 검사를 더 선택한다고
+묶음의 다른 eval도 선택해서, 실행하거나 결과를 재사용할 수 있게 합니다. eval을 더 선택한다고
 승인이 자동으로 생기지는 않습니다. `--recursive`가 없어도 `code/style`과 그 입력에 필요한
 리뷰는 통과해야 하므로, 이전 Run이나 캐시에 유효한 결과가 있어야 Run이 GREEN으로 끝납니다.
 
@@ -87,7 +87,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 
 ### 승인과 Run 종료 {#sign-offs-and-the-end-of-a-run}
 
-승인 요청은 [Human 승인](artifact.md#human-sign-offs)에서 설명하듯 그 Artifact의 자동 검사 eval이
+승인 요청은 [Human 승인](artifact.md#human-sign-offs)에서 설명하듯 그 Artifact의 자동 eval이
 통과하면 보내며, 요청은 DEFERRED로 표시됩니다. 그 승인에 의존하는 eval은 바로 실행되고 PROVISIONAL로
 표시되며, 자세한 내용은 [Human 리뷰](human.md)에 있습니다. 이는 해당 Run에서 실행하도록
 선택한 승인에 해당합니다. 선택하지 않은 승인도 최종 검증 요건에 포함되므로, 그 승인에 의존하는 eval은
@@ -112,7 +112,7 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 
 `verify --wait`, `run show --wait`, [MCP](../agent-plugin/mcp.md)의 대기 도구는 Run이 끝날 때까지 대기하므로,
 리뷰어가 승인 요청을 맡고 있거나 유예 시간이 남아 있으면 계속 대기합니다. YELLOW는 최종 상태입니다. 나중에 제출하면 요청이
-바뀔 뿐, Run의 판정은 바뀌지 않습니다. Run의 최종 판정에 승인 결과를 반영하려면 유휴 유예 시간이 지나기 전에 승인 요청을 맡으세요. 새 verify에서는 자동 검사의 잠정 결과가 바뀌지 않았으면 이를 재사용합니다. 승인이 GREEN이면
+바뀔 뿐, Run의 판정은 바뀌지 않습니다. Run의 최종 판정에 승인 결과를 반영하려면 유휴 유예 시간이 지나기 전에 승인 요청을 맡으세요. 새 verify에서는 자동 eval의 잠정 결과가 바뀌지 않았으면 이를 재사용합니다. 승인이 GREEN이면
 SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `--reuse-only agent,human`은 승인을 요청하지
 않고 대기 중인 승인을 GREEN으로 간주하지 않으므로 CI에 그대로 쓸 수 있습니다.
 
@@ -252,7 +252,7 @@ fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `na
 아래에 묶어 보여 주며, `w`를 누르면 대기 중인 eval이 나옵니다.
 
 나중에 Human이 승인을 제출하면 대기 중이던 Run이 확정될 수 있습니다. `run show`는 저장된 검증과
-요청을 그대로 보여 줍니다. monitor는 저장된 정의와 증거에 지금의 요청 상태(나중에 제출한 Human
+요청을 그대로 보여 줍니다. Monitor는 저장된 정의와 증거에 지금의 요청 상태(나중에 제출한 Human
 승인 포함)를 더해 트리를 만듭니다. 맨 위 줄은 **Run이 끝났을 때의 SATISFIED / NOT
 SATISFIED**를 유지하며, 흐린 `*`는 그 뒤로 상태가 바뀐 행을 표시합니다. 파일이 바뀌었다는 뜻은
 아닙니다. [Monitor](../tui/index.md#monitor)를 보세요.
