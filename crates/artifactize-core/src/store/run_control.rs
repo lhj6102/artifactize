@@ -97,20 +97,27 @@ impl Receipts {
         }).await.map_err(|error| error.to_string())
     }
 
+    /// Change the Run's control under the Run row's write lock. `change` sees the saved status
+    /// and control, and only the control is written back: neither the Run's state nor its
+    /// definitions are decoded, however large its catalog is.
     pub(crate) async fn control(
         &self,
         id: &RunId,
-        change: impl FnOnce(&mut Run) -> Result<(), String> + Send + 'static,
-    ) -> Result<Run, String> {
+        change: impl FnOnce(RunStatus, &mut Option<Control>) -> Result<(), String> + Send + 'static,
+    ) -> Result<(RunStatus, Option<Control>), String> {
         let id = id.clone();
         self.connection
-            .call(move |db| -> Result<Run, Error> {
+            .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                let mut run = load(&transaction, &id)?;
-                change(&mut run).map_err(Error::Invalid)?;
-                super::run_record::update(&transaction, &run)?;
+                let (status, mut control) = saved_control(&transaction, &id)?;
+                change(status, &mut control).map_err(Error::Invalid)?;
+                let text = control.as_ref().map(serde_json::to_string).transpose()?;
+                transaction.execute(
+                    "UPDATE runs SET data=CASE WHEN ?1 IS NULL THEN json_remove(data,'$.control') ELSE json_set(data,'$.control',json(?1)) END WHERE id=?2",
+                    params![text, id],
+                )?;
                 transaction.commit()?;
-                Ok(run)
+                Ok((status, control))
             })
             .await
             .map_err(|error| error.to_string())
@@ -149,8 +156,8 @@ impl Receipts {
         id: &RunId,
         owner: crate::process::ChildIdentity,
     ) -> Result<(), String> {
-        self.control(id, move |run| {
-            let control = run.control.as_mut().ok_or("Run has no admission record.")?;
+        self.control(id, move |_, control| {
+            let control = control.as_mut().ok_or("Run has no admission record.")?;
             if !matches!(control.worker, Worker::Starting { .. }) {
                 return Err("Run was already admitted.".into());
             }
@@ -162,10 +169,14 @@ impl Receipts {
         .map(|_| ())
     }
 
-    pub(crate) async fn request_cancel(&self, id: &RunId) -> Result<Run, String> {
-        self.control(id, |run| {
-            if run.status().is_open() {
-                let control = run.control.get_or_insert_with(Control::legacy);
+    /// Ask the Run to stop; the saved status and control after the request.
+    pub(crate) async fn request_cancel(
+        &self,
+        id: &RunId,
+    ) -> Result<(RunStatus, Option<Control>), String> {
+        self.control(id, |status, control| {
+            if status.is_open() {
+                let control = control.get_or_insert_with(Control::legacy);
                 control.cancellation_requested = true;
                 control.activity = Activity::Cancelling;
             }
@@ -290,4 +301,13 @@ pub(crate) async fn observe(state: &std::path::Path, id: &RunId) -> Result<Obser
         .await,
     )
     .map_err(|e| e.to_string())?
+}
+
+/// The repository a saved Run belongs to, read from its columns alone.
+pub async fn read_run_repo(
+    state: &std::path::Path,
+    id: &RunId,
+) -> Result<std::path::PathBuf, String> {
+    let state = crate::workspace::canonical_target(state).map_err(|e| e.to_string())?;
+    Ok(observe(&state, id).await?.repo)
 }

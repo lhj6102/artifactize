@@ -215,7 +215,7 @@ pub(crate) async fn execute(
     mut run: Run,
     receipts: &Receipts,
     cancellation: CancellationToken,
-) -> Result<RunView, Error> {
+) -> Result<(), Error> {
     let selection = &run.selection.clone();
     let options = &VerifyOptions {
         modes: run.modes.clone(),
@@ -304,7 +304,7 @@ pub(crate) async fn execute(
             .await?;
     }
     unchanged_declarations(repo, selection, options, &run.definitions)?;
-    let mut requests: Vec<_> = store::read_run(&state, &run.id).await?.requests;
+    let mut requests = store::read_run_requests_only(&state, &run.id).await?;
     for request in &mut requests {
         request.fingerprint = fingerprints
             .get(&request.target)
@@ -551,9 +551,7 @@ pub(crate) async fn execute(
             "Agent session collection failed: {error}"
         );
     }
-    store::read_run(&run.state_dir, &run.id)
-        .await
-        .map_err(Into::into)
+    Ok(())
 }
 
 pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {

@@ -372,9 +372,9 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `--limit N`(기본 50)과 `--offset N`(기본 0)은 각각 0–4294967295 범위로, 걸러 낸 결과를
 페이지로 나눕니다. 범위를 벗어난 값을 지정하면 종료 코드 2로 끝납니다. 각 행에는 Run ID, 저장소, 생성·완료
 시각, 상태, 판정과 상태별 요청 수(해당 상태가 없으면 0), Run의
-[코멘트](#submission-and-watching)(있을 때)가 나옵니다. 읽을 수 없는 요청은 세지
-않으며, `unreadable`에 손상된 기록과 그 이유가 나오고 유효한 증거는 그대로 볼 수 있습니다.
-[상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
+[코멘트](#submission-and-watching)(있을 때)가 나옵니다. 요청 수는 기록을 읽지 않고 요청마다
+저장된 상태로 세므로, Run이 아무리 커도 한 페이지를 읽는 시간은 같습니다. 손상된 기록과 그
+이유는 `status`와 `run show`가 알려 줍니다. [상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
 프로젝트 코드를 실행하지 않고, 없는 상태를 만들지 않으며, 저장소가 지금 남아 있지 않아도
 됩니다. 별도의 `history` 명령은 없습니다.
 

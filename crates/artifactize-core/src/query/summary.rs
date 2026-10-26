@@ -151,18 +151,54 @@ pub fn request_output(view: &RequestView, now: OffsetDateTime) -> Value {
     value
 }
 
-pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
-    let mut value = json!(view);
-    let requests = value["requests"]
-        .as_array_mut()
-        .expect("serialized requests are an array");
-    for (output, request) in requests.iter_mut().zip(&view.requests) {
-        with_source(output, request);
+/// A saved Run as output: the Run, its requests with their `source`, the records that do not
+/// read, and its usage and summary. It is written as it serializes, one request at a time, so
+/// a Run with a large catalog is never built into one JSON value first.
+#[derive(Serialize)]
+pub struct RunOutput<'a> {
+    #[serde(flatten)]
+    run: &'a crate::store::Run,
+    requests: RequestsOutput<'a>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    unreadable: &'a [crate::store::Unreadable],
+    usage: Usage,
+    summary: RunSummary,
+}
+
+/// Usage the Run spent on its own executions and saved by reusing results.
+#[derive(Serialize)]
+struct Usage {
+    spent: BTreeMap<String, u64>,
+    saved: BTreeMap<String, u64>,
+}
+
+/// A Run's requests as output, each written as soon as it is built.
+struct RequestsOutput<'a>(&'a [Request]);
+impl Serialize for RequestsOutput<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{Error, SerializeSeq};
+        let mut requests = serializer.serialize_seq(Some(self.0.len()))?;
+        for request in self.0 {
+            let mut value = serde_json::to_value(request).map_err(S::Error::custom)?;
+            with_source(&mut value, request);
+            requests.serialize_element(&value)?;
+        }
+        requests.end()
     }
+}
+
+pub fn run_output(view: &RunView, now: OffsetDateTime) -> RunOutput<'_> {
     let (summary, saved) = run_summary(view, now);
-    value["usage"] = json!({"spent":summary.usage.usage,"saved":saved});
-    value["summary"] = json!(summary);
-    value
+    RunOutput {
+        run: &view.run,
+        requests: RequestsOutput(&view.requests),
+        unreadable: &view.unreadable,
+        usage: Usage {
+            spent: summary.usage.usage.clone(),
+            saved,
+        },
+        summary,
+    }
 }
 
 /// A short name for the profile that produced a request's result: its variant, or its kind
@@ -391,13 +427,16 @@ mod tests {
             .unwrap()
             .time();
         let view = view();
-        let output = run_output(&view, now);
+        let output = serde_json::to_value(run_output(&view, now)).unwrap();
         assert_eq!(output["summary"]["wallMs"], 5000);
         assert_eq!(output["summary"]["reused"]["otherProfile"], 1);
         assert_eq!(output["summary"]["reused"]["runtime"], 1);
         assert_eq!(output["summary"]["attempts"], 0);
         assert_eq!(output["usage"]["saved"], json!({"inputTokens":17}));
-        assert_eq!(run_output(&view, now), output);
+        assert_eq!(
+            serde_json::to_value(run_output(&view, now)).unwrap(),
+            output
+        );
         assert_eq!(
             wall_time("2026-01-01T00:00:06Z".parse().unwrap(), None, now),
             Some(Duration::ZERO)

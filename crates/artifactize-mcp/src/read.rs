@@ -87,7 +87,10 @@ pub(super) async fn inspect(
         }
         "run_show" => {
             let args: RunDetails = parse(arguments)?;
-            artifactize_core::query::run_output(&runs::view(context, &args.run).await?, as_of)
+            encode(artifactize_core::query::run_output(
+                &runs::view(context, &args.run).await?,
+                as_of,
+            ))?
         }
         "request_list" => {
             let args: Requests = parse(arguments)?;

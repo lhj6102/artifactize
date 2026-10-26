@@ -274,7 +274,11 @@ async fn repositories_share_one_state_database() {
     for run in saved {
         let read = read_run(&state, run["id"].as_str().unwrap()).await.unwrap();
         assert_eq!(
-            artifactize_core::query::run_output(&read, time::OffsetDateTime::now_utc()),
+            serde_json::to_value(artifactize_core::query::run_output(
+                &read,
+                time::OffsetDateTime::now_utc()
+            ))
+            .unwrap(),
             run
         );
     }
