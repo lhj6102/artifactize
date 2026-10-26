@@ -92,7 +92,7 @@ eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리�
 - **규칙 문서**: 규칙 문서는 대개 Human 승인을 받는 Artifact로 선언하며,
   그 규칙이 적용되는 Artifact의 eval이 읽습니다.
 
-Arti는 암묵적인 의존성, 저장소 전체를 한 번에 리뷰하는 eval, 구현 담당자의 부정행위를 잡으려고만 넣는 eval(예: 테스트를 아무도 고치지 않았는지 해시로 확인하는 eval), 요청하지 않은 실행 옵션, GREEN을 얻으려고 판단 기준을 완화하는 일을 피하라고 안내합니다.
+Arti는 암묵적인 의존성, 저장소 전체를 한 번에 리뷰하는 eval, Builder가 규칙을 어기는지 감시하는 데만 쓰는 eval(예: 아무도 테스트를 고치지 않았는지 해시로 확인하는 eval), 요청하지 않은 실행 옵션, GREEN을 얻으려고 판단 기준을 완화하는 일을 피하라고 안내합니다.
 
 Arti는 사용자 상황에 맞는 예제로 리뷰 구성 방법을 보여 줍니다.
 [예제](../getting-started/examples.md)에서는 Runtime 관계, 승인이 있는 Agent 도구,
@@ -117,7 +117,7 @@ eval의 지시문, 결과 스키마, Runtime 명령을 바꾸면 그
 
 리뷰어가 실행 중인 프로그램을 살펴봐야 할 때, Arti는
 `views.agent_sessions.<name>.start`/`stop`으로 선언한 세션과 `session = "<name>"`으로 묶은 명령 도구를 보여 주며,
-그 프로그램이 fingerprint 계산에 포함되도록 Artifact 안에 둡니다.
+프로그램 파일도 Artifact의 fingerprint에 반영되도록 해당 Artifact 안에 둡니다.
 세션의 시작부터 종료까지는 artifactize가 관리합니다.
 [도구 세션](../features/tools/agent.md#tool-sessions)을 보세요.
 
