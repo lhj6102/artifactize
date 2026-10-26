@@ -47,10 +47,10 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 내장 도구�
 | `glob` | `{pattern, path?}` | — | — | 일치하는 경로 |
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}` | — | — | 일치하는 줄 |
 | `view_image` | `{path}` | — | — | 이미지 |
-| `section` | — | `[file]`(모델이 `heading`을 넘김) 또는 `[file, heading]` | `[file, heading]` | Markdown 섹션 하나 |
+| `section` | — | `[file]`(모델이 `heading`을 넘깁니다) 또는 `[file, heading]` | `[file, heading]` | Markdown 섹션 하나 |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help` |
-| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 입력에서 사용처로 이어지는 관계를 담은 트리. Human: 데스크톱 뷰어 |
-| `open` | — | — | `[file, folder 또는 URL]`(실행) | 없음. 기본 애플리케이션으로 엽니다 |
+| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 입력에서 사용처로 이어지는 관계를 담은 트리입니다. Human: 데스크톱 뷰어입니다 |
+| `open` | — | — | `[file, folder 또는 URL]`(실행) | 출력은 없습니다. 기본 애플리케이션으로 엽니다 |
 
 `args`가 없으면 Agent 도구는 모델의 입력을 받습니다. `read`, `list`, `glob`, `grep`,
 `view_image`의 입력, 결과, 한도는 [Agent 도구](agent.md#agent-tools)에 있습니다. `args`를 고정하면 인자를 하나만 지정한 `section`을 제외하고는 모델에서 인자를 받지 않습니다. 인자를 고정한 Agent 도구 중 `list`는 구조화된 JSON 내용 블록을 돌려주고, `read`, `section`, `help`는 텍스트 블록을 돌려줍니다.

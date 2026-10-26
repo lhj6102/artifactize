@@ -308,7 +308,7 @@ Settings는 화면 위에 모달 창으로 열립니다. Esc를 누르거나 **C
 직접 추가한 커스텀 provider의 이름과 **+ Custom provider**가 나옵니다. 하나를 고르면 오른쪽에 그
 provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 수 있습니다.
 
-- **Codex:** 로그인 안 됨, artifactize가 저장한 토큰과 만료 시각, 읽기 전용
+- **Codex:** 로그인하지 않은 상태, artifactize가 저장한 토큰과 만료 시각, 읽기 전용
   `ARTIFACTIZE_CODEX_AUTH_FILE`, 또는 저장이 거부된 이유를 보여 줍니다. 저장된 액세스 토큰이 만료되면 다음에 쓸 때 갱신되고, 외부 파일의 토큰이 만료되면 Codex에 다시 로그인해야 합니다.
   외부 파일 모드와 저장 거부 모드에서는 여기서 로그인할 수 없으며, 로그아웃은
   artifactize가 저장한 계정에서만 쓸 수 있습니다. 브라우저 로그인은

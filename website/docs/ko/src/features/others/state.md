@@ -146,9 +146,9 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 
 | 필드 | 기본값 | 뜻 |
 |---|---|---|
-| `enabled` | `true` | `false`면 새 대화를 저장하지 않음. 이미 저장된 대화는 계속 읽을 수 있음 |
-| `maxBytes` | 1 GiB | 이 크기를 넘으면 정리를 시작함. 1 이상 |
-| `targetBytes` | `maxBytes`가 768 MiB보다 크면 768 MiB, 아니면 `maxBytes`를 4로 나눈 몫(소수점 이하 버림)에 3을 곱한 바이트 수 | 정리할 때 줄이는 목표 크기. `maxBytes`보다 작아야 함 |
+| `enabled` | `true` | `false`면 새 대화를 저장하지 않습니다. 이미 저장된 대화는 계속 읽을 수 있습니다 |
+| `maxBytes` | 1 GiB | 이 크기를 넘으면 정리를 시작합니다. 1 이상이어야 합니다 |
+| `targetBytes` | `maxBytes`가 768 MiB보다 크면 768 MiB, 아니면 `maxBytes`를 4로 나눈 몫(소수점 이하 버림)에 3을 곱한 바이트 수 | 정리할 때 줄일 목표 크기입니다. `maxBytes`보다 작아야 합니다 |
 
 정리는 `verify` Run이 eval을 마쳤을 때와 `prune`을 실행할 때 합니다. 대화가 `maxBytes`보다
 많은 공간을 쓰면, 가장 오래된 세션부터 지워 `targetBytes` 이하로 줄입니다. 실행 중인 리뷰의
@@ -162,12 +162,12 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 
 | `kind` | 담는 내용 |
 |---|---|
-| `review` | 첫 줄. 세션, Run, 요청, eval ID, 대상, 만든 사람, 백엔드, 모델, reasoning, 매개변수, 예산, 제공한 도구 |
-| `message` | 모델과 주고받은 메시지 하나와 그 텍스트, 도구 호출, 도구 결과. follow-up에서 사람이 쓴 말은 `question`에 있음 |
-| `delivery` | 스트리밍되는 동안 보여 준 텍스트(`delta`, `complete`, `interrupted`). 대화나 사용량에는 들어가지 않음 |
-| `attempt` | provider 시도 한 번. 사용량 수치와, 실패했으면 `error`와 `errorCode` |
+| `review` | 첫 줄입니다. 세션, Run, 요청, eval ID, 대상, 만든 사람, 백엔드, 모델, reasoning, 매개변수, 예산, 제공한 도구를 담습니다 |
+| `message` | 모델과 주고받은 메시지 하나와 그 텍스트, 도구 호출, 도구 결과입니다. follow-up에서 사람이 쓴 말은 `question`에 들어 있습니다 |
+| `delivery` | 스트리밍되는 동안 보여 준 텍스트(`delta`, `complete`, `interrupted`)입니다. 대화나 사용량에는 들어가지 않습니다 |
+| `attempt` | provider 시도 한 번입니다. 사용량 수치와, 실패했으면 `error`와 `errorCode`를 담습니다 |
 | `end` | 리뷰의 `result`, 또는 `errorCode`와 `error` |
-| `send` | follow-up 시작. 번호, 사람이 쓴 `text`, 제공한 도구 |
+| `send` | follow-up의 시작입니다. 번호, 사람이 쓴 `text`, 제공한 도구를 담습니다 |
 | `answer` | follow-up 답변 `text`, 또는 `errorCode`와 `error` |
 
 판정, 결과, 사용량은 Run에 남습니다. 대화와 그 도구 호출은 세션에만 기록되며,

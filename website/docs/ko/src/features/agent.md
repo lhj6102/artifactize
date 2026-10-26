@@ -114,18 +114,18 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 
 | `errorCode` | 원인 | 재시도 |
 |---|---|---|
-| `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부됨: HTTP 401/403, API 키 없음, Codex 로그인 없음, 만료된 인증 파일 | 안 함. 백엔드를 멈춤 |
-| `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 안 함. 백엔드를 멈춤 |
-| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상임 | 함 |
-| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림. 요청한 재시도 대기가 너무 길어도 이 분류를 유지 | 출력 전이면 함 |
-| `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 안 함 |
-| `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
-| `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘음 | 안 함 |
-| `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |
-| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됨 | 안 함 |
-| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
-| `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
-| `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
+| `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일이 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
+| `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
+| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429입니다. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상인 경우입니다 | 합니다 |
+| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다 |
+| `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 하지 않습니다 |
+| `CANCELLED` | Run을 직접 취소했습니다(`run cancel` 또는 MCP `verify_cancel`) | 하지 않습니다 |
+| `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘었습니다 | 하지 않습니다 |
+| `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없습니다 | 하지 않습니다 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 하지 않습니다 |
+| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 하지 않습니다 |
+| `AGENT_ERROR` | 그 밖의 모든 경우입니다. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구가 해당합니다 | 하지 않습니다 |
+| `BACKEND_STOPPED` | 시작하지 않습니다. 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다 | — |
 
 provider의 오류 메시지에 artifactize가 보낸 자격 증명의 일부가 들어 있으면, 그 메시지는 보여
 주거나 저장하는 모든 곳에서 `[withheld: it contained part of the credential sent]`로 바뀝니다. 소유자 필드와
@@ -280,7 +280,7 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 | `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
 | `gemini` | `ARTIFACTIZE_GEMINI_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1beta/models/<model>:streamGenerateContent`, `GET <root>/v1beta/models` |
 | `codex` | `ARTIFACTIZE_CODEX_BASE_URL` | `http://127.0.0.1:8080/backend-api/codex` | `POST <root>/responses`, `GET <root>/models` |
-| Codex 로그인 | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token`과 `<root>/oauth/revoke`. `login codex`는 브라우저를 `<root>/oauth/authorize`로 보냄 |
+| Codex 로그인 | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token`과 `<root>/oauth/revoke`입니다. `login codex`는 브라우저를 `<root>/oauth/authorize`로 보냅니다 |
 
 - 루트는 `localhost`, `127.0.0.0/8`, `[::1]`의 `http://`나 `https://`여야 하며, 자격 증명,
   쿼리, 프래그먼트가 없어야 합니다. 그 밖의 값이면 연결하기 전에 리뷰, `models`, `doctor`가 그

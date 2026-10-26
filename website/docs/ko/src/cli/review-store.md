@@ -46,7 +46,7 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 
 | 경로 | 범위 | 쓰는 명령 |
 |---|---|---|
-| `GET /v1/whoami` | 범위 제한 없음 | `remote login`, `remote status` |
+| `GET /v1/whoami` | 필요한 범위가 없습니다 | `remote login`, `remote status` |
 | `POST /v1/lookup` | `read` | `verify`, `status`, `remote push` |
 | `PUT /v1/entries/{key}` | `publish`(Human 승인이면 `human`도) | `verify`, `request submit`, `remote push` |
 

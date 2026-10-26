@@ -218,11 +218,11 @@ eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결�
 
 | 동작 | 언제 | 사유 예 |
 |---|---|---|
-| `reuse` | 현재 재사용 키의 GREEN이나 RED 결과가 있음. 의존성이 대기 중이거나 RED여도 마찬가지(이때 상태는 WAIT_DEPENDENCY나 BLOCKED) | `The current eval and fingerprints have a completed cached result.` |
-| `execute` | 결과가 없고, 의존성은 지금 있는 결과로 GREEN | `The current eval and fingerprints have no completed cached result.` |
-| `blocked` | 결과가 없고, 의존성이 RED | `Dependency verdict RED: core/tests` |
-| `wait` | 결과가 없고, 의존성의 결과는 verify가 실행해야 생김 | `Waiting for current GREEN dependency evidence: core/tests` |
-| `wait` | 의존성은 준비됐고 같은 리뷰가 이미 실행 중임. verify는 새 리뷰를 시작하지 않고 그 실행에 합류함 | `The current eval and fingerprints have a live execution.` |
+| `reuse` | 현재 재사용 키의 GREEN이나 RED 결과가 있습니다. 의존성이 대기 중이거나 RED여도 마찬가지입니다(이때 상태는 WAIT_DEPENDENCY나 BLOCKED입니다) | `The current eval and fingerprints have a completed cached result.` |
+| `execute` | 결과가 없고, 의존성은 지금 있는 결과로 GREEN입니다 | `The current eval and fingerprints have no completed cached result.` |
+| `blocked` | 결과가 없고, 의존성이 RED입니다 | `Dependency verdict RED: core/tests` |
+| `wait` | 결과가 없고, 의존성의 결과는 verify가 실행해야 생깁니다 | `Waiting for current GREEN dependency evidence: core/tests` |
+| `wait` | 의존성은 준비됐고 같은 리뷰가 이미 실행 중입니다. verify는 새 리뷰를 시작하지 않고 그 실행에 합류합니다 | `The current eval and fingerprints have a live execution.` |
 
 status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스트 출력은 예를 들어
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합한
