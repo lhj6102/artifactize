@@ -124,7 +124,7 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 | `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘음 | 안 함 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |
-| `DEGENERATE_OUTPUT` | 답변이 긴 공백으로만 이어져 리뷰가 응답을 멈춤 | 안 함 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됨 | 안 함 |
 | `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
 | `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
 | `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
