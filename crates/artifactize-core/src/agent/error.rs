@@ -83,6 +83,9 @@ impl Code {
 pub struct Failure {
     pub code: Code,
     pub message: String,
+    /// The provider's output failed once it had begun: it degenerated, stopped at the output
+    /// cap or broke off. The request was sound, so the review may be dispatched again.
+    pub output_failed: bool,
 }
 
 impl Failure {
@@ -90,6 +93,15 @@ impl Failure {
         Self {
             code,
             message: message.into(),
+            output_failed: false,
+        }
+    }
+
+    /// The same failure, marked as one of the provider's output.
+    pub fn of_output(self) -> Self {
+        Self {
+            output_failed: true,
+            ..self
         }
     }
 
