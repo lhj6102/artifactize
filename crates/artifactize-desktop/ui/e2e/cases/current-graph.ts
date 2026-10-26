@@ -447,6 +447,8 @@ Summarize {docs}."""
       await waitFor(browser, () => fingerprintRuns(checking) === 3, "the new scan ran the fingerprint script again");
       writeText(gate, "go");
       await waitFor(browser, async () => (await nodes()) === known, "known again");
+      // Refresh is unavailable until the scan ends, so wait for its header first.
+      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the scan ended again");
       // A fingerprint that fails ends a running scan; what it showed stays.
       removeTree(gate);
       await browser.$(CURRENT).$("button=Refresh").click();
