@@ -76,66 +76,76 @@ async fn busy<F: Future>(future: F) -> F::Output {
 async fn many_short_runs_keep_their_exit_and_output_while_their_evidence_waits_for_a_slow_disk() {
     let disk = process::slow_disk::hold();
     let scratch = crate::test_os::tempdir();
-    let mut runs: Vec<_> = (0..RUNS)
+    let directories: Vec<_> = (0..RUNS)
         .map(|index| {
             let directory = scratch.path().join(index.to_string());
             std::fs::create_dir(&directory).unwrap();
-            let (started, pid) = oneshot::channel();
-            let run = tokio::spawn(process::run_logged(
+            directory
+        })
+        .collect();
+    let (starts, pids): (Vec<_>, Vec<_>) = (0..RUNS).map(|_| oneshot::channel()).unzip();
+    let cancellation = CancellationToken::new();
+    let work = futures_util::future::join_all(directories.iter().zip(starts).enumerate().map(
+        |(index, (directory, started))| {
+            process::run_logged(
                 echo(&format!("run {index}")),
                 directory.clone(),
-                CancellationToken::new(),
+                cancellation.clone(),
                 move |child| async move {
                     started.send(child.pid.get()).unwrap();
                     Ok(())
                 },
-            ));
-            (directory, pid, run)
-        })
-        .collect();
-    for (_, pid, _) in &mut runs {
-        let pid = busy(pid).await.unwrap();
+            )
+        },
+    ));
+    crate::test_os::scoped(cancellation, work, async move |running| {
+        for pid in pids {
+            let pid = busy(pid).await.unwrap();
+            busy(async {
+                while !crate::test_os::gone(pid) {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await;
+        }
+        // Each stream waits on the disk, with stdout's first write or stderr's last flush, and
+        // on no pipe read that could take its time. The paused clock cannot time this wait
+        // out, so the watchdog reads the system's clock.
+        let waiting = std::time::Instant::now();
         busy(async {
-            while !crate::test_os::gone(pid) {
+            while disk.waiting() < 2 * RUNS {
+                assert!(
+                    waiting.elapsed() < WATCHDOG,
+                    "{} of the streams wait on the disk",
+                    disk.waiting()
+                );
                 tokio::task::yield_now().await;
             }
         })
         .await;
-    }
-    // Each stream waits on the disk, with stdout's first write or stderr's last flush, and on
-    // no pipe read that could take its time.
-    // The paused clock cannot time this wait out, so the watchdog reads the system's clock.
-    let waiting = std::time::Instant::now();
-    busy(async {
-        while disk.waiting() < 2 * RUNS {
-            assert!(
-                waiting.elapsed() < WATCHDOG,
-                "{} of the streams wait on the disk",
-                disk.waiting()
+        // Every process has ended while none of its evidence is saved yet; twice as long
+        // passes as any pipe may stay open, and less than the runs' deadline.
+        tokio::time::advance(process::OUTPUT_CLOSE_GRACE * 2).await;
+        disk.release();
+        let outputs = busy(running).await.unwrap();
+        for (index, (output, directory)) in outputs.into_iter().zip(&directories).enumerate() {
+            let output = output.unwrap();
+            let expected = format!("run {index}\n").into_bytes();
+            assert!(output.status.success());
+            assert_eq!(output.stdout, expected);
+            assert_eq!(
+                std::fs::read(directory.join("runtime.stdout")).unwrap(),
+                expected
             );
-            tokio::task::yield_now().await;
+            assert!(directory.join("runtime.stdout.complete").exists());
+            assert!(directory.join("runtime.stderr.complete").exists());
         }
     })
     .await;
-    // Every process has ended while none of its evidence is saved yet; twice as long passes
-    // as any pipe may stay open, and less than the runs' deadline.
-    tokio::time::advance(process::OUTPUT_CLOSE_GRACE * 2).await;
-    disk.release();
-    for (index, (directory, _, run)) in runs.into_iter().enumerate() {
-        let output = busy(run).await.unwrap().unwrap();
-        let expected = format!("run {index}\n").into_bytes();
-        assert!(output.status.success());
-        assert_eq!(output.stdout, expected);
-        assert_eq!(
-            std::fs::read(directory.join("runtime.stdout")).unwrap(),
-            expected
-        );
-        assert!(directory.join("runtime.stdout.complete").exists());
-        assert!(directory.join("runtime.stderr.complete").exists());
-    }
 }
 
-/// A process the test started outside the run's group, killed when the test ends.
+/// A process the test started outside the run's group: killed when the test ends, also on
+/// unwinding, and gone before the test's temporary directory is.
 #[cfg(unix)]
 struct Left(u32);
 
@@ -143,6 +153,12 @@ struct Left(u32);
 impl Drop for Left {
     fn drop(&mut self) {
         crate::test_os::kill(self.0);
+        // Its new parent reaps it; a panic here would abort an unwinding test, so the wait
+        // only stops at the watchdog.
+        let killed = std::time::Instant::now();
+        while !crate::test_os::gone(self.0) && killed.elapsed() < WATCHDOG {
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 
@@ -166,47 +182,47 @@ async fn output_a_process_outside_the_group_still_holds_is_named_and_the_exit_is
         timeout: WATCHDOG,
     };
     let (started, pid) = oneshot::channel();
-    let run = tokio::spawn(process::run(
-        command,
-        CancellationToken::new(),
-        move |child| async move {
-            started.send(child.pid.get()).unwrap();
-            Ok(())
-        },
-    ));
-    let leader = busy(pid).await.unwrap();
-    busy(async {
-        while !crate::test_os::gone(leader) {
-            tokio::task::yield_now().await;
-        }
+    let cancellation = CancellationToken::new();
+    let work = process::run(command, cancellation.clone(), move |child| async move {
+        started.send(child.pid.get()).unwrap();
+        Ok(())
+    });
+    crate::test_os::scoped(cancellation, work, async move |running| {
+        let leader = busy(pid).await.unwrap();
+        busy(async {
+            while !crate::test_os::gone(leader) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        let _left = Left(
+            std::fs::read_to_string(&record)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap(),
+        );
+        // Time passes only here, a second at a time, until the run gives up on its pipes.
+        let result = busy(async {
+            while !running.is_finished() {
+                tokio::time::advance(Duration::from_secs(1)).await;
+            }
+            running.await.unwrap()
+        })
+        .await;
+        use crate::tools::human::log::Stream::{Stderr, Stdout};
+        let Err(process::Error::Capture(error)) = result else {
+            panic!("the held pipes must fail the capture: {result:?}");
+        };
+        assert!(error.output.status.success());
+        assert_eq!(error.output.stdout, b"done");
+        assert!(matches!(
+            error.failures.as_slice(),
+            [
+                (Stdout, process::StreamFailure::Open),
+                (Stderr, process::StreamFailure::Open)
+            ]
+        ));
     })
     .await;
-    let _left = Left(
-        std::fs::read_to_string(&record)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap(),
-    );
-    // Time passes only here, a second at a time, until the run gives up on its pipes.
-    let result = busy(async {
-        while !run.is_finished() {
-            tokio::time::advance(Duration::from_secs(1)).await;
-        }
-        run.await.unwrap()
-    })
-    .await;
-    use crate::tools::human::log::Stream::{Stderr, Stdout};
-    let Err(process::Error::Capture(error)) = result else {
-        panic!("the held pipes must fail the capture: {result:?}");
-    };
-    assert!(error.output.status.success());
-    assert_eq!(error.output.stdout, b"done");
-    assert!(matches!(
-        error.failures.as_slice(),
-        [
-            (Stdout, process::StreamFailure::Open),
-            (Stderr, process::StreamFailure::Open)
-        ]
-    ));
 }
