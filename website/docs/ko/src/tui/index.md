@@ -17,7 +17,7 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 하나 더 열어 실행하세요.
 
 ID를 지정하지 않으면 상태 디렉터리에 기록된 모든 저장소에서 검색 조건에 맞는 요청을
-최신 Run부터 나열합니다. 각 요청에는 eval, 상태, 담당자, 경과 시간, 저장소가 표시되며,
+최신 Run부터 나열합니다. 각 요청에는 eval, 요청 ID, 상태, 담당자, 경과 시간, 저장소가 표시되며,
 Enter를 누르면 선택한 요청이 열립니다. 처음 검색어는 대기 중인 Human 승인을 뜻하는 `kind:human status:waiting_human`입니다.
 `--repo PATH`는 그 저장소의 `repo:` 조건을 더하며, `--all`도 쓸 수 있고 이것이
 기본값입니다. 어느 저장소의 요청이든 ID로 열 수 있습니다.

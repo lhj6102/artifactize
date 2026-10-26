@@ -222,7 +222,7 @@ eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결�
 | `execute` | 결과가 없고, 의존성은 지금 있는 결과로 GREEN입니다 | `The current eval and fingerprints have no completed cached result.` |
 | `blocked` | 결과가 없고, 의존성이 RED입니다 | `Dependency verdict RED: core/tests` |
 | `wait` | 결과가 없고, 의존성의 결과는 verify가 실행해야 생깁니다 | `Waiting for current GREEN dependency evidence: core/tests` |
-| `wait` | 의존성은 준비됐고 같은 리뷰가 이미 실행 중입니다. verify는 새 리뷰를 시작하지 않고, 이미 진행 중인 리뷰가 끝날 때까지 기다립니다 | `The current eval and fingerprints have a live execution.` |
+| `wait` | 의존성이 준비됐고 같은 리뷰가 이미 실행 중입니다. 새 리뷰를 시작하지 않고 기존 리뷰가 끝날 때까지 대기합니다 | `The current eval and fingerprints have a live execution.` |
 
 status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스트 출력은 예를 들어
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합한
