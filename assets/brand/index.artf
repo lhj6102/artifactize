@@ -7,6 +7,7 @@ profile = { kind = "runtime", command = "sh", args = ["check-icons.sh", "{brand-
 [evals.generated.payload]
 instruction = """
 After the owner approves {brand-icon}, check that the user's python3 has the required CairoSVG \
-and Pillow modules, then rerender every generated asset in {brand} in memory. Pass only when \
-every committed output matches the approved artwork and OG template byte-for-byte. Do not \
+and Pillow modules, then rerender every generated asset in {brand} in memory, the social cards from the example graph \
+images in {others}. Pass only when every committed output matches the approved artwork and those \
+images byte-for-byte. Do not \
 install tools or modify the generated files during evaluation."""
