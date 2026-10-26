@@ -66,8 +66,8 @@ sections); it has no claim, tools or forms.
 
 The list and Detail use [Reactive panes](#reactive-panes). With the list focused,
 it is Full and the selected request has a read-only Preview; Enter or → opens
-Detail beside a Compact list. The linked layout reference gives the widths and
-small-terminal behavior.
+Detail beside a Compact list. The linked section explains how the panes share a small
+terminal.
 The breadcrumb is `artifactize review › search › eval`. ↑/↓ or `j`/`k` selects a request;
 `r` refreshes the list. Tab opens the selected request with its Tools focused. Esc on the
 list stays there, never quits. The standalone UI has no `?` help overlay or `!` attention
@@ -403,8 +403,8 @@ latest.
 A refresh failure records a timestamped **read failed at …** notice. Monitor and
 the Review list retain last-known data, so visible requests, results and claims
 can be stale, not current authority. Standalone non-Human Detail can hide the
-notice until you return to the list, and a failed Record reload can clear that
-previous Detail instead of retaining it. In Review, return to the request list
+notice until you return to the list, and a failed reload of that Detail can clear what
+it showed instead of keeping it. In Review, return to the request list
 and press `r`; in Monitor, request refresh from Scope, Runs or the tree.
 A successful read clears the failure notice.
 
