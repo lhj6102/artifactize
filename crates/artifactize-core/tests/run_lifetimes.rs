@@ -8,10 +8,26 @@ use tokio_util::sync::CancellationToken;
 
 mod support;
 
+/// This fixture state's IPC namespace, which lives outside the temporary state.
+struct Namespace(std::path::PathBuf);
+
+impl Drop for Namespace {
+    fn drop(&mut self) {
+        let removed = std::fs::remove_dir_all(&self.0);
+        if !std::thread::panicking() {
+            removed.expect("remove the fixture's IPC namespace");
+        }
+    }
+}
+
+/// Join the subscription's shutdown, then remove its namespace, on success and unwind alike.
 async fn subscribed<T>(
     state: &std::path::Path,
     observe: impl AsyncFnOnce(&mut Subscription) -> T,
 ) -> T {
+    let _namespace = Namespace(
+        artifactize_core::changes::namespace(state).expect("the fixture state's IPC namespace"),
+    );
     let mut changes = Subscription::new(state).await;
     let observed = std::panic::AssertUnwindSafe(async { observe(&mut changes).await })
         .catch_unwind()

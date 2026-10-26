@@ -18,7 +18,7 @@ artifactize가 설치되어 있는지 확인합니다. 설치되어 있지 않�
 호스트를 연결하세요. 등록은 도구를 제공할 뿐, 스킬을 설치하지는 않습니다. 링크된
 `SKILL.md` 파일을 고치지 말고 원본 그대로 어시스턴트의 대화에 첨부하고,
 예를 들어 "이 안내를 따르세요. 편집하기 전에 이 저장소를 파악하고 Artifact와
-eval을 제안하세요."라고 요청하세요. 고친 사본을 따로 관리하지 말고 그 정식 안내서를 쓰세요.
+eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두지 말고 원본 안내서를 그대로 쓰세요.
 
 ## Arti가 함께 하는 일 {#what-arti-does-with-you}
 
@@ -153,7 +153,7 @@ Arti는 각 결과를 다음과 같이 다룹니다.
 - **INCOMPLETE**: 필요한 증거가 없습니다. 예를 들어 CI가 기존 리뷰를
   재사용하기만 하는 경우입니다. Arti는 `verify`로 빠진 eval을 실행해 부족한 증거를 확보합니다.
 
-## 사람에게 넘기고 물러나기 {#hand-off-to-the-person-then-yield}
+## 사람에게 넘긴 뒤 대화 마치기 {#hand-off-to-the-person-then-yield}
 
 Arti는 `request_list`/`request_show`로 대기 중인 요청과 그 리뷰 기준을 알려 주고,
 `artifactize review REQUEST_ID`(또는 평소 쓰는 리뷰 인터페이스)로 요청을 여는 방법을 안내합니다.
