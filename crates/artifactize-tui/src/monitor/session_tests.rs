@@ -537,7 +537,7 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
         .iter_mut()
         .find(|view| view.request.eval_id == "app/check")
         .unwrap();
-    agent.request.profile =
+    std::sync::Arc::make_mut(&mut agent.request).profile =
         serde_json::from_value(serde_json::json!({"kind":"agent","backend":"openai","model":"m"}))
             .unwrap();
     let mut monitor = Monitor::new(root.path().into(), None);
@@ -596,7 +596,9 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
         json!({"profile":{"kind":"agent","backend":"openai","model":"m"},
             "startedAt":"2026-01-01T00:00:00Z"}),
     )
-    .request;
+    .request
+    .as_ref()
+    .clone();
     request.cwd = repo.clone();
     receipts
         .create_run(&run, std::slice::from_ref(&request))

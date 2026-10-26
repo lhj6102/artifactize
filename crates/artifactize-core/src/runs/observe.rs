@@ -118,7 +118,7 @@ fn state_for(status: RunStatus, control: Option<&super::Control>, counts: &Count
         }
     }
 }
-pub(super) fn state(run: &Run, requests: &[Request]) -> State {
+pub(super) fn state(run: &Run, requests: &[std::sync::Arc<Request>]) -> State {
     state_for(
         run.status(),
         run.control.as_ref(),

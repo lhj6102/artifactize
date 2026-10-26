@@ -789,6 +789,8 @@ fn saved_run(
                 serde_json::json!({"id":format!("{id}-{artifact}"),"runId":id,"cwd":repo}),
             )
             .request
+            .as_ref()
+            .clone()
         })
         .collect();
     (run, requests)

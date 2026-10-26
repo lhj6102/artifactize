@@ -19,6 +19,8 @@ fn request(run: &str, artifact: &str, repo: &Path) -> store::Request {
         json!({"id":format!("{run}-{artifact}"),"runId":run,"cwd":repo}),
     )
     .request
+    .as_ref()
+    .clone()
 }
 
 const DEFINED: &str = r#"{"artifacts":{"app":{"path":"app"}},"evals":[{"id":"app/check","target":"app","deps":[],"declaration":{"title":"Check"}}]}"#;

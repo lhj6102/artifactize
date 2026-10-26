@@ -304,7 +304,12 @@ pub(crate) async fn execute(
             .await?;
     }
     unchanged_declarations(repo, selection, options, &run.definitions)?;
-    let mut requests: Vec<_> = store::read_run(&state, &run.id).await?.requests;
+    let mut requests: Vec<_> = store::read_run(&state, &run.id)
+        .await?
+        .requests
+        .into_iter()
+        .map(std::sync::Arc::unwrap_or_clone)
+        .collect();
     for request in &mut requests {
         request.fingerprint = fingerprints
             .get(&request.target)

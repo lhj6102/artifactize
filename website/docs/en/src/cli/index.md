@@ -142,8 +142,8 @@ details.
 people watching it; it changes nothing the Run does. A comment is 1–200 characters on one
 line, without control characters or leading or trailing spaces; any other text exits 2.
 `verify --wait` prints it on a `Comment:` line, `run list` in its `COMMENT` column (`-` for
-none) and the JSON of `verify --wait`, `run list` and `run show` as `comment`; submit-only
-`verify --json` prints just `run` and `state`.
+none) and the JSON of `verify --wait`, `run list` and `run show` as `comment`; the JSON that
+`verify` prints without `--wait` acknowledges only the Run and its state.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -558,13 +558,13 @@ artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still ho
 ```
 
 ```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna · files changed since this review
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-The header names the session, the follow-up number, and the review's backend and model,
-then whether reviewed files changed since the review.
+Its header names the follow-up's number and, as `session show` does, the review's backend,
+model and reasoning.
 
 With `--json`, `send` prints `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`: `send` is the follow-up number, `filesChanged` whether reviewed inputs

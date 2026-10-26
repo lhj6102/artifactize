@@ -612,7 +612,7 @@ fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
     let instruction = (0..30)
         .map(|n| format!("criterion-{n}\n"))
         .collect::<String>();
-    review.shown.request_mut().unwrap().request.payload =
+    std::sync::Arc::make_mut(&mut review.shown.request_mut().unwrap().request).payload =
         serde_json::from_value(json!({"instruction":instruction})).unwrap();
     let hits = |review: &mut Review| {
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
@@ -722,7 +722,7 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
             json!({"verdict":"RED","reason":"Needs work"})
         )
     );
-    let settled = view("RED", None, demo()).request;
+    let settled = view("RED", None, demo()).request.as_ref().clone();
     assert_eq!(
         review.finish(Outcome::Submitted {
             id: ID.parse().unwrap(),
@@ -1045,8 +1045,8 @@ fn a_running_job_only_scrolls_or_cancels() {
 fn listed() -> Review {
     let mut review = Review::new("fixture-state".into(), None, "alice".parse().unwrap(), None);
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
-    other.request.id = "run-2-1".parse().unwrap();
-    other.request.eval_id = "docs/check".parse().unwrap();
+    std::sync::Arc::make_mut(&mut other.request).id = "run-2-1".parse().unwrap();
+    std::sync::Arc::make_mut(&mut other.request).eval_id = "docs/check".parse().unwrap();
     review.set_listed(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
     review.refreshed = Some(
         OffsetDateTime::parse(
@@ -1204,7 +1204,7 @@ fn control_characters_never_break_one_row_texts() {
                 .parse::<crate::types::EvalId>()
                 .is_err()
         );
-        view.request.title = "Ap\nprove\u{1b}[31m".into();
+        std::sync::Arc::make_mut(&mut view.request).title = "Ap\nprove\u{1b}[31m".into();
     }
     let rows = |text: &str| text.lines().map(str::to_owned).collect::<Vec<_>>();
     // The list cells and the Preview title stay on their rows.

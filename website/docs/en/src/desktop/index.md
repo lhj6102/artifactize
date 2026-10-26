@@ -156,13 +156,21 @@ or the pending-evals control reveals the unfinished checks behind an upstream wa
 
 A branch's **Current** scans its worktree as it is now, as
 [`artifactize status`](../features/run.md#status-and-static-graph) does, and draws
-the graph of its current declarations without needing a Run. Each Artifact shows as still
-being checked, then as reused (every eval's result would be reused without evaluation),
-would run, waiting or blocked; its accessible name also says how many of its evals would
-run. The header says how many Artifacts are still being checked, then when it was scanned,
-or why a fingerprint failed. It scans again when chosen again, on **Refresh** or
-Ctrl+R/F5, and when a Run of the branch in the Pane ends; after editing files, press
-**Refresh** to see them.
+the graph of its current declarations without needing a Run. The graph appears as soon as
+the declarations are read, every Artifact still being checked; as the fingerprints come in,
+each Artifact is coloured reused (every eval's result would be reused without evaluation),
+would run, waiting or blocked. An Artifact is known once its own fingerprints and those of
+what it waits for are in, so the graph fills in from the Artifacts nothing else feeds. Like a
+Run's Artifact, its node shows only its name, and its accessible name says which, with how
+many of its evals would run, or that it is still being checked. While the scan runs, its
+header says how many Artifacts are still being checked; then when it was scanned. If a
+fingerprint fails, the header says why and the graph stays as it was. It scans again
+when chosen again, on **Refresh** or Ctrl+R/F5, and when a Run of the branch ends while
+the branch is in the Pane; if your search hides the branch, press **Refresh** after the Run ends.
+While a scan of the branch is still running, choosing its Current again or a Run's end shows
+that scan instead of starting over. The Current's own **Refresh** button is disabled
+meanwhile; the app's **Refresh** command or Ctrl+R/F5 shows the scan too, then scans once
+more when it ends, so a change you made meanwhile shows.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it

@@ -294,6 +294,7 @@ an input; saved RED can block a consumer. A dash means neither source is present
 | View state | Meaning |
 |---|---|
 | `✓` done | GREEN, executed or reused |
+| `○` PROVISIONAL | Its criteria are met, executed or reused, but sign-offs it depends on remain (`PROVISIONAL · sign-offs remain`) |
 | `✗` / `!` failed | RED / ERROR |
 | `◐` / `?` / `·` in progress | Running, waiting for a Human (with claimant), awaiting admission, waiting for a backend slot or an explicit `--jobs` cap, or joining an execution |
 | `…` waits for X | A running Run waits for X's required evals to be GREEN |

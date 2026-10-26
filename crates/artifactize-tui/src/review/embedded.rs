@@ -189,7 +189,7 @@ impl Review {
         if let Some(request) = submitted
             && let Some(mut view) = old
         {
-            view.request = request;
+            view.request = std::sync::Arc::new(request);
             view.claim = None;
             self.load_single(view);
             self.mode = Mode::Request;

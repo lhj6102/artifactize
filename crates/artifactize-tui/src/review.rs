@@ -742,7 +742,7 @@ impl Review {
             Outcome::SavedLocally { request, .. } => {
                 self.taken.retain(|id| id != &request.id);
                 if let Some(view) = self.shown.request_mut() {
-                    view.request = *request;
+                    view.request = std::sync::Arc::new(*request);
                     view.claim = None;
                 }
                 self.mode = Mode::Request;
