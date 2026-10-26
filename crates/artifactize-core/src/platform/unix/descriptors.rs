@@ -239,16 +239,10 @@ const PROC_PIDFDPIPEINFO: libc::c_int = 6;
 
 #[cfg(target_os = "macos")]
 fn open_descriptors() -> io::Result<usize> {
+    let pid = own_pid().ok_or_else(|| io::Error::other("the process ID exceeds pid_t"))?;
     // SAFETY: a null buffer asks libproc for the size of the descriptor list only.
-    let bytes = unsafe {
-        libc::proc_pidinfo(
-            libc::getpid(),
-            libc::PROC_PIDLISTFDS,
-            0,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
+    let bytes =
+        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0) };
     let bytes = usize::try_from(bytes).map_err(|_| io::Error::last_os_error())?;
     Ok(bytes / std::mem::size_of::<libc::proc_fdinfo>())
 }
@@ -257,8 +251,9 @@ fn open_descriptors() -> io::Result<usize> {
 impl Inherited {
     /// List the descriptors with libproc, which writes into the reserved list.
     fn collect(&mut self, keep: RawFd) {
-        // SAFETY: getpid has no preconditions.
-        let pid = unsafe { libc::getpid() };
+        let Some(pid) = own_pid() else {
+            return;
+        };
         self.listed.clear();
         let room = self.listed.capacity() * std::mem::size_of::<libc::proc_fdinfo>();
         let Ok(room) = libc::c_int::try_from(room) else {
@@ -292,6 +287,12 @@ impl Inherited {
             }
         }
     }
+}
+
+/// This process's ID as libproc takes it.
+#[cfg(target_os = "macos")]
+fn own_pid() -> Option<libc::pid_t> {
+    libc::pid_t::try_from(std::process::id()).ok()
 }
 
 #[cfg(target_os = "macos")]

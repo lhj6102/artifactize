@@ -104,7 +104,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
                 None => Coverage::Disabled,
                 Some(Fingerprint::Artifactsum { files, ignore }) => Coverage::Artifactsum {
                     files: files.clone(),
-                    ignore: ignore.clone(),
+                    ignore: ignore.patterns().to_vec(),
                 },
                 Some(Fingerprint::Script {
                     command,

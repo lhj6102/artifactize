@@ -29,30 +29,31 @@ async fn a_sibling_held_before_exec_does_not_keep_another_runs_output_open() {
     let (first_held, first_holding) = oneshot::channel();
     let (second_held, second_holding) = oneshot::channel::<()>();
     let (first_returned, first_over) = oneshot::channel::<()>();
-    let first = tokio::spawn(process::run(
-        echo("first"),
-        CancellationToken::new(),
-        move |_| async move {
-            first_held.send(()).unwrap();
-            // The second run starts while this one is still held before exec.
-            let _ = second_holding.await;
-            Ok(())
-        },
-    ));
-    first_holding.await.unwrap();
-    let second = tokio::spawn(process::run(
-        echo("second"),
-        CancellationToken::new(),
-        move |_| async move {
+    let cancellation = CancellationToken::new();
+    let first = process::run(echo("first"), cancellation.clone(), move |_| async move {
+        first_held.send(()).unwrap();
+        // The second run starts while this one is still held before exec.
+        let _ = second_holding.await;
+        Ok(())
+    });
+    // A failed check or watchdog cancels and awaits both runs, their supervisors included.
+    let (first, second) = crate::test_os::scoped(cancellation.clone(), first, async move |first| {
+        first_holding.await.unwrap();
+        let second = process::run(echo("second"), cancellation.clone(), move |_| async move {
             second_held.send(()).unwrap();
             // Held before exec until the first run has returned.
             let _ = first_over.await;
             Ok(())
-        },
-    ));
-    let first = timeout(WATCHDOG, first).await.unwrap().unwrap().unwrap();
-    first_returned.send(()).unwrap();
-    let second = timeout(WATCHDOG, second).await.unwrap().unwrap().unwrap();
+        });
+        crate::test_os::scoped(cancellation, second, async move |second| {
+            let first = timeout(WATCHDOG, first).await.unwrap().unwrap().unwrap();
+            first_returned.send(()).unwrap();
+            let second = timeout(WATCHDOG, second).await.unwrap().unwrap().unwrap();
+            (first, second)
+        })
+        .await
+    })
+    .await;
     assert!(first.status.success());
     assert_eq!(first.stdout, b"first\n");
     assert!(second.status.success());

@@ -620,7 +620,7 @@ pub enum Fingerprint {
     },
     Artifactsum {
         files: Vec<LogicalPath>,
-        ignore: Vec<String>,
+        ignore: crate::cache::IgnorePatterns,
     },
 }
 
@@ -651,7 +651,7 @@ struct ArtifactsumForm {
     #[serde(default = "owner_root")]
     files: Vec<LogicalPath>,
     #[serde(default)]
-    ignore: Vec<String>,
+    ignore: crate::cache::IgnorePatterns,
 }
 
 fn owner_root() -> Vec<LogicalPath> {
@@ -662,7 +662,7 @@ impl Default for Fingerprint {
     fn default() -> Self {
         Self::Artifactsum {
             files: owner_root(),
-            ignore: Vec::new(),
+            ignore: Default::default(),
         }
     }
 }
@@ -766,7 +766,7 @@ impl Fingerprint {
                     .child("files")
                     .check(paths(files, "fingerprint.script.files"))
             }
-            Self::Artifactsum { files, ignore, .. } => {
+            Self::Artifactsum { files, .. } => {
                 if files.is_empty()
                     || files.len() > MAX_DECLARED_ITEMS
                     || files.iter().collect::<BTreeSet<_>>().len() != files.len()
@@ -780,9 +780,7 @@ impl Fingerprint {
                         path(file).map_err(|message| format!("fingerprint.files: {message}")),
                     )?;
                 }
-                location
-                    .child("ignore")
-                    .check(crate::cache::ignore_patterns(ignore))
+                Ok(())
             }
         }
     }

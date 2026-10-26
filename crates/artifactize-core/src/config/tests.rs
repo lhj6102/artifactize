@@ -505,7 +505,7 @@ fn artifactsum_defaults_to_the_owner_folder() {
         panic!()
     };
     assert_eq!(files, &["."]);
-    assert!(ignore.is_empty());
+    assert!(ignore.patterns().is_empty());
     assert_eq!(
         serde_json::to_value(&fingerprint).unwrap(),
         json!({"files":["."],"ignore":[]})
@@ -519,7 +519,7 @@ fn artifactsum_defaults_to_the_owner_folder() {
         panic!()
     };
     assert_eq!(files, ["src", "docs/a.md"]);
-    assert_eq!(ignore, ["*.log", "build/"]);
+    assert_eq!(ignore.patterns(), ["*.log", "build/"]);
     // The 0.4 dependency scope is gone in every form, with a message that says why.
     for scope in ["none", "direct", "transitive"] {
         let error = parse(json!({"name":"a","fingerprint":{"dependencies":scope}})).unwrap_err();

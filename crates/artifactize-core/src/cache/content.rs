@@ -41,9 +41,42 @@ pub(super) struct Files {
     pub files: BTreeMap<LogicalTarget, crate::types::Sha256Bytes>,
 }
 
-/// Validate declared `fingerprint.ignore` globs, which always exclude like the built-ins.
-pub(crate) fn ignore_patterns(patterns: &[String]) -> Result<(), String> {
-    matcher(patterns).map(drop)
+/// Declared `fingerprint.ignore` globs, parsed once from the declaration together with their
+/// matcher, which always excludes the built-ins too.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "Vec<String>", into = "Vec<String>")]
+pub struct IgnorePatterns {
+    patterns: Vec<String>,
+    matcher: Gitignore,
+}
+
+impl IgnorePatterns {
+    /// The globs as declared.
+    pub fn patterns(&self) -> &[String] {
+        &self.patterns
+    }
+}
+
+impl Default for IgnorePatterns {
+    /// No declared globs: only the built-ins.
+    fn default() -> Self {
+        Self::try_from(Vec::new()).expect("built-in ignore patterns")
+    }
+}
+
+impl TryFrom<Vec<String>> for IgnorePatterns {
+    type Error = String;
+
+    fn try_from(patterns: Vec<String>) -> Result<Self, String> {
+        let matcher = matcher(&patterns)?;
+        Ok(Self { patterns, matcher })
+    }
+}
+
+impl From<IgnorePatterns> for Vec<String> {
+    fn from(ignore: IgnorePatterns) -> Self {
+        ignore.patterns
+    }
 }
 
 fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
@@ -83,7 +116,7 @@ pub(super) async fn files(
     config: &RepoConfig,
     id: &crate::types::ArtifactName,
     inputs: &[crate::config::LogicalPath],
-    ignore: &[String],
+    ignore: &IgnorePatterns,
     cancellation: &CancellationToken,
 ) -> Result<Files, String> {
     if cancellation.is_cancelled() {
@@ -119,7 +152,7 @@ impl Walk {
         config: &RepoConfig,
         id: &crate::types::ArtifactName,
         inputs: &[crate::config::LogicalPath],
-        ignore: &[String],
+        ignore: &IgnorePatterns,
     ) -> Result<Self, String> {
         let artifact = &config.artifacts[id];
         let owner =
@@ -153,7 +186,7 @@ impl Walk {
             inputs,
             file: artifact.file_name().is_some(),
             excluded,
-            ignore: matcher(ignore)?,
+            ignore: ignore.matcher.clone(),
         })
     }
 
