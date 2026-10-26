@@ -2,11 +2,11 @@
 //! A Human sign-off with a built-in tool and owner schemas waits; a runtime Eval
 //! references it. Built-in tools and runtime Evals run alike on every OS.
 use artifactize_core::project::{VerifyOptions, selection::Selection};
-use artifactize_desktop::{Launch, Mode};
+use artifactize_desktop::{App, Launch, Mode};
 use serde_json::{Value, json};
 use std::{fs, path::Path};
 use tauri::{
-    WebviewWindow,
+    Manager, WebviewWindow,
     ipc::{CallbackFn, InvokeBody},
     test::{INVOKE_KEY, MockRuntime, mock_builder, mock_context, noop_assets},
     webview::InvokeRequest,
@@ -114,10 +114,10 @@ fn verify(repo: &Path, state: &Path) {
     });
 }
 
-/// Keep the mock app alive without leaking it or its transcript readers.
+/// Keep the mock app alive without leaking it, its transcript readers or its Current scans.
 struct Window {
     window: WebviewWindow<MockRuntime>,
-    _app: tauri::App<MockRuntime>,
+    app: tauri::App<MockRuntime>,
 }
 
 impl std::ops::Deref for Window {
@@ -130,8 +130,11 @@ impl std::ops::Deref for Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
-        // Destroy the window before the app, including when an assertion panics.
+        // Stop the Current scans and destroy the window before the app and the fixture's
+        // folders go, including when an assertion panics or a scan outlives its wait.
+        let stopped = self.app.state::<App>().close();
         let _ = self.window.destroy();
+        tauri::async_runtime::block_on(stopped);
     }
 }
 
@@ -152,7 +155,7 @@ fn window(fixture: &Fixture, mode: Mode) -> Window {
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();
-    Window { window, _app: app }
+    Window { window, app }
 }
 
 /// Invoke `command` with `args` through the IPC handler; an error is the serialized failure.
@@ -172,21 +175,21 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
     .map(|body| body.deserialize::<Value>().unwrap())
 }
 
-const STILL: fn() -> Value = || json!({"run": null, "close": false, "query": null, "older": null, "full": true, "resync": false});
+const STILL: fn() -> Value = || json!({"run": {"kind": "keep"}, "query": null, "older": null, "full": true, "resync": false});
 
 /// Show Run `run` in the Main area.
 fn open_run(run: &str) -> Value {
-    json!({"run": run, "close": false, "query": null, "older": null, "full": false, "resync": false})
+    json!({"run": {"kind": "open", "id": run}, "query": null, "older": null, "full": false, "resync": false})
 }
 
 /// Star `branch`, or take its star away.
 fn star(branch: &Value, on: bool) -> Value {
-    json!({"run": null, "close": false, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
+    json!({"run": {"kind": "keep"}, "query": null, "older": null, "star": {"branch": branch, "on": on}, "full": false, "resync": false})
 }
 
 /// Read the state afresh with the pane's search `query`.
 fn search(query: &str) -> Value {
-    json!({"run": null, "close": false, "query": query, "older": null, "full": true, "resync": false})
+    json!({"run": {"kind": "keep"}, "query": query, "older": null, "full": true, "resync": false})
 }
 
 /// The waiting Human reviews the Pane lists, read afresh.
@@ -808,10 +811,11 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
         let mut view = artifactize_core::store::read_request(&fixture.state, &id)
             .await
             .unwrap();
-        view.request.state = artifactize_core::store::RequestState::completed(
-            serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
-            "2026-01-01T00:00:02Z".parse().unwrap(),
-        );
+        std::sync::Arc::make_mut(&mut view.request).state =
+            artifactize_core::store::RequestState::completed(
+                serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
+                "2026-01-01T00:00:02Z".parse().unwrap(),
+            );
         receipts.save_request(&view.request).await.unwrap();
     });
     // Resolve after the saved completion, without assuming repeated calls made a window
@@ -838,7 +842,8 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
         let mut view = artifactize_core::store::read_request(&fixture.state, &id)
             .await
             .unwrap();
-        view.request.session_id = Some("other-session".parse().unwrap());
+        std::sync::Arc::make_mut(&mut view.request).session_id =
+            Some("other-session".parse().unwrap());
         receipts.save_request(&view.request).await.unwrap();
     });
     let replaced = invoke(

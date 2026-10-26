@@ -1,6 +1,6 @@
 # 팀으로 일하기 {#working-as-a-team}
 
-`artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 공유 리뷰 저장소를 하나 운영하면
+`artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 팀 리뷰 저장소를 하나 운영하면
 여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 각 머신은
 각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
 돌려주므로, 강제로 다시 리뷰하는 등 새 리뷰를 수행하면 모든 팀원이 이전 판정 대신 새 판정을 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
@@ -14,11 +14,10 @@ artifactize --state-dir /srv/artifactize server token add ci --scopes read
 artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 ```
 
-`token add`는 각 토큰을 한 번만 출력하니 비공개로 보관하세요. `server run`은
-**루프백**(`127.0.0.1`)에서 대기하므로, 같은 머신의 프로그램만 직접 연결할 수 있습니다.
+`token add`는 각 토큰을 한 번만 출력하니 비공개로 보관하세요. `server run`은 **루프백** 주소(`127.0.0.1`)에서만 연결을 받으므로, 같은 머신의 프로그램만 직접 연결할 수 있습니다.
 암호화되지 않은 네트워크로 토큰을 보내지 않고 팀원이 연결하게 하려면
 [아래의 안전한 연결 설정](#connect-teammates-securely)을 쓰세요.
-저장소는 SQLite 명령줄 도구로 백업하세요. 아래 명령 하나로 위 상태 디렉터리의
+SQLite 명령줄 도구를 사용해 저장소를 백업하세요. 아래 명령 하나로 위 상태 디렉터리의
 데이터베이스를 읽어 별도의 파일에 백업할 수 있습니다.
 
 ```sh
@@ -37,8 +36,7 @@ sqlite3 -readonly /srv/artifactize/review-store.sqlite ".backup '/srv/backups/ar
 ## 팀원을 안전하게 연결하기 {#connect-teammates-securely}
 
 **TLS 리버스 프록시**는 저장소 앞에서 암호화된
-HTTPS 연결을 받아 로컬로 전달하는 서버입니다. **터널**은 연결을 다른
-암호화된 연결 안에 담아 전달합니다. 저장소 호스트에 이미 SSH 계정이 있다면
+HTTPS 연결을 받아 로컬로 전달하는 서버입니다. **터널**은 하나의 연결을 암호화된 다른 연결을 거쳐 보내는 방식입니다. 저장소 호스트에 이미 SSH 계정이 있다면
 다음 절차에 따라 SSH 터널을 설정하세요.
 
 1. 위처럼 그 호스트에서 `artifactize server run`을 계속 실행해 두세요.
@@ -84,7 +82,7 @@ artifactize remote status
 - `request submit`은 Human 승인을 게시합니다.
 - `remote push`는 저장소에 연결할 수 없던 동안 만든 결과를 보냅니다.
 
-전체 레퍼런스는 [원격 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)를 보세요.
+전체 레퍼런스는 [팀 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)를 보세요.
 
 **CI.** CI는 환경 변수로만 설정합니다. [CI](ci.md)를 보세요.
 

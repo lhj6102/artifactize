@@ -1,4 +1,4 @@
-name = "docs-ko"
+name = "docs::ko"
 fingerprint = { files = ["src"] }
 
 [views.agent_tools]
@@ -13,8 +13,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-english.payload]
 instruction = """
-Review the Korean documentation {docs-ko} as a translation of the English documentation
-{docs}. Both are mdBook sources with the same chapter paths under src/; compare every English
+Review the Korean documentation {docs::ko} as a translation of the English documentation
+{docs::en}. Both are mdBook sources with the same chapter paths under src/; compare every English
 file with the Korean file at the same path.
 Check these criteria:
 - K-SAME-PAGES: Every English file has a Korean file at the same path and the Korean side has no
@@ -34,7 +34,7 @@ The project sentence "Build together on an Artifact Graph." stays in English by 
 "Artifact Graph" is the product's name for the graph.
 Judge whether the Korean says the same thing, not how it is written; the Korean writing is
 reviewed elsewhere, and so is the English documentation. Use the list, glob, grep and read
-tools of {docs} and {docs-ko}. Tool paths are Artifact-relative.
+tools of {docs::en} and {docs::ko}. Tool paths are Artifact-relative.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
 violations, most important first, each with the criterion id, the Korean path:line, the English
 path:line and one sentence on how to fix the Korean documentation.
@@ -67,16 +67,16 @@ additionalProperties = false
 
 [evals.follows-write-in-korean]
 title = "The Korean documentation follows the Korean writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-write-in-korean.payload]
 instruction = """
-Read {write-in-korean}. Read the Korean documentation {docs-ko}, an mdBook source whose chapters are under src/.
+Read {rules::write-in-korean}. Read the Korean documentation {docs::ko}, an mdBook source whose chapters are under src/.
 The project sentence "Build together on an Artifact Graph." stays in English by design, and
 "Artifact Graph" is the product's name for the graph.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
-the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-ko}; tool paths are Artifact-relative.
+the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs::ko}; tool paths are Artifact-relative.
 Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
 that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED with up
 to 20 violations, most important first, each with the item id, the path:line, the text and

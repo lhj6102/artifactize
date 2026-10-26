@@ -1,6 +1,7 @@
 //! Unix private file modes, process control, signals, and termios.
 //! Pinned file access lives in artifactize-tools.
 
+mod descriptors;
 pub(crate) mod ipc;
 mod process;
 

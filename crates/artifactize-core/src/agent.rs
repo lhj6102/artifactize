@@ -11,6 +11,7 @@ use rig_core::{
     completion::{CompletionRequest, CompletionResponse, FinishReason, ToolDefinition},
     message::{AssistantContent, ImageMediaType, Message, ToolCall, ToolChoice, ToolResultContent},
 };
+use serde::Serialize;
 use serde_json::json;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -20,7 +21,7 @@ use crate::{
         error::{Code, Failure},
         session::{Conversation, Recorder},
     },
-    config::{Eval, Profile, RepoConfig},
+    config::{ArtifactName, Eval, Profile, RepoConfig},
     llm::{self, Attempt, Client},
     scope::{self, InstructionPart},
     tools::{Content, Registry, ToolResult},
@@ -179,6 +180,7 @@ impl Turns<'_> {
                 request,
                 llm::Turn {
                     number: self.turn,
+                    model: self.model,
                     deadline: self.deadline,
                     cancellation: self.cancellation,
                 },
@@ -195,8 +197,6 @@ impl Turns<'_> {
             self.deadline,
             Instant::now(),
         )?;
-        llm::validate_response(&response, self.model)
-            .map_err(|message| Failure::new(Code::ProviderError, message))?;
         self.recorder.message(
             self.turn,
             &Message::Assistant {
@@ -699,29 +699,19 @@ fn prompt(
         .declaration
         .payload()
         .expect("Agent payload is validated");
-    let instruction: String =
-        scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references)
-            .into_iter()
-            .map(|part| match part {
-                InstructionPart::Text(text) => text,
-                InstructionPart::Artifact(id) => {
-                    let tools: Vec<_> = registry
-                        .list()
-                        .filter(|tool| tool.artifact_id == id)
-                        .map(|tool| tool.name.as_str())
-                        .collect();
-                    if config.artifacts[&id].file_name().is_some() {
-                        format!(
-                            "Artifact {id} (path: {}; tools: {})",
-                            crate::platform::path_text(&config.artifacts[&id].path),
-                            tools.join(", ")
-                        )
-                    } else {
-                        format!("Artifact {id} (tools: {})", tools.join(", "))
-                    }
-                }
-            })
-            .collect();
+    let parts = scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references);
+    let instruction: String = parts
+        .iter()
+        .map(|part| match part {
+            InstructionPart::Text(text) => text.as_str(),
+            InstructionPart::Artifact(id) => id.as_str(),
+        })
+        .collect();
+    let mentioned = parts.iter().filter_map(|part| match part {
+        InstructionPart::Artifact(id) => Some(id),
+        InstructionPart::Text(_) => None,
+    });
+    let artifacts = listed_artifacts(&eval.target, mentioned, registry);
     // Follow-ups reuse the system prefix, but do not set a structured output format.
     let system = "You are an artifactize evaluator. Review only the supplied Artifacts; do not implement or repair. Execute only registered Artifact tools.\n\
         Inspect the target and explicitly referenced Artifacts. Included child folders grant additional observation access when relevant. Use tool descriptions and input schemas, and follow pagination. Tools may return text, structured data or images.\n\
@@ -730,12 +720,50 @@ fn prompt(
         For the review, return only the structured final answer, following the verdict schema and its field descriptions. The result contains the verdict and declared owner fields.\n\
         If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the verdict stays as recorded.";
     let text = format!(
-        "Eval: {} ({})\nTarget Artifact: {}\nInstruction: {}",
-        eval.declaration.title, eval.id, eval.target, instruction,
+        "Eval: {} ({})\nTarget Artifact: {}\nInstruction: {}\nArtifacts:\n{}",
+        eval.declaration.title, eval.id, eval.target, instruction, artifacts,
     );
     let mut request = CompletionRequest::new(text).preamble(system);
     request.tools = definitions(registry);
     Ok(request)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Role {
+    Target,
+    Input,
+}
+
+/// One entry of the prompt's Artifacts list; tool definitions carry descriptions and schemas.
+#[derive(Serialize)]
+struct Listed<'a> {
+    name: &'a ArtifactName,
+    role: Role,
+    tools: Vec<&'a str>,
+}
+
+/// The target, then each Artifact the instruction mentions, once and in first-mention order,
+/// as a JSON array with one record per line.
+fn listed_artifacts<'a>(
+    target: &'a ArtifactName,
+    mentioned: impl Iterator<Item = &'a ArtifactName>,
+    registry: &'a Registry<'_>,
+) -> String {
+    let mut seen = HashSet::new();
+    let records: Vec<_> = std::iter::once((target, Role::Target))
+        .chain(mentioned.map(|id| (id, Role::Input)))
+        .filter(|(id, _)| seen.insert(*id))
+        .map(|(name, role)| {
+            let tools = registry
+                .list()
+                .filter(|tool| &tool.artifact_id == name)
+                .map(|tool| tool.name.as_str())
+                .collect();
+            serde_json::to_string(&Listed { name, role, tools }).expect("names serialize as JSON")
+        })
+        .collect();
+    format!("[{}]", records.join(",\n "))
 }
 
 fn check_deadline(cancelled: bool, deadline: Instant, now: Instant) -> Result<(), Failure> {

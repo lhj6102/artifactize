@@ -146,7 +146,7 @@ def layout(destination: Path) -> None:
         shutil.copyfile(BRAND / name, destination / name)
     for name in (
         "artifactize-icon.svg", "artifactize-icon-mark.svg",
-        "artifactize-icon-h56.png", "og.jpg",
+        "artifactize-icon-h56.png", "og.jpg", "og.ko.jpg",
     ):
         shutil.copyfile(BRAND / name, destination / "media" / name)
     for name in ("review-loop.gif", "graph-growth.gif"):

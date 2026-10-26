@@ -228,6 +228,7 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current: its eval chips and listed evals saying whether each would run, would be reused or is still being checked, the Artifact between its neighbours, its Tools and Tool log, its path, the rest under Debug |
 | E-MON-DETAIL-TAB | Detail of an Artifact of a Run | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's tab shown: its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
 | E-CURRENT-TAB | Detail of an Artifact of a Current | click an eval's tab, or an eval listed on the Artifact tab | Detail, that eval's Summary: whether it would run, would be reused or is still being checked and why, and the result it would reuse |
+| E-DETAIL-ARTIFACT-TAB | Detail of an Artifact of a Run or a Current, on an eval's tab (its Summary, a log or its Human review) | click the Artifact's own chip | same Detail on its Artifact tab: the Artifact between its neighbours, its evals listed with their verdicts, its Tools and its path |
 | E-MON-DETAIL-NEIGHBOUR | Detail of an Artifact, on its Artifact tab | click a neighbour drawn beside it | Detail of that Artifact, on its Artifact tab, between its own neighbours |
 | E-MON-DETAIL-SWITCH | Detail | click another Artifact of the graph | Detail of that Artifact, on its Artifact tab |
 | E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened |
@@ -330,9 +331,10 @@ E-PANE-SELECT.
   E-CURRENT-CHIP → E-CURRENT-RUN-END → E-CURRENT-CHECKED
   E-CURRENT-CHIP → E-CURRENT-FAILED
 - J-MAIN-REVIEW: E-REVIEW-OPEN → E-MAIN-REVIEW-LEAVE → E-REVIEW-OPEN
-- J-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-LOG → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
+- J-DETAIL: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-LOG → E-DETAIL-ARTIFACT-TAB → E-MON-DETAIL-TAB → E-MON-DETAIL-SWITCH → E-MON-DETAIL-BACK
   E-MON-DETAIL-RUN → E-MON-DETAIL-BACK
   E-CURRENT-CHIP → E-CURRENT-EVALS → E-CURRENT-CLOSE
+  E-CURRENT-EVALS → E-CURRENT-TAB → E-DETAIL-ARTIFACT-TAB → E-CURRENT-CLOSE
   E-MON-RUNS-GRAPH → E-GRAPH-TAB → E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-BACK
   E-MON-RUNS-GRAPH → E-GRAPH-TAB → E-CURRENT-EVALS → E-CURRENT-CLOSE
 - J-DETAIL-NEIGHBOURS: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-TAB

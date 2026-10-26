@@ -3,8 +3,7 @@
 `artifactize verify --all --wait`를 두 번 실행해 보세요. 두 번째에는 모든 eval이
 `GREEN (reused …)`으로 나오고 아무것도 다시 실행되지 않습니다. 파일 하나를 바꾸고 다시
 verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 Artifact의 리뷰 결과에 영향을
-주는 입력을 나타내는 값입니다. eval이 바뀌지 않았고 그 eval이 의존하는 Artifact의 fingerprint도 그대로면
-이전 결과를 재사용하므로, 리뷰 비용은 바뀐 만큼만 듭니다.
+주는 입력을 나타내는 값입니다. eval과 그 eval이 의존하는 Artifact의 fingerprint가 바뀌지 않았으면 이전 결과를 재사용하므로, 바뀐 부분의 리뷰만 다시 실행합니다.
 
 ## Fingerprint {#fingerprints}
 
@@ -24,7 +23,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 ## Artifactsum {#artifactsum}
 
 Artifact의 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint가 바뀌면 그 Artifact를 다시
-리뷰합니다. 폴더의 입력을 좁히려면 다음처럼 씁니다.
+리뷰합니다. 폴더 Artifact에서 해시할 파일 범위를 제한하려면 다음처럼 설정하세요.
 
 ```toml
 fingerprint = { files = ["src"], ignore = ["*.log"] }
@@ -56,7 +55,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 ## 재사용 키 {#the-reuse-key}
 
-eval은 대상 Artifact와, 대상에 직접 연결된 다음 Artifact에 의존합니다.
+eval은 대상 Artifact에 의존하며, 대상과 직접 연결된 다음 Artifact에도 의존합니다.
 
 - 대상의 자식 Artifact
 - eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact
@@ -86,7 +85,7 @@ ID와 제목, 태그, 저장소 경로, 쓰지 않은 프로필 변형, 도구 �
 도구는 Artifact를 보는 방법일 뿐이므로, 도구의 설명이나 스키마만 바꿔서는 다시 리뷰하지
 않습니다. 도구 변경도 반영하려면 관련 파일을 fingerprint에 포함하세요.
 
-실행 가능한 eval은 대상과 의존하는 모든 Artifact에 fingerprint가 있을 때만 키를 가집니다.
+실행 가능한 eval은 대상과 의존하는 모든 Artifact에 fingerprint가 있을 때만 재사용 키가 만들어집니다.
 생략하면 폴더와 파일 Artifact(그 종류의 basis Artifact 포함)는 artifactsum을 쓰고, 그래프
 Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 파일 Artifact가
 `fingerprint = false`를 선언하면 그 eval은 재사용하지 않아서, `verify`할 때마다 다시
@@ -100,12 +99,12 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 키에 기록이 여러 개 있으면 GREEN이든 RED이든 완료 시각이 가장 늦은 것을 재사용합니다. 그래서
 평가 기준과 입력이 같으면 프로필이 달라도 기존 결과를 재사용할 수 있습니다. 선언된 프로필로 요청한
 리뷰에 `--profile fast` 같은 Agent 변형으로 만든 결과를 재사용할 수 있고, 그 반대도 됩니다.
-명령이나 인자가 다른 Runtime 변형은 별도의 키를 가지며, 다른 입력을 가리킬 수도 있습니다.
+명령이나 인자가 다른 Runtime 변형은 서로 다른 재사용 키로 구분되며, 다른 입력을 가리킬 수도 있습니다.
 
 재사용한 결과에도 그 결과를 만든 명령이나 모델, 그리고 결과를 가져온 곳이 남습니다. `run show`에서
 둘을 어디서 보는지는 [verify와 Run](run.md#verify-and-runs)에 있습니다.
 
-재사용하기 전에 artifactize는 포함한 파일 대상을 다시 확인합니다. 대상은 심볼릭 링크를 거치지
+결과를 재사용하기 전에 artifactize는 리뷰 범위에 포함된 대상 파일을 다시 확인합니다. 대상은 심볼릭 링크를 거치지
 않는 일반 파일로 존재해야 합니다. `fingerprint = false`로 재사용을 꺼도 대상 파일이 안전한지
 확인하는 절차는 그대로 진행됩니다. 대상은 fingerprint 준비와 재확인, eval 시작과 끝, 도구 호출 때마다
 확인합니다.

@@ -50,9 +50,6 @@ pub(super) async fn list(
                 run.comment.as_deref().unwrap_or("-")
             )
             .map_err(|e| e.to_string())?;
-            for unreadable in &run.unreadable {
-                writeln!(out, "  {unreadable}").map_err(|error| error.to_string())?;
-            }
         }
     }
     Ok(0)
@@ -65,9 +62,9 @@ pub(super) async fn show(
     timeout_ms: Option<Duration>,
 ) -> Result<u8, String> {
     let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
-    let initial = artifactize_core::store::read_run(&state, &run_id).await?;
+    let repo = artifactize_core::store::read_run_repo(&state, &run_id).await?;
     let runs = artifactize_core::runs::Context::new(
-        &initial.run.repo_path,
+        &repo,
         Some(&state),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
@@ -110,9 +107,9 @@ pub(super) async fn cancel(
     id: artifactize_core::types::RunId,
 ) -> Result<u8, String> {
     let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
-    let view = artifactize_core::store::read_run(&state, &id).await?;
+    let repo = artifactize_core::store::read_run_repo(&state, &id).await?;
     let runs = artifactize_core::runs::Context::new(
-        &view.run.repo_path,
+        &repo,
         Some(&state),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;
@@ -126,9 +123,9 @@ pub(super) async fn watch(
     id: artifactize_core::types::RunId,
 ) -> Result<u8, String> {
     let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
-    let view = artifactize_core::store::read_run(&state, &id).await?;
+    let repo = artifactize_core::store::read_run_repo(&state, &id).await?;
     let runs = artifactize_core::runs::Context::new(
-        &view.run.repo_path,
+        &repo,
         Some(&state),
         &std::env::current_exe().map_err(|e| e.to_string())?,
     )?;

@@ -211,11 +211,26 @@ impl Currents {
         let _ = self.changed.send(branch.clone());
     }
 
+    /// Cancel every running scan at once; the returned future ends when each has stopped,
+    /// that is when its task let go of its stage.
+    pub(crate) fn stop(&self) -> impl std::future::Future<Output = ()> + use<> {
+        let stopping: Vec<_> = std::mem::take(&mut *self.running.lock().expect("scans lock"))
+            .into_values()
+            .map(|running| {
+                running.token.cancel();
+                running.stage
+            })
+            .collect();
+        async move {
+            for mut stage in stopping {
+                while stage.changed().await.is_ok() {}
+            }
+        }
+    }
+
     /// Forget every scan of a replaced state and cancel those running.
     pub fn reset(&self) {
-        for (_, running) in std::mem::take(&mut *self.running.lock().expect("scans lock")) {
-            running.token.cancel();
-        }
+        drop(self.stop());
         self.shown.lock().expect("currents lock").clear();
         self.failed.lock().expect("failures lock").clear();
     }

@@ -3,6 +3,7 @@
 
 mod api;
 pub mod codex;
+mod degenerate;
 mod delivery;
 #[cfg(test)]
 mod delivery_tests;
@@ -25,7 +26,7 @@ use rig_core::{
     error::ProviderError,
     observe::{Action, AdapterContext, AdapterEvent, Observation, Subject, Witness},
     providers::{anthropic, gemini, openai},
-    streaming::CompletionStream,
+    streaming::{CompletionStream, Item, StreamEvent},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -433,7 +434,8 @@ impl Client {
     /// One turn, retried while an attempt fails with a rate limit or a transient error
     /// before producing any output or usage: at any turn, since every request replays the
     /// whole conversation. A retry waits as long as the provider's `Retry-After` asks, or a
-    /// short backoff, within the review's deadline.
+    /// short backoff, within the review's deadline. A delivered response that fails
+    /// [`validate_response`] fails its attempt, which keeps its counters and is not retried.
     pub async fn turn(
         &self,
         request: &CompletionRequest,
@@ -466,6 +468,7 @@ impl Client {
                 format!("turn-{}", context.number),
             );
             let mut emitted = false;
+            let mut tail = degenerate::Tail::default();
             let sink = delivery::Sink::default();
             // Task-local registration encloses opening AND every poll, not just request creation.
             let (result, partial) = sink
@@ -499,6 +502,11 @@ impl Client {
                                 Some(Ok(item)) => {
                                     emitted = true;
                                     sink.normalized(&item);
+                                    if let Item::Event(StreamEvent::Text { text, .. }) = &item
+                                        && let Err(failure) = tail.push(text)
+                                    {
+                                        break Err(Classified::from(failure));
+                                    }
                                     if sink.ready() {
                                         for event in sink.take(context.number, attempt) {
                                             observe(event);
@@ -546,6 +554,11 @@ impl Client {
                 add_cache_usage(&mut counters, response);
             }
             let used_tokens = counters.values().any(|value| *value > 0);
+            let result = result.and_then(|response| {
+                validate_response(&response, context.model)
+                    .map(|()| response)
+                    .map_err(|message| Classified::from(Failure::new(Code::ProviderError, message)))
+            });
             attempts.push(Attempt {
                 turn: context.number,
                 attempt,
@@ -590,6 +603,8 @@ impl Client {
 
 pub struct Turn<'a> {
     pub number: usize,
+    /// The model the request asked for; a response from another model fails its attempt.
+    pub model: &'a str,
     pub deadline: Instant,
     pub cancellation: &'a CancellationToken,
 }
@@ -613,7 +628,8 @@ fn add_cache_usage(
     );
 }
 
-pub fn validate_response(response: &CompletionResponse, model: &str) -> Result<(), String> {
+/// A delivered response is usable only from the requested model and when it finished.
+fn validate_response(response: &CompletionResponse, model: &str) -> Result<(), String> {
     if response
         .model
         .as_deref()
@@ -755,8 +771,15 @@ pub fn test_endpoint(provider: Provider) -> Result<Option<TestEndpoint>, String>
 /// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
 /// value must be a loopback URL.
 pub fn variable_endpoint(variable: &str) -> Result<Option<TestEndpoint>, String> {
-    let Some(value) = crate::platform::environment::var(variable).filter(|value| !value.is_empty())
-    else {
+    variable_endpoint_in(variable, crate::platform::environment::var)
+}
+
+/// [`variable_endpoint`] read from `var` instead of this process's environment.
+pub fn variable_endpoint_in(
+    variable: &str,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<Option<TestEndpoint>, String> {
+    let Some(value) = var(variable).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     value

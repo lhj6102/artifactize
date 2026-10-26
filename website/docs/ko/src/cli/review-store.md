@@ -17,7 +17,7 @@ artifactize server token revoke alice-laptop [--purge]
 artifactize server rm KEY
 ```
 
-`artifactize server`는 [공유 원격 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
+`artifactize server`는 [팀 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
 `--state-dir` 아래 별도의 `review-store.sqlite`에 둡니다. `state.sqlite`와는 다른 파일입니다.
 각 [재사용 키](../features/fingerprint.md#the-reuse-key)의 기록을 모두 보관하고, 조회하면
 누가 게시했는지, 기록이 어떤 순서로 도착했는지와 상관없이 완료 시각이 가장 늦은 기록을
@@ -46,7 +46,7 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 
 | 경로 | 범위 | 쓰는 명령 |
 |---|---|---|
-| `GET /v1/whoami` | 범위 제한 없음 | `remote login`, `remote status` |
+| `GET /v1/whoami` | 필요한 범위가 없습니다 | `remote login`, `remote status` |
 | `POST /v1/lookup` | `read` | `verify`, `status`, `remote push` |
 | `PUT /v1/entries/{key}` | `publish`(Human 승인이면 `human`도) | `verify`, `request submit`, `remote push` |
 
@@ -71,7 +71,7 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 번 리뷰하고 새 기록을 게시합니다. 로컬 상태는 따로 업그레이드됩니다.
 [상태](../features/others/state.md#state)를 보세요.
 
-## 원격 리뷰 저장소 클라이언트 {#remote-review-store-client}
+## 팀 리뷰 저장소 클라이언트 {#remote-review-store-client}
 
 ```sh
 printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/ [--share full]
@@ -80,9 +80,8 @@ artifactize remote push [--dry-run] [--json]
 artifactize remote logout
 ```
 
-클라이언트는 `.artf` 선언이 아니라 상태 디렉터리와 환경 변수로만 설정합니다. 따라서 복제한 저장소의 선언으로 토큰 전송 대상을 바꿀 수 없습니다. `remote login URL`은 토큰 한 줄을
-argv가 아닌 stdin에서 읽습니다. 처음 8192바이트까지만 읽고 그 뒤는 무시한 다음 앞뒤 공백을
-지웁니다. 토큰 앞의 공백도 이 8192바이트에 들어가며, 4096바이트가 넘는 토큰은 거부합니다.
+클라이언트의 연결 설정은 `.artf` 선언이 아니라 상태 디렉터리와 환경 변수로만 정합니다. 따라서 복제한 저장소의 선언으로 토큰 전송 대상을 바꿀 수 없습니다. `remote login URL`은 토큰을
+argv가 아닌 stdin에서 읽으므로 토큰을 한 줄로 붙여 넣으세요. 4096바이트가 넘는 토큰은 거부합니다.
 터미널에서는 입력한 토큰이 화면에 나타나지 않도록 처리하며, Windows에서 입력을 숨기는 데 실패하면 토큰이 화면에 보인다고 경고한 뒤 계속 읽습니다. 터미널이 아닌 stdin은 터미널 에코를 건드리지 않고 읽습니다.
 `GET /v1/whoami`로 토큰을 확인한 다음, 내 계정만 읽을 수 있는
 `$STATE/auth/remote-token.json`에 저장하고 `$STATE/remote.json`에
@@ -104,7 +103,7 @@ configured.`(JSON은 `{"configured":false}`)를 출력하고 1로 종료합니�
 유효합니다. 토큰은 출력하지도, 로그에 남기지도 않습니다.
 
 저장소가 설정되어 있으면 `verify`는 각 리뷰를 실행하기 전에 저장소를 조회하고, 로컬 결과와 저장소 결과 중 더 나중에 완료된 쪽을 재사용합니다. 저장소 결과는 `origin`과 함께 로컬 상태로
-복사되므로 `run show`, `cache`, monitor에 재사용으로 나옵니다. 아직 결과가 없거나 사람의
+복사되므로 `run show`, `cache`, Monitor에 재사용으로 나옵니다. 아직 결과가 없거나 사람의
 승인 여부가 아직 결정되지 않은 리뷰가 있으면 verify는 약 1초마다 저장소를 다시 확인합니다. 다른 곳에서
 누군가 게시한 승인이 들어오면 대기 중인 요청은 그 승인을 재사용해 완료되고, 해당 요청에서 대기 중이던 Human 승인 작업은 ERROR(`SUPERSEDED`)로 끝납니다. 텍스트 출력에는 결과의 출처가 나옵니다.
 
@@ -145,8 +144,8 @@ configured.`(JSON은 `{"configured":false}`)를 출력하고 1로 종료합니�
 연결 오류, 요청 시간 초과, 5xx 응답이 나면 경고를 한 번 출력하고 원격 저장소를 쓰지 않은 채 작업을 계속합니다. 각 키의
 로컬 최신 기록을 재사용하고, 기록이 없는 것은 로컬에서 리뷰합니다. 401/403, TLS 실패, 그 밖의
 오류 응답, 잘못된 설정, 그리고 성공 응답이지만 본문을 읽거나 해석할 수 없는 경우(본문 시간
-초과 포함)는 오류로 처리하고 멈춥니다. 401/403 응답이면 artifactize가 저장소에서 토큰을 거부했다고 안내하며, 다른 4xx 응답이면 저장소가 보낸 오류 메시지가 있을 때 그 메시지를 보여 줍니다. 검증은
-Run 접수를 확실히 기록한 다음 원격 증거를 조회합니다. 그래서 조회에 실패해도 Run이 사라지지
+초과 포함)는 오류로 처리하고 멈춥니다. 401/403 응답이면 artifactize가 저장소에서 토큰을 거부했다고 안내하며, 다른 4xx 응답이면 저장소가 보낸 오류 메시지가 있을 때 그 메시지를 보여 줍니다. `verify`는
+Run이 접수되었다는 사실을 먼저 저장한 뒤 원격 증거를 조회합니다. 그래서 조회에 실패해도 Run이 사라지지
 않고 ERROR Run으로 남습니다. 제출만 하는 `verify`는 접수되면 0으로 종료하고, `verify
 --wait`는 그 ERROR를 확인하고 2로 종료합니다. 설정이 잘못되었으면 접수 전에 제출이 거부될 수도
 있습니다. `status` 같은 동기 명령은 조회 오류로 중단되면 곧바로 종료 코드 2로 끝납니다. 검증을

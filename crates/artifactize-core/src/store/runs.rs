@@ -26,6 +26,8 @@ pub struct RunSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<crate::types::RunComment>,
     pub counts: BTreeMap<crate::types::RequestStatus, u64>,
+    /// The Run's records that do not read, where the reader audited them (the monitor's
+    /// catalog); a listing reads columns only and leaves this empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub unreadable: Vec<super::Unreadable>,
 }
@@ -37,7 +39,9 @@ impl RunSummary {
     }
 }
 
-/// Saved request-state counts in one read-only snapshot; no repository discovery.
+/// A page of Runs with their saved request-state counts, in one read-only snapshot and from
+/// columns alone: no record is decoded, so a page costs the same however large its Runs are.
+/// `status` and `run show` report the records that do not read. No repository discovery.
 pub async fn read_runs(
     state: &Path,
     repo: Option<&Path>,
@@ -93,38 +97,13 @@ pub async fn read_scoped_runs(
             if !schema_initialized(&transaction)? {
                 return Ok(Vec::new());
             }
-            let runs = in_snapshot(&transaction, &state, repos.as_deref(), limit, offset)?;
+            let runs = page(&transaction, &state, repos.as_deref(), limit, offset, None)?;
             transaction.commit()?;
             Ok(runs)
         })
         .await
         .map_err(|e| e.to_string());
     super::connection::finish(connection, result).await
-}
-
-/// A page of Runs with their counts, and every record of those Runs audited: for listings
-/// that report records which do not read. A request that does not read is not counted.
-pub(super) fn in_snapshot(
-    db: &rusqlite::Connection,
-    state: &Path,
-    repos: Option<&str>,
-    limit: u32,
-    offset: u32,
-) -> Result<Vec<RunSummary>, Error> {
-    let mut runs = listed(db, state, repos, limit, offset, None)?;
-    let ids: Vec<_> = runs.iter().map(|run| run.id.clone()).collect();
-    let mut unreadable = super::unreadable::in_runs(db, &ids)?;
-    let invalid: Vec<_> = unreadable
-        .values()
-        .flatten()
-        .filter(|record| record.kind == "request")
-        .map(|record| record.id.clone())
-        .collect();
-    count(db, &mut runs, &invalid)?;
-    for run in &mut runs {
-        run.unreadable = unreadable.remove(&run.id).unwrap_or_default();
-    }
-    Ok(runs)
 }
 
 /// A page of Runs with their counts, read from columns alone: no record of a Run is decoded.
@@ -138,7 +117,7 @@ pub(super) fn page(
     pinned: Option<&crate::types::RunId>,
 ) -> Result<Vec<RunSummary>, Error> {
     let mut runs = listed(db, state, repos, limit, offset, pinned)?;
-    count(db, &mut runs, &[])?;
+    count(db, &mut runs)?;
     Ok(runs)
 }
 
@@ -183,31 +162,21 @@ fn listed(
     Ok(runs)
 }
 
-/// Fill in each Run's request counts by status, leaving out the `invalid` requests.
-fn count(
-    db: &rusqlite::Connection,
-    runs: &mut [RunSummary],
-    invalid: &[String],
-) -> Result<(), Error> {
+/// Fill in each Run's request counts by saved status.
+fn count(db: &rusqlite::Connection, runs: &mut [RunSummary]) -> Result<(), Error> {
     let ids: Vec<_> = runs.iter().map(|run| run.id.clone()).collect();
     let mut counts: BTreeMap<crate::types::RunId, BTreeMap<crate::types::RequestStatus, u64>> =
         BTreeMap::new();
     let mut statement = db.prepare_cached(
-        "SELECT run_id,status,count(*) FROM requests WHERE run_id IN (SELECT value FROM json_each(?1)) AND id NOT IN (SELECT value FROM json_each(?2)) GROUP BY run_id,status",
+        "SELECT run_id,status,count(*) FROM requests WHERE run_id IN (SELECT value FROM json_each(?1)) GROUP BY run_id,status",
     )?;
-    let rows = statement.query_map(
-        params![
-            serde_json::to_string(&ids)?,
-            serde_json::to_string(invalid)?
-        ],
-        |row| {
-            Ok((
-                row.get::<_, crate::types::RunId>(0)?,
-                row.get::<_, crate::types::RequestStatus>(1)?,
-                row.get::<_, i64>(2)?,
-            ))
-        },
-    )?;
+    let rows = statement.query_map([serde_json::to_string(&ids)?], |row| {
+        Ok((
+            row.get::<_, crate::types::RunId>(0)?,
+            row.get::<_, crate::types::RequestStatus>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
     for row in rows {
         let (run, status, count) = row?;
         let count = u64::try_from(count).expect("COUNT(*) is nonnegative");

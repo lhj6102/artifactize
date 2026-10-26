@@ -20,7 +20,7 @@
   - [Human](features/human.md)
   - [Runtime](features/runtime.md)
 - [Fingerprint](features/fingerprint.md)
-- [평가 Run](features/run.md)
+- [Run](features/run.md)
 - [도구](features/tools/index.md)
   - [내장 도구](features/tools/builtin.md)
   - [Agent 도구와 세션](features/tools/agent.md)

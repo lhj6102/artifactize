@@ -166,6 +166,9 @@ pub async fn start(
         let closed = receipts.close().await;
         result.and(closed)?;
     }
+    // Preparing the Run read the whole workspace and built its definitions, all freed by now;
+    // a caller that goes on to wait for the Run should not keep that memory while it waits.
+    crate::platform::release_free_memory();
     status(context, &id).await
 }
 
@@ -176,16 +179,16 @@ pub struct CancelAcknowledgement {
     pub cancellation_requested: bool,
 }
 pub async fn cancel(context: &Context, id: &RunId) -> Result<CancelAcknowledgement, String> {
-    let current = view(context, id).await?;
+    // The compact observation checks the repository and settles a Run whose worker died.
+    let current = status(context, id).await?;
     let receipts = Receipts::open(&context.state, &context.repo).await?;
-    let result = receipts.request_cancel(&current.run.id).await;
+    let result = receipts.request_cancel(id).await;
     let closed = receipts.close().await;
-    let run = result.and_then(|run| closed.map(|()| run))?;
+    let (saved, control) = result.and_then(|saved| closed.map(|()| saved))?;
     Ok(CancelAcknowledgement {
         run: id.clone(),
-        state: observe::state(&run, &current.requests),
-        cancellation_requested: run
-            .control
+        state: observe::state_for(saved, control.as_ref(), &current.counts),
+        cancellation_requested: control
             .as_ref()
             .is_some_and(|control| control.cancellation_requested),
     })

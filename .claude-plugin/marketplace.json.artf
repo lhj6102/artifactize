@@ -1,4 +1,4 @@
-name = "claude-marketplace"
+name = "agent::claude-marketplace"
 # Claude Code's catalog of this repository's plugin is an input of the plugin's
 # install check and needs no review of its own.
 basis = true

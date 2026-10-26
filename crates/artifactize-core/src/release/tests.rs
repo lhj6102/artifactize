@@ -148,12 +148,13 @@ async fn a_failed_lookup_is_reported_and_asked_again() {
 
 #[test]
 fn a_development_build_and_the_store_are_not_looked_up() {
+    let unset = |_: &str| None;
     assert_eq!(
-        source(&version("0.0.0-dev"), Channel::Cargo).err(),
+        source(&version("0.0.0-dev"), Channel::Cargo, unset).err(),
         Some(Outcome::Unchecked(Unchecked::Development))
     );
     assert_eq!(
-        source(&version("0.15.1"), Channel::Store).err(),
+        source(&version("0.15.1"), Channel::Store, unset).err(),
         Some(Outcome::Unchecked(Unchecked::Store))
     );
 }

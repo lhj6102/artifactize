@@ -15,7 +15,7 @@ cp -r examples/runtime-relations "$WALK/bob"
 printf 'WALK directory: %s\n' "$WALK"
 ```
 
-`mktemp -d`로 체크아웃 밖에 새 임시 폴더를 만듭니다. 생성된 폴더의 경로는 `WALK`에 저장되며 마지막 명령으로 출력됩니다. 그 값을 보관하세요.
+`mktemp -d`로 체크아웃 밖에 새 임시 폴더를 만듭니다. 생성된 폴더의 경로는 `WALK`에 저장되며 마지막 명령으로 출력됩니다. 출력된 `WALK` 경로를 복사해 두세요.
 
 서버, Alice, Bob, 로컬 CI 시연에는 각각 별도의 터미널을 쓰세요.
 **새 터미널마다** 다음을 실행하되, `COPIED_WALK_PATH`를 방금 출력된
@@ -212,8 +212,10 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0,
 ```
 
 Bob이 먼저 `verify --all --wait`를 실행했다면, Bob의 `verify --wait`는
-Run의 진행 상황을 보여 주며 끝날 때까지 대기했을 것이고, Alice의 승인이 저장소에 도착하는 즉시 Bob의 요청도
-확정되었을 것입니다. Bob의 토큰에는 `human`이 없으므로, Bob이 제출한 승인은
+Run의 진행 상황을 보여 주며 끝날 때까지 대기했을 것이고, Bob의 Run이 아직 열려 있는 동안
+Alice의 승인이 저장소에 도착하면 그 즉시 Bob의 요청도 확정되었을 것입니다. Bob은 승인 요청을 직접 맡지 않으므로
+Bob의 Run은 2분 뒤 YELLOW로 끝나고 더는 저장소를 확인하지 않습니다. 그 뒤에 Alice가 승인하면 Bob은
+`verify`를 다시 실행해 그 승인을 재사용합니다. Bob의 토큰에는 `human`이 없으므로, Bob이 제출한 승인은
 경고와 함께 로컬에만 남습니다.
 
 정리하려면 서버를 멈추고 `rm -rf "$WALK"`를 실행하세요.

@@ -1,4 +1,4 @@
-name = "demos-script"
+name = "media::demos-script"
 tags = ["type:capture"]
 
 [views.agent_tools]
@@ -10,8 +10,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.records-demos.payload]
 instruction = """
-Read {demos-script}, the app's feature journeys in {ux-features} and graph rules in \
-{ux-graph}, and the app in {desktop-backend}, {desktop-ui} and {desktop-e2e} as far as the \
+Read {media::demos-script}, the app's feature journeys in {desktop::ux-features} and graph rules in \
+{desktop::ux-graph}, and the app in {desktop::backend}, {desktop::ui} and {desktop::e2e} as far as the \
 demos need. Judge whether running the \
 script records each demo below from the real desktop app at 1920×1080, with real Runs made \
 through the real CLI and nothing mocked:

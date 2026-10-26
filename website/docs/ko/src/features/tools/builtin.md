@@ -26,11 +26,7 @@ summary = { builtin = "section", args = ["{reqs}/requirements.md", "Summary"] }
 
 내장 도구는 Linux, macOS, Windows에서 똑같이 동작합니다. 다른 점은 디스크에 있는 경로 표기를
 확인하는 방식([경로](../others/platforms.md#paths) 참고)과, Windows의 junction과 그 밖의 reparse
-point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 URL을 기본 애플리케이션으로 여는 OS
-명령(Linux에서는 `xdg-open`)을 쓰는 `open`, 요청한 프로그램을 실행하는 `help`, 그리고
-[데스크톱 앱](../../desktop/index.md#open-the-app)을 여는 Human `graph` 도구를 빼면 따로 설치할
-것이 없으며(Human `graph`는 `artifactize-desktop`이 설치되어 있지 않으면 실패하고, Agent
-`graph`는 아무것도 필요 없습니다), [`artifactize-tools`](#artifactize-tools-cli) 명령도 필요 없습니다. 그 명령과
+point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 내장 도구는 대부분 따로 설치할 것이 없고, [`artifactize-tools`](#artifactize-tools-cli) 명령도 필요 없습니다. 예외는 세 가지입니다. `open`은 파일이나 URL을 기본 애플리케이션으로 여는 OS 명령(Linux에서는 `xdg-open`)을 쓰고, `help`는 요청한 프로그램을 실행합니다. Human `graph`는 [데스크톱 앱](../../desktop/index.md#open-the-app)을 열므로 `artifactize-desktop`이 설치되어 있지 않으면 실패합니다. Agent `graph`는 아무것도 필요 없습니다. 그 명령과
 `artifactize tools`는 스크립트와 Runtime eval에 파일 시스템과 프로그램 도구를 제공합니다. 현재
 프로젝트의 구조를 보여 주는 `graph` 도구는 artifactize의 리뷰 도구로 선언해야 쓸 수 있으며, 독립
 실행형 도구 CLI에는 없습니다.
@@ -51,10 +47,10 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 파일이나 UR
 | `glob` | `{pattern, path?}` | — | — | 일치하는 경로 |
 | `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}` | — | — | 일치하는 줄 |
 | `view_image` | `{path}` | — | — | 이미지 |
-| `section` | — | `[file]`(모델이 `heading`을 넘김) 또는 `[file, heading]` | `[file, heading]` | Markdown 섹션 하나 |
+| `section` | — | `[file]`(모델이 `heading`을 넘깁니다) 또는 `[file, heading]` | `[file, heading]` | Markdown 섹션 하나 |
 | `help` | — | `[program, subcommand...]` | `[program, subcommand...]` | `program subcommand... --help` |
-| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 입력에서 사용처로 이어지는 관계를 담은 트리. Human: 데스크톱 뷰어 |
-| `open` | — | — | `[file, folder 또는 URL]`(실행) | 없음. 기본 애플리케이션으로 엽니다 |
+| `graph` | — | `[]` | `[]`(실행) | Agent: eval, 기준, 입력에서 사용처로 이어지는 관계를 담은 트리입니다. Human: 데스크톱 뷰어입니다 |
+| `open` | — | — | `[file, folder 또는 URL]`(실행) | 출력은 없습니다. 기본 애플리케이션으로 엽니다 |
 
 `args`가 없으면 Agent 도구는 모델의 입력을 받습니다. `read`, `list`, `glob`, `grep`,
 `view_image`의 입력, 결과, 한도는 [Agent 도구](agent.md#agent-tools)에 있습니다. `args`를 고정하면 인자를 하나만 지정한 `section`을 제외하고는 모델에서 인자를 받지 않습니다. 인자를 고정한 Agent 도구 중 `list`는 구조화된 JSON 내용 블록을 돌려주고, `read`, `section`, `help`는 텍스트 블록을 돌려줍니다.

@@ -14,7 +14,9 @@ fn fixture() -> (tempfile::TempDir, Saving, Request, crate::types::SessionId) {
         "RUNNING",
         json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"}}),
     )
-    .request;
+    .request
+    .as_ref()
+    .clone();
     (root, saving, request, "fixture-session".parse().unwrap())
 }
 

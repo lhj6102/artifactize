@@ -27,7 +27,16 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                 },
                 "reviewPolicy":{"dependencyGates":null,"futurePolicy":1},
                 "views":{
-                    "agentTools":{"read":{"builtin":"read","futureTool":true}},
+                    "agentTools":{
+                        "read":{"builtin":"read","futureTool":true},
+                        "find":{
+                            "description":"Find in {artifactName}",
+                            "inputSchema":{"type":"object","properties":{"query":{"type":"string","maxLength":80}},"required":["query"],"additionalProperties":false},
+                            "protocol":"json",
+                            "command":crate::test_os::echo_program(),
+                            "args":["find"],
+                        },
+                    },
                     "humanTools":{
                         "inspect":{
                             "description":"Inspect",
@@ -93,6 +102,24 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     let snapshot: Definitions = serde_json::from_value(wire.clone()).unwrap();
     let restored = serde_json::to_value(&snapshot).unwrap();
     assert_eq!(restored, wire);
+    // A reader decodes the saved text, and its tools' input schemas read back as saved.
+    let read: Definitions = serde_json::from_str(&wire.to_string()).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap(), wire);
+    let views = read
+        .graph()
+        .unwrap()
+        .artifact("page")
+        .unwrap()
+        .views
+        .value()
+        .unwrap();
+    let Some(AgentTool::Command(find)) = views.agent_tools.value().unwrap().get("find") else {
+        panic!("the saved command tool reads back");
+    };
+    assert_eq!(
+        find.input_schema.value(),
+        wire["artifacts"]["page"]["views"]["agentTools"]["find"]["inputSchema"]
+    );
     let graph = snapshot.graph().unwrap();
     assert_eq!(
         graph.repo_path.value().unwrap(),

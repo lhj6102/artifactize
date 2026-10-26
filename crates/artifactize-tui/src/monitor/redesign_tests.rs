@@ -426,7 +426,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
         .await
         .unwrap_err();
     assert!(text.contains("identity"));
-    view.request.session = Some(crate::agent::session::SessionRef {
+    std::sync::Arc::make_mut(&mut view.request).session = Some(crate::agent::session::SessionRef {
         producer: store::Producer::current().name,
         state: "fixture-state".parse().unwrap(),
         run_id: "run-1".parse().unwrap(),
@@ -442,7 +442,11 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
-    view.request.session.as_mut().unwrap().state = receipts.state_id().await.unwrap();
+    std::sync::Arc::make_mut(&mut view.request)
+        .session
+        .as_mut()
+        .unwrap()
+        .state = receipts.state_id().await.unwrap();
     use crate::agent::session::{
         document::Position,
         live::{Reader, Resolution},
@@ -556,7 +560,9 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
         "RUNNING",
         json!({"startedAt":"2026-01-01T00:00:00Z"}),
     )
-    .request;
+    .request
+    .as_ref()
+    .clone();
     request.cwd = repo.clone();
     receipts
         .create_run(&run, std::slice::from_ref(&request))
@@ -633,8 +639,8 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         .find(|view| view.request.eval_id == "app/review")
         .unwrap();
     // The injected review and saved tree request name the same Human request and schema.
-    human.request.id = "run-1-3".parse().unwrap();
-    human.request.human_definition =
+    std::sync::Arc::make_mut(&mut human.request).id = "run-1-3".parse().unwrap();
+    std::sync::Arc::make_mut(&mut human.request).human_definition =
         Some(serde_json::from_value(crate::review::tests::demo()).unwrap());
     human.claim.as_mut().unwrap().request_id = human.request.id.clone();
     let (_monitor_root, mut monitor) = tests::monitor();

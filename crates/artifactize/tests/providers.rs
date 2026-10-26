@@ -160,7 +160,10 @@ fn a_custom_endpoint_reviews_by_name_with_its_saved_key() {
         ENDPOINT_KEY,
     );
     assert_eq!(saved, json!({"provider":"local","saved":true}));
-    let list = parsed(project.command(&["provider", "list"]).output().unwrap(), 0);
+    let list = parsed(
+        support::os::run(&mut project.command(&["provider", "list"])),
+        0,
+    );
     assert_eq!(
         list["custom"],
         json!({"local":{"kind":"endpoint","api":"openai-chat","url":base,"key":true}})
@@ -179,7 +182,10 @@ fn a_custom_endpoint_reviews_by_name_with_its_saved_key() {
     assert_eq!(review.body["reasoning_effort"], "high");
     assert_eq!(review.body["response_format"]["type"], "json_schema");
 
-    let listing = parsed(project.command(&["models", "local"]).output().unwrap(), 0);
+    let listing = parsed(
+        support::os::run(&mut project.command(&["models", "local"])),
+        0,
+    );
     assert_eq!(
         listing,
         json!({"backend":"local","models":[{"slug":"local-model","display_name":"local-model"}]})
@@ -187,21 +193,21 @@ fn a_custom_endpoint_reviews_by_name_with_its_saved_key() {
 
     // Saved again without --key, the endpoint has none.
     parsed(
-        project
-            .command(&[
-                "provider",
-                "add",
-                "local",
-                "--api",
-                "openai-chat",
-                "--url",
-                &base,
-            ])
-            .output()
-            .unwrap(),
+        support::os::run(&mut project.command(&[
+            "provider",
+            "add",
+            "local",
+            "--api",
+            "openai-chat",
+            "--url",
+            &base,
+        ])),
         0,
     );
-    let list = parsed(project.command(&["provider", "list"]).output().unwrap(), 0);
+    let list = parsed(
+        support::os::run(&mut project.command(&["provider", "list"])),
+        0,
+    );
     assert_eq!(list["custom"]["local"]["key"], false);
 }
 
@@ -267,7 +273,7 @@ fn gemini_reviews_with_a_saved_key_and_its_thinking_level() {
     let mut command = project.command(&["models", "gemini"]);
     gemini_base(&mut command);
     command.env("GEMINI_API_KEY", "not a key");
-    let invalid = parsed(command.output().unwrap(), 2);
+    let invalid = parsed(support::os::run(&mut command), 2);
     assert!(
         invalid["error"]
             .to_string()
@@ -277,22 +283,28 @@ fn gemini_reviews_with_a_saved_key_and_its_thinking_level() {
 
     let mut command = project.command(&["models", "gemini"]);
     gemini_base(&mut command);
-    let listing = parsed(command.output().unwrap(), 0);
+    let listing = parsed(support::os::run(&mut command), 0);
     assert_eq!(listing["models"][0]["slug"], "fake-gemini", "{listing}");
 
     // An effort Gemini does not take is refused when the declaration is read.
     project.declare(json!({
         "kind":"agent", "backend":"gemini", "model":"fake-gemini", "reasoning":"xhigh",
     }));
-    let check = project.command(&["config", "check"]).output().unwrap();
+    let check = support::os::run(&mut project.command(&["config", "check"]));
     assert_ne!(check.status.code(), Some(0));
     assert!(String::from_utf8_lossy(&check.stdout).contains("Unsupported reasoning"));
 
     assert_eq!(
-        parsed(project.command(&["logout", "gemini"]).output().unwrap(), 0),
+        parsed(
+            support::os::run(&mut project.command(&["logout", "gemini"])),
+            0
+        ),
         json!({"provider":"gemini","saved":false})
     );
-    let list = parsed(project.command(&["provider", "list"]).output().unwrap(), 0);
+    let list = parsed(
+        support::os::run(&mut project.command(&["provider", "list"])),
+        0,
+    );
     let gemini = list["keys"]
         .as_array()
         .unwrap()
@@ -319,7 +331,10 @@ fn an_alias_reaches_its_provider_and_an_unknown_name_is_an_authentication_error(
     };
 
     // A project may name a provider this machine lacks; it is checked where it runs.
-    parsed(project.command(&["config", "check"]).output().unwrap(), 0);
+    parsed(
+        support::os::run(&mut project.command(&["config", "check"])),
+        0,
+    );
     let mut command = project.command(&["verify", "--wait", "--all"]);
     with_openai(&mut command);
     let unknown = project.verify(&mut command, 2);
@@ -335,10 +350,7 @@ fn an_alias_reaches_its_provider_and_an_unknown_name_is_an_authentication_error(
     );
 
     parsed(
-        project
-            .command(&["provider", "add", "work", "--alias", "openai"])
-            .output()
-            .unwrap(),
+        support::os::run(&mut project.command(&["provider", "add", "work", "--alias", "openai"])),
         0,
     );
     let mut command = project.command(&["verify", "--wait", "--all", "--force"]);
@@ -350,18 +362,16 @@ fn an_alias_reaches_its_provider_and_an_unknown_name_is_an_authentication_error(
     assert_eq!(review.headers["authorization"], "Bearer fake-openai-key");
 
     // A built-in name is never a custom provider's.
-    let builtin = project
-        .command(&["provider", "add", "openai", "--alias", "codex"])
-        .output()
-        .unwrap();
+    let builtin =
+        support::os::run(&mut project.command(&["provider", "add", "openai", "--alias", "codex"]));
     assert_ne!(builtin.status.code(), Some(0));
     parsed(
-        project
-            .command(&["provider", "remove", "work"])
-            .output()
-            .unwrap(),
+        support::os::run(&mut project.command(&["provider", "remove", "work"])),
         0,
     );
-    let list = parsed(project.command(&["provider", "list"]).output().unwrap(), 0);
+    let list = parsed(
+        support::os::run(&mut project.command(&["provider", "list"])),
+        0,
+    );
     assert_eq!(list["custom"], json!({}));
 }

@@ -407,6 +407,7 @@ status!(FailureCode {
    Cancelled => "CANCELLED",
    ProviderBudgetExceeded => "PROVIDER_BUDGET_EXCEEDED",
    InvalidResult => "INVALID_RESULT",
+   DegenerateOutput => "DEGENERATE_OUTPUT",
    ProviderError => "PROVIDER_ERROR",
    AgentError => "AGENT_ERROR",
    BackendStopped => "BACKEND_STOPPED",

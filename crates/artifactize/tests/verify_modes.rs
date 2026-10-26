@@ -406,11 +406,7 @@ async fn c2_signoffs_are_late_provisional_end_yellow_and_are_reused_by_the_next_
                 .copied()
                 .unwrap()
         );
-        let status_output = fixture
-            .command()
-            .args(["status", "--all", "--json"])
-            .output()
-            .unwrap();
+        let status_output = support::os::run(fixture.command().args(["status", "--all", "--json"]));
         assert_eq!(status_output.status.code(), Some(1));
         let current: Value = serde_json::from_slice(&status_output.stdout).unwrap();
         let state_of = |id: &str| {
@@ -455,11 +451,13 @@ async fn c2_signoffs_are_late_provisional_end_yellow_and_are_reused_by_the_next_
                 .modes
                 .speculate
         );
-        let output = fixture
-            .command()
-            .args(["verify", "--all", "--wait", "--request-key", "mode-choice"])
-            .output()
-            .unwrap();
+        let output = support::os::run(fixture.command().args([
+            "verify",
+            "--all",
+            "--wait",
+            "--request-key",
+            "mode-choice",
+        ]));
         assert_eq!(output.status.code(), Some(5));
         let ci = fixture.submit(&["--reuse-only", "agent,human"], None);
         let ci = fixture.settled(&ci).await;

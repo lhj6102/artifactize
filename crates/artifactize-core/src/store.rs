@@ -25,8 +25,12 @@ pub use unreadable::{Unreadable, read_unreadable};
 mod lifecycle;
 pub(crate) mod migrations;
 pub(crate) mod run_control;
+mod run_read;
 pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
+pub use run_control::read_run_repo;
+pub use run_read::read_run;
+pub(crate) use run_read::{read_new_results, read_run_record, read_run_requests_only};
 pub use snapshots::{
     ArtifactValidation, Blocker, ChildIdentity, EvalValidation, HumanDefinition, Validation,
     ValidationSnapshot,
@@ -46,7 +50,7 @@ pub use receipts::OwnedReceipts;
 pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
-    StoppedBackend, read_latest_requests, read_run, read_state_id, schema_error, state_schema,
+    StoppedBackend, read_latest_requests, read_state_id, schema_error, state_schema,
 };
 pub use requests::read_request_repo;
 pub use requests::{

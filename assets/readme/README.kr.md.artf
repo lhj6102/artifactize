@@ -1,4 +1,4 @@
-name = "readme-kr"
+name = "docs::readme-kr"
 
 [views.agent_tools.read]
 builtin = "read"
@@ -10,7 +10,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.translates-readme.payload]
 instruction = """
-Read the root README {readme} and its Korean translation {readme-kr}, which lives in
+Read the root README {docs::readme} and its Korean translation {docs::readme-kr}, which lives in
 assets/readme/. Check these criteria:
 - K-FAITHFUL: Every sentence, list item, heading, caption and image description of the
   root README is translated with the same meaning, in the same order. Nothing is left
@@ -59,13 +59,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-write-in-korean.payload]
 instruction = """
-Read {write-in-korean}. Read the Korean README {readme-kr}, README.kr.md in assets/readme/.
+Read {rules::write-in-korean}. Read the Korean README {docs::readme-kr}, README.kr.md in assets/readme/.
 The project sentence "Build together on an Artifact Graph." stays in English by design, as the
 headline, and "Artifact Graph" is the product's name for the graph. The root README says
 "checks" in plain words where the docs say eval, so the Korean README says 검사 for them.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
-the English is reviewed elsewhere. Use the read tool of {readme-kr}.
+the English is reviewed elsewhere. Use the read tool of {docs::readme-kr}.
 Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
 that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED with up
 to 20 violations, most important first, each with the item id, the path:line, the text and

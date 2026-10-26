@@ -22,11 +22,14 @@
 
 | 내장 도구 | 인자 | 결과 |
 |---|---|---|
-| `graph` | 고정 선언 `args = []`. 호출 `{}` | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
-| `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄(기본 1, 최대 9007199254740991), limit 기본 80, 최대 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
-| `list` | `{path?, offset?, limit?}`. offset은 0부터 셈(기본 0, 최대 9007199254740991), limit 기본값이자 최대 200 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
-| `glob` | `{pattern, path?}`. `path`는 디렉터리여야 함 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |
-| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`. 기본은 대소문자 구분, maxResults 기본값이자 최대 200 | 검색한 `path`, `matches: [{path, line, text}]`(일치하는 줄마다 하나, 경로 다음 줄 번호 순), `truncated` |
+| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
+| `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄이며(기본 1, 최대 9007199254740991), limit은 기본 80, 범위 1–500입니다 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
+| `list` | `{path?, offset?, limit?}`. offset은 0부터 세며(기본 0, 최대 9007199254740991), limit은 기본 200, 범위 1–200입니다 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
+| `glob` | `{pattern, path?}`. `path`는 디렉터리여야 합니다 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |
+| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`. 기본으로 대소문자를 구분하며, maxResults는 기본 200, 범위 1–200입니다 | 검색한 `path`, `matches: [{path, line, text}]`(일치하는 줄마다 하나, 경로 다음 줄 번호 순), `truncated` |
+
+`limit`이나 `maxResults`가 범위를 벗어나면(0 포함) 입력 스키마 검사에서 거부되어 호출이
+실패합니다.
 
 `read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 자식 폴더를
 거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 안에 `spec`으로 선언된 자식 폴더 `rules`가
@@ -37,7 +40,7 @@
 `symlink`, `other`입니다. glob/grep은 검색한 논리적 `path`를 돌려주며, grep이 찾은 줄 번호는
 1부터 셉니다.
 
-경로는 도구를 선언한 Artifact를 기준으로 쓰는 상대 논리적 경로이며, 자식 폴더 안도 가리킬 수 있습니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
+경로는 도구를 선언한 Artifact를 기준으로 한 상대 논리 경로이며, 자식 폴더 안의 파일도 가리킬 수 있습니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
 그 도구를 쓸 수 있습니다. 절대 경로, 경로를 거슬러 올라가는 구성 요소, 심볼릭 링크는 받지
 않습니다. 논리적 경로는 4096자까지이고(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다), 경로 전체가 `.` 하나이면 list/glob/grep에서
 파일 Artifact의 가상 루트로 해석합니다. 그 밖에는 ASCII 제어 문자, 백슬래시, 콜론, 빈 구간, `.`이나 `..` 구간이 있으면

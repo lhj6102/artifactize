@@ -344,7 +344,7 @@ pub(super) fn declaration(
             if value.get_ref().get("fingerprint").is_none() {
                 declaration.fingerprint = Some(Fingerprint::Artifactsum {
                     files: vec![target.parse().expect("validated target logical path")],
-                    ignore: Vec::new(),
+                    ignore: Default::default(),
                 });
             }
             if let Some(Fingerprint::Artifactsum { files, .. }) = &declaration.fingerprint {

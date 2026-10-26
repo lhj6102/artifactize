@@ -146,6 +146,19 @@ impl App {
         }
         generation
     }
+
+    /// A closing window cancels running Human tools, Current scans and a Codex sign-in in
+    /// progress, as quitting the terminal UI does; the returned future ends once the scans and
+    /// the sign-ins have stopped.
+    pub fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
+        self.human.cancel_all();
+        let scans = self.currents.stop();
+        let sign_ins = self.settings.close();
+        async move {
+            scans.await;
+            sign_ins.await;
+        }
+    }
 }
 
 /// Build the Tauri app around `launch` on `builder`'s runtime; the caller runs it.
@@ -183,9 +196,9 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
             Ok(())
         })
         .on_window_event(|window, event| {
-            // A closing window cancels running Human tools, as quitting the terminal UI does.
+            // Nothing waits for the scans to stop: the app is closing.
             if let tauri::WindowEvent::Destroyed = event {
-                window.state::<App>().human.cancel_all();
+                drop(window.state::<App>().close());
             }
         })
 }

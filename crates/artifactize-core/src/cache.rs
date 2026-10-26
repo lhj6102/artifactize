@@ -17,7 +17,8 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 pub use crate::store::history::{Entry, list, remove, show};
-pub(crate) use content::{HASH_BUFFER_BYTES, ignore_patterns};
+pub(crate) use content::HASH_BUFFER_BYTES;
+pub use content::IgnorePatterns;
 
 use crate::{
     config::{ArtifactName, Eval, EvalDeclaration, Fingerprint, Profile, RepoConfig},
@@ -433,7 +434,7 @@ async fn content(
     config: &RepoConfig,
     id: &ArtifactName,
     inputs: &[crate::config::LogicalPath],
-    ignore: &[String],
+    ignore: &IgnorePatterns,
     cancellation: &CancellationToken,
 ) -> Result<PreparedFingerprint, String> {
     let files = content::files(config, id, inputs, ignore, cancellation).await?;

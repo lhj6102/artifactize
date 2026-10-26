@@ -1,6 +1,6 @@
 # Agent eval과 백엔드 {#agent-evals-and-backends}
 
-Agent eval은 명시한 백엔드 하나를 통해 정확히 지정한 모델 하나에 Artifact 리뷰를 맡깁니다.
+Agent eval은 지정한 백엔드 하나와 모델 하나로 Artifact를 리뷰합니다.
 모델은 선언한 읽기 전용 도구로 Artifact를 살펴보고, 엄격한 형식의 GREEN 또는 RED 판정을
 돌려줍니다.
 
@@ -38,17 +38,16 @@ artifactize models codex
 커스텀 provider는 그 API가 받는 값을 따르며, 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까지 대기하고 결과를 재사용하며, 리뷰가 끝날 때 입력을
-다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
+Agent eval도 Runtime eval과 똑같이 입력의 eval 결과가 나올 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝날 때 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
 제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 리뷰만
 합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트를 실행하거나 테스트
-대상 코드를 불러오지 않고, 테스트 코드를 읽어 평가 기준에서 요구하는 사항을 충분히 검증하는지 판단합니다. 테스트 묶음이
+대상 코드를 불러오지 않고, 테스트 코드를 읽어 평가 기준에서 요구하는 사항을 충분히 검증하는지 판단합니다. 테스트 모음이
 통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요. `{name}`
-참조마다 리뷰어에게 그 Artifact의 이름과 읽을 때 쓸 도구(파일 Artifact라면 경로도)를 알려
-주므로, 지시문에 도구 이름을 적을 필요는 없습니다.
+참조는 리뷰어에게 이름만으로 전달됩니다. artifactize가 지시문 뒤에 대상과 참조된 Artifact를 중복 없이 나열하고 각각의 역할(`target` 또는 `input`)과 읽기 도구를 표시하므로, 지시문에
+도구 이름을 적을 필요는 없습니다.
 
 Agent 리뷰는 스키마로 검사한 GREEN 또는 RED 판정을 돌려줍니다. 모델이 잘못된 결과를 돌려주면
 artifactize가 한 번 고쳐 달라고 요청하고, 그래도 잘못되면 리뷰는 ERROR가 됩니다.
@@ -64,7 +63,7 @@ Agent 프로필에서 `max_tokens`와 `max_tool_calls`로 리뷰의 한도를 �
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", max_tokens = 100000, max_tool_calls = 100 }
 ```
 
-모델 서비스는 읽고 쓰는 텍스트를 **토큰**이라는 작은 단어 조각 단위로 셉니다. 로그인이나 리뷰
+모델 서비스는 입력과 출력 텍스트의 양을 **토큰** 단위로 셉니다. 토큰은 단어보다 작은 텍스트 조각일 수 있습니다. 로그인이나 리뷰
 저장소의 토큰과는 상관없습니다. 두 예산 모두 선택 항목이며 1부터 9007199254740991까지의 정수를
 받습니다. 생략하면 그 예산은
 무제한입니다. 이는 provider의 생성 매개변수가 아니라 클라이언트 쪽 리뷰 예산입니다.
@@ -90,7 +89,9 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 
 Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
 기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
+ERROR입니다. 답변이 긴 공백으로만 이어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
+끝납니다. `verify`를 다시 실행하고, 계속 그러면 다른 모델이나 `reasoning`을 써 보세요.
+Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
@@ -113,17 +114,18 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 
 | `errorCode` | 원인 | 재시도 |
 |---|---|---|
-| `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부됨: HTTP 401/403, API 키 없음, Codex 로그인 없음, 만료된 인증 파일 | 안 함. 백엔드를 멈춤 |
-| `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 안 함. 백엔드를 멈춤 |
-| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상임 | 함 |
-| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림. 요청한 재시도 대기가 너무 길어도 이 분류를 유지 | 출력 전이면 함 |
-| `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 안 함 |
-| `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
-| `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘음 | 안 함 |
-| `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |
-| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
-| `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
-| `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
+| `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일이 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
+| `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
+| `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429입니다. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상인 경우입니다 | 합니다 |
+| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다 |
+| `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 하지 않습니다 |
+| `CANCELLED` | Run을 직접 취소했습니다(`run cancel` 또는 MCP `verify_cancel`) | 하지 않습니다 |
+| `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘었습니다 | 하지 않습니다 |
+| `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없습니다 | 하지 않습니다 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 하지 않습니다 |
+| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 하지 않습니다 |
+| `AGENT_ERROR` | 그 밖의 모든 경우입니다. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구가 해당합니다 | 하지 않습니다 |
+| `BACKEND_STOPPED` | 시작하지 않습니다. 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다 | — |
 
 provider의 오류 메시지에 artifactize가 보낸 자격 증명의 일부가 들어 있으면, 그 메시지는 보여
 주거나 저장하는 모든 곳에서 `[withheld: it contained part of the credential sent]`로 바뀝니다. 소유자 필드와
@@ -213,7 +215,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 전에
   갱신합니다. 서버가 갱신 토큰을 더 이상 허용하지 않으면 artifactize는 저장된 토큰을 지우고, 리뷰는 다시
   로그인하라는 오류로 끝납니다.
-- **이미 있는 Codex 로그인 쓰기.** 예를 들어 `ARTIFACTIZE_CODEX_AUTH_FILE`을 `~/.codex/auth.json`으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의 `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 지정한 파일은 1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로 쓰이지 않습니다. 그 파일을 쓰거나 복사하거나
+- **기존 Codex 로그인 사용하기.** 예를 들어 `ARTIFACTIZE_CODEX_AUTH_FILE`을 `~/.codex/auth.json`으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의 `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 지정한 파일은 1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로 쓰이지 않습니다. 그 파일을 쓰거나 복사하거나
   갱신하지는 않습니다. 토큰 만료까지 남은 시간이 1분 이하이면 리뷰는 `codex login` 등으로 Codex에 다시
   로그인하라는 메시지와 함께 실패합니다. `logout codex`는 그 파일을 건드리지 않습니다.
 - **요청.** provider는 대화를 보관하지 않습니다. 선언한 `reasoning`은 `max`를 포함해 그대로
@@ -232,7 +234,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 머신마다
 따로 설정합니다. 커스텀 provider는 Agent 프로필의 `backend`에 쓸 수 있는 이름으로, 데스크톱 앱의
 **Settings → Providers**에서 **+ Custom provider**를 누르거나 `artifactize provider`로 추가합니다.
-필요한 만큼 추가할 수 있으며, 종류는 둘 중 하나입니다.
+종류는 둘 중 하나입니다.
 
 - **별칭(alias)**: 기본 provider를 다른 이름으로 쓰며, 그 provider의 로그인이나 키를 그대로 씁니다.
 
@@ -263,7 +265,10 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 이 머신에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
 오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
-저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
+저장되고, 저장소 안에는 저장되지 않습니다. 이 파일은 최대 1 MiB까지만 읽습니다. 이를 넘으면 provider를 읽거나 바꾸는
+명령이 모두 `Credential file is too large.` 오류로 실패하며, `logout`과 `provider remove`도 마찬가지라
+이 명령으로는 파일을 줄일 수 없습니다. 대신 `providers.json`을 `$STATE/auth/` 밖으로 옮겨 백업으로 두고,
+계속 쓸 키와 provider를 `login`과 `provider add`로 다시 저장하세요. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.
 
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}
@@ -277,7 +282,7 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 | `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
 | `gemini` | `ARTIFACTIZE_GEMINI_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1beta/models/<model>:streamGenerateContent`, `GET <root>/v1beta/models` |
 | `codex` | `ARTIFACTIZE_CODEX_BASE_URL` | `http://127.0.0.1:8080/backend-api/codex` | `POST <root>/responses`, `GET <root>/models` |
-| Codex 로그인 | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token`과 `<root>/oauth/revoke`. `login codex`는 브라우저를 `<root>/oauth/authorize`로 보냄 |
+| Codex 로그인 | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token`과 `<root>/oauth/revoke`입니다. `login codex`는 브라우저를 `<root>/oauth/authorize`로 보냅니다 |
 
 - 루트는 `localhost`, `127.0.0.0/8`, `[::1]`의 `http://`나 `https://`여야 하며, 자격 증명,
   쿼리, 프래그먼트가 없어야 합니다. 그 밖의 값이면 연결하기 전에 리뷰, `models`, `doctor`가 그

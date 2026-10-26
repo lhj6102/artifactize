@@ -1,4 +1,4 @@
-name = "cli"
+name = "engine::cli"
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -17,7 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-style.payload]
 instruction = """
-Read the checklist {code-style}. Then review the Rust code of {cli} (src/ \
+Read the checklist {rules::code-style}. Then review the Rust code of {engine::cli} (src/ \
 and Cargo.toml; tests/ for M-TAUTOLOGICAL-TESTS and every TEST- rule) against every item. Tool paths are relative to the Artifact, for example src/main.rs. Submit \
 GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most \
 important first, each with the item id, a path:line and one sentence on what to change."""
@@ -57,7 +57,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-platform.payload]
 instruction = """
-Read the checklist {platform}. Then review the Rust code of {cli} (src/, \
+Read the checklist {rules::platform}. Then review the Rust code of {engine::cli} (src/, \
 tests/ and Cargo.toml) against every P- item. Tool paths are relative to the Artifact, for example src/main.rs. Submit \
 GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most \
 important first, each with the item id, a path:line and one sentence on what to change."""
@@ -91,25 +91,25 @@ title = "The Rust formatting check passes"
 profile = { kind = "runtime", command = "cargo", args = ["fmt", "--check", "-p", "artifactize"], timeout_ms = 60000 }
 
 [evals.fmt.payload]
-instruction = "Check the formatting of {cli}."
+instruction = "Check the formatting of {engine::cli}."
 
 [evals.clippy]
 title = "Clippy passes for every Rust target"
 profile = { kind = "runtime", command = "cargo", args = ["clippy", "--locked", "-p", "artifactize", "--all-targets", "--", "-D", "warnings"], timeout_ms = 1800000 }
 
 [evals.clippy.payload]
-instruction = "Check every Rust target of {cli} with {core} with {tools} with {tui} with {mcp} with the workspace {cargo-manifest} and {cargo-lock}, treating every clippy warning as an error."
+instruction = "Check every Rust target of {engine::cli} with {engine::core} with {engine::tools} with {engine::tui} with {engine::mcp} with the workspace {engine::cargo-manifest} and {engine::cargo-lock}, treating every clippy warning as an error."
 
 [evals.tests]
 title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked", "-p", "artifactize"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Run the tests of {cli} with {core} with {tools} with {tui} with {mcp} with the workspace {cargo-manifest} and {cargo-lock}. Fixtures build or declare every executable they use and own their resources."
+instruction = "Run the tests of {engine::cli} with {engine::core} with {engine::tools} with {engine::tui} with {engine::mcp} with the workspace {engine::cargo-manifest} and {engine::cargo-lock}. Fixtures build or declare every executable they use and own their resources."
 
 [evals.publish]
 title = "Every published Rust crate packages and builds"
 profile = { kind = "runtime", command = "node", args = ["publish.mjs"], timeout_ms = 1800000 }
 
 [evals.publish.payload]
-instruction = "Package and verify {cli}, {core}, {tools}, {tui} and {mcp} with the workspace {cargo-manifest} and {cargo-lock} exactly as publication would, without uploading. Allow the builder's uncommitted candidate; the package verification still builds every crate."
+instruction = "Package and verify {engine::cli}, {engine::core}, {engine::tools}, {engine::tui} and {engine::mcp} with the workspace {engine::cargo-manifest} and {engine::cargo-lock} exactly as publication would, without uploading. Allow the builder's uncommitted candidate; the package verification still builds every crate."

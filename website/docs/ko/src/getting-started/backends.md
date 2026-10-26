@@ -1,8 +1,7 @@
 # 백엔드와 로그인 {#backends-and-sign-in}
 
 Agent eval은 백엔드를 통해 모델 서비스에 리뷰를 요청하며, Runtime eval과 Human eval에는 백엔드가 필요하지 않습니다.
-Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini API 키나 Codex가 포함된
-ChatGPT 요금제 중 필요한 것을 쓰면 됩니다.
+Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini 가운데 사용할 서비스의 API 키를 준비하거나, Codex를 쓸 수 있는 ChatGPT 요금제를 사용하세요.
 
 Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. artifactize는
 모델 목록을 따로 제공하지 않으며, 지정한 백엔드나 모델을 다른 것으로 바꾸지도 않습니다.
@@ -15,7 +14,7 @@ Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정�
 API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys),
 [Anthropic Console](https://console.anthropic.com/settings/keys),
 [Google AI Studio](https://aistudio.google.com/apikey)에서 키를 만든 다음 `artifactize login`으로
-저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 stdin으로 읽습니다. 데스크톱 앱의
+저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 artifactize가 stdin에서 키를 읽습니다. 데스크톱 앱의
 **Settings → Providers**에 붙여 넣어 저장해도 됩니다. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
 Codex는 대신 아래의 별도 브라우저 로그인을 씁니다.
 
@@ -37,7 +36,7 @@ Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우�
 출력된 URL을 브라우저에 복사하세요. Codex CLI나 다른 앱의 로그인 기능이 포트 1455를
 사용 중이면, artifactize가 주소를 붙여 넣으라고 안내합니다. 다른 머신에서 로그인할 때도 URL을 붙여 넣는 방법을 쓰세요.
 `http://localhost:1455/auth/callback?code=`로 시작하는 전체 URL을
-터미널이나 데스크톱 로그인의 붙여 넣기 칸에 넣으세요. 로그인은 5분 안에 마쳐야 하며, 그 뒤에는
+터미널에 붙여 넣거나 데스크톱 앱의 로그인 창에 있는 URL 입력란에 붙여 넣으세요. 로그인은 5분 안에 마쳐야 하며, 그 뒤에는
 `login codex`를 다시 실행하세요. 페이지 로드에 실패했다면 브라우저 주소 표시줄에서,
 페이지가 계속 로딩 중이라면 개발자 도구 → Network에서 이 URL을 찾을 수 있습니다.
 `logout codex`는 artifactize의 토큰을 삭제하고

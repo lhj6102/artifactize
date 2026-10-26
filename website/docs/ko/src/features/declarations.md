@@ -12,9 +12,9 @@ artifactize config check
 
 ## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
 
-`kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성 eval을 지우세요. 필요한 Artifact는 해당 Artifact를 입력으로 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에서 `{name}`으로 참조하세요.
+`kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성만 선언하던 eval은 삭제하세요. 필요한 Artifact는 해당 Artifact를 입력으로 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에서 `{name}`으로 참조하세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
-`"Review {app} against {spec} and {assets}."`처럼 쓰세요. 그 입력을 쓰는 eval은 입력에 필요한 eval이 끝난 뒤 실행되고, 같은 Artifact에 선언된 eval이라도 그 입력을 쓰지 않으면 입력에 필요한 eval이 끝나기 전에도 실행됩니다.
+`"Review {app} against {spec} and {assets}."`처럼 쓰세요. 입력 Artifact를 참조하는 eval은 그 Artifact에 필요한 eval이 끝난 뒤 실행됩니다. 같은 Artifact에 선언됐더라도 그 입력을 참조하지 않는 eval은 먼저 실행할 수 있습니다.
 
 자식 폴더는 부모의 모든 eval이 참조하는 것으로 간주합니다. 그 밖의 Artifact의 리뷰가 먼저
 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
@@ -26,8 +26,7 @@ artifactize config check
 
 ## 선언 검사 {#declaration-validation}
 
-`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 이름이 확장자까지
-정확히 `<filename>`이고 같은 폴더에 있는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
+`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 같은 폴더에서 이름(확장자 포함)이 `<filename>`과 정확히 일치하는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
 
@@ -43,32 +42,29 @@ crates/app/tests/
 examples/
 ```
 
-이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 글자나 숫자로 시작하고, 글자, 숫자, 밑줄,
-하이픈으로 이뤄진 64자 이하여야 합니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은
-`combat::Code`처럼 앞에 Artifact를 묶어 구분하는 *space*의 이름과 `::`를 붙일 수 있습니다(`combat` space의 `Code`). space 이름과 나머지 부분은 각각 같은
-규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 보도록 돕는
-것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
+이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름 앞에 *space*(이름 공간) 이름과 `::`를 붙여 관련 Artifact를 묶을 수 있습니다. 예를 들어 `combat::Code`는 `combat` space의 `Code`입니다. space 이름과 나머지 부분은 각각 같은
+규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 볼 수 있게 도울 뿐이며, 그 자체로 전체 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
 `artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
 Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
-전체에서 하나뿐이어야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
+프로젝트 전체에서 중복되지 않아야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 
 | 필드 | 규칙 |
 |---|---|
-| `name` | 필수. Artifact 이름 |
-| `tags` | 선택. 비어 있지 않고 ASCII 제어 문자가 없는 고유한 문자열 최대 64개의 목록 |
-| `basis` | 선택. 불리언. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 요건은 없애지만 의존성의 리뷰 요건은 없애지 않음 |
-| `fingerprint` | 생략하면 artifactsum. `false`면 재사용 안 함. 그 밖에는 artifactsum이나 스크립트 테이블 |
-| `views.agent_tools`, `views.human_tools` | 선택. 선언한 도구의 맵 |
-| `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령. `command`와 `args`는 필수, `execution_paths`는 선택. 다른 필드는 없음 |
-| `views.agent_tools.<name>.session` | 선택. 같은 Artifact에 선언한 도구 세션 이름. 명령을 실행하는 Agent 도구에만 씀 |
-| `evals.<id>.title` | 필수. 비어 있지 않은 제목 |
-| `evals.<id>.mutex` | 선택. 고유한 계층형 mutex 태그 최대 64개의 목록. Runtime과 Agent eval에만 씀. 기본값 없음 |
-| `evals.<id>.profile` | 필수. `runtime`, `agent`, `human` 프로필 |
-| `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수. 비어 있지 않은 지시문 |
-| `evals.<id>.pass_schema`, `fail_schema` | 선택. 실행 가능한 eval의 소유자 필드 JSON Schema. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받음 |
-| `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은 프로필을 이름별로 최대 64개 선언. 각 항목에는 프로필 전체를 씀 |
+| `name` | 필수입니다. Artifact 이름입니다 |
+| `tags` | 선택 사항입니다. 비어 있지 않고 ASCII 제어 문자가 없는 고유한 문자열을 최대 64개 담은 목록입니다 |
+| `basis` | 선택 사항이며 불리언입니다. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 요건은 없애지만 의존성의 리뷰 요건은 없애지 않습니다 |
+| `fingerprint` | 생략하면 artifactsum을 씁니다. `false`면 재사용하지 않습니다. 그 밖에는 artifactsum이나 스크립트 테이블을 지정합니다 |
+| `views.agent_tools`, `views.human_tools` | 선택 사항입니다. 선언한 도구의 맵입니다 |
+| `views.agent_sessions.<name>.start`, `.stop` | 도구 세션 명령입니다. `command`와 `args`는 필수이고 `execution_paths`는 선택 사항입니다. 다른 필드는 없습니다 |
+| `views.agent_tools.<name>.session` | 선택 사항입니다. 같은 Artifact에 선언한 도구 세션 이름입니다. 명령을 실행하는 Agent 도구에만 씁니다 |
+| `evals.<id>.title` | 필수입니다. 비어 있지 않은 제목입니다 |
+| `evals.<id>.mutex` | 선택 사항입니다. 고유한 계층형 mutex 태그를 최대 64개 담은 목록입니다. Runtime과 Agent eval에만 씁니다. 기본값은 없습니다 |
+| `evals.<id>.profile` | 필수입니다. `runtime`, `agent`, `human` 프로필입니다 |
+| `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수입니다. 비어 있지 않은 지시문입니다 |
+| `evals.<id>.pass_schema`, `fail_schema` | 선택 사항입니다. 실행 가능한 eval의 소유자 필드 JSON Schema입니다. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받습니다 |
+| `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은 프로필을 이름별로 최대 64개 선언합니다. 각 항목에는 프로필 전체를 씁니다 |
 
 [도구 세션](tools/agent.md#tool-sessions)을 쓰면 리뷰 하나가 진행되는 동안 테스트 하네스를 계속 실행해 둘 수 있습니다.
 시작, 종료, 정리는 artifactize가 관리하며, 세션을 얼마나 오래 실행하고 언제 시작하거나 끝낼지 선언하는 옵션은 없습니다.
@@ -131,13 +127,13 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 ## 소유자 결과 스키마 {#owner-result-schemas}
 
 Agent와 Human 결과에는 `verdict`와 소유자가 정한 필드가 들어 있습니다. `pass_schema`(GREEN)와
-`fail_schema`(RED)에는 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
+`fail_schema`(RED)에는 이 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
 위의 `summary` 스키마라면 Agent는 `{"verdict":"GREEN","summary":"All requirements are
 covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필드로
 `{"summary":"All requirements are covered."}`만 입력합니다.
 
 이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 허용하는지 정하는
-규칙입니다. 결과 객체 전체의 스키마인 **결과 envelope**에는 일반 JSON Schema의 일부 기능만
+규칙입니다. 결과 객체 전체에 적용되는 스키마(**결과 envelope**)에는 일반 JSON Schema의 일부 기능만
 쓸 수 있으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
 `oneOf`, `not`)에도 제한이 있습니다.
 
@@ -162,13 +158,13 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 
 | 소유자 필드 스키마 | 리뷰에서 보이는 모습 |
 |---|---|
-| `{ type = "string" }`. `minLength`, `maxLength`를 붙일 수 있음 | 텍스트 상자 |
-| `{ type = "integer" }`나 `"number"`. `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`를 붙일 수 있음 | 숫자 상자 |
+| `{ type = "string" }`. `minLength`, `maxLength`를 붙일 수 있습니다 | 텍스트 상자 |
+| `{ type = "integer" }`나 `"number"`. `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`를 붙일 수 있습니다 | 숫자 상자 |
 | `{ type = "boolean" }` | true / false(선택 항목이면 – 도) |
-| `{ enum = ["a", "b"] }`. 문자열만, `type = "string"`은 써도 되고 안 써도 됨 | 선택지 |
-| `{ const = … }` | 표시하지 않고 값을 자동으로 채움 |
-| `{ type = "array", items = { type = "string" } }`. 항목에 `minLength`, `maxLength`를 붙일 수 있음 | 텍스트 상자 목록 |
-| `{ type = "array", items = { type = "object", properties = … } }`. 속성은 위의 단일 값 형태만 | 그 필드들의 반복 그룹 |
+| `{ enum = ["a", "b"] }`. 문자열만 받으며, `type = "string"`은 써도 되고 안 써도 됩니다 | 선택지 |
+| `{ const = … }` | 표시하지 않고 값을 자동으로 채웁니다 |
+| `{ type = "array", items = { type = "string" } }`. 항목에 `minLength`, `maxLength`를 붙일 수 있습니다 | 텍스트 상자 목록 |
+| `{ type = "array", items = { type = "object", properties = … } }`. 속성은 위의 단일 값 형태만 쓸 수 있습니다 | 그 필드들의 반복 그룹 |
 
 배열에는 `minItems`와 `maxItems`를 쓸 수 있습니다. 결과 객체와 각 그룹의 객체에는
 `type = "object"`, `properties`, `required`, `additionalProperties`를 씁니다. `required`에
@@ -185,7 +181,7 @@ Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습�
 
 ## 그래프 Artifact {#graph-artifact}
 
-저장소 루트에 이름 없는 `.artf`를 두면 프로젝트 전체의 Artifact Graph를 선언합니다.
+저장소 루트에 파일명이 `.artf`인 선언 파일을 두면 프로젝트 전체의 Artifact Graph를 선언할 수 있습니다.
 이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 같은 폴더의 그 파일을 선언합니다. 다른
 디렉터리에 이름 없는 `.artf`가 있으면 선언 오류입니다. 루트 `.artf`는 `index.artf`처럼
 `.artfignore` 패턴이 그 파일 이름을 가리켜도 읽습니다. 그래프 Artifact는 하나만 둘 수
@@ -256,11 +252,11 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 대상은 리뷰하는 동안 내내 심볼릭 링크가 아닌 일반 파일이어야 하며, `fingerprint = false`여도
 마찬가지입니다.
 
-- eval이 시작되기 전에 없거나 잘못됨: eval이 ERROR/PREPARATION_FAILED로 끝납니다.
-- Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못됨: 판정 대신 ERROR/INPUT_CHANGED로 끝납니다.
-- Human 리뷰 중에 없거나 잘못됨: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
+- eval이 시작되기 전에 없거나 잘못된 경우: eval이 ERROR/PREPARATION_FAILED로 끝납니다.
+- Runtime이나 Agent 리뷰가 끝날 때 없거나 잘못된 경우: 판정 대신 ERROR/INPUT_CHANGED로 끝납니다.
+- Human 리뷰 중에 없거나 잘못된 경우: 도구와 제출이 실패하고 요청은 계속 남아 있으니, 파일을 되돌려
   놓고 다시 시도하세요.
-- 내용이 바뀜: eval에 온전한 재사용 키가 있고 그 변경이 eval이 포함하는 fingerprint를 바꿀 때만
+- 내용이 바뀐 경우: eval에 온전한 재사용 키가 있고 그 변경이 eval이 포함하는 fingerprint를 바꿀 때만
   감지합니다. 이 파일이나 eval이 포함하는 다른 Artifact에 `fingerprint = false`가 있어 재사용 키가
   없거나, 파일을 바꿔도 스크립트로 계산한 fingerprint가 그대로이면 변경을 감지하지 못합니다. 그 밖에는
   Runtime이나 Agent 리뷰, 또는 승인이 ERROR/INPUT_CHANGED로 끝납니다. 일반 파일인지, 심볼릭 링크가
@@ -302,8 +298,7 @@ payload.instruction = "Run the end-to-end suite."
 `--jobs` 자리도 차지하지 않으며, `timeout_ms`는 eval이 시작할 때부터 셉니다. 태그는 eval이 끝나거나 취소되면
 풀리고, 프로세스가 죽거나 Run이 끝날 때도 풀립니다.
 
-태그는 Artifact가 아니라 그 eval에서 실행하는 명령이나 도구를 나타냅니다. 다른 eval이 테스트를 실행
-중이어도, 테스트 코드를 읽기만 하는 Agent eval까지 대기할 필요는 없습니다. 암묵적인 태그는 없습니다.
+태그는 Artifact가 아니라 그 eval에서 실행하는 명령이나 도구를 나타냅니다. 다른 eval이 테스트를 실행하는 동안에도, 테스트 코드를 읽기만 하는 Agent eval은 실행을 미룰 필요가 없습니다. 암묵적인 태그는 없습니다.
 mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fingerprint나 재사용 키가 바뀌지 않고,
 충돌하는 eval이 실행 중일 때도 캐시 결과는 재사용할 수 있습니다.
 

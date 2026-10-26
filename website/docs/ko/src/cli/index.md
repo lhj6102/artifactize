@@ -26,26 +26,26 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 
 | 명령 | 플래그 | 출력 | 종료 코드 |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N`(필요할 때만), `--fingerprint-jobs N`(CPU 수), `--max-executions N`, `--wait` 또는 `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Run ID 또는 `{run,state}`. `--wait`면 최종 텍스트/JSON, `--watch`면 JSON 줄 이벤트 | 접수되면 0. `--wait`나 `--watch`면 Run 결과 |
-| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N`(CPU 수). 기본은 `--all` | 텍스트 또는 JSON | 충족하면 0, 아니면 1 |
-| `mcp` | | [MCP stdio 프로토콜](../agent-plugin/mcp.md). 진단은 stderr | 정상적으로 연결이 끊기면 0 |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--jobs N`(필요할 때만), `--fingerprint-jobs N`(CPU 수), `--max-executions N`, `--wait` 또는 `--watch`, `--request-key KEY`, `--comment TEXT`, `--reuse-only KINDS`, `--speculate` | Run ID 또는 `{run,state}`를 출력합니다. `--wait`면 최종 텍스트/JSON을, `--watch`면 JSON 줄 이벤트를 출력합니다 | 접수되면 0, `--wait`나 `--watch`면 Run 결과 |
+| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N`(CPU 수). 기본값은 `--all`입니다 | 텍스트 또는 JSON | 충족하면 0, 아니면 1 |
+| `mcp` | | [MCP stdio 프로토콜](../agent-plugin/mcp.md)입니다. 진단은 stderr로 출력합니다 | 정상적으로 연결이 끊기면 0 |
 | `config check` | | 텍스트 또는 JSON | 0 |
 | `config graph [ARTIFACT]` | `--impact` | 텍스트 또는 JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N`(50), `--offset N`(0) | 텍스트 또는 JSON | 0 |
 | `run watch RUN_ID` | | JSON 줄로 상태 변화, eval 결과, 최종 검증 | Run 결과 |
 | `run cancel RUN_ID` | | 취소 요청을 받았다는 JSON | 0 |
-| `run show RUN_ID` | `--wait`, `--timeout-ms MS`(600000, `--wait` 필요) | JSON | 0. `--wait`면 Run 결과 |
+| `run show RUN_ID` | `--wait`, `--timeout-ms MS`(600000, `--wait` 필요) | JSON | 0, `--wait`면 Run 결과 |
 | `request list` | `--run RUN_ID` | 텍스트 또는 JSON | 0 |
 | `request show ID` | | JSON | 0 |
 | `request logs ID` | `--stream stdout\|stderr\|both`, `--tail N`, `--start N`, `--end N`, `--search TEXT` | 크기가 제한된 증거 JSON | 0 |
 | `request claim ID` | `--reviewer NAME`(`$USER`) | JSON | 0 |
 | `request unclaim ID` | `--reviewer NAME`(`$USER`) | JSON | 0 |
-| `request tool ID TOOL` | `--reviewer NAME` | 텍스트 또는 JSON | 0. 도구 오류면 2 |
-| `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0. RED여도 0 |
+| `request tool ID TOOL` | `--reviewer NAME` | 텍스트 또는 JSON | 0, 도구 오류면 2 |
+| `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, RED여도 0 |
 | `session show REF` | `--summary` | 텍스트, 또는 저장된 이벤트(또는 요약)를 담은 JSON | 0 |
 | `session send REF MESSAGE` | | 텍스트 또는 JSON | 0 |
 | `cache list` | `--history` | 텍스트 또는 JSON | 0 |
-| `cache show KEY` | `--history` | JSON | 0. 없으면 4 |
+| `cache show KEY` | `--history` | JSON | 0, 없으면 4 |
 | `cache rm KEY` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 준비됐으면 0, 아니면 1 |
 | `tools read PATH` | — | UTF-8 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
@@ -53,27 +53,27 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `tools glob PATTERN [PATH]` | — | JSON | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools grep PATTERN [PATH]` | `--glob GLOB`, `--case-insensitive` | JSON | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools section PATH HEADING` | — | Markdown 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
-| `tools help PROGRAM [SUBCOMMAND...]` | 뒤따르는 인자는 `--help` 앞에 붙여 PROGRAM에 전달 | 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
-| `tools open TARGET` | — | 기본 애플리케이션으로 엶 | 성공 0, 도구 오류 1, 사용법 오류 2 |
-| `login codex` | 로그인 URL은 stderr에 출력. 터미널 stdin에서 붙여 넣은 리디렉션 URL을 읽을 수 있음 | `Signed in with Codex.`. JSON은 `{"provider":"codex","signed_in":true}` | 0 |
-| `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽음 | `Saved the PROVIDER API key.`. JSON은 `{"provider":…,"saved":true}` | 0 |
-| `logout codex` | 로컬 토큰을 지우고 폐기를 시도. 읽기 전용 인증 파일은 건드리지 않음 | `Signed out of Codex.`. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 로컬 로그아웃 뒤 0 |
-| `logout openai\|anthropic\|gemini` | 저장한 키를 지움. 변수는 건드리지 않음 | `Forgot the saved PROVIDER API key.`. JSON은 `{"provider":…,"saved":false}` | 0 |
-| `provider list` | | 기본 provider마다 키 출처와 커스텀 provider 전체. 키 값은 출력하지 않음. 텍스트 또는 JSON | 0 |
-| `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 선택 항목 `--key`(키는 stdin. 없으면 엔드포인트에 키가 없음) | `Saved custom provider NAME.`. JSON은 `{"provider":NAME,"saved":true}` | 0 |
-| `provider remove NAME` | | `Removed custom provider NAME.`. JSON은 `{"provider":NAME,"saved":false}` | 0 |
-| `remote login URL` | `--share summary\|full`(summary). 토큰은 stdin으로 | `Signed in to URL as NAME (scopes: …).`. JSON은 `{"url":…,"share":…,"principal":…,"scopes":[…]}` | 0 |
-| `remote logout` | | `Signed out of the remote review store.`와 함께, 서버에서는 `server token revoke` 전까지 토큰이 유효하다는 안내. JSON은 `{"signedIn":false}` | 0 |
-| `remote status` | | URL, 공유 수준, 토큰 출처, 접속 가능 여부, 이어서 주체와 범위 또는 오류. JSON은 아래 참고 | 로그인 상태면 0, 아니면 1 |
+| `tools help PROGRAM [SUBCOMMAND...]` | 뒤따르는 인자는 `--help` 앞에 붙여 PROGRAM에 전달합니다 | 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
+| `tools open TARGET` | — | 기본 애플리케이션으로 엽니다 | 성공 0, 도구 오류 1, 사용법 오류 2 |
+| `login codex` | 로그인 URL은 stderr에 출력합니다. 터미널 stdin에서 붙여 넣은 리디렉션 URL을 읽을 수 있습니다 | `Signed in with Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":true}`입니다 | 0 |
+| `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽습니다 | `Saved the PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":true}`입니다 | 0 |
+| `logout codex` | 로컬 토큰을 지우고 폐기를 시도합니다. 읽기 전용 인증 파일은 건드리지 않습니다 | `Signed out of Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}`입니다 | 로컬 로그아웃 뒤 0 |
+| `logout openai\|anthropic\|gemini` | 저장한 키를 지웁니다. 변수는 건드리지 않습니다 | `Forgot the saved PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":false}`입니다 | 0 |
+| `provider list` | | 기본 provider별 키 출처와 커스텀 provider 전체를 보여 줍니다. 키 값은 출력하지 않습니다. 형식은 텍스트 또는 JSON입니다 | 0 |
+| `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 선택 항목 `--key`(키는 stdin에서 읽습니다. 없으면 엔드포인트에 키가 없습니다) | `Saved custom provider NAME.`라고 출력합니다. JSON은 `{"provider":NAME,"saved":true}`입니다 | 0 |
+| `provider remove NAME` | | `Removed custom provider NAME.`라고 출력합니다. JSON은 `{"provider":NAME,"saved":false}`입니다 | 0 |
+| `remote login URL` | `--share summary\|full`(summary). 토큰은 stdin으로 받습니다 | `Signed in to URL as NAME (scopes: …).`라고 출력합니다. JSON은 `{"url":…,"share":…,"principal":…,"scopes":[…]}`입니다 | 0 |
+| `remote logout` | | `Signed out of the remote review store.`와 함께, 서버에서는 `server token revoke` 전까지 토큰이 유효하다고 안내합니다. JSON은 `{"signedIn":false}`입니다 | 0 |
+| `remote status` | | URL, 공유 수준, 토큰 출처, 접속 가능 여부를 보여 주고, 이어서 주체와 범위 또는 오류를 보여 줍니다. JSON은 아래를 참고하세요 | 로그인 상태면 0, 아니면 1 |
 | `remote push` | `--dry-run` | 텍스트 또는 JSON | 0 |
 | `models PROVIDER` | 기본 provider나 커스텀 provider | 텍스트 또는 JSON | 0 |
 | `doctor` | | 텍스트 또는 JSON | 준비됐으면 0, 심각한 오류면 1 |
-| `limits` | `--signoff-idle-grace SECONDS`(0–86400) | 지금 적용되는 머신 전체 한도. 텍스트 또는 JSON | 0 |
+| `limits` | `--signoff-idle-grace SECONDS`(0–86400) | 지금 적용되는 머신 전체 한도를 보여 줍니다. 형식은 텍스트 또는 JSON입니다 | 0 |
 | `prune` | `--older-than DURATION`, `--dry-run` | 텍스트 또는 JSON | 0 |
-| `monitor [PATH]` | ALL에서 시작. PATH나 `--repo PATH`는 처음 고를 저장소만 정함. `--all`은 경로와 함께 쓸 수 없음 | 터미널 UI | 0 |
-| `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값, `--repo`와 함께 쓸 수 없음), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
-| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`), 호스트 이름은 안 됨. 포트가 0이면 사용 가능한 포트를 선택하고 그 번호를 출력함 | `Listening on http://ADDR/`. JSON은 `{"listen":ADDR}` | 0 |
-| `server token add NAME --scopes SCOPES` | `--scopes`(필수, 기본값 없음. `read`, `publish`, `human`을 쉼표로 이은 목록) | 토큰을 한 번 출력하고 저장해 두라고 안내. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}` | 0 |
+| `monitor [PATH]` | ALL에서 시작합니다. PATH나 `--repo PATH`는 처음 고를 저장소만 정합니다. `--all`은 경로와 함께 쓸 수 없습니다 | 터미널 UI | 0 |
+| `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값이며 `--repo`와 함께 쓸 수 없습니다), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
+| `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`) 형식이며, 호스트 이름은 사용할 수 없습니다. 포트가 0이면 사용 가능한 포트를 골라 그 번호를 출력합니다 | `Listening on http://ADDR/`라고 출력합니다. JSON은 `{"listen":ADDR}`입니다 | 0 |
+| `server token add NAME --scopes SCOPES` | `--scopes`(필수이며 기본값은 없습니다. `read`, `publish`, `human`을 쉼표로 이은 목록입니다) | 토큰을 한 번 출력하고 저장해 두라고 안내합니다. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}`입니다 | 0 |
 | `server token list` | | 텍스트 또는 JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
 | `server rm KEY` | | JSON | 0 |
@@ -135,7 +135,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 `--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
 볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
-열(없으면 `-`)에 보여 주고, `verify`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
+`--wait` 없이 `verify`가 출력하는 JSON은 Run과 그 상태만 알려 줍니다.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -144,7 +145,7 @@ artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
 
-`verify --wait`는 stderr에 Run ID를 알리고, Run이 끝날 때까지 대기한 다음 eval마다 결과를
+`verify --wait`는 stderr에 Run ID를 출력하고, Run이 끝날 때까지 기다린 다음 eval마다 결과를
 출력하고 Run의 [종료 코드](#command-reference)로 종료합니다. Run 자체의 진단(최대 64 KiB)과
 Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 [runtime-relations 예제](../getting-started/examples.md)에서 GREEN, RED, 막힌 eval을 나란히
@@ -158,8 +159,8 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 
 | 모드 | 실행 방식 |
 |---|---|
-| 기본 | 실행 게이트가 막지 않으면 eval을 시작. 선택한 승인이 아직 대기 중이어도 그에 의존하는 eval은 바로 실행되며, GREEN 결과는 승인 결과가 GREEN이 될 때까지 PROVISIONAL로 표시됨 |
-| `--speculate` | 게이트가 정해지기 전에 Runtime과 Agent 리뷰를 시작 |
+| 기본 | 실행 게이트가 막지 않으면 eval을 시작합니다. 선택한 승인이 아직 대기 중이어도 그에 의존하는 eval은 바로 실행되며, GREEN 결과는 승인 결과가 GREEN이 될 때까지 PROVISIONAL로 표시됩니다 |
+| `--speculate` | 게이트가 정해지기 전에 Runtime과 Agent 리뷰를 시작합니다 |
 
 승인은 추측 실행으로 요청하지 않습니다. 승인을 언제 요청하는지, 그 승인에 의존하는 eval이 어떻게 실행되는지는
 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)를 보세요. `--speculate`에서는 새로 준비된 작업을
@@ -204,9 +205,9 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
 프로그램을 시작하지 못하거나 리뷰가 ERROR로 끝나도 이 횟수는 유지합니다. 사람을 기다리는 시간, 담당 지정, Human 도구는 시작
 횟수에 들어가지 않고, fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에 합류하는 것도
-마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. Agent 리뷰에서는
-시작 횟수를 센 뒤 `execution_paths`에 지정한 도구 파일의 해시를 기록합니다. 이 단계가
-실패해도 시작 횟수는 그대로 남고, 리뷰는 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED로 끝납니다.
+마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. `execution_paths`에
+지정한 도구 파일을 읽지 못한 Agent 리뷰는 시작 횟수에 들어가고, 모델을 호출하지 않은 채
+ERROR/PREPARATION_FAILED로 끝납니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
 실행해야 하면, 다시 실행하는 리뷰는 그 리뷰가 속한 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
@@ -259,7 +260,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 
 `artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
 범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
-합니다. Artifact 선택자는 그 Artifact를 리뷰하는, 순환으로 묶인 대상의 eval도 함께 실행합니다.
+합니다. Artifact를 선택하면 같은 순환에 속해 그 Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다.
 `--force`는 그래도 직접 선택한 eval만 새로 리뷰하도록 표시합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
 관계를 맺지 않습니다.
 
@@ -277,17 +278,17 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 
 | 상태 | eval | Artifact |
 |---|---|---|
-| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족됨 | eval이 모두 `PASS`이고 의존하는 Artifact도 모두 검증 요건을 충족함 |
-| `RED` | 현재 재사용 키에 맞는 RED 결과가 있음 | eval 중 하나가 `RED` |
-| `BLOCKED` | 게이트가 RED | eval 중 하나가 `BLOCKED` |
-| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없음 | eval 중 하나가 대기 중 |
-| `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있음 | — |
-| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있음 | eval 중 하나가 `DEFERRED` |
-| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL` | eval 중 하나가 `PROVISIONAL` |
-| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없음(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE` |
-| `UNREVIEWED` | 리뷰한 적이 없음 | 리뷰한 eval이 없거나 eval이 없음 |
-| `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않음 |
-| `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact |
+| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족합니다 | eval이 모두 `PASS`이고 의존하는 Artifact도 모두 검증 요건을 충족합니다 |
+| `RED` | 현재 재사용 키에 맞는 RED 결과가 있습니다 | eval 중 하나가 `RED`입니다 |
+| `BLOCKED` | 게이트가 RED입니다 | eval 중 하나가 `BLOCKED`입니다 |
+| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없습니다 | eval 중 하나가 대기 중입니다 |
+| `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있습니다 | — |
+| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있습니다 | eval 중 하나가 `DEFERRED`입니다 |
+| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL`입니다 | eval 중 하나가 `PROVISIONAL`입니다 |
+| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없습니다(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE`입니다 |
+| `UNREVIEWED` | 리뷰한 적이 없습니다 | 리뷰한 eval이 없거나 eval이 없습니다 |
+| `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않습니다 |
+| `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact입니다 |
 
 Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
 `STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다. `ERROR`는 Run 출력에만 나오며,
@@ -296,8 +297,7 @@ Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PR
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
 
 저장된 증거가 있으면 `run show RUN_ID --json`과 `verify --wait --json`의 출력 객체 최상위에
-`evidence` 필드가 들어갑니다. Run 필드는 `run`으로 감싸지 않고 출력 객체에 바로 들어갑니다. `evidence`는 이
-Run에서 요청 없이 사용한 저장된 판정을 eval ID별로 담습니다. 일부 eval만 실행한 Run에서 상위 eval의 결과를 캐시에서 가져와 쓴 경우가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
+`evidence` 필드가 들어갑니다. Run 필드는 `run`으로 감싸지 않고 출력 객체에 바로 들어갑니다. `evidence`에는 이 Run에서 새 요청을 만들지 않고 사용한 저장된 판정이 eval ID별로 담깁니다. 일부 eval만 실행한 Run에서 상위 eval의 결과를 캐시에서 가져와 쓴 경우가 그 예입니다. 전체 기록에서 가장 최근 판정을 담는 것은 아닙니다. [Run](../features/run.md#verify-and-runs)을
 보세요. 터미널에서 쓰는 키와 화면 배치는 [Monitor](../tui/index.md#monitor)와
 [Human 리뷰](../tui/index.md#review)에 있습니다.
 
@@ -372,9 +372,8 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `--limit N`(기본 50)과 `--offset N`(기본 0)은 각각 0–4294967295 범위로, 걸러 낸 결과를
 페이지로 나눕니다. 범위를 벗어난 값을 지정하면 종료 코드 2로 끝납니다. 각 행에는 Run ID, 저장소, 생성·완료
 시각, 상태, 판정과 상태별 요청 수(해당 상태가 없으면 0), Run의
-[코멘트](#submission-and-watching)(있을 때)가 나옵니다. 읽을 수 없는 요청은 세지
-않으며, `unreadable`에 손상된 기록과 그 이유가 나오고 유효한 증거는 그대로 볼 수 있습니다.
-[상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
+[코멘트](#submission-and-watching)(있을 때)가 나옵니다. `run list`는 손상된 기록을 확인하지
+않으며, 손상된 기록과 그 이유는 `status`와 `run show`가 알려 줍니다. [상태 문제 해결](../features/others/state.md#unreadable-records)을 보세요. 읽기만 하므로
 프로젝트 코드를 실행하지 않고, 없는 상태를 만들지 않으며, 저장소가 지금 남아 있지 않아도
 됩니다. 별도의 `history` 명령은 없습니다.
 
@@ -441,7 +440,9 @@ You are an artifactize evaluator. …
 ── User (turn 1)
 Eval: Review notes (notes/review)
 Target Artifact: notes
-Instruction: Check Artifact notes (tools: read_notes). …
+Instruction: Check notes. …
+Artifacts:
+[{"name":"notes","role":"target","tools":["read_notes"]}]
 
 ── Assistant (turn 1)
 [reasoning] Reading the notes
@@ -502,24 +503,26 @@ provider가 보고한 값을 합산한 것이며, 한 번도 보고되지 않은
 (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`, `requestId`,
 `reference`가 들어 있습니다.
 
-**이어서 묻기.**
+**follow-up으로 이어서 묻기.**
 
 ```sh
 artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
 ```
 
 ```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna · files changed since this review
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
+
+머리말에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이
 바뀌었는지(알 수 없으면 null), `answer`는 답변 텍스트, `usage`는 시도별 토큰 수입니다.
 
 follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
-텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
+텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 머리말에
 경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 캐시, 저장되는 메시지, 호환성은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
 보세요.

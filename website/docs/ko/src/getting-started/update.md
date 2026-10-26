@@ -5,11 +5,11 @@
 | 설치 방법 | 업데이트 |
 |---|---|
 | `install.sh` 또는 `install.ps1` | 같은 명령을 다시 실행하세요. 데스크톱 앱도 함께 업데이트됩니다 |
-| Homebrew | `brew upgrade artifactize`. 데스크톱 앱은 `brew upgrade --cask artifactize` |
-| Microsoft Store | 자동. 또는 Store 앱의 **라이브러리 → 업데이트 받기** |
+| Homebrew | `brew upgrade artifactize`를 실행하세요. 데스크톱 앱은 `brew upgrade --cask artifactize`로 업데이트합니다 |
+| Microsoft Store | 자동으로 업데이트됩니다. Store 앱의 **라이브러리 → 업데이트 받기**로 직접 받을 수도 있습니다 |
 | 디스크 이미지, `.deb` 또는 AppImage | 최신 릴리스의 설치 파일을 같은 방법으로 설치하세요 |
-| `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
-| `cargo install` | `cargo install artifactize artifactize-tools --locked`. 체크아웃에서는 `git pull` 후 `cargo install --path`를 반복하세요 |
+| `cargo binstall` | `cargo binstall artifactize artifactize-tools`를 실행하세요 |
+| `cargo install` | `cargo install artifactize artifactize-tools --locked`를 실행하세요. 체크아웃에서는 `git pull` 후 `cargo install --path`를 반복하세요 |
 
 설치 스크립트나 Cargo를 쓰면 릴리스가 게시되는 즉시 그 버전을 설치할 수 있습니다. Homebrew와
 Microsoft Store는 안정 릴리스만 제공하며, Microsoft가 검토하는 동안 Store 업데이트가
@@ -25,7 +25,7 @@ artifactize는 업데이트를 직접 내려받거나 설치하지 않습니다.
 위 표의 업데이트 방법을 안내하고, 설치 방식을 확인할 수 없으면 릴리스 페이지를 안내합니다.
 Microsoft Store로 설치했다면 Store가 업데이트하므로 아무것도 표시하지 않습니다.
 
-GitHub에 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 말고는
+GitHub에서 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 말고는
 아무것도 담기지 않습니다. 확인을 끄려면 `ARTIFACTIZE_NO_UPDATE_CHECK=1`을 설정하세요.
 
 ### 0.16으로 업그레이드 {#upgrading-to-016}
@@ -56,7 +56,7 @@ GitHub에 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 �
 
 게이트 우회(`review_policy.dependency_gates`를 포함한 `--ignore-gates`와 `review_policy`)는
 제거되었습니다. 빈 `review_policy` 테이블도 설정 검사에 실패하니 지우세요. 의존하는 eval의 판정이 나오기
-전에 검사를 실행하려면 verify 요청에 `--speculate`를 붙이세요. 이 옵션도 최종 승인을 면제하지 않습니다. 승인은 이제 다른
+전에 eval을 실행하려면 verify 요청에 `--speculate`를 붙이세요. 이 옵션도 최종 승인을 면제하지 않습니다. 승인은 이제 다른
 eval을 막지 않습니다([0.16으로 업그레이드](#upgrading-to-016) 참고). [Run과 status](../features/run.md)를 보세요.
 인자 없이 실행한 `artifactize monitor`는 ALL에서 시작합니다. `monitor .`, 위치 인자 경로, 또는 `--repo`는
 처음에 그 저장소를 선택합니다.
@@ -81,9 +81,9 @@ Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, �
 결과를 제출해도 요청을 맡은 것으로 처리되지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
 현재 조작 방법은 [Human 리뷰와 Monitor](../features/human.md)를 보세요.
 
-0.5.0은 `chatgpt`와 `claude` Agent 백엔드를 `login chatgpt`,
-`logout chatgpt`, 내부 `mcp` 명령과 함께 제거하고, ChatGPT 요금제
-사용자를 위한 `codex`를 추가합니다. `config check`는 제거된 백엔드를 아직 쓰는
+0.5.0부터는 `chatgpt`와 `claude` Agent 백엔드가 `login chatgpt`,
+`logout chatgpt`, 내부 `mcp` 명령과 함께 제거되었으며, ChatGPT 요금제
+사용자를 위한 `codex` 백엔드가 추가되었습니다. `config check`는 제거된 백엔드를 아직 쓰는
 eval이나 프로필 변형을 찾아 대신 쓸 백엔드를 안내합니다. artifactize는 이전 릴리스가 저장한 ChatGPT
 토큰을 더 이상 쓰지 않습니다. ChatGPT 설정에서 artifactize 연결을 끊은 다음
 상태 디렉터리에서 `auth/chatgpt.json`, `auth/chatgpt-registration.json`, `auth/chatgpt.lock`을

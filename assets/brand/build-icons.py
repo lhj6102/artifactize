@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Derive all brand assets from artifactize-icon.svg and og-template.svg.
+"""Derive all brand assets from artifactize-icon.svg, and the social cards from
+the example graph in assets/others.
 
 Run with python3 assets/brand/build-icons.py; --check compares bytes without
-writing. The template contains outlined text, so no installed fonts are needed.
+writing. No installed fonts are needed.
 """
 
 import argparse
@@ -14,6 +15,14 @@ import sys
 import xml.etree.ElementTree as ET
 
 BRAND = Path(__file__).resolve().parent
+OTHERS = BRAND.parent / "others"
+# The social cards: the example graph each shows, at its size. The pages' cards are 1200x630;
+# GitHub crops a repository's social preview to 2:1, so its card is 1280x640.
+CARDS = {
+    "og.jpg": ("graph-example.en.png", (1200, 630)),
+    "og.ko.jpg": ("graph-example.ko.png", (1200, 630)),
+    "github-social-preview.jpg": ("graph-example.en.png", (1280, 640)),
+}
 NS = "http://www.w3.org/2000/svg"
 SUPERSAMPLE = 8
 
@@ -152,16 +161,6 @@ def generated_assets():
     apple = rasterize(square_canvas(source, bounds, 0.80, "#090B0F"), 180, 180)
     assert apple.getchannel("A").getextrema() == (255, 255)
 
-    template = (BRAND / "og-template.svg").read_text(encoding="utf-8")
-    icon = re.sub(r'^<svg[^>]*>', (
-        f'<svg xmlns="{NS}" x="320" y="127" width="94" height="90" '
-        f'viewBox="{bounds[0]:.6f} {bounds[1]:.6f} {width:.6f} {height:.6f}">'
-    ), mark, count=1)
-    if template.count("{{icon}}") != 1:
-        raise ValueError("OG template must contain exactly one {{icon}} placeholder")
-    og = rasterize(template.replace("{{icon}}", icon), 1200, 630).convert("RGB")
-    jpeg = BytesIO()
-    og.save(jpeg, format="JPEG", quality=92, subsampling=0, optimize=True, progressive=True)
     return {
         "artifactize-icon-mark.svg": mark.encode("utf-8"),
         "artifactize-icon-h56.png": png_bytes(rasterize(mark, round(width / height * 56), 56)),
@@ -169,8 +168,30 @@ def generated_assets():
         "favicon.png": png_bytes(rasterize(favicon, 48, 48)),
         "artifactize-icon.ico": ico_bytes(favicon),
         "apple-touch-icon.png": png_bytes(apple.convert("RGB")),
-        "og.jpg": jpeg.getvalue(),
+        **{name: social_card(OTHERS / graph, size) for name, (graph, size) in CARDS.items()},
     }
+
+
+def social_card(graph, size):
+    """The example graph at the card's height, its edge columns repeated out to the card's
+    width; every edge column of the figure is one colour per row, so the card has no seam."""
+    with Image.open(graph) as image:
+        figure = image.convert("RGB")
+    card_width, card_height = size
+    width = round(figure.width * card_height / figure.height)
+    if width > card_width:
+        raise ValueError(f"{graph.name} is wider than the {card_width}x{card_height} card")
+    scaled = figure.resize((width, card_height), Image.Resampling.LANCZOS)
+    left = (card_width - width) // 2
+    right = card_width - left - width
+    card = Image.new("RGB", size)
+    card.paste(scaled.crop((0, 0, 1, card_height)).resize((left, card_height)), (0, 0))
+    card.paste(scaled, (left, 0))
+    card.paste(scaled.crop((width - 1, 0, width, card_height)).resize((right, card_height)),
+               (left + width, 0))
+    jpeg = BytesIO()
+    card.save(jpeg, format="JPEG", quality=92, subsampling=0, optimize=True, progressive=True)
+    return jpeg.getvalue()
 
 
 def main():
@@ -208,7 +229,7 @@ def main():
         print("Regenerate with python3 assets/brand/build-icons.py and commit the outputs.", file=sys.stderr)
         return 1
     if args.check:
-        print(f"All {len(assets)} generated brand assets match the source and template byte-for-byte.")
+        print(f"All {len(assets)} generated brand assets match their sources byte-for-byte.")
     return 0
 
 

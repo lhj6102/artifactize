@@ -97,14 +97,10 @@ with the same request key returns the first Run and its comment.
 
 ### Sign-offs and the end of a Run
 
-A sign-off is requested as soon as its own prerequisites pass: its Artifact's other
-machine evals are GREEN (a GREEN still PROVISIONAL on another sign-off counts) and no gate
-holds it. It never holds up other evals: what relies
-on it runs at once, and its GREEN results stay PROVISIONAL until the sign-off is GREEN;
-its own RED or ERROR shows as it is. Other
-machine work may still be running when it is requested; to review the final state, wait
-until it has finished. Its request shows DEFERRED. Neither DEFERRED nor PROVISIONAL is
-approval. This holds for sign-offs the Run selected. A sign-off outside the selection is
+A sign-off is requested once its Artifact's machine evals pass, as
+[Human sign-offs](artifact.md#human-sign-offs) describes, and shows DEFERRED; what relies on
+it runs at once and stays PROVISIONAL, as [Human reviews](human.md) explains. This holds
+for sign-offs the Run selected. A sign-off outside the selection is
 an obligation like any other: what relies on it waits for a reusable approval, and without
 one the Run ends INCOMPLETE. Select it too, for example with `--recursive` or `--all`.
 

@@ -1,4 +1,4 @@
-name = "agent-plugin"
+name = "agent::plugin"
 tags = ["type:plugin"]
 
 # This folder is the one plugin every host installs: the Agent Plugins manifest and MCP
@@ -11,10 +11,10 @@ read = { builtin = "read" }
 
 [evals.claude-code-installs]
 title = "Claude Code installs the plugin with its skill and MCP server"
-profile = { kind = "runtime", command = "python3", args = ["-I", "{arti-onramp}/agent_plugin.py", "claude", "{agent-plugin}", "{claude-marketplace}"], timeout_ms = 600000 }
-payload.instruction = "Install {agent-plugin} from {claude-marketplace} into a disposable configuration of the installed Claude Code, and check that it validates and loads every skill of the folder and the artifactize MCP server for the session's project."
+profile = { kind = "runtime", command = "python3", args = ["-I", "{agent::onramp}/agent_plugin.py", "claude", "{agent::plugin}", "{agent::claude-marketplace}"], timeout_ms = 600000 }
+payload.instruction = "Install {agent::plugin} from {agent::claude-marketplace} into a disposable configuration of the installed Claude Code, and check that it validates and loads every skill of the folder and the artifactize MCP server for the session's project."
 
 [evals.codex-installs]
 title = "Codex installs the plugin with its skill and MCP server"
-profile = { kind = "runtime", command = "python3", args = ["-I", "{arti-onramp}/agent_plugin.py", "codex", "{agent-plugin}", "{codex-marketplace}"], timeout_ms = 600000 }
-payload.instruction = "Install {agent-plugin} from {codex-marketplace} into a disposable configuration of the installed Codex, and check that it loads every skill of the folder and launches the artifactize MCP server as `artifactize mcp`, which Codex starts in the installed plugin's folder."
+profile = { kind = "runtime", command = "python3", args = ["-I", "{agent::onramp}/agent_plugin.py", "codex", "{agent::plugin}", "{agent::codex-marketplace}"], timeout_ms = 600000 }
+payload.instruction = "Install {agent::plugin} from {agent::codex-marketplace} into a disposable configuration of the installed Codex, and check that it loads every skill of the folder and launches the artifactize MCP server as `artifactize mcp`, which Codex starts in the installed plugin's folder."

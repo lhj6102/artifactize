@@ -13,6 +13,7 @@ it("shows the whole notice on a click and folds it on the next", async () => {
     title: "Run run-c",
     focused: false,
     notice,
+    noticeOpen: false,
     children: createRawSnippet(() => ({ render: () => "<p>graph</p>" })),
   });
   const status = screen.getByRole("status");

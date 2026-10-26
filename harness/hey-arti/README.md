@@ -4,7 +4,7 @@ The harness keeps **source fixtures** separate from builder outputs and live
 quality evidence. `cases.toml` supplies goals, obligations, edit/evolution requests
 and explicit private-fixture consent, not completed declarations or a golden
 partition. Source fixtures are ignored by project declaration discovery but their
-bytes are covered by `arti-harness`'s fingerprint.
+bytes are covered by `agent::harness`'s fingerprint.
 
 | Case | Observable boundary |
 | --- | --- |

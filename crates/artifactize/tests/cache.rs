@@ -150,7 +150,7 @@ impl Fixture {
                     assert_eq!(view.run.repo_path, support::os::canonical(repo));
                     let request = &view.requests[0];
                     if ready(request) {
-                        return request.clone();
+                        return store::Request::clone(request);
                     }
                     assert!(view.run.status().is_open(), "{view:?}");
                     last = Some(view);

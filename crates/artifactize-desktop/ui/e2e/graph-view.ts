@@ -129,6 +129,19 @@ export async function openTab(browser: WebdriverIO.Browser, id: string, { row = 
     { timeout: 15000, timeoutMsg: `${id}'s tab shown` });
 }
 
+/** Click the open Detail's own chip of the Artifact `name` and wait until its Artifact tab is the
+ * shown one, listing its evals. */
+export async function openArtifactTab(browser: WebdriverIO.Browser, name: string): Promise<Detail> {
+  await browser.$(`aside[aria-label="Detail"] [role="tab"][aria-label="Artifact ${name}"]`).click();
+  let shown: Detail | null = null;
+  await browser.waitUntil(async () => {
+    shown = await detail(browser);
+    return shown?.tabs[0]?.selected === true && shown.evals.length > 0;
+  }, { timeout: 15000, timeoutMsg: `${name}'s Artifact tab shown again` })
+    .catch((error: unknown) => { throw new Error(`${String(error)}; the Detail showed ${JSON.stringify(shown)}`); });
+  return shown!;
+}
+
 /** The open Detail. */
 export const aside = (browser: WebdriverIO.Browser) => browser.$('aside[aria-label="Detail"]');
 

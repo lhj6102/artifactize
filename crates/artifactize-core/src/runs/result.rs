@@ -228,7 +228,7 @@ pub async fn result(
             .iter()
             .skip(offset)
             .take(PAGE_SIZE)
-            .map(finding)
+            .map(|request| finding(request))
             .scan(0, |bytes, finding| {
                 let size = serde_json::to_vec(&finding)
                     .expect("typed finding serializes")
