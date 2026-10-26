@@ -4,7 +4,7 @@ The desktop app (Tauri 2 and Svelte 5) over the `artifactize` library.
 
 ## Try this branch's app
 
-In the desktop Artifact's Detail, run the **app** Human tool. It builds this tree's
+In the `desktop::app` Artifact's Detail, run the **app** Human tool. It builds this tree's
 production frontend and desktop app (without WebDriver), then opens this worktree's branch
 on your display with your own artifactize state and complete environment. Build output streams
 to the Tool log. Closing the app removes its private build output; it never writes `ui/dist`

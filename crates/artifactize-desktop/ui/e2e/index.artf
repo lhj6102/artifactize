@@ -1,4 +1,4 @@
-name = "desktop-e2e"
+name = "desktop::e2e"
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -17,7 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.covers-journeys.payload]
 instruction = """
-Read the journeys {ux-features} and the graph {ux-graph}. Review the tests of {desktop-e2e}. Evaluate UX coverage only: every journey (J- id) has a test \
+Read the journeys {desktop::ux-features} and the graph {desktop::ux-graph}. Review the tests of {desktop::e2e}. Evaluate UX coverage only: every journey (J- id) has a test \
 that performs its prescribed actions and checks its final outcome; every edge (E- id) has an \
 assertion that the transition happens, not only a comment naming it. Check that the assertions \
 express the actual feature and graph requirements, neither a weaker substitute nor an invented \
@@ -56,8 +56,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-style.payload]
 instruction = """
-Read {code-style}. Review all TypeScript tests, helpers and runner \
-code owned by {desktop-e2e}. Apply every language-neutral TEST- rule and M-TAUTOLOGICAL-TESTS: exact async \
+Read {rules::code-style}. Review all TypeScript tests, helpers and runner \
+code owned by {desktop::e2e}. Apply every language-neutral TEST- rule and M-TAUTOLOGICAL-TESTS: exact async \
 states, controlled ordering and expiry, read-only observation, fixture ownership and cleanup, \
 self-contained build inputs, observable seams without over-verification, and independent expected \
 results. The other Rust-specific checklist items do not apply to TypeScript. Judge the code \
@@ -85,7 +85,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-e2e-rules.payload]
 instruction = """
-Review all specs, fixtures, runner configuration and build/run code owned by {desktop-e2e}, its integrity checker in {desktop-ui} (lint/e2e-integrity.ts), and the test-only engine text-input device in {desktop-backend} (e2e_input.rs and e2e_input/). These are this Artifact's E2E-writing rules. Their reference is Tauri's WebDriver guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs (https://webdriver.io/docs/desktop-testing/tauri/).
+Review all specs, fixtures, runner configuration and build/run code owned by {desktop::e2e}, its integrity checker in {desktop::ui} (lint/e2e-integrity.ts), and the test-only engine text-input device in {desktop::backend} (e2e_input.rs and e2e_input/). These are this Artifact's E2E-writing rules. Their reference is Tauri's WebDriver guide (https://v2.tauri.app/develop/tests/webdriver/) and the WebdriverIO Tauri service docs (https://webdriver.io/docs/desktop-testing/tauri/).
 
 - E2E-WDIO-SERVICE: the suite runs on the WebdriverIO test runner with @wdio/tauri-service and the embedded WebDriver provider (tauri-plugin-wdio-webdriver), the same provider on Linux, Windows and macOS. The runner and service own app launch, WebDriver provisioning and shutdown, with capability-specific endpoints declared only in runner configuration. Specs and helpers do not spawn or kill the app or a WebDriver server, and do not wrap or re-wire the service's launcher lifecycle. When a journey's expected outcome is the app quitting, the spec observes the real exit and then marks that WebDriver session ended through one shared helper; this is the only session bookkeeping specs may do. On headless Linux, the whole runner runs under dbus-run-session and xvfb-run -a with X11, never on the user's desktop. Platforms differ only inside the suite's platform layer (E2E-PLATFORM); specs contain no OS branches.
 - E2E-INPUT: input reaches the app only through WebDriver commands or the WebView engine's own text-input API: WebKit's input-method context on Linux, the WKWebView's NSTextInputClient on macOS, and WebView2's DevTools Protocol Input domain on Windows. Copy and paste use each engine's editing commands: WebKit's Copy/Paste on Linux, the WKWebView responder's copy:/paste: on macOS, and on Windows Input.dispatchKeyEvent with commands naming Copy or Paste; raw key events through that method remain forbidden. Neither the suite nor its WebDriver provider synthesizes or injects OS-level events, such as NSApp sendEvent, constructed GdkEvents through gtk_widget_event, SendInput or keybd_event. Such events behave differently per OS and cannot be verified on Linux. A guarantee that is the app's own logic, such as ignoring shortcuts while an input method composes, is verified at the page, through the event fields the app reads (isComposing, keyCode 229), while a native composition is active. Where the WebDriver provider lacks a standard key or pointer event, such as PageUp/PageDown or pointerdown/pointerup, one input helper in the suite dispatches exactly the DOM events that the WebDriver action would deliver to the focused or targeted element, the same way the provider dispatches its own input. The provider-gap helper also supplies omitted browser defaults: Tab's sequential focus navigation, the native caret of a click on selectable text, and an option click's WebDriver selection steps, only when the page has not prevented the input. It never calls app code, sets app state directly, or produces events a user's input could not.
@@ -115,15 +115,15 @@ additionalProperties = false
 
 [evals.edge-ids]
 title = "Every edge id of the UX graph appears in the end-to-end tests"
-profile = { kind = "runtime", command = "node", args = ["check-edges.ts", "{ux-graph}", "."], timeout_ms = 30000 }
+profile = { kind = "runtime", command = "node", args = ["check-edges.ts", "{desktop::ux-graph}", "."], timeout_ms = 30000 }
 
 [evals.edge-ids.payload]
 instruction = """
-Check that every edge id of {ux-graph} is cited in the tests of {desktop-e2e}."""
+Check that every edge id of {desktop::ux-graph} is cited in the tests of {desktop::e2e}."""
 
 [evals.lint]
 title = "The end-to-end TypeScript lint and type check pass"
 profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 600000 }
 
 [evals.lint.payload]
-instruction = "Check the source-integrity rules over {desktop-e2e}, its checker in {desktop-ui}, and the native text-input device in {desktop-backend}; then run TypeScript eslint with no inline config over every test and helper of {desktop-e2e}, including the restriction of OS-dependent modules, process values and OS-specific literals to its platform layer, then type-check them."
+instruction = "Check the source-integrity rules over {desktop::e2e}, its checker in {desktop::ui}, and the native text-input device in {desktop::backend}; then run TypeScript eslint with no inline config over every test and helper of {desktop::e2e}, including the restriction of OS-dependent modules, process values and OS-specific literals to its platform layer, then type-check them."
