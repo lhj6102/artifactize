@@ -1,5 +1,6 @@
 //! Run lifecycle, scheduling, cancellation, and budget counters.
 
+mod evaluated;
 mod execution;
 mod modes;
 
@@ -303,6 +304,18 @@ impl Scheduler<'_, '_> {
         let mut idle_since: Option<tokio::time::Instant> = None;
         let grace = self.limits.signoff_idle_grace();
         let mut admissions: Vec<_> = self.requests.iter().map(|_| Admission::Idle).collect();
+        let mut evaluated = evaluated::Evaluated::default();
+        // A pass looks evals and requests up by id; the Run's are fixed, so index them once
+        // rather than searching the lists for each of them on every pass.
+        let config = self.config.clone();
+        let declarations: BTreeMap<&crate::config::EvalId, &crate::config::Eval> =
+            config.evals.iter().map(|eval| (&eval.id, eval)).collect();
+        let positions: BTreeMap<crate::config::EvalId, usize> = self
+            .requests
+            .iter()
+            .enumerate()
+            .map(|(index, request)| (request.eval_id.clone(), index))
+            .collect();
         let stops = Stops::new(self.run.stopped_backends.clone());
         loop {
             let completed = evidence.len();
@@ -356,10 +369,7 @@ impl Scheduler<'_, '_> {
                     {
                         continue;
                     }
-                    let index = self
-                        .requests
-                        .iter()
-                        .position(|request| request.eval_id == eval.id);
+                    let index = positions.get(&eval.id).copied();
                     if index.is_some_and(|index| {
                         admissions[index].blocked()
                             || admissions[index].running()
@@ -422,9 +432,8 @@ impl Scheduler<'_, '_> {
                         evidence.entry(id.clone()).or_insert(Evidence::Deferred);
                     }
                 }
-                let mut evaluation = self
-                    .graph
-                    .evaluate_for_run(&evidence, self.run.modes.speculate);
+                let mut evaluation =
+                    evaluated.evaluation(self.graph, &evidence, self.run.modes.speculate);
                 // Failures cancel transitively, including tasks, joined waits and sign-offs.
                 // Without speculation a cached result is taken before its gates resolve, even
                 // behind RED, so only work this Run started past a pending sign-off is cancelled.
@@ -453,14 +462,12 @@ impl Scheduler<'_, '_> {
                         }
                     }
                 }
-                evaluation = self
-                    .graph
-                    .evaluate_for_run(&evidence, self.run.modes.speculate);
-                let order = modes::order(self.graph, self.requests, &evidence);
+                evaluation = evaluated.evaluation(self.graph, &evidence, self.run.modes.speculate);
+                let order = evaluated.order(self.graph, self.requests, &evidence);
                 // Backends found full in this pass are not asked again until the next one.
                 let mut full = BTreeSet::new();
                 // Request order preserves selection order, then recursive configuration order.
-                for index in order {
+                for &index in order.iter() {
                     if self.cancellation.is_cancelled() {
                         break;
                     }
@@ -574,12 +581,7 @@ impl Scheduler<'_, '_> {
                     {
                         continue;
                     }
-                    let declared = self
-                        .config
-                        .evals
-                        .iter()
-                        .find(|eval| eval.id == request.eval_id)
-                        .expect("included Eval");
+                    let declared = declarations[&request.eval_id];
                     if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
                         admissions[index] = Admission::Idle;
                         request.queue = None;
@@ -591,9 +593,8 @@ impl Scheduler<'_, '_> {
                         );
                         self.receipts.save_request(request).await?;
                         evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-                        evaluation = self
-                            .graph
-                            .evaluate_for_run(&evidence, self.run.modes.speculate);
+                        evaluation =
+                            evaluated.evaluation(self.graph, &evidence, self.run.modes.speculate);
                         continue;
                     }
                     let mut execution = Execution {
@@ -631,15 +632,7 @@ impl Scheduler<'_, '_> {
                     if execution.key.is_some() {
                         execution.manifest = self.fingerprints[&request.target].manifest.clone();
                     }
-                    let kind = self
-                        .config
-                        .evals
-                        .iter()
-                        .find(|eval| eval.id == request.eval_id)
-                        .expect("included eval")
-                        .declaration
-                        .profile()
-                        .kind();
+                    let kind = declarations[&request.eval_id].declaration.profile().kind();
                     let human = kind == ProfileKind::Human;
                     // An eval of a --reuse-only kind starts nothing, joins nothing and requests
                     // no Human sign-off: it reuses a completed result or is not executed.
@@ -744,9 +737,11 @@ impl Scheduler<'_, '_> {
                             );
                             cache::reuse(request, &execution, now());
                             self.receipts.reuse_execution(request).await?;
-                            evaluation = self
-                                .graph
-                                .evaluate_for_run(&evidence, self.run.modes.speculate);
+                            evaluation = evaluated.evaluation(
+                                self.graph,
+                                &evidence,
+                                self.run.modes.speculate,
+                            );
                             continue;
                         }
                         // Nothing to reuse: the evidence stays stale, so dependents wait as
@@ -762,9 +757,11 @@ impl Scheduler<'_, '_> {
                             request.blocked_reason = Some(not_reused_reason(kind));
                             self.receipts.save_request(request).await?;
                             evidence.insert(request.eval_id.clone(), Evidence::Stale);
-                            evaluation = self
-                                .graph
-                                .evaluate_for_run(&evidence, self.run.modes.speculate);
+                            evaluation = evaluated.evaluation(
+                                self.graph,
+                                &evidence,
+                                self.run.modes.speculate,
+                            );
                             continue;
                         }
                         Claim::WaitHuman(id) => {
@@ -799,9 +796,11 @@ impl Scheduler<'_, '_> {
                                         _ => Evidence::OperationalError,
                                     },
                                 );
-                                evaluation = self
-                                    .graph
-                                    .evaluate_for_run(&evidence, self.run.modes.speculate);
+                                evaluation = evaluated.evaluation(
+                                    self.graph,
+                                    &evidence,
+                                    self.run.modes.speculate,
+                                );
                             }
                             continue;
                         }
@@ -837,9 +836,11 @@ impl Scheduler<'_, '_> {
                             );
                             self.receipts.save_request(request).await?;
                             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-                            evaluation = self
-                                .graph
-                                .evaluate_for_run(&evidence, self.run.modes.speculate);
+                            evaluation = evaluated.evaluation(
+                                self.graph,
+                                &evidence,
+                                self.run.modes.speculate,
+                            );
                             continue;
                         }
                         Claim::BudgetExhausted => {
@@ -872,12 +873,7 @@ impl Scheduler<'_, '_> {
                         .map(|_| execution.id.clone());
                     request.queue = None;
                     request.blocked_reason = None;
-                    let eval = self
-                        .config
-                        .evals
-                        .iter()
-                        .find(|eval| eval.id == request.eval_id)
-                        .expect("included eval");
+                    let eval = declarations[&request.eval_id];
                     let prepared = execution::prepare(
                         &self.config,
                         eval,
@@ -971,9 +967,7 @@ impl Scheduler<'_, '_> {
                     });
                 }
             }
-            let evaluation = self
-                .graph
-                .evaluate_for_run(&evidence, self.run.modes.speculate);
+            let evaluation = evaluated.evaluation(self.graph, &evidence, self.run.modes.speculate);
             for request in self.requests.iter_mut() {
                 if evaluation.evals[request.eval_id.as_str()].status == EvalStatus::Provisional
                     && let crate::store::RequestState::Completed { result, at } = &request.state
@@ -1041,65 +1035,97 @@ impl Scheduler<'_, '_> {
                 }
             }
             let waiting_external = admission_wait || human_wait;
-            tokio::select! {
+            let joined = tokio::select! {
                 biased;
-                result = self.tasks.join_next(), if !self.tasks.is_empty() => {
-                    let (index, mut request) = crate::task::joined(result.expect("active tasks"))
-                        .map_err(|e| e.to_string())??;
-                    let Admission::Running { stop, .. } = std::mem::replace(&mut admissions[index], Admission::Idle) else {
-                        unreachable!("a joined task belongs to a running request");
-                    };
-                    match stop {
-                        Some(modes::Stop::Blocked) => {
-                            admissions[index] = Admission::Blocked;
-                            let evaluation = self.graph.evaluate_for_run(&evidence, self.run.modes.speculate);
-                            let eval = &evaluation.evals[request.eval_id.as_str()];
-                            request.state = crate::store::RequestState::pending(crate::types::RequestStatus::Blocked, Some(now())).expect("blocked state");
-                            request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
-                            request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
-                            request.queue = None;
-                            self.receipts.block_request(&request).await?;
-                            self.requests[index] = request;
-                            continue;
-                        }
-                        Some(modes::Stop::Yield) => {
-                            request.state = crate::store::RequestState::pending(crate::types::RequestStatus::Queued, None).expect("queued state");
-                            request.execution_id = None;
-                            request.started_at = None;
-                            request.blocked_reason = Some("Speculative work yielded to a ready eval.".into());
-                            self.receipts.save_request(&request).await?;
-                            self.requests[index] = request;
-                            continue;
-                        }
-                        None => {}
-                    }
-                    if let Some(remote) = &self.remote {
-                        remote.publish_request(self.receipts, &request).await?;
-                    }
-                    let stopped = stops.all();
-                    if stopped.len() != self.run.stopped_backends.len() {
-                        self.run.stopped_backends = stopped;
-                        self.receipts.save_run(self.run).await?;
-                    }
-                    if !request.status().is_human_wait() {
-                        evidence.insert(request.eval_id.clone(), match request.status() {
-                            crate::types::RequestStatus::Green => Evidence::Current(Verdict::Green),
-                            crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
-                            _ => Evidence::OperationalError,
-                        });
-                    }
-                    self.requests[index] = request;
-                }
-                _ = self.cancellation.cancelled(), if !cancelled => {},
-                _ = changes.next_state(), if !cancelled => {},
-                _ = reconcile.tick(), if waiting_external && !cancelled => {},
+                result = self.tasks.join_next(), if !self.tasks.is_empty() => result,
+                _ = self.cancellation.cancelled(), if !cancelled => None,
+                _ = changes.next_state(), if !cancelled => None,
+                _ = reconcile.tick(), if waiting_external && !cancelled => None,
                 _ = tokio::time::sleep_until(grace_due.unwrap_or_else(tokio::time::Instant::now)),
-                    if grace_due.is_some() && !cancelled => {},
+                    if grace_due.is_some() && !cancelled => None,
                 _ = tokio::time::sleep_until(remote_due),
-                    if human_wait && self.remote.is_some() && !self.run.force && !cancelled => {},
+                    if human_wait && self.remote.is_some() && !self.run.force && !cancelled => None,
+            };
+            // Every task that has finished is settled before the next pass, not one per pass:
+            // a pass evaluates the whole graph, so settling one completion per pass made a
+            // large Run's tail as long as its number of completions times a pass.
+            let mut next = joined;
+            while let Some(result) = next {
+                self.settle(result, &mut admissions, &mut evidence, &stops)
+                    .await?;
+                next = self.tasks.try_join_next();
             }
         }
         Ok(evidence)
+    }
+
+    /// Settle a finished task: a stopped one goes back to waiting or blocked, any other gives
+    /// its request's evidence.
+    async fn settle(
+        &mut self,
+        result: Result<Result<(usize, Request), String>, tokio::task::JoinError>,
+        admissions: &mut [Admission],
+        evidence: &mut BTreeMap<crate::config::EvalId, Evidence>,
+        stops: &Stops,
+    ) -> Result<(), String> {
+        let (index, mut request) = crate::task::joined(result).map_err(|e| e.to_string())??;
+        let Admission::Running { stop, .. } =
+            std::mem::replace(&mut admissions[index], Admission::Idle)
+        else {
+            unreachable!("a joined task belongs to a running request");
+        };
+        match stop {
+            Some(modes::Stop::Blocked) => {
+                admissions[index] = Admission::Blocked;
+                let evaluation = self
+                    .graph
+                    .evaluate_for_run(evidence, self.run.modes.speculate);
+                let eval = &evaluation.evals[request.eval_id.as_str()];
+                request.state = crate::store::RequestState::pending(
+                    crate::types::RequestStatus::Blocked,
+                    Some(now()),
+                )
+                .expect("blocked state");
+                request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
+                request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
+                request.queue = None;
+                self.receipts.block_request(&request).await?;
+                self.requests[index] = request;
+                return Ok(());
+            }
+            Some(modes::Stop::Yield) => {
+                request.state =
+                    crate::store::RequestState::pending(crate::types::RequestStatus::Queued, None)
+                        .expect("queued state");
+                request.execution_id = None;
+                request.started_at = None;
+                request.blocked_reason = Some("Speculative work yielded to a ready eval.".into());
+                self.receipts.save_request(&request).await?;
+                self.requests[index] = request;
+                return Ok(());
+            }
+            None => {}
+        }
+        if let Some(remote) = &self.remote {
+            remote.publish_request(self.receipts, &request).await?;
+        }
+        let stopped = stops.all();
+        if stopped.len() != self.run.stopped_backends.len() {
+            self.run.stopped_backends = stopped;
+            self.receipts.save_run(self.run).await?;
+        }
+        if !request.status().is_human_wait() {
+            evidence.insert(
+                request.eval_id.clone(),
+                match request.status() {
+                    crate::types::RequestStatus::Green => Evidence::Current(Verdict::Green),
+                    crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
+                    _ => Evidence::OperationalError,
+                },
+            );
+        }
+        self.requests[index] = request;
+        Ok(())
     }
 }
 
