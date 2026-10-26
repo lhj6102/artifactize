@@ -143,8 +143,7 @@ fingerprint를 모두 계산한 뒤에 정해지므로, 의존 대상이 없는 
 진행 중인 스캔을 보여 줍니다. 그동안 Current의 **Refresh** 버튼은 비활성화됩니다. 앱의 **Refresh** 명령이나
 Ctrl+R/F5를 누르면 진행 중인 스캔을 보여 주고, 그 스캔이 끝나면 한 번 더 스캔하므로 그사이에 바꾼 내용도
 나타납니다.
-**Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
-관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
+**Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
 해서는 어떤 리뷰도 승인되지 않습니다.
 
@@ -175,8 +174,7 @@ Run이 바뀌면 그래프의 색이 그 자리에서 바뀌고, Artifact나 간
 
 ### Detail {#detail}
 
-Artifact를 클릭하면 그 **Detail**이 열립니다. 그래프 오른쪽 위에 떠 있으며
-뒤로 그래프가 계속 보이고, Pane 옆에 붙지 않습니다.
+Artifact를 클릭하면 그래프 오른쪽 위에 그 **Detail**이 열립니다. Detail 뒤로 그래프가 계속 보이며, Detail은 Pane 옆에 붙지 않습니다.
 다른 Artifact를 클릭하면
 그 Artifact의 Detail이 표시됩니다. 그래프
 배경, **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는
