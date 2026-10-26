@@ -91,7 +91,7 @@ winget install 9PB6W4LL165D --source msstore
 
 ### Arti와 함께 빠르게 시작하기
 
-Arti와 대화하면서 시작해 보기를 권합니다. Arti는 코딩 어시스턴트 안에서 Artifactize를 안내합니다.
+Arti와 대화하면서 시작해 보기를 권합니다. Arti는 코딩 어시스턴트 안에서 Artifactize 사용법을 안내합니다.
 현재 작업 중인 프로젝트를 예로 들어 Artifactize를 설명하고, 기존 테스트와 리뷰를 옮기거나
 새 프로젝트를 준비하도록 돕습니다.
 [플러그인](https://artifactize.dev/docs/ko/agent-plugin/plugin.html) 하나만 설치하면 Claude Code와

@@ -8,7 +8,7 @@ import { artifactize, create, createChain, createEvals, createSpaces, requests, 
 import { afterRender, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, camera, detail, fact, focusedNode, graphShown, openArtifact, openTab, summary, tabAt } from "../graph-view.ts";
+import { aside, camera, detail, fact, focusedNode, graphShown, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, showRun } from "../pane.ts";
@@ -520,10 +520,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL; UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL; UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-DETAIL-ARTIFACT-TAB E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK
   scenario<{ run: string }>(
     "graph-eval-tabs",
-    "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, and another from the tabs",
+    "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, returns to the Artifact tab by its chip, and shows another eval from the tabs",
     async () => {
       return ended(createEvals(["alpha", "beta", "gamma"], "lib"));
     },
@@ -563,6 +563,13 @@ export const scenarios: Scenario[] = [
       await (await view(0)).click();
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta.") && (await log()) === "",
         { timeout: 15000, timeoutMsg: "app/beta's Summary shown again" });
+      // From app/beta's Runtime log, app's own chip shows its Artifact tab again.
+      await (await view(1)).click();
+      await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()), { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown again" });
+      const back = await openArtifactTab(browser, "app");
+      assert.deepEqual(back.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's evals again");
+      assert.equal(back.tabs[2]?.selected, false, "app/beta's tab is no longer the shown one");
+      assert.equal(await log(), "", "app/beta's log is gone");
       // Another eval's tab shows that eval.
       await openTab(browser, "e:app/gamma");
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check gamma."), { timeout: 15000, timeoutMsg: "the Detail is app/gamma's" });

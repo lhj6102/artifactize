@@ -449,19 +449,36 @@ fn retire_unreadable(
     Ok(())
 }
 
+/// The complete declared effective profile an in-flight execution is joined on, as its
+/// stored JSON. Only [`ProfileIdentity::of`] makes one, so every join compares one spelling.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ProfileIdentity(String);
+
+impl ProfileIdentity {
+    fn of(profile: &crate::config::StoredProfile) -> Result<Self, Error> {
+        Ok(Self(serde_json::to_string(profile)?))
+    }
+}
+
+impl rusqlite::ToSql for ProfileIdentity {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
 /// The one definition of in-flight identity. Completed evidence still uses only its
 /// reuse key; joining additionally requires the complete declared effective profile.
 fn sharing_identity(
     key: &ReuseKey,
     profile: &crate::config::StoredProfile,
-) -> Result<(ReuseKey, String), Error> {
-    Ok((key.clone(), serde_json::to_string(profile)?))
+) -> Result<(ReuseKey, ProfileIdentity), Error> {
+    Ok((key.clone(), ProfileIdentity::of(profile)?))
 }
 
 fn active_owner(
     db: &rusqlite::Connection,
     key: &ReuseKey,
-    profile: Option<&str>,
+    profile: Option<&ProfileIdentity>,
 ) -> Result<
     Option<(
         crate::types::ExecutionId,
@@ -496,7 +513,7 @@ fn available_to_waiter(
     db: &rusqlite::Connection,
     key: &ReuseKey,
     waiting_for: Option<&crate::types::ExecutionId>,
-    profile: &str,
+    profile: &ProfileIdentity,
 ) -> Result<Option<Claim>, Error> {
     if let Some(id) = waiting_for {
         let data: Option<String> = db
@@ -543,7 +560,7 @@ fn available_to_waiter(
 fn available(
     db: &rusqlite::Connection,
     key: &ReuseKey,
-    profile: Option<&str>,
+    profile: Option<&ProfileIdentity>,
 ) -> Result<Option<Claim>, Error> {
     if let Some(execution) = lookup(db, key)? {
         return Ok(Some(Claim::Reuse(Box::new(execution))));
@@ -612,7 +629,7 @@ pub(crate) async fn read_profiled_executions(
 
 async fn read_claims<K: Ord + Send + 'static>(
     state: &std::path::Path,
-    keys: Vec<(K, ReuseKey, Option<String>)>,
+    keys: Vec<(K, ReuseKey, Option<ProfileIdentity>)>,
 ) -> Result<BTreeMap<K, Claim>, String> {
     if keys.is_empty() {
         return Ok(Default::default());
@@ -629,7 +646,7 @@ async fn read_claims<K: Ord + Send + 'static>(
             }
             let mut entries = std::collections::BTreeMap::new();
             for (id, key, profile) in keys {
-                if let Some(claim) = available(&transaction, &key, profile.as_deref())? {
+                if let Some(claim) = available(&transaction, &key, profile.as_ref())? {
                     entries.insert(id, claim);
                 }
             }
@@ -760,7 +777,7 @@ impl Receipts {
         self.connection
             .call(move |db| -> Result<Claim, Error> {
                 let key = identity.as_ref().map(|(key, _)| key);
-                let profile = identity.as_ref().map(|(_, profile)| profile.as_str());
+                let profile = identity.as_ref().map(|(_, profile)| profile);
                 if let Some(key) = key {
                     let transaction = db.transaction()?;
                     if let Some(claim) =
