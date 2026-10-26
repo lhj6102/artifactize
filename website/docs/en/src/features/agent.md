@@ -100,7 +100,9 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
-responses are ERROR, even if they contain a JSON verdict. An Anthropic answer is also
+responses are ERROR, even if they contain a JSON verdict. An answer that turns into a long
+run of whitespace ends within seconds as ERROR with `DEGENERATE_OUTPUT`; run `verify`
+again, and if it keeps happening, try another model or `reasoning`. An Anthropic answer is also
 capped at 16384 output tokens per turn, apart from the review's `max_tokens`. Artifactize
 handles retries as described below.
 
@@ -136,6 +138,7 @@ A failed Agent review records one of these `errorCode` values:
 | `CANCELLED` | Explicit Run cancellation (`run cancel` or MCP `verify_cancel`) | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
+| `DEGENERATE_OUTPUT` | The answer turned into a long run of whitespace, so the review stopped it | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
@@ -266,7 +269,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 A project only names a provider; what the name reaches is set up on each machine that runs
 the eval. A custom provider is a name an Agent profile's `backend` may use, added in the
 desktop app's **Settings → Providers** (**+ Custom provider**) or with `artifactize provider`.
-Add as many as you need; each is one of:
+Each is one of:
 
 - **An alias** of a built-in provider, used with that provider's sign-in or key:
 
@@ -297,7 +300,9 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 A review that names a provider this machine has not set up is an `AUTHENTICATION` ERROR
 naming the missing provider. Keys and custom providers are saved in `$STATE/auth/providers.json`,
-readable by you only, and never inside a repository. The provider, like the model and
+readable by you only, and never inside a repository. That file holds at most 1 MiB: past it,
+reading or changing providers fails with `Credential file is too large.`, so remove providers
+and keys you no longer use to bring it back under the limit. The provider, like the model and
 reasoning, is an execution option: it is recorded with each result and is not part of the
 reuse key.
 

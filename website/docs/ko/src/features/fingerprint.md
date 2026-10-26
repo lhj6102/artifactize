@@ -24,7 +24,7 @@ verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 
 ## Artifactsum {#artifactsum}
 
 Artifact의 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint가 바뀌면 그 Artifact를 다시
-리뷰합니다. 폴더의 입력을 좁히려면 다음처럼 씁니다.
+리뷰합니다. 폴더 Artifact에서 해시할 파일 범위를 제한하려면 다음처럼 설정하세요.
 
 ```toml
 fingerprint = { files = ["src"], ignore = ["*.log"] }
@@ -105,7 +105,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 재사용한 결과에도 그 결과를 만든 명령이나 모델, 그리고 결과를 가져온 곳이 남습니다. `run show`에서
 둘을 어디서 보는지는 [verify와 Run](run.md#verify-and-runs)에 있습니다.
 
-재사용하기 전에 artifactize는 포함한 파일 대상을 다시 확인합니다. 대상은 심볼릭 링크를 거치지
+결과를 재사용하기 전에 artifactize는 리뷰 범위에 포함된 대상 파일을 다시 확인합니다. 대상은 심볼릭 링크를 거치지
 않는 일반 파일로 존재해야 합니다. `fingerprint = false`로 재사용을 꺼도 대상 파일이 안전한지
 확인하는 절차는 그대로 진행됩니다. 대상은 fingerprint 준비와 재확인, eval 시작과 끝, 도구 호출 때마다
 확인합니다.

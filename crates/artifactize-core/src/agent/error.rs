@@ -22,6 +22,8 @@ pub enum Code {
     ProviderBudgetExceeded,
     /// No valid verdict after the one format repair.
     InvalidResult,
+    /// The response's text degenerated into a long run of whitespace; its stream was stopped.
+    DegenerateOutput,
     /// Any other provider failure: a rejected request, an unknown or different model,
     /// an incomplete response or a malformed tool call.
     ProviderError,
@@ -41,6 +43,7 @@ impl From<Code> for crate::types::FailureCode {
             Code::Cancelled => Self::Cancelled,
             Code::ProviderBudgetExceeded => Self::ProviderBudgetExceeded,
             Code::InvalidResult => Self::InvalidResult,
+            Code::DegenerateOutput => Self::DegenerateOutput,
             Code::ProviderError => Self::ProviderError,
             Code::AgentError => Self::AgentError,
         }
@@ -58,6 +61,7 @@ impl Code {
             Self::Cancelled => "CANCELLED",
             Self::ProviderBudgetExceeded => "PROVIDER_BUDGET_EXCEEDED",
             Self::InvalidResult => "INVALID_RESULT",
+            Self::DegenerateOutput => "DEGENERATE_OUTPUT",
             Self::ProviderError => "PROVIDER_ERROR",
             Self::AgentError => "AGENT_ERROR",
         }

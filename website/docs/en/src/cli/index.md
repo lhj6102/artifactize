@@ -218,9 +218,8 @@ The Run records an explicit `jobs` cap (the field is absent when unlimited),
 review counts one start once it is ready to run, even when its program then fails to
 start or the review later ends ERROR. Waiting for a person, claiming and Human tools count
 none, nor do computing or rechecking fingerprints, reusing a saved result or joining a
-review already running. A review that fails before it is ready to run counts none. One
-step comes after its start is counted: recording the hashes of an Agent review's
-`execution_paths` tool files. When that fails, the start still counts and the review ends
+review already running. A review that fails before it is ready to run counts none. An Agent
+review whose `execution_paths` tool files cannot be read counts its start and ends
 ERROR/PREPARATION_FAILED without calling the model.
 Zero permits reuse, joining and Human reviews; a Run that has to run a review again
 because the Run it joined failed uses its own remaining budget. Exhaustion never interrupts running evals, but

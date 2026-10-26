@@ -138,7 +138,9 @@ regardless of the focused area. Normal editing and focus switching pause until
 that ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
 - **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
-  `--reviewer NAME`, while Monitor always uses the default.
+  `--reviewer NAME`, while Monitor always uses the default. When no valid user name is
+  set, Monitor shows the error and keeps the request's read-only Detail instead; set the
+  user name, or open the request with `artifactize review REQUEST_ID --reviewer NAME`.
   Tool and verdict actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only; leaving Detail keeps your claim.
 - **Tools.** ↑/↓ selects; `j`/`k` also selects while not editing. Running a tool
@@ -181,16 +183,11 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
   one edit, in standalone `review` as in the monitor. A paste that would push the
   result past the 256000-byte Human result limit is refused as a whole with an
-  error, leaving the draft unchanged. Each verdict keeps a separate
-  draft when you switch between them.
-  Editing and tool work normally lock focus moves outside Detail. Monitor's Close
-  button is an exception: when idle it returns directly to the tree with the form
-  retained; while busy it cancels the work first. Esc closes
-  one thing at a time: cancel a job, then stop editing with its
-  draft kept, then leave Detail. In standalone `review`, Close works like Esc. The same verdict reopens the draft. Unless the state directory is replaced, refresh and
-  leaving/reopening the same request keep drafts; opening a different request in
-  standalone `review` starts fresh. A request settled by another command ends
-  editing on refresh and releases the focus lock.
+  error, leaving the draft unchanged. Esc steps back as the key table says; Monitor's
+  Close returns to the tree when idle (in standalone `review` it works like Esc). GREEN
+  and RED each keep their own draft across refreshes. Monitor keeps each request's drafts
+  while you view other requests; standalone `review` keeps them only until you open a
+  different request, which starts fresh. A request settled elsewhere ends editing on refresh.
 
 Outside a form or work, `q` quits from Detail too. Ctrl-C first cancels a busy claim,
 tool, submission or release; once nothing is busy, it quits, also from a form. Esc

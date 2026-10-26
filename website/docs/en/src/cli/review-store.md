@@ -89,9 +89,8 @@ artifactize remote logout
 
 A client is configured only through the state directory and the environment,
 never `.artf` declarations, so a cloned repository cannot redirect a token. `remote
-login URL` reads one token line from stdin (never argv): at most the first 8192 bytes are read,
-and bytes beyond that are ignored, then the surrounding whitespace is dropped. Whitespace
-before the token counts toward those 8192 bytes, and a token over 4096 bytes is refused. It attempts to hide
+login URL` reads the token from stdin, never argv: paste it as one line. A token over 4096
+bytes is refused. It attempts to hide
 terminal input; on Windows, if that fails, it warns that the token will be visible
 and continues reading. Non-terminal stdin is read without changing terminal echo.
 It verifies the token with `GET /v1/whoami`, then stores it in
