@@ -599,14 +599,17 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
     let shown = |view: &RunView| view.run.status().as_str();
     assert_eq!(shown(&waiting), "WAITING_HUMAN");
     // It follows from the open sign-off; the saved Run stays RUNNING.
-    let saved: (String, String) = rusqlite::Connection::open(fixture.state.join(store::DATABASE))
-        .unwrap()
-        .query_row(
-            "SELECT status,json_extract(data,'$.status') FROM runs WHERE id=?",
-            [id.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
+    let saved: (String, String) = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT status,json_extract(data,'$.status') FROM runs WHERE id=?",
+        [id.as_str()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap();
     assert_eq!(saved, ("RUNNING".into(), "RUNNING".into()));
 
     let receipts = fixture.receipts().await;

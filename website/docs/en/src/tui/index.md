@@ -233,12 +233,10 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-The screen always shows **Compact + Full + Preview**, the focused pane in the middle
-with the room the side panes leave. Scope shows Full + Preview, and Detail shows Tree
-Compact + Detail Full. Each side pane is 16 columns wide in a terminal narrower than 100
-columns, 28 from 100 columns and 36 from 140. In a terminal too narrow for them, the side panes
-share its width and the focused pane can shrink to nothing; widen the terminal when the
-focused pane needs more room.
+The focused pane sits in the middle, with Compact to its left and Preview to its right;
+Scope has no Compact and Detail no Preview. Side panes widen with the terminal, and in a
+narrow one the focused pane can shrink to nothing; widen the terminal when it needs more
+room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate
