@@ -138,7 +138,9 @@ regardless of the focused area. Normal editing and focus switching pause until
 that ends; Ctrl-PgUp/PgDn still scroll the instruction.
 
 - **Claim.** The reviewer is your user name (`$USER`); standalone `review` also takes
-  `--reviewer NAME`, while Monitor always uses the default.
+  `--reviewer NAME`, while Monitor always uses the default. When no valid user name is
+  set, Monitor shows the error and keeps the request's read-only Detail instead; set the
+  user name, or open the request with `artifactize review REQUEST_ID --reviewer NAME`.
   Tool and verdict actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only; leaving Detail keeps your claim.
 - **Tools.** ↑/↓ selects; `j`/`k` also selects while not editing. Running a tool
