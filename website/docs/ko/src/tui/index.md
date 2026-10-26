@@ -258,6 +258,7 @@ eval의 GREEN 결과를 재사용할 수 있어도, 그 Artifact는 통과 0개(
 | 보기 상태 | 의미 |
 |---|---|
 | `✓` done | GREEN, 실행했거나 재사용함 |
+| `○` PROVISIONAL | 실행했거나 재사용해 기준은 충족했지만, 의존하는 sign-off가 남아 있음(`PROVISIONAL · sign-offs remain`) |
 | `✗` / `!` failed | RED / ERROR |
 | `◐` / `?` / `·` in progress | 실행 중, Human 대기(맡은 사람과 함께), 실행 허가 대기, 백엔드 자리나 명시적 `--jobs` 상한 대기, 또는 실행에 합류 중 |
 | `…` waits for X | 실행 중인 Run에서 X에 필요한 eval이 GREEN이 될 때까지 대기 |
