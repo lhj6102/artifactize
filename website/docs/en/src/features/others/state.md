@@ -158,6 +158,20 @@ fields:
 artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
 ```
 
+## Agent redispatches
+
+`limits.json` also sets how many times an Agent review whose provider answer failed after
+it began is [dispatched again](../agent.md#retries-and-error-codes) within its Run:
+
+```json
+{"agentRedispatches": 1}
+```
+
+It is 0–5, 1 when the field or the file is missing; 0 ends such a review ERROR at its
+first failure, as `verify` did before. Each redispatch is paid for like the first
+dispatch. Like the other limits it applies to every Run on this state and is read when a
+Run starts. `artifactize limits` shows it.
+
 ## Agent sessions
 
 Each Agent review's conversation is saved under the state, for
@@ -200,15 +214,10 @@ conversation and its tool calls, which
 
 ### Follow-up replay
 
-`session send` asks the saved review a question with the same backend, model and
-reasoning, continuing its saved conversation. The
-project's current tools are offered again, and if a covered Artifact changed since the
-review, the header and the model are told. The question is a follow-up, not a new review:
-the model answers in plain text, may use the tools, and the recorded verdict never changes.
-`session show` prints your question as you wrote it.
-
-Questions, answers and tool calls are added to the same conversation, one question at a
-time, each with fresh profile budgets. A running review cannot be asked yet.
+[`session send`](../../cli/index.md#agent-sessions) asks a saved review a follow-up
+question. Questions, answers and tool calls are stored in the review's own session,
+after the review's conversation, so `session show` prints them with it, each question as
+you wrote it. A running review cannot be asked yet.
 
 ## Local diagnostics and maintenance
 

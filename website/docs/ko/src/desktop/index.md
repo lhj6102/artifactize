@@ -132,15 +132,12 @@ Detail이 열리며, 저장된 검증과 충족되지 않은 최종 검증 요�
 
 브랜치의 **Current**는
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
-Run 없이 현재 선언의 그래프를 그립니다. 그래프는 바로 나타나고, fingerprint 계산이 끝나는 대로
-각 Artifact가 reused(모든 eval의 결과를 재사용), would run, waiting, blocked 색으로 표시됩니다. Run에서처럼
-노드에는 Artifact 이름만 표시하고, 접근성 이름에는 실행될 eval 수나 아직 확인 중이라는 사실을 더합니다.
-헤더는 아직 확인 중인 Artifact 수를, 스캔이 끝나면 언제 스캔했는지를 보여 주며, fingerprint 계산에
-실패하면 그 이유를 보여 주고 그래프는 그대로 둡니다. Current를 다시 고르거나, **Refresh**나 Ctrl+R/F5를
-누르거나, Pane에 보이는 브랜치의 Run이 끝나면 다시 스캔합니다. 검색 때문에 브랜치가 Pane에 보이지 않으면
-Run이 끝난 뒤 **Refresh**를 누르세요. 진행 중인 스캔이 있으면 처음부터 다시 스캔하지 않고 그 스캔을 보여
-주며, 그동안 Current의 **Refresh** 버튼은 비활성화됩니다. 앱의 **Refresh** 명령이나 Ctrl+R/F5는 그 스캔이
-끝난 뒤 한 번 더 스캔하므로 그사이에 바꾼 내용도 나타납니다.
+Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에 확인 중(checking)으로 표시되다가,
+지금 verify를 실행하면 어떻게 될지에 따라 색이 바뀝니다. reused(모든 eval의 기존 결과를 다시 실행하지 않고 재사용), would run,
+waiting, blocked 중 하나입니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
+머리말에는 아직 확인 중인 Artifact 수가 나오고, 스캔이 끝나면 스캔한 시각이, 실패하면 그 이유가 나옵니다.
+Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나 Ctrl+R/F5를 누를 때 다시 스캔합니다.
+검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 **Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
 해서는 어떤 리뷰도 승인되지 않습니다.
@@ -160,9 +157,10 @@ Artifact에 초점을 옮기고, 그 위에서 Enter를 누르면 클릭과 같�
 Artifact가 공통으로 쓰는 Artifact(모든 리뷰가 읽는 기준 파일 하나 등)는 왼쪽의 별도 열에
 놓이며, 이를 쓰는 각 Artifact로 가는 간선은 그대로 그려집니다. `combat::Spec`과
 `combat::Code`처럼 [이름](../features/declarations.md)이 같은 space에 속한 Artifact는 `combat`이라고
-적힌 상자 하나에 함께 놓이고, 각 노드에는 space를 뺀 나머지 이름(`Code`)만 보입니다. 스크린 리더와 Detail에는 언제나 이름 전체가 나옵니다. space가 없는 Artifact는 어느 상자에도
-들어가지 않으며, space 사이의 간선도 다른 간선과 똑같이 그리고 색칠합니다. 상자는 Artifact가
-아니어서 Tab으로 이동할 때 건너뛰고, 상자를 클릭하면 배경을 클릭했을 때처럼 Detail이 닫힙니다.
+적힌 영역 하나에 함께 놓이고, 각 노드에는 space를 뺀 나머지 이름(`Code`)만 보입니다. 스크린 리더와 Detail에는 언제나 이름 전체가 나옵니다. 영역의 둥근 테두리는
+그 안의 Artifact를 따라 그려지고, space가 있는 그래프는 Artifact 사이와 space 사이를 더 넓게 띄워 배치합니다. space가 없는 Artifact는 어느 영역에도
+들어가지 않으며, space 사이의 간선도 다른 간선과 똑같이 그리고 색칠합니다. 영역은 Artifact가
+아니어서 Tab으로 이동할 때 건너뛰고, 영역을 클릭하면 배경을 클릭했을 때처럼 Detail이 닫힙니다.
 노드가 40개를 넘으면
 이동과 확대/축소가 되는 미니맵이 그래프 탐색을 돕습니다. **Artifact가 500개를 넘으면** 그래프에
 미니맵이 나오지 않고, 보이는 Artifact가 500개를 넘는 동안에는 이름 없이 색칠된 사각형으로 표시되며 클릭으로만 열 수 있습니다.
@@ -177,10 +175,10 @@ Artifact를 클릭하면 그래프 오른쪽 위에 그 **Detail**이 열립니�
 배경, **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는
 것이 없을 때만 Detail을 닫고, 나머지는 [리뷰에서 Esc를 누를 때](#human-reviews)처럼 먼저 한 단계씩 되돌아갑니다. Detail의 왼쪽 가장자리를 드래그해, 내용을 읽기 편하면서도 그래프가 조금 보이는 너비로 조절하세요. 그 폭은 다음 실행에서도 유지됩니다.
 
-Artifact의 Detail에는 Artifact 이름과 eval을 경로 형태로 나열한 칩 `[icon] {name} / [eval] …`이 있습니다.
+Artifact Detail에는 Artifact 이름과 eval을 경로처럼 보여 주는 칩(`[icon] {name} / [eval] …`)이 있습니다.
 Artifact를 나타내는 칩 하나와 eval마다 판정의 기호와 색을 표시하는 칩이 하나씩 있으며, Current에서는 실행될지, 재사용될지, 아직 확인 중인지를 보여 줍니다.
 
-Artifact 칩에서는 그 Artifact를 가운데 두고 이웃과의 관계를 그래프의 노드와 간선으로 보여 줍니다.
+Artifact 칩을 선택하면 해당 Artifact를 중심으로 이웃 Artifact와의 관계를 노드와 간선으로 보여 줍니다.
 왼쪽에는 이 Artifact의 eval이 사용하는 Artifact가, 오른쪽에는 이 Artifact를
 사용하는 eval이 속한 Artifact가 있습니다. 이 그림은 이동하거나 확대할 수 없으며, 이웃을 클릭하면 그 이웃의
 Detail이 열립니다. 그 아래에는 이 Artifact의 eval과 판정(클릭하면 그 eval의 칩이 열림),
@@ -283,7 +281,7 @@ Human 리뷰에 있고 편집이나 작업이 진행 중이면 종료하지 않�
 Settings가 열려 있을 때는 `q`가 동작하지 않으니, 먼저 Settings를 닫거나 Commands에서 **Quit**을 고르세요.
 창을 닫아도 종료가 시작됩니다. 이 창에서 맡은 Human 요청 중 아직 제출하지도, 담당을 해제하지도 않은 요청이 있다면
 **Stay**(Esc), **Release and quit**(`u`), **Keep and quit**(`k`) 중에서 고르세요.
-담당을 유지하면 요청은 이 리뷰어가 맡은 상태로 남을 뿐, 판정이 제출되지는 않습니다. 확인 창에는 이 창에서 맡은 요청이 나열됩니다. 각 요청의 상태는 이 창에서 마지막으로 조회했을 때를 기준으로 합니다. CLI나 다른 창에서
+담당을 유지하면 요청은 이 리뷰어가 맡은 상태로 남을 뿐, 판정이 제출되지는 않습니다. 확인 창에는 이 창에서 맡은 요청이 나열됩니다. 각 요청에는 이 창에서 마지막으로 확인한 시점의 상태가 표시됩니다. CLI나 다른 창에서
 담당을 해제하거나 처리를 확정한 요청이 여전히 나열될 수 있고, 창이 열리기 전에 맡은 요청은
 나열되지 않습니다. 종료하면 아직 출력을 내고 있는 도구와 진행 중인 리뷰 작업을 취소합니다. launch
 도구가 연 프로그램은 계속 실행되니 직접 닫으세요.

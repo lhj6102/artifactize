@@ -429,8 +429,8 @@ dependency-first strongly connected components (SCCs): groups of Artifacts that
 mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)
 shows them on screen.
-Component IDs refer to the full graph and may be
-noncontiguous in a selected projection. `config check` keeps its static validity
+Component IDs are numbered across the whole project graph, so output filtered to some
+Artifacts can skip numbers. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output
 level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
 command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
@@ -575,7 +575,7 @@ project tools. Its answer is plain text; it does not change the recorded verdict
 result or reuse. The header warns when reviewed inputs have changed. Each question
 gets fresh profile budgets, and questions to one session run in order. See the
 [follow-up replay reference](../features/others/state.md#follow-up-replay)
-for caching, stored messages and compatibility details.
+for how follow-ups are stored.
 
 A reference to another machine or state fails with where it lives, for example
 `Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state

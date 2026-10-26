@@ -35,7 +35,7 @@ artifactize models codex
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
 `xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Gemini는 `minimal`, `low`,
 `medium`, `high`를 받습니다. 그 밖의 값은 선언 오류이며, 다른 값으로 바꿔서 보내지 않습니다.
-커스텀 provider는 그 API가 받는 값을 따르며, 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
+커스텀 provider에서는 해당 API가 지원하는 값을 쓸 수 있으며, 지원 여부는 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
 Agent eval도 Runtime eval처럼 입력 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
@@ -74,6 +74,7 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 `max_tool_calls`는 도구를 실행하기 전에 호출 시도를 세며, 성공한 호출뿐 아니라 모르는 도구,
 잘못된 호출, 실패한 호출도 포함합니다. 둘 중 하나라도 넘으면 `PROVIDER_BUDGET_EXCEEDED`로
 작업을 멈춥니다. 수정 요청을 할 때도 원래 리뷰의 제한 시간과 예산을 적용하며, 예산을 추가하지 않습니다.
+반면 재실행은 제한 시간과 예산을 새로 받아 리뷰를 처음부터 다시 합니다([재시도와 오류 코드](#retries-and-error-codes) 참고).
 
 ## Agent 도구 {#agent-tools}
 
@@ -97,10 +98,22 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 요청한 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
-생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
+provider가 안내한 대기 시간이 지나면 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
+생긴 뒤의 실패는 그 턴 안에서 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
+
+provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 같은 Run 안에서 리뷰 전체를 기본
+한 번 다시 실행합니다. 이전 대화를 이어 가지 않고 새 대화로 시작합니다. 답변이 공백으로만
+계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
+`Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
+여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과를 기다렸다가 결과가 나오면
+이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 실행마다 리뷰 제한 시간, `max_tokens`, `max_tool_calls`를
+새로 적용하므로, 두 번 실행된 요청은 예산을 최대 두 배까지 쓸 수 있습니다. 다시 실행할 때마다 비용이 듭니다. 각 실행의
+시도는 모두 `usage`에 남고, 두 번째 이후 실행의 시도에는 `dispatch`(2, 3, …)가 붙습니다. 실패한 실행은
+요청의 `redispatches`에 `sessionId`, 저장된 `session`, `errorCode`, `error`와 함께 남습니다. 요청의
+`sessionId`와 `session`은 마지막 실행의 것입니다. 다시 실행하는 횟수는 머신마다
+[`limits.json`](others/state.md#agent-redispatches)에서 정합니다. 0이면 이런 실패가 처음 났을 때 리뷰가 끝납니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
@@ -117,13 +130,13 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 | `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일이 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
 | `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
 | `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429입니다. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상인 경우입니다 | 합니다 |
-| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다 |
+| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다. 출력 뒤에는 리뷰를 다시 실행합니다 |
 | `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 하지 않습니다 |
 | `CANCELLED` | Run을 직접 취소했습니다(`run cancel` 또는 MCP `verify_cancel`) | 하지 않습니다 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘었습니다 | 하지 않습니다 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없습니다 | 하지 않습니다 |
-| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 하지 않습니다 |
-| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 하지 않습니다 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 리뷰를 다시 실행합니다 |
+| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 출력 한도에서 끊긴 답변(`Length`)만 리뷰를 다시 실행합니다 |
 | `AGENT_ERROR` | 그 밖의 모든 경우입니다. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구가 해당합니다 | 하지 않습니다 |
 | `BACKEND_STOPPED` | 시작하지 않습니다. 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다 | — |
 
@@ -196,7 +209,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 
 ## Codex {#codex}
 
-`codex`는 내 ChatGPT 요금제의 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
+`codex`는 내 ChatGPT 요금제로 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)을 사용해 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser

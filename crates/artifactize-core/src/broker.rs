@@ -895,6 +895,7 @@ impl Scheduler<'_, '_> {
                     let parallelism = self.parallelism.clone();
                     let agent = request.profile.kind() == crate::config::ProfileKind::Agent;
                     let stops = stops.clone();
+                    let redispatches = self.limits.agent_redispatches();
                     self.tasks.spawn(async move {
                         let mut execution = execution;
                         // An Agent result pins the files its tools execute, hashed before the
@@ -948,6 +949,7 @@ impl Scheduler<'_, '_> {
                             run_dir,
                             &parallelism,
                             &stops,
+                            redispatches,
                             cancellation,
                             deferred_human,
                         )

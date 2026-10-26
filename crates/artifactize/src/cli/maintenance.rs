@@ -178,6 +178,12 @@ pub(super) fn limits(
             limits.signoff_idle_grace().as_secs()
         )
         .map_err(|e| e.to_string())?;
+        writeln!(
+            out,
+            "Agent redispatches after a failed provider output: {}",
+            limits.agent_redispatches()
+        )
+        .map_err(|e| e.to_string())?;
         for (backend, slots) in limits.backends() {
             writeln!(out, "Backend {backend}: {slots} reviews at once")
                 .map_err(|e| e.to_string())?;

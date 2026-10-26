@@ -480,7 +480,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       }
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them, as the Current draws them. The graph drawn
-      // is this release's only once its Artifact nodes (not its spaces' boxes) and edges are
+      // is this release's only once its Artifact nodes (not its spaces' regions) and edges are
       // exactly these, never the previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
         { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string }[] };
@@ -498,7 +498,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
       // Complete and still: exactly this release's Artifact nodes and edges, every node (space
-      // boxes included) drawn inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
+      // regions included) drawn inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
       // over 300 ms.
       const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {

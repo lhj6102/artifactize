@@ -134,6 +134,19 @@ Run에만 적용됩니다. `artifactize limits`(데스크톱 Settings에서도 �
 artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
 ```
 
+## Agent 재실행 {#agent-redispatches}
+
+`limits.json`으로 provider의 답변이 나오기 시작한 뒤 실패한 Agent 리뷰를 Run 안에서 몇 번
+[다시 실행](../agent.md#retries-and-error-codes)할지도 정합니다.
+
+```json
+{"agentRedispatches": 1}
+```
+
+값은 0–5이며, 필드나 파일이 없으면 1입니다. 0이면 이전처럼 첫 실패에서 리뷰가 ERROR로 끝납니다.
+다시 실행할 때마다 처음 실행과 똑같이 비용이 듭니다. 다른 한도와 마찬가지로 이 상태를 쓰는 모든 Run에
+적용되고 Run이 시작할 때 읽습니다. `artifactize limits`로 확인할 수 있습니다.
+
 ## Agent 세션 {#agent-sessions}
 
 Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
@@ -175,13 +188,9 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 
 ### follow-up 재생 {#follow-up-replay}
 
-`session send`로 같은 백엔드, 모델, reasoning 설정을 유지한 채 저장된 리뷰 대화에 이어서 질문할 수 있습니다. 현재 프로젝트의 도구를 다시 제공하며,
-리뷰 뒤에 그 리뷰가 다룬 Artifact 중 하나가 바뀌었다면 머리말에 그 사실을 표시하고 모델에도 알립니다. 질문은 새 리뷰가 아니라
-follow-up입니다. 모델은 일반 텍스트로 답하고, 도구를 쓸 수 있으며, 기록된 판정은 절대 바뀌지
-않습니다. `session show`는 질문을 쓴 그대로 보여 줍니다.
-
-질문, 답변, 도구 호출은 같은 대화에 이어서 쌓이며, 질문은 한 번에 하나씩 처리하고 질문마다
-프로필 예산이 새로 적용됩니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
+[`session send`](../../cli/index.md#agent-sessions)로 저장된 리뷰에 follow-up 질문을 할 수 있습니다.
+질문, 답변, 도구 호출은 리뷰 대화 뒤에 이어서 그 리뷰의 세션에 저장되므로, `session show`가 리뷰와 함께
+보여 주며 질문은 쓴 그대로 나옵니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
 
 ## 로컬 진단과 유지보수 {#local-diagnostics-and-maintenance}
 
