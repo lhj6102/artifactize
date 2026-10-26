@@ -19,12 +19,12 @@ payload.instruction = "Check that every link in the docs resolves."
 
 ## Artifact Graph {#artifact-graph}
 
-**Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. `{spec}` 같은 참조는 그
-Artifact를 eval의 입력으로 지정하며, 그 fingerprint가 바뀌면 재사용 키에 그 Artifact를 포함한 리뷰만
-무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
-Artifact가 모든 eval이 의존하는 대상이 되지는 않습니다.
+**Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. eval에 `{spec}` 같은 참조를
+쓰면 그 eval이 `spec`을 읽을 수 있습니다. `spec`이 바뀌면 `spec`을 참조한 eval만 다시 리뷰하고,
+나머지 결과는 그대로 재사용합니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는
+이유만으로 모든 Artifact가 모든 eval의 입력이 되지는 않습니다.
 
-실행 게이트는 eval마다 정해집니다. [eval 의존성](#eval-dependencies)을 보세요.
+각 eval은 자기가 참조한 입력을 판정하는 eval도 기다립니다. [eval 의존성](#eval-dependencies)을 보세요.
 
 Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은

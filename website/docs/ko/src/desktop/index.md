@@ -132,17 +132,12 @@ Detail이 열리며, 저장된 검증과 충족되지 않은 최종 검증 요�
 
 브랜치의 **Current**는
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
-Run 없이 현재 선언의 그래프를 그립니다. 선언을 읽는 즉시 그래프가 나타나며, 처음에는 모든 Artifact가 확인 중(checking)으로 표시됩니다. fingerprint 계산이 끝날 때마다 해당 Artifact의 상태가 갱신됩니다. reused(모든 eval을 다시 실행하지 않고 기존 결과를 재사용), would run, waiting, blocked 상태는 각각 다른 색으로 표시됩니다. 각 Artifact의 상태는 해당 Artifact와 의존 대상의
-fingerprint를 모두 계산한 뒤에 정해지므로, 의존 대상이 없는 Artifact부터 그래프에 상태를 표시합니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
-그 Artifact의 상태와 실행될 eval 수, 또는 아직 확인 중이라는 사실을 담습니다. 스캔이 진행되는 동안 머리말은
-아직 확인 중인 Artifact 수를 알려 주고, 스캔이 끝나면 언제 스캔했는지 알려 줍니다. fingerprint 계산에 실패하면
-머리말에 이유를 표시하고 그래프는 그대로 둡니다.
-다시 고를 때, **Refresh**나 Ctrl+R/F5를 누를 때, Pane에 보이는 브랜치의 Run이 끝날 때 다시 스캔합니다.
+Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에 확인 중(checking)으로 표시되다가,
+지금 verify를 실행하면 어떻게 될지에 따라 색이 바뀝니다. reused(모든 eval의 기존 결과를 다시 실행하지 않고 재사용), would run,
+waiting, blocked 중 하나입니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
+머리말에는 아직 확인 중인 Artifact 수가 나오고, 스캔이 끝나면 스캔한 시각이, 실패하면 그 이유가 나옵니다.
+Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나 Ctrl+R/F5를 누를 때 다시 스캔합니다.
 검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
-그 브랜치의 스캔이 아직 진행 중이면, Current를 다시 고르거나 Run이 끝나도 처음부터 다시 스캔하지 않고
-진행 중인 스캔을 보여 줍니다. 그동안 Current의 **Refresh** 버튼은 비활성화됩니다. 앱의 **Refresh** 명령이나
-Ctrl+R/F5를 누르면 진행 중인 스캔을 보여 주고, 그 스캔이 끝나면 한 번 더 스캔하므로 그사이에 바꾼 내용도
-나타납니다.
 **Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
 해서는 어떤 리뷰도 승인되지 않습니다.

@@ -196,7 +196,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 
 ## Codex {#codex}
 
-`codex`는 내 ChatGPT 요금제의 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
+`codex`는 내 ChatGPT 요금제로 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)을 사용해 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
