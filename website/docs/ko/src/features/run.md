@@ -88,12 +88,9 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 
 ### 승인과 Run 종료 {#sign-offs-and-the-end-of-a-run}
 
-승인 요청은 그 승인의 선행 조건, 즉 같은 Artifact의 다른 자동 검사 eval이 GREEN이 되고(다른 승인 때문에 PROVISIONAL로
-보이는 GREEN도 포함합니다) 이를 막는 게이트가 없다는 조건을 충족하는 즉시 보냅니다. 승인은 다른 eval을 막지 않습니다. 그 승인에 의존하는
-eval도 바로 실행하며, 그 eval의 GREEN 결과는 승인이 GREEN이 될 때까지 PROVISIONAL로 표시됩니다. 그 eval 자체의
-RED나 ERROR는 그대로 표시됩니다. 승인을 요청할 때 다른
-자동 검사 작업이 아직 실행 중일 수 있으니, 최종 상태를 리뷰하려면 그 작업이 끝날 때까지 기다리세요.
-요청은 DEFERRED로 표시됩니다. DEFERRED도 PROVISIONAL도 승인이 아닙니다. 이는 해당 Run에서 실행하도록
+승인 요청은 [Human 승인](artifact.md#human-sign-offs)에서 설명하듯 그 Artifact의 자동 검사 eval이
+통과하면 보내며, 요청은 DEFERRED로 표시됩니다. 그 승인에 의존하는 eval은 바로 실행되고 PROVISIONAL로
+표시되며, 자세한 내용은 [Human 리뷰](human.md)에 있습니다. 이는 해당 Run에서 실행하도록
 선택한 승인에 해당합니다. 선택하지 않은 승인도 최종 검증 요건에 포함되므로, 그 승인에 의존하는 eval은
 재사용할 승인 결과가 있어야 실행되고, 그런 결과가 없으면 Run은 INCOMPLETE로 끝납니다. `--recursive`나 `--all` 등으로 그 승인도
 선택하세요.

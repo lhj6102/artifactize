@@ -138,7 +138,7 @@ impl Entry {
         let tags = view
             .definition
             .as_ref()
-            .and_then(|definition| definition.artifact.tags.value())
+            .and_then(|definition| definition.artifact().tags.value())
             .or_else(|| {
                 let artifacts = request.human_definition.as_ref()?.artifacts.value()?;
                 artifacts.get(&request.target)?.tags.value()

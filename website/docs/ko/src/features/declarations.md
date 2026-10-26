@@ -185,7 +185,7 @@ Agent 스키마에는 검사기가 지원하는 기능을 모두 쓸 수 있습�
 
 ## 그래프 Artifact {#graph-artifact}
 
-저장소 루트에 이름 없는 `.artf`를 두면 프로젝트 전체의 Artifact Graph를 선언합니다.
+저장소 루트에 파일명이 `.artf`인 선언 파일을 두면 프로젝트 전체의 Artifact Graph를 선언할 수 있습니다.
 이때도 `index.artf`는 루트 폴더를, `<filename>.artf`는 같은 폴더의 그 파일을 선언합니다. 다른
 디렉터리에 이름 없는 `.artf`가 있으면 선언 오류입니다. 루트 `.artf`는 `index.artf`처럼
 `.artfignore` 패턴이 그 파일 이름을 가리켜도 읽습니다. 그래프 Artifact는 하나만 둘 수

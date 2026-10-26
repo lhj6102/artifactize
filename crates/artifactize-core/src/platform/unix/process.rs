@@ -370,14 +370,18 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
         admitted,
     };
     let parent = gate.socket.clone();
-    // SAFETY: the forked child uses only async-signal-safe syscalls and stack data.
-    // Both descriptors stay alive until spawn completes; CLOEXEC closes the child
-    // endpoint on exec. Closing the inherited parent endpoint makes EOF meaningful.
+    let mut inherited = super::descriptors::Inherited::reserve();
+    // SAFETY: the forked child uses only async-signal-safe syscalls, stack data and the
+    // memory reserved above. Both descriptors stay alive until spawn completes; CLOEXEC
+    // closes the child endpoint on exec. Closing the inherited parent endpoint makes EOF
+    // meaningful. The other runs' pipes this child inherited go before it is held, so
+    // that it cannot keep their output open while it waits for admission.
     unsafe {
         command.command_mut().pre_exec(move || {
             libc::close(parent.get_ref().as_raw_fd());
-            let pid = (libc::getpid() as u32).to_ne_bytes();
             let fd = child.as_raw_fd();
+            inherited.release(fd);
+            let pid = (libc::getpid() as u32).to_ne_bytes();
             let mut offset = 0;
             while offset < pid.len() {
                 let written = libc::write(fd, pid[offset..].as_ptr().cast(), pid.len() - offset);

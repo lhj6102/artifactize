@@ -190,6 +190,7 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
             &request,
             Turn {
                 number: 1,
+                model: "fixture-model",
                 deadline: Instant::now() + Duration::from_secs(5),
                 cancellation: &cancellation,
             },
@@ -333,6 +334,7 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
             &CompletionRequest::new(Message::user("fixture")),
             Turn {
                 number: 1,
+                model: "fixture-model",
                 deadline: Instant::now() + Duration::from_secs(5),
                 cancellation: &cancel,
             },

@@ -81,9 +81,9 @@ Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, �
 결과를 제출해도 요청을 맡은 것으로 처리되지 않습니다. 판정 양식, 제출 키, 편집기 단축키가 바뀌었습니다.
 현재 조작 방법은 [Human 리뷰와 Monitor](../features/human.md)를 보세요.
 
-0.5.0은 `chatgpt`와 `claude` Agent 백엔드를 `login chatgpt`,
-`logout chatgpt`, 내부 `mcp` 명령과 함께 제거하고, ChatGPT 요금제
-사용자를 위한 `codex`를 추가합니다. `config check`는 제거된 백엔드를 아직 쓰는
+0.5.0부터는 `chatgpt`와 `claude` Agent 백엔드가 `login chatgpt`,
+`logout chatgpt`, 내부 `mcp` 명령과 함께 제거되었으며, ChatGPT 요금제
+사용자를 위한 `codex` 백엔드가 추가되었습니다. `config check`는 제거된 백엔드를 아직 쓰는
 eval이나 프로필 변형을 찾아 대신 쓸 백엔드를 안내합니다. artifactize는 이전 릴리스가 저장한 ChatGPT
 토큰을 더 이상 쓰지 않습니다. ChatGPT 설정에서 artifactize 연결을 끊은 다음
 상태 디렉터리에서 `auth/chatgpt.json`, `auth/chatgpt-registration.json`, `auth/chatgpt.lock`을

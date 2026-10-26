@@ -136,7 +136,7 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
 열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
-`--wait`나 `--watch` 없이 `verify --json`을 실행하면 `run`과 `state`만 출력합니다.
+`--wait` 없이 `verify`가 출력하는 JSON은 Run과 그 상태만 알려 줍니다.
 
 ```sh
 artifactize verify --all --request-key build-42
@@ -205,9 +205,9 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
 프로그램을 시작하지 못하거나 리뷰가 ERROR로 끝나도 이 횟수는 유지합니다. 사람을 기다리는 시간, 담당 지정, Human 도구는 시작
 횟수에 들어가지 않고, fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에 합류하는 것도
-마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. Agent 리뷰에서는
-시작 횟수를 센 뒤 `execution_paths`에 지정한 도구 파일의 해시를 기록합니다. 이 단계가
-실패해도 시작 횟수는 그대로 남고, 리뷰는 모델을 호출하지 않은 채 ERROR/PREPARATION_FAILED로 끝납니다.
+마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. `execution_paths`에
+지정한 도구 파일을 읽지 못한 Agent 리뷰는 시작 횟수에 들어가고, 모델을 호출하지 않은 채
+ERROR/PREPARATION_FAILED로 끝납니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시
 실행해야 하면, 다시 실행하는 리뷰는 그 리뷰가 속한 Run의 남은 횟수를 씁니다. 횟수를 다 써도 실행 중인 eval은 멈추지 않지만,
 남은 READY 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 이유와 함께 INCOMPLETE(종료 코드 4)로
@@ -260,7 +260,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 
 `artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
 범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
-합니다. Artifact 선택자는 그 Artifact를 리뷰하는, 순환으로 묶인 대상의 eval도 함께 실행합니다.
+합니다. Artifact를 선택하면 같은 순환에 속해 그 Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다.
 `--force`는 그래도 직접 선택한 eval만 새로 리뷰하도록 표시합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
 관계를 맺지 않습니다.
 
@@ -511,17 +511,19 @@ artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still ho
 ```
 
 ```text
-Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna · files changed since this review
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
+
+머리말에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이
 바뀌었는지(알 수 없으면 null), `answer`는 답변 텍스트, `usage`는 시도별 토큰 수입니다.
 
 follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
-텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
+텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 머리말에
 경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 캐시, 저장되는 메시지, 호환성은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
 보세요.

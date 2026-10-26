@@ -465,11 +465,13 @@ fn heavy() -> (RunView, Vec<RequestView>) {
         },
     ]);
     for (index, eval) in ["p1/check", "p2/check"].into_iter().enumerate() {
-        let request = &mut requests
-            .iter_mut()
-            .find(|view| view.request.eval_id == eval)
-            .unwrap()
-            .request;
+        let request = std::sync::Arc::make_mut(
+            &mut requests
+                .iter_mut()
+                .find(|view| view.request.eval_id == eval)
+                .unwrap()
+                .request,
+        );
         request.provenance = Some(
             serde_json::from_value(
                 json!({"repoPath":"repo","runId":"run-1","requestId":request.id,
@@ -798,14 +800,14 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
     let (view, mut requests) = live();
     for view in &mut requests {
         if view.request.eval_id == "p2/check" {
-            view.request.state = crate::store::RequestState::failed(
+            std::sync::Arc::make_mut(&mut view.request).state = crate::store::RequestState::failed(
                 long.clone(),
                 view.request.error_code(),
                 "2026-01-01T00:01:00Z".parse().unwrap(),
             );
         }
         if view.request.eval_id == "app/check" {
-            view.request.profile = serde_json::from_value(
+            std::sync::Arc::make_mut(&mut view.request).profile = serde_json::from_value(
                 json!({"kind":"runtime","command":long.clone(),"args":[long.clone()]}),
             )
             .unwrap();
@@ -888,14 +890,14 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
     let (view, mut requests) = live();
     for view in &mut requests {
         if view.request.eval_id == "p2/check" {
-            view.request.state = crate::store::RequestState::failed(
+            std::sync::Arc::make_mut(&mut view.request).state = crate::store::RequestState::failed(
                 messy.into(),
                 view.request.error_code(),
                 "2026-01-01T00:01:00Z".parse().unwrap(),
             );
         }
         if view.request.eval_id == "app/check" {
-            view.request.profile = serde_json::from_value(
+            std::sync::Arc::make_mut(&mut view.request).profile = serde_json::from_value(
                 json!({"kind":"runtime","command":"line\nbreak","args":["tab\there"]}),
             )
             .unwrap();

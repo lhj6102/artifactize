@@ -122,7 +122,7 @@ pub(super) fn state_for(
         }
     }
 }
-pub(super) fn state(run: &Run, requests: &[Request]) -> State {
+pub(super) fn state(run: &Run, requests: &[std::sync::Arc<Request>]) -> State {
     state_for(
         run.status(),
         run.control.as_ref(),

@@ -45,7 +45,7 @@ Agent eval도 Runtime eval과 똑같이 입력의 검사 결과가 나올 때까
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
 제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 리뷰만
 합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트를 실행하거나 테스트
-대상 코드를 불러오지 않고, 테스트 코드를 읽어 평가 기준에서 요구하는 사항을 충분히 검증하는지 판단합니다. 테스트 묶음이
+대상 코드를 불러오지 않고, 테스트 코드를 읽어 평가 기준에서 요구하는 사항을 충분히 검증하는지 판단합니다. 테스트 모음이
 통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요. `{name}`
 참조는 리뷰어에게 이름만으로 전달됩니다. artifactize가 지시문 뒤에 대상과 참조된 Artifact를
 하나씩 한 번만, 역할(`target` 또는 `input`)과 읽을 때 쓸 도구 이름과 함께 나열하므로, 지시문에
@@ -91,7 +91,9 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 
 Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
 기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-ERROR입니다. Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
+ERROR입니다. 답변이 긴 공백으로만 이어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
+끝납니다. `verify`를 다시 실행하고, 계속 그러면 다른 모델이나 `reasoning`을 써 보세요.
+Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
@@ -122,6 +124,7 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 | `CANCELLED` | Run을 직접 취소함(`run cancel` 또는 MCP `verify_cancel`) | 안 함 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘음 | 안 함 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없음 | 안 함 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됨 | 안 함 |
 | `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 안 함 |
 | `AGENT_ERROR` | 그 밖의 모든 경우. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구 | 안 함 |
 | `BACKEND_STOPPED` | 시작하지 않음: 그 Run에서 그 백엔드로 새 리뷰를 보내지 않음 | — |
@@ -233,7 +236,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 머신마다
 따로 설정합니다. 커스텀 provider는 Agent 프로필의 `backend`에 쓸 수 있는 이름으로, 데스크톱 앱의
 **Settings → Providers**에서 **+ Custom provider**를 누르거나 `artifactize provider`로 추가합니다.
-필요한 만큼 추가할 수 있으며, 종류는 둘 중 하나입니다.
+종류는 둘 중 하나입니다.
 
 - **별칭(alias)**: 기본 provider를 다른 이름으로 쓰며, 그 provider의 로그인이나 키를 그대로 씁니다.
 
@@ -264,7 +267,8 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 이 머신에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
 오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
-저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
+저장되고, 저장소 안에는 저장되지 않습니다. 이 파일은 최대 1 MiB이며, 이를 넘으면 provider를 읽거나 바꿀 때
+`Credential file is too large.` 오류가 납니다. 쓰지 않는 provider와 키를 지워 한도 아래로 줄이세요. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.
 
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}

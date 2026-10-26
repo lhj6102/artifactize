@@ -922,10 +922,11 @@ fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
     let (_, requests) = monitor.run.as_mut().unwrap();
     for view in requests {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m2/x") {
-            view.request.state = crate::store::RequestState::completed(
-                serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
-                "2026-01-01T00:09:00Z".parse().unwrap(),
-            );
+            std::sync::Arc::make_mut(&mut view.request).state =
+                crate::store::RequestState::completed(
+                    serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
+                    "2026-01-01T00:09:00Z".parse().unwrap(),
+                );
         }
     }
     monitor.sync_tree(false);
@@ -1135,10 +1136,11 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
     let (_, requests) = monitor.run.as_mut().unwrap();
     for view in requests {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m6/x") {
-            view.request.state = crate::store::RequestState::completed(
-                serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
-                "2026-01-01T00:09:00Z".parse().unwrap(),
-            );
+            std::sync::Arc::make_mut(&mut view.request).state =
+                crate::store::RequestState::completed(
+                    serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
+                    "2026-01-01T00:09:00Z".parse().unwrap(),
+                );
         }
     }
     monitor.sync_tree(false);
@@ -1186,7 +1188,7 @@ fn frames_preserve_rendered_rows_and_refresh_updates_their_state() {
         .iter_mut()
         .find(|view| view.request.eval_id == "up-a/x")
         .unwrap();
-    request.request.state = crate::store::RequestState::completed(
+    std::sync::Arc::make_mut(&mut request.request).state = crate::store::RequestState::completed(
         serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
         "2026-01-01T00:00:01Z".parse().unwrap(),
     );

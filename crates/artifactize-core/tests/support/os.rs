@@ -484,7 +484,8 @@ pub fn waiting_program(directory: &Path) -> String {
 /// `hold FILE` starts a child that blocks until it is killed, appends the child's process id
 /// and waits for it, `spawn FILE` starts such a child, appends its process id and goes on
 /// without waiting, `start` starts such a child, prints its process id and goes on without
-/// waiting, `child` runs the remaining steps in a child process and waits for it, `block`
+/// waiting, `leave FILE` (Unix only) starts such a child in a process group of its own that
+/// keeps this program's stdout and stderr, appends its process id and goes on, `child` runs the remaining steps in a child process and waits for it, `block`
 /// blocks until it is killed, `fill COUNT BYTE ECOUNT EBYTE` writes COUNT copies of the byte
 /// BYTE to stdout and ECOUNT of EBYTE to stderr at the same time, `cwd` prints the working
 /// directory as portable path text, `ignore-term` ignores SIGTERM and `terminate` ends the
@@ -580,6 +581,16 @@ fn run(steps: Vec<String>) {
                 child.wait().unwrap();
             }
             "spawn" => line(&next(&mut steps), &blocking_child().id().to_string()),
+            #[cfg(unix)]
+            "leave" => {
+                use std::os::unix::process::CommandExt;
+                let child = std::process::Command::new(std::env::current_exe().unwrap())
+                    .arg("block")
+                    .process_group(0)
+                    .spawn()
+                    .unwrap();
+                line(&next(&mut steps), &child.id().to_string());
+            }
             "start" => {
                 println!("{}", blocking_child().id());
                 std::io::stdout().flush().unwrap();

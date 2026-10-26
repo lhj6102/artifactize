@@ -811,10 +811,11 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
         let mut view = artifactize_core::store::read_request(&fixture.state, &id)
             .await
             .unwrap();
-        view.request.state = artifactize_core::store::RequestState::completed(
-            serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
-            "2026-01-01T00:00:02Z".parse().unwrap(),
-        );
+        std::sync::Arc::make_mut(&mut view.request).state =
+            artifactize_core::store::RequestState::completed(
+                serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
+                "2026-01-01T00:00:02Z".parse().unwrap(),
+            );
         receipts.save_request(&view.request).await.unwrap();
     });
     // Resolve after the saved completion, without assuming repeated calls made a window
@@ -841,7 +842,8 @@ fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
         let mut view = artifactize_core::store::read_request(&fixture.state, &id)
             .await
             .unwrap();
-        view.request.session_id = Some("other-session".parse().unwrap());
+        std::sync::Arc::make_mut(&mut view.request).session_id =
+            Some("other-session".parse().unwrap());
         receipts.save_request(&view.request).await.unwrap();
     });
     let replaced = invoke(

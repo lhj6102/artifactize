@@ -551,7 +551,7 @@ impl Request {
 pub struct RunView {
     #[serde(flatten)]
     pub run: Run,
-    pub requests: Vec<Request>,
+    pub requests: Vec<std::sync::Arc<Request>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unreadable: Vec<super::Unreadable>,
 }

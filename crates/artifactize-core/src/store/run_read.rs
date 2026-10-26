@@ -119,7 +119,7 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
         unreadable.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
         Ok(RunView {
             run,
-            requests,
+            requests: requests.into_iter().map(std::sync::Arc::new).collect(),
             unreadable,
         })
     })

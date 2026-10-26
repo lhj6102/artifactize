@@ -71,8 +71,9 @@ again; its request waits for that execution and uses no execution start or backe
 The joined request gets the same GREEN, RED or ERROR; an ERROR is not kept for later Runs.
 If the first Runtime or Agent review is cancelled or fails to finish, a waiting Run runs
 it itself and the others join that one. A Human sign-off is not restarted: when its
-Run is cancelled or stops, the sign-off and every request waiting on it end as ERROR, and
-a new `verify` asks again. Cancelling a waiting Run does not cancel the first one.
+Run is cancelled, or its process dies (`OWNER_DIED`), the sign-off and every request waiting
+on it end as ERROR, and a new `verify` asks again. A Run that ends YELLOW leaves its waiting
+sign-offs and the requests waiting on them open, so they can still be submitted. Cancelling a waiting Run does not cancel the first one.
 `--force` always runs its own execution. Running reviews are not shared through a remote
 store, and there are no settings for this.
 

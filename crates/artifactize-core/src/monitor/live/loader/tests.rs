@@ -33,6 +33,8 @@ fn run(id: &str, repo: &Path, state: &Path, artifacts: usize) -> (Run, Vec<store
                 json!({"id":format!("{id}-{name}"),"runId":id,"cwd":repo}),
             )
             .request
+            .as_ref()
+            .clone()
         })
         .collect();
     (run, requests)

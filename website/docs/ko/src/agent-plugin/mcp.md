@@ -110,12 +110,10 @@ eval 결과 재사용은 유지됩니다.
 Run별 상한이며, 제한 없는 동시 실행이 문제를 일으킬 때만 추가하세요. 동시 실행 상한이 없는
 Run에는 `jobs` 필드가 없습니다.
 
-`speculate`는 기본값이 false이며 CLI의 `--speculate`와 뜻이 같습니다. 요청된 Runtime과 Agent 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다. 이번 Run의 실행 대상으로
-선택한 승인은 다른 eval을 막지 않습니다(선택 범위 밖의 승인은 막으며, scope에 그 승인을 넣을 때까지 Run은 INCOMPLETE로 끝납니다).
-첫 승인을 요청한 때부터 Run은 `waiting_human`이며, 승인을 맡고 있거나
-[유휴 유예 시간](../features/others/state.md#sign-off-idle-grace)이 남은 동안 종료되지 않고 대기하다가, 승인만 남으면
-`yellow`로 끝납니다. 이때 `verify_result`는 판정 `YELLOW`를 보고하며, 이는 완전한 승인이 아닙니다. CLI에서 진행 상황을
-지켜보는 명령은 종료 코드 5로 끝납니다. `DEFERRED`와 `PROVISIONAL` 같은 요청 상태는 CLI와 같습니다. 나중에 승인을 제출해도 자동 검사가 다시 실행되지는 않습니다.
+`speculate`는 기본값이 false이며 CLI의 `--speculate`와 뜻이 같습니다. 요청된 Runtime과 Agent 작업을 상위 eval의 판단이 끝나기 전에 시작하되, 일반 스케줄링 한도는 그대로 적용합니다. 상위 eval이 RED나 ERROR가 되면 그 결과로 무효가 된 하위 작업만 취소합니다.
+자세한 내용은 [추측 실행](../features/run.md#speculation)에 있습니다. 승인 대기 중인 Run이 언제
+`waiting_human`이 되고 언제 `yellow`로 끝나는지는 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)에 있습니다.
+`yellow` Run에서 `verify_result`는 판정 `YELLOW`를 보고하며, 이는 완전한 승인이 아닙니다.
 
 Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기 상태는 오류가 아니라 정상입니다.
 `verify_wait`는 Runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
@@ -150,8 +148,8 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 
 `session_show.reference`는 저장된 세션 참조, 요청 ID, 세션
-ID를 받으며, CLI와 마찬가지로 `producer`(리뷰를 실행한 `user@host`)와 상태를 확인합니다. 없는 캐시 기록은
-CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. 정적
+ID를 받으며, CLI와 마찬가지로 `producer`(리뷰를 실행한 `user@host`)와 상태를 확인합니다. 캐시 기록이 없으면
+CLI의 JSON 출력과 마찬가지로 null을 반환하고, history를 지정하면 빈 배열을 반환합니다. 정적
 `tools_check`는 프로젝트 도구를 호출하거나 세션을 시작하지 않습니다. `status`는
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
 명령은 OS 샌드박스 안에서 실행되지 않습니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며

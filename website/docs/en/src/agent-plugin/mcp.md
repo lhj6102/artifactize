@@ -116,13 +116,11 @@ trouble. The Run omits `jobs` when unlimited.
 
 `speculate` defaults false and means the same as CLI `--speculate`: it starts requested
 runtime and Agent work within the usual scheduling limits before upstream judgment; an
-upstream RED/ERROR cancels only the work it makes invalid. Sign-offs the Run selected never
-hold up other evals (one outside the selection does, and the Run ends INCOMPLETE until the
-scope includes it): the Run is `waiting_human` from its first sign-off request, stays open while one is
-claimed or its [idle grace](../features/others/state.md#sign-off-idle-grace) runs, and ends
-`yellow` when only sign-offs remain. `verify_result` then reports verdict `YELLOW`; this
-is not full approval (the CLI watcher exits 5). Request states such as `DEFERRED` and
-`PROVISIONAL` are the same as in the CLI. Later sign-offs do not re-run the machine work.
+upstream RED/ERROR cancels only the work it makes invalid. See
+[Speculation](../features/run.md#speculation). How sign-offs end a Run, including
+`waiting_human` and `yellow`, is in
+[Sign-offs and the end of a Run](../features/run.md#sign-offs-and-the-end-of-a-run); a
+`yellow` Run's `verify_result` reports verdict `YELLOW`, which is not full approval.
 
 A running answer is smaller than 2 KiB. Waiting is ordinary state, not an error.
 `verify_wait` treats runtime, Agent and Human evals equally: it does **not** return
