@@ -62,9 +62,9 @@ codex plugin add artifactize@artifactize
 쓰세요).
 
 ```text
-/artifactize:hey-arti 아티팩타이즈에 대해 설명해주고 이 프로젝트에 어떻게 적용하면 좋을지 얘기해줘
-/artifactize:hey-arti 지금 있는 테스트와 리뷰를 아티팩타이즈로 옮기도록 도와줘
-/artifactize:hey-arti 이 프로젝트를 아티팩타이즈로 처음부터 시작하도록 도와줘
+/artifactize:hey-arti Artifactize에 대해 설명해 주고 이 프로젝트에 어떻게 적용하면 좋을지 이야기해 줘
+/artifactize:hey-arti 지금 있는 테스트와 리뷰를 Artifactize로 옮기도록 도와줘
+/artifactize:hey-arti 이 프로젝트를 Artifactize로 처음부터 시작하도록 도와줘
 ```
 
 ## 다음 단계 {#next}
