@@ -26,8 +26,7 @@ artifactize config check
 
 ## 선언 검사 {#declaration-validation}
 
-`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 이름이 확장자까지
-정확히 `<filename>`이고 같은 폴더에 있는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
+`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 같은 폴더에서 이름(확장자 포함)이 `<filename>`과 정확히 일치하는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
 

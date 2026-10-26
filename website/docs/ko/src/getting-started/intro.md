@@ -5,7 +5,7 @@ Build together on an Artifact Graph.
 artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되, 바뀌지 않은 작업은
 다시 검사하지 않도록 도와줍니다. **Artifact**는 리뷰할 수 있는 작업 단위입니다.
 파일이나 폴더뿐 아니라, 구성 요소 사이의 연결로 이루어진 Artifact Graph도 Artifact로 선언할 수 있습니다.
-**eval**은 Artifact에 대한 검사입니다. eval은 명령 실행, AI 에이전트의 리뷰, 사람의 승인 가운데 하나입니다.
+**eval**은 Artifact에 대한 검사입니다. eval은 Runtime 명령 실행, Agent 리뷰, Human 승인 가운데 하나입니다.
 
 - 맡은 부분은 각자 편한 방식으로 작업하세요. 각 eval이 쓰는 다른 부분을 선언해 두면
   그 부분이 바뀔 때 영향을 받는 리뷰만 다시 실행됩니다.
