@@ -55,7 +55,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 ## 재사용 키 {#the-reuse-key}
 
-eval은 대상 Artifact와, 대상에 직접 연결된 다음 Artifact에 의존합니다.
+eval은 대상 Artifact에 의존하며, 대상과 직접 연결된 다음 Artifact에도 의존합니다.
 
 - 대상의 자식 Artifact
 - eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact
