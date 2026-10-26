@@ -86,9 +86,14 @@ impl Type for ToolRunKey {
     }
 }
 
-/// The next number of `counter`, which hands out each one once.
+/// The next number of `counter`, which hands out each one once and never wraps: a session
+/// that used up every number would reuse identifiers, so running out is a bug, not a wrap.
 fn allocate(counter: &AtomicU32) -> u32 {
-    counter.fetch_add(1, Ordering::Relaxed)
+    counter
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            next.checked_add(1)
+        })
+        .expect("a counter hands out at most u32::MAX numbers")
 }
 
 impl SignInId {

@@ -169,7 +169,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그
 ```
 
 `kind`는 해당 재사용 키로 저장된 완료 기록을 썼으면 `cache`, 같은 키로 실행 중인 작업(다른
-`verify`나 같은 Run의 형제 eval)이 끝날 때까지 대기한 뒤 그 결과를 썼으면 `joined`,
+`verify`나 같은 Run의 다른 eval)이 끝날 때까지 대기한 뒤 그 결과를 썼으면 `joined`,
 [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)의 기록이면 `remote`입니다.
 `run show`, `request show`, `request list --json`에도 `source`가 있습니다.
 

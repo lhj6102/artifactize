@@ -23,10 +23,13 @@
 | 내장 도구 | 인자 | 결과 |
 |---|---|---|
 | `graph` | 고정 선언 `args = []`. 호출 `{}` | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
-| `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄(기본 1, 최대 9007199254740991), limit 기본 80, 최대 500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
-| `list` | `{path?, offset?, limit?}`. offset은 0부터 셈(기본 0, 최대 9007199254740991), limit 기본값이자 최대 200 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
+| `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄(기본 1, 최대 9007199254740991), limit 기본 80, 범위 1–500 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
+| `list` | `{path?, offset?, limit?}`. offset은 0부터 셈(기본 0, 최대 9007199254740991), limit 기본 200, 범위 1–200 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
 | `glob` | `{pattern, path?}`. `path`는 디렉터리여야 함 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |
-| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`. 기본은 대소문자 구분, maxResults 기본값이자 최대 200 | 검색한 `path`, `matches: [{path, line, text}]`(일치하는 줄마다 하나, 경로 다음 줄 번호 순), `truncated` |
+| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`. 기본은 대소문자 구분, maxResults 기본 200, 범위 1–200 | 검색한 `path`, `matches: [{path, line, text}]`(일치하는 줄마다 하나, 경로 다음 줄 번호 순), `truncated` |
+
+`limit`이나 `maxResults`가 범위를 벗어나면(0 포함) 입력 스키마 검사에서 거부되어 호출이
+실패합니다.
 
 `read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 자식 폴더를
 거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 안에 `spec`으로 선언된 자식 폴더 `rules`가

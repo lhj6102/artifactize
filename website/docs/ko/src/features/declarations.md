@@ -50,7 +50,7 @@ examples/
 것일 뿐이고 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
 `artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
 Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
-전체에서 하나뿐이어야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
+프로젝트 전체에서 중복되지 않아야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 
