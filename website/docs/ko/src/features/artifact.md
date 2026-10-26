@@ -131,9 +131,9 @@ payload.instruction = "Run {e2e-tests} against {app}."
 `docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
 쓰는 eval이 진행하려면 둘 다 통과해야 합니다.
 
-순환으로 묶인 대상을 참조하는 eval도 순환 밖 입력의 검사 결과가 나올 때까지 대기합니다. `cli`의 eval이
+순환에 속한 Artifact를 참조하는 eval도 순환 밖 입력의 eval 결과가 나올 때까지 대기합니다. `cli`의 eval이
 `core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
-`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환으로 묶인 대상이나 입력, 자식을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환으로 묶인 대상과 입력, 자식의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
+`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환에 속한 Artifact나 입력, 자식을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환에 속한 Artifact와 입력, 자식의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.

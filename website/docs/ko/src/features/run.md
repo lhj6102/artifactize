@@ -13,10 +13,10 @@ fingerprint 스크립트는 실행할 수 있습니다.
 ## Verify와 Run {#verify-and-runs}
 
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
-eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact의 검사를 실행해
-달라는 뜻입니다. 서로 고리처럼 의존하는 대상은 **순환으로 묶인 대상**입니다. 이들의 검사는 선택한
-Artifact를 리뷰하므로, Artifact 선택자는 순환으로 묶인 대상의 검사도 함께 실행합니다. eval 선택자는 그
-검사 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 검사가 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
+eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact의 eval을 실행해
+달라는 뜻입니다. 서로를 따라가면 원래 Artifact로 돌아오는 Artifact들은 **순환**을 이룹니다. 순환에 속한
+Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는 순환에 속한 Artifact의 eval도 함께
+실행합니다. eval 선택자는 그 eval 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 eval이 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
 **의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
 않았더라도 마찬가지입니다.
 
