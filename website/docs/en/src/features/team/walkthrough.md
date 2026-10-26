@@ -220,7 +220,9 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0,
 
 Had Bob run `verify --all --wait` first, his `verify --wait` would have followed the
 waiting Run, and his request would settle as soon as Alice's sign-off reached the
-store. Bob's own token lacks `human`, so a sign-off he submits stays local, with a
+store, as long as his Run was still open. Bob never claims the sign-off himself, so his
+Run ends YELLOW after two minutes and stops looking; if Alice signs off after that, Bob
+runs `verify` again to reuse her sign-off. Bob's own token lacks `human`, so a sign-off he submits stays local, with a
 warning.
 
 To clean up, stop the server and `rm -rf "$WALK"`.

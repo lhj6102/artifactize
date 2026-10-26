@@ -300,9 +300,11 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 A review that names a provider this machine has not set up is an `AUTHENTICATION` ERROR
 naming the missing provider. Keys and custom providers are saved in `$STATE/auth/providers.json`,
-readable by you only, and never inside a repository. That file holds at most 1 MiB: past it,
-reading or changing providers fails with `Credential file is too large.`, so remove providers
-and keys you no longer use to bring it back under the limit. The provider, like the model and
+readable by you only, and never inside a repository. That file holds at most 1 MiB, which is a limit on
+reading it: past it, every command that reads or changes providers fails with `Credential file
+is too large.`, `logout` and `provider remove` included, so they cannot shrink it. Move
+`providers.json` out of `$STATE/auth/` instead, keeping it as a backup, and save what you
+still use again with `login` and `provider add`. The provider, like the model and
 reasoning, is an execution option: it is recorded with each result and is not part of the
 reuse key.
 
