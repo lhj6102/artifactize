@@ -44,7 +44,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 
-Run은 요청한 쪽과 상관없이 artifactize가 관리합니다. 옵션 없는 `verify`는 Run을 제출하고 Run ID
+누가 요청했든 Run은 artifactize가 관리합니다. 옵션 없는 `verify`는 Run을 제출하고 Run ID
 (`--json`이면 `{"run","state"}`)를 출력한 뒤, 승인 여부와 관계없이 Run이 **접수**되면 0으로 종료합니다.
 `verify --wait`는 stderr에 Run ID를 출력한 뒤 결과가 확정될 때까지 대기하고, 저장된 결과를
 보여 줍니다. 터미널을 닫거나 지켜보는 명령을 중단해도 지켜보기만 멈출 뿐 Run은 계속 실행됩니다. Run을 취소하는
