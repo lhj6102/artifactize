@@ -23,8 +23,7 @@ Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라�
 artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대로 실행합니다.
 [운영체제](../features/others/platforms.md)를 보세요.
 
-리뷰할 작업 단위마다 **Artifact**를 선언합니다. Artifact의 `index.artf`는 텍스트 설정 파일이며, 여기에 **eval**이라는 리뷰 항목을 나열합니다. 이 파일은 읽기 쉬운 `key = value`
-형식인 **TOML**을 씁니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
+리뷰할 작업 단위마다 **Artifact**를 선언합니다. Artifact의 `index.artf`는 텍스트 설정 파일이며, 여기에 **eval**이라는 리뷰 항목을 나열합니다. 이 파일은 읽기 쉬운 `key = value` 형식의 **TOML**로 작성합니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장
 **artifactsum**은 파일 내용으로 그 값을 계산해 artifactize가 변경을 알아차리게 합니다.
 
 artifactize는 Run과 결과 같은 기록, 곧 **상태(state)** 를 상태 디렉터리에 저장합니다.
@@ -64,7 +63,7 @@ artifactize verify --all --wait
 artifactize run show RUN_ID
 ```
 
-이 명령은 저장된 Run 정보를 JSON으로 출력합니다. `argv`는
+이 명령은 저장된 Run을 구조화된 텍스트 기록인 JSON으로 출력합니다. `argv`는
 프로그램에 전달된 인자 목록이고, `stdout`은 그 프로그램이 출력한 텍스트입니다.
 기록에는 리뷰된 입력을 식별하는 fingerprint도 들어 있습니다.
 
@@ -153,7 +152,7 @@ artifactize run show RUN_ID
 review`는 같은 일을 터미널 UI에서 합니다. 대기 중인 요청을 나열하고
 지시문을 미리 보여 줍니다. Enter를 누르면 Detail이 열립니다. `c`를 눌러 요청을 직접 맡고, Tab으로 도구에 초점을 옮긴 뒤 Enter를 누르거나 클릭하면 도구 하나가 바로 실행됩니다. `g`/`r`을 누르면 GREEN/RED 입력 칸이 열리고, Ctrl-S를 누르면 제출됩니다. Esc는 목록으로 돌아가기 전에 편집을 멈추며 초안은 유지됩니다.
 옵션 없는 `verify`는 Run을 제출하고 바로 끝납니다. `verify --wait`는 Run이 끝날 때까지 포그라운드에서 진행 상황을 표시합니다. 승인만
-남으면 Run은 담당자가 정해지기 전에는 최대 2분간, 정해진 뒤에는 승인이 끝날 때까지 종료되지 않습니다. 앞선
+남으면 Run은 담당자가 정해지기를 2분간 기다리고, 그 뒤에는 담당자가 승인을 맡고 있는 동안 계속 열려 있습니다. 앞선
 자동 리뷰가 여전히 유효하면 GREEN 승인이 제출되는 즉시 `verify --wait`가 종료 코드 0으로 끝납니다. Run이
 이미 YELLOW(종료 코드 5)로 끝난 뒤에 요청을 맡더라도, 승인을 제출하면 다음 `verify`에서 그 승인을 재사용합니다.
 

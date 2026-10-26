@@ -504,7 +504,7 @@ provider가 보고한 값을 합산한 것이며, 한 번도 보고되지 않은
 (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`, `requestId`,
 `reference`가 들어 있습니다.
 
-**이어서 묻기.**
+**follow-up으로 이어서 묻기.**
 
 ```sh
 artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
