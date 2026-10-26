@@ -148,8 +148,8 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 
 `session_show.reference`는 저장된 세션 참조, 요청 ID, 세션
-ID를 받으며, CLI와 마찬가지로 `producer`(리뷰를 실행한 `user@host`)와 상태를 확인합니다. 없는 캐시 기록은
-CLI JSON 출력과 마찬가지로 JSON null(history면 빈 배열)입니다. 정적
+ID를 받으며, CLI와 마찬가지로 `producer`(리뷰를 실행한 `user@host`)와 상태를 확인합니다. 캐시 기록이 없으면
+CLI의 JSON 출력과 마찬가지로 null을 반환하고, history를 지정하면 빈 배열을 반환합니다. 정적
 `tools_check`는 프로젝트 도구를 호출하거나 세션을 시작하지 않습니다. `status`는
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
 명령은 OS 샌드박스 안에서 실행되지 않습니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며
