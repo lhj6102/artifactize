@@ -82,7 +82,7 @@ artifactize remote status
 - `request submit`은 Human 승인을 게시합니다.
 - `remote push`는 저장소에 연결할 수 없던 동안 만든 결과를 보냅니다.
 
-전체 레퍼런스는 [원격 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)를 보세요.
+전체 레퍼런스는 [팀 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)를 보세요.
 
 **CI.** CI는 환경 변수로만 설정합니다. [CI](ci.md)를 보세요.
 

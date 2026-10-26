@@ -13,7 +13,7 @@ artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--revi
 
 저장된 요청을 검색하고 대기 중인 Human 요청을 리뷰하는 터미널 UI이며,
 `request`와 같은 단계를 거칩니다. 맡고, 도구를 실행하고, 담당을 해제하고, 제출하며, 제출한 결과를
-`request submit`과 똑같이 원격 리뷰 저장소에 게시합니다. 작업 중인 터미널과 별도로 터미널이나 tmux 창을
+`request submit`과 똑같이 팀 리뷰 저장소에 게시합니다. 작업 중인 터미널과 별도로 터미널이나 tmux 창을
 하나 더 열어 실행하세요.
 
 ID가 없으면 상태 안의 모든 저장소에서 검색 조건에 맞는 요청을

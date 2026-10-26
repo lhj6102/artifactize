@@ -17,7 +17,7 @@ artifactize server token revoke alice-laptop [--purge]
 artifactize server rm KEY
 ```
 
-`artifactize server`는 [공유 원격 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
+`artifactize server`는 [팀 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
 `--state-dir` 아래 별도의 `review-store.sqlite`에 둡니다. `state.sqlite`와는 다른 파일입니다.
 각 [재사용 키](../features/fingerprint.md#the-reuse-key)의 기록을 모두 보관하고, 조회하면
 누가 게시했는지, 기록이 어떤 순서로 도착했는지와 상관없이 완료 시각이 가장 늦은 기록을
@@ -71,7 +71,7 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 번 리뷰하고 새 기록을 게시합니다. 로컬 상태는 따로 업그레이드됩니다.
 [상태](../features/others/state.md#state)를 보세요.
 
-## 원격 리뷰 저장소 클라이언트 {#remote-review-store-client}
+## 팀 리뷰 저장소 클라이언트 {#remote-review-store-client}
 
 ```sh
 printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/ [--share full]

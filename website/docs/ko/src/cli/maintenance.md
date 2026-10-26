@@ -25,7 +25,7 @@ artifactize cache rm KEY
 `options`(백엔드, 모델, reasoning, 제한, 변형), 키가 포함하는 각 Artifact의 `fingerprints`,
 `artifactKinds`(포함한 이름마다 `folder`, `file`, `graph` 중 하나), 사용량, `producer`
 (`user@host`와 artifactize 버전)가 나오고, Human 결과에는 그 결과를 제출한 사람인 `reviewer`도 따로 나옵니다.
-[공유 원격 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
+[팀 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
 붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
 출력합니다. 읽기만 하므로 아무것도 바뀌지 않습니다.
 
@@ -87,7 +87,7 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
 - `providers`: 이 머신에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
   연결되는 곳을 보여 줍니다. 키 값은 보여 주지 않습니다. `$STATE/auth`가 저장소 안에 있으면, 저장한 것이
   없는 동안에는 경고이고 저장한 것이 있으면 심각한 오류입니다.
-- 원격 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.
+- 팀 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.
   토큰이 없으면 경고이고, 설정이 잘못됐거나(루프백이 아닌 호스트에 일반 HTTP를 쓰는 경우 포함)
   토큰 파일이 안전하지 않으면 심각한 오류입니다.
 - `desktop`: 데스크톱 앱이 설치되어 있는지 앱을 실행하지 않고 확인합니다. `artifactize` 명령과
