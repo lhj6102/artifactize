@@ -35,7 +35,7 @@ artifactize models codex
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
 `xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Gemini는 `minimal`, `low`,
 `medium`, `high`를 받습니다. 그 밖의 값은 선언 오류이며, 다른 값으로 바꿔서 보내지 않습니다.
-커스텀 provider는 그 API가 받는 값을 따르며, 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
+커스텀 provider에서는 해당 API가 지원하는 값을 쓸 수 있으며, 지원 여부는 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
 Agent eval도 Runtime eval과 똑같이 입력의 eval 결과가 나올 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝날 때 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
@@ -97,7 +97,7 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 요청한 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
+provider가 안내한 대기 시간이 지나면 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
 생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.

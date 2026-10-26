@@ -28,8 +28,8 @@ artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대
 artifactize는 Run과 결과를 상태 디렉터리에 저장하며, 이 기록을 **상태**(state)라고 합니다.
 이 실습의 리뷰 기록은 평소 쓰는 상태 디렉터리와 다른 디렉터리에 따로 두세요. POSIX 셸(예를 들어
 Bash나 zsh)에서 아래 첫 줄은 `mktemp -d`로 새 임시 디렉터리를 만들고
-artifactize가 그곳에 상태를 저장하도록 합니다. `export`는 이 터미널에서 실행하는
-명령에도 그 설정을 넘겨 줍니다. 그다음 예제로 들어가 선언을 확인하세요.
+artifactize가 그곳에 상태를 저장하도록 합니다. `export`로 설정한 변수는 이 터미널에서
+이후 실행하는 명령에 전달됩니다. 그다음 예제로 들어가 선언을 확인하세요.
 
 ```sh
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)
