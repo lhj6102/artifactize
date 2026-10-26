@@ -65,7 +65,7 @@ artifactize verify --all --wait
 artifactize run show RUN_ID
 ```
 
-이 명령은 저장된 Run의 기록을 구조화된 텍스트 형식인 JSON으로 출력합니다. `argv`는
+이 명령은 저장된 Run 정보를 JSON으로 출력합니다. `argv`는
 프로그램에 전달된 인자 목록이고, `stdout`은 그 프로그램이 출력한 텍스트입니다.
 기록에는 리뷰된 입력을 식별하는 fingerprint도 들어 있습니다.
 

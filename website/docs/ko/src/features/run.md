@@ -1,4 +1,4 @@
-# 평가 Run {#evaluation-run}
+# Run {#evaluation-run}
 
 `verify`는 선택한 eval을 리뷰하고 Run을 기록합니다. `status`는 eval을 실행하지 않고, 다음
 `verify`에서 각 eval을 실행할지, 기존 결과를 재사용할지, 대기시키거나 차단할지 예측합니다. `status`도 선언된

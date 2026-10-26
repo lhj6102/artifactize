@@ -145,7 +145,7 @@ artifactize run show RUN_ID --wait
 artifactize run cancel RUN_ID
 ```
 
-`verify --wait`는 stderr에 Run ID를 알리고, Run이 끝날 때까지 대기한 다음 eval마다 결과를
+`verify --wait`는 stderr에 Run ID를 출력하고, Run이 끝날 때까지 기다린 다음 eval마다 결과를
 출력하고 Run의 [종료 코드](#command-reference)로 종료합니다. Run 자체의 진단(최대 64 KiB)과
 Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 [runtime-relations 예제](../getting-started/examples.md)에서 GREEN, RED, 막힌 eval을 나란히
