@@ -517,7 +517,7 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-머리말에는 follow-up 번호와, `session show`처럼 리뷰의 backend, 모델, reasoning이 나옵니다.
+머리말에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이

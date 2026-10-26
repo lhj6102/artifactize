@@ -269,7 +269,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 A project only names a provider; what the name reaches is set up on each machine that runs
 the eval. A custom provider is a name an Agent profile's `backend` may use, added in the
 desktop app's **Settings → Providers** (**+ Custom provider**) or with `artifactize provider`.
-Add as many as you need; each is one of:
+Each is one of:
 
 - **An alias** of a built-in provider, used with that provider's sign-in or key:
 
@@ -300,7 +300,9 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 A review that names a provider this machine has not set up is an `AUTHENTICATION` ERROR
 naming the missing provider. Keys and custom providers are saved in `$STATE/auth/providers.json`,
-readable by you only, and never inside a repository. The provider, like the model and
+readable by you only, and never inside a repository. That file holds at most 1 MiB: past it,
+reading or changing providers fails with `Credential file is too large.`, so remove providers
+and keys you no longer use to bring it back under the limit. The provider, like the model and
 reasoning, is an execution option: it is recorded with each result and is not part of the
 reuse key.
 

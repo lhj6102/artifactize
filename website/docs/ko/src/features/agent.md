@@ -236,7 +236,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 머신마다
 따로 설정합니다. 커스텀 provider는 Agent 프로필의 `backend`에 쓸 수 있는 이름으로, 데스크톱 앱의
 **Settings → Providers**에서 **+ Custom provider**를 누르거나 `artifactize provider`로 추가합니다.
-필요한 만큼 추가할 수 있으며, 종류는 둘 중 하나입니다.
+종류는 둘 중 하나입니다.
 
 - **별칭(alias)**: 기본 provider를 다른 이름으로 쓰며, 그 provider의 로그인이나 키를 그대로 씁니다.
 
@@ -267,7 +267,8 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 이 머신에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
 오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
-저장되고, 저장소 안에는 저장되지 않습니다. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
+저장되고, 저장소 안에는 저장되지 않습니다. 이 파일은 최대 1 MiB이며, 이를 넘으면 provider를 읽거나 바꿀 때
+`Credential file is too large.` 오류가 납니다. 쓰지 않는 provider와 키를 지워 한도 아래로 줄이세요. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.
 
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}
