@@ -107,8 +107,7 @@ provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 
 한 번 다시 실행합니다. 이전 대화를 이어 가지 않고 새 대화로 시작합니다. 답변이 공백으로만
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
 `Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
-여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과를 기다렸다가 결과가 나오면
-이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 실행마다 리뷰 제한 시간, `max_tokens`, `max_tool_calls`를
+여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과가 나올 때까지 실행을 보류하고, 결과가 나오면 이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 실행마다 리뷰 제한 시간, `max_tokens`, `max_tool_calls`를
 새로 적용하므로, 두 번 실행된 요청은 예산을 최대 두 배까지 쓸 수 있습니다. 다시 실행할 때마다 비용이 듭니다. 각 실행의
 시도는 모두 `usage`에 남고, 두 번째 이후 실행의 시도에는 `dispatch`(2, 3, …)가 붙습니다. 실패한 실행은
 요청의 `redispatches`에 `sessionId`, 저장된 `session`, `errorCode`, `error`와 함께 남습니다. 요청의
@@ -209,7 +208,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 
 ## Codex {#codex}
 
-`codex`는 내 ChatGPT 요금제로 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)을 사용해 리뷰합니다.
+`codex` 백엔드는 사용 중인 ChatGPT 요금제에서 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
@@ -240,7 +239,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   연결하지 못하거나 오류 응답을 받으면 `TRANSIENT`로 분류합니다.
 
 - **모델.** `models codex`는 지금 계정으로 Codex 모델 선택기에서 고를 수 있는 모델을 서버가 보내 준
-  순서대로 나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.
+  순서대로 나열합니다. 프로필에는 목록에 표시되지 않더라도 계정에서 사용할 수 있는 모델을 지정할 수 있습니다.
 
 ## 커스텀 provider {#custom-providers}
 
