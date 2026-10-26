@@ -26,6 +26,8 @@ struct SignIn {
 #[derive(Default)]
 pub(super) struct SignIns {
     current: Mutex<Option<SignIn>>,
+    /// Stopped sign-ins nobody waits for, until they have ended: closing joins them.
+    stopped: Mutex<Vec<SignInTask>>,
     started: std::sync::atomic::AtomicU32,
 }
 
@@ -36,10 +38,33 @@ impl SignIns {
         self.current.lock().expect("sign-in lock")
     }
 
+    /// Stop `sign_in`. Its waiter, if it has one, joins it; otherwise closing does.
+    fn halt(&self, sign_in: SignIn) {
+        sign_in.abort.abort();
+        if let Some(task) = sign_in.task {
+            let mut stopped = self.stopped.lock().expect("sign-in lock");
+            stopped.retain(|task| !task.is_finished());
+            stopped.push(task);
+        }
+    }
+
     /// Stop the sign-in in progress, before another starts and needs its port.
     fn stop(&self) {
-        if let Some(previous) = self.current().take() {
-            previous.abort.abort();
+        let previous = self.current().take();
+        if let Some(previous) = previous {
+            self.halt(previous);
+        }
+    }
+
+    /// Stop every sign-in; the returned future ends once those nobody waits for have ended.
+    pub(super) fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
+        self.stop();
+        let stopped = std::mem::take(&mut *self.stopped.lock().expect("sign-in lock"));
+        async move {
+            for task in stopped {
+                // Aborted: how it ended does not matter, only that it has.
+                let _ = task.await;
+            }
         }
     }
 
@@ -48,7 +73,7 @@ impl SignIns {
         let id = SignInId::allocate(&self.started);
         let mut current = self.current();
         if let Some(previous) = current.take() {
-            previous.abort.abort();
+            self.halt(previous);
         }
         *current = Some(SignIn {
             id,
@@ -137,9 +162,12 @@ impl SignIns {
             sign_in.abort.abort();
             // No paste can reach a cancelled sign-in.
             sign_in.paste = None;
-            // Nobody waits for it: forget it now.
-            if sign_in.task.is_some() {
-                *current = None;
+            // Nobody waits for it: forget it now, and let closing join it.
+            if sign_in.task.is_some()
+                && let Some(sign_in) = current.take()
+            {
+                drop(current);
+                self.halt(sign_in);
             }
         }
     }

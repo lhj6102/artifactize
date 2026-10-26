@@ -651,10 +651,8 @@ export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: numb
 
 /**  A step of the pane and how to read the state for it. */
 export type Navigate = {
-	/**  Show this Run in the Main area. */
-	run: string | null,
-	/**  Show no Run: the Main area shows a Current, a review or Settings. */
-	close: boolean,
+	/**  Which Run the Main area shows after this step. */
+	run: RunStep,
 	/**  The pane's search, when it changed. */
 	query: string | null,
 	/**  Reach further back in this branch's Runs. */
@@ -797,6 +795,15 @@ export type RunPanel = {
 	/**  Attention lines beyond the shown ones. */
 	more: number,
 };
+
+/**  What a step does to the Run shown in the Main area. */
+export type RunStep = 
+/**  Leave the shown Run as it is. */
+{ kind: "keep" } | 
+/**  Show this Run. */
+{ kind: "open"; id: string } | 
+/**  Show no Run: the Main area shows a Current, a review or Settings. */
+{ kind: "close" };
 
 /**
  *  A scan of a branch's Current, or a step it published, numbered by the backend: a later

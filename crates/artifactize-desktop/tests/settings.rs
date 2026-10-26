@@ -41,6 +41,23 @@ fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Re
     .map(|body| body.deserialize::<Value>().unwrap())
 }
 
+/// The probe's app and window. Dropped before the probe's folders, also when an assertion
+/// panics: closing stops the Codex sign-ins and joins those nobody waits for, so none of them
+/// still listens or writes when the temporary state goes.
+struct Owned {
+    window: WebviewWindow<MockRuntime>,
+    app: tauri::App<MockRuntime>,
+}
+
+impl Drop for Owned {
+    fn drop(&mut self) {
+        use tauri::Manager;
+        let stopped = self.app.state::<artifactize_desktop::App>().close();
+        let _ = self.window.destroy();
+        tauri::async_runtime::block_on(stopped);
+    }
+}
+
 /// The `state=` of a Codex authorize URL.
 fn oauth_state(url: &str) -> String {
     url.split(['?', '&'])
@@ -164,7 +181,8 @@ fn settings_command_probe() {
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();
-    let call = |command: &str, args: Value| invoke(&window, command, args);
+    let owned = Owned { window, app };
+    let call = |command: &str, args: Value| invoke(&owned.window, command, args);
     let secret_free = |value: &Value| {
         let text = value.to_string();
         for secret in [
@@ -460,6 +478,5 @@ fn settings_command_probe() {
     assert_eq!(pushed["pushed"], json!(0));
     let out = call("remote_logout", json!({})).unwrap();
     assert_eq!(out["state"], json!("unconfigured"));
-    window.destroy().unwrap();
     // The owned window and app drop before the fixture root and fake provider, also on panic.
 }

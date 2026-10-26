@@ -17,3 +17,10 @@ pub use remote::*;
 pub struct Settings {
     sign_ins: codex::SignIns,
 }
+
+impl Settings {
+    /// Stop the Codex sign-ins; the returned future ends once they have ended.
+    pub(crate) fn close(&self) -> impl std::future::Future<Output = ()> + use<> {
+        self.sign_ins.close()
+    }
+}
