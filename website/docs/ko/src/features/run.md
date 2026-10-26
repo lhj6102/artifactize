@@ -123,8 +123,7 @@ DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED�
 그 Run이 끝난 뒤에도 제출할 수 있습니다. 제출할 때 fingerprint를 다시 확인하며, 바뀐 파일이 있으면 요청은
 판정 없이 ERROR(`INPUT_CHANGED`)로 끝나니 새 승인을 받으려면 다시 verify하세요.
 
-`status`는 지금 대기 중인 승인과 잠정 결과를 표시하고, 결과가 없는 승인에 의존하는 eval은 실행된다고
-예측합니다. Run과 결과를 보여 주는 화면은 WAITING_HUMAN인 Run을 아직 끝나지 않은 상태로, YELLOW인 Run을
+`status`는 지금 대기 중인 승인과 잠정 결과를 표시하고, 결과가 없는 승인에 의존하는 eval이 실행될 것으로 예측합니다. Run과 결과를 보여 주는 화면은 WAITING_HUMAN인 Run을 아직 끝나지 않은 상태로, YELLOW인 Run을
 끝났지만 최종 검증 요건은 충족하지 못한 상태로 표시합니다.
 
 ### 추측 실행 {#speculation}
