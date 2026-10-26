@@ -137,7 +137,7 @@ struct Source {
 pub async fn check(state: &Path) -> Status {
     let running = running();
     let channel = crate::platform::install::channel();
-    let outcome = match source(&running, channel) {
+    let outcome = match source(&running, channel, crate::platform::environment::var) {
         Ok(source) => look_up(&running, channel, &source, state, SystemTime::now()).await,
         Err(outcome) => outcome,
     };
@@ -164,15 +164,19 @@ pub fn running() -> Version {
     Version::parse(env!("CARGO_PKG_VERSION")).expect("the crate version is semantic")
 }
 
-/// Where to look up the latest release, or why not to.
-fn source(running: &Version, channel: Channel) -> Result<Source, Outcome> {
-    if crate::platform::environment::var(OFF_VARIABLE).is_some_and(|value| !value.is_empty()) {
+/// Where to look up the latest release, or why not to, with the variables in `var`.
+fn source(
+    running: &Version,
+    channel: Channel,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<Source, Outcome> {
+    if var(OFF_VARIABLE).is_some_and(|value| !value.is_empty()) {
         return Err(Outcome::Unchecked(Unchecked::Off));
     }
     if channel == Channel::Store {
         return Err(Outcome::Unchecked(Unchecked::Store));
     }
-    match crate::llm::variable_endpoint(TEST_ENDPOINT_VARIABLE) {
+    match crate::llm::variable_endpoint_in(TEST_ENDPOINT_VARIABLE, var) {
         Ok(Some(site)) => Ok(Source {
             url: format!("{site}{TEST_LATEST_PATH}"),
             site: site.root().to_owned(),
