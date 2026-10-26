@@ -3,8 +3,7 @@
 `artifactize verify --all --wait`를 두 번 실행해 보세요. 두 번째에는 모든 eval이
 `GREEN (reused …)`으로 나오고 아무것도 다시 실행되지 않습니다. 파일 하나를 바꾸고 다시
 verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 Artifact의 리뷰 결과에 영향을
-주는 입력을 나타내는 값입니다. eval이 바뀌지 않았고 그 eval이 의존하는 Artifact의 fingerprint도 그대로면
-이전 결과를 재사용하므로, 리뷰 비용은 바뀐 만큼만 듭니다.
+주는 입력을 나타내는 값입니다. eval과 그 eval이 의존하는 Artifact의 fingerprint가 바뀌지 않았으면 이전 결과를 재사용하므로, 바뀐 부분의 리뷰만 다시 실행합니다.
 
 ## Fingerprint {#fingerprints}
 
@@ -56,7 +55,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 ## 재사용 키 {#the-reuse-key}
 
-eval은 대상 Artifact와, 대상에 직접 연결된 다음 Artifact에 의존합니다.
+eval은 대상 Artifact에 의존하며, 대상과 직접 연결된 다음 Artifact에도 의존합니다.
 
 - 대상의 자식 Artifact
 - eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact

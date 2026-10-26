@@ -26,8 +26,7 @@ artifactize config check
 
 ## 선언 검사 {#declaration-validation}
 
-`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 이름이 확장자까지
-정확히 `<filename>`이고 같은 폴더에 있는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
+`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 같은 폴더에서 이름(확장자 포함)이 `<filename>`과 정확히 일치하는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
 
@@ -43,7 +42,7 @@ crates/app/tests/
 examples/
 ```
 
-이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름 앞에 *space* 이름과 `::`를 붙여 관련 Artifact를 묶을 수 있습니다. 예를 들어 `combat::Code`는 `combat` space의 `Code`입니다. space 이름과 나머지 부분은 각각 같은
+이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름 앞에 *space*(이름 공간) 이름과 `::`를 붙여 관련 Artifact를 묶을 수 있습니다. 예를 들어 `combat::Code`는 `combat` space의 `Code`입니다. space 이름과 나머지 부분은 각각 같은
 규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 볼 수 있게 도울 뿐이며, 그 자체로 전체 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
 `artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
 Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
@@ -134,7 +133,7 @@ covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필�
 `{"summary":"All requirements are covered."}`만 입력합니다.
 
 이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 허용하는지 정하는
-규칙입니다. 결과 객체 전체의 스키마인 **결과 envelope**에는 일반 JSON Schema의 일부 기능만
+규칙입니다. 결과 객체 전체에 적용되는 스키마(**결과 envelope**)에는 일반 JSON Schema의 일부 기능만
 쓸 수 있으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
 `oneOf`, `not`)에도 제한이 있습니다.
 

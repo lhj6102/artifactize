@@ -44,8 +44,7 @@ artifactize --version
 ```
 
 이 [스크립트](https://artifactize.dev/install.sh)는 OS와 CPU에 맞는 최신 안정 릴리스를
-`~/.local/bin`에 설치합니다. 내려받은 파일이 체크섬 확인에 실패하거나 바이너리가 실행되지 않으면
-스크립트는 파일을 교체하지 않고 종료하므로, 기존에 설치된 프로그램은 계속 사용할 수 있습니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
+`~/.local/bin`에 설치합니다. 내려받은 파일의 체크섬이 일치하지 않거나 바이너리를 실행할 수 없으면 스크립트는 기존 파일을 교체하지 않고 종료하므로, 이미 설치한 프로그램은 계속 사용할 수 있습니다. `curl`이나 `wget`을 쓰며, `sudo`를 쓰지 않고
 셸 시작 파일도 고치지 않습니다. `~/.local/bin`이 `PATH`에 없다면
 추가할 줄을 출력합니다. 대신 실행될 수 있는 다른 `artifactize`나 `artifactize-tools`가
 `PATH`에 있으면 경고도 합니다. 대부분의 x86_64 Linux 배포판(Ubuntu, Debian, Fedora 등)에서는 같은

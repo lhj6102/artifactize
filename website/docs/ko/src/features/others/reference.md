@@ -25,6 +25,6 @@
 - [`artifactize-tools` CLI](../tools/builtin.md#artifactize-tools-cli)
 - [로컬 진단과 유지보수](../../cli/maintenance.md#doctor-models-and-prune)
 - [리뷰 저장소 서버](../../cli/review-store.md#review-store-server)
-- [원격 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)
+- [팀 리뷰 저장소 클라이언트](../../cli/review-store.md#remote-review-store-client)
 - [운영체제](platforms.md)
 - [개인정보 처리방침](https://artifactize.dev/privacy/)

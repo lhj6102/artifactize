@@ -14,7 +14,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
 eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact의 eval을 실행해
-달라는 뜻입니다. 서로를 따라가면 원래 Artifact로 돌아오는 Artifact들은 **순환**을 이룹니다. 순환에 속한
+달라는 뜻입니다. Artifact 사이의 참조를 따라가다 처음 Artifact로 돌아오는 구조를 **순환**이라고 합니다. 순환에 속한
 Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는 순환에 속한 Artifact의 eval도 함께
 실행합니다. eval 선택자는 그 eval 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 eval이 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
 **의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
@@ -68,7 +68,7 @@ Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선�
 Run이 끝나면 지켜보는 명령도 그 Run의 결과에 맞는 종료 코드로 끝납니다. 종료 코드는 [CLI 레퍼런스](../cli/index.md#command-reference)에
 있습니다.
 
-최종 검증에는 필요한 범위 전체에서 실제 GREEN 증거나 직접 선언한 `basis = true`가 필요합니다.
+Run이 최종 검증을 통과하려면, 필요한 범위의 모든 대상에 실제 GREEN 증거가 있거나 그 Artifact를 직접 `basis = true`로 선언해야 합니다.
 basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 하위 작업이 대기합니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에 있습니다.
@@ -135,7 +135,7 @@ DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED�
 속하거나 같은 순환에 드는 eval은 제외합니다. 취소한 eval은 재사용할 수 있는 결과를 남기지 않고 BLOCKED로 표시합니다. 상위 eval이 GREEN이면 같은 파일을 대상으로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.
 
-텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint가 일치해 재사용했거나 실행 중인 리뷰에 합류해 얻은 결과에는, 그 결과를 실제로 만든 Run이 표시됩니다. [원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
+텍스트 형식에서는 요청별 결과를 한 줄씩 보여 줍니다. fingerprint가 일치해 재사용했거나 실행 중인 리뷰에 합류해 얻은 결과에는, 그 결과를 실제로 만든 Run이 표시됩니다. [팀 리뷰 저장소](../cli/review-store.md#remote-review-store-client)에서 가져온 결과에는 결과를 만든 사람이나 Human 리뷰어도 표시합니다.
 
 ```text
   web/tests [run-x05qFq-5]: GREEN
@@ -164,7 +164,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그
 
 `kind`는 해당 재사용 키로 저장된 완료 기록을 썼으면 `cache`, 같은 키로 실행 중인 작업(다른
 `verify`나 같은 Run의 다른 eval)이 끝날 때까지 대기한 뒤 그 결과를 썼으면 `joined`,
-[원격 리뷰 저장소](../cli/review-store.md#remote-review-store-client)의 기록이면 `remote`입니다.
+[팀 리뷰 저장소](../cli/review-store.md#remote-review-store-client)의 기록이면 `remote`입니다.
 `run show`, `request show`, `request list --json`에도 `source`가 있습니다.
 
 `verify --wait --json`과 `run show RUN_ID`는 저장된 Run 전체를 출력합니다. `run show`는 선언을

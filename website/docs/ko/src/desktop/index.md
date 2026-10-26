@@ -60,7 +60,7 @@ Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무
 프로젝트입니다. `--repo`로 시작한 프로젝트는 아직 Run이 없어도 나열됩니다. 제거된
 워크트리나 폴더, 또는 Git이 더 이상 나열하지 않는 워크트리는 보이지 않습니다. 추가되거나 제거된 워크트리는
 다시 읽지 않아도 몇 초 안에 나타나거나 사라집니다. Run을 실행한 쪽이 에이전트 세션이든 사람이든
-따로 항목이 생기지는 않습니다. 각 브랜치에는 어느 폴더에서 실행했는지와 상관없이 그 프로젝트의 그 브랜치에서 실행한 Run이 나옵니다.
+따로 항목이 생기지는 않습니다. 각 브랜치에는 실행한 폴더와 관계없이 그 프로젝트의 해당 브랜치에서 실행한 Run이 나옵니다.
 
 브랜치가 접혀 있으면 이름 아래에 가장 최근 Run의 상태를 나타내는 색 점과 상태 이름,
 실행 후 경과 시간(실행 중이면 지금까지 걸린 시간)을 표시합니다. 브랜치를 클릭하면
@@ -119,7 +119,7 @@ Main area는 Pane에서 고른 것을 보여 줍니다. Run, 브랜치의 Curren
 ### Run {#run}
 
 Pane에서 Run을 고르면 Main area에 그 Run의 Artifact와 판정이 그래프로 표시됩니다. 그 위에는 Run 머리말과 주의 항목이 나오고, Run에 코멘트가 있으면 그 전문도 함께 나옵니다. 노드와 관계의 색은
-리뷰 상태(GREEN, 실행 중이거나 Human 대기, 대기, RED, ERROR, 막힘)를 보여 주며
+리뷰 상태(GREEN, 실행 중 또는 Human 승인 대기, 의존성 대기, RED, ERROR, BLOCKED)를 보여 주며
 결과가 도착하는 대로 그 자리에서 색이 바뀝니다. 의존성은 그래프의
 입력 → 사용처 관계와, Artifact나 eval의
 **Debug** 아래의 **Waits for**로 확인하세요. Run이 끝날 때의 검증 결과는 기록으로 남습니다. 나중에 Human 판정을 제출해도
@@ -132,7 +132,7 @@ Detail이 열리며, 저장된 검증과 충족되지 않은 최종 검증 요�
 
 브랜치의 **Current**는
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
-Run 없이 현재 선언의 그래프를 그립니다. 선언을 읽는 즉시 그래프가 나타나며, 처음에는 모든 Artifact가 확인 중(checking)으로 표시됩니다. fingerprint 계산이 끝날 때마다 해당 Artifact의 상태가 갱신됩니다. reused(모든 eval이 기존 결과를 평가 없이 다시 사용), would run, waiting, blocked 상태는 각각 다른 색으로 표시됩니다. 각 Artifact의 상태는 해당 Artifact와 의존 대상의
+Run 없이 현재 선언의 그래프를 그립니다. 선언을 읽는 즉시 그래프가 나타나며, 처음에는 모든 Artifact가 확인 중(checking)으로 표시됩니다. fingerprint 계산이 끝날 때마다 해당 Artifact의 상태가 갱신됩니다. reused(모든 eval을 다시 실행하지 않고 기존 결과를 재사용), would run, waiting, blocked 상태는 각각 다른 색으로 표시됩니다. 각 Artifact의 상태는 해당 Artifact와 의존 대상의
 fingerprint를 모두 계산한 뒤에 정해지므로, 의존 대상이 없는 Artifact부터 그래프에 상태를 표시합니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
 그 Artifact의 상태와 실행될 eval 수, 또는 아직 확인 중이라는 사실을 담습니다. 스캔이 진행되는 동안 머리말은
 아직 확인 중인 Artifact 수를 알려 주고, 스캔이 끝나면 언제 스캔했는지 알려 줍니다. fingerprint 계산에 실패하면
@@ -143,8 +143,7 @@ fingerprint를 모두 계산한 뒤에 정해지므로, 의존 대상이 없는 
 진행 중인 스캔을 보여 줍니다. 그동안 Current의 **Refresh** 버튼은 비활성화됩니다. 앱의 **Refresh** 명령이나
 Ctrl+R/F5를 누르면 진행 중인 스캔을 보여 주고, 그 스캔이 끝나면 한 번 더 스캔하므로 그사이에 바꾼 내용도
 나타납니다.
-**Structure and evaluation criteria**를 펼치면 전체 트리, 기준, 라벨 붙은
-관계를 텍스트로 볼 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
+**Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
 해서는 어떤 리뷰도 승인되지 않습니다.
 
@@ -162,9 +161,8 @@ Artifact에 초점을 옮기고, 그 위에서 Enter를 누르면 클릭과 같�
 모든 그래프는 상위가 왼쪽에 오도록 한 번에 배치됩니다. 아주 많은
 Artifact가 공통으로 쓰는 Artifact(모든 리뷰가 읽는 기준 파일 하나 등)는 왼쪽의 별도 열에
 놓이며, 이를 쓰는 각 Artifact로 가는 간선은 그대로 그려집니다. `combat::Spec`과
-`combat::Code`처럼 [이름](../features/declarations.md)의 space가 같은 Artifact는 `combat`이라고
-적힌 상자 하나에 함께 놓이고, 각 노드에는 space를 뺀 나머지 이름(`Code`)만 보입니다. 화면
-읽기 프로그램과 Detail에는 언제나 이름 전체가 나옵니다. space가 없는 Artifact는 어느 상자에도
+`combat::Code`처럼 [이름](../features/declarations.md)이 같은 space에 속한 Artifact는 `combat`이라고
+적힌 상자 하나에 함께 놓이고, 각 노드에는 space를 뺀 나머지 이름(`Code`)만 보입니다. 스크린 리더와 Detail에는 언제나 이름 전체가 나옵니다. space가 없는 Artifact는 어느 상자에도
 들어가지 않으며, space 사이의 간선도 다른 간선과 똑같이 그리고 색칠합니다. 상자는 Artifact가
 아니어서 Tab으로 이동할 때 건너뛰고, 상자를 클릭하면 배경을 클릭했을 때처럼 Detail이 닫힙니다.
 노드가 40개를 넘으면
@@ -175,8 +173,7 @@ Run이 바뀌면 그래프의 색이 그 자리에서 바뀌고, Artifact나 간
 
 ### Detail {#detail}
 
-Artifact를 클릭하면 그 **Detail**이 열립니다. 그래프 오른쪽 위에 떠 있으며
-뒤로 그래프가 계속 보이고, Pane 옆에 붙지 않습니다.
+Artifact를 클릭하면 그래프 오른쪽 위에 그 **Detail**이 열립니다. Detail 뒤로 그래프가 계속 보이며, Detail은 Pane 옆에 붙지 않습니다.
 다른 Artifact를 클릭하면
 그 Artifact의 Detail이 표시됩니다. 그래프
 배경, **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는

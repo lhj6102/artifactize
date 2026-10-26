@@ -215,7 +215,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   `ARTIFACTIZE_CODEX_AUTH_FILE`을 쓰세요. artifactize는 액세스 토큰이 만료되기 전에
   갱신합니다. 서버가 갱신 토큰을 더 이상 허용하지 않으면 artifactize는 저장된 토큰을 지우고, 리뷰는 다시
   로그인하라는 오류로 끝납니다.
-- **이미 있는 Codex 로그인 쓰기.** 예를 들어 `ARTIFACTIZE_CODEX_AUTH_FILE`을 `~/.codex/auth.json`으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의 `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 지정한 파일은 1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로 쓰이지 않습니다. 그 파일을 쓰거나 복사하거나
+- **기존 Codex 로그인 사용하기.** 예를 들어 `ARTIFACTIZE_CODEX_AUTH_FILE`을 `~/.codex/auth.json`으로 설정하면, artifactize에 저장된 토큰 대신 매 턴 그 파일의 `tokens.access_token`(과 `tokens.account_id`)을 읽습니다. 지정한 파일은 1 MiB 이하의 일반 파일이어야 하며, 그렇지 않으면 거부되어 로그인 정보로 쓰이지 않습니다. 그 파일을 쓰거나 복사하거나
   갱신하지는 않습니다. 토큰 만료까지 남은 시간이 1분 이하이면 리뷰는 `codex login` 등으로 Codex에 다시
   로그인하라는 메시지와 함께 실패합니다. `logout codex`는 그 파일을 건드리지 않습니다.
 - **요청.** provider는 대화를 보관하지 않습니다. 선언한 `reasoning`은 `max`를 포함해 그대로
@@ -265,8 +265,10 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
 
 이 머신에 등록되지 않은 provider를 지정한 리뷰는 `AUTHENTICATION` ERROR로 끝나며,
 오류 메시지에 그 provider 이름이 표시됩니다. 키와 커스텀 provider는 본인만 읽을 수 있는 `$STATE/auth/providers.json`에
-저장되고, 저장소 안에는 저장되지 않습니다. 이 파일은 최대 1 MiB이며, 이를 넘으면 provider를 읽거나 바꿀 때
-`Credential file is too large.` 오류가 납니다. 쓰지 않는 provider와 키를 지워 한도 아래로 줄이세요. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
+저장되고, 저장소 안에는 저장되지 않습니다. 이 파일은 최대 1 MiB까지만 읽습니다. 이를 넘으면 provider를 읽거나 바꾸는
+명령이 모두 `Credential file is too large.` 오류로 실패하며, `logout`과 `provider remove`도 마찬가지라
+이 명령으로는 파일을 줄일 수 없습니다. 대신 `providers.json`을 `$STATE/auth/` 밖으로 옮겨 백업으로 두고,
+계속 쓸 키와 provider를 `login`과 `provider add`로 다시 저장하세요. provider도 모델, reasoning과 마찬가지로 실행 옵션이라 결과마다
 기록되지만 재사용 키에는 들어가지 않습니다.
 
 ## 가짜 provider로 테스트하기 {#test-against-a-fake-provider}

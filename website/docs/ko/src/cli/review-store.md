@@ -17,7 +17,7 @@ artifactize server token revoke alice-laptop [--purge]
 artifactize server rm KEY
 ```
 
-`artifactize server`는 [공유 원격 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
+`artifactize server`는 [팀 리뷰 저장소](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)를
 `--state-dir` 아래 별도의 `review-store.sqlite`에 둡니다. `state.sqlite`와는 다른 파일입니다.
 각 [재사용 키](../features/fingerprint.md#the-reuse-key)의 기록을 모두 보관하고, 조회하면
 누가 게시했는지, 기록이 어떤 순서로 도착했는지와 상관없이 완료 시각이 가장 늦은 기록을
@@ -71,7 +71,7 @@ JSON으로 응답합니다. 실패하면 `{"error":...}`를 돌려주며, 토큰
 번 리뷰하고 새 기록을 게시합니다. 로컬 상태는 따로 업그레이드됩니다.
 [상태](../features/others/state.md#state)를 보세요.
 
-## 원격 리뷰 저장소 클라이언트 {#remote-review-store-client}
+## 팀 리뷰 저장소 클라이언트 {#remote-review-store-client}
 
 ```sh
 printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/ [--share full]
@@ -80,7 +80,7 @@ artifactize remote push [--dry-run] [--json]
 artifactize remote logout
 ```
 
-클라이언트는 `.artf` 선언이 아니라 상태 디렉터리와 환경 변수로만 설정합니다. 따라서 복제한 저장소의 선언으로 토큰 전송 대상을 바꿀 수 없습니다. `remote login URL`은 토큰을
+클라이언트의 연결 설정은 `.artf` 선언이 아니라 상태 디렉터리와 환경 변수로만 정합니다. 따라서 복제한 저장소의 선언으로 토큰 전송 대상을 바꿀 수 없습니다. `remote login URL`은 토큰을
 argv가 아닌 stdin에서 읽으므로 토큰을 한 줄로 붙여 넣으세요. 4096바이트가 넘는 토큰은 거부합니다.
 터미널에서는 입력한 토큰이 화면에 나타나지 않도록 처리하며, Windows에서 입력을 숨기는 데 실패하면 토큰이 화면에 보인다고 경고한 뒤 계속 읽습니다. 터미널이 아닌 stdin은 터미널 에코를 건드리지 않고 읽습니다.
 `GET /v1/whoami`로 토큰을 확인한 다음, 내 계정만 읽을 수 있는

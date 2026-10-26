@@ -1,8 +1,7 @@
 # 백엔드와 로그인 {#backends-and-sign-in}
 
 Agent eval은 백엔드를 통해 모델 서비스에 리뷰를 요청하며, Runtime eval과 Human eval에는 백엔드가 필요하지 않습니다.
-Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini API 키나 Codex가 포함된
-ChatGPT 요금제 중 필요한 것을 쓰면 됩니다.
+Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini 가운데 사용할 서비스의 API 키를 준비하거나, Codex를 쓸 수 있는 ChatGPT 요금제를 사용하세요.
 
 Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. artifactize는
 모델 목록을 따로 제공하지 않으며, 지정한 백엔드나 모델을 다른 것으로 바꾸지도 않습니다.
@@ -15,7 +14,7 @@ Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정�
 API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-keys),
 [Anthropic Console](https://console.anthropic.com/settings/keys),
 [Google AI Studio](https://aistudio.google.com/apikey)에서 키를 만든 다음 `artifactize login`으로
-저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 stdin으로 읽습니다. 데스크톱 앱의
+저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 artifactize가 stdin에서 키를 읽습니다. 데스크톱 앱의
 **Settings → Providers**에 붙여 넣어 저장해도 됩니다. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
 Codex는 대신 아래의 별도 브라우저 로그인을 씁니다.
 

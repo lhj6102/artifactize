@@ -1,7 +1,6 @@
 # 캐시와 유지보수 {#cache-and-maintenance}
 
-`artifactize prune --older-than 30d --dry-run`을 실행하면 끝난 지 30일이 지나 출력을 지울
-Run 목록(`wouldRemove`)이 나옵니다. 확인했으면 `--dry-run` 없이 다시 실행해 지우세요.
+`artifactize prune --older-than 30d --dry-run`을 실행하면, 끝난 지 30일이 지나 출력 폴더를 지울 대상인 Run 목록(`wouldRemove`)이 표시됩니다. 확인했으면 `--dry-run` 없이 다시 실행해 지우세요.
 이 페이지는 이 명령과 함께, 재사용할 결과를 살펴보고 지우는 명령과 이 머신의 설정을
 점검하는 명령을 다룹니다. 이 명령들이 다루는 대상은 [상태, 캐시, 제한](../features/others/state.md)에서
 설명합니다.
@@ -25,7 +24,7 @@ artifactize cache rm KEY
 `options`(백엔드, 모델, reasoning, 제한, 변형), 키가 포함하는 각 Artifact의 `fingerprints`,
 `artifactKinds`(포함한 이름마다 `folder`, `file`, `graph` 중 하나), 사용량, `producer`
 (`user@host`와 artifactize 버전)가 나오고, Human 결과에는 그 결과를 제출한 사람인 `reviewer`도 따로 나옵니다.
-[공유 원격 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
+[팀 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
 붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
 출력합니다. 읽기만 하므로 아무것도 바뀌지 않습니다.
 
@@ -48,7 +47,7 @@ artifactize provider remove NAME [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
-`prune`은 현재 저장소만이 아니라 선택한 상태에 있는 모든 저장소의 Run을 다룹니다.
+`prune`은 현재 저장소뿐 아니라 선택한 상태 디렉터리에 저장된 모든 저장소의 Run을 다룹니다.
 **GREEN, RED, ERROR, INCOMPLETE**로 끝났고 아직 실행 중인 작업이 없는 Run의 출력을
 지웁니다. YELLOW Run은 승인이 모두 제출된 뒤에도 **항상 건너뛰며**, 끝나지 않은
 Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `prune`은 `--older-than`과 상관없이
@@ -87,7 +86,7 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
 - `providers`: 이 머신에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
   연결되는 곳을 보여 줍니다. 키 값은 보여 주지 않습니다. `$STATE/auth`가 저장소 안에 있으면, 저장한 것이
   없는 동안에는 경고이고 저장한 것이 있으면 심각한 오류입니다.
-- 원격 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.
+- 팀 리뷰 저장소: 이것도 오프라인으로 확인하며 URL, 공유 수준, 토큰 출처를 보여 줍니다.
   토큰이 없으면 경고이고, 설정이 잘못됐거나(루프백이 아닌 호스트에 일반 HTTP를 쓰는 경우 포함)
   토큰 파일이 안전하지 않으면 심각한 오류입니다.
 - `desktop`: 데스크톱 앱이 설치되어 있는지 앱을 실행하지 않고 확인합니다. `artifactize` 명령과
