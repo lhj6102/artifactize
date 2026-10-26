@@ -68,7 +68,7 @@ Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무
 펼치고 가장 최근 항목을 보여 줍니다. 이름 앞의 꺾쇠를 클릭하면 Main area는 바뀌지 않고
 그 항목만 펼쳐지거나 접힙니다. 펼치면 타임라인이 Run을 최신순으로 나열하며, 각 Run에는
 상태, 경과 시간, Run ID가 나옵니다. verify를 요청할 때 [코멘트](../cli/index.md#submission-and-watching)를
-남긴 Run은 Run ID 아래에 그 코멘트를 한 줄로 줄여 함께 표시합니다. 맨 앞 항목은 워크트리의 지금 상태인 **Current**입니다. Run이
+남긴 Run은 Run ID 아래에 그 코멘트를 한 줄로 요약해 표시합니다. 맨 앞 항목은 워크트리의 지금 상태인 **Current**입니다. Run이
 진행 중이면 그 Run이 Current 자리에 오고, Run이 끝나면 Current가 돌아옵니다. 끝의 **Older runs**는
 더 오래된 Run을 가져옵니다. 항목을 클릭하면 회색의 둥근 배지로 표시되며 Main area에 나옵니다. 브랜치는
 몇 개든 펼칠 수 있으며, `monitor`나 `graph`로 시작할 때 지정한 브랜치는 펼친 채로 시작합니다.
