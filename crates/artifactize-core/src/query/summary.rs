@@ -256,7 +256,7 @@ fn usage_state(reported: u64, unreported: u64) -> UsageState {
 }
 
 pub fn request_summary(view: &RequestView, now: OffsetDateTime) -> RequestSummary<'_> {
-    let request = &view.request;
+    let request: &Request = &view.request;
     RequestSummary {
         status: request.status(),
         wall_time: wall_time(request.created_at, request.completed_at(), now),
@@ -273,13 +273,17 @@ pub fn request_summary(view: &RequestView, now: OffsetDateTime) -> RequestSummar
 pub fn run_summary(view: &RunView, now: OffsetDateTime) -> (RunSummary, BTreeMap<String, u64>) {
     let mut counts = BTreeMap::new();
     let mut seen = BTreeSet::new();
-    let local = view.requests.iter().filter(|request| {
-        local_execution(request)
-            && request
-                .execution_id
-                .as_ref()
-                .is_some_and(|id| seen.insert(id))
-    });
+    let local = view
+        .requests
+        .iter()
+        .map(|request| &**request)
+        .filter(|request| {
+            local_execution(request)
+                && request
+                    .execution_id
+                    .as_ref()
+                    .is_some_and(|id| seen.insert(id))
+        });
     let usage = usage_totals(local);
     let (mut executed, mut reuses, mut saved) =
         (Kinds::default(), Reuses::default(), BTreeMap::new());

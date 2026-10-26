@@ -351,18 +351,22 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
     };
     assert_eq!(source.reference.request_id, view.request.id);
     assert!(!source.saved);
-    view.request.session = Some(source.reference.clone());
+    std::sync::Arc::make_mut(&mut view.request).session = Some(source.reference.clone());
     assert!(matches!(
         live::resolve(&state, &view).await.unwrap(),
         Resolution::Local(Source { saved: true, .. })
     ));
-    view.request.session.as_mut().unwrap().state = "foreign-state".parse().unwrap();
+    std::sync::Arc::make_mut(&mut view.request)
+        .session
+        .as_mut()
+        .unwrap()
+        .state = "foreign-state".parse().unwrap();
     assert!(matches!(
         live::resolve(&state, &view).await.unwrap(),
         Resolution::Unavailable(_)
     ));
-    view.request.session = None;
-    view.request.producer = Some(store::Producer {
+    std::sync::Arc::make_mut(&mut view.request).session = None;
+    std::sync::Arc::make_mut(&mut view.request).producer = Some(store::Producer {
         name: "foreign@host".parse().unwrap(),
         version: "fixture".into(),
         session: None,
@@ -413,14 +417,21 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
         }),
     );
     receipts
-        .create_run(&run, &[original.request.clone(), follower.request.clone()])
+        .create_run(
+            &run,
+            &[
+                original.request.as_ref().clone(),
+                follower.request.as_ref().clone(),
+            ],
+        )
         .await
         .unwrap();
     assert!(matches!(
         live::resolve(&state, &follower).await.unwrap(),
         Resolution::Unavailable(_)
     ));
-    original.request.session_id = Some("original-session".parse().unwrap());
+    std::sync::Arc::make_mut(&mut original.request).session_id =
+        Some("original-session".parse().unwrap());
     receipts.save_request(&original.request).await.unwrap();
     let Resolution::Local(source) = live::resolve(&state, &follower).await.unwrap() else {
         panic!("running follower must resolve owner");
@@ -429,7 +440,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     assert_eq!(source.reference.session_id.as_str(), "original-session");
     let mut producer = store::Producer::current();
     producer.session = Some(source.reference.clone());
-    follower.request.provenance = None;
+    std::sync::Arc::make_mut(&mut follower.request).provenance = None;
     follower.execution = Some(
         serde_json::from_value(json!({
             "id":"execution-fixture",
@@ -457,7 +468,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     };
     assert_eq!(execution_source.reference, source.reference);
     assert!(execution_source.saved);
-    follower.request.session = Some(SessionRef {
+    std::sync::Arc::make_mut(&mut follower.request).session = Some(SessionRef {
         state: "remote-state".parse().unwrap(),
         producer: "remote@host".parse().unwrap(),
         ..source.reference

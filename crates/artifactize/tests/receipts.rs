@@ -477,7 +477,14 @@ async fn schema_five_profiles_survive_typed_reads_and_invalid_states_fail_at_par
     }))
     .unwrap();
     receipts
-        .create_run(&view.run, &view.requests)
+        .create_run(
+            &view.run,
+            &view
+                .requests
+                .iter()
+                .map(|request| artifactize_core::store::Request::clone(request))
+                .collect::<Vec<_>>(),
+        )
         .await
         .unwrap();
     let saved = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();

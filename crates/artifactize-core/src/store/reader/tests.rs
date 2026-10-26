@@ -21,6 +21,8 @@ fn request(run: &str, artifact: &str, status: &str, repo: &Path) -> store::Reque
         }),
     )
     .request
+    .as_ref()
+    .clone()
 }
 async fn fixture(
     runs: usize,
@@ -657,4 +659,54 @@ async fn a_run_saved_again_keeps_its_definitions_as_saved_with_the_run() {
         .value()
         .unwrap();
     assert!(artifacts.contains_key("app") && !artifacts.contains_key("web"));
+}
+#[tokio::test]
+async fn a_changed_request_is_read_alone_and_the_rest_stay_shared_with_the_shown_snapshot() {
+    // A Run of thousands of requests stays shown while one of them changes: the next snapshot
+    // reads that request again and shares every other one, and the Run's definitions, with the
+    // snapshot still shown instead of copying them.
+    let (_root, repo, state, receipts) = fixture(0, 0).await;
+    let names = ["a0", "a1", "a2"];
+    let saved = run(
+        "run-1",
+        &repo,
+        &state,
+        json!({
+            "artifacts":names.map(|name| (name, json!({"path":name}))).into_iter().collect::<std::collections::BTreeMap<_, _>>(),
+            "evals":names.map(|name| json!({"id":format!("{name}/check"),"target":name,"declaration":{"title":name}})),
+        }),
+    );
+    let requests = names.map(|name| request("run-1", name, "GREEN", &repo));
+    receipts.create_run(&saved, &requests).await.unwrap();
+    let mut reader = Reader::default();
+    let id = "run-1".parse().unwrap();
+    let (_, shown) = read(&mut reader, &state, &id, 1).unwrap();
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    db.execute(
+        "UPDATE requests SET data=json_set(data,'$.title','Changed') WHERE id='run-1-a1'",
+        [],
+    )
+    .unwrap();
+    let (run, next) = read(&mut reader, &state, &id, 1).unwrap();
+    assert_eq!(next[1].request.title, "Changed");
+    assert_eq!(shown[1].request.title, "Title");
+    assert!(!std::sync::Arc::ptr_eq(&shown[1].request, &next[1].request));
+    for n in [0, 2] {
+        assert!(std::sync::Arc::ptr_eq(&shown[n].request, &next[n].request));
+    }
+    assert!(
+        run.requests
+            .iter()
+            .zip(&next)
+            .all(|(request, view)| std::sync::Arc::ptr_eq(request, &view.request))
+    );
+    let graph = run.run.definitions.graph().unwrap();
+    for (view, eval) in next.iter().zip(graph.evals()) {
+        let definition = view.definition.as_ref().unwrap();
+        assert!(std::ptr::eq(definition.eval(), eval));
+        assert!(std::ptr::eq(
+            definition.artifact(),
+            graph.artifact(&eval.target).unwrap()
+        ));
+    }
 }

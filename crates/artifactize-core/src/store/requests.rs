@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use serde::Serialize;
 
@@ -6,24 +6,76 @@ use tokio_rusqlite::Connection;
 
 use super::{
     DATABASE, Execution, HumanClaim, Request,
+    definitions::Graph,
     receipts::{Error, check_files, schema_initialized},
 };
 use crate::workspace::{canonical_target, outside_workspace};
 
+/// A request with what it shows. Its decoded records are shared: a copy of the view, and the
+/// Run's view of the same read, keep the one request and execution, so a snapshot that is
+/// read again copies only the requests that changed.
 #[derive(Debug, Clone, Serialize)]
 pub struct RequestView {
     #[serde(flatten)]
-    pub request: Request,
+    pub request: Arc<Request>,
     pub claim: Option<HumanClaim>,
-    pub execution: Option<Execution>,
+    pub execution: Option<Arc<Execution>>,
     pub definition: Option<RequestDefinition>,
 }
 
-/// The saved definitions of a request's eval and Artifact, shared by every view of the Run.
-#[derive(Debug, Clone, Serialize)]
-pub struct RequestDefinition {
-    pub eval: Arc<super::definitions::Eval>,
-    pub artifact: Arc<super::definitions::Artifact>,
+/// The saved definitions of a request's eval and Artifact.
+#[derive(Clone)]
+pub struct RequestDefinition(Place);
+#[derive(Clone)]
+enum Place {
+    /// A place in the Run's one decoded graph, which every view of an opened Run shares.
+    Graph {
+        graph: Arc<Graph>,
+        /// The eval's position in the graph's evals.
+        eval: usize,
+        artifact: crate::types::ArtifactName,
+    },
+    /// Copies of its own eval and Artifact, for a view read apart from its Run, such as a
+    /// waiting review's, which may be kept long after the rest of the Run is gone.
+    Own {
+        eval: Arc<super::definitions::Eval>,
+        artifact: Arc<super::definitions::Artifact>,
+    },
+}
+impl RequestDefinition {
+    pub fn eval(&self) -> &super::definitions::Eval {
+        match &self.0 {
+            Place::Graph { graph, eval, .. } => &graph.evals()[*eval],
+            Place::Own { eval, .. } => eval,
+        }
+    }
+    pub fn artifact(&self) -> &super::definitions::Artifact {
+        match &self.0 {
+            Place::Graph {
+                graph, artifact, ..
+            } => graph
+                .artifact(artifact)
+                .expect("an indexed request's Artifact is in its graph"),
+            Place::Own { artifact, .. } => artifact,
+        }
+    }
+}
+impl Serialize for RequestDefinition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut definition = serializer.serialize_struct("RequestDefinition", 2)?;
+        definition.serialize_field("eval", self.eval())?;
+        definition.serialize_field("artifact", self.artifact())?;
+        definition.end()
+    }
+}
+impl std::fmt::Debug for RequestDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestDefinition")
+            .field("eval", self.eval())
+            .field("artifact", self.artifact())
+            .finish()
+    }
 }
 
 #[derive(Default)]
@@ -291,7 +343,7 @@ async fn read_with_repo(
                     }
                 };
                 repos.push(std::path::PathBuf::from(repo));
-                indexes.insert(id, (DefinitionIndex::new(&run), run.repo_path));
+                indexes.insert(id, (DefinitionIndex::apart(&run), run.repo_path));
             }
             crate::workspace::outside_workspaces(repos.iter().map(|repo| repo.as_path()), &state)
                 .map_err(|error| Error::Invalid(error.to_string()))?;
@@ -299,7 +351,7 @@ async fn read_with_repo(
                 .into_iter()
                 .filter_map(|row| {
                     indexes
-                        .get(&row.run)
+                        .get_mut(&row.run)
                         .and_then(|(index, repo)| row.view(index).map(|view| (view, repo.clone())))
                 })
                 .collect();
@@ -421,40 +473,73 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
         .collect::<Result<_, _>>()?)
 }
 
-/// Saved definitions are decoded/indexed once per Run, never once per request. First duplicate
-/// Eval wins, matching SQLite's former json_each lookup; missing/null definitions remain absent.
+/// Saved definitions are decoded once per Run and indexed by position, never copied whole.
+/// First duplicate Eval wins, matching SQLite's former json_each lookup; missing/null
+/// definitions remain absent.
 pub(super) struct DefinitionIndex {
-    artifacts:
-        std::collections::BTreeMap<crate::types::ArtifactName, Arc<super::definitions::Artifact>>,
-    evals: std::collections::BTreeMap<crate::types::EvalId, Arc<super::definitions::Eval>>,
+    graph: Option<Arc<Graph>>,
+    evals: HashMap<crate::types::EvalId, usize>,
+    /// The copies handed out so far, when each view keeps its own ([`Place::Own`]).
+    copies: Option<Copies>,
+}
+#[derive(Default)]
+struct Copies {
+    evals: HashMap<usize, Arc<super::definitions::Eval>>,
+    artifacts: HashMap<crate::types::ArtifactName, Arc<super::definitions::Artifact>>,
 }
 impl DefinitionIndex {
+    /// The views share the Run's graph: an opened Run's, read as one.
     pub fn new(run: &super::Run) -> Self {
-        let mut evals = std::collections::BTreeMap::new();
-        if let Some(graph) = run.definitions.graph() {
-            for eval in graph.evals() {
-                evals
-                    .entry(eval.id.clone())
-                    .or_insert_with(|| Arc::new(eval.clone()));
-            }
+        let graph = run.definitions.share();
+        let mut evals = HashMap::new();
+        for (position, eval) in graph.iter().flat_map(|graph| graph.evals()).enumerate() {
+            evals.entry(eval.id.clone()).or_insert(position);
         }
         Self {
-            artifacts: run
-                .definitions
-                .graph()
-                .map(|graph| {
-                    graph
-                        .artifacts()
-                        .map(|(id, artifact)| (id.clone(), Arc::new(artifact.clone())))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            graph,
             evals,
+            copies: None,
         }
+    }
+    /// Each view keeps copies of its own eval and Artifact, shared only by the views of this
+    /// read: requests read apart from their Runs.
+    fn apart(run: &super::Run) -> Self {
+        Self {
+            copies: Some(Copies::default()),
+            ..Self::new(run)
+        }
+    }
+    fn definition(
+        &mut self,
+        eval: &crate::types::EvalId,
+        artifact: &crate::types::ArtifactName,
+    ) -> Option<RequestDefinition> {
+        let graph = self.graph.as_ref()?;
+        let saved = graph.artifact(artifact)?;
+        let position = *self.evals.get(eval)?;
+        Some(RequestDefinition(match &mut self.copies {
+            None => Place::Graph {
+                graph: graph.clone(),
+                eval: position,
+                artifact: artifact.clone(),
+            },
+            Some(copies) => Place::Own {
+                eval: copies
+                    .evals
+                    .entry(position)
+                    .or_insert_with(|| Arc::new(graph.evals()[position].clone()))
+                    .clone(),
+                artifact: copies
+                    .artifacts
+                    .entry(artifact.clone())
+                    .or_insert_with(|| Arc::new(saved.clone()))
+                    .clone(),
+            },
+        }))
     }
 }
 impl Row {
-    pub fn view(&self, index: &DefinitionIndex) -> Option<RequestView> {
+    pub fn view(&self, index: &mut DefinitionIndex) -> Option<RequestView> {
         let request = super::unreadable::evidence::<Request>("request", &self.data)?;
         let execution = self
             .execution
@@ -464,7 +549,10 @@ impl Row {
     }
     /// The request's view and why any of its records do not read. A request that does not read
     /// has no view; an execution that does not read leaves the view without it.
-    pub fn read(&self, index: &DefinitionIndex) -> (Option<RequestView>, Vec<super::Unreadable>) {
+    pub fn read(
+        &self,
+        index: &mut DefinitionIndex,
+    ) -> (Option<RequestView>, Vec<super::Unreadable>) {
         let mut unreadable = Vec::new();
         let execution = self
             .execution
@@ -483,22 +571,15 @@ impl Row {
     }
     fn with_evidence(
         &self,
-        index: &DefinitionIndex,
+        index: &mut DefinitionIndex,
         request: Request,
         execution: Option<Execution>,
     ) -> RequestView {
-        let definition = index
-            .evals
-            .get(&self.eval)
-            .zip(index.artifacts.get(&request.target))
-            .map(|(eval, artifact)| RequestDefinition {
-                eval: eval.clone(),
-                artifact: artifact.clone(),
-            });
+        let definition = index.definition(&self.eval, &request.target);
         RequestView {
-            request,
+            request: Arc::new(request),
             definition,
-            execution,
+            execution: execution.map(Arc::new),
             claim: self.claim.as_ref().map(|(id, reviewer, at)| HumanClaim {
                 request_id: id.clone(),
                 reviewer: reviewer.clone(),

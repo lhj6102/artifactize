@@ -22,9 +22,10 @@ fn request(run: &str, eval: &str, status: &str, profile: serde_json::Value) -> s
         status,
         json!({"profile":profile,"requestedProfile":profile}),
     );
-    view.request.run_id = run.parse().unwrap();
-    view.request.id = format!("{run}-{}", eval.replace('/', "-")).parse().unwrap();
-    view.request
+    std::sync::Arc::make_mut(&mut view.request).run_id = run.parse().unwrap();
+    std::sync::Arc::make_mut(&mut view.request).id =
+        format!("{run}-{}", eval.replace('/', "-")).parse().unwrap();
+    std::sync::Arc::unwrap_or_clone(view.request)
 }
 
 async fn run(state: &Path, repo: &Path, id: &str, requests: &[store::Request]) {
@@ -61,7 +62,9 @@ async fn fixture() -> Fixture {
             "result":{"verdict":"GREEN","exitCode":0,"stdout":"all good","stderr":""},
         }),
     )
-    .request;
+    .request
+    .as_ref()
+    .clone();
     let runtime = store::Request {
         run_id: "run-a".parse().unwrap(),
         id: "run-a-app-check".parse().unwrap(),

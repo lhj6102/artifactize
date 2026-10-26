@@ -637,13 +637,14 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
     if !changed {
         return None;
     }
+    // The views share their records: only a request that completed later is copied to change.
     let mut ended = requests.to_vec();
     for view in &mut ended {
         if late(view.claim.as_ref().map(|claim| claim.claimed_at)) {
             view.claim = None;
         }
-        let request = &mut view.request;
-        if late(request.completed_at()) {
+        if late(view.request.completed_at()) {
+            let request = std::sync::Arc::make_mut(&mut view.request);
             request.state = if request.profile.kind() == crate::config::ProfileKind::Human {
                 crate::store::RequestState::Deferred
             } else {

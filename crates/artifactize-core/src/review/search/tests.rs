@@ -233,6 +233,8 @@ async fn state_in(folder: &str, count: usize) -> (tempfile::TempDir, std::path::
         .map(|index| {
             crate::monitor::tests::request(&format!("app/check{index:03}"), "GREEN", json!({}))
                 .request
+                .as_ref()
+                .clone()
         })
         .collect();
     requests.push(
@@ -241,7 +243,9 @@ async fn state_in(folder: &str, count: usize) -> (tempfile::TempDir, std::path::
             "WAITING_HUMAN",
             json!({"profile":{"kind":"human"},"requestedProfile":{"kind":"human"}}),
         )
-        .request,
+        .request
+        .as_ref()
+        .clone(),
     );
     receipts.create_run(&run, &requests).await.unwrap();
     (root, state)
@@ -419,6 +423,8 @@ async fn pages_cross_batch_boundaries_with_mixed_statuses() {
                 json!({}),
             )
             .request
+            .as_ref()
+            .clone()
         })
         .collect();
     receipts.create_run(&run, &requests).await.unwrap();

@@ -251,8 +251,10 @@ mod tests {
             "selection":{"kind":"all"}, "validation":null, "definitions":null
         }))
         .unwrap();
-        let request =
-            crate::test_request::request("app/check", "GREEN", json!({"cwd":repo})).request;
+        let request = crate::test_request::request("app/check", "GREEN", json!({"cwd":repo}))
+            .request
+            .as_ref()
+            .clone();
         let id = request.id.clone();
         receipts.create_run(&run, &[request]).await.unwrap();
         store::Receipts::clone(&receipts).close().await.unwrap();
