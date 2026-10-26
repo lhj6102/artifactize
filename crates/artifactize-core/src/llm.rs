@@ -771,8 +771,15 @@ pub fn test_endpoint(provider: Provider) -> Result<Option<TestEndpoint>, String>
 /// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
 /// value must be a loopback URL.
 pub fn variable_endpoint(variable: &str) -> Result<Option<TestEndpoint>, String> {
-    let Some(value) = crate::platform::environment::var(variable).filter(|value| !value.is_empty())
-    else {
+    variable_endpoint_in(variable, crate::platform::environment::var)
+}
+
+/// [`variable_endpoint`] read from `var` instead of this process's environment.
+pub fn variable_endpoint_in(
+    variable: &str,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> Result<Option<TestEndpoint>, String> {
+    let Some(value) = var(variable).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     value
