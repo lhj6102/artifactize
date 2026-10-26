@@ -1,6 +1,6 @@
 # Eval {#eval}
 
-**eval**은 Artifact를 검사하는 단위 하나입니다. 바뀌지 않는 로컬 ID, 통과 조건을 나타내는 제목,
+**eval**은 Artifact를 검사하는 단위입니다. 바뀌지 않는 로컬 ID, 통과 조건을 나타내는 제목,
 리뷰 주체를 정하는 프로필을 설정하세요. 예를 들어 `library` Artifact의
 `[evals.tests]`는 전체 ID가 `library/tests`입니다.
 

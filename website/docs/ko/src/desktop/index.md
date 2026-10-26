@@ -132,7 +132,7 @@ Detail이 열리며, 저장된 검증과 충족되지 않은 최종 검증 요�
 
 브랜치의 **Current**는
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
-Run 없이 현재 선언의 그래프를 그립니다. 선언을 읽는 즉시 그래프가 나타나며, 처음에는 모든 Artifact가 확인 중(checking)으로 표시됩니다. fingerprint 계산이 끝날 때마다 해당 Artifact의 상태가 갱신되고, reused(모든 eval의 결과를 평가 없이 재사용), would run, waiting, blocked 상태가 각각 다른 색으로 표시됩니다. 각 Artifact의 상태는 해당 Artifact와 의존 대상의
+Run 없이 현재 선언의 그래프를 그립니다. 선언을 읽는 즉시 그래프가 나타나며, 처음에는 모든 Artifact가 확인 중(checking)으로 표시됩니다. fingerprint 계산이 끝날 때마다 해당 Artifact의 상태가 갱신됩니다. reused(모든 eval이 기존 결과를 평가 없이 다시 사용), would run, waiting, blocked 상태는 각각 다른 색으로 표시됩니다. 각 Artifact의 상태는 해당 Artifact와 의존 대상의
 fingerprint를 모두 계산한 뒤에 정해지므로, 의존 대상이 없는 Artifact부터 그래프에 상태를 표시합니다. Run의 Artifact처럼 노드에는 이름만 표시하고, 접근성 이름에는
 그 Artifact의 상태와 실행될 eval 수, 또는 아직 확인 중이라는 사실을 담습니다. 스캔이 진행되는 동안 머리말은
 아직 확인 중인 Artifact 수를 알려 주고, 스캔이 끝나면 언제 스캔했는지 알려 줍니다. fingerprint 계산에 실패하면

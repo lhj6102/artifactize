@@ -86,7 +86,7 @@ ID와 제목, 태그, 저장소 경로, 쓰지 않은 프로필 변형, 도구 �
 도구는 Artifact를 보는 방법일 뿐이므로, 도구의 설명이나 스키마만 바꿔서는 다시 리뷰하지
 않습니다. 도구 변경도 반영하려면 관련 파일을 fingerprint에 포함하세요.
 
-실행 가능한 eval은 대상과 의존하는 모든 Artifact에 fingerprint가 있을 때만 키를 가집니다.
+실행 가능한 eval은 대상과 의존하는 모든 Artifact에 fingerprint가 있을 때만 재사용 키가 만들어집니다.
 생략하면 폴더와 파일 Artifact(그 종류의 basis Artifact 포함)는 artifactsum을 쓰고, 그래프
 Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 파일 Artifact가
 `fingerprint = false`를 선언하면 그 eval은 재사용하지 않아서, `verify`할 때마다 다시
@@ -100,7 +100,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 키에 기록이 여러 개 있으면 GREEN이든 RED이든 완료 시각이 가장 늦은 것을 재사용합니다. 그래서
 평가 기준과 입력이 같으면 프로필이 달라도 기존 결과를 재사용할 수 있습니다. 선언된 프로필로 요청한
 리뷰에 `--profile fast` 같은 Agent 변형으로 만든 결과를 재사용할 수 있고, 그 반대도 됩니다.
-명령이나 인자가 다른 Runtime 변형은 별도의 키를 가지며, 다른 입력을 가리킬 수도 있습니다.
+명령이나 인자가 다른 Runtime 변형은 서로 다른 재사용 키로 구분되며, 다른 입력을 가리킬 수도 있습니다.
 
 재사용한 결과에도 그 결과를 만든 명령이나 모델, 그리고 결과를 가져온 곳이 남습니다. `run show`에서
 둘을 어디서 보는지는 [verify와 Run](run.md#verify-and-runs)에 있습니다.

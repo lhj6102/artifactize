@@ -263,6 +263,6 @@ SATISFIED**를 유지하며, 흐린 `*`는 그 뒤로 상태가 바뀐 행을 �
 [내장 `graph` 도구](tools/builtin.md#current-project-graph)를 선언하세요. Agent는 추출한 현재
 그래프를 트리로 보고, Human은 저장된 Run 없이도 데스크톱 앱에서 그 브랜치의
 [Current](../desktop/index.md#current)를 엽니다. 루트에 선택적으로 두는
-[`.artf` 그래프 Artifact](declarations.md#graph-artifact)는 일반 eval을 가지며, 다른 Artifact처럼
+[`.artf` 그래프 Artifact](declarations.md#graph-artifact)에도 일반 eval을 선언할 수 있으며, 다른 Artifact처럼
 Run과 status에 나옵니다. 다른 점은 fingerprint 계산 방식뿐이며, 그래프 전용 검증 절차나 루트
 폴더 Artifact와의 자동 관계는 없습니다.

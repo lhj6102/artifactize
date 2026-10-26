@@ -128,7 +128,7 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 ## 소유자 결과 스키마 {#owner-result-schemas}
 
 Agent와 Human 결과에는 `verdict`와 소유자가 정한 필드가 들어 있습니다. `pass_schema`(GREEN)와
-`fail_schema`(RED)에는 직접 정의한 필드(소유자 필드)만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
+`fail_schema`(RED)에는 이 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
 위의 `summary` 스키마라면 Agent는 `{"verdict":"GREEN","summary":"All requirements are
 covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필드로
 `{"summary":"All requirements are covered."}`만 입력합니다.

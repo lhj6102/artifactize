@@ -33,7 +33,7 @@ ID가 없으면 상태 안의 모든 저장소에서 검색 조건에 맞는 요
 | `eval:` | eval ID의 일부 |
 | `request:` | 요청 ID의 일부 |
 | `reviewer:` | 맡은 사람 이름의 일부입니다. 맡지 않은 요청은 일치하지 않습니다 |
-| `tag:` | eval의 Artifact가 가진 태그의 일부(선언의 `tags`, Run과 함께 저장된 그대로) |
+| `tag:` | eval의 Artifact에 선언된 태그 중 일부(선언의 `tags`, Run과 함께 저장된 그대로) |
 | `kind:` | eval 종류: `runtime`, `agent`, `human` |
 | `status:` | `waiting_human`(`deferred` 승인 포함), `green`, `red`, `error` 같은 요청 상태 |
 | `is:mine` | 내가 맡은 것(`$USER` 또는 `--reviewer`) |
