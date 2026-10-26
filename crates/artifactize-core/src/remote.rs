@@ -239,6 +239,7 @@ fn summary_usage(usage: Option<&Vec<crate::llm::Attempt>>) -> Option<Vec<crate::
                 usage: attempt.usage.clone(),
                 error: None,
                 error_code: None,
+                dispatch: attempt.dispatch,
             })
             .collect(),
     )

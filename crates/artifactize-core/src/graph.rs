@@ -538,7 +538,9 @@ impl EvalStatus {
 }
 
 impl EvalEvaluation<'_> {
-    /// Operational errors require an explicit retry, not automatic redispatch.
+    /// Operational errors require an explicit retry, not automatic redispatch. An Agent review
+    /// whose provider output failed is dispatched again within its own execution, before it
+    /// gives evidence ([`crate::agent::error::Failure::output_failed`]).
     pub fn can_execute(&self) -> bool {
         self.readiness == Readiness::Ready && matches!(self.evidence, None | Some(Evidence::Stale))
     }

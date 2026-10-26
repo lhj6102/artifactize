@@ -110,11 +110,26 @@ handles retries as described below.
 
 A turn that fails with a rate limit or a temporary error before it produced any output
 or used any tokens is retried automatically a few times, waiting as long as the provider
-asks. A failure after output or usage is never retried, so nothing is paid for twice.
+asks. A failure after output or usage is never retried within its turn, so nothing is
+paid for twice.
 When the retries do not help, or the provider asks to wait past the review's deadline,
 the review ends ERROR with `RATE_LIMIT` or `TRANSIENT`. Wait a moment and run `verify`
 again: finished results are reused, so only the failed reviews run. Each attempt is saved
 in `usage` with its counters, `error` and `errorCode`.
+
+When the provider's answer itself fails after it began, the whole review is dispatched
+again within the same Run, once by default, in a fresh conversation rather than a
+continuation. This covers an answer that turned into whitespace (`DEGENERATE_OUTPUT`),
+one that stopped at the model's output limit (`PROVIDER_ERROR`, `Provider response was
+incomplete: Some(Length)`), and a stream that broke off after its output began
+(`TRANSIENT`). The request stays RUNNING meanwhile, so evals that depend on it wait and
+go on once it settles; it ends ERROR only when the last dispatch fails. Every dispatch is
+paid for: its attempts stay in `usage`, where each attempt of a later dispatch carries
+`dispatch` (2, 3, …), and the request lists the failed ones under `redispatches`, each
+with its `sessionId`, saved `session`, `errorCode` and `error`. The request's own
+`sessionId` and `session` are the last dispatch's. The number of redispatches is set
+per machine in [`limits.json`](others/state.md#agent-redispatches); 0 ends the review at
+the first such failure.
 
 ### Prompt caching
 
@@ -133,13 +148,13 @@ A failed Agent review records one of these `errorCode` values:
 | `AUTHENTICATION` | Missing, expired or rejected credentials: HTTP 401/403, no API key, no Codex sign-in or an expired auth file | no; stops the backend |
 | `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit) | no; stops the backend |
 | `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` reaches the deadline | yes |
-| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes, before output |
+| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes, before output; after output the review is dispatched again |
 | `TIMEOUT` | The review's `timeout_ms` deadline | no |
 | `CANCELLED` | Explicit Run cancellation (`run cancel` or MCP `verify_cancel`) | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
-| `DEGENERATE_OUTPUT` | The answer turned into a long run of whitespace, so the review stopped it | no |
-| `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
+| `DEGENERATE_OUTPUT` | The answer turned into a long run of whitespace, so the review stopped it | the review is dispatched again |
+| `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | only an answer stopped at the output limit (`Length`): the review is dispatched again |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
 

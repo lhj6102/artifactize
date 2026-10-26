@@ -318,6 +318,9 @@ pub struct Request {
     /// Where the saved conversation behind this request's result lives: its own review's,
     /// or for a reused result the producing review's. Absent when none was saved.
     pub session: Option<crate::agent::session::SessionRef>,
+    /// The earlier dispatches of this request's Agent review, oldest first, each ended by a
+    /// failed provider output before the review was dispatched again.
+    pub redispatches: Vec<Redispatch>,
     pub human_definition: Option<super::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
     pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
@@ -340,6 +343,20 @@ pub struct Request {
     pub blocked_by: Vec<super::Blocker>,
     /// What a queued request waits for besides a job; `blocked_reason` says it in words.
     pub queue: Option<QueueReason>,
+}
+
+/// A dispatch of an Agent review that ended because the provider's output failed
+/// ([`crate::agent::error::Failure::output_failed`]), after which the review was dispatched
+/// again in a fresh session. Its attempts stay in the request's `usage`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Redispatch {
+    pub session_id: SessionId,
+    /// Its saved conversation; absent when none was saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<crate::agent::session::SessionRef>,
+    pub error_code: crate::types::FailureCode,
+    pub error: String,
 }
 
 /// What a queued request waits for besides a job slot of its Run.
@@ -393,6 +410,9 @@ pub(crate) struct RequestWire {
     /// or for a reused result the producing review's. Absent when none was saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<crate::agent::session::SessionRef>,
+    /// The earlier dispatches of the Agent review, oldest first; absent when there were none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub redispatches: Vec<Redispatch>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<super::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
@@ -462,6 +482,7 @@ impl TryFrom<RequestWire> for Request {
             origin: wire.origin,
             session_id: wire.session_id,
             session: wire.session,
+            redispatches: wire.redispatches,
             human_definition: wire.human_definition,
             payload: wire.payload,
             references: wire.references,
@@ -509,6 +530,7 @@ impl From<Request> for RequestWire {
             origin: record.origin,
             session_id: record.session_id,
             session: record.session,
+            redispatches: record.redispatches,
             human_definition: record.human_definition,
             payload: record.payload,
             references: record.references,

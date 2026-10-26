@@ -98,9 +98,20 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
 provider가 요청한 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
-생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
+생긴 뒤의 실패는 그 턴 안에서 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
+
+provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 같은 Run 안에서 리뷰 전체를 기본
+한 번 다시 실행합니다. 이전 대화를 이어 가지 않고 새 대화로 시작합니다. 답변이 공백으로만
+계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
+`Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
+여기에 해당합니다. 그동안 요청은 RUNNING이므로 이 요청에 의존하는 eval은 결과를 기다렸다가 결과가 나오면
+이어서 실행됩니다. 마지막 실행까지 실패해야 ERROR로 끝납니다. 다시 실행할 때마다 비용이 듭니다. 각 실행의
+시도는 모두 `usage`에 남고, 두 번째 이후 실행의 시도에는 `dispatch`(2, 3, …)가 붙습니다. 실패한 실행은
+요청의 `redispatches`에 `sessionId`, 저장된 `session`, `errorCode`, `error`와 함께 남습니다. 요청의
+`sessionId`와 `session`은 마지막 실행의 것입니다. 다시 실행하는 횟수는 머신마다
+[`limits.json`](others/state.md#agent-redispatches)에서 정합니다. 0이면 이런 실패가 처음 났을 때 리뷰가 끝납니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
@@ -117,13 +128,13 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 | `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일이 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
 | `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
 | `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429입니다. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상인 경우입니다 | 합니다 |
-| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다 |
+| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다. 출력 뒤에는 리뷰를 다시 실행합니다 |
 | `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 하지 않습니다 |
 | `CANCELLED` | Run을 직접 취소했습니다(`run cancel` 또는 MCP `verify_cancel`) | 하지 않습니다 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘었습니다 | 하지 않습니다 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없습니다 | 하지 않습니다 |
-| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 하지 않습니다 |
-| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 하지 않습니다 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 리뷰를 다시 실행합니다 |
+| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 출력 한도에서 끊긴 답변(`Length`)만 리뷰를 다시 실행합니다 |
 | `AGENT_ERROR` | 그 밖의 모든 경우입니다. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구가 해당합니다 | 하지 않습니다 |
 | `BACKEND_STOPPED` | 시작하지 않습니다. 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다 | — |
 
