@@ -315,7 +315,7 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 `files`, `ignore`, 파일 Artifact 형식은 [Fingerprint와 재사용](fingerprint.md#artifactsum)에
 있습니다. 태그는 해시하지 않습니다.
 
-artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일 중에 ignore하지 않은 심볼릭 링크나 특수 파일이 있으면 검증이 오류로 멈춥니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
+artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일에 ignore되지 않은 심볼릭 링크나 특수 파일이 있으면 오류가 발생해 검증을 중단합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
 심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 해당 Artifact에 속하지 않은 파일은 해시하지
 않습니다. 다만 무엇을 제외할지 알기 위해 저장소 루트까지 그 위 폴더들의 `.gitignore`도 읽습니다. 항목 10,000개나 1 GiB를 넘으면 오류와 함께 멈춥니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
