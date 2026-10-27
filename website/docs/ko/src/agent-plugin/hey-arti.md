@@ -1,4 +1,4 @@
-# Hey Arti: 프로젝트의 리뷰 구성하기 {#hey-arti-shape-a-projects-reviews}
+# Hey Arti: 프로젝트 리뷰 설계하기 {#hey-arti-shape-a-projects-reviews}
 
 코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰해야 할까?"라고 물어보세요. Arti는
 프로젝트를 파악하고, 무엇이 중요한지 묻고, 리뷰가 의미 있고 그 결과를 재사용할 수 있도록 Artifact와 eval을
