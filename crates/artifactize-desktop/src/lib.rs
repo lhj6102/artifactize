@@ -58,6 +58,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::human_release,
             graph::graph,
             graph::neighbours,
+            graph::find::find,
             graph::current::current_scan,
             graph::current::current_view,
             graph::current::current_structure,

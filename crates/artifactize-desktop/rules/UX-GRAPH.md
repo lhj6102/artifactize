@@ -83,7 +83,13 @@ that makes the transition happen and checks where it leads.
   Artifacts, and between its spaces, than a graph without. A region is not an Artifact: Tab
   passes it by and a click on it is a click on the background.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
-  does; they have no other keys of their own. Hovering only highlights.
+  does, and Ctrl+F opens their **Find field**; they have no other keys of their own. Hovering
+  only highlights.
+- **Find field**: floats over a graph's top left: a text field and, below it, the Artifacts and
+  evals whose names contain its text, ignoring case, in the graph's order, an Artifact by its
+  whole name and an eval as `{Artifact} / {eval}`, each with its verdict's glyph and colour (on a
+  Current, what would happen); the first 50, then how many more match, or that none does.
+  States: empty, listing (an entry chosen or not), nothing found.
 - **Detail**: floats over a graph docked toward its right edge, with a gap, and shows a Run or
   an Artifact; it never sits beside the Pane. Its left edge takes a drag that sets its width,
   between a readable column and a width that leaves some of the graph visible on its left.
@@ -195,7 +201,7 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-REVIEW-SEARCH-FOCUS | Pane or Main area, outside fields | `/` or Ctrl+F | Search focused |
+| E-REVIEW-SEARCH-FOCUS | Pane or Main area, outside fields | `/`, or Ctrl+F unless a Run graph or Current graph is shown and focus is outside the Pane (E-GRAPH-FIND-OPEN) | Search focused |
 | E-REVIEW-SEARCH-TERMS | Search | type free text, `repo:` or `branch:` terms, all of which must match | Search, the Branches and the Waiting stack narrowed alike (free text: part of a project, a branch or a waiting review's eval; `repo:` part of the project; `branch:` part of the branch), suggestions for the last term |
 | E-PANE-SORT | Search | replace `sort:recent` with `sort:name`, or back | Branches ordered by project and branch, or most recent Run first with branches without Runs last |
 | E-REVIEW-SUGGEST | Search with suggestions | ↑ ↓ then Tab or Enter | Search, the suggestion (a key, a project, a branch or a sort order) taken |
@@ -220,6 +226,11 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
 | E-GRAPH-SPACES | Pane | choose an entry whose graph has Artifacts named `space::name` | its Run graph or Current graph, each space's Artifacts in one region labelled with the space, its rounded outline following them, each node showing the rest of its name and read aloud whole, the edges between spaces drawn and coloured like any other |
 | E-GRAPH-SPACE-BACKGROUND | Run graph or Current graph with a space's region, the Detail open | click the region's background | where a click on the graph's background leads: E-MON-DETAIL-BACK or E-CURRENT-CLOSE, and with a Human review in the Detail running work or editing its form first E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM |
+| E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused |
+| E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does |
+| E-GRAPH-FIND-CHOOSE | Find field listing | ↓ or ↑ | the next or previous entry chosen |
+| E-GRAPH-FIND-GO | Find field listing | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable |
+| E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
 ## Detail
@@ -348,6 +359,9 @@ E-PANE-SELECT.
   E-CURRENT-CHIP → E-CURRENT-RUN-END
 - J-GRAPH-SPACES: E-GRAPH-SPACES → E-MON-DETAIL-ARTIFACT → E-GRAPH-SPACE-BACKGROUND
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
+- J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
+  E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
+  E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CLOSE
 - J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM

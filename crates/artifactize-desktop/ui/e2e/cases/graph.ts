@@ -5,13 +5,14 @@
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, createSpaceRoom, createSpaces, requests, savedRuns, signOff, signoff } from "../fixture.ts";
-import { afterRender, press } from "../keys.ts";
+import { afterRender, fill, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, camera, detail, fact, focusedNode, graphShown, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
+import { aside, camera, detail, fact, FIND, findField, focusedNode, graphShown, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
+import { primaryModifier } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
-import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, selectBranch, showRun } from "../pane.ts";
+import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, searchFocused, selectBranch, showRun } from "../pane.ts";
 
 /** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
 function ended(fixture: ReturnType<typeof createChain>) {
@@ -728,6 +729,123 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact release", { timeout: 15000, timeoutMsg: "release's Detail again" });
       // A click on an eval listed on the Artifact tab shows that eval's tab.
       await openTab(browser, "e:release/signoff", { row: true });
+    },
+  ),
+
+  // UX journeys: J-GRAPH-FIND J-PANE-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-LEAVE E-MON-RUNS-GRAPH
+  // E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-CLOSE E-MON-DETAIL-ARTIFACT E-GRAPH-FIND-GO E-GRAPH-FIND-CHOOSE
+  scenario<Record<string, never>>(
+    "graph-find",
+    "Ctrl+F searches the Pane from the Pane; over the Run's graph it finds Artifacts and evals by name, opens the chosen one's Detail on its tab with the Artifact in the middle of the graph left of the Detail, and Esc or a click outside closes it",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const field = () => findField(browser);
+      const names = async () => (await field())?.entries.map((entry) => entry.name) ?? null;
+      /** The Artifact `id` sits in the middle of the graph left of the Detail, its name readable:
+       * drawn at least at three quarters of its width (168 at zoom 1). */
+      const centred = async (id: string) => {
+        const at = await offCentre(browser, id);
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && at.width >= 126 - 1;
+      };
+      const inDetail = () => browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]'));
+      await graphShown(browser, "a:release");
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+
+      // In the Pane, Ctrl+F focuses the Pane's search, as / does; no find field opens.
+      await press(browser, [primaryModifier, "f"], () => searchFocused(browser), "Ctrl+F in the Pane focuses its search");
+      assert.equal(await field(), null, "no find field over the graph");
+      await press(browser, ["Escape"], () => entriesFocused(browser), "Esc on sort:recent back to the entries");
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+
+      // Over the graph, Ctrl+F opens the find field, empty and focused; a text nothing is named
+      // so says so, and Esc closes it, the camera and the keyboard where they were.
+      const first = await camera(browser);
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open and focused");
+      assert.deepEqual(await field(), { focused: true, value: "", entries: [], note: "" });
+      assert.equal(await searchFocused(browser), false, "the Pane's search stays unfocused");
+      await fill(browser, FIND, "nothing");
+      await browser.waitUntil(async () => (await field())?.note === "No Artifact or eval matches.", { timeout: 15000, timeoutMsg: "nothing found said so" });
+      assert.deepEqual(await names(), []);
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
+      assert.ok(await mainFocused(browser), "the keyboard is back on the Main area");
+      assert.equal(await camera(browser), first, "Esc moved no camera");
+      assert.equal(await detail(browser), null, "Esc opened nothing");
+
+      // With docs's Detail open, Ctrl+F finds ship; a click on it opens ship's Detail and brings
+      // ship to the middle of the graph left of the Detail.
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over docs's Detail");
+      await fill(browser, FIND, "ship");
+      await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(["ship"]), { timeout: 15000, timeoutMsg: "ship found" });
+      await browser.$('[aria-label="Found"] [role="option"]').click();
+      await browser.waitUntil(async () => {
+        const shown = await detail(browser);
+        return (await field()) === null && shown?.title === "Artifact ship" && shown.tabs[0]?.selected === true;
+      }, { timeout: 15000, timeoutMsg: "ship's Detail on its Artifact tab, the field closed" });
+      await browser.waitUntil(() => centred("a:ship"), { timeout: 15000, timeoutMsg: "ship in the middle of the graph left of the Detail" });
+      assert.ok(await inDetail(), "the keyboard is in the Detail");
+
+      // A click outside the field, on the Detail's heading, closes it: the Detail and the camera
+      // stay as they were.
+      const shipCamera = await camera(browser);
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open again");
+      await fill(browser, FIND, "s");
+      await browser.waitUntil(async () => ((await names())?.length ?? 0) > 0, { timeout: 15000, timeoutMsg: "names with s listed" });
+      await aside(browser).$("h2").click();
+      await browser.waitUntil(async () => (await field()) === null, { timeout: 15000, timeoutMsg: "the click outside closed the field" });
+      assert.equal((await detail(browser))?.title, "Artifact ship", "the Detail stays");
+      assert.equal(await camera(browser), shipCamera, "the click outside moved no camera");
+
+      // Typing lists what contains the text, ignoring case: release's eval signoff, with its
+      // verdict's glyph and colour. ↓ chooses it; Enter opens release's Detail on that eval's tab.
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open from the Detail");
+      await fill(browser, FIND, "SIGN");
+      await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(["release / signoff"]), { timeout: 15000, timeoutMsg: "release's signoff found" });
+      const [found] = (await field())!.entries;
+      assert.equal(found.chosen, false, "nothing chosen before ↓");
+      await press(browser, ["ArrowDown"], async () => (await field())?.entries[0]?.chosen === true, "↓ chooses the eval");
+      await press(browser, ["Enter"], async () => {
+        const shown = await detail(browser);
+        return (await field()) === null && shown?.tabs[0]?.name === "release" && shown.tabs.find((each) => each.selected)?.name === "signoff";
+      }, "Enter opens release's Detail on its signoff tab");
+      const tab = (await detail(browser))!.tabs.find((each) => each.selected)!;
+      assert.deepEqual([found.glyph, found.colour], [tab.glyph, tab.colour], "the found eval showed its verdict's glyph and colour");
+      await browser.waitUntil(() => centred("a:release"), { timeout: 15000, timeoutMsg: "release in the middle of the graph left of the Detail" });
+      assert.ok(await inDetail(), "the keyboard is in the Detail");
+    },
+  ),
+
+  // UX journey: J-GRAPH-FIND; UX edges: E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
+  scenario<Record<string, never>>(
+    "graph-find-many",
+    "lists the first 50 Artifacts of a Current that match, in the graph's order, says how many more do, and Enter opens the first",
+    async () => {
+      // Its Runs ended, so the branch's newest entry, shown at launch, is its Current.
+      const fixture = createChain(53);
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const field = () => findField(browser);
+      await browser.$('section[aria-label="Current"] .svelte-flow__node[data-id="a:n052"]').waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn" });
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over the Current");
+      await fill(browser, FIND, "N0");
+      await browser.waitUntil(async () => (await field())?.entries.length === 50, { timeout: 15000, timeoutMsg: "fifty found" });
+      const shown = (await field())!;
+      const expected = Array.from({ length: 50 }, (_, index) => `n${String(index).padStart(3, "0")}`);
+      assert.deepEqual(shown.entries.map((entry) => entry.name), expected, "the first fifty in the graph's order, upstream first");
+      assert.ok(shown.entries.every((entry) => entry.glyph !== "" && entry.colour !== ""), "each with what verify would do");
+      assert.equal(shown.note, "3 more match.");
+      // Enter with nothing chosen opens the first: n000, at the far left of the chain.
+      await press(browser, ["Enter"], async () => (await field()) === null && (await detail(browser))?.title === "Artifact n000", "Enter opens n000's Detail");
+      await browser.waitUntil(async () => {
+        const at = await offCentre(browser, "a:n000");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && at.width >= 126 - 1;
+      }, { timeout: 15000, timeoutMsg: "n000 in the middle of the graph left of the Detail, readable" });
     },
   ),
 ];
