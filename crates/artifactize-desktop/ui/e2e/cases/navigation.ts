@@ -67,6 +67,7 @@ export const scenarios: Scenario[] = [
         [/^Click an Artifact$/, /Open its Detail/],
         [/^Click the background$/, /Close the Detail/],
         [/^Click a tab or an eval$/, /Show the Artifact or that eval/],
+        [shortcutLabel("Ctrl+F"), /^Find an Artifact or an eval by name/],
         [/^c$/, /^Claim$/],
         [/\bF5\b/, /^Refresh/],
       ], [/^↑ \/ ↓ · j \/ k$/, /^v$/, /^(?:!|o|b \/ Backspace)$/], "the Main area");

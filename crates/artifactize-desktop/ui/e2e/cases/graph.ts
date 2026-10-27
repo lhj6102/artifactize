@@ -12,7 +12,7 @@ import { aside, camera, detail, fact, FIND, findField, focusedNode, graphShown, 
 import { primaryModifier } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
-import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, searchFocused, selectBranch, showRun } from "../pane.ts";
+import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, selectBranch, showRun } from "../pane.ts";
 
 /** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
 function ended(fixture: ReturnType<typeof createChain>) {
@@ -102,6 +102,10 @@ async function room(browser: WebdriverIO.Browser, fan: string, tail: string) {
   await browser.waitUntil(async () => (shown = await read()) !== null, { timeout: 15000, timeoutMsg: `the Current's six Artifacts drawn${fan ? " in their spaces" : ""}` });
   return shown!;
 }
+
+/** How wide an Artifact's node draws at the zoom its name starts to read at: 168 at zoom 1, at
+ * three quarters. */
+const READABLE = 126;
 
 export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
@@ -744,12 +748,13 @@ export const scenarios: Scenario[] = [
     async (browser) => {
       const field = () => findField(browser);
       const names = async () => (await field())?.entries.map((entry) => entry.name) ?? null;
-      /** The Artifact `id` sits in the middle of the graph left of the Detail, its name readable:
-       * drawn at least at three quarters of its width (168 at zoom 1). */
-      const centred = async (id: string) => {
+      /** The Artifact `id` sits in the middle of the graph left of the Detail, zoomed in only as
+       * far as its name needs: drawn `before` wide, or {@link READABLE} wide if that was less. */
+      const centred = async (id: string, before: number) => {
         const at = await offCentre(browser, id);
-        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && at.width >= 126 - 1;
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && Math.abs(at.width - Math.max(before, READABLE)) <= 1;
       };
+      const width = async (id: string) => (await offCentre(browser, id))?.width ?? 0;
       const inDetail = () => browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]'));
       await graphShown(browser, "a:release");
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
@@ -780,12 +785,13 @@ export const scenarios: Scenario[] = [
       await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over docs's Detail");
       await fill(browser, FIND, "ship");
       await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(["ship"]), { timeout: 15000, timeoutMsg: "ship found" });
+      const shipBefore = await width("a:ship");
       await browser.$('[aria-label="Found"] [role="option"]').click();
       await browser.waitUntil(async () => {
         const shown = await detail(browser);
         return (await field()) === null && shown?.title === "Artifact ship" && shown.tabs[0]?.selected === true;
       }, { timeout: 15000, timeoutMsg: "ship's Detail on its Artifact tab, the field closed" });
-      await browser.waitUntil(() => centred("a:ship"), { timeout: 15000, timeoutMsg: "ship in the middle of the graph left of the Detail" });
+      await browser.waitUntil(() => centred("a:ship", shipBefore), { timeout: 15000, timeoutMsg: "ship in the middle of the graph left of the Detail" });
       assert.ok(await inDetail(), "the keyboard is in the Detail");
 
       // A click outside the field, on the Detail's heading, closes it: the Detail and the camera
@@ -808,13 +814,14 @@ export const scenarios: Scenario[] = [
       const [found] = (await field())!.entries;
       assert.equal(found.chosen, false, "nothing chosen before ↓");
       await press(browser, ["ArrowDown"], async () => (await field())?.entries[0]?.chosen === true, "↓ chooses the eval");
+      const releaseBefore = await width("a:release");
       await press(browser, ["Enter"], async () => {
         const shown = await detail(browser);
         return (await field()) === null && shown?.tabs[0]?.name === "release" && shown.tabs.find((each) => each.selected)?.name === "signoff";
       }, "Enter opens release's Detail on its signoff tab");
       const tab = (await detail(browser))!.tabs.find((each) => each.selected)!;
       assert.deepEqual([found.glyph, found.colour], [tab.glyph, tab.colour], "the found eval showed its verdict's glyph and colour");
-      await browser.waitUntil(() => centred("a:release"), { timeout: 15000, timeoutMsg: "release in the middle of the graph left of the Detail" });
+      await browser.waitUntil(() => centred("a:release", releaseBefore), { timeout: 15000, timeoutMsg: "release in the middle of the graph left of the Detail" });
       assert.ok(await inDetail(), "the keyboard is in the Detail");
     },
   ),
@@ -832,21 +839,30 @@ export const scenarios: Scenario[] = [
       const field = () => findField(browser);
       await browser.$('section[aria-label="Current"] .svelte-flow__node[data-id="a:n052"]').waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn" });
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      // Once scanned, every Artifact of the unchanged chain would be reused.
+      await browser.waitUntil(async () => /^Scanned at \d/.test(await scanned(browser)), { timeout: 30000, timeoutMsg: "the Current scanned" });
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+      const before = (await offCentre(browser, "a:n000"))!.width;
+      assert.ok(before < READABLE, `the whole chain shows too small to read: ${before}`);
       await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over the Current");
       await fill(browser, FIND, "N0");
       await browser.waitUntil(async () => (await field())?.entries.length === 50, { timeout: 15000, timeoutMsg: "fifty found" });
       const shown = (await field())!;
       const expected = Array.from({ length: 50 }, (_, index) => `n${String(index).padStart(3, "0")}`);
       assert.deepEqual(shown.entries.map((entry) => entry.name), expected, "the first fifty in the graph's order, upstream first");
-      assert.ok(shown.entries.every((entry) => entry.glyph !== "" && entry.colour !== ""), "each with what verify would do");
       assert.equal(shown.note, "3 more match.");
       // Enter with nothing chosen opens the first: n000, at the far left of the chain.
       await press(browser, ["Enter"], async () => (await field()) === null && (await detail(browser))?.title === "Artifact n000", "Enter opens n000's Detail");
       await browser.waitUntil(async () => {
         const at = await offCentre(browser, "a:n000");
-        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && at.width >= 126 - 1;
-      }, { timeout: 15000, timeoutMsg: "n000 in the middle of the graph left of the Detail, readable" });
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && Math.abs(at.width - READABLE) <= 1;
+      }, { timeout: 15000, timeoutMsg: "n000 in the middle of the graph left of the Detail, zoomed in just to read" });
+      // Each listed Artifact showed what verify would do with it, reused, as its eval's chip in
+      // the Detail of the Current shows it.
+      const reused = (await detail(browser))!.tabs.find((each) => each.name === "check")!;
+      assert.equal(reused.glyph, "↻", "the Detail's eval chip says reused");
+      assert.deepEqual(shown.entries.filter((entry) => entry.glyph !== reused.glyph || entry.colour !== reused.colour), [],
+        "every found Artifact showed reused, in its glyph and colour");
     },
   ),
 ];

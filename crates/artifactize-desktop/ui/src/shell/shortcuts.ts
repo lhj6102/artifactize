@@ -7,7 +7,7 @@ const COMMON: Section = {
     ["Ctrl+K", "Command palette"],
     ["Ctrl+,", "Settings, and back"],
     ["Ctrl+O", "Open a request by ID"],
-    ["/ · Ctrl+F", "Search branches and reviews (Ctrl+F in the Pane, or with no graph shown)"],
+    ["/", "Search branches and reviews"],
     ["Ctrl+R / F5", "Refresh, and scan the branches again"],
     ["?", "These shortcuts"],
     ["q", "Quit (outside fields)"],
@@ -56,6 +56,7 @@ export const HELP: Record<"pane" | "main" | "settings", Section[]> = {
     {
       title: "Pane",
       keys: [
+        ["/ · Ctrl+F", "Search branches and reviews"],
         ["↑ / ↓ · j / k", "Select a branch or a timeline entry, then a waiting review"],
         ["← / →", "Fold / expand the selected branch, or step out of / into its timeline"],
         ["Enter", "Go to the Main area, or open the selected review"],
