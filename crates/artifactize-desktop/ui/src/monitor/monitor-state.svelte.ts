@@ -55,6 +55,8 @@ export class MonitorState {
   shown = $state.raw<Shown>({ kind: "none" });
   /** Settings show in the Main area over what it showed before. */
   settings = $state(false);
+  /** The graph's find field is open over the shown Run's or Current's graph. */
+  finding = $state(false);
   /** The Detail floating over the graph. */
   opened = $state.raw<Opened | null>(null);
   /** The Detail's dragged width in pixels, or `null` for its default. */

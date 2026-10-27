@@ -73,8 +73,9 @@
     m.selected = { kind: "chip", branch: item.key, chip: chipKey(chip) };
   }
 
-  /** Show `chip` of `item` in the Main area. */
+  /** Show `chip` of `item` in the Main area; a find field over the graph shown before closes. */
   function show(item: BranchView, chip: Chip) {
+    m.finding = false;
     if (chip.kind === "run") {
       m.shown = { kind: "run", branch: item.key, run: chip.id };
       closeDetailOf(keyOf({ kind: "run", run: chip.id }));
@@ -84,6 +85,7 @@
   }
 
   function showCurrent(item: BranchView) {
+    m.finding = false;
     m.shown = { kind: "current", branch: item.key };
     closeDetailOf(keyOf({ kind: "current", branch: item.key }));
     void browse.close();
@@ -113,6 +115,7 @@
   /** Open a waiting review (or a Human request opened by ID) in the Main area. */
   function openReview(id: string) {
     app.review(id);
+    m.finding = false;
     m.shown = { kind: "review", id };
     m.opened = null;
     current.clear();
@@ -132,6 +135,7 @@
       if (detail.profile === "human") return openReview(id);
       m.folds = { technical: false, pending: false, log: false, debug: false };
       m.shown = { kind: "request", detail };
+      m.finding = false;
       m.opened = null;
       current.clear();
       void browse.close();
@@ -272,9 +276,10 @@
     if (m.opened && m.opened.request !== id) m.opened = { ...m.opened, request: id };
   }
 
-  /** A click on an Artifact: its Detail, on the Artifact's own tab. */
-  function openNode(node: string) {
-    if (source) m.opened = { source, node, tab: null };
+  /** A click on an Artifact: its Detail, on the Artifact's own tab; what the graph's find
+   * field found opens on its eval's tab. */
+  function openNode(node: string, tab: string | null = null) {
+    if (source) m.opened = { source, node, tab };
   }
 
   /** A click on the Run's headline: the Run's Detail. */

@@ -97,7 +97,9 @@ Esc there, with no Detail open, returns to the Pane.
 
 ### Search
 
-`/` or Ctrl+F focuses the search, whose starting query is `sort:recent`. Free text
+`/` focuses the search, and so does Ctrl+F in the Pane or while no graph is shown; over a
+graph, Ctrl+F [finds in the graph](#find-in-the-graph) instead. The starting query is
+`sort:recent`. Free text
 and `key:value` terms must all match, and they narrow the branches and the waiting
 reviews alike. A plain word matches part of a project, a branch or a waiting review's
 eval, ignoring case; `repo:` and `branch:` match part of that one field. Quote a value
@@ -176,13 +178,14 @@ approves nothing.
 ### Graphs
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
-Artifacts and Enter on one does what a click does; they have no other keys of their
-own.
+Artifacts and Enter on one does what a click does, and Ctrl+F
+[finds an Artifact or an eval by name](#find-in-the-graph); they have no other keys of
+their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms.
 **Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
 whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
-appears; after that only you move its camera: the Detail, new results, scans and layouts
-leave it where it is.
+appears; after that only you move its camera, also by opening what Find found: the
+Detail, new results, scans and layouts leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
@@ -197,10 +200,26 @@ region is not an Artifact: Tab passes it by, and a click on it closes the Detail
 on the background does. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
 graph has no minimap, and while more than 500 are in view they are colored boxes without names
-that open only with a click. Zoom in until fewer are in view to see names again and reach
+that open only with a click or through [Find](#find-in-the-graph). Zoom in until fewer are in view to see names again and reach
 them with Tab and Enter. When a Run changes, the graph's colors update in
 place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
+
+### Find in the graph
+
+With a Run's graph or a Current shown and the keyboard outside the Pane (on the graph or
+in the Detail), Ctrl+F opens a find field over the graph's top left. It lists the
+Artifacts and evals whose names contain what you type, ignoring case, in the graph's
+order: an Artifact by its whole name and an eval as `Artifact / eval`, each with its
+verdict's mark and colour (on a Current, what verify would do). It lists the first 50 and
+says how many more match, or that none does.
+
+↑/↓ choose an entry. Enter, on the first entry when none is chosen, or a click opens its
+Detail, on the eval's tab for an eval, and moves the camera so that the Artifact sits in
+the middle of the graph left of the Detail, zooming in only as far as its name needs to
+read. Esc, or a click anywhere outside the field, closes it and leaves the graph and the
+Detail as they were; Esc also gives the keyboard back to where it was. Find reaches every
+Artifact, also in a graph too large to show their names.
 
 ### Detail
 

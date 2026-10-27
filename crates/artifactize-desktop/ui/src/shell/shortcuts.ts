@@ -7,7 +7,7 @@ const COMMON: Section = {
     ["Ctrl+K", "Command palette"],
     ["Ctrl+,", "Settings, and back"],
     ["Ctrl+O", "Open a request by ID"],
-    ["/ · Ctrl+F", "Search branches and reviews"],
+    ["/", "Search branches and reviews"],
     ["Ctrl+R / F5", "Refresh, and scan the branches again"],
     ["?", "These shortcuts"],
     ["q", "Quit (outside fields)"],
@@ -38,6 +38,7 @@ const GRAPH: Section = {
     ["Click the headline", "Open the Run's Detail"],
     ["Click the background", "Close the Detail"],
     ["Tab · Enter", "Focus an Artifact · open its Detail"],
+    ["Ctrl+F", "Find an Artifact or an eval by name; ↑ / ↓ choose, Enter opens, Esc closes"],
     ["Click a tab or an eval", "Show the Artifact or that eval"],
     ["Click ▶ under Tools", "Run one of the Artifact's tools in its worktree"],
     ["t / w", "Debug / pending evals"],
@@ -55,6 +56,7 @@ export const HELP: Record<"pane" | "main" | "settings", Section[]> = {
     {
       title: "Pane",
       keys: [
+        ["/ · Ctrl+F", "Search branches and reviews"],
         ["↑ / ↓ · j / k", "Select a branch or a timeline entry, then a waiting review"],
         ["← / →", "Fold / expand the selected branch, or step out of / into its timeline"],
         ["Enter", "Go to the Main area, or open the selected review"],

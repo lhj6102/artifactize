@@ -27,8 +27,8 @@
     revision: number;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    /** Open the Detail of an Artifact. */
-    onopen: (id: string) => void;
+    /** Open the Detail of an Artifact, on the tab of its eval `tab` or its own. */
+    onopen: (id: string, tab?: string | null) => void;
     /** Close the open Detail. */
     onclose: () => void;
   } = $props();
@@ -81,7 +81,7 @@
 {:else}
   {#key keyOf(g.shown.source)}
     <SvelteFlowProvider>
-      <GraphView graph={g.shown.graph} positions={g.shown.positions} {current} {opened} {onopen} {onclose} />
+      <GraphView source={g.shown.source} graph={g.shown.graph} positions={g.shown.positions} {current} {opened} {onopen} {onclose} />
     </SvelteFlowProvider>
   {/key}
 {/if}

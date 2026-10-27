@@ -120,8 +120,8 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 `examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
 다른 백엔드를 쓰려면 `verify`에 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
 자격 증명이 없으면 리뷰는 ERROR로 기록되고 대기 명령은 2로 종료합니다.
-Human eval은 같은 Artifact의 Human이 아닌 다른 eval이 모두
-GREEN이 된 뒤에만 요청되므로 `spec/review`가 먼저 실행됩니다. 두 터미널은 같은 임시 상태 디렉터리를 써야 합니다. 아래의
+같은 Artifact에 선언된 나머지 자동 eval이 모두 GREEN이 된 뒤에야
+Human eval을 요청하므로 `spec/review`가 먼저 실행됩니다. 두 터미널은 같은 임시 상태 디렉터리를 써야 합니다. 아래의
 대기 명령을 시작하기 전에 첫 번째 터미널의 값을
 `echo "$ARTIFACTIZE_STATE_HOME"`(PowerShell: `$env:ARTIFACTIZE_STATE_HOME`)으로 출력하세요.
 두 번째 터미널에서는 아래 `STATE_DIRECTORY`를 출력된 그 경로로 바꾸세요.

@@ -3,7 +3,8 @@
   // click on the background closes it. The keyboard reaches the nodes with Tab, and Enter on a
   // focused node does what a click does. Its first view shows the whole graph in its canvas; the
   // Detail floats over the canvas and takes no part in it. From then on only the person moves the
-  // camera, by panning, zooming or Fit View.
+  // camera, by panning, zooming, Fit View or opening what its find field (Ctrl+F) found: that
+  // brings the Artifact to the middle of the graph left of the Detail.
   //
   // A graph of more Artifacts than the window keeps as elements (a Run of tens of thousands)
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
@@ -13,19 +14,23 @@
   // Each space's Artifacts sit in its region, drawn behind them, which a click passes to the
   // background.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
+  import { tick } from "svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
-  import type { Shape } from "../ipc/client";
+  import type { Found, Shape, Source } from "../ipc/client";
+  import { getAppState } from "../shell/app.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
+  import GraphFind from "./GraphFind.svelte";
   import SpaceNode from "./SpaceNode.svelte";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { NODE } from "./layout";
   import { regions } from "./spaces";
-  import { area, whole, type Area, type Fit } from "./camera";
+  import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
 
   let {
+    source,
     graph,
     positions,
     opened = null,
@@ -33,19 +38,22 @@
     onopen,
     onclose,
   }: {
+    /** The Run or Current the graph is of: its find field searches it. */
+    source: Source;
     graph: Shape;
     /** A Current: lit by what verify would do, with its structure text below. */
     current?: boolean;
     positions: Map<string, Point>;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    /** Open the Detail of the Artifact `id`. */
-    onopen: (id: string) => void;
+    /** Open the Detail of the Artifact `id`, on the tab of its eval `tab` or its own. */
+    onopen: (id: string, tab?: string | null) => void;
     /** Close the open Detail. */
     onclose: () => void;
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
+  const { monitor: m } = getAppState();
 
   const flow = useSvelteFlow();
   const camera = useViewport();
@@ -54,6 +62,9 @@
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
+  /** The zoom from which an Artifact's name reads: bringing a found one into view zooms in to
+   * it, never out. */
+  const READABLE = 0.75;
   /** The most Artifacts kept as elements: the window stays quick to pan and zoom with this
    * many, and a camera holding about this many shows their names readably. */
   const DRAWN = 500;
@@ -225,6 +236,21 @@
     else onclose();
   }
 
+  /** Open what the find field found, close the field, and bring the Artifact to the middle of
+   * the graph left of the Detail once the Detail is there; the keyboard goes to the Detail. */
+  async function choose(found: Found) {
+    onopen(found.node, found.tab);
+    m.finding = false;
+    await tick();
+    const [at, canvas] = [positions.get(found.node), v.canvas];
+    if (at && canvas) {
+      const point = { x: at.x + NODE.width / 2, y: at.y + NODE.height / 2 };
+      const cover = m.panes.detail?.getBoundingClientRect() ?? null;
+      void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, flow.getViewport().zoom, READABLE, MAX_ZOOM), { duration: 0 });
+    }
+    m.panes.detail?.focus();
+  }
+
   /** Enter on a focused Artifact node opens its Detail, as a click does. */
   function keydown(event: KeyboardEvent) {
     const id = (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
@@ -275,6 +301,7 @@
       </Controls>
       {#if graph.nodes.length > 40 && !large}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
+    {#if m.finding}<GraphFind {source} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     <ul class="legend" aria-label="Legend">
       {#each current ? CURRENT_LEGEND : LEGEND as light (light)}
         <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
