@@ -10,7 +10,7 @@ artifactize config check
 오류가 있으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 등 파일 시스템에 문제가 있으면 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
 정확한 규칙이 있습니다. 개념 소개는 [Artifact와 eval](artifact.md)에 있습니다.
 
-## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
+## 기존 의존성 선언을 새 방식으로 바꾸기 {#migrating-removed-dependency-declarations}
 
 `kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성만 선언하던 eval은 삭제하세요. 필요한 Artifact는 해당 Artifact를 입력으로 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에서 `{name}`으로 참조하세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
@@ -133,9 +133,9 @@ covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필�
 `{"summary":"All requirements are covered."}`만 입력합니다.
 
 이 스키마는 JSON Schema입니다. 결과에 어떤 필드가 있을 수 있고 어떤 값을 허용하는지 정하는
-규칙입니다. 결과 객체 전체에 적용되는 스키마(**결과 envelope**)에는 일반 JSON Schema의 일부 기능만
+규칙입니다. 결과 객체 전체에 적용되는 스키마(**결과 형식**)에는 일반 JSON Schema의 일부 기능만
 쓸 수 있으며, 참조(다른 스키마를 가리키는 `$ref`)와 조합(여러 스키마를 합치는 `allOf`, `anyOf`,
-`oneOf`, `not`)에도 제한이 있습니다.
+`oneOf`, `not`)도 제한됩니다.
 
 - `type`이 있으면 `"object"`여야 합니다. `additionalProperties`가 있으면 `false`여야
   합니다. 생략해도 artifactize가 최종 스키마에 객체 타입과 추가 속성 금지 조건을 적용합니다.
@@ -412,4 +412,4 @@ Run의 `output` 폴더를 지우지만 이 스트림 캡처는 남깁니다. 캡
 백그라운드에서 시작한 프로그램이 명령보다 오래 남지 않습니다. 계속 실행되어야 하는 보조 프로그램에는
 Agent [도구 세션](tools/agent.md#tool-sessions)이나 Human [launch 도구](tools/human.md#running)를
 쓰세요. 명령은 사용자가 신뢰하는 로컬 코드로 보고
-**샌드박스 없이** 실행합니다. 명령은 내 계정의 권한으로 실행되므로 내 계정이 할 수 있는 일은 무엇이든 할 수 있습니다. 명령은 리뷰 대상인 입력을 바꾸면 안 됩니다. 부모 프로세스에서 일부러 분리해 실행한 프로그램은 명령이 끝난 뒤에도 계속 실행될 수 있습니다.
+**샌드박스 없이** 실행합니다. 명령은 현재 사용자 계정의 권한으로 실행되므로, 그 계정에 허용된 작업은 모두 수행할 수 있습니다. 명령은 리뷰 대상인 입력을 바꾸면 안 됩니다. 부모 프로세스에서 일부러 분리해 실행한 프로그램은 명령이 끝난 뒤에도 계속 실행될 수 있습니다.

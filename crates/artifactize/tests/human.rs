@@ -539,6 +539,114 @@ async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run
 }
 
 #[tokio::test]
+async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
+    let fixture = Fixture::new(true);
+    let release = fixture._root.path().join("release");
+    // The sign-off holds up nothing: the root's machine eval runs on PROVISIONAL meanwhile.
+    write_human(&fixture.repo.join("child"), true);
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        json!({
+            "name":"work",
+            "evals":[
+                {
+                    "id":"wait",
+                    "title":"Machine work",
+                    "profile":{
+                        "kind":"runtime",
+                        "command":support::os::waiting_program(fixture._root.path()),
+                        "args":[support::os::path_text(&release)],
+                    },
+                    "payload":{"instruction":"Wait."},
+                },
+            ],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // Started without a barrier: the machine eval runs until the test releases it.
+    let context = artifactize_core::runs::Context::new(
+        &fixture.repo,
+        Some(&fixture.state),
+        &support::os::cli(),
+    )
+    .unwrap();
+    let id = artifactize_core::runs::start(&context, &Selection::All, &returning(), None)
+        .await
+        .unwrap()
+        .run;
+    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
+    let status = |view: &RunView, target: &str| {
+        view.requests
+            .iter()
+            .find(|request| request.target == target)
+            .unwrap()
+            .status()
+    };
+    let waiting = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+        loop {
+            let view = store::read_run(&fixture.state, id.as_str()).await.unwrap();
+            if status(&view, "review").is_human_wait()
+                && status(&view, "work") == artifactize_core::types::RequestStatus::Running
+            {
+                return view;
+            }
+            changes.next_state().await;
+        }
+    })
+    .await
+    .expect("the sign-off waits while the machine eval runs");
+    let shown = |view: &RunView| view.run.status().as_str();
+    assert_eq!(shown(&waiting), "WAITING_HUMAN");
+    // It follows from the open sign-off; the saved Run stays RUNNING.
+    let saved: (String, String) = rusqlite::Connection::open_with_flags(
+        fixture.state.join(store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT status,json_extract(data,'$.status') FROM runs WHERE id=?",
+        [id.as_str()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap();
+    assert_eq!(saved, ("RUNNING".into(), "RUNNING".into()));
+
+    let receipts = fixture.receipts().await;
+    let signoff = &waiting
+        .requests
+        .iter()
+        .find(|request| request.target == "review")
+        .unwrap()
+        .id;
+    let alice = "alice".parse().unwrap();
+    human::claim(&receipts, signoff, &alice).await.unwrap();
+    human::submit(
+        &receipts,
+        signoff,
+        &alice,
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    // Every reader shows the open Run RUNNING again while its machine eval still runs.
+    let running = store::read_run(&fixture.state, id.as_str()).await.unwrap();
+    assert_eq!(status(&running, "work").as_str(), "RUNNING");
+    assert_eq!(shown(&running), "RUNNING");
+    let listed = store::read_runs(&fixture.state, Some(&fixture.repo), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(listed[0].status.as_str(), "RUNNING");
+    let catalog = store::read_catalog(&fixture.state).await.unwrap();
+    assert_eq!(catalog[0].status.as_str(), "RUNNING");
+
+    fs::write(&release, "").unwrap();
+    let ended = owned_run::terminal(&fixture.state, &id).await;
+    assert_eq!(shown(&ended), "GREEN");
+}
+
+#[tokio::test]
 async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let fixture = Fixture::new(true);
     let original = fixture.cli_verify();

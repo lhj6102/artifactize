@@ -35,6 +35,7 @@ impl Tail {
                 "Provider response degenerated: its text ended in {} whitespace characters, so artifactize stopped the stream.",
                 self.run
             ),
-        ))
+        )
+        .of_output())
     }
 }

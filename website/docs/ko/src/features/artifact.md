@@ -19,12 +19,12 @@ payload.instruction = "Check that every link in the docs resolves."
 
 ## Artifact Graph {#artifact-graph}
 
-**Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. `{spec}` 같은 참조는 그
-Artifact를 eval의 입력으로 지정하며, 그 fingerprint가 바뀌면 재사용 키에 그 Artifact를 포함한 리뷰만
-무효가 됩니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는 이유만으로 모든
-Artifact가 모든 eval이 의존하는 대상이 되지는 않습니다.
+**Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. eval에 `{spec}` 같은 참조를
+쓰면 그 eval이 `spec`을 읽을 수 있습니다. `spec`이 바뀌면 `spec`을 참조한 eval만 다시 리뷰하고,
+나머지 결과는 그대로 재사용합니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는
+이유만으로 모든 Artifact가 모든 eval의 입력이 되지는 않습니다.
 
-실행 게이트는 eval마다 정해집니다. [eval 의존성](#eval-dependencies)을 보세요.
+각 eval은 참조한 입력을 판정하는 eval의 결과가 나올 때까지 실행되지 않습니다. [eval 의존성](#eval-dependencies)을 보세요.
 
 Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
@@ -94,7 +94,7 @@ eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부�
 참조하세요. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
 
 자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact에는 자식 폴더의 내용도 포함되므로,
-부모의 모든 eval이 자식 Artifact를 참조하는 것으로 간주합니다. 부모의 각 eval은 Artifact로 선언된 가장
+부모 Artifact의 모든 eval은 자식 Artifact에 의존합니다. 정확히는 부모의 각 eval이 Artifact로 선언된 가장
 가까운 하위 폴더의 eval에 의존합니다.
 
 예를 들어 애플리케이션의 E2E 테스트를 실행하는 eval은 애플리케이션 Artifact에 선언합니다.
@@ -144,7 +144,7 @@ BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실�
 
 ### Human 승인 {#human-sign-offs}
 
-Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
+Human eval은 의존성 게이트를 통과하고, 같은 Artifact에 선언된 나머지 자동 eval도 모두 GREEN이어야
 시작합니다. 사람은 자동 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
 자동 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
 통과한 것으로 칩니다. 그

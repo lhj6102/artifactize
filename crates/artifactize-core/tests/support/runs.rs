@@ -196,7 +196,13 @@ impl Drop for RepoLease {
             } else {
                 panic!("{message}");
             }
-        } else if let Err(error) = self.root.take().expect("fixture root is owned").close() {
+        } else if let Err(error) = {
+            // The state's IPC namespace lives in the OS temp root, outside the fixture root;
+            // name it while the state still exists, then remove both.
+            let namespace = artifactize_core::changes::namespace(&self.state);
+            let closed = self.root.take().expect("fixture root is owned").close();
+            closed.and(namespace.and_then(std::fs::remove_dir_all))
+        } {
             let message = format!("Fixture directory cleanup failed: {error}");
             if std::thread::panicking() {
                 eprintln!("{message}");

@@ -35,10 +35,10 @@ artifactize models codex
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
 `xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Gemini는 `minimal`, `low`,
 `medium`, `high`를 받습니다. 그 밖의 값은 선언 오류이며, 다른 값으로 바꿔서 보내지 않습니다.
-커스텀 provider는 그 API가 받는 값을 따르며, 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
+커스텀 provider에서는 해당 API가 지원하는 값을 쓸 수 있으며, 지원 여부는 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 Runtime eval과 똑같이 입력의 eval 결과가 나올 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝날 때 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
+Agent eval도 Runtime eval처럼 입력 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
@@ -67,13 +67,13 @@ profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", ma
 저장소의 토큰과는 상관없습니다. 두 예산 모두 선택 항목이며 1부터 9007199254740991까지의 정수를
 받습니다. 생략하면 그 예산은
 무제한입니다. 이는 provider의 생성 매개변수가 아니라 클라이언트 쪽 리뷰 예산입니다.
-`max_tokens`로 제한하는 사용량은 모든 턴과 수정 요청 턴에서 성공한 응답에 보고된 `total_tokens`를 합산한 값입니다(보고된 캐시 읽기·쓰기 포함). 합계가 보고되지 않으면 0으로 셉니다. 사용량은 응답을 받은 뒤에
+`max_tokens`로 제한하는 사용량은 모든 턴, 수정 요청 턴, 다시 보낸 턴의 모든 시도에서 응답에 보고된 `total_tokens`를 합산한 값입니다(보고된 캐시 읽기·쓰기 포함). 합계가 보고되지 않으면 0으로 셉니다. 사용량은 응답을 받은 뒤에
 확인하고 합계가 한도를 넘을 때만 실패로 처리하므로, 실제 사용량은 한도를 넘을 수 있으며 이 설정이 생성량이나 비용의 엄격한
 상한이 되지는 않습니다.
 
 `max_tool_calls`는 도구를 실행하기 전에 호출 시도를 세며, 성공한 호출뿐 아니라 모르는 도구,
 잘못된 호출, 실패한 호출도 포함합니다. 둘 중 하나라도 넘으면 `PROVIDER_BUDGET_EXCEEDED`로
-작업을 멈춥니다. 수정 요청을 할 때도 원래 리뷰의 제한 시간과 예산을 적용하며, 예산을 추가하지 않습니다.
+작업을 멈춥니다. 수정 요청과 재시도에도 원래 리뷰의 제한 시간과 예산을 적용하며, 예산을 추가하지 않습니다.
 
 ## Agent 도구 {#agent-tools}
 
@@ -89,18 +89,24 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 
 Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
 기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-ERROR입니다. 답변이 긴 공백으로만 이어지면 몇 초 안에 `DEGENERATE_OUTPUT`과 함께 ERROR로
-끝납니다. `verify`를 다시 실행하고, 계속 그러면 다른 모델이나 `reasoning`을 써 보세요.
+유효한 응답으로 처리하지 않습니다. 응답이 긴 공백만으로 이루어지면 몇 초 안에 `DEGENERATE_OUTPUT`으로 중단합니다.
+두 경우 모두 아래 설명대로 다시 보냅니다. 그래도 리뷰가 이 코드와 함께 ERROR로 끝나면 다른 모델이나 `reasoning`을 써 보세요.
 Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다. 재시도는 아래 설명대로 artifactize가 처리합니다.
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 요청한 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. 출력이나 사용량이
-생긴 뒤의 실패는 재시도하지 않으므로 같은 비용을 두 번 내지 않습니다. 재시도로도 해결되지 않거나
-provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 `RATE_LIMIT` 또는 `TRANSIENT`와 함께
-ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
+provider가 안내한 대기 시간이 지나면 자동으로 몇 차례 재시도합니다.
+provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 같은 턴을 같은 횟수까지 다시 보냅니다.
+리뷰 전체가 아니라 마지막 도구 결과까지의 대화를 그대로 다시 보냅니다. 답변이 공백으로만
+계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
+`Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
+여기에 해당합니다. 실패한 답변도 이미 비용이 들었으므로 그 토큰은 `max_tokens`에 포함되며, 한도에
+이르면 그 턴을 다시 보내지 않습니다. 거부된 요청이나 다른 모델의 응답처럼 출력이나 사용량이 생긴 뒤의
+다른 실패는 재시도하지 않습니다.
+재시도로도 해결되지 않거나 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 마지막
+시도의 코드와 함께 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
@@ -117,13 +123,13 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 | `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일이 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
 | `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
 | `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429입니다. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상인 경우입니다 | 합니다 |
-| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 출력 전이면 합니다 |
+| `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 합니다. 출력 뒤에는 그 턴을 다시 보냅니다 |
 | `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 하지 않습니다 |
 | `CANCELLED` | Run을 직접 취소했습니다(`run cancel` 또는 MCP `verify_cancel`) | 하지 않습니다 |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens`나 `max_tool_calls`를 넘었습니다 | 하지 않습니다 |
 | `INVALID_RESULT` | 형식 수정을 한 번 요청한 뒤에도 유효한 판정이 없습니다 | 하지 않습니다 |
-| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 하지 않습니다 |
-| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 하지 않습니다 |
+| `DEGENERATE_OUTPUT` | 모델 답변이 긴 공백으로만 계속되어 리뷰가 중단됐습니다 | 합니다. 그 턴을 다시 보냅니다 |
+| `PROVIDER_ERROR` | 그 밖의 provider 실패: 거부된 요청, 알 수 없거나 요청과 다른 모델, 끝나지 않은 응답, 잘못된 도구 호출 | 출력 한도에서 끊긴 답변(`Length`)만 그 턴을 다시 보냅니다 |
 | `AGENT_ERROR` | 그 밖의 모든 경우입니다. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구가 해당합니다 | 하지 않습니다 |
 | `BACKEND_STOPPED` | 시작하지 않습니다. 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다 | — |
 
@@ -196,7 +202,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 
 ## Codex {#codex}
 
-`codex`는 내 ChatGPT 요금제의 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
+`codex` 백엔드는 사용 중인 ChatGPT 요금제에서 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
@@ -227,7 +233,7 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   연결하지 못하거나 오류 응답을 받으면 `TRANSIENT`로 분류합니다.
 
 - **모델.** `models codex`는 지금 계정으로 Codex 모델 선택기에서 고를 수 있는 모델을 서버가 보내 준
-  순서대로 나열합니다. 프로필에는 목록에 있든 없든 내 계정이 쓸 수 있는 모델이면 무엇이든 쓸 수 있습니다.
+  순서대로 나열합니다. 프로필에는 목록에 표시되지 않더라도 계정에서 사용할 수 있는 모델을 지정할 수 있습니다.
 
 ## 커스텀 provider {#custom-providers}
 

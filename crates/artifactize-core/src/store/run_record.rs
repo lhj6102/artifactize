@@ -6,10 +6,12 @@ use super::{Run, Unreadable, definitions::Definitions, receipts::Error, unreadab
 use crate::types::RunId;
 use rusqlite::{OptionalExtension, params};
 
-/// The Run's state as `runs.data` keeps it: the whole Run but its definitions.
+/// The Run's state as `runs.data` keeps it: the whole Run but its definitions, and RUNNING
+/// while it is open, since readers derive WAITING_HUMAN from its requests.
 pub(super) fn state_text(run: &Run) -> Result<String, serde_json::Error> {
     let mut state = run.clone();
     state.definitions = Definitions::default();
+    state.state = state.state.with_signoffs(false);
     serde_json::to_string(&state)
 }
 
@@ -20,7 +22,7 @@ pub(super) fn insert(db: &rusqlite::Connection, run: &Run) -> Result<(), Error> 
         params![
             run.id,
             crate::platform::path_text(&run.repo_path),
-            run.status(),
+            run.status().saved(),
             state_text(run)?,
             run.request_key
         ],
@@ -38,7 +40,7 @@ pub(super) fn insert(db: &rusqlite::Connection, run: &Run) -> Result<(), Error> 
 pub(super) fn update(db: &rusqlite::Connection, run: &Run) -> Result<(), Error> {
     db.execute(
         "UPDATE runs SET status=?,data=? WHERE id=?",
-        params![run.status(), state_text(run)?, run.id],
+        params![run.status().saved(), state_text(run)?, run.id],
     )?;
     Ok(())
 }

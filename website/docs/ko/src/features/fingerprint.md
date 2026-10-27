@@ -55,7 +55,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 ## 재사용 키 {#the-reuse-key}
 
-eval은 대상 Artifact에 의존하며, 대상과 직접 연결된 다음 Artifact에도 의존합니다.
+eval은 대상 Artifact와, 대상과 바로 연결된 다음 Artifact에 의존합니다.
 
 - 대상의 자식 Artifact
 - eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact
@@ -71,7 +71,7 @@ Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행�
 기존 리뷰 결과를 재사용합니다. 포함한 Artifact의 이름을 바꾸면 키가 바뀝니다. 대상 이름이 달라도 평가 기준과
 포함한 Artifact 전체가 같으면 결과를 함께 쓸 수 있습니다. 키는 포함한 Artifact 중 어느 것이
 대상인지 따로 구분하지 않기 때문입니다. 예를 들어 두 Artifact에 같은 eval을 선언하고 각 eval에서
-상대 Artifact를 참조하면 두 eval은 결과를 함께 씁니다. **eval 정의 해시**는 eval의 **평가 기준** 중 하나가 바뀔 때마다
+상대 Artifact를 참조하면 두 eval은 결과를 공유합니다. **eval 정의 해시**는 eval의 **평가 기준** 중 하나가 바뀔 때마다
 바뀝니다.
 
 - eval 종류(Runtime, Agent, Human)

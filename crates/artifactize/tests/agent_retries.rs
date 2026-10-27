@@ -505,7 +505,7 @@ fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
 }
 
 #[test]
-fn a_response_rejected_after_delivery_fails_its_billed_attempt_with_its_counters() {
+fn a_response_rejected_after_delivery_fails_its_billed_attempts_with_their_counters() {
     let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
     let provider =
         FakeProvider::start(|request| capped(request, &[r#"{"verdict":"GR"#.to_owned()], 128));
@@ -513,32 +513,41 @@ fn a_response_rejected_after_delivery_fails_its_billed_attempt_with_its_counters
     for (name, backend) in CAPPED {
         let review = request(&run, &format!("{name}/review"));
         assert_eq!(review["errorCode"], "PROVIDER_ERROR", "{backend}: {review}");
+        // Billed output is sent again within its turn, and every attempt is kept.
         let usage = review["usage"].as_array().unwrap();
-        assert_eq!(usage.len(), 1, "{backend}: billed output is not retried");
-        let attempt = &usage[0];
         assert_eq!(
-            attempt["errorCode"], "PROVIDER_ERROR",
-            "{backend}: {attempt}"
-        );
-        assert_eq!(attempt["error"], review["error"], "{backend}");
-        assert_eq!(
-            attempt["usage"]["outputTokens"], 128,
-            "{backend}: {attempt}"
+            attempts(review),
+            (1..=3)
+                .map(|attempt| (1, attempt, json!("PROVIDER_ERROR")))
+                .collect::<Vec<_>>(),
+            "{backend}: {review}"
         );
         let events = attempt_events(&project, review);
-        assert_eq!(events.len(), 1, "{backend}");
-        assert_eq!(events[0]["errorCode"], "PROVIDER_ERROR", "{backend}");
-        assert_eq!(events[0]["usage"], attempt["usage"], "{backend}");
+        assert_eq!(events.len(), 3, "{backend}");
+        for (event, attempt) in events.iter().zip(usage) {
+            assert_eq!(attempt["error"], review["error"], "{backend}");
+            assert_eq!(
+                attempt["usage"]["outputTokens"], 128,
+                "{backend}: {attempt}"
+            );
+            assert_eq!(event["errorCode"], "PROVIDER_ERROR", "{backend}");
+            assert_eq!(event["usage"], attempt["usage"], "{backend}");
+        }
     }
-    assert_eq!(provider.requests().len(), CAPPED.len());
+    assert_eq!(provider.requests().len(), 3 * CAPPED.len());
+}
+
+/// An unfinished result, then whitespace in deltas that pass the stop point together.
+fn degenerate_deltas() -> Vec<String> {
+    let mut deltas = vec![r#"{"verdict":"GREEN","findings":["#.to_owned()];
+    deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
+    deltas
 }
 
 #[test]
 fn a_response_that_degenerates_into_whitespace_stops_with_its_own_code() {
     let project = Project::new(&CAPPED.map(|(name, backend)| (name, agent(backend))));
-    // An unfinished result, then whitespace in deltas that pass the stop point together.
-    let mut deltas = vec![r#"{"verdict":"GREEN","findings":["#.to_owned()];
-    deltas.extend(std::iter::repeat_n(" \n\t ".repeat(256), 5));
+    let deltas = degenerate_deltas();
     let provider = FakeProvider::start(move |request| capped(request, &deltas, 128_000));
     let run = project.run(&provider, &["--all"], 2);
     for (name, backend) in CAPPED {
@@ -553,14 +562,88 @@ fn a_response_that_degenerates_into_whitespace_stops_with_its_own_code() {
         );
         assert_eq!(
             attempts(review),
-            [(1, 1, json!("DEGENERATE_OUTPUT"))],
-            "{backend}: billed output is not retried"
+            (1..=3)
+                .map(|attempt| (1, attempt, json!("DEGENERATE_OUTPUT")))
+                .collect::<Vec<_>>(),
+            "{backend}: every attempt of the turn degenerated"
         );
         let events = attempt_events(&project, review);
-        assert_eq!(events.len(), 1, "{backend}");
-        assert_eq!(events[0]["errorCode"], "DEGENERATE_OUTPUT", "{backend}");
+        assert_eq!(events.len(), 3, "{backend}");
+        assert!(
+            events
+                .iter()
+                .all(|event| event["errorCode"] == "DEGENERATE_OUTPUT"),
+            "{backend}"
+        );
     }
-    assert_eq!(provider.requests().len(), CAPPED.len());
+    assert_eq!(provider.requests().len(), 3 * CAPPED.len());
+}
+
+/// A streamed answer that breaks off with an overload after its first text.
+fn interrupted(request: &Request) -> Reply {
+    let mut events = vec![
+        json!({"type":"response.output_item.added","output_index":0,
+            "item":{"type":"message","id":"msg_fake","role":"assistant","status":"in_progress",
+                "content":[]}}),
+        json!({"type":"response.output_text.delta","item_id":"msg_fake","output_index":0,
+            "content_index":0,"delta":r#"{"verdict":"#}),
+        json!({"type":"error","code":"server_is_overloaded",
+            "message":"Our servers are currently overloaded. Please try again later.",
+            "param":null}),
+    ];
+    for (index, event) in events.iter_mut().enumerate() {
+        event["sequence_number"] = json!(index);
+    }
+    if request.path.starts_with("/backend-api/codex") {
+        codex::stream(events)
+    } else {
+        Reply::Events(events)
+    }
+}
+
+#[test]
+fn a_failed_provider_output_sends_its_turn_again_from_the_last_tool_results() {
+    let project = Project::new(&[("notes", agent("openai"))]);
+    type Failure = fn(&Request) -> Reply;
+    let failures: [(Failure, &str); 3] = [
+        (
+            |request| capped(request, &degenerate_deltas(), 128_000),
+            "DEGENERATE_OUTPUT",
+        ),
+        (
+            |request| capped(request, &[r#"{"verdict":"GR"#.to_owned()], 128),
+            "PROVIDER_ERROR",
+        ),
+        (interrupted, "TRANSIENT"),
+    ];
+    for (failure, code) in failures {
+        // The answer after the tool call fails once.
+        let failed = std::sync::Mutex::new(false);
+        let provider = FakeProvider::start(move |request| {
+            if replayed(request) && !std::mem::replace(&mut *failed.lock().unwrap(), true) {
+                return failure(request);
+            }
+            pass(request)
+        });
+        let run = project.run(&provider, &["--all", "--force"], 0);
+        let review = request(&run, "notes/review");
+        assert_eq!(review["status"], "GREEN", "{code}: {run}");
+        assert_eq!(
+            attempts(review),
+            [
+                (1, 1, Value::Null),
+                (2, 1, json!(code)),
+                (2, 2, Value::Null)
+            ],
+            "{code}: the failed attempt is kept"
+        );
+        assert_eq!(attempt_events(&project, review).len(), 3, "{code}");
+        let calls = provider.requests();
+        assert_eq!(calls.len(), 3, "{code}");
+        // The same request again: the conversation up to its last tool results.
+        assert!(replayed(&calls[2]), "{code}");
+        assert_eq!(calls[1].body, calls[2].body, "{code}");
+    }
 }
 
 #[test]
@@ -929,6 +1012,8 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
                     model: "fixture-model",
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
+                    max_tokens: None,
+                    tokens_used: &mut 0,
                 },
                 &mut attempts,
             )
@@ -986,6 +1071,8 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
                     model: "fixture-model",
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
+                    max_tokens: None,
+                    tokens_used: &mut 0,
                 },
                 &mut Vec::new(),
             )

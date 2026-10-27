@@ -189,20 +189,14 @@ chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
 스크립트, `.deb`, Store로 설치했다면 아무것도 바꾸지 않습니다. 그렇지 않으면 명령을 설정하며,
 그다음 새 터미널을 열고 `artifactize --version`을 실행하면 됩니다.
 
-- **macOS:** 앱이 시스템 관리자 권한 확인 창을 통해 앱 내부 `Contents/MacOS` 디렉터리의 절대 경로를
-  `/etc/paths.d/artifactize`에 기록합니다. 그다음 새
-  터미널을 열고 `artifactize --version`을 실행하세요. 두 명령 모두
-  설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 다른 위치로
-  옮겼다면 다시 실행해 이전 설치 경로가 저장된 설정을 갱신하세요. 권한 요청을
-  취소하면 앱이 설치된 위치별로 취소 여부를 앱 상태에 저장하므로, 같은 위치에서 다시
-  실행할 때는 묻지 않습니다.
-- **Linux AppImage:** 명령 실행 파일을
-  `${XDG_DATA_HOME:-~/.local/share}/artifactize/bin`에 복사하고, `~/.local/bin`에 그 파일을 가리키는 링크를 만듭니다.
-  임시 AppImage 마운트가 사라진 뒤에도 계속 동작하며, 더
-  새 AppImage를 실행하면 앱의 복사본이 갱신됩니다. 앱이 만들지 않은 `~/.local/bin`의
-  파일이나 링크는 절대 교체하지 않습니다. 셸이 아직
-  `~/.local/bin`을 검색하지 않는다면 셸 시작 파일에 `export PATH="$HOME/.local/bin:$PATH"`를 추가하고
-  새 터미널을 여세요. 앱은 셸 시작 파일을 고치지 않습니다.
+- **macOS:** 터미널이 앱의 명령을 찾을 수 있도록 관리자 권한 확인 창에서 승인하세요.
+  명령은 설치된 앱에서 실행되므로 앱을 업데이트하면 명령도 업데이트됩니다. 앱을 다른
+  위치로 옮겼다면 한 번 더 실행해 명령을 다시 설정하세요. 권한 요청을 취소하면 실행할
+  때마다 다시 묻지 않습니다.
+- **Linux AppImage:** 앱이 명령을 `~/.local/bin`에 설치합니다. AppImage를 닫은 뒤에도
+  명령은 계속 동작하며, 더 새 AppImage를 실행하면 명령도 업데이트됩니다. 앱이 만들지 않은
+  파일은 그곳에서 교체하지 않습니다. 셸이 `~/.local/bin`을 검색하지 않는다면 셸 시작 파일에
+  `export PATH="$HOME/.local/bin:$PATH"`를 추가하고 새 터미널을 여세요.
 
 설정 오류는 기록만 하고 앱을 멈추지 않습니다. Windows 설치 프로그램, `.deb`,
 `install.sh`가 풀어 놓은 Linux 앱은 이미 명령을 제공하므로 설정이 필요 없습니다.

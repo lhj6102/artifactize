@@ -271,7 +271,7 @@ fn final_openai() -> MockHttpResponse {
         "exact-model",
         "completed",
         vec![message(
-            "{\"result\":{\"verdict\":\"GREEN\",\"verdictFields\":{\"reason\":null}}}",
+            "{\"verdict\":\"GREEN\",\"verdictFields\":{\"reason\":null}}",
         )],
         json!({
             "input_tokens":10,
@@ -292,7 +292,7 @@ fn anthropic_response(tools: bool, stop: &str) -> MockHttpResponse {
     let delta = if tools {
         json!({"type":"input_json_delta","partial_json":"{\"path\":\"file.txt\"}"})
     } else {
-        json!({"type":"text_delta","text":"{\"result\":{\"verdict\":\"RED\",\"verdictFields\":{}}}"})
+        json!({"type":"text_delta","text":"{\"verdict\":\"RED\",\"verdictFields\":{}}"})
     };
     sse(vec![
         json!({
@@ -456,11 +456,12 @@ async fn anthropic_exact_effort_multiblock_results_and_reported_cache_usage() {
 async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
     let fixture = Fixture::new("openai");
     for response in [
+        // Incomplete for another reason than the output cap: not sent again.
         openai_response(
             "exact-model",
             "incomplete",
             vec![message(
-                "{\"result\":{\"verdict\":\"GREEN\",\"verdictFields\":{\"reason\":null}}}",
+                "{\"verdict\":\"GREEN\",\"verdictFields\":{\"reason\":null}}",
             )],
             Value::Null,
         ),
@@ -482,10 +483,34 @@ async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
         assert!(fixture.calls().is_empty());
         assert_eq!(http.requests().len(), 1);
     }
-    let (review, _) = Fixture::new("anthropic")
-        .run(vec![anthropic_response(false, "max_tokens")])
+}
+
+#[tokio::test]
+async fn an_answer_cut_at_the_output_cap_sends_its_turn_again() {
+    let cut = || anthropic_response(false, "max_tokens");
+    let (review, http) = Fixture::new("anthropic")
+        .run(vec![cut(), anthropic_response(false, "end_turn")])
         .await;
-    assert!(review.result.unwrap_err().message.contains("incomplete"));
+    assert!(review.result.is_ok(), "{:?}", review.result);
+    assert_eq!(http.requests().len(), 2);
+    assert_eq!(http.requests()[0].body, http.requests()[1].body);
+    assert_eq!(
+        review.attempts[0].error_code.map(Code::as_str),
+        Some("PROVIDER_ERROR")
+    );
+    let (review, http) = Fixture::new("anthropic")
+        .run(vec![
+            cut(),
+            cut(),
+            cut(),
+            anthropic_response(false, "end_turn"),
+        ])
+        .await;
+    let failure = review.result.unwrap_err();
+    assert!(failure.message.contains("incomplete"), "{failure:?}");
+    assert!(failure.output_failed);
+    assert_eq!(http.requests().len(), 3);
+    assert_eq!(review.attempts.len(), 3);
 }
 
 #[tokio::test]
@@ -529,7 +554,7 @@ async fn retries_are_bounded_and_auth_quota_are_permanent() {
 }
 
 #[tokio::test]
-async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
+async fn output_that_breaks_off_sends_the_same_turn_again_at_any_turn() {
     let fixture = Fixture::new("openai");
     let partial = sse(vec![
         json!({
@@ -551,9 +576,26 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
             "delta":"partial",
         }),
     ]);
-    let (review, http) = fixture.run(vec![partial, final_openai()]).await;
-    assert!(review.result.is_err());
-    assert_eq!(http.requests().len(), 1);
+    let (review, http) = fixture.run(vec![partial.clone(), final_openai()]).await;
+    assert!(review.result.is_ok(), "{:?}", review.result);
+    assert_eq!(http.requests().len(), 2);
+    assert_eq!(http.requests()[0].body, http.requests()[1].body);
+    assert_eq!(
+        review.attempts[0].error_code.map(Code::as_str),
+        Some("TRANSIENT")
+    );
+    let (review, http) = fixture
+        .run(vec![
+            partial.clone(),
+            partial.clone(),
+            partial,
+            final_openai(),
+        ])
+        .await;
+    let failure = review.result.unwrap_err();
+    assert_eq!(failure.code, Code::Transient);
+    assert!(failure.output_failed);
+    assert_eq!(http.requests().len(), 3);
     let (review, http) = fixture
         .run(vec![
             openai_response(
@@ -607,10 +649,10 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
     let (review, http) = Fixture::new("anthropic")
         .run(vec![partial_usage, anthropic_response(false, "end_turn")])
         .await;
-    assert!(review.result.is_err());
+    assert!(review.result.is_ok(), "{:?}", review.result);
     assert_eq!(review.attempts[0].usage["inputTokens"], 10);
     assert_eq!(review.attempts[0].usage["outputTokens"], 0);
-    assert_eq!(http.requests().len(), 1);
+    assert_eq!(http.requests().len(), 2);
 }
 
 #[test]

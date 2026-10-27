@@ -65,7 +65,7 @@ artifactize verify --all --wait
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
-각 GREEN 결과가 fingerprint 재확인을 통과했으므로, `verify`는 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
+`verify`는 각 결과의 fingerprint를 다시 확인한 뒤 GREEN으로 판정했으므로, 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
 요약에는 캡처한 stdout/stderr, 별도의 호출 감사 기록,
 로컬 저장소 출처가 빠졌습니다. 선언된 Runtime 명령과 인자는
 프로필의 일부로 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은
@@ -126,7 +126,7 @@ Human 승인은 건너뜁니다.
 
 ## 5. CI가 둘 다 재사용하기 {#5-ci-reuses-both}
 
-CI는 환경 변수로만 설정합니다. 1단계의 읽기 전용 `ci` 토큰을 쓰며,
+CI 설정은 환경 변수로만 합니다. 1단계의 읽기 전용 `ci` 토큰을 쓰며,
 여기서는 `CI_TOKEN` 변수로 전달합니다. 토큰은 커밋한 파일이 아니라 CI 시크릿으로 등록하세요. `--reuse-only agent,human`을 쓰면 Agent 리뷰와 Human 승인은 저장소나 캐시에 있는 결과만 재사용합니다.
 로컬 시연에서는 먼저 이 터미널에도 `WALK`를 복사하고,
 1단계에서 `server token add ci`가 출력한 토큰을 `CI_TOKEN`으로 붙여 넣으세요.

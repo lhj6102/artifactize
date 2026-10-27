@@ -193,6 +193,8 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
                 model: "fixture-model",
                 deadline: Instant::now() + Duration::from_secs(5),
                 cancellation: &cancellation,
+                max_tokens: None,
+                tokens_used: &mut 0,
             },
             &mut attempts,
             &mut |event| {
@@ -337,6 +339,8 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
                 model: "fixture-model",
                 deadline: Instant::now() + Duration::from_secs(5),
                 cancellation: &cancel,
+                max_tokens: None,
+                tokens_used: &mut 0,
             },
             &mut attempts,
             &mut |event| {

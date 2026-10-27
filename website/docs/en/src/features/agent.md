@@ -75,16 +75,15 @@ A model service measures the text it reads and writes in **tokens**, small piece
 words; they have nothing to do with sign-in or review store tokens. Each optional budget
 accepts an integer from 1 through 9007199254740991.
 Omission leaves that budget unlimited. These are client-side review budgets,
-not provider generation parameters. `max_tokens` adds each successful response's
-reported `total_tokens`, including reported cache reads/writes, across every
-turn and the repair turn. Missing totals count as zero for enforcement. The check
+not provider generation parameters. `max_tokens` adds each response's reported
+`total_tokens`, including reported cache reads/writes, across every turn, the repair
+turn and every attempt of a turn that was sent again. Missing totals count as zero for enforcement. The check
 runs after a response and fails only when the total exceeds the limit: it can
 overshoot, and is not a hard generation or spending cap.
 
 `max_tool_calls` counts attempted calls before invocation, including unknown,
 invalid or failed calls, not only successful tools. Exceeding either budget stops
-further work with `PROVIDER_BUDGET_EXCEEDED`. Repair remains within the original
-review deadline and budgets; it never adds a fresh allowance.
+further work with `PROVIDER_BUDGET_EXCEEDED`. Repair and retries remain within the original review deadline and budgets; they never add a fresh allowance.
 
 ## Agent tools
 
@@ -100,9 +99,10 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 
 Agent reviews stream the model's answer as it is produced. One review deadline
 (default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
-responses are ERROR, even if they contain a JSON verdict. An answer that turns into a long
-run of whitespace ends within seconds as ERROR with `DEGENERATE_OUTPUT`; run `verify`
-again, and if it keeps happening, try another model or `reasoning`. An Anthropic answer is also
+responses are not accepted, even if they contain a JSON verdict. An answer that turns into a
+long run of whitespace is stopped within seconds with `DEGENERATE_OUTPUT`. Both are sent
+again as described below; if the review still ends ERROR with them, try another model or
+`reasoning`. An Anthropic answer is also
 capped at 16384 output tokens per turn, apart from the review's `max_tokens`. Artifactize
 handles retries as described below.
 
@@ -110,9 +110,17 @@ handles retries as described below.
 
 A turn that fails with a rate limit or a temporary error before it produced any output
 or used any tokens is retried automatically a few times, waiting as long as the provider
-asks. A failure after output or usage is never retried, so nothing is paid for twice.
+asks.
+When the provider's answer itself fails after it began, the same turn is sent again, up to
+the same few times: the conversation up to its last tool results, not the whole review.
+This covers an answer that turned into whitespace (`DEGENERATE_OUTPUT`), one that stopped
+at the model's output limit (`PROVIDER_ERROR`, `Provider response was incomplete:
+Some(Length)`), and a stream that broke off after its output began (`TRANSIENT`). The
+failed answer is already paid for, so its tokens count against `max_tokens`, and once they
+reach it the turn is not sent again. Other failures after output or usage, such as a
+rejected request or another model, are never retried.
 When the retries do not help, or the provider asks to wait past the review's deadline,
-the review ends ERROR with `RATE_LIMIT` or `TRANSIENT`. Wait a moment and run `verify`
+the review ends ERROR with the last attempt's code. Wait a moment and run `verify`
 again: finished results are reused, so only the failed reviews run. Each attempt is saved
 in `usage` with its counters, `error` and `errorCode`.
 
@@ -133,13 +141,13 @@ A failed Agent review records one of these `errorCode` values:
 | `AUTHENTICATION` | Missing, expired or rejected credentials: HTTP 401/403, no API key, no Codex sign-in or an expired auth file | no; stops the backend |
 | `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit) | no; stops the backend |
 | `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` reaches the deadline | yes |
-| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes, before output |
+| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes; after output, the turn is sent again |
 | `TIMEOUT` | The review's `timeout_ms` deadline | no |
 | `CANCELLED` | Explicit Run cancellation (`run cancel` or MCP `verify_cancel`) | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
-| `DEGENERATE_OUTPUT` | The answer turned into a long run of whitespace, so the review stopped it | no |
-| `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
+| `DEGENERATE_OUTPUT` | The answer turned into a long run of whitespace, so the review stopped it | yes, the turn is sent again |
+| `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | only an answer stopped at the output limit (`Length`): the turn is sent again |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
 

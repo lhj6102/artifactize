@@ -430,9 +430,11 @@ impl Cache {
                 .collect();
             unreadable.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
             unreadable.dedup_by(|a, b| (&a.kind, &a.id) == (&b.kind, &b.id));
+            let mut run = selected.run.clone();
+            run.show_signoffs(views.iter().map(|view| view.request.status()));
             (
                 RunView {
-                    run: selected.run.clone(),
+                    run,
                     requests: views.iter().map(|view| view.request.clone()).collect(),
                     unreadable,
                 },

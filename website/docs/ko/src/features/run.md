@@ -39,7 +39,7 @@ READY인 eval은 준비되는 즉시 시작하며, **동시 실행 수에 기본
 `--jobs`에 포함되지만, 승인에 합류한 Human 요청과 캐시 적중은 포함되지 않습니다. Agent 리뷰는
 [백엔드 자리](others/state.md#backend-capacity)도 필요합니다. QUEUED는 접수 대기 중이거나, 백엔드 자리가 나지 않았거나, 합류한 실행이 아직 끝나지 않았거나, 직접 정한 Run의 동시 실행 상한에 걸렸을 때 표시됩니다. 백엔드 자리가
 빌 때까지 대기 중인 요청은 Run의 `--jobs` 동시 실행 수에 포함되지 않습니다.
-실행 대기 중인 작업은 선택하거나 선언한 순서와 관계없이, Run 전체의 완료 시간을 줄이도록 artifactize가 정한 순서로 시작합니다. `--max-executions`가 어떤 리뷰까지 실행할지도 이 순서로 정합니다.
+실행 대기 중인 작업은 선택·선언 순서와 관계없이, Run을 빨리 끝낼 수 있도록 artifactize가 정한 순서로 시작합니다. `--max-executions`가 어떤 리뷰까지 실행할지도 이 순서로 정합니다.
 
 ### 제출, 지켜보기, 취소 {#submit-observe-and-cancel}
 
@@ -93,8 +93,9 @@ JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 재사용할 승인 결과가 있어야 실행되고, 그런 결과가 없으면 Run은 INCOMPLETE로 끝납니다. `--recursive`나 `--all` 등으로 그 승인도
 선택하세요.
 
-첫 승인을 요청한 때부터 Run은 **WAITING_HUMAN**입니다. RUNNING과 마찬가지로 아직 끝나지 않은 상태입니다.
-승인만 남으면 리뷰어가 그중 하나를 맡고 있는 동안에는 Run이 종료되지 않으며, 아무도 맡지 않은 채
+제출되지 않은 승인 요청이 하나라도 있는 동안 Run은 **WAITING_HUMAN**입니다. RUNNING과 마찬가지로 아직 끝나지 않은 상태입니다.
+그런 요청이 없는 진행 중인 Run은 RUNNING이므로, 다른 작업이 아직 실행되는 동안 마지막 승인이 제출되면 Run은 다시
+RUNNING으로 표시됩니다. 승인만 남으면 리뷰어가 그중 하나를 맡고 있는 동안에는 Run이 종료되지 않으며, 아무도 맡지 않은 채
 **유휴 유예 시간**이 지나면 종료됩니다. 유휴 유예 시간은 따로
 [바꾸지](others/state.md#sign-off-idle-grace) 않았다면 2분입니다. 유예 시간은 다른 작업이 모두 끝난
 시점과 승인 요청을 마지막으로 제출하거나 담당을 해제한 시점 중 더 늦은 시점부터 계산합니다. 새로 승인을 맡으면 멈춥니다. 그래서 승인을
@@ -221,7 +222,7 @@ eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결�
 | `execute` | 결과가 없고, 의존성은 지금 있는 결과로 GREEN입니다 | `The current eval and fingerprints have no completed cached result.` |
 | `blocked` | 결과가 없고, 의존성이 RED입니다 | `Dependency verdict RED: core/tests` |
 | `wait` | 결과가 없고, 의존성의 결과는 verify가 실행해야 생깁니다 | `Waiting for current GREEN dependency evidence: core/tests` |
-| `wait` | 의존성은 준비됐고 같은 리뷰가 이미 실행 중입니다. verify는 새 리뷰를 시작하지 않고 그 실행에 합류합니다 | `The current eval and fingerprints have a live execution.` |
+| `wait` | 의존성이 준비됐고 같은 리뷰가 이미 실행 중입니다. 새 리뷰를 시작하지 않고 기존 리뷰가 끝날 때까지 대기합니다 | `The current eval and fingerprints have a live execution.` |
 
 status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스트 출력은 예를 들어
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합한

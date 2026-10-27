@@ -186,24 +186,25 @@ fn candidate(text: &str) -> Option<serde_json::Value> {
         return None;
     }
     let mut value: serde_json::Value = serde_json::from_str(text).ok()?;
+    // Conversations saved before the envelope moved to the root wrap it in `result`.
     if value.get("verdict").is_none() && value.as_object()?.len() == 1 {
         value = value.get("result")?.clone();
         if let Some(text) = value.as_str() {
             value = serde_json::from_str(text).ok()?;
         }
-        if value.as_object()?.len() == 2 && value.get("verdictFields").is_some() {
-            let verdict = value.get("verdict")?.clone();
-            let mut fields = value.get("verdictFields")?.clone();
-            if let Some(text) = fields.as_str() {
-                fields = serde_json::from_str(text).ok()?;
-            }
-            let object = fields.as_object_mut()?;
-            if object.get("verdict").is_some_and(|value| value != &verdict) {
-                return None;
-            }
-            object.insert("verdict".into(), verdict);
-            value = fields;
+    }
+    if value.as_object()?.len() == 2 && value.get("verdictFields").is_some() {
+        let verdict = value.get("verdict")?.clone();
+        let mut fields = value.get("verdictFields")?.clone();
+        if let Some(text) = fields.as_str() {
+            fields = serde_json::from_str(text).ok()?;
         }
+        let object = fields.as_object_mut()?;
+        if object.get("verdict").is_some_and(|value| value != &verdict) {
+            return None;
+        }
+        object.insert("verdict".into(), verdict);
+        value = fields;
     }
     matches!(value.get("verdict")?.as_str()?, "GREEN" | "RED").then_some(value)
 }

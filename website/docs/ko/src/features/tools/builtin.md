@@ -1,6 +1,6 @@
 # 내장 도구 {#built-in-tools}
 
-스크립트를 쓰거나 `cat`, `xdg-open` 같은 OS 프로그램을 부르는 대신 `builtin`에 이름을 적어
+스크립트를 쓰거나 `cat`, `xdg-open` 같은 OS 프로그램을 실행하는 대신 `builtin`에 이름을 적어
 리뷰어에게 내장 도구를 제공하세요. `[views.agent_tools]` 아래에 `read = { builtin = "read" }`를
 적으면 Agent가 그 Artifact의 파일을 무엇이든 읽을 수 있고, `args`를 주면 정해진 파일이나 섹션
 하나를 보여 줍니다. 다른 형태는 다음과 같습니다.
