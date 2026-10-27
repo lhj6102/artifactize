@@ -137,6 +137,8 @@ Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에
 waiting, blocked 중 하나입니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
 머리말에는 아직 확인 중인 Artifact 수가 나오고, 스캔이 끝나면 스캔한 시각이, 실패하면 그 이유가 나옵니다.
 Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나 Ctrl+R/F5를 누를 때 다시 스캔합니다.
+스캔이 아직 진행 중일 때 Current를 다시 고르거나 Run이 끝나면 진행 중인 스캔을 이어 갑니다. **Refresh**나
+Ctrl+R/F5를 누르면 그 스캔이 끝난 뒤 다시 스캔하므로, 그사이 바꾼 파일도 반영됩니다.
 검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 **Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
