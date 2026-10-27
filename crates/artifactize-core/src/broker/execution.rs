@@ -27,13 +27,9 @@ pub(super) enum Prepared {
     Human,
 }
 
-/// Execute a request. An Agent review whose provider output failed
-/// ([`agent::error::Failure::output_failed`]) is dispatched again, in a fresh session with
-/// fresh tool sessions, up to `redispatches` times; its request keeps every dispatch's usage
-/// and lists the failed ones, and ends ERROR only when the last dispatch fails.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the request with its execution and preparation, and the Run's output, fingerprint bound, backend stops, redispatch limit and cancellation"
+    reason = "the request with its execution and preparation, and the Run's output, fingerprint bound, backend stops and cancellation"
 )]
 pub(super) async fn execute(
     config: Arc<RepoConfig>,
@@ -44,7 +40,6 @@ pub(super) async fn execute(
     run_dir: PathBuf,
     parallelism: &cache::Parallelism,
     stops: &Stops,
-    redispatches: usize,
     cancellation: CancellationToken,
     deferred_human: bool,
 ) -> Result<Request, String> {
@@ -73,95 +68,41 @@ pub(super) async fn execute(
         }
         Ok(Prepared::Agent {
             state,
-            mut session,
+            session,
             saving,
-            mut tools,
+            tools,
         }) => {
             let eval = config
                 .evals
                 .iter()
                 .find(|eval| eval.id == request.eval_id)
                 .expect("included eval");
-            request.redispatches.clear();
-            let mut spent = Vec::new();
-            let mut dispatch = 1;
-            loop {
-                let mut recorder =
-                    agent::session::Recorder::new(saving.as_ref(), &request, &session);
-                let review = agent::execute(
-                    &config,
-                    eval,
-                    &run_dir,
-                    &state,
-                    &mut recorder,
-                    cancellation.clone(),
-                    &tools,
-                )
-                .await;
-                let cleaned = tools.close().await;
-                spent.extend(
-                    review
-                        .attempts
-                        .into_iter()
-                        .map(|attempt| crate::llm::Attempt {
-                            dispatch,
-                            ..attempt
-                        }),
-                );
-                request.usage = Some(spent.clone());
-                let reference = recorder.reference().cloned();
-                let redispatch = match &review.result {
-                    Err(failure)
-                        if failure.output_failed
-                            && cleaned.is_ok()
-                            && dispatch <= redispatches
-                            && !cancellation.is_cancelled() =>
-                    {
-                        Some(fresh_dispatch(
-                            &config,
-                            &request.eval_id,
-                            &state,
-                            &cancellation,
-                        ))
-                    }
-                    _ => None,
-                };
-                match (review.result, redispatch) {
-                    (Err(failure), Some(Ok((next, next_tools)))) => {
-                        request.redispatches.push(crate::store::Redispatch {
-                            session_id: std::mem::replace(&mut session, next),
-                            session: reference,
-                            error_code: failure.code.into(),
-                            error: failure.message,
-                        });
-                        tools = next_tools;
-                        dispatch += 1;
-                        request.session_id = Some(session.clone());
-                        receipts.save_request(&request).await?;
-                    }
-                    (result, redispatch) => {
-                        // The result names its saved conversation, and so does every reuse of it.
-                        if let Some(reference) = reference {
-                            request.session = Some(reference.clone());
-                            if let Some(producer) = &mut execution.producer {
-                                producer.session = Some(reference);
-                            }
-                        }
-                        let unprepared = redispatch.and_then(Result::err);
-                        break match cleaned {
-                            Ok(()) => result.map(Into::into).map_err(|failure| {
-                                let message = match unprepared {
-                                    Some(error) => {
-                                        format!("{} Not dispatched again: {error}", failure.message)
-                                    }
-                                    None => failure.message,
-                                };
-                                (message, failure.code.into())
-                            }),
-                            Err(error) => Err((error, crate::types::FailureCode::AgentError)),
-                        };
-                    }
+            let mut recorder = agent::session::Recorder::new(saving.as_ref(), &request, &session);
+            let review = agent::execute(
+                &config,
+                eval,
+                &run_dir,
+                &state,
+                &mut recorder,
+                cancellation.clone(),
+                &tools,
+            )
+            .await;
+            let cleaned = tools.close().await;
+            // The result names its saved conversation, and so does every reuse of it.
+            if let Some(reference) = recorder.reference() {
+                request.session = Some(reference.clone());
+                if let Some(producer) = &mut execution.producer {
+                    producer.session = Some(reference.clone());
                 }
+            }
+            request.usage = Some(review.attempts);
+            match cleaned {
+                Ok(()) => review
+                    .result
+                    .map(Into::into)
+                    .map_err(|failure| (failure.message, failure.code.into())),
+                Err(error) => Err((error, crate::types::FailureCode::AgentError)),
             }
         }
         Ok(Prepared::Runtime(command)) => {
@@ -249,20 +190,6 @@ pub(super) async fn execute(
     stops.record(&request);
     receipts.complete_execution(&execution, &request).await?;
     Ok(request)
-}
-
-/// A new session id and tool sessions for dispatching an Agent review again.
-fn fresh_dispatch(
-    config: &RepoConfig,
-    eval_id: &str,
-    state: &Path,
-    cancellation: &CancellationToken,
-) -> Result<(crate::types::SessionId, crate::tools::sessions::Sessions), String> {
-    let registry = crate::tools::Registry::new(config, eval_id)?;
-    Ok((
-        agent::session_id()?,
-        registry.sessions(state, None, cancellation.clone()),
-    ))
 }
 
 fn runtime_result(

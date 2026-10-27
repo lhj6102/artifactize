@@ -362,7 +362,6 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: crate::
     request.options = execution.options.clone();
     request.provenance = Some(execution.provenance.clone());
     request.usage = None;
-    request.redispatches.clear();
     request.reused_usage = execution.usage.clone();
     request.producer = execution.producer.clone();
     request.session = execution

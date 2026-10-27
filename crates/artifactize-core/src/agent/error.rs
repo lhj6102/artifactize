@@ -13,7 +13,7 @@ pub enum Code {
     /// Rate limited (HTTP 429) after the retries, or asked to wait past the deadline.
     RateLimit,
     /// A connection failure, an overloaded or failing server, or an interrupted stream,
-    /// after the retries or once the turn had produced output.
+    /// after the retries.
     Transient,
     /// The review's `timeoutMs` deadline passed.
     Timeout,
@@ -22,7 +22,8 @@ pub enum Code {
     ProviderBudgetExceeded,
     /// No valid verdict after the one format repair.
     InvalidResult,
-    /// The response's text degenerated into a long run of whitespace; its stream was stopped.
+    /// The response's text degenerated into a long run of whitespace, after the retries; its
+    /// stream was stopped.
     DegenerateOutput,
     /// Any other provider failure: a rejected request, an unknown or different model,
     /// an incomplete response or a malformed tool call.
@@ -84,7 +85,7 @@ pub struct Failure {
     pub code: Code,
     pub message: String,
     /// The provider's output failed once it had begun: it degenerated, stopped at the output
-    /// cap or broke off. The request was sound, so the review may be dispatched again.
+    /// cap or broke off. The request was sound, so its turn may be sent again.
     pub output_failed: bool,
 }
 

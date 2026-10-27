@@ -178,7 +178,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
             |request| match (request.method.as_str(), request.path.as_str()) {
                 ("POST", "/v1/messages") => anthropic::text(
                     request,
-                    &json!({"result":{"verdict":"RED","verdictFields":{}}}).to_string(),
+                    &json!({"verdict":"RED","verdictFields":{}}).to_string(),
                     12,
                     3,
                 ),
@@ -209,10 +209,7 @@ fn anthropic_review_and_model_listings_use_their_test_endpoints() {
     let schema = &review.body["output_config"]["format"]["schema"];
     assert_eq!(schema["type"], "object");
     assert!(schema.get("anyOf").is_none());
-    assert_eq!(
-        schema["properties"]["result"]["anyOf"][1]["required"],
-        json!(["verdict", "verdictFields"])
-    );
+    assert_eq!(schema["required"], json!(["verdict", "verdictFields"]));
 
     for (backend, variable, base, model) in [
         (

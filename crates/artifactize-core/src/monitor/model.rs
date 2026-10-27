@@ -889,13 +889,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     let attempts = attempts.iter().map(|attempt| {
         let error = attempt.error.as_deref();
         let error = error.map_or(String::new(), |error| format!(" error: {error}"));
-        let dispatch = if attempt.dispatch > 1 {
-            format!("dispatch {} ", attempt.dispatch)
-        } else {
-            String::new()
-        };
         format!(
-            "{dispatch}turn {} attempt {}: {}{error}",
+            "turn {} attempt {}: {}{error}",
             attempt.turn,
             attempt.attempt,
             counter_pairs(&attempt.usage)

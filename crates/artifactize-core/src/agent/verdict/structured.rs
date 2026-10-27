@@ -37,22 +37,17 @@ impl Structured {
 
     /// Only the provider envelope is decoded; Human submissions and stored results stay flat.
     pub fn decode(&self, mut value: Value) -> Result<Value, &'static str> {
-        if value.get("verdict").is_some() {
-            // The local safety net also handles nonconforming providers and older transcripts.
+        let enveloped = value.as_object().is_some_and(|object| {
+            object.len() == 2
+                && object.contains_key("verdict")
+                && object.contains_key("verdictFields")
+        });
+        if !enveloped {
+            // The local safety net also handles nonconforming providers.
             return Ok(value);
         }
-        let object = value
-            .as_object_mut()
-            .filter(|object| object.len() == 1)
-            .ok_or("schema_mismatch: return an object containing only result")?;
-        let mut result = object
-            .remove("result")
-            .ok_or("schema_mismatch: missing result")?;
-        if let Some(text) = result.as_str() {
-            result = serde_json::from_str(text)
-                .map_err(|_| "not_json: encoded result must contain valid JSON")?;
-        }
-        let verdict = result
+        let object = value.as_object_mut().expect("envelope checked");
+        let verdict = object
             .get("verdict")
             .and_then(Value::as_str)
             .ok_or("schema_mismatch: verdict must be GREEN or RED")?
@@ -62,32 +57,23 @@ impl Structured {
             "RED" => &self.red,
             _ => return Err("schema_mismatch: verdict must be GREEN or RED"),
         };
-        if result.get("verdictFields").is_some() {
-            let object = result
-                .as_object_mut()
-                .filter(|object| object.len() == 2)
-                .ok_or("schema_mismatch: result must contain verdict and verdictFields")?;
-            let mut fields = object.remove("verdictFields").expect("field checked");
-            shape.decode(&mut fields)?;
-            let object = fields
-                .as_object_mut()
-                .ok_or("schema_mismatch: verdictFields must decode to an object")?;
-            if object
-                .get("verdict")
-                .is_some_and(|value| value != &json!(verdict))
-            {
-                return Err("schema_mismatch: encoded verdict contradicts verdict");
-            }
-            object.insert("verdict".into(), json!(verdict));
-            Ok(fields)
-        } else {
-            // Local validation remains a safety net for older/nonconforming providers.
-            shape.decode(&mut result)?;
-            Ok(result)
+        let mut fields = object.remove("verdictFields").expect("envelope checked");
+        shape.decode(&mut fields)?;
+        let object = fields
+            .as_object_mut()
+            .ok_or("schema_mismatch: verdictFields must decode to an object")?;
+        if object
+            .get("verdict")
+            .is_some_and(|value| value != &json!(verdict))
+        {
+            return Err("schema_mismatch: encoded verdict contradicts verdict");
         }
+        object.insert("verdict".into(), json!(verdict));
+        Ok(fields)
     }
 }
 
+/// The owner fields of one verdict, without the verdict the envelope carries.
 fn variant(verdict: &str, mut fields: Value) -> Value {
     if let Some(properties) = fields.get_mut("properties").and_then(Value::as_object_mut) {
         properties.remove("verdict");
@@ -95,22 +81,29 @@ fn variant(verdict: &str, mut fields: Value) -> Value {
             required.retain(|name| name != "verdict");
         }
     }
-    // Constrained output follows schema key order. Both alternatives must start with
-    // the same discriminator: otherwise alphabetical owner keys can force a branch
-    // before the model can choose GREEN/RED (e.g. summary vs verdict/violations).
-    // verdict is a prefix of verdictFields, so it sorts first even in a sorted map.
-    json!({
-        "type":"object",
-        "properties":{"verdict":{"type":"string","enum":[verdict]},"verdictFields":fields},
-        "required":["verdict","verdictFields"],"additionalProperties":false,
-    })
+    let description = fields["description"].as_str().unwrap_or_default();
+    fields["description"] = json!(
+        format!("The fields when verdict is {verdict}.\n{description}")
+            .trim_end()
+            .to_owned()
+    );
+    fields
 }
 
+/// A closed root whose answer ends where the owner fields close. Wrapping the alternatives
+/// deeper (`{"result":anyOf[{verdict, verdictFields}]}`) made models stop one `}` early
+/// and stream whitespace, which strict output still allows there. The fields cannot be tied
+/// to the verdict without a root anyOf; local validation catches a mismatched pair.
+/// Constrained output follows schema key order, and verdict is a prefix of verdictFields, so
+/// it comes first even in a sorted map: the model decides GREEN/RED before any owner field.
 fn envelope(green: Value, red: Value) -> Value {
     json!({
         "type":"object",
-        "properties":{"result":{"anyOf":[variant("GREEN",green),variant("RED",red)]}},
-        "required":["result"],
+        "properties":{
+            "verdict":{"type":"string","enum":["GREEN","RED"]},
+            "verdictFields":{"anyOf":[variant("GREEN",green),variant("RED",red)]},
+        },
+        "required":["verdict","verdictFields"],
         "additionalProperties":false,
     })
 }
