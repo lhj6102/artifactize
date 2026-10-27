@@ -126,18 +126,6 @@ pub struct Attempt {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_code: Option<Code>,
-    /// The review's dispatch that spent it: 1, or a later one after the provider's output
-    /// failed ([`Failure::output_failed`]). Saved only when later than the first.
-    #[serde(default = "first_dispatch", skip_serializing_if = "is_first_dispatch")]
-    pub dispatch: usize,
-}
-
-fn first_dispatch() -> usize {
-    1
-}
-
-fn is_first_dispatch(dispatch: &usize) -> bool {
-    *dispatch == first_dispatch()
 }
 
 /// A classified provider failure, with the wait the provider asked for, if any.
@@ -450,11 +438,14 @@ impl Client {
         }
     }
 
-    /// One turn, retried while an attempt fails with a rate limit or a transient error
-    /// before producing any output or usage: at any turn, since every request replays the
-    /// whole conversation. A retry waits as long as the provider's `Retry-After` asks, or a
-    /// short backoff, within the review's deadline. A delivered response that fails
-    /// [`validate_response`] fails its attempt, which keeps its counters and is not retried.
+    /// One turn, sent again while an attempt fails with a rate limit or a transient error
+    /// before producing any output or usage, or with a failure of the provider's output
+    /// ([`Failure::output_failed`]): at any turn, since every request replays the whole
+    /// conversation up to its last tool results. A retry waits as long as the provider's
+    /// `Retry-After` asks, or a short backoff, within the review's deadline. Every attempt
+    /// keeps its counters, and its tokens count against the review's `maxTokens`: an output
+    /// failure is not sent again once they reach it. A delivered response that fails
+    /// [`validate_response`] for another reason fails its attempt and is not retried.
     pub async fn turn(
         &self,
         request: &CompletionRequest,
@@ -573,6 +564,14 @@ impl Client {
                 add_cache_usage(&mut counters, response);
             }
             let used_tokens = counters.values().any(|value| *value > 0);
+            // rig totals include cache reads/writes; absent usage is zero only for enforcement.
+            let spent = result
+                .as_ref()
+                .ok()
+                .or(partial.as_ref())
+                .and_then(|response| response.usage.total_tokens)
+                .unwrap_or(0);
+            *context.tokens_used = context.tokens_used.saturating_add(spent);
             let result = result.and_then(|response| {
                 validate_response(&response, context.model)
                     .map(|()| response)
@@ -584,22 +583,31 @@ impl Client {
                 usage: counters.into(),
                 error: result.as_ref().err().map(|failure| failure.message.clone()),
                 error_code: result.as_ref().err().map(|failure| failure.code),
-                dispatch: first_dispatch(),
             });
             let failure = match result {
                 Ok(response) => return Ok(response),
                 Err(failure) => failure,
             };
-            if !failure.code.retryable() || emitted || used_tokens || attempt == ATTEMPTS {
-                let failure = Failure::from(failure);
-                // A stream that broke off after its output began was a sound request.
-                return Err(
-                    if failure.code == Code::Transient && (emitted || used_tokens) {
-                        failure.of_output()
-                    } else {
-                        failure
-                    },
-                );
+            // A stream that broke off after its output began was a sound request.
+            let failure = if failure.code == Code::Transient && (emitted || used_tokens) {
+                Classified {
+                    output_failed: true,
+                    ..failure
+                }
+            } else {
+                failure
+            };
+            // A failed output is already paid for; sending the same request again repeats
+            // only this turn, and the next answer rarely fails the same way.
+            let retry = if failure.output_failed {
+                context
+                    .max_tokens
+                    .is_none_or(|limit| *context.tokens_used < limit)
+            } else {
+                failure.code.retryable() && !emitted && !used_tokens
+            };
+            if !retry || attempt == ATTEMPTS {
+                return Err(failure.into());
             }
             let wait = failure
                 .retry_after
@@ -635,6 +643,10 @@ pub struct Turn<'a> {
     pub model: &'a str,
     pub deadline: Instant,
     pub cancellation: &'a CancellationToken,
+    /// The review's `maxTokens`, if any.
+    pub max_tokens: Option<u64>,
+    /// The tokens the review has spent; every attempt of the turn adds its own.
+    pub tokens_used: &'a mut u64,
 }
 
 fn add_cache_usage(

@@ -100,6 +100,11 @@ fn final_json_is_kept_until_matching_end_then_owner_failure_fields_remain_readab
     for wire in [
         result.clone(),
         json!({"result":result}),
+        json!({"verdict":"RED","verdictFields":{
+            "mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],
+            "custom":"{\"expected\":\"value\"}", "unused":null,
+        }}),
+        json!({"verdict":"RED","verdictFields":result.to_string()}),
         json!({"result":{"verdict":"RED","verdictFields":{
             "mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],
             "custom":"{\"expected\":\"value\"}", "unused":null,

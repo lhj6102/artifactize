@@ -10,7 +10,7 @@ artifactize config check
 오류가 있으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 등 파일 시스템에 문제가 있으면 그 경로만 나옵니다. 이 페이지에는 선언, 폴더와 파일 Artifact, fingerprint, 참조, 명령 실행 방식의
 정확한 규칙이 있습니다. 개념 소개는 [Artifact와 eval](artifact.md)에 있습니다.
 
-## 없어진 의존성 선언 옮기기 {#migrating-removed-dependency-declarations}
+## 기존 의존성 선언을 새 방식으로 바꾸기 {#migrating-removed-dependency-declarations}
 
 `kind = "dependency"`와 `depends_on`은 없어졌습니다. 의존성만 선언하던 eval은 삭제하세요. 필요한 Artifact는 해당 Artifact를 입력으로 쓰는 eval의 `payload.instruction`(또는 Runtime `args`)에서 `{name}`으로 참조하세요.
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을

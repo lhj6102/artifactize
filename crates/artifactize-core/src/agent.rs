@@ -183,6 +183,8 @@ impl Turns<'_> {
                     model: self.model,
                     deadline: self.deadline,
                     cancellation: self.cancellation,
+                    max_tokens: self.max_tokens,
+                    tokens_used: &mut self.tokens_used,
                 },
                 attempts,
                 &mut |delivery| self.recorder.event(session::Kind::Delivery(delivery)),
@@ -205,10 +207,7 @@ impl Turns<'_> {
             },
             false,
         );
-        // rig totals include cache reads/writes; absent usage is zero only for enforcement.
-        self.tokens_used = self
-            .tokens_used
-            .saturating_add(response.usage.total_tokens.unwrap_or(0));
+        // Every attempt of the turn, failed or not, is counted.
         if self
             .max_tokens
             .is_some_and(|limit| self.tokens_used > limit)

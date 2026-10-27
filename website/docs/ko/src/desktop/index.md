@@ -22,8 +22,8 @@ artifactize-desktop graph --repo PATH
 아무것도 고르지 않으며, 어느 쪽이든 모든 브랜치가 나열됩니다. `review`는
 가장 최근에 승인 대기 상태가 된 Human 리뷰를, `review REQUEST_ID`는 지정한 요청을 엽니다. `review`는 `--repo`를 주어도 브랜치를 고르거나 펼치지 않습니다. `graph`에는
 `--repo`가 필요하며 그 브랜치의 [Current](#current)를 보여 줍니다. `--state-dir PATH`로
-상태 디렉터리를 지정하며, 지정하지 않으면 공유 상태 디렉터리를 씁니다. `--reviewer NAME`은
-협업할 때 리뷰를 맡은 사람으로 보일 이름(보통은 사용자 이름)을 정합니다. `-h`나 `--help`(모드 뒤에도
+상태 디렉터리를 지정하며, 지정하지 않으면 공유 상태 디렉터리를 씁니다. `--reviewer NAME`으로
+협업할 때 리뷰어로 표시할 이름(보통 사용자 이름)을 지정합니다. `-h`나 `--help`(모드 뒤에도
 쓸 수 있음, 예: `artifactize-desktop monitor --help`)와 `artifactize-desktop help [MODE]`는 잘못된 인자와
 마찬가지로 stderr에 도움말을 출력하고 2로 종료합니다. 앱을 정상적으로 닫으면 종료 코드는 0이고, 시작하지 못하면
 1입니다.
@@ -137,6 +137,8 @@ Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에
 waiting, blocked 중 하나입니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
 머리말에는 아직 확인 중인 Artifact 수가 나오고, 스캔이 끝나면 스캔한 시각이, 실패하면 그 이유가 나옵니다.
 Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나 Ctrl+R/F5를 누를 때 다시 스캔합니다.
+스캔이 아직 진행 중일 때 Current를 다시 고르거나 Run이 끝나면 진행 중인 스캔을 이어 갑니다. **Refresh**나
+Ctrl+R/F5를 누르면 그 스캔이 끝난 뒤 다시 스캔하므로, 그사이 바꾼 파일도 반영됩니다.
 검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 **Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만

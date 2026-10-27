@@ -158,20 +158,6 @@ fields:
 artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
 ```
 
-## Agent redispatches
-
-`limits.json` also sets how many times an Agent review whose provider answer failed after
-it began is [dispatched again](../agent.md#retries-and-error-codes) within its Run:
-
-```json
-{"agentRedispatches": 1}
-```
-
-It is 0–5, 1 when the field or the file is missing; 0 ends such a review ERROR at its
-first failure, as `verify` did before. Each redispatch is paid for like the first
-dispatch. Like the other limits it applies to every Run on this state and is read when a
-Run starts. `artifactize limits` shows it.
-
 ## Agent sessions
 
 Each Agent review's conversation is saved under the state, for

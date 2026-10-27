@@ -498,13 +498,13 @@ Artifacts:
 {"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
 
 ── Assistant (turn 2)
-{"result":{"verdict":"GREEN","verdictFields":{}}}
+{"verdict":"GREEN","verdictFields":{}}
 
 ── Repair prompt (turn 3)
 Your final response did not match the required schema: …
 
 ── Assistant (turn 3)
-{"result":{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}}
+{"verdict":"GREEN","verdictFields":{"covered":["R1"]}}
 
 ── Result: {"covered":["R1"],"verdict":"GREEN"}
 ```

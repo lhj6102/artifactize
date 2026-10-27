@@ -144,7 +144,7 @@ BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실�
 
 ### Human 승인 {#human-sign-offs}
 
-Human eval은 의존성 게이트에 더해, 같은 Artifact의 Human이 아닌 다른 eval이 모두 GREEN일 때만
+Human eval은 의존성 게이트를 통과하고, 같은 Artifact에 선언된 나머지 자동 eval도 모두 GREEN이어야
 시작합니다. 사람은 자동 eval을 이미 통과한 것만 승인하며, 그전까지 Human eval은 대기 상태로 남습니다.
 자동 eval의 판정이 GREEN이면, 그 eval이 의존하는 승인이 아직 남아 있어 PROVISIONAL로 보이더라도
 통과한 것으로 칩니다. 그

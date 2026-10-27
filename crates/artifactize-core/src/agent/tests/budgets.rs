@@ -173,3 +173,34 @@ async fn repair_tokens_can_exceed_budget_even_with_a_valid_verdict() {
     assert_eq!(http.requests().len(), 2);
     assert_eq!(review.attempts[1].usage["totalTokens"], 14);
 }
+
+#[tokio::test]
+async fn a_failed_output_counts_against_the_token_budget_before_its_turn_is_sent_again() {
+    // Each Anthropic fixture response spends 21 tokens, as above.
+    for (limit, requests, outcome) in [
+        (21, 1, Err("incomplete")),
+        (30, 2, Err("maxTokens")),
+        (42, 2, Ok(())),
+    ] {
+        let mut fixture = Fixture::new("anthropic");
+        let Profile::Agent { max_tokens, .. } = fixture.config.evals[0].declaration.profile_mut()
+        else {
+            unreachable!()
+        };
+        *max_tokens = Some(limit);
+        let (review, http) = fixture
+            .run(vec![
+                anthropic_response(false, "max_tokens"),
+                anthropic_response(false, "end_turn"),
+            ])
+            .await;
+        assert_eq!(http.requests().len(), requests, "{limit}");
+        match (review.result, outcome) {
+            (Ok(_), Ok(())) => {}
+            (Err(failure), Err(expected)) => {
+                assert!(failure.message.contains(expected), "{limit}: {failure:?}");
+            }
+            (result, _) => panic!("{limit}: {result:?}"),
+        }
+    }
+}

@@ -22,7 +22,7 @@ fn native(mut result: Value) -> Value {
     } else {
         result.as_object_mut().unwrap().remove("verdict").unwrap()
     };
-    json!({"result":{"verdict":verdict,"verdictFields":result}})
+    json!({"verdict":verdict,"verdictFields":result})
 }
 
 fn response(backend: &str, value: &Value) -> MockHttpResponse {
@@ -66,17 +66,34 @@ async fn native_red_arrays_and_backend_constraints_reach_the_wire() {
         };
         let schema = &format["schema"];
         assert_eq!(schema["type"], "object");
-        assert_eq!(schema["required"], json!(["result"]));
+        assert_eq!(schema["required"], json!(["verdict", "verdictFields"]));
         assert!(schema.get("anyOf").is_none());
-        for branch in schema["properties"]["result"]["anyOf"].as_array().unwrap() {
-            assert_eq!(
-                branch["properties"]
-                    .as_object()
+        // The verdict comes first, and the owner fields close the root's last value.
+        assert_eq!(
+            schema["properties"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["verdict", "verdictFields"]
+        );
+        assert_eq!(
+            schema["properties"]["verdict"]["enum"],
+            json!(["GREEN", "RED"])
+        );
+        for (branch, verdict) in schema["properties"]["verdictFields"]["anyOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(["GREEN", "RED"])
+        {
+            assert!(branch["properties"].get("verdict").is_none());
+            assert!(
+                branch["description"]
+                    .as_str()
                     .unwrap()
-                    .keys()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>(),
-                ["verdict", "verdictFields"]
+                    .starts_with(&format!("The fields when verdict is {verdict}."))
             );
         }
         assert!(
@@ -84,8 +101,8 @@ async fn native_red_arrays_and_backend_constraints_reach_the_wire() {
                 .unwrap()
                 .is_valid(&native(result.clone()))
         );
-        let violations = &schema["properties"]["result"]["anyOf"][1]["properties"]["verdictFields"]
-            ["properties"]["violations"];
+        let violations =
+            &schema["properties"]["verdictFields"]["anyOf"][1]["properties"]["violations"];
         assert_eq!(violations["type"], "array");
         assert_eq!(violations["minItems"], 1);
         if backend == "openai" {
@@ -148,7 +165,7 @@ async fn nullable_placeholders_and_json_encoded_shapes_preserve_owner_results() 
             &body["output_config"]["format"]["schema"]
         };
         assert!(jsonschema::validator_for(schema).unwrap().is_valid(&wire));
-        let green = &schema["properties"]["result"]["anyOf"][0]["properties"]["verdictFields"];
+        let green = &schema["properties"]["verdictFields"]["anyOf"][0];
         assert_eq!(green["required"].as_array().unwrap().len(), 7);
         assert!(green["properties"]["constant"].get("enum").is_none());
     }
@@ -227,7 +244,7 @@ async fn responses_schema_limits_keep_valid_owner_results_representable() {
         let body: Value = serde_json::from_slice(&http.requests()[0].body).unwrap();
         let schema = &body["text"]["format"]["schema"];
         assert_eq!(
-            schema["properties"]["result"]["anyOf"][0]["properties"]["verdictFields"]["type"],
+            schema["properties"]["verdictFields"]["anyOf"][0]["type"],
             "string"
         );
         assert!(jsonschema::validator_for(schema).unwrap().is_valid(&wire));

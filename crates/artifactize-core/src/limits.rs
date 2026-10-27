@@ -1,15 +1,13 @@
 //! Machine-wide limits in `$STATE/limits.json`: `backends` caps how many Agent reviews of a
 //! backend (a built-in or custom provider name) are in flight at once across every `verify`
 //! that shares the state directory, `agentSessions` sets whether Agent conversations are saved
-//! and how large their store grows, `signoffIdleGraceSeconds` sets how long a Run with only
-//! unclaimed sign-offs left stays open, and `agentRedispatches` how many times an Agent review
-//! whose provider output failed is dispatched again within its Run.
+//! and how large their store grows, and `signoffIdleGraceSeconds` sets how long a Run with only
+//! unclaimed sign-offs left stays open.
 //!
 //! ```json
 //! {"backends": {"codex": 4, "openai": 16},
 //!  "agentSessions": {"enabled": true, "maxBytes": 1073741824, "targetBytes": 805306368},
-//!  "signoffIdleGraceSeconds": 120,
-//!  "agentRedispatches": 1}
+//!  "signoffIdleGraceSeconds": 120}
 //! ```
 
 use std::{collections::BTreeMap, io::Write, path::Path, time::Duration};
@@ -41,12 +39,6 @@ pub const SIGNOFF_IDLE_GRACE: Duration = Duration::from_secs(120);
 pub const MAX_SIGNOFF_IDLE_GRACE: Duration = Duration::from_secs(24 * 60 * 60);
 /// The field `signoffIdleGraceSeconds` is saved under.
 const GRACE_FIELD: &str = "signoffIdleGraceSeconds";
-/// How many times an Agent review whose provider output failed is dispatched again by default:
-/// once, since a degenerated or cut-off answer rarely repeats on the next try.
-pub const AGENT_REDISPATCHES: usize = 1;
-/// The most redispatches accepted: each one is paid for, and an answer that fails this often
-/// points at the review rather than the provider.
-pub const MAX_AGENT_REDISPATCHES: usize = 5;
 
 /// Backend names to their machine-wide slot counts; a backend without an entry is unlimited.
 /// It serializes as the limits in force, in the file's own field names.
@@ -57,7 +49,6 @@ pub struct Limits {
     agent_sessions: AgentSessions,
     #[serde(rename = "signoffIdleGraceSeconds", serialize_with = "seconds")]
     signoff_idle_grace: Duration,
-    agent_redispatches: usize,
 }
 
 fn seconds<S: serde::Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
@@ -70,7 +61,6 @@ impl Default for Limits {
             backends: BTreeMap::new(),
             agent_sessions: AgentSessions::default(),
             signoff_idle_grace: SIGNOFF_IDLE_GRACE,
-            agent_redispatches: AGENT_REDISPATCHES,
         }
     }
 }
@@ -104,8 +94,6 @@ struct Declared {
     agent_sessions: Option<DeclaredSessions>,
     #[serde(default, rename = "signoffIdleGraceSeconds")]
     signoff_idle_grace_seconds: Option<u64>,
-    #[serde(default, rename = "agentRedispatches")]
-    agent_redispatches: Option<usize>,
 }
 
 /// A declared idle grace, in whole seconds, within its bound.
@@ -230,17 +218,10 @@ impl Limits {
             .transpose()
             .map_err(invalid)?
             .unwrap_or(SIGNOFF_IDLE_GRACE);
-        let agent_redispatches = declared.agent_redispatches.unwrap_or(AGENT_REDISPATCHES);
-        if agent_redispatches > MAX_AGENT_REDISPATCHES {
-            return Err(invalid(format!(
-                "agentRedispatches must be at most {MAX_AGENT_REDISPATCHES}."
-            )));
-        }
         Ok(Self {
             backends: declared.backends,
             agent_sessions,
             signoff_idle_grace,
-            agent_redispatches,
         })
     }
 
@@ -290,12 +271,6 @@ impl Limits {
     /// How long a Run with nothing but unclaimed sign-offs left stays open before it ends.
     pub fn signoff_idle_grace(&self) -> Duration {
         self.signoff_idle_grace
-    }
-
-    /// How many times an Agent review whose provider output failed is dispatched again, each
-    /// in a fresh session, before its request ends ERROR; 0 dispatches it once.
-    pub fn agent_redispatches(&self) -> usize {
-        self.agent_redispatches
     }
 }
 
@@ -384,32 +359,6 @@ mod tests {
             (r#"{"agentSessions":{"maxBytes":-1}}"#, "invalid value"),
             (r#"{"agentSessions":{"enabled":"no"}}"#, "invalid type"),
             (r#"{"agentSessions":true}"#, "invalid type"),
-        ] {
-            let message = read(text).unwrap_err();
-            assert!(message.contains(error), "{text}: {message}");
-            assert!(message.contains(FILE), "{message}");
-        }
-    }
-
-    #[test]
-    fn agent_redispatches_default_to_one_and_stay_small() {
-        assert_eq!(read("{}").unwrap().agent_redispatches(), 1);
-        assert_eq!(
-            read(r#"{"agentRedispatches":0}"#)
-                .unwrap()
-                .agent_redispatches(),
-            0
-        );
-        assert_eq!(
-            read(r#"{"agentRedispatches":5}"#)
-                .unwrap()
-                .agent_redispatches(),
-            5
-        );
-        for (text, error) in [
-            (r#"{"agentRedispatches":6}"#, "must be at most 5"),
-            (r#"{"agentRedispatches":-1}"#, "invalid value"),
-            (r#"{"agentRedispatches":true}"#, "invalid type"),
         ] {
             let message = read(text).unwrap_err();
             assert!(message.contains(error), "{text}: {message}");
