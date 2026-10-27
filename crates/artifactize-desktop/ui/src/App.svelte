@@ -16,6 +16,7 @@
   import { chord, composing, plain } from "./shell/keys";
   import { HELP } from "./shell/shortcuts";
   import { AppState, setAppState } from "./shell/app.svelte";
+  import { sourceOf } from "./monitor/monitor-state.svelte";
 
   import { exposeActivity, refreshed, setActivity } from "./ipc/activity.svelte";
 
@@ -113,6 +114,10 @@
     } else if (chord(event, "o")) {
       event.preventDefault();
       app.asking = true;
+    } else if (chord(event, "f") && sourceOf(m.shown) !== null && m.focus !== "pane" && free()) {
+      // Over a graph, Ctrl+F finds in it; in the Pane, or with no graph, it searches the Pane.
+      event.preventDefault();
+      m.finding = true;
     } else if (chord(event, "f") || (plain(event, "/") && free())) {
       event.preventDefault();
       void search();

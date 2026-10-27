@@ -106,6 +106,11 @@ export const commands = {
 	 */
 	neighbours: (source: Source, node: string) => typedError<Neighbours, Failure>(__TAURI_INVOKE("neighbours", { source, node })),
 	/**
+	 *  The Artifacts and evals of `source` whose names contain `text`: the shown Run's, or the
+	 *  branch's Current as its last scan found it.
+	 */
+	find: (source: Source, text: string) => typedError<Finding, Failure>(__TAURI_INVOKE("find", { source, text })),
+	/**
 	 *  Scan `branch`'s worktree as it is now, answering with the scan's first step: the graph,
 	 *  every Artifact still being checked. Each later step is announced by [`CurrentChanged`].
 	 *  While the branch's scan still runs, this answers with that scan instead; when the person
@@ -465,6 +470,12 @@ export type FieldValue = { kind: "fixed" } | { kind: "bool"; value: boolean | nu
 /**  What a read-only Codex auth file says of its token. */
 export type FileExpiry = { state: "usable"; expiresAt: UnixSeconds | null } | { state: "expired" };
 
+/**  What a text found: the first [`LISTED`] (50) in the graph's order, and how many more. */
+export type Finding = {
+	found: Found[],
+	more: number,
+};
+
 export type FormField = {
 	name: string,
 	required: boolean,
@@ -478,6 +489,21 @@ export type FormView = {
 	verdict: Verdict,
 	fields: FormField[],
 	draft: Draft,
+};
+
+/**  An Artifact or an eval whose name contains the text. */
+export type Found = {
+	/**  The Artifact's node, whose Detail opens. */
+	node: string,
+	/**  The eval's tab the Detail opens on; none for the Artifact's own. */
+	tab: string | null,
+	/**  The Artifact's whole name. */
+	artifact: string,
+	/**  The eval's name within its Artifact. */
+	eval: string | null,
+	/**  Its verdict's glyph and tone; on a Current, what verify would do. */
+	glyph: string,
+	tone: Tone,
 };
 
 export type Graph = {

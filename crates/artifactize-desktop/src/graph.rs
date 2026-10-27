@@ -1,4 +1,5 @@
 pub(crate) mod current;
+pub(crate) mod find;
 
 // A graph of Artifacts for the Main area: the shown Run's, lit by the library's
 // [`monitor::graph`] over the shown tree, or a branch's Current, lit by what verify would do.

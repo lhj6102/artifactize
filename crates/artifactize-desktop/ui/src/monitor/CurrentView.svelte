@@ -16,7 +16,7 @@
     branch: BranchKey;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
-    onopen: (id: string) => void;
+    onopen: (id: string, tab?: string | null) => void;
     onclose: () => void;
   } = $props();
   const { current } = getAppState();

@@ -165,3 +165,63 @@ export function fact(browser: WebdriverIO.Browser, name: string): Promise<string
   return browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
     .find((entry) => entry.textContent === key)?.nextElementSibling?.textContent ?? "", name);
 }
+
+/** The graph's find field. */
+export const FIND = 'input[aria-label="Find in the graph"]';
+
+/** An entry the find field lists: its text without the glyph, its verdict glyph and colour, and
+ * whether it is the chosen one. */
+export type FoundEntry = { name: string; glyph: string; colour: string; chosen: boolean };
+/** The find field as read, or null while it is closed: whether it has the keyboard, its text,
+ * what it lists, and its note (how many more match, or that none does). */
+export type FindField = { focused: boolean; value: string; entries: FoundEntry[]; note: string };
+
+export function findField(browser: WebdriverIO.Browser): Promise<FindField | null> {
+  return browser.execute((query) => {
+    const input = document.querySelector<HTMLInputElement>(query);
+    const box = input?.closest(".find");
+    if (!input || !box) return null;
+    return {
+      focused: document.activeElement === input,
+      value: input.value,
+      entries: [...box.querySelectorAll<HTMLElement>('[role="option"]')].map((option) => {
+        const glyph = option.querySelector(".glyph");
+        return {
+          name: option.querySelector(".name")?.textContent?.trim() ?? "",
+          glyph: glyph?.textContent?.trim() ?? "",
+          colour: glyph ? getComputedStyle(glyph).color : "",
+          chosen: option.getAttribute("aria-selected") === "true",
+        };
+      }),
+      note: box.querySelector('[role="status"]')?.textContent?.trim() ?? "",
+    };
+  }, FIND);
+}
+
+/** Where the Main area's graph shows the Artifact `id`: how far its centre lies from the middle
+ * of the graph left of the open Detail (of the whole canvas without one), in pixels, and its
+ * drawn width; null while it is not drawn. */
+export function offCentre(browser: WebdriverIO.Browser, id: string): Promise<{ x: number; y: number; width: number } | null> {
+  return browser.execute((want) => {
+    const outside = (element: Element) => !element.closest('aside[aria-label="Detail"]');
+    const node = [...document.querySelectorAll(`.svelte-flow__node[data-id="${want}"]`)].find(outside);
+    const canvas = [...document.querySelectorAll(".graph > .canvas")].find(outside);
+    if (!node || !canvas) return null;
+    const [at, room] = [node.getBoundingClientRect(), canvas.getBoundingClientRect()];
+    const cover = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+    const right = cover && cover.left > room.left && cover.left < room.right ? cover.left : room.right;
+    return {
+      x: at.left + at.width / 2 - (room.left + right) / 2,
+      y: at.top + at.height / 2 - (room.top + room.height / 2),
+      width: at.width,
+    };
+  }, id);
+}
+
+/** The element with the keyboard, described by its tag, accessible name and node id. */
+export function focusedElement(browser: WebdriverIO.Browser): Promise<string> {
+  return browser.execute(() => {
+    const active = document.activeElement;
+    return active ? `${active.tagName} ${active.getAttribute("aria-label") ?? ""} ${active.getAttribute("data-id") ?? ""}` : "";
+  });
+}
