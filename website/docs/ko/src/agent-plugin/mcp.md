@@ -93,8 +93,8 @@ Run과 함께 사람에게 보이며 Run의 동작은 바꾸지 않습니다. �
 `{"kind":"artifacts","artifactIds":["library","consumer"]}`,
 `{"kind":"evals","evalIds":["library/tests","consumer/review"]}`가 있습니다.
 배열로 선택할 때는 ID를 1–64개 넣을 수 있으며, 처음 나온 순서를 유지합니다. 의존성 처리와 결과 재사용에는 CLI와 같은 기본 규칙이 적용되며,
-전송 방식에 따른 별도의 스케줄링이나 수명 주기 설정은 없습니다. 이 객체는
-CLI 선택 파일이 아닙니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
+전송 방식에 따른 별도의 스케줄링이나 수명 주기 설정은 없습니다. 이 JSON 객체는
+CLI에서 쓰는 선택 파일과 형식이 다릅니다. `--evals-file`과 `--artifacts-file`은 `kind` 태그 없이
 ID의 JSON 배열이나 한 줄에 ID 하나를 받습니다.
 
 `request_key`는 ASCII 문자/숫자/`._:-` 1–128개입니다. 프로젝트를 고쳤거나 Run이 끝났더라도,
