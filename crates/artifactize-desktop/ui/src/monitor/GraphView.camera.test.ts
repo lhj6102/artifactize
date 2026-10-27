@@ -249,7 +249,10 @@ it("opens a found Artifact on its own tab with a click, keeping a zoom that read
   camera.setViewport.mockClear();
   await typeFind(app, "pub");
   const [own] = await screen.findAllByRole("option");
-  await fireEvent.mouseDown(own);
+  // Pressing keeps the keyboard in the field and opens nothing; the click opens.
+  expect(await fireEvent.mouseDown(own)).toBe(false);
+  expect(onopen).not.toHaveBeenCalled();
+  await fireEvent.click(own);
   expect(onopen).toHaveBeenCalledExactlyOnceWith("a:publish", null);
   await vi.waitFor(() => expect(camera.setViewport).toHaveBeenCalledOnce());
   // No Detail docked: the whole canvas is the graph's middle.

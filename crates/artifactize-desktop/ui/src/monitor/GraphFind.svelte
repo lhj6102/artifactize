@@ -93,16 +93,16 @@
     {#if found.length > 0}
       <ul class="found" id="graph-found" role="listbox" aria-label="Found">
         {#each found as item, at (`${item.node}\n${item.tab}`)}
+          <!-- The keys belong to the field, which names the chosen entry as its active one. -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li
             id="graph-found-{at}"
             role="option"
             aria-selected={at === f.active}
             class:active={at === f.active}
-            onmousedown={(event) => {
-              // Keep focus in the field; the click opens what was found.
-              event.preventDefault();
-              onchoose(item);
-            }}
+            // The press keeps focus in the field, which leaving would close; the click opens.
+            onmousedown={(event) => event.preventDefault()}
+            onclick={() => onchoose(item)}
           >
             <span class="glyph {tone(item.tone)}">{item.glyph}</span><span class="name">{named(item)}</span>
           </li>

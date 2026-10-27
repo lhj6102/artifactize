@@ -794,7 +794,8 @@ export const scenarios: Scenario[] = [
       await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open again");
       await fill(browser, FIND, "s");
       await browser.waitUntil(async () => ((await names())?.length ?? 0) > 0, { timeout: 15000, timeoutMsg: "names with s listed" });
-      await aside(browser).$("h2").click();
+      // A press on its text, as a pointer gives it: focus moves to the Detail.
+      await dispatchInput(browser, { kind: "text-click", ...await visibleCenter(browser, await aside(browser).$("h2").getElement()) });
       await browser.waitUntil(async () => (await field()) === null, { timeout: 15000, timeoutMsg: "the click outside closed the field" });
       assert.equal((await detail(browser))?.title, "Artifact ship", "the Detail stays");
       assert.equal(await camera(browser), shipCamera, "the click outside moved no camera");
