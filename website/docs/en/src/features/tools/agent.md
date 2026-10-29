@@ -36,7 +36,7 @@ A `limit` or `maxResults` outside its range, 0 included, fails the call: its inp
 rejects it.
 
 `read.artifactId` identifies the Artifact that **declared the tool**;
-`resolvedArtifactId` identifies the Artifact reached through a child folder.
+`resolvedArtifactId` identifies the Artifact reached through a nested folder.
 For example, if the folder `rules` in app's folder is declared as `spec` and the eval
 also references `{spec}`, app's read tool
 called with `{"path":"rules/requirements.md"}` returns ownership metadata

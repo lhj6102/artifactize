@@ -401,8 +401,9 @@ can still be reused while a conflicting eval runs.
 
 Write Artifact references as `{input}` or `{input}/path` in
 `payload.instruction` and runtime `profile.args`. See
-[Eval dependencies](artifact.md#eval-dependencies) for their obligations, child
-Artifacts, cycles, scheduling and the Human prerequisites.
+[Eval dependencies](artifact.md#eval-dependencies) for their obligations, cycles,
+scheduling and the Human prerequisites, and [composition](artifact.md#composition) for
+constituents.
 
 ## Artifactsum
 

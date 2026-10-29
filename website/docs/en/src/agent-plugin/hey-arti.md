@@ -72,8 +72,8 @@ When shaping a new project, it:
 - Cut Artifacts where work is edited and judged independently, each with a concrete
   obligation. Avoid one review over the whole repository.
 - An eval names each input it really uses as `{name}`; sharing a repository is not a
-  dependency, and a command does not add the files it reads. A child folder counts
-  as an input of its parent's evals.
+  dependency, and a command does not add the files it reads. A constituent such as
+  `app::ui` is part of `app`, yet no input of `app`'s evals unless they name it.
 - One obligation per eval. Use a runtime eval when a command can check it, an
   [Agent eval](../features/agent.md) when it needs judgment, and a
   [Human eval](../features/human.md) only where a person must add judgment or

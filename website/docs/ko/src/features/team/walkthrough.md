@@ -60,8 +60,8 @@ artifactize verify --all --wait
 
 ```text
   guide/terms [run-FBh4xF-1]: GREEN
-  intro/heading [run-FBh4xF-2]: GREEN
-  usage/heading [run-FBh4xF-3]: GREEN
+  guide::intro/heading [run-FBh4xF-2]: GREEN
+  guide::usage/heading [run-FBh4xF-3]: GREEN
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
@@ -87,8 +87,8 @@ artifactize verify --all --wait
 ```text
 Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
   guide/terms [run-MxxJJJ-1]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  intro/heading [run-MxxJJJ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  usage/heading [run-MxxJJJ-3]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  guide::intro/heading [run-MxxJJJ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  guide::usage/heading [run-MxxJJJ-3]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
@@ -111,14 +111,14 @@ artifactize remote push
 
 ```text
   guide/terms [run-PzLGma-1]: GREEN
-  intro/heading [run-PzLGma-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  usage/heading [run-PzLGma-3]: GREEN
+  guide::intro/heading [run-PzLGma-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  guide::usage/heading [run-PzLGma-3]: GREEN
 Summary: executed 2 (runtime 2, agent 0, human 0), reused 1 (runtime 1, agent 0, human 0)
 Would push 2, already in the store 0, skipped 0.
 Pushed 2, already in the store 0, skipped 0.
 ```
 
-`guide/terms`의 재사용 키에 자식 `usage`가 들어 있으므로, 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
+`guide/terms`는 `guide::usage`를 참조하므로 재사용 키에 `guide::usage`가 들어 있습니다. 그래서 다시 리뷰한 Artifact는 `guide::usage`와 `guide`뿐입니다.
 저장소 연동을 `off`로 끈 것이 아니라 저장소에 연결할 수 없는 상황이었더라도, `verify`는 한 번 경고한 뒤
 같은 방식으로 로컬에서 리뷰했을 것입니다. `remote push`는 각 키에 대해 저장소에
 아직 없는 가장 최근 로컬 결과를 보냅니다. 미러링한 기록은 보내지 않으며, 토큰에 `human`이 없으면
@@ -143,8 +143,8 @@ artifactize verify --all --wait --reuse-only agent,human
 
 ```text
   guide/terms [run-GpqdSQ-1]: GREEN (reused from remote: bob@laptop, run-PzLGma)
-  intro/heading [run-GpqdSQ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  usage/heading [run-GpqdSQ-3]: GREEN (reused from remote: bob@laptop, run-PzLGma)
+  guide::intro/heading [run-GpqdSQ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  guide::usage/heading [run-GpqdSQ-3]: GREEN (reused from remote: bob@laptop, run-PzLGma)
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 

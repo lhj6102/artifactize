@@ -110,7 +110,8 @@ review. Add the next area once the first one's verdicts are trusted.
 
 **Auditing an existing setup**: run `config_check` and `config_graph`, then check the
 setup against section 4: reviews over the whole repository, consumers missing a
-reference, children covering more than intended, evals with several obligations,
+reference, an eval that reads a nested folder or a constituent without naming it,
+evals with several obligations,
 sign-offs without a reason, criteria copied where a shared rule document belongs.
 Report each finding with its fix, agree, then change only what was agreed.
 
@@ -186,6 +187,10 @@ verify again: the new Run reuses that sign-off. No keep-alive turns or polling l
   dependency, and a command does not add the files it reads. Split an Artifact that
   grows. Use `basis = true` only for an input the team agrees nobody reviews. Keep
   the default fingerprint.
+- **Composition.** Name a part `whole::part` when the whole cannot pass while the part
+  fails; `verify whole` then covers the part. Each part checks what it owns and the
+  whole checks only how its parts work together, naming the parts its evals use. A
+  part that is not a folder of its own is an aspect that selects its files.
 - **Evals.** One obligation per eval. Use a runtime eval when a command can check it,
   an Agent eval when it needs judgment, and a Human eval only where a person must add
   judgment or authority; a person is asked only after the Artifact's runtime and
@@ -203,7 +208,7 @@ Point the user at the example that matches their situation:
 
 | Situation | Reference |
 |---|---|
-| Content with child sections, a basis input, references in instructions and arguments | [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) |
+| Content made of constituent sections, a basis input, references in instructions and arguments | [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) |
 | An Agent review with built-in and declared tools, result schemas, and a person's sign-off | [examples/agent-tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) |
 | Many files reviewed one by one, with a shared checker | [examples/posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts) |
 | A consumer checked against what it uses (a web page against the style tokens it uses) and independent parts that reuse | [website/demo/shop](https://github.com/lhj6102/artifactize/tree/main/website/demo/shop) |

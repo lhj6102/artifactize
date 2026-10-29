@@ -424,9 +424,9 @@ MCP `config_graph` exposes the same definitions with single/multiple Artifact or
 eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
-child/instruction/argv relation metadata, cycle markers and
+child (composition by name)/instruction/argv relation metadata, cycle markers and
 dependency-first strongly connected components (SCCs): groups of Artifacts that
-mutually depend on one another. Artifact entries carry `kind` (`file`, `folder` or `graph`) and
+mutually depend on one another. Artifact entries carry `kind` (`file`, `folder`, `aspect` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)
 shows them on screen.
 Component IDs are numbered across the whole project graph, so output filtered to some

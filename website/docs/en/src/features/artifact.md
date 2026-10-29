@@ -47,7 +47,7 @@ say what it is part of: `game::combat` is a constituent of `game` (see
 see the [legacy policy upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
-`usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
+`guide::usage/heading` on the `guide::usage` Artifact. Do not declare an `id` field. Each eval
 has a `title` and a `profile` whose `kind` is `runtime`, `agent`,
 or `human`. All evals require `payload.instruction` and
 may have `pass_schema`, `fail_schema` and `profile_variants`.
@@ -135,7 +135,7 @@ or BLOCKED gate blocks the Eval in turn, so blocking propagates along these Eval
 A RED constituent blocks no Eval of its parent; it keeps the parent from passing
 instead (see [composition](#composition)). An intermediate Artifact
 with no Evals supplies no execution gates: referring to it does not gate execution
-on its own inputs or children. Those still belong to the final approval obligations,
+on its own inputs or constituents. Those still belong to the final approval obligations,
 so the consumer may execute without the Run being able to finish GREEN.
 
 Artifacts whose evals reference each other, directly or through a chain, form a
@@ -148,7 +148,7 @@ proceed.
 An eval that references a cycle peer still waits for that cycle's outside inputs: if
 `cli`'s eval also references `core`, a RED `core/tests` blocks `cli/tests` and also
 `docs/matches-cli`, which references `cli`. An eval of these Artifacts that references
-no cycle peer, input or child is not held back by them, though the Run still needs all of
+no cycle peer or input is not held back by them, though the Run still needs all of
 their results to finish GREEN. An eval
 elsewhere that references `docs` waits for every eval of `docs` and `cli`. An Eval's
 own Artifact is likewise not a gate for it, apart from the

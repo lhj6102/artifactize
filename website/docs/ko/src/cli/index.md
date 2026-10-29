@@ -353,7 +353,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 정적으로만 확인하므로 프로젝트 도구나 fingerprint 스크립트를 실행하지 않고 상태나 출력 폴더도
 만들지 않습니다. 위치 인자 선택자나 `--eval`은 Agent/Human eval 하나를 고르며, `--artifact`나
 `--audience`와 함께 쓸 수 없습니다. 실제로 실행하려면 `--tool`을 지정하고, eval 선택자를 쓰거나 `--artifact`와 `--audience`를 함께 지정해야 합니다. `--artifact`를 쓰면 짧은 동작 이름과 공개된
-이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
+이름을 모두 받으며, 범위는 그 Artifact 하나입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
 `--args`는 Agent 실행에서만 쓸 수 있고, 생략하면 Agent 도구는 `{}`를 받습니다. Human 스키마는 빈
@@ -384,9 +384,9 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
-payload, 스키마, 도구 뷰), 태그, 자식·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
+payload, 스키마, 도구 뷰), 태그, 자식(이름에 따른 구성)·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
-`kind`(`file`, `folder`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
+`kind`(`file`, `folder`, `aspect`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
 경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 컴포넌트
 ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄띄엄일 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 형식은
 텍스트와 전체 JSON 두 가지이며, `plan`, `--compact`, `--full`은 지원하지 않습니다. 예전의 최상위

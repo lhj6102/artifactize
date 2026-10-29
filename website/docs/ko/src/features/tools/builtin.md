@@ -12,7 +12,7 @@ grep = { builtin = "grep" }
 style = { builtin = "read", args = ["DEV-CODING.md"] }                 # one fixed file
 spec = { builtin = "section", args = ["spec.md"] }                # the model passes only the heading
 install = { builtin = "section", args = ["spec.md", "Install"] }  # one fixed section
-reqs = { builtin = "read", args = ["reqs/requirements.md"] }      # in the child folder reqs
+reqs = { builtin = "read", args = ["reqs/requirements.md"] }      # in a subfolder
 structure = { builtin = "graph", args = [] }                    # current project entity tree
 cargo_help = { builtin = "help", args = ["cargo", "build"] }      # cargo build --help
 
@@ -121,15 +121,16 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 
 파일 시스템 대상은 실제 리뷰에 허용된 범위 안에 있어야 합니다.
 
-- **고정 Agent 도구**는 선언한 Artifact 기준의 논리적 경로를 쓰며, 자식 폴더 안을 가리킬 수도
-  있습니다(`reqs/requirements.md`). 선언을 찾거나 `config check`를 실행할 때 대상이 존재하고 그 Artifact의
-  자식 범위 안에 있는지 확인하며, 조건에 맞지 않으면 거부합니다. 호출할 때도 다시 확인합니다.
+- **고정 Agent 도구**는 `reqs/requirements.md`처럼 선언한 Artifact 기준의 논리적 경로를 씁니다.
+  그 안에 선언된 폴더 Artifact로 들어가는 경로는 범위 밖입니다. 선언을 찾거나 `config check`를
+  실행할 때 대상이 존재하고 그 Artifact 안에 있는지 확인하며, 조건에 맞지 않으면 거부합니다. 호출할
+  때도 다시 확인합니다.
 - **Human 도구**는 같은 논리적 경로와 함께 `{artifactPath}`나 `{artifactPath}/path`,
   `{name}`이나 `{name}/path`(`name`은 Artifact)도 받습니다.
-  [Human 도구](human.md#human-tools)를 보세요. `--flag=` 접두어는 받지 않습니다. 선언을 찾거나 `config check`를 실행할 때는 리뷰 범위보다 넓은 작업 공간 전체를 기준으로 참조 이름과 대상이 존재하는지 확인합니다. 그래서 `other`가 자식 Artifact가 아니더라도 `{other}/file`이 존재하면 설정 검사를
+  [Human 도구](human.md#human-tools)를 보세요. `--flag=` 접두어는 받지 않습니다. 선언을 찾거나 `config check`를 실행할 때는 리뷰 범위보다 넓은 작업 공간 전체를 기준으로 참조 이름과 대상이 존재하는지 확인합니다. 그래서 `{other}/file`이 존재하면 설정 검사를
   통과할 수 있습니다. 사전 확인과 도구 호출 때 `other`가 그 Human eval의 범위에 들어 있어야 하므로, 그
-  eval에서 `{other}`를 직접 참조해야 합니다. Artifact만 대상으로 하는 도구 확인은 그 Artifact의 자식
-  범위만 씁니다. 도구 인자는 의존성을 더하거나 범위를 넓히지 않습니다.
+  eval에서 `{other}`를 직접 참조해야 합니다. Artifact만 대상으로 하는 도구 확인은 그 Artifact만
+  범위로 씁니다. 도구 인자는 의존성을 더하거나 범위를 넓히지 않습니다.
 
 설정을 검사하거나 도구를 호출할 때마다 파일 시스템 대상이 절대 경로, `..`, 심볼릭 링크, 특수
 파일이면 거부합니다. `open`은 HTTP(S) URL도 받습니다. `help`는 자리 표시자 없이 글자 그대로의 프로그램
