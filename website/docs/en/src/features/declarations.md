@@ -476,8 +476,9 @@ only at preparation and recheck.
 
 Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
 `{name}`, `{name}/path` or `--flag={name}/path`. A path starts at the folder of a folder
-Artifact or aspect and may not enter a folder Artifact nested there: `config check`
-names it, and you reference that Artifact instead. A file reference is the file itself
+Artifact or aspect. A folder Artifact's path may not enter a folder Artifact nested there:
+`config check` names it, and you reference that Artifact instead. An aspect's path must lie
+in its selection, which may reach into nested folder Artifacts. A file reference is the file itself
 and takes no path. Each one becomes an
 absolute path when the command runs. In instructions and runtime arguments a reference
 makes the eval depend on that Artifact; in a fingerprint script it only lets the script

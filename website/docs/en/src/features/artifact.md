@@ -198,16 +198,18 @@ Composition decides verdicts, not reviews:
 
 - **A failing constituent fails its parent.** `game` shows RED while
   `game::combat::skills::fireball` is RED, and passes only when every constituent and
-  its own evals pass. A parent without evals of its own takes its verdict from its
-  constituents alone and is never UNREVIEWED.
+  its own evals pass. A parent without evals of its own has no review of its own to wait
+  for: it shows its constituents' states, UNREVIEWED included, and passes once they pass.
 - **Selecting a parent selects its constituents.** `verify game` runs or reuses the
   evals of `game` and of every Artifact under it.
 - **Needing a parent needs its constituents.** An eval that names `{game}` needs
   `game` to pass to finish GREEN, so the Run needs the constituents' results too. Its
   execution gates are still only `game`'s own evals.
-- **Nothing else follows.** A constituent's files are not its parent's: a change to
-  the fireball reviews again only the evals that name it, and a change to `game`'s own
-  files does not review the fireball again. An eval of `game` that uses the fireball
+- **Nothing else follows.** Composition does not divide files: each Artifact keeps the
+  files its declaration covers. With separate files, a change to the fireball reviews
+  again only the evals that name it, and a change to `game`'s own files does not review
+  the fireball again. A file Artifact or an aspect can share files with its parent, and a
+  change to a shared file reviews both again. An eval of `game` that uses the fireball
   names `{game::combat::skills::fireball}`.
 
 A constituent need not be a folder of its own. An [aspect](declarations.md#aspects)

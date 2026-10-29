@@ -184,15 +184,17 @@ Artifact가 없을 때 `engine::core`의 `engine`처럼 선언되지 않은 앞�
 
 - **구성 요소가 실패하면 부모도 실패합니다.** `game::combat::skills::fireball`이 RED인 동안
   `game`도 RED로 보이며, 모든 구성 요소와 자기 eval이 통과해야 `game`이 통과합니다. 자기 eval이
-  없는 부모는 구성 요소만으로 판정이 정해지고, UNREVIEWED가 되지 않습니다.
+  없는 부모는 따로 기다릴 자기 리뷰가 없습니다. UNREVIEWED를 포함해 구성 요소의 상태를 그대로
+  보여 주고, 구성 요소가 모두 통과하면 통과합니다.
 - **부모를 선택하면 구성 요소도 선택됩니다.** `verify game`은 `game`과 그 아래 모든 Artifact의
   eval을 실행하거나 재사용합니다.
 - **부모가 필요하면 구성 요소도 필요합니다.** `{game}`을 참조하는 eval이 GREEN으로 끝나려면
   `game`이 통과해야 하므로, Run에는 구성 요소의 결과도 필요합니다. 다만 실행 게이트는 여전히
   `game`에 선언된 eval뿐입니다.
-- **그 밖에는 영향이 없습니다.** 구성 요소의 파일은 부모의 파일이 아닙니다. fireball이 바뀌면
-  fireball을 참조하는 eval만 다시 리뷰하고, `game`의 파일이 바뀌어도 fireball은 다시 리뷰하지
-  않습니다. fireball을 쓰는 `game`의 eval은 `{game::combat::skills::fireball}`을 참조합니다.
+- **그 밖에는 영향이 없습니다.** 구성은 파일을 나누지 않으며, 각 Artifact는 선언이 다루는 파일을
+  그대로 가집니다. 파일이 겹치지 않으면 fireball이 바뀔 때 fireball을 참조하는 eval만 다시
+  리뷰하고, `game`의 파일이 바뀌어도 fireball은 다시 리뷰하지 않습니다. 파일 Artifact나 aspect는
+  부모와 파일을 함께 가질 수 있으며, 함께 가진 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{game::combat::skills::fireball}`을 참조합니다.
 
 구성 요소에 자기 폴더가 꼭 있어야 하지는 않습니다. [aspect](declarations.md#aspects)는 fireball의
 코드, 테스트, 스프라이트처럼 큰 폴더에서 한 부분의 파일만 골라, 그 부분을 따로 리뷰하고 재사용할 수

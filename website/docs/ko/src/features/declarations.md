@@ -403,8 +403,9 @@ artifactsum은 준비와 재확인 때만 해시합니다.
 
 Runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/path`,
 `--flag={name}/path`로 다른 Artifact를 가리킵니다. 경로는 폴더 Artifact나 aspect의 폴더에서
-시작하며, 그 안에 선언된 폴더 Artifact로 들어갈 수 없습니다. 그런 경로는 `config check`가 알려
-주므로 그 Artifact를 대신 참조하세요. 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
+시작합니다. 폴더 Artifact의 경로는 그 안에 선언된 폴더 Artifact로 들어갈 수 없습니다. 그런 경로는
+`config check`가 알려 주므로 그 Artifact를 대신 참조하세요. aspect의 경로는 고른 범위 안에 있어야
+하며, 고른 범위는 안에 선언된 폴더 Artifact까지 닿을 수 있습니다. 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
 경로로 바뀝니다. 지시문과 Runtime 인자에서 참조하면 eval이 그 Artifact에 의존하게 되고,
 fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽을 수 있게 될 뿐입니다. 도구
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.

@@ -465,6 +465,9 @@ Your final response did not match the required schema: …
 ── Result: {"covered":["R1"],"verdict":"GREEN"}
 ```
 
+모델은 pass 또는 fail 스키마의 필드를 `verdictFields` 안에 담아 답하고, 결과에는 그 필드가
+`verdict`와 나란히 들어갑니다. [Agent 리뷰](../features/agent.md#agent-reviews)를 보세요.
+
 텍스트 출력은 도구 결과를 2000자에서 자르고 reasoning은 요약만 보여 줍니다. `--json`은
 `{"reference", "file", "events"}`를 출력합니다. 이 JSON에는 참조, 세션 파일, 저장된
 이벤트 전체가 들어 있어 대화를 그대로 재생할 수 있습니다.

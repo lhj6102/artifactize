@@ -511,6 +511,9 @@ Your final response did not match the required schema: …
 ── Result: {"covered":["R1"],"verdict":"GREEN"}
 ```
 
+The model answers with its pass or fail schema's fields under `verdictFields`; the
+result holds them beside `verdict`, as in [Agent reviews](../features/agent.md#agent-reviews).
+
 Text output cuts tool results after 2000 characters and shows only reasoning
 summaries. `--json` prints `{"reference", "file", "events"}`: the reference, the session
 file, and the stored events as they are, which is also the conversation's replayable
