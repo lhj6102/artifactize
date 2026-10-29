@@ -39,8 +39,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
   not silently skipped. A directory whose name ends in `.artf` is an invalid
   declaration and fails discovery.
-  A neighboring file Artifact's target remains in the folder's hash; it creates
-  no relation.
+  A neighboring file Artifact's target remains in the folder's hash, though the file
+  Artifact is a [part](artifact.md#composition) of the folder Artifact.
 - `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
   negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files

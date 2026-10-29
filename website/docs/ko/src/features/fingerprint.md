@@ -34,8 +34,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   안에 선언된 폴더 Artifact를 가리키는 경로는 거부합니다. 디렉터리를 훑을 때 안에 선언된 폴더 Artifact와
   `*.artf` 선언은 모두 건너뜁니다. `.artf` 파일을 직접 입력으로 적으면 알림 없이 건너뛰지 않고
   `config check`가 실패합니다. 이름이 `.artf`로 끝나는 디렉터리가 있으면
-  잘못된 선언으로 처리하며 선언 찾기가 실패합니다. 옆에 있는 파일 Artifact의 대상은 폴더 해시에 그대로 들어가며, 관계는
-  생기지 않습니다.
+  잘못된 선언으로 처리하며 선언 찾기가 실패합니다. 옆에 있는 파일 Artifact는 폴더 Artifact의
+  [부분](artifact.md#composition)이지만, 그 대상은 폴더 해시에 그대로 들어갑니다.
 - `ignore`: 그 Artifact의 폴더를 기준으로 한 `.gitignore` 형식의 glob 패턴을 최대 64개 지정할 수 있으며, 패턴은
   중복될 수 없고 부정 패턴은 쓸 수 없습니다. 비어 있거나, `#`로 시작하거나, 제어 문자가 든 패턴은 안 됩니다. 이 패턴에 맞는 파일은
   `.git`, `__pycache__/`, `*.pyc`, `target/`, `node_modules/` 같은 내장 ignore처럼 항상 제외합니다. `.gitignore`에

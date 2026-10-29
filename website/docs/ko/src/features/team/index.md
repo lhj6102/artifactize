@@ -1,8 +1,8 @@
 # 팀으로 일하기 {#working-as-a-team}
 
 `artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 팀 리뷰 저장소를 하나 운영하면
-여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 각 머신은
-각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
+여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 머신마다
+독립된 상태를 사용합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
 돌려주므로, 강제로 다시 리뷰하는 등 새 리뷰를 수행하면 모든 팀원이 이전 판정 대신 새 판정을 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
 
 **서버.** 소규모 서버에 별도의 상태 디렉터리를 두고 리뷰 저장소를 실행하세요.
@@ -92,7 +92,7 @@ artifactize remote status
 - 스키마로 검증한 소유자 필드(Runtime eval에서는 종료 코드,
   소요 시간, 잘림 표시만)
 - 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
-  fingerprint와 그 종류(`folder`/`file`/`graph`)
+  fingerprint와 그 종류(`folder`/`file`/`aspect`/`graph`)
   (기록의 `artifactKinds`)
 - 프로필과 실행 옵션(백엔드, 모델, reasoning, 제한, 변형), 사용량 카운터. Agent 결과의 `executionPaths`에는 작업 공간 기준 상대 경로와 경로별 해시도 기록합니다.
 - 만든 사람(`user@host`), Human 리뷰어, 타임스탬프

@@ -260,9 +260,11 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 
 `artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
 범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
-합니다. Artifact를 선택하면 같은 순환에 속해 그 Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다.
-`--force`는 그래도 직접 선택한 eval만 새로 리뷰하도록 표시합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
-관계를 맺지 않습니다.
+합니다. Artifact를 선택하면 그 [부분](../features/artifact.md#composition)의 eval과, 같은 순환에 속해 그
+Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다. `--force`는 선택한 Artifact와 그 부분의
+eval만 새로 리뷰하도록 표시하며, 순환에 속한 다른 Artifact나 의존성에는 적용되지 않습니다. 파일
+Artifact는 선언된 이름으로 선택하며, 파일 Artifact를 둘러싼 폴더 Artifact를 선택하면 부분인 파일
+Artifact도 함께 선택됩니다.
 
 의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.

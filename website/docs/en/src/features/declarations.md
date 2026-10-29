@@ -273,8 +273,12 @@ The `.artf` declaration itself must also be a regular file: symlinks, special fi
 and directories such as `bundle.artf` fail discovery. A file named `index` cannot have a sidecar because `index.artf` always declares the folder;
 `.artf` files are declarations and are never targets.
 
-A file Artifact creates no relation to the containing folder Artifact. A subfolder
-with its own `index.artf` still takes its files out of the folder Artifact around it.
+A file Artifact is a [part](artifact.md#composition) of the nearest folder Artifact
+around it: selecting that folder Artifact selects the file Artifact too, and the folder
+Artifact passes only while it does. Being a part makes it no input: the folder
+Artifact's evals neither read it nor carry its fingerprint in their reuse keys unless they
+name it. A subfolder with its own `index.artf` still takes its files out of the folder
+Artifact around it.
 A folder's artifactsum includes neighboring file Artifact targets and excludes every
 `*.artf` declaration.
 
@@ -292,9 +296,10 @@ Omit `fingerprint` to hash the file; the [file-Artifact form](fingerprint.md#art
 of artifactsum names only the target, and scripts and `fingerprint = false` work too.
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
-its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
+its containing folder. Scope entries carry `kind = "file"`, `"folder"`, `"aspect"` or `"graph"`; an aspect's
+path is its declaration's folder, of which it reaches only what `select` names.
 `execution_paths`, the project-relative paths of tool files whose hashes are recorded
-to show which version ran, work the same for all three kinds.
+to show which version ran, work the same for every kind.
 
 The target must stay a regular file, not a symbolic link, for as long as it is
 reviewed, also with `fingerprint = false`:

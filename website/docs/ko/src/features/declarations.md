@@ -231,8 +231,11 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 이름이 `index`인 파일에는 사이드카를 둘 수 없습니다. `.artf` 파일은 선언이며 대상이 되지
 않습니다.
 
-파일 Artifact는 들어 있는 폴더 Artifact와 아무 관계도 맺지 않습니다. 하위 폴더에 `index.artf`를 두면
-그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
+파일 Artifact는 자기를 둘러싼 가장 가까운 폴더 Artifact의 [부분](artifact.md#composition)입니다.
+그 폴더 Artifact를 선택하면 파일 Artifact도 함께 선택되고, 파일 Artifact가 통과해야 폴더 Artifact도
+통과합니다. 다만 부분이라고 입력이 되지는 않습니다. 폴더 Artifact의 eval이 이름을 적지 않으면 그
+파일 Artifact를 읽지 않으며, 재사용 키에도 그 fingerprint가 들어가지 않습니다. 하위 폴더에
+`index.artf`를 두면 그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
@@ -248,8 +251,9 @@ Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 `fingerprint = false`를 선택할 수도 있습니다.
 
 JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로세스의 작업 디렉터리는 그
-파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"graph"`가
-있습니다. `execution_paths`에는 어떤 버전의 도구가 실행됐는지 해시로 기록할 파일을 프로젝트 기준 경로로 적으며, 이 필드는 세 종류 모두에서 똑같이 동작합니다.
+파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"aspect"`, `"graph"`가
+있습니다. aspect의 경로는 선언이 있는 폴더이며, 그 안에서 `select`에 적은 경로에만 접근할 수 있습니다.
+`execution_paths`에는 어떤 버전의 도구가 실행됐는지 해시로 기록할 파일을 프로젝트 기준 경로로 적으며, 이 필드는 모든 종류에서 똑같이 동작합니다.
 
 대상은 리뷰하는 동안 내내 심볼릭 링크가 아닌 일반 파일이어야 하며, `fingerprint = false`여도
 마찬가지입니다.

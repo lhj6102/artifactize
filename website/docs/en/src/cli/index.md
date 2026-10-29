@@ -284,9 +284,10 @@ RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
 `artifactize verify app/e2e` selects the qualified Eval just like `--eval app/e2e`.
 Add `--recursive` to execute the Evals in the required dependency scope. Without
 it, input evidence must already be available. An Artifact selector also executes
-the Evals of its cycle peers, which review it; `--force` still marks only the
-explicitly selected Evals. File Artifacts are selected by their
-declared names; a sidecar creates no automatic relation to the surrounding folder.
+the Evals of its [parts](../features/artifact.md#composition) and of its cycle peers,
+which review it; `--force` marks the selected Artifact's and its parts' Evals, never its
+cycle peers' or dependencies'. File Artifacts are selected by their declared names, and
+selecting the folder Artifact around a file Artifact selects it as a part.
 
 For which evals wait or block, including dependency cycles, see
 [Eval dependencies](../features/artifact.md#eval-dependencies).
