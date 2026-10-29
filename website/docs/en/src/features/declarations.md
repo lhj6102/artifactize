@@ -254,8 +254,9 @@ Its scope uses `kind = "graph"` and its declaration path is `.artf`.
 Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
 always the current extracted graph. Otherwise ordinary Artifact rules apply:
 `basis = true` explicitly declares no own review obligations and cannot own evals;
-it does not satisfy unmet dependencies. A no-eval graph without `basis = true`
-remains UNREVIEWED, as any no-eval Artifact does. No source file is
+it does not satisfy unmet dependencies. A graph with neither evals nor constituents and
+without `basis = true` remains UNREVIEWED, as any such Artifact does; one with
+[constituents](artifact.md#composition) takes their states. No source file is
 created or required. Ordinary Artifact cycles are allowed, and the graph fingerprint also covers the graph
 Artifact's own declaration.
 
@@ -464,21 +465,22 @@ operational error, without starting any eval or falling back to uncached review.
 Stderr is not forwarded as a fingerprint diagnostic.
 
 After runtime or Agent review, covered fingerprints are recomputed before
-accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no
-semantic result; a failed recheck records ERROR. Force skips neither preparation
+accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no GREEN or
+RED verdict; a failed recheck records ERROR. Force skips neither preparation
 nor recheck. An Artifact with `fingerprint = false` has no fingerprint to prepare;
-unkeyed evals skip the fingerprint-value recheck. File-target validation remains
-mandatory at preparation, eval start/end and tool calls, including for unkeyed
-evals. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
+evals without a complete reuse key skip the fingerprint-value recheck. File targets are
+still checked at preparation, eval start and end, and tool calls, for every eval. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
 ## Artifact references in commands
 
 Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
 `{name}`, `{name}/path` or `--flag={name}/path`. A path starts at the folder of a folder
-Artifact or aspect. A folder Artifact's path may not enter a folder Artifact nested there:
-`config check` names it, and you reference that Artifact instead. An aspect's path must lie
-in its selection, which may reach into nested folder Artifacts. A file reference is the file itself
+Artifact or aspect. In runtime arguments, a folder Artifact's path may not enter a folder
+Artifact nested there: `config check` names it, and you reference that Artifact instead.
+In fingerprint scripts and tool arguments such a path fails when the command is prepared
+or called, unless the nested Artifact is in scope too. An aspect's path must lie in its
+selection, which may reach into nested folder Artifacts. A file reference is the file itself
 and takes no path. Each one becomes an
 absolute path when the command runs. In instructions and runtime arguments a reference
 makes the eval depend on that Artifact; in a fingerprint script it only lets the script

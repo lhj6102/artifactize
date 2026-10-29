@@ -216,7 +216,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한
 그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
-`basis = true`가 없고 eval도 없는 그래프는 eval 없는 다른 Artifact처럼 UNREVIEWED로 남습니다.
+`basis = true`가 없고 eval도 구성 요소도 없는 그래프는 그런 다른 Artifact처럼 UNREVIEWED로 남습니다.
+[구성 요소](artifact.md#composition)가 있으면 그 상태를 따릅니다.
 소스 파일을 만들지 않으며, 소스 파일이 없어도 됩니다. 일반 Artifact의 순환도 허용하며, 그래프
 Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
@@ -394,8 +395,8 @@ Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 A
 Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
 ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 않습니다. `fingerprint = false`인
-Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 재사용 키가
-없는 eval에서도 준비 단계와 eval 실행 전후, 도구 호출 때마다 파일 Artifact의 대상 파일을 확인합니다. 필요한 다른
+Artifact는 준비할 fingerprint가 없으며, 온전한 재사용 키가 없는 eval은 fingerprint 값 재확인을 건너뜁니다.
+그래도 모든 eval에서 준비 단계와 eval 실행 전후, 도구 호출 때마다 파일 Artifact의 대상 파일을 확인합니다. 필요한 다른
 Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간의 변경을 계속 감시하지는 않습니다.
 artifactsum은 준비와 재확인 때만 해시합니다.
 
@@ -403,8 +404,9 @@ artifactsum은 준비와 재확인 때만 해시합니다.
 
 Runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/path`,
 `--flag={name}/path`로 다른 Artifact를 가리킵니다. 경로는 폴더 Artifact나 aspect의 폴더에서
-시작합니다. 폴더 Artifact의 경로는 그 안에 선언된 폴더 Artifact로 들어갈 수 없습니다. 그런 경로는
-`config check`가 알려 주므로 그 Artifact를 대신 참조하세요. aspect의 경로는 고른 범위 안에 있어야
+시작합니다. Runtime 인자에서 폴더 Artifact의 경로는 그 안에 선언된 폴더 Artifact로 들어갈 수 없습니다.
+그런 경로는 `config check`가 알려 주므로 그 Artifact를 대신 참조하세요. fingerprint 스크립트와 도구
+인자에서는 안에 선언된 Artifact도 범위에 들어 있지 않으면 명령을 준비하거나 호출할 때 실패합니다. aspect의 경로는 고른 범위 안에 있어야
 하며, 고른 범위는 안에 선언된 폴더 Artifact까지 닿을 수 있습니다. 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
 경로로 바뀝니다. 지시문과 Runtime 인자에서 참조하면 eval이 그 Artifact에 의존하게 되고,
 fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽을 수 있게 될 뿐입니다. 도구
