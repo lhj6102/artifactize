@@ -76,7 +76,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
 `mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
-씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
+씁니다. eval 작성자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
 들어가지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
 상태는 `timeoutMs`, `passSchema`, `agentTools`, `blockedBy`처럼 기존 camelCase 필드를 계속
 쓰며, 이는 선언 문법이 아닙니다.
@@ -129,7 +129,7 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 
 ## 소유자 결과 스키마 {#owner-result-schemas}
 
-Agent와 Human 결과에는 `verdict`와 소유자가 정한 필드가 들어 있습니다. `pass_schema`(GREEN)와
+Agent와 Human 결과에는 `verdict`와, eval 작성자가 정한 결과 필드인 소유자 필드가 들어 있습니다. `pass_schema`(GREEN)와
 `fail_schema`(RED)에는 이 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
 위의 `summary` 스키마라면 Agent는 `{"verdict":"GREEN","summary":"All requirements are
 covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필드로

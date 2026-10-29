@@ -64,7 +64,7 @@ payload.instruction = "Check that every bold term in {guide::intro} and {guide::
 ```
 
 선언 키는 snake_case입니다. `minLength`, `additionalProperties` 같은 JSON Schema 키워드는 표준
-이름을 그대로 쓰고, 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 다만 `--json` 출력과
+이름을 그대로 쓰고, eval 작성자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 다만 `--json` 출력과
 저장된 상태에는 지금도 `passSchema`, `timeoutMs`, `agentTools` 같은 필드가 쓰입니다. 정확한 문법은
 [선언(.artf)](declarations.md)을 보세요.
 

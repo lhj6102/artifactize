@@ -407,7 +407,7 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다.
 실패하면 2로 종료하며 판정을 만들어 내지 않습니다.
 
 제출하려면 `--verdict GREEN|RED`가 필요합니다. `--fields`와 `--fields-file`은 함께 쓸 수
-없습니다. 둘 중 하나로 소유자가 정한 필드만 담은 JSON 객체를 넘기며, 판정은 이 객체에 넣지 않습니다. 생략하면 `{}`입니다. 파일은
+없습니다. 둘 중 하나로 소유자 필드만 담은 JSON 객체를 넘기며, 판정은 이 객체에 넣지 않습니다. 생략하면 `{}`입니다. 파일은
 일반 파일이어야 하고, 필드와 전체 결과는 256000바이트까지입니다. JSON, 스키마, 리뷰어 이름,
 판정이 잘못되면 2로 종료하며, 요청은 수정 후 다시 제출할 수 있는 상태로 남습니다. 제출에 성공하면 RED여도
 0으로 종료하며, 별도의 검증 과정을 시작하지 않습니다.
@@ -519,14 +519,14 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-머리말에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
+헤더에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이
 바뀌었는지(알 수 없으면 null), `answer`는 답변 텍스트, `usage`는 시도별 토큰 수입니다.
 
 follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
-텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 머리말에
+텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
 경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 follow-up을 저장하는 방식은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
 보세요.
