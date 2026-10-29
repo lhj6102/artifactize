@@ -14,7 +14,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
             "page":{
                 "path":"pages",
                 "name":"page",
-                "children":{},
+                "nested":{},
                 "basis":null,
                 "fingerprint":{
                     "script":{
@@ -178,7 +178,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
     let selection = Selection::All;
     let view = crate::query::graph(&config, &selection).unwrap();
     let expected = json!({
-        "version":1,
+        "version":2,
         "repoPath":crate::platform::path_text(&crate::platform::canonicalize(root.path()).unwrap()),
         "selection":{"kind":"all"},
         "artifacts":{
@@ -187,7 +187,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
                 "kind":"folder",
                 "name":"app",
                 "tags":[],
-                "children":{},
+                "nested":{},
                 "basis":null,
                 "views":{"agentSessions":{},"agentTools":{"read":{"builtin":"read"}},"humanTools":{}},
                 "fingerprint":{"script":{
@@ -298,7 +298,7 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
     let saved = r#"{"id":17,"artifacts":["app"],"dependencies":[0,10],"gates":["spec/check"],"cyclic":false}"#;
     let component: Component = serde_json::from_str(saved).unwrap();
     assert_eq!(serde_json::to_string(&component).unwrap(), saved);
-    let saved = r#"{"children":{"nested/child":"child"}}"#;
+    let saved = r#"{"nested":{"nested/child":"child"}}"#;
     let artifact: Artifact = serde_json::from_str(saved).unwrap();
     assert_eq!(serde_json::to_string(&artifact).unwrap(), saved);
     let saved = r#"{"profileVariants":{"sol-max":{"kind":"human"}}}"#;
@@ -309,7 +309,7 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
         assert!(serde_json::from_str::<crate::graph::ComponentId>(invalid).is_err());
     }
     for invalid in [
-        json!({"artifacts":{"app":{"children":{"../outside":"child"}}}}),
+        json!({"artifacts":{"app":{"nested":{"../outside":"child"}}}}),
         json!({"evals":[{"id":"app/check","target":"app","declaration":{"profileVariants":{"bad.name":{"kind":"human"}}}}]}),
         json!({"relations":[{"source":"input","target":"app","kind":"instruction","evalId":"app/check","name":"bad.name"}]}),
     ] {

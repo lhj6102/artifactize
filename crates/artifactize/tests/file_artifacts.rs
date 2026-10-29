@@ -120,15 +120,16 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
         Path::new("nested/Makefile.artf")
     );
     assert_eq!(
-        config.artifacts["folder"].children,
+        config.artifacts["folder"].nested,
         std::collections::BTreeMap::from([(
             "nested/deep".parse().unwrap(),
             "deep".parse().unwrap()
         )])
     );
-    assert!(config.artifacts["hero"].children.is_empty());
-    assert!(config.artifacts["build"].children.is_empty());
-    assert_eq!(config.relations.len(), 1);
+    assert!(config.artifacts["hero"].nested.is_empty());
+    assert!(config.artifacts["build"].nested.is_empty());
+    // Nesting partitions files; it is no relation.
+    assert!(config.relations.is_empty());
     assert!(
         !artifact_scope(&config, &[&"folder".parse().unwrap()])
             .unwrap()
@@ -156,7 +157,7 @@ fn a_workspace_may_contain_only_a_file_artifact_and_index_is_always_a_folder_mar
     let config = fixture.config();
     assert_eq!(config.artifacts["index-file"].kind, ArtifactKind::Folder);
     assert_eq!(config.artifacts["index-file"].path, Path::new(""));
-    assert!(config.artifacts["index-file"].children.is_empty());
+    assert!(config.artifacts["index-file"].nested.is_empty());
 }
 
 #[test]

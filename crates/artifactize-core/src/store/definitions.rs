@@ -111,7 +111,7 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
     pub path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub children: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
+    pub nested: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub name: Field<crate::types::ArtifactName>,
     #[serde(default, skip_serializing_if = "missing")]

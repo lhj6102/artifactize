@@ -58,7 +58,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 tags: declaration.tags,
                 basis: declaration.basis,
                 path: name.into(),
-                children: BTreeMap::new(),
+                nested: BTreeMap::new(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
             },
@@ -360,7 +360,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
                 ],
             }),
         ),
-        ("owner/child", json!({"name":"child", "basis":true})),
+        ("child", json!({"name":"owner::child", "basis":true})),
         ("instruction", json!({"name":"instruction", "basis":true})),
         ("argument", json!({"name":"argument", "basis":true})),
     ] {
@@ -375,7 +375,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
         graph
             .dependency_closure(&roots(&["owner"]).iter().collect::<Vec<_>>())
             .unwrap(),
-        ["argument", "child", "instruction", "owner"]
+        ["argument", "instruction", "owner", "owner::child"]
     );
     assert_eq!(
         graph.eval_target("owner/check").map(ArtifactName::as_str),
@@ -468,4 +468,62 @@ fn speculation_keeps_file_evidence_but_never_waives_final_obligations() {
     assert_eq!(failed.evals["a/check"].status, EvalStatus::Error);
     assert_eq!(failed.evals["b/check"].status, EvalStatus::Blocked);
     assert_eq!(failed.evals["c/check"].status, EvalStatus::Blocked);
+}
+
+#[test]
+fn a_constituent_verdict_is_part_of_its_parent_without_gating_the_parent_evals() {
+    let mut config = config(
+        &[
+            ("game", false, &[]),
+            ("game::combat", false, &["check"]),
+            ("game::combat::fireball", false, &["check"]),
+            ("consumer", false, &["check"]),
+        ],
+        &[("game::combat", "consumer")],
+    );
+    for (source, target) in [
+        ("game::combat", "game"),
+        ("game::combat::fireball", "game::combat"),
+    ] {
+        config.relations.push(Relation {
+            source: source.parse().unwrap(),
+            target: target.parse().unwrap(),
+            kind: RelationKind::Child,
+        });
+    }
+    let graph = Graph::new(&config).unwrap();
+    assert_eq!(
+        graph
+            .dependency_closure(&roots(&["consumer"]).iter().collect::<Vec<_>>())
+            .unwrap(),
+        ["consumer", "game::combat", "game::combat::fireball"]
+    );
+    let result = graph.evaluate(&evidence(&[
+        ("game::combat/check", GREEN),
+        ("game::combat::fireball/check", RED),
+        ("consumer/check", GREEN),
+    ]));
+    // The parent's own eval and its consumer are judged on their own inputs.
+    assert_eq!(result.evals["game::combat/check"].status, EvalStatus::Green);
+    assert_eq!(result.evals["consumer/check"].status, EvalStatus::Green);
+    // Yet neither the parent nor anything above it passes while a constituent fails.
+    for parent in ["game::combat", "game"] {
+        assert_eq!(result.artifacts[parent].status, ArtifactStatus::Red);
+        assert!(!result.artifacts[parent].satisfied);
+    }
+    assert_eq!(
+        result.artifacts["consumer"].status,
+        ArtifactStatus::Incomplete
+    );
+    assert_eq!(result.status, FinalStatus::Red);
+
+    let result = graph.evaluate(&evidence(&[
+        ("game::combat/check", GREEN),
+        ("game::combat::fireball/check", GREEN),
+        ("consumer/check", GREEN),
+    ]));
+    // A parent without evals of its own passes on its constituents alone.
+    assert_eq!(result.artifacts["game"].status, ArtifactStatus::Green);
+    assert!(result.obligations.is_empty());
+    assert_eq!(result.status, FinalStatus::Green);
 }

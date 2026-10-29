@@ -176,7 +176,7 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn root_path<'a>(&self, path: &'a str) -> &'a str {
-        if path == "." && self.scope.artifacts[self.owner].file_name().is_some() {
+        if path == "." && self.scope.artifacts[self.owner].selective() {
             ""
         } else {
             path
@@ -270,6 +270,7 @@ impl Reader<'_> {
             entries.insert(name.to_owned(), EntryKind::File);
         } else {
             // Enumerate the pinned directory, not a path that could have been replaced by a link.
+            // An aspect lists only what leads to or lies in its selection.
             let directory =
                 platform::read_dir(&file).map_err(|_| "Cannot list Artifact directory.")?;
             for entry in directory {
@@ -285,6 +286,9 @@ impl Reader<'_> {
                     .file_name()
                     .into_string()
                     .map_err(|_| "Artifact paths must be UTF-8.")?;
+                if !owner.admits(&join(&location.path, &name)) {
+                    continue;
+                }
                 let kind = entry
                     .file_type()
                     .map_err(|_| "Cannot inspect Artifact entry.")?;

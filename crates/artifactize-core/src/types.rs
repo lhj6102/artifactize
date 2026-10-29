@@ -153,25 +153,35 @@ fn name(value: &str) -> bool {
     crate::config::identifier(value, "").is_ok()
 }
 
-/// An Artifact name: a local Eval id's form, optionally prefixed by one `space::`.
+/// An Artifact name: local Eval id forms joined by `::`.
 fn artifact_name(value: &str) -> bool {
     crate::config::artifact_name(value, "").is_ok()
 }
 
 identity!(ArtifactName, artifact_name);
 impl ArtifactName {
-    /// The space a `space::name` belongs to; `None` for an unprefixed name.
+    /// The leading parts of a `space::name`, `game::combat` of `game::combat::fireball`;
+    /// `None` for a one-part name.
     pub fn space(&self) -> Option<&str> {
         self.0
-            .split_once(crate::config::SPACE_SEPARATOR)
+            .rsplit_once(crate::config::SPACE_SEPARATOR)
             .map(|(space, _)| space)
     }
 
-    /// The name without its space: `Code` of `combat::Code`, the whole of an unprefixed one.
+    /// The last part of the name: `fireball` of `game::combat::fireball`, the whole of a
+    /// one-part name.
     pub fn local(&self) -> &str {
         self.0
-            .split_once(crate::config::SPACE_SEPARATOR)
+            .rsplit_once(crate::config::SPACE_SEPARATOR)
             .map_or(&self.0, |(_, local)| local)
+    }
+
+    /// Every proper leading part, nearest first: `game::combat`, then `game`.
+    pub fn ancestors(&self) -> impl Iterator<Item = &str> {
+        std::iter::successors(self.space(), |name| {
+            name.rsplit_once(crate::config::SPACE_SEPARATOR)
+                .map(|(space, _)| space)
+        })
     }
 
     /// The name as a model's tool name spells it: `::` becomes `__`, since tool names hold

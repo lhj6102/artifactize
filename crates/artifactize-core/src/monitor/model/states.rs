@@ -229,19 +229,11 @@ impl<'a> Index<'a> {
             .iter()
             .flat_map(|(&target, ids)| ids.iter().map(move |&id| (id, target)))
             .collect();
-        let children: BTreeMap<_, Vec<_>> = saved
-            .artifacts()
-            .map(|(parent, artifact)| {
-                let children = artifact.children.value().into_iter().flatten();
-                (parent, children.map(|(_, child)| child).collect())
-            })
-            .collect();
-        // An eval depends on what it references and, like every eval of its target, on the
-        // target's children.
+        // An eval depends on what it references.
         let inputs: BTreeMap<_, Vec<_>> = targets
             .iter()
-            .map(|(&eval, &target)| {
-                let mut deps: Vec<_> = definitions
+            .map(|(&eval, _)| {
+                let deps: Vec<_> = definitions
                     .get(eval)
                     .and_then(|definition| definition.deps.value())
                     .map(|deps| deps.iter().collect())
@@ -250,7 +242,6 @@ impl<'a> Index<'a> {
                             .get(eval)
                             .map_or(Vec::new(), |view| view.request.deps.iter().collect())
                     });
-                deps.extend(children.get(target).into_iter().flatten().copied());
                 (eval, deps)
             })
             .collect();
@@ -273,9 +264,6 @@ impl<'a> Index<'a> {
                     deps: inputs[eval].clone(),
                     human: human(eval),
                 }),
-            children
-                .iter()
-                .flat_map(|(&parent, children)| children.iter().map(move |&child| (parent, child))),
         );
         let upstream = inputs
             .into_iter()

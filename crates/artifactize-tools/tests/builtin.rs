@@ -25,14 +25,15 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
         path,
         kind: ArtifactKind::Folder,
         name: "fixture".into(),
-        children: BTreeMap::new(),
+        nested: BTreeMap::new(),
+        select: Vec::new(),
     };
     let scope = Scope {
         artifacts: BTreeMap::from([
             (
                 owner.clone(),
                 Artifact {
-                    children: BTreeMap::from([(ChildPrefix::new("docs").unwrap(), id("target"))]),
+                    nested: BTreeMap::from([(ChildPrefix::new("docs").unwrap(), id("target"))]),
                     ..folder("".into())
                 },
             ),
@@ -113,7 +114,8 @@ fn folder_scope(owner: &ArtifactId) -> Scope {
                 path: "".into(),
                 kind: ArtifactKind::Folder,
                 name: "fixture".into(),
-                children: BTreeMap::new(),
+                nested: BTreeMap::new(),
+                select: Vec::new(),
             },
         )]),
     }

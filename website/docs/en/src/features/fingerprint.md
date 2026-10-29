@@ -8,7 +8,7 @@ Artifacts it depends on are unchanged, so review cost follows the size of a chan
 
 ## Fingerprints
 
-Folder and file Artifacts use **artifactsum** by default. Omit `fingerprint` to
+Folder, file and aspect Artifacts use **artifactsum** by default. Omit `fingerprint` to
 hash their own files, or choose a script. The root graph Artifact always uses the
 [structural graph fingerprint](#graph-fingerprint); it cannot declare `fingerprint`
 to override or disable that value. For folder and file Artifacts, the configurable
@@ -17,7 +17,7 @@ through the [reuse key](#the-reuse-key).
 
 - Omission uses artifactsum: `artifactsum:` plus SHA-256 over the Artifact's
   own input paths and bytes. `fingerprint = {}` also works for folders. A folder hashes its own files;
-  a file Artifact hashes its one target file.
+  a file Artifact hashes its one target file, and an [aspect](declarations.md#aspects) its selected paths.
 - `fingerprint = { script = { command = "hash", args = [] } }` uses the command's
   output as the fingerprint. It hashes nothing on its own, so the command must
   reflect every input and script change that should re-review.
@@ -34,13 +34,13 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 - `files`: 1–64 unique owner-relative paths of up to 1024 characters each (an emoji or another
   character outside the Basic Multilingual Plane counts as two),
-  default `["."]` (the owner's own files). Each must exist and stay inside the Artifact: paths into child Artifacts
-  are rejected. Directory walks skip child Artifact folders and every
+  default `["."]` (the owner's own files). Each must exist and stay inside the Artifact: paths into nested folder Artifacts
+  are rejected. Directory walks skip nested folder Artifacts and every
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
   not silently skipped. A directory whose name ends in `.artf` is an invalid
   declaration and fails discovery.
   A neighboring file Artifact's target remains in the folder's hash; it creates
-  no automatic child relation.
+  no relation.
 - `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
   negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
@@ -61,10 +61,9 @@ Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the s
 
 ## The reuse key
 
-An eval depends on its target Artifact and on what the target directly connects:
-
-- the target's child Artifacts;
-- the Artifacts the eval names in its instruction or runtime args.
+An eval depends on its target Artifact and on the Artifacts the eval names in its
+instruction or runtime args. Neither the target's [constituents](artifact.md#composition)
+nor a folder Artifact nested in its folder are part of the key unless the eval names them.
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
@@ -72,7 +71,7 @@ script can read a file of any Artifact it names in its args. So a result is revi
 again when the eval's criteria change, or the name, kind or fingerprint of its target or of
 an Artifact it covers changes.
 
-Artifact names and kinds (`folder`, `file` or `graph`) are part of the key, for the
+Artifact names and kinds (`folder`, `file`, `aspect` or `graph`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
@@ -155,10 +154,10 @@ The root [`.artf` graph Artifact](declarations.md#graph-artifact)
 uses `graph:<sha256>`, which changes when the project's structure or criteria change,
 not when files move or their content changes. It covers:
 
-- Artifact names and kinds, `basis`, and fingerprint coverage: artifactsum `files`
+- Artifact names and kinds, `basis`, an aspect's `select`, and fingerprint coverage: artifactsum `files`
   and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
   
-- Input → consumer relations: child ownership (names, not child folder paths),
+- Relations: composition (constituent → parent, from names),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
 - Qualified eval IDs, owning Artifact, titles and evaluation criteria: default

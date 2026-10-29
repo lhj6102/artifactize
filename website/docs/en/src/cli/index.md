@@ -387,7 +387,7 @@ fingerprint script and creates no state or output folder. A positional selector 
 selects one Agent/Human eval and cannot be combined with `--artifact` or
 `--audience`. Explicit execution requires `--tool` and either an eval selector or
 both `--artifact` and `--audience`. With `--artifact`, the short operation name or
-its published name is accepted, and the scope is that Artifact and its children.
+its published name is accepted, and the scope is that Artifact alone.
 With an eval, name the tool as that eval publishes it (`<tool>_<artifact>`); it runs
 in the eval's own scope, so a tool whose operands name another Artifact runs as it
 would in that eval's review.

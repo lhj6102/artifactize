@@ -245,7 +245,7 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
         data["scope"]["a"]["path"],
         json!(crate::test_os::path_text(&fixture.repo))
     );
-    assert_eq!(data["scope"]["a"]["children"], json!({}));
+    assert_eq!(data["scope"]["a"]["nested"], json!({}));
     assert_eq!(
         data["executionPaths"]["shared.txt"],
         json!(crate::test_os::path_text(&fixture.repo.join("shared.txt")))
@@ -573,7 +573,8 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["inspect_a", "list_child", "read_b"]
+        // b's nested folder Artifact is not b's, so a's eval does not see its tools.
+        ["inspect_a", "read_b"]
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert!(
@@ -606,7 +607,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
 #[test]
 fn concatenated_tool_name_collisions_are_rejected() {
     let fixture = Fixture::new(command());
-    write_artifact(&fixture.repo, "root", json!({}), "Review.");
+    write_artifact(&fixture.repo, "root", json!({}), "Review {a} and {b_a}.");
     write_artifact(
         &fixture.repo.join("a"),
         "a",
@@ -686,13 +687,14 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 }
 
 #[tokio::test]
-async fn json_scope_contains_only_paths_kinds_and_children() {
+async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
     let fixture = Fixture::new(command());
     let mut root: Value =
         crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
     root["views"]["human_tools"] = json!({
         "humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]},
     });
+    root["evals"][0]["payload"]["instruction"] = json!("Review {leaf}.");
     crate::test_declaration::write(fixture.repo.join("index.artf"), root.to_string()).unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
     crate::test_declaration::write(
@@ -724,14 +726,14 @@ async fn json_scope_contains_only_paths_kinds_and_children() {
     let [Content::Json { data }] = result.content() else {
         panic!("{result:?}")
     };
-    assert_eq!(data["a"]["children"], json!({"cases":"leaf"}));
+    assert_eq!(data["a"]["nested"], json!({"cases":"leaf"}));
     assert_eq!(
         data["leaf"]["path"],
         json!(crate::platform::path_text(&fixture.repo.join("cases")))
     );
     assert_eq!(
         data["leaf"],
-        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","children":{}})
+        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","nested":{}})
     );
     assert_eq!(data["a"].as_object().unwrap().len(), 3);
 }

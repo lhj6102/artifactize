@@ -282,7 +282,7 @@ pub(super) fn assemble(
             fingerprint: fingerprints
                 .get(&eval.target)
                 .map(|fingerprint| fingerprint.value.clone()),
-            fingerprints: cache::dependencies(config, eval)
+            fingerprints: cache::dependencies(eval)
                 .into_iter()
                 .map(|id| {
                     (

@@ -60,6 +60,9 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         ));
     }
     crate::scope::resolve_config(&mut config)?;
+    if matches!(targets, FileTargets::Required) {
+        crate::scope::validate_selections(&config)?;
+    }
     Ok(config)
 }
 
@@ -82,8 +85,8 @@ pub(super) struct Found<'a> {
     pub(super) path: PathBuf,
     pub(super) file: &'a Path,
     pub(super) source: String,
-    /// The folder Artifact that composes it, and its child prefix there.
-    parent: Option<(&'a ArtifactName, ChildPrefix)>,
+    /// The folder Artifact it is nested in, and its path there.
+    folder: Option<(&'a ArtifactName, ChildPrefix)>,
 }
 
 /// Walk `reach` below `root` in deterministic path order, handing each declaration to
@@ -100,7 +103,7 @@ pub(super) fn walk<E: From<ConfigError>>(
         Reach::Folder(folder) => (folder.to_owned(), true),
         Reach::File(folder, _) => (folder.to_owned(), false),
     };
-    // Each folder with the folder Artifact that composes what it declares, and its path.
+    // Each folder with the folder Artifact it is nested in, and that Artifact's path.
     let mut pending = vec![(start, None::<(ArtifactName, PathBuf)>)];
     while let Some((relative, mut owner)) = pending.pop() {
         let directory = root.join(&relative);
@@ -154,8 +157,8 @@ pub(super) fn walk<E: From<ConfigError>>(
             }
             let source =
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
-            let parent = match &owner {
-                Some((parent, path)) => {
+            let folder = match &owner {
+                Some((folder, path)) => {
                     let child = relative.strip_prefix(path).unwrap();
                     let child = child
                         .to_str()
@@ -163,7 +166,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                     let child = child
                         .parse()
                         .map_err(|error: String| ConfigError::new(&file, error))?;
-                    Some((parent, child))
+                    Some((folder, child))
                 }
                 None => None,
             };
@@ -172,7 +175,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 path: relative.clone(),
                 file: &file,
                 source,
-                parent,
+                folder,
             })?;
             owner = Some((name, relative.clone()));
         }
@@ -237,7 +240,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                     path: PathBuf::new(),
                     file: &file,
                     source,
-                    parent: None,
+                    folder: None,
                 })?;
                 continue;
             }
@@ -249,6 +252,33 @@ pub(super) fn walk<E: From<ConfigError>>(
                 .into());
             }
             path(target).map_err(|error| ConfigError::new(&file, error))?;
+            let source =
+                read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+            if selects(&source) {
+                // Its label names no file: the declaration selects paths of its folder.
+                match crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target)) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    _ if matches!(targets, FileTargets::DeclarationsOnly) => {}
+                    _ => {
+                        return Err(ConfigError::declaration(
+                            &file,
+                            &["select"],
+                            format!(
+                                "select declares an aspect, but {target}.artf declares the file {target}; give the aspect a label that names no file."
+                            ),
+                        )
+                        .into());
+                    }
+                }
+                visit(Found {
+                    kind: ArtifactKind::Aspect,
+                    path: logical_join(&relative, std::ffi::OsStr::new(target)),
+                    file: &file,
+                    source,
+                    folder: None,
+                })?;
+                continue;
+            }
             if target.contains(':') {
                 return Err(ConfigError::new(
                     &file,
@@ -278,14 +308,12 @@ pub(super) fn walk<E: From<ConfigError>>(
                     .into());
                 }
             }
-            let source =
-                read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             visit(Found {
                 kind: ArtifactKind::File,
                 path: logical_join(&relative, std::ffi::OsStr::new(target)),
                 file: &file,
                 source,
-                parent: None,
+                folder: None,
             })?;
         }
         if !recursive {
@@ -312,9 +340,46 @@ pub(super) fn declaration(
 ) -> Result<ArtifactDeclaration, ConfigError> {
     let file = found.file;
     let source = &found.source;
+    if found.kind != ArtifactKind::Aspect && selects(source) {
+        return Err(ConfigError::declaration(
+            file,
+            &["select"],
+            "select declares an aspect, which only a <label>.artf whose label names no file declares.",
+        ));
+    }
     match found.kind {
         ArtifactKind::Folder => {
             parse_declaration_in(source, schemas).map_err(|error| ConfigError::new(file, error))
+        }
+        ArtifactKind::Aspect => {
+            let mut declaration = parse_declaration_in(source, schemas)
+                .map_err(|error| ConfigError::new(file, error))?;
+            let select = declaration.select.clone().unwrap_or_default();
+            if !declares(source, "fingerprint") {
+                // Without a fingerprint of its own, an aspect hashes what it selects.
+                declaration.fingerprint = Some(Fingerprint::Artifactsum {
+                    files: select,
+                    ignore: Default::default(),
+                });
+            } else if let Some(Fingerprint::Artifactsum { files, .. }) = &declaration.fingerprint {
+                let within = |input: &str| {
+                    select.iter().any(|selected| {
+                        input
+                            .strip_prefix(selected.as_str())
+                            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                    })
+                };
+                if let Some(outside) = files.iter().find(|input| !within(input)) {
+                    return Err(ConfigError::declaration(
+                        file,
+                        &["fingerprint", "files"],
+                        format!(
+                            "fingerprint.files for an aspect must lie in its selection: {outside}."
+                        ),
+                    ));
+                }
+            }
+            Ok(declaration)
         }
         ArtifactKind::Graph => {
             let table: toml::Table =
@@ -375,16 +440,27 @@ pub(super) fn declaration(
     }
 }
 
-/// Add a found declaration to `config`, as a child of the folder Artifact composing it.
+/// Whether a declaration's source declares `select`, which makes it an aspect.
+fn selects(source: &str) -> bool {
+    declares(source, "select")
+}
+
+/// Whether a declaration's source has the top-level `key`. A source that does not parse has
+/// none; parsing it reports why.
+fn declares(source: &str, key: &str) -> bool {
+    toml::de::DeTable::parse(source).is_ok_and(|table| table.get_ref().contains_key(key))
+}
+
+/// Add a found declaration to `config`, nested in the folder Artifact around it.
 pub(super) fn declare(
     config: &mut RepoConfig,
     found: Found<'_>,
     declaration: ArtifactDeclaration,
 ) -> Result<ArtifactName, ConfigError> {
     let name = declaration.name.clone();
-    if let Some((parent, child)) = found.parent {
-        let parent = config.artifacts.get_mut(parent).unwrap();
-        parent.children.insert(child, name.clone());
+    if let Some((folder, path)) = found.folder {
+        let folder = config.artifacts.get_mut(folder).unwrap();
+        folder.nested.insert(path, name.clone());
     }
     insert_artifact(config, found.path, found.kind, declaration, found.file)?;
     Ok(name)
@@ -404,6 +480,7 @@ fn insert_artifact(
         views,
         basis,
         fingerprint,
+        select,
     } = declaration;
     if config.artifacts.contains_key(&name) {
         return Err(ConfigError::declaration(
@@ -429,7 +506,8 @@ fn insert_artifact(
         Artifact {
             path,
             kind,
-            children: BTreeMap::new(),
+            nested: BTreeMap::new(),
+            select: select.unwrap_or_default(),
             name,
             tags,
             views,

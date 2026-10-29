@@ -26,7 +26,7 @@ impl Site {
 pub(super) fn folder_of(kind: ArtifactKind, path: &Path) -> &Path {
     match kind {
         ArtifactKind::Folder | ArtifactKind::Graph => path,
-        ArtifactKind::File => path.parent().unwrap_or(Path::new("")),
+        ArtifactKind::File | ArtifactKind::Aspect => path.parent().unwrap_or(Path::new("")),
     }
 }
 
@@ -34,7 +34,7 @@ pub(super) fn declaration_of(kind: ArtifactKind, path: &Path) -> PathBuf {
     match kind {
         ArtifactKind::Graph => PathBuf::from(".artf"),
         ArtifactKind::Folder => logical_join(path, std::ffi::OsStr::new(CONFIG_FILE)),
-        ArtifactKind::File => {
+        ArtifactKind::File | ArtifactKind::Aspect => {
             let mut path = path.as_os_str().to_owned();
             path.push(".artf");
             PathBuf::from(path)
@@ -122,7 +122,7 @@ pub(crate) fn read_artifact_scope(
     }
     let reach = match site.kind {
         ArtifactKind::Folder => Reach::Folder(&site.path),
-        ArtifactKind::File | ArtifactKind::Graph => Reach::File(
+        ArtifactKind::File | ArtifactKind::Aspect | ArtifactKind::Graph => Reach::File(
             folder,
             site.path
                 .file_name()

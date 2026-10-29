@@ -5,9 +5,9 @@
 //! eval's result would not be fresh. Its own Artifact and the Artifacts in a dependency cycle
 //! with it are evaluated together, so their evals never gate it.
 //!
-//! An eval depends on the Artifacts it references and on its target's children. A child
-//! folder's files are part of its parent's content, so a child counts exactly as if every
-//! eval of the parent referenced it. Cycles are the Artifact cycles these links form.
+//! An eval depends on the Artifacts it references, and on nothing else: composition makes a
+//! constituent's verdict part of its parent's, but no eval of the parent reads it unless it
+//! references it. Cycles are the Artifact cycles these references form.
 //!
 //! A Human eval also waits for every non-Human eval of its own Artifact: a person signs off
 //! only on what the machine evals already pass. Other Human evals never gate it.
@@ -34,40 +34,23 @@ pub(crate) struct Schedule<'a> {
 }
 
 impl<'a> Schedule<'a> {
-    /// `children` are `(parent, child)`. A reference names material, and its gates are all
-    /// evals of that material's cycle. A reference into the eval's own cycle brings the
-    /// gates the cycle's evals reference outside it, since that is what the referenced
-    /// peer's content depends on.
-    pub fn new(
-        evals: impl IntoIterator<Item = Input<'a>>,
-        children: impl IntoIterator<Item = (&'a ArtifactName, &'a ArtifactName)>,
-    ) -> Self {
-        let mut links: BTreeMap<&ArtifactName, BTreeSet<&ArtifactName>> = BTreeMap::new();
-        for (parent, child) in children {
-            links.entry(parent).or_default().insert(child);
-        }
-        // A child is a reference every eval of its parent makes.
+    /// A reference names material, and its gates are all evals of that material's cycle. A
+    /// reference into the eval's own cycle brings the gates the cycle's evals reference
+    /// outside it, since that is what the referenced peer's content depends on.
+    pub fn new(evals: impl IntoIterator<Item = Input<'a>>) -> Self {
         let evals: Vec<_> = evals
             .into_iter()
             .map(|mut eval| {
-                eval.deps
-                    .extend(links.get(eval.target).into_iter().flatten().copied());
                 eval.deps.sort_unstable();
                 eval.deps.dedup();
                 eval
             })
             .collect();
         // Consumer -> input, so the SCC traversal yields dependencies first.
-        // Children link their parent whether or not it owns evals, so the cycles are the
-        // Artifact cycles of the content.
-        let edges: BTreeSet<(&ArtifactName, &ArtifactName)> =
-            evals
-                .iter()
-                .flat_map(|eval| eval.deps.iter().map(|dep| (eval.target, *dep)))
-                .chain(links.iter().flat_map(|(&parent, children)| {
-                    children.iter().map(move |&child| (parent, child))
-                }))
-                .collect();
+        let edges: BTreeSet<(&ArtifactName, &ArtifactName)> = evals
+            .iter()
+            .flat_map(|eval| eval.deps.iter().map(|dep| (eval.target, *dep)))
+            .collect();
         let mut graph = DiGraph::<&ArtifactName, ()>::new();
         let nodes: BTreeMap<_, _> = evals
             .iter()

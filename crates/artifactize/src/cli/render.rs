@@ -330,7 +330,7 @@ pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result
     for edge in &view.relations {
         use artifactize_core::scope::RelationKind;
         let detail = match &edge.relation.kind {
-            RelationKind::Child { path } => format!("child path={path}"),
+            RelationKind::Child => "child".into(),
             RelationKind::Instruction { eval_id, name } => {
                 format!("instruction eval={eval_id} name={name}")
             }

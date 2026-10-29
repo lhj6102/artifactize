@@ -28,15 +28,18 @@ command or arguments is a different check, with its own reuse key and inputs. Se
 Dependencies belong to the consuming eval: name its input Artifacts as `{name}`
 in its instruction or runtime arguments. See [Eval dependencies](artifact.md#eval-dependencies).
 
-Declare only real inputs. An eval can look at its target, the Artifacts its
-instruction or runtime arguments name, and all their child Artifacts. For example,
-`app/review` with the instruction `Check {app} against {spec}.` can read `app`, `spec`, and
-`app/ui` if `ui` is a child of `app`, and use their tools; it does not reach what `spec`'s
-own evals reference. Naming an Artifact in a tool's arguments does not add an input.
+Declare only real inputs. An eval can look at its target and the Artifacts its
+instruction or runtime arguments name, nothing else. For example, `app/review` with the
+instruction `Check {app} against {spec}.` can read `app` and `spec` and use their tools;
+it does not reach `app::ui`, a [constituent](artifact.md#composition) of `app`, nor
+a folder Artifact nested in `app`'s folder, nor what `spec`'s own evals reference. To
+read `app::ui` as well, name it: `Check {app} and {app::ui} against {spec}.` Naming an
+Artifact in a tool's arguments does not add an input.
 
-An eval can read more than what decides its reuse (the
-[reuse key](fingerprint.md#the-reuse-key)) and more than what it waits for
-([eval dependencies](artifact.md#eval-dependencies)).
+The Artifacts its tools can read are the ones that decide its reuse (the
+[reuse key](fingerprint.md#the-reuse-key)) and that it waits for
+([eval dependencies](artifact.md#eval-dependencies)). A runtime command is not confined
+this way, so name every Artifact whose files it uses.
 
 `artifactize verify library/tests --wait` starts a [Run](run.md) for one eval.
 Use `artifactize status library/tests` first to see what can reuse or needs review;

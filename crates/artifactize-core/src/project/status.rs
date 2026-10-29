@@ -433,7 +433,7 @@ impl<'a> Scope<'a> {
             {
                 for id in &self.graph.artifacts()[*artifact].evals {
                     let keyed =
-                        cache::dependencies(self.config, evals[id])
+                        cache::dependencies(evals[id])
                             .into_iter()
                             .all(|input| {
                                 self.config.artifacts[input].fingerprint.is_none()
