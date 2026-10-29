@@ -488,12 +488,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     let repo = human_repo(root.path(), "repo");
 
     // Bob waits for a sign-off that does not exist anywhere yet.
-    let waiting = bob
-        .command(&repo, &["verify", "--wait", "--all"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let waiting = support::os::start(&mut bob.command(&repo, &["verify", "--wait", "--all"]));
     let waiting = RunChild::new(waiting, &bob.state, &repo);
     let saved = waiting.human_waiting();
     assert_eq!(saved.requests[0].status().as_str(), "DEFERRED");

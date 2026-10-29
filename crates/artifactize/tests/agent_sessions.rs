@@ -730,16 +730,11 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     // A running review's session survives any collection; verify collects at its end.
     project.limits(json!({"agentSessions":{"maxBytes":1,"targetBytes":0}}));
     release.close();
-    let running = project
-        .command(
-            &provider,
-            &project.state,
-            &["verify", "--wait", "--all", "--force", "--json"],
-        )
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let running = support::os::start(&mut project.command(
+        &provider,
+        &project.state,
+        &["verify", "--wait", "--all", "--force", "--json"],
+    ));
     let running = RunChild::new(running, &project.state, &project.repo);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

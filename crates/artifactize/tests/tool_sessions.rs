@@ -394,12 +394,7 @@ fn diagnostic_fixture_releases_detached_processes_before_removal_on_drop_and_unw
 #[test]
 fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
     let fixture = Fixture::new("start", "stop", "crash", 2);
-    let child = fixture
-        .command(&["verify", "--wait", "--all"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
     let mut child = RunChild::new(child, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         !fixture.records("call").is_empty()
@@ -631,12 +626,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
             openai::usage(10, 5),
         )
     });
-    let owner = fixture
-        .command(&["verify", "--wait", "--all"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let owner = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
     let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         !fixture.records("start").is_empty()
@@ -674,12 +664,7 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
         };
         openai::completed(request, vec![content], openai::usage(10, 5))
     });
-    let owner = fixture
-        .command(&["verify", "--wait", "--all"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let owner = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
     let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         fs::read_to_string(fixture.log().join("awaiting-verdict")).unwrap_or_default() == "ready"
@@ -866,12 +851,7 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
         };
         openai::completed(request, vec![content], openai::usage(10, 5))
     });
-    let owner = fixture
-        .command(&["verify", "--wait", "--all"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let owner = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
     let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         fs::read_to_string(fixture.log().join("probe-done")).unwrap_or_default() == "ready"

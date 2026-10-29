@@ -10,7 +10,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     thread,
     time::{Duration, Instant},
 };
@@ -583,12 +583,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
     let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
-    let verify = session
-        .command(&repo, &signoff)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let verify = support::os::start(&mut session.command(&repo, &signoff));
     let verify = RunChild::new(verify, &session.root.path().join("state"), &repo);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {
