@@ -79,7 +79,10 @@ struct ContextArtifact {
     #[serde(with = "crate::platform::path_serde")]
     path: PathBuf,
     kind: crate::config::ArtifactKind,
-    children: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    nested: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    /// An aspect's selected paths below `path`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    select: Vec<crate::config::LogicalPath>,
 }
 #[derive(Serialize)]
 struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
@@ -425,13 +428,15 @@ impl<'a> Registry<'a> {
             .artifacts
             .values()
             .map(|artifact| {
-                let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
+                let path = scope::scoped_path(&self.config.root, artifact.referenced_path())
+                    .map_err(|_| ())?;
                 Ok((
                     artifact.name.clone(),
                     ContextArtifact {
                         path,
                         kind: artifact.kind,
-                        children: artifact.children.clone(),
+                        nested: artifact.nested.clone(),
+                        select: artifact.select.clone(),
                     },
                 ))
             })

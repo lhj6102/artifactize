@@ -27,7 +27,8 @@ fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
         path: "".into(),
         kind: ArtifactKind::Folder,
         name: "parent".into(),
-        children: BTreeMap::from([(ChildPrefix::new("Secret").unwrap(), id("child"))]),
+        nested: BTreeMap::from([(ChildPrefix::new("Secret").unwrap(), id("child"))]),
+        select: Vec::new(),
     };
     // Excluded child data is intentionally absent from this scope.
     let scope = Scope {

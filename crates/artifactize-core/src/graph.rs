@@ -45,6 +45,8 @@ impl std::fmt::Display for ComponentId {
 pub struct ArtifactNode<'a> {
     pub basis: bool,
     pub evals: Vec<&'a EvalId>,
+    /// The Artifacts it is directly composed of, by name.
+    pub constituents: Vec<&'a ArtifactName>,
     pub component: ComponentId,
 }
 
@@ -84,6 +86,7 @@ impl<'a> Graph<'a> {
                     ArtifactNode {
                         basis: artifact.basis == Some(true),
                         evals: Vec::new(),
+                        constituents: Vec::new(),
                         component: ComponentId(0),
                     },
                 )
@@ -115,7 +118,16 @@ impl<'a> Graph<'a> {
                     return Err(GraphError(format!("Unknown relation Artifact: {id}")));
                 }
             }
+            // A parent needs its constituents as a consumer needs its inputs, for obligations
+            // only: execution gates come from references alone.
             edges.insert((&relation.target, &relation.source));
+            if relation.kind == crate::scope::RelationKind::Child {
+                artifacts
+                    .get_mut(&relation.target)
+                    .unwrap()
+                    .constituents
+                    .push(&relation.source);
+            }
         }
         // Consumer -> input makes iterative SCC traversal dependency-first.
         for &(consumer, dependency) in &edges {
@@ -158,17 +170,12 @@ impl<'a> Graph<'a> {
             components[index].dependencies = dependencies.into_iter().collect();
             components[index].gates = gates;
         }
-        let schedule = schedule::Schedule::new(
-            config.evals.iter().map(|eval| schedule::Input {
-                id: &eval.id,
-                target: &eval.target,
-                deps: eval.deps.iter().collect(),
-                human: eval.declaration.profile().kind() == crate::config::ProfileKind::Human,
-            }),
-            config.artifacts.iter().flat_map(|(parent, artifact)| {
-                artifact.children.values().map(move |child| (parent, child))
-            }),
-        );
+        let schedule = schedule::Schedule::new(config.evals.iter().map(|eval| schedule::Input {
+            id: &eval.id,
+            target: &eval.target,
+            deps: eval.deps.iter().collect(),
+            human: eval.declaration.profile().kind() == crate::config::ProfileKind::Human,
+        }));
         Ok(Self {
             artifacts,
             evals,
@@ -339,7 +346,10 @@ impl<'a> Graph<'a> {
             .artifacts
             .iter()
             .map(|(id, artifact)| {
+                // An Artifact without evals that is composed of others takes its verdict from
+                // them, which the components below require.
                 let satisfied = artifact.basis
+                    || (artifact.evals.is_empty() && !artifact.constituents.is_empty())
                     || (!artifact.evals.is_empty()
                         && artifact
                             .evals
@@ -356,58 +366,63 @@ impl<'a> Graph<'a> {
                     .iter()
                     .all(|&dependency| satisfied[dependency.index()]);
         }
-        let artifacts = self
-            .artifacts
-            .iter()
-            .map(|(id, artifact)| {
-                let satisfied = satisfied[artifact.component.index()];
-                let status = if satisfied {
-                    if artifact.basis {
-                        ArtifactStatus::Basis
-                    } else {
-                        ArtifactStatus::Green
-                    }
+        // A constituent's status is part of its parent's, so constituents, whose names are
+        // longer, go first.
+        let mut order: Vec<_> = self.artifacts.iter().collect();
+        order.sort_by_key(|(id, _)| std::cmp::Reverse(id.as_str().matches("::").count()));
+        let mut artifacts: BTreeMap<ArtifactName, ArtifactEvaluation> = BTreeMap::new();
+        for (id, artifact) in order {
+            let satisfied = satisfied[artifact.component.index()];
+            let status = if satisfied {
+                if artifact.basis {
+                    ArtifactStatus::Basis
                 } else {
-                    [
-                        (EvalStatus::Error, ArtifactStatus::Error),
-                        (EvalStatus::Red, ArtifactStatus::Red),
-                        (EvalStatus::Blocked, ArtifactStatus::Blocked),
-                        (EvalStatus::Wait, ArtifactStatus::Wait),
-                        (EvalStatus::Deferred, ArtifactStatus::Deferred),
-                        (EvalStatus::Provisional, ArtifactStatus::Provisional),
-                        (EvalStatus::Stale, ArtifactStatus::Stale),
-                        (EvalStatus::Unreviewed, ArtifactStatus::Unreviewed),
-                    ]
-                    .into_iter()
-                    .find_map(|(eval_status, artifact_status)| {
-                        artifact
-                            .evals
+                    ArtifactStatus::Green
+                }
+            } else {
+                [
+                    (EvalStatus::Error, ArtifactStatus::Error),
+                    (EvalStatus::Red, ArtifactStatus::Red),
+                    (EvalStatus::Blocked, ArtifactStatus::Blocked),
+                    (EvalStatus::Wait, ArtifactStatus::Wait),
+                    (EvalStatus::Deferred, ArtifactStatus::Deferred),
+                    (EvalStatus::Provisional, ArtifactStatus::Provisional),
+                    (EvalStatus::Stale, ArtifactStatus::Stale),
+                    (EvalStatus::Unreviewed, ArtifactStatus::Unreviewed),
+                ]
+                .into_iter()
+                .find_map(|(eval_status, artifact_status)| {
+                    (artifact
+                        .evals
+                        .iter()
+                        .any(|id| evals[id.as_str()].status == eval_status)
+                        || artifact
+                            .constituents
                             .iter()
-                            .any(|id| evals[id.as_str()].status == eval_status)
-                            .then_some(artifact_status)
-                    })
-                    .unwrap_or(if own_satisfied[id] {
-                        ArtifactStatus::Incomplete
-                    } else {
-                        ArtifactStatus::Unreviewed
-                    })
-                };
-                (
-                    id.clone(),
-                    ArtifactEvaluation {
-                        status,
-                        own_satisfied: own_satisfied[id],
-                        satisfied,
-                        passed: artifact
-                            .evals
-                            .iter()
-                            .filter(|id| evals[id.as_str()].status == EvalStatus::Green)
-                            .count(),
-                        total: artifact.evals.len(),
-                    },
-                )
-            })
-            .collect();
+                            .any(|id| artifacts[id.as_str()].status == artifact_status))
+                    .then_some(artifact_status)
+                })
+                .unwrap_or(if own_satisfied[id] {
+                    ArtifactStatus::Incomplete
+                } else {
+                    ArtifactStatus::Unreviewed
+                })
+            };
+            artifacts.insert(
+                id.clone(),
+                ArtifactEvaluation {
+                    status,
+                    own_satisfied: own_satisfied[id],
+                    satisfied,
+                    passed: artifact
+                        .evals
+                        .iter()
+                        .filter(|id| evals[id.as_str()].status == EvalStatus::Green)
+                        .count(),
+                    total: artifact.evals.len(),
+                },
+            );
+        }
         let obligations: Vec<_> = own_satisfied
             .into_iter()
             .filter_map(|(id, satisfied)| (!satisfied).then_some(id))

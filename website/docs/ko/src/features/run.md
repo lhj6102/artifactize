@@ -13,8 +13,9 @@ fingerprint 스크립트는 실행할 수 있습니다.
 ## Verify와 Run {#verify-and-runs}
 
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
-eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact의 eval을 실행해
-달라는 뜻입니다. Artifact 사이의 참조를 따라가다 처음 Artifact로 돌아오는 구조를 **순환**이라고 합니다. 순환에 속한
+eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact와 그
+[구성 요소](artifact.md#composition)의 eval을 실행해 달라는 뜻입니다. `verify game`은 `game::combat`도
+함께 다룹니다. Artifact 사이의 참조를 따라가다 처음 Artifact로 돌아오는 구조를 **순환**이라고 합니다. 순환에 속한
 Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는 순환에 속한 Artifact의 eval도 함께
 실행합니다. eval 선택자는 그 eval 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 eval이 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
 **의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
@@ -55,7 +56,7 @@ ERROR로 끝나고, 다른 Run에서 그 승인에 합류한 요청도 마찬가
 취소해도 바뀌는 것이 없고, 그 승인은 여전히 제출할 수 있습니다. 프로세스가 죽은 작업은
 ERROR/OWNER_DIED로 끝나고 자동으로 다시 실행되지 않으니 다시 verify하세요.
 
-Run은 접수될 때의 선언을 그대로 씁니다. 준비하는 동안 선언을 바꾸면 Run은 다른 기준이나
+Run에는 접수 시점의 선언을 그대로 적용합니다. 준비하는 동안 선언을 바꾸면 Run은 다른 기준이나
 프로필로 실행하지 않고 **ERROR/INPUT_CHANGED**로 끝납니다. eval의 실행 일정이 잡힌 뒤에는
 접수된 대로 실행합니다. 선언을 다 고친 다음 새 Run을 제출하세요(이전 Run이 아직 실행 중이면
 취소하세요). 접수된 Run의 대상이 바뀌지는 않습니다.
@@ -240,7 +241,7 @@ RED 결과 이후 무엇이 바뀌었는지 설명하고 `changes: {sinceRunId, 
 summary}`를 알려 줍니다. 텍스트로는 `Fingerprint changed since Run RUN_ID: ...` 줄이며, 예를
 들어 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`입니다. `files`는
 대상 Artifact에 속한 파일의 변경을 `path`(바뀜), `+path`(추가), `-path`(삭제)로 보여 주고, `dependencies`는
-fingerprint가 바뀐 자식과 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
+fingerprint가 바뀐, 이름으로 참조한 Artifact의 변경을 `name`, `+name`, `-name`으로 보여
 줍니다. fingerprint를 스크립트로 계산했거나 파일 목록을 남기지 않은 이전 기록처럼 파일별 변경 내역을 알 수 없으면, 대상의 변경 내역은 `fingerprint changed`나 `inputs changed`로만 표시합니다. 그 eval 정의가 캐시된 적이 없거나
 강제로 실행한 eval이면 설명이 나오지 않습니다. 강제로 실행하지 않은 READY Runtime/Agent eval에 키가 없으면,
 실행 사유에 `fingerprint = false`를 선언한 대상이나 의존성이 나옵니다. READY인 Human eval은 키가

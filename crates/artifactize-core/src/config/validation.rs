@@ -103,22 +103,20 @@ pub(crate) fn identifier(value: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Separates an Artifact name's optional space from the rest: `combat::Code`.
+/// Separates the levels of an Artifact name: `game::combat::fireball`.
 pub const SPACE_SEPARATOR: &str = "::";
 
-/// An Artifact name is an identifier, optionally prefixed by one `space::`; the space only
-/// groups names for people, and the whole name stays one identity of at most 64 bytes.
+/// An Artifact name is one or more identifiers joined by `::`, at most 64 bytes in all. Each
+/// leading part names the Artifact that composes it when one is declared.
 pub(crate) fn artifact_name(value: &str, label: &str) -> Result<(), String> {
-    let segment = |segment: &str| identifier(segment, "").is_ok();
     let valid = value.len() <= MAX_IDENTIFIER_BYTES
-        && match value.split_once(SPACE_SEPARATOR) {
-            Some((space, name)) => segment(space) && segment(name),
-            None => segment(value),
-        };
+        && value
+            .split(SPACE_SEPARATOR)
+            .all(|segment| identifier(segment, "").is_ok());
     if !valid {
         return Err(format!(
-            "{label} must match [A-Za-z0-9][A-Za-z0-9_-]* with an optional space:: prefix of \
-             the same form, at most 64 bytes."
+            "{label} must be one or more parts matching [A-Za-z0-9][A-Za-z0-9_-]* joined by ::, \
+             at most 64 bytes."
         ));
     }
     Ok(())

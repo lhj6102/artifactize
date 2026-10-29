@@ -16,8 +16,8 @@ artifactize config check
 예를 들어 `spec`과 `assets`를 나열하는 `ready` eval을 따로 만들지 말고, 실제 리뷰 지시문을
 `"Review {app} against {spec} and {assets}."`처럼 쓰세요. 입력 Artifact를 참조하는 eval은 그 Artifact에 필요한 eval이 끝난 뒤 실행됩니다. 같은 Artifact에 선언됐더라도 그 입력을 참조하지 않는 eval은 먼저 실행할 수 있습니다.
 
-자식 폴더는 부모의 모든 eval이 참조하는 것으로 간주합니다. 그 밖의 Artifact의 리뷰가 먼저
-끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접 참조하세요.
+다른 Artifact의 리뷰가 먼저 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접
+참조하세요. 안에 선언된 폴더도, [구성 요소](artifact.md#composition)도 참조가 아닙니다.
 
 예전 프로필을 쓰면 설정을 해석하는 단계에서
 `unknown variant `dependency`, expected one of `agent`, `human`, `runtime`` 오류가 납니다.
@@ -26,7 +26,7 @@ artifactize config check
 
 ## 선언 검사 {#declaration-validation}
 
-`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 같은 폴더에서 이름(확장자 포함)이 `<filename>`과 정확히 일치하는 파일을 선언합니다. 둘 다 표준 TOML을 쓰며 `name`이 필요합니다.
+`index.artf`는 그 파일이 있는 폴더를 Artifact로 선언합니다. `<filename>.artf`는 같은 폴더에서 이름(확장자 포함)이 `<filename>`과 정확히 일치하는 파일을 선언하고, 그런 파일이 없을 때 `select`가 있으면 [aspect](#aspects)를 선언합니다. 모두 표준 TOML을 쓰며 `name`이 필요합니다.
 저장소 루트의 이름 없는 `.artf`는 소스 파일 없이 [그래프 Artifact](#graph-artifact)를
 선언합니다.
 
@@ -42,10 +42,12 @@ crates/app/tests/
 examples/
 ```
 
-이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름 앞에 *space*(이름 공간) 이름과 `::`를 붙여 관련 Artifact를 묶을 수 있습니다. 예를 들어 `combat::Code`는 `combat` space의 `Code`입니다. space 이름과 나머지 부분은 각각 같은
-규칙을 따르고, 이름 전체는 64바이트 이하입니다. space는 사람이 이름을 묶어 볼 수 있게 도울 뿐이며, 그 자체로 전체 이름의 일부입니다. 그래서 `{combat::Code}`, `combat::Code/check`,
-`artifactize verify combat::Code`처럼 언제나 이름 전체를 쓰며, eval은 다른 space의
-Artifact도 여느 Artifact처럼 씁니다. `a::b::c`는 거부합니다. Artifact 이름은
+이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은 `game::combat::fireball`처럼 이 형식의 부분 여러 개를 `::`로 이을 수 있으며, 이름
+전체는 64바이트 이하입니다. 앞부분은 그 Artifact가 무엇의 일부인지 나타냅니다. 앞부분 가운데 선언된
+Artifact를 가리키는 가장 가까운 것이 [구성](artifact.md#composition)의 부모이고, 선언되지 않은
+앞부분은 사람이 알아보기 쉽게 이름을 묶어 줄 뿐입니다. 부분들이 모여 이름 하나가 되므로
+`{game::combat}`, `game::combat/check`, `artifactize verify game::combat`처럼 언제나 이름 전체를
+씁니다. Artifact 이름은
 프로젝트 전체에서 중복되지 않아야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
@@ -53,6 +55,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | 필드 | 규칙 |
 |---|---|
 | `name` | 필수입니다. Artifact 이름입니다 |
+| `select` | [aspect](#aspects)가 고른 경로입니다. aspect 선언에만 씁니다 |
 | `tags` | 선택 사항입니다. 비어 있지 않고 ASCII 제어 문자가 없는 고유한 문자열을 최대 64개 담은 목록입니다 |
 | `basis` | 선택 사항이며 불리언입니다. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 요건은 없애지만 의존성의 리뷰 요건은 없애지 않습니다 |
 | `fingerprint` | 생략하면 artifactsum을 씁니다. `false`면 재사용하지 않습니다. 그 밖에는 artifactsum이나 스크립트 테이블을 지정합니다 |
@@ -73,7 +76,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`, `profile_variants`,
 `mutex`. 그 밖의 키와 `timeout_ms` 대신 쓴 `timeoutMs` 같은 camelCase 표기는 거부합니다.
 `additionalProperties`, `minLength`, `maxItems` 같은 JSON Schema 키워드는 표준 이름을 그대로
-씁니다. 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
+씁니다. eval 작성자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 이 필드는 eval에 저장되고 재사용 키에도
 들어가지만, Agent는 `payload.instruction`만 보므로 리뷰어에게 필요한 내용은 모두 거기에 쓰세요. `--json`, 도구 프로토콜, 저장된
 상태는 `timeoutMs`, `passSchema`, `agentTools`, `blockedBy`처럼 기존 camelCase 필드를 계속
 쓰며, 이는 선언 문법이 아닙니다.
@@ -126,7 +129,7 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 
 ## 소유자 결과 스키마 {#owner-result-schemas}
 
-Agent와 Human 결과에는 `verdict`와 소유자가 정한 필드가 들어 있습니다. `pass_schema`(GREEN)와
+Agent와 Human 결과에는 `verdict`와, eval 작성자가 정한 결과 필드인 소유자 필드가 들어 있습니다. `pass_schema`(GREEN)와
 `fail_schema`(RED)에는 이 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
 위의 `summary` 스키마라면 Agent는 `{"verdict":"GREEN","summary":"All requirements are
 covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필드로
@@ -207,13 +210,14 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 ```
 
 이름 있는 일반 Artifact이므로 Runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
-`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이나 자식 Artifact는 없고, 다른 Artifact와의 관계도 자동으로 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
+`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이나 구성 요소는 없고, 이름이나 참조로 만들지 않는 한 다른 Artifact와의 관계도 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
 명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위 항목의
 `kind`는 `"graph"`이고 선언 경로는 `.artf`입니다.
 
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한
 그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
-`basis = true`가 없고 eval도 없는 그래프는 eval 없는 다른 Artifact처럼 UNREVIEWED로 남습니다.
+`basis = true`가 없고 eval도 구성 요소도 없는 그래프는 그런 다른 Artifact처럼 UNREVIEWED로 남습니다.
+[구성 요소](artifact.md#composition)가 있으면 그 상태를 따릅니다.
 소스 파일을 만들지 않으며, 소스 파일이 없어도 됩니다. 일반 Artifact의 순환도 허용하며, 그래프
 Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
@@ -230,7 +234,8 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 이름이 `index`인 파일에는 사이드카를 둘 수 없습니다. `.artf` 파일은 선언이며 대상이 되지
 않습니다.
 
-파일 Artifact는 들어 있는 폴더 Artifact와 자식 관계나 의존 관계를 맺지 않습니다. 하위 폴더에 `index.artf`로 선언한 Artifact는 그대로 가장 가까운 상위 폴더 Artifact의 자식이 됩니다. 폴더의
+파일 Artifact는 들어 있는 폴더 Artifact와 아무 관계도 맺지 않습니다. 하위 폴더에 `index.artf`를 두면
+그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
@@ -266,6 +271,41 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 파일을 되돌려 놓은 뒤 다시 verify하세요.
 
 어떤 예전 정책 필드가 없어졌고 무엇으로 대체해야 하는지는 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에서 확인하세요.
+
+## Aspect {#aspects}
+
+aspect는 게임 트리 안에 흩어진 스킬 하나의 코드, 테스트, 스프라이트처럼, 자기 폴더 없이 더 큰 파일
+묶음의 일부를 이루는 부분입니다. 같은 이름의 파일이 없는 `<label>.artf`에 선언하고, `select`에
+선언 파일이 있는 폴더를 기준으로 한 경로를 적습니다.
+
+```toml
+# game/fireball.artf
+name = "game::combat::skills::fireball"
+select = ["src/skills/fireball.rs", "tests/fireball.rs", "assets/fireball"]
+
+[evals.behaves]
+title = "Damage, cooldown and effects match the skill spec"
+profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID" }
+payload.instruction = "Review {game::combat::skills::fireball} against {skill-spec}."
+```
+
+- `select`에는 파일이나 디렉터리 경로를 중복 없이 1–64개 적으며, 각 경로는 1024자까지입니다(이모지처럼
+  기본 다국어 평면 밖의 문자는 2자로 셉니다). 경로는 심볼릭 링크를 거치지 않고 존재해야 하며 선언
+  파일이 있는 폴더 아래에 있어야 합니다. aspect는 다른 Artifact의 일부를 나타내므로, 안에 선언된 폴더
+  Artifact를 포함해 다른 Artifact의 파일을 골라도 됩니다. `*.artf` 선언은 고르지 않습니다.
+- label은 선언에 붙이는 이름일 뿐이므로 자유롭게 정하면 됩니다. label과 같은 이름의 파일이 있는
+  선언에 `select`를 쓰면 오류이고, `index.artf`와 루트 `.artf`에 써도 오류입니다.
+- `fingerprint`를 생략하면 고른 경로를 artifactsum으로 해시하므로, 폴더의 다른 곳이 바뀌어도
+  aspect의 결과를 재사용합니다. artifactsum 형식을 직접 쓰면 `files`를 고른 범위 안으로 좁히고
+  `ignore`를 더할 수 있습니다. 스크립트나 `fingerprint = false`는 다른 Artifact와 같습니다.
+- 도구에는 선언 파일이 있는 폴더가 보이지만, 고른 경로와 그 경로로 가는 폴더만 보입니다. aspect
+  참조 `{name}`은 그 폴더를 가리키고, `{name}/path`는 고른 범위 안에 있어야 합니다. 명령은 그 폴더에서
+  실행됩니다.
+- scope 항목과 저장된 정의에는 `kind = "aspect"`가 들어갑니다.
+
+겹쳐도 됩니다. 오히려 그것이 aspect를 쓰는 이유입니다. `game`의 다른 파일이 바뀌어도
+`game::combat::skills::fireball`의 결과는 재사용되고, `src/`를 담은 폴더 Artifact는 여전히 그 안을 모두
+리뷰합니다.
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
@@ -305,8 +345,8 @@ mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fin
 ## eval 의존성 {#eval-dependencies}
 
 Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`이나
-`{input}/path`로 씁니다. 최종 검증 요건, 자식 Artifact, 순환, 스케줄링, Human 선행 조건은
-[eval 의존성](artifact.md#eval-dependencies)에 있습니다.
+`{input}/path`로 씁니다. 최종 검증 요건, 순환, 스케줄링, Human 선행 조건은
+[eval 의존성](artifact.md#eval-dependencies)에, 구성 요소는 [구성](artifact.md#composition)에 있습니다.
 
 ## Artifactsum {#artifactsum}
 
@@ -341,7 +381,7 @@ Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도�
 찾습니다. 파일 Artifact라면 대상 파일이 있는 폴더 아래에서 찾으며, 같은 폴더의 다른 파일을
 가리킬 수도 있습니다. 어느 쪽이든 상위 경로로 올라가거나 심볼릭 링크를 거치는 경로는 거부합니다. 인자는 범위가 정해진
 Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 Artifact 이름입니다. 스크립트에서는
-참조한 Artifact와 그 자식까지 접근할 수 있지만, 이 참조로 그래프에 관계가 추가되지는 않습니다.
+참조한 Artifact에 접근할 수 있지만, 이 참조로 그래프에 관계가 추가되지는 않습니다.
 `config check`는 모르는 참조와 형식이 잘못된 참조를 거부하며, 존재 여부와 심볼릭 링크는 명령을
 준비할 때 확인합니다. 인터프리터별 플래그, 래퍼, 진입 파일 규칙은 없습니다.
 
@@ -355,22 +395,25 @@ Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 A
 Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
 ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 않습니다. `fingerprint = false`인
-Artifact는 준비할 fingerprint가 없으며, 키 없는 eval은 fingerprint 값 재확인을 건너뜁니다. 재사용 키가
-없는 eval에서도 준비 단계와 eval 실행 전후, 도구 호출 때마다 파일 Artifact의 대상 파일을 확인합니다. 필요한 다른
+Artifact는 준비할 fingerprint가 없으며, 온전한 재사용 키가 없는 eval은 fingerprint 값 재확인을 건너뜁니다.
+그래도 모든 eval에서 준비 단계와 eval 실행 전후, 도구 호출 때마다 파일 Artifact의 대상 파일을 확인합니다. 필요한 다른
 Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간의 변경을 계속 감시하지는 않습니다.
 artifactsum은 준비와 재확인 때만 해시합니다.
 
 ## 명령 안의 Artifact 참조 {#artifact-references-in-commands}
 
 Runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/path`,
-`--flag={name}/path`로 다른 Artifact를 가리킵니다. `{owner}/child/path`는 폴더 Artifact에서
-시작하고, 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
+`--flag={name}/path`로 다른 Artifact를 가리킵니다. 경로는 폴더 Artifact나 aspect의 폴더에서
+시작합니다. Runtime 인자에서 폴더 Artifact의 경로는 그 안에 선언된 폴더 Artifact로 들어갈 수 없습니다.
+그런 경로는 `config check`가 알려 주므로 그 Artifact를 대신 참조하세요. fingerprint 스크립트와 도구
+인자에서는 안에 선언된 Artifact도 범위에 들어 있지 않으면 명령을 준비하거나 호출할 때 실패합니다. aspect의 경로는 고른 범위 안에 있어야
+하며, 고른 범위는 안에 선언된 폴더 Artifact까지 닿을 수 있습니다. 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
 경로로 바뀝니다. 지시문과 Runtime 인자에서 참조하면 eval이 그 Artifact에 의존하게 되고,
 fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽을 수 있게 될 뿐입니다. 도구
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-자식까지 읽을 수 있습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
+읽을 수 있지만, 그 구성 요소나 그 안에 선언된 폴더는 읽을 수 없습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를

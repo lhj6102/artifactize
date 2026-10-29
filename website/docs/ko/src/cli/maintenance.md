@@ -1,6 +1,6 @@
 # 캐시와 유지보수 {#cache-and-maintenance}
 
-`artifactize prune --older-than 30d --dry-run`은 완료된 지 30일이 넘은 Run 가운데 출력 폴더를 삭제할 대상을 미리 보여 줍니다(`wouldRemove`). 확인했으면 `--dry-run` 없이 다시 실행해 지우세요.
+`artifactize prune --older-than 30d --dry-run`은 완료된 지 30일이 넘은 Run 중 출력 폴더를 삭제할 Run을 미리 보여 줍니다(`wouldRemove`). 확인했으면 `--dry-run` 없이 다시 실행해 지우세요.
 이 페이지에서는 `prune`과 함께 캐시 결과를 확인하고 삭제하는 명령, 이 머신의 설정을
 점검하는 명령을 설명합니다. 이 명령들이 다루는 대상은 [상태, 캐시, 제한](../features/others/state.md)에서
 설명합니다.
@@ -22,7 +22,7 @@ artifactize cache rm KEY
 
 `show`는 그 키의 가장 최근 기록을 JSON으로 출력합니다. 결과, 실제로 쓴 `profile`,
 `options`(백엔드, 모델, reasoning, 제한, 변형), 키가 포함하는 각 Artifact의 `fingerprints`,
-`artifactKinds`(포함한 이름마다 `folder`, `file`, `graph` 중 하나), 사용량, `producer`
+`artifactKinds`(포함한 이름마다 `folder`, `file`, `aspect`, `graph` 중 하나), 사용량, `producer`
 (`user@host`와 artifactize 버전)가 나오고, Human 결과에는 그 결과를 제출한 사람인 `reviewer`도 따로 나옵니다.
 [팀 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
 붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
@@ -50,7 +50,11 @@ artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 `prune`은 현재 저장소뿐 아니라 선택한 상태 디렉터리에 저장된 모든 저장소의 Run을 다룹니다.
 **GREEN, RED, ERROR, INCOMPLETE**로 끝났고 아직 실행 중인 작업이 없는 Run의 출력을
 지웁니다. YELLOW Run은 승인이 모두 제출된 뒤에도 **항상 건너뛰며**, 끝나지 않은
-Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. `prune`은 `--older-than`과 상관없이
+Run도 건너뜁니다. `--older-than`에는 `s`, `m`, `h`, `d`, `w`를 붙인 정수로 기간을 지정합니다. Run이 끝난 시각을 기준으로 이 기간이 지났는지 확인합니다. 이 옵션이 없으면 대상이 되는 Run을 모두 정리합니다. 지우는 것은
+`state/runs/<run-id>` 안의 출력 폴더(Runtime의 `output`, 남은 도구 출력, 이전 버전이 남긴 `tmp`,
+`home`, `cache`)뿐이므로 `run show`와 `request show`는 계속 동작합니다. `--dry-run`일 때도 심볼릭
+링크와 프로젝트처럼 보이는 폴더(`.git`이나 Artifact 선언이 있는 폴더)는 건드리지 않습니다. 다른
+프로그램이 그 폴더를 바꾸는 동안에는 실행하지 마세요. `prune`은 `--older-than`과 상관없이
 [Agent 세션 저장소](../features/others/state.md#agent-sessions)도 크기 한도까지 줄입니다. 텍스트
 형식으로는 지운 폴더마다 `Removed PATH`(`--dry-run`이면 `Would remove PATH`), 건너뛴 Run마다
 `Skipped Run ID`, 지운 세션마다 `Removed Agent session ID`(`--dry-run`이면 `Would remove Agent
@@ -133,9 +137,3 @@ provider 전체를 출력하며, 키 값은 출력하지
  "custom":{"local":{"kind":"endpoint","api":"openai-chat","url":"http://localhost:11434/v1","key":false},
            "work":{"kind":"alias","provider":"codex"}}}
 ```
-
-`prune`은 `state/runs/<run-id>` 안의 출력 폴더만 지웁니다. Runtime의 `output`(이전
-버전이 남긴 `tmp`, `home`, `cache`도 포함)과 남은 도구 출력이 대상입니다. Run 기록, 결과,
-재사용 기록, 알 수 없는 파일은 남으므로 `run show`와 `request show`는 계속 동작합니다.
-`--dry-run`일 때도 심볼릭 링크와 프로젝트처럼 보이는 폴더(`.git`이나 Artifact 선언이 있는
-폴더)는 건드리지 않습니다. 다른 프로그램이 그 폴더를 바꾸는 동안에는 실행하지 마세요.

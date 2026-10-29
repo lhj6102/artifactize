@@ -1,5 +1,5 @@
-//! `space::name` Artifact names: a space groups names for people and changes no identity,
-//! reference, tool or verify semantics.
+//! `space::name` Artifact names: an undeclared leading part groups names for people and
+//! changes no identity, reference, tool or verify semantics.
 #[path = "support/run.rs"]
 mod owned_run;
 
@@ -155,25 +155,25 @@ fn spaced_names_are_whole_identities_that_reference_across_the_graph() {
 }
 
 #[test]
-fn a_name_has_at_most_one_space_and_no_empty_part() {
+fn a_name_has_parts_of_identifier_form_and_at_most_64_bytes() {
     let fixture = Fixture::new();
-    let longest = format!("{}::{}", "s".repeat(30), "n".repeat(32));
+    let longest = format!("{}::{}::{}", "s".repeat(20), "m".repeat(20), "n".repeat(20));
     fixture.declare("long", json!({"name":longest,"basis":true}));
     fixture.json(&["config", "check", "--json"], 0);
     for name in [
         "combat::",
         "::Code",
-        "a::b::c",
+        "a::::c",
         "combat:Code",
         "combat:::Code",
         "_combat::Code",
-        &format!("{longest}x"),
+        &format!("{longest}xx"),
     ] {
         fixture.declare("long", json!({"name":name,"basis":true}));
         let output = fixture.cli(&["config", "check"]);
         let text = String::from_utf8_lossy(&output.stderr);
         assert!(
-            !output.status.success() && text.contains("Artifact name must match"),
+            !output.status.success() && text.contains("Artifact name must be one or more parts"),
             "{name}: {text}"
         );
     }

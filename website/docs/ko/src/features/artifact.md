@@ -21,8 +21,12 @@ payload.instruction = "Check that every link in the docs resolves."
 
 **Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. eval에 `{spec}` 같은 참조를
 쓰면 그 eval이 `spec`을 읽을 수 있습니다. `spec`이 바뀌면 `spec`을 참조한 eval만 다시 리뷰하고,
-나머지 결과는 그대로 재사용합니다. 자식 폴더로 입력을 정리할 수 있지만, 같은 저장소에 있다는
-이유만으로 모든 Artifact가 모든 eval의 입력이 되지는 않습니다.
+나머지 결과는 그대로 재사용합니다. 같은 저장소나 같은 폴더에 있다는 이유만으로 한 Artifact가
+다른 Artifact의 eval 입력이 되지는 않습니다.
+
+이름은 이와 별개인 관계를 하나 더 만듭니다. 바로 [구성](#composition)입니다. `game::combat`은
+`game`의 일부이므로 `game::combat`이 실패하는 동안 `game`은 통과하지 못합니다. 그렇다고 `game`의
+eval이 `game::combat`을 읽지는 않으며, 읽으려면 참조해야 합니다.
 
 각 eval은 참조한 입력을 판정하는 eval의 결과가 나올 때까지 실행되지 않습니다. [eval 의존성](#eval-dependencies)을 보세요.
 
@@ -34,32 +38,33 @@ Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람�
 
 ## 폴더 설정 {#folder-configuration}
 
-`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, `combat::Code`처럼 앞에
-space를 붙여 다른 Artifact와 묶을 수 있습니다([이름](declarations.md) 참고). `basis`, `views`,
+`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고, 이름의 앞부분은 그 Artifact가
+무엇의 일부인지 나타냅니다. `game::combat`은 `game`의 구성 요소입니다([구성](#composition)과
+[이름](declarations.md#declaration-validation) 참고). `basis`, `views`,
 `fingerprint`, `tags`는 선택입니다. 예전 선언은
 [예전 정책 업그레이드 안내](../getting-started/update.md#upgrading-from-011)를 보세요.
 
-eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[evals.heading]`은 eval ID
-`usage/heading`이 됩니다. `id` 필드는 선언하지 마세요. eval마다 `title`과, `kind`가 `runtime`,
+eval은 로컬 ID를 키로 쓰는 테이블입니다. `guide::usage` Artifact의 `[evals.heading]`은 eval ID
+`guide::usage/heading`이 됩니다. `id` 필드는 선언하지 마세요. eval마다 `title`과, `kind`가 `runtime`,
 `agent`, `human` 중 하나인 `profile`이 있습니다. 모든 eval에는 `payload.instruction`이 필요하며,
 `pass_schema`, `fail_schema`, `profile_variants`를 둘 수 있습니다.
 
 Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 0이면 GREEN입니다. Agent eval과 Human eval은 소유자 필드를 포함한 GREEN 또는 RED 판정을 돌려줍니다.
 
 다음은 [runtime-relations 예제](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)의
-`guide` Artifact이며, 그 README에서 자식, `{artifact}` 참조, basis Artifact를 설명합니다.
+`guide` Artifact이며, 그 README에서 구성 요소, `{artifact}` 참조, basis Artifact를 설명합니다.
 
 ```toml
 name = "guide"
 
 [evals.terms]
 title = "Every bold term is defined in the glossary"
-profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{glossary}/terms.txt", "{guide}/intro/page.md", "{usage}/page.md"], timeout_ms = 10000 }
-payload.instruction = "Check that every bold term in {intro} and {usage} is defined in {glossary}."
+profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{glossary}/terms.txt", "{guide::intro}/page.md", "{guide::usage}/page.md"], timeout_ms = 10000 }
+payload.instruction = "Check that every bold term in {guide::intro} and {guide::usage} is defined in {glossary}."
 ```
 
 선언 키는 snake_case입니다. `minLength`, `additionalProperties` 같은 JSON Schema 키워드는 표준
-이름을 그대로 쓰고, 소유자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 다만 `--json` 출력과
+이름을 그대로 쓰고, eval 작성자가 정한 payload 필드는 정한 이름을 그대로 씁니다. 다만 `--json` 출력과
 저장된 상태에는 지금도 `passSchema`, `timeoutMs`, `agentTools` 같은 필드가 쓰입니다. 정확한 문법은
 [선언(.artf)](declarations.md)을 보세요.
 
@@ -80,9 +85,11 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
 파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
-폴더이지만, 내장 도구로는 대상 파일과 허용 범위에 포함된 파일에만 접근할 수 있습니다. 사이드카를
-추가해도 그 파일 Artifact가 상위 폴더 Artifact의 자식이 되지는 않으며, 상위 폴더의 해시에는 대상
-파일이 계속 들어갑니다. 반면 `index.artf`로 선언한 폴더는 그 위에서 가장 가까운 Artifact 폴더의 자식입니다.
+폴더이지만, 내장 도구로는 대상 파일과 허용 범위에 포함된 파일에만 접근할 수 있습니다. 사이드카는
+그 파일을 어떤 Artifact와도 연결하지 않습니다. 상위 폴더 Artifact도 예외가 아니며, 상위 폴더의
+해시에는 대상 파일이 계속 들어갑니다. 다른 Artifact의 폴더 안에 있는 하위 폴더에 `index.artf`를
+두면 그 폴더의 파일은 바깥 Artifact의 파일 범위에서 제외됩니다. 폴더를 중첩해서 생기는 효과는 이것뿐이고, 관계는 이름과
+참조로만 생깁니다.
 이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
 [파일 Artifact 레퍼런스](declarations.md#file-artifacts)에 있습니다.
 
@@ -93,9 +100,8 @@ Runtime `args` 인자에 있는 `{name}` 참조가 입력 Artifact를 가리키�
 eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부분을 검사하는 eval에서 그 Artifact를 `{name}`으로
 참조하세요. 그 밖의 방식으로는 의존성이 추가되지 않습니다.
 
-자식 Artifact와의 연결만은 eval에 적지 않아도 생깁니다. 폴더 Artifact에는 자식 폴더의 내용도 포함되므로,
-부모 Artifact의 모든 eval은 자식 Artifact에 의존합니다. 정확히는 부모의 각 eval이 Artifact로 선언된 가장
-가까운 하위 폴더의 eval에 의존합니다.
+[구성 요소](#composition)는 입력이 아닙니다. 게임 전체를 실행하느라 `game::combat`도 쓰는
+`game`의 eval은 다른 입력과 마찬가지로 `{game::combat}`을 참조합니다.
 
 예를 들어 애플리케이션의 E2E 테스트를 실행하는 eval은 애플리케이션 Artifact에 선언합니다.
 
@@ -119,20 +125,20 @@ payload.instruction = "Run {e2e-tests} against {app}."
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
 하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED이면 이에 의존하는 eval도
-차례로 차단되며, 자식 eval이 RED이면 부모의 모든 eval이 차단됩니다. eval이
-없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 자식이
-실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 자식에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
+차례로 차단됩니다. 구성 요소가 RED여도 부모의 eval은 막히지 않으며, 대신 부모가 통과하지
+못합니다([구성](#composition) 참고). eval이
+없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 구성 요소가
+실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 구성 요소에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
 쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
 
-한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로 돌아오면 이 Artifact들은 **순환**을 이룹니다. 부모를
-참조하는 자식도 부모와 순환을 이룹니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
+한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로 돌아오면 이 Artifact들은 **순환**을 이룹니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
 `docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면, `cli/tests`가 RED여도
 `docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
 쓰는 eval이 진행하려면 둘 다 통과해야 합니다.
 
 순환에 속한 Artifact를 참조하는 eval도 순환 밖 입력의 eval 결과가 나올 때까지 실행을 미룹니다. `cli`의 eval이
 `core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
-`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환에 속한 Artifact나 입력, 자식을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환에 속한 Artifact와 입력, 자식의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
+`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환에 속한 Artifact나 입력을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환에 속한 Artifact와 입력의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
 참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
 Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
@@ -153,6 +159,46 @@ Human eval은 의존성 게이트를 통과하고, 같은 Artifact에 선언된 
 eval에는 이 조건을 적용하지 않으므로, 두 승인 요청은 서로의 완료를 선행 조건으로 삼지 않습니다. 옵션 없는 `verify`와
 `--speculate` 모두 규칙이 같습니다. 추측 실행하는 Run도 그 자동 eval이
 GREEN이 되기 전에는 사람에게 요청하지 않습니다.
+
+## 구성 {#composition}
+
+Artifact는 다른 Artifact로 이루어질 수 있습니다. 이름이 그 Artifact가 무엇의 일부인지 나타냅니다.
+`game::combat`은 `game`의 **구성 요소**이고, `game::combat::skills::fireball`은 `game::combat`의
+구성 요소입니다. **부모**는 이름의 앞부분 가운데 선언된 것 중 가장 가까운 것입니다. 그래서
+`game::combat::skills`라는 Artifact가 없으면 fireball의 부모는 `game::combat`입니다. `engine`이라는
+Artifact가 없을 때 `engine::core`의 `engine`처럼 선언되지 않은 앞부분은 사람이 알아보기 쉽게 이름을
+묶어 줄 뿐입니다.
+
+단계마다 파일이 어디에 있든 그 자체로 하나의 Artifact입니다. 구성을 정하는 것은 폴더가 아니라
+이름입니다. 부모는 eval 없이 구성 요소를 모으기만 할 수도 있고, 부분들이 함께 동작하는지 보는
+검사처럼 자기 내용과 eval을 가질 수도 있습니다. 구성 요소가 자기 몫을 검사하므로 부모가 같은 검사를
+되풀이할 필요는 없습니다.
+
+| Artifact | 자기 eval |
+|---|---|
+| `game` | 게임 전체가 시작되고 부분들이 함께 동작함 |
+| `game::combat` | 전투 구성 요소끼리 함께 동작함 |
+| `game::combat::skills::fireball` | 피해량, 재사용 대기시간, 효과 |
+
+구성이 정하는 것은 리뷰가 아니라 판정입니다.
+
+- **구성 요소가 실패하면 부모도 실패합니다.** `game::combat::skills::fireball`이 RED인 동안
+  `game`도 RED로 보이며, 모든 구성 요소와 자기 eval이 통과해야 `game`이 통과합니다. 자기 eval이
+  없는 부모는 따로 기다릴 자기 리뷰가 없습니다. UNREVIEWED를 포함해 구성 요소의 상태를 그대로
+  보여 주고, 구성 요소가 모두 통과하면 통과합니다.
+- **부모를 선택하면 구성 요소도 선택됩니다.** `verify game`은 `game`과 그 아래 모든 Artifact의
+  eval을 실행하거나 재사용합니다.
+- **부모가 필요하면 구성 요소도 필요합니다.** `{game}`을 참조하는 eval이 GREEN으로 끝나려면
+  `game`이 통과해야 하므로, Run에는 구성 요소의 결과도 필요합니다. 다만 실행 게이트는 여전히
+  `game`에 선언된 eval뿐입니다.
+- **그 밖에는 영향이 없습니다.** 구성은 파일을 나누지 않으며, 각 Artifact는 선언이 다루는 파일을
+  그대로 가집니다. 파일이 겹치지 않으면 fireball이 바뀔 때 fireball을 참조하는 eval만 다시
+  리뷰하고, `game`의 파일이 바뀌어도 fireball은 다시 리뷰하지 않습니다. 파일 Artifact나 aspect는
+  부모와 파일을 함께 가질 수 있으며, 함께 가진 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{game::combat::skills::fireball}`을 참조합니다.
+
+구성 요소에 자기 폴더가 꼭 있어야 하지는 않습니다. [aspect](declarations.md#aspects)는 fireball의
+코드, 테스트, 스프라이트처럼 큰 폴더에서 한 부분의 파일만 골라, 그 부분을 따로 리뷰하고 재사용할 수
+있게 합니다.
 
 ## fingerprint 필드 {#the-fingerprint-field}
 

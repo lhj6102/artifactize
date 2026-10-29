@@ -126,15 +126,11 @@ pub struct Changes {
     pub summary: String,
 }
 
-/// The Artifacts an eval depends on: its target, the target's child Artifacts, and
-/// the Artifacts the eval names in its instruction or runtime args. Connections further away
-/// count only through how the developer defines fingerprints.
-pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a ArtifactName> {
-    let target = &config.artifacts[&eval.target];
-    std::iter::once(&eval.target)
-        .chain(target.children.values())
-        .chain(&eval.deps)
-        .collect()
+/// The Artifacts an eval depends on: its target and the Artifacts the eval names in its
+/// instruction or runtime args. Neither the target's constituents nor connections further
+/// away count, except through how the developer defines fingerprints.
+pub fn dependencies(eval: &Eval) -> BTreeSet<&ArtifactName> {
+    std::iter::once(&eval.target).chain(&eval.deps).collect()
 }
 
 /// Restrict fingerprint preparation to the required Eval key inputs.
@@ -146,7 +142,7 @@ pub(crate) fn fingerprint_targets<'a>(
         .evals
         .iter()
         .filter(|eval| required.contains(&eval.target))
-        .flat_map(|eval| dependencies(config, eval))
+        .flat_map(dependencies)
         .collect()
 }
 
@@ -195,7 +191,7 @@ pub fn eval_key(
         return Err(Unkeyed::Target);
     }
     let mut values: BTreeMap<ArtifactName, crate::types::Fingerprint> = BTreeMap::new();
-    for id in dependencies(config, eval) {
+    for id in dependencies(eval) {
         let fingerprint = fingerprints
             .get(id)
             .ok_or_else(|| Unkeyed::Dependency(id.clone()))?;
@@ -386,7 +382,7 @@ pub async fn recheck(
     validate_file_inputs(config, eval)?;
     let fingerprints = prepare(
         config,
-        dependencies(config, eval),
+        dependencies(eval),
         output_root,
         parallelism,
         cancellation,

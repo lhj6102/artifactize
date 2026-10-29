@@ -36,8 +36,9 @@ A `limit` or `maxResults` outside its range, 0 included, fails the call: its inp
 rejects it.
 
 `read.artifactId` identifies the Artifact that **declared the tool**;
-`resolvedArtifactId` identifies the Artifact reached through a child folder.
-For example, if app owns the child folder `rules` declared as `spec`, its read tool
+`resolvedArtifactId` identifies the Artifact reached through a nested folder.
+For example, if the folder `rules` in app's folder is declared as `spec` and the eval
+also references `{spec}`, app's read tool
 called with `{"path":"rules/requirements.md"}` returns ownership metadata
 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`
 alongside the line data. `path` remains the logical request path, not a physical
@@ -45,14 +46,16 @@ machine path. List's top-level `artifactId` likewise names the declaring Artifac
 Entry kinds are `file`, `directory`, `symlink` or `other`. Glob/grep return the
 searched logical `path`, and grep's matching line numbers start at 1.
 
-Paths are relative logical paths from the tool's declaring Artifact, including
-its children; omitted paths mean its root. Another Artifact's files are read with
+Paths are relative logical paths from the tool's declaring Artifact; a path into a
+folder Artifact nested there reaches it only when the eval references that Artifact too.
+Otherwise `list`, `glob` and `grep` pass over that folder as if it were absent.
+Omitted paths mean its root. Another Artifact's files are read with
 that Artifact's own tools, which an eval admits when it references the Artifact. They never accept
 absolute paths, traversal components or symlinks. Logical paths are at most
 4096 characters (an emoji or another character outside the Basic Multilingual Plane
 counts as two) and reject ASCII controls, backslashes, colons and empty
 or `.`/`..` components. The lone `.` is accepted as
-a file Artifact's virtual root for list/glob/grep; other dot components are
+a file Artifact's or an aspect's virtual root for list/glob/grep; other dot components are
 rejected. A tool reaches only the Artifacts in its own eval's scope, never those of
 other evals. Files are opened read-only, symbolic links are never followed, and special
 files cannot be read. `list` can report `symlink`/`other` entries, but searches skip them. On Windows,
@@ -112,7 +115,7 @@ The `json` protocol receives exactly one request on stdin:
     "outputDir": "/external/private/output",
     "tmpDir": "/external/private/tmp",
     "scope": {
-      "example": {"path": "/workspace/example", "kind": "folder", "children": {}}
+      "example": {"path": "/workspace/example", "kind": "folder", "nested": {}}
     },
     "executionPaths": {"shared/rules.json": "/workspace/shared/rules.json"}
   },
@@ -120,8 +123,9 @@ The `json` protocol receives exactly one request on stdin:
 }
 ```
 
-Scope entries contain canonical physical paths, `kind` (`file`, `folder` or `graph`) and
-logical child maps. For a file Artifact, `context.artifactPath` and its
+Scope entries contain canonical physical paths, `kind` (`file`, `folder`, `aspect` or
+`graph`), `nested`, the logical paths of folder Artifacts nested in a folder, and an
+aspect's `select`. An aspect's `path` is its declaration's folder. For a file Artifact, `context.artifactPath` and its
 scope entry's `path` name the file, not the process cwd; the cwd is its containing
 folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and

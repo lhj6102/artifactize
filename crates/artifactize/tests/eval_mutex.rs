@@ -10,7 +10,7 @@ use std::{
     io::{Read, Write},
     net::{Ipv4Addr, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -101,21 +101,19 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, extra: &[&str]) -> RunChild {
-        let child = Command::new(support::os::cli())
-            .arg("--repo")
-            .arg(repo)
-            .arg("--state-dir")
-            .arg(self.state())
-            .args(["verify", "--all", "--wait", "--json"])
-            .args(extra)
-            .envs(support::os::home_variables(self.root.path().join("home")))
-            .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
-            .env("OPENAI_API_KEY", "fake-openai-key")
-            .env("ARTIFACTIZE_REMOTE", "off")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = support::os::start(
+            Command::new(support::os::cli())
+                .arg("--repo")
+                .arg(repo)
+                .arg("--state-dir")
+                .arg(self.state())
+                .args(["verify", "--all", "--wait", "--json"])
+                .args(extra)
+                .envs(support::os::home_variables(self.root.path().join("home")))
+                .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
+                .env("OPENAI_API_KEY", "fake-openai-key")
+                .env("ARTIFACTIZE_REMOTE", "off"),
+        );
         RunChild::new(child, &self.state(), repo)
     }
 

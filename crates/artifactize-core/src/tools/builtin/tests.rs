@@ -101,6 +101,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
     let fixture = Fixture::new();
     fixture.artifact("a/source", "b", "Refers to {hidden}.");
     fixture.artifact("hidden", "hidden", "Review.");
+    fixture.artifact("a", "a", "Review {b}.");
     fixture.write("hidden/secret", &image::tests::fixtures()[0].1);
     for (mime, bytes) in image::tests::fixtures() {
         fixture.write("a/source/image.txt", &bytes);
@@ -513,7 +514,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
 }
 
 #[tokio::test]
-async fn listing_pages_are_sorted_and_include_children() {
+async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
     let fixture = Fixture::new();
     fixture.artifact("a/source", "b", "Refers to {hidden}.");
     fixture.artifact("hidden", "hidden", "Review.");
@@ -523,6 +524,12 @@ async fn listing_pages_are_sorted_and_include_children() {
         json!({"name":"cases"}).to_string(),
     );
     fixture.write("a/nested/cases/input.txt", "child\n");
+    // A nested folder Artifact is another Artifact: only a reference brings it in.
+    let refused = fixture
+        .call("read_a", json!({"path":"nested/cases/input.txt"}))
+        .await;
+    assert!(refused.is_error(), "{refused:?}");
+    fixture.artifact("a", "a", "Review {b} and {cases}.");
     let data = fixture.data("list_a", json!({})).await;
     assert_eq!(
         data["entries"]

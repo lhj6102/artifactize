@@ -148,10 +148,11 @@ pub fn graph(tree: &[Node]) -> Graph {
             })
             .min()
             .unwrap_or(Light::Green);
-        // Every eval done, yet graph.rs still holds them on their own gates: not complete.
-        let light = match (evals, completion) {
-            (Light::Green, Completion::Waiting { .. }) => Light::from(*completion),
-            (light, _) => light,
+        // Every eval done, yet graph.rs still holds them on their own gates, or a constituent
+        // is not done: not complete.
+        let light = match evals {
+            Light::Green => Light::from(*completion),
+            light => light,
         };
         lights.insert(name.clone(), light);
     }

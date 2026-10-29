@@ -430,7 +430,9 @@ pub(crate) async fn execute(
             .iter()
             .all(|(_, eval)| eval.status.passes_gate())
         && required.iter().all(|id| {
-            graph.artifacts()[id.as_str()].basis || !graph.artifacts()[id.as_str()].evals.is_empty()
+            // A parent without evals of its own is reviewed through its constituents.
+            let artifact = &graph.artifacts()[id.as_str()];
+            artifact.basis || !artifact.evals.is_empty() || !artifact.constituents.is_empty()
         })
     {
         crate::store::RunState::Yellow { at }

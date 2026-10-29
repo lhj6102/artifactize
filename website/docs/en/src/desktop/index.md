@@ -190,14 +190,10 @@ Detail, new results, scans and layouts leave it where it is.
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
 the left, its edges still drawn to each Artifact that uses it. Artifacts whose
-[names](../features/declarations.md) share a space, such as `combat::Spec` and
-`combat::Code`, sit together in one region labelled `combat`, each node showing the rest
-of its name (`Code`); read aloud and in the Detail an Artifact keeps its whole name. A
-region's rounded outline follows its Artifacts, and a graph with spaces is laid out with
-more room between its Artifacts and between its spaces. Artifacts without a space stand
-outside every region, and edges between spaces are drawn and coloured like any other. A
-region is not an Artifact: Tab passes it by, and a click on it closes the Detail as a click
-on the background does. Above 40 nodes, a
+[names](../features/declarations.md#declaration-validation) share everything before their
+last `::`, such as `combat::Spec` and `combat::Code`, sit together in one region labelled
+`combat`, each node showing the last part (`Code`); read aloud and in the Detail an
+Artifact keeps its whole name. A region is not an Artifact: Tab passes it by. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
 graph has no minimap, and while more than 500 are in view they are colored boxes without names
 that open only with a click or through [Find](#find-in-the-graph). Zoom in until fewer are in view to see names again and reach
@@ -217,8 +213,10 @@ says how many more match, or that none does.
 ↑/↓ choose an entry. Enter, on the first entry when none is chosen, or a click opens its
 Detail, on the eval's tab for an eval, and moves the camera so that the Artifact sits in
 the middle of the graph left of the Detail, zooming in only as far as its name needs to
-read. Esc, or a click anywhere outside the field, closes it and leaves the graph and the
-Detail as they were; Esc also gives the keyboard back to where it was. Find reaches every
+read. Esc closes it and leaves the graph and the Detail as they were, giving the keyboard
+back to where it was. A click outside the field also closes it, and the click does what it
+does anyway: on an Artifact it opens that Artifact's Detail, and on the background it closes
+the Detail. Find reaches every
 Artifact, also in a graph too large to show their names.
 
 ### Detail
@@ -323,22 +321,14 @@ another window ends the editing here but leaves this window's log shown. Nothing
 saved.
 
 After claiming, `g` opens GREEN and `r` RED, each a form built from the eval's
-schema ([the shapes it may use](../features/declarations.md#human-result-schemas)):
-a text box, a number box, true/false, a choice, a list of text with **+ Add** and
-✕ per item, or repeated groups of fields with **+ Add** for a group and ✕ per
-group (one empty group always stays to type in). Constants are filled in and not
-shown; `*` marks a required field. An empty optional text or number field, a text
-list item included, says *Optional* in grey; an optional yes/no or choice shows `–`
-while unset. Tab moves between controls. Ctrl+G/Ctrl+R switches verdicts. Enter in a field
-does not submit; Ctrl+S or activating the **Submit** button submits, including
-Enter while that button has keyboard focus.
-Schema errors identify the failing path and leave the form correctable. Input-method
-composition, including Korean, belongs to the text field and never fires shortcuts.
-Leaving a form keeps its verdict's draft; reopening it restores that draft, and
-GREEN and RED keep separate drafts. Opening the same request from the Pane or from
-its chip in a Run's Detail shows the same draft and Tool log. If the state directory is
-replaced, for example by restoring a backup, open reviews close, running Human tools and
-submissions are cancelled, and unsaved drafts and Tool logs are discarded.
+schema ([the shapes it may use](../features/declarations.md#human-result-schemas)).
+`*` marks a required field, and **+ Add** and ✕ add and remove list items and groups.
+Tab moves between controls and Ctrl+G/Ctrl+R switches verdicts. Ctrl+S or the **Submit**
+button submits; Enter in a field does not. A schema error names the failing field and
+leaves the form open to correct. Each verdict keeps its own draft until you submit, also
+when you leave the form or open the request from elsewhere. Typing through an input
+method, such as Korean, never fires shortcuts. If the state directory is replaced, for
+example from a backup, open reviews close and their drafts and Tool logs are discarded.
 
 A completed result stays open. Remote publication can fail **after local
 settlement**: the form closes and a saved-locally notice explains the failure.

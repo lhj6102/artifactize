@@ -129,7 +129,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
 }
 
 #[tokio::test]
-async fn fixed_agent_reads_sections_children_and_schemas() {
+async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
@@ -189,7 +189,7 @@ async fn fixed_agent_reads_sections_children_and_schemas() {
             .unwrap()
             .contains("First\\nNested\\nNext")
     );
-    // A child path follows the same read rule, even for fixed args.
+    // A path into a nested folder Artifact reaches another Artifact, even for fixed args.
     let mut value =
         support::declaration::read(fs::read(repo.join("a/index.artf")).unwrap()).unwrap();
     value["views"]["agent_tools"]["nested"] =
@@ -202,17 +202,8 @@ async fn fixed_agent_reads_sections_children_and_schemas() {
         json!({"name":"b","basis":true}).to_string(),
     )
     .unwrap();
-    let config = read_workspace_config(&repo).unwrap();
-    let result = tools::Registry::for_artifact(&config, "a")
-        .unwrap()
-        .call("nested_a", json!({}), root.path(), CancellationToken::new())
-        .await;
-    assert!(!result.is_error(), "{result:?}");
-    assert!(
-        serde_json::to_string(&result)
-            .unwrap()
-            .contains("child text")
-    );
+    let error = read_workspace_config(&repo).unwrap_err().to_string();
+    assert!(error.contains("outside this review: b"), "{error}");
 }
 
 #[test]

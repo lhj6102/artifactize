@@ -549,8 +549,38 @@ fn artifact_node<'a>(
     } else {
         format!("{passed}/{}", children.len())
     };
-    let (glyph, tone, weight, text) = if basis {
+    let constituents = states
+        .index
+        .constituents
+        .get(id)
+        .map_or(&[][..], Vec::as_slice);
+    // Constituents that keep the Artifact from passing, most urgent first.
+    let mut pending: Vec<_> = constituents
+        .iter()
+        .filter(|constituent| states.completion(constituent) != Completion::Complete)
+        .collect();
+    pending.sort_by_key(|constituent| states.completion(constituent).rank());
+    let parts = |label: &str| {
+        let shown: Vec<_> = pending.iter().take(SHOWN).map(|id| id.as_str()).collect();
+        let more = pending.len().saturating_sub(SHOWN);
+        let more = if more > 0 {
+            format!(" +{more}")
+        } else {
+            String::new()
+        };
+        Segment::plain(format!("{label}{}{more}", shown.join(", ")))
+    };
+    let (glyph, tone, weight, mut text) = if basis && pending.is_empty() {
         ("◇", Tone::Muted, Weight::Dim, vec![Segment::plain("basis")])
+    } else if children.is_empty() && !constituents.is_empty() {
+        // Without evals of its own, it is what its constituents are.
+        let (glyph, tone, _) = self::completion(completion);
+        let text = if pending.is_empty() {
+            Segment::plain(format!("made of {}", constituents.len()))
+        } else {
+            parts("pending: ")
+        };
+        (glyph, tone, Weight::Normal, vec![text])
     } else if children.is_empty() {
         (
             "○",
@@ -573,6 +603,11 @@ fn artifact_node<'a>(
                 let (glyph, tone, _) = self::completion(Completion::InProgress(busy));
                 (glyph, tone, Weight::Bold)
             }
+            // Every eval row passes, yet a constituent fails.
+            (Kind::Eval(EvalView::Done(_)), Completion::Failed { verdict }) => {
+                let (glyph, tone, _) = self::completion(Completion::Failed { verdict });
+                (glyph, tone, Weight::Bold)
+            }
             // Every eval row is done, yet the graph holds them on their own gates.
             (Kind::Eval(EvalView::Done(_)), Completion::Waiting { blocked }) => {
                 let (glyph, tone, _) = self::completion(Completion::Waiting { blocked });
@@ -583,6 +618,13 @@ fn artifact_node<'a>(
         };
         (glyph, tone, weight, summary(states, id, &children))
     };
+    if !children.is_empty() && !pending.is_empty() {
+        text.push(parts(if text.is_empty() {
+            "constituents: "
+        } else {
+            " · constituents: "
+        }));
+    }
     Node {
         id: super::NodeId::artifact(id.clone()),
         clock: None,

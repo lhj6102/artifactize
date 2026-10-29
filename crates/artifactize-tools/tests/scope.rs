@@ -30,15 +30,16 @@ fn artifact_ids_accept_only_short_names_without_path_syntax() {
 }
 
 #[test]
-fn children_resolve_to_their_target_ids() {
-    let folder = |path: &str, children: &[(&str, &str)]| Artifact {
+fn nested_folders_resolve_to_their_target_ids() {
+    let folder = |path: &str, nested: &[(&str, &str)]| Artifact {
         path: PathBuf::from(path),
         kind: ArtifactKind::Folder,
         name: path.into(),
-        children: children
+        nested: nested
             .iter()
             .map(|(prefix, target)| (ChildPrefix::new(*prefix).unwrap(), id(target)))
             .collect(),
+        select: Vec::new(),
     };
     let scope = Scope {
         artifacts: BTreeMap::from([

@@ -615,30 +615,30 @@ fn speculative_readiness_and_saved_blocked_requests() {
 }
 
 #[test]
-fn upstream_index_uses_each_evals_references_and_its_targets_children() {
+fn upstream_index_uses_each_evals_references_only() {
     // A component alone adds no Eval gates: a/x references nothing in its cycle with b, and
-    // d/x depends on its child c as if it referenced it.
+    // d/x does not depend on its constituent d::c, which it does not reference.
     let definitions = json!({
         "artifacts":{
-            "a":{"path":"a"},"b":{"path":"b"},"c":{"path":"c"},
-            "d":{"path":"d","children":{"c":"c"}},
+            "a":{"path":"a"},"b":{"path":"b"},"d::c":{"path":"c"},
+            "d":{"path":"d"},
         },
         "evals":[
             runtime("a/x"),
             referenced("a/y", &["b"]),
             referenced("b/x", &["a"]),
-            referenced("c/x", &["a"]),
+            referenced("d::c/x", &["a"]),
             runtime("d/x"),
         ],
         "relations":[
             {"source":"b","target":"a","kind":"instruction","name":"b","evalId":"a/y"},
             {"source":"a","target":"b","kind":"instruction","name":"a","evalId":"b/x"},
-            {"source":"a","target":"c","kind":"instruction","name":"a","evalId":"c/x"},
-            {"source":"c","target":"d","kind":"child","path":"c"},
+            {"source":"a","target":"d::c","kind":"instruction","name":"a","evalId":"d::c/x"},
+            {"source":"d::c","target":"d","kind":"child"},
         ],
         "components":[
             {"id":0,"artifacts":["a","b"],"cyclic":true},
-            {"id":1,"artifacts":["c"]},
+            {"id":1,"artifacts":["d::c"]},
             {"id":2,"artifacts":["d"]},
         ],
     });
@@ -649,8 +649,8 @@ fn upstream_index_uses_each_evals_references_and_its_targets_children() {
             ("a/x".parse().unwrap(), x(&[])),
             ("a/y".parse().unwrap(), x(&["b"])),
             ("b/x".parse().unwrap(), x(&["a"])),
-            ("c/x".parse().unwrap(), x(&["a", "b"])),
-            ("d/x".parse().unwrap(), x(&["c"])),
+            ("d/x".parse().unwrap(), x(&[])),
+            ("d::c/x".parse().unwrap(), x(&["a", "b"])),
         ]
     );
     let nodes = tree(&run, &requests, now());

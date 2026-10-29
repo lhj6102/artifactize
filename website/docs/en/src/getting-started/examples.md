@@ -3,8 +3,8 @@
 Install the binary as described in [Install](install.md), then try the
 example projects. Each README lists the exact commands:
 
-- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): checks that run commands over parent and
-  child folders, `{artifact}` references in instructions and command arguments, an
+- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): checks that run commands over a parent
+  Artifact and its constituents, `{artifact}` references in instructions and command arguments, an
   Artifact that only supplies input, a check you can make fail, and reuse of results
   until files change, with `status` explaining what changed.
 - [Agent tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools): an Agent eval using the built-in

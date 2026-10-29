@@ -113,7 +113,7 @@ fn graph_declaration_is_root_only_and_rejects_fingerprint_overrides() {
     let config = crate::config::read_workspace_config(repo.path()).unwrap();
     let graph = &config.artifacts["graph"];
     assert_eq!(graph.kind, ArtifactKind::Graph);
-    assert!(graph.children.is_empty());
+    assert!(graph.nested.is_empty());
     assert!(!config.evals.iter().any(|eval| eval.target == "graph"));
     for basis in [false, true] {
         fs::write(

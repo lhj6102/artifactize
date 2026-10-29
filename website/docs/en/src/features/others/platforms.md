@@ -69,7 +69,7 @@ How the spelling on disk is checked differs by OS:
 
 | OS | Spelling on disk |
 |---|---|
-| macOS, Windows | Artifactize enforces it. On a case-insensitive volume (the default on both), a path must use the exact spelling of the entry on disk, and a file or folder whose name differs from a child Artifact only by case is refused rather than read. |
+| macOS, Windows | Artifactize enforces it. On a case-insensitive volume (the default on both), a path must use the exact spelling of the entry on disk, and a file or folder whose name differs from a nested folder Artifact only by case is refused rather than read. |
 | Linux | Artifactize relies on the filesystem. A case-sensitive filesystem (the usual one) only opens the exact spelling; on a case-insensitive one, such as a casefolded folder or a Windows drive mounted in WSL, a path that differs only by case may open the same entry. |
 
 ## Opening files and the browser

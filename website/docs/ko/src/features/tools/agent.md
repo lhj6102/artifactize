@@ -31,19 +31,21 @@
 `limit`이나 `maxResults`가 범위를 벗어나면(0 포함) 입력 스키마 검사에서 거부되어 호출이
 실패합니다.
 
-`read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 자식 폴더를
-거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 안에 `spec`으로 선언된 자식 폴더 `rules`가
-있을 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 소유
+`read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 안에 선언된 폴더를
+거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 폴더 안의 `rules` 폴더가 `spec`으로 선언되어 있고
+eval이 `{spec}`도 참조할 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 소유
 정보 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`를
 돌려줍니다. `path`는 실제 머신 경로가 아니라 요청한 논리적 경로 그대로입니다. list의 최상위
 `artifactId`도 마찬가지로 선언한 Artifact를 가리킵니다. 항목 종류는 `file`, `directory`,
 `symlink`, `other`입니다. glob/grep은 검색한 논리적 `path`를 돌려주며, grep이 찾은 줄 번호는
 1부터 셉니다.
 
-경로는 도구를 선언한 Artifact를 기준으로 한 상대 논리 경로이며, 자식 폴더 안의 파일도 가리킬 수 있습니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
+경로는 도구를 선언한 Artifact를 기준으로 한 상대 논리 경로입니다. 그 안에 선언된 폴더 Artifact로
+들어가는 경로는 eval이 그 Artifact도 참조할 때만 닿습니다. 참조하지 않으면 `list`, `glob`, `grep`은 그
+폴더가 없는 것처럼 건너뜁니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
 그 도구를 쓸 수 있습니다. 절대 경로, 경로를 거슬러 올라가는 구성 요소, 심볼릭 링크는 받지
 않습니다. 논리적 경로는 4096자까지이고(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다), 경로 전체가 `.` 하나이면 list/glob/grep에서
-파일 Artifact의 가상 루트로 해석합니다. 그 밖에는 ASCII 제어 문자, 백슬래시, 콜론, 빈 구간, `.`이나 `..` 구간이 있으면
+파일 Artifact나 aspect의 가상 루트로 해석합니다. 그 밖에는 ASCII 제어 문자, 백슬래시, 콜론, 빈 구간, `.`이나 `..` 구간이 있으면
 거부합니다. 도구는 그 eval 범위의 Artifact에만
 접근할 수 있으며, 다른 eval의 범위에는 접근할 수 없습니다. 파일은 읽기 전용으로 열고, 심볼릭 링크는 따라가지
 않으며, 특수 파일은 읽을 수 없습니다. `list`는 `symlink`/`other` 항목을 보여 줄 수 있지만,
@@ -92,7 +94,7 @@ glob 패턴은 `path` 기준입니다. `*`는 폴더 이름 하나 안에서, `*
     "outputDir": "/external/private/output",
     "tmpDir": "/external/private/tmp",
     "scope": {
-      "example": {"path": "/workspace/example", "kind": "folder", "children": {}}
+      "example": {"path": "/workspace/example", "kind": "folder", "nested": {}}
     },
     "executionPaths": {"shared/rules.json": "/workspace/shared/rules.json"}
   },
@@ -100,8 +102,9 @@ glob 패턴은 `path` 기준입니다. `*`는 폴더 이름 하나 안에서, `*
 }
 ```
 
-scope 항목에는 정규화된 실제 경로, `kind`(`file`, `folder`, `graph`), 논리적 자식 맵이 들어
-있습니다. 파일 Artifact라면 `context.artifactPath`와 그 scope 항목의 `path`는 프로세스 작업
+scope 항목에는 정규화된 실제 경로, `kind`(`file`, `folder`, `aspect`, `graph`), 폴더 안에 선언된
+폴더 Artifact의 논리적 경로인 `nested`, aspect의 `select`가 들어 있습니다. aspect의 `path`는 그 선언이
+있는 폴더입니다. 파일 Artifact라면 `context.artifactPath`와 그 scope 항목의 `path`는 프로세스 작업
 디렉터리가 아니라 그 파일을 가리키며, 작업 디렉터리는 파일이 들어 있는 폴더입니다. 파일
 Artifact 참조 뒤에는 `/path`처럼 하위 경로를 붙일 수 없습니다. 이 프로토콜 키는 camelCase를 유지하며,
 선언에서는 `execution_paths`와 `input_schema`를 씁니다. `executionPaths`는 비어 있으면

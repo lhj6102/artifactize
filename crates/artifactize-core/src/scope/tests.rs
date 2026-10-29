@@ -61,7 +61,7 @@ fn reference_parser_preserves_brace_groups_and_escape_parity() {
 }
 
 #[test]
-fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
+fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
     let fixture = Fixture::new();
     fixture.artifact(
         "outer",
@@ -85,7 +85,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     fixture.write("outer/unmarked/deep/input.txt", "child");
     let config = fixture.config();
     assert_eq!(
-        config.artifacts["parent"].children,
+        config.artifacts["parent"].nested,
         BTreeMap::from([
             ("unmarked/deep".parse().unwrap(), "child".parse().unwrap()),
             (
@@ -95,13 +95,23 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
         ])
     );
     assert_eq!(
-        config.artifacts["child"].children,
+        config.artifacts["child"].nested,
         BTreeMap::from([("leaf".parse().unwrap(), "leaf".parse().unwrap())])
     );
     assert_eq!(config.artifacts["parent"].views.agent_tools.len(), 1);
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
     assert_eq!(config.evals.len(), 1);
+    // Alone, the parent reaches only its own files: the nested folders are other Artifacts.
     let scope = artifact_scope(&config, &[&"parent".parse().unwrap()]).unwrap();
+    assert!(
+        scope
+            .resolve_path(&"parent".parse().unwrap(), "unmarked/deep/input.txt")
+            .unwrap_err()
+            .to_string()
+            .contains("outside this review: child")
+    );
+    let names = ["parent", "child", "neighbor", "leaf"].map(|name| name.parse().unwrap());
+    let scope = artifact_scope(&config, &names.iter().collect::<Vec<_>>()).unwrap();
     assert_eq!(
         scope
             .resolve_path(&"parent".parse().unwrap(), "unmarked/material.txt")
@@ -134,19 +144,47 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
             .artifact_id,
         "leaf"
     );
-    assert!(config.relations.contains(&Relation {
-        source: "child".parse().unwrap(),
-        target: "parent".parse().unwrap(),
-        kind: RelationKind::Child {
-            path: "unmarked/deep".parse().unwrap()
-        },
-    }));
     assert!(
         !config
             .relations
             .iter()
-            .any(|edge| edge.source == "leaf" && edge.target == "parent")
+            .any(|edge| edge.kind == RelationKind::Child)
     );
+}
+
+#[test]
+fn names_compose_through_their_nearest_declared_leading_name() {
+    let fixture = Fixture::new();
+    // Folders do not follow the names: composition comes from names alone.
+    fixture.artifact("a", json!({"name":"game"}));
+    fixture.artifact("b", json!({"name":"game::combat"}));
+    fixture.artifact("a/c", json!({"name":"game::combat::skills::fireball"}));
+    fixture.artifact("d", json!({"name":"gameplay::notes"}));
+    let config = fixture.config();
+    let child = |source: &str, target: &str| Relation {
+        source: source.parse().unwrap(),
+        target: target.parse().unwrap(),
+        kind: RelationKind::Child,
+    };
+    let composition: Vec<_> = config
+        .relations
+        .iter()
+        .filter(|edge| edge.kind == RelationKind::Child)
+        .cloned()
+        .collect();
+    assert_eq!(
+        composition,
+        [
+            child("game::combat", "game"),
+            child("game::combat::skills::fireball", "game::combat"),
+        ]
+    );
+    let game = "game".parse().unwrap();
+    assert_eq!(
+        config.descendants(&game).collect::<Vec<_>>(),
+        ["game::combat", "game::combat::skills::fireball"]
+    );
+    assert_eq!(config.parent(&"gameplay::notes".parse().unwrap()), None);
 }
 
 #[test]
@@ -209,6 +247,7 @@ fn observation_scope_never_follows_other_evals_instructions() {
         json!({"name":"input","evals":[eval("Read {hidden}.")]}),
     );
     fixture.artifact("data/child", json!({"name":"child"}));
+    fixture.artifact("part", json!({"name":"input::part"}));
     fixture.artifact("hidden", json!({"name":"hidden"}));
     let config = fixture.config();
     let eval = config
@@ -223,7 +262,7 @@ fn observation_scope_never_follows_other_evals_instructions() {
             .keys()
             .map(ArtifactName::as_str)
             .collect::<Vec<_>>(),
-        ["child", "input", "review"]
+        ["input", "review"]
     );
     assert!(
         scope
@@ -386,8 +425,8 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
 fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion() {
     let fixture = Fixture::new();
     let args = json!([
-        "{input}/nested/file",
-        "--data={input}/nested/file",
+        "{input}/sub/file",
+        "--data={input}/sub/file",
         "{input}",
         "$ARTIFACTIZE_FIXTURE_VALUE",
         "literal;command",
@@ -400,8 +439,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":args});
     fixture.artifact("review", json!({"name":"review","evals":[declared]}));
     fixture.artifact("data", json!({"name":"input"}));
-    fixture.artifact("data/nested", json!({"name":"child"}));
-    fixture.write("data/nested/file", "input");
+    fixture.write("data/sub/file", "input");
     let config = fixture.config();
     let eval = &config.evals[0];
     assert!(eval.references.is_empty());
@@ -413,7 +451,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
             eval_id: "review/check".parse().unwrap(),
             index: 0,
             name: "input".parse().unwrap(),
-            path: "nested/file".parse().unwrap()
+            path: "sub/file".parse().unwrap()
         },
     }));
     let scope = eval_scope(&config, eval).unwrap();
@@ -421,7 +459,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         panic!()
     };
     let resolved = resolve_argv(&config, &scope, &"review".parse().unwrap(), args).unwrap();
-    let file = fixture.0.join("data").join("nested").join("file");
+    let file = fixture.0.join("data").join("sub").join("file");
     let file = crate::platform::path_text(&file);
     assert_eq!(
         &resolved[..3],
@@ -433,8 +471,24 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     );
     assert_eq!(&resolved[3..], &args[3..]);
     assert_eq!(*command, crate::test_os::echo_program());
-    let restricted = artifact_scope(&config, &[&"child".parse().unwrap()]).unwrap();
+    let restricted = artifact_scope(&config, &[&"review".parse().unwrap()]).unwrap();
     assert!(resolve_argv(&config, &restricted, &"review".parse().unwrap(), args).is_err());
+}
+
+#[test]
+fn an_argument_path_into_a_nested_artifact_names_that_artifact_instead() {
+    let fixture = Fixture::new();
+    let mut declared = eval("Inspect.");
+    declared["profile"] = json!({"kind":"runtime","command":crate::test_os::cat_program(),
+        "args":["{input}/nested/file"]});
+    fixture.artifact("review", json!({"name":"review","evals":[declared]}));
+    fixture.artifact("data", json!({"name":"input"}));
+    fixture.artifact("data/nested", json!({"name":"child"}));
+    let error = read_workspace_config(&fixture.0).unwrap_err().to_string();
+    assert!(
+        error.contains("{input}/nested/file is in Artifact child; reference {child}/file"),
+        "{error}"
+    );
 }
 
 #[test]

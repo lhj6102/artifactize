@@ -113,13 +113,13 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-desktop.payload]
 instruction = """
-Review {docs::en} against only {desktop::app}. Start with src/SUMMARY.md in the docs.
+Review {docs::en} against only {desktop} and its parts {desktop::backend} and {desktop::ui}. Start with src/SUMMARY.md in the docs.
 The owned documentation area is Desktop (src/desktop/), including launch, the Pane (branches, their Runs, search and waiting reviews), the Main area (Runs, Currents, graphs and Detail), Human review, keyboard/mouse interaction and Settings.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.
 Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {desktop::app} to inspect that Artifact. Tool paths are Artifact-relative.
+exposed by {desktop}, {desktop::backend} and {desktop::ui} to inspect them. Tool paths are Artifact-relative.
 Do not infer correctness from other docs or review other code Artifacts.
 User-facing means what a user declares, runs, sees or must decide: declarations,
 commands, flags, screens, outputs, exit codes, actionable errors and limits that

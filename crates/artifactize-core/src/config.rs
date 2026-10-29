@@ -803,6 +803,9 @@ pub struct ArtifactDeclaration {
         deserialize_with = "declared_fingerprint"
     )]
     pub fingerprint: Option<Fingerprint>,
+    /// An aspect's paths, relative to its declaration's folder.
+    #[serde(default, deserialize_with = "present")]
+    pub select: Option<Vec<LogicalPath>>,
 }
 
 impl ArtifactDeclaration {
@@ -844,6 +847,25 @@ impl ArtifactDeclaration {
         self.views.validate(&location.child("views"), schemas)?;
         if let Some(fingerprint) = &self.fingerprint {
             fingerprint.validate(&location.child("fingerprint"))?;
+        }
+        if let Some(select) = &self.select {
+            let select_location = location.child("select");
+            if select.is_empty()
+                || select.len() > MAX_DECLARED_ITEMS
+                || select.iter().collect::<BTreeSet<_>>().len() != select.len()
+            {
+                return Err(select_location
+                    .error("select must contain 1–64 unique paths relative to the declaration."));
+            }
+            for selected in select {
+                select_location
+                    .check(path(selected).map_err(|message| format!("select: {message}")))?;
+                if selected.ends_with(".artf") {
+                    return Err(select_location.error(
+                        "select: Artifact declarations (*.artf) are never part of an aspect.",
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -1086,12 +1108,12 @@ fn reject_non_json_values(
 
 pub use artifactize_tools::scope::ArtifactKind;
 
-/// Child paths with their target Artifacts as tool-side IDs. Discovery validated both, so a
+/// Nested folder paths with their Artifacts as tool-side IDs. Discovery validated both, so a
 /// failure here is a bug.
-fn tool_children(
-    children: &BTreeMap<ChildPrefix, ArtifactName>,
+fn tool_nested(
+    nested: &BTreeMap<ChildPrefix, ArtifactName>,
 ) -> BTreeMap<artifactize_tools::scope::ChildPrefix, artifactize_tools::scope::ArtifactId> {
-    children
+    nested
         .iter()
         .map(|(path, name)| {
             (
@@ -1109,7 +1131,12 @@ pub struct Artifact {
     #[serde(with = "crate::platform::path_serde")]
     pub path: PathBuf,
     pub kind: ArtifactKind,
-    pub children: BTreeMap<ChildPrefix, ArtifactName>,
+    /// Folder Artifacts declared in subfolders, by their path here. Their files are theirs,
+    /// not this Artifact's; nesting is no relation between the two.
+    pub nested: BTreeMap<ChildPrefix, ArtifactName>,
+    /// An aspect's selected paths below its folder; empty for other kinds.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub select: Vec<LogicalPath>,
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
@@ -1123,13 +1150,24 @@ impl Artifact {
             path: self.path.clone(),
             kind: self.kind,
             name: self.name.to_string(),
-            children: tool_children(&self.children),
+            nested: tool_nested(&self.nested),
+            select: self.select.iter().map(|path| path.to_string()).collect(),
         }
     }
 
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
         folder_of(self.kind, &self.path)
+    }
+
+    /// What `{name}` stands for: the folder or file, or an aspect's folder, since an
+    /// aspect's path is only its declaration's label.
+    pub fn referenced_path(&self) -> &Path {
+        if self.kind == ArtifactKind::Aspect {
+            self.folder()
+        } else {
+            &self.path
+        }
     }
 
     pub fn file_name(&self) -> Option<&str> {
@@ -1170,6 +1208,8 @@ pub enum ReviewRequirement {
     Basis,
     Unreviewed,
     Evals,
+    /// No evals of its own: its constituents' verdicts are its verdict.
+    Constituents,
 }
 
 #[derive(Debug)]
@@ -1181,6 +1221,30 @@ pub struct RepoConfig {
 }
 
 impl RepoConfig {
+    /// The Artifact `name` is a constituent of: its nearest declared leading name, `game` for
+    /// `game::combat::fireball` when `game::combat` is not declared.
+    pub fn parent(&self, name: &ArtifactName) -> Option<&ArtifactName> {
+        name.ancestors()
+            .find_map(|ancestor| self.artifacts.get_key_value(ancestor))
+            .map(|(id, _)| id)
+    }
+
+    /// Every Artifact `name` is composed of, directly or through its constituents: each
+    /// name under `name::`, since `name` or one of them is its nearest declared leading name.
+    pub fn descendants<'a>(
+        &'a self,
+        name: &'a ArtifactName,
+    ) -> impl Iterator<Item = &'a ArtifactName> + 'a {
+        let prefix = format!("{name}{SPACE_SEPARATOR}");
+        self.artifacts
+            .range::<str, _>((
+                std::ops::Bound::Excluded(prefix.as_str()),
+                std::ops::Bound::Unbounded,
+            ))
+            .map(|(id, _)| id)
+            .take_while(move |id| id.as_str().starts_with(&prefix))
+    }
+
     /// Local obligations only; a basis does not satisfy its dependency scope.
     pub fn review_requirement(&self, artifact_id: &str) -> Option<ReviewRequirement> {
         let artifact = self.artifacts.get(artifact_id)?;
@@ -1188,6 +1252,8 @@ impl RepoConfig {
             ReviewRequirement::Basis
         } else if self.evals.iter().any(|eval| eval.target == artifact_id) {
             ReviewRequirement::Evals
+        } else if self.descendants(&artifact.name).next().is_some() {
+            ReviewRequirement::Constituents
         } else {
             ReviewRequirement::Unreviewed
         })

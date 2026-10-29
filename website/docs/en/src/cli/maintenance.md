@@ -24,7 +24,7 @@ fingerprint and the profile variant. `--history` lists every record, latest firs
 
 `show` prints the key's latest record as JSON: result, the actual `profile`, `options`
 (backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
-covers, `artifactKinds` (each covered name with `folder`, `file` or `graph`), usage and
+covers, `artifactKinds` (each covered name with `folder`, `file`, `aspect` or `graph`), usage and
 `producer` (`user@host` and artifactize version), and for a Human result `reviewer`, the
 person who submitted it.
 Records from a [shared remote review store](review-store.md) carry an `origin`
@@ -55,7 +55,11 @@ It removes the output of Runs that ended **GREEN, RED, ERROR or INCOMPLETE** and
 nothing still running. YELLOW Runs are **always skipped**, even after their
 sign-offs are submitted, and so are unfinished Runs. `--older-than` compares the Run's
 end time, as a whole number of `s`, `m`, `h`, `d` or `w`; without it every eligible Run is
-pruned. `prune` also cleans the
+pruned. It removes only the output folders inside `state/runs/<run-id>` (runtime
+`output`, leftover tool output, and `tmp`, `home` and `cache` from older versions), so
+`run show` and `request show` keep working. It refuses symbolic links and anything that
+looks like a project (a `.git` or an Artifact declaration), also on `--dry-run`; do not run
+it while another program is changing those folders. `prune` also cleans the
 [Agent session store](../features/others/state.md#agent-sessions) down to its size bounds, whatever `--older-than`
 says. Its text output prints one line per removed folder (`Removed PATH`, or `Would remove
 PATH` with `--dry-run`), per skipped Run (`Skipped Run ID`) and per removed session (`Removed
@@ -139,10 +143,3 @@ provider, never a key:
  "custom":{"local":{"kind":"endpoint","api":"openai-chat","url":"http://localhost:11434/v1","key":false},
            "work":{"kind":"alias","provider":"codex"}}}
 ```
-
-`prune` removes only the output folders inside `state/runs/<run-id>`: runtime `output`
-(and `tmp`, `home` and `cache` left by older versions) and leftover tool output. Run
-records, results, reuse records and unknown files stay, and `run show` and `request show`
-still work. It refuses symbolic links and anything that looks like a project (a `.git` or
-an Artifact declaration), also on `--dry-run`. Do not run it while another program is
-changing those folders.

@@ -165,7 +165,7 @@ impl Walk {
         let prefix = platform::path_text(artifact.folder())
             .parse::<LogicalTarget>()
             .map_err(|error| error.to_string())?;
-        let excluded = artifact.children.keys().cloned().collect();
+        let excluded = artifact.nested.keys().cloned().collect();
         let inputs = inputs
             .iter()
             .map(|input| {

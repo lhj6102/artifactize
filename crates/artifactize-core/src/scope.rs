@@ -33,9 +33,8 @@ pub struct Relation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RelationKind {
-    Child {
-        path: crate::config::ChildPrefix,
-    },
+    /// The source is a constituent of the target, by name.
+    Child,
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: crate::config::EvalId,
@@ -132,23 +131,41 @@ fn reference_path(config: &RepoConfig, id: &ArtifactName, path: &str) -> Result<
     Ok(())
 }
 
-/// Composition grants access; a referenced Artifact's Eval instructions do not.
+/// A path under `{source}` that lies in a nested folder Artifact is that Artifact's input,
+/// which only a reference of its own brings into a review.
+fn nested_path(
+    everything: &artifactize_tools::scope::Scope,
+    source: &ArtifactName,
+    path: &str,
+) -> Result<(), ScopeError> {
+    let resolved = everything.resolve_path(&tool_id(source), path)?;
+    if resolved.artifact_id.as_str() != source.as_str() {
+        return Err(ScopeError(format!(
+            "{{{source}}}/{path} is in Artifact {owner}; reference {{{owner}}}/{rest} instead.",
+            owner = resolved.artifact_id,
+            rest = resolved.path,
+        )));
+    }
+    Ok(())
+}
+
+/// Exactly the given Artifacts. Neither composition nor a referenced Artifact's Eval
+/// instructions grant access: a path into a constituent or a nested folder Artifact needs a
+/// reference of its own, so that what a review reads is what its reuse key covers.
 pub fn artifact_scope<'a>(
     config: &'a RepoConfig,
     roots: &[&ArtifactName],
 ) -> Result<Scope<'a>, ScopeError> {
-    let mut artifacts = BTreeMap::new();
-    let mut pending = roots.to_vec();
-    while let Some(id) = pending.pop() {
-        let (id, artifact) = config
-            .artifacts
-            .get_key_value(id)
-            .ok_or_else(|| ScopeError(format!("Unknown Artifact: {id}")))?;
-        if artifacts.insert(id.clone(), artifact).is_some() {
-            continue;
-        }
-        pending.extend(artifact.children.values());
-    }
+    let artifacts = roots
+        .iter()
+        .map(|&id| {
+            config
+                .artifacts
+                .get_key_value(id)
+                .map(|(id, artifact)| (id.clone(), artifact))
+                .ok_or_else(|| ScopeError(format!("Unknown Artifact: {id}")))
+        })
+        .collect::<Result<_, _>>()?;
     Ok(Scope { artifacts })
 }
 
@@ -329,6 +346,25 @@ pub fn resolve_argv(
         .collect()
 }
 
+/// Every path an aspect selects exists below its folder, without symlink traversal.
+pub(crate) fn validate_selections(config: &RepoConfig) -> Result<(), ConfigError> {
+    for (id, artifact) in &config.artifacts {
+        let scope = artifact_scope(config, &[id]).expect("a configured Artifact");
+        for selected in &artifact.select {
+            scope
+                .resolve_input(&config.root, id, selected)
+                .map_err(|failure| {
+                    ConfigError::declaration(
+                        config.root.join(artifact.declaration_path()),
+                        &["select"],
+                        format!("select: {selected}: {failure}"),
+                    )
+                })?;
+        }
+    }
+    Ok(())
+}
+
 /// Static relationships only; scheduling and dependency closure belong to graph.
 pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError> {
     let mut relations = Vec::new();
@@ -404,13 +440,6 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
             }
         }
-        for (path, source) in &artifact.children {
-            relations.push(Relation {
-                source: source.clone(),
-                target: id.clone(),
-                kind: RelationKind::Child { path: path.clone() },
-            });
-        }
     }
     for (id, artifact) in &config.artifacts {
         let Some(Fingerprint::Artifactsum { files: inputs, .. }) = &artifact.fingerprint else {
@@ -439,12 +468,20 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 .map_err(|failure| error(failure.0))?;
             if location.artifact_id.as_str() != id.as_str() {
                 return Err(error(format!(
-                    "{input} belongs to Artifact {}; dependencies come from children and references.",
+                    "{input} belongs to Artifact {}; a fingerprint covers only its own Artifact's files.",
                     location.artifact_id
                 )));
             }
         }
     }
+    let everything = Scope {
+        artifacts: config
+            .artifacts
+            .iter()
+            .map(|(id, artifact)| (id.clone(), artifact))
+            .collect(),
+    }
+    .tool_scope();
     let mut resolved = Vec::new();
     for eval in &config.evals {
         let error = |field: &[&str], failure: ScopeError| {
@@ -501,6 +538,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     .map_err(|failure| error(&["profile", "args"], failure))?;
                 reference_path(config, source, path)
                     .map_err(|failure| error(&["profile", "args"], failure))?;
+                nested_path(&everything, source, path)
+                    .map_err(|failure| error(&["profile", "args"], failure))?;
                 if source != &eval.target {
                     deps.insert(source.clone());
                     relations.push(Relation {
@@ -522,6 +561,14 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         eval.references = references;
         eval.deps = deps;
     }
+    // A name's nearest declared leading name composes it: `game` composes `game::combat`.
+    relations.extend(config.artifacts.keys().filter_map(|id| {
+        config.parent(id).map(|parent| Relation {
+            source: id.clone(),
+            target: parent.clone(),
+            kind: RelationKind::Child,
+        })
+    }));
     config.relations = relations;
     human::validate_references(config)?;
     crate::graph::Graph::new(config).map_err(|error| ConfigError::new(&config.root, error))?;
