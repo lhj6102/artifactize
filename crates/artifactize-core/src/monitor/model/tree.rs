@@ -563,7 +563,11 @@ fn artifact_node<'a>(
     let parts = |label: &str| {
         let shown: Vec<_> = pending.iter().take(SHOWN).map(|id| id.as_str()).collect();
         let more = pending.len().saturating_sub(SHOWN);
-        let more = if more > 0 { format!(" +{more}") } else { String::new() };
+        let more = if more > 0 {
+            format!(" +{more}")
+        } else {
+            String::new()
+        };
         Segment::plain(format!("{label}{}{more}", shown.join(", ")))
     };
     let (glyph, tone, weight, mut text) = if basis && pending.is_empty() {

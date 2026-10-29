@@ -257,16 +257,15 @@ impl<'a> Index<'a> {
                     matches!(profile.known, crate::config::StoredProfile::Human { .. })
                 }),
         };
-        let schedule = crate::graph::schedule::Schedule::new(
-            targets
-                .iter()
-                .map(|(&eval, &target)| crate::graph::schedule::Input {
+        let schedule =
+            crate::graph::schedule::Schedule::new(targets.iter().map(|(&eval, &target)| {
+                crate::graph::schedule::Input {
                     id: eval,
                     target,
                     deps: inputs[eval].clone(),
                     human: human(eval),
-                }),
-        );
+                }
+            }));
         let upstream = inputs
             .into_iter()
             .map(|(eval, mut deps)| {

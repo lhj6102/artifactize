@@ -152,7 +152,10 @@ fn names_compose_artifacts_and_a_failing_constituent_fails_its_parent_only() {
         children,
         [
             (json!("game::combat"), json!("game")),
-            (json!("game::combat::skills::fireball"), json!("game::combat")),
+            (
+                json!("game::combat::skills::fireball"),
+                json!("game::combat")
+            ),
         ]
     );
 
@@ -192,7 +195,10 @@ fn a_constituent_change_reviews_only_the_evals_that_name_it() {
     let fixture = Fixture::new();
     fixture.write("app/main.txt", "main\n");
     fixture.write("app/ui/view.txt", "view\n");
-    fixture.declare("app/index.artf", json!({"name":"app","evals":reads("main.txt")}));
+    fixture.declare(
+        "app/index.artf",
+        json!({"name":"app","evals":reads("main.txt")}),
+    );
     fixture.declare(
         "app/ui/index.artf",
         json!({"name":"app::ui","evals":reads("view.txt")}),
@@ -216,7 +222,10 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
     fixture.write("game/src/skills/fireball.rs", "fireball\n");
     fixture.write("game/src/other.rs", "other\n");
     fixture.write("game/assets/fireball.png", "sprite\n");
-    fixture.declare("game/index.artf", json!({"name":"game","evals":reads("src/other.rs")}));
+    fixture.declare(
+        "game/index.artf",
+        json!({"name":"game","evals":reads("src/other.rs")}),
+    );
     fixture.declare(
         "game/fireball.artf",
         json!({
@@ -279,14 +288,20 @@ fn an_aspect_is_declared_only_by_a_label_that_names_no_file_and_reads_only_its_s
         json!({"name":"game::fireball","select":["src/skills"],
             "evals":reads(args)})
     };
-    fixture.declare("game/fireball.artf", aspect("{game::fireball}/src/other.rs"));
+    fixture.declare(
+        "game/fireball.artf",
+        aspect("{game::fireball}/src/other.rs"),
+    );
     assert!(
         fixture
             .error(&["config", "check"])
             .contains("exposes only its selected paths: src/skills")
     );
 
-    fixture.declare("game/fireball.artf", aspect("{game::fireball}/src/skills/fireball.rs"));
+    fixture.declare(
+        "game/fireball.artf",
+        aspect("{game::fireball}/src/skills/fireball.rs"),
+    );
     fixture.json(&["config", "check", "--json"], 0);
     fixture.write("game/fireball", "a file named like the label");
     assert!(
@@ -296,16 +311,21 @@ fn an_aspect_is_declared_only_by_a_label_that_names_no_file_and_reads_only_its_s
     );
     fs::remove_file(fixture.repo.join("game/fireball")).unwrap();
 
-    fixture.declare(
-        "game/index.artf",
-        json!({"name":"game","select":["src"]}),
+    fixture.declare("game/index.artf", json!({"name":"game","select":["src"]}));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("select declares an aspect")
     );
-    assert!(fixture.error(&["config", "check"]).contains("select declares an aspect"));
     fixture.declare("game/index.artf", json!({"name":"game"}));
 
     fixture.declare(
         "game/fireball.artf",
         json!({"name":"game::fireball","select":["src/missing.rs"]}),
     );
-    assert!(fixture.error(&["config", "check"]).contains("select: src/missing.rs"));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("select: src/missing.rs")
+    );
 }

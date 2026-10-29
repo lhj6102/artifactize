@@ -197,7 +197,11 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     .unwrap();
     // Nested folders are no part of the project; a constituent by name is.
     assert_eq!(
-        row(&fixture.json(&["status", "project"], 0), "artifacts", "project")["state"],
+        row(
+            &fixture.json(&["status", "project"], 0),
+            "artifacts",
+            "project"
+        )["state"],
         "BASIS"
     );
     fs::create_dir_all(fixture.repo.join("part")).unwrap();

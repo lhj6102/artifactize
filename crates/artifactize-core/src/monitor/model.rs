@@ -672,7 +672,11 @@ impl<'a> Saved<'a> {
     /// Each parent with the Artifacts it is directly composed of.
     fn constituents(&self) -> std::collections::BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>> {
         let mut constituents: std::collections::BTreeMap<_, Vec<_>> = Default::default();
-        for relation in self.definitions().into_iter().flat_map(|graph| graph.relations()) {
+        for relation in self
+            .definitions()
+            .into_iter()
+            .flat_map(|graph| graph.relations())
+        {
             if matches!(
                 relation.kind,
                 crate::store::definitions::RelationKind::Child { .. }

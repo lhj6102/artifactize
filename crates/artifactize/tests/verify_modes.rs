@@ -1073,7 +1073,15 @@ async fn c4_a_parent_runs_beside_its_constituent_and_fails_with_it() {
         fixture.release("app", "check", 0);
         let ended = fixture.settled(&run).await;
         assert_eq!(ended.run.status(), RunStatus::Red, "{modes:?}");
-        assert_eq!(status(&ended, "app/check"), RequestStatus::Green, "{modes:?}");
-        assert_eq!(status(&ended, "app::lib/check"), RequestStatus::Red, "{modes:?}");
+        assert_eq!(
+            status(&ended, "app/check"),
+            RequestStatus::Green,
+            "{modes:?}"
+        );
+        assert_eq!(
+            status(&ended, "app::lib/check"),
+            RequestStatus::Red,
+            "{modes:?}"
+        );
     }
 }

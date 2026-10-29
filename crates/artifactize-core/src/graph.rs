@@ -170,13 +170,12 @@ impl<'a> Graph<'a> {
             components[index].dependencies = dependencies.into_iter().collect();
             components[index].gates = gates;
         }
-        let schedule = schedule::Schedule::new(
-            config.evals.iter().map(|eval| schedule::Input {
-                id: &eval.id,
-                target: &eval.target,
-                deps: eval.deps.iter().collect(),
-                human: eval.declaration.profile().kind() == crate::config::ProfileKind::Human,
-            }));
+        let schedule = schedule::Schedule::new(config.evals.iter().map(|eval| schedule::Input {
+            id: &eval.id,
+            target: &eval.target,
+            deps: eval.deps.iter().collect(),
+            human: eval.declaration.profile().kind() == crate::config::ProfileKind::Human,
+        }));
         Ok(Self {
             artifacts,
             evals,

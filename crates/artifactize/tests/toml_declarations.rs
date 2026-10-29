@@ -223,7 +223,11 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
             "unknown field `reviewPolicy`",
             "line 2",
         ),
-        ("name = '_bad'", "Artifact name must be one or more parts", "line 1"),
+        (
+            "name = '_bad'",
+            "Artifact name must be one or more parts",
+            "line 1",
+        ),
         (
             "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }",
             "Eval payload is required",

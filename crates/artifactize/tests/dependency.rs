@@ -160,7 +160,10 @@ fn a_red_constituent_blocks_no_eval_but_keeps_its_parent_from_passing() {
     assert!(waiting.evals["app::lib/check"].can_execute());
     assert_eq!(waiting.evals["consumer/check"].unmet_gates, ["app/check"]);
     let evaluation = graph.evaluate(&BTreeMap::from([
-        ("app/check".parse().unwrap(), Evidence::Current(Verdict::Green)),
+        (
+            "app/check".parse().unwrap(),
+            Evidence::Current(Verdict::Green),
+        ),
         (
             "app::lib/check".parse().unwrap(),
             Evidence::Current(Verdict::Red),

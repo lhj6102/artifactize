@@ -824,13 +824,22 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     fixture.runtime(&support::os::true_program(), &[]);
     // An unreviewed constituent is an obligation of the Artifact it is part of.
     fs::create_dir(fixture.repo.join("input")).unwrap();
-    support::declaration::write(fixture.repo.join("input/index.artf"), r#"{"name":"test::input"}"#)
-        .unwrap();
+    support::declaration::write(
+        fixture.repo.join("input/index.artf"),
+        r#"{"name":"test::input"}"#,
+    )
+    .unwrap();
     let individual = fixture.verify(&["test"], 4);
-    assert_eq!(individual["validation"]["obligations"], json!(["test::input"]));
+    assert_eq!(
+        individual["validation"]["obligations"],
+        json!(["test::input"])
+    );
     assert_eq!(individual["requests"][0]["status"], "GREEN");
     let recursive = fixture.verify(&["test", "--recursive"], 4);
-    assert_eq!(recursive["validation"]["obligations"], json!(["test::input"]));
+    assert_eq!(
+        recursive["validation"]["obligations"],
+        json!(["test::input"])
+    );
     let text = fixture
         .command()
         .args(["verify", "--wait", "--all"])

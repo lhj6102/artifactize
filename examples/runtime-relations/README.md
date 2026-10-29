@@ -52,7 +52,7 @@ You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/ge
 ```sh
 cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
-artifactize config graph    # Artifacts, evals, components and child/instruction/argv relations
+artifactize config graph    # Artifacts, evals, components and child (composition)/instruction/argv relations
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"
