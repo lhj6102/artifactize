@@ -1,6 +1,6 @@
 # Hey Arti: 프로젝트 리뷰 설계하기 {#hey-arti-shape-a-projects-reviews}
 
-코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰해야 할까?"라고 물어보세요. Arti는
+코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰하면 좋을까요?"라고 물어보세요. Arti는
 프로젝트를 파악하고, 무엇이 중요한지 묻고, 리뷰가 의미 있고 그 결과를 재사용할 수 있도록 Artifact와 eval을
 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
 대신해 승인하지도 않습니다.
@@ -69,8 +69,9 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
   ([구성](../features/artifact.md#composition) 참고). 전체의 폴더 안에 선언한 Artifact는 자동으로
   부분이 됩니다. 다른 곳에 있거나 여러 전체가 함께 쓰는 부분은 각 전체의 `parts`에 적으세요. 부분이 실패하면 전체도 실패하고, `verify whole`은
   부분까지 함께 다룹니다. 각 부분은 자기 몫을 검사하고, 전체는 부분들이 함께 동작하는지만 검사하며
-  그 eval이 쓰는 부분의 이름을 적습니다. 자기 폴더가 없는 부분은 파일을 골라 담는
-  [aspect](../features/declarations.md#aspects)로 선언합니다.
+  그 eval이 쓰는 부분의 이름을 적습니다. 파일 하나인 부분은
+  [파일 Artifact](../features/declarations.md#file-artifacts)로, 큰 폴더 곳곳에 파일이 흩어진 부분은
+  그 파일을 골라 담는 [aspect](../features/declarations.md#aspects)로 선언합니다.
 - eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
   필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
   [Human eval](../features/human.md)을 쓰세요. 사람에게는

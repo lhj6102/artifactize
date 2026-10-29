@@ -205,7 +205,8 @@ parts = ["physics"]
   다시 리뷰하지 않습니다. 파일 Artifact나 aspect는 둘러싼 폴더 Artifact와 파일을 함께 가지며, 함께
   가진 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
 
-부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [aspect](declarations.md#aspects)는 fireball의
+부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [파일 Artifact](declarations.md#file-artifacts)는 파일
+하나이고, [aspect](declarations.md#aspects)는 fireball의
 코드, 테스트, 스프라이트처럼 큰 폴더에서 한 부분의 파일만 골라, 그 부분을 따로 리뷰하고 재사용할 수
 있게 합니다.
 

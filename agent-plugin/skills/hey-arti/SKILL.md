@@ -192,7 +192,8 @@ verify again: the new Run reuses that sign-off. No keep-alive turns or polling l
   `parts` when it lives elsewhere or several wholes share it; `verify whole` then
   covers the part. Each part checks what it owns and the
   whole checks only how its parts work together, naming the parts its evals use. A
-  part that is not a folder of its own is an aspect that selects its files.
+  part that is one file is a file Artifact; one whose files lie spread in a larger folder
+  is an aspect that selects them.
 - **Evals.** One obligation per eval. Use a runtime eval when a command can check it,
   an Agent eval when it needs judgment, and a Human eval only where a person must add
   judgment or authority; a person is asked only after the Artifact's runtime and

@@ -225,8 +225,8 @@ Parts decide verdicts, not reviews:
   a shared file reviews both again. An eval of `game` that uses the fireball names
   `{fireball}`.
 
-A part need not be a folder of its own. An [aspect](declarations.md#aspects)
-selects the files of one part from a larger folder, such as the fireball's code, test
+A part need not be a folder of its own. A [file Artifact](declarations.md#file-artifacts)
+is one file, and an [aspect](declarations.md#aspects) selects the files of one part from a larger folder, such as the fireball's code, test
 and sprite, so that part can be reviewed and reused on its own.
 
 ## The fingerprint field

@@ -80,8 +80,9 @@ When shaping a new project, it:
   several wholes. The part's failure fails the
   whole, and `verify whole` covers the part too. Each part checks what it owns, and the
   whole checks only how its parts work together, naming the parts its evals use. A part
-  that is not a folder of its own is an [aspect](../features/declarations.md#aspects)
-  that selects its files.
+  that is one file is a [file Artifact](../features/declarations.md#file-artifacts); one
+  whose files lie spread in a larger folder is an
+  [aspect](../features/declarations.md#aspects) that selects them.
 - One obligation per eval. Use a runtime eval when a command can check it, an
   [Agent eval](../features/agent.md) when it needs judgment, and a
   [Human eval](../features/human.md) only where a person must add judgment or
