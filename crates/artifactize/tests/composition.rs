@@ -107,18 +107,13 @@ fn status<'a>(run: &'a Value, kind: &str, id: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("{id} in {run}"))["status"]
 }
 
-/// The evals this Run executed rather than reused, by their executions' Run.
+/// The evals this Run executed rather than reused, by the Run their results came from.
 fn executed(run: &Value) -> Vec<String> {
-    let own = format!("execution-{}-", run["id"].as_str().unwrap());
     run["requests"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|request| {
-            request["executionId"]
-                .as_str()
-                .is_some_and(|id| id.starts_with(&own))
-        })
+        .filter(|request| request["provenance"]["runId"] == run["id"])
         .map(|request| request["evalId"].as_str().unwrap().to_owned())
         .collect()
 }

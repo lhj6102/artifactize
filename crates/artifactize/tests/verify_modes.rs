@@ -617,6 +617,15 @@ async fn c2_the_idle_grace_holds_a_run_with_only_signoffs_left_open() {
 }
 
 #[tokio::test]
+async fn c2_a_parent_without_evals_settles_yellow_while_its_constituent_awaits_a_signoff() {
+    let fixture = Fixture::new();
+    fixture.declare("notes", Vec::new());
+    fixture.declare_at("notes/draft", "notes::draft", vec![human_eval(&[])]);
+    let run = fixture.submit(&[], None);
+    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Yellow);
+}
+
+#[tokio::test]
 async fn c2_a_run_that_an_earlier_version_ended_signoffs_pending_reads_as_yellow() {
     let fixture = Fixture::new();
     fixture.declare("notes", vec![human_eval(&[])]);

@@ -48,6 +48,7 @@ searched logical `path`, and grep's matching line numbers start at 1.
 
 Paths are relative logical paths from the tool's declaring Artifact; a path into a
 folder Artifact nested there reaches it only when the eval references that Artifact too.
+Otherwise `list`, `glob` and `grep` pass over that folder as if it were absent.
 Omitted paths mean its root. Another Artifact's files are read with
 that Artifact's own tools, which an eval admits when it references the Artifact. They never accept
 absolute paths, traversal components or symlinks. Logical paths are at most

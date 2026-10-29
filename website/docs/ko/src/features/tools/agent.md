@@ -41,7 +41,8 @@ eval이 `{spec}`도 참조할 때 app의 read 도구를 `{"path":"rules/requirem
 1부터 셉니다.
 
 경로는 도구를 선언한 Artifact를 기준으로 한 상대 논리 경로입니다. 그 안에 선언된 폴더 Artifact로
-들어가는 경로는 eval이 그 Artifact도 참조할 때만 닿습니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
+들어가는 경로는 eval이 그 Artifact도 참조할 때만 닿습니다. 참조하지 않으면 `list`, `glob`, `grep`은 그
+폴더가 없는 것처럼 건너뜁니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
 그 도구를 쓸 수 있습니다. 절대 경로, 경로를 거슬러 올라가는 구성 요소, 심볼릭 링크는 받지
 않습니다. 논리적 경로는 4096자까지이고(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다), 경로 전체가 `.` 하나이면 list/glob/grep에서
 파일 Artifact나 aspect의 가상 루트로 해석합니다. 그 밖에는 ASCII 제어 문자, 백슬래시, 콜론, 빈 구간, `.`이나 `..` 구간이 있으면

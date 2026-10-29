@@ -503,7 +503,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(red.field("Options"), Some("timeoutMs 20000"));
     let source = red.field("Source").unwrap();
     assert!(
-        source.starts_with(&format!("reused from Run {first} request {first}-")),
+        source.starts_with(&format!("reused from Run {first} request ")),
         "{source}"
     );
     // The Outcome shows the verdict first; the whole result is under What.

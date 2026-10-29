@@ -694,9 +694,16 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
     root["views"]["human_tools"] = json!({
         "humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]},
     });
-    root["evals"][0]["payload"]["instruction"] = json!("Review {leaf}.");
+    root["evals"][0]["payload"]["instruction"] = json!("Review {leaf} and {part}.");
     crate::test_declaration::write(fixture.repo.join("index.artf"), root.to_string()).unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
+    fs::create_dir_all(fixture.repo.join("parts")).unwrap();
+    fs::write(fixture.repo.join("parts/one.txt"), "one").unwrap();
+    crate::test_declaration::write(
+        fixture.repo.join("part.artf"),
+        json!({"name":"part","select":["parts/one.txt"]}).to_string(),
+    )
+    .unwrap();
     crate::test_declaration::write(
         fixture.repo.join("cases/index.artf"),
         json!({"name":"leaf"}).to_string(),
@@ -736,6 +743,11 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
         json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","nested":{}})
     );
     assert_eq!(data["a"].as_object().unwrap().len(), 3);
+    // An aspect's entry is its declaration's folder with its selection.
+    assert_eq!(
+        data["part"],
+        json!({"path":crate::platform::path_text(&fixture.repo),"kind":"aspect","nested":{},"select":["parts/one.txt"]})
+    );
 }
 
 #[tokio::test]

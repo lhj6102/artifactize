@@ -303,3 +303,66 @@ async fn sections_follow_markdown_headings_not_code_blocks() {
         }]
     );
 }
+
+#[test]
+fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
+    let directory = os::tempdir();
+    let root = directory.path();
+    fs::write(root.join("notes.md"), "alpha\n").unwrap();
+    fs::create_dir(root.join("ui")).unwrap();
+    fs::write(root.join("ui/view.md"), "alpha\n").unwrap();
+    let id = |name| ArtifactId::new(name).unwrap();
+    let owner = id("app");
+    let folder = |path: &str, nested| Artifact {
+        path: path.into(),
+        kind: ArtifactKind::Folder,
+        name: "fixture".into(),
+        nested,
+        select: Vec::new(),
+    };
+    let app = folder(
+        "",
+        BTreeMap::from([(ChildPrefix::new("ui").unwrap(), id("app::ui"))]),
+    );
+    let search = |scope: &Scope, tool, input| {
+        let result = builtin::call(
+            Input::parse(tool, input).unwrap(),
+            root,
+            scope,
+            &owner,
+            &CancellationToken::new(),
+        );
+        assert!(!result.is_error(), "{result:?}");
+        let [Content::Json { data }] = result.content() else {
+            panic!("expected one JSON result")
+        };
+        data.clone()
+    };
+    let alone = Scope {
+        artifacts: BTreeMap::from([(owner.clone(), app.clone())]),
+    };
+    assert_eq!(
+        search(&alone, Builtin::Grep, json!({"pattern":"alpha"}))["matches"],
+        json!([{"path":"notes.md","line":1,"text":"alpha"}])
+    );
+    assert_eq!(
+        search(&alone, Builtin::Glob, json!({"pattern":"**/*.md"}))["files"],
+        json!(["notes.md"])
+    );
+    assert_eq!(
+        search(&alone, Builtin::List, json!({}))["entries"],
+        json!([{"kind":"file","name":"notes.md","path":"notes.md"}])
+    );
+
+    // Referenced as well, the nested Artifact is searched through its folder.
+    let both = Scope {
+        artifacts: BTreeMap::from([
+            (owner.clone(), app),
+            (id("app::ui"), folder("ui", BTreeMap::new())),
+        ]),
+    };
+    assert_eq!(
+        search(&both, Builtin::Glob, json!({"pattern":"**/*.md"}))["files"],
+        json!(["notes.md", "ui/view.md"])
+    );
+}

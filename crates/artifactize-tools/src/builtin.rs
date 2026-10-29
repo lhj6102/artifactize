@@ -286,7 +286,8 @@ impl Reader<'_> {
                     .file_name()
                     .into_string()
                     .map_err(|_| "Artifact paths must be UTF-8.")?;
-                if !owner.admits(&join(&location.path, &name)) {
+                let entry_path = join(&location.path, &name);
+                if !owner.admits(&entry_path) || self.excludes(owner, &entry_path) {
                     continue;
                 }
                 let kind = entry
@@ -309,6 +310,15 @@ impl Reader<'_> {
                 name,
             })
             .collect())
+    }
+
+    /// A folder Artifact nested in `owner` at `path` that this review does not admit: its
+    /// files belong to neither, so listings and searches pass over it.
+    fn excludes(&self, owner: &scope::Artifact, path: &str) -> bool {
+        owner
+            .nested
+            .iter()
+            .any(|(prefix, id)| prefix.as_str() == path && !self.scope.artifacts.contains_key(id))
     }
 
     fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Output, String> {
