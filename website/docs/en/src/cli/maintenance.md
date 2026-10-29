@@ -24,7 +24,7 @@ fingerprint and the profile variant. `--history` lists every record, latest firs
 
 `show` prints the key's latest record as JSON: result, the actual `profile`, `options`
 (backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
-covers, `artifactKinds` (each covered name with `folder`, `file` or `graph`), usage and
+covers, `artifactKinds` (each covered name with `folder`, `file`, `aspect` or `graph`), usage and
 `producer` (`user@host` and artifactize version), and for a Human result `reviewer`, the
 person who submitted it.
 Records from a [shared remote review store](review-store.md) carry an `origin`

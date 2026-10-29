@@ -217,8 +217,10 @@ says how many more match, or that none does.
 ↑/↓ choose an entry. Enter, on the first entry when none is chosen, or a click opens its
 Detail, on the eval's tab for an eval, and moves the camera so that the Artifact sits in
 the middle of the graph left of the Detail, zooming in only as far as its name needs to
-read. Esc, or a click anywhere outside the field, closes it and leaves the graph and the
-Detail as they were; Esc also gives the keyboard back to where it was. Find reaches every
+read. Esc closes it and leaves the graph and the Detail as they were, giving the keyboard
+back to where it was. A click outside the field also closes it, and the click does what it
+does anyway: on an Artifact it opens that Artifact's Detail, and on the background it closes
+the Detail. Find reaches every
 Artifact, also in a graph too large to show their names.
 
 ### Detail

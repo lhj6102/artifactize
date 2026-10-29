@@ -65,6 +65,11 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
 - eval은 실제로 쓰는 각 입력을 `{name}`으로 가리킵니다. 같은 저장소에 있다고 해서
   의존 관계가 생기지는 않으며, 명령이 읽는 파일도 eval의 입력에 자동으로 추가되지는 않습니다. `app::ui` 같은
   구성 요소는 `app`의 일부이지만, `app`의 eval이 이름을 적지 않으면 그 입력이 아닙니다.
+- 부분이 실패하는 동안 전체가 통과하면 안 된다면 그 부분의 이름을 `whole::part`로 지으세요
+  ([구성](../features/artifact.md#composition) 참고). 부분이 실패하면 전체도 실패하고, `verify whole`은
+  부분까지 함께 다룹니다. 각 부분은 자기 몫을 검사하고, 전체는 부분들이 함께 동작하는지만 검사하며
+  그 eval이 쓰는 부분의 이름을 적습니다. 자기 폴더가 없는 부분은 파일을 골라 담는
+  [aspect](../features/declarations.md#aspects)로 선언합니다.
 - eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
   필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
   [Human eval](../features/human.md)을 쓰세요. 사람에게는

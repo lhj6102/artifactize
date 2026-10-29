@@ -74,6 +74,12 @@ When shaping a new project, it:
 - An eval names each input it really uses as `{name}`; sharing a repository is not a
   dependency, and a command does not add the files it reads. A constituent such as
   `app::ui` is part of `app`, yet no input of `app`'s evals unless they name it.
+- Name a part `whole::part` when the whole cannot pass while the part fails
+  ([composition](../features/artifact.md#composition)): the part's failure fails the
+  whole, and `verify whole` covers the part too. Each part checks what it owns, and the
+  whole checks only how its parts work together, naming the parts its evals use. A part
+  that is not a folder of its own is an [aspect](../features/declarations.md#aspects)
+  that selects its files.
 - One obligation per eval. Use a runtime eval when a command can check it, an
   [Agent eval](../features/agent.md) when it needs judgment, and a
   [Human eval](../features/human.md) only where a person must add judgment or

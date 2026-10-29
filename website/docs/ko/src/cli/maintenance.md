@@ -22,7 +22,7 @@ artifactize cache rm KEY
 
 `show`는 그 키의 가장 최근 기록을 JSON으로 출력합니다. 결과, 실제로 쓴 `profile`,
 `options`(백엔드, 모델, reasoning, 제한, 변형), 키가 포함하는 각 Artifact의 `fingerprints`,
-`artifactKinds`(포함한 이름마다 `folder`, `file`, `graph` 중 하나), 사용량, `producer`
+`artifactKinds`(포함한 이름마다 `folder`, `file`, `aspect`, `graph` 중 하나), 사용량, `producer`
 (`user@host`와 artifactize 버전)가 나오고, Human 결과에는 그 결과를 제출한 사람인 `reviewer`도 따로 나옵니다.
 [팀 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
 붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
