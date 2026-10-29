@@ -450,6 +450,36 @@ function checkout(ref: string, tree: string): void {
     });
     if (converted !== text) writeFileSync(file, converted);
   }
+  // 0.17–0.18 allowed `space::name`; a name is one identifier now, `space-name`.
+  for (const file of files(tree, (name) => name.endsWith(".artf"))) {
+    const text = readFileSync(file, "utf8");
+    const spaced = /^(name = ")([^"]*)"/gm;
+    const converted = text
+      .replace(spaced, (_, start: string, name: string) => `${start}${name.replaceAll("::", "-")}"`)
+      .replace(/\{([A-Za-z0-9][A-Za-z0-9_-]*(?:::[A-Za-z0-9][A-Za-z0-9_-]*)+)\}/g, (_, name: string) => `{${name.replaceAll("::", "-")}}`);
+    if (converted !== text) writeFileSync(file, converted);
+  }
+  // A reference reached through a folder Artifact into one nested in it; that file is the
+  // nested Artifact's now, so the reference names it.
+  const folders = new Map<string, string>();
+  for (const file of files(tree, (name) => name === "index.artf")) {
+    const name = /^name = "([^"]*)"/m.exec(readFileSync(file, "utf8"))?.[1];
+    if (name) folders.set(name, dirname(file));
+  }
+  const owners = [...folders].sort(([, one], [, other]) => other.length - one.length);
+  for (const file of files(tree, (name) => name.endsWith(".artf"))) {
+    const text = readFileSync(file, "utf8");
+    const converted = text.replace(/\{([A-Za-z0-9][A-Za-z0-9_-]*)\}\/([^"\s}]+)/g, (whole, name: string, path: string) => {
+      const folder = folders.get(name);
+      if (!folder) return whole;
+      const target = join(folder, path);
+      const [owner, root] = owners.find(([, root]) => !relative(root, target).startsWith("..")) ?? [name, folder];
+      if (owner === name) return whole;
+      const rest = relative(root, target);
+      return rest ? `{${owner}}/${rest.split("\\").join("/")}` : `{${owner}}`;
+    });
+    if (converted !== text) writeFileSync(file, converted);
+  }
 }
 
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
