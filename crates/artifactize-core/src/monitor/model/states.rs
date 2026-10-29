@@ -130,7 +130,7 @@ pub enum Completion {
 
 impl Completion {
     /// Order of X: failed, in progress, waiting, complete; blocked completions still wait.
-    fn rank(self) -> Rank {
+    pub(super) fn rank(self) -> Rank {
         match self {
             Self::Failed { .. } => Rank::Failed,
             Self::InProgress(_) => Rank::InProgress,
@@ -161,6 +161,8 @@ pub(super) struct Index<'a> {
     targets: BTreeMap<&'a EvalId, &'a ArtifactName>,
     /// Artifact → its cycle peers (same component), by name.
     pub peers: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
+    /// Artifact → the Artifacts it is directly composed of.
+    pub constituents: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
     pub cyclic: BTreeSet<&'a ArtifactName>,
 }
 
@@ -289,6 +291,7 @@ impl<'a> Index<'a> {
             execution_order,
             targets,
             peers,
+            constituents: saved.constituents(),
             cyclic,
         }
     }
@@ -634,11 +637,32 @@ impl<'a> States<'a> {
     }
 
     /// The Artifact's completion from its eval rows; done rows whose own gates are unmet
-    /// do not complete it.
+    /// do not complete it. A constituent that is not complete keeps its parent from it too.
     pub fn completion(&self, artifact: &ArtifactName) -> Completion {
         if let Some(completion) = self.completions.borrow().get(artifact) {
             return *completion;
         }
+        let own = self.own_completion(artifact);
+        let completion = self
+            .index
+            .constituents
+            .get(artifact)
+            .into_iter()
+            .flatten()
+            .map(|constituent| self.completion(constituent))
+            .chain([own])
+            .min_by_key(|completion| match completion {
+                Completion::Failed { verdict } => (completion.rank(), *verdict),
+                _ => (completion.rank(), true),
+            })
+            .expect("its own completion");
+        if let Some(id) = self.key(artifact) {
+            self.completions.borrow_mut().insert(id, completion);
+        }
+        completion
+    }
+
+    fn own_completion(&self, artifact: &ArtifactName) -> Completion {
         let views = self.views_of(artifact);
         let busy = views
             .iter()
@@ -649,7 +673,7 @@ impl<'a> States<'a> {
                 _ => None,
             })
             .min();
-        let completion = if views
+        if views
             .iter()
             .any(|view| matches!(view, EvalView::Failed { .. }))
         {
@@ -669,11 +693,7 @@ impl<'a> States<'a> {
             }
         } else {
             Completion::Complete
-        };
-        if let Some(id) = self.key(artifact) {
-            self.completions.borrow_mut().insert(id, completion);
         }
-        completion
     }
 
     /// Group only this Eval's actual gates, never unrelated Evals on the same material.

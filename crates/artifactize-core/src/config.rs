@@ -1135,6 +1135,7 @@ pub struct Artifact {
     /// not this Artifact's; nesting is no relation between the two.
     pub nested: BTreeMap<ChildPrefix, ArtifactName>,
     /// An aspect's selected paths below its folder; empty for other kinds.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<LogicalPath>,
     pub name: ArtifactName,
     pub tags: Vec<String>,

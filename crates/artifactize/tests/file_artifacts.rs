@@ -946,7 +946,7 @@ fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
 }
 
 #[test]
-fn reuse_key_covers_kinds_of_target_child_and_reference_but_never_paths_or_tags() {
+fn reuse_key_covers_kinds_of_target_and_reference_but_never_paths_tags_or_nested_folders() {
     let fixture = Fixture::new();
     fixture.declare(
         "owner/index.artf",
@@ -990,7 +990,16 @@ fn reuse_key_covers_kinds_of_target_child_and_reference_but_never_paths_or_tags(
     let key = cache::eval_key(&config, &config.evals[0], &fingerprints)
         .unwrap()
         .value;
-    for id in ["owner", "child", "reference"] {
+    // A nested folder Artifact is not in the key; only the target and what it names are.
+    config.artifacts.get_mut("child").unwrap().kind = ArtifactKind::File;
+    assert_eq!(
+        key,
+        cache::eval_key(&config, &config.evals[0], &fingerprints)
+            .unwrap()
+            .value
+    );
+    config.artifacts.get_mut("child").unwrap().kind = ArtifactKind::Folder;
+    for id in ["owner", "reference"] {
         config.artifacts.get_mut(id).unwrap().kind = ArtifactKind::File;
         assert_ne!(
             key,

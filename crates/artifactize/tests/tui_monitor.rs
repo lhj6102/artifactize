@@ -91,7 +91,7 @@ impl Fixture {
                 "name":"red",
                 "fingerprint":{"script":{"command":support::os::echo_program(),"args":["red-v1"]}},
                 "evals":[
-                    eval("check", runtime(&finding, &[]), "Check {input}."),
+                    eval("check", runtime(&finding, &[]), "Check {input} with {part}."),
                 ],
             }),
         );

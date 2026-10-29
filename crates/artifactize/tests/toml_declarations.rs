@@ -223,7 +223,7 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
             "unknown field `reviewPolicy`",
             "line 2",
         ),
-        ("name = '_bad'", "Artifact name must match", "line 1"),
+        ("name = '_bad'", "Artifact name must be one or more parts", "line 1"),
         (
             "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }",
             "Eval payload is required",
@@ -392,7 +392,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
     let walked: Value = serde_json::from_slice(&walked.stdout).unwrap();
     assert_eq!(walked["artifacts"].as_object().unwrap().len(), 2);
     assert_eq!(
-        walked["artifacts"]["root"]["children"]["artifactize.json"],
+        walked["artifacts"]["root"]["nested"]["artifactize.json"],
         "nested"
     );
 }

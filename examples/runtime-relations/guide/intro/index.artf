@@ -1,4 +1,4 @@
-name = "intro"
+name = "guide::intro"
 
 [evals.heading]
 title = "The page has a top-level heading"
@@ -6,4 +6,4 @@ profile = { kind = "runtime", command = "grep", args = ["-m", "1", "^# ", "page.
 
 [evals.heading.payload]
 instruction = """
-Check that {intro} starts with a top-level heading."""
+Check that {guide::intro} starts with a top-level heading."""

@@ -59,6 +59,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 basis: declaration.basis,
                 path: name.into(),
                 nested: BTreeMap::new(),
+                select: Vec::new(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
             },

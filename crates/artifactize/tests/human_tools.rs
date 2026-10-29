@@ -163,7 +163,8 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["inspect_a", "inspect_b", "inspect_child"]
+        // `child` is nested in b's folder, which makes it no part of b's scope.
+        ["inspect_a", "inspect_b"]
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert_eq!(
@@ -192,9 +193,10 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
         json!({"inspect":command}),
         "Review.",
     );
+    write_artifact(repo.path(), "root", json!({}), "Review {a} and {b_a}.");
     let config = read_workspace_config(repo.path()).unwrap();
     assert!(
-        Registry::for_artifact(&config, "root")
+        Registry::new(&config, "root/review")
             .err()
             .unwrap()
             .contains("collide")

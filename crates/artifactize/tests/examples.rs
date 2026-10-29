@@ -193,8 +193,8 @@ fn every_example_passes_static_queries_and_reports_status() {
     assert_eq!(kinds, ["argv", "child", "instruction"]);
     assert_eq!(graph["artifacts"]["glossary"]["basis"], true);
     assert_eq!(
-        graph["artifacts"]["guide"]["children"],
-        json!({"intro": "intro", "usage": "usage"})
+        graph["artifacts"]["guide"]["nested"],
+        json!({"intro": "guide::intro", "usage": "guide::usage"})
     );
 }
 
@@ -215,13 +215,13 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         statuses(&run),
         map(&[
             ("guide/terms", "GREEN"),
-            ("intro/heading", "GREEN"),
-            ("usage/heading", "GREEN"),
+            ("guide::intro/heading", "GREEN"),
+            ("guide::usage/heading", "GREEN"),
         ])
     );
     assert_eq!(files(&repo), before);
 
-    // README: an undefined bold term makes guide/terms RED; intro/heading is reused.
+    // README: an undefined bold term makes guide/terms RED; guide::intro/heading is reused.
     let copy = session.copy("runtime-relations");
     let page = copy.join("guide/usage/page.md");
     append(&page, "Results live in the **cache**.\n");
@@ -235,8 +235,8 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     assert_eq!(
         summaries,
         BTreeMap::from([
-            ("guide/terms", "dependency usage changed"),
-            ("usage/heading", "changed: page.md"),
+            ("guide/terms", "dependency guide::usage changed"),
+            ("guide::usage/heading", "changed: page.md"),
         ])
     );
     let red = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
@@ -244,8 +244,8 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         statuses(&red),
         map(&[
             ("guide/terms", "RED"),
-            ("intro/heading", "GREEN"),
-            ("usage/heading", "GREEN"),
+            ("guide::intro/heading", "GREEN"),
+            ("guide::usage/heading", "GREEN"),
         ])
     );
     assert_eq!(red["executionsStarted"], 2);
@@ -258,7 +258,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         "{terms}"
     );
 
-    // README: a page without its heading is RED and blocks its parent.
+    // README: a page without its heading is RED and blocks the eval that names it.
     let contents = fs::read_to_string(&page).unwrap();
     fs::write(&page, contents.split_once('\n').unwrap().1).unwrap();
     let blocked = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
@@ -266,8 +266,8 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         statuses(&blocked),
         map(&[
             ("guide/terms", "BLOCKED"),
-            ("intro/heading", "GREEN"),
-            ("usage/heading", "RED"),
+            ("guide::intro/heading", "GREEN"),
+            ("guide::usage/heading", "RED"),
         ])
     );
 }
@@ -288,7 +288,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         let artifact = &graph["artifacts"][name];
         assert_eq!(artifact["kind"], "file");
         assert_eq!(artifact["path"], format!("{name}.md"));
-        assert_eq!(artifact["children"], json!({}));
+        assert_eq!(artifact["nested"], json!({}));
     }
     assert!(
         graph["relations"]
