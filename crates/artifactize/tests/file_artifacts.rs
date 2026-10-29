@@ -128,8 +128,18 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     );
     assert!(config.artifacts["hero"].nested.is_empty());
     assert!(config.artifacts["build"].nested.is_empty());
-    // Nesting partitions files; it is no relation.
-    assert!(config.relations.is_empty());
+    // Each is a part of the folder Artifact around it, and only the nested folder takes its
+    // files out of the folder's.
+    let mut parts: Vec<_> = config
+        .relations
+        .iter()
+        .map(|relation| (relation.source.as_str(), relation.target.as_str()))
+        .collect();
+    parts.sort();
+    assert_eq!(
+        parts,
+        [("build", "folder"), ("deep", "folder"), ("hero", "folder")]
+    );
     assert!(
         !artifact_scope(&config, &[&"folder".parse().unwrap()])
             .unwrap()

@@ -822,31 +822,22 @@ fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
 fn basis_and_all_keep_no_eval_dependency_obligations() {
     let fixture = Fixture::new();
     fixture.runtime(&support::os::true_program(), &[]);
-    // An unreviewed constituent is an obligation of the Artifact it is part of.
+    // An unreviewed part is an obligation of the Artifact it is part of.
     fs::create_dir(fixture.repo.join("input")).unwrap();
-    support::declaration::write(
-        fixture.repo.join("input/index.artf"),
-        r#"{"name":"test::input"}"#,
-    )
-    .unwrap();
+    support::declaration::write(fixture.repo.join("input/index.artf"), r#"{"name":"input"}"#)
+        .unwrap();
     let individual = fixture.verify(&["test"], 4);
-    assert_eq!(
-        individual["validation"]["obligations"],
-        json!(["test::input"])
-    );
+    assert_eq!(individual["validation"]["obligations"], json!(["input"]));
     assert_eq!(individual["requests"][0]["status"], "GREEN");
     let recursive = fixture.verify(&["test", "--recursive"], 4);
-    assert_eq!(
-        recursive["validation"]["obligations"],
-        json!(["test::input"])
-    );
+    assert_eq!(recursive["validation"]["obligations"], json!(["input"]));
     let text = fixture
         .command()
         .args(["verify", "--wait", "--all"])
         .record_output()
         .unwrap();
     assert_eq!(text.status.code(), Some(4));
-    assert!(String::from_utf8_lossy(&text.stdout).contains("Unmet obligation: test::input"));
+    assert!(String::from_utf8_lossy(&text.stdout).contains("Unmet obligation: input"));
 
     support::declaration::write(
         fixture.repo.join("index.artf"),
@@ -855,10 +846,10 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     .unwrap();
     let basis = fixture.verify(&["test"], 4);
     assert!(basis["requests"].as_array().unwrap().is_empty());
-    assert_eq!(basis["validation"]["obligations"], json!(["test::input"]));
+    assert_eq!(basis["validation"]["obligations"], json!(["input"]));
     support::declaration::write(
         fixture.repo.join("input/index.artf"),
-        r#"{"name":"test::input","basis":true}"#,
+        r#"{"name":"input","basis":true}"#,
     )
     .unwrap();
     assert_eq!(fixture.verify(&["--all"], 0)["status"], "GREEN");

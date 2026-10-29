@@ -1,4 +1,4 @@
-name = "media::brand-icon"
+name = "media-brand-icon"
 
 [views.human_tools]
 open = { description = "Open the original artwork of {artifactName} in the default image viewer.", builtin = "open", args = ["{artifactPath}"] }
@@ -9,7 +9,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open {media::brand-icon} with the open tool. Submit GREEN with approved: true when the owner approves \
+Open {media-brand-icon} with the open tool. Submit GREEN with approved: true when the owner approves \
 this artwork as the Artifactize icon; otherwise submit RED and list the changes required."""
 
 [evals.approved.pass_schema]

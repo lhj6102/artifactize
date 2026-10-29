@@ -127,7 +127,7 @@ pub struct Changes {
 }
 
 /// The Artifacts an eval depends on: its target and the Artifacts the eval names in its
-/// instruction or runtime args. Neither the target's constituents nor connections further
+/// instruction or runtime args. Neither the target's parts nor connections further
 /// away count, except through how the developer defines fingerprints.
 pub fn dependencies(eval: &Eval) -> BTreeSet<&ArtifactName> {
     std::iter::once(&eval.target).chain(&eval.deps).collect()

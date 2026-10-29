@@ -322,7 +322,7 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
     };
     let app = folder(
         "",
-        BTreeMap::from([(ChildPrefix::new("ui").unwrap(), id("app::ui"))]),
+        BTreeMap::from([(ChildPrefix::new("ui").unwrap(), id("ui"))]),
     );
     let search = |scope: &Scope, tool, input| {
         let result = builtin::call(
@@ -358,7 +358,7 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
     let both = Scope {
         artifacts: BTreeMap::from([
             (owner.clone(), app),
-            (id("app::ui"), folder("ui", BTreeMap::new())),
+            (id("ui"), folder("ui", BTreeMap::new())),
         ]),
     };
     assert_eq!(

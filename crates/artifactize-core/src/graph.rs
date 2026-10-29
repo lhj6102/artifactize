@@ -46,7 +46,7 @@ pub struct ArtifactNode<'a> {
     pub basis: bool,
     pub evals: Vec<&'a EvalId>,
     /// The Artifacts it is directly composed of, by name.
-    pub constituents: Vec<&'a ArtifactName>,
+    pub parts: Vec<&'a ArtifactName>,
     pub component: ComponentId,
 }
 
@@ -86,7 +86,7 @@ impl<'a> Graph<'a> {
                     ArtifactNode {
                         basis: artifact.basis == Some(true),
                         evals: Vec::new(),
-                        constituents: Vec::new(),
+                        parts: Vec::new(),
                         component: ComponentId(0),
                     },
                 )
@@ -118,14 +118,14 @@ impl<'a> Graph<'a> {
                     return Err(GraphError(format!("Unknown relation Artifact: {id}")));
                 }
             }
-            // A parent needs its constituents as a consumer needs its inputs, for obligations
+            // A parent needs its parts as a consumer needs its inputs, for obligations
             // only: execution gates come from references alone.
             edges.insert((&relation.target, &relation.source));
-            if relation.kind == crate::scope::RelationKind::Child {
+            if relation.kind == crate::scope::RelationKind::Part {
                 artifacts
                     .get_mut(&relation.target)
                     .unwrap()
-                    .constituents
+                    .parts
                     .push(&relation.source);
             }
         }
@@ -349,7 +349,7 @@ impl<'a> Graph<'a> {
                 // An Artifact without evals that is composed of others takes its verdict from
                 // them, which the components below require.
                 let satisfied = artifact.basis
-                    || (artifact.evals.is_empty() && !artifact.constituents.is_empty())
+                    || (artifact.evals.is_empty() && !artifact.parts.is_empty())
                     || (!artifact.evals.is_empty()
                         && artifact
                             .evals
@@ -366,10 +366,20 @@ impl<'a> Graph<'a> {
                     .iter()
                     .all(|&dependency| satisfied[dependency.index()]);
         }
-        // A constituent's status is part of its parent's, so constituents, whose names are
-        // longer, go first.
-        let mut order: Vec<_> = self.artifacts.iter().collect();
-        order.sort_by_key(|(id, _)| std::cmp::Reverse(id.as_str().matches("::").count()));
+        // A part's status is part of its parent's, so parts go first; parts never form a cycle.
+        let mut order = Vec::with_capacity(self.artifacts.len());
+        let mut placed = BTreeSet::new();
+        for root in self.artifacts.keys() {
+            let mut pending = vec![(root, false)];
+            while let Some((id, expanded)) = pending.pop() {
+                if expanded {
+                    order.push((id, &self.artifacts[id]));
+                } else if placed.insert(id) {
+                    pending.push((id, true));
+                    pending.extend(self.artifacts[id].parts.iter().map(|part| (*part, false)));
+                }
+            }
+        }
         let mut artifacts: BTreeMap<ArtifactName, ArtifactEvaluation> = BTreeMap::new();
         for (id, artifact) in order {
             let satisfied = satisfied[artifact.component.index()];
@@ -397,7 +407,7 @@ impl<'a> Graph<'a> {
                         .iter()
                         .any(|id| evals[id.as_str()].status == eval_status)
                         || artifact
-                            .constituents
+                            .parts
                             .iter()
                             .any(|id| artifacts[id.as_str()].status == artifact_status))
                     .then_some(artifact_status)

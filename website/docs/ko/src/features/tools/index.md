@@ -28,10 +28,7 @@ notes = { builtin = "read", args = ["{artifactPath}/notes.md"] }
 ```
 
 eval은 실제로 참조하는 Artifact에 선언된 도구를 쓸 수 있습니다. 도구 이름은
-`<operation>_<artifactName>`이 되므로, `spec`에 선언한 `read`는 `read_spec`입니다. 도구
-이름에는 `:`를 쓸 수 없어서 space 뒤의 `::`는 `__`로 바꿉니다. `combat::Spec`의 `read`는
-`read_combat__Spec`입니다. 한 eval의 범위에서 `combat::Spec`과 `combat__Spec`의 `read`처럼
-이름이 같아지는 도구가 있으면 오류입니다.
+`<operation>_<artifactName>`이 되므로, `spec`에 선언한 `read`는 `read_spec`입니다.
 
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}
 

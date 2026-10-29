@@ -283,12 +283,11 @@ fn an_eval_depends_on_its_target_and_named_artifacts_only() {
         }),
     );
     repo.artifact("c", json!({"name":"c","evals":check("Check {a}.")}));
-    // Neither a nested folder nor a constituent is part of a key that does not name it.
+    // A part, here the folder nested in a, is in no key that does not name it.
     repo.artifact(
         "a/child",
         json!({"name":"child","evals":check("Check {c}.")}),
     );
-    repo.artifact("f", json!({"name":"a::part","evals":check("Check {c}.")}));
     repo.artifact("d", json!({"name":"d"}));
     repo.write("d/x", "x");
     repo.artifact("e", json!({"name":"e","evals":check("Check {c}.")}));

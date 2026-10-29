@@ -271,10 +271,10 @@ one waiting sign-off.
 Each eval has **one row**. Artifact rows summarize the eval rows shown now, with
 `passed/total` and the most urgent state. `[file]` marks file Artifacts; their target
 path and tags are in Detail's Technical section. A basis Artifact is one row:
-`◇ engine  basis`. A parent's row also reflects its
-[constituents](../features/artifact.md#composition): one that is not done keeps the parent
-from done and is listed after `constituents:`; a parent without evals of its own shows
-`made of N`, or `pending:` with the constituents not done. There are no separate relation
+`◇ engine  basis`. An Artifact's row also reflects its
+[parts](../features/artifact.md#composition): one that is not done keeps the Artifact
+from done and is listed after `parts:`; an Artifact without evals of its own shows
+`made of N`, or `pending:` with the parts not done. There are no separate relation
 rows or always-on dependency lists.
 
 Artifact completion also enforces upstream gates, not just its eval rows' colors.

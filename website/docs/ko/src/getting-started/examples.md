@@ -3,8 +3,8 @@
 [설치](install.md)에 나온 대로 바이너리를 설치한 뒤 예제 프로젝트를
 실행해 보세요. 각 README에 정확한 명령이 적혀 있습니다.
 
-- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): 부모 Artifact와 그
-  구성 요소에서 명령을 실행하는 eval, 지시문과 명령 인자 안의 `{artifact}` 참조, 입력만 제공하는 Artifact, 일부러
+- [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): Artifact와 그
+  부분에서 명령을 실행하는 eval, 지시문과 명령 인자 안의 `{artifact}` 참조, 입력만 제공하는 Artifact, 일부러
   실패시켜 볼 수 있는 eval, 파일이 바뀔 때까지 결과를 재사용하는 모습을 보여 주며, `status`가
   무엇이 바뀌었는지 설명합니다.
 - [Agent tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools): 내장

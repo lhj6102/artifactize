@@ -1,4 +1,4 @@
-name = "agent::codex-marketplace"
+name = "agent-codex-marketplace"
 # Codex's catalog of this repository's plugin is an input of the plugin's install
 # check and needs no review of its own.
 basis = true

@@ -549,18 +549,14 @@ fn artifact_node<'a>(
     } else {
         format!("{passed}/{}", children.len())
     };
-    let constituents = states
-        .index
-        .constituents
-        .get(id)
-        .map_or(&[][..], Vec::as_slice);
-    // Constituents that keep the Artifact from passing, most urgent first.
-    let mut pending: Vec<_> = constituents
+    let parts = states.index.parts.get(id).map_or(&[][..], Vec::as_slice);
+    // Parts that keep the Artifact from passing, most urgent first.
+    let mut pending: Vec<_> = parts
         .iter()
-        .filter(|constituent| states.completion(constituent) != Completion::Complete)
+        .filter(|part| states.completion(part) != Completion::Complete)
         .collect();
-    pending.sort_by_key(|constituent| states.completion(constituent).rank());
-    let parts = |label: &str| {
+    pending.sort_by_key(|part| states.completion(part).rank());
+    let listed = |label: &str| {
         let shown: Vec<_> = pending.iter().take(SHOWN).map(|id| id.as_str()).collect();
         let more = pending.len().saturating_sub(SHOWN);
         let more = if more > 0 {
@@ -572,13 +568,13 @@ fn artifact_node<'a>(
     };
     let (glyph, tone, weight, mut text) = if basis && pending.is_empty() {
         ("◇", Tone::Muted, Weight::Dim, vec![Segment::plain("basis")])
-    } else if children.is_empty() && !constituents.is_empty() {
-        // Without evals of its own, it is what its constituents are.
+    } else if children.is_empty() && !parts.is_empty() {
+        // Without evals of its own, it is what its parts are.
         let (glyph, tone, _) = self::completion(completion);
         let text = if pending.is_empty() {
-            Segment::plain(format!("made of {}", constituents.len()))
+            Segment::plain(format!("made of {}", parts.len()))
         } else {
-            parts("pending: ")
+            listed("pending: ")
         };
         (glyph, tone, Weight::Normal, vec![text])
     } else if children.is_empty() {
@@ -603,7 +599,7 @@ fn artifact_node<'a>(
                 let (glyph, tone, _) = self::completion(Completion::InProgress(busy));
                 (glyph, tone, Weight::Bold)
             }
-            // Every eval row passes, yet a constituent fails.
+            // Every eval row passes, yet a part fails.
             (Kind::Eval(EvalView::Done(_)), Completion::Failed { verdict }) => {
                 let (glyph, tone, _) = self::completion(Completion::Failed { verdict });
                 (glyph, tone, Weight::Bold)
@@ -619,10 +615,10 @@ fn artifact_node<'a>(
         (glyph, tone, weight, summary(states, id, &children))
     };
     if !children.is_empty() && !pending.is_empty() {
-        text.push(parts(if text.is_empty() {
-            "constituents: "
+        text.push(listed(if text.is_empty() {
+            "parts: "
         } else {
-            " · constituents: "
+            " · parts: "
         }));
     }
     Node {

@@ -214,7 +214,7 @@ impl Tool {
     /// The name tool `name` has in `artifact`, which declares it.
     pub fn operation_of<'a>(name: &'a ToolName, artifact: &crate::types::ArtifactName) -> &'a str {
         name.as_str()
-            .strip_suffix(&format!("_{}", artifact.tool_suffix()))
+            .strip_suffix(&format!("_{}", artifact))
             .unwrap_or(name.as_str())
     }
 
@@ -416,7 +416,7 @@ impl ArtifactDeclarations {
             .human_tools
             .iter()
             .map(|(operation, declaration)| {
-                let name: ToolName = format!("{operation}_{}", self.artifact.tool_suffix())
+                let name: ToolName = format!("{operation}_{}", self.artifact)
                     .parse()
                     .expect("validated tool and Artifact names");
                 let command = registry.is_command(&name).then(|| registry.command(&name));
@@ -491,7 +491,7 @@ fn declared(
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
                     };
                     Some(Tool {
-                        name: format!("{operation}_{}", id.tool_suffix()).parse().ok()?,
+                        name: format!("{operation}_{}", id).parse().ok()?,
                         artifact: id.clone(),
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),

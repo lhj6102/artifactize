@@ -76,12 +76,6 @@ that makes the transition happen and checks where it leads.
   without evaluation), would run, waiting, blocked. A node shows only its name, as on a Run
   graph; read aloud it says which, would run with how many of its evals would run, or that it
   is still being checked.
-- On both graphs the Artifacts of one space, named `space::name`, sit together in a region
-  labelled with the space, each node showing its name without the space and read aloud whole;
-  Artifacts without a space stand outside every region. A region is no plain box: its rounded
-  outline follows its Artifacts. A graph with spaces is laid out with more room between its
-  Artifacts, and between its spaces, than a graph without. A region is not an Artifact: Tab
-  passes it by and a click on it is a click on the background.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does, and Ctrl+F opens their **Find field**; they have no other keys of their own. Hovering
   only highlights.
@@ -224,8 +218,6 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
-| E-GRAPH-SPACES | Pane | choose an entry whose graph has Artifacts named `space::name` | its Run graph or Current graph, each space's Artifacts in one region labelled with the space, its rounded outline following them, each node showing the rest of its name and read aloud whole, the edges between spaces drawn and coloured like any other |
-| E-GRAPH-SPACE-BACKGROUND | Run graph or Current graph with a space's region, the Detail open | click the region's background | where a click on the graph's background leads: E-MON-DETAIL-BACK or E-CURRENT-CLOSE, and with a Human review in the Detail running work or editing its form first E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM |
 | E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused |
 | E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does |
 | E-GRAPH-FIND-CHOOSE | Find field listing | ↓ or ↑ | the next or previous entry chosen |
@@ -357,7 +349,6 @@ E-PANE-SELECT.
   E-CURRENT-EVALS → E-CURRENT-TAB
 - J-GRAPH-COLOURS: E-PANE-CHIP → E-GRAPH-RECOLOUR
   E-CURRENT-CHIP → E-CURRENT-RUN-END
-- J-GRAPH-SPACES: E-GRAPH-SPACES → E-MON-DETAIL-ARTIFACT → E-GRAPH-SPACE-BACKGROUND
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO

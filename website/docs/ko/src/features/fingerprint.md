@@ -56,7 +56,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 ## 재사용 키 {#the-reuse-key}
 
 eval은 대상 Artifact와, eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact에 의존합니다.
-대상의 [구성 요소](artifact.md#composition)나 대상 폴더 안에 선언된 폴더 Artifact는 eval이 이름을
+대상 폴더 안에 선언된 폴더 Artifact를 포함해 대상의 [부분](artifact.md#composition)은 eval이 이름을
 적지 않는 한 키에 들어가지 않습니다.
 
 artifactize는 그보다 먼 연결은 살피지 않습니다. 두 단계 떨어진 Artifact의 변경을 반영할지는
@@ -136,7 +136,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 
 - Artifact 이름과 종류, `basis`, aspect의 `select`, fingerprint 범위: artifactsum의 `files`와 `ignore`, 스크립트의
   `command`, `args`, `files`, 또는 `fingerprint = false`.
-- 관계: 이름에 따른 구성(구성 요소 → 부모), 지시문 참조,
+- 관계: 폴더와 `parts`에 따른 구성(부분 → 그 부분으로 이루어진 Artifact), 지시문 참조,
   Runtime argv 참조(eval ID, argv 위치, 인자의 Artifact 참조 뒤에 붙인 하위 경로 포함)와 그 입력 대상.
 - eval ID, eval을 선언한 Artifact, 제목, 평가 기준: 기본 프로필 종류, 지시문과
   소유자가 제공한 추가 정보를 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.

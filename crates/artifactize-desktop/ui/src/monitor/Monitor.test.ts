@@ -88,8 +88,8 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
             update: {
               kind: "shape",
               nodes: [
-                { id: "a:app", name: "app", space: null, label: "app", light: "reused", note: "reused" },
-                { id: "a:graph", name: "graph", space: null, label: "graph", light: "run", note: "would run (1 eval)" },
+                { id: "a:app", name: "app", light: "reused", note: "reused" },
+                { id: "a:graph", name: "graph", light: "run", note: "would run (1 eval)" },
               ],
               edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
             },

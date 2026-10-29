@@ -84,7 +84,7 @@ pub struct Relation {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Edge {
-    Child,
+    Part,
     Instruction {
         eval_id: EvalId,
         name: crate::config::ReferenceName,
@@ -164,7 +164,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
             source: relation.source.clone(),
             target: relation.target.clone(),
             kind: match &relation.kind {
-                RelationKind::Child => Edge::Child,
+                RelationKind::Part => Edge::Part,
                 RelationKind::Instruction { eval_id, name } => Edge::Instruction {
                     eval_id: eval_id.clone(),
                     name: name.clone(),

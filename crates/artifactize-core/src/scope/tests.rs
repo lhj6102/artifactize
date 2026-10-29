@@ -32,6 +32,10 @@ impl Fixture {
     fn config(&self) -> RepoConfig {
         read_workspace_config(&self.0).unwrap()
     }
+
+    fn error(&self) -> String {
+        read_workspace_config(&self.0).unwrap_err().to_string()
+    }
 }
 
 fn eval(instruction: &str) -> Value {
@@ -144,47 +148,61 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
             .artifact_id,
         "leaf"
     );
-    assert!(
-        !config
-            .relations
+    // Each is a part of the nearest folder Artifact around it.
+    let parts = |name: &str| {
+        config.artifacts[name]
+            .parts
             .iter()
-            .any(|edge| edge.kind == RelationKind::Child)
-    );
+            .map(ArtifactName::as_str)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(parts("parent"), ["child", "neighbor"]);
+    assert_eq!(parts("child"), ["leaf"]);
 }
 
 #[test]
-fn names_compose_through_their_nearest_declared_leading_name() {
+fn parts_join_what_a_folder_holds_and_may_be_shared_but_never_circular() {
     let fixture = Fixture::new();
-    // Folders do not follow the names: composition comes from names alone.
-    fixture.artifact("a", json!({"name":"game"}));
-    fixture.artifact("b", json!({"name":"game::combat"}));
-    fixture.artifact("a/c", json!({"name":"game::combat::skills::fireball"}));
-    fixture.artifact("d", json!({"name":"gameplay::notes"}));
+    // A shared module is a part of both apps; the ui is a part of app1 by its folder alone.
+    fixture.artifact("app1", json!({"name":"app1","parts":["module"]}));
+    fixture.artifact("app1/ui", json!({"name":"ui"}));
+    fixture.artifact("app2", json!({"name":"app2","parts":["module"]}));
+    fixture.artifact("module", json!({"name":"module"}));
     let config = fixture.config();
-    let child = |source: &str, target: &str| Relation {
+    let part = |source: &str, target: &str| Relation {
         source: source.parse().unwrap(),
         target: target.parse().unwrap(),
-        kind: RelationKind::Child,
+        kind: RelationKind::Part,
     };
-    let composition: Vec<_> = config
+    let mut parts: Vec<_> = config
         .relations
         .iter()
-        .filter(|edge| edge.kind == RelationKind::Child)
+        .filter(|edge| edge.kind == RelationKind::Part)
         .cloned()
         .collect();
+    parts.sort_by(|one, other| (&one.target, &one.source).cmp(&(&other.target, &other.source)));
     assert_eq!(
-        composition,
+        parts,
         [
-            child("game::combat", "game"),
-            child("game::combat::skills::fireball", "game::combat"),
+            part("module", "app1"),
+            part("ui", "app1"),
+            part("module", "app2")
         ]
     );
-    let game = "game".parse().unwrap();
     assert_eq!(
-        config.descendants(&game).collect::<Vec<_>>(),
-        ["game::combat", "game::combat::skills::fireball"]
+        config.descendants(&"app1".parse().unwrap()),
+        ["module", "ui"]
     );
-    assert_eq!(config.parent(&"gameplay::notes".parse().unwrap()), None);
+
+    fixture.artifact("module", json!({"name":"module","parts":["app1"]}));
+    assert!(
+        fixture
+            .error()
+            .contains("app1 is a part of itself through its parts")
+    );
+    fixture.artifact("module", json!({"name":"module"}));
+    fixture.artifact("app2", json!({"name":"app2","parts":["missing"]}));
+    assert!(fixture.error().contains("parts: Unknown Artifact missing"));
 }
 
 #[test]
@@ -247,7 +265,6 @@ fn observation_scope_never_follows_other_evals_instructions() {
         json!({"name":"input","evals":[eval("Read {hidden}.")]}),
     );
     fixture.artifact("data/child", json!({"name":"child"}));
-    fixture.artifact("part", json!({"name":"input::part"}));
     fixture.artifact("hidden", json!({"name":"hidden"}));
     let config = fixture.config();
     let eval = config

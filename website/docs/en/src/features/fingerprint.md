@@ -62,8 +62,8 @@ Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the s
 ## The reuse key
 
 An eval depends on its target Artifact and on the Artifacts the eval names in its
-instruction or runtime args. Neither the target's [constituents](artifact.md#composition)
-nor a folder Artifact nested in its folder are part of the key unless the eval names them.
+instruction or runtime args. The target's [parts](artifact.md#composition), a folder Artifact
+nested in its folder included, are not in the key unless the eval names them.
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
@@ -157,7 +157,7 @@ not when files move or their content changes. It covers:
 - Artifact names and kinds, `basis`, an aspect's `select`, and fingerprint coverage: artifactsum `files`
   and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
   
-- Relations: composition (constituent → parent, from names),
+- Relations: composition (part → the Artifact it is a part of, from folders and `parts`),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
 - Qualified eval IDs, owning Artifact, titles and evaluation criteria: default

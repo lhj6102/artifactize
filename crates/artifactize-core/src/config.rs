@@ -39,7 +39,6 @@ pub use tools::{
 };
 
 use location::Location;
-pub use validation::SPACE_SEPARATOR;
 pub(crate) use validation::{artifact_name, identifier};
 use validation::{path, paths, positive_integer, present, script, tags, text, timeout};
 
@@ -806,6 +805,9 @@ pub struct ArtifactDeclaration {
     /// An aspect's paths, relative to its declaration's folder.
     #[serde(default, deserialize_with = "present")]
     pub select: Option<Vec<LogicalPath>>,
+    /// Artifacts this one is made of besides those its folder holds.
+    #[serde(default, deserialize_with = "present")]
+    pub parts: Option<Vec<ArtifactName>>,
 }
 
 impl ArtifactDeclaration {
@@ -847,6 +849,20 @@ impl ArtifactDeclaration {
         self.views.validate(&location.child("views"), schemas)?;
         if let Some(fingerprint) = &self.fingerprint {
             fingerprint.validate(&location.child("fingerprint"))?;
+        }
+        if let Some(parts) = &self.parts {
+            let parts_location = location.child("parts");
+            if parts.is_empty()
+                || parts.len() > MAX_DECLARED_ITEMS
+                || parts.iter().collect::<BTreeSet<_>>().len() != parts.len()
+            {
+                return Err(parts_location.error("parts must name 1–64 unique Artifacts."));
+            }
+            if parts.contains(&self.name) {
+                return Err(
+                    parts_location.error(format!("{} cannot be a part of itself.", self.name))
+                );
+            }
         }
         if let Some(select) = &self.select {
             let select_location = location.child("select");
@@ -1137,6 +1153,9 @@ pub struct Artifact {
     /// An aspect's selected paths below its folder; empty for other kinds.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<LogicalPath>,
+    /// What it is made of: the Artifacts its folder holds and those its `parts` names.
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    pub parts: BTreeSet<ArtifactName>,
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
@@ -1208,8 +1227,8 @@ pub enum ReviewRequirement {
     Basis,
     Unreviewed,
     Evals,
-    /// No evals of its own: its constituents' verdicts are its verdict.
-    Constituents,
+    /// No evals of its own: its parts' verdicts are its verdict.
+    Parts,
 }
 
 #[derive(Debug)]
@@ -1221,28 +1240,18 @@ pub struct RepoConfig {
 }
 
 impl RepoConfig {
-    /// The Artifact `name` is a constituent of: its nearest declared leading name, `game` for
-    /// `game::combat::fireball` when `game::combat` is not declared.
-    pub fn parent(&self, name: &ArtifactName) -> Option<&ArtifactName> {
-        name.ancestors()
-            .find_map(|ancestor| self.artifacts.get_key_value(ancestor))
-            .map(|(id, _)| id)
-    }
-
-    /// Every Artifact `name` is composed of, directly or through its constituents: each
-    /// name under `name::`, since `name` or one of them is its nearest declared leading name.
-    pub fn descendants<'a>(
-        &'a self,
-        name: &'a ArtifactName,
-    ) -> impl Iterator<Item = &'a ArtifactName> + 'a {
-        let prefix = format!("{name}{SPACE_SEPARATOR}");
-        self.artifacts
-            .range::<str, _>((
-                std::ops::Bound::Excluded(prefix.as_str()),
-                std::ops::Bound::Unbounded,
-            ))
-            .map(|(id, _)| id)
-            .take_while(move |id| id.as_str().starts_with(&prefix))
+    /// Every Artifact `name` is made of, directly or through its parts, each once.
+    pub fn descendants<'a>(&'a self, name: &'a ArtifactName) -> Vec<&'a ArtifactName> {
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![name];
+        while let Some(next) = pending.pop() {
+            for part in self.artifacts.get(next).into_iter().flat_map(|a| &a.parts) {
+                if seen.insert(part) {
+                    pending.push(part);
+                }
+            }
+        }
+        seen.into_iter().collect()
     }
 
     /// Local obligations only; a basis does not satisfy its dependency scope.
@@ -1252,8 +1261,8 @@ impl RepoConfig {
             ReviewRequirement::Basis
         } else if self.evals.iter().any(|eval| eval.target == artifact_id) {
             ReviewRequirement::Evals
-        } else if self.descendants(&artifact.name).next().is_some() {
-            ReviewRequirement::Constituents
+        } else if !artifact.parts.is_empty() {
+            ReviewRequirement::Parts
         } else {
             ReviewRequirement::Unreviewed
         })

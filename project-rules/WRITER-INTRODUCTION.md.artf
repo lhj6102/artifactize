@@ -1,4 +1,4 @@
-name = "rules::writer-introduction"
+name = "rules-writer-introduction"
 
 [views.agent_tools]
 
@@ -16,7 +16,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open WRITER-INTRODUCTION.md of {rules::writer-introduction} with the open tool. Submit GREEN with approved: true when every rule \
+Open WRITER-INTRODUCTION.md of {rules-writer-introduction} with the open tool. Submit GREEN with approved: true when every rule \
 is one this project should follow; otherwise submit RED and list the items to change."""
 
 [evals.approved.pass_schema]

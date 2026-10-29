@@ -24,9 +24,9 @@ reference such as `{spec}` in an eval lets that eval read `spec`; when `spec` ch
 only the evals that name it are reviewed again, and every other result is reused. Sharing
 a repository or a folder alone does not make an Artifact an input of another one's check.
 
-Names add a second, separate relation: [composition](#composition). `game::combat` is
-part of `game`, so `game` cannot pass while `game::combat` fails, yet no eval of `game`
-reads `game::combat` unless it names it.
+Parts add a second, separate relation: [composition](#composition). When `combat` is a
+part of `game`, `game` cannot pass while `combat` fails, yet no eval of `game` reads
+`combat` unless it names it.
 
 Each eval also waits for the evals that judge the inputs it names; see
 [Eval dependencies](#eval-dependencies).
@@ -40,14 +40,14 @@ structure to an agent or opens it in Desktop for a person.
 
 ## Folder configuration
 
-A folder with an `index.artf` is an Artifact. `name` is required, and its leading parts
-say what it is part of: `game::combat` is a constituent of `game` (see
-[composition](#composition) and [names](declarations.md#declaration-validation)); `basis`,
-`views`, `fingerprint` and `tags` are optional. For older declarations,
+A folder with an `index.artf` is an Artifact. `name` is required (see
+[names](declarations.md#declaration-validation)); `basis`, `views`, `fingerprint`,
+`tags` and `parts` are optional. An Artifact declared inside another one's folder is a
+[part](#composition) of it. For older declarations,
 see the [legacy policy upgrade reference](../getting-started/update.md#upgrading-from-011).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
-`guide::usage/heading` on the `guide::usage` Artifact. Do not declare an `id` field. Each eval
+`usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
 has a `title` and a `profile` whose `kind` is `runtime`, `agent`,
 or `human`. All evals require `payload.instruction` and
 may have `pass_schema`, `fail_schema` and `profile_variants`.
@@ -55,7 +55,7 @@ may have `pass_schema`, `fail_schema` and `profile_variants`.
 A runtime eval's exit code is its verdict (0 is GREEN); an Agent or a Human returns
 GREEN or RED with owner fields.
 
-This is the `guide` Artifact of the [runtime-relations example](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), whose README explains constituents,
+This is the `guide` Artifact of the [runtime-relations example](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), whose README explains parts,
 `{artifact}` references and basis Artifacts:
 
 ```toml
@@ -63,8 +63,8 @@ name = "guide"
 
 [evals.terms]
 title = "Every bold term is defined in the glossary"
-profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{glossary}/terms.txt", "{guide::intro}/page.md", "{guide::usage}/page.md"], timeout_ms = 10000 }
-payload.instruction = "Check that every bold term in {guide::intro} and {guide::usage} is defined in {glossary}."
+profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{glossary}/terms.txt", "{intro}/page.md", "{usage}/page.md"], timeout_ms = 10000 }
+payload.instruction = "Check that every bold term in {intro} and {usage} is defined in {glossary}."
 ```
 
 Declaration keys are snake_case. JSON Schema keywords such as `minLength` and
@@ -90,10 +90,10 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 A file Artifact hashes its one target by default. Its working directory is the
 containing folder, but built-in tools see the file and its admitted scope, not
-unrelated siblings. The sidecar relates it to nothing, the surrounding folder Artifact
-included, which still hashes the target as part of its own files. A folder declared
-with `index.artf` inside another Artifact's folder takes its files out of that
-Artifact's; that is all nesting does. Relations come from names and references only.
+unrelated siblings. Inside a folder Artifact's folder it is a [part](#composition) of
+that Artifact, which still hashes the target as part of its own files. A folder declared
+with `index.artf` inside another Artifact's folder is a part of it too, and takes its
+files out of that Artifact's.
 See the [file-Artifact reference](declarations.md#file-artifacts) for naming,
 fingerprint forms, virtual paths and invalid-target/revalidation rules.
 
@@ -105,8 +105,8 @@ names an input Artifact; that Eval depends on the Evals judging the input. If an
 Artifact uses another one, the eval that checks that use names it as `{name}`;
 nothing else adds a dependency.
 
-A [constituent](#composition) is not an input: an eval of `game` that runs the
-whole game and so uses `game::combat` names `{game::combat}` like any other input.
+A [part](#composition) is not an input: an eval of `game` that runs the
+whole game and so uses `combat` names `{combat}` like any other input.
 
 For example, application E2E execution belongs to the application:
 
@@ -132,10 +132,10 @@ Final GREEN still requires all required evidence, including upstream reviews.
 
 Gates apply to each Eval. An Artifact shows ERROR or RED if one of its Evals is, else BLOCKED if one is blocked. A RED
 or BLOCKED gate blocks the Eval in turn, so blocking propagates along these Eval gates.
-A RED constituent blocks no Eval of its parent; it keeps the parent from passing
+A RED part blocks no Eval of the Artifact it is a part of; it keeps that Artifact from passing
 instead (see [composition](#composition)). An intermediate Artifact
 with no Evals supplies no execution gates: referring to it does not gate execution
-on its own inputs or constituents. Those still belong to the final approval obligations,
+on its own inputs or parts. Those still belong to the final approval obligations,
 so the consumer may execute without the Run being able to finish GREEN.
 
 Artifacts whose evals reference each other, directly or through a chain, form a
@@ -176,43 +176,56 @@ does not ask a person before those machine Evals are GREEN.
 
 ## Composition
 
-An Artifact can be made of others. Its name says what it is part of: `game::combat` is
-a **constituent** of `game`, and `game::combat::skills::fireball` of `game::combat`.
-The **parent** is the nearest leading part of the name that is declared, so if no
-Artifact is named `game::combat::skills`, `game::combat` is the fireball's parent. An
-undeclared leading part, such as `engine` in `engine::core` while no Artifact is named
-`engine`, only groups names for people.
+An Artifact can be made of others, its **parts**. An Artifact declared inside the folder
+of a folder Artifact is a part of the nearest one around it: a nested folder with its own
+`index.artf`, a file declared beside it, an aspect. `parts` names more, wherever they
+are:
 
-Each level is an Artifact in its own right, wherever its files are: names, not folders,
-make the composition. A parent may hold no evals and only gather its constituents, or
-have content and evals of its own, such as checks that its parts work together.
-Constituents check what they own, so the parent need not repeat their checks:
+```toml
+# game/index.artf
+name = "game"
+parts = ["physics"]
+```
+
+Here `game/combat/index.artf` makes `combat` a part of `game` with nothing to write,
+and `game/combat/skills/fireball/index.artf` makes `fireball` a part of `combat`.
+`physics`, declared in its own folder elsewhere, is a part of `game` because `parts`
+names it. One Artifact can be a part of several: a module shared by two applications is
+named in the `parts` of both, and its folder may sit inside one of them. An Artifact
+cannot be a part of itself, also not through other parts. The Graph Artifact has no
+parts and is a part of nothing.
+
+Each part is an Artifact in its own right. An Artifact may hold no evals and only
+gather its parts, or have content and evals of its own, such as checks that its parts
+work together. Parts check what they own, so the Artifact they make up need not repeat
+their checks:
 
 | Artifact | Its own evals |
 |---|---|
 | `game` | The whole game starts and its parts work together |
-| `game::combat` | Combat components work with each other |
-| `game::combat::skills::fireball` | Damage, cooldown and effects |
+| `combat` | Combat components work with each other |
+| `fireball` | Damage, cooldown and effects |
 
-Composition decides verdicts, not reviews:
+Parts decide verdicts, not reviews:
 
-- **A failing constituent fails its parent.** `game` shows RED while
-  `game::combat::skills::fireball` is RED, and passes only when every constituent and
-  its own evals pass. A parent without evals of its own has no review of its own to wait
-  for: it shows its constituents' states, UNREVIEWED included, and passes once they pass.
-- **Selecting a parent selects its constituents.** `verify game` runs or reuses the
-  evals of `game` and of every Artifact under it.
-- **Needing a parent needs its constituents.** An eval that names `{game}` needs
-  `game` to pass to finish GREEN, so the Run needs the constituents' results too. Its
+- **A failing part fails what it is a part of.** `game` shows RED while `fireball` is
+  RED, and passes only when every part, its parts' parts included, and its own evals
+  pass. An Artifact without evals of its own has no review of its own to wait for: it
+  shows its parts' states, UNREVIEWED included, and passes once they pass.
+- **Selecting an Artifact selects its parts.** `verify game` runs or reuses the
+  evals of `game`, `combat`, `fireball` and `physics`.
+- **Needing an Artifact needs its parts.** An eval that names `{game}` needs
+  `game` to pass to finish GREEN, so the Run needs its parts' results too. Its
   execution gates are still only `game`'s own evals.
-- **Nothing else follows.** Composition does not divide files: each Artifact keeps the
-  files its declaration covers. With separate files, a change to the fireball reviews
-  again only the evals that name it, and a change to `game`'s own files does not review
-  the fireball again. A file Artifact or an aspect can share files with its parent, and a
-  change to a shared file reviews both again. An eval of `game` that uses the fireball
-  names `{game::combat::skills::fireball}`.
+- **Nothing else follows.** Parts do not divide files: each Artifact keeps the files its
+  declaration covers, and a folder Artifact's files never include those of a folder
+  Artifact nested in it. A change to the fireball reviews again only the evals that name
+  it, and a change to `game`'s own files does not review the fireball again. A file
+  Artifact or an aspect shares files with the folder Artifact around it, and a change to
+  a shared file reviews both again. An eval of `game` that uses the fireball names
+  `{fireball}`.
 
-A constituent need not be a folder of its own. An [aspect](declarations.md#aspects)
+A part need not be a folder of its own. An [aspect](declarations.md#aspects)
 selects the files of one part from a larger folder, such as the fireball's code, test
 and sprite, so that part can be reviewed and reused on its own.
 

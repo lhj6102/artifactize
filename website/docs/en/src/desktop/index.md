@@ -189,11 +189,7 @@ Detail, new results, scans and layouts leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. Artifacts whose
-[names](../features/declarations.md#declaration-validation) share everything before their
-last `::`, such as `combat::Spec` and `combat::Code`, sit together in one region labelled
-`combat`, each node showing the last part (`Code`); read aloud and in the Detail an
-Artifact keeps its whole name. A region is not an Artifact: Tab passes it by. Above 40 nodes, a
+the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
 graph has no minimap, and while more than 500 are in view they are colored boxes without names
 that open only with a click or through [Find](#find-in-the-graph). Zoom in until fewer are in view to see names again and reach

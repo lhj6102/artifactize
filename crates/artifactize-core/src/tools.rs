@@ -137,7 +137,7 @@ impl<'a> Registry<'a> {
                 if let AgentTool::Command(command) = declaration
                     && let Some(session) = &command.session
                 {
-                    let key = format!("{session}_{}", id.tool_suffix());
+                    let key = format!("{session}_{}", id);
                     let identity = (id, session);
                     if session_names
                         .insert(key.clone(), identity)
@@ -146,7 +146,7 @@ impl<'a> Registry<'a> {
                         return Err(format!("Artifact tool session names collide: {key}"));
                     }
                 }
-                let name: crate::config::ToolName = format!("{operation}_{}", id.tool_suffix())
+                let name: crate::config::ToolName = format!("{operation}_{}", id)
                     .parse()
                     .expect("validated tool and Artifact names");
                 let description = match declaration {

@@ -240,9 +240,9 @@ Scope 배지와 헤더에는 주의가 필요한 항목 수가 같은 `!N ✗N �
 eval마다 **행이 하나**씩 있습니다. Artifact 행은 지금 보이는 eval 행을
 `passed/total`과 표시 우선순위가 가장 높은 상태로 요약합니다. `[file]`은 파일 Artifact를 표시하며, 그 대상
 경로와 태그는 Detail의 Technical 섹션에 있습니다. basis Artifact는 행 하나로 나옵니다.
-`◇ engine  basis`. 부모 행에는 [구성 요소](../features/artifact.md#composition)의 상태도 반영됩니다.
-끝나지 않은 구성 요소가 있으면 부모도 끝난 것으로 보지 않고, 그 구성 요소를 `constituents:` 뒤에
-보여 줍니다. 자기 eval이 없는 부모는 `made of N`을 보여 주거나, 끝나지 않은 구성 요소를 `pending:` 뒤에
+`◇ engine  basis`. Artifact 행에는 그 [부분](../features/artifact.md#composition)의 상태도 반영됩니다.
+끝나지 않은 부분이 있으면 그 Artifact도 끝난 것으로 보지 않고, 그 부분을 `parts:` 뒤에
+보여 줍니다. 자기 eval이 없는 Artifact는 `made of N`을 보여 주거나, 끝나지 않은 부분을 `pending:` 뒤에
 보여 줍니다. 별도의 관계 행이나 항상 표시되는 의존성 목록은 없습니다.
 
 Artifact의 완료 여부는 eval의 상태와 상위 게이트의 충족 여부를 함께 보고 정합니다.

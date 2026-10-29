@@ -153,43 +153,12 @@ fn name(value: &str) -> bool {
     crate::config::identifier(value, "").is_ok()
 }
 
-/// An Artifact name: local Eval id forms joined by `::`.
+/// An Artifact name: one local Eval id form.
 fn artifact_name(value: &str) -> bool {
     crate::config::artifact_name(value, "").is_ok()
 }
 
 identity!(ArtifactName, artifact_name);
-impl ArtifactName {
-    /// The leading parts of a `space::name`, `game::combat` of `game::combat::fireball`;
-    /// `None` for a one-part name.
-    pub fn space(&self) -> Option<&str> {
-        self.0
-            .rsplit_once(crate::config::SPACE_SEPARATOR)
-            .map(|(space, _)| space)
-    }
-
-    /// The last part of the name: `fireball` of `game::combat::fireball`, the whole of a
-    /// one-part name.
-    pub fn local(&self) -> &str {
-        self.0
-            .rsplit_once(crate::config::SPACE_SEPARATOR)
-            .map_or(&self.0, |(_, local)| local)
-    }
-
-    /// Every proper leading part, nearest first: `game::combat`, then `game`.
-    pub fn ancestors(&self) -> impl Iterator<Item = &str> {
-        std::iter::successors(self.space(), |name| {
-            name.rsplit_once(crate::config::SPACE_SEPARATOR)
-                .map(|(space, _)| space)
-        })
-    }
-
-    /// The name as a model's tool name spells it: `::` becomes `__`, since tool names hold
-    /// only `[A-Za-z0-9_-]`. A spelling two names share is a registry collision.
-    pub fn tool_suffix(&self) -> String {
-        self.0.replace(crate::config::SPACE_SEPARATOR, "__")
-    }
-}
 // A workspace-qualified Eval id: the Artifact name, `/`, and the Eval's local id.
 identity!(EvalId, |value: &str| value.split_once('/').is_some_and(
     |(artifact, eval)| artifact_name(artifact) && name(eval)

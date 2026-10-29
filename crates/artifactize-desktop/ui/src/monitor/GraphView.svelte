@@ -10,9 +10,6 @@
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
   // while at most that many are; with more in view, they are boxes on the canvas, which a click
   // opens as it opens an element.
-  //
-  // Each space's Artifacts sit in its region, drawn behind them, which a click passes to the
-  // background.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
@@ -21,10 +18,8 @@
   import { getAppState } from "../shell/app.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
-  import SpaceNode from "./SpaceNode.svelte";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { NODE } from "./layout";
-  import { regions } from "./spaces";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
@@ -57,7 +52,7 @@
 
   const flow = useSvelteFlow();
   const camera = useViewport();
-  const nodeTypes = { artifact: ArtifactNode, space: SpaceNode };
+  const nodeTypes = { artifact: ArtifactNode };
   /** A positive zoom floor clips sufficiently long graphs in the split canvas. Zero lets
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
@@ -75,17 +70,8 @@
 
   /** Where every Artifact is, indexed by area. */
   const laid = $derived(scene(positions));
-  /** Each space's region around its Artifacts; few, so always kept as elements. */
-  const spaces = $derived(regions(graph, positions));
-  /** The whole graph, the spaces' regions included, as Fit View fits it. */
-  const bounds = $derived.by(() => {
-    const all = [laid.bounds, ...spaces];
-    if (spaces.length === 0) return laid.bounds;
-    const [left, top] = [Math.min(...all.map((box) => box.x)), Math.min(...all.map((box) => box.y))];
-    const right = Math.max(...all.map((box) => box.x + box.width));
-    const bottom = Math.max(...all.map((box) => box.y + box.height));
-    return { x: left, y: top, width: right - left, height: bottom - top };
-  });
+  /** The whole graph, as Fit View fits it. */
+  const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
   const large = $derived(graph.nodes.length > DRAWN);
   /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
@@ -101,23 +87,7 @@
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() => {
     const keep = drawn === null ? null : new Set(drawn === "" ? [] : drawn.split(",").map((number) => laid.ids[Number(number)]));
-    const behind = spaces.map((region): Node => ({
-      id: `space:${region.space}`,
-      type: "space",
-      position: { x: region.x, y: region.y },
-      width: region.width,
-      height: region.height,
-      measured: v.initialized ? { width: region.width, height: region.height } : undefined,
-      data: { space: region.space, outline: region.outline, label: region.label },
-      draggable: false,
-      connectable: false,
-      selectable: false,
-      focusable: false,
-      zIndex: -1,
-      ariaLabel: `Space ${region.space}`,
-      domAttributes: { "data-space": region.space },
-    }));
-    const artifacts = graph.nodes
+    return graph.nodes
       .filter((node) => positions.has(node.id) && (keep === null || keep.has(node.id)))
       .map((node) => ({
         id: node.id,
@@ -130,13 +100,12 @@
         width: NODE.width,
         height: NODE.height,
         measured: v.initialized ? { width: NODE.width, height: NODE.height } : undefined,
-        data: { label: node.label, light: node.light, open: node.id === opened },
+        data: { name: node.name, light: node.light, open: node.id === opened },
         draggable: false,
         connectable: false,
         ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}`,
         domAttributes: { "data-light": node.light },
       }));
-    return [...behind, ...artifacts];
   });
   // A large graph's edges are all on the canvas.
   let edges = $derived.by<Edge[]>(() =>
@@ -342,10 +311,6 @@
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
-  }
-  /* A space's region takes the pointer only within its outline and on its label. */
-  .canvas :global(.svelte-flow__node-space) {
-    pointer-events: none;
   }
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);

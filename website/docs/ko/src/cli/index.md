@@ -278,21 +278,21 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 
 | 상태 | eval | Artifact |
 |---|---|---|
-| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족합니다 | eval이 모두 `PASS`이고, 구성 요소와 의존하는 Artifact도 모두 검증 요건을 충족합니다 |
-| `RED` | 현재 재사용 키에 맞는 RED 결과가 있습니다 | eval이나 구성 요소 중 하나가 `RED`입니다 |
-| `BLOCKED` | 게이트가 RED입니다 | eval이나 구성 요소 중 하나가 `BLOCKED`입니다 |
-| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없습니다 | eval이나 구성 요소 중 하나가 대기 중입니다 |
+| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족합니다 | eval이 모두 `PASS`이고, 부분과 의존하는 Artifact도 모두 검증 요건을 충족합니다 |
+| `RED` | 현재 재사용 키에 맞는 RED 결과가 있습니다 | eval이나 부분 중 하나가 `RED`입니다 |
+| `BLOCKED` | 게이트가 RED입니다 | eval이나 부분 중 하나가 `BLOCKED`입니다 |
+| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없습니다 | eval이나 부분 중 하나가 대기 중입니다 |
 | `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있습니다 | — |
-| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있습니다 | eval이나 구성 요소 중 하나가 `DEFERRED`입니다 |
-| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL`입니다 | eval이나 구성 요소 중 하나가 `PROVISIONAL`입니다 |
-| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없습니다(이전 오류, 키 없는 결과, `--force` 포함) | eval이나 구성 요소 중 하나가 `STALE`입니다 |
-| `UNREVIEWED` | 리뷰한 적이 없습니다 | 리뷰한 eval이 없거나, eval도 구성 요소도 없습니다 |
+| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있습니다 | eval이나 부분 중 하나가 `DEFERRED`입니다 |
+| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL`입니다 | eval이나 부분 중 하나가 `PROVISIONAL`입니다 |
+| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없습니다(이전 오류, 키 없는 결과, `--force` 포함) | eval이나 부분 중 하나가 `STALE`입니다 |
+| `UNREVIEWED` | 리뷰한 적이 없습니다 | 리뷰한 eval이 없거나, eval도 부분도 없습니다 |
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않습니다 |
 | `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact입니다 |
 
-Artifact의 eval과 [구성 요소](../features/artifact.md#composition)의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+Artifact의 eval과 [부분](../features/artifact.md#composition)의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
 `STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다.
-그래서 자기 eval이 없는 부모는 구성 요소의 상태를 그대로 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
+그래서 자기 eval이 없는 Artifact는 부분의 상태를 그대로 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
@@ -385,7 +385,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
-payload, 스키마, 도구 뷰), 태그, 자식(이름에 따른 구성)·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
+payload, 스키마, 도구 뷰), 태그, 부분·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
 `kind`(`file`, `folder`, `aspect`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
 경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 강한 연결

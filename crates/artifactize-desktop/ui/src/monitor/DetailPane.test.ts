@@ -71,10 +71,10 @@ function setup(tab: string | null = null) {
       // The backend cut two more Artifacts that use `app`.
       return { moreUses: 0, moreUsedBy: 2, shape: {
         nodes: [
-          { id: "a:core", name: "core", space: null, label: "core", light: "green", note: null },
-          { id: "a:app", name: "app", space: null, label: "app", light: "red", note: null },
-          { id: "a:docs", name: "docs", space: null, label: "docs", light: "green", note: null },
-          { id: "a:far", name: "far", space: null, label: "far", light: "green", note: null },
+          { id: "a:core", name: "core", light: "green", note: null },
+          { id: "a:app", name: "app", light: "red", note: null },
+          { id: "a:docs", name: "docs", light: "green", note: null },
+          { id: "a:far", name: "far", light: "green", note: null },
         ],
         edges: [
           { source: "a:core", target: "a:app", light: "green" },

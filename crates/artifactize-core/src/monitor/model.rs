@@ -669,25 +669,22 @@ impl<'a> Saved<'a> {
         })
     }
 
-    /// Each parent with the Artifacts it is directly composed of.
-    fn constituents(&self) -> std::collections::BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>> {
-        let mut constituents: std::collections::BTreeMap<_, Vec<_>> = Default::default();
+    /// Each Artifact with its direct parts.
+    fn parts(&self) -> std::collections::BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>> {
+        let mut parts: std::collections::BTreeMap<_, Vec<_>> = Default::default();
         for relation in self
             .definitions()
             .into_iter()
             .flat_map(|graph| graph.relations())
         {
-            if matches!(
-                relation.kind,
-                crate::store::definitions::RelationKind::Child { .. }
-            ) {
-                constituents
+            if matches!(relation.kind, crate::store::definitions::RelationKind::Part) {
+                parts
                     .entry(&relation.target)
                     .or_default()
                     .push(&relation.source);
             }
         }
-        constituents
+        parts
     }
 
     fn relations(
@@ -713,11 +710,11 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
     use crate::store::definitions::RelationKind;
     let kind = match &relation.kind {
         RelationKind::Unknown { .. } => serde_json::to_string(relation).unwrap_or_default(),
-        // Runs saved before composition by name recorded the child's folder.
-        RelationKind::Child { path } => match path.value() {
-            Some(path) => format!("child {path}"),
-            None => "child".into(),
-        },
+        RelationKind::Part => "part".into(),
+        RelationKind::Child { path } => format!(
+            "child {}",
+            path.value().map_or("", crate::config::ChildPrefix::as_str)
+        ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,

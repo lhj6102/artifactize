@@ -1,4 +1,4 @@
-name = "docs::readme"
+name = "docs-readme"
 
 [views.agent_tools.read]
 builtin = "read"
@@ -15,8 +15,8 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read the shared checklist {rules::writer-introduction} and the
-root README {docs::readme}. Check every W- item and this Artifact's own criteria:
+Read the shared checklist {rules-writer-introduction} and the
+root README {docs-readme}. Check every W- item and this Artifact's own criteria:
 - R-FLOW: Badges are at the top; the exact project sentence is the first headline, followed by
   the role animation, who it is for, the example Artifact Graph image, the introduction video, the project's
   principles, a short explanation, installation, and real product screenshots at the bottom. The role
@@ -65,8 +65,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.matches-landing-install.payload]
 instruction = """
-Read the installation section of the root README {docs::readme} and the install section of index.html
-of {docs::landing}. For each operating system (Linux, macOS, Windows), compare what the two tell a
+Read the installation section of the root README {docs-readme} and the install section of index.html
+of {docs-landing}. For each operating system (Linux, macOS, Windows), compare what the two tell a
 reader to do: the default install command must be identical, an alternative method both name
 must be the same, and both must agree on which channels are not available yet. Wording and
 layout may differ, and either may mention a detail the other leaves out as long as nothing
