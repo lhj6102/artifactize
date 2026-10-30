@@ -175,8 +175,8 @@ parts = ["physics"]
 `game/combat/skills/fireball/index.artf`가 있으면 `fireball`은 `combat`의 부분입니다. 다른 폴더에
 선언한 `physics`는 `parts`에 적혀 있으므로 `game`의 부분입니다. 한 Artifact가 여러 Artifact의
 부분일 수도 있습니다. 두 애플리케이션이 함께 쓰는 모듈은 두 애플리케이션의 `parts`에 모두 적으며,
-그 모듈의 폴더는 둘 중 한쪽 안에 있어도 됩니다. 다른 부분을 거치더라도 Artifact가 자기 자신의
-부분이 될 수는 없습니다. Graph Artifact는 부분을 갖지 않고 어떤 Artifact의 부분도 아닙니다.
+그 모듈의 폴더는 둘 중 한쪽 안에 있어도 됩니다. 부분 관계가 이어져도 Artifact는 자기 자신을
+부분으로 삼을 수 없습니다. Graph Artifact는 부분을 갖지 않고 어떤 Artifact의 부분도 아닙니다.
 
 부분은 저마다 그 자체로 하나의 Artifact입니다. Artifact는 eval 없이 부분을 모으기만 할 수도 있고,
 부분들이 함께 동작하는지 보는 검사처럼 자기 내용과 eval을 가질 수도 있습니다. 부분이 자기 몫을

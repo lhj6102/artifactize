@@ -206,14 +206,11 @@ order: an Artifact by its whole name and an eval as `Artifact / eval`, each with
 verdict's mark and colour (on a Current, what verify would do). It lists the first 50 and
 says how many more match, or that none does.
 
-↑/↓ choose an entry. Enter, on the first entry when none is chosen, or a click opens its
-Detail, on the eval's tab for an eval, and moves the camera so that the Artifact sits in
-the middle of the graph left of the Detail, zooming in only as far as its name needs to
-read. Esc closes it and leaves the graph and the Detail as they were, giving the keyboard
-back to where it was. A click outside the field also closes it, and the click does what it
-does anyway: on an Artifact it opens that Artifact's Detail, and on the background it closes
-the Detail. Find reaches every
-Artifact, also in a graph too large to show their names.
+↑/↓ choose an entry. Enter (on the first entry when none is chosen) or a click opens its
+Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
+Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
+click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
+graph too large to show their names.
 
 ### Detail
 

@@ -366,8 +366,8 @@ artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 �
 
 ## Fingerprint 스크립트 {#fingerprint-scripts}
 
-eval을 실행하기 전에 `verify`는 선택한 eval에 필요한 의존성 범위의 fingerprint를 계산하며,
-eval을 선택하지 않은 의존성도 포함합니다. 동시에 몇 개를 계산할지는
+eval을 실행하기 전에 `verify`는 선택한 eval에 필요한 모든 Artifact의 fingerprint를 계산하며,
+eval을 선택하지 않은 의존 Artifact도 포함합니다. 동시에 몇 개를 계산할지는
 [`--fingerprint-jobs`](../cli/index.md#runtime-cli)로 정합니다. 실패하면 이름 순서로 처음 실패한
 Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도의 출력 폴더를 줍니다.
 

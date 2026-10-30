@@ -430,8 +430,8 @@ folder may show only that something changed.
 
 ## Fingerprint scripts
 
-Before executing evals, `verify` computes fingerprints in their selected required
-dependency closure, including dependencies whose evals are not selected.
+Before executing evals, `verify` computes the fingerprint of every Artifact the selected
+evals need, also of the Artifacts they depend on whose own evals are not selected.
 How many are computed at once is set by
 [`--fingerprint-jobs`](../cli/index.md#runtime-cli). A failure reports the first failing
 Artifact in name order and stops the rest. Each script gets its own private output

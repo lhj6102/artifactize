@@ -94,21 +94,15 @@ line of status, claim and waiting time. `t` shows or hides Technical: request,
 Run, repository, full claim details, shared execution, creation time and GREEN/RED
 owner schemas; for a waiting follower, those of its original request.
 
-Before claim, the instruction fills the body and tools appear on one line. After
-claim, it folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds
-it while not editing; the expanded instruction takes 70% of the body and ↑/↓
-scrolls it. While Technical is shown the instruction stays expanded, so hide
-Technical with `t` before `i` can fold it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
-the wheel over the instruction scrolls it too. Tools focus widens the Tools and
-Tool log column to 60% of the available width;
-the selected tool shows its action and description. A command tool shows the command line
-it would run, worked out from the declarations when you opened the review, without claiming
-it or running anything. If you changed the declarations since, the line may be out of date
-until the next tool run updates it. If a tool's command could not be
-worked out, for example because its program is missing, it shows the declaration and why.
-If the review's declarations could not be read at all, every tool shows its command as
-declared, without a reason; running the tool then reports the error. Fix the declaration
-and verify again.
+Before claim, the instruction fills the body and tools appear on one line; after claim it
+folds to two rows above the Tools, the Tool log and the fields. `i` expands or folds it
+while not editing, and ↑/↓ scroll the expanded instruction; hide Technical with `t` first,
+since the instruction stays expanded while Technical is shown. Ctrl-PgUp/PgDn scrolls long
+criteria from any sub-area, and in monitor so does the wheel over the instruction. Tools
+focus widens the Tools and Tool log column to 60% of the width, and the selected tool shows
+its action and description. A command tool previews the command line it would run, worked
+out when you opened the review, without running anything. When the command cannot be worked
+out, the tool shows its declaration and why; running it reports the error.
 A built-in shows an action on a logical target instead: for example, opening
 `notes.md`, printing a Markdown section, or listing a directory, not a shell
 command line.
