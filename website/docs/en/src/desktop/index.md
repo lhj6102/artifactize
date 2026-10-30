@@ -189,11 +189,12 @@ Detail, new results, scans and layouts leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
-pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
-graph has no minimap, and while more than 500 are in view they are colored boxes without names
-that open only with a click or through [Find](#find-in-the-graph). Zoom in until fewer are in view to see names again and reach
-them with Tab and Enter. When a Run changes, the graph's colors update in
+the left, its edges still drawn to each Artifact that uses it. These limits count the
+nodes drawn, a part drawn inside several Artifacts once for each. Above 40 nodes, a
+pannable, zoomable minimap helps navigate the graph. **More than 500 nodes:** the
+graph has no minimap, and while more than 500 are in or near the view they are colored boxes without names
+that open only with a click or through [Find](#find-in-the-graph). Zoom in until names show again to
+reach them with Tab and Enter. When a Run changes, the graph's colors update in
 place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
 
