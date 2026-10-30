@@ -340,8 +340,8 @@ The verdict is already recorded; retry publication with Settings' **Push results
 ### Leave and quit
 
 Press `q` outside a text field, choose **Quit** in Commands, or close the window. `q`
-waits while a Human review you are in is editing or busy, and does nothing while
-Settings is open.
+does not quit while the keyboard is in a Human review that is editing or busy, so finish
+or cancel that work first; it also does nothing while Settings is open.
 
 If this window took Human claims it has not submitted or released, it asks what to
 do with them:
