@@ -533,6 +533,7 @@ pub fn run_node(run: &RunView) -> Node {
         changed: false,
         upstream: Vec::new(),
         held: false,
+        parts: Vec::new(),
         children: Vec::new(),
     }
 }

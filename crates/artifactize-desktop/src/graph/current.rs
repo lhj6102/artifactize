@@ -370,13 +370,16 @@ fn view(currents: &Currents, branch: BranchKey) -> Result<CurrentView, Failure> 
     })
 }
 
-/// The same Artifacts and edges in the same order, whatever they would do.
+/// The same Artifacts, parts and edges in the same order, whatever they would do.
 fn same_shape(before: &Current, after: &Current) -> bool {
     before
         .artifacts
         .iter()
-        .map(|artifact| &artifact.name)
-        .eq(after.artifacts.iter().map(|artifact| &artifact.name))
+        .map(|artifact| (&artifact.name, &artifact.parts))
+        .eq(after
+            .artifacts
+            .iter()
+            .map(|artifact| (&artifact.name, &artifact.parts)))
         && before
             .edges
             .iter()
@@ -386,6 +389,8 @@ fn same_shape(before: &Current, after: &Current) -> bool {
 
 /// The graph of `current`, every Artifact lit and noted by what verify would do.
 pub(crate) fn shape(current: &Current) -> Shape {
+    let names: std::collections::BTreeSet<_> =
+        current.artifacts.iter().map(|artifact| &artifact.name).collect();
     Shape {
         nodes: current
             .artifacts
@@ -395,6 +400,12 @@ pub(crate) fn shape(current: &Current) -> Shape {
                 name: artifact.name.to_string(),
                 light: artifact.plan.into(),
                 note: Some(artifact.text()),
+                parts: artifact
+                    .parts
+                    .iter()
+                    .filter(|part| names.contains(part))
+                    .map(node_id)
+                    .collect(),
             })
             .collect(),
         edges: current

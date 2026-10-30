@@ -86,6 +86,8 @@ pub struct Node {
     pub upstream: Vec<Upstream>,
     /// A waiting Eval cannot proceed in this Run because an actual external gate failed.
     pub(crate) held: bool,
+    /// Artifact rows: the Artifacts it is made of directly, by name.
+    pub parts: Vec<ArtifactName>,
     /// Timed eval rows, so a cached tree can redraw its elapsed times.
     pub clock: Option<Clock>,
     pub children: Vec<Node>,
@@ -402,6 +404,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a EvalId, now: OffsetDateTime) -> 
         changed: false,
         upstream: states.upstream_states(eval),
         held: states.held_for_run(eval),
+        parts: Vec::new(),
         children: Vec::new(),
         kind: Kind::Eval(view),
     }
@@ -636,6 +639,7 @@ fn artifact_node<'a>(
         changed: false,
         upstream: Vec::new(),
         held: false,
+        parts: parts.iter().map(|&part| part.clone()).collect(),
         children,
     }
 }

@@ -64,3 +64,36 @@ async fn a_scan_shows_the_graph_first_every_artifact_checking_then_what_verify_w
     );
     assert_eq!(edges(&current), edges(first));
 }
+
+#[tokio::test]
+async fn a_whole_holds_its_parts_without_edges_to_them_and_does_what_they_do() {
+    let repo = crate::test_os::tempdir();
+    let state = crate::test_os::tempdir();
+    for (folder, declaration) in [
+        ("kit", "name = 'kit'\nparts = ['notes']\n"),
+        (
+            "kit/core",
+            "name = 'core'\nfingerprint = { files = ['.'] }\n[evals.review]\ntitle = 'Review the core'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review it.' }\n",
+        ),
+        ("notes", "name = 'notes'\nbasis = true\n"),
+    ] {
+        fs::create_dir_all(repo.path().join(folder)).unwrap();
+        fs::write(repo.path().join(folder).join("index.artf"), declaration).unwrap();
+    }
+    let current = scan(repo.path(), state.path(), CancellationToken::new(), |_| {})
+        .await
+        .unwrap();
+    let kit = current
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.name.as_str() == "kit")
+        .unwrap();
+    assert_eq!(
+        kit.parts.iter().map(|part| part.as_str()).collect::<Vec<_>>(),
+        ["core", "notes"]
+    );
+    assert!(edges(&current).is_empty());
+    // Without evals of its own, it would run what its part would run.
+    assert_eq!(kit.plan, Plan::Run);
+    assert_eq!(kit.text(), "would run");
+}

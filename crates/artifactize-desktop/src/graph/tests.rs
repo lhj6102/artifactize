@@ -10,6 +10,7 @@ fn node(text: &str, light: monitor::Light) -> monitor::GraphNode {
         id: monitor::NodeId::artifact(name(text)),
         name: name(text),
         light,
+        parts: Vec::new(),
     }
 }
 

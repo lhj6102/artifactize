@@ -527,6 +527,8 @@ export type GraphNode = {
 	light: Light,
 	/**  Under the name: on a Current what verify would do, `would run (2 evals)`. */
 	note: string | null,
+	/**  The Artifacts of the graph it is made of directly, by tree id: drawn inside it. */
+	parts: string[],
 };
 
 /**  The Tool logs that changed, each whole. */
@@ -863,7 +865,7 @@ export type Settled =
  */
 "savedLocally";
 
-/**  The Artifacts and the edges between them, each with its light. */
+/**  The Artifacts, each with its parts, and the edges between them, each with its light. */
 export type Shape = {
 	/**  Upstream first, in the tree's order. */
 	nodes: GraphNode[],

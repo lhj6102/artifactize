@@ -138,18 +138,24 @@ fn artifact_detail_groups_waits_without_dropping_equal_eval_names() {
 }
 
 #[test]
-fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_or_edges() {
+fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_parts_or_edges() {
     use super::{Graph, GraphEdge, GraphNode, Light, NodeId};
     use crate::types::ArtifactName;
     let name = |text: &str| text.parse::<ArtifactName>().unwrap();
-    let graph = |lights: [Light; 2], names: [&str; 2], edges: &[(&str, &str)]| Graph {
+    let whole = |lights: [Light; 2], names: [&str; 2], edges: &[(&str, &str)], parts: &[&str]| Graph {
         nodes: names
             .iter()
             .zip(lights)
-            .map(|(item, light)| GraphNode {
+            .enumerate()
+            .map(|(at, (item, light))| GraphNode {
                 id: NodeId::artifact(name(item)),
                 name: name(item),
                 light,
+                parts: if at == 0 {
+                    parts.iter().map(|part| name(part)).collect()
+                } else {
+                    Vec::new()
+                },
             })
             .collect(),
         edges: edges
@@ -161,6 +167,7 @@ fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_or_edges() {
             })
             .collect(),
     };
+    let graph = |lights, names, edges: &[(&str, &str)]| whole(lights, names, edges, &[]);
     let base = graph([Light::Waiting; 2], ["lib", "app"], &[("lib", "app")]);
     // Other lights keep the shape.
     assert!(base.same_shape(&graph(
@@ -184,5 +191,12 @@ fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_or_edges() {
         [Light::Waiting; 2],
         ["lib", "app"],
         &[("app", "lib")]
+    )));
+    // Nor do other parts.
+    assert!(!base.same_shape(&whole(
+        [Light::Waiting; 2],
+        ["lib", "app"],
+        &[("lib", "app")],
+        &["app"]
     )));
 }

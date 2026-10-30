@@ -75,6 +75,8 @@ pub struct GraphNode {
     pub light: Light,
     /// Under the name: on a Current what verify would do, `would run (2 evals)`.
     pub note: Option<String>,
+    /// The Artifacts of the graph it is made of directly, by tree id: drawn inside it.
+    pub parts: Vec<crate::ids::NodeKey>,
 }
 
 /// `target`'s evals depend on `source`; both are tree ids.
@@ -86,7 +88,7 @@ pub struct GraphEdge {
     pub light: Light,
 }
 
-/// The Artifacts and the edges between them, each with its light.
+/// The Artifacts, each with its parts, and the edges between them, each with its light.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Shape {
@@ -132,6 +134,7 @@ fn shape(graph: &monitor::Graph) -> Shape {
                 name: node.name.to_string(),
                 light: node.light.into(),
                 note: None,
+                parts: node.parts.iter().map(node_id).collect(),
             })
             .collect(),
         edges: graph
