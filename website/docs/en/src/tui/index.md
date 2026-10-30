@@ -101,8 +101,9 @@ since the instruction stays expanded while Technical is shown. Ctrl-PgUp/PgDn sc
 criteria from any sub-area, and in monitor so does the wheel over the instruction. Tools
 focus widens the Tools and Tool log column to 60% of the width, and the selected tool shows
 its action and description. A command tool previews the command line it would run, worked
-out when you opened the review, without running anything. When the command cannot be worked
-out, the tool shows its declaration and why; running it reports the error.
+out when you opened the review, without running anything. When one command cannot be worked
+out, the tool shows its declaration and why; when the review's commands cannot be worked out
+at all, every tool shows only its declaration. Running a tool reports the error either way.
 A built-in shows an action on a logical target instead: for example, opening
 `notes.md`, printing a Markdown section, or listing a directory, not a shell
 command line.

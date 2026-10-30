@@ -63,18 +63,18 @@ const view = (node: string, title: string): DetailView => ({
   mark: null, sections: [], evidence: null, running: false, card: null,
 });
 
-function setup(tab: string | null = null) {
+function setup(tab: string | null = null, drawn: { wholes: string[]; copies: number } = { wholes: [], copies: 1 }) {
   const read: string[] = [];
   mockIPC((command, args) => {
     if (command === "detail_row") return rowOf(args);
     if (command === "neighbours") {
       // The backend cut two more Artifacts that use `app`.
-      return { moreUses: 0, moreUsedBy: 2, shape: {
+      return { moreUses: 0, moreUsedBy: 2, ...drawn, shape: {
         nodes: [
-          { id: "a:core", name: "core", light: "green", note: null },
-          { id: "a:app", name: "app", light: "red", note: null },
-          { id: "a:docs", name: "docs", light: "green", note: null },
-          { id: "a:far", name: "far", light: "green", note: null },
+          { id: "a:core", name: "core", light: "green", note: null, parts: [] },
+          { id: "a:app", name: "app", light: "red", note: null, parts: [] },
+          { id: "a:docs", name: "docs", light: "green", note: null, parts: [] },
+          { id: "a:far", name: "far", light: "green", note: null, parts: [] },
         ],
         edges: [
           { source: "a:core", target: "a:app", light: "green" },
@@ -227,6 +227,8 @@ it("draws the Artifact between the Artifacts its evals use and those that use it
   expect(onopen).toHaveBeenCalledWith("a:docs");
   await fireEvent.click(node("a:app")!);
   expect(onopen).toHaveBeenCalledTimes(1);
+  // Drawn once, it says nothing of where.
+  expect(screen.queryByText(/^Drawn /)).toBeNull();
 });
 
 it("folds an eval Summary's technical facts under Debug, which t shows and hides", async () => {
@@ -267,4 +269,9 @@ it("lets go of a Detail whose node the Run no longer has", async () => {
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone,
   });
   await waitFor(() => expect(ongone).toHaveBeenCalledOnce());
+});
+
+it("says that a part of several wholes is drawn in each of them, naming them", async () => {
+  setup(null, { wholes: ["kit", "site"], copies: 2 });
+  expect(await screen.findByText("Drawn 2 times on the graph, inside kit and site.")).toBeTruthy();
 });

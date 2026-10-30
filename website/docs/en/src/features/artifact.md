@@ -139,7 +139,8 @@ on its own inputs or parts. Those still belong to the final approval obligations
 so the consumer may execute without the Run being able to finish GREEN.
 
 Artifacts whose evals reference each other, directly or through a chain, form a
-**cycle**. Evals in a cycle do not
+**cycle**. These gates come from references alone; parts count only toward the
+[cycle peers](run.md#verify-and-runs) an Artifact selector runs. Evals in a cycle do not
 gate each other. For example, if `docs`'s eval references `cli` and `cli`'s eval
 references `docs`, a RED `cli/tests` does not block `docs/matches-cli` or replace its
 verdict. Both run independently and must pass before consumers outside the cycle can

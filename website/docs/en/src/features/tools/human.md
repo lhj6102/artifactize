@@ -6,6 +6,11 @@ declare, or a [built-in tool](builtin.md) (`read`, `list`, `section`, `help`,
 `open` and `graph` launch a program; the others print output. The rest of this page
 is about commands.
 
+A command tool is offered to the reviewer as `<operation>_<artifactId>`, as Agent tools are,
+and every name must be unique across the eval's scope: operation `a` on Artifact `b_c` and
+operation `a_b` on Artifact `c` would both be `a_b_c`. Such a collision stops the review's
+tools with `Artifact tool names collide: a_b_c`; rename an operation or an Artifact.
+
 ## Arguments
 
 Arguments are a fixed list. The only placeholders are `{artifactPath}`, the

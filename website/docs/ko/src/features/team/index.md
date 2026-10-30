@@ -89,7 +89,7 @@ artifactize remote status
 **공유 수준.** 기본값인 `summary`는 다음을 보냅니다.
 
 - 판정
-- 스키마로 검증한 소유자 필드(Runtime eval에서는 종료 코드,
+- 스키마로 검증한 추가 결과 필드(Runtime eval에서는 종료 코드,
   소요 시간, 잘림 표시만)
 - 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
   fingerprint와 그 종류(`folder`/`file`/`aspect`/`graph`)
@@ -105,7 +105,7 @@ artifactize remote status
 선언된 Runtime 프로필 전체는 보냅니다. 프로필에 적은 경로나 민감한 리터럴은 가려지지 않고 공유됩니다.
 `executionPaths` 기록에도 작업 공간 기준 상대 경로가 들어 있습니다.
 `full`(`remote login --share full` 또는 `ARTIFACTIZE_REMOTE_SHARE=full`)은 추가로
-캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 소유자 필드에는
+캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 추가 결과 필드에는
 텍스트를 자유롭게 쓸 수 있으므로, 공유되는 선언과 `pass_schema`, `fail_schema`가 허용하는 필드에는
 API 키나 토큰 같은 민감한 정보를 넣지 마세요.
 

@@ -75,6 +75,8 @@ pub struct GraphNode {
     pub light: Light,
     /// Under the name: on a Current what verify would do, `would run (2 evals)`.
     pub note: Option<String>,
+    /// The Artifacts of the graph it is made of directly, by tree id: drawn inside it.
+    pub parts: Vec<crate::ids::NodeKey>,
 }
 
 /// `target`'s evals depend on `source`; both are tree ids.
@@ -86,7 +88,7 @@ pub struct GraphEdge {
     pub light: Light,
 }
 
-/// The Artifacts and the edges between them, each with its light.
+/// The Artifacts, each with its parts, and the edges between them, each with its light.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Shape {
@@ -132,6 +134,7 @@ fn shape(graph: &monitor::Graph) -> Shape {
                 name: node.name.to_string(),
                 light: node.light.into(),
                 note: None,
+                parts: node.parts.iter().map(node_id).collect(),
             })
             .collect(),
         edges: graph
@@ -196,6 +199,10 @@ pub struct Neighbours {
     pub more_uses: u32,
     /// Artifacts whose evals use it beyond those shown.
     pub more_used_by: u32,
+    /// The Artifacts it is a part of directly, by name in the graph's order.
+    pub wholes: Vec<String>,
+    /// How many times the graph draws it: once inside each drawing of each of its wholes.
+    pub copies: u32,
 }
 
 /// Neighbours shown on each side: a shared input that thousands of Artifacts use would
@@ -229,6 +236,8 @@ fn neighbours_in(graph: &Shape, node: &monitor::NodeId) -> Neighbours {
             },
             more_uses: 0,
             more_used_by: 0,
+            wholes: Vec::new(),
+            copies: 0,
         };
     };
     let lights: std::collections::BTreeMap<_, Light> = graph
@@ -268,7 +277,47 @@ fn neighbours_in(graph: &Shape, node: &monitor::NodeId) -> Neighbours {
         },
         more_uses,
         more_used_by,
+        wholes: graph
+            .nodes
+            .iter()
+            .filter(|item| item.parts.contains(&own.id))
+            .map(|item| item.name.clone())
+            .collect(),
+        copies: copies(graph, &own.id),
     }
+}
+
+/// How many times `graph` draws `node`: once at the top, unless it is a part, else once inside
+/// each drawing of each Artifact it is a part of.
+fn copies(graph: &Shape, node: &crate::ids::NodeKey) -> u32 {
+    type Wholes<'a> = std::collections::BTreeMap<&'a monitor::NodeId, Vec<&'a monitor::NodeId>>;
+    let mut wholes: Wholes<'_> = Default::default();
+    for item in &graph.nodes {
+        for part in &item.parts {
+            wholes
+                .entry(part.inner())
+                .or_default()
+                .push(item.id.inner());
+        }
+    }
+    // Parts close no cycle; one in a saved Run would count its way round once.
+    fn count<'a>(
+        wholes: &Wholes<'a>,
+        node: &'a monitor::NodeId,
+        path: &mut Vec<&'a monitor::NodeId>,
+    ) -> u32 {
+        let above = wholes.get(node).map_or(&[][..], Vec::as_slice);
+        if above.is_empty() || path.contains(&node) {
+            return 1;
+        }
+        path.push(node);
+        let sum = above.iter().fold(0u32, |sum, whole| {
+            sum.saturating_add(count(wholes, whole, path))
+        });
+        path.pop();
+        sum
+    }
+    count(&wholes, node.inner(), &mut Vec::new())
 }
 
 #[cfg(test)]

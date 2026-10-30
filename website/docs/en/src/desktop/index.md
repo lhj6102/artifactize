@@ -189,13 +189,21 @@ Detail, new results, scans and layouts leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
-pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
-graph has no minimap, and while more than 500 are in view they are colored boxes without names
-that open only with a click or through [Find](#find-in-the-graph). Zoom in until fewer are in view to see names again and reach
-them with Tab and Enter. When a Run changes, the graph's colors update in
+the left, its edges still drawn to each Artifact that uses it. These limits count the
+nodes drawn, a part drawn inside several Artifacts once for each. Above 40 nodes, a
+pannable, zoomable minimap helps navigate the graph. **More than 500 nodes:** the
+graph has no minimap, and while more than 500 are in or near the view they are colored boxes without names
+that open only with a click or through [Find](#find-in-the-graph). Zoom in until names show again to
+reach them with Tab and Enter. When a Run changes, the graph's colors update in
 place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
+
+An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
+its parts, its name and colour at the top; a part with parts of its own is a box inside it.
+The box is that Artifact: a click on the box outside its parts, or Tab and Enter, opens its
+Detail, and a click on a part opens the part's. A part of several Artifacts is drawn inside
+each of them. Opening one of its copies highlights them all, and its Detail says how many
+times it is drawn and inside which Artifacts.
 
 ### Find in the graph
 
@@ -210,7 +218,8 @@ says how many more match, or that none does.
 Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
 Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
 click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
-graph too large to show their names.
+graph too large to show their names. A part drawn inside several Artifacts is listed once,
+and opening it centres its first copy.
 
 ### Detail
 

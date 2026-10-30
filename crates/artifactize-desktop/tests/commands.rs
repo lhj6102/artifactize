@@ -955,8 +955,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     assert_eq!(
         before["nodes"],
         json!([
-            {"id": "a:release", "name": "release", "light": "active", "note": null},
-            {"id": "a:ship", "name": "ship", "light": "waiting", "note": null},
+            {"id": "a:release", "name": "release", "light": "active", "note": null, "parts": []},
+            {"id": "a:ship", "name": "ship", "light": "waiting", "note": null, "parts": []},
         ])
     );
     assert_eq!(
@@ -978,6 +978,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
             },
             "moreUses": 0,
             "moreUsedBy": 0,
+            "wholes": [],
+            "copies": 1,
         })
     );
     // An Artifact the Run lacks has no row and no neighbours.
@@ -1148,6 +1150,9 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     fs::create_dir(&repo).unwrap();
     fs::write(repo.join(".artf"), "name = 'graph'\n[evals.review]\ntitle = 'Review the graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review {app}.' }\n").unwrap();
     fs::write(repo.join("index.artf"), "name = 'app'\n").unwrap();
+    // A part of app: its folder holds it.
+    fs::create_dir(repo.join("lib")).unwrap();
+    fs::write(repo.join("lib/index.artf"), "name = 'lib'\n").unwrap();
     let launch = Launch::parse([
         "artifactize-desktop".into(),
         "graph".into(),
@@ -1177,7 +1182,7 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     // known.
     let (first, scanned) = scan_current(&viewer, &branch);
     assert_eq!(first["fingerprint"], structure.fingerprint().as_str());
-    assert_eq!(first["artifacts"], 2);
+    assert_eq!(first["artifacts"], 3);
     assert!(scanned["revision"].as_u64() >= first["revision"].as_u64());
     assert_eq!(scanned["checking"], 0);
     assert_eq!(scanned["failure"], Value::Null);
@@ -1185,7 +1190,8 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
         invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
         structure.tree()
     );
-    // Never verified: the Human eval would run; the Artifact without evals is reused.
+    // Never verified: the Human eval would run; the Artifacts without evals are reused, app
+    // since its part lib is. lib is drawn inside app, by no edge.
     let source = json!({"kind": "current", "branch": branch});
     let graph = invoke(&viewer, "graph", json!({"source": source, "known": null})).unwrap();
     // A Current comes whole on every read, its shape named.
@@ -1195,8 +1201,9 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(
         graph["nodes"],
         json!([
-            {"id": "a:app", "name": "app", "light": "reused", "note": "reused"},
-            {"id": "a:graph", "name": "graph", "light": "run", "note": "would run (1 eval)"},
+            {"id": "a:app", "name": "app", "light": "reused", "note": "reused", "parts": ["a:lib"]},
+            {"id": "a:graph", "name": "graph", "light": "run", "note": "would run (1 eval)", "parts": []},
+            {"id": "a:lib", "name": "lib", "light": "reused", "note": "reused", "parts": []},
         ])
     );
     assert_eq!(
@@ -1212,9 +1219,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
         )
         .unwrap(),
         json!({
-            "shape": {"nodes": graph["nodes"], "edges": graph["edges"]},
+            "shape": {"nodes": graph["nodes"].as_array().unwrap()[..2], "edges": graph["edges"]},
             "moreUses": 0,
             "moreUsedBy": 0,
+            "wholes": [],
+            "copies": 1,
         })
     );
     // Its row, with its eval, as the Detail's chips show them; none for an Artifact it lacks.

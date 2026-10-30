@@ -1,5 +1,6 @@
-//! A Run as a graph of Artifacts: one node per Artifact of the tree, one edge per Artifact an
-//! Artifact's evals depend on, each with one of six lights taken from the tree's own states.
+//! A Run as a graph of Artifacts: one node per Artifact of the tree, with the Artifacts it is
+//! made of, one edge per Artifact an Artifact's evals depend on, each with one of six lights
+//! taken from the tree's own states.
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
@@ -85,6 +86,8 @@ pub struct GraphNode {
     pub id: NodeId,
     pub name: ArtifactName,
     pub light: Light,
+    /// The Artifacts of the graph it is made of directly, by name.
+    pub parts: Vec<ArtifactName>,
 }
 
 /// `to`'s evals depend on `from`.
@@ -105,7 +108,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    /// Whether `other` has the same Artifacts and edges in the same order, whatever their
+    /// Whether `other` has the same Artifacts, parts and edges in the same order, whatever their
     /// lights: a view can keep where it placed them and only relight them.
     pub fn same_shape(&self, other: &Self) -> bool {
         self.nodes.len() == other.nodes.len()
@@ -114,7 +117,7 @@ impl Graph {
                 .nodes
                 .iter()
                 .zip(&other.nodes)
-                .all(|(one, other)| one.id == other.id)
+                .all(|(one, other)| one.id == other.id && one.parts == other.parts)
             && self
                 .edges
                 .iter()
@@ -186,6 +189,12 @@ pub fn graph(tree: &[Node]) -> Graph {
             .map(|(name, node, _)| GraphNode {
                 id: node.id.clone(),
                 light: lights[&name],
+                parts: node
+                    .parts
+                    .iter()
+                    .filter(|part| lights.contains_key(*part))
+                    .cloned()
+                    .collect(),
                 name,
             })
             .collect(),
