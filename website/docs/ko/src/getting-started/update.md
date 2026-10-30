@@ -65,7 +65,7 @@ eval을 막지 않습니다([0.16으로 업그레이드](#upgrading-to-016) 참�
 선언을 폴더에는 TOML `index.artf`로, 파일에는 `<file>.artf`로 다시 작성하세요. 키는
 snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예전 무시 파일을
 대신합니다. 변환기는 없습니다. 에이전트에게 파일을 다시 작성해 커밋하게 하고,
-예전 표시를 제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
+기존 선언 형식의 흔적을 제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
 필요하다면 직접 만든 생성기를 쓰고 그 `.artf` 출력을 커밋하세요. [선언 (.artf)](../features/declarations.md)을 보세요.
 
 0.9 이전의 상태(스키마 1~5)는 거부합니다. `ARTIFACTIZE_STATE_HOME`이나 `--state-dir`을 새
