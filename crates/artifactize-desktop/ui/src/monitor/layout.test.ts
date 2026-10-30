@@ -9,6 +9,7 @@ import type { Shape } from "../ipc/client";
 import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
+import { boxes, copies, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
 const elk = vi.hoisted(() => ({ loads: 0, starts: 0, layouts: 0 }));
@@ -48,7 +49,7 @@ async function byElk(graph: Shape): Promise<Map<string, Point>> {
 }
 
 const shape = (names: string[], pairs: [string, string][]): Shape => ({
-  nodes: names.map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null })),
+  nodes: names.map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null, parts: [] })),
   edges: pairs.map(([source, target]) => ({ source: `a:${source}`, target: `a:${target}`, light: "waiting" })),
 });
 
@@ -188,3 +189,66 @@ describe("layered", () => {
   });
 });
 
+
+/** `graph` with the wholes `parts` names, each with its parts. */
+const made = (graph: Shape, parts: Record<string, string[]>): Shape => ({
+  ...graph,
+  nodes: graph.nodes.map((node) => ({ ...node, parts: (parts[node.name] ?? []).map((part) => `a:${part}`) })),
+});
+
+/** Every copy's box: each inside the box around it, and none overlapping another drawn beside
+ * it in the same box (or in none). */
+function nested(graph: Shape, placed: Map<string, Point>) {
+  const drawn = copies(graph);
+  const rects = boxes(drawn, placed);
+  expect([...rects.keys()]).toEqual(drawn.map((copy) => copy.key));
+  const inside = (inner: Rect, outer: Rect) =>
+    inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
+  const apart = (one: Rect, other: Rect) =>
+    one.x + one.width <= other.x || other.x + other.width <= one.x || one.y + one.height <= other.y || other.y + other.height <= one.y;
+  const levels = new Map<string | null, Rect[]>();
+  for (const copy of drawn) {
+    const at = rects.get(copy.key)!;
+    if (copy.parent !== null) expect(inside(at, rects.get(copy.parent)!)).toBe(true);
+    levels.set(copy.parent, [...(levels.get(copy.parent) ?? []), at]);
+  }
+  for (const level of levels.values()) {
+    level.forEach((one, at) => level.slice(at + 1).forEach((other) => expect(apart(one, other)).toBe(true)));
+  }
+  return { drawn, rects };
+}
+
+describe("layout of wholes", () => {
+  //   suite ⊃ { app ⊃ { kit, core }, site ⊃ { kit } }, docs ⊃ { site }; core ──> app's kit ──> lone
+  const graph = made(
+    shape(["suite", "docs", "app", "site", "kit", "core", "lone"], [["core", "kit"], ["kit", "lone"]]),
+    { suite: ["app", "site"], docs: ["site"], app: ["kit", "core"], site: ["kit"] },
+  );
+
+  it("draws each whole around its parts, nested, and a shared part inside each of its wholes", async () => {
+    const placed = await layout(graph);
+    const { drawn } = nested(graph, placed);
+    // Only copies that are no wholes are placed: kit three times, core and lone once each.
+    expect([...placed.keys()].sort()).toEqual(
+      ["a:docs/a:site/a:kit", "a:lone", "a:suite/a:app/a:core", "a:suite/a:app/a:kit", "a:suite/a:site/a:kit"].sort(),
+    );
+    expect(drawn.filter((copy) => copy.node.id === "a:site").map((copy) => copy.parent)).toEqual(["a:suite", "a:docs"]);
+    // Within app its parts keep their edge left to right.
+    expect(placed.get("a:suite/a:app/a:core")!.x).toBeLessThan(placed.get("a:suite/a:app/a:kit")!.x);
+  });
+
+  it("nests the same way past ELK_LIMIT with the layered layout", async () => {
+    const before = elk.layouts;
+    // 300 wholes of four parts each, in chains, and a whole of all the wholes.
+    const names = Array.from({ length: 300 }, (_, at) => `w${at}`);
+    const members = (whole: string) => [0, 1, 2, 3].map((at) => `${whole}p${at}`);
+    const big = made(
+      shape(["all", ...names, ...names.flatMap(members)], names.flatMap((whole) => members(whole).slice(1).map((part, at): [string, string] => [members(whole)[at], part]))),
+      { all: names, ...Object.fromEntries(names.map((whole) => [whole, members(whole)])) },
+    );
+    const placed = await layout(big);
+    expect(elk.layouts).toBe(before);
+    expect(placed.size).toBe(1200);
+    nested(big, placed);
+  });
+});

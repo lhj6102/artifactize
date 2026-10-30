@@ -52,8 +52,8 @@ function runOf(args: unknown): { run: string; known: number | null } {
 function graph(release: Shape["nodes"][number]["light"], ship = "waiting" as const): Shape {
   return {
     nodes: [
-      { id: "a:release", name: "release", light: release, note: null },
-      { id: "a:ship", name: "ship", light: ship, note: null },
+      { id: "a:release", name: "release", light: release, note: null, parts: [] },
+      { id: "a:ship", name: "ship", light: ship, note: null, parts: [] },
     ],
     edges: [{ source: "a:release", target: "a:ship", light: release }],
   };
@@ -126,6 +126,53 @@ describe("SourceGraph", () => {
     expect(onclose).toHaveBeenCalledOnce();
   });
 
+  it("draws a whole as a box around its parts, each opening its own Detail, and a shared part in each whole", async () => {
+    // kit is a part of app and of site; app uses kit, and lone uses site.
+    const parts: Shape = {
+      nodes: [
+        { id: "a:app", name: "app", light: "red", note: null, parts: ["a:kit"] },
+        { id: "a:site", name: "site", light: "green", note: null, parts: ["a:kit"] },
+        { id: "a:kit", name: "kit", light: "green", note: null, parts: [] },
+        { id: "a:lone", name: "lone", light: "waiting", note: null, parts: [] },
+      ],
+      edges: [{ source: "a:site", target: "a:lone", light: "green" }],
+    };
+    serve(() => parts);
+    // The layout places only the copies that are no wholes.
+    layout.mockImplementation(async () => new Map([["a:app/a:kit", { x: 0, y: 0 }], ["a:site/a:kit", { x: 0, y: 200 }], ["a:lone", { x: 400, y: 200 }]]));
+    const onopen = vi.fn();
+    const { rerender } = render(SourceGraph, { source: source("run-a"), revision: 1, onopen, onclose: vi.fn() });
+    await waitFor(() => expect(node("a:app")).not.toBeNull());
+    // Each whole is a box around its own copy of kit, its name and light at its top.
+    const app = node("a:app")!;
+    expect(app.classList.contains("svelte-flow__node-whole")).toBe(true);
+    expect(app.dataset.light).toBe("red");
+    expect(app.getAttribute("aria-label")).toBe("app: RED");
+    expect(app.textContent?.trim()).toBe("app");
+    expect([app.style.width, app.style.height]).toEqual(["200px", "92px"]);
+    for (const key of ["a:app/a:kit", "a:site/a:kit"]) {
+      expect(node(key)?.dataset.artifact).toBe("a:kit");
+      expect(node(key)?.getAttribute("aria-label")).toBe("kit: GREEN");
+    }
+    expect(node("a:kit")).toBeNull();
+    // Tab reaches a whole before its parts.
+    const order = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].map((each) => each.dataset.id);
+    expect(order).toEqual(["a:app", "a:app/a:kit", "a:site", "a:site/a:kit", "a:lone"]);
+    // The whole and each part open their own Detail, by click and by Enter.
+    await fireEvent.click(app);
+    expect(onopen).toHaveBeenLastCalledWith("a:app");
+    await fireEvent.click(node("a:site/a:kit")!);
+    expect(onopen).toHaveBeenLastCalledWith("a:kit");
+    node("a:app/a:kit")!.focus();
+    await fireEvent.keyDown(node("a:app/a:kit")!, { key: "Enter" });
+    expect(onopen).toHaveBeenLastCalledWith("a:kit");
+    // Every copy of the opened part shows it, and its wholes do not.
+    await rerender({ opened: "a:kit" });
+    expect(node("a:app/a:kit")?.querySelector(".open")).not.toBeNull();
+    expect(node("a:site/a:kit")?.querySelector(".open")).not.toBeNull();
+    expect(node("a:app")?.querySelector(".open")).toBeNull();
+  });
+
   it("asks only for the lights of the shape it holds, recolours them in place, and lays out only a new shape", async () => {
     let served = graph("active");
     const { rerender } = setup(() => served);
@@ -143,14 +190,14 @@ describe("SourceGraph", () => {
     expect(asked[1].known).not.toBeNull();
     expect(layout).toHaveBeenCalledOnce();
 
-    served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", note: null }] };
+    served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", note: null, parts: [] }] };
     await rerender({ revision: 3 });
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the graph shown while a new shape lays out, and lays out each shape once whatever snapshots arrive", async () => {
-    const docs = { id: "a:docs", name: "docs", light: "waiting" as const, note: null };
+    const docs = { id: "a:docs", name: "docs", light: "waiting" as const, note: null, parts: [] };
     const grown = (release: Shape["nodes"][number]["light"]): Shape => ({ ...graph(release), nodes: [...graph(release).nodes, docs] });
     let served = graph("active");
     const { rerender } = setup(() => served);
@@ -199,7 +246,7 @@ describe("SourceGraph", () => {
       if (run === "run-b") {
         asking();
         await held;
-        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red", note: null }], edges: [] }, known);
+        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red", note: null, parts: [] }], edges: [] }, known);
       }
       return answer(run, lightA, known);
     });
@@ -229,9 +276,9 @@ describe("SourceGraph", () => {
   it("shows ERROR apart from RED, and a legend of all six lights", async () => {
     setup(() => ({
       nodes: [
-        { id: "a:release", name: "release", light: "red", note: null },
-        { id: "a:ship", name: "ship", light: "error", note: null },
-        { id: "a:docs", name: "docs", light: "blocked", note: null },
+        { id: "a:release", name: "release", light: "red", note: null, parts: [] },
+        { id: "a:ship", name: "ship", light: "error", note: null, parts: [] },
+        { id: "a:docs", name: "docs", light: "blocked", note: null, parts: [] },
       ],
       edges: [{ source: "a:ship", target: "a:docs", light: "error" }],
     }));
@@ -260,8 +307,8 @@ describe("SourceGraph", () => {
             update: {
               kind: "shape",
               nodes: [
-                { id: "a:app", name: "app", light: "reused", note: "reused" },
-                { id: "a:graph", name: "graph", light: "run", note: "would run (2 evals)" },
+                { id: "a:app", name: "app", light: "reused", note: "reused", parts: [] },
+                { id: "a:graph", name: "graph", light: "run", note: "would run (2 evals)", parts: [] },
               ],
               edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
             },

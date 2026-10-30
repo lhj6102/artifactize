@@ -3,7 +3,8 @@
   // evals use on the left, the ones whose evals use it on the right, with the graph's nodes and
   // edges. It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail. A
   // shared input's thousands of users are cut to the backend's first few, failing ones first,
-  // and the rest counted below.
+  // and the rest counted below. An Artifact the graph draws more than once, a part of several
+  // wholes, says so and names the wholes it is drawn in.
   import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
@@ -46,7 +47,7 @@
 
   const shown = $derived.by(() => {
     if (!n.graph) return null;
-    const { shape: graph, moreUses, moreUsedBy } = n.graph;
+    const { shape: graph, moreUses, moreUsedBy, wholes, copies } = n.graph;
     const uses = graph.edges.filter((edge) => edge.target === node);
     const usedBy = graph.edges.filter((edge) => edge.source === node);
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));
@@ -93,6 +94,7 @@
       height: rows * (NODE.height + GAP.y) + 24,
       key: placed.map(({ item }) => item.id).join(),
       more: more.length > 0 ? `And ${more.join(" and ")}, not shown.` : "",
+      copies: copies > 1 ? `Drawn ${copies.toLocaleString()} times on the graph, inside ${new Intl.ListFormat("en").format(wholes)}.` : "",
     };
   });
 </script>
@@ -125,6 +127,7 @@
     {/key}
   </div>
   {#if shown.more}<p class="more">{shown.more}</p>{/if}
+  {#if shown.copies}<p class="more">{shown.copies}</p>{/if}
 {/if}
 </div>
 

@@ -2,7 +2,7 @@
 // of tens of thousands draws the rest here: every edge, and every Artifact in view while too
 // many are in view to keep as elements. Where things are comes from the layout; this only
 // finds what is in view or under the pointer and paints it, in graph coordinates under the
-// camera's transform.
+// camera's transform. A whole's box is painted as its outline, its parts inside it.
 import type { Rect, Viewport } from "@xyflow/svelte";
 import type { Light, Shape } from "../ipc/client";
 import type { Point } from "./graph";
@@ -29,8 +29,13 @@ const MARGIN = 0.25;
 
 /** The laid-out Artifacts: where each is, and an index of them by area. */
 export type Scene = {
+  /** The drawn copies' keys (parts.ts), each whole before its parts. */
   ids: string[];
-  places: Point[];
+  places: Rect[];
+  /** The numbers of the copies that are wholes, drawn as boxes around their parts. */
+  wholes: Set<number>;
+  /** The Artifact's tree id of each copy. */
+  nodes: string[];
   /** Each Artifact's number by id. */
   numbers: Map<string, number>;
   /** All of them, or an empty box for none. */
@@ -40,17 +45,18 @@ export type Scene = {
 
 const cell = (value: number) => Math.floor(value / CELL);
 
-/** The scene of `positions`. */
-export function scene(positions: Map<string, Point>): Scene {
+/** The scene of `positions`, each of `NODE`'s size unless it has its own; `wholes` and
+ * `nodes` say which keys are wholes and whose copies they are, each its own Artifact without. */
+export function scene(positions: Map<string, Point & Partial<Rect>>, wholes: Set<string> = new Set(), nodes: Map<string, string> = new Map()): Scene {
   const ids = [...positions.keys()];
-  const places = [...positions.values()];
+  const places = [...positions.values()].map((at) => ({ x: at.x, y: at.y, width: at.width ?? NODE.width, height: at.height ?? NODE.height }));
   const cells = new Map<number, number[]>();
   let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
   places.forEach((at, number) => {
     [left, top] = [Math.min(left, at.x), Math.min(top, at.y)];
-    [right, bottom] = [Math.max(right, at.x + NODE.width), Math.max(bottom, at.y + NODE.height)];
-    for (let x = cell(at.x); x <= cell(at.x + NODE.width); x += 1) {
-      for (let y = cell(at.y); y <= cell(at.y + NODE.height); y += 1) {
+    [right, bottom] = [Math.max(right, at.x + at.width), Math.max(bottom, at.y + at.height)];
+    for (let x = cell(at.x); x <= cell(at.x + at.width); x += 1) {
+      for (let y = cell(at.y); y <= cell(at.y + at.height); y += 1) {
         const key = x * ROW + y;
         const found = cells.get(key);
         if (found) found.push(number);
@@ -59,7 +65,16 @@ export function scene(positions: Map<string, Point>): Scene {
     }
   });
   const bounds = places.length === 0 ? { x: 0, y: 0, width: 0, height: 0 } : { x: left, y: top, width: right - left, height: bottom - top };
-  return { ids, places, numbers: new Map(ids.map((id, number) => [id, number])), bounds, cells };
+  const numbers = new Map(ids.map((id, number) => [id, number]));
+  return {
+    ids,
+    places,
+    wholes: new Set([...wholes].flatMap((key) => numbers.get(key) ?? [])),
+    nodes: ids.map((id) => nodes.get(id) ?? id),
+    numbers,
+    bounds,
+    cells,
+  };
 }
 
 /** What a canvas of `width` × `height` shows under `viewport`, in graph coordinates, with a
@@ -77,7 +92,7 @@ export function within(at: Scene, rect: Rect, most = Infinity): number[] | null 
     for (let y = cell(rect.y); y <= cell(rect.y + rect.height); y += 1) {
       for (const number of at.cells.get(x * ROW + y) ?? []) {
         const place = at.places[number];
-        const meets = place.x < rect.x + rect.width && place.x + NODE.width > rect.x && place.y < rect.y + rect.height && place.y + NODE.height > rect.y;
+        const meets = place.x < rect.x + rect.width && place.x + place.width > rect.x && place.y < rect.y + rect.height && place.y + place.height > rect.y;
         if (meets) found.add(number);
         if (found.size > most) return null;
       }
@@ -86,13 +101,14 @@ export function within(at: Scene, rect: Rect, most = Infinity): number[] | null 
   return [...found].sort((one, other) => one - other);
 }
 
-/** The Artifact whose box holds `point`, if any. */
+/** The copy whose box holds `point`, if any: of a whole and its part, the part. */
 export function hit(at: Scene, point: Point): string | null {
-  const number = (at.cells.get(cell(point.x) * ROW + cell(point.y)) ?? []).find((each) => {
+  const holding = (at.cells.get(cell(point.x) * ROW + cell(point.y)) ?? []).filter((each) => {
     const place = at.places[each];
-    return point.x >= place.x && point.x <= place.x + NODE.width && point.y >= place.y && point.y <= place.y + NODE.height;
+    return point.x >= place.x && point.x <= place.x + place.width && point.y >= place.y && point.y <= place.y + place.height;
   });
-  return number === undefined ? null : at.ids[number];
+  // A part comes after the wholes around it.
+  return holding.length === 0 ? null : at.ids[Math.max(...holding)];
 }
 
 /** What to paint: the graph's lights, the camera, the canvas's size and pixel ratio, whether
@@ -149,8 +165,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const grain = (value: number) => Math.min(Math.max(Math.floor(value / GRAIN), -FAR), FAR) + FAR;
   for (let edge = 0; edge < sources.length; edge += 1) {
     const [source, target] = [at.places[sources[edge]], at.places[targets[edge]]];
-    const [x1, y1] = [(source.x + NODE.width) * zoom + left, (source.y + NODE.height / 2) * zoom + top];
-    const [x2, y2] = [target.x * zoom + left, (target.y + NODE.height / 2) * zoom + top];
+    const [x1, y1] = [(source.x + source.width) * zoom + left, (source.y + source.height / 2) * zoom + top];
+    const [x2, y2] = [target.x * zoom + left, (target.y + target.height / 2) * zoom + top];
     // Out of view: both ends on one side of the canvas.
     if ((x1 < 0 && x2 < 0) || (x1 > width && x2 > width) || (y1 < 0 && y2 < 0) || (y1 > height && y2 > height)) continue;
     const cells = [grain(x1), grain(y1), grain(x2), grain(y2)];
@@ -173,13 +189,19 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
 
   const lit = new Map(what.graph.nodes.map((node) => [node.id, node.light]));
   const boxes = new Map<Light, Path2D>();
+  const outlines = new Map<Light, Path2D>();
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
   for (const number of within(at, shown) ?? []) {
-    const light = lit.get(at.ids[number]) ?? "waiting";
-    let path = boxes.get(light);
-    if (!path) boxes.set(light, (path = new Path2D()));
+    const light = lit.get(at.nodes[number]) ?? "waiting";
+    const paths = at.wholes.has(number) ? outlines : boxes;
+    let path = paths.get(light);
+    if (!path) paths.set(light, (path = new Path2D()));
     const place = at.places[number];
-    path.rect(place.x * zoom + left, place.y * zoom + top, Math.max(NODE.width * zoom, 1), Math.max(NODE.height * zoom, 1));
+    path.rect(place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1));
+  }
+  for (const [light, path] of outlines) {
+    context.strokeStyle = colour(light);
+    context.stroke(path);
   }
   for (const [light, path] of boxes) {
     context.fillStyle = colour(light);
@@ -230,16 +252,18 @@ export class Picture {
     return painted;
   }
 
-  /** A ring around the opened Artifact, as its element draws it. */
+  /** A ring around every copy of the opened Artifact, as its elements draw it. */
   #ring(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
-    const opened = what.opened === null ? undefined : at.numbers.get(what.opened);
-    if (opened === undefined) return;
+    if (what.opened === null) return;
     const { viewport, ratio } = what;
-    const place = at.places[opened];
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
     context.lineWidth = RING;
-    const [x, y] = [place.x * viewport.zoom + viewport.x, place.y * viewport.zoom + viewport.y];
-    context.strokeRect(x - RING, y - RING, NODE.width * viewport.zoom + 2 * RING, NODE.height * viewport.zoom + 2 * RING);
+    at.nodes.forEach((node, number) => {
+      if (node !== what.opened) return;
+      const place = at.places[number];
+      const [x, y] = [place.x * viewport.zoom + viewport.x, place.y * viewport.zoom + viewport.y];
+      context.strokeRect(x - RING, y - RING, place.width * viewport.zoom + 2 * RING, place.height * viewport.zoom + 2 * RING);
+    });
   }
 }
