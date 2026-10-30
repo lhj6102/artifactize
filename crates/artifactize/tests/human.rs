@@ -465,6 +465,104 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 }
 
 #[tokio::test]
+async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outside_the_scope() {
+    let root = owned_run::Root::from(support::os::tempdir());
+    let repo = root.path().join("repo");
+    write_human(&repo.join("review"), false);
+    // The eval's scope is its Artifact and the one its instruction references.
+    let review = repo.join("review/index.artf");
+    let declaration = fs::read_to_string(&review).unwrap();
+    assert!(declaration.contains("Review."));
+    fs::write(&review, declaration.replace("Review.", "Review {spec}.")).unwrap();
+    for name in ["spec", "other"] {
+        fs::create_dir(repo.join(name)).unwrap();
+        support::declaration::write(
+            repo.join(name).join("index.artf"),
+            json!({"name":name,"basis":true}).to_string(),
+        )
+        .unwrap();
+    }
+    let state = root.path().join("state");
+    root.track(&state, &repo);
+    let fixture = Fixture {
+        repo,
+        state,
+        _root: root,
+    };
+    let run = fixture.verify(returning()).await;
+    let id = run.requests[0].id.clone();
+    // The Run's saved graph no longer decodes, and the workspace no longer reads as a whole:
+    // a reader of either fails.
+    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
+    let saved: String = db
+        .query_row(
+            "SELECT data FROM run_definitions WHERE run_id=?",
+            [&run.run.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    db.execute(
+        "UPDATE run_definitions SET data='{' WHERE run_id=?",
+        [&run.run.id],
+    )
+    .unwrap();
+    fs::write(fixture.repo.join("other/index.artf"), "name = ").unwrap();
+    assert!(store::read_request(&fixture.state, &id).await.is_err());
+    assert!(artifactize_core::config::read_workspace_config(&fixture.repo).is_err());
+    let alice = "alice".parse().unwrap();
+    let (receipts, repo) = human::open(&fixture.state, &id).await.unwrap();
+    assert_eq!(repo, fixture.repo.canonicalize().unwrap());
+    human::claim(&receipts, &id, &alice).await.unwrap();
+    // The declarations of the scope are still compared with those the request recorded.
+    let spec = fixture.repo.join("spec/index.artf");
+    let recorded = fs::read(&spec).unwrap();
+    support::declaration::write(&spec, r#"{"name":"spec","basis":true,"tags":["changed"]}"#)
+        .unwrap();
+    assert!(
+        human::run_human_tool(
+            &receipts,
+            &id,
+            &alice,
+            &"inspect_review".parse().unwrap(),
+            CancellationToken::new(),
+            artifactize_core::review::log::Run::unwatched(),
+        )
+        .await
+        .unwrap_err()
+        .contains("declarations changed")
+    );
+    fs::write(&spec, recorded).unwrap();
+    let tool = human::run_human_tool(
+        &receipts,
+        &id,
+        &alice,
+        &"inspect_review".parse().unwrap(),
+        CancellationToken::new(),
+        artifactize_core::review::log::Run::unwatched(),
+    )
+    .await
+    .unwrap();
+    assert!(!tool.is_error());
+    receipts.close().await.unwrap();
+    let submitted = human::submit_and_publish(
+        &fixture.state,
+        &id,
+        &alice,
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(submitted.status().as_str(), "GREEN");
+    // The fixture's cleanup reads the Run whole.
+    db.execute(
+        "UPDATE run_definitions SET data=? WHERE run_id=?",
+        [&saved, run.run.id.as_str()],
+    )
+    .unwrap();
+}
+
+#[tokio::test]
 async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);

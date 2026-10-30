@@ -34,7 +34,7 @@ pub async fn open(
     state: &Path,
     request: &crate::types::RequestId,
 ) -> Result<(Receipts, PathBuf), String> {
-    let (_, repo) = store::read_request_repo(state, request).await?;
+    let repo = store::read_request_repo(state, request).await?;
     Ok((Receipts::open(state, &repo).await?, repo))
 }
 
@@ -171,13 +171,42 @@ pub(crate) fn definition(
     serde_json::from_value(json!({"repo":crate::platform::path_text(&config.root),"eval":eval,"artifacts":scope.artifacts})).map_err(|e| e.to_string())
 }
 
+/// The live declarations of the request's eval, compared with those it was recorded with. Only
+/// the declarations of the eval's scope are read, however large the workspace is; the whole
+/// workspace only when the scope alone cannot answer, as when an Artifact of it moved.
 fn reconnect(request: &Request) -> Result<RepoConfig, String> {
     let repo = &request
         .provenance
         .as_ref()
         .ok_or("Human request has no provenance.")?
         .repo_path;
-    let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
+    let sites = request
+        .human_definition
+        .as_ref()
+        .and_then(|definition| definition.artifacts.value())
+        .and_then(|artifacts| {
+            artifacts
+                .iter()
+                .map(|(name, artifact)| {
+                    Some((
+                        name.clone(),
+                        crate::config::Site {
+                            kind: *artifact.kind.value()?,
+                            path: artifact.path.value()?.clone(),
+                        },
+                    ))
+                })
+                .collect::<Option<std::collections::BTreeMap<_, _>>>()
+        });
+    let scoped = sites.and_then(|sites| {
+        crate::config::read_eval_scope(repo, &request.eval_id, &sites)
+            .ok()
+            .flatten()
+    });
+    let config = match scoped {
+        Some(config) => config,
+        None => read_workspace_config(repo).map_err(|e| e.to_string())?,
+    };
     let eval = config
         .evals
         .iter()

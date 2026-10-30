@@ -56,10 +56,7 @@ pub(super) async fn inspect(
         }
         "request_logs" => {
             let args: LogInput = parse(arguments)?;
-            if artifactize_core::store::read_request_repo(context.state(), &args.id)
-                .await?
-                .1
-                != *repo
+            if artifactize_core::store::read_request_repo(context.state(), &args.id).await? != *repo
             {
                 return Err("Request not found in this repository.".into());
             }
@@ -110,9 +107,7 @@ pub(super) async fn inspect(
         "request_show" => {
             let args: super::input::Request = parse(arguments)?;
             let view = artifactize_core::store::read_request(context.state(), &args.id).await?;
-            if artifactize_core::store::read_request_repo(context.state(), &view.request.id)
-                .await?
-                .1
+            if artifactize_core::store::read_request_repo(context.state(), &view.request.id).await?
                 != repo
             {
                 return Err("Request not found in this repository.".into());
