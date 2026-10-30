@@ -129,7 +129,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 - 부분이 RED여도 아무것도 막히지 않습니다. `combat`이 `game`의 부분이고 `combat/tests`가 RED여도
   `game`의 eval은 실행되지만, `game`은 통과하지 못합니다([구성](#composition) 참고).
 - eval이 없는 Artifact는 아무것도 막지 않습니다. `app/e2e`가 eval이 없는 `bundle` Artifact를
-  참조한다면, `bundle`의 부분 결과를 기다리지 않고 실행됩니다. 다만 Run에는 그 결과도 필요하므로,
+  참조한다면, `app/e2e`는 `bundle`의 부분 결과가 나오기 전에도 실행됩니다. 다만 Run에는 그 결과도 필요하므로,
   그중 하나라도 RED면 Run은 GREEN으로 끝나지 못합니다.
 
 한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로
@@ -143,7 +143,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 |---|---|
 | `cli/tests`가 RED | `docs/matches-cli`는 그대로 실행되고 판정도 바뀌지 않습니다. |
 | `core/tests`가 RED | `cli/tests`가 막히고, `cli`를 참조하는 `docs/matches-cli`도 막힙니다. |
-| `docs`나 `cli`의 eval이 서로도 `core`도 참조하지 않음 | 이들의 결과를 기다리지 않고 실행됩니다. 다만 Run이 GREEN으로 끝나려면 모든 결과가 필요합니다. |
+| `docs`나 `cli`의 eval이 서로도 `core`도 참조하지 않음 | 그 eval은 이들의 결과가 나오기 전에도 실행됩니다. 다만 Run이 GREEN으로 끝나려면 모든 결과가 필요합니다. |
 | 다른 곳의 eval이 `docs`를 참조함 | `docs`와 `cli`의 모든 eval 결과가 나와야 실행됩니다. |
 
 eval의 대상 Artifact도 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
