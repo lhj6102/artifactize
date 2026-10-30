@@ -1,10 +1,12 @@
 # Claude Code와 Codex용 플러그인 {#plugin-for-claude-code-and-codex}
 
 **플러그인**은 코딩 어시스턴트에 한 번에 설치할 수 있는 패키지입니다. `artifactize`
-플러그인은 Claude Code와 Codex에 두 가지를 함께 제공합니다.
+플러그인은 Claude Code와 Codex에 다음을 함께 제공합니다.
 
 - [Hey Arti](hey-arti.md) 스킬: 어시스턴트가 artifactize로 프로젝트를 구성하고
   검증하게 해 주는 안내
+- [focus-then-sweep](focus-then-sweep.md) 스킬: 어시스턴트가 RED eval을 고치는 동안 verify를
+  어떻게 다시 실행할지 알려 주는 안내
 - [artifactize MCP 서버](mcp.md): 어시스턴트가 프로젝트를 살펴보고
   검증 Run을 시작한 뒤 진행 상황을 확인하는 데 쓰는 도구
 
@@ -42,13 +44,13 @@ codex plugin add artifactize@artifactize
 
 **Claude Code:** `/reload-plugins`를 실행하거나 새 세션을 시작한 다음, `/mcp`에서
 `artifactize` 서버를 확인하세요. 평소 말투로 요청하거나, 스킬을
-`/artifactize:hey-arti`로 호출하세요. 서버는 `artifactize --repo <project> mcp`로 실행되며,
+`/artifactize:hey-arti` 또는 `/artifactize:focus-then-sweep`로 호출하세요. 서버는 `artifactize --repo <project> mcp`로 실행되며,
 `<project>`는 세션이 시작된 디렉터리입니다.
 
 **Codex:** 프로젝트 디렉터리에서 새 Codex 세션을 시작하세요. 서버는
-플러그인 폴더에서 `artifactize mcp`로 실행되며, 도구가 프로젝트를 지정하지 않았다고 답하면 Hey Arti가
+플러그인 폴더에서 `artifactize mcp`로 실행되며, 도구가 프로젝트를 지정하지 않았다고 답하면 스킬이
 그 뒤의 호출마다 세션의 프로젝트 폴더를 넘깁니다([서버가 프로젝트를 찾는 방법](mcp.md#which-project)). 평소 말투로 요청하거나
-`$artifactize:hey-arti`를 입력해 스킬을 호출하세요.
+`$artifactize:hey-arti` 또는 `$artifactize:focus-then-sweep`를 입력해 스킬을 호출하세요.
 
 ## 업데이트 {#updates}
 
@@ -61,4 +63,5 @@ Claude Code에서는 `/plugin marketplace update artifactize`로 업데이트하
 다른 호스트나 직접 관리하는 설정에서는 서버를 직접 등록하고
 ([MCP 설정](mcp.md#register-the-mcp-server)), [Hey Arti](hey-arti.md)에 설명된 대로 어시스턴트에
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)를
-제공하세요. 호스트마다 플러그인을 설치하거나 같은 서버를 수동으로 등록하는 방법 중 하나만 쓰세요.
+제공하세요. [focus-then-sweep `SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/focus-then-sweep/SKILL.md)도
+같은 방법으로 제공하세요. 호스트마다 플러그인을 설치하거나 같은 서버를 수동으로 등록하는 방법 중 하나만 쓰세요.
