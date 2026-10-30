@@ -265,9 +265,16 @@ export const scenarios: Scenario[] = [
       // suite's box staying as it was.
       await clickWhole(browser, ".graph", "a:suite");
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact suite", { timeout: 15000, timeoutMsg: "the click on suite's box opened suite's Detail" });
-      const suite = (await partsDrawn(browser, ".graph"))["a:suite"].rect;
+      // suite's box as drawn: its size, and where kit sits in it. A click may scroll the
+      // page, which moves both alike.
+      const box = async () => {
+        const shown = await partsDrawn(browser, ".graph");
+        const [suite, kit] = [shown["a:suite"].rect, shown["a:suite/a:app/a:kit"].rect];
+        return { width: suite.width, height: suite.height, kit: { x: kit.left - suite.left, y: kit.top - suite.top } };
+      };
+      const suite = await box();
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
-      assert.deepEqual((await partsDrawn(browser, ".graph"))["a:suite"].rect, suite, "suite's box stays");
+      assert.deepEqual(await box(), suite, "suite's box stays as it was, kit inside it");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
     },
   ),
