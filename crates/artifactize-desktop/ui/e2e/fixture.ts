@@ -405,8 +405,9 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
 
 /**
  * A repository verified GREEN once whose Artifacts have parts: suite's folder holds app and site,
- * app's holds kit, and docs names site among its parts, so site is a part of two wholes. app's
- * check reads lib, which is a part of nothing. Every Artifact but suite has a runtime check.
+ * app's holds kit, and docs names site among its parts, so site is a part of two wholes. site's
+ * check reads lib, which is a part of nothing, and app's reads site. Every Artifact but suite has
+ * a runtime check.
  */
 export function createParts(): Fixture {
   return prepareFixture((root) => {
@@ -417,9 +418,9 @@ export function createParts(): Fixture {
     for (const [folder, text] of [
       [["lib"], check("lib")],
       [["suite"], `name = "suite"\n`],
-      [["suite", "app"], check("app", " Read {lib}.")],
+      [["suite", "app"], check("app", " Read {site}.")],
       [["suite", "app", "kit"], check("kit")],
-      [["suite", "site"], check("site")],
+      [["suite", "site"], check("site", " Read {lib}.")],
       [["docs"], `parts = ["site"]\n${check("docs")}`],
     ] as const) {
       writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);

@@ -252,8 +252,14 @@ export const scenarios: Scenario[] = [
       assert.equal(drawn["a:suite"].light, "green");
       assert.equal(drawn["a:suite"].label, "suite: GREEN");
       assert.deepEqual([drawn["a:suite/a:site"].artifact, drawn["a:docs/a:site"].artifact], ["a:site", "a:site"], "both copies are site");
-      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:lib": "green", "a:suite/a:app/a:kit": "green" }, { "a:lib>a:suite/a:app": "green" }),
-        { timeout: 15000, timeoutMsg: "the edge from lib into app's box is drawn and lit like any other" });
+      // Each copy of site carries site's edges: from lib outside every box into it, and out of
+      // it to app, within suite and across from docs into suite.
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:lib": "green", "a:suite/a:site": "green", "a:docs/a:site": "green" }, {
+        "a:lib>a:suite/a:site": "green",
+        "a:lib>a:docs/a:site": "green",
+        "a:suite/a:site>a:suite/a:app": "green",
+        "a:docs/a:site>a:suite/a:app": "green",
+      }), { timeout: 15000, timeoutMsg: "every copy of site's edges drawn and lit like any other" });
 
       // A click on suite's box outside its parts opens suite; a click on a part opens the part,
       // suite's box staying as it was.
@@ -266,8 +272,8 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-GRAPH-PARTS J-GRAPH-FIND; UX edges: E-GRAPH-PARTS E-GRAPH-SHARED E-CURRENT-CLOSE E-GRAPH-FIND-OPEN
-  // E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
+  // UX journeys: J-GRAPH-PARTS J-GRAPH-FIND J-DETAIL; UX edges: E-GRAPH-PARTS E-GRAPH-TAB E-GRAPH-WHOLE E-GRAPH-PART
+  // E-CURRENT-EVALS E-GRAPH-SHARED E-CURRENT-CLOSE E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
   scenario<Record<string, never>>(
     "graph-parts-shared",
     "on a branch's Current, selecting one copy of a part of two wholes highlights both and its Detail names the wholes; the find field lists it once and goes to its first copy",
@@ -282,9 +288,31 @@ export const scenarios: Scenario[] = [
       const drawn = await partsDrawn(browser, current);
       assert.ok(within(drawn["a:docs/a:site"].rect, drawn["a:docs"].rect) && within(drawn["a:suite/a:site"].rect, drawn["a:suite"].rect), "the Current draws site in both wholes");
 
-      // The find field lists site once; Enter brings its first copy to the middle of the graph.
+      // From the Pane, Enter gives the graph the keyboard; Tab reaches each whole before its
+      // parts, opening nothing, and Enter opens the focused whole's or part's Detail.
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+      const order: string[] = [];
+      // A bound on traversing this small fixture's controls, not a claimed tab order.
+      for (let attempt = 0; attempt < 60 && order.length < PARTS.length; attempt += 1) {
+        await tab(browser);
+        const focused = await focusedNode(browser);
+        if (focused === null || order.includes(focused)) continue;
+        assert.ok(PARTS.includes(focused), `Tab reached a copy of the graph: ${focused}`);
+        assert.equal(await detail(browser), null, `focusing ${focused} opens nothing`);
+        order.push(focused);
+        const opens: Record<string, string | undefined> = { "a:suite/a:app": "app", "a:suite/a:app/a:kit": "kit" };
+        const name = opens[focused];
+        if (name === undefined) continue;
+        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter on ${focused} opens ${name}'s Detail`);
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closes`);
+      }
+      assert.deepEqual([...order].sort(), [...PARTS].sort(), "Tab reaches every whole and every part");
+      for (const [whole, part] of [["a:suite", "a:suite/a:app"], ["a:suite/a:app", "a:suite/a:app/a:kit"], ["a:suite", "a:suite/a:site"], ["a:docs", "a:docs/a:site"]]) {
+        assert.ok(order.indexOf(whole) < order.indexOf(part), `Tab reaches ${whole} before its part ${part}: ${order.join(", ")}`);
+      }
+
+      // The find field lists site once; Enter brings its first copy to the middle of the graph.
       await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over the Current");
       await fill(browser, FIND, "site");
       await browser.waitUntil(async () => JSON.stringify((await findField(browser))?.entries.map((entry) => entry.name)) === JSON.stringify(["site"]), { timeout: 15000, timeoutMsg: "site listed once" });

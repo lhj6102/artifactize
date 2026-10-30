@@ -25,7 +25,6 @@
   import WholeNode from "./WholeNode.svelte";
   import { boxes, copies, copyEdges, drawings } from "./parts";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
-  import { NODE } from "./layout";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
