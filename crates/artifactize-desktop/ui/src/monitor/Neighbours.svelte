@@ -136,7 +136,10 @@
     margin: 0 var(--pad) 12px;
     min-height: 72px;
   }
+  /* Svelte Flow's container hides its overflow, which still lets a focused node scroll it:
+   * WebKitGTK then shifts the whole graph off the camera. A clipped container cannot scroll. */
   .neighbours :global(.svelte-flow) {
+    overflow: clip;
     --xy-background-color: transparent;
     --xy-edge-stroke-width: 1.5;
   }
