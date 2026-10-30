@@ -251,7 +251,7 @@
     const first = keys.get(found.node)?.[0];
     const [at, canvas] = [first === undefined ? undefined : rects.get(first), v.canvas];
     if (at && canvas) {
-      const point = { x: at.x + Math.min(at.width, NODE.width) / 2, y: at.y + Math.min(at.height, NODE.height) / 2 };
+      const point = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
       const cover = m.panes.detail?.getBoundingClientRect() ?? null;
       void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, flow.getViewport().zoom, READABLE, MAX_ZOOM), { duration: 0 });
     }

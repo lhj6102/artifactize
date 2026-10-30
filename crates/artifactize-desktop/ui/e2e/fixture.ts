@@ -404,6 +404,35 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
 }
 
 /**
+ * A repository verified GREEN once whose Artifacts have parts: suite's folder holds app and site,
+ * app's holds kit, and docs names site among its parts, so site is a part of two wholes. app's
+ * check reads lib, which is a part of nothing. Every Artifact but suite has a runtime check.
+ */
+export function createParts(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, input = "") =>
+      `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`;
+    for (const [folder, text] of [
+      [["lib"], check("lib")],
+      [["suite"], `name = "suite"\n`],
+      [["suite", "app"], check("app", " Read {lib}.")],
+      [["suite", "app", "kit"], check("kit")],
+      [["suite", "site"], check("site")],
+      [["docs"], `parts = ["site"]\n${check("docs")}`],
+    ] as const) {
+      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+    }
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
+/**
  * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
  * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
  */
