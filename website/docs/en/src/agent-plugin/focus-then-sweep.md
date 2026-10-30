@@ -24,8 +24,16 @@ Your assistant picks one per task; Plan A is the default.
     GREEN, then takes the next RED eval. RED evals whose fixes do not touch each other can
     share one focus Run (`--evals app/review,docs/matches-app`, or the scope
     `{"kind": "evals", "evalIds": [...]}`). Evals the fix made stale are not rerun on each
-    iteration. Such a Run usually ends INCOMPLETE (exit 4) because
-    those stale evals are still unmet; your assistant reads the focused eval's own verdict.
+    iteration. It fixes the Artifact the eval evaluates and never weakens an eval to reach
+    GREEN.
+    To read a focus Run it follows `verify_start` with `verify_wait` and `verify_result`,
+    which names the failing evals and their request IDs, then reads the reviewer's result
+    with `request_show` or a runtime eval's output with `request_logs` (CLI:
+    `artifactize run show RUN_ID --json`). Such a Run usually ends INCOMPLETE (exit 4) with
+    `Unmet obligation:` lines because the stale evals are still unmet; that is expected, and
+    your assistant goes by the focused eval's own verdict. A BLOCKED eval names what blocks
+    it, such as `Dependency verdict RED: core/tests` or an eval that ended ERROR; your
+    assistant fixes and focuses on that eval first.
     `--speculate` lets the eval run even when an input it references went stale. To redo a
     RED sign-off it selects the eval's Artifact instead, because a person is asked only
     after the Artifact's machine evals are GREEN.
@@ -49,5 +57,7 @@ The loop aims at YELLOW: everything passed and only sign-offs remain. A sign-off
 holds up other evals; when nobody claims it within the
 [idle grace](../features/run.md#sign-offs-and-the-end-of-a-run) (2 minutes unless you
 change it), the Run ends YELLOW. Your assistant keeps working while sign-offs wait, names
-the waiting requests for you, and never signs off in your place. You sign off later, and
+the waiting requests for you and hands them over, for example with
+`artifactize review REQUEST_ID`. It never claims or submits a sign-off in your place, and
+it does not wait, poll or keep turns alive for one. You sign off later, and
 the next verify reuses your sign-off. YELLOW is not approval until you do.

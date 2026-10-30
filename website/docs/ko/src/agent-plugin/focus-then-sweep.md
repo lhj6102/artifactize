@@ -24,8 +24,16 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
     그다음 RED eval로 넘어갑니다. 서로 겹치지 않는 수정이라면 여러 RED eval을 Run 하나에서
     함께 focus할 수 있습니다(`--evals app/review,docs/matches-app`, 또는 scope
     `{"kind": "evals", "evalIds": [...]}`). 수정 때문에 다시 리뷰해야 하는 eval은 반복할
-    때마다 실행하지 않습니다. 그 eval들의 결과가 아직 없으므로 이런 Run은 보통
-    INCOMPLETE(종료 코드 4)로 끝나고, 어시스턴트는 focus한 eval의 판정만 봅니다.
+    때마다 실행하지 않습니다. 고칠 대상은 그 eval이 평가하는 Artifact이며, GREEN을 받으려고
+    eval을 느슨하게 바꾸지 않습니다.
+    focus Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
+    `verify_result`는 실패한 eval과 그 요청 ID를 알려 주고, 리뷰어가 보고한 결과는
+    `request_show`로, runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
+    `artifactize run show RUN_ID --json`). 다시 리뷰해야 하는 eval의 결과가 아직 없으므로 이런
+    Run은 보통 `Unmet obligation:` 줄과 함께 INCOMPLETE(종료 코드 4)로 끝납니다. 예상한
+    결과이므로 어시스턴트는 focus한 eval의 판정만 봅니다. BLOCKED eval에는
+    `Dependency verdict RED: core/tests`처럼 막고 있는 RED eval이나 ERROR로 끝난 eval이
+    나옵니다. 어시스턴트는 그 eval을 먼저 고치고 focus합니다.
     `--speculate`를 붙이면 eval이 참조하는 입력이 수정 때문에 다시 리뷰 대상이 되었어도 그
     eval을 실행합니다. RED 승인을 다시 받을 때는 eval 대신 그 Artifact를 선택합니다. 같은
     Artifact의 자동 eval이 모두 GREEN이 된 뒤에야 사람에게 승인을 요청하기 때문입니다.
@@ -49,6 +57,8 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
 반복의 목표는 나머지가 모두 통과하고 승인만 남은 YELLOW입니다. 승인은 다른 eval을 막지
 않습니다. 아무도 승인 요청을 맡지 않은 채 [유휴 유예 시간](../features/run.md#sign-offs-and-the-end-of-a-run)
 (따로 바꾸지 않았다면 2분)이 지나면 Run은 YELLOW로 끝납니다. 어시스턴트는 승인할 요청이 남아
-있어도 작업을 계속하고, 남은 요청을 알려 주며, 사용자 대신 승인하지 않습니다. 사용자가 나중에
+있어도 작업을 계속하고, 남은 요청을 알려 주며 `artifactize review REQUEST_ID` 같은 방법으로
+사용자에게 넘깁니다. 사용자 대신 승인 요청을 맡거나 제출하지 않으며, 승인을 기다리느라 대기하거나
+상태를 반복해서 확인하거나 대화를 이어 가지 않습니다. 사용자가 나중에
 승인하면 다음 verify가 그 승인을 재사용합니다. 사용자가 승인하기 전까지 YELLOW는 승인된 상태가
 아닙니다.

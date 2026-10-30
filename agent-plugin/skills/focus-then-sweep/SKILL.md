@@ -38,8 +38,9 @@ it the eval waits for those inputs' evals, which the focus does not select, and 
 
 Repeat until the eval is GREEN, then take the next RED eval. RED evals whose fixes do not
 touch each other can share one focus Run (`--evals app/review,docs/matches-app`, MCP
-`{"kind": "evals", "evalIds": [...]}`). A BLOCKED eval names the RED eval at its root
-(`Dependency verdict RED: core/tests`): focus on that one first.
+`{"kind": "evals", "evalIds": [...]}`). A BLOCKED eval names what blocks it, a RED eval
+(`Dependency verdict RED: core/tests`) or one that ended ERROR: fix that eval and focus
+on it first. An ERROR means the check could not run; repair its cause, never the verdict.
 
 A RED sign-off is a person's verdict: make the changes they asked for, then focus on its
 Artifact rather than the eval (`artifactize verify app`, MCP `{"kind": "artifact",
