@@ -617,6 +617,15 @@ async fn c2_the_idle_grace_holds_a_run_with_only_signoffs_left_open() {
 }
 
 #[tokio::test]
+async fn c2_a_parent_without_evals_settles_yellow_while_its_part_awaits_a_signoff() {
+    let fixture = Fixture::new();
+    fixture.declare("notes", Vec::new());
+    fixture.declare_at("notes/draft", "draft", vec![human_eval(&[])]);
+    let run = fixture.submit(&[], None);
+    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Yellow);
+}
+
+#[tokio::test]
 async fn c2_a_run_that_an_earlier_version_ended_signoffs_pending_reads_as_yellow() {
     let fixture = Fixture::new();
     fixture.declare("notes", vec![human_eval(&[])]);
@@ -1057,70 +1066,27 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
 }
 
 #[tokio::test]
-async fn c4_a_parent_waits_for_its_children_and_speculation_cancels_it_on_a_red_child() {
-    let fixture = Fixture::new();
-    fixture.declare("app", vec![fixture.runtime("check", &[])]);
-    fixture.declare_at("app/lib", "lib", vec![fixture.runtime("check", &[])]);
-    let run = fixture.submit(&["--jobs", "2"], None);
-    fixture
-        .until(&run, |view| {
-            fixture.ready("app/lib", "check") && status(view, "lib/check") == RequestStatus::Running
-        })
-        .await;
-    assert!(
-        !fixture.ready("app", "check"),
-        "a parent eval waits for its child's evals"
-    );
-    fixture.release("app/lib", "check", 0);
-    fixture
-        .until(&run, |view| {
-            fixture.ready("app", "check") && status(view, "app/check") == RequestStatus::Running
-        })
-        .await;
-    fixture.release("app", "check", 0);
-    assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
-
-    let fixture = Fixture::new();
-    fixture.declare("app", vec![fixture.runtime("check", &[])]);
-    fixture.declare_at("app/lib", "lib", vec![fixture.runtime("check", &[])]);
-    let run = fixture.submit(&["--speculate", "--jobs", "2"], None);
-    let active = fixture
-        .until(&run, |view| {
-            fixture.ready("app/lib", "check")
-                && fixture.ready("app", "check")
-                && view.requests.iter().any(|request| {
-                    request.eval_id.as_str() == "app/check" && request.child.is_some()
-                })
-        })
-        .await;
-    let parent = active
-        .requests
-        .iter()
-        .find(|request| request.eval_id.as_str() == "app/check")
-        .unwrap()
-        .child
-        .clone()
-        .unwrap();
-    fixture.release("app/lib", "check", 1);
-    let ended = fixture.settled(&run).await;
-    assert_eq!(ended.run.status(), RunStatus::Red);
-    assert_eq!(status(&ended, "app/check"), RequestStatus::Blocked);
-    let blocked = ended
-        .requests
-        .iter()
-        .find(|request| request.eval_id.as_str() == "app/check")
-        .unwrap();
-    assert_eq!(
-        blocked.blocked_reason.as_deref(),
-        Some("Dependency verdict RED: lib/check")
-    );
-    assert!(!support::os::running(parent.pid.get()));
-    assert!(
-        artifactize_core::cache::list(&fixture.state, false)
-            .await
-            .unwrap()
-            .iter()
-            .all(|entry| entry.eval_id.as_str() == "lib/check"),
-        "cancelled work has no reusable record"
-    );
+async fn c4_a_parent_runs_beside_its_part_and_fails_with_it() {
+    for modes in [&["--jobs", "2"][..], &["--speculate", "--jobs", "2"]] {
+        let fixture = Fixture::new();
+        fixture.declare("app", vec![fixture.runtime("check", &[])]);
+        fixture.declare_at("app/lib", "lib", vec![fixture.runtime("check", &[])]);
+        let run = fixture.submit(modes, None);
+        // A part is no input: both evals run at once.
+        fixture
+            .until(&run, |_| {
+                fixture.ready("app/lib", "check") && fixture.ready("app", "check")
+            })
+            .await;
+        fixture.release("app/lib", "check", 1);
+        fixture.release("app", "check", 0);
+        let ended = fixture.settled(&run).await;
+        assert_eq!(ended.run.status(), RunStatus::Red, "{modes:?}");
+        assert_eq!(
+            status(&ended, "app/check"),
+            RequestStatus::Green,
+            "{modes:?}"
+        );
+        assert_eq!(status(&ended, "lib/check"), RequestStatus::Red, "{modes:?}");
+    }
 }

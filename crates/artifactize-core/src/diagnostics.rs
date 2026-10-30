@@ -265,7 +265,7 @@ pub async fn check_tools(
                     && (d.name == *name
                         || (!published
                             && artifact.is_some()
-                            && d.name == format!("{name}_{}", d.artifact_id.tool_suffix())))
+                            && d.name == format!("{name}_{}", d.artifact_id)))
             });
             if definitions.is_empty() {
                 report.check(

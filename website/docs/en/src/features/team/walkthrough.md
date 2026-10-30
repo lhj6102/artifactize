@@ -121,8 +121,8 @@ Would push 2, already in the store 0, skipped 0.
 Pushed 2, already in the store 0, skipped 0.
 ```
 
-Only `usage` and `guide`, whose `guide/terms` key covers its child `usage`, were
-reviewed again. With the store unreachable instead of `off`, `verify` would warn
+Only `usage` and `guide`, whose `guide/terms` key covers `usage`, which it
+names, were reviewed again. With the store unreachable instead of `off`, `verify` would warn
 once and review locally in the same way. `remote push` sends each key's latest
 local result that the store does not have yet. It never sends mirrors, and it skips
 Human sign-offs unless the token has `human`.

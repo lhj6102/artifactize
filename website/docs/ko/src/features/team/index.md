@@ -1,8 +1,8 @@
 # 팀으로 일하기 {#working-as-a-team}
 
 `artifactize server`([설계](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md))로 팀 리뷰 저장소를 하나 운영하면
-여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 각 머신은
-각자 상태를 유지합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
+여러 머신과 CI에서 서로의 판정을 재사용할 수 있습니다. 머신마다
+독립된 상태를 사용합니다. 저장소는 각 재사용 키의 모든 기록을 보관하되 가장 최근 기록을
 돌려주므로, 강제로 다시 리뷰하는 등 새 리뷰를 수행하면 모든 팀원이 이전 판정 대신 새 판정을 재사용합니다. [팀 워크스루](walkthrough.md)에서 두 머신과 CI가 판정을 공유하는 전체 과정을 처음부터 끝까지 실습합니다.
 
 **서버.** 소규모 서버에 별도의 상태 디렉터리를 두고 리뷰 저장소를 실행하세요.
@@ -89,10 +89,10 @@ artifactize remote status
 **공유 수준.** 기본값인 `summary`는 다음을 보냅니다.
 
 - 판정
-- 스키마로 검증한 소유자 필드(Runtime eval에서는 종료 코드,
+- 스키마로 검증한 추가 결과 필드(Runtime eval에서는 종료 코드,
   소요 시간, 잘림 표시만)
 - 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
-  fingerprint와 그 종류(`folder`/`file`/`graph`)
+  fingerprint와 그 종류(`folder`/`file`/`aspect`/`graph`)
   (기록의 `artifactKinds`)
 - 프로필과 실행 옵션(백엔드, 모델, reasoning, 제한, 변형), 사용량 카운터. Agent 결과의 `executionPaths`에는 작업 공간 기준 상대 경로와 경로별 해시도 기록합니다.
 - 만든 사람(`user@host`), Human 리뷰어, 타임스탬프
@@ -105,7 +105,7 @@ artifactize remote status
 선언된 Runtime 프로필 전체는 보냅니다. 프로필에 적은 경로나 민감한 리터럴은 가려지지 않고 공유됩니다.
 `executionPaths` 기록에도 작업 공간 기준 상대 경로가 들어 있습니다.
 `full`(`remote login --share full` 또는 `ARTIFACTIZE_REMOTE_SHARE=full`)은 추가로
-캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 소유자 필드에는
+캡처한 출력을 포함해 저장된 실행 기록을 그대로 보냅니다. 두 공유 수준 모두 추가 결과 필드에는
 텍스트를 자유롭게 쓸 수 있으므로, 공유되는 선언과 `pass_schema`, `fail_schema`가 허용하는 필드에는
 API 키나 토큰 같은 민감한 정보를 넣지 마세요.
 
@@ -117,7 +117,7 @@ API 키나 토큰 같은 민감한 정보를 넣지 마세요.
   풀 리퀘스트)에는 `read`만 주고, `human`은 승인하는 사람에게만 주세요. 토큰이
   유출되거나 오용되면 `server token revoke NAME --purge`로 그 토큰이 게시한
   항목도 삭제합니다.
-- `verify --force`는 저장소에서 아무것도 읽지 않으므로 의심스러운 기록을 우회하며,
+- `verify --force`는 저장소에서 아무것도 읽지 않으므로 의심스러운 기록을 재사용하지 않으며,
   새로 리뷰해 게시한 결과가 저장소의 최신 기록이 됩니다.
   `cache rm`은 로컬 키의 기록을 지우고, `server rm`은 저장소에서 키의 기록을
   제거합니다.

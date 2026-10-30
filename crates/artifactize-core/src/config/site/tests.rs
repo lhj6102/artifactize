@@ -109,27 +109,6 @@ fn an_artifacts_declarations_are_its_own_and_those_it_composes() {
 }
 
 #[test]
-fn a_space_named_artifacts_tools_are_named_as_the_registry_names_them() {
-    let workspace = Workspace::new();
-    workspace.write(
-        "kit/index.artf",
-        r#"name = "kit::tools"
-
-[views.human_tools]
-open = { description = "Open the kit.", builtin = "open", args = ["{artifactPath}"] }
-"#,
-    );
-    let sites = read_sites(&workspace.0).unwrap();
-    let declared = workspace
-        .read("kit::tools", &sites[&Workspace::name("kit::tools")])
-        .unwrap();
-    assert_eq!(
-        declared.tools().unwrap()[0].0.name.as_str(),
-        "open_kit__tools"
-    );
-}
-
-#[test]
 fn a_broken_declaration_in_its_scope_fails_as_a_full_read_does() {
     let workspace = Workspace::new();
     let sites = read_sites(&workspace.0).unwrap();

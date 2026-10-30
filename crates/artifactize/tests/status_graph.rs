@@ -190,16 +190,34 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     assert_eq!(row(&recursive, "evals", "blocked/check")["force"], true);
     assert_eq!(row(&recursive, "evals", "blocked/check")["action"], "wait");
     assert_eq!(row(&recursive, "evals", "red/check")["force"], false);
+    // In a folder of its own, beside the fixture's Artifacts rather than around them.
+    fs::create_dir_all(fixture.repo.join("project")).unwrap();
     support::declaration::write(
-        fixture.repo.join("index.artf"),
+        fixture.repo.join("project/index.artf"),
         r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
-    let incomplete = fixture.json(&["status", "project"], 1);
+    // Without parts, a basis is BASIS; a part nested in its folder is reviewed with it.
     assert_eq!(
-        row(&incomplete, "artifacts", "project")["state"],
-        "INCOMPLETE"
+        row(
+            &fixture.json(&["status", "project"], 0),
+            "artifacts",
+            "project"
+        )["state"],
+        "BASIS"
     );
+    fs::create_dir_all(fixture.repo.join("project/part")).unwrap();
+    support::declaration::write(
+        fixture.repo.join("project/part/index.artf"),
+        json!({"name":"part","fingerprint":false,"evals":[{"id":"check",
+            "title":"Check","payload":{"instruction":"Check the part."},
+            "profile":{"kind":"runtime","command":"missing-command","args":[]}}]})
+        .to_string(),
+    )
+    .unwrap();
+    let incomplete = fixture.json(&["status", "project"], 1);
+    assert_eq!(incomplete["selectedEvalIds"], json!(["part/check"]));
+    assert_ne!(row(&incomplete, "artifacts", "project")["state"], "BASIS");
     assert!(
         !incomplete["obligations"]
             .as_array()
@@ -257,11 +275,17 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
         r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
+    fs::create_dir_all(fixture.repo.join("part")).unwrap();
+    support::declaration::write(
+        fixture.repo.join("part/index.artf"),
+        r#"{"name":"part","basis":true}"#,
+    )
+    .unwrap();
     let graph = fixture.json(&["config", "graph"], 0);
-    assert_eq!(graph["version"], 1);
+    assert_eq!(graph["version"], 2);
     let relations = graph["relations"].as_array().unwrap();
     for (kind, field, value) in [
-        ("child", "path", "review"),
+        ("part", "source", "part"),
         ("instruction", "evalId", "cycle-a/check"),
         ("argv", "evalId", "green/check"),
     ] {

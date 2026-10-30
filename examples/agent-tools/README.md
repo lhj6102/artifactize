@@ -72,7 +72,7 @@ artifactize tools check --execute --artifact spec --audience human --tool notes
 An explicit check runs one tool and creates no Run, verdict or cache entry. It
 exits 1 when the tool reports an error, as `coverage` does for `R9`. `coverage`
 reads `{requirements}`, so it runs in the scope of `spec/review`, whose instruction
-names `requirements`; `--artifact spec` admits only `spec` and its children. Static
+names `requirements`; `--artifact spec` admits only `spec`. Static
 checks validate built-in tools without launching a desktop application. Actually using
 `open_spec` requires a working desktop default-application mechanism;
 `notes_spec` works in any terminal.

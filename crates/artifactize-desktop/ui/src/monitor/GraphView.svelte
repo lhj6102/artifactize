@@ -11,8 +11,9 @@
   // while at most that many are; with more in view, they are boxes on the canvas, which a click
   // opens as it opens an element.
   //
-  // Each space's Artifacts sit in its region, drawn behind them, which a click passes to the
-  // background.
+  // A whole is a box around its parts (parts.ts), a parent node in Svelte Flow, and a part of
+  // several wholes is drawn in each: every copy opens its Artifact, and the opened Artifact's
+  // copies all show it.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
@@ -21,10 +22,9 @@
   import { getAppState } from "../shell/app.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
-  import SpaceNode from "./SpaceNode.svelte";
+  import WholeNode from "./WholeNode.svelte";
+  import { boxes, copies, copyEdges, drawings } from "./parts";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
-  import { NODE } from "./layout";
-  import { regions } from "./spaces";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
@@ -43,6 +43,7 @@
     graph: Shape;
     /** A Current: lit by what verify would do, with its structure text below. */
     current?: boolean;
+    /** Where the layout put each copy that is no whole, by key. */
     positions: Map<string, Point>;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
@@ -57,7 +58,7 @@
 
   const flow = useSvelteFlow();
   const camera = useViewport();
-  const nodeTypes = { artifact: ArtifactNode, space: SpaceNode };
+  const nodeTypes = { artifact: ArtifactNode, whole: WholeNode };
   /** A positive zoom floor clips sufficiently long graphs in the split canvas. Zero lets
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
@@ -73,76 +74,76 @@
   /** Fit View, the first fit included, fits the whole canvas. */
   const fitViewOptions = { minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: FIT.padding };
 
-  /** Where every Artifact is, indexed by area. */
-  const laid = $derived(scene(positions));
-  /** Each space's region around its Artifacts; few, so always kept as elements. */
-  const spaces = $derived(regions(graph, positions));
-  /** The whole graph, the spaces' regions included, as Fit View fits it. */
-  const bounds = $derived.by(() => {
-    const all = [laid.bounds, ...spaces];
-    if (spaces.length === 0) return laid.bounds;
-    const [left, top] = [Math.min(...all.map((box) => box.x)), Math.min(...all.map((box) => box.y))];
-    const right = Math.max(...all.map((box) => box.x + box.width));
-    const bottom = Math.max(...all.map((box) => box.y + box.height));
-    return { x: left, y: top, width: right - left, height: bottom - top };
-  });
+  /** Every drawing of an Artifact, each whole before its parts. */
+  const drawn = $derived(copies(graph));
+  /** Each copy by key. */
+  const byKey = $derived(new Map(drawn.map((copy) => [copy.key, copy])));
+  /** Each Artifact's copies by its tree id. */
+  const keys = $derived(drawings(drawn));
+  /** Where every copy is, wholes around their parts. */
+  const rects = $derived(boxes(drawn, positions));
+  /** The graph's edges between copies, lit as their edges. */
+  const lines = $derived(copyEdges(graph, drawn).map(({ source, target, edge }) => ({ ...edge, source, target })));
+  /** Where every copy is, indexed by area. */
+  const laid = $derived(
+    scene(
+      rects,
+      new Set(drawn.filter((copy) => copy.parts.length > 0).map((copy) => copy.key)),
+      new Map(drawn.map((copy) => [copy.key, copy.node.id])),
+    ),
+  );
+  /** The whole graph, as Fit View fits it. */
+  const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
-  const large = $derived(graph.nodes.length > DRAWN);
+  const large = $derived(drawn.length > DRAWN);
   /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
    * none before the canvas has a size. */
   const inView = $derived(large && v.area ? within(laid, view(camera.current, v.area.width, v.area.height), DRAWN) : []);
-  /** The Artifacts kept as elements: every one of a small graph (`null`); of a large one,
-   * those in view while at most `DRAWN` are. A text key, so that panning over the same ones
-   * keeps the same elements. */
-  const drawn = $derived(large ? (inView?.join() ?? "") : null);
+  /** The copies kept as elements: every one of a small graph (`null`); of a large one, those
+   * in view while at most `DRAWN` are. A text key, so that panning over the same ones keeps
+   * the same elements. */
+  const kept = $derived(large ? (inView?.join() ?? "") : null);
   /** The Artifacts in view are painted as boxes, while too many are in view to keep as elements. */
   const painted = $derived(inView === null);
 
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() => {
-    const keep = drawn === null ? null : new Set(drawn === "" ? [] : drawn.split(",").map((number) => laid.ids[Number(number)]));
-    const behind = spaces.map((region): Node => ({
-      id: `space:${region.space}`,
-      type: "space",
-      position: { x: region.x, y: region.y },
-      width: region.width,
-      height: region.height,
-      measured: v.initialized ? { width: region.width, height: region.height } : undefined,
-      data: { space: region.space, outline: region.outline, label: region.label },
-      draggable: false,
-      connectable: false,
-      selectable: false,
-      focusable: false,
-      zIndex: -1,
-      ariaLabel: `Space ${region.space}`,
-      domAttributes: { "data-space": region.space },
-    }));
-    const artifacts = graph.nodes
-      .filter((node) => positions.has(node.id) && (keep === null || keep.has(node.id)))
-      .map((node) => ({
-        id: node.id,
-        type: "artifact",
-        position: positions.get(node.id)!,
-        // A fixed size: recoloured nodes keep their dimensions and never re-measure. A node
-        // object without `measured` makes Svelte Flow drop its handle positions, which hides
-        // its edges until it is measured again; every recolour would make them flicker. The
-        // first draw goes without it, so the initial fit waits for the laid-out canvas.
-        width: NODE.width,
-        height: NODE.height,
-        measured: v.initialized ? { width: NODE.width, height: NODE.height } : undefined,
-        data: { label: node.label, light: node.light, open: node.id === opened },
-        draggable: false,
-        connectable: false,
-        ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}`,
-        domAttributes: { "data-light": node.light },
-      }));
-    return [...behind, ...artifacts];
+    // A part kept as an element keeps the wholes around it, which hold it.
+    const holding = (key: string): string[] => {
+      const parent = byKey.get(key)?.parent ?? null;
+      return parent === null ? [key] : [key, ...holding(parent)];
+    };
+    const keep = kept === null ? null : new Set(kept === "" ? [] : kept.split(",").flatMap((number) => holding(laid.ids[Number(number)])));
+    return drawn
+      .filter((copy) => rects.has(copy.key) && (keep === null || keep.has(copy.key)))
+      .map(({ key, node, parent, parts }) => {
+        const [at, around] = [rects.get(key)!, parent === null ? null : rects.get(parent)!];
+        return {
+          id: key,
+          type: parts.length > 0 ? "whole" : "artifact",
+          // A part's place is from its whole's corner.
+          position: around ? { x: at.x - around.x, y: at.y - around.y } : { x: at.x, y: at.y },
+          parentId: parent ?? undefined,
+          // A fixed size: recoloured nodes keep their dimensions and never re-measure. A node
+          // object without `measured` makes Svelte Flow drop its handle positions, which hides
+          // its edges until it is measured again; every recolour would make them flicker. The
+          // first draw goes without it, so the initial fit waits for the laid-out canvas.
+          width: at.width,
+          height: at.height,
+          measured: v.initialized ? { width: at.width, height: at.height } : undefined,
+          data: { name: node.name, light: node.light, open: node.id === opened, artifact: node.id },
+          draggable: false,
+          connectable: false,
+          ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}`,
+          domAttributes: { "data-light": node.light, "data-artifact": node.id },
+        };
+      });
   });
   // A large graph's edges are all on the canvas.
   let edges = $derived.by<Edge[]>(() =>
     large
       ? []
-      : graph.edges.map((edge) => ({
+      : lines.map((edge) => ({
           id: `${edge.source}>${edge.target}`,
           source: edge.source,
           target: edge.target,
@@ -193,6 +194,8 @@
     if (v.area) void flow.setViewport(whole(bounds, v.area, FIT), { duration: 0 });
   }
 
+  /** The graph the large graph's picture paints: its edges between copies. */
+  const picturing = $derived({ nodes: graph.nodes, edges: lines });
   /** The large graph's picture, painted around the view and moved as the camera pans. */
   const picture = new Picture();
   /** How long the zoom holds still before a scaled picture is painted sharp at the new zoom:
@@ -204,7 +207,7 @@
   const draw: Attachment<HTMLCanvasElement> = (canvas) => {
     const at = v.area;
     if (!at) return;
-    const what = { graph, viewport: camera.current, width: at.width, height: at.height, ratio: window.devicePixelRatio || 1, boxes: painted, opened };
+    const what = { graph: picturing, viewport: camera.current, width: at.width, height: at.height, ratio: window.devicePixelRatio || 1, boxes: painted, opened };
     const where = laid;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const show = (sharp: boolean) => {
@@ -231,20 +234,23 @@
     }
     const camera = flow.getViewport();
     const point = box && { x: (event.clientX - box.left - camera.x) / camera.zoom, y: (event.clientY - box.top - camera.y) / camera.zoom };
-    const id = painted && point ? hit(laid, point) : null;
-    if (id) onopen(id);
+    const key = painted && point ? hit(laid, point) : null;
+    const copy = key === null ? undefined : byKey.get(key);
+    if (copy) onopen(copy.node.id);
     else onclose();
   }
 
-  /** Open what the find field found, close the field, and bring the Artifact to the middle of
-   * the graph left of the Detail once the Detail is there; the keyboard goes to the Detail. */
+  /** Open what the find field found, close the field, and bring the Artifact (its first copy)
+   * to the middle of the graph left of the Detail once the Detail is there; the keyboard goes
+   * to the Detail. */
   async function choose(found: Found) {
     onopen(found.node, found.tab);
     m.finding = false;
     await tick();
-    const [at, canvas] = [positions.get(found.node), v.canvas];
+    const first = keys.get(found.node)?.[0];
+    const [at, canvas] = [first === undefined ? undefined : rects.get(first), v.canvas];
     if (at && canvas) {
-      const point = { x: at.x + NODE.width / 2, y: at.y + NODE.height / 2 };
+      const point = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
       const cover = m.panes.detail?.getBoundingClientRect() ?? null;
       void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, flow.getViewport().zoom, READABLE, MAX_ZOOM), { duration: 0 });
     }
@@ -253,10 +259,11 @@
 
   /** Enter on a focused Artifact node opens its Detail, as a click does. */
   function keydown(event: KeyboardEvent) {
-    const id = (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
-    if (!id || !plain(event, "Enter")) return;
+    const key = (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
+    const copy = key === undefined ? undefined : byKey.get(key);
+    if (!copy || !plain(event, "Enter")) return;
     event.preventDefault();
-    onopen(id);
+    onopen(copy.node.id);
   }
 </script>
 
@@ -277,7 +284,7 @@
       elementsSelectable={false}
       autoPanOnNodeFocus={false}
       elevateNodesOnSelect={false}
-      onlyRenderVisibleElements={graph.nodes.length > 80}
+      onlyRenderVisibleElements={drawn.length > 80}
       oninit={() => {
         v.initialized = true;
         // The first draw shows whole; a canvas without a size yet (a hidden screen) gets its
@@ -285,7 +292,7 @@
         first();
       }}
       proOptions={{ hideAttribution: true }}
-      onnodeclick={({ node, event }) => (node.type === "space" ? background(event) : onopen(node.id))}
+      onnodeclick={({ node }) => onopen(byKey.get(node.id)?.node.id ?? node.id)}
       onpaneclick={({ event }) => background(event)}
     >
       <Controls showLock={false} showFitView={false}>
@@ -299,7 +306,7 @@
           </ControlButton>
         {/snippet}
       </Controls>
-      {#if graph.nodes.length > 40 && !large}<MiniMap pannable zoomable />{/if}
+      {#if drawn.length > 40 && !large}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
     {#if m.finding}<GraphFind {source} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     <ul class="legend" aria-label="Legend">
@@ -333,7 +340,10 @@
     height: 100%;
     pointer-events: none;
   }
+  /* Svelte Flow's container hides its overflow, which still lets a focused node scroll it:
+   * WebKitGTK then shifts the whole graph off the camera. A clipped container cannot scroll. */
   .canvas :global(.svelte-flow) {
+    overflow: clip;
     --xy-background-color: transparent;
     --xy-edge-stroke-width: 1.5;
   }
@@ -342,10 +352,6 @@
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
-  }
-  /* A space's region takes the pointer only within its outline and on its label. */
-  .canvas :global(.svelte-flow__node-space) {
-    pointer-events: none;
   }
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);

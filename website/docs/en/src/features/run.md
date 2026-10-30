@@ -13,8 +13,9 @@ including the [machine prerequisites of a Human sign-off](artifact.md#human-sign
 ## Verify and Runs
 
 `verify` takes exactly one [selector](../cli/index.md#command-reference): Artifacts,
-qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks. Pieces that depend on one
-another in a loop are **cycle peers**; their checks review the selected piece, so an Artifact
+qualified evals (`green/check`), or `--all`. An Artifact selector asks to run that piece's checks
+and those of its [parts](artifact.md#composition): `verify game` covers `combat` too. Pieces that depend on one
+another in a loop, through references or parts, are **cycle peers**; their checks review the selected piece, so an Artifact
 selector runs its cycle peers' checks too. An individual eval selector asks to run just that check. The Run still needs valid results for every piece
 those checks rely on, following their links as far as needed. This linked group is
 the **dependency closure**; its required results are **final obligations**, even
@@ -23,7 +24,9 @@ when you did not ask to execute them in this Run.
 `--recursive` also selects every check in that group, including other checks on
 the selected Artifact, in configuration order. `--all` already selects
 every check and the obligations of pieces that have no checks. A file Artifact
-selector selects its own evals, never those of the surrounding folder.
+selector selects its own evals, not those of the surrounding folder, unless that folder is
+its cycle peer: when the file's eval references the folder that holds it, the folder's evals
+run as a peer's.
 
 For example, suppose `code/tests` relies on `plan`, which needs a person's
 `plan/signoff`. `verify --eval code/tests` selects the test, but cannot finish GREEN
@@ -276,7 +279,7 @@ When an eval with a reuse key has no current cached result, `status` explains wh
 changed since its last GREEN or RED result with the same criteria, and reports
 `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a `Fingerprint changed since Run RUN_ID: ...` line, for example `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. `files`
 lists the target's own files as `path` (changed), `+path` (added) or
-`-path` (removed); `dependencies` lists the children and named Artifacts
+`-path` (removed); `dependencies` lists the named Artifacts
 whose fingerprint changed, as `name`, `+name` or `-name`. When the
 per-file details are not available, as with a script fingerprint or an older record that
 kept no file list, it reports only `fingerprint changed` or `inputs changed` for the target. No explanation appears when that eval definition has

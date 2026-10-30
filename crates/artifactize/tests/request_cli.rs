@@ -31,8 +31,10 @@ impl Fixture {
         let repo = root.path().join("repo");
         let child = repo.join("child");
         fs::create_dir_all(&child).unwrap();
+        // Beside the child rather than around it, so that the child is no part of it.
+        fs::create_dir_all(repo.join("parent")).unwrap();
         support::declaration::write(
-            repo.join("index.artf"),
+            repo.join("parent/index.artf"),
             json!({
                 "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
                     "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},

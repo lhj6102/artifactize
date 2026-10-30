@@ -86,6 +86,8 @@ pub struct Node {
     pub upstream: Vec<Upstream>,
     /// A waiting Eval cannot proceed in this Run because an actual external gate failed.
     pub(crate) held: bool,
+    /// Artifact rows: the Artifacts it is made of directly, by name.
+    pub parts: Vec<ArtifactName>,
     /// Timed eval rows, so a cached tree can redraw its elapsed times.
     pub clock: Option<Clock>,
     pub children: Vec<Node>,
@@ -402,6 +404,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a EvalId, now: OffsetDateTime) -> 
         changed: false,
         upstream: states.upstream_states(eval),
         held: states.held_for_run(eval),
+        parts: Vec::new(),
         children: Vec::new(),
         kind: Kind::Eval(view),
     }
@@ -549,8 +552,34 @@ fn artifact_node<'a>(
     } else {
         format!("{passed}/{}", children.len())
     };
-    let (glyph, tone, weight, text) = if basis {
+    let parts = states.index.parts.get(id).map_or(&[][..], Vec::as_slice);
+    // Parts that keep the Artifact from passing, most urgent first.
+    let mut pending: Vec<_> = parts
+        .iter()
+        .filter(|part| states.completion(part) != Completion::Complete)
+        .collect();
+    pending.sort_by_key(|part| states.completion(part).rank());
+    let listed = |label: &str| {
+        let shown: Vec<_> = pending.iter().take(SHOWN).map(|id| id.as_str()).collect();
+        let more = pending.len().saturating_sub(SHOWN);
+        let more = if more > 0 {
+            format!(" +{more}")
+        } else {
+            String::new()
+        };
+        Segment::plain(format!("{label}{}{more}", shown.join(", ")))
+    };
+    let (glyph, tone, weight, mut text) = if basis && pending.is_empty() {
         ("◇", Tone::Muted, Weight::Dim, vec![Segment::plain("basis")])
+    } else if children.is_empty() && !parts.is_empty() {
+        // Without evals of its own, it is what its parts are.
+        let (glyph, tone, _) = self::completion(completion);
+        let text = if pending.is_empty() {
+            Segment::plain(format!("made of {}", parts.len()))
+        } else {
+            listed("pending: ")
+        };
+        (glyph, tone, Weight::Normal, vec![text])
     } else if children.is_empty() {
         (
             "○",
@@ -573,6 +602,11 @@ fn artifact_node<'a>(
                 let (glyph, tone, _) = self::completion(Completion::InProgress(busy));
                 (glyph, tone, Weight::Bold)
             }
+            // Every eval row passes, yet a part fails.
+            (Kind::Eval(EvalView::Done(_)), Completion::Failed { verdict }) => {
+                let (glyph, tone, _) = self::completion(Completion::Failed { verdict });
+                (glyph, tone, Weight::Bold)
+            }
             // Every eval row is done, yet the graph holds them on their own gates.
             (Kind::Eval(EvalView::Done(_)), Completion::Waiting { blocked }) => {
                 let (glyph, tone, _) = self::completion(Completion::Waiting { blocked });
@@ -583,6 +617,13 @@ fn artifact_node<'a>(
         };
         (glyph, tone, weight, summary(states, id, &children))
     };
+    if !children.is_empty() && !pending.is_empty() {
+        text.push(listed(if text.is_empty() {
+            "parts: "
+        } else {
+            " · parts: "
+        }));
+    }
     Node {
         id: super::NodeId::artifact(id.clone()),
         clock: None,
@@ -598,6 +639,7 @@ fn artifact_node<'a>(
         changed: false,
         upstream: Vec::new(),
         held: false,
+        parts: parts.iter().map(|&part| part.clone()).collect(),
         children,
     }
 }

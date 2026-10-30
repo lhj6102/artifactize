@@ -1,6 +1,6 @@
 # Hey Arti: 프로젝트 리뷰 설계하기 {#hey-arti-shape-a-projects-reviews}
 
-코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰해야 할까?"라고 물어보세요. Arti는
+코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰하면 좋을까요?"라고 물어보세요. Arti는
 프로젝트를 파악하고, 무엇이 중요한지 묻고, 리뷰가 의미 있고 그 결과를 재사용할 수 있도록 Artifact와 eval을
 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
 대신해 승인하지도 않습니다.
@@ -63,8 +63,15 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
 - 독립적으로 고치고 리뷰할 수 있는 단위로 Artifact를 나누고, 각각의
   검증 요건을 구체적으로 정하세요. 저장소 전체에 대한 리뷰 하나는 피하세요.
 - eval은 실제로 쓰는 각 입력을 `{name}`으로 가리킵니다. 같은 저장소에 있다고 해서
-  의존 관계가 생기지는 않으며, 명령이 읽는 파일도 eval의 입력에 자동으로 추가되지는 않습니다. 자식 폴더는
-  부모 eval의 입력으로 간주합니다.
+  의존 관계가 생기지는 않으며, 명령이 읽는 파일도 eval의 입력에 자동으로 추가되지는 않습니다. `app` 폴더 안의
+  `ui` 같은 부분은 `app`을 이루지만, `app`의 eval이 이름을 적지 않으면 그 입력이 아닙니다.
+- 부분이 실패하는 동안 전체가 통과하면 안 된다면 그 Artifact를 전체의 부분으로 만드세요
+  ([구성](../features/artifact.md#composition) 참고). 전체의 폴더 안에 선언한 Artifact는 자동으로
+  부분이 됩니다. 다른 곳에 있거나 여러 전체가 함께 쓰는 부분은 각 전체의 `parts`에 적으세요. 부분이 실패하면 전체도 실패하고, `verify whole`은
+  부분까지 함께 다룹니다. 각 부분은 자기 몫을 검사하고, 전체는 부분들이 함께 동작하는지만 검사하며
+  그 eval이 쓰는 부분의 이름을 적습니다. 파일 하나인 부분은
+  [파일 Artifact](../features/declarations.md#file-artifacts)로, 큰 폴더 곳곳에 파일이 흩어진 부분은
+  그 파일을 골라 담는 [aspect](../features/declarations.md#aspects)로 선언합니다.
 - eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
   필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
   [Human eval](../features/human.md)을 쓰세요. 사람에게는
@@ -136,7 +143,7 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
 Arti는 verify 요청마다 [추측 실행](../features/run.md#speculation)을 켤 수 있습니다. 이번 Run에서 실행 대상으로 선택한 승인 요청은
-다른 eval의 실행을 막지 않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, scope에 해당 Artifact를 추가하거나
+다른 eval의 실행을 막지 않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, 선택 범위에 해당 Artifact를 추가하거나
 선택 범위를 `{"kind": "all"}`로 넓히지 않으면 Run은 INCOMPLETE로 끝납니다. YELLOW는 **완전한 승인이 아니라** 사람의 승인이 아직 남아 있다는 뜻이며, 그 승인은 사람이 직접 제출해야 합니다.
 
 Arti는 각 결과를 다음과 같이 다룹니다.

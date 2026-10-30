@@ -6,7 +6,7 @@ import { relight } from "./graph";
 //   base ─┬─> app ──> site
 //   lib  ─┘
 const shape: Shape = {
-  nodes: ["base", "lib", "app", "site"].map((name) => ({ id: `a:${name}`, name, space: null, label: name, light: "waiting", note: null })),
+  nodes: ["base", "lib", "app", "site"].map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null, parts: [] })),
   edges: [
     { source: "a:base", target: "a:app", light: "waiting" },
     { source: "a:lib", target: "a:app", light: "waiting" },

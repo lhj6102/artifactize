@@ -4,7 +4,7 @@
 // Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, createSpaceRoom, createSpaces, requests, savedRuns, signOff, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
@@ -12,7 +12,7 @@ import { aside, camera, detail, fact, FIND, findField, focusedNode, graphShown, 
 import { primaryModifier } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
-import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, selectBranch, showRun } from "../pane.ts";
+import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
 
 /** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
 function ended(fixture: ReturnType<typeof createChain>) {
@@ -41,6 +41,37 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
   }
 }
 
+/** How wide an Artifact's node draws at the zoom its name starts to read at: 168 at zoom 1, at
+ * three quarters. */
+const READABLE = 126;
+
+/** The copies of {@link createParts}'s graph: the wholes suite and docs, app inside suite, kit
+ * inside app, site inside both, and lib outside every whole. */
+const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib"];
+
+/** The copies of the graph under `root`, outside the Detail, once all of {@link PARTS} are
+ * drawn: each one's box, whether it is drawn as a whole, its title text, its Artifact, its
+ * spoken name, whether it shows as opened, and its light. */
+async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
+  const read = () => browser.execute((under) => Object.fromEntries([...document.querySelectorAll<HTMLElement>(`${under} .svelte-flow__node`)]
+    .filter((node) => !node.closest('aside[aria-label="Detail"]'))
+    .map((node) => [node.dataset.id ?? "", {
+      rect: node.getBoundingClientRect().toJSON() as DOMRect,
+      whole: node.classList.contains("svelte-flow__node-whole"),
+      text: node.textContent?.trim() ?? "",
+      artifact: node.dataset.artifact ?? "",
+      label: node.getAttribute("aria-label") ?? "",
+      open: !!node.querySelector(".open"),
+      light: node.dataset.light ?? "",
+    }])), root);
+  let shown: Awaited<ReturnType<typeof read>> = {};
+  await browser.waitUntil(async () => {
+    shown = await read();
+    return PARTS.every((key) => key in shown);
+  }, { timeout: 15000, timeoutMsg: "every whole and part drawn" });
+  return shown;
+}
+
 /** A rectangle wholly inside another. */
 const within = (inner: DOMRect, outer: DOMRect) =>
   inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
@@ -49,63 +80,15 @@ const within = (inner: DOMRect, outer: DOMRect) =>
 const apart = (one: DOMRect, other: DOMRect) =>
   one.left >= other.right || one.right <= other.left || one.top >= other.bottom || one.bottom <= other.top;
 
-/** The spaces' regions and the Artifacts of the graph under `root`, once its four Artifacts and
- * two regions are drawn: each region's box, text and outline, each Artifact's rectangle, text
- * and spoken name. */
-async function spacesDrawn(browser: WebdriverIO.Browser, root: string) {
-  const read = () => browser.execute((under) => {
-    const rect = (element: Element) => element.getBoundingClientRect().toJSON() as DOMRect;
-    const of = (selector: string) => [...document.querySelectorAll<HTMLElement>(`${under} ${selector}`)]
-      .filter((node) => !node.closest('aside[aria-label="Detail"]'));
-    return {
-      regions: Object.fromEntries(of(".svelte-flow__node[data-space]")
-        .map((region) => [region.dataset.space ?? "", { rect: rect(region), text: region.textContent?.trim() ?? "", outline: region.querySelector("svg path")?.getAttribute("d") ?? "" }])),
-      nodes: Object.fromEntries(of(".svelte-flow__node[data-light]")
-        .map((node) => [node.dataset.id ?? "", { rect: rect(node), text: node.textContent?.trim() ?? "", label: node.getAttribute("aria-label") ?? "" }])),
-    };
-  }, root);
-  let shown: Awaited<ReturnType<typeof read>> | undefined;
-  await browser.waitUntil(async () => {
-    shown = await read();
-    return Object.keys(shown.nodes).length === 4 && Object.keys(shown.regions).length === 2;
-  }, { timeout: 15000, timeoutMsg: "two regions and four Artifacts drawn" });
-  return shown!;
+/** A click at the top left of the whole `key`'s box, on its name, outside its parts. */
+async function clickWhole(browser: WebdriverIO.Browser, root: string, key: string) {
+  const at = await browser.execute((under, want) => {
+    const box = [...document.querySelectorAll(`${under} .svelte-flow__node[data-id="${want}"]`)]
+      .find((node) => !node.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+    return { x: Math.round(box.left + 10), y: Math.round(box.top + 8) };
+  }, root, key);
+  await browser.action("pointer").move({ x: at.x, y: at.y }).down().up().perform();
 }
-
-/** The Current's graph of {@link createSpaceRoom} with its six Artifacts drawn, named with
- * `fan` (`fan::`, `tail::`) or not (""): the room between root and a (a layer), a and b (a row)
- * and end and x, in node widths and heights so that the camera's zoom drops out; and, with
- * spaces, whether the `fan` region holds a point beside root and points above and below it. */
-async function room(browser: WebdriverIO.Browser, fan: string, tail: string) {
-  const read = () => browser.execute((fan, tail) => {
-    const current = 'section[aria-label="Current"]';
-    const rect = (id: string) => document.querySelector(`${current} .svelte-flow__node[data-id="a:${id}"]`)?.getBoundingClientRect();
-    const [root, a, b, end, x] = [`${fan}root`, `${fan}a`, `${fan}b`, `${fan}end`, `${tail}x`].map(rect);
-    if (!root || !a || !b || !end || !x) return null;
-    const region = document.querySelector(`${current} .svelte-flow__node[data-space="fan"]`)?.getBoundingClientRect();
-    const regions = document.querySelectorAll(`${current} .svelte-flow__node[data-space]`).length;
-    if (fan && !region) return null;
-    /** Whether the `fan` region takes the pointer at a point: only within its outline does it. */
-    const held = (left: number, top: number) => document.elementsFromPoint(left, top).some((element) => !!element.closest(`${current} [data-space="fan"]`));
-    const middle = root.left + root.width / 2;
-    return {
-      layer: (a.left - root.right) / root.width,
-      row: (b.top - a.bottom) / a.height,
-      across: (x.left - end.right) / end.width,
-      regions,
-      beside: region ? held(root.left - 6, root.top + root.height / 2) : false,
-      above: region ? held(middle, region.top + 4) : false,
-      below: region ? held(middle, region.bottom - 4) : false,
-    };
-  }, fan, tail);
-  let shown: Awaited<ReturnType<typeof read>> = null;
-  await browser.waitUntil(async () => (shown = await read()) !== null, { timeout: 15000, timeoutMsg: `the Current's six Artifacts drawn${fan ? " in their spaces" : ""}` });
-  return shown!;
-}
-
-/** How wide an Artifact's node draws at the zoom its name starts to read at: 168 at zoom 1, at
- * three quarters. */
-const READABLE = 126;
 
 export const scenarios: Scenario[] = [
   // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
@@ -245,112 +228,113 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-GRAPH-SPACES; UX edges: E-GRAPH-SPACES E-MON-DETAIL-ARTIFACT E-GRAPH-SPACE-BACKGROUND
+  // UX journey: J-GRAPH-PARTS; UX edges: E-GRAPH-PARTS E-GRAPH-WHOLE E-GRAPH-PART E-MON-DETAIL-BACK
   scenario<{ run: string }>(
-    "graph-spaces",
-    "draws each space's Artifacts in one region labelled with the space by the rest of their names, its rounded outline following them, edges between spaces and out of them like any other, and closes the Detail on a click on a region",
-    async () => ended(createSpaces()),
+    "graph-parts",
+    "draws each whole of a Run as a box around its parts, nested as deep as they go, a shared part in each of its wholes, edges into a box like any other, and opens the whole's Detail from its box and a part's from the part",
+    async () => ended(createParts()),
     async (browser, { data }) => {
       await shownRun(browser, data.run);
-      await graphShown(browser, "a:combat::Code");
-      const { regions, nodes } = await spacesDrawn(browser, ".graph");
-      assert.deepEqual(Object.keys(regions).sort(), ["combat", "inventory"], "one region per space: docs has none");
-      for (const [space, region] of Object.entries(regions)) {
-        assert.equal(region.text, space, `the ${space} region is labelled with its space`);
-        assert.match(region.outline, /^M .* A .* Z$/, `the ${space} region is drawn as a rounded outline`);
+      await graphShown(browser, "a:suite/a:app/a:kit");
+      const drawn = await partsDrawn(browser, ".graph");
+      assert.deepEqual(Object.keys(drawn).sort(), [...PARTS].sort(), "each Artifact once, site once in each of its wholes");
+      for (const [key, whole] of [["a:suite", true], ["a:suite/a:app", true], ["a:docs", true], ["a:suite/a:site", false], ["a:docs/a:site", false], ["a:suite/a:app/a:kit", false], ["a:lib", false]] as const) {
+        assert.equal(drawn[key].whole, whole, `${key} is ${whole ? "" : "not "}drawn as a box`);
       }
-      for (const [id, space, label] of [["a:combat::Spec", "combat", "Spec"], ["a:combat::Code", "combat", "Code"], ["a:inventory::Code", "inventory", "Code"]]) {
-        assert.equal(nodes[id].text, label, `${id} shows the rest of its name`);
-        assert.ok(nodes[id].label.startsWith(`${id.slice(2)}: `), `${id} is read aloud whole: ${nodes[id].label}`);
-        assert.ok(within(nodes[id].rect, regions[space].rect), `${id} sits in the ${space} region`);
-        for (const [other, region] of Object.entries(regions)) {
-          if (other !== space) assert.ok(apart(nodes[id].rect, region.rect), `${id} stands outside the ${other} region`);
-        }
+      for (const [part, whole] of [["a:suite/a:app", "a:suite"], ["a:suite/a:app/a:kit", "a:suite/a:app"], ["a:suite/a:site", "a:suite"], ["a:docs/a:site", "a:docs"]]) {
+        assert.ok(within(drawn[part].rect, drawn[whole].rect), `${part} sits in ${whole}'s box`);
       }
-      assert.equal(nodes["a:docs"].text, "docs");
-      for (const region of Object.values(regions)) assert.ok(apart(nodes["a:docs"].rect, region.rect), "docs stands outside every region");
-      assert.ok(apart(regions.combat.rect, regions.inventory.rect), "the regions do not meet");
-      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser),
-        { "a:combat::Code": "green", "a:inventory::Code": "green", "a:docs": "green" },
-        { "a:combat::Code>a:inventory::Code": "green", "a:inventory::Code>a:docs": "green" }),
-      { timeout: 15000, timeoutMsg: "the edges from combat into inventory and out of inventory to docs are drawn and lit like any other" });
+      assert.ok(apart(drawn["a:suite"].rect, drawn["a:docs"].rect), "the wholes' boxes do not meet");
+      for (const whole of ["a:suite", "a:docs"]) assert.ok(apart(drawn["a:lib"].rect, drawn[whole].rect), `lib stands outside ${whole}`);
+      assert.ok(apart(drawn["a:suite/a:app"].rect, drawn["a:suite/a:site"].rect), "suite's parts do not meet");
+      // A whole shows its name at its top, lit as its parts are, and is read aloud as a node is.
+      assert.equal(drawn["a:suite"].text, "suite");
+      assert.equal(drawn["a:suite"].light, "green");
+      assert.equal(drawn["a:suite"].label, "suite: GREEN");
+      assert.deepEqual([drawn["a:suite/a:site"].artifact, drawn["a:docs/a:site"].artifact], ["a:site", "a:site"], "both copies are site");
+      // Each copy of site carries site's edges: from lib outside every box into it, and out of
+      // it to app, within suite and across from docs into suite.
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:lib": "green", "a:suite/a:site": "green", "a:docs/a:site": "green" }, {
+        "a:lib>a:suite/a:site": "green",
+        "a:lib>a:docs/a:site": "green",
+        "a:suite/a:site>a:suite/a:app": "green",
+        "a:docs/a:site>a:suite/a:app": "green",
+      }), { timeout: 15000, timeoutMsg: "every copy of site's edges drawn and lit like any other" });
 
-      // The Detail names the Artifact whole; a click on a region's label closes it.
-      await openArtifact(browser, "a:combat::Code", "Artifact combat::Code");
-      const label = await browser.execute(() => {
-        const at = document.querySelector('.graph .svelte-flow__node[data-space="combat"] .label')!.getBoundingClientRect();
-        return { x: Math.round(at.left + 8), y: Math.round(at.top + at.height / 2) };
-      });
-      await browser.action("pointer").move({ x: label.x, y: label.y }).down().up().perform();
-      await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "a click on the region closed the Detail" });
+      // A click on suite's box outside its parts opens suite; a click on a part opens the part,
+      // suite's box staying as it was.
+      await clickWhole(browser, ".graph", "a:suite");
+      await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact suite", { timeout: 15000, timeoutMsg: "the click on suite's box opened suite's Detail" });
+      const suite = (await partsDrawn(browser, ".graph"))["a:suite"].rect;
+      await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
+      assert.deepEqual((await partsDrawn(browser, ".graph"))["a:suite"].rect, suite, "suite's box stays");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
     },
   ),
 
-  // UX journeys: J-GRAPH-SPACES J-DETAIL; UX edges: E-GRAPH-SPACES E-GRAPH-TAB E-CURRENT-EVALS E-CURRENT-CLOSE
+  // UX journeys: J-GRAPH-PARTS J-GRAPH-FIND J-DETAIL; UX edges: E-GRAPH-PARTS E-GRAPH-TAB E-GRAPH-WHOLE E-GRAPH-PART
+  // E-CURRENT-EVALS E-GRAPH-SHARED E-CURRENT-CLOSE E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
   scenario<Record<string, never>>(
-    "graph-spaces-keyboard",
-    "Tabs past the spaces' regions of a branch's Current to every Artifact, opening nothing, and opens each one's Detail with Enter",
+    "graph-parts-shared",
+    "on a branch's Current, selecting one copy of a part of two wholes highlights both and its Detail names the wholes; the find field lists it once and goes to its first copy",
     async () => {
       // Its Run ended, so the branch's newest entry, shown at launch, is its Current.
-      const fixture = createSpaces();
+      const fixture = createParts();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
       const current = 'section[aria-label="Current"]';
-      await browser.$(`${current} .svelte-flow__node[data-space="inventory"]`)
-        .waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn with its regions" });
-      assert.deepEqual(Object.keys((await spacesDrawn(browser, current)).regions).sort(), ["combat", "inventory"], "the Current draws the same regions");
-      await browser.waitUntil(() => browser.$(ENTRIES).isFocused(), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
-      await press(browser, ["Enter"], () => browser.$(MAIN).isFocused(), "the Main area reached by keyboard");
-      const expected = ["a:combat::Code", "a:combat::Spec", "a:docs", "a:inventory::Code"];
-      const visited = new Set<string>();
+      await browser.$(`${current} .svelte-flow__node[data-id="a:docs/a:site"]`).waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn with its wholes" });
+      const drawn = await partsDrawn(browser, current);
+      assert.ok(within(drawn["a:docs/a:site"].rect, drawn["a:docs"].rect) && within(drawn["a:suite/a:site"].rect, drawn["a:suite"].rect), "the Current draws site in both wholes");
+
+      // From the Pane, Enter gives the graph the keyboard; Tab reaches each whole before its
+      // parts, opening nothing, and Enter opens the focused whole's or part's Detail.
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+      const order: string[] = [];
       // A bound on traversing this small fixture's controls, not a claimed tab order.
-      for (let attempt = 0; attempt < 40 && visited.size < expected.length; attempt += 1) {
+      for (let attempt = 0; attempt < 60 && order.length < PARTS.length; attempt += 1) {
         await tab(browser);
-        const focused = await browser.execute(() => {
-          const node = document.activeElement?.closest('section[aria-label="Current"] .svelte-flow__node');
-          return node ? { id: node.getAttribute("data-id") ?? "", space: node.getAttribute("data-space") } : null;
-        });
-        if (!focused) continue;
-        assert.equal(focused.space, null, `Tab passes the ${focused.space} region by`);
-        if (visited.has(focused.id)) continue;
-        assert.ok(expected.includes(focused.id), `Tab reached an Artifact of the Current: ${focused.id}`);
-        assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
-        const name = focused.id.slice(2);
-        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail with its whole name`);
-        await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Current's Detail closes");
-        visited.add(focused.id);
+        const focused = await focusedNode(browser);
+        if (focused === null || order.includes(focused)) continue;
+        assert.ok(PARTS.includes(focused), `Tab reached a copy of the graph: ${focused}`);
+        assert.equal(await detail(browser), null, `focusing ${focused} opens nothing`);
+        order.push(focused);
+        const opens: Record<string, string | undefined> = { "a:suite/a:app": "app", "a:suite/a:app/a:kit": "kit" };
+        const name = opens[focused];
+        if (name === undefined) continue;
+        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter on ${focused} opens ${name}'s Detail`);
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closes`);
       }
-      assert.deepEqual([...visited].sort(), expected, "every Artifact, and no region, is reachable with Tab");
-    },
-  ),
+      assert.deepEqual([...order].sort(), [...PARTS].sort(), "Tab reaches every whole and every part");
+      for (const [whole, part] of [["a:suite", "a:suite/a:app"], ["a:suite/a:app", "a:suite/a:app/a:kit"], ["a:suite", "a:suite/a:site"], ["a:docs", "a:docs/a:site"]]) {
+        assert.ok(order.indexOf(whole) < order.indexOf(part), `Tab reaches ${whole} before its part ${part}: ${order.join(", ")}`);
+      }
 
-  // UX journey: J-GRAPH-SPACES; UX edges: E-GRAPH-SPACES
-  scenario<Record<string, never>>(
-    "graph-spaces-room",
-    "draws a space's region as an outline that narrows with its Artifacts, not a box around them, and lays out a graph with spaces with more room than the same graph without",
-    async () => {
-      // Its Runs ended, so each branch's newest entry, shown when chosen, is its Current.
-      const fixture = createSpaceRoom();
-      return { fixture, args: ["--repo", fixture.repo], data: {} };
-    },
-    async (browser) => {
-      await browser.waitUntil(async () => (await mainTitle(browser)) === "Current · repo  master", { timeout: 15000, timeoutMsg: "the spaced branch's Current shown" });
-      const spaced = await room(browser, "fan::", "tail::");
-      assert.equal(spaced.regions, 2, "fan and tail each have a region");
-      assert.ok(spaced.beside, "the fan region reaches around root");
-      // root stands alone in its layer, level with b: the region narrows above and below it,
-      // where a box around fan's Artifacts would reach.
-      assert.equal(spaced.above, false, "the fan region does not reach above root, where a box would");
-      assert.equal(spaced.below, false, "the fan region does not reach below root, where a box would");
+      // The find field lists site once; Enter brings its first copy to the middle of the graph.
+      await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over the Current");
+      await fill(browser, FIND, "site");
+      await browser.waitUntil(async () => JSON.stringify((await findField(browser))?.entries.map((entry) => entry.name)) === JSON.stringify(["site"]), { timeout: 15000, timeoutMsg: "site listed once" });
+      const first = await browser.execute((under) => [...document.querySelectorAll<HTMLElement>(`${under} .svelte-flow__node[data-artifact="a:site"]`)][0]?.dataset.id ?? "", current);
+      await press(browser, ["Enter"], async () => (await findField(browser)) === null && (await detail(browser))?.title === "Artifact site", "Enter opens site's Detail");
+      await browser.waitUntil(async () => {
+        const at = await offCentre(browser, first);
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4;
+      }, { timeout: 15000, timeoutMsg: `site's first copy ${first} in the middle of the graph left of the Detail` });
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes site's Detail");
 
-      await selectBranch(browser, "plain  master");
-      await browser.waitUntil(async () => (await mainTitle(browser)) === "Current · plain  master", { timeout: 15000, timeoutMsg: "the plain branch's Current shown" });
-      const plain = await room(browser, "", "");
-      assert.equal(plain.regions, 0, "a graph without spaces has no region");
-      assert.ok(spaced.layer > plain.layer, `more room between layers with spaces: ${spaced.layer} against ${plain.layer} node widths`);
-      assert.ok(spaced.row > plain.row, `more room between the Artifacts of a layer with spaces: ${spaced.row} against ${plain.row} node heights`);
-      assert.ok(spaced.across > plain.across, `more room between spaces: ${spaced.across} against ${plain.across} node widths`);
+      // A click on docs's copy of site opens site, both copies highlighted.
+      await openArtifact(browser, "a:docs/a:site", "Artifact site");
+      await browser.waitUntil(async () => {
+        const shown = await partsDrawn(browser, current);
+        return shown["a:docs/a:site"].open && shown["a:suite/a:site"].open && !shown["a:docs"].open && !shown["a:suite"].open;
+      }, { timeout: 15000, timeoutMsg: "both copies of site, and no whole, highlighted" });
+      const note = await aside(browser).$("p=Drawn 2 times on the graph, inside suite and docs.").isExisting()
+        || await aside(browser).$("p=Drawn 2 times on the graph, inside docs and suite.").isExisting();
+      assert.ok(note, "site's Detail says it is drawn in both wholes, naming them");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
+      assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
     },
   ),
 

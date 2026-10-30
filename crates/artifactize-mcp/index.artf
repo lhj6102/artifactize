@@ -1,4 +1,4 @@
-name = "engine::mcp"
+name = "engine-mcp"
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -17,7 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-style.payload]
 instruction = """
-Read the checklist {rules::code-style} with read_style_rules__code-style. Then review the Rust code of {engine::mcp} (src/ \
+Read the checklist {rules-code-style} with read_style_rules__code-style. Then review the Rust code of {engine-mcp} (src/ \
 and Cargo.toml; tests/ for M-TAUTOLOGICAL-TESTS and every TEST- rule) against every item, using list_engine__mcp, glob_engine__mcp, \
 grep_engine__mcp and read_engine__mcp. Tool paths are relative to the Artifact, for example src/lib.rs. Submit \
 GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most \
@@ -58,7 +58,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-platform.payload]
 instruction = """
-Read the checklist {rules::platform} with read_platform_rules__platform. Then review the Rust code of {engine::mcp} (src/, \
+Read the checklist {rules-platform} with read_platform_rules__platform. Then review the Rust code of {engine-mcp} (src/, \
 tests/ and Cargo.toml) against every P- item, using list_engine__mcp, glob_engine__mcp, \
 grep_engine__mcp and read_engine__mcp. Tool paths are relative to the Artifact, for example src/lib.rs. Submit \
 GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most \
@@ -93,18 +93,18 @@ title = "The Rust formatting check passes"
 profile = { kind = "runtime", command = "cargo", args = ["fmt", "--check", "-p", "artifactize-mcp"], timeout_ms = 60000 }
 
 [evals.fmt.payload]
-instruction = "Check the formatting of {engine::mcp}."
+instruction = "Check the formatting of {engine-mcp}."
 
 [evals.clippy]
 title = "Clippy passes for every Rust target"
 profile = { kind = "runtime", command = "cargo", args = ["clippy", "--locked", "-p", "artifactize-mcp", "--all-targets", "--", "-D", "warnings"], timeout_ms = 1800000 }
 
 [evals.clippy.payload]
-instruction = "Check every Rust target of {engine::mcp} with {engine::core} with the workspace {engine::cargo-manifest} and {engine::cargo-lock}, treating every clippy warning as an error."
+instruction = "Check every Rust target of {engine-mcp} with {engine-core} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}, treating every clippy warning as an error."
 
 [evals.tests]
 title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked", "-p", "artifactize-mcp"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Run the tests of {engine::mcp} with {engine::core} with the workspace {engine::cargo-manifest} and {engine::cargo-lock}. Fixtures build or declare every executable they use and own their resources."
+instruction = "Run the tests of {engine-mcp} with {engine-core} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}. Fixtures build or declare every executable they use and own their resources."

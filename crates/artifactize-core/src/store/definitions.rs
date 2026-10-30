@@ -111,7 +111,7 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
     pub path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub children: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
+    pub nested: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub name: Field<crate::types::ArtifactName>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -311,13 +311,15 @@ impl<'de> Deserialize<'de> for Relation {
         let target = serde_json::from_value(take("target")?).map_err(serde::de::Error::custom)?;
         let kind_name: String =
             serde_json::from_value(take("kind")?).map_err(serde::de::Error::custom)?;
-        let names: &[&str] = match kind_name.as_str() {
-            "child" => &["path"],
-            "instruction" => &["evalId", "name"],
-            "argv" => &["evalId", "index", "name", "path"],
-            _ => &[],
+        let names: Option<&[&str]> = match kind_name.as_str() {
+            "child" => Some(&["path"]),
+            "part" => Some(&[]),
+            "instruction" => Some(&["evalId", "name"]),
+            "argv" => Some(&["evalId", "index", "name", "path"]),
+            _ => None,
         };
-        let unknown = names.is_empty();
+        let unknown = names.is_none();
+        let names = names.unwrap_or_default();
         let mut kind = Map::from_iter([("kind".into(), Value::String(kind_name.clone()))]);
         for name in names {
             if let Some(value) = fields.remove(*name) {
@@ -352,10 +354,13 @@ impl<'de> Deserialize<'de> for Relation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RelationKind {
+    /// A folder child that Runs saved before parts recorded; it is no part relation.
     Child {
         #[serde(default, skip_serializing_if = "missing")]
         path: Field<config::ChildPrefix>,
     },
+    /// The source is a part of the target.
+    Part,
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: crate::types::EvalId,

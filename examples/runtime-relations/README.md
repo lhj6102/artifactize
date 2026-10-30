@@ -1,4 +1,4 @@
-# Runtime evals with children and references
+# Runtime evals with parts and references
 
 This example is a two-page guide checked by runtime evals. It shows how
 Artifacts relate to each other and how a content fingerprint lets a second
@@ -9,36 +9,35 @@ runtime-relations/
 ├── glossary/            basis Artifact: terms.txt is accepted as is
 └── guide/               parent Artifact: eval guide/terms, references glossary
     ├── check_terms.py   runtime check used by guide/terms
-    ├── intro/           child Artifact: eval intro/heading
-    └── usage/           child Artifact: eval usage/heading
+    ├── intro/           part Artifact: eval intro/heading
+    └── usage/           part Artifact: eval usage/heading
 ```
 
 What it demonstrates:
 
-- **Children.** `guide/intro` and `guide/usage` have their own `index.artf`,
-  so they are separate Artifacts. A child folder's files are part of its parent's
-  content, so every eval of a parent depends on its nearest marked children, as if
-  it referenced them: `guide/terms` waits for `intro/heading` and `usage/heading`
-  to be GREEN.
+- **Parts.** `guide/intro` and `guide/usage` have their own `index.artf`,
+  so they are separate Artifacts, and because `guide`'s folder holds them they are
+  parts of `guide`: `guide` passes only when they pass too, and
+  `artifactize verify guide` runs or reuses all three evals. Being part of `guide`
+  makes them no input of its evals, and their folders' files are not `guide`'s.
+  `guide/terms` reads both pages, so it names them, and that is why it waits for
+  `intro/heading` and `usage/heading` to be GREEN.
 - **A basis Artifact.** `glossary` declares `basis = true`: it has no evals
   and counts as accepted input. A basis never waives its own dependencies.
 - **`{artifact}` references.** The instruction of `guide/terms` names
-  `{intro}`, `{usage}` and `{glossary}`. Each one is a graph relation, and the
-  text is never expanded. `guide/terms` uses the glossary, so it names
-  `{glossary}` itself: that reference is what makes the glossary its dependency.
-  Its argv shows two operand forms that artifactize resolves to absolute paths
-  before the command runs: `{glossary}/terms.txt` and `{usage}/page.md` (an
-  Artifact name), and `{guide}/intro/page.md` (a logical path from the owner
-  through a child).
+  `{intro}`, `{usage}` and `{glossary}`. Each one is a graph relation,
+  and the text is never expanded. A reference is what makes an Artifact an eval's
+  dependency. Its argv operands `{glossary}/terms.txt`, `{intro}/page.md` and
+  `{usage}/page.md` are resolved to absolute paths before the command runs.
 - **Runtime evals.** The exit code is the verdict: 0 is GREEN, anything else is RED.
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with only
   `PATH` and `LANG` inherited.
 - **Content fingerprint and reuse.** Each Artifact omits `fingerprint`, so it uses the
-  built-in content fingerprint, artifactsum, which hashes the Artifact's own files (child
-  folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
-  fingerprints of the Artifacts it depends on: `guide/terms` depends on `intro` and
-  `usage` (children) and `glossary` (named as `{glossary}`). That is
+  built-in content fingerprint, artifactsum, which hashes the Artifact's own files (nested
+  Artifact folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
+  fingerprints of the Artifacts it names: `guide/terms` depends on `intro`,
+  `usage` and `glossary`. That is
   why the `glossary` basis participates in reuse too. The default fingerprint is
   artifactsum; setting `fingerprint = false` on a dependency would leave `guide/terms`
   without a reuse key, so it would be reviewed on every `verify`. While the eval
@@ -53,7 +52,7 @@ You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/ge
 ```sh
 cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
-artifactize config graph    # Artifacts, evals, components and child/instruction/argv relations
+artifactize config graph    # Artifacts, evals, components and part/instruction/argv relations
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"
@@ -86,12 +85,14 @@ artifactize verify --all    # reuses the results from the original folder: keys 
    ```
 
    `usage/heading` runs again because its folder changed, and stays GREEN.
-   `guide/terms` runs again because the fingerprint of its child `usage` changed,
-   and is RED, with `cache: NOT DEFINED` in its stdout. `intro/heading` is reused.
+   `guide/terms` runs again because the fingerprint of `usage`, which it names,
+   changed, and is RED, with `cache: NOT DEFINED` in its stdout. `intro/heading`
+   is reused.
    Adding `cache: ...` to `glossary/terms.txt` changes `glossary`'s fingerprint,
    which `guide/terms`'s key covers, so the next `verify` runs `guide/terms` again
    and it turns GREEN.
 
-2. Remove the `# Usage` heading from `guide/usage/page.md`. `usage/heading` is
-   RED, and `guide/terms` is BLOCKED: a RED dependency blocks its dependents,
-   so they do not run.
+2. Remove the `# Usage` heading from `guide/usage/page.md`. `usage/heading`
+   is RED, and `guide/terms` is BLOCKED: a RED dependency blocks the evals that name
+   it, so they do not run. `guide` is RED as well, because a failing part
+   fails the Artifact it is a part of.

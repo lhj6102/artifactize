@@ -1,4 +1,4 @@
-name = "rules::write-in-korean"
+name = "rules-write-in-korean"
 
 [views.agent_tools]
 
@@ -16,7 +16,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-itself.payload]
 instruction = """
-Read WRITE-IN-KOREAN.md of {rules::write-in-korean} with the read_rules tool. It states rules for Korean writing and \
+Read WRITE-IN-KOREAN.md of {rules-write-in-korean} with the read_rules tool. It states rules for Korean writing and \
 is itself written in Korean. Read every Korean sentence of it, including the examples, and check it against \
 every K- item of the same document. The item ids, the English words quoted as examples and the phrases quoted in '…' \
 as what not to write are not prose to judge. Submit GREEN only when no sentence violates an item. Otherwise submit RED with up to 20 violations, \
@@ -53,7 +53,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open WRITE-IN-KOREAN.md of {rules::write-in-korean} with the open tool. Submit GREEN with approved: true when every rule \
+Open WRITE-IN-KOREAN.md of {rules-write-in-korean} with the open tool. Submit GREEN with approved: true when every rule \
 is one the project's Korean writing should follow; otherwise submit RED and list the items to change."""
 
 [evals.approved.pass_schema]

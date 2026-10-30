@@ -29,6 +29,9 @@ pub struct Artifact {
     pub kind: ArtifactKind,
     pub basis: Option<bool>,
     pub fingerprint: Coverage,
+    /// An aspect's boundary; absent for other kinds, so their extraction is unchanged.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub select: Vec<crate::config::LogicalPath>,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,7 +84,7 @@ pub struct Relation {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Edge {
-    Child,
+    Part,
     Instruction {
         eval_id: EvalId,
         name: crate::config::ReferenceName,
@@ -123,6 +126,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
                     kind: artifact.kind,
                     basis: artifact.basis,
                     fingerprint,
+                    select: artifact.select.clone(),
                 },
             )
         })
@@ -160,7 +164,7 @@ pub fn extract(config: &RepoConfig) -> Structure {
             source: relation.source.clone(),
             target: relation.target.clone(),
             kind: match &relation.kind {
-                RelationKind::Child { .. } => Edge::Child,
+                RelationKind::Part => Edge::Part,
                 RelationKind::Instruction { eval_id, name } => Edge::Instruction {
                     eval_id: eval_id.clone(),
                     name: name.clone(),

@@ -15,7 +15,7 @@
 `graph`는 eval 범위와 상관없이 프로젝트의 현재 선언을 모두 읽습니다.
 `help`는 일반적인 실행 파일 검색으로 찾은 실제 프로그램을 실행하며,
 직접 선언한 명령 도구도 사용자가 신뢰하는 프로그램으로 보고 실행합니다. 어느 쪽도 **OS
-샌드박스 안에서 실행되지 않습니다**. 내 권한으로 실행되므로 선언한 Artifact 바깥의 파일과
+샌드박스 안에서 실행되지 않습니다**. 현재 사용자 권한으로 실행되므로 선언한 Artifact 바깥의 파일과
 자격 증명에도 접근할 수 있습니다.
 
 ```toml
@@ -28,10 +28,7 @@ notes = { builtin = "read", args = ["{artifactPath}/notes.md"] }
 ```
 
 eval은 실제로 참조하는 Artifact에 선언된 도구를 쓸 수 있습니다. 도구 이름은
-`<operation>_<artifactName>`이 되므로, `spec`에 선언한 `read`는 `read_spec`입니다. 도구
-이름에는 `:`를 쓸 수 없어서 space 뒤의 `::`는 `__`로 바꿉니다. `combat::Spec`의 `read`는
-`read_combat__Spec`입니다. 한 eval의 범위에서 `combat::Spec`과 `combat__Spec`의 `read`처럼
-이름이 같아지는 도구가 있으면 오류입니다.
+`<operation>_<artifactName>`이 되므로, `spec`에 선언한 `read`는 `read_spec`입니다.
 
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}
 

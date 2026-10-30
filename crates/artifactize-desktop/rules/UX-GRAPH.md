@@ -76,12 +76,15 @@ that makes the transition happen and checks where it leads.
   without evaluation), would run, waiting, blocked. A node shows only its name, as on a Run
   graph; read aloud it says which, would run with how many of its evals would run, or that it
   is still being checked.
-- On both graphs the Artifacts of one space, named `space::name`, sit together in a region
-  labelled with the space, each node showing its name without the space and read aloud whole;
-  Artifacts without a space stand outside every region. A region is no plain box: its rounded
-  outline follows its Artifacts. A graph with spaces is laid out with more room between its
-  Artifacts, and between its spaces, than a graph without. A region is not an Artifact: Tab
-  passes it by and a click on it is a click on the background.
+- On both graphs an Artifact made of **parts** (those its folder holds and those its `parts`
+  names) is a **whole**, drawn as a **box** that encloses its parts' nodes, its name and its
+  verdict's colour at the box's top; a part that is a whole too is a box inside it, as deep as
+  the parts go. The box is the whole's Artifact: Tab reaches it before its parts, Enter on it
+  or a click on it outside its parts does what a click on a node does, and it is read aloud as
+  a node is. Edges to and from a whole meet its box. The layout is built for a part of one
+  whole: each whole's parts are laid out together inside its box. A **shared part**, a part of
+  several wholes, is drawn as a **copy** inside each of them, each copy with the part's edges.
+  States: a copy selected, its other copies highlighted with it.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does, and Ctrl+F opens their **Find field**; they have no other keys of their own. Hovering
   only highlights.
@@ -224,12 +227,14 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
-| E-GRAPH-SPACES | Pane | choose an entry whose graph has Artifacts named `space::name` | its Run graph or Current graph, each space's Artifacts in one region labelled with the space, its rounded outline following them, each node showing the rest of its name and read aloud whole, the edges between spaces drawn and coloured like any other |
-| E-GRAPH-SPACE-BACKGROUND | Run graph or Current graph with a space's region, the Detail open | click the region's background | where a click on the graph's background leads: E-MON-DETAIL-BACK or E-CURRENT-CLOSE, and with a Human review in the Detail running work or editing its form first E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM |
+| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
+| E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
+| E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
+| E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
 | E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused |
 | E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does |
 | E-GRAPH-FIND-CHOOSE | Find field listing | ↓ or ↑ | the next or previous entry chosen |
-| E-GRAPH-FIND-GO | Find field listing | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable |
+| E-GRAPH-FIND-GO | Find field listing | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
 | E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
@@ -357,7 +362,9 @@ E-PANE-SELECT.
   E-CURRENT-EVALS → E-CURRENT-TAB
 - J-GRAPH-COLOURS: E-PANE-CHIP → E-GRAPH-RECOLOUR
   E-CURRENT-CHIP → E-CURRENT-RUN-END
-- J-GRAPH-SPACES: E-GRAPH-SPACES → E-MON-DETAIL-ARTIFACT → E-GRAPH-SPACE-BACKGROUND
+- J-GRAPH-PARTS: E-GRAPH-PARTS → E-GRAPH-WHOLE → E-GRAPH-PART → E-MON-DETAIL-BACK
+  E-GRAPH-PARTS → E-GRAPH-SHARED → E-CURRENT-CLOSE
+  E-GRAPH-PARTS → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO

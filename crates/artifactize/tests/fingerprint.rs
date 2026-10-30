@@ -450,13 +450,11 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
                 "evals":[eval("check", &["touch", "executed"])],
             }),
         );
-        let child = fixture
-            .command()
-            .args(["verify", "--wait", "--all", "--json"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = support::os::start(
+            fixture
+                .command()
+                .args(["verify", "--wait", "--all", "--json"]),
+        );
         let child = RunChild::new(child, &fixture.state, &fixture.repo);
         let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
         // Creation and even a partial second line are not a saved PID/path record.

@@ -404,6 +404,36 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
 }
 
 /**
+ * A repository verified GREEN once whose Artifacts have parts: suite's folder holds app and site,
+ * app's holds kit, and docs names site among its parts, so site is a part of two wholes. site's
+ * check reads lib, which is a part of nothing, and app's reads site. Every Artifact but suite has
+ * a runtime check.
+ */
+export function createParts(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, input = "") =>
+      `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`;
+    for (const [folder, text] of [
+      [["lib"], check("lib")],
+      [["suite"], `name = "suite"\n`],
+      [["suite", "app"], check("app", " Read {site}.")],
+      [["suite", "app", "kit"], check("kit")],
+      [["suite", "site"], check("site", " Read {lib}.")],
+      [["docs"], `parts = ["site"]\n${check("docs")}`],
+    ] as const) {
+      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+    }
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
+/**
  * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
  * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
  */
@@ -430,57 +460,6 @@ export function createChain(count: number): Fixture {
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
     if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
-    return fixture;
-  });
-}
-
-/** A repository verified GREEN once, its Artifacts in two spaces and none:
- * `combat::Spec` → `combat::Code` → `inventory::Code` → `docs`, each with a runtime check. */
-export function createSpaces(): Fixture {
-  return prepareFixture((root) => {
-    const repo = nativePath(root, "repo");
-    const state = nativePath(root, "state");
-    for (const [folder, name, input] of [
-      ["spec", "combat::Spec", ""],
-      ["code", "combat::Code", " Read {combat::Spec}."],
-      ["inventory", "inventory::Code", " Read {combat::Code}."],
-      ["docs", "docs", " Read {inventory::Code}."],
-    ]) {
-      writeText(nativePath(makeDirectory(nativePath(repo, folder)), "index.artf"),
-        `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`);
-    }
-    git(repo, "init", "-q", "--initial-branch=master", repo);
-    const fixture = { root, repo, state };
-    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
-    if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
-    return fixture;
-  });
-}
-
-/**
- * The same graph twice, verified GREEN in one state: `repo` names its Artifacts in spaces, `plain`
- * does not. root feeds a, b and c, which all feed end; x reads end. In `repo` the first five are
- * the space `fan`, a region narrower at root and end than at a, b and c, and x is `tail::x`.
- */
-export function createSpaceRoom(): Fixture & { plain: NativePath } {
-  return prepareFixture((root) => {
-    const fixture = { root, repo: nativePath(root, "repo"), state: nativePath(root, "state"), plain: nativePath(root, "plain") };
-    for (const [repo, fan, tail] of [[fixture.repo, "fan::", "tail::"], [fixture.plain, "", ""]] as const) {
-      for (const [folder, name, input] of [
-        ["root", `${fan}root`, ""],
-        ["a", `${fan}a`, ` Read {${fan}root}.`],
-        ["b", `${fan}b`, ` Read {${fan}root}.`],
-        ["c", `${fan}c`, ` Read {${fan}root}.`],
-        ["end", `${fan}end`, ` Read {${fan}a}, {${fan}b} and {${fan}c}.`],
-        ["x", `${tail}x`, ` Read {${fan}end}.`],
-      ]) {
-        writeText(nativePath(makeDirectory(nativePath(repo, folder)), "index.artf"),
-          `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`);
-      }
-      git(repo, "init", "-q", "--initial-branch=master", repo);
-      const status = artifactize({ ...fixture, repo }, "verify", "--all", "--wait", "--json");
-      if (status !== 0) throw new Error(`verify of ${repo} exited ${status}, expected 0 (GREEN)`);
-    }
     return fixture;
   });
 }

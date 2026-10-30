@@ -1,4 +1,4 @@
-name = "docs::landing"
+name = "docs-landing"
 
 [views.human_tools]
 preview = { description = "Open this tree's landing page in your browser with shared assets, without docs, and clean up after 30 minutes without requests.", kind = "launch", command = "python3", args = ["../preview.py"] }
@@ -20,7 +20,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read {rules::writer-introduction}. Read index.html of {docs::landing}. It holds the English page and its Korean
+Read {rules-writer-introduction}. Read index.html of {docs-landing}. It holds the English page and its Korean
 translation: elements with data-locale="ko" and the values of data-ko-* attributes appear only on the
 Korean page. Review the English page: elements without data-locale or with data-locale="en", and
 attributes as written. Check its visible introduction and page content against every W- item;
@@ -60,7 +60,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.translates-ko.payload]
 instruction = """
-index.html of {docs::landing} holds the English landing page (served at /) and its Korean translation
+index.html of {docs-landing} holds the English landing page (served at /) and its Korean translation
 (served at /ko/) in one file. The site build keeps an element with data-locale="en" only on the
 English page and one with data-locale="ko" only on the Korean page, keeps elements without
 data-locale on both, and on the Korean page gives an element's ATTR the value of its
@@ -83,7 +83,7 @@ the Open Graph title and the start of the descriptions. Check these criteria:
   and the privacy page (/privacy/) are English only, and their Korean links say so. Commands, copy
   targets and code are unchanged; only comments in code may be translated. Both pages link to
   each other in the header and declare each other with hreflang.
-Use the list, glob, grep and read tools of {docs::landing}. Tool paths are Artifact-relative. Judge only
+Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifact-relative. Judge only
 whether the Korean says the same; the Korean writing and the English page are reviewed elsewhere.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
 violations, most important first, each with the criterion id, the index.html or site.js line of the
@@ -121,10 +121,10 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-write-in-korean.payload]
 instruction = """
-Read {rules::write-in-korean}. Read index.html and site.js of {docs::landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Build together on an Artifact Graph." stays in English by design, and "Artifact Graph" is the product's name for the graph.
+Read {rules-write-in-korean}. Read index.html and site.js of {docs-landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Build together on an Artifact Graph." stays in English by design, and "Artifact Graph" is the product's name for the graph.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
-the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs::landing}; tool paths are Artifact-relative.
+the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-landing}; tool paths are Artifact-relative.
 Read every Korean sentence. Submit GREEN only when no sentence violates an item; a sentence
 that is grammatical but reads as translated violates K-NATURAL. Otherwise submit RED with up
 to 20 violations, most important first, each with the item id, the path:line, the text and

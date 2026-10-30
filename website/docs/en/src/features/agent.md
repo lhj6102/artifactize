@@ -103,8 +103,7 @@ responses are not accepted, even if they contain a JSON verdict. An answer that 
 long run of whitespace is stopped within seconds with `DEGENERATE_OUTPUT`. Both are sent
 again as described below; if the review still ends ERROR with them, try another model or
 `reasoning`. An Anthropic answer is also
-capped at 16384 output tokens per turn, apart from the review's `max_tokens`. Artifactize
-handles retries as described below.
+capped at 16384 output tokens per turn, apart from the review's `max_tokens`.
 
 ### Retries and error codes
 

@@ -34,7 +34,8 @@ export function graphAppearance(browser: WebdriverIO.Browser) {
       [...document.querySelectorAll<E>(selector)].filter((element) => !element.closest('aside[aria-label="Detail"]'));
     return {
       nodes: Object.fromEntries(ofRun<HTMLElement>(".svelte-flow__node").map((node) => {
-        const artifact = node.querySelector(".artifact");
+        // An Artifact's node, or a whole's box.
+        const artifact = node.querySelector(".artifact, .whole");
         const dot = artifact?.querySelector(".dot") ?? null;
         const style = artifact ? getComputedStyle(artifact) : null;
         return [node.dataset.id ?? "", {

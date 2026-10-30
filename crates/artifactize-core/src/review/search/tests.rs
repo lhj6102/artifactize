@@ -31,14 +31,6 @@ fn free_text_matches_any_listed_column_case_insensitively() {
     // Tags, kinds and statuses are not listed columns; only their keys reach them.
     assert!(!matches("style", &entry));
     assert!(!matches("waiting", &entry));
-    // A spaced Artifact name is a word to search for, unquoted or after `eval:`.
-    let spaced = Entry {
-        eval: "combat::Code/check".into(),
-        ..entry.clone()
-    };
-    assert!(matches("combat::Code", &spaced));
-    assert!(matches("eval:combat::code", &spaced));
-    assert!(!matches("combat::Spec", &spaced));
 }
 
 #[test]

@@ -392,7 +392,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
     let walked: Value = serde_json::from_slice(&walked.stdout).unwrap();
     assert_eq!(walked["artifacts"].as_object().unwrap().len(), 2);
     assert_eq!(
-        walked["artifacts"]["root"]["children"]["artifactize.json"],
+        walked["artifacts"]["root"]["nested"]["artifactize.json"],
         "nested"
     );
 }

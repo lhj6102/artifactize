@@ -533,6 +533,7 @@ pub fn run_node(run: &RunView) -> Node {
         changed: false,
         upstream: Vec::new(),
         held: false,
+        parts: Vec::new(),
         children: Vec::new(),
     }
 }
@@ -669,6 +670,24 @@ impl<'a> Saved<'a> {
         })
     }
 
+    /// Each Artifact with its direct parts.
+    fn parts(&self) -> std::collections::BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>> {
+        let mut parts: std::collections::BTreeMap<_, Vec<_>> = Default::default();
+        for relation in self
+            .definitions()
+            .into_iter()
+            .flat_map(|graph| graph.relations())
+        {
+            if matches!(relation.kind, crate::store::definitions::RelationKind::Part) {
+                parts
+                    .entry(&relation.target)
+                    .or_default()
+                    .push(&relation.source);
+            }
+        }
+        parts
+    }
+
     fn relations(
         &self,
         artifact: &ArtifactName,
@@ -692,12 +711,11 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
     use crate::store::definitions::RelationKind;
     let kind = match &relation.kind {
         RelationKind::Unknown { .. } => serde_json::to_string(relation).unwrap_or_default(),
-        RelationKind::Child { path } => {
-            format!(
-                "child {}",
-                path.value().map_or("", crate::config::ChildPrefix::as_str)
-            )
-        }
+        RelationKind::Part => "part".into(),
+        RelationKind::Child { path } => format!(
+            "child {}",
+            path.value().map_or("", crate::config::ChildPrefix::as_str)
+        ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,

@@ -204,13 +204,6 @@ fn scan(text: &str) -> (Vec<Word>, bool) {
     (words, open)
 }
 
-/// An unquoted word's `key:value` split; a word whose first colon begins a `::`, such as the
-/// Artifact name `combat::Code`, is text to search for.
-pub(crate) fn filter(word: &str) -> Option<(&str, &str)> {
-    word.split_once(':')
-        .filter(|(_, value)| !value.starts_with(':'))
-}
-
 /// Words of `text` and whether each began quoted.
 pub(crate) fn words(text: &str) -> Vec<(String, bool)> {
     scan(text)
@@ -227,7 +220,7 @@ impl std::str::FromStr for Query {
         let terms = words(text)
             .into_iter()
             .map(|(word, quoted)| {
-                let Some((name, value)) = filter(&word).filter(|_| !quoted) else {
+                let Some((name, value)) = word.split_once(':').filter(|_| !quoted) else {
                     return Ok(Term::Text(word.to_lowercase()));
                 };
                 let key = Key::parse(name).ok_or_else(|| {

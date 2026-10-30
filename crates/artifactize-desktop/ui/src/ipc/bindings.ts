@@ -524,13 +524,11 @@ export type GraphNode = {
 	/**  The Artifact row's tree id, `a:<artifact>`. */
 	id: string,
 	name: string,
-	/**  The space of a `space::name`, which the graph draws its Artifacts together in. */
-	space: string | null,
-	/**  What the node shows: the name without its space. */
-	label: string,
 	light: Light,
 	/**  Under the name: on a Current what verify would do, `would run (2 evals)`. */
 	note: string | null,
+	/**  The Artifacts of the graph it is made of directly, by tree id: drawn inside it. */
+	parts: string[],
 };
 
 /**  The Tool logs that changed, each whole. */
@@ -702,6 +700,10 @@ export type Neighbours = {
 	moreUses: number,
 	/**  Artifacts whose evals use it beyond those shown. */
 	moreUsedBy: number,
+	/**  The Artifacts it is a part of directly, by name in the graph's order. */
+	wholes: string[],
+	/**  How many times the graph draws it: once inside each drawing of each of its wholes. */
+	copies: number,
 };
 
 export type NodeKind = "run" | "artifact" | "eval";
@@ -867,7 +869,7 @@ export type Settled =
  */
 "savedLocally";
 
-/**  The Artifacts and the edges between them, each with its light. */
+/**  The Artifacts, each with its parts, and the edges between them, each with its light. */
 export type Shape = {
 	/**  Upstream first, in the tree's order. */
 	nodes: GraphNode[],

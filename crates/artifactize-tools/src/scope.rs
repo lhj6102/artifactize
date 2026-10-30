@@ -25,9 +25,8 @@ pub const MAX_ARTIFACT_ID_BYTES: usize = 64;
 #[error("{0}")]
 pub struct ScopeError(pub String);
 
-/// An Artifact's ID: `[A-Za-z0-9][A-Za-z0-9_-]*` with an optional `space::` prefix of the
-/// same form, at most 64 bytes, so it can never smuggle a path separator, a dot component,
-/// or control text into a scope key or a tool result.
+/// An Artifact's ID: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, so it can never smuggle a path
+/// separator, a dot component, or control text into a scope key or a tool result.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ArtifactId(String);
@@ -35,26 +34,19 @@ pub struct ArtifactId(String);
 impl ArtifactId {
     pub fn new(value: impl Into<String>) -> Result<Self, ScopeError> {
         let value = value.into();
-        let segment = |segment: &str| {
-            segment
+        let valid = value.len() <= MAX_ARTIFACT_ID_BYTES
+            && value
                 .bytes()
                 .next()
                 .is_some_and(|first| first.is_ascii_alphanumeric())
-                && segment
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-        };
-        let valid = value.len() <= MAX_ARTIFACT_ID_BYTES
-            && match value.split_once("::") {
-                Some((space, name)) => segment(space) && segment(name),
-                None => segment(&value),
-            };
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'));
         if valid {
             Ok(Self(value))
         } else {
             Err(ScopeError(format!(
-                "Artifact ID must match [A-Za-z0-9][A-Za-z0-9_-]* with an optional space:: \
-                 prefix, at most 64 bytes: {value:?}"
+                "Artifact ID must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}: {value:?}"
             )))
         }
     }
@@ -149,6 +141,8 @@ logical_name!(ChildPrefix, "child folder prefix", |_: &str| true);
 pub enum ArtifactKind {
     Folder,
     File,
+    /// Selected paths below the folder of its declaration.
+    Aspect,
     Graph,
 }
 
@@ -158,15 +152,45 @@ pub struct Artifact {
     pub path: PathBuf,
     pub kind: ArtifactKind,
     pub name: String,
-    /// Logical path prefix to the child Artifact that owns it.
-    pub children: BTreeMap<ChildPrefix, ArtifactId>,
+    /// Logical path prefix to the nested folder Artifact that owns it.
+    pub nested: BTreeMap<ChildPrefix, ArtifactId>,
+    /// An aspect's selected paths, relative to its folder; empty for other kinds.
+    pub select: Vec<String>,
 }
 
 impl Artifact {
     pub fn folder(&self) -> &Path {
         match self.kind {
             ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
-            ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
+            ArtifactKind::File | ArtifactKind::Aspect => {
+                self.path.parent().unwrap_or(Path::new(""))
+            }
+        }
+    }
+
+    /// Whether only some paths below its folder are the Artifact's: a file Artifact's
+    /// target or an aspect's selection, under a virtual root.
+    pub fn selective(&self) -> bool {
+        matches!(self.kind, ArtifactKind::File | ArtifactKind::Aspect)
+    }
+
+    /// Whether the logical `path` below its folder is the Artifact's: always for a folder,
+    /// and for an aspect a selected path, a path below one, or a folder leading to one.
+    pub fn admits(&self, path: &str) -> bool {
+        if path.is_empty() {
+            return true;
+        }
+        match self.kind {
+            ArtifactKind::Folder | ArtifactKind::Graph => true,
+            ArtifactKind::File => self.file_name() == Some(path),
+            ArtifactKind::Aspect => self.select.iter().any(|selected| {
+                let within = |outer: &str, inner: &str| {
+                    inner
+                        .strip_prefix(outer)
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                };
+                within(selected, path) || within(path, selected)
+            }),
         }
     }
 
@@ -206,7 +230,7 @@ impl Scope {
             if remaining.is_empty() {
                 break;
             }
-            if let Some((prefix, target)) = artifact.children.iter().find(|(prefix, _)| {
+            if let Some((prefix, target)) = artifact.nested.iter().find(|(prefix, _)| {
                 remaining == prefix.as_str()
                     || remaining
                         .strip_prefix(prefix.as_str())
@@ -287,7 +311,7 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
     let components: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
     let mut file = owner;
     for (depth, component) in components.iter().enumerate() {
-        let child = artifact.children.keys().any(|prefix| {
+        let child = artifact.nested.keys().any(|prefix| {
             let prefix: Vec<_> = prefix.split('/').collect();
             prefix.len() == depth + 1
                 && prefix
@@ -314,18 +338,23 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
     Ok(file)
 }
 
-/// A file Artifact exposes a virtual root containing only its target.
+/// A file Artifact exposes a virtual root containing only its target, and an aspect one
+/// containing only its selected paths.
 fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
-    if let Some(target) = artifact.file_name()
-        && !path.is_empty()
-        && path != target
-    {
-        return Err(ScopeError(format!(
+    if artifact.admits(path) {
+        return Ok(());
+    }
+    Err(ScopeError(match artifact.file_name() {
+        Some(target) => format!(
             "File Artifact {} exposes only its target {target}.",
             artifact.name
-        )));
-    }
-    Ok(())
+        ),
+        None => format!(
+            "Aspect {} exposes only its selected paths: {}.",
+            artifact.name,
+            artifact.select.join(", ")
+        ),
+    }))
 }
 
 /// Open a relative path below an absolute root without following any symlink components.

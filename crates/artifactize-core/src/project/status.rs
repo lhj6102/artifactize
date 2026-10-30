@@ -432,13 +432,10 @@ impl<'a> Scope<'a> {
                 .filter(|id| self.required.contains(*id))
             {
                 for id in &self.graph.artifacts()[*artifact].evals {
-                    let keyed =
-                        cache::dependencies(self.config, evals[id])
-                            .into_iter()
-                            .all(|input| {
-                                self.config.artifacts[input].fingerprint.is_none()
-                                    || fingerprints.contains_key(input)
-                            });
+                    let keyed = cache::dependencies(evals[id]).into_iter().all(|input| {
+                        self.config.artifacts[input].fingerprint.is_none()
+                            || fingerprints.contains_key(input)
+                    });
                     let decided = keyed
                         && (matches!(cached.get(*id), Some(Claim::Reuse(_)))
                             || self

@@ -1,4 +1,4 @@
-name = "media::others"
+name = "media-others"
 
 [views.agent_tools]
 list = { builtin = "list" }
@@ -21,7 +21,7 @@ additionalProperties = false
 [evals.renders-html]
 title = "The saved images are what their HTML renders now"
 profile = { kind = "runtime", command = "node", args = ["capture.mts", "check"], timeout_ms = 300000 }
-payload.instruction = "Render every HTML figure of {media::others} again with its capture script and compare each image with the saved one."
+payload.instruction = "Render every HTML figure of {media-others} again with its capture script and compare each image with the saved one."
 
 [evals.explains-graph]
 title = "The example graph shows how Artifactize works, the same in every language"
@@ -29,10 +29,10 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.explains-graph.payload]
 instruction = """
-{media::others} holds graph-example.html and the images capture.mts renders from it in English \
+{media-others} holds graph-example.html and the images capture.mts renders from it in English \
 (graph-example.en.png), Korean (graph-example.ko.png) and Chinese (graph-example.zh.png). It \
 shows an example project's files on the left and the Artifact Graph their declarations make \
-on the right. Read graph-example.html and view every image. Using {docs::en}, judge:
+on the right. Read graph-example.html and view every image. Using {docs-en}, judge:
 - Accuracy: the files declare the Artifacts the way the docs describe (.artf beside a file, \
 index.artf for a folder); each check is the kind its legend says (a command, an AI agent or a \
 person); each line joins the Artifact a check reads with the Artifact the check belongs to and \
@@ -40,7 +40,7 @@ ends in an arrow pointing at the latter, a check that reads only its own Artifac
 it, and a person's review is a dotted line from the person who signs off with its arrow at the \
 Artifact they review. Nothing contradicts the docs.
 - Plain language: the English text follows W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING of \
-{rules::writer-introduction}.
+{rules-writer-introduction}.
 - Languages: the Korean and Chinese images say what the English one says, in natural wording, \
 and all three show the same layout.
 - Layout: in every image, no text is clipped, overlaps a box, line or other text, or is too \
@@ -67,7 +67,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.shows-roles.payload]
 instruction = """
-{media::others} holds roles.html and the looping GIF capture.mts renders from it, roles.en.gif. The \
+{media-others} holds roles.html and the looping GIF capture.mts renders from it, roles.en.gif. The \
 README and the landing page use it in place of a sentence saying that Artifactize brings human \
 and agent work together. Its point is that people and AI agents collaborate in Artifactize \
 through three roles that pass one Artifact Graph between them: Director above, Builder and \
@@ -88,7 +88,7 @@ enough frames to follow every step. Judge:
 - Meaning: the three roles are what the figure is about, and the motion shows the graph \
 passing between them in that order, the Builder and the Evaluator going back and forth until \
 GREEN, so a first-time reader sees what each role does without a caption; its few words follow \
-W-INTRO-PLAIN-LANGUAGE of {rules::writer-introduction}; and the figure shows nothing beyond the roles, \
+W-INTRO-PLAIN-LANGUAGE of {rules-writer-introduction}; and the figure shows nothing beyond the roles, \
 their teams, the graph, why it is passed and that title line.
 - Clarity: a first-time reader tells the person from the AI agent without labels, because \
 each keeps one icon and one color across the figure; sees which team works while it has the \

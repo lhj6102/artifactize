@@ -260,9 +260,11 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 
 `artifactize verify app/e2e`는 `--eval app/e2e`처럼 그 eval을 선택합니다. 필요한 의존성
 범위의 eval까지 실행하려면 `--recursive`를 붙이세요. 붙이지 않으면 입력 증거가 이미 있어야
-합니다. Artifact를 선택하면 같은 순환에 속해 그 Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다.
-`--force`는 그래도 직접 선택한 eval만 새로 리뷰하도록 표시합니다. 파일 Artifact는 선언된 이름으로 선택하며, 사이드카 선언은 그 파일이 들어 있는 폴더와 자동으로
-관계를 맺지 않습니다.
+합니다. Artifact를 선택하면 그 [부분](../features/artifact.md#composition)의 eval과, 같은 순환에 속해 그
+Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다. `--force`는 선택한 Artifact와 그 부분의
+eval만 새로 리뷰하도록 표시하며, 순환에 속한 다른 Artifact나 의존성에는 적용되지 않습니다. 파일
+Artifact는 선언된 이름으로 선택하며, 파일 Artifact를 둘러싼 폴더 Artifact를 선택하면 부분인 파일
+Artifact도 함께 선택됩니다.
 
 의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
@@ -278,20 +280,21 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 
 | 상태 | eval | Artifact |
 |---|---|---|
-| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족합니다 | eval이 모두 `PASS`이고 의존하는 Artifact도 모두 검증 요건을 충족합니다 |
-| `RED` | 현재 재사용 키에 맞는 RED 결과가 있습니다 | eval 중 하나가 `RED`입니다 |
-| `BLOCKED` | 게이트가 RED입니다 | eval 중 하나가 `BLOCKED`입니다 |
-| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없습니다 | eval 중 하나가 대기 중입니다 |
+| `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족합니다 | eval이 모두 `PASS`이고, 부분과 의존하는 Artifact도 모두 검증 요건을 충족합니다 |
+| `RED` | 현재 재사용 키에 맞는 RED 결과가 있습니다 | eval이나 부분 중 하나가 `RED`입니다 |
+| `BLOCKED` | 게이트가 RED입니다 | eval이나 부분 중 하나가 `BLOCKED`입니다 |
+| `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없습니다 | eval이나 부분 중 하나가 대기 중입니다 |
 | `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있습니다 | — |
-| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있습니다 | eval 중 하나가 `DEFERRED`입니다 |
-| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL`입니다 | eval 중 하나가 `PROVISIONAL`입니다 |
-| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없습니다(이전 오류, 키 없는 결과, `--force` 포함) | eval 중 하나가 `STALE`입니다 |
-| `UNREVIEWED` | 리뷰한 적이 없습니다 | 리뷰한 eval이 없거나 eval이 없습니다 |
+| `DEFERRED` | 다른 작업을 막지 않으며, 아직 사람이 처리하지 않은 승인 요청이 있습니다 | eval이나 부분 중 하나가 `DEFERRED`입니다 |
+| `PROVISIONAL` | GREEN이지만 게이트가 아직 `DEFERRED`나 `PROVISIONAL`입니다 | eval이나 부분 중 하나가 `PROVISIONAL`입니다 |
+| `STALE` | 전에 리뷰했지만 현재 재사용 키에 맞는 결과가 없습니다(이전 오류, 키 없는 결과, `--force` 포함) | eval이나 부분 중 하나가 `STALE`입니다 |
+| `UNREVIEWED` | 리뷰한 적이 없습니다 | 리뷰한 eval이 없거나, eval도 부분도 없습니다 |
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않습니다 |
 | `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact입니다 |
 
-Artifact의 eval 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
-`STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다. `ERROR`는 Run 출력에만 나오며,
+Artifact의 eval과 [부분](../features/artifact.md#composition)의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+`STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다.
+그래서 자기 eval이 없는 Artifact는 부분의 상태를 그대로 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
 `status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
@@ -353,7 +356,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 정적으로만 확인하므로 프로젝트 도구나 fingerprint 스크립트를 실행하지 않고 상태나 출력 폴더도
 만들지 않습니다. 위치 인자 선택자나 `--eval`은 Agent/Human eval 하나를 고르며, `--artifact`나
 `--audience`와 함께 쓸 수 없습니다. 실제로 실행하려면 `--tool`을 지정하고, eval 선택자를 쓰거나 `--artifact`와 `--audience`를 함께 지정해야 합니다. `--artifact`를 쓰면 짧은 동작 이름과 공개된
-이름을 모두 받으며, 범위는 그 Artifact와 자식 Artifact입니다. eval을 쓰면 그 eval이 공개하는
+이름을 모두 받으며, 범위는 그 Artifact 하나입니다. eval을 쓰면 그 eval이 공개하는
 이름(`<tool>_<artifact>`)으로 도구를 지정합니다. 도구는 그 eval의 범위에서 실행되므로, 인자가
 다른 Artifact를 가리키는 도구도 그 eval의 리뷰에서처럼 실행됩니다.
 `--args`는 Agent 실행에서만 쓸 수 있고, 생략하면 Agent 도구는 `{}`를 받습니다. Human 스키마는 빈
@@ -384,11 +387,11 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 실제로 무엇을 실행하고 재사용할지는
 `status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
-payload, 스키마, 도구 뷰), 태그, 자식·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
+payload, 스키마, 도구 뷰), 태그, 부분·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
-`kind`(`file`, `folder`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
-경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 컴포넌트
-ID는 전체 그래프 기준이라 일부만 보여 줄 때는 번호가 띄엄띄엄일 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 형식은
+`kind`(`file`, `folder`, `aspect`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
+경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 강한 연결
+요소의 ID는 전체 그래프를 기준으로 매기므로, 일부만 보여 주면 번호가 띄엄띄엄 나올 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 형식은
 텍스트와 전체 JSON 두 가지이며, `plan`, `--compact`, `--full`은 지원하지 않습니다. 예전의 최상위
 `graph` 명령은 도움말에 나오지 않으며, 실행하면 `graph moved to "artifactize config graph"`를
 출력하고 2로 종료합니다.
@@ -406,7 +409,7 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다.
 실패하면 2로 종료하며 판정을 만들어 내지 않습니다.
 
 제출하려면 `--verdict GREEN|RED`가 필요합니다. `--fields`와 `--fields-file`은 함께 쓸 수
-없습니다. 둘 중 하나로 소유자가 정한 필드만 담은 JSON 객체를 넘기며, 판정은 이 객체에 넣지 않습니다. 생략하면 `{}`입니다. 파일은
+없습니다. 둘 중 하나로 추가 결과 필드만 담은 JSON 객체를 넘기며, 판정은 이 객체에 넣지 않습니다. 생략하면 `{}`입니다. 파일은
 일반 파일이어야 하고, 필드와 전체 결과는 256000바이트까지입니다. JSON, 스키마, 리뷰어 이름,
 판정이 잘못되면 2로 종료하며, 요청은 수정 후 다시 제출할 수 있는 상태로 남습니다. 제출에 성공하면 RED여도
 0으로 종료하며, 별도의 검증 과정을 시작하지 않습니다.
@@ -464,6 +467,9 @@ Your final response did not match the required schema: …
 ── Result: {"covered":["R1"],"verdict":"GREEN"}
 ```
 
+모델은 pass 또는 fail 스키마의 필드를 `verdictFields` 안에 담아 답하고, 결과에는 그 필드가
+`verdict`와 나란히 들어갑니다. [Agent 리뷰](../features/agent.md#agent-reviews)를 보세요.
+
 텍스트 출력은 도구 결과를 2000자에서 자르고 reasoning은 요약만 보여 줍니다. `--json`은
 `{"reference", "file", "events"}`를 출력합니다. 이 JSON에는 참조, 세션 파일, 저장된
 이벤트 전체가 들어 있어 대화를 그대로 재생할 수 있습니다.
@@ -515,14 +521,14 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-머리말에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
+헤더에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이
 바뀌었는지(알 수 없으면 null), `answer`는 답변 텍스트, `usage`는 시도별 토큰 수입니다.
 
 follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
-텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 머리말에
+텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
 경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 follow-up을 저장하는 방식은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
 보세요.

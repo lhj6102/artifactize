@@ -1,4 +1,4 @@
-name = "docs::board"
+name = "docs-landing-board"
 # The development board at artifactize.dev/board/: reads GitHub's public API in the browser.
 
 [views.agent_tools]
@@ -13,7 +13,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.reads-the-record.payload]
 instruction = """
-Read index.html, model.js and main.js of {docs::board}, and dev-master/SKILL.md and
+Read index.html, model.js and main.js of {docs-landing-board}, and dev-master/SKILL.md and
 dev-worker/SKILL.md of {dev-skills}. Check that:
 - the board parses exactly the pull request note the skills tell agents to write: its
   marker, every field name, the value forms (Run IDs, outcomes, commit SHAs, times) and
@@ -47,7 +47,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-rules.payload]
 instruction = """
-Read {rules::writer-introduction}. Read index.html of {docs::board} and the visible text that main.js
+Read {rules-writer-introduction}. Read index.html of {docs-landing-board} and the visible text that main.js
 writes into it. Check the page's visible text against W-INTRO-FIRST-READER,
 W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING; the other W- items are for the landing
 page's introduction and do not apply here. Submit GREEN only when none of the three is

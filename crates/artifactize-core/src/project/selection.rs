@@ -42,7 +42,8 @@ pub struct ResolvedSelection<'a> {
 }
 
 impl Selection {
-    /// Preserve selector order, then declaration order, keeping each root/Eval once.
+    /// Preserve selector order, then declaration order, keeping each root/Eval once. An
+    /// Artifact selector's roots are the Artifact and its parts.
     pub fn resolve<'a>(&self, config: &'a RepoConfig) -> Result<ResolvedSelection<'a>, String> {
         let evals_by_id: BTreeMap<_, _> = config
             .evals
@@ -93,6 +94,15 @@ impl Selection {
             result
                 .roots
                 .extend(result.evals.iter().map(|eval| &eval.target));
+        }
+        // An Artifact is made of its parts, so selecting it selects them too.
+        if matches!(self, Self::Artifact { .. } | Self::Artifacts { .. }) {
+            let parts: Vec<_> = result
+                .roots
+                .iter()
+                .flat_map(|&id| config.descendants(id))
+                .collect();
+            result.roots.extend(parts);
         }
         let mut seen = BTreeSet::new();
         result.roots.retain(|id| seen.insert(*id));

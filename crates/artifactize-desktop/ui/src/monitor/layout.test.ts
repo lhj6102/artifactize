@@ -9,7 +9,7 @@ import type { Shape } from "../ipc/client";
 import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
-import { regions, type Region } from "./spaces";
+import { boxes, copies, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
 const elk = vi.hoisted(() => ({ loads: 0, starts: 0, layouts: 0 }));
@@ -49,7 +49,7 @@ async function byElk(graph: Shape): Promise<Map<string, Point>> {
 }
 
 const shape = (names: string[], pairs: [string, string][]): Shape => ({
-  nodes: names.map((name) => ({ id: `a:${name}`, name, space: null, label: name, light: "waiting", note: null })),
+  nodes: names.map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null, parts: [] })),
   edges: pairs.map(([source, target]) => ({ source: `a:${source}`, target: `a:${target}`, light: "waiting" })),
 });
 
@@ -189,129 +189,66 @@ describe("layered", () => {
   });
 });
 
-describe("spaces", () => {
-  /** `graph` with each Artifact named `space::name` in that space. */
-  const spaced = (graph: Shape): Shape => ({
-    ...graph,
-    nodes: graph.nodes.map((node) => {
-      const [space, label] = node.name.includes("::") ? node.name.split("::") : [null, node.name];
-      return { ...node, space, label };
-    }),
-  });
-  const inside = (at: Point, box: Region) =>
-    at.x >= box.x && at.y >= box.y && at.x + NODE.width <= box.x + box.width && at.y + NODE.height <= box.y + box.height;
-  const meets = (one: Region, other: { x: number; y: number; width: number; height: number }) =>
-    one.x < other.x + other.width && other.x < one.x + one.width && one.y < other.y + other.height && other.y < one.y + one.height;
-  /** The points the outline of `region` passes through, in graph coordinates. */
-  const passes = (region: Region): Point[] =>
-    [...region.outline.matchAll(/(?:[ML]|A \S+ \S+ 0 0 1) (-?[\d.e-]+) (-?[\d.e-]+)/g)].map(([, x, y]) => ({ x: region.x + Number(x), y: region.y + Number(y) }));
-  /** `at` within the convex polygon `around`, clockwise on the screen. */
-  const enclosed = (at: Point, around: Point[]) =>
-    around.every((one, index) => {
-      const other = around[(index + 1) % around.length];
-      return (other.x - one.x) * (at.y - one.y) - (other.y - one.y) * (at.x - one.x) >= -1e-6;
-    });
 
-  /** Each space's region holds its own Artifacts, its outline around each of them and within its
-   * box, no other Artifact meets its box, and no two boxes meet. */
-  function grouped(graph: Shape, placed: Map<string, Point>): Region[] {
-    const drawn = regions(graph, placed);
-    for (const region of drawn) {
-      const outline = passes(region);
-      expect(outline.length, `${region.space} has an outline`).toBeGreaterThanOrEqual(4);
-      for (const at of outline) {
-        const within = at.x >= region.x - 1e-6 && at.y >= region.y - 1e-6 && at.x <= region.x + region.width + 1e-6 && at.y <= region.y + region.height + 1e-6;
-        expect(within, `${region.space}'s outline at ${at.x},${at.y} in its box`).toBe(true);
-      }
-      for (const node of graph.nodes) {
-        const at = placed.get(node.id)!;
-        if (node.space === region.space) {
-          expect(inside(at, region), `${node.name} in ${region.space}`).toBe(true);
-          const corners = [at, { x: at.x + NODE.width, y: at.y }, { x: at.x, y: at.y + NODE.height }, { x: at.x + NODE.width, y: at.y + NODE.height }];
-          for (const corner of corners) expect(enclosed(corner, outline), `${node.name} within ${region.space}'s outline`).toBe(true);
-        } else expect(meets(region, { ...at, ...NODE }), `${node.name} outside ${region.space}`).toBe(false);
-      }
-      for (const other of drawn) if (other !== region) expect(meets(region, other), `${region.space} apart from ${other.space}`).toBe(false);
-    }
-    return drawn;
+/** `graph` with the wholes `parts` names, each with its parts. */
+const made = (graph: Shape, parts: Record<string, string[]>): Shape => ({
+  ...graph,
+  nodes: graph.nodes.map((node) => ({ ...node, parts: (parts[node.name] ?? []).map((part) => `a:${part}`) })),
+});
+
+/** Every copy's box: each inside the box around it, and none overlapping another drawn beside
+ * it in the same box (or in none). */
+function nested(graph: Shape, placed: Map<string, Point>) {
+  const drawn = copies(graph);
+  const rects = boxes(drawn, placed);
+  expect([...rects.keys()]).toEqual(drawn.map((copy) => copy.key));
+  const inside = (inner: Rect, outer: Rect) =>
+    inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
+  const apart = (one: Rect, other: Rect) =>
+    one.x + one.width <= other.x || other.x + other.width <= one.x || one.y + one.height <= other.y || other.y + other.height <= one.y;
+  const levels = new Map<string | null, Rect[]>();
+  for (const copy of drawn) {
+    const at = rects.get(copy.key)!;
+    if (copy.parent !== null) expect(inside(at, rects.get(copy.parent)!)).toBe(true);
+    levels.set(copy.parent, [...(levels.get(copy.parent) ?? []), at]);
   }
+  for (const level of levels.values()) {
+    level.forEach((one, at) => level.slice(at + 1).forEach((other) => expect(apart(one, other)).toBe(true)));
+  }
+  return { drawn, rects };
+}
 
-  it("lays out each space's Artifacts together in its region, a space right of the spaces it uses", async () => {
-    //   base ─> combat::Spec ─> combat::Code ─> docs
-    //                └──────> inventory::Code ─┘        lone
-    const graph = spaced(
-      shape(
-        ["base", "combat::Spec", "combat::Code", "inventory::Code", "docs", "lone"],
-        [
-          ["base", "combat::Spec"],
-          ["combat::Spec", "combat::Code"],
-          ["combat::Spec", "inventory::Code"],
-          ["combat::Code", "docs"],
-          ["inventory::Code", "docs"],
-        ],
-      ),
+describe("layout of wholes", () => {
+  //   suite ⊃ { app ⊃ { kit, core }, site ⊃ { kit } }, docs ⊃ { site }; core ──> app's kit ──> lone
+  const graph = made(
+    shape(["suite", "docs", "app", "site", "kit", "core", "lone"], [["core", "kit"], ["kit", "lone"]]),
+    { suite: ["app", "site"], docs: ["site"], app: ["kit", "core"], site: ["kit"] },
+  );
+
+  it("draws each whole around its parts, nested, and a shared part inside each of its wholes", async () => {
+    const placed = await layout(graph);
+    const { drawn } = nested(graph, placed);
+    // Only copies that are no wholes are placed: kit three times, core and lone once each.
+    expect([...placed.keys()].sort()).toEqual(
+      ["a:docs/a:site/a:kit", "a:lone", "a:suite/a:app/a:core", "a:suite/a:app/a:kit", "a:suite/a:site/a:kit"].sort(),
     );
-    const placed = await layout(graph);
-    expect(placed.size).toBe(graph.nodes.length);
-    expect(overlaps(placed)).toEqual([]);
-    const [combat, inventory] = grouped(graph, placed);
-    expect([combat.space, inventory.space]).toEqual(["combat", "inventory"]);
-    expect(inventory.x).toBeGreaterThanOrEqual(combat.x + combat.width);
-    expect(backward(graph, placed)).toEqual([]);
+    expect(drawn.filter((copy) => copy.node.id === "a:site").map((copy) => copy.parent)).toEqual(["a:suite", "a:docs"]);
+    // Within app its parts keep their edge left to right.
+    expect(placed.get("a:suite/a:app/a:core")!.x).toBeLessThan(placed.get("a:suite/a:app/a:kit")!.x);
   });
 
-  it("follows a space's Artifacts with its region's outline rather than a box around them", async () => {
-    //   fan::root ─> fan::a ─> fan::end
-    //            ├─> fan::b ─┤
-    //            └─> fan::c ─┘
-    const graph = spaced(
-      shape(
-        ["fan::root", "fan::a", "fan::b", "fan::c", "fan::end"],
-        [["fan::root", "fan::a"], ["fan::root", "fan::b"], ["fan::root", "fan::c"], ["fan::a", "fan::end"], ["fan::b", "fan::end"], ["fan::c", "fan::end"]],
-      ),
+  it("nests the same way past ELK_LIMIT with the layered layout", async () => {
+    const before = elk.layouts;
+    // 300 wholes of four parts each, in chains, and a whole of all the wholes.
+    const names = Array.from({ length: 300 }, (_, at) => `w${at}`);
+    const members = (whole: string) => [0, 1, 2, 3].map((at) => `${whole}p${at}`);
+    const big = made(
+      shape(["all", ...names, ...names.flatMap(members)], names.flatMap((whole) => members(whole).slice(1).map((part, at): [string, string] => [members(whole)[at], part]))),
+      { all: names, ...Object.fromEntries(names.map((whole) => [whole, members(whole)])) },
     );
-    const placed = await layout(graph);
-    const [fan] = grouped(graph, placed);
-    // The box's corners lie beyond the outline, which turns in toward the narrower layers.
-    const outline = passes(fan);
-    for (const corner of [{ x: fan.x, y: fan.y }, { x: fan.x, y: fan.y + fan.height }]) {
-      expect(enclosed(corner, outline), `the box's corner ${corner.x},${corner.y} outside the outline`).toBe(false);
-    }
-  });
-
-  it("lays out a graph with spaces with more room than the same graph without", async () => {
-    const names = ["fan::root", "fan::a", "fan::b", "fan::c", "fan::end"];
-    const pairs: [string, string][] = [["fan::root", "fan::a"], ["fan::root", "fan::b"], ["fan::root", "fan::c"], ["fan::a", "fan::end"], ["fan::b", "fan::end"], ["fan::c", "fan::end"]];
-    /** The least room between two Artifacts of one layer, and between two layers. */
-    const room = (placed: Map<string, Point>) => {
-      const [a, b, root] = [placed.get("a:fan::a")!, placed.get("a:fan::b")!, placed.get("a:fan::root")!];
-      return { row: Math.abs(b.y - a.y) - NODE.height, layer: a.x - root.x - NODE.width };
-    };
-    const plain = room(await layout(shape(names, pairs)));
-    const spacious = room(await layout(spaced(shape(names, pairs))));
-    expect(spacious.row).toBeGreaterThan(plain.row);
-    expect(spacious.layer).toBeGreaterThan(plain.layer);
-  });
-
-  it("lays out a whole catalog with a space per skill, its spaces packed rather than one tall column", async () => {
-    const whole = catalog();
-    const graph: Shape = {
-      ...whole,
-      nodes: whole.nodes.map((node) => {
-        const skill = /^[tc](\d+)-/.exec(node.name)?.[1];
-        return skill === undefined ? node : { ...node, name: `s${skill}::${node.name}`, space: `s${skill}`, label: node.name };
-      }),
-    };
-    const placed = await layout(graph);
-    expect(placed.size).toBe(graph.nodes.length);
-    expect(overlaps(placed)).toEqual([]);
-    expect(aspect(placed)).toBeLessThan(4);
-    expect(aspect(placed)).toBeGreaterThan(0.25);
-    // Every box against every other is slow at a catalog's size: a sample of them is checked.
-    const drawn = regions(graph, placed);
-    expect(drawn.length).toBeGreaterThan(500);
-    for (const box of drawn.filter((_, at) => at % 50 === 0)) {
-      for (const other of drawn) if (other !== box) expect(meets(box, other)).toBe(false);
-    }
+    const placed = await layout(big);
+    expect(elk.layouts).toBe(before);
+    expect(placed.size).toBe(1200);
+    nested(big, placed);
   });
 });

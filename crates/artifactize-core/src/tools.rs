@@ -79,7 +79,10 @@ struct ContextArtifact {
     #[serde(with = "crate::platform::path_serde")]
     path: PathBuf,
     kind: crate::config::ArtifactKind,
-    children: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    nested: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    /// An aspect's selected paths below `path`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    select: Vec<crate::config::LogicalPath>,
 }
 #[derive(Serialize)]
 struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
@@ -134,7 +137,7 @@ impl<'a> Registry<'a> {
                 if let AgentTool::Command(command) = declaration
                     && let Some(session) = &command.session
                 {
-                    let key = format!("{session}_{}", id.tool_suffix());
+                    let key = format!("{session}_{}", id);
                     let identity = (id, session);
                     if session_names
                         .insert(key.clone(), identity)
@@ -143,7 +146,7 @@ impl<'a> Registry<'a> {
                         return Err(format!("Artifact tool session names collide: {key}"));
                     }
                 }
-                let name: crate::config::ToolName = format!("{operation}_{}", id.tool_suffix())
+                let name: crate::config::ToolName = format!("{operation}_{}", id)
                     .parse()
                     .expect("validated tool and Artifact names");
                 let description = match declaration {
@@ -425,13 +428,15 @@ impl<'a> Registry<'a> {
             .artifacts
             .values()
             .map(|artifact| {
-                let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
+                let path = scope::scoped_path(&self.config.root, artifact.referenced_path())
+                    .map_err(|_| ())?;
                 Ok((
                     artifact.name.clone(),
                     ContextArtifact {
                         path,
                         kind: artifact.kind,
-                        children: artifact.children.clone(),
+                        nested: artifact.nested.clone(),
+                        select: artifact.select.clone(),
                     },
                 ))
             })

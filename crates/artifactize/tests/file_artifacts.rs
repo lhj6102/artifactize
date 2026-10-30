@@ -120,15 +120,26 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
         Path::new("nested/Makefile.artf")
     );
     assert_eq!(
-        config.artifacts["folder"].children,
+        config.artifacts["folder"].nested,
         std::collections::BTreeMap::from([(
             "nested/deep".parse().unwrap(),
             "deep".parse().unwrap()
         )])
     );
-    assert!(config.artifacts["hero"].children.is_empty());
-    assert!(config.artifacts["build"].children.is_empty());
-    assert_eq!(config.relations.len(), 1);
+    assert!(config.artifacts["hero"].nested.is_empty());
+    assert!(config.artifacts["build"].nested.is_empty());
+    // Each is a part of the folder Artifact around it, and only the nested folder takes its
+    // files out of the folder's.
+    let mut parts: Vec<_> = config
+        .relations
+        .iter()
+        .map(|relation| (relation.source.as_str(), relation.target.as_str()))
+        .collect();
+    parts.sort();
+    assert_eq!(
+        parts,
+        [("build", "folder"), ("deep", "folder"), ("hero", "folder")]
+    );
     assert!(
         !artifact_scope(&config, &[&"folder".parse().unwrap()])
             .unwrap()
@@ -156,7 +167,7 @@ fn a_workspace_may_contain_only_a_file_artifact_and_index_is_always_a_folder_mar
     let config = fixture.config();
     assert_eq!(config.artifacts["index-file"].kind, ArtifactKind::Folder);
     assert_eq!(config.artifacts["index-file"].path, Path::new(""));
-    assert!(config.artifacts["index-file"].children.is_empty());
+    assert!(config.artifacts["index-file"].nested.is_empty());
 }
 
 #[test]
@@ -945,7 +956,7 @@ fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
 }
 
 #[test]
-fn reuse_key_covers_kinds_of_target_child_and_reference_but_never_paths_or_tags() {
+fn reuse_key_covers_kinds_of_target_and_reference_but_never_paths_tags_or_nested_folders() {
     let fixture = Fixture::new();
     fixture.declare(
         "owner/index.artf",
@@ -989,7 +1000,16 @@ fn reuse_key_covers_kinds_of_target_child_and_reference_but_never_paths_or_tags(
     let key = cache::eval_key(&config, &config.evals[0], &fingerprints)
         .unwrap()
         .value;
-    for id in ["owner", "child", "reference"] {
+    // A nested folder Artifact is not in the key; only the target and what it names are.
+    config.artifacts.get_mut("child").unwrap().kind = ArtifactKind::File;
+    assert_eq!(
+        key,
+        cache::eval_key(&config, &config.evals[0], &fingerprints)
+            .unwrap()
+            .value
+    );
+    config.artifacts.get_mut("child").unwrap().kind = ArtifactKind::Folder;
+    for id in ["owner", "reference"] {
         config.artifacts.get_mut(id).unwrap().kind = ArtifactKind::File;
         assert_ne!(
             key,

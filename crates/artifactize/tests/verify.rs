@@ -822,6 +822,7 @@ fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
 fn basis_and_all_keep_no_eval_dependency_obligations() {
     let fixture = Fixture::new();
     fixture.runtime(&support::os::true_program(), &[]);
+    // An unreviewed part is an obligation of the Artifact it is part of.
     fs::create_dir(fixture.repo.join("input")).unwrap();
     support::declaration::write(fixture.repo.join("input/index.artf"), r#"{"name":"input"}"#)
         .unwrap();

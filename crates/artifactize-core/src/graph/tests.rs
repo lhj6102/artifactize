@@ -58,7 +58,9 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 tags: declaration.tags,
                 basis: declaration.basis,
                 path: name.into(),
-                children: BTreeMap::new(),
+                nested: BTreeMap::new(),
+                select: Vec::new(),
+                parts: Default::default(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
             },
@@ -468,4 +470,59 @@ fn speculation_keeps_file_evidence_but_never_waives_final_obligations() {
     assert_eq!(failed.evals["a/check"].status, EvalStatus::Error);
     assert_eq!(failed.evals["b/check"].status, EvalStatus::Blocked);
     assert_eq!(failed.evals["c/check"].status, EvalStatus::Blocked);
+}
+
+#[test]
+fn a_part_verdict_is_part_of_its_parent_without_gating_the_parent_evals() {
+    let mut config = config(
+        &[
+            ("game", false, &[]),
+            ("combat", false, &["check"]),
+            ("fireball", false, &["check"]),
+            ("consumer", false, &["check"]),
+        ],
+        &[("combat", "consumer")],
+    );
+    for (source, target) in [("combat", "game"), ("fireball", "combat")] {
+        config.relations.push(Relation {
+            source: source.parse().unwrap(),
+            target: target.parse().unwrap(),
+            kind: RelationKind::Part,
+        });
+    }
+    let graph = Graph::new(&config).unwrap();
+    assert_eq!(
+        graph
+            .dependency_closure(&roots(&["consumer"]).iter().collect::<Vec<_>>())
+            .unwrap(),
+        ["combat", "consumer", "fireball"]
+    );
+    let result = graph.evaluate(&evidence(&[
+        ("combat/check", GREEN),
+        ("fireball/check", RED),
+        ("consumer/check", GREEN),
+    ]));
+    // The parent's own eval and its consumer are judged on their own inputs.
+    assert_eq!(result.evals["combat/check"].status, EvalStatus::Green);
+    assert_eq!(result.evals["consumer/check"].status, EvalStatus::Green);
+    // Yet neither the parent nor anything above it passes while a part fails.
+    for parent in ["combat", "game"] {
+        assert_eq!(result.artifacts[parent].status, ArtifactStatus::Red);
+        assert!(!result.artifacts[parent].satisfied);
+    }
+    assert_eq!(
+        result.artifacts["consumer"].status,
+        ArtifactStatus::Incomplete
+    );
+    assert_eq!(result.status, FinalStatus::Red);
+
+    let result = graph.evaluate(&evidence(&[
+        ("combat/check", GREEN),
+        ("fireball/check", GREEN),
+        ("consumer/check", GREEN),
+    ]));
+    // A parent without evals of its own passes on its parts alone.
+    assert_eq!(result.artifacts["game"].status, ArtifactStatus::Green);
+    assert!(result.obligations.is_empty());
+    assert_eq!(result.status, FinalStatus::Green);
 }

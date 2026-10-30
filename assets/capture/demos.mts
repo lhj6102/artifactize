@@ -450,6 +450,36 @@ function checkout(ref: string, tree: string): void {
     });
     if (converted !== text) writeFileSync(file, converted);
   }
+  // 0.17–0.18 allowed `space::name`; a name is one identifier now, `space-name`.
+  for (const file of files(tree, (name) => name.endsWith(".artf"))) {
+    const text = readFileSync(file, "utf8");
+    const spaced = /^(name = ")([^"]*)"/gm;
+    const converted = text
+      .replace(spaced, (_, start: string, name: string) => `${start}${name.replaceAll("::", "-")}"`)
+      .replace(/\{([A-Za-z0-9][A-Za-z0-9_-]*(?:::[A-Za-z0-9][A-Za-z0-9_-]*)+)\}/g, (_, name: string) => `{${name.replaceAll("::", "-")}}`);
+    if (converted !== text) writeFileSync(file, converted);
+  }
+  // A reference reached through a folder Artifact into one nested in it; that file is the
+  // nested Artifact's now, so the reference names it.
+  const folders = new Map<string, string>();
+  for (const file of files(tree, (name) => name === "index.artf")) {
+    const name = /^name = "([^"]*)"/m.exec(readFileSync(file, "utf8"))?.[1];
+    if (name) folders.set(name, dirname(file));
+  }
+  const owners = [...folders].sort(([, one], [, other]) => other.length - one.length);
+  for (const file of files(tree, (name) => name.endsWith(".artf"))) {
+    const text = readFileSync(file, "utf8");
+    const converted = text.replace(/\{([A-Za-z0-9][A-Za-z0-9_-]*)\}\/([^"\s}]+)/g, (whole, name: string, path: string) => {
+      const folder = folders.get(name);
+      if (!folder) return whole;
+      const target = join(folder, path);
+      const [owner, root] = owners.find(([, root]) => !relative(root, target).startsWith("..")) ?? [name, folder];
+      if (owner === name) return whole;
+      const rest = relative(root, target);
+      return rest ? `{${owner}}/${rest.split("\\").join("/")}` : `{${owner}}`;
+    });
+    if (converted !== text) writeFileSync(file, converted);
+  }
 }
 
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
@@ -479,33 +509,39 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         await browser.$("button=Refresh").click();
       }
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
-      // edge for every relation between two of them, as the Current draws them. The graph drawn
-      // is this release's only once its Artifact nodes (not its spaces' regions) and edges are
-      // exactly these, never the previous one's.
+      // edge for every relation between two of them but a part's, which the Current draws as
+      // the part inside its whole. A part of several wholes is drawn once in each, so the
+      // drawing is compared by the Artifacts its nodes and edges stand for, a copy's key ending
+      // in its Artifact's id. The graph drawn is this release's only once these are exactly
+      // its own, never the previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
-        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string }[] };
+        { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string; kind: string }[] };
       const names = new Set(Object.keys(graph.artifacts));
       const expected = [
         [...names].map((name) => `a:${name}`).sort().join(" "),
-        [...new Set(graph.relations.filter(({ source, target }) => source !== target && names.has(source) && names.has(target))
+        [...new Set(graph.relations.filter(({ source, target, kind }) => kind !== "part" && source !== target && names.has(source) && names.has(target))
           .map(({ source, target }) => `a:${source}>a:${target}`))].sort().join(" "),
       ].join("\n");
       await browser.waitUntil(() => browser.execute((expected) => {
-        const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
-        return !document.querySelector<HTMLButtonElement>(".current header button")?.disabled
-          && `${ids(".current .svelte-flow__node[data-id^='a:']")}\n${ids(".current .svelte-flow__edge")}` === expected;
+        const set = (values: string[]) => [...new Set(values)].sort().join(" ");
+        const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
+        const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.artifact ?? ""));
+        const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
+        return !document.querySelector<HTMLButtonElement>(".current header button")?.disabled && `${artifacts}\n${edges}` === expected;
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: exactly this release's Artifact nodes and edges, every node (space
-      // regions included) drawn inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
+      // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
+      // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
       // over 300 ms.
       const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {
           const canvas = document.querySelector(".current .svelte-flow")?.getBoundingClientRect();
           const nodes = [...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node")];
-          const ids = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => element.dataset.id ?? "").sort().join(" ");
-          if (`${ids(".current .svelte-flow__node[data-id^='a:']")}\n${ids(".current .svelte-flow__edge")}` !== expected) return null;
+          const set = (values: string[]) => [...new Set(values)].sort().join(" ");
+          const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
+          const artifacts = set(nodes.map((node) => node.dataset.artifact ?? ""));
+          if (`${artifacts}\n${set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")))}` !== expected) return null;
           const edges = document.querySelectorAll(".current .svelte-flow__edge").length;
           const lines = [...document.querySelectorAll<SVGPathElement>(".current .svelte-flow__edge path.svelte-flow__edge-path")].filter((line) => {
             const box = line.getBoundingClientRect();

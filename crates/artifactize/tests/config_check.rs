@@ -443,5 +443,5 @@ fn artfignore_keeps_folders_out_of_discovery() {
     let config = read_workspace_config(&fixture.0).unwrap();
     assert!(config.artifacts.contains_key("app"));
     assert!(!config.artifacts.contains_key("demo"));
-    assert!(config.artifacts["app"].children.is_empty());
+    assert!(config.artifacts["app"].nested.is_empty());
 }

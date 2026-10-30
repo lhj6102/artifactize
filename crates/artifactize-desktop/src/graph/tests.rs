@@ -10,6 +10,7 @@ fn node(text: &str, light: monitor::Light) -> monitor::GraphNode {
         id: monitor::NodeId::artifact(name(text)),
         name: name(text),
         light,
+        parts: Vec::new(),
     }
 }
 
@@ -89,32 +90,32 @@ fn an_artifact_the_run_lacks_has_no_neighbours() {
 }
 
 #[test]
-fn a_node_names_its_space_and_shows_the_rest_of_its_name() {
+fn a_shared_part_is_drawn_inside_each_drawing_of_each_of_its_wholes() {
+    // `site` and `app` share `kit`; `suite` holds `app` and `site`, and `docs` holds `site`,
+    // so `site` is drawn twice and `kit` three times.
+    let whole = |text: &str, parts: &[&str]| monitor::GraphNode {
+        parts: parts.iter().map(|part| name(part)).collect(),
+        ..node(text, monitor::Light::Green)
+    };
     let graph = monitor::Graph {
         nodes: vec![
-            node("combat::Code", monitor::Light::Red),
-            node("docs", monitor::Light::Green),
+            whole("suite", &["app", "site"]),
+            whole("docs", &["site"]),
+            whole("app", &["kit"]),
+            whole("site", &["kit"]),
+            node("kit", monitor::Light::Green),
         ],
-        edges: vec![edge("combat::Code", "docs")],
+        edges: Vec::new(),
     };
-    let shown = shape(&graph);
-    let nodes: Vec<_> = shown
-        .nodes
-        .iter()
-        .map(|item| {
-            (
-                item.name.as_str(),
-                item.space.as_deref(),
-                item.label.as_str(),
-            )
-        })
-        .collect();
+    let drawn = |text: &str| {
+        let near = neighbours_in(&shape(&graph), &monitor::NodeId::artifact(name(text)));
+        (near.wholes, near.copies)
+    };
+    assert_eq!(drawn("suite"), (Vec::new(), 1));
+    assert_eq!(drawn("app"), (vec!["suite".to_owned()], 1));
     assert_eq!(
-        nodes,
-        [
-            ("combat::Code", Some("combat"), "Code"),
-            ("docs", None, "docs")
-        ]
+        drawn("site"),
+        (vec!["suite".to_owned(), "docs".to_owned()], 2)
     );
-    assert_eq!(String::from(shown.nodes[0].id.clone()), "a:combat::Code");
+    assert_eq!(drawn("kit"), (vec!["app".to_owned(), "site".to_owned()], 3));
 }

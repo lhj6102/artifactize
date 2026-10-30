@@ -65,7 +65,7 @@ artifactize verify --all --wait
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
-`verify`는 각 결과의 fingerprint를 다시 확인한 뒤 GREEN으로 판정했으므로, 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
+`verify`는 각 결과의 fingerprint를 다시 확인한 뒤 GREEN으로 판정했으므로, 판정, 추가 결과 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
 요약에는 캡처한 stdout/stderr, 별도의 호출 감사 기록,
 로컬 저장소 출처가 빠졌습니다. 선언된 Runtime 명령과 인자는
 프로필의 일부로 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은
@@ -118,7 +118,7 @@ Would push 2, already in the store 0, skipped 0.
 Pushed 2, already in the store 0, skipped 0.
 ```
 
-`guide/terms`의 재사용 키에 자식 `usage`가 들어 있으므로, 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
+`guide/terms`는 `usage`를 참조하므로 재사용 키에 `usage`가 들어 있습니다. 그래서 다시 리뷰한 Artifact는 `usage`와 `guide`뿐입니다.
 저장소 연동을 `off`로 끈 것이 아니라 저장소에 연결할 수 없는 상황이었더라도, `verify`는 한 번 경고한 뒤
 같은 방식으로 로컬에서 리뷰했을 것입니다. `remote push`는 각 키에 대해 저장소에
 아직 없는 가장 최근 로컬 결과를 보냅니다. 미러링한 기록은 보내지 않으며, 토큰에 `human`이 없으면

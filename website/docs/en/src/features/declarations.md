@@ -22,9 +22,9 @@ put the needed Artifacts as `{name}` references in the consuming eval's
 `"Review {app} against {spec} and {assets}."` Each consuming eval waits for those
 inputs' required evals; independent sibling evals keep running.
 
-A child folder counts as a reference of every eval of its parent. To require any
-other Artifact's reviews before an eval, reference that Artifact explicitly in the
-eval's instruction or argv.
+To require any other Artifact's reviews before an eval, reference that Artifact
+explicitly in the eval's instruction or argv. Neither a nested folder nor any other
+[part](artifact.md#composition) is a reference.
 
 An old profile fails configuration parsing with
 `unknown variant `dependency`, expected one of `agent`, `human`, `runtime``.
@@ -34,8 +34,9 @@ configuration errors, not review verdicts; migrate the declaration before verify
 ## Declaration validation
 
 `index.artf` declares its containing folder. `<filename>.artf` declares the
-neighboring file whose complete name is `<filename>`, including its extension.
-Both use standard TOML and require `name`. The repository root's nameless `.artf`
+neighboring file whose complete name is `<filename>`, including its extension, or,
+with `select`, an [aspect](#aspects) when no such file exists. All use standard TOML
+and require `name`. The repository root's nameless `.artf`
 declares the [graph Artifact](#graph-artifact), with no source file.
 
 Discovery walks from the repository root and skips `.git`, `node_modules`, and
@@ -54,13 +55,9 @@ examples/
 
 Names, eval IDs, tool/session names and profile variant names start with a letter or
 digit and have at most 64 letters, digits, underscores or hyphens
-(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). An Artifact name may also start with the name
-of a *space*, a group it belongs to, and `::`, such as `combat::Code` in the space
-`combat`: the space name and the rest each have that form, and the whole
-name has at most 64 bytes. A space only groups names for people; it is part of the name,
-so `{combat::Code}`, `combat::Code/check` and `artifactize verify combat::Code` spell it
-whole, and evals use Artifacts of other spaces as they use any other. `a::b::c` is
-rejected. Artifact names are globally unique. Evals are
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). A name says nothing about what the Artifact is a
+part of: folders and `parts` do (see [composition](artifact.md#composition)). Artifact
+names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
 by ID, not by their position in the TOML source.
@@ -68,6 +65,8 @@ by ID, not by their position in the TOML source.
 | Field | Rule |
 |---|---|
 | `name` | Required Artifact name |
+| `select` | An [aspect](#aspects)'s selected paths; only in an aspect's declaration |
+| `parts` | Optional list of 1–64 unique Artifact names that are [parts](artifact.md#composition) of this one besides those its folder holds; not itself, not in the root `.artf` |
 | `tags` | Optional list of at most 64 unique nonblank strings, without ASCII controls |
 | `basis` | Optional boolean; `true` declares a no-eval input, waiving its own review obligations but not its dependencies |
 | `fingerprint` | Omission uses artifactsum; `false` disables reuse; otherwise an artifactsum or script table |
@@ -243,7 +242,8 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 
 It is an ordinary named Artifact: declare any runtime, Agent or Human
 evals and tools, and select it by name in `verify`, `status`, CI or `--reuse-only`.
-It has no default evals, child ownership or relations to other Artifacts. Explicit
+It has no default evals, parts or relations to other Artifacts unless names
+or references make them. Explicit
 instruction/argv references work normally. Commands run from the
 repository root; declaring the graph does not make it the owner of that folder.
 Its scope uses `kind = "graph"` and its declaration path is `.artf`.
@@ -251,8 +251,9 @@ Its scope uses `kind = "graph"` and its declaration path is `.artf`.
 Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
 always the current extracted graph. Otherwise ordinary Artifact rules apply:
 `basis = true` explicitly declares no own review obligations and cannot own evals;
-it does not satisfy unmet dependencies. A no-eval graph without `basis = true`
-remains UNREVIEWED, as any no-eval Artifact does. No source file is
+it does not satisfy unmet dependencies. A graph without evals and
+without `basis = true` remains UNREVIEWED, as any such Artifact does; it has no
+[parts](artifact.md#composition) and is a part of nothing. No source file is
 created or required. Ordinary Artifact cycles are allowed, and the graph fingerprint also covers the graph
 Artifact's own declaration.
 
@@ -272,10 +273,14 @@ The `.artf` declaration itself must also be a regular file: symlinks, special fi
 and directories such as `bundle.artf` fail discovery. A file named `index` cannot have a sidecar because `index.artf` always declares the folder;
 `.artf` files are declarations and are never targets.
 
-A file Artifact creates no child or dependency relation to the containing folder
-Artifact. The nearest-folder ownership rule still applies to subfolder
-`index.artf` declarations. A folder's artifactsum includes neighboring file
-Artifact targets and excludes every `*.artf` declaration.
+A file Artifact is a [part](artifact.md#composition) of the nearest folder Artifact
+around it: selecting that folder Artifact selects the file Artifact too, and the folder
+Artifact passes only while it does. Being a part makes it no input: the folder
+Artifact's evals neither read it nor carry its fingerprint in their reuse keys unless they
+name it. A subfolder with its own `index.artf` still takes its files out of the folder
+Artifact around it.
+A folder's artifactsum includes neighboring file Artifact targets and excludes every
+`*.artf` declaration.
 
 The containing folder is the working directory of runtime commands, tools and
 fingerprint scripts, so a relative executable may be a sibling file. It grants no
@@ -291,9 +296,10 @@ Omit `fingerprint` to hash the file; the [file-Artifact form](fingerprint.md#art
 of artifactsum names only the target, and scripts and `fingerprint = false` work too.
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
-its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
+its containing folder. Scope entries carry `kind = "file"`, `"folder"`, `"aspect"` or `"graph"`; an aspect's
+path is its declaration's folder, of which it reaches only what `select` names.
 `execution_paths`, the project-relative paths of tool files whose hashes are recorded
-to show which version ran, work the same for all three kinds.
+to show which version ran, work the same for every kind.
 
 The target must stay a regular file, not a symbolic link, for as long as it is
 reviewed, also with `fingerprint = false`:
@@ -315,6 +321,45 @@ Verify again once the file is back.
 
 For removed legacy policy fields and their replacements, see the
 [upgrade reference](../getting-started/update.md#upgrading-from-011).
+
+## Aspects
+
+An aspect is a part of a larger body of files that is not a folder of its own, such as
+one skill's code, tests and sprite in a game's tree. Declare it in a `<label>.artf`
+whose `<label>` names no file, with `select` listing its paths relative to the
+declaration's folder:
+
+```toml
+# game/fireball.artf
+name = "fireball"
+select = ["src/skills/fireball.rs", "tests/fireball.rs", "assets/fireball"]
+
+[evals.behaves]
+title = "Damage, cooldown and effects match the skill spec"
+profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID" }
+payload.instruction = "Review {fireball} against {skill-spec}."
+```
+
+- `select` holds 1–64 unique paths, files or directories, of up to 1024 characters
+  each (an emoji or another character outside the Basic Multilingual Plane counts as
+  two). Each must exist without symlink traversal and stay below the declaration's
+  folder; it may lie in other Artifacts' files, including nested folder Artifacts, since
+  an aspect describes a part of them. `*.artf` declarations are never selected.
+- The label is free: it only names the declaration. `select` in a declaration whose
+  label names an existing file is an error, and `select` is an error in `index.artf`
+  and the root `.artf`.
+- Omitting `fingerprint` hashes the selected paths with artifactsum, so a change
+  elsewhere in the folder reuses the aspect's results. An explicit artifactsum form may
+  narrow `files` within the selection and add `ignore`; a script or
+  `fingerprint = false` works as for any Artifact.
+- Tools see the declaration's folder with only the selected paths and the folders
+  leading to them. A reference to the aspect, `{name}`, is that folder, and
+  `{name}/path` must lie in the selection. Commands run in that folder.
+- Scope entries and saved definitions carry `kind = "aspect"`.
+
+Overlap is the point: `fireball` stays reusable while other files of `game` change,
+and the folder Artifact that holds `src/` still reviews all of it. An aspect is a
+[part](artifact.md#composition) of the folder Artifact around its declaration.
 
 ## Eval mutex tags
 
@@ -360,8 +405,9 @@ can still be reused while a conflicting eval runs.
 
 Write Artifact references as `{input}` or `{input}/path` in
 `payload.instruction` and runtime `profile.args`. See
-[Eval dependencies](artifact.md#eval-dependencies) for their obligations, child
-Artifacts, cycles, scheduling and the Human prerequisites.
+[Eval dependencies](artifact.md#eval-dependencies) for their obligations, cycles,
+scheduling and the Human prerequisites, and [composition](artifact.md#composition) for
+parts.
 
 ## Artifactsum
 
@@ -384,8 +430,8 @@ folder may show only that something changed.
 
 ## Fingerprint scripts
 
-Before executing evals, `verify` computes fingerprints in their selected required
-dependency closure, including dependencies whose evals are not selected.
+Before executing evals, `verify` computes the fingerprint of every Artifact the selected
+evals need, also of the Artifacts they depend on whose own evals are not selected.
 How many are computed at once is set by
 [`--fingerprint-jobs`](../cli/index.md#runtime-cli). A failure reports the first failing
 Artifact in name order and stops the rest. Each script gets its own private output
@@ -403,8 +449,8 @@ absolute executables run as given. Relative executables containing `/` (such as
 Artifacts, relative executables instead resolve beneath the containing folder and
 may name unrelated siblings. Traversal and symlinks are rejected in both cases.
 Arguments stay literal except explicit scoped Artifact references: `{name}` is a
-global Artifact name. Each referenced Artifact, with its child closure, enters the
-script's scope without becoming a graph relation.
+global Artifact name. Each referenced Artifact enters the script's scope without
+becoming a graph relation.
 `config check` rejects unknown and malformed references; existence and symlinks
 are checked when the command is prepared. There are no interpreter-specific
 flags, wrappers or entry-file rules.
@@ -422,25 +468,29 @@ operational error, without starting any eval or falling back to uncached review.
 Stderr is not forwarded as a fingerprint diagnostic.
 
 After runtime or Agent review, covered fingerprints are recomputed before
-accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no
-semantic result; a failed recheck records ERROR. Force skips neither preparation
+accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no GREEN or
+RED verdict; a failed recheck records ERROR. Force skips neither preparation
 nor recheck. An Artifact with `fingerprint = false` has no fingerprint to prepare;
-unkeyed evals skip the fingerprint-value recheck. File-target validation remains
-mandatory at preparation, eval start/end and tool calls, including for unkeyed
-evals. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
+evals without a complete reuse key skip the fingerprint-value recheck. File targets are
+still checked at preparation, eval start and end, and tool calls, for every eval. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
 ## Artifact references in commands
 
 Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
-`{name}`, `{name}/path` or `--flag={name}/path`. `{owner}/child/path` starts at a folder
-Artifact; a file reference is the file itself and takes no path. Each one becomes an
+`{name}`, `{name}/path` or `--flag={name}/path`. A path starts at the folder of a folder
+Artifact or aspect. In runtime arguments, a folder Artifact's path may not enter a folder
+Artifact nested there: `config check` names it, and you reference that Artifact instead.
+In fingerprint scripts and tool arguments such a path fails when the command is prepared
+or called, unless the nested Artifact is in scope too. An aspect's path must lie in its
+selection, which may reach into nested folder Artifacts. A file reference is the file itself
+and takes no path. Each one becomes an
 absolute path when the command runs. In instructions and runtime arguments a reference
 makes the eval depend on that Artifact; in a fingerprint script it only lets the script
 read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
 doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
-never builds a command line from a string. An eval may read its target and the Artifacts it references, with
-their children. The instructions of the referenced Artifacts' evals are not added to its
+never builds a command line from a string. An eval may read its target and the Artifacts it references,
+neither their parts nor folders nested in them. The instructions of the referenced Artifacts' evals are not added to its
 review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,

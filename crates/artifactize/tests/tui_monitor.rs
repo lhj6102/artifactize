@@ -91,7 +91,7 @@ impl Fixture {
                 "name":"red",
                 "fingerprint":{"script":{"command":support::os::echo_program(),"args":["red-v1"]}},
                 "evals":[
-                    eval("check", runtime(&finding, &[]), "Check {input}."),
+                    eval("check", runtime(&finding, &[]), "Check {input} with {part}."),
                 ],
             }),
         );
@@ -503,7 +503,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(red.field("Options"), Some("timeoutMs 20000"));
     let source = red.field("Source").unwrap();
     assert!(
-        source.starts_with(&format!("reused from Run {first} request {first}-")),
+        source.starts_with(&format!("reused from Run {first} request ")),
         "{source}"
     );
     // The Outcome shows the verdict first; the whole result is under What.

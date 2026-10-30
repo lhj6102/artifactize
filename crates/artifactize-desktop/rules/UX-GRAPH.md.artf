@@ -1,4 +1,4 @@
-name = "desktop::ux-graph"
+name = "desktop-ux-graph"
 
 [views.agent_tools]
 
@@ -17,7 +17,7 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 
 [evals.covers-features.payload]
 instruction = """
-Read the journeys {desktop::ux-features} and the graph {desktop::ux-graph}. Check that every journey (J- id) is a path through edges of the graph: each \
+Read the journeys {desktop-ux-features} and the graph {desktop-ux-graph}. Check that every journey (J- id) is a path through edges of the graph: each \
 step the journey describes is an edge, and no edge contradicts what a journey says. Check also that \
 every edge id is unique and that each edge belongs to at least one journey. Submit GREEN when no \
 journey is missing a step. Otherwise submit RED with up to 20 gaps, the most important first, each \

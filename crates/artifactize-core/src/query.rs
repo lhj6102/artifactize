@@ -20,7 +20,7 @@ use crate::{
 /// The format version of the printed graph: the shape of its Artifacts, evals, relations
 /// and components. It changes when a field is removed or changes meaning, so that scripts
 /// reading the output can refuse a shape they do not know.
-const GRAPH_FORMAT_VERSION: u32 = 1;
+const GRAPH_FORMAT_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

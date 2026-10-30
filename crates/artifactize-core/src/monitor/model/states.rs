@@ -130,7 +130,7 @@ pub enum Completion {
 
 impl Completion {
     /// Order of X: failed, in progress, waiting, complete; blocked completions still wait.
-    fn rank(self) -> Rank {
+    pub(super) fn rank(self) -> Rank {
         match self {
             Self::Failed { .. } => Rank::Failed,
             Self::InProgress(_) => Rank::InProgress,
@@ -161,6 +161,8 @@ pub(super) struct Index<'a> {
     targets: BTreeMap<&'a EvalId, &'a ArtifactName>,
     /// Artifact → its cycle peers (same component), by name.
     pub peers: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
+    /// Artifact → the Artifacts it is directly composed of.
+    pub parts: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
     pub cyclic: BTreeSet<&'a ArtifactName>,
 }
 
@@ -229,19 +231,11 @@ impl<'a> Index<'a> {
             .iter()
             .flat_map(|(&target, ids)| ids.iter().map(move |&id| (id, target)))
             .collect();
-        let children: BTreeMap<_, Vec<_>> = saved
-            .artifacts()
-            .map(|(parent, artifact)| {
-                let children = artifact.children.value().into_iter().flatten();
-                (parent, children.map(|(_, child)| child).collect())
-            })
-            .collect();
-        // An eval depends on what it references and, like every eval of its target, on the
-        // target's children.
+        // An eval depends on what it references.
         let inputs: BTreeMap<_, Vec<_>> = targets
             .iter()
-            .map(|(&eval, &target)| {
-                let mut deps: Vec<_> = definitions
+            .map(|(&eval, _)| {
+                let deps: Vec<_> = definitions
                     .get(eval)
                     .and_then(|definition| definition.deps.value())
                     .map(|deps| deps.iter().collect())
@@ -250,7 +244,6 @@ impl<'a> Index<'a> {
                             .get(eval)
                             .map_or(Vec::new(), |view| view.request.deps.iter().collect())
                     });
-                deps.extend(children.get(target).into_iter().flatten().copied());
                 (eval, deps)
             })
             .collect();
@@ -264,19 +257,15 @@ impl<'a> Index<'a> {
                     matches!(profile.known, crate::config::StoredProfile::Human { .. })
                 }),
         };
-        let schedule = crate::graph::schedule::Schedule::new(
-            targets
-                .iter()
-                .map(|(&eval, &target)| crate::graph::schedule::Input {
+        let schedule =
+            crate::graph::schedule::Schedule::new(targets.iter().map(|(&eval, &target)| {
+                crate::graph::schedule::Input {
                     id: eval,
                     target,
                     deps: inputs[eval].clone(),
                     human: human(eval),
-                }),
-            children
-                .iter()
-                .flat_map(|(&parent, children)| children.iter().map(move |&child| (parent, child))),
-        );
+                }
+            }));
         let upstream = inputs
             .into_iter()
             .map(|(eval, mut deps)| {
@@ -301,6 +290,7 @@ impl<'a> Index<'a> {
             execution_order,
             targets,
             peers,
+            parts: saved.parts(),
             cyclic,
         }
     }
@@ -646,11 +636,32 @@ impl<'a> States<'a> {
     }
 
     /// The Artifact's completion from its eval rows; done rows whose own gates are unmet
-    /// do not complete it.
+    /// do not complete it. A part that is not complete keeps its parent from it too.
     pub fn completion(&self, artifact: &ArtifactName) -> Completion {
         if let Some(completion) = self.completions.borrow().get(artifact) {
             return *completion;
         }
+        let own = self.own_completion(artifact);
+        let completion = self
+            .index
+            .parts
+            .get(artifact)
+            .into_iter()
+            .flatten()
+            .map(|part| self.completion(part))
+            .chain([own])
+            .min_by_key(|completion| match completion {
+                Completion::Failed { verdict } => (completion.rank(), *verdict),
+                _ => (completion.rank(), true),
+            })
+            .expect("its own completion");
+        if let Some(id) = self.key(artifact) {
+            self.completions.borrow_mut().insert(id, completion);
+        }
+        completion
+    }
+
+    fn own_completion(&self, artifact: &ArtifactName) -> Completion {
         let views = self.views_of(artifact);
         let busy = views
             .iter()
@@ -661,7 +672,7 @@ impl<'a> States<'a> {
                 _ => None,
             })
             .min();
-        let completion = if views
+        if views
             .iter()
             .any(|view| matches!(view, EvalView::Failed { .. }))
         {
@@ -681,11 +692,7 @@ impl<'a> States<'a> {
             }
         } else {
             Completion::Complete
-        };
-        if let Some(id) = self.key(artifact) {
-            self.completions.borrow_mut().insert(id, completion);
         }
-        completion
     }
 
     /// Group only this Eval's actual gates, never unrelated Evals on the same material.

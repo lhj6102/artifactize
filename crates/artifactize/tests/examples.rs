@@ -10,7 +10,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     thread,
     time::{Duration, Instant},
 };
@@ -190,10 +190,10 @@ fn every_example_passes_static_queries_and_reports_status() {
         .collect();
     kinds.sort();
     kinds.dedup();
-    assert_eq!(kinds, ["argv", "child", "instruction"]);
+    assert_eq!(kinds, ["argv", "instruction", "part"]);
     assert_eq!(graph["artifacts"]["glossary"]["basis"], true);
     assert_eq!(
-        graph["artifacts"]["guide"]["children"],
+        graph["artifacts"]["guide"]["nested"],
         json!({"intro": "intro", "usage": "usage"})
     );
 }
@@ -258,7 +258,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         "{terms}"
     );
 
-    // README: a page without its heading is RED and blocks its parent.
+    // README: a page without its heading is RED and blocks the eval that names it.
     let contents = fs::read_to_string(&page).unwrap();
     fs::write(&page, contents.split_once('\n').unwrap().1).unwrap();
     let blocked = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
@@ -288,7 +288,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
         let artifact = &graph["artifacts"][name];
         assert_eq!(artifact["kind"], "file");
         assert_eq!(artifact["path"], format!("{name}.md"));
-        assert_eq!(artifact["children"], json!({}));
+        assert_eq!(artifact["nested"], json!({}));
     }
     assert!(
         graph["relations"]
@@ -583,12 +583,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
     let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
-    let verify = session
-        .command(&repo, &signoff)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let verify = support::os::start(&mut session.command(&repo, &signoff));
     let verify = RunChild::new(verify, &session.root.path().join("state"), &repo);
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {

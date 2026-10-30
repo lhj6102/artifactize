@@ -48,9 +48,21 @@ impl Runs {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let place = |id: &str| {
             let artifact = artifacts.get(id)?;
-            Some(Place {
-                path: artifact.path.value()?.clone(),
-                file: artifact.kind.value() == Some(&crate::config::ArtifactKind::File),
+            let path = artifact.path.value()?;
+            Some(match artifact.kind.value() {
+                Some(crate::config::ArtifactKind::File) => Place {
+                    path: path.clone(),
+                    file: true,
+                },
+                // An aspect's path is its declaration's label in its folder.
+                Some(crate::config::ArtifactKind::Aspect) => Place {
+                    path: path.parent().unwrap_or(std::path::Path::new("")).to_owned(),
+                    file: false,
+                },
+                _ => Place {
+                    path: path.clone(),
+                    file: false,
+                },
             })
         };
         Self::of(builtin, command, &args, &place, owner)
@@ -72,7 +84,7 @@ impl Runs {
         let place = |id: &str| {
             let artifact = artifacts.get(id)?;
             Some(Place {
-                path: artifact.path.clone(),
+                path: artifact.referenced_path().to_owned(),
                 file: artifact.kind == crate::config::ArtifactKind::File,
             })
         };

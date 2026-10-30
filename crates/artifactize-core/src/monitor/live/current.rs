@@ -79,6 +79,8 @@ impl CurrentArtifact {
     pub fn text(&self) -> String {
         match (self.plan, self.runs) {
             (Plan::Run, 1) => "would run (1 eval)".into(),
+            // Without evals of its own, what its parts would do.
+            (plan, 0) => plan.word().into(),
             (Plan::Run, runs) => format!("would run ({runs} evals)"),
             (plan, _) => plan.word().into(),
         }
@@ -129,9 +131,11 @@ pub struct CurrentArtifact {
     pub state: ArtifactCondition,
     pub reason: String,
     pub evals: Vec<CurrentEval>,
+    /// The Artifacts it is made of directly, in name order.
+    pub parts: Vec<ArtifactName>,
 }
 
-/// `to`'s evals use `from`, lit by `from`'s plan.
+/// `to`'s evals use `from`, lit by `from`'s plan; a part is no edge but drawn in its whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurrentEdge {
     pub from: ArtifactName,
@@ -266,7 +270,16 @@ fn project(
     for eval in &status.evals {
         by_target.entry(&eval.target).or_default().push(eval);
     }
-    let artifacts: Vec<CurrentArtifact> = status
+    let mut parts: BTreeMap<&ArtifactName, Vec<ArtifactName>> = BTreeMap::new();
+    for relation in &declared.structure.relations {
+        if relation.kind == graph_structure::Edge::Part {
+            parts
+                .entry(&relation.target)
+                .or_default()
+                .push(relation.source.clone());
+        }
+    }
+    let mut artifacts: Vec<CurrentArtifact> = status
         .artifacts
         .iter()
         .map(|artifact| {
@@ -350,18 +363,44 @@ fn project(
                 state: artifact.state,
                 reason: artifact.reason.clone(),
                 evals,
+                parts: parts.remove(&artifact.id).unwrap_or_default(),
             }
         })
         .collect();
-    let plans: BTreeMap<&ArtifactName, Plan> = artifacts
+    let mut plans: BTreeMap<ArtifactName, Plan> = artifacts
         .iter()
-        .map(|artifact| (&artifact.name, artifact.plan))
+        .map(|artifact| (artifact.name.clone(), artifact.plan))
         .collect();
+    // Without evals of its own, an Artifact does what the first of its parts in plan order
+    // does; parts are acyclic, so passes over the wholes settle.
+    let wholes: Vec<usize> = (0..artifacts.len())
+        .filter(|&at| artifacts[at].evals.is_empty() && !artifacts[at].parts.is_empty())
+        .collect();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for &at in &wholes {
+            let artifact = &mut artifacts[at];
+            let plan = artifact
+                .parts
+                .iter()
+                .filter_map(|part| plans.get(part).copied())
+                .min()
+                .unwrap_or(Plan::Reuse);
+            if plan != artifact.plan {
+                artifact.plan = plan;
+                plans.insert(artifact.name.clone(), plan);
+                changed = true;
+            }
+        }
+    }
     let pairs: BTreeSet<(&ArtifactName, &ArtifactName)> = declared
         .structure
         .relations
         .iter()
-        .filter(|relation| relation.source != relation.target)
+        .filter(|relation| {
+            relation.source != relation.target && relation.kind != graph_structure::Edge::Part
+        })
         .map(|relation| (&relation.source, &relation.target))
         .collect();
     let edges = pairs
