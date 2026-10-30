@@ -1,6 +1,6 @@
 # Focus then sweep: verify를 반복하는 방법 {#focus-then-sweep-iterate-with-verify}
 
-코딩 어시스턴트가 RED eval을 고치면 수정한 Artifact가 바뀌므로, 그 Artifact를 읽는 eval은
+코딩 어시스턴트가 RED eval을 고치면 고친 Artifact의 내용이 달라지므로, 그 Artifact를 읽는 eval은
 GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마다 `verify --all`을 실행하면 반복할
 때마다 시간과 비용이 들지만, eval 하나를 겨냥한 수정이 다른 eval을 깨뜨리는 경우는 드뭅니다.
 **focus-then-sweep** 스킬은 어시스턴트가 고치고 있는 eval만 다시 실행하고, 나머지는 마지막에
@@ -45,9 +45,9 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
   `config graph ARTIFACT --impact`(MCP에서는 `impact`를 켠 `config_graph`)와 `status`로 그
   eval을 찾습니다. 순환에 속한 eval은 함께 실행합니다. Artifact를 선택하면 같은 순환에 속한
   Artifact의 eval도 함께 실행됩니다.
-- **방식 C: 매번 sweep**: 수정할 때마다 `verify --all`을 실행합니다. eval이 적거나 비용이
-  적을 때, 대부분의 eval이 읽는 것을 바꿨을 때, 여러 RED eval의 원인이 하나일 때처럼 focus로
-  아낄 것이 적을 때 씁니다.
+- **방식 C: 매번 sweep**: 수정할 때마다 `verify --all`을 실행합니다. focus로 절약할 수 있는 것이 적을 때
+  씁니다. eval이 적거나 비용이 적을 때, 대부분의 eval이 참조하는 입력을 바꿨을 때, 여러 RED eval의
+  원인이 하나일 때가 그렇습니다.
 
 선택자와 Run에 필요한 결과는 [Run](../features/run.md#verify-and-runs)에, `--speculate`가
 바꾸는 점은 [추측 실행](../features/run.md#speculation)에 있습니다.

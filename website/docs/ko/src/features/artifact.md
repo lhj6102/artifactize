@@ -200,7 +200,7 @@ parts = ["physics"]
 
 - **부분이 실패하면 그 부분으로 이루어진 Artifact도 실패합니다.** `fireball`이 RED인 동안
   `game`도 RED로 보이며, 부분의 부분까지 모든 부분과 자기 eval이 통과해야 `game`이 통과합니다.
-  자기 eval이 없는 Artifact는 따로 기다릴 자기 리뷰가 없습니다. UNREVIEWED를 포함해 부분의 상태를
+  자기 eval이 없는 Artifact에는 기다려야 할 리뷰가 따로 없습니다. UNREVIEWED를 포함해 부분의 상태를
   그대로 보여 주고, 부분이 모두 통과하면 통과합니다.
 - **Artifact를 선택하면 그 부분도 선택됩니다.** `verify game`은 `game`, `combat`, `fireball`,
   `physics`의 eval을 실행하거나 재사용합니다.
