@@ -143,7 +143,7 @@ Run은 artifactize가 관리합니다. 터미널을 닫거나, 연결을 끊거�
 [Run](../features/run.md)과 [스트리밍](mcp.md#streaming-and-focused-diagnosis)을 보세요.
 
 Arti는 verify 요청마다 [추측 실행](../features/run.md#speculation)을 켤 수 있습니다. 이번 Run에서 실행 대상으로 선택한 승인 요청은
-다른 eval의 실행을 막지 않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, scope에 해당 Artifact를 추가하거나
+다른 eval의 실행을 막지 않습니다. 선택 범위 밖의 승인은 다른 eval의 실행을 막으므로, 선택 범위에 해당 Artifact를 추가하거나
 선택 범위를 `{"kind": "all"}`로 넓히지 않으면 Run은 INCOMPLETE로 끝납니다. YELLOW는 **완전한 승인이 아니라** 사람의 승인이 아직 남아 있다는 뜻이며, 그 승인은 사람이 직접 제출해야 합니다.
 
 Arti는 각 결과를 다음과 같이 다룹니다.
