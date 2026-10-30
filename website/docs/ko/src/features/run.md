@@ -1,7 +1,7 @@
 # Run {#evaluation-run}
 
 `verify`는 선택한 eval을 리뷰하고 Run을 기록합니다. `status`는 eval을 실행하지 않고, 다음
-`verify`에서 각 eval을 실행할지, 기존 결과를 재사용할지, 대기시키거나 차단할지 예측합니다. `status`도 선언된
+`verify`에서 각 eval이 실행될지, 결과를 재사용할지, 대기하거나 차단될지를 예측합니다. `status`도 선언된
 fingerprint 스크립트는 실행할 수 있습니다.
 
 ## eval 실행 게이트 {#eval-execution-gates}
@@ -133,7 +133,7 @@ DEFERRED 승인은 거기에 합류한 요청까지 포함해 ERROR/SUPERSEDED�
 `--speculate`는 [요청별 verify 모드](../cli/index.md#verify-modes)이며, 기본으로 꺼져 있고 Run의 `modes`에
 저장됩니다. 같은 요청 키로 다시 제출하면 처음 선택을 그대로 씁니다.
 
-추측 실행을 사용하면 게이트 조건의 충족 여부가 정해지기 전에도 요청한 Runtime, Agent eval을 시작합니다. 이때도 `--jobs`, 백엔드 수용량, `--max-executions` 한도를 지킵니다. 승인은 추측 실행으로 요청하지 않습니다. 준비된 작업이 먼저 실행됩니다. 준비된 작업에 추측 실행 리뷰가 쓰고 있는 자리가 필요하면 그 리뷰를 중단했다가 나중에 다시 시작하며, 시작할 때마다 `--max-executions`로 정한 실행 횟수에 포함됩니다. 상위 eval이 RED나 ERROR가
+추측 실행을 사용하면 게이트 조건의 충족 여부가 정해지기 전에도 요청한 Runtime, Agent eval을 시작합니다. 이때도 `--jobs`, 백엔드 수용량, `--max-executions` 한도를 지킵니다. 승인은 추측 실행으로 요청하지 않습니다. 준비된 작업이 먼저 실행됩니다. 준비된 작업을 실행할 자리를 추측 실행 리뷰가 차지하고 있으면 그 리뷰를 중단하고 나중에 다시 시작합니다. 리뷰를 시작할 때마다 `--max-executions`의 실행 횟수에 포함됩니다. 상위 eval이 RED나 ERROR가
 되면 그 결과로 무효가 된 하위 작업만 바로 취소합니다. 취소 대상은 실패한 상위 eval에 의존하는 eval이며, 실패한 eval과 같은 Artifact에
 속하거나 같은 순환에 드는 eval은 제외합니다. 취소한 eval은 재사용할 수 있는 결과를 남기지 않고 BLOCKED로 표시합니다. 상위 eval이 GREEN이면 같은 파일을 대상으로 이미 만든 결과를 그대로 씁니다. 결과는 스케줄링이 끝난 뒤에, 끝까지 유효한 것만
 [팀 리뷰 저장소](../cli/review-store.md)에 공유합니다.

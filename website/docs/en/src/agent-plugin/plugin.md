@@ -1,10 +1,12 @@
 # Plugin for Claude Code and Codex
 
 A **plugin** is a package a coding assistant installs in one step. The `artifactize`
-plugin gives Claude Code and Codex two things together:
+plugin gives Claude Code and Codex these together:
 
 - the [Hey Arti](hey-arti.md) skill, the instructions that let your assistant shape
   and verify your project with artifactize;
+- the [focus-then-sweep](focus-then-sweep.md) skill, which tells your assistant how to
+  rerun verify while it fixes RED evals;
 - the [artifactize MCP server](mcp.md), the tools your assistant uses to inspect the
   project and start and follow verification Runs.
 
@@ -43,15 +45,16 @@ codex plugin add artifactize@artifactize
 Or run `/plugins` in Codex CLI and pick the `artifactize` marketplace.
 
 **Claude Code:** run `/reload-plugins` or start a new session, then check `/mcp`
-for the `artifactize` server. Ask in your own words, or invoke the skill as
-`/artifactize:hey-arti`. The server runs as `artifactize --repo <project> mcp`,
+for the `artifactize` server. Ask in your own words, or invoke a skill as
+`/artifactize:hey-arti` or `/artifactize:focus-then-sweep`. The server runs as `artifactize --repo <project> mcp`,
 where `<project>` is the directory the session started in.
 
 **Codex:** start a new Codex session in your project directory. The server runs as
 `artifactize mcp` in the plugin's folder; when a tool answers that no project is
-named, Hey Arti passes your session's project folder with each later call
+named, the skill passes your session's project folder with each later call
 ([how the server finds the project](mcp.md#which-project)). Ask in your own
-words, or mention the skill as `$artifactize:hey-arti`.
+words, or mention a skill as `$artifactize:hey-arti` or
+`$artifactize:focus-then-sweep`.
 
 ## Updates
 
@@ -67,5 +70,7 @@ auto-update for the marketplace in `/plugin`), or
 Other hosts, or a setup you manage yourself, can register the server by hand
 ([MCP setup](mcp.md#register-the-mcp-server)) and give the assistant
 [`SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/hey-arti/SKILL.md)
-as described in [Hey Arti](hey-arti.md). Do not install both the plugin and a manual
+as described in [Hey Arti](hey-arti.md), and the
+[focus-then-sweep `SKILL.md`](https://github.com/lhj6102/artifactize/blob/main/agent-plugin/skills/focus-then-sweep/SKILL.md)
+the same way. Do not install both the plugin and a manual
 registration of the same server in one host.

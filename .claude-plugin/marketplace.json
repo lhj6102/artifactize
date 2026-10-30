@@ -1,6 +1,6 @@
 {
   "name": "artifactize",
-  "description": "artifactize for coding agents: the Hey Arti skill and the artifactize MCP server.",
+  "description": "artifactize for coding agents: the Hey Arti and focus-then-sweep skills and the artifactize MCP server.",
   "owner": {
     "name": "Hyukjin LIM",
     "url": "https://github.com/lhj6102"
@@ -9,7 +9,7 @@
     {
       "name": "artifactize",
       "source": "./agent-plugin",
-      "description": "Hey Arti, artifactize's Forward Deployed Engineer, as a skill, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
+      "description": "Hey Arti, artifactize's Forward Deployed Engineer, and focus-then-sweep, how to iterate with verify while fixing RED evals, as skills, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
       "category": "development"
     }
   ]

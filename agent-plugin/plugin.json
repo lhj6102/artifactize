@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "artifactize",
-  "description": "Hey Arti, artifactize's Forward Deployed Engineer, as a skill, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
+  "description": "Hey Arti, artifactize's Forward Deployed Engineer, and focus-then-sweep, how to iterate with verify while fixing RED evals, as skills, and the artifactize MCP server for inspecting and verifying the project. Needs the artifactize program on PATH.",
   "author": {
     "name": "Hyukjin LIM",
     "url": "https://github.com/lhj6102"
@@ -15,7 +15,7 @@
       "interface": {
         "displayName": "artifactize",
         "shortDescription": "Shape and verify your project's reviews",
-        "longDescription": "Hey Arti helps you shape your project into Artifacts and evals, and the artifactize MCP server lets Codex inspect the project and start and follow verification Runs. Install the artifactize program first.",
+        "longDescription": "Hey Arti helps you shape your project into Artifacts and evals, focus-then-sweep guides how Codex reruns verify while it fixes RED evals, and the artifactize MCP server lets Codex inspect the project and start and follow verification Runs. Install the artifactize program first.",
         "developerName": "Hyukjin LIM",
         "category": "Developer Tools",
         "capabilities": ["Interactive", "Read", "Write"],
