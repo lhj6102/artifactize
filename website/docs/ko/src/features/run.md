@@ -15,7 +15,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
 eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact와 그
 [부분](artifact.md#composition)의 eval을 실행해 달라는 뜻입니다. `verify game`은 `combat`도
-함께 다룹니다. Artifact 사이의 참조를 따라가다 처음 Artifact로 돌아오는 구조를 **순환**이라고 합니다. 순환에 속한
+함께 다룹니다. Artifact 사이의 참조나 부분 관계를 따라가다 처음 Artifact로 돌아오는 구조를 **순환**이라고 합니다. 순환에 속한
 Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는 순환에 속한 Artifact의 eval도 함께
 실행합니다. eval 선택자는 그 eval 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 eval이 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이
 **의존성 범위**이고, 여기서 반드시 확보해야 하는 결과가 **최종 검증 요건**입니다. 이번 Run에서 실행해 달라고 하지
@@ -24,7 +24,8 @@ Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는
 `--recursive`는 선택한 Artifact의 다른 eval을 포함해 그 묶음의 모든 eval을 설정 순서대로
 선택합니다. `--all`은
 이미 모든 eval을 선택하며, eval이 없는 대상도 최종 검증 요건에 포함합니다. 파일 Artifact 선택자는 그 파일의 eval만
-선택하며, 그 파일이 들어 있는 폴더의 eval은 선택하지 않습니다.
+선택하며, 그 파일이 들어 있는 폴더의 eval은 선택하지 않습니다. 다만 그 폴더가 같은 순환에 들면 다릅니다.
+파일의 eval이 자기를 담은 폴더를 참조하면, 그 폴더의 eval도 순환에 속한 Artifact의 eval로 함께 실행됩니다.
 
 예를 들어 `code/tests`가 `plan`에 의존하고, `plan`에는 사람의 승인 `plan/signoff`가 필요하다고 가정합니다. `verify --eval code/tests`는 테스트를 선택하지만, 그 승인이 아직 유효하지 않으면 GREEN으로
 끝날 수 없습니다. `verify --eval code/tests --recursive`는 `code/style`과 `plan/signoff` 같은
