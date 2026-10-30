@@ -19,9 +19,12 @@ Your assistant picks one per task; Plan A is the default.
 
 - **Plan A: focus first, sweep last.**
   - **Focus.** It fixes one RED eval and reruns only that eval
-    (`artifactize verify --eval app/review --speculate --wait`, or `verify_start` with an
-    `eval` scope) until it is GREEN, then takes the next RED eval. Evals the fix made stale
-    are not rerun on each iteration. Such a Run usually ends INCOMPLETE (exit 4) because
+    (`artifactize verify --eval app/review --speculate --wait`, or `verify_start` with the
+    scope `{"kind": "eval", "evalId": "app/review"}` and `speculate: true`) until it is
+    GREEN, then takes the next RED eval. RED evals whose fixes do not touch each other can
+    share one focus Run (`--evals app/review,docs/matches-app`, or the scope
+    `{"kind": "evals", "evalIds": [...]}`). Evals the fix made stale are not rerun on each
+    iteration. Such a Run usually ends INCOMPLETE (exit 4) because
     those stale evals are still unmet; your assistant reads the focused eval's own verdict.
     `--speculate` lets the eval run even when an input it references went stale. To redo a
     RED sign-off it selects the eval's Artifact instead, because a person is asked only

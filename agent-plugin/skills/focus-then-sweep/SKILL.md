@@ -21,8 +21,10 @@ project, pass `project`, the session's absolute project folder, with every call.
 
 ## Plan A: focus first, sweep last (the default)
 
-**Focus.** Take one RED eval, read its findings (`verify_result`, or `artifactize run
-show RUN_ID --json`) and fix the Artifact it evaluates. Then rerun only that eval:
+**Focus.** Take one RED eval and read its findings: `verify_result` names the failing
+evals and their request IDs, `request_show` returns the reviewer's reported result and
+`request_logs` a runtime eval's output (CLI: `artifactize run show RUN_ID --json`). Fix
+the Artifact the eval evaluates, then rerun only that eval:
 
 - MCP: `verify_start` with `scope` `{"kind": "eval", "evalId": "app/review"}` and
   `speculate: true`, then `verify_wait` and `verify_result`.

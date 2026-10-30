@@ -33,8 +33,8 @@
 
 `read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 안에 선언된 폴더를
 거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 폴더 안의 `rules` 폴더가 `spec`으로 선언되어 있고
-eval이 `{spec}`도 참조할 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 소유
-정보 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`를
+eval이 `{spec}`도 참조할 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 실제로 읽은
+Artifact를 나타내는 정보 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`를
 돌려줍니다. `path`는 실제 머신 경로가 아니라 요청한 논리적 경로 그대로입니다. list의 최상위
 `artifactId`도 마찬가지로 선언한 Artifact를 가리킵니다. 항목 종류는 `file`, `directory`,
 `symlink`, `other`입니다. glob/grep은 검색한 논리적 `path`를 돌려주며, grep이 찾은 줄 번호는

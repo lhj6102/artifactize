@@ -231,7 +231,7 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 이름이 `index`인 파일에는 사이드카를 둘 수 없습니다. `.artf` 파일은 선언이며 대상이 되지
 않습니다.
 
-파일 Artifact는 자기를 둘러싼 가장 가까운 폴더 Artifact의 [부분](artifact.md#composition)입니다.
+파일 Artifact는 가장 가까운 상위 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 그 폴더 Artifact를 선택하면 파일 Artifact도 함께 선택되고, 파일 Artifact가 통과해야 폴더 Artifact도
 통과합니다. 다만 부분이라고 입력이 되지는 않습니다. 폴더 Artifact의 eval이 이름을 적지 않으면 그
 파일 Artifact를 읽지 않으며, 재사용 키에도 그 fingerprint가 들어가지 않습니다. 하위 폴더에

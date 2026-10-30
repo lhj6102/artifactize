@@ -18,9 +18,12 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
 어시스턴트는 작업마다 하나를 고르며, 기본은 방식 A입니다.
 
 - **방식 A: 먼저 focus, 마지막에 sweep**
-  - **Focus**: RED eval 하나를 고친 뒤 그 eval만 다시 실행합니다
-    (`artifactize verify --eval app/review --speculate --wait`, 또는 `eval` scope로 `verify_start`).
-    GREEN이 되면 다음 RED eval로 넘어갑니다. 수정 때문에 다시 리뷰해야 하는 eval은 반복할
+  - **Focus**: RED eval 하나를 고친 뒤 GREEN이 될 때까지 그 eval만 다시 실행하고
+    (`artifactize verify --eval app/review --speculate --wait`, 또는 scope
+    `{"kind": "eval", "evalId": "app/review"}`와 `speculate: true`로 `verify_start`),
+    그다음 RED eval로 넘어갑니다. 서로 겹치지 않는 수정이라면 여러 RED eval을 Run 하나에서
+    함께 focus할 수 있습니다(`--evals app/review,docs/matches-app`, 또는 scope
+    `{"kind": "evals", "evalIds": [...]}`). 수정 때문에 다시 리뷰해야 하는 eval은 반복할
     때마다 실행하지 않습니다. 그 eval들의 결과가 아직 없으므로 이런 Run은 보통
     INCOMPLETE(종료 코드 4)로 끝나고, 어시스턴트는 focus한 eval의 판정만 봅니다.
     `--speculate`를 붙이면 eval이 참조하는 입력이 수정 때문에 다시 리뷰 대상이 되었어도 그

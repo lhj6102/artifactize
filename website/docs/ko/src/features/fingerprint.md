@@ -59,7 +59,7 @@ eval은 대상 Artifact와, eval이 지시문이나 Runtime 인자에서 이름�
 대상 폴더 안에 선언된 폴더 Artifact를 포함해 대상의 [부분](artifact.md#composition)은 eval이 이름을
 적지 않는 한 키에 들어가지 않습니다.
 
-artifactize는 그보다 먼 연결은 살피지 않습니다. 두 단계 떨어진 Artifact의 변경을 반영할지는
+artifactize는 그보다 더 이어지는 의존 관계까지 추적하지 않습니다. 두 단계 떨어진 Artifact의 변경을 반영할지는
 fingerprint를 어떻게 정하느냐에 달려 있습니다. fingerprint 스크립트는 인자에서 이름으로 가리킨
 Artifact의 파일이면 무엇이든 읽을 수 있습니다. 그래서 eval의 기준이 바뀌거나, 대상이나 포함한
 Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행합니다.
@@ -100,7 +100,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 리뷰에 `--profile fast` 같은 Agent 변형으로 만든 결과를 재사용할 수 있고, 그 반대도 됩니다.
 명령이나 인자가 다른 Runtime 변형은 서로 다른 재사용 키로 구분되며, 다른 입력을 가리킬 수도 있습니다.
 
-재사용한 결과에도 그 결과를 만든 명령이나 모델, 그리고 결과를 가져온 곳이 남습니다. `run show`에서
+재사용한 결과에도 원래 결과를 만든 명령이나 모델, 결과 출처가 기록됩니다. `run show`에서
 둘을 어디서 보는지는 [verify와 Run](run.md#verify-and-runs)에 있습니다.
 
 결과를 재사용하기 전에 artifactize는 리뷰 범위에 포함된 대상 파일을 다시 확인합니다. 대상은 심볼릭 링크를 거치지

@@ -24,7 +24,7 @@ payload.instruction = "Check that every link in the docs resolves."
 나머지 결과는 그대로 재사용합니다. 같은 저장소나 같은 폴더에 있다는 이유만으로 한 Artifact가
 다른 Artifact의 eval 입력이 되지는 않습니다.
 
-부분은 이와 별개인 관계를 하나 더 만듭니다. 바로 [구성](#composition)입니다. `combat`이
+부분 관계는 입력 관계와 별개이며, 이를 [구성](#composition)이라고 합니다. `combat`이
 `game`의 부분이면 `combat`이 실패하는 동안 `game`은 통과하지 못합니다. 그렇다고 `game`의
 eval이 `combat`을 읽지는 않으며, 읽으려면 참조해야 합니다.
 
@@ -162,7 +162,7 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 ## 구성 {#composition}
 
 Artifact는 다른 Artifact, 곧 **부분**(part)으로 이루어질 수 있습니다. 폴더 Artifact의 폴더 안에
-선언한 Artifact는 그것을 둘러싼 가장 가까운 폴더 Artifact의 부분입니다. 자기 `index.artf`가 있는
+선언한 Artifact는 가장 가까운 상위 폴더 Artifact의 부분입니다. 자기 `index.artf`가 있는
 하위 폴더, 그 옆에 선언한 파일, aspect가 모두 그렇습니다. 다른 곳에 있는 Artifact는 `parts`에
 적어 부분으로 더할 수 있습니다.
 
