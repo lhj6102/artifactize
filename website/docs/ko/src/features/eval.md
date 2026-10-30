@@ -27,9 +27,9 @@ Artifact가 통과 조건을 충족하지 못했다는 뜻입니다. 어느 종�
 
 실제 입력만 선언하세요. eval은 대상 Artifact와, 지시문이나 Runtime 인자가 가리키는 Artifact만 볼 수
 있습니다. 예를 들어 지시문이 `Check {app} against {spec}.`인 `app/review`는 `app`과 `spec`을 읽고
-그 도구를 쓸 수 있습니다. 하지만 `app`의 [구성 요소](artifact.md#composition)인 `app::ui`, `app`
-폴더 안에 선언된 폴더 Artifact, `spec`의 eval이 참조하는 Artifact에는 접근할 수 없습니다.
-`app::ui`도 읽으려면 `Check {app} and {app::ui} against {spec}.`처럼 이름을 적으세요. 도구 인자에
+그 도구를 쓸 수 있습니다. 하지만 `app` 폴더 안에 선언된 폴더 Artifact `ui`처럼 `app`의
+[부분](artifact.md#composition)인 Artifact나, `spec`의 eval이 참조하는 Artifact에는 접근할 수 없습니다.
+`ui`도 읽으려면 `Check {app} and {ui} against {spec}.`처럼 이름을 적으세요. 도구 인자에
 Artifact를 적는다고 입력이 늘어나지는 않습니다.
 
 eval의 도구가 읽을 수 있는 Artifact는 곧 재사용 여부를 정하는 Artifact([재사용 키](fingerprint.md#the-reuse-key))이자

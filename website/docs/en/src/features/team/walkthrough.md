@@ -62,8 +62,8 @@ artifactize verify --all --wait
 
 ```text
   guide/terms [run-FBh4xF-1]: GREEN
-  guide::intro/heading [run-FBh4xF-2]: GREEN
-  guide::usage/heading [run-FBh4xF-3]: GREEN
+  intro/heading [run-FBh4xF-2]: GREEN
+  usage/heading [run-FBh4xF-3]: GREEN
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
@@ -90,8 +90,8 @@ artifactize verify --all --wait
 ```text
 Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
   guide/terms [run-MxxJJJ-1]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  guide::intro/heading [run-MxxJJJ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  guide::usage/heading [run-MxxJJJ-3]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  intro/heading [run-MxxJJJ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  usage/heading [run-MxxJJJ-3]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
@@ -114,14 +114,14 @@ artifactize remote push
 
 ```text
   guide/terms [run-PzLGma-1]: GREEN
-  guide::intro/heading [run-PzLGma-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  guide::usage/heading [run-PzLGma-3]: GREEN
+  intro/heading [run-PzLGma-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  usage/heading [run-PzLGma-3]: GREEN
 Summary: executed 2 (runtime 2, agent 0, human 0), reused 1 (runtime 1, agent 0, human 0)
 Would push 2, already in the store 0, skipped 0.
 Pushed 2, already in the store 0, skipped 0.
 ```
 
-Only `guide::usage` and `guide`, whose `guide/terms` key covers `guide::usage`, which it
+Only `usage` and `guide`, whose `guide/terms` key covers `usage`, which it
 names, were reviewed again. With the store unreachable instead of `off`, `verify` would warn
 once and review locally in the same way. `remote push` sends each key's latest
 local result that the store does not have yet. It never sends mirrors, and it skips
@@ -148,8 +148,8 @@ artifactize verify --all --wait --reuse-only agent,human
 
 ```text
   guide/terms [run-GpqdSQ-1]: GREEN (reused from remote: bob@laptop, run-PzLGma)
-  guide::intro/heading [run-GpqdSQ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
-  guide::usage/heading [run-GpqdSQ-3]: GREEN (reused from remote: bob@laptop, run-PzLGma)
+  intro/heading [run-GpqdSQ-2]: GREEN (reused from remote: alice@laptop, run-FBh4xF)
+  usage/heading [run-GpqdSQ-3]: GREEN (reused from remote: bob@laptop, run-PzLGma)
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 

@@ -524,10 +524,6 @@ export type GraphNode = {
 	/**  The Artifact row's tree id, `a:<artifact>`. */
 	id: string,
 	name: string,
-	/**  The space of a `space::name`, which the graph draws its Artifacts together in. */
-	space: string | null,
-	/**  What the node shows: the name without its space. */
-	label: string,
 	light: Light,
 	/**  Under the name: on a Current what verify would do, `would run (2 evals)`. */
 	note: string | null,

@@ -14,7 +14,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 
 `verify`는 [선택자](../cli/index.md#command-reference)를 정확히 하나 받습니다. Artifact,
 eval(`green/check`), `--all` 중 하나입니다. Artifact 선택자는 그 Artifact와 그
-[구성 요소](artifact.md#composition)의 eval을 실행해 달라는 뜻입니다. `verify game`은 `game::combat`도
+[부분](artifact.md#composition)의 eval을 실행해 달라는 뜻입니다. `verify game`은 `combat`도
 함께 다룹니다. Artifact 사이의 참조를 따라가다 처음 Artifact로 돌아오는 구조를 **순환**이라고 합니다. 순환에 속한
 Artifact의 eval은 선택한 Artifact를 리뷰하므로, Artifact 선택자는 순환에 속한 Artifact의 eval도 함께
 실행합니다. eval 선택자는 그 eval 하나만 실행해 달라는 뜻입니다. 그래도 Run이 GREEN으로 끝나려면 그 eval이 의존하는 모든 대상의 유효한 결과가 필요하며, 이를 확인하려고 의존 관계를 필요한 범위까지 따라갑니다. 이렇게 이어진 묶음이

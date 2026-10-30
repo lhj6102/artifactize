@@ -1,5 +1,5 @@
 //! Runtime references are Eval dependencies, never Artifact-wide execution gates, and
-//! constituents are no dependencies at all.
+//! parts are no dependencies at all.
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use artifactize_core::{
@@ -131,8 +131,8 @@ fn instructions_and_argv_gate_only_the_eval_that_references_the_input() {
     }
 }
 
-/// `app::lib`, nested in `app`'s folder, is a constituent of `app`; `consumer` references
-/// `app`. With `cycle`, the constituent references its parent back.
+/// `lib`, nested in `app`'s folder, is a part of `app`; `consumer` references
+/// `app`. With `cycle`, the part references its parent back.
 fn parent_with_child(fixture: &Fixture, cycle: bool, child_green: bool) {
     fixture.declare("app", vec![runtime("check", "Inspect the app.", true)]);
     let instruction = if cycle {
@@ -142,22 +142,22 @@ fn parent_with_child(fixture: &Fixture, cycle: bool, child_green: bool) {
     };
     fixture.declare_at(
         "app/lib",
-        "app::lib",
+        "lib",
         vec![runtime("check", instruction, child_green)],
     );
     fixture.declare("consumer", vec![runtime("check", "Check {app}.", true)]);
 }
 
 #[test]
-fn a_red_constituent_blocks_no_eval_but_keeps_its_parent_from_passing() {
+fn a_red_part_blocks_no_eval_but_keeps_its_parent_from_passing() {
     let fixture = Fixture::new();
     parent_with_child(&fixture, false, true);
     let config = read_workspace_config(&fixture.repo).unwrap();
     let graph = Graph::new(&config).unwrap();
-    // A constituent is no input: the parent's eval does not wait for it.
+    // A part is no input: the parent's eval does not wait for it.
     let waiting = graph.evaluate(&BTreeMap::new());
     assert!(waiting.evals["app/check"].can_execute());
-    assert!(waiting.evals["app::lib/check"].can_execute());
+    assert!(waiting.evals["lib/check"].can_execute());
     assert_eq!(waiting.evals["consumer/check"].unmet_gates, ["app/check"]);
     let evaluation = graph.evaluate(&BTreeMap::from([
         (
@@ -165,7 +165,7 @@ fn a_red_constituent_blocks_no_eval_but_keeps_its_parent_from_passing() {
             Evidence::Current(Verdict::Green),
         ),
         (
-            "app::lib/check".parse().unwrap(),
+            "lib/check".parse().unwrap(),
             Evidence::Current(Verdict::Red),
         ),
     ]));
@@ -176,23 +176,23 @@ fn a_red_constituent_blocks_no_eval_but_keeps_its_parent_from_passing() {
 }
 
 #[test]
-fn a_constituent_that_references_its_parent_waits_for_its_parent_evals() {
+fn a_part_that_references_its_parent_waits_for_its_parent_evals() {
     let fixture = Fixture::new();
     parent_with_child(&fixture, true, true);
     let config = read_workspace_config(&fixture.repo).unwrap();
     let graph = Graph::new(&config).unwrap();
     let waiting = graph.evaluate(&BTreeMap::new());
     assert!(waiting.evals["app/check"].can_execute());
-    assert_eq!(waiting.evals["app::lib/check"].unmet_gates, ["app/check"]);
+    assert_eq!(waiting.evals["lib/check"].unmet_gates, ["app/check"]);
     let evaluation = graph.evaluate(&BTreeMap::from([(
-        "app::lib/check".parse().unwrap(),
+        "lib/check".parse().unwrap(),
         Evidence::Current(Verdict::Red),
     )]));
     assert!(evaluation.evals["app/check"].can_execute());
 }
 
 #[tokio::test]
-async fn verify_and_the_saved_run_view_run_a_parent_beside_its_red_constituent() {
+async fn verify_and_the_saved_run_view_run_a_parent_beside_its_red_part() {
     for speculate in [false, true] {
         for cycle in [false, true] {
             let fixture = Fixture::new();
@@ -203,7 +203,7 @@ async fn verify_and_the_saved_run_view_run_a_parent_beside_its_red_constituent()
                 statuses(&run),
                 BTreeMap::from([
                     ("app/check", "GREEN"),
-                    ("app::lib/check", "RED"),
+                    ("lib/check", "RED"),
                     ("consumer/check", "GREEN"),
                 ]),
                 "{context}"
@@ -222,14 +222,14 @@ async fn verify_and_the_saved_run_view_run_a_parent_beside_its_red_constituent()
                 matches!(parent, monitor::Kind::Eval(monitor::EvalView::Done(_))),
                 "{context}: {parent:?}"
             );
-            // The parent's row fails with its constituent and names it.
+            // The parent's row fails with its part and names it.
             let app = tree
                 .iter()
                 .find(|node| Target::from(&node.id) == Target::Artifact("app".parse().unwrap()))
                 .unwrap();
             assert_eq!(app.glyph, "✗", "{context}");
             assert!(
-                app.line().contains("constituents: app::lib"),
+                app.line().contains("parts: lib"),
                 "{context}: {}",
                 app.line()
             );

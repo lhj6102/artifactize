@@ -1,4 +1,4 @@
-name = "rules::code-style"
+name = "rules-code-style"
 
 [views.agent_tools]
 
@@ -16,7 +16,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open DEV-CODING.md of {rules::code-style} with the open tool. Submit GREEN with approved: true when every item \
+Open DEV-CODING.md of {rules-code-style} with the open tool. Submit GREEN with approved: true when every item \
 is one the codebase should follow; otherwise submit RED and list the items to change."""
 
 [evals.approved.pass_schema]

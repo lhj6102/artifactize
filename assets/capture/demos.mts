@@ -450,6 +450,36 @@ function checkout(ref: string, tree: string): void {
     });
     if (converted !== text) writeFileSync(file, converted);
   }
+  // 0.17–0.18 allowed `space::name`; a name is one identifier now, `space-name`.
+  for (const file of files(tree, (name) => name.endsWith(".artf"))) {
+    const text = readFileSync(file, "utf8");
+    const spaced = /^(name = ")([^"]*)"/gm;
+    const converted = text
+      .replace(spaced, (_, start: string, name: string) => `${start}${name.replaceAll("::", "-")}"`)
+      .replace(/\{([A-Za-z0-9][A-Za-z0-9_-]*(?:::[A-Za-z0-9][A-Za-z0-9_-]*)+)\}/g, (_, name: string) => `{${name.replaceAll("::", "-")}}`);
+    if (converted !== text) writeFileSync(file, converted);
+  }
+  // A reference reached through a folder Artifact into one nested in it; that file is the
+  // nested Artifact's now, so the reference names it.
+  const folders = new Map<string, string>();
+  for (const file of files(tree, (name) => name === "index.artf")) {
+    const name = /^name = "([^"]*)"/m.exec(readFileSync(file, "utf8"))?.[1];
+    if (name) folders.set(name, dirname(file));
+  }
+  const owners = [...folders].sort(([, one], [, other]) => other.length - one.length);
+  for (const file of files(tree, (name) => name.endsWith(".artf"))) {
+    const text = readFileSync(file, "utf8");
+    const converted = text.replace(/\{([A-Za-z0-9][A-Za-z0-9_-]*)\}\/([^"\s}]+)/g, (whole, name: string, path: string) => {
+      const folder = folders.get(name);
+      if (!folder) return whole;
+      const target = join(folder, path);
+      const [owner, root] = owners.find(([, root]) => !relative(root, target).startsWith("..")) ?? [name, folder];
+      if (owner === name) return whole;
+      const rest = relative(root, target);
+      return rest ? `{${owner}}/${rest.split("\\").join("/")}` : `{${owner}}`;
+    });
+    if (converted !== text) writeFileSync(file, converted);
+  }
 }
 
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
@@ -480,7 +510,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       }
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
       // edge for every relation between two of them, as the Current draws them. The graph drawn
-      // is this release's only once its Artifact nodes (not its spaces' regions) and edges are
+      // is this release's only once its Artifact nodes and edges are
       // exactly these, never the previous one's.
       const graph = JSON.parse(run(candidate.cli, ["--repo", fixture.repo, "--state-dir", fixture.state, "config", "graph", "--json"],
         { env: e2e.environment(fixture) })) as { artifacts: Record<string, unknown>; relations: { source: string; target: string }[] };
@@ -497,8 +527,8 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
       const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
-      // Complete and still: exactly this release's Artifact nodes and edges, every node (space
-      // regions included) drawn inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
+      // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
+      // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
       // over 300 ms.
       const drawn = (inside: boolean) => browser.waitUntil(() => browser.executeAsync<boolean, [boolean, string]>((inside, expected, done) => {
         const shown = () => {

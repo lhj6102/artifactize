@@ -6,7 +6,7 @@
 //! with it are evaluated together, so their evals never gate it.
 //!
 //! An eval depends on the Artifacts it references, and on nothing else: composition makes a
-//! constituent's verdict part of its parent's, but no eval of the parent reads it unless it
+//! part's verdict part of its parent's, but no eval of the parent reads it unless it
 //! references it. Cycles are the Artifact cycles these references form.
 //!
 //! A Human eval also waits for every non-Human eval of its own Artifact: a person signs off

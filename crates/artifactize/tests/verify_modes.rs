@@ -617,10 +617,10 @@ async fn c2_the_idle_grace_holds_a_run_with_only_signoffs_left_open() {
 }
 
 #[tokio::test]
-async fn c2_a_parent_without_evals_settles_yellow_while_its_constituent_awaits_a_signoff() {
+async fn c2_a_parent_without_evals_settles_yellow_while_its_part_awaits_a_signoff() {
     let fixture = Fixture::new();
     fixture.declare("notes", Vec::new());
-    fixture.declare_at("notes/draft", "notes::draft", vec![human_eval(&[])]);
+    fixture.declare_at("notes/draft", "draft", vec![human_eval(&[])]);
     let run = fixture.submit(&[], None);
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Yellow);
 }
@@ -1066,13 +1066,13 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
 }
 
 #[tokio::test]
-async fn c4_a_parent_runs_beside_its_constituent_and_fails_with_it() {
+async fn c4_a_parent_runs_beside_its_part_and_fails_with_it() {
     for modes in [&["--jobs", "2"][..], &["--speculate", "--jobs", "2"]] {
         let fixture = Fixture::new();
         fixture.declare("app", vec![fixture.runtime("check", &[])]);
-        fixture.declare_at("app/lib", "app::lib", vec![fixture.runtime("check", &[])]);
+        fixture.declare_at("app/lib", "lib", vec![fixture.runtime("check", &[])]);
         let run = fixture.submit(modes, None);
-        // A constituent is no input: both evals run at once.
+        // A part is no input: both evals run at once.
         fixture
             .until(&run, |_| {
                 fixture.ready("app/lib", "check") && fixture.ready("app", "check")
@@ -1087,10 +1087,6 @@ async fn c4_a_parent_runs_beside_its_constituent_and_fails_with_it() {
             RequestStatus::Green,
             "{modes:?}"
         );
-        assert_eq!(
-            status(&ended, "app::lib/check"),
-            RequestStatus::Red,
-            "{modes:?}"
-        );
+        assert_eq!(status(&ended, "lib/check"), RequestStatus::Red, "{modes:?}");
     }
 }

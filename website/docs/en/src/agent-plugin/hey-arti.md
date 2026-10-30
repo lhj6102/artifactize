@@ -72,14 +72,17 @@ When shaping a new project, it:
 - Cut Artifacts where work is edited and judged independently, each with a concrete
   obligation. Avoid one review over the whole repository.
 - An eval names each input it really uses as `{name}`; sharing a repository is not a
-  dependency, and a command does not add the files it reads. A constituent such as
-  `app::ui` is part of `app`, yet no input of `app`'s evals unless they name it.
-- Name a part `whole::part` when the whole cannot pass while the part fails
-  ([composition](../features/artifact.md#composition)): the part's failure fails the
+  dependency, and a command does not add the files it reads. A part such as
+  `ui` in `app`'s folder makes up `app`, yet is no input of `app`'s evals unless they name it.
+- Make an Artifact a part of a whole when the whole cannot pass while the part fails
+  ([composition](../features/artifact.md#composition)): nest its folder in the whole's
+  folder, or list it in the whole's `parts` when it lives elsewhere or is shared by
+  several wholes. The part's failure fails the
   whole, and `verify whole` covers the part too. Each part checks what it owns, and the
   whole checks only how its parts work together, naming the parts its evals use. A part
-  that is not a folder of its own is an [aspect](../features/declarations.md#aspects)
-  that selects its files.
+  that is one file is a [file Artifact](../features/declarations.md#file-artifacts); one
+  whose files lie spread in a larger folder is an
+  [aspect](../features/declarations.md#aspects) that selects them.
 - One obligation per eval. Use a runtime eval when a command can check it, an
   [Agent eval](../features/agent.md) when it needs judgment, and a
   [Human eval](../features/human.md) only where a person must add judgment or

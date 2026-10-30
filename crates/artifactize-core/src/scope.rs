@@ -33,8 +33,9 @@ pub struct Relation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RelationKind {
-    /// The source is a constituent of the target, by name.
-    Child,
+    /// The source is a part of the target: its folder holds it, or the target's `parts`
+    /// names it.
+    Part,
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: crate::config::EvalId,
@@ -150,7 +151,7 @@ fn nested_path(
 }
 
 /// Exactly the given Artifacts. Neither composition nor a referenced Artifact's Eval
-/// instructions grant access: a path into a constituent or a nested folder Artifact needs a
+/// instructions grant access: a path into a part or a nested folder Artifact needs a
 /// reference of its own, so that what a review reads is what its reuse key covers.
 pub fn artifact_scope<'a>(
     config: &'a RepoConfig,
@@ -561,17 +562,49 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         eval.references = references;
         eval.deps = deps;
     }
-    // A name's nearest declared leading name composes it: `game` composes `game::combat`.
-    relations.extend(config.artifacts.keys().filter_map(|id| {
-        config.parent(id).map(|parent| Relation {
-            source: id.clone(),
-            target: parent.clone(),
-            kind: RelationKind::Child,
-        })
-    }));
+    for artifact in config.artifacts.values() {
+        for part in &artifact.parts {
+            let error = |message: String| {
+                ConfigError::declaration(
+                    config.root.join(artifact.declaration_path()),
+                    &["parts"],
+                    message,
+                )
+            };
+            match config.artifacts.get(part) {
+                None => return Err(error(format!("Unknown Artifact {part}."))),
+                Some(part) if part.kind == crate::config::ArtifactKind::Graph => {
+                    return Err(error(format!(
+                        "The graph Artifact {} is a part of nothing.",
+                        part.name
+                    )));
+                }
+                Some(_) => relations.push(Relation {
+                    source: part.clone(),
+                    target: artifact.name.clone(),
+                    kind: RelationKind::Part,
+                }),
+            }
+        }
+    }
+    parts_acyclic(config)?;
     config.relations = relations;
     human::validate_references(config)?;
     crate::graph::Graph::new(config).map_err(|error| ConfigError::new(&config.root, error))?;
+    Ok(())
+}
+
+/// Nothing is a part of itself, however many parts lie between.
+fn parts_acyclic(config: &RepoConfig) -> Result<(), ConfigError> {
+    for artifact in config.artifacts.values() {
+        if config.descendants(&artifact.name).contains(&&artifact.name) {
+            return Err(ConfigError::declaration(
+                config.root.join(artifact.declaration_path()),
+                &["parts"],
+                format!("{} is a part of itself through its parts.", artifact.name),
+            ));
+        }
+    }
     Ok(())
 }
 

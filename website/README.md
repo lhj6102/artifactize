@@ -79,7 +79,7 @@ writes one page per language. An element with `data-locale="en"` appears only on
 page and one with `data-locale="ko"` only on the Korean page; elements without it appear on
 both. On the Korean page, `data-ko-ATTR="value"` gives the element's `ATTR` that value, for
 example `data-ko-href` or `data-ko-alt`. Put the Korean element right after its English one
-and change both together; the `docs::landing` Artifact's `translates-ko` eval compares them. The words
+and change both together; the `docs-landing` Artifact's `translates-ko` eval compares them. The words
 `site.js` writes come from its table for the page's `<html lang>`. The project sentence "Build together on an Artifact Graph." and the scroll story's graphic
 stay English; the board, the privacy page and `404.html` are English only.
 
@@ -102,7 +102,7 @@ of each book; no generated copies are committed under `landing/` or `docs/theme/
 ```sh
 python3 assets/brand/build-icons.py
 python3 assets/brand/build-icons.py --check
-artifactize verify media::brand --recursive
+artifactize verify media-brand --recursive
 ```
 
 Install the tools in the user's `python3` environment first: CairoSVG >=2.8,
@@ -113,7 +113,7 @@ missing tools clearly; artifactize's private HOME may hide `pip --user` modules.
 The committed images use CairoSVG 2.8.2 and Pillow 12.1.1; after a renderer upgrade,
 regenerate and commit the outputs if the byte check reports drift.
 
-The `media::brand-icon/approved` Human eval owns artwork approval; `media::brand/generated`
+The `media-brand-icon/approved` Human eval owns artwork approval; `media-brand/generated`
 waits for it and checks every output in memory without modifying files. The folder
 uses its default artifactsum, including the source artwork and all outputs.
 This is the brand drift check; there is no separate brand CI. The Website workflow

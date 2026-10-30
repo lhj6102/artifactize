@@ -162,7 +162,7 @@ pub(super) struct Index<'a> {
     /// Artifact → its cycle peers (same component), by name.
     pub peers: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
     /// Artifact → the Artifacts it is directly composed of.
-    pub constituents: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
+    pub parts: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
     pub cyclic: BTreeSet<&'a ArtifactName>,
 }
 
@@ -290,7 +290,7 @@ impl<'a> Index<'a> {
             execution_order,
             targets,
             peers,
-            constituents: saved.constituents(),
+            parts: saved.parts(),
             cyclic,
         }
     }
@@ -636,7 +636,7 @@ impl<'a> States<'a> {
     }
 
     /// The Artifact's completion from its eval rows; done rows whose own gates are unmet
-    /// do not complete it. A constituent that is not complete keeps its parent from it too.
+    /// do not complete it. A part that is not complete keeps its parent from it too.
     pub fn completion(&self, artifact: &ArtifactName) -> Completion {
         if let Some(completion) = self.completions.borrow().get(artifact) {
             return *completion;
@@ -644,11 +644,11 @@ impl<'a> States<'a> {
         let own = self.own_completion(artifact);
         let completion = self
             .index
-            .constituents
+            .parts
             .get(artifact)
             .into_iter()
             .flatten()
-            .map(|constituent| self.completion(constituent))
+            .map(|part| self.completion(part))
             .chain([own])
             .min_by_key(|completion| match completion {
                 Completion::Failed { verdict } => (completion.rank(), *verdict),

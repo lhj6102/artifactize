@@ -1,4 +1,4 @@
-name = "agent::harness"
+name = "agent-harness"
 tags = ["type:harness"]
 
 [views.agent_tools]
@@ -7,8 +7,8 @@ read = { builtin = "read" }
 
 [evals.deterministic]
 title = "The fixture driver checks pass without a live builder"
-profile = { kind = "runtime", command = "python3", args = ["-I", "{agent::harness}/driver.py", "check"], timeout_ms = 180000 }
-payload.instruction = "Run deterministic fixture, private materialization, live-run cleanup and canonical TOML example checks for {agent::hey-arti}. These tests do not prove live skill quality."
+profile = { kind = "runtime", command = "python3", args = ["-I", "{agent-harness}/driver.py", "check"], timeout_ms = 180000 }
+payload.instruction = "Run deterministic fixture, private materialization, live-run cleanup and canonical TOML example checks for {agent-hey-arti}. These tests do not prove live skill quality."
 
 [evals.follows-test-rules]
 title = "The Python driver tests and harness lifecycle follow the test rules"
@@ -16,8 +16,8 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 
 [evals.follows-test-rules.payload]
 instruction = """
-Read the TEST- rules of {rules::code-style}. Review the Python tests and harness \
-helpers of {agent::harness}. The fixture projects are \
+Read the TEST- rules of {rules-code-style}. Review the Python tests and harness \
+helpers of {agent-harness}. The fixture projects are \
 test inputs, not another copy of the code review. Check every TEST- rule: exact async states, \
 controlled ordering or expiry times, read-only observations, owned processes/connections/temporary \
 files and cleanup, declared executables and inputs, and observable seams without over-verification. \

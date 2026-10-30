@@ -1,4 +1,4 @@
-name = "desktop::ux-features"
+name = "desktop-ux-features"
 
 [views.agent_tools]
 
@@ -16,7 +16,7 @@ profile = { kind = "human" }
 
 [evals.approved.payload]
 instruction = """
-Open UX-FEATURES.md of {desktop::ux-features} with the open tool. Submit GREEN with approved: true when every journey \
+Open UX-FEATURES.md of {desktop-ux-features} with the open tool. Submit GREEN with approved: true when every journey \
 is one the desktop app should offer and none is missing; otherwise submit RED and list the changes."""
 
 [evals.approved.pass_schema]

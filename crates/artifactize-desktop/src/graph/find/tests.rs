@@ -49,13 +49,13 @@ fn listed(text: &str, graph: &[(&str, &[&str])]) -> (Vec<String>, u32) {
 #[test]
 fn finds_artifacts_and_evals_by_part_of_their_names_ignoring_case_in_the_graph_order() {
     let graph: &[(&str, &[&str])] = &[
-        ("docs::Guide", &["reads-well", "matches-code"]),
+        ("docs-guide", &["reads-well", "matches-code"]),
         ("code", &["clippy", "Docs-links"]),
         ("release", &["signoff"]),
     ];
     assert_eq!(
         listed("DOCS", graph),
-        (vec!["docs::Guide".into(), "code / Docs-links".into()], 0)
+        (vec!["docs-guide".into(), "code / Docs-links".into()], 0)
     );
     assert_eq!(
         listed("  sign ", graph),

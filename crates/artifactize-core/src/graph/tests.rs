@@ -60,6 +60,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 path: name.into(),
                 nested: BTreeMap::new(),
                 select: Vec::new(),
+                parts: Default::default(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
             },
@@ -361,7 +362,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
                 ],
             }),
         ),
-        ("child", json!({"name":"owner::child", "basis":true})),
+        ("owner/child", json!({"name":"child", "basis":true})),
         ("instruction", json!({"name":"instruction", "basis":true})),
         ("argument", json!({"name":"argument", "basis":true})),
     ] {
@@ -376,7 +377,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
         graph
             .dependency_closure(&roots(&["owner"]).iter().collect::<Vec<_>>())
             .unwrap(),
-        ["argument", "instruction", "owner", "owner::child"]
+        ["argument", "child", "instruction", "owner"]
     );
     assert_eq!(
         graph.eval_target("owner/check").map(ArtifactName::as_str),
@@ -472,24 +473,21 @@ fn speculation_keeps_file_evidence_but_never_waives_final_obligations() {
 }
 
 #[test]
-fn a_constituent_verdict_is_part_of_its_parent_without_gating_the_parent_evals() {
+fn a_part_verdict_is_part_of_its_parent_without_gating_the_parent_evals() {
     let mut config = config(
         &[
             ("game", false, &[]),
-            ("game::combat", false, &["check"]),
-            ("game::combat::fireball", false, &["check"]),
+            ("combat", false, &["check"]),
+            ("fireball", false, &["check"]),
             ("consumer", false, &["check"]),
         ],
-        &[("game::combat", "consumer")],
+        &[("combat", "consumer")],
     );
-    for (source, target) in [
-        ("game::combat", "game"),
-        ("game::combat::fireball", "game::combat"),
-    ] {
+    for (source, target) in [("combat", "game"), ("fireball", "combat")] {
         config.relations.push(Relation {
             source: source.parse().unwrap(),
             target: target.parse().unwrap(),
-            kind: RelationKind::Child,
+            kind: RelationKind::Part,
         });
     }
     let graph = Graph::new(&config).unwrap();
@@ -497,18 +495,18 @@ fn a_constituent_verdict_is_part_of_its_parent_without_gating_the_parent_evals()
         graph
             .dependency_closure(&roots(&["consumer"]).iter().collect::<Vec<_>>())
             .unwrap(),
-        ["consumer", "game::combat", "game::combat::fireball"]
+        ["combat", "consumer", "fireball"]
     );
     let result = graph.evaluate(&evidence(&[
-        ("game::combat/check", GREEN),
-        ("game::combat::fireball/check", RED),
+        ("combat/check", GREEN),
+        ("fireball/check", RED),
         ("consumer/check", GREEN),
     ]));
     // The parent's own eval and its consumer are judged on their own inputs.
-    assert_eq!(result.evals["game::combat/check"].status, EvalStatus::Green);
+    assert_eq!(result.evals["combat/check"].status, EvalStatus::Green);
     assert_eq!(result.evals["consumer/check"].status, EvalStatus::Green);
-    // Yet neither the parent nor anything above it passes while a constituent fails.
-    for parent in ["game::combat", "game"] {
+    // Yet neither the parent nor anything above it passes while a part fails.
+    for parent in ["combat", "game"] {
         assert_eq!(result.artifacts[parent].status, ArtifactStatus::Red);
         assert!(!result.artifacts[parent].satisfied);
     }
@@ -519,11 +517,11 @@ fn a_constituent_verdict_is_part_of_its_parent_without_gating_the_parent_evals()
     assert_eq!(result.status, FinalStatus::Red);
 
     let result = graph.evaluate(&evidence(&[
-        ("game::combat/check", GREEN),
-        ("game::combat::fireball/check", GREEN),
+        ("combat/check", GREEN),
+        ("fireball/check", GREEN),
         ("consumer/check", GREEN),
     ]));
-    // A parent without evals of its own passes on its constituents alone.
+    // A parent without evals of its own passes on its parts alone.
     assert_eq!(result.artifacts["game"].status, ArtifactStatus::Green);
     assert!(result.obligations.is_empty());
     assert_eq!(result.status, FinalStatus::Green);

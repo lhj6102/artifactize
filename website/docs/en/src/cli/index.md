@@ -284,9 +284,10 @@ RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
 `artifactize verify app/e2e` selects the qualified Eval just like `--eval app/e2e`.
 Add `--recursive` to execute the Evals in the required dependency scope. Without
 it, input evidence must already be available. An Artifact selector also executes
-the Evals of its cycle peers, which review it; `--force` still marks only the
-explicitly selected Evals. File Artifacts are selected by their
-declared names; a sidecar creates no automatic relation to the surrounding folder.
+the Evals of its [parts](../features/artifact.md#composition) and of its cycle peers,
+which review it; `--force` marks the selected Artifact's and its parts' Evals, never its
+cycle peers' or dependencies'. File Artifacts are selected by their declared names, and
+selecting the folder Artifact around a file Artifact selects it as a part.
 
 For which evals wait or block, including dependency cycles, see
 [Eval dependencies](../features/artifact.md#eval-dependencies).
@@ -303,22 +304,22 @@ shows as `PASS`, and the action says what `verify` would do next.
 
 | State | Eval | Artifact |
 |---|---|---|
-| `PASS` | a GREEN result matches its current reuse key and its gates are met | its evals are `PASS`, and its constituents and the Artifacts it depends on are satisfied |
-| `RED` | a RED result matches its current reuse key | one of its evals or constituents is `RED` |
-| `BLOCKED` | a gate is RED | one of its evals or constituents is `BLOCKED` |
-| `WAIT_DEPENDENCY` | a gate has no current result yet | one of its evals or constituents is waiting |
+| `PASS` | a GREEN result matches its current reuse key and its gates are met | its evals are `PASS`, and its parts and the Artifacts it depends on are satisfied |
+| `RED` | a RED result matches its current reuse key | one of its evals or parts is `RED` |
+| `BLOCKED` | a gate is RED | one of its evals or parts is `BLOCKED` |
+| `WAIT_DEPENDENCY` | a gate has no current result yet | one of its evals or parts is waiting |
 | `WAITING_HUMAN` | a sign-off an earlier artifactize asked for waits for a person | — |
-| `DEFERRED` | a sign-off waits for a person, holding up nothing | one of its evals or constituents is `DEFERRED` |
-| `PROVISIONAL` | GREEN, but a gate is still `DEFERRED` or `PROVISIONAL` | one of its evals or constituents is `PROVISIONAL` |
-| `STALE` | it was reviewed before, but no result matches its current reuse key (an earlier error, a keyless result or `--force` included) | one of its evals or constituents is `STALE` |
-| `UNREVIEWED` | it was never reviewed | none of its evals was reviewed, or it has neither evals nor constituents |
+| `DEFERRED` | a sign-off waits for a person, holding up nothing | one of its evals or parts is `DEFERRED` |
+| `PROVISIONAL` | GREEN, but a gate is still `DEFERRED` or `PROVISIONAL` | one of its evals or parts is `PROVISIONAL` |
+| `STALE` | it was reviewed before, but no result matches its current reuse key (an earlier error, a keyless result or `--force` included) | one of its evals or parts is `STALE` |
+| `UNREVIEWED` | it was never reviewed | none of its evals was reviewed, or it has neither evals nor parts |
 | `INCOMPLETE` | — | its own evals are `PASS`, but an Artifact it depends on is not satisfied |
 | `BASIS` | — | a basis Artifact whose dependencies are satisfied |
 
 An Artifact shows the first of `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`,
 `PROVISIONAL`, `STALE` and `UNREVIEWED` that one of its evals or one of its
-[constituents](../features/artifact.md#composition) has. A parent without evals of its own
-therefore takes its state from its constituents. `ERROR` belongs to Run
+[parts](../features/artifact.md#composition) has. An Artifact without evals of its own
+therefore takes its state from its parts. `ERROR` belongs to Run
 output; `status` reports an eval whose last attempt failed as `STALE`.
 
 ## Saved Run evidence and terminal views
@@ -426,7 +427,7 @@ MCP `config_graph` exposes the same definitions with single/multiple Artifact or
 eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
-child (composition by name)/instruction/argv relation metadata, cycle markers and
+part/instruction/argv relation metadata, cycle markers and
 dependency-first strongly connected components (SCCs): groups of Artifacts that
 mutually depend on one another. Artifact entries carry `kind` (`file`, `folder`, `aspect` or `graph`) and
 workspace-relative target `path`. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)

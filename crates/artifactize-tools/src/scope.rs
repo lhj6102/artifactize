@@ -25,9 +25,8 @@ pub const MAX_ARTIFACT_ID_BYTES: usize = 64;
 #[error("{0}")]
 pub struct ScopeError(pub String);
 
-/// An Artifact's ID: parts of the form `[A-Za-z0-9][A-Za-z0-9_-]*` joined by `::`, at most
-/// 64 bytes, so it can never smuggle a path separator, a dot component,
-/// or control text into a scope key or a tool result.
+/// An Artifact's ID: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, so it can never smuggle a path
+/// separator, a dot component, or control text into a scope key or a tool result.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ArtifactId(String);
@@ -35,22 +34,19 @@ pub struct ArtifactId(String);
 impl ArtifactId {
     pub fn new(value: impl Into<String>) -> Result<Self, ScopeError> {
         let value = value.into();
-        let segment = |segment: &str| {
-            segment
+        let valid = value.len() <= MAX_ARTIFACT_ID_BYTES
+            && value
                 .bytes()
                 .next()
                 .is_some_and(|first| first.is_ascii_alphanumeric())
-                && segment
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-        };
-        let valid = value.len() <= MAX_ARTIFACT_ID_BYTES && value.split("::").all(segment);
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'));
         if valid {
             Ok(Self(value))
         } else {
             Err(ScopeError(format!(
-                "Artifact ID must be one or more parts matching [A-Za-z0-9][A-Za-z0-9_-]* \
-                 joined by ::, at most 64 bytes: {value:?}"
+                "Artifact ID must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}: {value:?}"
             )))
         }
     }

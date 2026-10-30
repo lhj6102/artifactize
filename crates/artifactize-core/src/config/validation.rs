@@ -104,22 +104,18 @@ pub(crate) fn identifier(value: &str, label: &str) -> Result<(), String> {
 }
 
 /// Separates the levels of an Artifact name: `game::combat::fireball`.
-pub const SPACE_SEPARATOR: &str = "::";
-
-/// An Artifact name is one or more identifiers joined by `::`, at most 64 bytes in all. Each
-/// leading part names the Artifact that composes it when one is declared.
+/// An Artifact name is one identifier; `::` names a part of nothing, so an old spaced name
+/// is told how to move on.
 pub(crate) fn artifact_name(value: &str, label: &str) -> Result<(), String> {
-    let valid = value.len() <= MAX_IDENTIFIER_BYTES
-        && value
-            .split(SPACE_SEPARATOR)
-            .all(|segment| identifier(segment, "").is_ok());
-    if !valid {
+    if value.contains("::") {
         return Err(format!(
-            "{label} must be one or more parts matching [A-Za-z0-9][A-Za-z0-9_-]* joined by ::, \
-             at most 64 bytes."
+            "{label} must match [A-Za-z0-9][A-Za-z0-9_-]{{0,63}}; names no longer have spaces. \
+             Rename {value}, for example to {}, and make it part of another Artifact by \
+             nesting its folder there or by listing it in that Artifact's parts.",
+            value.replace("::", "-")
         ));
     }
-    Ok(())
+    identifier(value, label)
 }
 
 pub(super) fn text(value: &str, label: &str) -> Result<(), String> {

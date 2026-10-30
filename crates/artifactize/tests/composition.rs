@@ -1,5 +1,5 @@
-//! Composition by name and aspects: a constituent's verdict is part of its parent's, while
-//! only references decide what an eval reads, reuses and waits for.
+//! Composition by folders and `parts`, and aspects: a part's verdict is part of each
+//! whole's, while only references decide what an eval reads, reuses and waits for.
 #[path = "support/run.rs"]
 mod owned_run;
 
@@ -118,75 +118,155 @@ fn executed(run: &Value) -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn names_compose_artifacts_and_a_failing_constituent_fails_its_parent_only() {
-    let fixture = Fixture::new();
-    // Folders deliberately do not follow the names, and a nested folder relates to nothing.
-    fixture.declare("game/index.artf", json!({"name":"game"}));
-    fixture.declare(
-        "combat/index.artf",
-        json!({"name":"game::combat","evals":runtime(true, "{game::combat}")}),
-    );
-    fixture.declare(
-        "game/fireball/index.artf",
-        json!({"name":"game::combat::skills::fireball","evals":runtime(false, "the skill")}),
-    );
-    fixture.declare(
-        "consumer/index.artf",
-        json!({"name":"consumer","evals":runtime(true, "{game::combat}")}),
-    );
-    let graph = fixture.json(&["config", "graph", "--json"], 0);
-    let children: Vec<_> = graph["relations"]
+/// Each part relation in the graph, as (part, whole), in the graph's order.
+fn parts(graph: &Value) -> Vec<(String, String)> {
+    let mut parts: Vec<_> = graph["relations"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|relation| relation["kind"] == "child")
-        .map(|relation| (relation["source"].clone(), relation["target"].clone()))
+        .filter(|relation| relation["kind"] == "part")
+        .map(|relation| {
+            let name = |key: &str| relation[key].as_str().unwrap().to_owned();
+            (name("source"), name("target"))
+        })
         .collect();
+    parts.sort();
+    parts
+}
+
+#[test]
+fn folders_and_parts_compose_artifacts_and_a_failing_part_fails_each_whole_only() {
+    let fixture = Fixture::new();
+    // combat is a part of game by its folder, fireball of combat; physics, elsewhere, of game
+    // because game names it, and shared of both game and tools.
+    fixture.declare(
+        "game/index.artf",
+        json!({"name":"game","parts":["physics","shared"]}),
+    );
+    fixture.declare(
+        "game/combat/index.artf",
+        json!({"name":"combat","evals":runtime(true, "{combat}")}),
+    );
+    fixture.declare(
+        "game/combat/skills/fireball/index.artf",
+        json!({"name":"fireball","evals":runtime(false, "the skill")}),
+    );
+    fixture.declare(
+        "physics/index.artf",
+        json!({"name":"physics","evals":runtime(true, "the physics")}),
+    );
+    fixture.declare(
+        "tools/index.artf",
+        json!({"name":"tools","parts":["shared"],"evals":runtime(true, "the tools")}),
+    );
+    fixture.declare(
+        "tools/shared/index.artf",
+        json!({"name":"shared","evals":runtime(true, "the module")}),
+    );
+    fixture.declare(
+        "consumer/index.artf",
+        json!({"name":"consumer","evals":runtime(true, "{combat}")}),
+    );
+    let graph = fixture.json(&["config", "graph", "--json"], 0);
+    let part = |part: &str, whole: &str| (part.to_owned(), whole.to_owned());
+    // A part its folder makes and `parts` names again counts once.
     assert_eq!(
-        children,
+        parts(&graph),
         [
-            (json!("game::combat"), json!("game")),
-            (
-                json!("game::combat::skills::fireball"),
-                json!("game::combat")
-            ),
+            part("combat", "game"),
+            part("fireball", "combat"),
+            part("physics", "game"),
+            part("shared", "game"),
+            part("shared", "tools"),
         ]
     );
 
-    // Selecting the parent selects every constituent.
+    // Selecting an Artifact selects every part, its parts' parts included.
     let run = fixture.json(&["verify", "game", "--wait", "--json"], 1);
     let mut ran = executed(&run);
     ran.sort();
     assert_eq!(
         ran,
-        ["game::combat/check", "game::combat::skills::fireball/check"]
+        [
+            "combat/check",
+            "fireball/check",
+            "physics/check",
+            "shared/check"
+        ]
     );
-    // The RED constituent blocks no eval of its parent, yet no level above it passes.
-    assert_eq!(status(&run, "evals", "game::combat/check"), "GREEN");
-    assert_eq!(
-        status(&run, "evals", "game::combat::skills::fireball/check"),
-        "RED"
-    );
-    assert_eq!(status(&run, "artifacts", "game::combat"), "RED");
+    // The RED part blocks no eval of the whole, yet no whole above it passes.
+    assert_eq!(status(&run, "evals", "combat/check"), "GREEN");
+    assert_eq!(status(&run, "evals", "fireball/check"), "RED");
+    assert_eq!(status(&run, "artifacts", "combat"), "RED");
     assert_eq!(status(&run, "artifacts", "game"), "RED");
 
-    // A consumer of the parent runs on the parent's own evals, but cannot finish GREEN.
+    // A shared part's verdict belongs to each of its wholes, and only to them.
+    let run = fixture.json(&["verify", "tools", "--wait", "--json"], 0);
+    assert_eq!(status(&run, "artifacts", "tools"), "GREEN");
+
+    // A consumer of a whole runs on the whole's own evals, but cannot finish GREEN.
     let run = fixture.json(&["verify", "consumer", "--wait", "--json"], 1);
     assert_eq!(status(&run, "evals", "consumer/check"), "GREEN");
     assert_eq!(run["status"], "RED");
 
-    // Fixed, the grouping parent without evals passes on its constituents alone.
+    // Fixed, the gathering whole without evals passes on its parts alone.
     fixture.declare(
-        "game/fireball/index.artf",
-        json!({"name":"game::combat::skills::fireball","evals":runtime(true, "the skill")}),
+        "game/combat/skills/fireball/index.artf",
+        json!({"name":"fireball","evals":runtime(true, "the skill")}),
     );
     let run = fixture.json(&["verify", "game", "--wait", "--json"], 0);
     assert_eq!(status(&run, "artifacts", "game"), "GREEN");
 }
 
 #[test]
-fn a_constituent_change_reviews_only_the_evals_that_name_it() {
+fn parts_reject_cycles_unknown_names_the_graph_and_spaced_names() {
+    let fixture = Fixture::new();
+    fixture.declare("a/index.artf", json!({"name":"a","parts":["b"]}));
+    fixture.declare("b/index.artf", json!({"name":"b","parts":["a"]}));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("is a part of itself through its parts")
+    );
+    fixture.declare("b/index.artf", json!({"name":"b","parts":["missing"]}));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("parts: Unknown Artifact missing")
+    );
+    fixture.declare("b/index.artf", json!({"name":"b","parts":["b"]}));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("b cannot be a part of itself")
+    );
+    fixture.declare("b/index.artf", json!({"name":"b"}));
+    fixture.write(".artf", "name = \"graph\"\n");
+    fixture.declare("a/index.artf", json!({"name":"a","parts":["graph"]}));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("parts: The graph Artifact graph is a part of nothing")
+    );
+    fixture.write(".artf", "name = \"graph\"\nparts = [\"b\"]\n");
+    fixture.declare("a/index.artf", json!({"name":"a"}));
+    assert!(
+        fixture
+            .error(&["config", "check"])
+            .contains("cannot declare parts")
+    );
+    fixture.write(".artf", "name = \"graph\"\n");
+    // A name with a space says how to make it a part instead.
+    fixture.declare("b/index.artf", json!({"name":"a::b"}));
+    let error = fixture.error(&["config", "check"]);
+    assert!(
+        error.contains("Rename a::b, for example to a-b") && error.contains("parts"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_part_change_reviews_only_the_evals_that_name_it() {
     let fixture = Fixture::new();
     fixture.write("app/main.txt", "main\n");
     fixture.write("app/ui/view.txt", "view\n");
@@ -196,11 +276,11 @@ fn a_constituent_change_reviews_only_the_evals_that_name_it() {
     );
     fixture.declare(
         "app/ui/index.artf",
-        json!({"name":"app::ui","evals":reads("view.txt")}),
+        json!({"name":"ui","evals":reads("view.txt")}),
     );
     fixture.declare(
         "integration/index.artf",
-        json!({"name":"integration","evals":reads("{app::ui}/view.txt")}),
+        json!({"name":"integration","evals":reads("{ui}/view.txt")}),
     );
     let first = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
     assert_eq!(first["executionsStarted"], 3);
@@ -208,7 +288,7 @@ fn a_constituent_change_reviews_only_the_evals_that_name_it() {
     let second = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
     let mut ran = executed(&second);
     ran.sort();
-    assert_eq!(ran, ["app::ui/check", "integration/check"]);
+    assert_eq!(ran, ["integration/check", "ui/check"]);
 }
 
 #[test]
@@ -224,14 +304,14 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
     fixture.declare(
         "game/fireball.artf",
         json!({
-            "name":"game::fireball",
+            "name":"fireball",
             "select":["src/skills/fireball.rs","assets"],
             "views":{"agent_tools":{"list":{"builtin":"list"}}},
-            "evals":reads("{game::fireball}/src/skills/fireball.rs"),
+            "evals":reads("{fireball}/src/skills/fireball.rs"),
         }),
     );
     let graph = fixture.json(&["config", "graph", "--json"], 0);
-    assert_eq!(graph["artifacts"]["game::fireball"]["kind"], "aspect");
+    assert_eq!(graph["artifacts"]["fireball"]["kind"], "aspect");
 
     let list = |path: &str| {
         let args = format!(r#"{{"path":"{path}"}}"#);
@@ -241,7 +321,7 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
                 "check",
                 "--execute",
                 "--artifact",
-                "game::fireball",
+                "fireball",
                 "--audience",
                 "agent",
                 "--tool",
@@ -270,7 +350,7 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
     let run = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
     let mut ran = executed(&run);
     ran.sort();
-    assert_eq!(ran, ["game/check", "game::fireball/check"]);
+    assert_eq!(ran, ["fireball/check", "game/check"]);
 }
 
 #[test]
@@ -280,13 +360,10 @@ fn an_aspect_is_declared_only_by_a_label_that_names_no_file_and_reads_only_its_s
     fixture.write("game/src/other.rs", "other\n");
     fixture.declare("game/index.artf", json!({"name":"game"}));
     let aspect = |args: &str| {
-        json!({"name":"game::fireball","select":["src/skills"],
+        json!({"name":"fireball","select":["src/skills"],
             "evals":reads(args)})
     };
-    fixture.declare(
-        "game/fireball.artf",
-        aspect("{game::fireball}/src/other.rs"),
-    );
+    fixture.declare("game/fireball.artf", aspect("{fireball}/src/other.rs"));
     assert!(
         fixture
             .error(&["config", "check"])
@@ -295,7 +372,7 @@ fn an_aspect_is_declared_only_by_a_label_that_names_no_file_and_reads_only_its_s
 
     fixture.declare(
         "game/fireball.artf",
-        aspect("{game::fireball}/src/skills/fireball.rs"),
+        aspect("{fireball}/src/skills/fireball.rs"),
     );
     fixture.json(&["config", "check", "--json"], 0);
     fixture.write("game/fireball", "a file named like the label");
@@ -316,7 +393,7 @@ fn an_aspect_is_declared_only_by_a_label_that_names_no_file_and_reads_only_its_s
 
     fixture.declare(
         "game/fireball.artf",
-        json!({"name":"game::fireball","select":["src/missing.rs"]}),
+        json!({"name":"fireball","select":["src/missing.rs"]}),
     );
     assert!(
         fixture

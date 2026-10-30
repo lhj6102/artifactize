@@ -87,6 +87,8 @@ pub(super) struct Found<'a> {
     pub(super) source: String,
     /// The folder Artifact it is nested in, and its path there.
     folder: Option<(&'a ArtifactName, ChildPrefix)>,
+    /// The nearest folder Artifact around it, which it is a part of.
+    owner: Option<&'a ArtifactName>,
 }
 
 /// Walk `reach` below `root` in deterministic path order, handing each declaration to
@@ -175,6 +177,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 path: relative.clone(),
                 file: &file,
                 source,
+                owner: folder.as_ref().map(|(folder, _)| *folder),
                 folder,
             })?;
             owner = Some((name, relative.clone()));
@@ -241,6 +244,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                     file: &file,
                     source,
                     folder: None,
+                    owner: None,
                 })?;
                 continue;
             }
@@ -276,6 +280,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                     file: &file,
                     source,
                     folder: None,
+                    owner: owner.as_ref().map(|(owner, _)| owner),
                 })?;
                 continue;
             }
@@ -314,6 +319,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 file: &file,
                 source,
                 folder: None,
+                owner: owner.as_ref().map(|(owner, _)| owner),
             })?;
         }
         if !recursive {
@@ -391,6 +397,13 @@ pub(super) fn declaration(
                     "The graph Artifact cannot declare fingerprint.",
                 ));
             }
+            if table.contains_key("parts") {
+                return Err(ConfigError::declaration(
+                    file,
+                    &["parts"],
+                    "The graph Artifact is made of nothing; it cannot declare parts.",
+                ));
+            }
             let mut declaration = parse_declaration_in(source, schemas)
                 .map_err(|error| ConfigError::new(file, error))?;
             declaration.fingerprint = Some(Fingerprint::Graph);
@@ -451,7 +464,8 @@ fn declares(source: &str, key: &str) -> bool {
     toml::de::DeTable::parse(source).is_ok_and(|table| table.get_ref().contains_key(key))
 }
 
-/// Add a found declaration to `config`, nested in the folder Artifact around it.
+/// Add a found declaration to `config`, nested in the folder Artifact around it and a part
+/// of it.
 pub(super) fn declare(
     config: &mut RepoConfig,
     found: Found<'_>,
@@ -463,6 +477,14 @@ pub(super) fn declare(
         folder.nested.insert(path, name.clone());
     }
     insert_artifact(config, found.path, found.kind, declaration, found.file)?;
+    if let Some(owner) = found.owner {
+        config
+            .artifacts
+            .get_mut(owner)
+            .unwrap()
+            .parts
+            .insert(name.clone());
+    }
     Ok(name)
 }
 
@@ -481,6 +503,7 @@ fn insert_artifact(
         basis,
         fingerprint,
         select,
+        parts,
     } = declaration;
     if config.artifacts.contains_key(&name) {
         return Err(ConfigError::declaration(
@@ -508,6 +531,7 @@ fn insert_artifact(
             kind,
             nested: BTreeMap::new(),
             select: select.unwrap_or_default(),
+            parts: parts.into_iter().flatten().collect(),
             name,
             tags,
             views,

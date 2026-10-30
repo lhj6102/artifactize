@@ -777,7 +777,7 @@ fn errors_are_audited_but_never_published() {
 }
 
 #[test]
-fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies_reuse() {
+fn force_executes_and_adds_a_newer_record_that_later_runs_reuse() {
     let fixture = Fixture::new();
     let check = eval("check", &["from", "review.txt"]);
     let repo = fixture.repo(
@@ -887,8 +887,8 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
         0,
     );
     assert_eq!(request(&forced, "test/check")["force"], true);
-    assert_eq!(request(&forced, "dep/check")["force"], false);
-    assert!(request(&forced, "dep/check")["child"].is_null());
+    // `dep`'s folder lies in `test`'s, so it is a part of `test`, selected and forced with it.
+    assert_eq!(request(&forced, "dep/check")["force"], true);
 
     let absent = fixture.repo(
         "absent",

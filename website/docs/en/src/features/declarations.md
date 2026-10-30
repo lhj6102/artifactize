@@ -23,8 +23,8 @@ put the needed Artifacts as `{name}` references in the consuming eval's
 inputs' required evals; independent sibling evals keep running.
 
 To require any other Artifact's reviews before an eval, reference that Artifact
-explicitly in the eval's instruction or argv. Neither a nested folder nor a
-[constituent](artifact.md#composition) is a reference.
+explicitly in the eval's instruction or argv. Neither a nested folder nor any other
+[part](artifact.md#composition) is a reference.
 
 An old profile fails configuration parsing with
 `unknown variant `dependency`, expected one of `agent`, `human`, `runtime``.
@@ -55,13 +55,9 @@ examples/
 
 Names, eval IDs, tool/session names and profile variant names start with a letter or
 digit and have at most 64 letters, digits, underscores or hyphens
-(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). An Artifact name may join several parts of that
-form with `::`, such as `game::combat::fireball`; the whole name has at most 64 bytes.
-The leading parts say what the Artifact is part of: the nearest one that names a
-declared Artifact is its parent in the [composition](artifact.md#composition), and an
-undeclared one only groups names for people. The parts are one name, so
-`{game::combat}`, `game::combat/check` and `artifactize verify game::combat` spell it
-whole. Artifact names are globally unique. Evals are
+(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). A name says nothing about what the Artifact is a
+part of: folders and `parts` do (see [composition](artifact.md#composition)). Artifact
+names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
 by ID, not by their position in the TOML source.
@@ -70,6 +66,7 @@ by ID, not by their position in the TOML source.
 |---|---|
 | `name` | Required Artifact name |
 | `select` | An [aspect](#aspects)'s selected paths; only in an aspect's declaration |
+| `parts` | Optional list of 1–64 unique Artifact names that are [parts](artifact.md#composition) of this one besides those its folder holds; not itself, not in the root `.artf` |
 | `tags` | Optional list of at most 64 unique nonblank strings, without ASCII controls |
 | `basis` | Optional boolean; `true` declares a no-eval input, waiving its own review obligations but not its dependencies |
 | `fingerprint` | Omission uses artifactsum; `false` disables reuse; otherwise an artifactsum or script table |
@@ -245,7 +242,7 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 
 It is an ordinary named Artifact: declare any runtime, Agent or Human
 evals and tools, and select it by name in `verify`, `status`, CI or `--reuse-only`.
-It has no default evals, constituents or relations to other Artifacts unless names
+It has no default evals, parts or relations to other Artifacts unless names
 or references make them. Explicit
 instruction/argv references work normally. Commands run from the
 repository root; declaring the graph does not make it the owner of that folder.
@@ -254,9 +251,9 @@ Its scope uses `kind = "graph"` and its declaration path is `.artf`.
 Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
 always the current extracted graph. Otherwise ordinary Artifact rules apply:
 `basis = true` explicitly declares no own review obligations and cannot own evals;
-it does not satisfy unmet dependencies. A graph with neither evals nor constituents and
-without `basis = true` remains UNREVIEWED, as any such Artifact does; one with
-[constituents](artifact.md#composition) takes their states. No source file is
+it does not satisfy unmet dependencies. A graph without evals and
+without `basis = true` remains UNREVIEWED, as any such Artifact does; it has no
+[parts](artifact.md#composition) and is a part of nothing. No source file is
 created or required. Ordinary Artifact cycles are allowed, and the graph fingerprint also covers the graph
 Artifact's own declaration.
 
@@ -276,8 +273,12 @@ The `.artf` declaration itself must also be a regular file: symlinks, special fi
 and directories such as `bundle.artf` fail discovery. A file named `index` cannot have a sidecar because `index.artf` always declares the folder;
 `.artf` files are declarations and are never targets.
 
-A file Artifact creates no relation to the containing folder Artifact. A subfolder
-with its own `index.artf` still takes its files out of the folder Artifact around it.
+A file Artifact is a [part](artifact.md#composition) of the nearest folder Artifact
+around it: selecting that folder Artifact selects the file Artifact too, and the folder
+Artifact passes only while it does. Being a part makes it no input: the folder
+Artifact's evals neither read it nor carry its fingerprint in their reuse keys unless they
+name it. A subfolder with its own `index.artf` still takes its files out of the folder
+Artifact around it.
 A folder's artifactsum includes neighboring file Artifact targets and excludes every
 `*.artf` declaration.
 
@@ -295,9 +296,10 @@ Omit `fingerprint` to hash the file; the [file-Artifact form](fingerprint.md#art
 of artifactsum names only the target, and scripts and `fingerprint = false` work too.
 
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
-its containing folder. Scope entries carry `kind = "file"`, `"folder"` or `"graph"`.
+its containing folder. Scope entries carry `kind = "file"`, `"folder"`, `"aspect"` or `"graph"`; an aspect's
+path is its declaration's folder, of which it reaches only what `select` names.
 `execution_paths`, the project-relative paths of tool files whose hashes are recorded
-to show which version ran, work the same for all three kinds.
+to show which version ran, work the same for every kind.
 
 The target must stay a regular file, not a symbolic link, for as long as it is
 reviewed, also with `fingerprint = false`:
@@ -329,13 +331,13 @@ declaration's folder:
 
 ```toml
 # game/fireball.artf
-name = "game::combat::skills::fireball"
+name = "fireball"
 select = ["src/skills/fireball.rs", "tests/fireball.rs", "assets/fireball"]
 
 [evals.behaves]
 title = "Damage, cooldown and effects match the skill spec"
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID" }
-payload.instruction = "Review {game::combat::skills::fireball} against {skill-spec}."
+payload.instruction = "Review {fireball} against {skill-spec}."
 ```
 
 - `select` holds 1–64 unique paths, files or directories, of up to 1024 characters
@@ -355,8 +357,9 @@ payload.instruction = "Review {game::combat::skills::fireball} against {skill-sp
   `{name}/path` must lie in the selection. Commands run in that folder.
 - Scope entries and saved definitions carry `kind = "aspect"`.
 
-Overlap is the point: `game::combat::skills::fireball` stays reusable while other
-files of `game` change, and the folder Artifact that holds `src/` still reviews all of it.
+Overlap is the point: `fireball` stays reusable while other files of `game` change,
+and the folder Artifact that holds `src/` still reviews all of it. An aspect is a
+[part](artifact.md#composition) of the folder Artifact around its declaration.
 
 ## Eval mutex tags
 
@@ -404,7 +407,7 @@ Write Artifact references as `{input}` or `{input}/path` in
 `payload.instruction` and runtime `profile.args`. See
 [Eval dependencies](artifact.md#eval-dependencies) for their obligations, cycles,
 scheduling and the Human prerequisites, and [composition](artifact.md#composition) for
-constituents.
+parts.
 
 ## Artifactsum
 
@@ -427,8 +430,8 @@ folder may show only that something changed.
 
 ## Fingerprint scripts
 
-Before executing evals, `verify` computes fingerprints in their selected required
-dependency closure, including dependencies whose evals are not selected.
+Before executing evals, `verify` computes the fingerprint of every Artifact the selected
+evals need, also of the Artifacts they depend on whose own evals are not selected.
 How many are computed at once is set by
 [`--fingerprint-jobs`](../cli/index.md#runtime-cli). A failure reports the first failing
 Artifact in name order and stops the rest. Each script gets its own private output
@@ -487,7 +490,7 @@ makes the eval depend on that Artifact; in a fingerprint script it only lets the
 read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
 doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
 never builds a command line from a string. An eval may read its target and the Artifacts it references,
-neither their constituents nor folders nested in them. The instructions of the referenced Artifacts' evals are not added to its
+neither their parts nor folders nested in them. The instructions of the referenced Artifacts' evals are not added to its
 review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,

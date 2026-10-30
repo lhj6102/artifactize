@@ -39,8 +39,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
   not silently skipped. A directory whose name ends in `.artf` is an invalid
   declaration and fails discovery.
-  A neighboring file Artifact's target remains in the folder's hash; it creates
-  no relation.
+  A neighboring file Artifact's target remains in the folder's hash, though the file
+  Artifact is a [part](artifact.md#composition) of the folder Artifact.
 - `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
   negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
@@ -62,8 +62,8 @@ Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the s
 ## The reuse key
 
 An eval depends on its target Artifact and on the Artifacts the eval names in its
-instruction or runtime args. Neither the target's [constituents](artifact.md#composition)
-nor a folder Artifact nested in its folder are part of the key unless the eval names them.
+instruction or runtime args. The target's [parts](artifact.md#composition), a folder Artifact
+nested in its folder included, are not in the key unless the eval names them.
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
@@ -157,7 +157,7 @@ not when files move or their content changes. It covers:
 - Artifact names and kinds, `basis`, an aspect's `select`, and fingerprint coverage: artifactsum `files`
   and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
   
-- Relations: composition (constituent → parent, from names),
+- Relations: composition (part → the Artifact it is a part of, from folders and `parts`),
   instruction references, runtime argv references
   (including eval ID, argv index and logical suffix), and their input targets.
 - Qualified eval IDs, owning Artifact, titles and evaluation criteria: default

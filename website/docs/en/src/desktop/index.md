@@ -189,11 +189,7 @@ Detail, new results, scans and layouts leave it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. Artifacts whose
-[names](../features/declarations.md#declaration-validation) share everything before their
-last `::`, such as `combat::Spec` and `combat::Code`, sit together in one region labelled
-`combat`, each node showing the last part (`Code`); read aloud and in the Detail an
-Artifact keeps its whole name. A region is not an Artifact: Tab passes it by. Above 40 nodes, a
+the left, its edges still drawn to each Artifact that uses it. Above 40 nodes, a
 pannable, zoomable minimap helps navigate the graph. **More than 500 Artifacts:** the
 graph has no minimap, and while more than 500 are in view they are colored boxes without names
 that open only with a click or through [Find](#find-in-the-graph). Zoom in until fewer are in view to see names again and reach
@@ -210,14 +206,11 @@ order: an Artifact by its whole name and an eval as `Artifact / eval`, each with
 verdict's mark and colour (on a Current, what verify would do). It lists the first 50 and
 says how many more match, or that none does.
 
-↑/↓ choose an entry. Enter, on the first entry when none is chosen, or a click opens its
-Detail, on the eval's tab for an eval, and moves the camera so that the Artifact sits in
-the middle of the graph left of the Detail, zooming in only as far as its name needs to
-read. Esc closes it and leaves the graph and the Detail as they were, giving the keyboard
-back to where it was. A click outside the field also closes it, and the click does what it
-does anyway: on an Artifact it opens that Artifact's Detail, and on the background it closes
-the Detail. Find reaches every
-Artifact, also in a graph too large to show their names.
+↑/↓ choose an entry. Enter (on the first entry when none is chosen) or a click opens its
+Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
+Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
+click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
+graph too large to show their names.
 
 ### Detail
 

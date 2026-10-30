@@ -17,7 +17,7 @@ artifactize config check
 `"Review {app} against {spec} and {assets}."`처럼 쓰세요. 입력 Artifact를 참조하는 eval은 그 Artifact에 필요한 eval이 끝난 뒤 실행됩니다. 같은 Artifact에 선언됐더라도 그 입력을 참조하지 않는 eval은 먼저 실행할 수 있습니다.
 
 다른 Artifact의 리뷰가 먼저 끝나야 한다면, eval의 지시문이나 argv에서 그 Artifact를 직접
-참조하세요. 안에 선언된 폴더도, [구성 요소](artifact.md#composition)도 참조가 아닙니다.
+참조하세요. 안에 선언된 폴더도, 그 밖의 [부분](artifact.md#composition)도 참조가 아닙니다.
 
 예전 프로필을 쓰면 설정을 해석하는 단계에서
 `unknown variant `dependency`, expected one of `agent`, `human`, `runtime`` 오류가 납니다.
@@ -42,12 +42,8 @@ crates/app/tests/
 examples/
 ```
 
-이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름은 `game::combat::fireball`처럼 이 형식의 부분 여러 개를 `::`로 이을 수 있으며, 이름
-전체는 64바이트 이하입니다. 앞부분은 그 Artifact가 무엇의 일부인지 나타냅니다. 앞부분 가운데 선언된
-Artifact를 가리키는 가장 가까운 것이 [구성](artifact.md#composition)의 부모이고, 선언되지 않은
-앞부분은 사람이 알아보기 쉽게 이름을 묶어 줄 뿐입니다. 부분들이 모여 이름 하나가 되므로
-`{game::combat}`, `game::combat/check`, `artifactize verify game::combat`처럼 언제나 이름 전체를
-씁니다. Artifact 이름은
+이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름으로는 무엇의 부분인지 알 수 없으며, 그것은 폴더
+구조와 `parts`로 정합니다([구성](artifact.md#composition) 참고). Artifact 이름은
 프로젝트 전체에서 중복되지 않아야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
@@ -56,6 +52,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 |---|---|
 | `name` | 필수입니다. Artifact 이름입니다 |
 | `select` | [aspect](#aspects)가 고른 경로입니다. aspect 선언에만 씁니다 |
+| `parts` | 선택입니다. 폴더가 담은 것 말고도 이 Artifact의 [부분](artifact.md#composition)인 Artifact 이름 1–64개를 중복 없이 적습니다. 자기 자신은 적을 수 없고, 루트 `.artf`에는 쓸 수 없습니다 |
 | `tags` | 선택 사항입니다. 비어 있지 않고 ASCII 제어 문자가 없는 고유한 문자열을 최대 64개 담은 목록입니다 |
 | `basis` | 선택 사항이며 불리언입니다. `true`면 eval 없는 입력으로 선언하며, 그 Artifact의 리뷰 요건은 없애지만 의존성의 리뷰 요건은 없애지 않습니다 |
 | `fingerprint` | 생략하면 artifactsum을 씁니다. `false`면 재사용하지 않습니다. 그 밖에는 artifactsum이나 스크립트 테이블을 지정합니다 |
@@ -210,14 +207,14 @@ payload = { instruction = "Use the graph viewer to review the current structure.
 ```
 
 이름 있는 일반 Artifact이므로 Runtime, Agent, Human eval과 도구를 무엇이든 선언할 수 있고,
-`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이나 구성 요소는 없고, 이름이나 참조로 만들지 않는 한 다른 Artifact와의 관계도 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
+`verify`, `status`, CI, `--reuse-only`에서 이름으로 고를 수 있습니다. 기본 eval이나 부분은 없고, 이름이나 참조로 만들지 않는 한 다른 Artifact와의 관계도 생기지 않습니다. 지시문이나 argv의 Artifact 참조에는 일반 Artifact와 같은 규칙을 적용합니다.
 명령은 저장소 루트에서 실행되지만, 그래프를 선언해도 그 폴더가 그래프 Artifact에 속하지는 않습니다. 범위 항목의
 `kind`는 `"graph"`이고 선언 경로는 `.artf`입니다.
 
 `fingerprint`는 `false`나 빈 테이블이라도 선언하지 마세요. fingerprint는 항상 현재 추출한
 그래프입니다. 그 밖에는 일반 Artifact 규칙을 따릅니다. `basis = true`로 선언한 Artifact에는 eval을 둘 수 없고 그 Artifact의 리뷰도 필요 없지만, 의존하는 Artifact에 필요한 리뷰까지 면제되지는 않습니다.
-`basis = true`가 없고 eval도 구성 요소도 없는 그래프는 그런 다른 Artifact처럼 UNREVIEWED로 남습니다.
-[구성 요소](artifact.md#composition)가 있으면 그 상태를 따릅니다.
+`basis = true`가 없고 eval도 없는 그래프는 그런 다른 Artifact처럼 UNREVIEWED로 남습니다.
+그래프는 [부분](artifact.md#composition)을 갖지 않고 어떤 Artifact의 부분도 아닙니다.
 소스 파일을 만들지 않으며, 소스 파일이 없어도 됩니다. 일반 Artifact의 순환도 허용하며, 그래프
 Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
@@ -234,8 +231,11 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 이름이 `index`인 파일에는 사이드카를 둘 수 없습니다. `.artf` 파일은 선언이며 대상이 되지
 않습니다.
 
-파일 Artifact는 들어 있는 폴더 Artifact와 아무 관계도 맺지 않습니다. 하위 폴더에 `index.artf`를 두면
-그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
+파일 Artifact는 자기를 둘러싼 가장 가까운 폴더 Artifact의 [부분](artifact.md#composition)입니다.
+그 폴더 Artifact를 선택하면 파일 Artifact도 함께 선택되고, 파일 Artifact가 통과해야 폴더 Artifact도
+통과합니다. 다만 부분이라고 입력이 되지는 않습니다. 폴더 Artifact의 eval이 이름을 적지 않으면 그
+파일 Artifact를 읽지 않으며, 재사용 키에도 그 fingerprint가 들어가지 않습니다. 하위 폴더에
+`index.artf`를 두면 그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
 artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
@@ -251,8 +251,9 @@ Artifact만 있어도 되며, 폴더 선언이 없어도 됩니다.
 `fingerprint = false`를 선택할 수도 있습니다.
 
 JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로세스의 작업 디렉터리는 그
-파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"graph"`가
-있습니다. `execution_paths`에는 어떤 버전의 도구가 실행됐는지 해시로 기록할 파일을 프로젝트 기준 경로로 적으며, 이 필드는 세 종류 모두에서 똑같이 동작합니다.
+파일이 들어 있는 폴더입니다. 범위 항목에는 `kind = "file"`, `"folder"`, `"aspect"`, `"graph"`가
+있습니다. aspect의 경로는 선언이 있는 폴더이며, 그 안에서 `select`에 적은 경로에만 접근할 수 있습니다.
+`execution_paths`에는 어떤 버전의 도구가 실행됐는지 해시로 기록할 파일을 프로젝트 기준 경로로 적으며, 이 필드는 모든 종류에서 똑같이 동작합니다.
 
 대상은 리뷰하는 동안 내내 심볼릭 링크가 아닌 일반 파일이어야 하며, `fingerprint = false`여도
 마찬가지입니다.
@@ -280,13 +281,13 @@ aspect는 게임 트리 안에 흩어진 스킬 하나의 코드, 테스트, 스
 
 ```toml
 # game/fireball.artf
-name = "game::combat::skills::fireball"
+name = "fireball"
 select = ["src/skills/fireball.rs", "tests/fireball.rs", "assets/fireball"]
 
 [evals.behaves]
 title = "Damage, cooldown and effects match the skill spec"
 profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID" }
-payload.instruction = "Review {game::combat::skills::fireball} against {skill-spec}."
+payload.instruction = "Review {fireball} against {skill-spec}."
 ```
 
 - `select`에는 파일이나 디렉터리 경로를 중복 없이 1–64개 적으며, 각 경로는 1024자까지입니다(이모지처럼
@@ -304,8 +305,8 @@ payload.instruction = "Review {game::combat::skills::fireball} against {skill-sp
 - scope 항목과 저장된 정의에는 `kind = "aspect"`가 들어갑니다.
 
 겹쳐도 됩니다. 오히려 그것이 aspect를 쓰는 이유입니다. `game`의 다른 파일이 바뀌어도
-`game::combat::skills::fireball`의 결과는 재사용되고, `src/`를 담은 폴더 Artifact는 여전히 그 안을 모두
-리뷰합니다.
+`fireball`의 결과는 재사용되고, `src/`를 담은 폴더 Artifact는 여전히 그 안을 모두
+리뷰합니다. aspect는 선언이 있는 폴더를 둘러싼 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 
 ## eval mutex 태그 {#eval-mutex-tags}
 
@@ -346,7 +347,7 @@ mutex 태그는 평가 기준이 아니라 실행 옵션이므로, 바꿔도 fin
 
 Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`이나
 `{input}/path`로 씁니다. 최종 검증 요건, 순환, 스케줄링, Human 선행 조건은
-[eval 의존성](artifact.md#eval-dependencies)에, 구성 요소는 [구성](artifact.md#composition)에 있습니다.
+[eval 의존성](artifact.md#eval-dependencies)에, 부분은 [구성](artifact.md#composition)에 있습니다.
 
 ## Artifactsum {#artifactsum}
 
@@ -365,8 +366,8 @@ artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 �
 
 ## Fingerprint 스크립트 {#fingerprint-scripts}
 
-eval을 실행하기 전에 `verify`는 선택한 eval에 필요한 의존성 범위의 fingerprint를 계산하며,
-eval을 선택하지 않은 의존성도 포함합니다. 동시에 몇 개를 계산할지는
+eval을 실행하기 전에 `verify`는 선택한 eval에 필요한 모든 Artifact의 fingerprint를 계산하며,
+eval을 선택하지 않은 의존 Artifact도 포함합니다. 동시에 몇 개를 계산할지는
 [`--fingerprint-jobs`](../cli/index.md#runtime-cli)로 정합니다. 실패하면 이름 순서로 처음 실패한
 Artifact를 알리고 나머지는 멈춥니다. 각 스크립트에는 별도의 출력 폴더를 줍니다.
 
@@ -413,7 +414,7 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-읽을 수 있지만, 그 구성 요소나 그 안에 선언된 폴더는 읽을 수 없습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
+읽을 수 있지만, 그 부분이나 그 안에 선언된 폴더는 읽을 수 없습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를

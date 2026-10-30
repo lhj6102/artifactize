@@ -15,16 +15,8 @@
 // every review reads) would tie every part into one tall, narrow column, and makes ELK slow; it
 // stands apart in its own column before the rest instead, its edges still drawn to every
 // Artifact that uses it.
-//
-// Artifacts named `space::name` are drawn together in their space's region. Each space, and the
-// Artifacts without one, is laid out on its own as above; the spaces then stand in columns, a
-// space one column right of the furthest space it uses, those of one column packed in rows in
-// the tree's order. A graph with spaces gets more room throughout, so that its regions, their
-// names and the edges running between them read apart. A graph without spaces is laid out as
-// one, unchanged.
 import type { Shape } from "../ipc/client";
 import { NODE, type Point } from "./graph";
-import { SPACE, extent, spaces } from "./spaces";
 
 export { NODE };
 /** The most Artifacts ELK lays out, in about half a second for a real graph this size. A larger
@@ -36,8 +28,6 @@ export const ELK_LIMIT = 1000;
 type Room = { x: number; y: number; apart: number };
 /** A graph's room. */
 const ROOM: Room = { x: 72, y: 20, apart: 40 };
-/** A graph with spaces': its spaces' regions take room of their own, and edges run between them. */
-const SPACED: Room = { x: 120, y: 36, apart: 80 };
 /** An Artifact used by more than this many is a shared input. A part of a real graph has a few
  * dozen Artifacts, and none uses one Artifact more than about ten times. */
 const SHARED = 64;
@@ -57,89 +47,9 @@ function largest(values: ArrayLike<number>): number {
 }
 
 /** Top-left positions of `graph`'s nodes: by ELK for at most `ELK_LIMIT` Artifacts, else by
- * `layered`; each space's Artifacts together, with more room, room left around them for its
- * region. */
+ * `layered`. */
 export async function layout(graph: Shape): Promise<Map<string, Point>> {
-  const spaced = graph.nodes.some((node) => node.space !== null);
-  const room = spaced ? SPACED : ROOM;
-  const one = graph.nodes.length > ELK_LIMIT ? (part: Shape) => Promise.resolve(layered(part, room)) : (part: Shape) => elk(part, room);
-  if (!spaced) return one(graph);
-  const order = new Map(graph.nodes.map((node, at) => [node.id, at]));
-  const groups = spaces(graph)
-    .flatMap((each) => (each.space === null ? apart(graph, each.nodes) : [each]))
-    .sort((one, other) => order.get(one.nodes[0].id)! - order.get(other.nodes[0].id)!);
-  const group = new Map(groups.flatMap((each, at) => each.nodes.map((node): [string, number] => [node.id, at])));
-  const inner = groups.map((): Shape["edges"] => []);
-  for (const edge of graph.edges) {
-    const at = group.get(edge.source);
-    if (at !== undefined && at === group.get(edge.target)) inner[at].push(edge);
-  }
-  // A lone Artifact needs no layout of its own.
-  const laid = await Promise.all(
-    groups.map(({ nodes }, at) =>
-      nodes.length === 1 ? new Map([[nodes[0].id, { x: 0, y: 0 }]]) : one({ nodes, edges: inner[at] }),
-    ),
-  );
-  // Each group's layout from its own top-left corner, and the room it takes with its region.
-  const parts = laid.map((places, at) => {
-    const { left, top, width, height } = extent(places.values());
-    const [pad, header] = groups[at].space === null ? [0, 0] : [SPACE.pad, SPACE.header];
-    return { places, left: left - pad, top: top - header, width: width + 2 * pad, height: height + header + pad };
-  });
-  // A space one column right of the furthest space it uses; a use that closes a cycle is skipped.
-  const uses = groups.map(() => new Set<number>());
-  for (const edge of graph.edges) {
-    const [source, target] = [group.get(edge.source), group.get(edge.target)];
-    if (source !== undefined && target !== undefined && source !== target) uses[target].add(source);
-  }
-  const column = new Int32Array(groups.length).fill(-1);
-  const walking = new Uint8Array(groups.length);
-  const place = (at: number): number => {
-    if (column[at] >= 0 || walking[at]) return column[at];
-    walking[at] = 1;
-    let furthest = -1;
-    for (const source of uses[at]) furthest = Math.max(furthest, place(source));
-    walking[at] = 0;
-    return (column[at] = furthest + 1);
-  };
-  groups.forEach((_, at) => place(at));
-  // The spaces of one column packed in rows, so that many of them do not make one tall column.
-  const placed = new Map<string, Point>();
-  let x = 0;
-  for (let at = 0; at <= largest(column); at += 1) {
-    const members = parts.filter((_, each) => column[each] === at);
-    const corners = shelve(members, room.apart);
-    members.forEach((part, each) => {
-      for (const [id, p] of part.places) placed.set(id, { x: x + corners[each].x + p.x - part.left, y: corners[each].y + p.y - part.top });
-    });
-    x += largest(members.map((part, each) => corners[each].x + part.width)) + room.x;
-  }
-  return placed;
-}
-
-/** `nodes`, the Artifacts without a space, in the parts their own edges connect, each in the
- * order of its first Artifact: one that uses a space and one that a space uses stand apart, on
- * either side of it. */
-function apart(graph: Shape, nodes: Shape["nodes"]): { space: null; nodes: Shape["nodes"] }[] {
-  const index = new Map(nodes.map((node, at) => [node.id, at]));
-  const parent = Int32Array.from(nodes, (_, at) => at);
-  const root = (at: number): number => {
-    while (parent[at] !== at) at = parent[at] = parent[parent[at]];
-    return at;
-  };
-  for (const edge of graph.edges) {
-    const [source, target] = [index.get(edge.source), index.get(edge.target)];
-    if (source === undefined || target === undefined) continue;
-    const [one, other] = [root(source), root(target)];
-    if (one !== other) parent[Math.max(one, other)] = Math.min(one, other);
-  }
-  const parts = new Map<number, Shape["nodes"]>();
-  nodes.forEach((node, at) => {
-    const part = parts.get(root(at));
-    if (part) part.push(node);
-    else parts.set(root(at), [node]);
-  });
-  return [...parts.values()].map((members) => ({ space: null, nodes: members }));
+  return graph.nodes.length > ELK_LIMIT ? layered(graph, ROOM) : elk(graph, ROOM);
 }
 
 /** Each edge once, between two different Artifacts the graph has, by their numbers in

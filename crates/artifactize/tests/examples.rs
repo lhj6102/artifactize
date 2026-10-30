@@ -190,11 +190,11 @@ fn every_example_passes_static_queries_and_reports_status() {
         .collect();
     kinds.sort();
     kinds.dedup();
-    assert_eq!(kinds, ["argv", "child", "instruction"]);
+    assert_eq!(kinds, ["argv", "instruction", "part"]);
     assert_eq!(graph["artifacts"]["glossary"]["basis"], true);
     assert_eq!(
         graph["artifacts"]["guide"]["nested"],
-        json!({"intro": "guide::intro", "usage": "guide::usage"})
+        json!({"intro": "intro", "usage": "usage"})
     );
 }
 
@@ -215,13 +215,13 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         statuses(&run),
         map(&[
             ("guide/terms", "GREEN"),
-            ("guide::intro/heading", "GREEN"),
-            ("guide::usage/heading", "GREEN"),
+            ("intro/heading", "GREEN"),
+            ("usage/heading", "GREEN"),
         ])
     );
     assert_eq!(files(&repo), before);
 
-    // README: an undefined bold term makes guide/terms RED; guide::intro/heading is reused.
+    // README: an undefined bold term makes guide/terms RED; intro/heading is reused.
     let copy = session.copy("runtime-relations");
     let page = copy.join("guide/usage/page.md");
     append(&page, "Results live in the **cache**.\n");
@@ -235,8 +235,8 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
     assert_eq!(
         summaries,
         BTreeMap::from([
-            ("guide/terms", "dependency guide::usage changed"),
-            ("guide::usage/heading", "changed: page.md"),
+            ("guide/terms", "dependency usage changed"),
+            ("usage/heading", "changed: page.md"),
         ])
     );
     let red = session.json(&copy, &["verify", "--wait", "--all", "--json"], 1);
@@ -244,8 +244,8 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         statuses(&red),
         map(&[
             ("guide/terms", "RED"),
-            ("guide::intro/heading", "GREEN"),
-            ("guide::usage/heading", "GREEN"),
+            ("intro/heading", "GREEN"),
+            ("usage/heading", "GREEN"),
         ])
     );
     assert_eq!(red["executionsStarted"], 2);
@@ -266,8 +266,8 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
         statuses(&blocked),
         map(&[
             ("guide/terms", "BLOCKED"),
-            ("guide::intro/heading", "GREEN"),
-            ("guide::usage/heading", "RED"),
+            ("intro/heading", "GREEN"),
+            ("usage/heading", "RED"),
         ])
     );
 }
