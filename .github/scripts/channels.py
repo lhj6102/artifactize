@@ -75,7 +75,7 @@ def generate(args):
                  f'  url "{base}/{dmg}"', '  name "Artifactize"',
                  '  desc "Declare and verify artifacts with reusable evidence"',
                  '  homepage "https://artifactize.dev/"', "",
-                 '  depends_on macos: :big_sur', "",
+                 '  depends_on :macos', "",
                  '  app "Artifactize.app"',
                  '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize"',
                  '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize-tools"', "end", ""]
