@@ -70,9 +70,11 @@ Only the reviewer who claimed the request can run its tools; see
 if the eval's scope or declarations changed since then, the tool refuses to run
 instead of running the new version. A tool error is something to fix and retry, not
 a verdict, and tool runs are not recorded with the result. Before a tool runs, the
-project's declarations must still load: if they do not, for example because a declared
-file Artifact's file is missing, the tool refuses to run and the request keeps waiting,
-so you can restore the file and try again. Then the reviewed files are checked: if
+declarations of the Artifacts the eval reviews must still load: if they do not, for
+example because one of them is a file Artifact whose file is missing, the tool refuses
+to run and the request keeps waiting, so you can restore the file and try again. A
+declaration elsewhere in the project that does not load does not stop it. Then the
+reviewed files are checked: if
 their fingerprint changed, or cannot be computed, the request ends ERROR (INPUT_CHANGED or FINGERPRINT_RECHECK_FAILED) without running the tool,
 and the next `verify` asks again.
 

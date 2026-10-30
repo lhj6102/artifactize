@@ -48,7 +48,7 @@ A state written by a newer artifactize is refused with `Unsupported state schema
 version: N; a newer artifactize wrote it.`: update artifactize to open it.
 
 After an upgrade to 0.9, every eval is reviewed once; see
-[Upgrading to 0.9](../fingerprint.md#upgrading-to-09).
+[Upgrading to 0.9](../../getting-started/update.md#upgrading-to-09).
 
 **Tokens stay out of repositories.** `$STATE/auth`, which holds the Codex sign-in, the
 review store token, and the saved API keys and custom providers (`providers.json`), is refused when it lies inside a git work tree, an artifactize

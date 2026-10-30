@@ -92,8 +92,11 @@ such as `[*]`; backslash escapes are not accepted.
 Glob and grep patterns (including grep's optional `glob`) must be nonempty and at
 most 4096 characters. Globs must be relative, with no leading slash,
 backslashes, colons, NUL, or empty/`.`/`..` path components. Grep's pattern is a regular expression, a text-search pattern such as `fn \w+_test` (a
-line with `fn ` and a name ending in `_test`), in the syntax of Rust's `regex`; an empty,
-invalid or very large pattern is an error. Grep's optional `glob` filter matches relative file paths
+line with `fn ` and a name ending in `_test`), in the syntax of Rust's `regex`; an empty or
+invalid pattern is an error. A short pattern can still be too complex: one whose compiled
+form needs more than 2 MiB, such as one with large repetition counts or many alternatives,
+fails with `Invalid or oversized regex pattern.`; simplify its repetitions or alternatives,
+since shortening the text alone does not help. Grep's optional `glob` filter matches relative file paths
 (or the basename when `path` names a file). Hidden files are included; git ignore
 rules do not filter results.
 Bounds are 10,000

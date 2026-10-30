@@ -475,92 +475,16 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             }
         }
     }
-    let everything = Scope {
-        artifacts: config
-            .artifacts
-            .iter()
-            .map(|(id, artifact)| (id.clone(), artifact))
-            .collect(),
-    }
-    .tool_scope();
+    let everything = everything(config);
     let mut resolved = Vec::new();
     for eval in &config.evals {
-        let error = |field: &[&str], failure: ScopeError| {
-            let mut keys = vec!["evals", eval.declaration.id.as_ref()];
-            keys.extend_from_slice(field);
-            ConfigError::declaration(
-                config
-                    .root
-                    .join(config.artifacts[&eval.target].declaration_path()),
-                &keys,
-                format!("Eval {}: {failure}", eval.id),
-            )
-        };
-        let mut references = BTreeMap::new();
-        let mut deps = BTreeSet::new();
-        let instruction = eval
-            .declaration
-            .payload()
-            .map_or("", |payload| payload.instruction.as_str());
-        for reference in instruction::references(instruction) {
-            let name = reference.name;
-            let source = reference_target(config, &eval.target, &name)
-                .map_err(|failure| error(&["payload", "instruction"], failure))?;
-            if instruction[reference.end..].starts_with('/') {
-                reference_path(config, source, "/")
-                    .map_err(|failure| error(&["payload", "instruction"], failure))?;
-            }
-            if references.insert(name.clone(), source.clone()).is_some() {
-                continue;
-            }
-            if source != &eval.target {
-                deps.insert(source.clone());
-                relations.push(Relation {
-                    source: source.clone(),
-                    target: eval.target.clone(),
-                    kind: RelationKind::Instruction {
-                        eval_id: eval.id.clone(),
-                        name,
-                    },
-                });
-            }
-        }
-        if let Profile::Runtime { args, .. } = eval.declaration.profile() {
-            for (index, argument) in args.iter().enumerate() {
-                let Argument::Reference {
-                    name: ref_name,
-                    path,
-                    ..
-                } = argument
-                else {
-                    continue;
-                };
-                let source = reference_target(config, &eval.target, ref_name)
-                    .map_err(|failure| error(&["profile", "args"], failure))?;
-                reference_path(config, source, path)
-                    .map_err(|failure| error(&["profile", "args"], failure))?;
-                nested_path(&everything, source, path)
-                    .map_err(|failure| error(&["profile", "args"], failure))?;
-                if source != &eval.target {
-                    deps.insert(source.clone());
-                    relations.push(Relation {
-                        source: source.clone(),
-                        target: eval.target.clone(),
-                        kind: RelationKind::Argument {
-                            eval_id: eval.id.clone(),
-                            index,
-                            name: ref_name.clone(),
-                            path: path.clone(),
-                        },
-                    });
-                }
-            }
-        }
-        resolved.push((references, deps.into_iter().collect()));
+        let mut found = eval_references(config, &everything, eval)?;
+        relations.append(&mut found.relations);
+        resolved.push(found);
     }
-    for (eval, (references, deps)) in config.evals.iter_mut().zip(resolved) {
-        eval.references = references;
-        eval.deps = deps;
+    for (eval, found) in config.evals.iter_mut().zip(resolved) {
+        eval.references = found.references;
+        eval.deps = found.deps;
     }
     for artifact in config.artifacts.values() {
         for part in &artifact.parts {
@@ -592,6 +516,127 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     human::validate_references(config)?;
     crate::graph::Graph::new(config).map_err(|error| ConfigError::new(&config.root, error))?;
     Ok(())
+}
+
+/// Every Artifact of `config` as one tool scope, which nested paths are checked against.
+fn everything(config: &RepoConfig) -> artifactize_tools::scope::Scope {
+    Scope {
+        artifacts: config
+            .artifacts
+            .iter()
+            .map(|(id, artifact)| (id.clone(), artifact))
+            .collect(),
+    }
+    .tool_scope()
+}
+
+/// Resolve the evals' references against the Artifacts `config` holds, and nothing else: a
+/// read of part of the workspace, whose checks across the workspace stay with a full read.
+pub(crate) fn resolve_evals(config: &mut RepoConfig) -> Result<(), ConfigError> {
+    let everything = everything(config);
+    let resolved = config
+        .evals
+        .iter()
+        .map(|eval| eval_references(config, &everything, eval))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (eval, found) in config.evals.iter_mut().zip(resolved) {
+        eval.references = found.references;
+        eval.deps = found.deps;
+    }
+    Ok(())
+}
+
+/// What an eval's instruction and runtime arguments reference.
+struct EvalReferences {
+    references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
+    /// The referenced Artifacts other than the eval's target.
+    deps: Vec<ArtifactName>,
+    /// The relations that record the deps.
+    relations: Vec<Relation>,
+}
+
+fn eval_references(
+    config: &RepoConfig,
+    everything: &artifactize_tools::scope::Scope,
+    eval: &Eval,
+) -> Result<EvalReferences, ConfigError> {
+    let mut relations = Vec::new();
+    let error = |field: &[&str], failure: ScopeError| {
+        let mut keys = vec!["evals", eval.declaration.id.as_ref()];
+        keys.extend_from_slice(field);
+        ConfigError::declaration(
+            config
+                .root
+                .join(config.artifacts[&eval.target].declaration_path()),
+            &keys,
+            format!("Eval {}: {failure}", eval.id),
+        )
+    };
+    let mut references = BTreeMap::new();
+    let mut deps = BTreeSet::new();
+    let instruction = eval
+        .declaration
+        .payload()
+        .map_or("", |payload| payload.instruction.as_str());
+    for reference in instruction::references(instruction) {
+        let name = reference.name;
+        let source = reference_target(config, &eval.target, &name)
+            .map_err(|failure| error(&["payload", "instruction"], failure))?;
+        if instruction[reference.end..].starts_with('/') {
+            reference_path(config, source, "/")
+                .map_err(|failure| error(&["payload", "instruction"], failure))?;
+        }
+        if references.insert(name.clone(), source.clone()).is_some() {
+            continue;
+        }
+        if source != &eval.target {
+            deps.insert(source.clone());
+            relations.push(Relation {
+                source: source.clone(),
+                target: eval.target.clone(),
+                kind: RelationKind::Instruction {
+                    eval_id: eval.id.clone(),
+                    name,
+                },
+            });
+        }
+    }
+    if let Profile::Runtime { args, .. } = eval.declaration.profile() {
+        for (index, argument) in args.iter().enumerate() {
+            let Argument::Reference {
+                name: ref_name,
+                path,
+                ..
+            } = argument
+            else {
+                continue;
+            };
+            let source = reference_target(config, &eval.target, ref_name)
+                .map_err(|failure| error(&["profile", "args"], failure))?;
+            reference_path(config, source, path)
+                .map_err(|failure| error(&["profile", "args"], failure))?;
+            nested_path(everything, source, path)
+                .map_err(|failure| error(&["profile", "args"], failure))?;
+            if source != &eval.target {
+                deps.insert(source.clone());
+                relations.push(Relation {
+                    source: source.clone(),
+                    target: eval.target.clone(),
+                    kind: RelationKind::Argument {
+                        eval_id: eval.id.clone(),
+                        index,
+                        name: ref_name.clone(),
+                        path: path.clone(),
+                    },
+                });
+            }
+        }
+    }
+    Ok(EvalReferences {
+        references,
+        deps: deps.into_iter().collect(),
+        relations,
+    })
 }
 
 /// Nothing is a part of itself, however many parts lie between.

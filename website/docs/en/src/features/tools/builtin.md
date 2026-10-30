@@ -218,7 +218,9 @@ syntax and limits. The current directory is not a declared Artifact, so `artifac
 
  From the command line, `help` runs the
 program with your terminal's environment minus every `ARTIFACTIZE_*` variable, and
-with no private temporary or output directory; otherwise it runs as `help` above. A tool
+with no private temporary or output directory; otherwise it runs as `help` above, except
+that on Linux and macOS interrupting the command with Ctrl+C does not stop the program
+or what it started: they keep running until they exit. A tool
 error goes to stderr with exit 1; invalid usage exits 2. `artifactize tools --help` (or `artifactize-tools --help`) lists the tools, and
 `artifactize tools SUBCOMMAND --help` describes one. `artifactize tools help PROGRAM
 SUBCOMMAND...` is different: it runs `PROGRAM SUBCOMMAND... --help` and prints that

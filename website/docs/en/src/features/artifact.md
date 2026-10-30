@@ -130,29 +130,34 @@ reviews delay the consumer Eval; RED input reviews block it. `--speculate` lets
 work start before unresolved input gates, without approving missing requirements.
 Final GREEN still requires all required evidence, including upstream reviews.
 
-Gates apply to each Eval. An Artifact shows ERROR or RED if one of its Evals is, else BLOCKED if one is blocked. A RED
-or BLOCKED gate blocks the Eval in turn, so blocking propagates along these Eval gates.
-A RED part blocks no Eval of the Artifact it is a part of; it keeps that Artifact from passing
-instead (see [composition](#composition)). An intermediate Artifact
-with no Evals supplies no execution gates: referring to it does not gate execution
-on its own inputs or parts. Those still belong to the final approval obligations,
-so the consumer may execute without the Run being able to finish GREEN.
+Gates apply to each Eval. An Artifact shows ERROR or RED if one of its Evals is, else
+BLOCKED if one is blocked. With `app/e2e` above, which references `e2e-tests`:
+
+- A RED or BLOCKED Eval of `e2e-tests` blocks `app/e2e`, and an Eval that references
+  `app` is blocked in turn.
+- A RED part blocks nothing: if `combat` is a part of `game` and `combat/tests` is RED,
+  the Evals of `game` still run, but `game` cannot pass (see
+  [composition](#composition)).
+- An Artifact with no Evals gates nothing. If `app/e2e` referenced a `bundle` Artifact
+  without Evals, it would run without waiting for the parts of `bundle`. The Run still
+  needs their results, so it cannot finish GREEN while one of them is RED.
 
 Artifacts whose evals reference each other, directly or through a chain, form a
-**cycle**. These gates come from references alone; parts count only toward the
+**cycle**. Only references make a cycle; parts count only toward the
 [cycle peers](run.md#verify-and-runs) an Artifact selector runs. Evals in a cycle do not
-gate each other. For example, if `docs`'s eval references `cli` and `cli`'s eval
-references `docs`, a RED `cli/tests` does not block `docs/matches-cli` or replace its
-verdict. Both run independently and must pass before consumers outside the cycle can
-proceed.
+gate each other, but they still wait for the cycle's inputs from outside it.
 
-An eval that references a cycle peer still waits for that cycle's outside inputs: if
-`cli`'s eval also references `core`, a RED `core/tests` blocks `cli/tests` and also
-`docs/matches-cli`, which references `cli`. An eval of these Artifacts that references
-no cycle peer or input is not held back by them, though the Run still needs all of
-their results to finish GREEN. An eval
-elsewhere that references `docs` waits for every eval of `docs` and `cli`. An Eval's
-own Artifact is likewise not a gate for it, apart from the
+For example, `docs/matches-cli` references `cli`, and `cli/tests` references `docs` and
+`core`:
+
+| Result | What happens |
+|---|---|
+| `cli/tests` is RED | `docs/matches-cli` still runs and keeps its own verdict. |
+| `core/tests` is RED | `cli/tests` is blocked, and so is `docs/matches-cli`, because it references `cli`. |
+| An eval of `docs` or `cli` references neither the other nor `core` | It runs without waiting for them. The Run still needs every result to finish GREEN. |
+| An eval elsewhere references `docs` | It waits for every eval of `docs` and `cli`. |
+
+An Eval's own Artifact is not a gate for it either, apart from the
 [Human sibling prerequisite](#human-sign-offs). These gates also decide what waits and
 which speculative work is cancelled.
 

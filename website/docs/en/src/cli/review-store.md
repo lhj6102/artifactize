@@ -73,10 +73,9 @@ KEY`. Lookups count as use, and the store removes the least recently used record
 keeps its tokens but drops its records, so clients review once more and publish again;
 0.3 and 0.4 clients are told to upgrade.
 
-0.9 uses reuse-key v2, so it reuses no pre-0.9 record, including script-fingerprint
-results and Human sign-offs. Existing store records cannot satisfy the new keys;
-clients review once and publish new records. Local state upgrades separately; see
-[State](../features/others/state.md#state).
+Records from before 0.9 are not reused; see
+[Upgrading to 0.9](../getting-started/update.md#upgrading-to-09). Local state upgrades
+separately; see [State](../features/others/state.md#state).
 
 ## Remote review store client
 

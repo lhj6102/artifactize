@@ -122,24 +122,31 @@ payload.instruction = "Run {e2e-tests} against {app}."
 포함해 필요한 증거를 모두 확보해야 합니다.
 
 게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. 게이트가 RED나 BLOCKED이면 이에 의존하는 eval도
-차례로 차단됩니다. 부분이 RED여도 그 부분으로 이루어진 Artifact의 eval은 막히지 않으며, 대신 그
-Artifact가 통과하지 못합니다([구성](#composition) 참고). eval이
-없는 중간 Artifact는 실행 게이트가 되지 않습니다. 그런 Artifact를 참조해도 그 입력이나 부분이
-실행을 막지는 않습니다. 다만 Run이 GREEN으로 끝나려면 그 입력과 부분에 필요한 리뷰도 모두 통과해야 하므로, 그 Artifact를
-쓰는 eval이 실행되더라도 Run은 GREEN으로 끝나지 못할 수 있습니다.
+하나라도 막혔으면 BLOCKED를 보여 줍니다. 위의 `app/e2e`는 `e2e-tests`를 참조합니다.
 
-한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로 돌아오면 이 Artifact들은 **순환**을 이룹니다. 게이트는 참조로만 정해지며, 부분 관계는 Artifact 선택자가 함께 실행하는
-[순환](run.md#verify-and-runs)을 정할 때만 셉니다. 순환 안의 eval은 서로의 게이트가 되지 않습니다. 예를 들어
-`docs`의 eval이 `cli`를 참조하고 `cli`의 eval이 `docs`를 참조하면, `cli/tests`가 RED여도
-`docs/matches-cli`는 막히지 않고 판정도 바뀌지 않습니다. 둘은 따로 실행되며, 순환 밖에서 이들을
-쓰는 eval이 진행하려면 둘 다 통과해야 합니다.
+- `e2e-tests`의 eval이 RED나 BLOCKED이면 `app/e2e`가 막히고, `app`을 참조하는 eval도 차례로
+  막힙니다.
+- 부분이 RED여도 아무것도 막히지 않습니다. `combat`이 `game`의 부분이고 `combat/tests`가 RED여도
+  `game`의 eval은 실행되지만, `game`은 통과하지 못합니다([구성](#composition) 참고).
+- eval이 없는 Artifact는 아무것도 막지 않습니다. `app/e2e`가 eval이 없는 `bundle` Artifact를
+  참조한다면, `app/e2e`는 `bundle`의 부분 결과가 나오기 전에도 실행됩니다. 다만 Run에는 그 결과도 필요하므로,
+  그중 하나라도 RED면 Run은 GREEN으로 끝나지 못합니다.
 
-순환에 속한 Artifact를 참조하는 eval도 순환 밖 입력의 eval 결과가 나올 때까지 실행을 미룹니다. `cli`의 eval이
-`core`도 참조한다면, `core/tests`가 RED일 때 `cli/tests`가 막히고, `cli`를 참조하는
-`docs/matches-cli`도 막힙니다. 이 Artifact들에 속한 eval이라도 순환에 속한 Artifact나 입력을 참조하지 않으면 이들의 결과가 나오기 전에도 실행할 수 있습니다. 다만 Run이 GREEN으로 끝나려면 순환에 속한 Artifact와 입력의 결과가 모두 필요합니다. 다른 곳에서 `docs`를
-참조하는 eval은 `docs`와 `cli`의 모든 eval 결과가 나와야 실행할 수 있습니다. eval의 대상
-Artifact도 마찬가지로 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
+한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로
+돌아오면 이 Artifact들은 **순환**을 이룹니다. 순환은 참조로만 생기며, 부분 관계는 Artifact 선택자가
+함께 실행하는 [순환](run.md#verify-and-runs)을 정할 때만 셉니다. 순환 안의 eval은 서로의 게이트가
+되지 않지만, 순환 밖에서 들어오는 입력의 eval은 여전히 먼저 끝나야 합니다.
+
+예를 들어 `docs/matches-cli`가 `cli`를 참조하고, `cli/tests`가 `docs`와 `core`를 참조한다고 해 봅시다.
+
+| 결과 | 일어나는 일 |
+|---|---|
+| `cli/tests`가 RED | `docs/matches-cli`는 그대로 실행되고 판정도 바뀌지 않습니다. |
+| `core/tests`가 RED | `cli/tests`가 막히고, `cli`를 참조하는 `docs/matches-cli`도 막힙니다. |
+| `docs`나 `cli`의 eval이 서로도 `core`도 참조하지 않음 | 그 eval은 이들의 결과가 나오기 전에도 실행됩니다. 다만 Run이 GREEN으로 끝나려면 모든 결과가 필요합니다. |
+| 다른 곳의 eval이 `docs`를 참조함 | `docs`와 `cli`의 모든 eval 결과가 나와야 실행됩니다. |
+
+eval의 대상 Artifact도 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
 예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
 
 BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval만
