@@ -700,6 +700,10 @@ export type Neighbours = {
 	moreUses: number,
 	/**  Artifacts whose evals use it beyond those shown. */
 	moreUsedBy: number,
+	/**  The Artifacts it is a part of directly, by name in the graph's order. */
+	wholes: string[],
+	/**  How many times the graph draws it: once inside each drawing of each of its wholes. */
+	copies: number,
 };
 
 export type NodeKind = "run" | "artifact" | "eval";

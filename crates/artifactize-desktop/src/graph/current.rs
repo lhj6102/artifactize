@@ -389,8 +389,11 @@ fn same_shape(before: &Current, after: &Current) -> bool {
 
 /// The graph of `current`, every Artifact lit and noted by what verify would do.
 pub(crate) fn shape(current: &Current) -> Shape {
-    let names: std::collections::BTreeSet<_> =
-        current.artifacts.iter().map(|artifact| &artifact.name).collect();
+    let names: std::collections::BTreeSet<_> = current
+        .artifacts
+        .iter()
+        .map(|artifact| &artifact.name)
+        .collect();
     Shape {
         nodes: current
             .artifacts

@@ -978,6 +978,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
             },
             "moreUses": 0,
             "moreUsedBy": 0,
+            "wholes": [],
+            "copies": 1,
         })
     );
     // An Artifact the Run lacks has no row and no neighbours.
@@ -1220,6 +1222,8 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
             "shape": {"nodes": graph["nodes"].as_array().unwrap()[..2], "edges": graph["edges"]},
             "moreUses": 0,
             "moreUsedBy": 0,
+            "wholes": [],
+            "copies": 1,
         })
     );
     // Its row, with its eval, as the Detail's chips show them; none for an Artifact it lacks.

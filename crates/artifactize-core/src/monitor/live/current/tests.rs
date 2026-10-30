@@ -89,7 +89,10 @@ async fn a_whole_holds_its_parts_without_edges_to_them_and_does_what_they_do() {
         .find(|artifact| artifact.name.as_str() == "kit")
         .unwrap();
     assert_eq!(
-        kit.parts.iter().map(|part| part.as_str()).collect::<Vec<_>>(),
+        kit.parts
+            .iter()
+            .map(|part| part.as_str())
+            .collect::<Vec<_>>(),
         ["core", "notes"]
     );
     assert!(edges(&current).is_empty());

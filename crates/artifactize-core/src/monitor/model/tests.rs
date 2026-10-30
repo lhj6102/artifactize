@@ -142,31 +142,32 @@ fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_parts_or_edges()
     use super::{Graph, GraphEdge, GraphNode, Light, NodeId};
     use crate::types::ArtifactName;
     let name = |text: &str| text.parse::<ArtifactName>().unwrap();
-    let whole = |lights: [Light; 2], names: [&str; 2], edges: &[(&str, &str)], parts: &[&str]| Graph {
-        nodes: names
-            .iter()
-            .zip(lights)
-            .enumerate()
-            .map(|(at, (item, light))| GraphNode {
-                id: NodeId::artifact(name(item)),
-                name: name(item),
-                light,
-                parts: if at == 0 {
-                    parts.iter().map(|part| name(part)).collect()
-                } else {
-                    Vec::new()
-                },
-            })
-            .collect(),
-        edges: edges
-            .iter()
-            .map(|(from, to)| GraphEdge {
-                from: name(from),
-                to: name(to),
-                light: lights[0],
-            })
-            .collect(),
-    };
+    let whole =
+        |lights: [Light; 2], names: [&str; 2], edges: &[(&str, &str)], parts: &[&str]| Graph {
+            nodes: names
+                .iter()
+                .zip(lights)
+                .enumerate()
+                .map(|(at, (item, light))| GraphNode {
+                    id: NodeId::artifact(name(item)),
+                    name: name(item),
+                    light,
+                    parts: if at == 0 {
+                        parts.iter().map(|part| name(part)).collect()
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .collect(),
+            edges: edges
+                .iter()
+                .map(|(from, to)| GraphEdge {
+                    from: name(from),
+                    to: name(to),
+                    light: lights[0],
+                })
+                .collect(),
+        };
     let graph = |lights, names, edges: &[(&str, &str)]| whole(lights, names, edges, &[]);
     let base = graph([Light::Waiting; 2], ["lib", "app"], &[("lib", "app")]);
     // Other lights keep the shape.
