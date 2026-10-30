@@ -511,7 +511,7 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     assert!(artifactize_core::config::read_workspace_config(&fixture.repo).is_err());
     let alice = "alice".parse().unwrap();
     let (receipts, repo) = human::open(&fixture.state, &id).await.unwrap();
-    assert_eq!(repo, fixture.repo.canonicalize().unwrap());
+    assert_eq!(repo, support::os::canonical(&fixture.repo));
     human::claim(&receipts, &id, &alice).await.unwrap();
     // The declarations of the scope are still compared with those the request recorded.
     let spec = fixture.repo.join("spec/index.artf");
