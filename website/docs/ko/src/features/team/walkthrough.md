@@ -65,7 +65,7 @@ artifactize verify --all --wait
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
-`verify`는 각 결과의 fingerprint를 다시 확인한 뒤 GREEN으로 판정했으므로, 판정, 소유자 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
+`verify`는 각 결과의 fingerprint를 다시 확인한 뒤 GREEN으로 판정했으므로, 판정, 추가 결과 필드, 프로필, 사용량 카운터, 만든 사람, 타임스탬프를 담은 요약 기록을 게시했습니다.
 요약에는 캡처한 stdout/stderr, 별도의 호출 감사 기록,
 로컬 저장소 출처가 빠졌습니다. 선언된 Runtime 명령과 인자는
 프로필의 일부로 공유되었으며, 그 인자 안의 경로와 민감한 리터럴은

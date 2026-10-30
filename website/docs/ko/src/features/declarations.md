@@ -63,7 +63,7 @@ eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
 | `evals.<id>.mutex` | 선택 사항입니다. 고유한 계층형 mutex 태그를 최대 64개 담은 목록입니다. Runtime과 Agent eval에만 씁니다. 기본값은 없습니다 |
 | `evals.<id>.profile` | 필수입니다. `runtime`, `agent`, `human` 프로필입니다 |
 | `evals.<id>.payload.instruction` | Runtime, Agent, Human eval에 필수입니다. 비어 있지 않은 지시문입니다 |
-| `evals.<id>.pass_schema`, `fail_schema` | 선택 사항입니다. 실행 가능한 eval의 소유자 필드 JSON Schema입니다. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받습니다 |
+| `evals.<id>.pass_schema`, `fail_schema` | 선택 사항입니다. 실행 가능한 eval의 추가 결과 필드 JSON Schema입니다. Human eval은 [양식으로 입력할 수 있는 형태](#human-result-schemas)만 받습니다 |
 | `evals.<id>.profile_variants` | 기본 프로필과 종류가 같은 프로필을 이름별로 최대 64개 선언합니다. 각 항목에는 프로필 전체를 씁니다 |
 
 [도구 세션](tools/agent.md#tool-sessions)을 쓰면 리뷰 하나가 진행되는 동안 테스트 하네스를 계속 실행해 둘 수 있습니다.
@@ -124,10 +124,10 @@ artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
 거부하며, 새 필드의 별칭이 아닙니다. artifactsum 형식의 예전 `dependencies` 옵션도
 거부합니다.
 
-## 소유자 결과 스키마 {#owner-result-schemas}
+## 결과 필드 스키마 {#owner-result-schemas}
 
-Agent와 Human 결과에는 `verdict`와, eval 작성자가 정한 결과 필드인 소유자 필드가 들어 있습니다. `pass_schema`(GREEN)와
-`fail_schema`(RED)에는 이 소유자 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
+Agent와 Human 결과에는 `verdict`와, eval 작성자가 정한 추가 결과 필드가 들어 있습니다. `pass_schema`(GREEN)와
+`fail_schema`(RED)에는 이 추가 결과 필드만 선언하세요. `verdict`는 artifactize가 넣습니다. 예를 들어
 위의 `summary` 스키마라면 Agent는 `{"verdict":"GREEN","summary":"All requirements are
 covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필드로
 `{"summary":"All requirements are covered."}`만 입력합니다.
@@ -139,16 +139,16 @@ covered."}`를 돌려줍니다. Human은 GREEN을 따로 고르고, 양식 필�
 
 - `type`이 있으면 `"object"`여야 합니다. `additionalProperties`가 있으면 `false`여야
   합니다. 생략해도 artifactize가 최종 스키마에 객체 타입과 추가 속성 금지 조건을 적용합니다.
-- 허용하는 최상위 소유자 필드는 모두 `properties`에 직접 적어야 합니다. `patternProperties`나
+- 허용하는 최상위 추가 결과 필드는 모두 `properties`에 직접 적어야 합니다. `patternProperties`나
   `$ref`로 선언하지 않은 최상위 필드를 허용할 수 없습니다.
-- 최상위의 `allOf`, `anyOf`, `oneOf`, `not`은 거부합니다. 조합은 소유자 필드 안에서 하세요.
+- 최상위의 `allOf`, `anyOf`, `oneOf`, `not`은 거부합니다. 조합은 추가 결과 필드 안에서 하세요.
   중첩 객체, 배열, 로컬 참조는 스키마 검사기가 지원합니다.
 - 다음 이름은 예약되어 있으므로 필드로 선언하거나 필수 항목으로 지정할 수 없습니다: `verdict`, `reference`,
   `reusedFrom`, `executionProvenance`, `attemptId`, `provider`, `model`, `stdout`,
-  `stderr`, `durationMs`, `exitCode`. 감사·실행 데이터는 소유자 필드 밖에 있습니다.
-- 한 판정의 스키마를 생략하면 그 판정에서는 **소유자 필드를 하나도 허용하지 않습니다**.
+  `stderr`, `durationMs`, `exitCode`. 감사·실행 데이터는 추가 결과 필드 밖에 있습니다.
+- 한 판정의 스키마를 생략하면 그 판정에서는 **추가 결과 필드를 하나도 허용하지 않습니다**.
   Agent는 `{"verdict":"GREEN"}`이나 `{"verdict":"RED"}`만 돌려주고, Human 양식 필드는
-  `{}`입니다. 빈 객체 스키마도 마찬가지로 소유자 필드를 허용하지 않습니다.
+  `{}`입니다. 빈 객체 스키마도 마찬가지로 추가 결과 필드를 허용하지 않습니다.
 
 ### Human 결과 스키마 {#human-result-schemas}
 
@@ -156,7 +156,7 @@ Human 결과는 사람이 양식으로 입력하므로, Human eval의 `pass_sche
 입력할 수 있는 형태만 쓸 수 있습니다. 그 밖의 형태는 `.artf`를 읽을 때 선언 오류가 되며, 키
 경로와 대신 쓸 수 있는 형태를 알려 줍니다.
 
-| 소유자 필드 스키마 | 리뷰에서 보이는 모습 |
+| 추가 결과 필드 스키마 | 리뷰에서 보이는 모습 |
 |---|---|
 | `{ type = "string" }`. `minLength`, `maxLength`를 붙일 수 있습니다 | 텍스트 상자 |
 | `{ type = "integer" }`나 `"number"`. `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`를 붙일 수 있습니다 | 숫자 상자 |
