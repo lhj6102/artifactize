@@ -6,8 +6,9 @@ description: How a builder iterates with artifactize verify while fixing RED eva
 # Focus then sweep
 
 You are building in a project that artifactize verifies, and a Run came back RED. A fix
-changes the Artifact you edited, so every eval that reads that Artifact needs review
-again, including evals that were GREEN. Running all of them after every fix
+changes the Artifact you edited and so its fingerprint, which makes the earlier results
+of every eval that reads that Artifact stale: they need review again, including evals
+that were GREEN. Running all of them after every fix
 (`verify --all`) costs time and money on each iteration, and a fix that targets one eval
 rarely breaks another. So fix and rerun the RED evals one by one first, and review
 everything else once at the end.

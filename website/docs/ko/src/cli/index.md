@@ -133,8 +133,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)에 있습니다.
 
 `--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
-볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
-조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
+볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백이 없는 한 줄이어야 하며,
+길이는 1–200자여야 합니다. 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
 열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
 `--wait` 없이 `verify`가 출력하는 JSON은 Run과 그 상태만 알려 줍니다.
 
