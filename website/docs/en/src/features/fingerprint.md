@@ -140,14 +140,6 @@ the store, and its completed GREEN or RED is appended as a newer record (and
 published to a configured store), which later runs then reuse. Forced and unkeyed
 results still satisfy their own Run and keep their execution.
 
-## Upgrading to 0.9
-
-For declaration, state-directory and terminal changes, see
-[Install: Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
-Reuse-key v2 matches no pre-0.9 result, including script fingerprints and team
-review store records. The first full `verify` therefore reviews every executable
-eval once, Human sign-offs included; later Runs reuse normally.
-
 ## Graph fingerprint
 
 The root [`.artf` graph Artifact](declarations.md#graph-artifact)

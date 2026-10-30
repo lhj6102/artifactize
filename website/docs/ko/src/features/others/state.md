@@ -35,7 +35,7 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 
 0.9로 업그레이드하면 모든 eval을 한 번 리뷰합니다.
-[0.9로 업그레이드](../fingerprint.md#upgrading-to-09)를 보세요.
+[0.9로 업그레이드](../../getting-started/update.md#upgrading-to-09)를 보세요.
 
 **토큰은 저장소 밖에 둡니다.** Codex 로그인 정보, 리뷰 저장소 토큰, 저장한 API 키와 커스텀
 provider(`providers.json`)를 담는 `$STATE/auth`가

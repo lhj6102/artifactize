@@ -32,9 +32,9 @@ Replace both paths for your host. The source must be the server's actual
 project checkout (`/srv/backups` in this example). `-readonly` prevents a mistyped
 source path from silently creating a new empty source database.
 
-Upgrade the server and its clients together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
-Human sign-offs included, needs one new review. See [Review store server](../../cli/review-store.md#review-store-server) for
-the full reference.
+Upgrade the server and its clients together; for what changes in 0.9, see
+[Upgrading to 0.9](../../getting-started/update.md#upgrading-to-09). See
+[Review store server](../../cli/review-store.md#review-store-server) for the full reference.
 
 ## Connect teammates securely
 

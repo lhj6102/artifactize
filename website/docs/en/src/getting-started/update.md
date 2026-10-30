@@ -80,7 +80,7 @@ A state from before 0.9 (schemas 1–5) is refused: set `ARTIFACTIZE_STATE_HOME`
 themselves ([State](../features/others/state.md#state)).
 Reuse-key v2 matches no pre-0.9 result, even in
 a team review store or with a script fingerprint. The first full `verify` reviews
-every eval once, Human sign-offs included. See [Upgrading to 0.9](../features/fingerprint.md#upgrading-to-09).
+every executable eval once, Human sign-offs included; later Runs reuse normally.
 
 Monitor now opens an eval's Detail in its pane rather than a modal. Standalone
 Review shares that Human Detail: claims are explicit, and tools and submission

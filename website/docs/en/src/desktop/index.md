@@ -339,19 +339,21 @@ The verdict is already recorded; retry publication with Settings' **Push results
 
 ### Leave and quit
 
-`q` quits outside a text field, except while the keyboard is in a Human review that
-is editing or busy: leave or cancel that work first. With the keyboard elsewhere,
-such as after closing Commands, `q` starts quitting even while that review stays
-open. While Settings is open, `q` does nothing: close Settings first, or choose
-**Quit** in Commands. Closing the window also starts quitting. If
-this window took Human claims it has not submitted or released itself, choose
-**Stay** (Esc), **Release and quit** (`u`) or **Keep and quit** (`k`). Keeping a
-claim leaves it held for this reviewer; it is not a verdict. The prompt lists the
-claims this window took, as this window last saw them: a claim released or settled
-from the CLI or another window can still be listed, and a claim taken before the
-window opened is not. Quitting cancels tools that are still producing output and any
-review work in progress; programs a launch tool opened keep running, so close them
-yourself.
+Press `q` outside a text field, choose **Quit** in Commands, or close the window. `q`
+waits while a Human review you are in is editing or busy, and does nothing while
+Settings is open.
+
+If this window took Human claims it has not submitted or released, it asks what to
+do with them:
+
+| Choice | Key | Claims |
+|---|---|---|
+| **Stay** | Esc | Nothing changes; the app stays open. |
+| **Release and quit** | `u` | Released, so another reviewer can take them. |
+| **Keep and quit** | `k` | Still held for you; keeping one is not a verdict. |
+
+Quitting cancels tools that are still producing output and review work in progress.
+Programs a launch tool opened keep running, so close them yourself.
 
 ## Settings
 
