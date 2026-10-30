@@ -197,6 +197,13 @@ them with Tab and Enter. When a Run changes, the graph's colors update in
 place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
 
+An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
+its parts, its name and colour at the top; a part with parts of its own is a box inside it.
+The box is that Artifact: a click on the box outside its parts, or Tab and Enter, opens its
+Detail, and a click on a part opens the part's. A part of several Artifacts is drawn inside
+each of them. Opening one of its copies highlights them all, and its Detail says how many
+times it is drawn and inside which Artifacts.
+
 ### Find in the graph
 
 With a Run's graph or a Current shown and the keyboard outside the Pane (on the graph or
@@ -210,7 +217,8 @@ says how many more match, or that none does.
 Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
 Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
 click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
-graph too large to show their names.
+graph too large to show their names. A part drawn inside several Artifacts is listed once,
+and opening it centres its first copy.
 
 ### Detail
 

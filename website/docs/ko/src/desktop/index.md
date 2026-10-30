@@ -165,6 +165,13 @@ Artifact가 공통으로 쓰는 Artifact(모든 리뷰가 읽는 기준 파일 �
 확대해서 보이는 수를 줄이면 다시 이름이 나오고 Tab과 Enter로 이동할 수 있습니다.
 Run이 바뀌면 그래프의 색이 그 자리에서 바뀌고, Artifact나 간선이 바뀔 때만 다시 배치합니다. Artifact의 Detail에는 양쪽에 이웃 Artifact가 각각 최대 16개씩 표시됩니다. 실패한 Artifact를 먼저 보여 주고, 나머지는 개수만 표시합니다.
 
+[부분](../features/artifact.md#composition)으로 이루어진 Artifact는 부분들을 감싸는 상자로
+그려지고, 상자 위쪽에 이름과 색이 표시됩니다. 부분에 다시 부분이 있으면 그 안에 상자가 하나 더
+들어갑니다. 상자가 곧 그 Artifact입니다. 부분이 없는 곳을 클릭하거나 Tab과 Enter를 쓰면 그
+Artifact의 Detail이 열리고, 부분을 클릭하면 그 부분의 Detail이 열립니다. 여러 Artifact에 속한
+부분은 각 Artifact 안에 하나씩 그려집니다. 그중 하나를 열면 모든 사본이 함께 강조되고, Detail에
+몇 번 그려졌는지와 어느 Artifact 안에 있는지가 나옵니다.
+
 ### 그래프에서 찾기 {#find-in-the-graph}
 
 Run의 그래프나 Current가 보이고 키보드 초점이 Pane 밖(그래프나 Detail)에 있을 때 Ctrl+F를 누르면
@@ -177,7 +184,8 @@ Run의 그래프나 Current가 보이고 키보드 초점이 Pane 밖(그래프�
 열리며, eval이면 그 eval의 탭으로 열립니다. 그 Artifact는 Detail 왼쪽 그래프의 한가운데로 오고,
 이름을 읽을 수 있을 만큼 확대됩니다. Esc를 누르면 찾기 칸이 닫히고 키보드 초점이 돌아갑니다. 찾기 칸
 바깥을 클릭해도 닫히며, 그 클릭은 평소처럼 동작합니다. 그래프가 너무 커서 이름이 보이지 않을 때도
-찾기로 모든 Artifact에 갈 수 있습니다.
+찾기로 모든 Artifact에 갈 수 있습니다. 여러 Artifact 안에 그려진 부분은 한 번만 나오고, 열면 첫
+번째 사본이 가운데로 옵니다.
 
 ### Detail {#detail}
 
