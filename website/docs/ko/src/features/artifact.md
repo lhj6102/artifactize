@@ -135,7 +135,7 @@ payload.instruction = "Run {e2e-tests} against {app}."
 한 Artifact의 eval이 다른 Artifact를 참조하고, 그 참조가 직접 또는 여러 단계를 거쳐 처음 Artifact로
 돌아오면 이 Artifact들은 **순환**을 이룹니다. 순환은 참조로만 생기며, 부분 관계는 Artifact 선택자가
 함께 실행하는 [순환](run.md#verify-and-runs)을 정할 때만 셉니다. 순환 안의 eval은 서로의 게이트가
-되지 않지만, 순환 밖에서 들어오는 입력은 여전히 기다립니다.
+되지 않지만, 순환 밖에서 들어오는 입력의 eval은 여전히 먼저 끝나야 합니다.
 
 예를 들어 `docs/matches-cli`가 `cli`를 참조하고, `cli/tests`가 `docs`와 `core`를 참조한다고 해 봅시다.
 
