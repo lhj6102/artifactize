@@ -519,8 +519,7 @@ async fn followers_keep_the_original_claim_remote_session_and_run_specific_evide
     assert_eq!(
         store::read_request_repo(&state, &follower.id)
             .await
-            .unwrap()
-            .1,
+            .unwrap(),
         repo
     );
     let catalog = store::read_catalog(&state).await.unwrap();

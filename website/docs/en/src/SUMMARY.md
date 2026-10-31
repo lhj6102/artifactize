@@ -41,6 +41,7 @@
 
 - [Plugin for Claude Code and Codex](agent-plugin/plugin.md)
 - [Hey Arti](agent-plugin/hey-arti.md)
+- [Focus then sweep](agent-plugin/focus-then-sweep.md)
 - [MCP](agent-plugin/mcp.md)
 
 # CLI

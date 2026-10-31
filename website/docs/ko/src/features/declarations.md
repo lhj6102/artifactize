@@ -42,8 +42,8 @@ crates/app/tests/
 examples/
 ```
 
-이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact 이름으로는 무엇의 부분인지 알 수 없으며, 그것은 폴더
-구조와 `parts`로 정합니다([구성](artifact.md#composition) 참고). Artifact 이름은
+이름, eval ID, 도구·세션 이름, 프로필 변형 이름은 영문자나 숫자로 시작하고, 영문자, 숫자, 밑줄, 하이픈으로만 이루어져야 하며, 길이는 64자 이하입니다(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). Artifact가 어느 Artifact의 부분인지는 이름이 아니라 폴더
+구조와 `parts`로 결정합니다([구성](artifact.md#composition) 참고). Artifact 이름은
 프로젝트 전체에서 중복되지 않아야 합니다. eval은 배열이 아니라 ID를 키로 쓰는 테이블이며, `app`의
 `[evals.check]`는 `app/check`가 됩니다. eval에 `id` 필드를 직접 쓰면 거부합니다. 선언 안의
 eval은 TOML에 적힌 위치가 아니라 ID 순서로 정렬합니다.
@@ -231,7 +231,7 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 이름이 `index`인 파일에는 사이드카를 둘 수 없습니다. `.artf` 파일은 선언이며 대상이 되지
 않습니다.
 
-파일 Artifact는 자기를 둘러싼 가장 가까운 폴더 Artifact의 [부분](artifact.md#composition)입니다.
+파일 Artifact는 가장 가까운 상위 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 그 폴더 Artifact를 선택하면 파일 Artifact도 함께 선택되고, 파일 Artifact가 통과해야 폴더 Artifact도
 통과합니다. 다만 부분이라고 입력이 되지는 않습니다. 폴더 Artifact의 eval이 이름을 적지 않으면 그
 파일 Artifact를 읽지 않으며, 재사용 키에도 그 fingerprint가 들어가지 않습니다. 하위 폴더에

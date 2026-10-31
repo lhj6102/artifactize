@@ -79,7 +79,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `server rm KEY` | | JSON | 0 |
 
 Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 2 ERROR 또는
-취소, 4 INCOMPLETE, 5 YELLOW(승인만 남았다는 뜻이지 승인되었다는 뜻이 아님)입니다.
+취소, 4 INCOMPLETE, 5 YELLOW입니다. YELLOW는 승인이 남아 있을 뿐, 승인된 상태는 아니라는 뜻입니다.
 옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 진행 상황을 지켜보는
 명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING이나
 WAITING_HUMAN 상태의 Run이 끝날 때까지 상태를 계속 확인합니다. Run이 끝나기 전에 이 명령의 제한 시간이 지나면 현재 Run을 출력하고 3으로
@@ -133,8 +133,8 @@ Run ID와 요청 ID 인자(`request list --run`과 `review REQUEST_ID` 포함)�
 [제출, 지켜보기, 취소](../features/run.md#submit-observe-and-cancel)에 있습니다.
 
 `--comment TEXT`를 붙이면 지금 하는 일을 짧게 적어 Run과 함께 남기고, Run을 지켜보는 사람이 이를
-볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백 없는 한 줄, 1–200자이며
-조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
+볼 수 있습니다. Run의 동작은 바뀌지 않습니다. 코멘트는 제어 문자와 앞뒤 공백이 없는 한 줄이어야 하며,
+길이는 1–200자여야 합니다. 조건에 맞지 않으면 종료 코드 2로 끝납니다. `verify --wait`는 `Comment:` 줄에, `run list`는 `COMMENT`
 열(없으면 `-`)에 보여 주고, `verify --wait`, `run list`, `run show`의 JSON에는 `comment`로 나옵니다.
 `--wait` 없이 `verify`가 출력하는 JSON은 Run과 그 상태만 알려 줍니다.
 
@@ -203,9 +203,8 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
-프로그램을 시작하지 못하거나 리뷰가 ERROR로 끝나도 이 횟수는 유지합니다. 사람을 기다리는 시간, 담당 지정, Human 도구는 시작
-횟수에 들어가지 않고, fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에 합류하는 것도
-마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. `execution_paths`에
+프로그램을 시작하지 못하거나 리뷰가 ERROR로 끝나도 이 횟수는 유지합니다. 사람의 판정을 기다리는 시간, 담당 지정, Human 도구 사용은 시작 횟수에 포함되지 않습니다. fingerprint 계산과 재확인, 저장된 결과 재사용, 이미 실행 중인 리뷰에
+합류하는 것도 마찬가지입니다. 실행할 준비가 끝나기 전에 실패한 리뷰도 시작 횟수에 넣지 않습니다. `execution_paths`에
 지정한 도구 파일을 읽지 못한 Agent 리뷰는 시작 횟수에 들어가고, 모델을 호출하지 않은 채
 ERROR/PREPARATION_FAILED로 끝납니다.
 0으로 두면 재사용, 합류, Human 리뷰만 할 수 있습니다. 합류한 Run이 실패해서 리뷰를 다시

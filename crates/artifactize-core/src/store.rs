@@ -54,8 +54,9 @@ pub use receipts::{
 };
 pub use requests::read_request_repo;
 pub use requests::{
-    RequestView, read_original, read_request, read_request_batch, read_requests, read_requests_in,
-    read_run_requests, read_session_request, read_waiting, read_waiting_originals,
+    RequestView, Shown, read_original, read_original_as, read_request, read_request_as,
+    read_request_batch, read_requests, read_requests_in, read_run_requests, read_session_request,
+    read_waiting, read_waiting_originals,
 };
 
 /// How long one database operation waits for the state other processes are writing before it

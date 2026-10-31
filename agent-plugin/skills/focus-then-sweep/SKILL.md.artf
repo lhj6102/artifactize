@@ -1,0 +1,44 @@
+name = "agent-focus-then-sweep"
+tags = ["type:skill"]
+
+[views.agent_tools]
+read = { builtin = "read" }
+
+[evals.correct]
+title = "What the skill recommends exists in today's artifactize"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+payload.instruction = """
+Read the skill {agent-focus-then-sweep} using read_agent-focus-then-sweep. Check that every selector, command, flag, tool,
+status, exit code and behaviour it mentions or recommends matches {engine-core},
+{engine-cli}, {engine-mcp} and {docs-en}. Judge accuracy only: an omission is not a
+finding. Submit GREEN when nothing it states is wrong or outdated; otherwise RED with
+concrete skill path:line findings.
+"""
+pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }
+
+[evals.guides]
+title = "The skill guides a builder through focus, sweep and the three plans"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+payload.instruction = """
+Read the skill {agent-focus-then-sweep} using read_agent-focus-then-sweep, as a builder, a coding agent fixing RED evals in a
+project that artifactize verifies, using {docs-en} only to understand the concepts. Check
+that it:
+- explains why: a fix changes the Artifact's fingerprint, so every eval that sees it needs
+  review again, and rerunning everything after each fix costs time and money;
+- makes Plan A, focus first and sweep last, the default: rerun only the RED eval after each
+  fix until it is GREEN, one RED eval after another, without rerunning the evals the fix
+  made stale; then run everything once, and send a new RED back to focus;
+- offers Plan B, focus with the expected impact: include the evals a fix may affect, with
+  a way to find them, and run evals in a cycle together;
+- offers Plan C, always sweep, and says when to choose it;
+- tells the builder how to read a focus Run whose outcome is not GREEN although the
+  focused eval is;
+- makes YELLOW the target: sign-offs wait for people without holding the builder up, the
+  builder keeps working and hands them over, and never signs off itself.
+Submit GREEN when it does all of these and a builder could follow each step without
+guessing; otherwise RED with concrete skill path:line findings, each naming the missing
+or unclear part.
+"""
+pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1, maxItems = 20 } }, required = ["findings"], additionalProperties = false }

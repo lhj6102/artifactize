@@ -65,7 +65,7 @@ eval을 막지 않습니다([0.16으로 업그레이드](#upgrading-to-016) 참�
 선언을 폴더에는 TOML `index.artf`로, 파일에는 `<file>.artf`로 다시 작성하세요. 키는
 snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예전 무시 파일을
 대신합니다. 변환기는 없습니다. 에이전트에게 파일을 다시 작성해 커밋하게 하고,
-예전 표시를 제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
+기존 선언 형식의 흔적을 제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
 필요하다면 직접 만든 생성기를 쓰고 그 `.artf` 출력을 커밋하세요. [선언 (.artf)](../features/declarations.md)을 보세요.
 
 0.9 이전의 상태(스키마 1~5)는 거부합니다. `ARTIFACTIZE_STATE_HOME`이나 `--state-dir`을 새
@@ -73,7 +73,7 @@ snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예
 업그레이드됩니다([상태](../features/others/state.md#state)).
 재사용 키 v2는 0.9 이전의 어떤 결과와도 일치하지 않습니다.
 팀 리뷰 저장소에 있거나 스크립트 fingerprint를 쓰는 경우도 마찬가지입니다. 업그레이드 후 처음으로 전체 `verify`를
-실행하면 Human 승인을 포함해 모든 eval을 한 번씩 리뷰합니다. [0.9로 업그레이드](../features/fingerprint.md#upgrading-to-09)를 보세요.
+실행하면 Human 승인을 포함해 실행 가능한 eval을 모두 한 번씩 리뷰하고, 그 뒤 Run부터는 평소처럼 재사용합니다.
 
 이제 Monitor는 eval의 Detail을 모달이 아니라 전용 패널에서 엽니다. 독립 실행형
 Review도 같은 Human Detail을 씁니다. 요청은 직접 맡아야 하며, 도구를 실행하거나

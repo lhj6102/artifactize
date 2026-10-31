@@ -280,6 +280,33 @@ async fn search_pages_through_every_request_and_the_default_finds_waiting_human_
 }
 
 #[tokio::test]
+async fn only_a_tag_term_reads_the_runs_definitions() {
+    // Definitions that do not decode: a read that decodes them skips the Run.
+    let (_root, state) = state(3).await;
+    rusqlite::Connection::open(state.join(store::DATABASE))
+        .unwrap()
+        .execute(
+            "UPDATE run_definitions SET data='{\"artifacts\":7}' WHERE run_id='run-1'",
+            [],
+        )
+        .unwrap();
+    let reviewer: ReviewerId = "alice".parse().unwrap();
+    for (query, expected) in [(DEFAULT, 1), ("eval:check", 3), ("tag:any", 0)] {
+        let parsed = query.parse().unwrap();
+        let found = search(&state, &parsed, &reviewer, 0).await.unwrap();
+        assert_eq!(found.requests.len(), expected, "{query}");
+        assert_eq!(
+            count(&state, &parsed, &reviewer).await.unwrap(),
+            expected as u64
+        );
+    }
+    let waiting = crate::monitor::live::waiting(&state, &reviewer, &Default::default())
+        .await
+        .unwrap();
+    assert_eq!(waiting.len(), 1);
+}
+
+#[tokio::test]
 async fn count_finds_what_every_page_of_the_query_lists() {
     // 210 GREEN requests and one waiting sign-off: the count spans the pages search returns.
     let (_root, state) = state(210).await;

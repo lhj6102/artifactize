@@ -207,6 +207,56 @@ properties.fix = { type = "string", minLength = 1 }
 required = ["doc", "code", "fix"]
 additionalProperties = false
 
+[evals.matches-focus-then-sweep]
+title = "The documentation explains the focus-then-sweep Artifact completely and accurately"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.matches-focus-then-sweep.payload]
+instruction = """
+Review {docs-en} against only {agent-focus-then-sweep}. Start with src/SUMMARY.md in the docs.
+The owned documentation area is Focus then sweep inside Agent plugin (src/agent-plugin/focus-then-sweep.md), including why a fix makes other evals stale, getting and invoking the canonical skill, the three plans (focus first and sweep last as the default, focus with the expected impact, always sweep), reading a focus Run, cycles, sign-offs and working toward YELLOW.
+Check that this area is grouped in one distinct place, that all user-facing features
+of the described Artifact are present, and that they are explained well and agree
+with its actual behavior. Follow links within the docs for necessary context.
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
+exposed by {agent-focus-then-sweep} to inspect that Artifact. Tool paths are Artifact-relative.
+Do not infer correctness from other docs or review other code Artifacts.
+User-facing means what a user declares, runs, sees or must decide: declarations,
+commands, flags, screens, outputs, exit codes, actionable errors and limits that
+change what they can do. How artifactize implements it (process groups, signals,
+journals, transactions, recovery, locking) and the Rust library API are not
+user-facing. Documentation of them is a mismatch whose fix is to remove it.
+Submit GREEN only when no feature is missing, poorly explained or contradicted, and
+no implementation detail is documented.
+Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
+each with the doc path:line, the implementation path:line (or skill location),
+and one sentence on how to fix the documentation. Fix the docs, not the code.
+"""
+
+[evals.matches-focus-then-sweep.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.matches-focus-then-sweep.fail_schema]
+type = "object"
+required = ["mismatches"]
+additionalProperties = false
+
+[evals.matches-focus-then-sweep.fail_schema.properties.mismatches]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.matches-focus-then-sweep.fail_schema.properties.mismatches.items]
+type = "object"
+properties.doc = { type = "string", minLength = 1 }
+properties.code = { type = "string", minLength = 1 }
+properties.fix = { type = "string", minLength = 1 }
+required = ["doc", "code", "fix"]
+additionalProperties = false
+
 [evals.matches-agent-plugin]
 title = "The documentation explains the agent-plugin Artifact completely and accurately"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }

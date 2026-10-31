@@ -2,8 +2,8 @@
 
 모든 OS에서 공통으로 쓸 명령과 경로를 한 번만 선언하세요. 선언에 적힌 명령은
 Linux(x86_64와 aarch64), macOS(Apple 실리콘과 Intel), Windows(x64)에서 실행됩니다. WSL 2에서는
-Linux 빌드가 실행됩니다. 리뷰하기 전에는 `artifactize tools check`가 프로그램을 찾을 수 없는
-도구를 알려 줍니다. 리뷰 중에 Runtime eval의 프로그램을 시작하지 못하면 그 eval은 RED가 아니라 ERROR가 되고, 도구의 프로그램을 시작하지 못하면 도구 오류를 돌려주며 리뷰는 계속됩니다. 각
+Linux 빌드가 실행됩니다. 리뷰 전에 `artifactize tools check`를 실행하면 필요한 프로그램을
+찾지 못하는 도구를 확인할 수 있습니다. 리뷰 중에 Runtime eval의 프로그램을 시작하지 못하면 그 eval은 RED가 아니라 ERROR가 되고, 도구의 프로그램을 시작하지 못하면 도구 오류를 돌려주며 리뷰는 계속됩니다. 각
 OS의 설치 채널은 [설치](../../getting-started/install.md)에 있습니다. 이 페이지는 OS마다 다른
 점을 정리합니다.
 
@@ -13,15 +13,14 @@ Runtime eval, fingerprint 스크립트, 명령을 실행하는 Agent 도구와 H
 `command`와 `args`를 인자 목록 하나로 실행합니다. 셸을 거치지 않으며 OS별로 선언을 따로 작성하지도 않습니다.
 리뷰어의 실행 환경에서 쓸 수 있는 명령을 프로젝트에 선언하세요. `python3`나 `grep`을 실행하는 eval이라면 모든
 리뷰어의 `PATH`에 그 명령이 있어야 합니다. 파일을 읽고 검색하는 데는
-[내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 OS가 제공하는
-열기 프로그램을 씁니다. macOS에서는 `open`, Windows에서는 기본 애플리케이션, Linux와 WSL에서는
+[내장 도구](../tools/builtin.md)가 외부 프로그램 없이 어디서나 동작합니다. `open`은 OS별로 파일을 여는
+기본 명령을 사용합니다. macOS에서는 `open`, Windows에서는 기본 애플리케이션, Linux와 WSL에서는
 `xdg-open`이며, `xdg-open`은 설치되어 있어야 합니다.
 
-명령은 [Runtime 실행](../declarations.md#runtime-execution)에서 설명한 대로 내 환경에서
+명령은 [Runtime 실행](../declarations.md#runtime-execution)에서 설명한 대로 작성자의 환경에서
 실행됩니다. Windows에서는 다른 OS와 달리 시스템 변수도 전달합니다.
 
-Linux에서 AppImage로 실행한 데스크톱 앱은 다른 프로그램을 시작할 때 앱이 시작될 때의 환경 변수를
-전달하되, AppImage가 추가한 설정은 제거합니다. 직접 설정해 둔 변수를 AppImage가 덮어썼다면(`GTK_THEME` 등) 원래
+Linux에서 AppImage로 실행한 데스크톱 앱은 다른 프로그램을 시작할 때 앱을 실행한 당시의 환경 변수를 전달하되, AppImage가 추가한 설정은 제거합니다. 직접 설정해 둔 변수를 AppImage가 덮어썼다면(`GTK_THEME` 등) 원래
 값으로 되돌리지 않고 지웁니다. 명령에 그 변수가 필요하면 다시 설정하세요.
 
 ## 프로그램 찾기 {#program-lookup}

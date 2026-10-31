@@ -103,6 +103,81 @@ pub(crate) fn read_artifact_scope(
     name: &ArtifactName,
     site: &Site,
 ) -> Result<RepoConfig, ScopeReadError> {
+    let mut config = read_declared(repo, name, site)?;
+    config.evals.clear();
+    Ok(config)
+}
+
+/// The declarations eval `id` reviews: those of the Artifacts in its scope, each declared at
+/// its site in `sites`, with the Artifacts they compose, and the eval resolved against them.
+/// No other declaration is read, and the checks across the workspace stay with the full read.
+/// The config holds no eval when the target no longer declares it, and is none when these
+/// declarations name an Artifact outside them, which only a full read places.
+pub(crate) fn read_eval_scope(
+    repo: &Path,
+    id: &crate::types::EvalId,
+    sites: &BTreeMap<ArtifactName, Site>,
+) -> Result<Option<RepoConfig>, ScopeReadError> {
+    let mut scoped: Option<RepoConfig> = None;
+    for (name, site) in sites {
+        let mut read = read_declared(repo, name, site)?;
+        read.evals.retain(|eval| &eval.id == id);
+        match &mut scoped {
+            None => scoped = Some(read),
+            Some(config) => {
+                for (name, artifact) in read.artifacts {
+                    config.artifacts.entry(name).or_insert(artifact);
+                }
+                if config.evals.is_empty() {
+                    config.evals = read.evals;
+                }
+            }
+        }
+    }
+    let Some(mut config) = scoped else {
+        return Ok(None);
+    };
+    let outside = sites
+        .keys()
+        .flat_map(|owner| named(&config.artifacts[owner]))
+        .any(|name| !config.artifacts.contains_key(name.as_str()));
+    if outside || crate::scope::resolve_evals(&mut config).is_err() {
+        return Ok(None);
+    }
+    Ok(Some(config))
+}
+
+/// The Artifacts an Artifact's fingerprint script and Human tools reference by name.
+fn named(artifact: &Artifact) -> impl Iterator<Item = &ReferenceName> {
+    let script = match &artifact.fingerprint {
+        Some(Fingerprint::Script { args, .. }) => args.as_slice(),
+        _ => &[],
+    };
+    let tools = artifact
+        .views
+        .human_tools
+        .values()
+        .flat_map(|tool| match tool {
+            HumanTool::Command(tool) => tool.args.as_slice(),
+            HumanTool::Builtin(tool) => tool.args.as_slice(),
+        });
+    script
+        .iter()
+        .chain(tools)
+        .filter_map(|argument| match argument {
+            crate::scope::Argument::Reference { name, .. } => Some(name),
+            crate::scope::Argument::Literal(_) => None,
+        })
+        // `{artifactPath}` stands for the tool's own Artifact.
+        .filter(|name| name.as_str() != "artifactPath")
+}
+
+/// [`read_artifact_scope`] with the evals these declarations declare.
+fn read_declared(
+    repo: &Path,
+    name: &ArtifactName,
+    site: &Site,
+) -> Result<RepoConfig, ScopeReadError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let moved = || ScopeReadError::Moved {
@@ -157,7 +232,6 @@ pub(crate) fn read_artifact_scope(
     if !config.artifacts.contains_key(name) {
         return Err(moved());
     }
-    config.evals.clear();
     Ok(config)
 }
 

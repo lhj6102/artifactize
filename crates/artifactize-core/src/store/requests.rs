@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use serde::Serialize;
 
+use rusqlite::OptionalExtension;
 use tokio_rusqlite::Connection;
 
 use super::{
@@ -88,6 +89,18 @@ struct Filter<'a> {
     statuses: &'a [crate::types::RequestStatus],
     /// A bounded slice of the ordered requests: offset and count.
     slice: Option<(u64, u32)>,
+    shown: Shown,
+}
+
+/// What the views of a read show besides their requests.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Shown {
+    /// The definitions their Runs saved, which hold the Runs' whole graphs: each Run read is
+    /// decoded whole.
+    #[default]
+    Definitions,
+    /// No definitions: only the Runs' repositories are read, never their records.
+    Requests,
 }
 
 pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<RequestView>, String> {
@@ -118,10 +131,16 @@ pub async fn read_requests_in(
 }
 
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
+    read_request_as(state, id, Shown::Definitions).await
+}
+
+/// Request `id` with what `shown` names besides it.
+pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<RequestView, String> {
     read(
         state,
         Filter {
             id: Some(id),
+            shown,
             ..Filter::default()
         },
     )
@@ -147,6 +166,15 @@ pub async fn read_session_request(state: &Path, id: &str) -> Result<Option<Reque
 /// original waiting request, which alone records the Human definition (tools and owner
 /// schemas), the claim and the result. `view` itself when it is the original.
 pub async fn read_original(state: &Path, view: &RequestView) -> Result<RequestView, String> {
+    read_original_as(state, view, Shown::Definitions).await
+}
+
+/// The request that owns `view`'s shared execution, read with what `shown` names besides it.
+pub async fn read_original_as(
+    state: &Path,
+    view: &RequestView,
+    shown: Shown,
+) -> Result<RequestView, String> {
     let original = view
         .execution
         .as_ref()
@@ -158,7 +186,7 @@ pub async fn read_original(state: &Path, view: &RequestView) -> Result<RequestVi
                 .map(|source| &source.request_id)
         });
     match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request(state, id).await,
+        Some(id) => read_request_as(state, id, shown).await,
         None => Ok(view.clone()),
     }
 }
@@ -202,18 +230,21 @@ pub async fn read_waiting_originals(
 }
 
 /// Up to `limit` requests with one of `statuses` (any status when empty) from position
-/// `offset` of every Run's requests, newest Run first, each with its Run's repository.
+/// `offset` of every Run's requests, newest Run first, each with its Run's repository and what
+/// `shown` names besides it.
 pub async fn read_request_batch(
     state: &Path,
     statuses: &[crate::types::RequestStatus],
     offset: u64,
     limit: u32,
+    shown: Shown,
 ) -> Result<Vec<(RequestView, std::path::PathBuf)>, String> {
     read_with_repo(
         state,
         Filter {
             statuses,
             slice: Some((offset, limit)),
+            shown,
             ..Filter::default()
         },
     )
@@ -221,12 +252,15 @@ pub async fn read_request_batch(
 }
 
 /// WAITING_HUMAN requests, newest Run first, from the canonical `repo`'s Runs or every Run.
+/// Their views have no definitions: what waits, not what it reviews, so the read does not grow
+/// with the waiting Runs' workspaces.
 pub async fn read_waiting(state: &Path, repo: Option<&Path>) -> Result<Vec<RequestView>, String> {
     read(
         state,
         Filter {
             repo,
             waiting: true,
+            shown: Shown::Requests,
             ..Filter::default()
         },
     )
@@ -241,22 +275,64 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
         .collect())
 }
 
-/// Human action setup needs only the owning repository, not another full Run/request audit.
-pub async fn read_request_repo(
-    state: &Path,
-    id: &str,
-) -> Result<(RequestView, std::path::PathBuf), String> {
-    read_with_repo(
-        state,
-        Filter {
-            id: Some(id),
-            ..Filter::default()
-        },
-    )
-    .await?
-    .pop()
-    .ok_or_else(|| "Review request not found.".into())
+/// The repository of the Run that request `id` belongs to, where its Human actions are
+/// recorded. Only the request's Run row is read, never the Run's record or definitions, so a
+/// Human action finds its receipts at once however large the Run's workspace is.
+pub async fn read_request_repo(state: &Path, id: &str) -> Result<std::path::PathBuf, String> {
+    let not_found = || "Review request not found.".to_owned();
+    let id: crate::types::RequestId = id.parse()?;
+    let state = canonical_target(state).map_err(|e| e.to_string())?;
+    let Some(connection) = open_read(&state).await? else {
+        return Err(not_found());
+    };
+    let result = connection
+        .call(move |db| -> Result<_, Error> {
+            super::wait_when_busy(db)?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(None);
+            }
+            let repo = transaction
+                .query_row(
+                    "SELECT r.repo FROM requests q JOIN runs r ON r.id=q.run_id WHERE q.id=?",
+                    [&id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .map(std::path::PathBuf::from);
+            transaction.commit()?;
+            if let Some(repo) = &repo {
+                crate::workspace::outside_workspaces(std::iter::once(repo.as_path()), &state)
+                    .map_err(|error| Error::Invalid(error.to_string()))?;
+            }
+            Ok(repo)
+        })
+        .await
+        .map_err(|e| e.to_string());
+    super::connection::finish(connection, result)
+        .await?
+        .ok_or_else(not_found)
 }
+
+/// A read-only connection to the database of the canonical `state`, or none before it has one.
+async fn open_read(state: &Path) -> Result<Option<Connection>, String> {
+    check_files(state)?;
+    if !state
+        .join(DATABASE)
+        .try_exists()
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(None);
+    }
+    Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .await
+    .map(Some)
+    .map_err(|e| e.to_string())
+}
+
 async fn read_with_repo(
     state: &Path,
     filter: Filter<'_>,
@@ -269,14 +345,6 @@ async fn read_with_repo(
         .map_err(|e| e.to_string())?;
     if let Some(repo) = &repo {
         outside_workspace(repo, &state).map_err(|e| e.to_string())?;
-    }
-    check_files(&state)?;
-    if !state
-        .join(DATABASE)
-        .try_exists()
-        .map_err(|e| e.to_string())?
-    {
-        return Ok(Vec::new());
     }
     let run = filter
         .run
@@ -294,12 +362,10 @@ async fn read_with_repo(
         .session
         .map(str::parse::<crate::types::SessionId>)
         .transpose()?;
-    let connection = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let shown = filter.shown;
+    let Some(connection) = open_read(&state).await? else {
+        return Ok(Vec::new());
+    };
     let result = connection
         .call(move |db| -> Result<_, Error> {
             super::wait_when_busy(db)?;
@@ -319,15 +385,16 @@ async fn read_with_repo(
             };
             let rows = rows(&transaction, &filter)?;
             let ids: std::collections::BTreeSet<_> = rows.iter().map(|row| &row.run).collect();
-            let mut statement = transaction.prepare(
-                "SELECT r.id,r.repo,r.data,d.data FROM runs r LEFT JOIN run_definitions d ON d.run_id=r.id WHERE r.id IN (SELECT value FROM json_each(?))",
-            )?;
+            let mut statement = transaction.prepare(match shown {
+                Shown::Definitions => "SELECT r.id,r.repo,r.data,d.data FROM runs r LEFT JOIN run_definitions d ON d.run_id=r.id WHERE r.id IN (SELECT value FROM json_each(?))",
+                Shown::Requests => "SELECT r.id,r.repo,NULL,NULL FROM runs r WHERE r.id IN (SELECT value FROM json_each(?))",
+            })?;
             let runs = statement
                 .query_map([serde_json::to_string(&ids)?], |row| {
                     Ok((
                         row.get::<_, crate::types::RunId>(0)?,
                         row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(2)?,
                         row.get::<_, Option<String>>(3)?,
                     ))
                 })?
@@ -335,15 +402,21 @@ async fn read_with_repo(
             let mut indexes = std::collections::BTreeMap::new();
             let mut repos = Vec::new();
             for (id, repo, state, definitions) in runs {
-                let run = match super::run_record::whole(&id, &state, definitions.as_deref()) {
-                    Ok(run) => run,
-                    Err(unreadable) => {
-                        super::unreadable::skipped(&unreadable);
-                        continue;
+                let index = match state {
+                    None => DefinitionIndex::none(),
+                    Some(state) => {
+                        match super::run_record::whole(&id, &state, definitions.as_deref()) {
+                            Ok(run) => DefinitionIndex::apart(&run),
+                            Err(unreadable) => {
+                                super::unreadable::skipped(&unreadable);
+                                continue;
+                            }
+                        }
                     }
                 };
-                repos.push(std::path::PathBuf::from(repo));
-                indexes.insert(id, (DefinitionIndex::apart(&run), run.repo_path));
+                let repo = std::path::PathBuf::from(repo);
+                repos.push(repo.clone());
+                indexes.insert(id, (index, repo));
             }
             crate::workspace::outside_workspaces(repos.iter().map(|repo| repo.as_path()), &state)
                 .map_err(|error| Error::Invalid(error.to_string()))?;
@@ -507,6 +580,14 @@ impl DefinitionIndex {
         Self {
             copies: Some(Copies::default()),
             ..Self::new(run)
+        }
+    }
+    /// No definitions: the views show their requests alone.
+    fn none() -> Self {
+        Self {
+            graph: None,
+            evals: HashMap::new(),
+            copies: None,
         }
     }
     fn definition(
