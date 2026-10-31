@@ -72,8 +72,8 @@ Then sweep as in Plan A.
 ## Plan C: always sweep
 
 Run `verify --all` after every fix. Choose it when focusing saves little: the evals are
-few or cheap, every eval reads what you changed (the root `.artf` or a rule document most
-evals read), or many RED evals share one cause.
+few or cheap, most evals read what you changed (a rule document they all reference, say),
+or many RED evals share one cause.
 
 ## Work toward YELLOW
 

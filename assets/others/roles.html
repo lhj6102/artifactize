@@ -48,8 +48,8 @@
 
   <!-- The three roles. -->
   <text class="title" x="720" y="76" text-anchor="middle">Director</text>
-  <text class="title" x="165" y="452" text-anchor="middle">Builder</text>
-  <text class="title" x="1275" y="452" text-anchor="middle">Evaluator</text>
+  <text class="title" x="215" y="392" text-anchor="middle">Builder</text>
+  <text class="title" x="1225" y="392" text-anchor="middle">Evaluator</text>
   <g id="teams"></g>
 
   <!-- The Artifact Graph, and the tag naming what it is passed for. -->
@@ -79,7 +79,7 @@
   // ---------- The story, second by second ----------
 
   /** Where the graph rests beside each role. */
-  const SPOTS = { director: { x: 720, y: 360 }, builder: { x: 530, y: 505 }, evaluator: { x: 910, y: 505 } };
+  const SPOTS = { director: { x: 720, y: 345 }, builder: { x: 590, y: 450 }, evaluator: { x: 850, y: 450 } };
   /** The passes: from one role to another between `start` and `end`, tagged with why. */
   const PASSES = [
     { from: "director", to: "builder", start: 1.4, end: 2.2, tag: "build" },
@@ -151,8 +151,8 @@
   /** Each role's team, left to right, at the centre of its row. */
   const TEAMS = {
     director: { x: 720, y: 138, members: ["person", "person", "person", "agent", "agent"] },
-    builder: { x: 165, y: 514, members: ["agent", "agent", "agent", "agent", "agent"] },
-    evaluator: { x: 1275, y: 514, members: ["agent", "agent", "agent", "agent", "person"] },
+    builder: { x: 215, y: 454, members: ["agent", "agent", "agent", "agent", "agent"] },
+    evaluator: { x: 1225, y: 454, members: ["agent", "agent", "agent", "agent", "person"] },
   };
   const badges = {};
   for (const [role, team] of Object.entries(TEAMS)) {
