@@ -93,8 +93,8 @@ struct Filter<'a> {
 }
 
 /// What the views of a read show besides their requests.
-#[derive(Default, Clone, Copy)]
-enum Shown {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Shown {
     /// The definitions their Runs saved, which hold the Runs' whole graphs: each Run read is
     /// decoded whole.
     #[default]
@@ -131,10 +131,16 @@ pub async fn read_requests_in(
 }
 
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
+    read_request_as(state, id, Shown::Definitions).await
+}
+
+/// Request `id` with what `shown` names besides it.
+pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<RequestView, String> {
     read(
         state,
         Filter {
             id: Some(id),
+            shown,
             ..Filter::default()
         },
     )
@@ -160,6 +166,15 @@ pub async fn read_session_request(state: &Path, id: &str) -> Result<Option<Reque
 /// original waiting request, which alone records the Human definition (tools and owner
 /// schemas), the claim and the result. `view` itself when it is the original.
 pub async fn read_original(state: &Path, view: &RequestView) -> Result<RequestView, String> {
+    read_original_as(state, view, Shown::Definitions).await
+}
+
+/// The request that owns `view`'s shared execution, read with what `shown` names besides it.
+pub async fn read_original_as(
+    state: &Path,
+    view: &RequestView,
+    shown: Shown,
+) -> Result<RequestView, String> {
     let original = view
         .execution
         .as_ref()
@@ -171,7 +186,7 @@ pub async fn read_original(state: &Path, view: &RequestView) -> Result<RequestVi
                 .map(|source| &source.request_id)
         });
     match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request(state, id).await,
+        Some(id) => read_request_as(state, id, shown).await,
         None => Ok(view.clone()),
     }
 }
@@ -215,18 +230,21 @@ pub async fn read_waiting_originals(
 }
 
 /// Up to `limit` requests with one of `statuses` (any status when empty) from position
-/// `offset` of every Run's requests, newest Run first, each with its Run's repository.
+/// `offset` of every Run's requests, newest Run first, each with its Run's repository and what
+/// `shown` names besides it.
 pub async fn read_request_batch(
     state: &Path,
     statuses: &[crate::types::RequestStatus],
     offset: u64,
     limit: u32,
+    shown: Shown,
 ) -> Result<Vec<(RequestView, std::path::PathBuf)>, String> {
     read_with_repo(
         state,
         Filter {
             statuses,
             slice: Some((offset, limit)),
+            shown,
             ..Filter::default()
         },
     )
