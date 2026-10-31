@@ -29,7 +29,7 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
     eval을 느슨하게 바꾸지 않습니다.
     focus Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
     `verify_result`는 실패한 eval과 그 요청 ID를 알려 주고, 리뷰어가 보고한 결과는
-    `request_show`로, runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
+    `request_show`로, Runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
     `artifactize run show RUN_ID --json`). 다시 리뷰해야 하는 eval의 결과가 아직 없으므로 이런
     Run은 보통 `Unmet obligation:` 줄과 함께 INCOMPLETE(종료 코드 4)로 끝납니다. 예상한
     결과이므로 어시스턴트는 focus한 eval의 판정만 봅니다. BLOCKED eval에는
