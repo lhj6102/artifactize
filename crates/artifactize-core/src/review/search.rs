@@ -343,6 +343,21 @@ impl Query {
         })
     }
 
+    /// What the state read shows besides the requests: their Runs' definitions only for a
+    /// `tag:` term, the one term matched against them. They hold a Run's whole graph, which
+    /// for a large Run costs seconds and gigabytes to decode for each batch.
+    fn shown(&self) -> store::Shown {
+        if self
+            .terms
+            .iter()
+            .any(|term| matches!(term, Term::Field(Key::Tag, _)))
+        {
+            store::Shown::Definitions
+        } else {
+            store::Shown::Requests
+        }
+    }
+
     /// The statuses every match must have, for the state read to select up front.
     fn statuses(&self) -> Vec<RequestStatus> {
         let statuses: BTreeSet<_> = self
@@ -470,18 +485,25 @@ pub async fn suggest(
     reviewer: &ReviewerId,
 ) -> Result<Completion, String> {
     let (keep, term) = last_term(text);
-    let from_requests = term
+    let key = term
         .split_once(':')
         .filter(|_| !term.starts_with('"'))
-        .and_then(|(name, _)| Key::parse(name))
-        .is_some_and(|key| {
-            matches!(
-                key,
-                Key::Repo | Key::Eval | Key::Request | Key::Reviewer | Key::Tag
-            )
-        });
+        .and_then(|(name, _)| Key::parse(name));
+    let from_requests = key.is_some_and(|key| {
+        matches!(
+            key,
+            Key::Repo | Key::Eval | Key::Request | Key::Reviewer | Key::Tag
+        )
+    });
+    let shown = match key {
+        Some(Key::Tag) => store::Shown::Definitions,
+        _ => keep
+            .parse::<Query>()
+            .map_or(store::Shown::Requests, |query| query.shown()),
+    };
     let entries = match keep.parse::<Query>() {
-        Ok(query) if from_requests => search(state, &query, reviewer, 0)
+        // Tags are completed from the definitions the matches' Runs saved.
+        Ok(query) if from_requests => page(state, &query, reviewer, 0, shown)
             .await?
             .requests
             .into_iter()
@@ -511,15 +533,33 @@ pub async fn search(
     reviewer: &ReviewerId,
     start: u64,
 ) -> Result<Found, String> {
+    page(state, query, reviewer, start, query.shown()).await
+}
+
+/// One [`search`] page, its views showing what `shown` names besides their requests.
+async fn page(
+    state: &Path,
+    query: &Query,
+    reviewer: &ReviewerId,
+    start: u64,
+    shown: store::Shown,
+) -> Result<Found, String> {
     let mut found = Found::default();
-    read_matching(state, query, reviewer, start, |view, entry, position| {
-        found.requests.push((view, entry));
-        if found.requests.len() < PAGE {
-            return ControlFlow::Continue(());
-        }
-        found.next = Some(position + 1);
-        ControlFlow::Break(())
-    })
+    read_matching(
+        state,
+        query,
+        reviewer,
+        start,
+        shown,
+        |view, entry, position| {
+            found.requests.push((view, entry));
+            if found.requests.len() < PAGE {
+                return ControlFlow::Continue(());
+            }
+            found.next = Some(position + 1);
+            ControlFlow::Break(())
+        },
+    )
     .await?;
     Ok(found)
 }
@@ -528,7 +568,7 @@ pub async fn search(
 /// lists it.
 pub async fn count(state: &Path, query: &Query, reviewer: &ReviewerId) -> Result<u64, String> {
     let mut count = 0;
-    read_matching(state, query, reviewer, 0, |_, _, _| {
+    read_matching(state, query, reviewer, 0, query.shown(), |_, _, _| {
         count += 1;
         ControlFlow::Continue(())
     })
@@ -537,18 +577,20 @@ pub async fn count(state: &Path, query: &Query, reviewer: &ReviewerId) -> Result
 }
 
 /// Pass each request matching `query` from position `start` on to `found` with its position,
-/// in the state's request order, until `found` breaks or the requests end.
+/// in the state's request order, until `found` breaks or the requests end. Each view shows what
+/// `shown` names besides its request.
 async fn read_matching(
     state: &Path,
     query: &Query,
     reviewer: &ReviewerId,
     start: u64,
+    shown: store::Shown,
     mut found: impl FnMut(RequestView, Entry, u64) -> ControlFlow<()>,
 ) -> Result<(), String> {
     let statuses = query.statuses();
     let mut position = start;
     loop {
-        let batch = store::read_request_batch(state, &statuses, position, BATCH).await?;
+        let batch = store::read_request_batch(state, &statuses, position, BATCH, shown).await?;
         let read = batch.len() as u64;
         for (offset, (view, repo)) in batch.into_iter().enumerate() {
             if Box::pin(follows_waiting(state, &view)).await {
@@ -579,7 +621,8 @@ async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
     else {
         return false;
     };
-    store::read_request(state, source)
+    // Only the original's status matters, never what its Run's definitions hold.
+    store::read_request_as(state, source, store::Shown::Requests)
         .await
         .is_ok_and(|original| original.request.status().is_human_wait())
 }

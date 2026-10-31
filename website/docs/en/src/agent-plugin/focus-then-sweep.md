@@ -15,7 +15,8 @@ attach the unchanged file to the conversation, as for [Hey Arti](hey-arti.md#get
 
 ## The three plans
 
-Your assistant picks one per task; Plan A is the default.
+Your assistant picks one per task; Plan A is the default. It uses the
+[MCP tools](mcp.md) when they can answer and falls back to the CLI otherwise.
 
 - **Plan A: focus first, sweep last.**
   - **Focus.** It fixes one RED eval and reruns only that eval
@@ -33,13 +34,16 @@ Your assistant picks one per task; Plan A is the default.
     `Unmet obligation:` lines because the stale evals are still unmet; that is expected, and
     your assistant goes by the focused eval's own verdict. A BLOCKED eval names what blocks
     it, such as `Dependency verdict RED: core/tests` or an eval that ended ERROR; your
-    assistant fixes and focuses on that eval first.
+    assistant fixes and focuses on that eval first. An ERROR means the check could not run,
+    so your assistant repairs its cause, never the verdict.
     `--speculate` lets the eval run even when an input it references went stale. To redo a
     RED sign-off it selects the eval's Artifact instead, because a person is asked only
     after the Artifact's machine evals are GREEN.
-  - **Sweep.** Once the RED evals are GREEN, it runs `verify --all` once. Unchanged results,
-    the focus Runs' included, are reused, and the stale evals run. A new RED goes back to
-    focus.
+  - **Sweep.** Once the RED evals are GREEN, it runs everything once:
+    `artifactize verify --all --wait`, or `verify_start` with the scope `{"kind": "all"}`
+    followed by `verify_wait` and `verify_result`. Unchanged results, the focus Runs'
+    included, are reused, and the stale evals run. A new RED goes back to focus; the loop
+    ends when the sweep ends GREEN or YELLOW.
 - **Plan B: focus with the expected impact, sweep last.** When a fix may affect other evals,
   for example a change to a shared specification or rule document, the focus also runs
   those evals. Your assistant finds them with `config graph ARTIFACT --impact` (MCP

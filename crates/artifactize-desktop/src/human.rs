@@ -301,14 +301,15 @@ fn view(
 }
 
 /// Read `id` afresh: a waiting follower resolves to its original, which records the Human
-/// definition and receives every action.
+/// definition and receives every action. The request records all the review shows, so its
+/// Run's definitions, which can hold a large Run's whole graph, are not read.
 async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
     let state = &app.launch.state;
-    let view = store::read_request(state, id)
+    let view = store::read_request_as(state, id, store::Shown::Requests)
         .await
         .map_err(Failure::Read)?;
     let view = if view.request.status().is_human_wait() {
-        store::read_original(state, &view)
+        store::read_original_as(state, &view, store::Shown::Requests)
             .await
             .map_err(Failure::Read)?
     } else {

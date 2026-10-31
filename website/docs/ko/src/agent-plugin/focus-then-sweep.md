@@ -15,7 +15,8 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
 
 ## 세 가지 방식 {#the-three-plans}
 
-어시스턴트는 작업마다 하나를 고르며, 기본은 방식 A입니다.
+어시스턴트는 작업마다 하나를 고르며, 기본은 방식 A입니다. 어시스턴트는
+[MCP 도구](mcp.md)로 답할 수 있으면 MCP 도구를 쓰고, 그렇지 않으면 CLI를 씁니다.
 
 - **방식 A: 먼저 focus, 마지막에 sweep**
   - **Focus**: RED eval 하나를 고친 뒤 GREEN이 될 때까지 그 eval만 다시 실행하고
@@ -28,20 +29,22 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
     eval을 느슨하게 바꾸지 않습니다.
     focus Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
     `verify_result`는 실패한 eval과 그 요청 ID를 알려 주고, 리뷰어가 보고한 결과는
-    `request_show`로, runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
+    `request_show`로, Runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
     `artifactize run show RUN_ID --json`). 다시 리뷰해야 하는 eval의 결과가 아직 없으므로 이런
     Run은 보통 `Unmet obligation:` 줄과 함께 INCOMPLETE(종료 코드 4)로 끝납니다. 예상한
     결과이므로 어시스턴트는 focus한 eval의 판정만 봅니다. BLOCKED eval에는
     `Dependency verdict RED: core/tests`처럼 막고 있는 RED eval이나 ERROR로 끝난 eval이
-    나옵니다. 어시스턴트는 그 eval을 먼저 고치고 focus합니다.
+    나옵니다. 어시스턴트는 해당 eval을 먼저 고친 뒤 다시 실행합니다. ERROR는 검사를 실행하지 못했다는
+    뜻이므로, 어시스턴트는 판정이 아니라 그 원인을 고칩니다.
     `--speculate`를 붙이면 eval이 참조하는 입력이 수정 때문에 다시 리뷰 대상이 되었어도 그
     eval을 실행합니다. RED 승인을 다시 받을 때는 eval 대신 그 Artifact를 선택합니다. 같은
     Artifact의 자동 eval이 모두 GREEN이 된 뒤에야 사람에게 승인을 요청하기 때문입니다.
-  - **Sweep**: RED eval이 모두 GREEN이 되면 `verify --all`을 한 번 실행합니다. 바뀌지 않은
-    결과는 focus Run의 결과까지 포함해 재사용하고, 다시 리뷰해야 하는 eval만 실행합니다.
-    새로 RED가 나오면 다시 focus로 돌아갑니다.
+  - **Sweep**: RED eval이 모두 GREEN이 되면 전체를 한 번 실행합니다.
+    `artifactize verify --all --wait`를 쓰거나, scope `{"kind": "all"}`로 `verify_start`를
+    호출한 뒤 `verify_wait`와 `verify_result`로 결과를 봅니다. 바뀌지 않은 결과는 focus Run의
+    결과까지 포함해 재사용하고, 다시 리뷰해야 하는 eval만 실행합니다. 새 RED eval이 나오면 focus 단계로 돌아가고, sweep 결과가 GREEN이나 YELLOW이면 반복을 마칩니다.
 - **방식 B: 영향받을 eval까지 focus, 마지막에 sweep**: 공유 명세나 규칙 문서를 바꾼 경우처럼
-  수정이 다른 eval에 영향을 줄 수 있으면, focus할 때 그 eval도 함께 실행합니다. 어시스턴트는
+  수정이 다른 eval에도 영향을 줄 수 있으면, focus 단계에서 해당 eval도 함께 실행합니다. 어시스턴트는
   `config graph ARTIFACT --impact`(MCP에서는 `impact`를 켠 `config_graph`)와 `status`로 그
   eval을 찾습니다. 순환에 속한 eval은 함께 실행합니다. Artifact를 선택하면 같은 순환에 속한
   Artifact의 eval도 함께 실행됩니다.

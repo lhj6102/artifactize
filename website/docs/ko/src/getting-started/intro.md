@@ -24,7 +24,7 @@ Linux, macOS, Windows에서 실행됩니다. [설치](/docs/ko/getting-started/i
   재사용할지 정하고, 검증을 실행하고 진행 상황을 확인하며, 리뷰어가 사용할 도구를 제공하고, 팀과 결과를 공유합니다.
   CLI, 데스크톱 앱, 에이전트 플러그인에서 똑같이 동작합니다.
 - **[데스크톱](/docs/ko/desktop/index.html):** 창에서 Run을 살펴보고 Human 리뷰를 처리합니다.
-- **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** 여러 코딩 어시스턴트에서 쓸 수 있는 스킬인 Arti를 어시스턴트에 추가하고
+- **[에이전트 플러그인](/docs/ko/agent-plugin/hey-arti.html):** 여러 코딩 어시스턴트에서 쓸 수 있는 Arti 스킬을 추가하고
   [MCP](/docs/ko/agent-plugin/mcp.html)로 코딩 호스트를 연결합니다.
 - **[CLI](/docs/ko/cli/index.html):** 명령 문법, 출력, 종료 코드.
 - **[TUI](/docs/ko/tui/index.html):** 터미널에서 쓰는 Monitor와 Review.
