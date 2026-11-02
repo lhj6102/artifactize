@@ -26,7 +26,27 @@ impl Drop for Processes {
 }
 
 pub(crate) const STOP_BEFORE_REMOVE: bool = false;
-pub(crate) fn wait_host(_host: ChildIdentity) -> io::Result<()> {
+pub(crate) fn wait_host(host: ChildIdentity) -> io::Result<()> {
+    use std::time::{Duration, Instant};
+    // An in-process library host has already released its service lock; it cannot wait
+    // for its own containing process. Detached CLI hosts must actually finish exiting.
+    if host.pid.get() == std::process::id() {
+        return Ok(());
+    }
+    // Match Windows's bounded process wait after native child cleanup and frame draining.
+    const HOST_EXIT_TIMEOUT: Duration = Duration::from_secs(30);
+    // A host need not be our child, so observe its identity instead of calling waitpid.
+    const EXIT_POLL: Duration = Duration::from_millis(25);
+    let deadline = Instant::now() + HOST_EXIT_TIMEOUT;
+    while crate::process::is_alive(Some(host))? {
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Terminal host did not exit",
+            ));
+        }
+        std::thread::sleep(EXIT_POLL);
+    }
     Ok(())
 }
 

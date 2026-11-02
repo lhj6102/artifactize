@@ -107,19 +107,11 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
 #[cfg_attr(feature = "desktop-types", derive(specta::Type))]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum GitRef {
-    Branch {
-        name: String,
-    },
-    Tag {
-        name: String,
-    },
-    Remote {
-        name: String,
-    },
+    Branch { name: String },
+    Tag { name: String },
+    Remote { name: String },
     // Refs outside the standard namespaces retain their full name.
-    Other {
-        name: String,
-    },
+    Other { name: String },
 }
 
 fn decorations(value: &str) -> (bool, Vec<GitRef>) {
