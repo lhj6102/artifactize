@@ -209,10 +209,48 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
             }
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Resized(size) => keep_minimum(window, *size),
             // Nothing waits for the scans to stop: the app is closing.
-            if let tauri::WindowEvent::Destroyed = event {
-                drop(window.state::<App>().close());
-            }
+            tauri::WindowEvent::Destroyed => drop(window.state::<App>().close()),
+            _ => {}
         })
+}
+
+/// Keep a window at least its configured minimum size. On Windows a program can still resize
+/// it below (tao answers WM_WINDOWPOSCHANGING without the default handling that enforces
+/// the minimum); elsewhere the system already keeps it and this never acts.
+fn keep_minimum<R: tauri::Runtime>(window: &tauri::Window<R>, size: tauri::PhysicalSize<u32>) {
+    // Sizes convert through the scale factor and round to whole pixels on the way back.
+    const ROUNDING: f64 = 0.5;
+    // A minimized window reports a zero size; a maximized or full-screen one takes the
+    // screen's size, which the app must not fight.
+    let fitted = |state: tauri::Result<bool>| state.unwrap_or(true);
+    if fitted(window.is_minimized())
+        || fitted(window.is_maximized())
+        || fitted(window.is_fullscreen())
+    {
+        return;
+    }
+    let config = window.app_handle().config();
+    let Some(config) = config
+        .app
+        .windows
+        .iter()
+        .find(|config| config.label == window.label())
+    else {
+        return;
+    };
+    let Ok(scale) = window.scale_factor() else {
+        return;
+    };
+    let size = size.to_logical::<f64>(scale);
+    let width = config.min_width.unwrap_or(0.0);
+    let height = config.min_height.unwrap_or(0.0);
+    if size.width + ROUNDING < width || size.height + ROUNDING < height {
+        let _ = window.set_size(tauri::LogicalSize::new(
+            size.width.max(width),
+            size.height.max(height),
+        ));
+    }
 }
