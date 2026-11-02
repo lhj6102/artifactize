@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 #[path = "support/run.rs"]
 mod owned_run;
 use owned_run::RunChild as Child;
+use owned_run::launch::{LAUNCH, Launched};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -23,11 +24,20 @@ struct Fixture {
     root: owned_run::Root,
     repo: PathBuf,
     state: PathBuf,
+    /// The launch tool's own input directory; a test that launches it hands this to the
+    /// owning `Launched` fixture.
+    launch: Option<tempfile::TempDir>,
 }
 
 impl Fixture {
     fn new(fingerprint: bool) -> Self {
         let root = owned_run::Root::from(support::os::tempdir());
+        let launch = support::os::tempdir();
+        let launch_args = support::os::python(LAUNCH)
+            .into_iter()
+            .map(str::to_owned)
+            .chain([support::os::path_text(launch.path())])
+            .collect::<Vec<_>>();
         let repo = root.path().join("repo");
         let child = repo.join("child");
         fs::create_dir_all(&child).unwrap();
@@ -53,7 +63,7 @@ impl Fixture {
                         "command":support::os::cat_program(),
                         "args":["fingerprint"],
                     },
-                    "open":{"description":"Launch","kind":"launch","command":support::os::true_program(),"args":[]},
+                    "open":{"description":"Launch","kind":"launch","command":support::os::python_program(),"args":launch_args},
                 },
             },
             "evals":[
@@ -87,7 +97,12 @@ impl Fixture {
         support::declaration::write(child.join("index.artf"), declaration.to_string()).unwrap();
         let state = root.path().join("state");
         root.track(&state, &repo);
-        Self { repo, state, root }
+        Self {
+            repo,
+            state,
+            root,
+            launch: Some(launch),
+        }
     }
 
     fn command(&self) -> Command {
@@ -229,7 +244,7 @@ fn finish(mut child: Child, code: i32) -> Value {
 
 #[test]
 fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
-    let fixture = Fixture::new(true);
+    let mut fixture = Fixture::new(true);
     assert_eq!(fixture.json(&["request", "list"], 0), json!([]));
     assert!(!fixture.state.exists());
     // The Run remains waiting; the next verify reuses the submitted result.
@@ -288,6 +303,8 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         .unwrap();
     assert!(tool.status.success());
     assert!(String::from_utf8_lossy(&tool.stdout).contains("review-v1"));
+    // Owned before it starts, so the launched program has exited before its inputs go.
+    let mut launched = Launched::new(fixture.launch.take().unwrap());
     let launch = fixture
         .command()
         .args(["request", "tool", id, "open_child"])
@@ -295,6 +312,8 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         .unwrap();
     assert!(launch.status.success());
     assert!(String::from_utf8_lossy(&launch.stdout).contains("launched"));
+    support::os::wait_until(Duration::from_secs(30), || launched.own().is_some());
+    launched.close().unwrap();
     for fields in [
         "{}",
         "[]",

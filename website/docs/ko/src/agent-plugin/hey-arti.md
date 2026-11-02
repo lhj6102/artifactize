@@ -1,8 +1,8 @@
 # Hey Arti: 프로젝트 리뷰 설계하기 {#hey-arti-shape-a-projects-reviews}
 
 코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰하면 좋을까요?"라고 물어보세요. Arti는
-프로젝트를 파악하고, 무엇이 중요한지 묻고, 리뷰의 실효성을 높이고 결과를 재사용할 수 있도록 Artifact와 eval을
-제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
+프로젝트를 파악하고 무엇이 중요한지 물은 뒤, 리뷰를 더 효과적으로 하고 결과를 재사용할 수 있도록
+Artifact와 eval을 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
 대신해 승인하지도 않습니다.
 
 Arti의 안내서인 **스킬**은
@@ -107,8 +107,8 @@ Arti는 다음 방식을 피하도록 안내합니다.
 - GREEN을 얻으려고 판단 기준을 완화하는 일
 
 Arti는 사용자 상황에 맞는 예제로 리뷰 구성 방법을 보여 줍니다.
-[예제](../getting-started/examples.md)에서는 Runtime 관계, 승인이 있는 Agent 도구,
-파일 Artifact로 선언한 글을 볼 수 있습니다. 데모 프로젝트 `website/demo/shop`에서는 페이지가
+[예제](../getting-started/examples.md)에서는 Runtime eval 사이의 관계, 승인 절차를 포함한 Agent 도구,
+파일 Artifact로 선언한 글을 확인할 수 있습니다. 데모 프로젝트 `website/demo/shop`에서는 페이지가
 사용하는 스타일 토큰을 기준으로 검사하고, `website/demo/brand`에서는 페이지에 들어간
 로고의 승인을 받습니다. artifactize 자체 저장소에서는 승인받은 규칙 문서를
 그 규칙이 적용되는 코드의 eval이 읽고, 앱의 eval이
