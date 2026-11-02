@@ -54,14 +54,14 @@ pub async fn attach(
     dimensions(cols, rows).map_err(|e| e.to_string())?;
     let identity = crate::repository::worktree_id(worktree)?;
     let endpoint = Endpoint::namespaced(&identity, "terminal").map_err(|e| e.to_string())?;
-    let stream = match endpoint.connect().await {
-        Ok(stream) => stream,
+    let (stream, persistent) = match endpoint.connect().await {
+        Ok(stream) => (stream, true),
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
             return Err(error.to_string());
         }
         Err(_) => {
-            crate::process::launch_terminal(worktree, cols, rows)?;
-            tokio::time::timeout(START_TIMEOUT, async {
+            let persistent = crate::process::launch_terminal(worktree, cols, rows)?;
+            let stream = tokio::time::timeout(START_TIMEOUT, async {
                 loop {
                     match endpoint.connect().await {
                         Ok(stream) => return Ok(stream),
@@ -74,7 +74,8 @@ pub async fn attach(
             })
             .await
             .map_err(|_| "Terminal host did not start".to_owned())?
-            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+            (stream, persistent)
         }
     };
     let (commands, incoming) = mpsc::channel(CLIENT_QUEUE);
@@ -89,6 +90,7 @@ pub async fn attach(
                 rows,
             },
             incoming,
+            persistent,
             &frames,
             ready,
         )
@@ -107,14 +109,22 @@ async fn connection(
     stream: Stream,
     attach: Request,
     mut commands: mpsc::Receiver<Pending>,
+    persistent: bool,
     frames: &mpsc::Sender<TerminalFrame>,
     ready: oneshot::Sender<Result<(), String>>,
 ) -> io::Result<()> {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read).lines();
     wire::send(&mut write, &attach).await?;
-    let result = acknowledge(&mut read, frames).await;
+    let mut warned = false;
+    let result = acknowledge(&mut read, frames, &mut warned).await;
     let success = result.is_ok();
+    if success && !persistent && !warned {
+        frames
+            .send(TerminalFrame::NotPersistent)
+            .await
+            .map_err(io::Error::other)?;
+    }
     let _ = ready.send(result.map_err(|e| e.to_string()));
     if !success {
         return Ok(());
@@ -125,7 +135,7 @@ async fn connection(
                 let Some((request, answer)) = command else { return Ok(()); };
                 let detach = matches!(request, Request::Detach);
                 wire::send(&mut write, &request).await?;
-                let result = acknowledge(&mut read, frames).await;
+                let result = acknowledge(&mut read, frames, &mut warned).await;
                 let disconnected = result.as_ref().is_err_and(|error| error.kind() != io::ErrorKind::Other);
                 let _ = answer.send(result.map_err(|e| e.to_string()));
                 if detach || disconnected { return Ok(()); }
@@ -145,12 +155,16 @@ async fn connection(
 async fn acknowledge(
     reader: &mut tokio::io::Lines<impl tokio::io::AsyncBufRead + Unpin>,
     frames: &mpsc::Sender<TerminalFrame>,
+    warned: &mut bool,
 ) -> io::Result<()> {
     loop {
         match wire::receive(reader).await? {
             Some(Response::Accepted) => return Ok(()),
             Some(Response::Failed(error)) => return Err(io::Error::other(error)),
-            Some(Response::Frame(frame)) => frames.send(frame).await.map_err(io::Error::other)?,
+            Some(Response::Frame(frame)) => {
+                *warned |= matches!(frame, TerminalFrame::NotPersistent);
+                frames.send(frame).await.map_err(io::Error::other)?;
+            }
             None => return Err(io::ErrorKind::UnexpectedEof.into()),
         }
     }

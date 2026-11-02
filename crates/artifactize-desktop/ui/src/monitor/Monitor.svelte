@@ -14,7 +14,7 @@
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { DETAIL_KEY, GAP, MIN, TERMINAL_KEY, clampWidth, detailDefault, fitPanels, saveWidth, terminalDefault } from "./detail-width";
+  import { DETAIL_KEY, GAP, MIN, TERMINAL_KEY, clampWidth, detailDefault, fitPanels, leftTaken, saveWidth, terminalDefault } from "./detail-width";
   import { GIT, fitLayout } from "./columns";
   import GitLayer from "../workbench/GitLayer.svelte";
   import TerminalPanel from "../workbench/TerminalPanel.svelte";
@@ -45,21 +45,29 @@
     shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
   );
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
-  /** The worktree of the shown Run or Current: its history, its terminal. */
-  const worktree = $derived(branch?.workspace ?? null);
+  /** The Git worktree of the shown Run or Current: its history, its terminal. A folder outside
+   * Git is no worktree and has neither. */
+  const worktree = $derived(branch && branch.key.kind !== "folder" ? branch.workspace : null);
   /** Over the graph, the terminal panel expanded and the Detail open. */
   const terminalShown = $derived(worktree !== null && m.terminal);
   const detailShown = $derived(m.opened !== null && source !== null && keyOf(m.opened.source) === keyOf(source));
+  /** The terminal collapsed to its tab on the graph's left edge. */
+  const tabShown = $derived(worktree !== null && !m.terminal);
   /** Both panels' widths, fitted to the stage once it is measured. */
   const widths = $derived(
     m.stageWidth > 0
-      ? fitPanels(m.stageWidth, terminalShown ? (m.terminalWidth ?? terminalDefault(m.stageWidth)) : null, detailShown ? (m.detailWidth ?? detailDefault(m.stageWidth)) : null)
+      ? fitPanels(
+          m.stageWidth,
+          terminalShown ? (m.terminalWidth ?? terminalDefault(m.stageWidth)) : null,
+          detailShown ? (m.detailWidth ?? detailDefault(m.stageWidth)) : null,
+          tabShown,
+        )
       : { terminal: null, detail: null },
   );
   /** How far the terminal (or its collapsed tab) covers the graph from the left; before the
    * stage is measured, the terminal's CSS width does. */
   const coveredLeft = $derived(
-    worktree === null ? "0px" : !terminalShown ? `${GAP + 28}px` : widths.terminal === null ? `calc(${GAP}px + min(40%, 560px))` : `${GAP + widths.terminal}px`,
+    terminalShown && widths.terminal === null ? `calc(${GAP}px + min(40%, 560px))` : `${leftTaken(terminalShown ? widths.terminal : null, tabShown)}px`,
   );
   /** The divider's group, and the columns it splits; neither is drawn from. */
   let group: ReturnType<typeof PaneGroup> | undefined;
@@ -400,7 +408,7 @@
     const drag = (moved: MouseEvent) => {
       const room = stage.getBoundingClientRect();
       if (panel === "terminal") m.terminalWidth = clampWidth(moved.clientX - room.left - GAP, room.width, GAP + MIN);
-      else m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width, widths.terminal === null ? 0 : GAP + widths.terminal);
+      else m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width, leftTaken(widths.terminal, tabShown));
     };
     const drop = () => {
       window.removeEventListener("mousemove", drag);
@@ -489,7 +497,7 @@
 </script>
 
 <div class="monitor" style:--git-width="{GIT}px">
-  <GitLayer {worktree} />
+  <GitLayer {worktree} outside={branch?.key.kind === "folder"} />
   <div class="split" {@attach columns}>
     <PaneGroup bind:this={group} direction="horizontal" autoSaveId="monitor-layout" class="columns" onLayoutChange={fitColumns}>
       <Split defaultSize={24} minSize={12}>

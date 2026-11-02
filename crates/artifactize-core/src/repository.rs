@@ -117,8 +117,8 @@ pub fn history(worktree: &Path) -> Result<Vec<Commit>, String> {
         worktree,
         &[
             "log",
+            // --all includes HEAD when it exists, without requiring an unborn HEAD.
             "--all",
-            "HEAD",
             "--topo-order",
             "--format=%H%x00%P%x00%D%x00%s%x00%ct%x00",
         ],

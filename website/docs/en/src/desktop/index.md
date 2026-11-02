@@ -146,7 +146,7 @@ worktree appears in the Pane like any other.
 ### Terminal
 
 Every worktree in the Pane has one **terminal**: the main checkout, worktrees made by
-other tools and those made here. Choosing a worktree shows its terminal in a panel
+other tools and those made here; a folder outside Git has none. Choosing a worktree shows its terminal in a panel
 floating over the graph's left side, as the [Detail](#detail) floats over its right;
 the graph never shrinks under either. The terminal starts the first time you open it,
 as your shell in the worktree; run anything in it, such as Claude Code, Codex or a

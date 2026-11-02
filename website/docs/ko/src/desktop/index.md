@@ -123,7 +123,7 @@ worktree**를 만들 수 있습니다. artifactize는 메인 체크아웃 옆에
 ### 터미널 {#terminal}
 
 Pane에 있는 worktree마다 **터미널**이 하나씩 있습니다. 메인 체크아웃, 다른 도구로 만든 worktree,
-여기서 만든 worktree 모두 마찬가지입니다. worktree를 고르면 그 터미널이 그래프 왼쪽 위에 떠 있는
+여기서 만든 worktree 모두 마찬가지입니다. Git 밖의 폴더에는 터미널이 없습니다. worktree를 고르면 그 터미널이 그래프 왼쪽 위에 떠 있는
 패널로 열립니다. [Detail](#detail)이 그래프 오른쪽에 떠 있는 것과 같은 방식이며, 두 패널 때문에
 그래프가 줄어들지는 않습니다. 터미널은 처음 열 때 그 worktree에서 셸로 시작합니다. Claude Code,
 Codex, 빌드 등 무엇이든 실행하세요. 터미널은 브랜치가 아니라 worktree에 속하므로 브랜치를 바꾸거나

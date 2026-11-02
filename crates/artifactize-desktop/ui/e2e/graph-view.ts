@@ -7,12 +7,35 @@ export function focusedNode(browser: WebdriverIO.Browser): Promise<string | null
   return browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
 }
 
+/** The terminal floating over the graph's left side. */
+export const TERMINAL = '.stage aside[aria-label="Terminal"]';
+
+/** Collapse the terminal with its own button, as a person does to reach the graph under it, and
+ * wait for its tab; the terminal keeps running. Nothing happens while it is collapsed already. */
+export async function collapseTerminal(browser: WebdriverIO.Browser): Promise<void> {
+  const panel = browser.$(TERMINAL);
+  if (!(await panel.isExisting())) return;
+  await panel.$('button[aria-label="Collapse the terminal"]').click();
+  await browser.$('.stage button[aria-label="Expand the terminal"]').waitForDisplayed({ timeout: 15000, timeoutMsg: "the terminal collapsed to its tab" });
+}
+
+/** Collapse the terminal if it covers the centre of the Artifact node `id`, as a person does to
+ * click that Artifact. */
+export async function uncover(browser: WebdriverIO.Browser, id: string): Promise<void> {
+  const covered = await browser.execute((want, terminal) => {
+    const box = document.querySelector(`.svelte-flow__node[data-id="${want}"]`)?.getBoundingClientRect();
+    return !!box && !!document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(terminal);
+  }, id, TERMINAL);
+  if (covered) await collapseTerminal(browser);
+}
+
 /** Wait until the live graph draws a visible, hit-testable node `id`, not a retained element.
+ * A node under the expanded terminal is reached as a person reaches it: the terminal collapses.
  * A timeout says what stood in the way: no node, an empty box, or what covers its centre. */
 export async function graphShown(browser: WebdriverIO.Browser, id: string, timeout = 15000): Promise<void> {
   let last = "";
   await browser.waitUntil(async () => {
-    last = await browser.execute((want) => {
+    last = await browser.execute((want, terminal) => {
       const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
       const box = node?.getBoundingClientRect();
       if (!node || !box) return "no node";
@@ -20,9 +43,11 @@ export async function graphShown(browser: WebdriverIO.Browser, id: string, timeo
       if (box.width <= 0 || box.height <= 0) return `an empty box at ${at}`;
       const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
       if (target?.closest(".svelte-flow__node") === node) return "";
+      if (target?.closest(terminal)) return "terminal";
       const cover = target?.closest("[aria-label]") ?? target;
       return `its box ${at} in a ${innerWidth}×${innerHeight} window is covered at its centre by ${cover?.tagName ?? "nothing"} ${cover?.getAttribute("aria-label") ?? cover?.className ?? ""}`;
-    }, id);
+    }, id, TERMINAL);
+    if (last === "terminal") await collapseTerminal(browser);
     return last === "";
   }, { timeout, timeoutMsg: `the graph draws ${id}` }).catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
 }
@@ -111,6 +136,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
 
 /** Click the Artifact `id` and wait for its Detail on the Artifact tab. */
 export async function openArtifact(browser: WebdriverIO.Browser, id: string, title: string): Promise<Detail> {
+  await uncover(browser, id);
   await browser.$(nodeAt(id)).click();
   let shown: Detail | null = null;
   await browser.waitUntil(async () => {
@@ -199,10 +225,10 @@ export function findField(browser: WebdriverIO.Browser): Promise<FindField | nul
 }
 
 /** Where the Main area's graph shows the Artifact `id`: how far its centre lies from the middle
- * of the graph left of the open Detail (of the whole canvas without one), in pixels, and its
- * drawn width; null while it is not drawn. */
+ * of the graph between the expanded terminal and the open Detail (of the whole canvas without
+ * them), in pixels, and its drawn width; null while it is not drawn. */
 export function offCentre(browser: WebdriverIO.Browser, id: string): Promise<{ x: number; y: number; width: number } | null> {
-  return browser.execute((want) => {
+  return browser.execute((want, terminal) => {
     const outside = (element: Element) => !element.closest('aside[aria-label="Detail"]');
     const node = [...document.querySelectorAll(`.svelte-flow__node[data-id="${want}"]`)].find(outside);
     const canvas = [...document.querySelectorAll(".graph > .canvas")].find(outside);
@@ -210,12 +236,14 @@ export function offCentre(browser: WebdriverIO.Browser, id: string): Promise<{ x
     const [at, room] = [node.getBoundingClientRect(), canvas.getBoundingClientRect()];
     const cover = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
     const right = cover && cover.left > room.left && cover.left < room.right ? cover.left : room.right;
+    const shell = document.querySelector(terminal)?.getBoundingClientRect();
+    const left = shell && shell.right > room.left && shell.right < right ? shell.right : room.left;
     return {
-      x: at.left + at.width / 2 - (room.left + right) / 2,
+      x: at.left + at.width / 2 - (left + right) / 2,
       y: at.top + at.height / 2 - (room.top + room.height / 2),
       width: at.width,
     };
-  }, id);
+  }, id, TERMINAL);
 }
 
 /** The element with the keyboard, described by its tag, accessible name and node id. */

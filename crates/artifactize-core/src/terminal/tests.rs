@@ -1,5 +1,6 @@
 //! Terminal seams: a host serves attachments of one worktree, outlives every client and ends
-//! with its worktree; a restore offer waits for a person's choice. The host runs in this test
+//! with its worktree; its endpoint refuses what others could reach. The restore offer runs
+//! through the real CLI host (crates/artifactize/tests/terminal.rs). The host runs in this test
 //! process through the same `serve` the hidden CLI entry calls, so no installed or earlier
 //! built CLI is ever started. The terminal runs the system's default shell, as it does for
 //! a person; the typed lines come from `test_os::terminal_echo` and work in every such shell.
@@ -213,59 +214,6 @@ async fn removing_the_worktree_ends_its_host() {
     assert_eq!(served, Ok(()));
     // With the worktree gone there is nothing to attach to, and no host is started for it.
     assert!(attach(&created.worktree, COLS, ROWS).await.is_err());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_restore_offer_runs_nothing_until_a_choice_is_sent() {
-    let root = test_os::tempdir();
-    let worktree = project(root.path());
-    let programs = root.path().join("programs");
-    std::fs::create_dir(&programs).unwrap();
-    let program = test_os::working_directory_program(&programs, "where");
-    let offered = worktree.join("offered");
-    std::fs::create_dir(&offered).unwrap();
-    // What a previous host of this worktree saved before it was gone.
-    let command = TerminalCommand {
-        program: crate::platform::path_text(&program),
-        args: Vec::new(),
-    };
-    metadata::Metadata {
-        cwd: Some(offered.clone()),
-        command: Some(command.clone()),
-        harness: None,
-        session_id: None,
-    }
-    .save(&crate::repository::worktree_id(&worktree).unwrap())
-    .unwrap();
-    let served = hosted(&worktree, async {
-        let (terminal, frames) = attach(&worktree, COLS, ROWS).await.unwrap();
-        let mut frames = Frames::new(frames);
-        let offer = loop {
-            match frames.next().await {
-                Some(TerminalFrame::RestoreOffer { offer }) => break offer,
-                Some(_) => {}
-                None => panic!("no restore offer"),
-            }
-        };
-        assert_eq!(offer.command, Some(command));
-        assert_eq!(offer.cwd.as_deref(), Some(offered.as_path()));
-        // A fresh shell answers while the offer waits, and the offered program has not run.
-        terminal
-            .input(test_os::terminal_echo("fresh", "shell"))
-            .await
-            .unwrap();
-        frames.printed("freshshell").await;
-        let ran = test_os::path_text(&offered);
-        assert!(!contains(&frames.output, &ran));
-
-        terminal.restore(RestoreChoice::Rerun).await.unwrap();
-        frames.printed(&ran).await;
-        // The offer is used up: nothing can run it a second time.
-        assert!(terminal.restore(RestoreChoice::Rerun).await.is_err());
-        exit(&terminal, &mut frames).await;
-    })
-    .await;
-    assert_eq!(served, Ok(()));
 }
 
 #[tokio::test]

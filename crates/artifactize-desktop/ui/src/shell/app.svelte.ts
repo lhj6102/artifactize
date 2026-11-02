@@ -12,7 +12,7 @@ import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { Leaving } from "./leaving.svelte";
 import { Release } from "./release.svelte";
-import { workbench, type Workbench } from "../workbench/backend";
+import { workbenchOf, type Workbench } from "../workbench/backend";
 import { GitLayer } from "../workbench/git-layer.svelte";
 import { Terminals } from "../workbench/terminals.svelte";
 
@@ -29,7 +29,7 @@ export class AppState {
   /** The Pane's selection, what the Main area shows and its open Detail. */
   readonly monitor = new MonitorState();
   /** The Git layer and the worktrees' terminals, through their own backend door. */
-  readonly workbench: Workbench = workbench;
+  readonly workbench: Workbench = workbenchOf(this.ipc);
   readonly git = new GitLayer(this.workbench);
   readonly terminals = new Terminals(this.workbench);
   readonly leaving = new Leaving(this.ipc);

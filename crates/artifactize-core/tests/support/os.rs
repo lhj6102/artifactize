@@ -439,6 +439,27 @@ pub fn working_directory_program(directory: &Path, name: &str) -> std::path::Pat
     )
 }
 
+/// A program that prints `label` and then its working directory as portable path text, so a
+/// test can tell its output from a shell prompt that shows the same directory.
+pub fn labelled_working_directory_program(
+    directory: &Path,
+    name: &str,
+    label: &str,
+) -> std::path::PathBuf {
+    compiled_program(
+        directory,
+        name,
+        &format!(
+            r#"fn main() {{
+    let directory = std::env::current_dir().unwrap();
+    let text = directory.to_str().unwrap().replace('\\', "/");
+    print!("{{}}{{text}}", {label:?});
+}}
+"#
+        ),
+    )
+}
+
 /// Build a program named `name` in `directory` that appends its argument count and first
 /// argument, one per line, to the file named by `RECORD`.
 pub fn recording_program(directory: &Path, name: &str) -> std::path::PathBuf {

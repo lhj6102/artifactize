@@ -1,12 +1,17 @@
 // The Git layer's history of the shown worktree, the worktree last created from it until the
 // Pane lists it, and removing a worktree. One owner, kept in the AppState.
 import { call, message } from "../ipc/client";
-import type { Created, History, Workbench, WorktreeKey } from "./backend";
+import type { Commit, Created, Workbench, WorktreeKey } from "./backend";
+
+/** How many more commits each request shows. */
+export const PAGE = 200;
 
 export class GitLayer {
   /** The history read last, with the worktree it is of; replaced whole. */
-  shown = $state.raw<{ worktree: WorktreeKey; history: History } | null>(null);
+  shown = $state.raw<{ worktree: WorktreeKey; commits: Commit[] } | null>(null);
   error = $state<string | null>(null);
+  /** How many of the newest commits show. */
+  limit = $state(PAGE);
   /** Asking to read again: the layer reads whenever this grows. */
   asked = $state(0);
   /** The commit a worktree is being created from. */
@@ -24,9 +29,9 @@ export class GitLayer {
   async read(worktree: WorktreeKey): Promise<void> {
     const read = ++this.#reads;
     try {
-      const history = await call(this.#backend.gitHistory(worktree));
+      const commits = await call(this.#backend.gitHistory(worktree));
       if (read !== this.#reads) return;
-      this.shown = { worktree, history };
+      this.shown = { worktree, commits };
       this.error = null;
     } catch (failure) {
       if (read !== this.#reads) return;
