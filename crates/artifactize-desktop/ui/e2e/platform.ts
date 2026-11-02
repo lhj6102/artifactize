@@ -918,13 +918,22 @@ export function supports(needs: readonly Capability[] = []): boolean {
   return needs.every((need) => offered[need]);
 }
 
-/** The harness stand-ins of a fixture: declared agent programs named `claude` and `codex`, first
- * on the PATH of the returned environment. Each says what it was started with and where, adds
- * a line to `runs` for each start (its name, arguments and directory as a portable path), and
- * works for a few seconds; `--move NAME` moves it into the sibling folder NAME, where it keeps
- * working; `--hold PORT` connects to that loopback port and keeps working until it is ended.
- * On Unix each shim execs Node on a script named for its harness, as the real ones run. */
-export function agentStandIns(root: NativePath, env: Environment, runs: NativePath): Environment {
+/** Claude Code and Codex as they sit on this system's disk, for a fixture under `root` whose
+ * home is `root/home`. This reproduces the harnesses' native on-disk format, so unlike every
+ * other fixture file its text holds native paths: each harness's own record of the session
+ * `session.id` names the directory `session.cwd` as the OS spells it, as the real harnesses
+ * write it, and each program is a Node script found on PATH through the OS's own launcher (a
+ * shell shim that execs Node on a script named for its harness, as the real ones run; a `.cmd`
+ * on Windows). The programs are declared stand-ins, first on the PATH of the returned
+ * environment: each says what it was started with and where, adds a line to `runs` for each
+ * start (its name, arguments and directory as a portable path), and works for a few seconds;
+ * `--move NAME` moves it into the sibling folder NAME, where it keeps working; `--hold PORT`
+ * connects to that loopback port and keeps working until it is ended. */
+export function harnessesOnDisk(root: NativePath, env: Environment, runs: NativePath, session: { id: string; cwd: NativePath }): Environment {
+  const claude = makeDirectory(nativePath(root, "home", ".claude", "projects", "repo"));
+  writeFileSync(nativePath(claude, `${session.id}.jsonl`), `${JSON.stringify({ type: "user", sessionId: session.id, cwd: session.cwd })}\n`);
+  const codex = makeDirectory(nativePath(root, "home", ".codex", "sessions", "2026", "01", "01"));
+  writeFileSync(nativePath(codex, `rollout-2026-01-01T12-00-00-${session.id}.jsonl`), `${JSON.stringify({ type: "session_meta", payload: { id: session.id, cwd: session.cwd } })}\n`);
   const scripts = makeDirectory(nativePath(root, "agent"));
   const bin = makeDirectory(nativePath(root, "agent-bin"));
   for (const name of ["claude", "codex"]) {
@@ -950,6 +959,21 @@ if (args[0] === "--move") {
   }
   const path = Object.entries(env).find(([name]) => name.toUpperCase() === "PATH")?.[1] ?? process.env.PATH ?? "";
   return withVariable({ ...env, DESKTOP_TEST_NODE: process.execPath }, "PATH", `${bin}${delimiter}${path}`);
+}
+
+/** A declared stand-in for the program `name`, placed in `directory`, which only adds a line
+ * with its arguments to `record` each time it starts. Returns the PATH, this process's with
+ * `directory` first, on which it is the program found by that name. */
+export function recordingProgram(directory: NativePath, name: string, record: NativePath): string {
+  const script = join(directory, `${name}-stand-in.mjs`);
+  writeFileSync(script, `// The ${name} stand-in: it records each start and does nothing else.
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(record)}, process.argv.slice(2).join(" ") + "\\n");
+`);
+  if (WINDOWS) writeFileSync(join(directory, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
+  else writeFileSync(join(directory, name), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
+  const path = Object.entries(process.env).find(([key]) => key.toUpperCase() === "PATH")?.[1] ?? "";
+  return `${directory}${delimiter}${path}`;
 }
 
 /** The starts the stand-ins recorded in `runs`, in order: each harness, arguments and directory. */

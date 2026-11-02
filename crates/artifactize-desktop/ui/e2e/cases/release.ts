@@ -10,10 +10,10 @@ import { dispatchInput } from "../input.ts";
 import { afterRender, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
 import { visibleCenter } from "../pointer.ts";
-import { scenario, type Scenario } from "../scenario.ts";
+import { scenario, servedBy, type Scenario } from "../scenario.ts";
 import {
-  appendText, diskImageAppDirectory, nativePath, placeApp, primaryModifier, readText, replaceText, runProgramOk,
-  serveLoopbackHttp, storePackageDirectory, writeText,
+  appendText, diskImageAppDirectory, nativePath, placeApp, primaryModifier, readText, readTextIfExists, recordingProgram, replaceText,
+  runProgramOk, serveLoopbackHttp, storePackageDirectory, withVariable, writeText,
   type Environment, type HttpServer, type NativePath,
 } from "../platform.ts";
 
@@ -44,6 +44,9 @@ async function site(fixture: Fixture, tag: string): Promise<{ data: Site; server
   });
   return { data: { url: server.url, visits, answer }, server };
 }
+
+/** Where the Cargo stand-in of an app installed with Cargo records each start. */
+const cargoRuns = (fixture: Fixture) => nativePath(fixture.root, "cargo-runs.txt");
 
 const visited = (data: Site): string[] => readText(data.visits).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
 
@@ -109,14 +112,17 @@ async function prepare(tag: string, options: {
   const fixture = options.used ? await create() : createOutside();
   const placed = options.place?.(fixture);
   const { data, server } = await site(fixture, tag);
-  return {
-    fixture,
-    env: { ...environment(fixture), ...placed?.env, ARTIFACTIZE_RELEASES_URL: data.url },
-    data,
-    ...(placed ? { app: placed.app } : {}),
-    ...(options.browser ? { browser: `${data.url}${options.browser}` } : {}),
-    release: () => server.close(),
-  };
+  return servedBy(server, () => {
+    const env: Environment = { ...environment(fixture), ARTIFACTIZE_RELEASES_URL: data.url };
+    for (const [name, value] of Object.entries(placed?.env ?? {})) if (value !== undefined) withVariable(env, name, value);
+    return {
+      fixture,
+      env,
+      data,
+      ...(placed ? { app: placed.app } : {}),
+      ...(options.browser ? { browser: `${data.url}${options.browser}` } : {}),
+    };
+  });
 }
 
 export const scenarios: Scenario[] = [
@@ -179,10 +185,13 @@ export const scenarios: Scenario[] = [
     () => prepare(`v${LATEST}`, {
       place: (fixture) => {
         const cargo = nativePath(fixture.root, "cargo");
-        return { app: placeApp(app(), nativePath(cargo, "bin")), env: { CARGO_HOME: cargo } };
+        const bin = nativePath(cargo, "bin");
+        const placed = placeApp(app(), bin);
+        // Cargo itself, where the app and the person find it, records any update it is asked for.
+        return { app: placed, env: { CARGO_HOME: cargo, PATH: recordingProgram(bin, "cargo", cargoRuns(fixture)) } };
       },
     }),
-    async (browser, { data }) => {
+    async (browser, { fixture, data }) => {
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
       const text = await openDialog(browser);
       assert.ok(text.includes("To update, run:"), text);
@@ -196,6 +205,7 @@ export const scenarios: Scenario[] = [
       assert.ok(selected.includes("cargo install artifactize artifactize-tools --locked"), `the command is selectable text: ${selected}`);
       await closeByButton(browser);
       onlyLookups(data);
+      assert.equal(readTextIfExists(cargoRuns(fixture)) ?? "", "", "selecting the command ran no update");
     },
   ),
   // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-LINK E-UPDATE-CLOSE

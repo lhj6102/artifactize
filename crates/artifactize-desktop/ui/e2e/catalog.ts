@@ -33,11 +33,19 @@ for (const item of declared) {
   ids.add(item.id);
 }
 
-/** The scenarios this system can run: a case that needs what it does not offer is left out. */
+/** The scenarios this system can run: the full suite leaves out a case that needs what this
+ * system does not offer. */
 export const scenarios: Scenario[] = declared.filter((item) => supports(item.needs));
 
+/** The scenarios named, or the full suite without names. A named case this system cannot run
+ * fails the selection rather than being left out. */
 export function selectedScenarios(selected: string[]): Scenario[] {
   if (selected.length === 0) return scenarios;
   for (const id of selected) if (!ids.has(id)) throw new Error(`unknown desktop scenario: ${id}`);
-  return scenarios.filter((item) => selected.includes(item.id));
+  const named = declared.filter((item) => selected.includes(item.id));
+  const unable = named.filter((item) => !supports(item.needs));
+  if (unable.length) {
+    throw new Error(`this system cannot run ${unable.map((item) => `${item.id} (needs ${item.needs!.join(", ")})`).join("; ")}`);
+  }
+  return named;
 }

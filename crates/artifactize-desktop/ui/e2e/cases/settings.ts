@@ -11,7 +11,7 @@ import { clickOption } from "../input.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle } from "../pane.ts";
-import { scenario, type Scenario } from "../scenario.ts";
+import { scenario, servedBy, type Scenario } from "../scenario.ts";
 import { makeDirectory, nativePath, primaryModifier, readText, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
@@ -140,12 +140,11 @@ export const scenarios: Scenario[] = [
         response.writeHead(listing ? 200 : 404, { "content-type": "application/json" });
         response.end(JSON.stringify(listing ? { object: "list", data: [{ id: "openai-model", object: "model", created: 0, owned_by: "e2e" }] } : {}));
       });
-      return {
+      return servedBy(openai, () => ({
         fixture,
         env: { ...settingsEnvironment(fixture), ARTIFACTIZE_OPENAI_BASE_URL: `${openai.url}/v1` },
         data: { key: KEY, saved: SAVED, shadowed: SHADOWED, seen },
-        release: () => openai.close(),
-      };
+      }));
     },
     async (browser, { fixture, data: { key, saved, shadowed, seen } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
@@ -287,12 +286,11 @@ export const scenarios: Scenario[] = [
           } else json(404, {});
         });
       });
-      return {
+      return servedBy(endpoint, () => ({
         fixture,
         env: { ...settingsEnvironment(fixture), ARTIFACTIZE_OPENAI_BASE_URL: `${endpoint.url}/oai/v1` },
         data: { root: endpoint.url, url: `${endpoint.url}/v1`, seen, alias, review, key: ENDPOINT_KEY },
-        release: () => endpoint.close(),
-      };
+      }));
     },
     async (browser, { fixture, data: { root, url, seen, alias, review, key } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
@@ -404,12 +402,11 @@ Review the agent folder."""
         response.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
         response.end(JSON.stringify(ok ? { principal: readText(principalFile), scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
       });
-      return {
+      return servedBy(store, () => ({
         fixture,
         env,
         data: { url: `${store.url}/`, principalFile, token: TOKEN },
-        release: () => store.close(),
-      };
+      }));
     },
     async (browser, { fixture, data: { url, principalFile, token } }) => {
       const text = () => browser.execute(() => document.body.innerText);

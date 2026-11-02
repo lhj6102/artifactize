@@ -100,9 +100,18 @@ async function confirmRemoval(browser: WebdriverIO.Browser): Promise<void> {
   await browser.waitUntil(async () => (await removal(browser)) === null, { timeout: 15000, timeoutMsg: "the removal dialog closed" });
 }
 
-/** Wait until the Git layer says Git refused the removal. */
-const refused = (browser: WebdriverIO.Browser, what: string) => browser.waitUntil(async () =>
-  (await gitLayer(browser)).notes.some((note) => note.startsWith("Git refused to remove the worktree")), { timeout: 30000, timeoutMsg: what });
+/** Whether the Git layer says Git refused a removal. */
+const saysRefused = async (browser: WebdriverIO.Browser) =>
+  (await gitLayer(browser)).notes.some((note) => note.startsWith("Git refused to remove the worktree"));
+
+/** Ask to remove the shown worktree, confirm, and wait until the Git layer says Git refused
+ * this removal: no refusal shows before it is asked, so the one that shows is its own. */
+async function removalRefused(browser: WebdriverIO.Browser, what: string): Promise<void> {
+  await browser.waitUntil(async () => !(await saysRefused(browser)), { timeout: 15000, timeoutMsg: `no earlier refusal shows before ${what}` });
+  await askRemoval(browser);
+  await confirmRemoval(browser);
+  await browser.waitUntil(() => saysRefused(browser), { timeout: 30000, timeoutMsg: what });
+}
 
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-GIT-LAYER J-WORKTREE-NEW; UX edges: E-GIT-HISTORY E-GIT-WORKTREE-NEW E-TERMINAL-OPEN E-TERMINAL-TYPE
@@ -304,11 +313,14 @@ export const scenarios: Scenario[] = [
     async (browser, { data: fixture }) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
+      // The agent runs in a folder of the worktree the shell moved into, not the worktree itself.
+      await typeLine(browser, "cd docs");
       await typeLine(browser, "claude --hello");
       await printed(browser, "agent done --hello", "the agent ran and finished");
+      assert.match(agentRuns(fixture, "claude")[0].cwd, /\/repo\/docs$/, "the agent ran in docs");
       await endShell(browser);
       const offer = await reopen(browser);
-      assert.match(offer.text, /Rerun the last command in .*: claude --hello Run/, "the agent as it was run, not its interpreter");
+      assert.match(offer.text, /Rerun the last command in .*[\\/]repo[\\/]docs: claude --hello Run/, "the agent as it was run, where it ran");
       assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
       assert.deepEqual(offer.buttons, ["Run the last command again", "Resume the latest Claude Code session", "Keep the fresh shell"]);
       assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");
@@ -316,14 +328,17 @@ export const scenarios: Scenario[] = [
       await browser.$(TERMINAL).$('button[aria-label="Resume the latest Claude Code session"]').click();
       await browser.waitUntil(() => agentRuns(fixture, "claude").length === 2, { timeout: 30000, timeoutMsg: "the resume command ran" });
       const [first, resumed] = agentRuns(fixture, "claude");
-      assert.deepEqual(resumed, { args: "--continue", cwd: first.cwd }, "in the agent's directory");
+      assert.deepEqual(resumed, { args: "--continue", cwd: first.cwd }, "in the agent's directory, docs");
       assert.equal((await terminal(browser))?.offer, null, "the offer is gone");
       await printed(browser, "agent done --continue", "the resumed agent ran and finished");
 
-      // A session the agent's own records name for this directory resumes by its ID; rerunning
+      // A session the agent's own records name for the worktree resumes by its ID; rerunning
       // the last command runs it again where it ran.
+      await typeLine(browser, "cd ..");
       await typeLine(browser, `claude --resume ${fixture.session}`);
       await printed(browser, `agent done --resume+${fixture.session}`, "the agent ran its session and finished");
+      const named = agentRuns(fixture, "claude").at(-1)!;
+      assert.match(named.cwd, /\/repo$/, "the session ran in the worktree");
       await endShell(browser);
       const known = await reopen(browser);
       assert.match(known.text, new RegExp(`Resume the Claude Code session: claude --resume ${fixture.session}`));
@@ -331,7 +346,7 @@ export const scenarios: Scenario[] = [
       const runs = agentRuns(fixture, "claude").length;
       await browser.$(TERMINAL).$('button[aria-label="Run the last command again"]').click();
       await browser.waitUntil(() => agentRuns(fixture, "claude").length === runs + 1, { timeout: 30000, timeoutMsg: "the last command ran again" });
-      assert.deepEqual(agentRuns(fixture, "claude").at(-1), { args: `--resume ${fixture.session}`, cwd: first.cwd }, "the same command where it ran");
+      assert.deepEqual(agentRuns(fixture, "claude").at(-1), { args: `--resume ${fixture.session}`, cwd: named.cwd }, "the same command where it ran");
       await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
     },
   )),
@@ -533,24 +548,18 @@ export const scenarios: Scenario[] = [
       assert.ok(exists(fixture.repo) && await branch(browser, "repo  master"), "nothing removed");
 
       // Git refuses the main checkout, a locked worktree and one with uncommitted work.
-      await askRemoval(browser);
-      await confirmRemoval(browser);
-      await refused(browser, "the main checkout refused");
+      await removalRefused(browser, "the main checkout refused");
       assert.ok(exists(fixture.repo) && await branch(browser, "repo  master"), "the main checkout stays");
       git(fixture.repo, "-C", fixture.repo, "worktree", "lock", fixture.side);
       await selectBranch(browser, "repo  side");
       await terminalOf(browser, "repo / side");
-      await askRemoval(browser);
-      await confirmRemoval(browser);
-      await refused(browser, "the locked worktree refused");
+      // The lock stays until the locked worktree's own refusal shows.
+      await removalRefused(browser, "the locked worktree refused");
       git(fixture.repo, "-C", fixture.repo, "worktree", "unlock", fixture.side);
       writeText(nativePath(fixture.side, "docs", "notes.md"), "Unfinished work.\n");
       await selectBranch(browser, "repo  master");
       await selectBranch(browser, "repo  side");
-      await browser.waitUntil(async () => !(await gitLayer(browser)).notes.some((note) => note.startsWith("Git refused")), { timeout: 15000, timeoutMsg: "the history read again" });
-      await askRemoval(browser);
-      await confirmRemoval(browser);
-      await refused(browser, "the dirty worktree refused");
+      await removalRefused(browser, "the dirty worktree refused");
       assert.ok(exists(fixture.side) && await branch(browser, "repo  side"), "the refused worktree stays");
 
       // A clean worktree goes with its folder, and its terminal ends with the program running in
@@ -627,10 +636,34 @@ export const scenarios: Scenario[] = [
         { timeout: 30000, timeoutMsg: "the panel says the terminal ends with the app" });
       await typeLine(browser, "echo in-the-job");
       await printed(browser, "in-the-job", "a shell runs in the worktree");
-      await selectBranch(browser, "repo  master");
-      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
-        { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
-      await sessionEndedByApp(browser, () => browser.keys(["q"]));
+      // A program running in it holds a connection open until it ends; closing the app ends it.
+      const held: LoopbackSocket[] = [];
+      let closed = 0;
+      let programEnded = () => {};
+      const ended = new Promise<void>((done) => { programEnded = done; });
+      const server = await serveLoopback((socket) => {
+        held.push(socket);
+        // Windows resets the connection of a program it terminates; that reset is its end too.
+        socket.on("error", () => {});
+        socket.on("close", () => { closed += 1; programEnded(); });
+      });
+      let bound: NodeJS.Timeout | undefined;
+      try {
+        await typeLine(browser, `claude --hold ${server.port}`);
+        await browser.waitUntil(() => held.length === 1, { timeout: 30000, timeoutMsg: "the program in the terminal runs" });
+        await selectBranch(browser, "repo  master");
+        await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
+          { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
+        assert.equal(closed, 0, "the program runs until the app closes");
+        await sessionEndedByApp(browser, () => browser.keys(["q"]));
+        await Promise.race([ended, new Promise((_, fail) => {
+          bound = setTimeout(() => fail(new Error("closing the app ended the program in its terminal")), 30000);
+        })]);
+      } finally {
+        clearTimeout(bound);
+        for (const socket of held) socket.destroy();
+        await server.close();
+      }
     },
   )),
 ];

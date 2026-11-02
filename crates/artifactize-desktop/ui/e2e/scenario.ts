@@ -47,3 +47,15 @@ export function scenario<T>(
     ...(relaunched ? { relaunched: (browser: WebdriverIO.Browser, input: Prepared) => relaunched(browser, input as Prepared<T>) } : {}),
   };
 }
+
+/** The prepared inputs `build` makes while `server` already runs, released with it. When
+ * `build` throws, the server closes before the failure goes on, so a failed preparation leaves
+ * nothing listening. */
+export async function servedBy<T>(server: { close: () => Promise<void> }, build: () => Omit<Prepared<T>, "release">): Promise<Prepared<T>> {
+  let prepared: Omit<Prepared<T>, "release">;
+  try { prepared = build(); } catch (error) {
+    await server.close();
+    throw error;
+  }
+  return { ...prepared, release: () => server.close() };
+}

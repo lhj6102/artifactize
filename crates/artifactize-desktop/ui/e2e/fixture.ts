@@ -9,7 +9,7 @@ import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
 import {
-  agentStandIns, agentStarts, canonicalPath, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
+  harnessesOnDisk, agentStarts, canonicalPath, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
   updateDatabase, writeText, type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
@@ -206,9 +206,9 @@ export function createGraph(): Fixture {
 
 /** The workbench's repository: master with two commits, the first tagged `v1`, and a linked
  * worktree `side` on branch `side` with a commit of its own, each commit an hour after the
- * last; no Run yet. Claude Code and Codex stand-ins ([`agentStandIns`]) are first on the app's
- * PATH, recording their starts in `agent-runs.txt`. The fixture home holds each harness's own
- * record of the session `session` in the repository. */
+ * last; no Run yet. Claude Code and Codex stand-ins are first on the app's PATH, recording
+ * their starts in `agent-runs.txt`, and the fixture home holds each harness's own record of the
+ * session `session` in the repository ([`harnessesOnDisk`]). */
 export type Workbench = Fixture & { side: NativePath; runs: NativePath; session: string; env: Environment };
 export function createWorkbench(): Workbench {
   return prepareFixture((root) => {
@@ -225,14 +225,9 @@ export function createWorkbench(): Workbench {
     gitAt(repo, "2026-01-01T12:00:00Z", "-C", side, "commit", "-qam", "Side work");
     const runs = nativePath(root, "agent-runs.txt");
     quietShell(root);
-    // Each harness's own record of a session in the repository, as its metadata names it.
     const session = "0f1e2d3c-workbench";
-    const cwd = canonicalPath(repo);
-    const claude = makeDirectory(nativePath(root, "home", ".claude", "projects", "repo"));
-    writeText(nativePath(claude, `${session}.jsonl`), `${JSON.stringify({ type: "user", sessionId: session, cwd })}\n`);
-    const codex = makeDirectory(nativePath(root, "home", ".codex", "sessions", "2026", "01", "01"));
-    writeText(nativePath(codex, `rollout-2026-01-01T12-00-00-${session}.jsonl`), `${JSON.stringify({ type: "session_meta", payload: { id: session, cwd } })}\n`);
-    return { root, repo, state: nativePath(root, "state"), side, runs, session, env: agentStandIns(root, {}, runs) };
+    const env = harnessesOnDisk(root, {}, runs, { id: session, cwd: canonicalPath(repo) });
+    return { root, repo, state: nativePath(root, "state"), side, runs, session, env };
   });
 }
 
