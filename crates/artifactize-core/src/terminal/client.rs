@@ -162,6 +162,9 @@ async fn acknowledge(
     loop {
         match wire::receive(reader).await? {
             Some(Response::Accepted) => return Ok(()),
+            Some(Response::Stopped { .. }) => {
+                return Err(io::Error::other("Unexpected host shutdown response"));
+            }
             Some(Response::Failed(error)) => return Err(io::Error::other(error)),
             Some(Response::Frame(frame)) => {
                 *warned |= matches!(frame, TerminalFrame::NotPersistent);
