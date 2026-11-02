@@ -136,17 +136,23 @@ fn session_id(
     };
     let mut directories = vec![root];
     while let Some(directory) = directories.pop() {
-        for entry in fs::read_dir(directory).ok()?.flatten() {
+        // Links and Windows reparse points are classified, never followed.
+        let opened = platform::open_directory(&directory).ok()?;
+        for entry in platform::read_dir(&opened).ok()? {
+            let entry = entry.ok()?;
+            let name = entry.file_name();
+            let path = directory.join(&name);
             let kind = entry.file_type().ok()?;
-            if kind.is_dir() {
-                directories.push(entry.path());
-            } else if kind.is_file()
-                && entry
-                    .file_name()
+            if kind == platform::FileKind::Directory {
+                directories.push(path);
+            } else if kind == platform::FileKind::File
+                && name
                     .to_string_lossy()
                     .ends_with(&format!("{requested}.jsonl"))
             {
-                let file = io::BufReader::new(fs::File::open(entry.path()).ok()?);
+                let file = io::BufReader::new(
+                    platform::open_no_follow(fs::OpenOptions::new().read(true), &path).ok()?,
+                );
                 // Records stream through metadata-only structs: serde skips every other
                 // field as it parses, so no message or tool-call content is ever held.
                 let proves = |id: &Option<SessionId>, directory: &Option<PathBuf>| {
