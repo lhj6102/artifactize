@@ -27,6 +27,7 @@ pub enum Harness {
 #[cfg_attr(feature = "desktop-types", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalCommand {
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub program: String,
     pub args: Vec<String>,
 }

@@ -39,8 +39,7 @@ impl vte::Perform for Integration {
     fn osc_dispatch(&mut self, params: &[&[u8]], _: bool) {
         if params.first() == Some(&b"7".as_slice())
             && let Some(value) = params.get(1).and_then(|v| std::str::from_utf8(v).ok())
-            && let Ok(url) = url::Url::parse(value)
-            && let Ok(path) = url.to_file_path()
+            && let Some(path) = crate::platform::file_uri_path(value)
         {
             self.cwd = Some(path);
         }

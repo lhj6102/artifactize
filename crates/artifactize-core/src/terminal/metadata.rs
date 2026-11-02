@@ -156,7 +156,11 @@ fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) 
                         }
                         Harness::Codex => break,
                     };
-                    if id.as_deref() == Some(requested) && directory.as_deref() == Some(cwd) {
+                    if id.as_deref() == Some(requested)
+                        && directory
+                            .as_deref()
+                            .is_some_and(|directory| platform::paths_equal(directory, cwd))
+                    {
                         return id;
                     }
                 }
