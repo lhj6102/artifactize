@@ -110,8 +110,10 @@ fn inspect(pid: i32) -> Option<(Option<PathBuf>, Vec<String>)> {
         )
     };
     let cwd = if read == mem::size_of_val(&info) as i32 {
-        // SAFETY: a successful proc_pidinfo fills a NUL-terminated vnode path.
-        let bytes = unsafe { CStr::from_ptr(info.pvi_cdir.vip_path.as_ptr()) }.to_bytes();
+        // SAFETY: proc_pidinfo fills a NUL-terminated MAXPATHLEN path. libc represents
+        // that contiguous buffer as nested arrays; flatten all rows, not only the first.
+        let bytes =
+            unsafe { CStr::from_ptr(info.pvi_cdir.vip_path.as_flattened().as_ptr()) }.to_bytes();
         Some(crate::platform::path_from_bytes(bytes))
     } else {
         None
