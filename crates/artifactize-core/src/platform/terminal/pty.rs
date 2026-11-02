@@ -1,6 +1,6 @@
 //! Native PTY and process lifetime. The slave stays open so a restored argv and its following
 //! fresh shell use the same terminal, including pending input, output and geometry.
-use super::{Foreground, Processes, Size};
+use super::{Foreground, Modes, Processes, Size};
 use crate::{platform, terminal::TerminalCommand};
 use portable_pty::{Child, CommandBuilder, MasterPty, SlavePty};
 use std::{
@@ -42,6 +42,7 @@ pub(crate) struct Pty {
     running: Option<Running>,
     slave: Box<dyn SlavePty + Send>,
     master: Box<dyn MasterPty + Send>,
+    modes: Modes,
     input: mpsc::SyncSender<Vec<u8>>,
 }
 impl Pty {
@@ -56,10 +57,12 @@ impl Pty {
         let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
         let mut reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
         let (input, pending) = mpsc::sync_channel::<Vec<u8>>(INPUT_QUEUE);
+        let modes = Modes::initial(&*pair.master)?;
         let mut pty = Self {
             running: None,
             slave: pair.slave,
             master: pair.master,
+            modes,
             input,
         };
         pty.run(cwd, None)?;
@@ -94,6 +97,8 @@ impl Pty {
     }
     pub fn run(&mut self, cwd: &Path, command: Option<&TerminalCommand>) -> io::Result<()> {
         self.stop()?;
+        // Every program starts on the PTY's initial settings, not on what the last one left.
+        self.modes.restore(&*self.master)?;
         let mut launch = match command {
             Some(command) => {
                 let program = platform::program::resolve(command.program.as_ref(), cwd)?;

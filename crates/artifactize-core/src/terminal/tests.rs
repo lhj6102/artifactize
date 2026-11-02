@@ -231,3 +231,19 @@ async fn an_endpoint_others_can_reach_is_refused_and_not_repaired() {
     assert!(attach(&worktree, COLS, ROWS).await.is_err());
     assert!(!test_os::private_dir(&directory.0));
 }
+
+/// The host's screen is the terminal: a program's cursor position query is answered from it,
+/// also when the query arrives split across reads, and clients never receive the query.
+#[test]
+fn a_cursor_query_is_answered_by_the_host_and_never_reaches_clients() {
+    let mut screen = screen::Screen::new(COLS, ROWS);
+    let before = screen.process(b"ab\r\ncd\x1b[");
+    let after = screen.process(b"6nef");
+    assert_eq!([before.output, after.output].concat(), b"ab\r\ncdef");
+    assert_eq!([before.answers, after.answers].concat(), b"\x1b[2;3R");
+    // Output that only begins like the query reaches clients unchanged.
+    let held = screen.process(b"\x1b[");
+    let style = screen.process(b"1mbold");
+    assert_eq!([held.output, style.output].concat(), b"\x1b[1mbold");
+    assert!(held.answers.is_empty() && style.answers.is_empty());
+}

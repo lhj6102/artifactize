@@ -151,6 +151,13 @@ async fn a_restore_offer_runs_nothing_until_a_choice_is_sent() {
         .await;
     // The offer is used up: nothing can run it a second time.
     assert!(attachment.restore(RestoreChoice::Rerun).await.is_err());
+    // The shell that follows the rerun shows the line being typed, whatever terminal settings
+    // the shell and program before it left behind.
+    let typed = os::terminal_echo("after", "rerun");
+    attachment.input(typed.clone()).await.unwrap();
+    frames.printed("afterrerun").await;
+    let line = String::from_utf8(typed).unwrap();
+    assert!(contains(&frames.output, line.trim_end()));
 
     attachment.input(b"exit\r".to_vec()).await.unwrap();
     while !matches!(frames.next().await, TerminalFrame::Ended { .. }) {}

@@ -44,6 +44,12 @@ const INPUT_MODES: [u16; 9] = [
 /// A terminal retains ten thousand lines, independently of how long its host lives.
 const SCROLLBACK_LINES: usize = 10_000;
 
+/// A program asks its terminal where the cursor is (Device Status Report 6) and waits for the
+/// answer. The host's screen is the terminal, so it answers even with no client attached;
+/// ConPTY asks once as it starts and shows nothing until it is answered.
+const CURSOR_QUERY: &[u8] = b"\x1b[6n";
+const ESC: u8 = 0x1b;
+
 #[derive(Default)]
 struct Integration {
     cwd: Option<PathBuf>,
@@ -89,11 +95,21 @@ impl vte::Perform for Integration {
     }
 }
 
+/// What a program's output became: what clients receive, and the host's answers to the
+/// program's queries, which go back to it as terminal input.
+#[derive(Default)]
+pub(super) struct Shown {
+    pub output: Vec<u8>,
+    pub answers: Vec<u8>,
+}
+
 pub(super) struct Screen {
     terminal: avt::Terminal,
     integration: Integration,
     parser: vte::Parser,
     utf8: Vec<u8>,
+    /// The start of a query split across reads, held until its end arrives or rules it out.
+    query: Vec<u8>,
 }
 impl Screen {
     pub fn new(cols: u16, rows: u16) -> Self {
@@ -107,9 +123,54 @@ impl Screen {
             integration: Integration::default(),
             parser: vte::Parser::new(),
             utf8: Vec::new(),
+            query: Vec::new(),
         }
     }
-    pub fn process(&mut self, data: &[u8]) {
+    /// Show a program's output. A cursor query is answered here and never reaches clients,
+    /// whose own answers would arrive twice or, with none attached, never.
+    pub fn process(&mut self, data: &[u8]) -> Shown {
+        let input = [std::mem::take(&mut self.query).as_slice(), data].concat();
+        let mut shown = Shown::default();
+        let mut start = 0;
+        let mut from = 0;
+        let mut end = input.len();
+        while let Some(at) = input[from..]
+            .iter()
+            .position(|byte| *byte == ESC)
+            .map(|offset| from + offset)
+        {
+            let rest = &input[at..];
+            if rest.starts_with(CURSOR_QUERY) {
+                self.show(&input[start..at], &mut shown.output);
+                shown
+                    .answers
+                    .extend_from_slice(self.cursor_report().as_bytes());
+                start = at + CURSOR_QUERY.len();
+                from = start;
+            } else if CURSOR_QUERY.starts_with(rest) {
+                self.query = rest.to_vec();
+                end = at;
+                break;
+            } else {
+                from = at + 1;
+            }
+        }
+        self.show(&input[start..end], &mut shown.output);
+        shown
+    }
+    /// The Cursor Position Report: one-based row and column of the cursor.
+    fn cursor_report(&self) -> String {
+        let (cols, _) = self.terminal.size();
+        let cursor = self.terminal.cursor();
+        // A cursor waiting to wrap after the last column reports that column.
+        let col = cursor.col.min(cols.saturating_sub(1));
+        format!("\x1b[{};{}R", cursor.row + 1, col + 1)
+    }
+    fn show(&mut self, data: &[u8], output: &mut Vec<u8>) {
+        self.feed(data);
+        output.extend_from_slice(data);
+    }
+    fn feed(&mut self, data: &[u8]) {
         self.parser.advance(&mut self.integration, data);
         self.utf8.extend_from_slice(data);
         let mut consumed = 0;
