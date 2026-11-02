@@ -196,7 +196,7 @@ parts = ["physics"]
 | `combat` | 전투 구성 요소끼리 함께 동작함 |
 | `fireball` | 피해량, 재사용 대기시간, 효과 |
 
-부분이 정하는 것은 리뷰가 아니라 판정입니다.
+부분 관계는 리뷰 실행 여부가 아니라 상위 Artifact의 최종 판정에 영향을 줍니다.
 
 - **부분이 실패하면 그 부분으로 이루어진 Artifact도 실패합니다.** `fireball`이 RED인 동안
   `game`도 RED로 보이며, 부분의 부분까지 모든 부분과 자기 eval이 통과해야 `game`이 통과합니다.
@@ -207,11 +207,11 @@ parts = ["physics"]
 - **Artifact가 필요하면 그 부분도 필요합니다.** `{game}`을 참조하는 eval이 GREEN으로 끝나려면
   `game`이 통과해야 하므로, Run에는 부분의 결과도 필요합니다. 다만 실행 게이트는 여전히
   `game`에 선언된 eval뿐입니다.
-- **그 밖에는 영향이 없습니다.** 부분은 파일을 나누지 않으며, 각 Artifact는 선언이 다루는 파일을
-  그대로 가집니다. 폴더 Artifact의 파일에 그 안에 중첩된 폴더 Artifact의 파일은 들어가지 않습니다.
+- **그 밖에는 영향이 없습니다.** 부분은 파일 범위를 나누지 않으며, 각 Artifact에는 선언에서 다루는
+  파일이 그대로 포함됩니다. 폴더 Artifact의 파일에 그 안에 중첩된 폴더 Artifact의 파일은 들어가지 않습니다.
   fireball이 바뀔 때는 fireball을 참조하는 eval만 다시 리뷰하고, `game`의 파일이 바뀌어도 fireball은
-  다시 리뷰하지 않습니다. 파일 Artifact나 aspect는 둘러싼 폴더 Artifact와 파일을 함께 가지며, 함께
-  가진 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
+  다시 리뷰하지 않습니다. 파일 Artifact나 aspect의 파일은 둘러싼 폴더 Artifact의 파일 범위에도
+  포함되며, 그 파일이 바뀌면 두 Artifact를 모두 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
 
 부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [파일 Artifact](declarations.md#file-artifacts)는 파일
 하나이고, [aspect](declarations.md#aspects)는 fireball의
