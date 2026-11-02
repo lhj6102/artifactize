@@ -41,7 +41,7 @@
       <button class="again" aria-label="Read the history again" title="Read the history again" onclick={() => git.asked++}>↻</button>
     {/if}
   </header>
-  {#if git.error}<p class="failure" role="alert">{git.error}</p>{/if}
+  {#if git.error}<p class="failure" role="status">{git.error}</p>{/if}
   {#if created}
     <p class="made" role="status">Created <code>{created.branch}</code> in <code>{created.worktree}</code>; it opens once listed.</p>
   {/if}

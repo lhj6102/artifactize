@@ -135,7 +135,7 @@
         <div class="actions"><button class="button small" onclick={() => terminals.fresh(worktree)}>Start a fresh shell</button></div>
       </div>
     {/if}
-    {#if session.error}<p class="failure" role="alert">{session.error}</p>{/if}
+    {#if session.error}<p class="failure" role="status">{session.error}</p>{/if}
     {#key `${worktree}\n${session.attempt}`}
       <div class="screen" {@attach screen(worktree, terminals, app.workbench)}></div>
     {/key}
