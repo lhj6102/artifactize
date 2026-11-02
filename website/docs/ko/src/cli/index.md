@@ -526,7 +526,7 @@ notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이
 바뀌었는지(알 수 없으면 null), `answer`는 답변 텍스트, `usage`는 시도별 토큰 수입니다.
 
-follow-up은 저장된 대화를 같은 모델과 현재 프로젝트 도구로 이어 갑니다. 답변은 일반
+follow-up은 저장된 대화를 같은 모델과 현재 프로젝트에 선언된 도구를 사용해 이어 갑니다. 답변은 일반
 텍스트이며, 기록된 판정, 결과, 재사용에는 영향을 주지 않습니다. 리뷰한 입력이 바뀌었으면 헤더에
 경고가 나옵니다. 질문마다 프로필의 예산이 새로 적용되며, 한 세션에 보낸 질문은 차례대로 처리합니다.
 follow-up을 저장하는 방식은 [follow-up 재생 레퍼런스](../features/others/state.md#follow-up-replay)를
