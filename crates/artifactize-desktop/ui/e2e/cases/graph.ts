@@ -265,11 +265,14 @@ export const scenarios: Scenario[] = [
       assert.equal(drawn["a:suite"].dot, drawn["a:lib"].dot, "suite's name marked in GREEN, as lib's is");
       // An edge into a whole meets its box: site's edge to app reaches the side of app's box,
       // where the box takes edges in.
-      const meets = await browser.execute((edge, whole) => {
+      // Edges are drawn once the boxes they join are measured, which may be after the boxes show.
+      const edgeEnd = () => browser.execute((edge, whole) => {
         const path = document.querySelector(`.graph .svelte-flow__edge[data-id="${edge}"] path.svelte-flow__edge-path`)?.getBoundingClientRect();
         const handle = document.querySelector(`.graph .svelte-flow__node[data-id="${whole}"] .svelte-flow__handle.target`)?.getBoundingClientRect();
         return path && handle ? { right: path.right, top: path.top, bottom: path.bottom, x: handle.left + handle.width / 2, y: handle.top + handle.height / 2 } : null;
       }, "a:suite/a:site>a:suite/a:app", "a:suite/a:app");
+      await browser.waitUntil(async () => (await edgeEnd()) !== null, { timeout: 15000, timeoutMsg: "site's edge to app drawn" });
+      const meets = await edgeEnd();
       const app = drawn["a:suite/a:app"].rect;
       assert.ok(meets && Math.abs(meets.x - app.left) <= 4 && meets.y > app.top && meets.y < app.bottom
         && Math.abs(meets.right - meets.x) <= 4 && meets.y >= meets.top - 2 && meets.y <= meets.bottom + 2,

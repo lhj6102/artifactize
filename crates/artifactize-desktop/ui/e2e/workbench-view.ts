@@ -133,14 +133,13 @@ export function gitLayer(browser: WebdriverIO.Browser): Promise<{ commits: Commi
 /** Ask for a new worktree from the commit whose summary is `summary`: the pointer goes to its
  * row, which brings its quiet action forward, and presses it. */
 export async function newWorktreeFrom(browser: WebdriverIO.Browser, summary: string): Promise<void> {
-  const rows = await browser.$$(`${GIT_LAYER} [aria-label="Commits"] > li.commit`);
-  for (const row of rows) {
-    if ((await row.$(".subject").getText()).trim() !== summary) continue;
-    await browser.action("pointer").move({ origin: row, x: 0, y: 0 }).perform();
-    const action = await row.$('button[aria-label^="New worktree from "]');
-    await action.waitForDisplayed({ timeout: 15000, timeoutMsg: `the new worktree action shows on ${summary}` });
-    await action.click();
-    return;
-  }
-  assert.fail(`no commit ${summary} in the Git layer`);
+  // The chosen worktree's history may still be on its way.
+  await browser.waitUntil(async () => (await gitLayer(browser)).commits.some((commit) => commit.summary === summary),
+    { timeout: 15000, timeoutMsg: `the Git layer lists the commit ${summary}` });
+  const at = (await gitLayer(browser)).commits.findIndex((commit) => commit.summary === summary);
+  const row = await browser.$(`${GIT_LAYER} [aria-label="Commits"] > li.commit:nth-child(${at + 1})`);
+  await browser.action("pointer").move({ origin: row, x: 0, y: 0 }).perform();
+  const action = await row.$('button[aria-label^="New worktree from "]');
+  await action.waitForDisplayed({ timeout: 15000, timeoutMsg: `the new worktree action shows on ${summary}` });
+  await action.click();
 }

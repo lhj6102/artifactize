@@ -771,21 +771,23 @@ public static class Display {
   public static string Widen(int width, int height) {
     var mode = new Mode();
     mode.Size = (short)Marshal.SizeOf(typeof(Mode));
-    if (!EnumDisplaySettings(null, -1, ref mode)) return "the display mode could not be read";
-    if (mode.PelsWidth >= width) return "";
+    if (!EnumDisplaySettings(null, -1, ref mode)) throw new Exception("the display mode could not be read");
+    var was = mode.PelsWidth + "x" + mode.PelsHeight;
+    if (mode.PelsWidth >= width) return "the display stays " + was;
     mode.PelsWidth = width;
     mode.PelsHeight = height;
     mode.Fields = 0x80000 | 0x100000;
     var changed = ChangeDisplaySettings(ref mode, 0);
-    return changed == 0 ? "" : "the display refused " + width + "x" + height + ": " + changed;
+    if (changed != 0) throw new Exception("the display refused " + width + "x" + height + ": " + changed);
+    if (!EnumDisplaySettings(null, -1, ref mode)) throw new Exception("the display mode could not be read again");
+    return "the display widened from " + was + " to " + mode.PelsWidth + "x" + mode.PelsHeight;
   }
 }
 "@
-$failure = [Display]::Widen(1920, 1080)
-if ($failure) { throw $failure }
+[Display]::Widen(1920, 1080)
 `);
   try {
-    runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script]);
+    process.stdout.write(`${runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script]).trim()}\n`);
   } finally {
     removeTree(directory);
   }

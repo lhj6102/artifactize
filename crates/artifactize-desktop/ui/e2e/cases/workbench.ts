@@ -40,7 +40,9 @@ const currentOf = (browser: WebdriverIO.Browser, name: string) =>
   browser.waitUntil(async () => (await mainTitle(browser)) === `Current · ${name}`, { timeout: 15000, timeoutMsg: `${name}'s Current shown` });
 
 /** The graph's canvas, and whether the expanded terminal floats over it, inside its box. */
-function overGraph(browser: WebdriverIO.Browser) {
+async function overGraph(browser: WebdriverIO.Browser) {
+  // The graph is drawn once its worktree's scan arrives, which may come after the terminal.
+  await browser.$(".monitor .graph > .canvas").waitForExist({ timeout: 30000, timeoutMsg: "the graph drawn under the terminal" });
   return browser.execute((query) => {
     const panel = document.querySelector(query)?.getBoundingClientRect();
     const canvas = document.querySelector(".monitor .graph > .canvas")!.getBoundingClientRect();
@@ -411,7 +413,8 @@ export const scenarios: Scenario[] = [
       // the Main area room for both panels and some graph.
       await browser.setWindowSize(1000, 800);
       await afterRender(browser);
-      assert.ok(await browser.execute(() => innerWidth) >= 1280, "the window never narrower than 1280 px");
+      const narrowest = await browser.execute(() => innerWidth);
+      assert.ok(narrowest >= 1280, `the window never narrower than 1280 px: ${narrowest}`);
       await browser.setWindowSize(1440, 900);
       await afterRender(browser);
       const divider = await browser.$(".monitor [data-pane-resizer]");
