@@ -136,36 +136,46 @@ fn session_id(
     };
     let mut directories = vec![root];
     while let Some(directory) = directories.pop() {
-        for entry in fs::read_dir(directory).ok()?.flatten() {
+        // Links and Windows reparse points are classified, never followed.
+        let opened = platform::open_directory(&directory).ok()?;
+        for entry in platform::read_dir(&opened).ok()? {
+            let entry = entry.ok()?;
+            let name = entry.file_name();
+            let path = directory.join(&name);
             let kind = entry.file_type().ok()?;
-            if kind.is_dir() {
-                directories.push(entry.path());
-            } else if kind.is_file()
-                && entry
-                    .file_name()
+            if kind == platform::FileKind::Directory {
+                directories.push(path);
+            } else if kind == platform::FileKind::File
+                && name
                     .to_string_lossy()
                     .ends_with(&format!("{requested}.jsonl"))
             {
-                let file = fs::File::open(entry.path()).ok()?;
-                for line in io::BufRead::lines(io::BufReader::new(file)) {
-                    let line = line.ok()?;
-                    let record: Envelope = serde_json::from_str(&line).ok()?;
-                    let (id, directory) = match harness {
-                        Harness::ClaudeCode => (record.session_id, record.cwd),
-                        // Only a session_meta record's payload is decoded at all.
-                        Harness::Codex if record.kind.as_deref() == Some("session_meta") => {
-                            let meta: SessionRecord = serde_json::from_str(&line).ok()?;
-                            (meta.payload.id, meta.payload.cwd)
-                        }
-                        Harness::Codex => break,
-                    };
-                    if id.as_ref() == Some(&requested)
+                let file = io::BufReader::new(
+                    platform::open_no_follow(fs::OpenOptions::new().read(true), &path).ok()?,
+                );
+                // Records stream through metadata-only structs: serde skips every other
+                // field as it parses, so no message or tool-call content is ever held.
+                let proves = |id: &Option<SessionId>, directory: &Option<PathBuf>| {
+                    id.as_ref() == Some(&requested)
                         && directory
                             .as_deref()
                             .is_some_and(|directory| platform::paths_equal(directory, cwd))
-                    {
-                        return id;
-                    }
+                };
+                let proven = match harness {
+                    Harness::ClaudeCode => serde_json::Deserializer::from_reader(file)
+                        .into_iter::<ClaudeRecord>()
+                        .map_while(Result::ok)
+                        .any(|record| proves(&record.session_id, &record.cwd)),
+                    // A rollout opens with its session_meta record; nothing after it is read.
+                    Harness::Codex => serde_json::Deserializer::from_reader(file)
+                        .into_iter::<CodexRecord>()
+                        .next()
+                        .and_then(Result::ok)
+                        .and_then(|record| record.0)
+                        .is_some_and(|meta| proves(&meta.id, &meta.cwd)),
+                };
+                if proven {
+                    return Some(requested);
                 }
             }
         }
@@ -198,16 +208,46 @@ fn requested<'a>(harness: &Harness, command: &'a TerminalCommand) -> Option<&'a 
 }
 
 #[derive(Deserialize)]
-struct Envelope {
-    #[serde(rename = "type")]
-    kind: Option<String>,
+struct ClaudeRecord {
     #[serde(rename = "sessionId")]
     session_id: Option<SessionId>,
     cwd: Option<PathBuf>,
 }
-#[derive(Deserialize)]
-struct SessionRecord {
-    payload: SessionMeta,
+
+/// A Codex rollout record's session metadata, decoded only when the record says it is
+/// `session_meta` before its payload; any other payload is skipped unread.
+struct CodexRecord(Option<SessionMeta>);
+impl<'de> Deserialize<'de> for CodexRecord {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = CodexRecord;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a Codex rollout record")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut session = false;
+                let mut meta = None;
+                while let Some(key) = map.next_key::<std::borrow::Cow<'de, str>>()? {
+                    match key.as_ref() {
+                        "type" => {
+                            session =
+                                map.next_value::<std::borrow::Cow<'de, str>>()? == "session_meta"
+                        }
+                        "payload" if session => meta = Some(map.next_value::<SessionMeta>()?),
+                        _ => {
+                            map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(CodexRecord(meta.filter(|_| session)))
+            }
+        }
+        deserializer.deserialize_map(Visitor)
+    }
 }
 #[derive(Deserialize)]
 struct SessionMeta {
