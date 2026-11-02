@@ -17,12 +17,13 @@ import { scenarios as search } from "./cases/search.ts";
 import { scenarios as palette } from "./cases/palette.ts";
 import { scenarios as branches } from "./cases/branches.ts";
 import { scenarios as release } from "./cases/release.ts";
+import { scenarios as workbench } from "./cases/workbench.ts";
 import type { Scenario } from "./scenario.ts";
 
 export const scenarios: Scenario[] = [
   ...accounts, ...settings, ...currentGraph, ...graph, ...navigation, ...states,
   ...detailContent, ...catalogLayout, ...monitor, ...review, ...canonicalReview, ...humanSubmitFocus, ...launch,
-  ...requests, ...search, ...palette, ...branches, ...release,
+  ...requests, ...search, ...palette, ...branches, ...release, ...workbench,
 ];
 
 const ids = new Set<string>();

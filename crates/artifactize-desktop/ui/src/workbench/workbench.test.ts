@@ -170,12 +170,11 @@ it("offers what a gone terminal can restore and runs only the choice the person 
   await hear("/work/main", {
     kind: "restoreOffer",
     offer: {
+      kind: "harness",
       cwd: "/work/main/ui",
       command: { program: "pnpm", args: ["test", "--filter", "a b"] },
       harness: "claudeCode",
-      sessionId: null,
-      resume: { program: "claude", args: ["--continue"] },
-      latestSession: true,
+      session: { kind: "latest" },
     },
   });
   const offer = await within(panel).findByRole("region", { name: "Restore" });
@@ -187,15 +186,22 @@ it("offers what a gone terminal can restore and runs only the choice the person 
   await waitFor(() => expect(sent("terminal_restore")).toEqual([{ worktree: "/work/main", choice: "resume" }]));
   await waitFor(() => expect(within(panel).queryByRole("region", { name: "Restore" })).toBeNull());
 
-  // A session known for certain resumes by its ID; keeping the fresh shell runs nothing else.
+  // A session known for certain resumes by its ID.
   await hear("/work/main", {
     kind: "restoreOffer",
-    offer: { cwd: null, command: null, harness: "codex", sessionId: "0199", resume: { program: "codex", args: ["resume", "0199"] }, latestSession: false },
+    offer: { kind: "harness", cwd: "/work/main", command: { program: "codex", args: ["resume", "0199"] }, harness: "codex", session: { kind: "exact", id: "0199" } },
   });
+  const exact = await within(panel).findByRole("region", { name: "Restore" });
+  expect(within(exact).getByRole("button", { name: "Resume the Codex session" })).toBeTruthy();
+  expect(exact.textContent).toContain("Resume the Codex session: codex resume 0199");
+  await fireEvent.click(within(exact).getByRole("button", { name: "Run the last command again" }));
+  await waitFor(() => expect(sent("terminal_restore").at(-1)).toEqual({ worktree: "/work/main", choice: "rerun" }));
+  await waitFor(() => expect(within(panel).queryByRole("region", { name: "Restore" })).toBeNull());
+
+  // With nothing known but the fresh shell, keeping it is the one choice, and runs nothing.
+  await hear("/work/main", { kind: "restoreOffer", offer: { kind: "shell", cwd: null } });
   const again = await within(panel).findByRole("region", { name: "Restore" });
-  expect(within(again).getByRole("button", { name: "Resume the Codex session" })).toBeTruthy();
-  expect(again.textContent).toContain("codex resume 0199");
-  expect(within(again).queryByRole("button", { name: "Run the last command again" })).toBeNull();
+  expect(within(again).getAllByRole("button").map((button) => button.textContent)).toEqual(["Keep the fresh shell"]);
   await fireEvent.click(within(again).getByRole("button", { name: "Keep the fresh shell" }));
   await waitFor(() => expect(sent("terminal_restore").at(-1)).toEqual({ worktree: "/work/main", choice: "freshShell" }));
 });
@@ -240,7 +246,7 @@ it("lists the worktree's history and creates a worktree from a commit, opening i
   listed = [main, { ...branch("worktree-0123456789abcdef", [{ kind: "current" }]), workspace: "/work/main-2" }];
   await emit("state-changed", { resync: false });
   await waitFor(() => expect(mainTitle()).toBe("Current · app  worktree-0123456789abcdef"));
-  expect(within(layer).queryByRole("status")).toBeNull();
+  expect(within(layer).getByRole("status").textContent?.replace(/\s+/g, " ").trim()).toBe("Created worktree-0123456789abcdef in /work/main-2.");
   await waitFor(() => expect(sent("git_history").at(-1)).toEqual({ worktree: "/work/main-2" }));
   expect(sent("terminal_open").at(-1)).toMatchObject({ worktree: "/work/main-2" });
 });

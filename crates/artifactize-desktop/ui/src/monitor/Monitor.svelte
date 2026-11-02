@@ -13,7 +13,7 @@
   import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
-  import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
+  import { chipKey, entryKey, keyOf, sourceOf, type Chosen, type Entry, type Focus } from "./monitor-state.svelte";
   import { DETAIL_KEY, GAP, MIN, TERMINAL_KEY, clampWidth, detailDefault, fitPanels, leftTaken, saveWidth, terminalDefault } from "./detail-width";
   import { GIT, fitLayout } from "./columns";
   import GitLayer from "../workbench/GitLayer.svelte";
@@ -45,9 +45,13 @@
     shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
   );
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
-  /** The Git worktree of the shown Run or Current: its history, its terminal. A folder outside
-   * Git is no worktree and has neither. */
-  const worktree = $derived(branch && branch.key.kind !== "folder" ? branch.workspace : null);
+  /** The worktree of the shown Run or Current, by its folder: it keeps its terminal and history
+   * while its branch is switched or renamed, or the worktree is removed. */
+  const chosen = $derived(shown.kind === "run" || shown.kind === "current" ? m.chosen : null);
+  /** Its entry in the Pane now, if listed. */
+  const listed = $derived(chosen === null ? undefined : branches.find((item) => item.workspace === chosen.worktree));
+  /** The Git worktree shown: its history, its terminal. A folder outside Git has neither. */
+  const worktree = $derived(chosen?.git ? chosen.worktree : null);
   /** Over the graph, the terminal panel expanded and the Detail open. */
   const terminalShown = $derived(worktree !== null && m.terminal);
   const detailShown = $derived(m.opened !== null && source !== null && keyOf(m.opened.source) === keyOf(source));
@@ -110,6 +114,7 @@
   /** Show `chip` of `item` in the Main area; a find field over the graph shown before closes. */
   function show(item: BranchView, chip: Chip) {
     m.finding = false;
+    m.chosen = chosenOf(item);
     if (chip.kind === "run") {
       m.shown = { kind: "run", branch: item.key, run: chip.id };
       closeDetailOf(keyOf({ kind: "run", run: chip.id }));
@@ -120,6 +125,7 @@
 
   /** The name a branch goes by in the Pane. */
   const nameOf = (item: BranchView) => (item.name ? `${item.project} / ${item.name}` : item.project);
+  const chosenOf = (item: BranchView): Chosen => ({ worktree: item.workspace, name: nameOf(item), git: item.key.kind !== "folder" });
 
   /** Open the worktree `path` as a click on its branch does, if the Pane lists it. */
   function openWorktree(path: WorktreeKey): boolean {
@@ -146,6 +152,7 @@
 
   function showCurrent(item: BranchView) {
     m.finding = false;
+    m.chosen = chosenOf(item);
     m.shown = { kind: "current", branch: item.key };
     closeDetailOf(keyOf({ kind: "current", branch: item.key }));
     void browse.close();
@@ -279,9 +286,9 @@
     if (byId !== null && next.revision !== m.followed) void reread(byId);
     m.followed = next.revision;
     // A worktree created from the Git layer opens once listed.
-    const created = git.created === null ? undefined : next.branches.find((item) => item.workspace === git.created?.worktree);
+    const created = git.opening === null ? undefined : next.branches.find((item) => item.workspace === git.opening);
     if (created) {
-      git.created = null;
+      git.opening = null;
       open(created);
     }
     start(next);
@@ -497,7 +504,7 @@
 </script>
 
 <div class="monitor" style:--git-width="{GIT}px">
-  <GitLayer {worktree} outside={branch?.key.kind === "folder"} />
+  <GitLayer {worktree} outside={chosen !== null && !chosen.git} />
   <div class="split" {@attach columns}>
     <PaneGroup bind:this={group} direction="horizontal" autoSaveId="monitor-layout" class="columns" onLayoutChange={fitColumns}>
       <Split defaultSize={24} minSize={12}>
@@ -558,8 +565,14 @@
               <p class="empty">Choose a branch or a waiting review in the Pane.</p>
             {/if}
           </Panel>
-          {#if worktree !== null && branch}
-            <TerminalPanel {worktree} name={nameOf(branch)} width={widths.terminal} onmoved={followAgent} ongrab={(event) => grab(event, "terminal")} />
+          {#if worktree !== null && chosen}
+            <TerminalPanel
+              {worktree}
+              name={listed ? nameOf(listed) : chosen.name}
+              width={widths.terminal}
+              onmoved={followAgent}
+              ongrab={(event) => grab(event, "terminal")}
+            />
           {/if}
           {#if m.opened && source && detailShown}
             {@const width = widths.detail ?? m.detailWidth}

@@ -9,8 +9,8 @@ import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
 import {
-  exists, makeDirectory, nativePath, parentOf, portablePath, readTextIfExists, runProgram, runProgramAsync, textPath, updateDatabase, writeText,
-  type Environment, type NativePath,
+  canonicalPath, claudeStandIn, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
+  updateDatabase, writeText, type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
 export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
@@ -201,6 +201,56 @@ export function createGraph(): Fixture {
     const repo = nativePath(root, "repo");
     declare(repo);
     return { root, repo, state: nativePath(root, "state") };
+  });
+}
+
+/** The workbench's repository: master with two commits, the first tagged `v1`, and a linked
+ * worktree `side` on branch `side` with a commit of its own; no Run yet. A Claude Code
+ * stand-in is first on the app's PATH: it says what it was started with and where, records
+ * each start in `claude-runs.txt` (arguments, then directory), and works for a few seconds;
+ * started with `--move NAME` it moves into the sibling folder NAME and keeps working there.
+ * The fixture home holds Claude Code's record of session `session` in the repository. */
+export type Workbench = Fixture & { side: NativePath; runs: NativePath; session: string; env: Environment };
+export function createWorkbench(): Workbench {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const side = nativePath(root, "side");
+    declare(repo);
+    git(repo, "-C", repo, "add", ".");
+    git(repo, "-C", repo, "commit", "-qm", "Fixture inputs");
+    git(repo, "-C", repo, "tag", "v1");
+    writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked twice.\n");
+    git(repo, "-C", repo, "commit", "-qam", "Check the docs twice");
+    git(repo, "-C", repo, "worktree", "add", "-q", "-b", "side", side, "v1");
+    writeText(nativePath(side, "docs", "notes.md"), "Documentation of the side.\n");
+    git(repo, "-C", side, "commit", "-qam", "Side work");
+    const runs = nativePath(root, "claude-runs.txt");
+    const script = nativePath(makeDirectory(nativePath(root, "agent")), "claude.mjs");
+    writeText(script, `// A Claude Code stand-in: the fixture's declared agent program.
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(runs)}, args.join(" ") + String.fromCharCode(9) + process.cwd() + String.fromCharCode(10));
+console.log("agent " + args.join("+") + " at " + process.cwd());
+if (args[0] === "--move") {
+  setTimeout(() => process.chdir(join(process.cwd(), "..", args[1])), 1500);
+  setTimeout(() => {}, 120000);
+} else setTimeout(() => console.log("agent done " + args.join("+")), 2500);
+`);
+    quietShell(root);
+    // Claude Code's own record of a session in the repository, as its metadata names it.
+    const session = "0f1e2d3c-workbench";
+    const projects = makeDirectory(nativePath(root, "home", ".claude", "projects", "repo"));
+    writeText(nativePath(projects, `${session}.jsonl`), `${JSON.stringify({ type: "user", sessionId: session, cwd: canonicalPath(repo) })}\n`);
+    return { root, repo, state: nativePath(root, "state"), side, runs, session, env: claudeStandIn(root, {}, script) };
+  });
+}
+
+/** The starts of the workbench's Claude Code stand-in: its arguments and its directory. */
+export function claudeRuns(fixture: Workbench): { args: string; cwd: string }[] {
+  return (readTextIfExists(fixture.runs) ?? "").split("\n").filter(Boolean).map((line) => {
+    const [args, cwd] = line.split("\t");
+    return { args, cwd };
   });
 }
 

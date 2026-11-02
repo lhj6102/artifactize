@@ -30,7 +30,7 @@
   };
 
   const short = (commit: Commit) => commit.id.slice(0, 7);
-  const when = (commit: Commit) => new Date(Number(commit.time) * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const when = (commit: Commit) => new Date(commit.time).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   /** The commit's refs as chips: Git's `HEAD -> main` is the checked-out `HEAD` and `main`,
    * and `tag: v1` the tag `v1`. */
   const chips = (commit: Commit) => commit.refs.flatMap((ref) => (ref.startsWith("HEAD -> ") ? ["HEAD", ref.slice(8)] : [ref.replace(/^tag: /, "")]));
@@ -46,7 +46,9 @@
   </header>
   {#if git.error && worktree !== null}<p class="failure" role="status">{git.error}</p>{/if}
   {#if created}
-    <p class="made" role="status">Created <code>{created.branch}</code> in <code>{created.worktree}</code>; it opens once listed.</p>
+    <p class="made" role="status">
+      Created <code>{created.branch}</code> in <code>{created.worktree}</code>{git.opening === null ? "." : "; it opens once listed."}
+    </p>
   {/if}
   {#if outside}
     <p class="empty">This folder is outside Git: it has no history and no worktrees.</p>
@@ -235,7 +237,8 @@
   .meta code {
     font: 11px var(--mono);
   }
-  /* A commit's action shows on hover or focus; the keyboard reaches it with Tab. */
+  /* A commit's action is quiet until its row is hovered or it has focus; the keyboard reaches
+   * it with Tab. */
   .make {
     width: 20px;
     height: 20px;
@@ -247,7 +250,7 @@
     font: inherit;
     line-height: 1;
     cursor: pointer;
-    opacity: 0;
+    opacity: 0.35;
   }
   .commit:hover .make,
   .make:focus-visible {

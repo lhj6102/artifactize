@@ -847,6 +847,29 @@ try {
   return { ...env, PATH: `${bin}${delimiter}${env.PATH ?? ""}`, DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_BROWSER_PROGRAM: program };
 }
 
+/** The fixture user's interactive shell starts plainly in the isolated home `root/home`: zsh
+ * would otherwise ask a new user to set it up, as that home holds no startup file. */
+export function quietShell(root: NativePath): void {
+  writeFileSync(join(makeDirectory(nativePath(root, "home"), { private: true }), ".zshrc"), "");
+}
+
+/** Whether the OS tells a terminal host its foreground program and directory, which a restore
+ * offer's rerun and resume commands and an agent's move come from. Linux and macOS do;
+ * Windows does not, and its offers keep only the fresh shell. */
+export const terminalForeground = !WINDOWS;
+
+/** The fixture environment `env` with a Claude Code stand-in named `claude` first on its
+ * PATH: a declared agent stand-in that runs the Node.js `script` with its arguments. On Unix
+ * the shim execs Node, so the terminal sees Node running a script named claude, as with the
+ * real harness. */
+export function claudeStandIn(root: NativePath, env: Environment, script: NativePath): Environment {
+  const bin = makeDirectory(nativePath(root, "agent-bin"));
+  if (WINDOWS) writeFileSync(join(bin, "claude.cmd"), '@"%DESKTOP_TEST_NODE%" "%DESKTOP_TEST_CLAUDE%" %*\r\n');
+  else writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_CLAUDE" "$@"\n', { mode: 0o755 });
+  const path = Object.entries(env).find(([name]) => name.toUpperCase() === "PATH")?.[1] ?? process.env.PATH ?? "";
+  return withVariable({ ...env, DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_CLAUDE: script }, "PATH", `${bin}${delimiter}${path}`);
+}
+
 /** The evaluated test-build device reaches only the engine's text-input API. This
  * test-only IPC command is not an application action and is absent from production. */
 export async function nativeInput(browser: WebdriverIO.Browser, input:

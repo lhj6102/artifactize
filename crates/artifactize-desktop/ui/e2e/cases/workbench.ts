@@ -1,0 +1,403 @@
+// The workbench: the Git layer's history of the chosen worktree and a new worktree from one of
+// its commits; each worktree's one terminal floating over the graph's left side, which keeps
+// running when collapsed, left or closed, follows its worktree through a branch change, ends with
+// it, offers what it can restore once it was gone and the worktree its agent moved to; and the
+// terminal panel's width, kept like the Detail's. Every case owns its fixture.
+import assert from "node:assert/strict";
+import { addFolder, claudeRuns, createWorkbench, type Workbench } from "../fixture.ts";
+import { git } from "../environment.ts";
+import { afterRender, fill, press } from "../keys.ts";
+import { scenario, type Scenario } from "../scenario.ts";
+import { sessionEndedByApp } from "../observation.ts";
+import { exists, nativePath, primaryModifier, terminalForeground } from "../platform.ts";
+import { visibleCenter } from "../pointer.ts";
+import { camera, detail, FIND, findField, offCentre, TERMINAL } from "../graph-view.ts";
+import { branch, branches, entriesFocused, listed, mainFocused, mainTitle, selectBranch } from "../pane.ts";
+import {
+  collapse, expand, gitLayer, TAB, newWorktreeFrom, printed, screenShows, screenText, shows, terminal, terminalOf, typeLine, type Commit,
+} from "../workbench-view.ts";
+
+/** The workbench's repository, started on its master branch. */
+async function prepare() {
+  const fixture = createWorkbench();
+  return { fixture, args: ["--repo", fixture.repo], env: fixture.env, data: fixture };
+}
+
+/** The Git layer's history, once it lists `count` commits. */
+async function history(browser: WebdriverIO.Browser, count: number, what: string): Promise<Commit[]> {
+  let commits: Commit[] = [];
+  await browser.waitUntil(async () => (commits = (await gitLayer(browser)).commits).length === count,
+    { timeout: 15000, timeoutMsg: `${what}: ${JSON.stringify(commits)}` });
+  return commits;
+}
+const marked = (commits: Commit[]) => commits.filter((commit) => commit.marked).map((commit) => commit.summary);
+
+/** Wait until the Main area shows the Current of the branch read as `name`. */
+const currentOf = (browser: WebdriverIO.Browser, name: string) =>
+  browser.waitUntil(async () => (await mainTitle(browser)) === `Current · ${name}`, { timeout: 15000, timeoutMsg: `${name}'s Current shown` });
+
+/** The terminal and the graph's canvas: the panel floats over the canvas, which keeps the whole
+ * Main area's width beneath it. */
+function overGraph(browser: WebdriverIO.Browser) {
+  return browser.execute((query) => {
+    const panel = document.querySelector(query)?.getBoundingClientRect();
+    const canvas = document.querySelector(".monitor .graph > .canvas")?.getBoundingClientRect();
+    const stage = document.querySelector(".monitor .stage")!.getBoundingClientRect();
+    return !!panel && !!canvas && canvas.left < panel.left && canvas.right > panel.right && Math.abs(canvas.width - stage.width) <= 2;
+  }, TERMINAL);
+}
+
+/** End the shown terminal's shell as a person does: `exit`, until the panel says it ended. */
+async function endShell(browser: WebdriverIO.Browser): Promise<void> {
+  await typeLine(browser, "exit");
+  await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
+    { timeout: 15000, timeoutMsg: "the panel says the terminal ended" });
+}
+
+export const scenarios: Scenario[] = [
+  // UX journeys: J-LAUNCH J-GIT-LAYER J-WORKTREE-NEW; UX edges: E-GIT-HISTORY E-GIT-WORKTREE-NEW E-TERMINAL-OPEN E-TERMINAL-TYPE
+  scenario<Workbench>(
+    "workbench-git-history",
+    "shows the chosen worktree's history at the far left with its checked-out commit marked, and makes a new worktree from a commit that the Pane lists with its own terminal",
+    prepare,
+    async (browser, { data: fixture }) => {
+      await listed(browser, "repo  master");
+      await listed(browser, "repo  side");
+      await currentOf(browser, "repo  master");
+      // The Git layer at the far left, the Pane beside it, then the Main area.
+      const columns = await browser.execute(() => {
+        const box = (query: string) => document.querySelector(query)!.getBoundingClientRect();
+        const [layer, pane, main] = [box('section[aria-label="Git layer"]'), box('section[aria-label="Pane"]'), box('section.panel[aria-label="Main area"]')];
+        return layer.left <= 1 && layer.right <= pane.left + 1 && pane.right <= main.left + 1;
+      });
+      assert.ok(columns, "the Git layer, the Pane and the Main area from left to right");
+      // Every branch's commits, each with its summary, short ID and the branches and tags on it;
+      // master's checked-out commit marked.
+      const all = await history(browser, 3, "master's history lists the commits of every branch");
+      assert.deepEqual(all.map((commit) => commit.summary).sort(), ["Check the docs twice", "Fixture inputs", "Side work"]);
+      assert.ok(all.every((commit) => /^[0-9a-f]{7}$/.test(commit.short)), `short IDs: ${JSON.stringify(all)}`);
+      const refs = Object.fromEntries(all.map((commit) => [commit.summary, commit.refs]));
+      assert.deepEqual(refs, { "Check the docs twice": ["HEAD", "master"], "Fixture inputs": ["v1"], "Side work": ["side"] });
+      assert.deepEqual(marked(all), ["Check the docs twice"]);
+
+      // Choosing the side worktree shows its history, its own commit marked.
+      await selectBranch(browser, "repo  side");
+      await currentOf(browser, "repo  side");
+      await browser.waitUntil(async () => JSON.stringify(marked((await gitLayer(browser)).commits)) === JSON.stringify(["Side work"]),
+        { timeout: 15000, timeoutMsg: "side's checked-out commit marked" });
+      await terminalOf(browser, "repo / side");
+
+      // A new worktree from the tagged commit: a new folder beside the primary checkout on a new
+      // branch, said where; the Pane lists it and it shows with its own terminal.
+      await newWorktreeFrom(browser, "Fixture inputs");
+      let said = "";
+      await browser.waitUntil(async () => !!(said = (await gitLayer(browser)).notes.find((note) => note.startsWith("Created ")) ?? ""),
+        { timeout: 30000, timeoutMsg: "the Git layer says which worktree it created" });
+      const name = said.match(/^Created (worktree-[0-9a-f]+) in /)?.[1];
+      assert.ok(name, `the created branch named: ${said}`);
+      assert.ok(said.includes(name), "the folder named like its branch");
+      assert.ok(exists(nativePath(fixture.root, name)), "the folder beside the primary checkout");
+      await listed(browser, `repo  ${name}`, 30000);
+      await currentOf(browser, `repo  ${name}`);
+      assert.deepEqual((await branches(browser)).map((entry) => entry.name).sort(), ["repo  master", `repo  ${name}`, "repo  side"].sort());
+      await browser.waitUntil(async () => JSON.stringify(marked((await gitLayer(browser)).commits)) === JSON.stringify(["Fixture inputs"]),
+        { timeout: 15000, timeoutMsg: "the new worktree's commit marked" });
+      // Its own terminal: a shell in the new folder, taking what is typed.
+      await terminalOf(browser, `repo / ${name}`);
+      await typeLine(browser, "echo new-tree-shell");
+      await printed(browser, "new-tree-shell", "the shell ran what was typed");
+    },
+  ),
+
+  // UX journeys: J-TERMINAL J-TERMINAL-DETACH J-BRANCHES; UX edges: E-TERMINAL-OPEN E-TERMINAL-TYPE E-TERMINAL-COLLAPSE
+  // E-TERMINAL-EXPAND E-TERMINAL-SWITCH E-TERMINAL-BRANCH E-TERMINAL-REMOVED E-PANE-WORKTREES
+  scenario<Workbench>(
+    "workbench-terminal",
+    "opens each worktree's own terminal over the graph and none for a folder outside Git, keeps it running while collapsed or left, follows its worktree through a branch rename and says it ended once the worktree is removed",
+    async () => {
+      const prepared = await prepare();
+      addFolder(prepared.fixture, "plain");
+      return prepared;
+    },
+    async (browser, { data: fixture }) => {
+      await currentOf(browser, "repo  master");
+      // Opened the first time it is shown: a shell over the graph's left side, the graph beneath.
+      await terminalOf(browser, "repo / master");
+      assert.ok(await overGraph(browser), "the terminal floats over the graph, which keeps its width");
+      await typeLine(browser, "echo master-mark");
+      await printed(browser, "master-mark", "the shell ran what was typed");
+
+      // Collapsed, it keeps running: what a program prints meanwhile shows once it is expanded.
+      const shown = await camera(browser);
+      await typeLine(browser, "node -e \"setTimeout(()=>{console.log('while-'+'collapsed');require('fs').writeFileSync('printed','')},2000)\"");
+      await collapse(browser);
+      assert.equal(await camera(browser), shown, "the graph as it was");
+      await browser.waitUntil(() => exists(nativePath(fixture.repo, "printed")), { timeout: 30000, timeoutMsg: "the program finished while collapsed" });
+      await expand(browser);
+      await printed(browser, "while-collapsed", "what it printed while collapsed");
+      assert.ok(shows(await terminal(browser), "master-mark"), "the screen as it was");
+
+      // Another worktree has its own terminal; the first comes back as it was.
+      await selectBranch(browser, "repo  side");
+      await terminalOf(browser, "repo / side");
+      assert.ok(!screenText(await terminal(browser)).includes("master-mark"), "side's own terminal");
+      await typeLine(browser, "echo side-mark");
+      await printed(browser, "side-mark", "side's shell ran what was typed");
+      await selectBranch(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await printed(browser, "while-collapsed", "master's screen as it was");
+      await selectBranch(browser, "repo  side");
+      await printed(browser, "side-mark", "side's screen as it was");
+
+      // A folder outside Git is no worktree: no terminal, and no history to make one from.
+      await selectBranch(browser, "plain");
+      await currentOf(browser, "plain");
+      assert.equal(await terminal(browser), null, "no terminal panel for the folder");
+      assert.equal(await browser.$(TAB).isExisting(), false, "nothing to expand either");
+      assert.deepEqual((await gitLayer(browser)).notes, ["This folder is outside Git: it has no history and no worktrees."]);
+      await selectBranch(browser, "repo  side");
+      await printed(browser, "side-mark", "side's terminal again");
+
+      // The terminal belongs to the worktree: renaming its branch keeps it, for the new entry.
+      git(fixture.repo, "-C", fixture.side, "branch", "-m", "side", "renamed");
+      await listed(browser, "repo  renamed", 30000);
+      await browser.waitUntil(async () => (await terminal(browser))?.heading === "Terminal · repo / renamed",
+        { timeout: 15000, timeoutMsg: "the terminal names the worktree's new branch" });
+      await selectBranch(browser, "repo  renamed");
+      await printed(browser, "side-mark", "the same terminal after the rename");
+      assert.equal((await terminal(browser))?.offer, null, "no restore: the terminal never stopped");
+
+      // Removing the worktree ends its terminal: the panel says so, and the Pane drops it.
+      git(fixture.repo, "-C", fixture.repo, "worktree", "remove", "--force", fixture.side);
+      await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
+        { timeout: 30000, timeoutMsg: "the panel says the removed worktree's terminal ended" });
+      await browser.waitUntil(async () => (await branch(browser, "repo  renamed")) === undefined, { timeout: 30000, timeoutMsg: "the removed worktree gone from the Pane" });
+    },
+  ),
+
+  // UX journey: J-TERMINAL-DETACH; UX edges: E-TERMINAL-TYPE E-QUIT-CLEAN E-TERMINAL-RELAUNCH
+  scenario<Workbench>(
+    "workbench-terminal-relaunch",
+    "keeps a worktree's terminal running when the app quits, and shows it as it was in the next launch",
+    prepare,
+    async (browser) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await typeLine(browser, "echo before-quit");
+      await printed(browser, "before-quit", "the shell ran what was typed");
+      // q from the Pane quits at once.
+      await selectBranch(browser, "repo  master");
+      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
+        { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
+      await sessionEndedByApp(browser, () => browser.keys(["q"]));
+    },
+    async (browser) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await printed(browser, "before-quit", "the screen as it was before the app quit");
+      assert.equal((await terminal(browser))?.offer, null, "the terminal kept running: nothing to restore");
+      await typeLine(browser, "echo after-relaunch");
+      await printed(browser, "after-relaunch", "the same shell takes what is typed");
+    },
+  ),
+
+  // UX journey: J-TERMINAL-RESTORE; UX edges: E-TERMINAL-RESTORE-OFFER E-TERMINAL-TYPE E-TERMINAL-RESTORE-RUN E-TERMINAL-RESTORE-KEEP
+  scenario<Workbench>(
+    "workbench-terminal-restore",
+    "offers to rerun the last command or resume the agent's latest session once a terminal was gone, runs only the chosen one and drops the offer when the fresh shell is kept",
+    prepare,
+    async (browser, { data: fixture }) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      // The agent runs, then the shell ends: the terminal is gone.
+      await typeLine(browser, "claude --hello");
+      await printed(browser, "agent done --hello", "the agent ran and finished");
+      assert.equal(claudeRuns(fixture).length, 1);
+      await endShell(browser);
+      /** Choose another worktree and the gone one again: a fresh shell with a restore offer. */
+      const reopen = async () => {
+        await selectBranch(browser, "repo  side");
+        await terminalOf(browser, "repo / side");
+        await selectBranch(browser, "repo  master");
+        await browser.waitUntil(async () => (await terminal(browser))?.offer !== null && (await terminal(browser))?.heading === "Terminal · repo / master",
+          { timeout: 30000, timeoutMsg: "master's terminal offers a restore" });
+        return (await terminal(browser))!.offer!;
+      };
+      const offer = await reopen();
+      assert.equal(claudeRuns(fixture).length, 1, "offering runs nothing");
+      if (terminalForeground) {
+        assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
+        assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
+        assert.deepEqual(offer.buttons, ["Run the last command again", "Resume the latest Claude Code session", "Keep the fresh shell"]);
+      } else assert.deepEqual(offer.buttons, ["Keep the fresh shell"], "without the foreground program only the fresh shell");
+      // The fresh shell takes what is typed while the offer waits.
+      await typeLine(browser, "echo fresh-shell");
+      await printed(browser, "fresh-shell", "the fresh shell ran what was typed");
+      assert.notEqual((await terminal(browser))?.offer, null, "the offer still waits");
+
+      if (terminalForeground) {
+        // Resuming runs the agent's resume command in its directory, and the offer goes.
+        await browser.$(TERMINAL).$('button[aria-label="Resume the latest Claude Code session"]').click();
+        await browser.waitUntil(() => claudeRuns(fixture).length === 2, { timeout: 30000, timeoutMsg: "the resume command ran" });
+        const [, resumed] = claudeRuns(fixture);
+        assert.equal(resumed.args, "--continue");
+        assert.equal(resumed.cwd, claudeRuns(fixture)[0].cwd, "in the agent's directory");
+        assert.equal((await terminal(browser))?.offer, null, "the offer is gone");
+        await printed(browser, "agent done --continue", "the resumed agent ran and finished");
+      }
+
+      // Keeping the fresh shell drops the offer and runs nothing.
+      await endShell(browser);
+      const again = await reopen();
+      const before = claudeRuns(fixture).length;
+      assert.ok(again.buttons.includes("Keep the fresh shell"));
+      await browser.$(TERMINAL).$("button=Keep the fresh shell").click();
+      await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
+      await typeLine(browser, "echo kept-shell");
+      await printed(browser, "kept-shell", "the fresh shell kept");
+      assert.equal(claudeRuns(fixture).length, before, "keeping the fresh shell ran nothing");
+      if (!terminalForeground) return;
+
+      // A session the agent's own records name for this directory resumes by its ID; rerunning
+      // the last command runs it again where it ran.
+      await typeLine(browser, `claude --resume ${fixture.session}`);
+      await printed(browser, `agent done --resume+${fixture.session}`, "the agent ran its session and finished");
+      await endShell(browser);
+      const known = await reopen();
+      assert.match(known.text, new RegExp(`Resume the Claude Code session: claude --resume ${fixture.session}`));
+      assert.deepEqual(known.buttons, ["Run the last command again", "Resume the Claude Code session", "Keep the fresh shell"]);
+      const runs = claudeRuns(fixture).length;
+      await browser.$(TERMINAL).$('button[aria-label="Run the last command again"]').click();
+      await browser.waitUntil(() => claudeRuns(fixture).length === runs + 1, { timeout: 30000, timeoutMsg: "the last command ran again" });
+      assert.deepEqual(claudeRuns(fixture).at(-1), { args: `--resume ${fixture.session}`, cwd: claudeRuns(fixture)[0].cwd }, "the same command where it ran");
+      await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
+    },
+  ),
+
+  // UX journey: J-TERMINAL-MOVED; UX edges: E-TERMINAL-OPEN E-TERMINAL-MOVED E-TERMINAL-FOLLOW
+  scenario<Workbench>(
+    "workbench-terminal-moved",
+    "keeps the graph on the terminal's worktree when its agent moves to another, and opens the detected worktree with its own graph and terminal",
+    prepare,
+    async (browser, { data: fixture }) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await typeLine(browser, "claude --move side");
+      await screenShows(browser, "agent --move+side at", "the agent started");
+      if (!terminalForeground) return;
+      await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.includes("The agent moved to another worktree")) === true,
+        { timeout: 30000, timeoutMsg: "the terminal offers the worktree its agent moved to" });
+      assert.equal(await mainTitle(browser), "Current · repo  master", "the graph stays on the terminal's own worktree");
+      assert.ok(await branch(browser, "repo  side"), "the other worktree listed as its own entry");
+      assert.equal(claudeRuns(fixture).length, 1);
+      await browser.$(TERMINAL).$("button=Open detected worktree").click();
+      await currentOf(browser, "repo  side");
+      await terminalOf(browser, "repo / side");
+      assert.ok(!screenText(await terminal(browser)).includes("agent --move+side at"), "side's own terminal");
+    },
+  ),
+
+  // UX journeys: J-RESIZE J-GRAPH-FIND J-TERMINAL; UX edges: E-TERMINAL-OPEN E-GRAPH-FIND-GO E-TERMINAL-WIDTH E-TERMINAL-COLLAPSE
+  // E-TERMINAL-EXPAND E-MON-RESIZE
+  scenario<{ width: number }>(
+    "workbench-resize",
+    "centres what the find field opens between the terminal and the Detail, resizes the terminal by its edge within room for both panels and some graph, keeps its width collapsed and in the next launch, and keeps the window and the Main area wide enough",
+    async () => {
+      const fixture = createWorkbench();
+      return { fixture, args: ["--repo", fixture.repo], env: fixture.env, data: { width: 420 } };
+    },
+    async (browser, { data: { width } }) => {
+      await browser.setWindowSize(1440, 900);
+      await afterRender(browser);
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await browser.waitUntil(async () => (await browser.$$(".monitor .graph .svelte-flow__node").length) > 0, { timeout: 30000, timeoutMsg: "the graph drawn" });
+      await camera(browser);
+
+      // Found from the Main area, docs opens and sits between the terminal and the Detail.
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane has the keyboard" });
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+      await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open");
+      await fill(browser, FIND, "docs");
+      await browser.waitUntil(async () => (await findField(browser))?.entries[0]?.name === "docs", { timeout: 15000, timeoutMsg: "docs found" });
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact docs", "docs's Detail open");
+      await browser.waitUntil(async () => {
+        const at = await offCentre(browser, "a:docs");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4;
+      }, { timeout: 15000, timeoutMsg: "docs in the middle of the graph between the terminal and the Detail" });
+      const between = await browser.execute((query) => {
+        const node = document.querySelector('.monitor .graph .svelte-flow__node[data-id="a:docs"]')!.getBoundingClientRect();
+        const panel = document.querySelector(query)!.getBoundingClientRect();
+        const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        return panel.right < node.left + node.width / 2 && node.left + node.width / 2 < dock.left;
+      }, TERMINAL);
+      assert.ok(between, "docs between the terminal and the Detail");
+
+      // The window stays at least 1280 px wide, and the Pane's divider dragged far right leaves
+      // the Main area room for both panels and some graph.
+      await browser.setWindowSize(1000, 800);
+      await afterRender(browser);
+      assert.ok(await browser.execute(() => innerWidth) >= 1280, "the window never narrower than 1280 px");
+      await browser.setWindowSize(1440, 900);
+      await afterRender(browser);
+      const divider = await browser.$(".monitor [data-pane-resizer]");
+      const paneWidth = () => browser.execute(() => document.querySelector('section[aria-label="Pane"]')!.getBoundingClientRect().width);
+      const narrow = await paneWidth();
+      await browser.action("pointer", { id: "divider" }).move({ origin: divider, x: 2, y: 0 }).down().perform(true);
+      try {
+        await afterRender(browser);
+        await browser.action("pointer", { id: "divider" }).move({ x: 1400, y: 300 }).up().perform();
+      } finally { await browser.releaseActions(); }
+      await browser.waitUntil(async () => (await paneWidth()) > narrow + 40, { timeout: 15000, timeoutMsg: "the Pane widened by the drag" });
+      const stage = await browser.execute(() => document.querySelector(".monitor .stage")!.getBoundingClientRect().width);
+      assert.ok(stage >= 760 - 1, `the Main area keeps room for both panels and some graph: ${stage}`);
+      // The divider dragged back gives the Main area its room again.
+      await browser.action("pointer", { id: "divider" }).move({ origin: divider, x: 2, y: 0 }).down().perform(true);
+      try {
+        await afterRender(browser);
+        await browser.action("pointer", { id: "divider" }).move({ x: 520, y: 300 }).up().perform();
+      } finally { await browser.releaseActions(); }
+      await browser.waitUntil(() => browser.execute(() => document.querySelector(".monitor .stage")!.getBoundingClientRect().width > 900),
+        { timeout: 15000, timeoutMsg: "the Main area wide again" });
+      // The right edge resizes the terminal; hovering it shows only the resize cursor.
+      const edge = () => browser.$(TERMINAL).$('[role="separator"][aria-label="Terminal width"]');
+      assert.match(await browser.execute((query) => getComputedStyle(document.querySelector(`${query} [aria-label="Terminal width"]`)!).cursor, TERMINAL), /(?:ew|col)-resize/);
+      await browser.action("pointer").move(await visibleCenter(browser, await edge().getElement())).perform();
+      assert.equal(await browser.$('[role="tooltip"], [role="menu"]').isExisting(), false, "hovering the edge opens nothing");
+      const dragEdge = async (x: number) => {
+        await browser.action("pointer", { id: "terminal-edge" }).move({ origin: await edge() }).down().perform(true);
+        try {
+          await browser.action("pointer", { id: "terminal-edge" }).move({ x, y: 300 }).up().perform();
+        } finally { await browser.releaseActions(); }
+      };
+      const room = await browser.execute(() => {
+        const box = document.querySelector(".monitor .stage")!.getBoundingClientRect();
+        return { left: box.left, right: box.right, width: box.width };
+      });
+      // Dragged as far right as the pointer goes: the Detail keeps a readable column beside it
+      // and some graph shows between them.
+      await dragEdge(Math.round(room.right - 2));
+      const fit = await browser.execute((query) => {
+        const panel = document.querySelector(query)!.getBoundingClientRect();
+        const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        const stage = document.querySelector(".monitor .stage")!.getBoundingClientRect();
+        const middle = document.elementFromPoint((panel.right + dock.left) / 2, stage.top + stage.height / 2);
+        return { terminal: panel.width, detail: dock.width, gap: dock.left - panel.right, graph: !!middle?.closest(".graph") };
+      }, TERMINAL);
+      assert.ok(fit.terminal > width && fit.detail >= 320 - 1 && fit.gap >= 96 - 1 && fit.graph, `both panels and some graph fit: ${JSON.stringify(fit)}`);
+      // Dragged to a chosen width, it keeps it collapsed and expanded again.
+      await dragEdge(Math.round(room.left + 12 + width));
+      await browser.waitUntil(async () => Math.abs(((await terminal(browser))?.box.width ?? 0) - width) <= 1, { timeout: 15000, timeoutMsg: "the dragged width" });
+      await collapse(browser);
+      await expand(browser);
+      assert.ok(Math.abs(((await terminal(browser))?.box.width ?? 0) - width) <= 1, "expanded again at its width");
+
+    },
+    async (browser, { data: { width } }) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await browser.waitUntil(async () => Math.abs(((await terminal(browser))?.box.width ?? 0) - width) <= 1,
+        { timeout: 15000, timeoutMsg: `the next launch restores the terminal's ${width}px` });
+    },
+  ),
+];
