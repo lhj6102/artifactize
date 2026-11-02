@@ -68,20 +68,16 @@ impl Pty {
         let pair = portable_pty::native_pty_system()
             .openpty(size)
             .map_err(io::Error::other)?;
-        let mut launch = match command {
-            Some(command) => {
-                let mut launch = CommandBuilder::new(&command.program);
-                launch.args(&command.args);
-                launch
-            }
-            None => CommandBuilder::new_default_prog(),
-        };
+        let mut launch = CommandBuilder::new_default_prog();
         launch.cwd(worktree);
         launch.env_clear();
         for (name, value) in platform::environment::for_command() {
             launch.env(name, value);
         }
         launch.env("TERM", "xterm-256color");
+        let confirmed = command
+            .map(|command| super::restore::input(&mut launch, command))
+            .transpose()?;
         let mut child = pair.slave.spawn_command(launch).map_err(io::Error::other)?;
         let processes = match platform::terminal::Processes::new(&*child) {
             Ok(processes) => processes,
@@ -105,6 +101,9 @@ impl Pty {
                 }
             }
         });
+        if let Some(confirmed) = confirmed {
+            input.send(confirmed).map_err(io::Error::other)?;
+        }
         let mut reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
         std::thread::spawn(move || {
             let mut buffer = [0u8; OUTPUT_CHUNK];
@@ -255,7 +254,6 @@ struct Actor {
     metadata: Metadata,
     offer: Option<RestoreOffer>,
     moved: Option<PathBuf>,
-    restored: bool,
     persistent: bool,
 }
 impl Actor {
@@ -285,7 +283,6 @@ impl Actor {
             metadata,
             offer,
             moved: None,
-            restored: false,
             persistent: platform::environment::var("ARTIFACTIZE_TERMINAL_NOT_PERSISTENT").is_none(),
         })
     }
@@ -377,13 +374,8 @@ impl Actor {
                         .as_mut()
                         .and_then(|pty| pty.child.try_wait().ok().flatten())
                         .map(|exit| exit.exit_code());
-                    if self.restored {
-                        self.replace(None, self.worktree.clone())?;
-                        self.restored = false;
-                    } else {
-                        self.emit(TerminalFrame::Ended { exit_code });
-                        return Ok(());
-                    }
+                    self.emit(TerminalFrame::Ended { exit_code });
+                    return Ok(());
                 }
                 Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
@@ -460,7 +452,6 @@ impl Actor {
                 let cwd = offer.cwd.clone().unwrap_or_else(|| self.worktree.clone());
                 self.replace(Some(&command), cwd)?;
                 self.offer = None;
-                self.restored = true;
                 Ok(())
             }
             Request::Detach => Ok(()),
@@ -474,10 +465,6 @@ impl Actor {
     ) -> io::Result<()> {
         self.generation += 1;
         self.pty.take();
-        // A finished restored program leaves its output available above the new prompt.
-        if command.is_some() {
-            self.screen = Screen::new(self.size.cols, self.size.rows);
-        }
         let opened = Pty::open(
             &cwd,
             self.size,

@@ -2,11 +2,13 @@
 mod client;
 mod host;
 mod metadata;
+mod restore;
 mod screen;
 mod wire;
 
 pub use client::{Attachment, attach};
 pub use host::serve;
+pub use restore::run_confirmed;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

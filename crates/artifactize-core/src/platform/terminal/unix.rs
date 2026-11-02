@@ -131,3 +131,24 @@ fn inspect(pid: i32) -> Option<(Option<PathBuf>, Vec<String>)> {
         .ok()?;
     Some((cwd, argv))
 }
+
+/// Only the fixed CLI trampoline is typed into the fresh shell. The restored argv travels
+/// through its environment, not terminal input: no shell expansion or canonical line limit.
+pub(crate) fn restore_input(shell: &str) -> Vec<u8> {
+    let program = std::path::Path::new(shell)
+        .file_stem()
+        .and_then(|name| name.to_str());
+    let executable = match program {
+        Some("nu") => "^$env.ARTIFACTIZE_TERMINAL_EXECUTABLE",
+        Some("pwsh" | "powershell") => "& $env:ARTIFACTIZE_TERMINAL_EXECUTABLE",
+        _ => "\"$ARTIFACTIZE_TERMINAL_EXECUTABLE\"",
+    };
+    format!("{executable} __terminal-command\r").into_bytes()
+}
+
+pub(crate) fn run_confirmed(mut command: std::process::Command) -> io::Result<u8> {
+    use std::os::unix::process::CommandExt;
+    // Replace only the shell's trampoline child, not the interactive shell or host. The
+    // foreground process group then belongs to the restored program, including Ctrl-C.
+    Err(command.exec())
+}
