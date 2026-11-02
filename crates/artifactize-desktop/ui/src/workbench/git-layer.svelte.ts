@@ -16,8 +16,10 @@ export class GitLayer {
   asked = $state(0);
   /** The commit a worktree is being created from. */
   creating = $state<string | null>(null);
-  /** The worktree created last, until the Pane lists it and it opens. */
+  /** The worktree created last, which the layer names. */
   created = $state.raw<Created | null>(null);
+  /** The created worktree's folder, until the Pane lists it and it opens. */
+  opening = $state<string | null>(null);
   #reads = 0;
   readonly #backend: Workbench;
 
@@ -46,6 +48,7 @@ export class GitLayer {
     this.creating = commit;
     try {
       this.created = await call(this.#backend.worktreeCreate(worktree, commit));
+      this.opening = this.created.worktree;
       this.error = null;
     } catch (failure) {
       this.error = message(failure);

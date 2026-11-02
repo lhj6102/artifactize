@@ -240,7 +240,7 @@ it("lists the worktree's history and creates a worktree from a commit, opening i
   listed = [main, { ...branch("worktree-0123456789abcdef", [{ kind: "current" }]), workspace: "/work/main-2" }];
   await emit("state-changed", { resync: false });
   await waitFor(() => expect(mainTitle()).toBe("Current · app  worktree-0123456789abcdef"));
-  expect(within(layer).queryByRole("status")).toBeNull();
+  expect(within(layer).getByRole("status").textContent?.replace(/\s+/g, " ").trim()).toBe("Created worktree-0123456789abcdef in /work/main-2.");
   await waitFor(() => expect(sent("git_history").at(-1)).toEqual({ worktree: "/work/main-2" }));
   expect(sent("terminal_open").at(-1)).toMatchObject({ worktree: "/work/main-2" });
 });

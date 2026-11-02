@@ -47,6 +47,9 @@ export function sourceOf(shown: Shown): Source | null {
   return null;
 }
 
+/** A chosen worktree: its folder, its name in the Pane when chosen, and whether it is in Git. */
+export type Chosen = { worktree: string; name: string; git: boolean };
+
 export class MonitorState {
   focus = $state<Focus>("pane");
   selected = $state.raw<Entry | null>(null);
@@ -57,6 +60,9 @@ export class MonitorState {
   settings = $state(false);
   /** The graph's find field is open over the shown Run's or Current's graph. */
   finding = $state(false);
+  /** The worktree (or folder outside Git) whose Run or Current was chosen last, by its folder:
+   * its terminal and history stay while its entry changes branch or leaves the Pane. */
+  chosen = $state.raw<Chosen | null>(null);
   /** The Detail floating over the graph. */
   opened = $state.raw<Opened | null>(null);
   /** The Detail's dragged width in pixels, or `null` for its default. */
