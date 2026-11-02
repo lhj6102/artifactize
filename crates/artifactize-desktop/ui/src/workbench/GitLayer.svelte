@@ -1,11 +1,13 @@
 <script lang="ts">
   // The window's far-left column: the shown worktree's history as a vertical line with a dot
-  // for each commit, newest at the top, the checked-out one ringed and merges hollow. Each commit
-  // offers a new worktree from it: a sibling folder of the primary checkout on a generated
-  // branch, which opens once the Pane lists it.
+  // for each commit, newest at the top, the checked-out one ringed and merges hollow. A long
+  // history shows its newest commits first and more on request. Each commit offers a new
+  // worktree from it: a sibling folder of the primary checkout on a generated branch, which
+  // opens once the Pane lists it.
   import type { Attachment } from "svelte/attachments";
   import { getAppState } from "../shell/app.svelte";
   import type { Commit, WorktreeKey } from "./backend";
+  import { PAGE } from "./git-layer.svelte";
 
   let {
     worktree,
@@ -15,7 +17,7 @@
   } = $props();
   const { git } = getAppState();
 
-  const history = $derived(worktree !== null && git.shown?.worktree === worktree ? git.shown.history : null);
+  const commits = $derived(worktree !== null && git.shown?.worktree === worktree ? git.shown.commits : null);
   const created = $derived(git.created);
 
   /** Read the history for every other worktree and whenever asked again. */
@@ -25,7 +27,11 @@
   };
 
   const short = (commit: Commit) => commit.id.slice(0, 7);
-  const when = (commit: Commit) => new Date(commit.time).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const when = (commit: Commit) => new Date(Number(commit.time) * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  /** The commit's refs as chips: Git's `HEAD -> main` is the checked-out `HEAD` and `main`,
+   * and `tag: v1` the tag `v1`. */
+  const chips = (commit: Commit) => commit.refs.flatMap((ref) => (ref.startsWith("HEAD -> ") ? ["HEAD", ref.slice(8)] : [ref.replace(/^tag: /, "")]));
+  const checkedOut = (commit: Commit) => commit.refs.some((ref) => ref === "HEAD" || ref.startsWith("HEAD -> "));
 </script>
 
 <section class="git" aria-label="Git layer" {@attach reread}>
@@ -41,26 +47,26 @@
   {/if}
   {#if worktree === null}
     <p class="empty">Choose a worktree to see its history.</p>
-  {:else if history === null}
+  {:else if commits === null}
     {#if !git.error}<p class="empty">Reading the history…</p>{/if}
-  {:else if history.commits.length === 0}
+  {:else if commits.length === 0}
     <p class="empty">No commits yet.</p>
   {:else}
     <ol class="commits" aria-label="Commits">
-      {#each history.commits as commit (commit.id)}
+      {#each commits.slice(0, git.limit) as commit (commit.id)}
         <li
           class="commit"
-          class:head={commit.id === history.head}
+          class:head={checkedOut(commit)}
           class:merge={commit.parents.length > 1}
           class:root={commit.parents.length === 0}
-          title="{short(commit)} {commit.subject}&#10;{commit.author} · {when(commit)}"
+          title="{short(commit)} {commit.summary}&#10;{when(commit)}"
         >
           <span class="dot" aria-hidden="true"></span>
           <span class="text">
             {#if commit.refs.length > 0}
-              <span class="refs">{#each commit.refs as ref (ref)}<span class="ref" class:here={ref === "HEAD"}>{ref}</span>{/each}</span>
+              <span class="refs">{#each chips(commit) as ref (ref)}<span class="ref" class:here={ref === "HEAD"}>{ref}</span>{/each}</span>
             {/if}
-            <span class="subject">{commit.subject}</span>
+            <span class="subject">{commit.summary}</span>
             <span class="meta"><code>{short(commit)}</code></span>
           </span>
           <button
@@ -72,8 +78,12 @@
           >
         </li>
       {/each}
+      {#if commits.length > git.limit}
+        <li class="more">
+          <button class="button" onclick={() => (git.limit += PAGE)}>Show {Math.min(PAGE, commits.length - git.limit)} older commits</button>
+        </li>
+      {/if}
     </ol>
-    {#if history.more}<p class="empty">Older commits are not shown.</p>{/if}
   {/if}
 </section>
 
@@ -159,6 +169,13 @@
   .commit.root::before,
   .commit:last-child::before {
     bottom: calc(100% - 11px);
+  }
+  .more {
+    padding: 6px 12px;
+  }
+  .more .button {
+    font-size: 12px;
+    padding: 2px 10px;
   }
   .commit:hover {
     background: var(--surface-2);

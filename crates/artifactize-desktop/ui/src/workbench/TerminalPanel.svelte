@@ -9,7 +9,7 @@
   // fresh shell runs, with what it can restore. Nothing of a restore runs until the person
   // presses its Run.
   import { getAppState } from "../shell/app.svelte";
-  import type { RestoreChoice, WorktreeKey } from "./backend";
+  import { HARNESS, commandLine, type RestoreChoice, type WorktreeKey } from "./backend";
   import { screen } from "./screen";
 
   let {
@@ -37,6 +37,12 @@
   const offer = $derived(session.offer);
   /** The last directory, as the offer says it. */
   const where = $derived(offer?.cwd ? `in ${offer.cwd}` : "in the worktree (the last directory is not known)");
+  /** The resume suggestion's words: a session known for certain, or only the latest one. */
+  const resuming = $derived.by(() => {
+    if (!offer?.resume) return null;
+    const harness = offer.harness ? HARNESS[offer.harness] : offer.resume.program;
+    return offer.latestSession || offer.sessionId === null ? `Resume the latest ${harness} session` : `Resume the ${harness} session`;
+  });
 
   function restore(choice: RestoreChoice) {
     void terminals.restore(worktree, choice);
@@ -64,10 +70,8 @@
         >‹</button
       >
     </header>
-    {#if session.fragile !== null}
-      <p class="state" role="status">
-        <strong>Not persistent.</strong> This terminal ends when Artifactize closes{session.fragile ? `: ${session.fragile}` : "."}
-      </p>
+    {#if session.fragile}
+      <p class="state" role="status"><strong>Not persistent.</strong> This terminal ends when Artifactize closes.</p>
     {/if}
     {#if session.moved !== null}
       {@const moved = session.moved}
@@ -85,26 +89,19 @@
         <ul>
           {#if offer.command}
             <li>
-              <span>Rerun the last command {where}: <code>{offer.command}</code></span>
-              <button class="button small" aria-label="Run the last command again" onclick={() => restore({ kind: "rerun" })}>Run</button>
+              <span>Rerun the last command {where}: <code>{commandLine(offer.command)}</code></span>
+              <button class="button small" aria-label="Run the last command again" onclick={() => restore("rerun")}>Run</button>
             </li>
           {/if}
-          {#if offer.resume}
+          {#if offer.resume && resuming}
             <li>
-              <span
-                >{offer.resume.certain ? `Resume the ${offer.resume.harness} session` : `Resume the latest ${offer.resume.harness} session`}:
-                <code>{offer.resume.command}</code></span
-              >
-              <button
-                class="button small"
-                aria-label={offer.resume.certain ? `Resume the ${offer.resume.harness} session` : `Resume the latest ${offer.resume.harness} session`}
-                onclick={() => restore({ kind: "resume" })}>Run</button
-              >
+              <span>{resuming}: <code>{commandLine(offer.resume)}</code></span>
+              <button class="button small" aria-label={resuming} onclick={() => restore("resume")}>Run</button>
             </li>
           {/if}
         </ul>
         <div class="actions">
-          <button class="button small" onclick={() => restore({ kind: "fresh" })}>Keep the fresh shell</button>
+          <button class="button small" onclick={() => restore("freshShell")}>Keep the fresh shell</button>
         </div>
       </section>
     {/if}

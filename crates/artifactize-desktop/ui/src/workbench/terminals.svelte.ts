@@ -11,15 +11,15 @@ export type Session = {
   ended: { code: number | null } | null;
   /** A terminal that was gone: what its fresh shell can restore, until the person chooses. */
   offer: RestoreOffer | null;
-  /** Why the terminal ends with the app, if it does. */
-  fragile: string | null;
+  /** The terminal ends with the app: its host could not leave the app's process group. */
+  fragile: boolean;
   /** The worktree its agent moved to, until opened or dismissed. */
   moved: WorktreeKey | null;
   /** What went wrong last: attaching, typing or restoring. */
   error: string | null;
 };
 
-const UNTOUCHED: Session = { attempt: 0, ended: null, offer: null, fragile: null, moved: null, error: null };
+const UNTOUCHED: Session = { attempt: 0, ended: null, offer: null, fragile: false, moved: null, error: null };
 
 export class Terminals {
   /** Each worktree's terminal by its worktree, once attached in this window. */
@@ -42,9 +42,9 @@ export class Terminals {
   /** A frame besides the screen's own output. A snapshot means a live terminal again. */
   heard(worktree: WorktreeKey, frame: TerminalFrame): void {
     if (frame.kind === "snapshot") this.#set(worktree, { ended: null, error: null });
-    else if (frame.kind === "ended") this.#set(worktree, { ended: { code: frame.code } });
-    else if (frame.kind === "restore") this.#set(worktree, { offer: frame.offer });
-    else if (frame.kind === "notPersistent") this.#set(worktree, { fragile: frame.reason });
+    else if (frame.kind === "ended") this.#set(worktree, { ended: { code: frame.exitCode } });
+    else if (frame.kind === "restoreOffer") this.#set(worktree, { offer: frame.offer });
+    else if (frame.kind === "notPersistent") this.#set(worktree, { fragile: true });
     else if (frame.kind === "agentMoved") this.#set(worktree, { moved: frame.worktree });
   }
 

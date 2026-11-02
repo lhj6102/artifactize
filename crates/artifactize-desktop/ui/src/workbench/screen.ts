@@ -33,12 +33,20 @@ export function screen(worktree: WorktreeKey, terminals: Terminals, backend: Wor
     call(
       backend.terminalOpen(worktree, terminal.cols, terminal.rows, (frame) => {
         if (!attached) return;
-        if (frame.kind === "snapshot") terminal.reset();
-        if (frame.kind === "snapshot" || frame.kind === "output") terminal.write(frame.data);
+        // A snapshot resets the screen and redraws it at the host's size; the screen then fits
+        // its box again, which resizes the host if they differ.
+        if (frame.kind === "snapshot") {
+          terminal.resize(frame.cols, frame.rows);
+          terminal.write(new Uint8Array(frame.data), () => attached && fit.fit());
+        } else if (frame.kind === "output") terminal.write(new Uint8Array(frame.data));
         terminals.heard(worktree, frame);
       }),
     ).catch(failed);
-    const typed = terminal.onData((data) => void call(backend.terminalInput(worktree, data)).catch(failed));
+    const send = (bytes: number[]) => void call(backend.terminalInput(worktree, bytes)).catch(failed);
+    const encoder = new TextEncoder();
+    const typed = terminal.onData((data) => send([...encoder.encode(data)]));
+    // Some mouse reports are bytes, one per character.
+    const binary = terminal.onBinary((data) => send([...data].map((byte) => byte.charCodeAt(0) & 0xff)));
     const resized = terminal.onResize(({ cols, rows }) => void call(backend.terminalResize(worktree, cols, rows)).catch(failed));
     // The screen follows its box: the panel's width, the window's height.
     const observer = new ResizeObserver(() => fit.fit());
@@ -47,6 +55,7 @@ export function screen(worktree: WorktreeKey, terminals: Terminals, backend: Wor
       attached = false;
       observer.disconnect();
       typed.dispose();
+      binary.dispose();
       resized.dispose();
       void backend.terminalClose(worktree);
       terminal.dispose();
