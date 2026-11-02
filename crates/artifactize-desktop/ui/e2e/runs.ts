@@ -1,5 +1,6 @@
-// Domain Run cleanup uses public cancellation/views and the shared Rust OS observer.
-// It never scans processes, signals workers, or controls the application lifecycle.
+// Domain Run cleanup uses public cancellation/views and the shared Rust OS observer; terminal
+// cleanup asks each worktree's host to stop through the CLI and waits for it. It never scans
+// processes, signals workers, or controls the application lifecycle.
 import { readCandidate } from "./build.ts";
 import { environment } from "./environment.ts";
 import { childDirectories, exists, nativePath, parentOf, removeTree, runProgram, runProgramOk, type NativePath } from "./platform.ts";
@@ -92,10 +93,31 @@ export function settleFixtureRuns(program: NativePath, root: NativePath, observe
   if (failures.length > 1) throw new AggregateError(failures, "fixture Run cleanup failed; preserve inputs");
 }
 
-/** Call only after the runner/service has exited the app. Domain settlement and file
- * deletion are separate, so an unconfirmed native owner can retain its inputs safely. */
+/** The bound on one terminal host's stop, its process tree included. */
+const STOP_BOUND = 60000;
+
+/** Stop the terminal host of each of the fixture's Git worktrees (its folders holding a `.git`
+ * entry), with its shell and every program in it, and wait for each, through the CLI's own
+ * stop. A worktree whose terminal never ran has nothing to stop. Failures keep the inputs. */
+export function stopTerminals(program: NativePath, root: NativePath): void {
+  if (!exists(root)) return;
+  const failures: unknown[] = [];
+  for (const worktree of childDirectories(root).filter((folder) => exists(nativePath(folder, ".git")))) {
+    const stopped = runProgram(program, ["__terminal-stop", worktree], {
+      timeout: STOP_BOUND, env: environment({ root, repo: worktree, state: nativePath(root, "state") }),
+    });
+    if (stopped.status !== 0) failures.push(new Error(`the terminal of ${worktree} did not stop: ${stopped.stderr}`));
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "fixture terminals did not stop; preserve inputs");
+}
+
+/** Call only after the runner/service has exited the app. Domain settlement, the terminals'
+ * stop and file deletion are separate, so an unconfirmed native owner, a running Run or a
+ * running terminal can retain its inputs safely. */
 export function removeFixture(program: NativePath, root: NativePath, observer = readCandidate().observer): void {
   if (!exists(root)) return;
   settleFixtureRuns(program, root, observer);
+  stopTerminals(program, root);
   removeTree(root);
 }
