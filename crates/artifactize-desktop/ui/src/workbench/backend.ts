@@ -2,7 +2,9 @@
 // and each worktree's terminal, as the generated bindings type them. Only opening a terminal
 // differs: its frames arrive on a Tauri Channel, which this door hides behind a callback.
 import { Channel } from "@tauri-apps/api/core";
-import type { Commands, CreatedWorktree_Serialize, RestoreOffer_Deserialize, TerminalCommand, TerminalFrame_Deserialize } from "../ipc/client";
+import type {
+  Commands, CreatedWorktree_Serialize, Harness, RestoreOffer_Deserialize, ResumeSession, TerminalCommand_Deserialize, TerminalFrame_Deserialize,
+} from "../ipc/client";
 
 export type { Commit, RestoreChoice } from "../ipc/client";
 
@@ -43,10 +45,19 @@ export function workbenchOf(commands: Commands): Workbench {
 }
 
 /** An argv as a person would type it: arguments with spaces or quotes are quoted. */
-export function commandLine(command: TerminalCommand): string {
+export function commandLine(command: TerminalCommand_Deserialize): string {
   const quoted = (word: string) => (word === "" || /[\s'"\\$`]/.test(word) ? `'${word.replace(/'/g, `'\\''`)}'` : word);
   return [command.program, ...command.args].map(quoted).join(" ");
 }
 
 /** A harness as people call it. */
-export const HARNESS = { claudeCode: "Claude Code", codex: "Codex" } as const;
+const HARNESS = { claudeCode: "Claude Code", codex: "Codex" } as const;
+
+/** What resuming `session` of `harness` reads as: its label, "latest" unless the session is
+ * known for certain, and the harness's own resume command. */
+export function resumeOf(harness: Harness, session: ResumeSession): { label: string; command: string } {
+  const exact = session.kind === "exact" ? session.id : null;
+  const command =
+    harness === "claudeCode" ? (exact ? `claude --resume ${exact}` : "claude --continue") : exact ? `codex resume ${exact}` : "codex resume --last";
+  return { label: exact ? `Resume the ${HARNESS[harness]} session` : `Resume the latest ${HARNESS[harness]} session`, command };
+}

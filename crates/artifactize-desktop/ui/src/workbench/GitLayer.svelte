@@ -30,7 +30,7 @@
   };
 
   const short = (commit: Commit) => commit.id.slice(0, 7);
-  const when = (commit: Commit) => new Date(Number(commit.time) * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const when = (commit: Commit) => new Date(commit.time).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   /** The commit's refs as chips: Git's `HEAD -> main` is the checked-out `HEAD` and `main`,
    * and `tag: v1` the tag `v1`. */
   const chips = (commit: Commit) => commit.refs.flatMap((ref) => (ref.startsWith("HEAD -> ") ? ["HEAD", ref.slice(8)] : [ref.replace(/^tag: /, "")]));

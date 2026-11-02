@@ -12,7 +12,7 @@
   // presses its Run.
   import { tick } from "svelte";
   import { getAppState } from "../shell/app.svelte";
-  import { HARNESS, commandLine, type RestoreChoice, type WorktreeKey } from "./backend";
+  import { commandLine, resumeOf, type RestoreChoice, type WorktreeKey } from "./backend";
   import { screen } from "./screen";
 
   let {
@@ -40,12 +40,9 @@
   const offer = $derived(session.offer);
   /** The last directory, as the offer says it. */
   const where = $derived(offer?.cwd ? `in ${offer.cwd}` : "in the worktree (the last directory is not known)");
-  /** The resume suggestion's words: a session known for certain, or only the latest one. */
-  const resuming = $derived.by(() => {
-    if (!offer?.resume) return null;
-    const harness = offer.harness ? HARNESS[offer.harness] : offer.resume.program;
-    return offer.latestSession || offer.sessionId === null ? `Resume the latest ${harness} session` : `Resume the ${harness} session`;
-  });
+  /** The harness's resume, as the person would type it: a session known for certain by its ID,
+   * or else its latest session, labelled so. */
+  const resuming = $derived(offer?.kind === "harness" ? resumeOf(offer.harness, offer.session) : null);
 
   function restore(choice: RestoreChoice) {
     void terminals.restore(worktree, choice);
@@ -111,16 +108,16 @@
       <section class="offer" aria-label="Restore">
         <p>This terminal was gone; a fresh shell runs in the worktree. Nothing runs until you choose.</p>
         <ul>
-          {#if offer.command}
+          {#if offer.kind !== "shell"}
             <li>
               <span>Rerun the last command {where}: <code>{commandLine(offer.command)}</code></span>
               <button class="button small" aria-label="Run the last command again" onclick={() => restore("rerun")}>Run</button>
             </li>
           {/if}
-          {#if offer.resume && resuming}
+          {#if resuming}
             <li>
-              <span>{resuming}: <code>{commandLine(offer.resume)}</code></span>
-              <button class="button small" aria-label={resuming} onclick={() => restore("resume")}>Run</button>
+              <span>{resuming.label}: <code>{resuming.command}</code></span>
+              <button class="button small" aria-label={resuming.label} onclick={() => restore("resume")}>Run</button>
             </li>
           {/if}
         </ul>
