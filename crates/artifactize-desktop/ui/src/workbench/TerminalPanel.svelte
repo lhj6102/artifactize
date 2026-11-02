@@ -55,8 +55,6 @@
     void terminals.restore(worktree, choice);
   }
 
-  /** The collapsed tab, while it shows. */
-  let tab = $state<HTMLButtonElement>();
   /** A press of the mouse on collapse or expand leaves the keyboard where it is. */
   const keep = (event: MouseEvent) => event.preventDefault();
 
@@ -68,7 +66,7 @@
     m.terminal = open;
     await tick();
     if (pressed && open) m.panes.terminal?.querySelector<HTMLElement>("textarea")?.focus();
-    else if (pressed) tab?.focus();
+    else if (pressed) m.panes.tab?.focus();
     else if (had instanceof HTMLElement && had.isConnected && document.activeElement !== had) had.focus();
   }
 
@@ -153,7 +151,7 @@
     class="tab"
     aria-label="Expand the terminal"
     title="Terminal · {name}"
-    bind:this={tab}
+    bind:this={m.panes.tab}
     onmousedown={keep}
     onclick={(event) => void fold(true, event)}>Terminal</button
   >

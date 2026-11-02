@@ -218,7 +218,10 @@ it("says when a terminal is not persistent or ended, and opens the worktree its 
   expect(await within(panel).findByText("The terminal ended with exit status 0.")).toBeTruthy();
   await fireEvent.click(within(panel).getByRole("button", { name: "Start a fresh shell" }));
   await waitFor(() => expect(sent("terminal_open")).toHaveLength(2));
-  expect(within(panel).queryByText(/The terminal ended/)).toBeNull();
+  // It says it ended until the fresh terminal's first screen arrives.
+  expect(within(panel).getByText(/The terminal ended/)).toBeTruthy();
+  await hear("/work/main", { kind: "snapshot", data: [...new TextEncoder().encode("$ ")], cols: 80, rows: 24 });
+  await waitFor(() => expect(within(panel).queryByText(/The terminal ended/)).toBeNull());
 
   await hear("/work/main", { kind: "agentMoved", worktree: "/work/other" });
   await fireEvent.click(await within(panel).findByRole("button", { name: "Open detected worktree" }));

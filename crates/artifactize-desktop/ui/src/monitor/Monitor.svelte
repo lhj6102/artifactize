@@ -612,7 +612,8 @@
     <Dialog.Content class="dialog">
       <Dialog.Title class="dialog-title">Remove this worktree?</Dialog.Title>
       <p>
-        <code>{m.removing}</code> is removed with its folder, and its terminal ends with everything running in it. Its branch stays.
+        <code>{m.removing}</code> is removed with its folder, and its terminal ends with everything running in it. A branch artifactize
+        generated for it is deleted too while nobody renamed it and it has no commits of its own; any other branch stays.
       </p>
       <div class="dialog-actions">
         <Dialog.Close class="button">Cancel</Dialog.Close>

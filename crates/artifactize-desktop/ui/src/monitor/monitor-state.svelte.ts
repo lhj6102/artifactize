@@ -88,5 +88,13 @@ export class MonitorState {
   /** What the launch asked for was opened: only the first snapshot opens it. */
   started = $state(false);
   /** The parts focus moves into. */
-  readonly panes: { pane?: HTMLElement; main?: HTMLElement; detail?: HTMLElement; terminal?: HTMLElement; search?: HTMLInputElement } = $state({});
+  readonly panes: {
+    pane?: HTMLElement;
+    main?: HTMLElement;
+    detail?: HTMLElement;
+    terminal?: HTMLElement;
+    /** The collapsed terminal's tab. */
+    tab?: HTMLElement;
+    search?: HTMLInputElement;
+  } = $state({});
 }

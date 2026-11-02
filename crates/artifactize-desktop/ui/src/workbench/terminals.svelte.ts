@@ -22,8 +22,9 @@ export type Session = {
 const UNTOUCHED: Session = { attempt: 0, ended: null, offer: null, fragile: false, moved: null, error: null };
 
 export class Terminals {
-  /** Each worktree's terminal by its worktree, once attached in this window. */
-  readonly sessions = $state<Record<WorktreeKey, Session>>({});
+  /** Each worktree's terminal by its worktree, once attached in this window; each replaced
+   * whole as it changes. */
+  sessions = $state.raw<Record<WorktreeKey, Session>>({});
   readonly #backend: Workbench;
 
   constructor(backend: Workbench) {
@@ -36,7 +37,7 @@ export class Terminals {
   }
 
   #set(worktree: WorktreeKey, change: Partial<Session>): void {
-    this.sessions[worktree] = { ...this.of(worktree), ...change };
+    this.sessions = { ...this.sessions, [worktree]: { ...this.of(worktree), ...change } };
   }
 
   /** A frame besides the screen's own output. A snapshot means a live terminal again. */
@@ -63,9 +64,10 @@ export class Terminals {
     }
   }
 
-  /** Start a fresh terminal after the last one ended. */
+  /** Attach again after the terminal ended, which starts a fresh one; it says it ended until
+   * the new terminal's first screen arrives. */
   fresh(worktree: WorktreeKey): void {
-    this.#set(worktree, { attempt: this.of(worktree).attempt + 1, ended: null, error: null });
+    this.#set(worktree, { attempt: this.of(worktree).attempt + 1 });
   }
 
   /** Forget where the agent moved: opened, or dismissed. */
