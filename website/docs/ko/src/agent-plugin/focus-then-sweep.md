@@ -1,7 +1,7 @@
 # Focus then sweep: verify를 반복하는 방법 {#focus-then-sweep-iterate-with-verify}
 
-코딩 어시스턴트가 RED eval을 고치면 고친 Artifact의 내용이 달라지므로, 그 Artifact를 읽는 eval은
-GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마다 `verify --all`을 실행하면 반복할
+코딩 어시스턴트가 RED eval을 고치면 고친 Artifact의 내용이 달라지므로, 그 Artifact를 입력으로 쓰는 eval은
+이전에 GREEN이었더라도 모두 다시 실행해야 합니다. 수정할 때마다 `verify --all`을 실행하면 반복할
 때마다 시간과 비용이 들지만, eval 하나를 겨냥한 수정이 다른 eval을 깨뜨리는 경우는 드뭅니다.
 **focus-then-sweep** 스킬은 어시스턴트가 고치고 있는 eval만 다시 실행하고, 나머지는 마지막에
 한 번에 리뷰하도록 안내합니다.
@@ -57,7 +57,7 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
 
 ## YELLOW를 목표로 {#toward-yellow}
 
-반복의 목표는 나머지가 모두 통과하고 승인만 남은 YELLOW입니다. 승인은 다른 eval을 막지
+반복을 마칠 때는 다른 검사를 모두 통과하고 사람의 승인만 남은 YELLOW 상태를 목표로 합니다. 승인은 다른 eval을 막지
 않습니다. 아무도 승인 요청을 맡지 않은 채 [승인 대기 시간](../features/run.md#sign-offs-and-the-end-of-a-run)
 (따로 바꾸지 않았다면 2분)이 지나면 Run은 YELLOW로 끝납니다. 어시스턴트는 승인할 요청이 남아
 있어도 작업을 계속하고, 남은 요청을 알려 주며 `artifactize review REQUEST_ID` 같은 방법으로

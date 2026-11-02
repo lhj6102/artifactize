@@ -78,8 +78,8 @@ codex mcp get artifactize
 | `verify_result` | `run`, 선택적으로 `cursor` | 판정과 간결한 지적 사항 최대 20개, `next_cursor`를 돌려줍니다. 실행 중이면 `ready:false`입니다 |
 | `verify_cancel` | `run` | 명시적 취소 확인입니다. 취소 뒤 정리가 끝났는지는 Run이 최종 상태가 될 때까지 지켜보세요 |
 
-`comment`에는 에이전트가 지금 하는 일을 짧게 적습니다. 터미널의 Monitor, 데스크톱 앱과 `run_show`에서
-Run과 함께 사람에게 보이며 Run의 동작은 바꾸지 않습니다. 제어 문자와 앞뒤 공백이 없는 한
+`comment`에는 에이전트가 지금 하는 일을 짧게 적습니다. `comment`는 터미널 Monitor와
+데스크톱 앱, `run_show`에 Run 정보와 함께 표시되며 Run의 동작에는 영향을 주지 않습니다. 제어 문자와 앞뒤 공백이 없는 한
 줄이어야 하며, 길이는 1–200자여야 합니다. 그 밖의 값은 Run을 접수하기 전에 거부됩니다.
 
 `scope`에는 `kind` 필드로 선택 유형을 지정하는 공통 형식의 JSON 객체를 전달합니다.
@@ -151,7 +151,7 @@ CLI의 JSON 출력과 마찬가지로 null을 반환하고, history를 지정하
 신뢰하는 fingerprint 명령을 실행하고 설정된 리뷰 저장소를 조회할 수 있습니다. 선언된
 명령은 OS 샌드박스 안에서 실행되지 않습니다. MCP는 로그인/로그아웃 동작을 제공하지 않으며
 자격 증명을 돌려주는 일도 없습니다. `models`, `doctor`, `remote_status`는 백엔드
-준비 상태를 확인할 수 있고, `doctor`는 CLI와 마찬가지로 [새 릴리스](../getting-started/update.md#newer-releases)도 확인합니다. Codex 모델 목록을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있으며, 갱신이 영구히 거부되면 저장된 로그인 정보를 지울 수 있습니다.
+준비 상태를 확인할 수 있고, `doctor`는 CLI와 마찬가지로 [새 릴리스](../getting-started/update.md#newer-releases)도 확인합니다. Codex 모델을 조회할 때는 CLI와 마찬가지로 artifactize에 저장된 토큰을 갱신할 수 있습니다. 토큰 갱신이 영구히 거부되면 저장된 로그인 정보를 삭제할 수 있습니다.
 
 ### 세부 페이지 {#detail-pages}
 
@@ -197,8 +197,8 @@ Agent 세션 follow-up은 없습니다. 이런 동작은 CLI와 일반 Human 리
 - `{"kind":"outcome","data":...}`: `verify_result`의 스키마를 쓰는 최종 Run 검증입니다.
   남은 지적 사항은 그 `next_cursor`를 `verify_result`에 넘겨 읽으세요.
 
-연결할 때마다 기준 상태와 이미 완료된 eval을 다시 보내므로, 필요하면
-요청 ID와 상태를 기준으로 이전 연결에서 받은 항목과 겹치는 것을 걸러 내세요. 호출이 제한 시간에 도달해 반환될 때
+연결할 때마다 기준 상태와 완료된 eval을 다시 전달합니다. 필요하다면 요청 ID와 상태를 비교해
+이전 연결에서 이미 받은 항목을 걸러 내세요. 호출이 제한 시간에 도달해 반환될 때
 Run이 이미 끝난 상태여도, 클라이언트가 outcome 알림을 받았다고 보장할 수는 없습니다.
 최종 검증 결과는 `verify_result`로 확인하세요. 진행 토큰이 없으면
 이 호출은 알림을 보내지 않은 채 대기합니다. 진행 알림을 쓰지 않는 클라이언트에서는

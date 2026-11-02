@@ -136,8 +136,8 @@ artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
 
 ## Agent 세션 {#agent-sessions}
 
-Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
-[`session show`와 `session send`](../agent.md#saved-conversations)로 읽거나 이어서 질문할 수 있습니다.
+Agent 리뷰 대화는 상태 디렉터리에 저장됩니다.
+[`session show`와 `session send`](../agent.md#saved-conversations)로 대화를 읽고 후속 질문을 보낼 수 있습니다.
 `limits.json`으로 대화 저장 여부와 저장 공간의 크기를 정합니다.
 
 ```json
@@ -176,8 +176,8 @@ Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
 ### follow-up 재생 {#follow-up-replay}
 
 [`session send`](../../cli/index.md#agent-sessions)로 저장된 리뷰에 follow-up 질문을 할 수 있습니다.
-질문, 답변, 도구 호출은 리뷰 대화 뒤에 이어서 그 리뷰의 세션에 저장되므로, `session show`가 리뷰와 함께
-보여 주며 질문은 쓴 그대로 나옵니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
+질문, 답변, 도구 호출은 리뷰 대화 뒤에 세션에 저장됩니다. `session show`를 실행하면 리뷰 대화와
+함께 확인할 수 있고, 질문은 입력한 그대로 표시됩니다. 아직 실행 중인 리뷰에는 질문할 수 없습니다.
 
 ## 로컬 진단과 유지보수 {#local-diagnostics-and-maintenance}
 
