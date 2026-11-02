@@ -1,8 +1,8 @@
-//! Native PTY and process lifetime. Every program gets a PTY of its own: macOS revokes a
-//! terminal once its session leader exits, so a restored argv and the fresh shell after it
-//! cannot share one, and a new PTY starts from clean line settings wherever it runs. The
-//! host's screen carries what was shown from one PTY to the next.
-use super::{Foreground, Processes, Size};
+//! Native PTY and process lifetime. Where a PTY outlives the program leading it, a restored
+//! argv and the fresh shell after it share one, including input typed ahead and geometry;
+//! every program starts from the PTY's initial line settings. Where it does not (macOS),
+//! each program gets a PTY of its own. The host's screen carries what was shown either way.
+use super::{Foreground, Modes, PTY_PER_PROGRAM, Processes, Size};
 use crate::{platform, terminal::TerminalCommand};
 use portable_pty::{Child, CommandBuilder, MasterPty, SlavePty};
 use std::{
@@ -18,27 +18,78 @@ const INPUT_QUEUE: usize = 256;
 
 pub(crate) enum Output {
     Data(Vec<u8>),
-    /// A program's terminal closed; see [`Pty::is_current`].
+    /// A PTY closed; see [`Pty::is_current`].
     Closed(Generation),
 }
 
-/// Numbers the PTYs of one host in start order.
+/// Numbers the PTYs of one host in open order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Generation(u64);
 
 type Sink = Arc<dyn Fn(Output) + Send + Sync>;
 
-/// One program on its own PTY. Fields drop in order: the program is stopped before its
-/// terminal closes.
-struct Session {
+/// One PTY with its input and output threads.
+struct Terminal {
+    master: Box<dyn MasterPty + Send>,
+    // Held open so the PTY outlives each program's own descriptors, where the system allows.
+    slave: Box<dyn SlavePty + Send>,
+    modes: Modes,
+    input: mpsc::SyncSender<Vec<u8>>,
+    generation: Generation,
+}
+impl Terminal {
+    fn open(size: Size, generation: Generation, output: Sink) -> io::Result<Self> {
+        let pair = portable_pty::native_pty_system()
+            .openpty(size)
+            .map_err(io::Error::other)?;
+        let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
+        let mut reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
+        let modes = Modes::initial(&*pair.master)?;
+        let (input, pending) = mpsc::sync_channel::<Vec<u8>>(INPUT_QUEUE);
+        std::thread::Builder::new()
+            .name("terminal-input".into())
+            .spawn(move || {
+                while let Ok(data) = pending.recv() {
+                    if writer
+                        .write_all(&data)
+                        .and_then(|()| writer.flush())
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })?;
+        std::thread::Builder::new()
+            .name("terminal-output".into())
+            .spawn(move || {
+                let mut buffer = [0u8; OUTPUT_CHUNK];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(0) | Err(_) => {
+                            output(Output::Closed(generation));
+                            break;
+                        }
+                        // A replaced PTY's last output still belongs on the screen.
+                        Ok(count) => output(Output::Data(buffer[..count].to_vec())),
+                    }
+                }
+            })?;
+        Ok(Self {
+            master: pair.master,
+            slave: pair.slave,
+            modes,
+            input,
+            generation,
+        })
+    }
+}
+
+/// The program running on the terminal now.
+struct Program {
     processes: Processes,
     child: Box<dyn Child + Send + Sync>,
-    master: Box<dyn MasterPty + Send>,
-    // Held open so a Linux PTY outlives its program's own descriptors until it is replaced.
-    _slave: Box<dyn SlavePty + Send>,
-    input: mpsc::SyncSender<Vec<u8>>,
 }
-impl Session {
+impl Program {
     fn stop(&mut self) -> io::Result<()> {
         self.processes.stop()?;
         // A process already reaped by try_wait needs no signal, but wait still returns its status.
@@ -47,17 +98,19 @@ impl Session {
         Ok(())
     }
 }
-impl Drop for Session {
+impl Drop for Program {
     fn drop(&mut self) {
         let _ = self.stop();
     }
 }
 
 pub(crate) struct Pty {
-    session: Option<Session>,
+    // Declared first: a program is stopped before its terminal closes.
+    program: Option<Program>,
+    terminal: Option<Terminal>,
     size: Size,
     output: Sink,
-    generation: Generation,
+    opened: u64,
 }
 impl Pty {
     pub fn open(
@@ -66,10 +119,11 @@ impl Pty {
         output: impl Fn(Output) + Send + Sync + 'static,
     ) -> io::Result<Self> {
         let mut pty = Self {
-            session: None,
+            program: None,
+            terminal: None,
             size,
             output: Arc::new(output),
-            generation: Generation(0),
+            opened: 0,
         };
         pty.run(cwd, None)?;
         Ok(pty)
@@ -91,13 +145,23 @@ impl Pty {
             launch.env(name, value);
         }
         launch.env("TERM", "xterm-256color");
-
-        let pair = portable_pty::native_pty_system()
-            .openpty(self.size)
+        let terminal = match self.terminal.take() {
+            Some(terminal) if !PTY_PER_PROGRAM => {
+                // Every program starts on the PTY's initial settings, not on what the last
+                // one left (a shell's line editor turns echo off while it waits).
+                terminal.modes.restore(&*terminal.master)?;
+                terminal
+            }
+            _ => {
+                self.opened += 1;
+                Terminal::open(self.size, Generation(self.opened), self.output.clone())?
+            }
+        };
+        let terminal = self.terminal.insert(terminal);
+        let mut child = terminal
+            .slave
+            .spawn_command(launch)
             .map_err(io::Error::other)?;
-        let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
-        let mut reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
-        let mut child = pair.slave.spawn_command(launch).map_err(io::Error::other)?;
         let processes = match Processes::new(&*child) {
             Ok(processes) => processes,
             Err(error) => {
@@ -106,81 +170,45 @@ impl Pty {
                 return Err(error);
             }
         };
-        let (input, pending) = mpsc::sync_channel::<Vec<u8>>(INPUT_QUEUE);
-        // From here the session owns the program, so a failed thread start still stops it.
-        let session = Session {
-            processes,
-            child,
-            master: pair.master,
-            _slave: pair.slave,
-            input,
-        };
-        std::thread::Builder::new()
-            .name("terminal-input".into())
-            .spawn(move || {
-                while let Ok(data) = pending.recv() {
-                    if writer
-                        .write_all(&data)
-                        .and_then(|()| writer.flush())
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            })?;
-        let output = self.output.clone();
-        let generation = Generation(self.generation.0 + 1);
-        std::thread::Builder::new()
-            .name("terminal-output".into())
-            .spawn(move || {
-                let mut buffer = [0u8; OUTPUT_CHUNK];
-                loop {
-                    match reader.read(&mut buffer) {
-                        Ok(0) | Err(_) => {
-                            output(Output::Closed(generation));
-                            break;
-                        }
-                        // A replaced program's last output still belongs on the screen.
-                        Ok(count) => output(Output::Data(buffer[..count].to_vec())),
-                    }
-                }
-            })?;
-        self.session = Some(session);
-        self.generation = generation;
+        self.program = Some(Program { processes, child });
         Ok(())
     }
-    /// Whether `generation` is the PTY of the program running now. A replaced PTY's close
-    /// arrives late and says nothing about the current program.
+    /// Whether `generation` is the PTY in use now. A replaced PTY's close arrives late and
+    /// says nothing about the program running now.
     pub fn is_current(&self, generation: Generation) -> bool {
-        self.session.is_some() && generation == self.generation
+        self.terminal
+            .as_ref()
+            .is_some_and(|terminal| terminal.generation == generation)
     }
     pub fn stop(&mut self) -> io::Result<()> {
-        if let Some(mut session) = self.session.take() {
-            session.stop()?;
+        if let Some(mut program) = self.program.take() {
+            program.stop()?;
         }
         Ok(())
     }
     pub fn input(&self, data: Vec<u8>) -> io::Result<()> {
-        let session = self
-            .session
+        let terminal = self
+            .terminal
             .as_ref()
-            .ok_or_else(|| io::Error::other("No program is running"))?;
-        session.input.try_send(data).map_err(io::Error::other)
+            .ok_or_else(|| io::Error::other("The terminal is not open"))?;
+        terminal.input.try_send(data).map_err(io::Error::other)
     }
     pub fn resize(&mut self, size: Size) -> io::Result<()> {
-        if let Some(session) = &self.session {
-            session.master.resize(size).map_err(io::Error::other)?;
+        if let Some(terminal) = &self.terminal {
+            terminal.master.resize(size).map_err(io::Error::other)?;
         }
         self.size = size;
         Ok(())
     }
     pub fn foreground(&self) -> Option<Foreground> {
-        let session = self.session.as_ref()?;
-        super::foreground(&*session.master, session.child.process_id())
+        super::foreground(
+            &*self.terminal.as_ref()?.master,
+            self.program.as_ref()?.child.process_id(),
+        )
     }
     pub fn try_wait(&mut self) -> io::Result<Option<u32>> {
-        match &mut self.session {
-            Some(session) => Ok(session.child.try_wait()?.map(|exit| exit.exit_code())),
+        match &mut self.program {
+            Some(program) => Ok(program.child.try_wait()?.map(|exit| exit.exit_code())),
             None => Ok(None),
         }
     }
