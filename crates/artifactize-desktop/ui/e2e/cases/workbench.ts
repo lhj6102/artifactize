@@ -560,6 +560,8 @@ export const scenarios: Scenario[] = [
       let closed = 0;
       const server = await serveLoopback((socket) => {
         held.push(socket);
+        // Windows resets the connection of a program it terminates; that reset is its end too.
+        socket.on("error", () => {});
         socket.on("close", () => { closed += 1; });
       });
       try {
