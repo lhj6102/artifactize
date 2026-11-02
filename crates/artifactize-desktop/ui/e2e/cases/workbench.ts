@@ -283,7 +283,7 @@ export const scenarios: Scenario[] = [
       const offer = await reopen(browser);
       assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");
       if (terminalForeground) {
-        assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
+        assert.match(offer.text, /Rerun the last command in .*: claude --hello Run/, "the agent as it was run, not its interpreter");
         assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
         assert.deepEqual(offer.buttons, ["Run the last command again", "Resume the latest Claude Code session", "Keep the fresh shell"]);
       } else assert.deepEqual(offer.buttons, ["Keep the fresh shell"], "without the foreground program only the fresh shell");

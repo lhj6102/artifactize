@@ -3,15 +3,15 @@ use crate::terminal::TerminalCommand;
 use std::path::PathBuf;
 mod pty;
 pub(crate) use portable_pty::PtySize as Size;
-pub(crate) use pty::{Output, Pty};
+pub(crate) use pty::{Generation, Output, Pty};
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
 mod windows;
 #[cfg(unix)]
-pub(crate) use unix::{Modes, Processes, STOP_BEFORE_REMOVE, foreground, wait_host};
+pub(crate) use unix::{Processes, STOP_BEFORE_REMOVE, foreground, wait_host};
 #[cfg(windows)]
-pub(crate) use windows::{Modes, Processes, STOP_BEFORE_REMOVE, foreground, wait_host};
+pub(crate) use windows::{Processes, STOP_BEFORE_REMOVE, foreground, wait_host};
 
 pub(crate) struct Foreground {
     pub cwd: Option<PathBuf>,

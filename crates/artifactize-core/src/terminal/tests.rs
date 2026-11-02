@@ -247,3 +247,39 @@ fn a_cursor_query_is_answered_by_the_host_and_never_reaches_clients() {
     assert_eq!([held.output, style.output].concat(), b"\x1b[1mbold");
     assert!(held.answers.is_empty() && style.answers.is_empty());
 }
+
+/// An installed harness is a script its interpreter runs, so the terminal sees the
+/// interpreter with the script's path. Its restore offer names the harness as the person ran
+/// it, for the rerun and for its resume alike.
+#[test]
+fn a_harness_run_through_its_interpreter_is_offered_as_it_was_run() {
+    let root = test_os::tempdir();
+    let install = root.path().join("lib").join("codex").join("bin");
+    let mut metadata = metadata::Metadata::default();
+    let agent = metadata.observe(crate::platform::terminal::Foreground {
+        cwd: Some(root.path().to_owned()),
+        command: Some(TerminalCommand {
+            program: test_os::path_text(&root.path().join("node")),
+            args: vec![
+                test_os::path_text(&install.join("codex.js")),
+                "--hello".into(),
+            ],
+        }),
+        shell: false,
+    });
+    assert!(agent);
+    let codex = |args: &[&str]| TerminalCommand {
+        program: "codex".into(),
+        args: args.iter().map(|arg| arg.to_string()).collect(),
+    };
+    assert_eq!(
+        metadata.offer(),
+        RestoreOffer::Harness {
+            cwd: root.path().to_owned(),
+            command: codex(&["--hello"]),
+            harness: Harness::Codex,
+            session: ResumeSession::Latest,
+            resume: codex(&["resume", "--last"]),
+        }
+    );
+}

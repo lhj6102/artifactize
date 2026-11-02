@@ -94,17 +94,24 @@ impl RestoreOffer {
 }
 
 impl Harness {
+    /// The name a person runs the harness by, which its resume commands use too.
+    pub(crate) fn program(&self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude",
+            Self::Codex => "codex",
+        }
+    }
     pub(crate) fn resume(&self, session: &ResumeSession) -> TerminalCommand {
         match self {
             Self::ClaudeCode => TerminalCommand {
-                program: "claude".into(),
+                program: self.program().into(),
                 args: match session {
                     ResumeSession::Exact { id } => vec!["--resume".into(), id.to_string()],
                     ResumeSession::Latest => vec!["--continue".into()],
                 },
             },
             Self::Codex => TerminalCommand {
-                program: "codex".into(),
+                program: self.program().into(),
                 args: vec![
                     "resume".into(),
                     match session {

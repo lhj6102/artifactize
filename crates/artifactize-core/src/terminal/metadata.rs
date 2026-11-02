@@ -66,18 +66,21 @@ impl Metadata {
             },
         }
     }
+    /// Record the foreground program; whether it is an agent, a harness, is returned.
     pub fn observe(&mut self, foreground: platform::terminal::Foreground) -> bool {
-        let agent = !foreground.shell && foreground.command.as_ref().and_then(harness).is_some();
         if let Some(cwd) = foreground.cwd {
             self.cwd = Some(cwd);
         }
-        if !foreground.shell
-            && let Some(command) = foreground.command
-        {
-            self.harness = harness(&command);
-            self.command = Some(command);
+        if foreground.shell {
+            return false;
         }
-        agent
+        let Some(command) = foreground.command else {
+            return false;
+        };
+        let command = invoked(command, self.cwd.as_deref());
+        self.harness = harness(&command);
+        self.command = Some(command);
+        self.harness.is_some()
     }
     /// Prove the session again for the current command and directory: an ID proven for one
     /// directory is never offered for another.
@@ -89,28 +92,82 @@ impl Metadata {
     }
 }
 
+/// Programs a script's shebang names to run it: npm installs `claude` and `codex` as Node.js
+/// scripts, and other installed tools are Python, Ruby or Perl scripts started the same way.
+const INTERPRETERS: [&str; 7] = ["node", "nodejs", "bun", "deno", "python", "ruby", "perl"];
+
+/// The harness a program is, by the name it was run as.
 fn harness(command: &TerminalCommand) -> Option<Harness> {
-    let program = Path::new(&command.program).file_stem()?.to_str()?;
-    match program {
+    match Path::new(&command.program).file_stem()?.to_str()? {
         "claude" => Some(Harness::ClaudeCode),
         "codex" => Some(Harness::Codex),
-        "node" | "nodejs" | "bun" => {
-            let script = Path::new(command.args.first()?);
-            match script.file_stem()?.to_str()? {
-                "claude" => Some(Harness::ClaudeCode),
-                "codex" => Some(Harness::Codex),
-                "cli"
-                    if script
-                        .components()
-                        .any(|part| part.as_os_str() == "claude-code") =>
-                {
-                    Some(Harness::ClaudeCode)
-                }
-                _ => None,
-            }
+        _ => None,
+    }
+}
+
+fn is_interpreter(command: &TerminalCommand) -> bool {
+    Path::new(&command.program)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        // A versioned interpreter (`python3`, `python3.12`) is still that interpreter.
+        .map(|stem| stem.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.'))
+        .is_some_and(|name| INTERPRETERS.contains(&name))
+}
+
+/// The harness an interpreter runs as its script, if any.
+fn interpreted(command: &TerminalCommand) -> Option<Harness> {
+    if !is_interpreter(command) {
+        return None;
+    }
+    let script = Path::new(command.args.first()?);
+    match script.file_stem()?.to_str()? {
+        "claude" => Some(Harness::ClaudeCode),
+        "codex" => Some(Harness::Codex),
+        "cli"
+            if script
+                .components()
+                .any(|part| part.as_os_str() == "claude-code") =>
+        {
+            Some(Harness::ClaudeCode)
         }
         _ => None,
     }
+}
+
+/// The command as the person ran it. A script started through its shebang shows up as its
+/// interpreter running the script's path, as installed `claude` and `codex` do; the person
+/// ran the script by its name. A harness is named as the harness, as its resume commands
+/// are; another script by its file name when that name finds the very same file on `PATH`.
+/// Anything else is kept exactly as it ran.
+fn invoked(command: TerminalCommand, cwd: Option<&Path>) -> TerminalCommand {
+    let Some((script, args)) = command.args.split_first() else {
+        return command;
+    };
+    if !is_interpreter(&command) {
+        return command;
+    }
+    let program = interpreted(&command)
+        .map(|harness| harness.program().to_owned())
+        .or_else(|| by_name(Path::new(script), cwd?));
+    match program {
+        Some(program) => TerminalCommand {
+            program,
+            args: args.to_vec(),
+        },
+        None => command,
+    }
+}
+
+/// The file name `PATH` finds `script` by, if it finds this very file.
+fn by_name(script: &Path, cwd: &Path) -> Option<String> {
+    if !script.is_absolute() {
+        return None;
+    }
+    let name = script.file_name()?;
+    let found = platform::program::resolve(name, cwd).ok()?;
+    (platform::canonicalize(&found).ok()? == platform::canonicalize(script).ok()?)
+        .then(|| name.to_str().map(str::to_owned))
+        .flatten()
 }
 
 // An exact resume/session argument plus matching metadata is proof. A matching cwd or newest
@@ -187,12 +244,7 @@ fn session_id(
 /// the following token, so searching later arguments for a flag would invent certainty.
 /// The session's own metadata must still confirm this ID and its directory.
 fn requested<'a>(harness: &Harness, command: &'a TerminalCommand) -> Option<&'a str> {
-    let interpreted = Path::new(&command.program)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .is_some_and(|stem| matches!(stem, "node" | "nodejs" | "bun"));
-    let args = command.args.get(usize::from(interpreted)..)?;
-    let value = match (harness, args) {
+    let value = match (harness, command.args.as_slice()) {
         (Harness::ClaudeCode, [flag, id])
             if matches!(flag.as_str(), "--resume" | "-r" | "--session-id") =>
         {

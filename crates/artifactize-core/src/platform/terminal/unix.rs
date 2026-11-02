@@ -25,36 +25,6 @@ impl Drop for Processes {
     }
 }
 
-/// The line discipline a new PTY starts with. A program that is killed or exits without
-/// restoring its terminal (a shell's line editor turns echo off while it waits) leaves its
-/// settings behind; the next program on the same PTY starts from these again.
-pub(crate) struct Modes(libc::termios);
-impl Modes {
-    pub fn initial(master: &dyn MasterPty) -> io::Result<Self> {
-        let fd = master
-            .as_raw_fd()
-            .ok_or_else(|| io::Error::other("PTY master has no descriptor"))?;
-        // SAFETY: a zeroed termios is a valid plain C structure that tcgetattr overwrites.
-        let mut modes: libc::termios = unsafe { std::mem::zeroed() };
-        // SAFETY: the live master owns fd and modes is writable for the call.
-        if unsafe { libc::tcgetattr(fd, &mut modes) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(Self(modes))
-    }
-    pub fn restore(&self, master: &dyn MasterPty) -> io::Result<()> {
-        let fd = master
-            .as_raw_fd()
-            .ok_or_else(|| io::Error::other("PTY master has no descriptor"))?;
-        // Apply at once: typed-ahead input stays queued for the next program.
-        // SAFETY: the live master owns fd and the saved settings came from tcgetattr.
-        if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &self.0) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
-    }
-}
-
 pub(crate) const STOP_BEFORE_REMOVE: bool = false;
 pub(crate) fn wait_host(host: ChildIdentity) -> io::Result<()> {
     use std::time::{Duration, Instant};
