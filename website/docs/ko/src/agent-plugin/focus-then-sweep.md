@@ -1,7 +1,7 @@
 # Focus then sweep: verify를 반복하는 방법 {#focus-then-sweep-iterate-with-verify}
 
-코딩 어시스턴트가 RED eval을 고치면 고친 Artifact의 내용이 달라지므로, 그 Artifact를 읽는 eval은
-GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마다 `verify --all`을 실행하면 반복할
+코딩 어시스턴트가 RED eval을 고치면 고친 Artifact의 내용이 달라지므로, 그 Artifact를 입력으로 쓰는 eval은
+이전에 GREEN이었더라도 모두 다시 실행해야 합니다. 수정할 때마다 `verify --all`을 실행하면 반복할
 때마다 시간과 비용이 들지만, eval 하나를 겨냥한 수정이 다른 eval을 깨뜨리는 경우는 드뭅니다.
 **focus-then-sweep** 스킬은 어시스턴트가 고치고 있는 eval만 다시 실행하고, 나머지는 마지막에
 한 번에 리뷰하도록 안내합니다.
