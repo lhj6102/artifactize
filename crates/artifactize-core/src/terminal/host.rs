@@ -76,7 +76,7 @@ impl Pty {
         }
         launch.env("TERM", "xterm-256color");
         let confirmed = command
-            .map(|command| super::restore::input(&mut launch, command))
+            .map(|command| super::restore::input(&mut launch, command, worktree))
             .transpose()?;
         let mut child = pair.slave.spawn_command(launch).map_err(io::Error::other)?;
         let processes = match platform::terminal::Processes::new(&*child) {

@@ -3193,6 +3193,45 @@ pub fn path_output(output: &str) -> (&'static str, Vec<String>) {
     }
 }
 
+/// The OS user a local IPC endpoint is scoped to: the numeric user ID on Unix, the current
+/// token's SID (as `whoami` prints it) on Windows.
+pub fn ipc_user() -> String {
+    #[cfg(unix)]
+    {
+        current_uid().to_string()
+    }
+    #[cfg(windows)]
+    {
+        let output = Command::new("whoami")
+            .args(["/user", "/fo", "csv", "/nh"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let line = String::from_utf8(output.stdout).unwrap();
+        line.trim()
+            .rsplit(',')
+            .next()
+            .unwrap()
+            .trim_matches('"')
+            .to_owned()
+    }
+}
+
+/// The private directory of a local IPC namespace whose digest starts with `prefix`: below
+/// the sticky system temporary root on Unix, below the user's temporary folder on Windows.
+pub fn ipc_directory(user: &str, prefix: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::temp_dir().join(format!("artifactize-ipc-{prefix}"))
+    } else {
+        Path::new(if cfg!(target_os = "macos") {
+            "/private/tmp"
+        } else {
+            "/tmp"
+        })
+        .join(format!("artifactize-ipc-{user}-{prefix}"))
+    }
+}
+
 /// Expected IPC address independently pins the public namespace spelling and hash length.
 pub fn changes_address(user: &str, identity: &str) -> std::path::PathBuf {
     if cfg!(windows) {

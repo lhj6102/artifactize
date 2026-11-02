@@ -3,6 +3,29 @@
 use super::TerminalFrame;
 use std::{collections::BTreeSet, fmt::Write, path::PathBuf};
 
+// DEC private modes that change what the client sends rather than what the screen shows.
+const X10_MOUSE: u16 = 9;
+const MOUSE_PRESSES: u16 = 1000;
+const MOUSE_DRAGS: u16 = 1002;
+const MOUSE_MOTION: u16 = 1003;
+const FOCUS_EVENTS: u16 = 1004;
+const MOUSE_UTF8: u16 = 1005;
+const MOUSE_SGR: u16 = 1006;
+const MOUSE_URXVT: u16 = 1015;
+const BRACKETED_PASTE: u16 = 2004;
+/// A reattached client restores these input modes with the screen; avt keeps the rest.
+const INPUT_MODES: [u16; 9] = [
+    X10_MOUSE,
+    MOUSE_PRESSES,
+    MOUSE_DRAGS,
+    MOUSE_MOTION,
+    FOCUS_EVENTS,
+    MOUSE_UTF8,
+    MOUSE_SGR,
+    MOUSE_URXVT,
+    BRACKETED_PASTE,
+];
+
 /// A terminal retains ten thousand lines, independently of how long its host lives.
 const SCROLLBACK_LINES: usize = 10_000;
 
@@ -27,7 +50,8 @@ impl vte::Perform for Integration {
             for param in params {
                 // avt handles the rendering modes. These additional modes control client
                 // keyboard, focus, mouse and paste input rather than screen cells.
-                if let [mode @ (9 | 1000 | 1002 | 1003 | 1004 | 1005 | 1006 | 1015 | 2004)] = param
+                if let [mode] = param
+                    && INPUT_MODES.contains(mode)
                 {
                     if action == 'h' {
                         self.input_modes.insert(*mode);
