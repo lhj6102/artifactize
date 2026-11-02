@@ -9,9 +9,13 @@ mod unix;
 #[cfg(windows)]
 mod windows;
 #[cfg(unix)]
-pub(crate) use unix::{Processes, STOP_BEFORE_REMOVE, foreground, wait_host};
+pub(crate) use unix::{
+    Modes, PTY_PER_PROGRAM, Processes, STOP_BEFORE_REMOVE, foreground, wait_host,
+};
 #[cfg(windows)]
-pub(crate) use windows::{Processes, STOP_BEFORE_REMOVE, foreground, wait_host};
+pub(crate) use windows::{
+    Modes, PTY_PER_PROGRAM, Processes, STOP_BEFORE_REMOVE, foreground, wait_host,
+};
 
 pub(crate) struct Foreground {
     pub cwd: Option<PathBuf>,

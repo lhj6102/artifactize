@@ -80,6 +80,12 @@ impl Frames {
     }
 }
 
+// Windows sees no foreground program, so it offers only the fresh shell; macOS gives each
+// program its own terminal and flushes what was typed ahead of the shell into the last one.
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "the rerun offer and input typed ahead of the shell are Linux behavior"
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restore_offer_runs_nothing_until_a_choice_is_sent() {
     let root = os::tempdir();
@@ -94,9 +100,11 @@ async fn a_restore_offer_runs_nothing_until_a_choice_is_sent() {
     let metadata = artifactize_core::repository::worktree_id(&worktree)
         .unwrap()
         .join("artifactize-terminal.json");
+    // The rerun keeps running until its gate exists, so the test can type ahead of the shell.
+    let gate = root.path().join("gate");
     let saved = serde_json::to_vec_pretty(&json!({
         "cwd": os::path_text(&offered),
-        "command": { "program": os::path_text(&program), "args": [] },
+        "command": { "program": os::path_text(&program), "args": [os::path_text(&gate)] },
         "harness": null,
         "session_id": null,
     }))
@@ -151,10 +159,11 @@ async fn a_restore_offer_runs_nothing_until_a_choice_is_sent() {
         .await;
     // The offer is used up: nothing can run it a second time.
     assert!(attachment.restore(RestoreChoice::Rerun).await.is_err());
-    // The shell that follows the rerun shows the line being typed, whatever terminal settings
-    // the shell and program before it left behind.
+    // A line typed while the rerun still runs reaches the shell that follows it, and that
+    // shell shows what is typed, whatever terminal settings the programs before it left.
     let typed = os::terminal_echo("after", "rerun");
     attachment.input(typed.clone()).await.unwrap();
+    std::fs::write(&gate, b"").unwrap();
     frames.printed("afterrerun").await;
     let line = String::from_utf8(typed).unwrap();
     assert!(contains(&frames.output, line.trim_end()));

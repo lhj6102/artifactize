@@ -16,6 +16,20 @@ impl Processes {
     }
 }
 
+/// ConPTY has no line discipline to restore; each console program sets its own modes.
+pub(crate) struct Modes;
+impl Modes {
+    pub fn initial(_master: &dyn MasterPty) -> io::Result<Self> {
+        Ok(Self)
+    }
+    pub fn restore(&self, _master: &dyn MasterPty) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A pseudoconsole outlives the programs attached to it, and what was typed ahead with it.
+pub(crate) const PTY_PER_PROGRAM: bool = false;
+
 pub(crate) const STOP_BEFORE_REMOVE: bool = true;
 
 pub(crate) fn wait_host(host: crate::process::ChildIdentity) -> io::Result<()> {

@@ -440,7 +440,8 @@ pub fn working_directory_program(directory: &Path, name: &str) -> std::path::Pat
 }
 
 /// A program that prints `label` and then its working directory as portable path text, so a
-/// test can tell its output from a shell prompt that shows the same directory.
+/// test can tell its output from a shell prompt that shows the same directory. Given a path
+/// as its argument, it then keeps running until that file exists.
 pub fn labelled_working_directory_program(
     directory: &Path,
     name: &str,
@@ -450,10 +451,18 @@ pub fn labelled_working_directory_program(
         directory,
         name,
         &format!(
-            r#"fn main() {{
+            r#"use std::io::Write;
+fn main() {{
     let directory = std::env::current_dir().unwrap();
     let text = directory.to_str().unwrap().replace('\\', "/");
     print!("{{}}{{text}}", {label:?});
+    std::io::stdout().flush().unwrap();
+    if let Some(gate) = std::env::args_os().nth(1) {{
+        // Polling only paces the wait; the test orders events by creating the file.
+        while !std::path::Path::new(&gate).exists() {{
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }}
+    }}
 }}
 "#
         ),
