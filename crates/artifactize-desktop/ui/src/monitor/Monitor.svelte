@@ -1,17 +1,24 @@
 <script lang="ts">
-  // The window's one screen: the Pane on the left and the Main area on the right, always with
-  // the divider between them. A chip shows its Run or the branch's Current in the Main area, a
-  // waiting review opens there as Review, and Settings take its place until left. A click on an
-  // Artifact (or on the Run's headline) opens its Detail, floating over the graph's right side;
-  // dragging its left edge sets its width, kept like the split ratio.
+  // The window's one screen: the Git layer at the far left, then the Pane and the Main area,
+  // always with the divider between them. A chip shows its Run or the branch's Current in the
+  // Main area, a waiting review opens there as Review, and Settings take its place until left.
+  // Over a Run's or a Current's graph, the worktree's terminal floats on the left; a click on an
+  // Artifact (or on the Run's headline) opens its Detail, floating over the graph's right side.
+  // The graph never shrinks under either; dragging a panel's inner edge sets its width, kept
+  // like the split ratio. The stage keeps room for both panels and some graph between them.
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { GAP, clampWidth, saveWidth } from "./detail-width";
+  import { DETAIL_KEY, GAP, MIN, TERMINAL, TERMINAL_KEY, clampWidth, detailDefault, fitPanels, saveWidth } from "./detail-width";
+  import { GIT, PANE_MIN, fitLayout, limits } from "./columns";
+  import GitLayer from "../workbench/GitLayer.svelte";
+  import TerminalPanel from "../workbench/TerminalPanel.svelte";
+  import type { WorktreeKey } from "../workbench/backend";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
@@ -24,7 +31,7 @@
   import { plain } from "../shell/keys";
 
   const app = getAppState();
-  const { browse, current, monitor: m } = app;
+  const { browse, current, git, monitor: m } = app;
   const { panes } = m;
 
   const view = $derived(browse.view);
@@ -38,6 +45,22 @@
     shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
   );
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
+  /** The worktree of the shown Run or Current: its history, its terminal. */
+  const worktree = $derived(branch?.workspace ?? null);
+  /** Over the graph, the terminal panel expanded and the Detail open. */
+  const terminalShown = $derived(worktree !== null && m.terminal);
+  const detailShown = $derived(m.opened !== null && source !== null && keyOf(m.opened.source) === keyOf(source));
+  /** Both panels' widths, fitted to the stage once it is measured. */
+  const widths = $derived(
+    m.stageWidth > 0
+      ? fitPanels(m.stageWidth, terminalShown ? (m.terminalWidth ?? TERMINAL) : null, detailShown ? (m.detailWidth ?? detailDefault(m.stageWidth)) : null)
+      : { terminal: null, detail: null },
+  );
+  /** How far the terminal (or its collapsed tab) covers the graph from the left. */
+  const coveredLeft = $derived(worktree === null ? 0 : terminalShown ? GAP + (widths.terminal ?? TERMINAL) : GAP + 28);
+  /** The Pane's widest and the stage's narrowest shares, from the columns' width. */
+  const shares = $derived(limits(m.columnsWidth));
+  let group = $state<ReturnType<typeof PaneGroup>>();
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a
    * failed search puts the library's back. */
@@ -82,6 +105,32 @@
       current.clear();
       void browse.open(chip.id);
     } else showCurrent(item);
+  }
+
+  /** The name a branch goes by in the Pane. */
+  const nameOf = (item: BranchView) => (item.name ? `${item.project} / ${item.name}` : item.project);
+
+  /** Open the worktree `path` as a click on its branch does, if the Pane lists it. */
+  function openWorktree(path: WorktreeKey): boolean {
+    const item = branches.find((candidate) => candidate.workspace === path);
+    if (item) open(item);
+    return item !== undefined;
+  }
+
+  /** The agent in the shown terminal moved to `path`: open that worktree's own entry. */
+  function followAgent(path: WorktreeKey) {
+    if (!openWorktree(path)) browse.error = `The worktree ${path} is not listed yet; it shows in the Pane once found.`;
+  }
+
+  /** Remove the worktree waiting for confirmation; its terminal ends. */
+  async function remove() {
+    const path = m.removing;
+    m.removing = null;
+    if (path !== null && (await git.remove(path)) && worktree === path) {
+      m.shown = { kind: "none" };
+      m.opened = null;
+      current.clear();
+    }
   }
 
   function showCurrent(item: BranchView) {
@@ -183,12 +232,13 @@
     else if (by < 0) m.expanded.delete(key);
   }
 
-  /** Move focus to the Pane's entries, the Main area or the Detail. */
+  /** Move focus to the Pane's entries, the Main area, the Detail or the terminal. */
   async function focus(to: Focus) {
     m.focus = to;
     await tick();
     const pane = panes[to];
     if (to === "main" && review) (pane?.querySelector<HTMLElement>('[aria-label="Human review"]') ?? pane)?.focus();
+    else if (to === "terminal") pane?.querySelector<HTMLElement>("textarea")?.focus();
     else pane?.focus();
   }
 
@@ -217,6 +267,12 @@
     const byId = m.shown.kind === "request" ? m.shown.detail.request : null;
     if (byId !== null && next.revision !== m.followed) void reread(byId);
     m.followed = next.revision;
+    // A worktree created from the Git layer opens once listed.
+    const created = git.created === null ? undefined : next.branches.find((item) => item.workspace === git.created?.worktree);
+    if (created) {
+      git.created = null;
+      open(created);
+    }
     start(next);
   }
 
@@ -330,25 +386,47 @@
     event.preventDefault();
   }
 
-  /** Dragging the Detail's left edge: the mouse moves it wherever it goes until the button is
-   * released, as the pane dividers follow it. */
-  function grab(event: MouseEvent) {
+  /** Dragging a panel's inner edge, the Detail's left or the terminal's right: the mouse moves
+   * it wherever it goes until the button is released, as the pane dividers follow it. The
+   * terminal keeps a Detail's narrowest beside it; the Detail takes what the terminal leaves. */
+  function grab(event: MouseEvent, panel: "detail" | "terminal") {
     if (event.button !== 0) return;
     const stage = (event.currentTarget as HTMLElement).closest(".stage");
     if (!stage) return;
     event.preventDefault();
     const drag = (moved: MouseEvent) => {
       const room = stage.getBoundingClientRect();
-      m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width);
+      if (panel === "terminal") m.terminalWidth = clampWidth(moved.clientX - room.left - GAP, room.width, GAP + MIN);
+      else m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width, widths.terminal === null ? 0 : GAP + widths.terminal);
     };
     const drop = () => {
       window.removeEventListener("mousemove", drag);
       window.removeEventListener("mouseup", drop);
-      if (m.detailWidth !== null) saveWidth(m.detailWidth);
+      const [key, width] = panel === "terminal" ? [TERMINAL_KEY, m.terminalWidth] : [DETAIL_KEY, m.detailWidth];
+      if (width !== null) saveWidth(key, width);
     };
     window.addEventListener("mousemove", drag);
     window.addEventListener("mouseup", drop);
   }
+
+  /** The columns right of the Git layer, measured: a layout kept from a wider window, or one
+   * the window shrank under, gives the stage back its narrowest. */
+  const columns: Attachment<HTMLElement> = (element) => {
+    const resized = new ResizeObserver(() => {
+      m.columnsWidth = element.clientWidth;
+      const fitted = group ? fitLayout(group.getLayout(), element.clientWidth) : null;
+      if (fitted) group?.setLayout(fitted);
+    });
+    resized.observe(element);
+    return () => resized.disconnect();
+  };
+
+  /** The stage, measured: both panels fit to its width. */
+  const stage: Attachment<HTMLElement> = (element) => {
+    const resized = new ResizeObserver(() => (m.stageWidth = element.clientWidth));
+    resized.observe(element);
+    return () => resized.disconnect();
+  };
 
   const title = $derived.by(() => {
     if (shown.kind === "run") return `Run ${shown.run}`;
@@ -366,6 +444,30 @@
     { id: "main.open-id", group: "Main area", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
     { id: "main.run", group: "Main area", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
     {
+      id: "terminal.toggle",
+      group: "Terminal",
+      label: m.terminal ? "Collapse the terminal" : "Expand the terminal",
+      enabled: () => worktree !== null,
+      run: () => (m.terminal = !m.terminal),
+    },
+    {
+      id: "terminal.focus",
+      group: "Terminal",
+      label: "Focus the terminal",
+      enabled: () => worktree !== null,
+      run: () => {
+        m.terminal = true;
+        void focus("terminal");
+      },
+    },
+    {
+      id: "worktree.remove",
+      group: "Terminal",
+      label: "Remove the shown worktree…",
+      enabled: () => worktree !== null,
+      run: () => (m.removing = worktree),
+    },
+    {
       id: "main.close",
       group: "Main area",
       label: "Close the Detail",
@@ -376,95 +478,118 @@
   ]);
 </script>
 
-<div class="monitor">
-  <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
-    <Split defaultSize={24} minSize={12}>
-      <Pane
-        bind:query={() => query, setQuery}
-        {filled}
-        onselect={open}
-        ontoggle={toggle}
-        onchoose={choose}
-        onopen={openWaiting}
-        onmove={move}
-        onstep={step}
-        onmain={() => void focus("main")}
-      />
-    </Split>
-    <PaneResizer class="resizer" />
-    <Split defaultSize={76} minSize={30}>
-      <div class="stage">
-        <Panel
-          {title}
-          label="Main area"
-          focused={m.focus === "main"}
-          {notice}
-          bind:noticeOpen={m.noticeOpen}
-          bind:element={panes.main}
-          onfocus={() => m.focus !== "detail" && (m.focus = "main")}
-          onkeydown={mainKey}
-        >
-          {#snippet actions()}
-            {#if (shown.kind === "request" || shown.kind === "review") && !m.settings}
-              <button class="button small" onclick={closeMain}>Close <kbd>Esc</kbd></button>
-            {/if}
-          {/snippet}
-          {#if shown.kind === "run"}
-            {#if run}
-              <RunView {run} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
-            {:else if view?.missing}
-              <p class="empty">This Run cannot be read; choose another.</p>
+<div class="monitor" style:--git-width="{GIT}px">
+  <GitLayer {worktree} />
+  <div class="split" {@attach columns}>
+    <PaneGroup bind:this={group} direction="horizontal" autoSaveId="monitor-layout" class="columns">
+      <Split defaultSize={24} minSize={PANE_MIN} maxSize={shares.paneMax}>
+        <Pane
+          bind:query={() => query, setQuery}
+          {filled}
+          onselect={open}
+          ontoggle={toggle}
+          onchoose={choose}
+          onopen={openWaiting}
+          onmove={move}
+          onstep={step}
+          onmain={() => void focus("main")}
+        />
+      </Split>
+      <PaneResizer class="resizer" />
+      <Split defaultSize={76} minSize={shares.stageMin}>
+        <div class="stage" style:--covered-left="{coveredLeft}px" {@attach stage}>
+          <Panel
+            {title}
+            label="Main area"
+            focused={m.focus === "main"}
+            {notice}
+            bind:noticeOpen={m.noticeOpen}
+            bind:element={panes.main}
+            onfocus={() => m.focus !== "detail" && (m.focus = "main")}
+            onkeydown={mainKey}
+          >
+            {#snippet actions()}
+              {#if (shown.kind === "request" || shown.kind === "review") && !m.settings}
+                <button class="button small" onclick={closeMain}>Close <kbd>Esc</kbd></button>
+              {/if}
+            {/snippet}
+            {#if shown.kind === "run"}
+              {#if run}
+                <RunView {run} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
+              {:else if view?.missing}
+                <p class="empty">This Run cannot be read; choose another.</p>
+              {:else}
+                <p class="empty">Loading the Run…</p>
+              {/if}
+            {:else if shown.kind === "current"}
+              <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
+            {:else if shown.kind === "review"}
+              {#if review}
+                <div class="review">
+                  {#if review.view}<p class="crumb">{review.view.title} · Artifact {review.view.artifact}</p>{/if}
+                  {#key review}
+                    <HumanDetail {review} active={!m.settings} onback={() => void focus("pane")} />
+                  {/key}
+                </div>
+              {/if}
+            {:else if shown.kind === "request"}
+              {#key shown.detail.request}
+                <RecordDetail detail={shown.detail} bind:technical={m.folds.technical} bind:pending={m.folds.pending} bind:log={m.folds.log} bind:debug={m.folds.debug} />
+              {/key}
             {:else}
-              <p class="empty">Loading the Run…</p>
+              <p class="empty">Choose a branch or a waiting review in the Pane.</p>
             {/if}
-          {:else if shown.kind === "current"}
-            <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
-          {:else if shown.kind === "review"}
-            {#if review}
-              <div class="review">
-                {#if review.view}<p class="crumb">{review.view.title} · Artifact {review.view.artifact}</p>{/if}
-                {#key review}
-                  <HumanDetail {review} active={!m.settings} onback={() => void focus("pane")} />
-                {/key}
-              </div>
-            {/if}
-          {:else if shown.kind === "request"}
-            {#key shown.detail.request}
-              <RecordDetail detail={shown.detail} bind:technical={m.folds.technical} bind:pending={m.folds.pending} bind:log={m.folds.log} bind:debug={m.folds.debug} />
-            {/key}
-          {:else}
-            <p class="empty">Choose a branch or a waiting review in the Pane.</p>
+          </Panel>
+          {#if worktree !== null && branch}
+            <TerminalPanel {worktree} name={nameOf(branch)} width={widths.terminal} onmoved={followAgent} ongrab={(event) => grab(event, "terminal")} />
           {/if}
-        </Panel>
-        {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
-          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
-            <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
-                 the resize cursor. -->
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onmousedown={grab}></div>
-            <DetailPane
-              source={m.opened.source}
-              {revision}
-              {branch}
-              node={m.opened.node}
-              tab={m.opened.tab}
-              focused={m.focus === "detail"}
-              active={!m.settings}
-              review={reviewOf}
-              openReview={noteReview}
-              bind:element={panes.detail}
-              onfocus={() => (m.focus = "detail")}
-              ontab={showTab}
-              onopen={openNode}
-              onback={closeDetail}
-              ongone={() => (m.opened = null)}
-            />
-          </aside>
-        {/if}
-      </div>
-    </Split>
-  </PaneGroup>
+          {#if m.opened && source && detailShown}
+            {@const width = widths.detail ?? m.detailWidth}
+            <aside class="dock" aria-label="Detail" style:--detail-width={width === null ? null : `${width}px`}>
+              <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
+                   the resize cursor. -->
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+              <div class="edge" role="separator" aria-orientation="vertical" aria-label="Detail width" onmousedown={(event) => grab(event, "detail")}></div>
+              <DetailPane
+                source={m.opened.source}
+                {revision}
+                {branch}
+                node={m.opened.node}
+                tab={m.opened.tab}
+                focused={m.focus === "detail"}
+                active={!m.settings}
+                review={reviewOf}
+                openReview={noteReview}
+                bind:element={panes.detail}
+                onfocus={() => (m.focus = "detail")}
+                ontab={showTab}
+                onopen={openNode}
+                onback={closeDetail}
+                ongone={() => (m.opened = null)}
+              />
+            </aside>
+          {/if}
+        </div>
+      </Split>
+    </PaneGroup>
+  </div>
 </div>
+
+<Dialog.Root open={m.removing !== null} onOpenChange={(open) => !open && (m.removing = null)}>
+  <Dialog.Portal>
+    <Dialog.Overlay class="overlay" />
+    <Dialog.Content class="dialog">
+      <Dialog.Title class="dialog-title">Remove this worktree?</Dialog.Title>
+      <p>
+        <code>{m.removing}</code> is removed with its folder, and its terminal ends with everything running in it. Its branch stays.
+      </p>
+      <div class="dialog-actions">
+        <Dialog.Close class="button">Cancel</Dialog.Close>
+        <button class="button primary" onclick={() => void remove()}>Remove</button>
+      </div>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
 
 <Dialog.Root bind:open={app.asking}>
   <Dialog.Portal>
@@ -500,10 +625,17 @@
 </Dialog.Root>
 
 <style>
+  /* The Git layer keeps its width; the Pane and the stage share the rest. */
   .monitor {
     height: 100%;
     min-height: 0;
     min-width: 0;
+    display: grid;
+    grid-template-columns: var(--git-width) minmax(0, 1fr);
+  }
+  .split {
+    min-width: 0;
+    min-height: 0;
   }
   :global(.columns) {
     min-height: 0;

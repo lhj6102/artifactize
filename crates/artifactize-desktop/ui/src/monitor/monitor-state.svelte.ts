@@ -1,11 +1,11 @@
 // What the window's one screen holds of its own: where focus is, the Pane's selected entry,
-// what the Main area shows, the open Detail with its tab and width, and whether the notice
-// shows in full. One owner, kept in the AppState; the snapshot it shows is the Browse.
+// what the Main area shows, the open Detail with its tab and width, the terminal panel and its
+// width, the sizes the layout fits to, and whether the notice shows in full. One owner, kept in the AppState; the snapshot it shows is the Browse.
 import { SvelteSet } from "svelte/reactivity";
 import type { BranchKey, Chip, DetailView, Source } from "../ipc/client";
-import { loadWidth } from "./detail-width";
+import { DETAIL_KEY, TERMINAL_KEY, loadWidth } from "./detail-width";
 
-export type Focus = "pane" | "main" | "detail";
+export type Focus = "pane" | "main" | "detail" | "terminal";
 
 /** The Pane's selected entry: a branch, one entry of an expanded branch's timeline (a Run by
  * its ID, the Current as `current`), or a waiting review. */
@@ -60,7 +60,16 @@ export class MonitorState {
   /** The Detail floating over the graph. */
   opened = $state.raw<Opened | null>(null);
   /** The Detail's dragged width in pixels, or `null` for its default. */
-  detailWidth = $state<number | null>(loadWidth());
+  detailWidth = $state<number | null>(loadWidth(DETAIL_KEY));
+  /** The terminal panel floats over the graph's left side; collapsed, it only detaches. */
+  terminal = $state(true);
+  /** The terminal panel's dragged width in pixels, or `null` for its default. */
+  terminalWidth = $state<number | null>(loadWidth(TERMINAL_KEY));
+  /** The columns' and the stage's widths in pixels, as last measured; 0 before. */
+  columnsWidth = $state(0);
+  stageWidth = $state(0);
+  /** The worktree whose removal waits for the person's confirmation. */
+  removing = $state<string | null>(null);
   /** The notice shows in full rather than cut to one line. */
   noticeOpen = $state(false);
   /** The read-only request's folds. */
@@ -74,5 +83,5 @@ export class MonitorState {
   /** What the launch asked for was opened: only the first snapshot opens it. */
   started = $state(false);
   /** The parts focus moves into. */
-  readonly panes: { pane?: HTMLElement; main?: HTMLElement; detail?: HTMLElement; search?: HTMLInputElement } = $state({});
+  readonly panes: { pane?: HTMLElement; main?: HTMLElement; detail?: HTMLElement; terminal?: HTMLElement; search?: HTMLInputElement } = $state({});
 }

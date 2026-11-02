@@ -4,7 +4,7 @@
   // focused node does what a click does. Its first view shows the whole graph in its canvas; the
   // Detail floats over the canvas and takes no part in it. From then on only the person moves the
   // camera, by panning, zooming, Fit View or opening what its find field (Ctrl+F) found: that
-  // brings the Artifact to the middle of the graph left of the Detail.
+  // brings the Artifact to the middle of the graph between the terminal and the Detail.
   //
   // A graph of more Artifacts than the window keeps as elements (a Run of tens of thousands)
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
@@ -241,8 +241,8 @@
   }
 
   /** Open what the find field found, close the field, and bring the Artifact (its first copy)
-   * to the middle of the graph left of the Detail once the Detail is there; the keyboard goes
-   * to the Detail. */
+   * to the middle of the graph between the terminal and the Detail once the Detail is there;
+   * the keyboard goes to the Detail. */
   async function choose(found: Found) {
     onopen(found.node, found.tab);
     m.finding = false;
@@ -251,8 +251,8 @@
     const [at, canvas] = [first === undefined ? undefined : rects.get(first), v.canvas];
     if (at && canvas) {
       const point = { x: at.x + at.width / 2, y: at.y + at.height / 2 };
-      const cover = m.panes.detail?.getBoundingClientRect() ?? null;
-      void flow.setViewport(centred(point, canvas.getBoundingClientRect(), cover, flow.getViewport().zoom, READABLE, MAX_ZOOM), { duration: 0 });
+      const covers = [m.panes.terminal, m.panes.detail].map((panel) => panel?.getBoundingClientRect() ?? null);
+      void flow.setViewport(centred(point, canvas.getBoundingClientRect(), covers, flow.getViewport().zoom, READABLE, MAX_ZOOM), { duration: 0 });
     }
     m.panes.detail?.focus();
   }
@@ -358,9 +358,13 @@
     outline-offset: 2px;
     border-radius: var(--radius);
   }
+  /* The legend and the camera's controls stay right of the terminal floating over the canvas. */
+  .canvas :global(.svelte-flow__controls) {
+    left: var(--covered-left, 0px);
+  }
   .legend {
     position: absolute;
-    left: 8px;
+    left: calc(8px + var(--covered-left, 0px));
     top: 8px;
     display: flex;
     flex-wrap: wrap;

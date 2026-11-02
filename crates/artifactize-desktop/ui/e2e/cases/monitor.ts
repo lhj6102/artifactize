@@ -295,7 +295,7 @@ export const scenarios: Scenario[] = [
       await openReview();
       // A normal smaller window makes the result form scroll the log out of view,
       // as on shorter desktops. Every copy action must bring its own target back.
-      await browser.setWindowSize(1100, 720);
+      await browser.setWindowSize(1280, 720);
       await afterRender(browser);
       const notes = await tool("notes");
       const ends = async () => (await toolLog()).rows.filter((row) => row.kind === "end").length;
