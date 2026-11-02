@@ -118,6 +118,8 @@ fn harness(command: &TerminalCommand) -> Option<Harness> {
 // timestamp alone is not: concurrent agents may be working in the very same directory.
 fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) -> Option<String> {
     let requested = requested(harness, command)?;
+    // An unknown directory proves nothing: the session must name the very directory.
+    let cwd = cwd?;
     let home = platform::home_directory()?;
     let root = match harness {
         Harness::ClaudeCode => platform::environment::var("CLAUDE_CONFIG_DIR")
@@ -154,7 +156,7 @@ fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) 
                         }
                         Harness::Codex => break,
                     };
-                    if id.as_deref() == Some(requested) && directory.as_deref() == cwd {
+                    if id.as_deref() == Some(requested) && directory.as_deref() == Some(cwd) {
                         return id;
                     }
                 }
