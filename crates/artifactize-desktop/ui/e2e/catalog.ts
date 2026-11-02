@@ -19,18 +19,22 @@ import { scenarios as branches } from "./cases/branches.ts";
 import { scenarios as release } from "./cases/release.ts";
 import { scenarios as workbench } from "./cases/workbench.ts";
 import type { Scenario } from "./scenario.ts";
+import { supports } from "./platform.ts";
 
-export const scenarios: Scenario[] = [
+const declared: Scenario[] = [
   ...accounts, ...settings, ...currentGraph, ...graph, ...navigation, ...states,
   ...detailContent, ...catalogLayout, ...monitor, ...review, ...canonicalReview, ...humanSubmitFocus, ...launch,
   ...requests, ...search, ...palette, ...branches, ...release, ...workbench,
 ];
 
 const ids = new Set<string>();
-for (const item of scenarios) {
+for (const item of declared) {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(item.id) || ids.has(item.id)) throw new Error(`invalid or duplicate desktop scenario id: ${item.id}`);
   ids.add(item.id);
 }
+
+/** The scenarios this system can run: a case that needs what it does not offer is left out. */
+export const scenarios: Scenario[] = declared.filter((item) => supports(item.needs));
 
 export function selectedScenarios(selected: string[]): Scenario[] {
   if (selected.length === 0) return scenarios;

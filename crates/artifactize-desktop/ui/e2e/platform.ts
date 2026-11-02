@@ -901,18 +901,48 @@ export function quietShell(root: NativePath): void {
   writeFileSync(join(makeDirectory(nativePath(root, "home"), { private: true }), ".zshrc"), "");
 }
 
-/** Whether the OS tells a terminal host its foreground program and directory, which a restore
- * offer's rerun and resume commands and an agent's move come from. Linux and macOS do;
- * Windows does not, and its offers keep only the fresh shell. */
-export const terminalForeground = !WINDOWS;
+/** What a scenario may need of the system it runs on, which decides whether it runs there:
+ * - `terminal-foreground`: the OS tells a terminal host its foreground program and directory,
+ *   which a restore offer's rerun and resume commands and an agent's move come from (Linux and
+ *   macOS; Windows does not);
+ * - `no-terminal-foreground`: it does not, so a restore offer keeps only the fresh shell;
+ * - `breakaway-job`: the scenario's batch can run inside a Job that refuses to let anything it
+ *   starts leave it (only Windows has Jobs). */
+export type Capability = "terminal-foreground" | "no-terminal-foreground" | "breakaway-job";
 
-/** The fixture environment `env` with harness stand-ins first on its PATH: a declared agent
- * program named for each harness, `claude` and `codex`, running the Node.js script `scripts`
- * names for it with its arguments. On Unix each shim execs Node, so the terminal sees Node
- * running a script named for the harness, as with the real ones. */
-export function agentStandIns(root: NativePath, env: Environment, scripts: Record<"claude" | "codex", NativePath>): Environment {
+/** Whether this system offers everything in `needs`. */
+export function supports(needs: readonly Capability[] = []): boolean {
+  const offered: Record<Capability, boolean> = { "terminal-foreground": !WINDOWS, "no-terminal-foreground": WINDOWS, "breakaway-job": WINDOWS };
+  return needs.every((need) => offered[need]);
+}
+
+/** The harness stand-ins of a fixture: declared agent programs named `claude` and `codex`, first
+ * on the PATH of the returned environment. Each says what it was started with and where, adds
+ * a line to `runs` for each start (its name, arguments and directory as a portable path), and
+ * works for a few seconds; `--move NAME` moves it into the sibling folder NAME, where it keeps
+ * working; `--hold PORT` connects to that loopback port and keeps working until it is ended.
+ * On Unix each shim execs Node on a script named for its harness, as the real ones run. */
+export function agentStandIns(root: NativePath, env: Environment, runs: NativePath): Environment {
+  const scripts = makeDirectory(nativePath(root, "agent"));
   const bin = makeDirectory(nativePath(root, "agent-bin"));
-  for (const [name, script] of Object.entries(scripts)) {
+  for (const name of ["claude", "codex"]) {
+    const script = join(scripts, `${name}.mjs`);
+    writeFileSync(script, `// The ${name} stand-in: the fixture's declared agent program.
+import { appendFileSync } from "node:fs";
+import { connect } from "node:net";
+import { join, sep } from "node:path";
+const args = process.argv.slice(2);
+const where = () => process.cwd().split(sep).join("/");
+appendFileSync(${JSON.stringify(runs)}, ${JSON.stringify(name)} + "\\t" + args.join(" ") + "\\t" + where() + "\\n");
+console.log("agent " + args.join("+") + " at " + where());
+if (args[0] === "--move") {
+  setTimeout(() => process.chdir(join(process.cwd(), "..", args[1])), 1500);
+  setInterval(() => {}, 60000);
+} else if (args[0] === "--hold") {
+  connect(Number(args[1]), "127.0.0.1");
+  setInterval(() => {}, 60000);
+} else setTimeout(() => console.log("agent done " + args.join("+")), 2500);
+`);
     if (WINDOWS) writeFileSync(join(bin, `${name}.cmd`), `@"%DESKTOP_TEST_NODE%" "${script}" %*\r\n`);
     else writeFileSync(join(bin, name), `#!/bin/sh\nexec "$DESKTOP_TEST_NODE" ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
   }
@@ -920,26 +950,29 @@ export function agentStandIns(root: NativePath, env: Environment, scripts: Recor
   return withVariable({ ...env, DESKTOP_TEST_NODE: process.execPath }, "PATH", `${bin}${delimiter}${path}`);
 }
 
-/** Whether a test can start the app inside a Job that refuses to let the app's terminals
- * leave it: only Windows has Jobs. */
-export const breakawayRefusable = WINDOWS;
+/** The starts the stand-ins recorded in `runs`, in order: each harness, arguments and directory. */
+export function agentStarts(runs: NativePath): { harness: string; args: string; cwd: string }[] {
+  return (existsSync(runs) ? readFileSync(runs, "utf8") : "").split("\n").filter(Boolean).map((line) => {
+    const [harness, args, cwd] = line.split("\t");
+    return { harness, args, cwd };
+  });
+}
 
-/** Windows only: an executable, compiled under `root` from C# by Windows PowerShell, that puts
- * itself in a new Job that kills its processes when it closes and allows no breakaway, then
- * runs `app` with the arguments it was given, inside that Job, and exits with it. The app's
- * terminal hosts cannot leave the Job, so they end when the app does. Started in the app's
- * place, it is given the app through `DESKTOP_TEST_JOB_APP` in the returned environment. */
-export function appInJob(root: NativePath, app: NativePath, env: Environment): { app: NativePath; env: Environment } {
+/** Windows only (`breakaway-job`): an executable, compiled into `directory` from C# by Windows
+ * PowerShell, that puts itself in a new Job that kills its processes when it closes and allows
+ * no breakaway, then runs the program and arguments it is given inside that Job and exits with
+ * it. A scenario batch run through it has the WDIO service start the real app inside the Job,
+ * so the app's terminals cannot leave it. */
+export function breakawayJobRunner(directory: NativePath): NativePath {
   if (!WINDOWS) throw new Error("only Windows has Jobs");
-  const directory = makeDirectory(nativePath(root, "job"));
-  const source = nativePath(directory, "AppInJob.cs");
-  const wrapper = nativePath(directory, "app-in-job.exe");
+  const source = nativePath(directory, "InJob.cs");
+  const wrapper = nativePath(directory, "in-job.exe");
   writeFileSync(source, `using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class AppInJob {
+public static class InJob {
   [StructLayout(LayoutKind.Sequential)]
   struct BasicLimits {
     public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
@@ -994,13 +1027,12 @@ public static class AppInJob {
       Console.Error.WriteLine("the Job could not be made: " + Marshal.GetLastWin32Error());
       return 2;
     }
-    var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DESKTOP_TEST_JOB_APP")) {
-      UseShellExecute = false,
-      Arguments = string.Join(" ", Array.ConvertAll(args, Quote)),
-    };
-    using (var app = Process.Start(start)) {
-      app.WaitForExit();
-      return app.ExitCode;
+    var rest = new string[args.Length - 1];
+    Array.Copy(args, 1, rest, 0, rest.Length);
+    var start = new ProcessStartInfo(args[0]) { UseShellExecute = false, Arguments = string.Join(" ", Array.ConvertAll(rest, Quote)) };
+    using (var program = Process.Start(start)) {
+      program.WaitForExit();
+      return program.ExitCode;
     }
   }
 }
@@ -1010,7 +1042,7 @@ public static class AppInJob {
     + "Add-Type -TypeDefinition ([IO.File]::ReadAllText($Source)) -OutputAssembly $Output -OutputType ConsoleApplication\n");
   // Windows PowerShell's Add-Type compiles a console program; PowerShell 7's does not.
   runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", compile, "-Source", source, "-Output", wrapper]);
-  return { app: wrapper, env: { ...env, DESKTOP_TEST_JOB_APP: app } };
+  return wrapper;
 }
 
 /** The evaluated test-build device reaches only the engine's text-input API. This

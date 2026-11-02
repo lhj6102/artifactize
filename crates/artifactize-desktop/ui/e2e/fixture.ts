@@ -9,7 +9,7 @@ import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
 import {
-  agentStandIns, canonicalPath, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
+  agentStandIns, agentStarts, canonicalPath, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
   updateDatabase, writeText, type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
@@ -206,11 +206,9 @@ export function createGraph(): Fixture {
 
 /** The workbench's repository: master with two commits, the first tagged `v1`, and a linked
  * worktree `side` on branch `side` with a commit of its own, each commit an hour after the
- * last; no Run yet. Claude Code and Codex stand-ins are first on the app's PATH: each says what
- * it was started with and where, records each start in `agent-runs.txt` (its name, arguments
- * and directory), and works for a few seconds; started with `--move NAME` it moves into the
- * sibling folder NAME and keeps working there. The fixture home holds each harness's own record
- * of the session `session` in the repository. */
+ * last; no Run yet. Claude Code and Codex stand-ins ([`agentStandIns`]) are first on the app's
+ * PATH, recording their starts in `agent-runs.txt`. The fixture home holds each harness's own
+ * record of the session `session` in the repository. */
 export type Workbench = Fixture & { side: NativePath; runs: NativePath; session: string; env: Environment };
 export function createWorkbench(): Workbench {
   return prepareFixture((root) => {
@@ -226,22 +224,6 @@ export function createWorkbench(): Workbench {
     writeText(nativePath(side, "docs", "notes.md"), "Documentation of the side.\n");
     gitAt(repo, "2026-01-01T12:00:00Z", "-C", side, "commit", "-qam", "Side work");
     const runs = nativePath(root, "agent-runs.txt");
-    const agents = makeDirectory(nativePath(root, "agent"));
-    const scripts = { claude: nativePath(agents, "claude.mjs"), codex: nativePath(agents, "codex.mjs") };
-    for (const script of Object.values(scripts)) {
-      writeText(script, `// A harness stand-in: the fixture's declared agent program, named as the harness it stands for.
-import { appendFileSync } from "node:fs";
-import { basename, join } from "node:path";
-const args = process.argv.slice(2);
-const tab = String.fromCharCode(9);
-appendFileSync(${JSON.stringify(runs)}, basename(process.argv[1], ".mjs") + tab + args.join(" ") + tab + process.cwd() + String.fromCharCode(10));
-console.log("agent " + args.join("+") + " at " + process.cwd());
-if (args[0] === "--move") {
-  setTimeout(() => process.chdir(join(process.cwd(), "..", args[1])), 1500);
-  setTimeout(() => {}, 120000);
-} else setTimeout(() => console.log("agent done " + args.join("+")), 2500);
-`);
-    }
     quietShell(root);
     // Each harness's own record of a session in the repository, as its metadata names it.
     const session = "0f1e2d3c-workbench";
@@ -250,14 +232,13 @@ if (args[0] === "--move") {
     writeText(nativePath(claude, `${session}.jsonl`), `${JSON.stringify({ type: "user", sessionId: session, cwd })}\n`);
     const codex = makeDirectory(nativePath(root, "home", ".codex", "sessions", "2026", "01", "01"));
     writeText(nativePath(codex, `rollout-2026-01-01T12-00-00-${session}.jsonl`), `${JSON.stringify({ type: "session_meta", payload: { id: session, cwd } })}\n`);
-    return { root, repo, state: nativePath(root, "state"), side, runs, session, env: agentStandIns(root, {}, scripts) };
+    return { root, repo, state: nativePath(root, "state"), side, runs, session, env: agentStandIns(root, {}, runs) };
   });
 }
 
 /** The starts of the workbench's `harness` stand-in, in order: its arguments and directory. */
 export function agentRuns(fixture: Workbench, harness: "claude" | "codex"): { args: string; cwd: string }[] {
-  return (readTextIfExists(fixture.runs) ?? "").split("\n").filter(Boolean).map((line) => line.split("\t"))
-    .filter(([name]) => name === harness).map(([, args, cwd]) => ({ args, cwd }));
+  return agentStarts(fixture.runs).filter((start) => start.harness === harness).map(({ args, cwd }) => ({ args, cwd }));
 }
 
 /** The branches of the workbench's repository, by name. */

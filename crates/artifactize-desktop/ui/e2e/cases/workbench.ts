@@ -4,14 +4,14 @@
 // it, offers what it can restore once it was gone and the worktree its agent moved to; and the
 // terminal panel's width, kept like the Detail's. Every case owns its fixture.
 import assert from "node:assert/strict";
-import { addFolder, agentRuns, app, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
+import { addFolder, agentRuns, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { scenario, type Scenario } from "../scenario.ts";
+import { needing, scenario, type Scenario } from "../scenario.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import {
-  appInJob, asNativePath, breakawayRefusable, childDirectories, exists, nameOf, nativePath, primaryModifier, terminalForeground, writeText,
+  asNativePath, childDirectories, exists, nameOf, nativePath, primaryModifier, serveLoopback, writeText, type LoopbackSocket,
 } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { camera, detail, FIND, findField, offCentre, TERMINAL } from "../graph-view.ts";
@@ -39,14 +39,12 @@ const marked = (commits: Commit[]) => commits.filter((commit) => commit.marked).
 const currentOf = (browser: WebdriverIO.Browser, name: string) =>
   browser.waitUntil(async () => (await mainTitle(browser)) === `Current · ${name}`, { timeout: 15000, timeoutMsg: `${name}'s Current shown` });
 
-/** The terminal and the graph's canvas: the panel floats over the canvas, which keeps the whole
- * Main area's width beneath it. */
+/** The graph's canvas, and whether the expanded terminal floats over it, inside its box. */
 function overGraph(browser: WebdriverIO.Browser) {
   return browser.execute((query) => {
     const panel = document.querySelector(query)?.getBoundingClientRect();
-    const canvas = document.querySelector(".monitor .graph > .canvas")?.getBoundingClientRect();
-    const stage = document.querySelector(".monitor .stage")!.getBoundingClientRect();
-    return !!panel && !!canvas && canvas.left < panel.left && canvas.right > panel.right && Math.abs(canvas.width - stage.width) <= 2;
+    const canvas = document.querySelector(".monitor .graph > .canvas")!.getBoundingClientRect();
+    return { over: !!panel && canvas.left < panel.left && canvas.right > panel.right, canvas: [canvas.left, canvas.width].map(Math.round) };
   }, TERMINAL);
 }
 
@@ -177,7 +175,8 @@ export const scenarios: Scenario[] = [
       await currentOf(browser, "repo  master");
       // Opened the first time it is shown: a shell over the graph's left side, the graph beneath.
       await terminalOf(browser, "repo / master");
-      assert.ok(await overGraph(browser), "the terminal floats over the graph, which keeps its width");
+      const floating = await overGraph(browser);
+      assert.ok(floating.over, `the terminal floats over the graph: ${JSON.stringify(floating)}`);
       await typeLine(browser, "echo master-mark");
       await printed(browser, "master-mark", "the shell ran what was typed");
 
@@ -187,6 +186,7 @@ export const scenarios: Scenario[] = [
       await typeLine(browser, "node -e \"const fs=require('fs');const t=setInterval(()=>{if(fs.existsSync('gate')){clearInterval(t);console.log('while-'+'collapsed');fs.writeFileSync('printed','')}},50)\"");
       await collapse(browser);
       assert.equal(await camera(browser), shown, "the graph as it was");
+      assert.deepEqual((await overGraph(browser)).canvas, floating.canvas, "the graph never shrank under the terminal");
       writeText(nativePath(fixture.repo, "gate"), "");
       await browser.waitUntil(() => exists(nativePath(fixture.repo, "printed")), { timeout: 30000, timeoutMsg: "the program printed while collapsed" });
       await expand(browser);
@@ -266,10 +266,10 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-TERMINAL-RESTORE; UX edges: E-TERMINAL-RESTORE-OFFER E-TERMINAL-TYPE E-TERMINAL-RESTORE-RUN E-TERMINAL-RESTORE-KEEP
+  // UX journey: J-TERMINAL-RESTORE; UX edges: E-TERMINAL-RESTORE-OFFER E-TERMINAL-TYPE E-TERMINAL-RESTORE-KEEP
   scenario<Workbench>(
     "workbench-terminal-restore",
-    "offers to rerun the last command or resume the agent's latest session once a terminal was gone, runs only the chosen one and drops the offer when the fresh shell is kept",
+    "offers a restore over a fresh shell once a terminal was gone, takes typing while the offer waits, and drops the offer when the fresh shell is kept, running nothing",
     prepare,
     async (browser, { data: fixture }) => {
       await currentOf(browser, "repo  master");
@@ -277,43 +277,46 @@ export const scenarios: Scenario[] = [
       // The agent runs, then the shell ends: the terminal is gone.
       await typeLine(browser, "claude --hello");
       await printed(browser, "agent done --hello", "the agent ran and finished");
-      assert.equal(agentRuns(fixture, "claude").length, 1);
       await endShell(browser);
-      /** Choose another worktree and the gone one again: a fresh shell with a restore offer. */
       const offer = await reopen(browser);
+      assert.ok(offer.buttons.includes("Keep the fresh shell"), JSON.stringify(offer));
       assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");
-      if (terminalForeground) {
-        assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
-        assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
-        assert.deepEqual(offer.buttons, ["Run the last command again", "Resume the latest Claude Code session", "Keep the fresh shell"]);
-      } else assert.deepEqual(offer.buttons, ["Keep the fresh shell"], "without the foreground program only the fresh shell");
       // The fresh shell takes what is typed while the offer waits.
       await typeLine(browser, "echo fresh-shell");
       await printed(browser, "fresh-shell", "the fresh shell ran what was typed");
       assert.notEqual((await terminal(browser))?.offer, null, "the offer still waits");
-
-      if (terminalForeground) {
-        // Resuming runs the agent's resume command in its directory, and the offer goes.
-        await browser.$(TERMINAL).$('button[aria-label="Resume the latest Claude Code session"]').click();
-        await browser.waitUntil(() => agentRuns(fixture, "claude").length === 2, { timeout: 30000, timeoutMsg: "the resume command ran" });
-        const [, resumed] = agentRuns(fixture, "claude");
-        assert.equal(resumed.args, "--continue");
-        assert.equal(resumed.cwd, agentRuns(fixture, "claude")[0].cwd, "in the agent's directory");
-        assert.equal((await terminal(browser))?.offer, null, "the offer is gone");
-        await printed(browser, "agent done --continue", "the resumed agent ran and finished");
-      }
-
       // Keeping the fresh shell drops the offer and runs nothing.
-      await endShell(browser);
-      const again = await reopen(browser);
-      const before = agentRuns(fixture, "claude").length;
-      assert.ok(again.buttons.includes("Keep the fresh shell"));
       await browser.$(TERMINAL).$("button=Keep the fresh shell").click();
       await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
       await typeLine(browser, "echo kept-shell");
       await printed(browser, "kept-shell", "the fresh shell kept");
-      assert.equal(agentRuns(fixture, "claude").length, before, "keeping the fresh shell ran nothing");
-      if (!terminalForeground) return;
+      assert.equal(agentRuns(fixture, "claude").length, 1, "keeping the fresh shell ran nothing");
+    },
+  ),
+
+  // UX journey: J-TERMINAL-RESTORE; UX edges: E-TERMINAL-RESTORE-OFFER E-TERMINAL-RESTORE-RUN
+  needing(["terminal-foreground"], scenario<Workbench>(
+    "workbench-terminal-restore-run",
+    "offers the last command from its directory and Claude Code's latest session, labelled so, or the session its records name, and runs the one chosen there",
+    prepare,
+    async (browser, { data: fixture }) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await typeLine(browser, "claude --hello");
+      await printed(browser, "agent done --hello", "the agent ran and finished");
+      await endShell(browser);
+      const offer = await reopen(browser);
+      assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
+      assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
+      assert.deepEqual(offer.buttons, ["Run the last command again", "Resume the latest Claude Code session", "Keep the fresh shell"]);
+      assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");
+      // Resuming runs the agent's resume command in its directory, and the offer goes.
+      await browser.$(TERMINAL).$('button[aria-label="Resume the latest Claude Code session"]').click();
+      await browser.waitUntil(() => agentRuns(fixture, "claude").length === 2, { timeout: 30000, timeoutMsg: "the resume command ran" });
+      const [first, resumed] = agentRuns(fixture, "claude");
+      assert.deepEqual(resumed, { args: "--continue", cwd: first.cwd }, "in the agent's directory");
+      assert.equal((await terminal(browser))?.offer, null, "the offer is gone");
+      await printed(browser, "agent done --continue", "the resumed agent ran and finished");
 
       // A session the agent's own records name for this directory resumes by its ID; rerunning
       // the last command runs it again where it ran.
@@ -326,13 +329,28 @@ export const scenarios: Scenario[] = [
       const runs = agentRuns(fixture, "claude").length;
       await browser.$(TERMINAL).$('button[aria-label="Run the last command again"]').click();
       await browser.waitUntil(() => agentRuns(fixture, "claude").length === runs + 1, { timeout: 30000, timeoutMsg: "the last command ran again" });
-      assert.deepEqual(agentRuns(fixture, "claude").at(-1), { args: `--resume ${fixture.session}`, cwd: agentRuns(fixture, "claude")[0].cwd }, "the same command where it ran");
+      assert.deepEqual(agentRuns(fixture, "claude").at(-1), { args: `--resume ${fixture.session}`, cwd: first.cwd }, "the same command where it ran");
       await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
     },
-  ),
+  )),
+
+  // UX journey: J-TERMINAL-RESTORE; UX edge: E-TERMINAL-RESTORE-OFFER
+  needing(["no-terminal-foreground"], scenario<Workbench>(
+    "workbench-terminal-restore-shell-only",
+    "offers only to keep the fresh shell where the system cannot tell which program ran in the terminal",
+    prepare,
+    async (browser) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await typeLine(browser, "claude --hello");
+      await printed(browser, "agent done --hello", "the agent ran and finished");
+      await endShell(browser);
+      assert.deepEqual((await reopen(browser)).buttons, ["Keep the fresh shell"], "the last command and its resume are unknown");
+    },
+  )),
 
   // UX journey: J-TERMINAL-MOVED; UX edges: E-TERMINAL-OPEN E-TERMINAL-MOVED E-TERMINAL-FOLLOW
-  scenario<Workbench>(
+  needing(["terminal-foreground"], scenario<Workbench>(
     "workbench-terminal-moved",
     "keeps the graph on the terminal's worktree when its agent moves to another, and opens the detected worktree with its own graph and terminal",
     prepare,
@@ -341,7 +359,6 @@ export const scenarios: Scenario[] = [
       await terminalOf(browser, "repo / master");
       await typeLine(browser, "claude --move side");
       await screenShows(browser, "agent --move+side at", "the agent started");
-      if (!terminalForeground) return;
       await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.includes("The agent moved to another worktree")) === true,
         { timeout: 30000, timeoutMsg: "the terminal offers the worktree its agent moved to" });
       assert.equal(await mainTitle(browser), "Current · repo  master", "the graph stays on the terminal's own worktree");
@@ -352,7 +369,7 @@ export const scenarios: Scenario[] = [
       await terminalOf(browser, "repo / side");
       assert.ok(!screenText(await terminal(browser)).includes("agent --move+side at"), "side's own terminal");
     },
-  ),
+  )),
 
   // UX journeys: J-RESIZE J-GRAPH-FIND J-TERMINAL; UX edges: E-TERMINAL-OPEN E-GRAPH-FIND-GO E-TERMINAL-WIDTH E-TERMINAL-COLLAPSE
   // E-TERMINAL-EXPAND E-MON-RESIZE
@@ -453,13 +470,17 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { width } }) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
-      await browser.waitUntil(async () => Math.abs(((await terminal(browser))?.box.width ?? 0) - width) <= 1,
-        { timeout: 15000, timeoutMsg: `the next launch restores the terminal's ${width}px` });
+      // Restored widths are kept within room for both panels and some graph: as wide as dragged
+      // where the Main area allows it.
+      const stage = await browser.execute(() => document.querySelector(".monitor .stage")!.getBoundingClientRect().width);
+      const fitted = Math.max(320, Math.min(width, Math.round(stage) - 12 - 96 - 12 - 320));
+      await browser.waitUntil(async () => Math.abs(((await terminal(browser))?.box.width ?? 0) - fitted) <= 1,
+        { timeout: 15000, timeoutMsg: `the next launch restores the terminal's ${width}px, fitted to a ${stage}px Main area as ${fitted}px` });
     },
   ),
 
   // UX journey: J-TERMINAL-RESTORE; UX edges: E-TERMINAL-RESTORE-OFFER E-TERMINAL-RESTORE-RUN
-  scenario<Workbench>(
+  needing(["terminal-foreground"], scenario<Workbench>(
     "workbench-terminal-restore-codex",
     "offers Codex's latest session, labelled so, as `codex resume --last`, and a session its records name as `codex resume ID`, and runs the one chosen",
     prepare,
@@ -470,10 +491,6 @@ export const scenarios: Scenario[] = [
       await printed(browser, "agent done --hello", "Codex ran and finished");
       await endShell(browser);
       const latest = await reopen(browser);
-      if (!terminalForeground) {
-        assert.deepEqual(latest.buttons, ["Keep the fresh shell"], "without the foreground program only the fresh shell");
-        return;
-      }
       assert.match(latest.text, /Resume the latest Codex session: codex resume --last/);
       assert.equal(agentRuns(fixture, "codex").length, 1, "offering runs nothing");
       await browser.$(TERMINAL).$('button[aria-label="Resume the latest Codex session"]').click();
@@ -492,7 +509,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => agentRuns(fixture, "codex").length === runs + 1, { timeout: 30000, timeoutMsg: "the session resumed" });
       assert.deepEqual(agentRuns(fixture, "codex").at(-1), { args: `resume ${fixture.session}`, cwd: first.cwd });
     },
-  ),
+  )),
 
   // UX journey: J-WORKTREE-REMOVE; UX edges: E-WORKTREE-REMOVE-ASK E-WORKTREE-REMOVE-CANCEL E-WORKTREE-REMOVE E-TERMINAL-REMOVED
   scenario<Workbench>(
@@ -533,10 +550,25 @@ export const scenarios: Scenario[] = [
       await refused(browser, "the dirty worktree refused");
       assert.ok(exists(fixture.side) && await branch(browser, "repo  side"), "the refused worktree stays");
 
-      // A clean worktree goes with its folder, and its terminal ends; its own branch stays.
+      // A clean worktree goes with its folder, and its terminal ends with the program running in
+      // it, which holds a connection open until it ends; its own branch stays.
       git(fixture.repo, "-C", fixture.side, "checkout", "--", ".");
-      await askRemoval(browser);
-      await confirmRemoval(browser);
+      const held: LoopbackSocket[] = [];
+      let closed = 0;
+      const server = await serveLoopback((socket) => {
+        held.push(socket);
+        socket.on("close", () => { closed += 1; });
+      });
+      try {
+        await typeLine(browser, `claude --hold ${server.port}`);
+        await browser.waitUntil(() => held.length === 1, { timeout: 30000, timeoutMsg: "the program in side's terminal runs" });
+        await askRemoval(browser);
+        await confirmRemoval(browser);
+        await browser.waitUntil(() => closed === 1, { timeout: 30000, timeoutMsg: "the program in the removed worktree's terminal ended" });
+      } finally {
+        for (const socket of held) socket.destroy();
+        await server.close();
+      }
       await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
         { timeout: 30000, timeoutMsg: "the removed worktree's terminal ended" });
       await browser.waitUntil(async () => (await branch(browser, "repo  side")) === undefined, { timeout: 30000, timeoutMsg: "gone from the Pane" });
@@ -577,19 +609,12 @@ export const scenarios: Scenario[] = [
       assert.ok(branchNames(fixture).includes("kept-name"), "a renamed generated branch stays");
     },
   ),
-];
 
-/** Only where the app can be started inside a Job that refuses its terminals' breakaway. */
-const inJob: Scenario[] = [
   // UX journey: J-TERMINAL-DETACH; UX edges: E-TERMINAL-NOT-PERSISTENT E-QUIT-CLEAN
-  scenario<Workbench>(
+  needing(["breakaway-job"], scenario<Workbench>(
     "workbench-terminal-not-persistent",
-    "says a terminal ends with the app when the system keeps it in the app's Job, and it does end when the app closes",
-    async () => {
-      const fixture = createWorkbench();
-      const wrapped = appInJob(fixture.root, app(), fixture.env);
-      return { fixture, args: ["--repo", fixture.repo], env: wrapped.env, app: wrapped.app, data: fixture };
-    },
+    "says a worktree's terminal ends when the app closes when the system keeps it in the Job the app runs in, and quits at once",
+    prepare,
     async (browser) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
@@ -602,13 +627,5 @@ const inJob: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
       await sessionEndedByApp(browser, () => browser.keys(["q"]));
     },
-    async (browser) => {
-      // The terminal ended with the app: the next launch finds it gone and offers a fresh shell.
-      await currentOf(browser, "repo  master");
-      await browser.waitUntil(async () => (await terminal(browser))?.offer !== null && (await terminal(browser))?.heading === "Terminal · repo / master",
-        { timeout: 30000, timeoutMsg: "the terminal that ended with the app is gone" });
-      assert.ok(!shows(await terminal(browser), "in-the-job"), "not the terminal of the last launch");
-    },
-  ),
+  )),
 ];
-if (breakawayRefusable) scenarios.push(...inJob);

@@ -8,6 +8,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
 import { aside, camera, collapseTerminal, detail, graphShown, nodeAt } from "../graph-view.ts";
 import { afterRender } from "../keys.ts";
+import { gitLayer } from "../workbench-view.ts";
 
 function slot(browser: WebdriverIO.Browser) {
   return browser.execute(() => {
@@ -23,7 +24,7 @@ function slot(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-MAIN-RUN
+  // UX journeys: J-MAIN-RUN J-GIT-LAYER
   scenario<Record<string, never>>(
     "main-nothing-chosen",
     "keeps the graph's place and its divider with nothing chosen, and says so",
@@ -35,6 +36,9 @@ export const scenarios: Scenario[] = [
       assert.ok(shown.divider && shown.bounds[2] > 0 && shown.bounds[3] > 0);
       assert.equal(await mainTitle(browser), "Nothing chosen");
       assert.equal(await browser.$(".monitor .graph").isExisting(), false);
+      // With no worktree chosen, the Git layer says so and lists no history.
+      const layer = await gitLayer(browser);
+      assert.deepEqual({ commits: layer.commits, notes: layer.notes }, { commits: [], notes: ["Choose a worktree to see its history."] });
     },
   ),
   // UX journey: J-MAIN-RUN

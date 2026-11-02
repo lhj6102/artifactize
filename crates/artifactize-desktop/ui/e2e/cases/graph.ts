@@ -63,6 +63,10 @@ async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
       label: node.getAttribute("aria-label") ?? "",
       open: !!node.querySelector(".open"),
       light: node.dataset.light ?? "",
+      // Where its name is drawn, and the colour of its outline and of its dot.
+      title: (node.querySelector(".title") ?? node.querySelector(".name"))?.getBoundingClientRect().toJSON() as DOMRect,
+      outline: getComputedStyle(node.firstElementChild ?? node).borderTopColor,
+      dot: node.querySelector(".dot") ? getComputedStyle(node.querySelector(".dot")!).backgroundColor : "",
     }])), root);
   let shown: Awaited<ReturnType<typeof read>> = {};
   await browser.waitUntil(async () => {
@@ -247,10 +251,29 @@ export const scenarios: Scenario[] = [
       assert.ok(apart(drawn["a:suite"].rect, drawn["a:docs"].rect), "the wholes' boxes do not meet");
       for (const whole of ["a:suite", "a:docs"]) assert.ok(apart(drawn["a:lib"].rect, drawn[whole].rect), `lib stands outside ${whole}`);
       assert.ok(apart(drawn["a:suite/a:app"].rect, drawn["a:suite/a:site"].rect), "suite's parts do not meet");
-      // A whole shows its name at its top, lit as its parts are, and is read aloud as a node is.
+      // A whole shows its name at its top, above its parts, in its verdict's colour as a node of
+      // that verdict is drawn, and is read aloud as a node is.
       assert.equal(drawn["a:suite"].text, "suite");
       assert.equal(drawn["a:suite"].light, "green");
       assert.equal(drawn["a:suite"].label, "suite: GREEN");
+      const [box, title] = [drawn["a:suite"].rect, drawn["a:suite"].title];
+      assert.ok(within(title, box) && title.top - box.top <= 4, `suite's name at the top of its box: ${JSON.stringify({ title, box })}`);
+      const name = await browser.execute(() => document.querySelector('.graph .svelte-flow__node[data-id="a:suite"] .name')!.getBoundingClientRect().toJSON() as DOMRect);
+      assert.ok(["a:suite/a:app", "a:suite/a:site"].every((part) => drawn[part].rect.top >= name.bottom),
+        `its parts below its name: ${JSON.stringify({ name, parts: [drawn["a:suite/a:app"].rect, drawn["a:suite/a:site"].rect] })}`);
+      assert.equal(drawn["a:suite"].outline, drawn["a:lib"].outline, "suite's box outlined in GREEN, as the GREEN node lib is");
+      assert.equal(drawn["a:suite"].dot, drawn["a:lib"].dot, "suite's name marked in GREEN, as lib's is");
+      // An edge into a whole meets its box: site's edge to app reaches the side of app's box,
+      // where the box takes edges in.
+      const meets = await browser.execute((edge, whole) => {
+        const path = document.querySelector(`.graph .svelte-flow__edge[data-id="${edge}"] path.svelte-flow__edge-path`)?.getBoundingClientRect();
+        const handle = document.querySelector(`.graph .svelte-flow__node[data-id="${whole}"] .svelte-flow__handle.target`)?.getBoundingClientRect();
+        return path && handle ? { right: path.right, top: path.top, bottom: path.bottom, x: handle.left + handle.width / 2, y: handle.top + handle.height / 2 } : null;
+      }, "a:suite/a:site>a:suite/a:app", "a:suite/a:app");
+      const app = drawn["a:suite/a:app"].rect;
+      assert.ok(meets && Math.abs(meets.x - app.left) <= 4 && meets.y > app.top && meets.y < app.bottom
+        && Math.abs(meets.right - meets.x) <= 4 && meets.y >= meets.top - 2 && meets.y <= meets.bottom + 2,
+        `site's edge ends on app's box: ${JSON.stringify({ meets, app })}`);
       assert.deepEqual([drawn["a:suite/a:site"].artifact, drawn["a:docs/a:site"].artifact], ["a:site", "a:site"], "both copies are site");
       // Each copy of site carries site's edges: from lib outside every box into it, and out of
       // it to app, within suite and across from docs into suite.

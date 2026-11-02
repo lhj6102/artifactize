@@ -1,5 +1,5 @@
 import type { Fixture } from "./fixture.ts";
-import type { Environment, NativePath } from "./platform.ts";
+import type { Capability, Environment, NativePath } from "./platform.ts";
 
 /** Domain inputs prepared before the service launches a capability's app. */
 export type Prepared<T = unknown> = {
@@ -23,7 +23,14 @@ export type Scenario = {
   run: (browser: WebdriverIO.Browser, input: Prepared) => Promise<void>;
   /** A second service-owned app lifetime, on this case's still-owned fixture. */
   relaunched?: (browser: WebdriverIO.Browser, input: Prepared) => Promise<void>;
+  /** What the case needs of the system; it runs only where all of it is offered. */
+  needs?: Capability[];
 };
+
+/** `item`, run only on systems that offer everything in `needs`. */
+export function needing(needs: Capability[], item: Scenario): Scenario {
+  return { ...item, needs };
+}
 
 export function scenario<T>(
   id: string,

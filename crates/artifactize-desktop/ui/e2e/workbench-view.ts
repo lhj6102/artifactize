@@ -12,7 +12,7 @@ export const TAB = '.stage button[aria-label="Expand the terminal"]';
 export type Terminal = {
   /** `Terminal · {project} / {branch}`. */
   heading: string;
-  /** The screen's rows as they read, trailing blanks dropped. */
+  /** The screen's rows as they read; a line wrapped across rows keeps its spaces at the wrap. */
   rows: string[];
   /** What the panel says above the screen, each note's text. */
   notes: string[];
@@ -32,7 +32,7 @@ export function terminal(browser: WebdriverIO.Browser): Promise<Terminal | null>
     const box = panel.getBoundingClientRect();
     return {
       heading: words(panel.querySelector("h2")!),
-      rows: [...panel.querySelectorAll(".xterm-rows > div")].map((row) => (row.textContent ?? "").replace(/\u00a0/g, " ").trimEnd()),
+      rows: [...panel.querySelectorAll(".xterm-rows > div")].map((row) => (row.textContent ?? "").replace(/\u00a0/g, " ")),
       notes: [...panel.querySelectorAll(".state, .offer, .failure")].map(words),
       offer: offer ? { text: words(offer), buttons: [...offer.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? words(button)) } : null,
       box: { left: box.left, right: box.right, width: box.width },
