@@ -2,12 +2,15 @@
   // The shown worktree's terminal, floating over the graph's left side as the Detail floats over
   // its right; the graph never shrinks under it. Collapsed it is a tab at the left edge, and only
   // detaches: the terminal and its processes keep running, and expanding attaches again. Dragging
-  // its right edge sets its width, kept like the Detail's.
+  // its right edge sets its width, kept like the Detail's. Collapse and expand leave the keyboard
+  // where it was, unless it was on the button pressed: collapse hands it to the tab, expand into
+  // the terminal.
   //
   // Above the screen it says what the person should know: that the terminal ends with the app,
   // that its agent moved to another worktree, that its process ended, or that it was gone and a
   // fresh shell runs, with what it can restore. Nothing of a restore runs until the person
   // presses its Run.
+  import { tick } from "svelte";
   import { getAppState } from "../shell/app.svelte";
   import { HARNESS, commandLine, type RestoreChoice, type WorktreeKey } from "./backend";
   import { screen } from "./screen";
@@ -48,6 +51,23 @@
     void terminals.restore(worktree, choice);
   }
 
+  /** The collapsed tab, while it shows. */
+  let tab = $state<HTMLButtonElement>();
+  /** A press of the mouse on collapse or expand leaves the keyboard where it is. */
+  const keep = (event: MouseEvent) => event.preventDefault();
+
+  /** Collapse or expand. The keyboard stays with what had it; only when it was on the button
+   * itself does it move on: from collapse to the tab, from the tab into the terminal. */
+  async function fold(open: boolean, event: MouseEvent) {
+    const had = document.activeElement;
+    const pressed = had === event.currentTarget;
+    m.terminal = open;
+    await tick();
+    if (pressed && open) m.panes.terminal?.querySelector<HTMLElement>("textarea")?.focus();
+    else if (pressed) tab?.focus();
+    else if (had instanceof HTMLElement && had.isConnected && document.activeElement !== had) had.focus();
+  }
+
   /** Open the worktree the agent moved to; its terminal stays as it is. */
   function follow(to: WorktreeKey) {
     terminals.settled(worktree);
@@ -66,8 +86,12 @@
   >
     <header>
       <h2 title={worktree}>Terminal · {name}</h2>
-      <button class="button small" aria-label="Collapse the terminal" title="Collapse; the terminal keeps running" onclick={() => (m.terminal = false)}
-        >‹</button
+      <button
+        class="button small"
+        aria-label="Collapse the terminal"
+        title="Collapse; the terminal keeps running"
+        onmousedown={keep}
+        onclick={(event) => void fold(false, event)}>‹</button
       >
     </header>
     {#if session.fragile}
@@ -121,7 +145,14 @@
     <div class="edge" role="separator" aria-orientation="vertical" aria-label="Terminal width" onmousedown={ongrab}></div>
   </aside>
 {:else}
-  <button class="tab" aria-label="Expand the terminal" title="Terminal · {name}" onclick={() => (m.terminal = true)}>Terminal</button>
+  <button
+    class="tab"
+    aria-label="Expand the terminal"
+    title="Terminal · {name}"
+    bind:this={tab}
+    onmousedown={keep}
+    onclick={(event) => void fold(true, event)}>Terminal</button
+  >
 {/if}
 
 <style>

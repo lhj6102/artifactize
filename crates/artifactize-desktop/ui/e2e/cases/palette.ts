@@ -135,11 +135,13 @@ export const scenarios: Scenario[] = [
       const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
         .map((item) => item.querySelector("span")?.textContent?.trim() ?? "").sort());
       await ctrlK("filter");
-      // With no Detail open, the window's, the Pane's and the Main area's commands, not a
-      // Detail's or a Human review's. These are the person's commands, not a registry oracle.
+      // With no Detail open, the window's, the Pane's, the Main area's and the shown worktree's
+      // terminal's commands, not a Detail's or a Human review's. The terminal was collapsed to
+      // reach the graph under it. These are the person's commands, not a registry oracle.
       const expected = [
         "Command palette", "Keyboard shortcuts", "Show Settings", "Refresh", "Quit",
         "Search branches and reviews", "Focus the Pane", "Focus the Main area", "Open a request by ID", "Open the Run's Detail",
+        "Expand the terminal", "Focus the terminal", "Remove the shown worktree…",
       ].sort();
       await waitFor(browser, async () => isDeepStrictEqual(await listed(), expected), `the enabled commands are rendered: ${JSON.stringify(await listed())}`);
       assert.deepEqual(await listed(), expected, "all and only the enabled commands");

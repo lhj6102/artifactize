@@ -138,13 +138,23 @@ it("shows the shown worktree's terminal over the graph, and collapsing or leavin
   // The graph is drawn beside it, not shrunk out of the way.
   await waitFor(() => expect(screen.getByLabelText("app: reused")).toBeTruthy());
 
-  // Collapsing detaches; the tab expands it and attaches again.
+  // Collapsing detaches; the tab expands it and attaches again. The keyboard stays where it was;
+  // pressed from the keyboard, collapse hands it to the tab.
+  const entries = screen.getByRole("group", { name: "Pane entries" });
+  entries.focus();
   await fireEvent.click(within(panel).getByRole("button", { name: "Collapse the terminal" }));
   expect(sent("terminal_close")).toEqual([{ worktree: "/work/main" }]);
   expect(screen.queryByRole("complementary", { name: "Terminal" })).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(entries));
   await fireEvent.click(screen.getByRole("button", { name: "Expand the terminal" }));
   await terminal();
-  await waitFor(() => expect(sent("terminal_open")).toHaveLength(2));
+  const pressed = within(await terminal()).getByRole("button", { name: "Collapse the terminal" });
+  pressed.focus();
+  await fireEvent.click(pressed);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Expand the terminal" })));
+  await fireEvent.click(screen.getByRole("button", { name: "Expand the terminal" }));
+  await terminal();
+  await waitFor(() => expect(sent("terminal_open")).toHaveLength(3));
 
   // Choosing another worktree detaches this one and shows that one's terminal.
   await fireEvent.click(within(screen.getByRole("group", { name: "Pane entries" })).getByRole("button", { name: /^app \/ feat/ }));
