@@ -823,9 +823,9 @@ export type RestoreChoice = "freshShell" | "rerun" | "resume";
 
 export type RestoreOffer = RestoreOffer_Serialize | RestoreOffer_Deserialize;
 
-export type RestoreOffer_Deserialize = ({ kind: "shell"; cwd: string | null }) & { command?: never; harness?: never; session?: never } | ({ kind: "command"; cwd: string; command: TerminalCommand_Deserialize }) & { harness?: never; session?: never } | { kind: "harness"; cwd: string; command: TerminalCommand_Deserialize; harness: Harness; session: ResumeSession };
+export type RestoreOffer_Deserialize = ({ kind: "shell"; cwd: string | null }) & { command?: never; harness?: never; resume?: never; session?: never } | ({ kind: "command"; cwd: string; command: TerminalCommand_Deserialize }) & { harness?: never; resume?: never; session?: never } | { kind: "harness"; cwd: string; command: TerminalCommand_Deserialize; harness: Harness; session: ResumeSession; resume: TerminalCommand_Deserialize };
 
-export type RestoreOffer_Serialize = ({ kind: "shell"; cwd: string | null }) & { command?: never; harness?: never; session?: never } | ({ kind: "command"; cwd: string; command: TerminalCommand_Serialize }) & { harness?: never; session?: never } | { kind: "harness"; cwd: string; command: TerminalCommand_Serialize; harness: Harness; session: ResumeSession };
+export type RestoreOffer_Serialize = ({ kind: "shell"; cwd: string | null }) & { command?: never; harness?: never; resume?: never; session?: never } | ({ kind: "command"; cwd: string; command: TerminalCommand_Serialize }) & { harness?: never; resume?: never; session?: never } | { kind: "harness"; cwd: string; command: TerminalCommand_Serialize; harness: Harness; session: ResumeSession; resume: TerminalCommand_Serialize };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };

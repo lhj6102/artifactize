@@ -69,6 +69,8 @@ pub enum RestoreOffer {
         command: TerminalCommand,
         harness: Harness,
         session: ResumeSession,
+        // The exact argv both the client displays and the confirmed resume executes.
+        resume: TerminalCommand,
     },
 }
 
@@ -82,37 +84,34 @@ impl RestoreOffer {
                 Self::Command { cwd, command } | Self::Harness { cwd, command, .. },
                 RestoreChoice::Rerun,
             ) => Ok((cwd.clone(), command.clone())),
-            (
-                Self::Harness {
-                    cwd,
-                    harness,
-                    session,
-                    ..
-                },
-                RestoreChoice::Resume,
-            ) => {
-                let command = match harness {
-                    Harness::ClaudeCode => TerminalCommand {
-                        program: "claude".into(),
-                        args: match session {
-                            ResumeSession::Exact { id } => vec!["--resume".into(), id.to_string()],
-                            ResumeSession::Latest => vec!["--continue".into()],
-                        },
-                    },
-                    Harness::Codex => TerminalCommand {
-                        program: "codex".into(),
-                        args: vec![
-                            "resume".into(),
-                            match session {
-                                ResumeSession::Exact { id } => id.to_string(),
-                                ResumeSession::Latest => "--last".into(),
-                            },
-                        ],
-                    },
-                };
-                Ok((cwd.clone(), command))
+            (Self::Harness { cwd, resume, .. }, RestoreChoice::Resume) => {
+                Ok((cwd.clone(), resume.clone()))
             }
             _ => Err("That restore command is unknown".into()),
+        }
+    }
+}
+
+impl Harness {
+    pub(crate) fn resume(&self, session: &ResumeSession) -> TerminalCommand {
+        match self {
+            Self::ClaudeCode => TerminalCommand {
+                program: "claude".into(),
+                args: match session {
+                    ResumeSession::Exact { id } => vec!["--resume".into(), id.to_string()],
+                    ResumeSession::Latest => vec!["--continue".into()],
+                },
+            },
+            Self::Codex => TerminalCommand {
+                program: "codex".into(),
+                args: vec![
+                    "resume".into(),
+                    match session {
+                        ResumeSession::Exact { id } => id.to_string(),
+                        ResumeSession::Latest => "--last".into(),
+                    },
+                ],
+            },
         }
     }
 }

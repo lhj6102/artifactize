@@ -44,15 +44,19 @@ impl Metadata {
     }
     pub fn offer(&self) -> RestoreOffer {
         match (&self.cwd, &self.command, &self.harness) {
-            (Some(cwd), Some(command), Some(harness)) => RestoreOffer::Harness {
-                cwd: cwd.clone(),
-                command: command.clone(),
-                harness: harness.clone(),
-                session: match &self.session_id {
+            (Some(cwd), Some(command), Some(harness)) => {
+                let session = match &self.session_id {
                     Some(id) => ResumeSession::Exact { id: id.clone() },
                     None => ResumeSession::Latest,
-                },
-            },
+                };
+                RestoreOffer::Harness {
+                    cwd: cwd.clone(),
+                    command: command.clone(),
+                    harness: harness.clone(),
+                    resume: harness.resume(&session),
+                    session,
+                }
+            }
             (Some(cwd), Some(command), None) => RestoreOffer::Command {
                 cwd: cwd.clone(),
                 command: command.clone(),
