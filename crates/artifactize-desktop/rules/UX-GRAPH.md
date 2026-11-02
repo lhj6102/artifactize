@@ -8,7 +8,8 @@ that makes the transition happen and checks where it leads.
 ## Screens and states
 
 - **Launch**: the window opening, titled "Artifactize". It opens on its one screen, the
-  **Pane** beside the **Main area**, the divider between them always shown. Started with
+  **Git layer** at the far left, the **Pane** beside it and the **Main area**, the divider
+  between the Pane and the Main area always shown. The window is never narrower than 1280 px. Started with
   `--repo PATH` it selects the branch of PATH; with `review ID` it opens that review, with
   `review` alone the newest waiting one; with `graph --repo PATH` (also the declared Human
   `graph` tool) it shows the Current of the branch of PATH. The Branches list the projects with
@@ -47,6 +48,24 @@ that makes the transition happen and checks where it leads.
     half of the pane's height, beyond which it scrolls. States: a waiting review selected.
   - The keys move one selection through the Branches and then the Waiting stack. Focus is in
     the Pane (its entries or its Search) or in the Main area.
+- **Git layer**: the window's far-left column, the history of the worktree chosen in the Pane
+  as a vertical line with a dot for each commit, newest at the top: the commits of every branch,
+  each with its summary, its short ID and the branches and tags on it, the checked-out commit
+  marked, and on each commit a way to make a new worktree from it. States: no worktree chosen
+  (it says so), reading, showing the history, a worktree just created (it says the new
+  worktree's branch and folder).
+- **Terminal panel**: the chosen worktree's one terminal, floating over the graph's left side
+  as the Detail floats over its right; the graph never shrinks under either. It belongs to the
+  worktree, not its branch, and runs independently of the window: collapsed it is a tab at
+  the left edge while the terminal keeps running. Its right edge takes a drag that sets its
+  width, kept like the Detail's; the Pane and both panels stay narrow enough, restored widths
+  included, that both panels and some of the graph always fit. States: expanded (its screen
+  taking what is typed) or collapsed; offering a restore (a fresh shell running, with the last
+  command to rerun from the last directory and, for Claude Code or Codex, its resume command
+  for the session known for certain or else its latest session, labelled so); offering to
+  open the worktree its agent moved to; ended (its process ended or its worktree was removed);
+  where Windows keeps the terminal inside the app's Job, saying that it ends when the app
+  closes.
 - **Main area**: shows one view at a time, with what went wrong (such as Runs that cannot be
   read) as the **notice**, one line in its header that neither moves nor hides what is below.
   - **Nothing chosen**: no branch or review chosen yet; the graph's place says so.
@@ -234,9 +253,30 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused |
 | E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does |
 | E-GRAPH-FIND-CHOOSE | Find field listing | ↓ or ↑ | the next or previous entry chosen |
-| E-GRAPH-FIND-GO | Find field listing | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
+| E-GRAPH-FIND-GO | Find field listing | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph between the Terminal panel and the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
 | E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
+
+## Workbench
+
+| Edge | From | Action | To |
+| --- | --- | --- | --- |
+| E-GIT-HISTORY | Pane | choose a worktree (a branch or an entry of its timeline) | the Git layer showing that worktree's history, the checked-out commit marked |
+| E-GIT-WORKTREE-NEW | Git layer showing a history | ask for a new worktree from a commit | a worktree of that commit created in a new folder beside the primary checkout, on a newly generated branch, the Git layer saying which; within seconds the Branches list it (E-PANE-WORKTREES) |
+| E-TERMINAL-OPEN | Pane | choose a worktree whose terminal has not run yet | Terminal panel expanded over the graph's left side, a shell running in the worktree |
+| E-TERMINAL-TYPE | Terminal panel expanded | type into it | the typed text reaches the terminal's program and what it prints shows on the screen |
+| E-TERMINAL-COLLAPSE | Terminal panel expanded | collapse it | Terminal panel collapsed to a tab at the left edge, the terminal and its programs running on; the graph as it was |
+| E-TERMINAL-EXPAND | Terminal panel collapsed | expand it | Terminal panel expanded, its screen as it was, with what it printed while collapsed |
+| E-TERMINAL-SWITCH | Terminal panel of a worktree | choose another worktree, then the first again | the other worktree's own terminal, then the first's again with its screen as it was |
+| E-TERMINAL-RELAUNCH | window closed while a terminal runs | start the app and choose that worktree | its terminal, still running, its screen as it was |
+| E-TERMINAL-BRANCH | Terminal panel of a worktree | the worktree's branch is switched or renamed | the same terminal, its screen as it was, for the worktree's new branch entry |
+| E-TERMINAL-REMOVED | Terminal panel of a worktree | the worktree is removed | Terminal panel saying the terminal ended; the worktree gone from the Branches (E-PANE-WORKTREES) |
+| E-TERMINAL-RESTORE-OFFER | Pane | choose a worktree whose terminal is gone after it ran | Terminal panel offering a restore over a fresh shell in the worktree; nothing run |
+| E-TERMINAL-RESTORE-RUN | Terminal panel offering a restore | choose the rerun or the resume command | that command running in its directory in the terminal, the offer gone |
+| E-TERMINAL-RESTORE-KEEP | Terminal panel offering a restore | keep the fresh shell | the fresh shell, the offer gone, nothing run |
+| E-TERMINAL-MOVED | Terminal panel of a worktree | its agent moves to another worktree | the graph staying on the panel's worktree, the panel offering to open the detected worktree; the other worktree listed in the Branches |
+| E-TERMINAL-FOLLOW | Terminal panel offering the detected worktree | open it | that worktree chosen, its graph and its own terminal shown |
+| E-TERMINAL-WIDTH | Terminal panel expanded | drag its right edge (hovering it shows only the resize cursor) | Terminal panel resized, never so wide that both panels and some graph no longer fit; the width kept for the next opening and launch |
 
 ## Detail
 
@@ -344,6 +384,17 @@ E-PANE-SELECT.
 - J-LIVE: E-MON-LIVE | E-PANE-WORKTREES | E-BRANCH-RUNNING | E-WAITING-CHANGE
 - J-RESIZE: E-MON-RESIZE
   E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-WIDTH → E-MON-DETAIL-BACK → E-MON-DETAIL-ARTIFACT
+  E-TERMINAL-OPEN → E-TERMINAL-WIDTH → E-TERMINAL-COLLAPSE → E-TERMINAL-EXPAND
+- J-GIT-LAYER: E-LAUNCH-MONITOR → E-GIT-HISTORY
+- J-WORKTREE-NEW: E-GIT-HISTORY → E-GIT-WORKTREE-NEW → E-PANE-WORKTREES → E-TERMINAL-OPEN
+- J-TERMINAL: E-TERMINAL-OPEN → E-TERMINAL-TYPE → E-TERMINAL-BRANCH
+- J-TERMINAL-DETACH: E-TERMINAL-OPEN → E-TERMINAL-TYPE → E-TERMINAL-COLLAPSE → E-TERMINAL-EXPAND
+  E-TERMINAL-TYPE → E-TERMINAL-SWITCH
+  E-TERMINAL-TYPE → E-QUIT-CLEAN → E-TERMINAL-RELAUNCH
+  E-TERMINAL-OPEN → E-TERMINAL-REMOVED
+- J-TERMINAL-RESTORE: E-TERMINAL-RESTORE-OFFER → E-TERMINAL-TYPE → E-TERMINAL-RESTORE-RUN
+  E-TERMINAL-RESTORE-OFFER → E-TERMINAL-RESTORE-KEEP
+- J-TERMINAL-MOVED: E-TERMINAL-OPEN → E-TERMINAL-MOVED → E-TERMINAL-FOLLOW
 - J-MAIN-RUN: E-PANE-CHIP → E-MON-NOTICE
 - J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-CHECKED → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH → E-CURRENT-CHECKED
   E-CURRENT-CHIP → E-CURRENT-RUN-END → E-CURRENT-CHECKED

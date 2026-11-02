@@ -328,4 +328,133 @@ mod tests {
         std::fs::remove_dir_all(&other).unwrap();
         assert_eq!(branches(worktrees(&common)), [Some("main".into())]);
     }
+
+    /// Git with a fixed identity, so commits never depend on the machine's configuration.
+    fn committing(path: &Path, arguments: &[&str]) {
+        let mut all = vec![
+            "-c",
+            "user.name=artifactize",
+            "-c",
+            "user.email=artifactize@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+        ];
+        all.extend_from_slice(arguments);
+        crate::test_os::git(path, &all);
+    }
+
+    fn commit(path: &Path, message: &str) -> String {
+        committing(path, &["commit", "--quiet", "--allow-empty", "-m", message]);
+        head(path)
+    }
+
+    /// Read-only observations of a checkout through Git itself.
+    fn head(path: &Path) -> String {
+        output(path, &["rev-parse", "HEAD"])
+    }
+    fn output(path: &Path, arguments: &[&str]) -> String {
+        let bytes = git(path, arguments).expect("Git answers");
+        String::from_utf8(bytes).unwrap().trim_end().to_owned()
+    }
+
+    /// The primary checkout `root/project` on `main`, with a first and a second commit.
+    fn project(root: &Path) -> (PathBuf, String, String) {
+        let main = root.join("project");
+        std::fs::create_dir(&main).unwrap();
+        crate::test_os::git(&main, &["init", "--quiet", "--initial-branch=main"]);
+        let first = commit(&main, "first");
+        let second = commit(&main, "second");
+        (main, first, second)
+    }
+
+    #[test]
+    fn a_worktree_from_a_commit_lands_beside_the_primary_on_a_new_branch_and_removal_removes_it() {
+        let root = crate::test_os::tempdir();
+        let (main, first, _) = project(root.path());
+        let common = crate::test_os::canonical(&main.join(".git"));
+        let created = create_worktree(&main, &first).unwrap();
+        assert_eq!(
+            created.worktree.parent(),
+            Some(crate::test_os::canonical(root.path()).as_path())
+        );
+        assert_eq!(head(&created.worktree), first);
+        assert_eq!(
+            output(&created.worktree, &["symbolic-ref", "--short", "HEAD"]),
+            created.branch
+        );
+        assert_ne!(created.branch, "main");
+        // The same commit again never reuses the folder or the branch of the first one.
+        let again = create_worktree(&main, &first).unwrap();
+        assert_ne!(again.worktree, created.worktree);
+        assert_ne!(again.branch, created.branch);
+        let listed = |trees: Vec<Worktree>| -> Vec<PathBuf> {
+            trees.into_iter().map(|tree| tree.path).collect()
+        };
+        assert!(listed(worktrees(&common)).contains(&created.worktree));
+
+        remove_worktree(&created.worktree).unwrap();
+        assert!(!created.worktree.exists());
+        assert!(!listed(worktrees(&common)).contains(&created.worktree));
+        assert!(listed(worktrees(&common)).contains(&again.worktree));
+    }
+
+    #[test]
+    fn removal_refuses_the_primary_checkout_and_uncommitted_work_and_keeps_them() {
+        let root = crate::test_os::tempdir();
+        let (main, first, second) = project(root.path());
+        let created = create_worktree(&main, &first).unwrap();
+        let work = created.worktree.join("unsaved.txt");
+        std::fs::write(&work, "work in progress").unwrap();
+        assert!(remove_worktree(&created.worktree).is_err());
+        assert_eq!(std::fs::read_to_string(&work).unwrap(), "work in progress");
+        assert!(remove_worktree(&main).is_err());
+        assert_eq!(head(&main), second);
+    }
+
+    #[test]
+    fn a_commit_that_is_not_in_the_repository_creates_no_worktree() {
+        let root = crate::test_os::tempdir();
+        let (main, _, _) = project(root.path());
+        let before: Vec<_> = std::fs::read_dir(root.path()).unwrap().collect();
+        assert!(create_worktree(&main, &"0".repeat(40)).is_err());
+        assert!(create_worktree(&main, "--orphan").is_err());
+        let after: Vec<_> = std::fs::read_dir(root.path()).unwrap().collect();
+        assert_eq!(before.len(), after.len());
+    }
+
+    #[test]
+    fn history_lists_every_branch_with_parents_and_refs_children_first() {
+        let root = crate::test_os::tempdir();
+        let (main, first, second) = project(root.path());
+        crate::test_os::git(&main, &["switch", "--quiet", "-c", "side", &first]);
+        let third = commit(&main, "third");
+        crate::test_os::git(&main, &["switch", "--quiet", "main"]);
+        committing(
+            &main,
+            &["merge", "--quiet", "--no-ff", "-m", "merge side", "side"],
+        );
+        let merge = head(&main);
+        let commits = history(&main).unwrap();
+        let find = |id: &str| -> (usize, &Commit) {
+            commits
+                .iter()
+                .enumerate()
+                .find(|(_, commit)| commit.id == id)
+                .unwrap_or_else(|| panic!("{id} is listed"))
+        };
+        let (merged_at, merged) = find(&merge);
+        let (second_at, second_commit) = find(&second);
+        let (third_at, third_commit) = find(&third);
+        let (first_at, first_commit) = find(&first);
+        assert_eq!(commits.len(), 4);
+        assert_eq!(merged.parents, [second.as_str(), third.as_str()]);
+        assert_eq!(merged.summary, "merge side");
+        assert!(merged.refs.contains(&"HEAD -> main".to_owned()));
+        assert_eq!(second_commit.parents, [first.as_str()]);
+        assert_eq!(third_commit.parents, [first.as_str()]);
+        assert!(third_commit.refs.contains(&"side".to_owned()));
+        assert!(first_commit.parents.is_empty());
+        assert!(merged_at < second_at.min(third_at));
+        assert!(second_at.max(third_at) < first_at);
+    }
 }

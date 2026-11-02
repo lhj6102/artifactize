@@ -3,6 +3,8 @@ mod client;
 mod host;
 mod metadata;
 mod screen;
+#[cfg(test)]
+mod tests;
 mod wire;
 
 pub use client::{Attachment, attach};

@@ -114,7 +114,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.matches-desktop.payload]
 instruction = """
 Review {docs-en} against only {desktop} and its parts {desktop-backend} and {desktop-ui}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Desktop (src/desktop/), including launch, the Pane (branches, their Runs, search and waiting reviews), the Main area (Runs, Currents, graphs and Detail), Human review, keyboard/mouse interaction and Settings.
+The owned documentation area is Desktop (src/desktop/), including launch, the workbench (the Git layer, new worktrees and each worktree's terminal with its lifetime and restore), the Pane (branches, their Runs, search and waiting reviews), the Main area (Runs, Currents, graphs and Detail), Human review, keyboard/mouse interaction and Settings.
 Check that this area is grouped in one distinct place, that all user-facing features
 of the described Artifact are present, and that they are explained well and agree
 with its actual behavior. Follow links within the docs for necessary context.

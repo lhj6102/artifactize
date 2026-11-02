@@ -54,7 +54,8 @@ Hovering only highlights; information opens on a click.
 
 ## Pane
 
-The window is one screen: the **Pane** on the left, the **Main area** beside it.
+The window is one screen: the [Git layer](#git-layer) at the far left, the **Pane**
+beside it and the **Main area**. The window is at least 1280 pixels wide.
 The Pane is one column: a search field at the top, the branches below it, and the
 reviews waiting for a person at the bottom. Drag the divider between the Pane and
 the Main area to resize them; the split stays as dragged whatever the Main area shows.
@@ -126,6 +127,49 @@ original review.
 
 New Runs, results, claims and submissions made elsewhere, and worktrees added or
 removed, appear without a manual reload.
+
+## Workbench
+
+Each worktree is a place to work: its history on the left, its terminal over the graph,
+its Artifacts in the graph.
+
+### Git layer
+
+The **Git layer** shows the history of the worktree chosen in the Pane as a vertical
+line with a dot for each commit, newest at the top: the commits of every branch, each
+with its summary, its short ID and the branches and tags on it, the checked-out commit
+marked. Every commit offers a **new worktree** from it: artifactize creates a folder
+beside the main checkout, on a new temporary branch with a generated name that you can
+rename later, and says where. It never reuses an existing folder or branch. The new
+worktree appears in the Pane like any other.
+
+### Terminal
+
+Every worktree in the Pane has one **terminal**: the main checkout, worktrees made by
+other tools and those made here. Choosing a worktree shows its terminal in a panel
+floating over the graph's left side, as the [Detail](#detail) floats over its right;
+the graph never shrinks under either. The terminal starts the first time you open it,
+as your shell in the worktree; run anything in it, such as Claude Code, Codex or a
+build. It belongs to the worktree, not its branch: switching or renaming the branch
+keeps the same terminal. Drag the panel's right edge to resize it; it keeps that width.
+
+Collapsing the panel, choosing another worktree or closing the app only detaches: the
+terminal and what runs in it keep going, and opening it again shows its screen as it is,
+with what it printed meanwhile. Removing the worktree ends its terminal. On Windows,
+when the system does not let the terminal outlive the app, the panel says that it ends
+when the app closes.
+
+When a terminal is gone, after a reboot or because its shell ended, opening it starts a
+fresh shell in the worktree and offers to rerun the last command from the last
+directory. If that command was Claude Code or Codex, it also offers to resume its
+session (`claude --resume ID`, `codex resume ID`) when the session is known for
+certain, and otherwise the latest session (`claude --continue`, `codex resume --last`),
+labelled as the latest. Nothing runs until you choose; **Keep the fresh shell** drops
+the offer.
+
+When the agent in a terminal moves to another worktree, the graph stays on the
+terminal's own worktree, and the terminal offers to open the detected worktree. That
+worktree is also listed in the Pane.
 
 ## Main area
 
@@ -215,8 +259,8 @@ verdict's mark and colour (on a Current, what verify would do). It lists the fir
 says how many more match, or that none does.
 
 ↑/↓ choose an entry. Enter (on the first entry when none is chosen) or a click opens its
-Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
-Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
+Detail, on the eval's tab for an eval, and centres the Artifact in the graph between the
+terminal and the Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
 click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
 graph too large to show their names. A part drawn inside several Artifacts is listed once,
 and opening it centres its first copy.

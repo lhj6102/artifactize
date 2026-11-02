@@ -223,6 +223,14 @@ pub fn shell() -> String {
     bin("/bin/sh")
 }
 
+/// A line typed into a terminal's default shell (a POSIX shell, or cmd.exe on Windows) that
+/// prints `first` and `second` joined, while the typed line the terminal echoes keeps them
+/// apart: an empty quote pair splits them for a POSIX shell, a caret for cmd.exe.
+pub fn terminal_echo(first: &str, second: &str) -> Vec<u8> {
+    let split = if cfg!(windows) { "^" } else { "''" };
+    format!("echo {first}{split}{second}\r").into_bytes()
+}
+
 /// A program that exits 0 and does nothing else, resolved through [`bin`].
 pub fn true_program() -> String {
     bin("/bin/true")
