@@ -207,6 +207,14 @@ impl ExecutionId {
     }
 }
 identity!(SessionId, segment);
+/// A full Git SHA-1 object name has forty hex digits; SHA-256 repositories use sixty-four.
+const GIT_SHA1_HEX_BYTES: usize = 40;
+identity!(GitObjectId, |value: &str| matches!(
+    value.len(),
+    GIT_SHA1_HEX_BYTES | SHA256_HEX_BYTES
+) && value
+    .bytes()
+    .all(|byte| byte.is_ascii_hexdigit()));
 // A tool name as a model called it: the model controls it, so it is only bounded and printable.
 identity!(CalledTool, |value: &str| (1..=MAX_CALLED_TOOL_BYTES)
     .contains(&value.len())

@@ -1,5 +1,6 @@
 //! Git display identity, separate from the artifactize workspace used for execution.
 
+use crate::types::{GitObjectId, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::{
     ffi::OsStr,
@@ -104,12 +105,15 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
 #[cfg_attr(feature = "desktop-types", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
 pub struct Commit {
-    pub id: String,
-    pub parents: Vec<String>,
+    #[cfg_attr(feature = "desktop-types", specta(type = String))]
+    pub id: GitObjectId,
+    #[cfg_attr(feature = "desktop-types", specta(type = Vec<String>))]
+    pub parents: Vec<GitObjectId>,
     pub refs: Vec<String>,
     pub summary: String,
-    /// Unix seconds, represented as text so JavaScript never rounds an identifier or time.
-    pub time: String,
+    /// The commit time, parsed from Git and serialized as a UTC RFC 3339 timestamp.
+    #[cfg_attr(feature = "desktop-types", specta(type = String))]
+    pub time: Timestamp,
 }
 
 pub fn history(worktree: &Path) -> Result<Vec<Commit>, String> {
@@ -120,28 +124,33 @@ pub fn history(worktree: &Path) -> Result<Vec<Commit>, String> {
             // --all includes HEAD when it exists, without requiring an unborn HEAD.
             "--all",
             "--topo-order",
-            "--format=%H%x00%P%x00%D%x00%s%x00%ct%x00",
+            "--format=%H%x00%P%x00%D%x00%s%x00%cI%x00",
         ],
     )
     .ok_or_else(|| "Cannot read Git history".to_owned())?;
     let text = String::from_utf8_lossy(&bytes);
     let fields: Vec<_> = text.split('\0').collect();
-    Ok(fields
+    fields
         .as_chunks::<5>()
         .0
         .iter()
-        .map(|row| Commit {
-            id: row[0].trim_start_matches(['\r', '\n']).to_owned(),
-            parents: row[1].split_whitespace().map(str::to_owned).collect(),
-            refs: row[2]
-                .split(", ")
-                .filter(|r| !r.is_empty())
-                .map(str::to_owned)
-                .collect(),
-            summary: row[3].to_owned(),
-            time: row[4].to_owned(),
+        .map(|row| {
+            Ok(Commit {
+                id: row[0].trim_start_matches(['\r', '\n']).parse()?,
+                parents: row[1]
+                    .split_whitespace()
+                    .map(str::parse)
+                    .collect::<Result<_, _>>()?,
+                refs: row[2]
+                    .split(", ")
+                    .filter(|r| !r.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+                summary: row[3].to_owned(),
+                time: row[4].parse()?,
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// A worktree's Git administrative directory is independent of its current branch.
@@ -217,6 +226,7 @@ pub fn create_worktree(worktree: &Path, commit: &str) -> Result<CreatedWorktree,
 
 /// Git refuses a primary, locked or dirty checkout; removal never silently discards work.
 pub fn remove_worktree(worktree: &Path) -> Result<(), String> {
+    let _terminal = crate::platform::terminal::before_remove(worktree)?;
     let identity = identify(worktree);
     let common = identity.common_dir.ok_or("Not a Git worktree")?;
     crate::process::tool_output(

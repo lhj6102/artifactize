@@ -6,6 +6,9 @@ use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
 
 #[derive(Serialize, Deserialize)]
 pub(super) enum Request {
+    Shutdown {
+        identity: crate::config::EndpointId,
+    },
     Attach {
         identity: crate::config::EndpointId,
         cols: u16,
@@ -28,6 +31,7 @@ pub(super) enum Request {
 pub(super) enum Response {
     Frame(TerminalFrame),
     Accepted,
+    Stopped { host: crate::process::ChildIdentity },
     Failed(String),
 }
 

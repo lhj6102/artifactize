@@ -1,7 +1,8 @@
 //! Restore facts only. Transcript envelopes are deserialized into metadata-only structs;
 //! messages, tool calls and conversation text are skipped, never retained or interpreted.
-use super::{Harness, RestoreOffer, TerminalCommand};
+use super::{Harness, RestoreOffer, ResumeSession, TerminalCommand};
 use crate::platform;
+use crate::types::SessionId;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
@@ -14,7 +15,7 @@ pub(super) struct Metadata {
     pub cwd: Option<PathBuf>,
     pub command: Option<TerminalCommand>,
     pub harness: Option<Harness>,
-    pub session_id: Option<String>,
+    pub session_id: Option<SessionId>,
 }
 impl Metadata {
     pub fn read(identity: &Path) -> io::Result<Option<Self>> {
@@ -42,29 +43,23 @@ impl Metadata {
         platform::sync_dir(identity)
     }
     pub fn offer(&self) -> RestoreOffer {
-        let resume = self.harness.as_ref().map(|harness| match harness {
-            Harness::ClaudeCode => TerminalCommand {
-                program: "claude".into(),
-                args: match &self.session_id {
-                    Some(id) => vec!["--resume".into(), id.clone()],
-                    None => vec!["--continue".into()],
+        match (&self.cwd, &self.command, &self.harness) {
+            (Some(cwd), Some(command), Some(harness)) => RestoreOffer::Harness {
+                cwd: cwd.clone(),
+                command: command.clone(),
+                harness: harness.clone(),
+                session: match &self.session_id {
+                    Some(id) => ResumeSession::Exact { id: id.clone() },
+                    None => ResumeSession::Latest,
                 },
             },
-            Harness::Codex => TerminalCommand {
-                program: "codex".into(),
-                args: vec![
-                    "resume".into(),
-                    self.session_id.clone().unwrap_or_else(|| "--last".into()),
-                ],
+            (Some(cwd), Some(command), None) => RestoreOffer::Command {
+                cwd: cwd.clone(),
+                command: command.clone(),
             },
-        });
-        RestoreOffer {
-            cwd: self.cwd.clone(),
-            command: self.command.clone(),
-            harness: self.harness.clone(),
-            session_id: self.session_id.clone(),
-            latest_session: resume.is_some() && self.session_id.is_none(),
-            resume,
+            _ => RestoreOffer::Shell {
+                cwd: self.cwd.clone(),
+            },
         }
     }
     pub fn observe(&mut self, foreground: platform::terminal::Foreground) -> bool {
@@ -116,8 +111,12 @@ fn harness(command: &TerminalCommand) -> Option<Harness> {
 
 // An exact resume/session argument plus matching metadata is proof. A matching cwd or newest
 // timestamp alone is not: concurrent agents may be working in the very same directory.
-fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) -> Option<String> {
-    let requested = requested(harness, command)?;
+fn session_id(
+    harness: &Harness,
+    command: &TerminalCommand,
+    cwd: Option<&Path>,
+) -> Option<SessionId> {
+    let requested: SessionId = requested(harness, command)?.parse().ok()?;
     // An unknown directory proves nothing: the session must name the very directory.
     let cwd = cwd?;
     let home = platform::home_directory()?;
@@ -156,7 +155,7 @@ fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) 
                         }
                         Harness::Codex => break,
                     };
-                    if id.as_deref() == Some(requested)
+                    if id.as_ref() == Some(&requested)
                         && directory
                             .as_deref()
                             .is_some_and(|directory| platform::paths_equal(directory, cwd))
@@ -170,33 +169,26 @@ fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) 
     None
 }
 
-/// The session a harness command names in that harness's own syntax: Claude Code's
-/// `--resume ID`, `-r ID` or `--session-id ID` (also with `=`), and Codex's `resume ID`
-/// subcommand. Arguments after `--` are operands, and a harness started through its
-/// interpreter has its script first. The session's own metadata must still confirm the ID.
+/// Recognize only a complete, unambiguous resume invocation. Unknown options may consume
+/// the following token, so searching later arguments for a flag would invent certainty.
+/// The session's own metadata must still confirm this ID and its directory.
 fn requested<'a>(harness: &Harness, command: &'a TerminalCommand) -> Option<&'a str> {
     let interpreted = Path::new(&command.program)
         .file_stem()
         .and_then(|stem| stem.to_str())
         .is_some_and(|stem| matches!(stem, "node" | "nodejs" | "bun"));
     let args = command.args.get(usize::from(interpreted)..)?;
-    let options = args.split(|arg| arg == "--").next().unwrap_or_default();
-    let value = match harness {
-        Harness::ClaudeCode => {
-            options
-                .iter()
-                .enumerate()
-                .find_map(|(at, arg)| match arg.as_str() {
-                    "--resume" | "-r" | "--session-id" => options.get(at + 1).map(String::as_str),
-                    other => other
-                        .strip_prefix("--resume=")
-                        .or_else(|| other.strip_prefix("--session-id=")),
-                })
+    let value = match (harness, args) {
+        (Harness::ClaudeCode, [flag, id])
+            if matches!(flag.as_str(), "--resume" | "-r" | "--session-id") =>
+        {
+            Some(id.as_str())
         }
-        Harness::Codex => match options {
-            [subcommand, id, ..] if subcommand == "resume" => Some(id.as_str()),
-            _ => None,
-        },
+        (Harness::ClaudeCode, [argument]) => argument
+            .strip_prefix("--resume=")
+            .or_else(|| argument.strip_prefix("--session-id=")),
+        (Harness::Codex, [subcommand, id]) if subcommand == "resume" => Some(id.as_str()),
+        _ => None,
     }?;
     (!value.is_empty() && !value.starts_with('-')).then_some(value)
 }
@@ -206,7 +198,7 @@ struct Envelope {
     #[serde(rename = "type")]
     kind: Option<String>,
     #[serde(rename = "sessionId")]
-    session_id: Option<String>,
+    session_id: Option<SessionId>,
     cwd: Option<PathBuf>,
 }
 #[derive(Deserialize)]
@@ -215,6 +207,6 @@ struct SessionRecord {
 }
 #[derive(Deserialize)]
 struct SessionMeta {
-    id: Option<String>,
+    id: Option<SessionId>,
     cwd: Option<PathBuf>,
 }

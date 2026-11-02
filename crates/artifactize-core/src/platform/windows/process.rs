@@ -627,6 +627,10 @@ mod exit_tests {
 /// Terminal children share a cleanup Job independently of the desktop's Job.
 pub(crate) struct TerminalJob(Job);
 impl TerminalJob {
+    pub(crate) fn stop(&self) -> io::Result<()> {
+        self.0.terminate()?;
+        self.0.wait_empty()
+    }
     pub(crate) fn attach(child: &dyn portable_pty::Child) -> io::Result<Self> {
         let job = Job::new()?;
         let process = child
