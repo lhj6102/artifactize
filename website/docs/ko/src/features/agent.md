@@ -98,7 +98,7 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
 provider가 안내한 대기 시간이 지나면 자동으로 몇 차례 재시도합니다.
-provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 같은 턴을 같은 횟수까지 다시 보냅니다.
+provider 응답이 시작된 뒤 답변 생성에 실패하면, 같은 턴을 같은 횟수까지 재시도합니다.
 리뷰 전체가 아니라 마지막 도구 결과까지의 대화를 그대로 다시 보냅니다. 답변이 공백으로만
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
 `Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
