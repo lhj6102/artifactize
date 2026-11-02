@@ -99,6 +99,143 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
         .collect()
 }
 
+/// A commit in Git's topological history, including every parent and decorating ref.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "desktop-types", derive(specta::Type))]
+#[serde(rename_all = "camelCase")]
+pub struct Commit {
+    pub id: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub summary: String,
+    /// Unix seconds, represented as text so JavaScript never rounds an identifier or time.
+    pub time: String,
+}
+
+pub fn history(worktree: &Path) -> Result<Vec<Commit>, String> {
+    let bytes = git(
+        worktree,
+        &[
+            "log",
+            "--all",
+            "HEAD",
+            "--topo-order",
+            "--format=%H%x00%P%x00%D%x00%s%x00%ct%x00",
+        ],
+    )
+    .ok_or_else(|| "Cannot read Git history".to_owned())?;
+    let text = String::from_utf8_lossy(&bytes);
+    let fields: Vec<_> = text.split('\0').collect();
+    Ok(fields
+        .as_chunks::<5>()
+        .0
+        .iter()
+        .map(|row| Commit {
+            id: row[0].trim_start_matches(['\r', '\n']).to_owned(),
+            parents: row[1].split_whitespace().map(str::to_owned).collect(),
+            refs: row[2]
+                .split(", ")
+                .filter(|r| !r.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            summary: row[3].to_owned(),
+            time: row[4].to_owned(),
+        })
+        .collect())
+}
+
+/// A worktree's Git administrative directory is independent of its current branch.
+/// The primary checkout uses its common directory; linked worktrees have their own git-dir.
+pub fn worktree_id(path: &Path) -> Result<PathBuf, String> {
+    git_path(path, "--git-dir").ok_or_else(|| "Not a Git worktree".to_owned())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "desktop-types", derive(specta::Type))]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedWorktree {
+    #[serde(with = "crate::platform::path_serde")]
+    #[cfg_attr(feature = "desktop-types", specta(type = String))]
+    pub worktree: PathBuf,
+    pub branch: String,
+}
+
+pub fn create_worktree(worktree: &Path, commit: &str) -> Result<CreatedWorktree, String> {
+    let identity = identify(worktree);
+    let common = identity.common_dir.ok_or("Not a Git worktree")?;
+    let primary = worktrees(&common)
+        .into_iter()
+        .next()
+        .ok_or("No primary checkout")?;
+    let parent = primary
+        .path
+        .parent()
+        .ok_or("The primary checkout has no parent")?;
+    // Git resolves the revision before it is used as a positional argument to worktree add.
+    let revision = git(
+        worktree,
+        &[
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            &format!("{commit}^{{commit}}"),
+        ],
+    )
+    .ok_or("Cannot resolve the selected commit")?;
+    let revision = String::from_utf8_lossy(&revision);
+    loop {
+        let random = getrandom::u64().map_err(|e| e.to_string())?;
+        let branch = format!("worktree-{random:016x}");
+        let path = parent.join(&branch);
+        if path.exists()
+            || git(
+                worktree,
+                &["show-ref", "--verify", &format!("refs/heads/{branch}")],
+            )
+            .is_some()
+        {
+            continue;
+        }
+        let args = [
+            OsStr::new("-C"),
+            worktree.as_os_str(),
+            OsStr::new("worktree"),
+            OsStr::new("add"),
+            OsStr::new("-b"),
+            OsStr::new(&branch),
+            OsStr::new("--"),
+            path.as_os_str(),
+            OsStr::new(revision.trim()),
+        ];
+        crate::process::tool_output("git", args).ok_or("Git could not create the worktree")?;
+        return Ok(CreatedWorktree {
+            worktree: path,
+            branch,
+        });
+    }
+}
+
+/// Git refuses a primary, locked or dirty checkout; removal never silently discards work.
+pub fn remove_worktree(worktree: &Path) -> Result<(), String> {
+    let identity = identify(worktree);
+    let common = identity.common_dir.ok_or("Not a Git worktree")?;
+    crate::process::tool_output(
+        "git",
+        [
+            OsStr::new("--git-dir"),
+            common.as_os_str(),
+            OsStr::new("worktree"),
+            OsStr::new("remove"),
+            OsStr::new("--"),
+            worktree.as_os_str(),
+        ],
+    )
+    .ok_or_else(|| {
+        "Git refused to remove the worktree (it may be primary, locked or dirty)".to_owned()
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

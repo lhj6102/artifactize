@@ -13,6 +13,7 @@ categories = ["command-line-utilities", "development-tools", "development-tools:
 exclude = ["tests/support/fixture.rs", "index.artf"]
 
 [features]
+desktop-types = ["dep:specta"]
 # Hooks that the unit tests of artifactize-tui count queries and derivations with.
 test-support = ["rusqlite/trace"]
 
@@ -28,6 +29,10 @@ getrandom = "0.4"
 globset = "0.4"
 ignore = "0.4"
 jsonschema = { version = "0.58.4", default-features = false }
+portable-pty = "0.9"
+avt = "0.19"
+vte = "0.15"
+specta = { version = "=2.0.0-rc.25", features = ["derive"], optional = true }
 petgraph = { version = "0.8", default-features = false, features = ["std"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form"] }
 rig-core = { version = "=0.43.0", default-features = false, features = ["reqwest", "rustls"] }

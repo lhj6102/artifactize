@@ -75,6 +75,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    #[command(name = "__terminal-host", hide = true)]
+    TerminalHost {
+        worktree: PathBuf,
+        cols: u16,
+        rows: u16,
+    },
     /// Serve bounded verification and inspection tools over MCP stdio.
     Mcp,
     #[command(name = "__verify", hide = true)]

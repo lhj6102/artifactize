@@ -175,6 +175,10 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     command.spawn()
 }
 
+pub(crate) fn spawn_persistent(command: Command) -> io::Result<(tokio::process::Child, bool)> {
+    spawn_detached(command).map(|child| (child, true))
+}
+
 pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
     spawn_detached(command)
 }

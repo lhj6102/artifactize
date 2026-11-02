@@ -23,6 +23,7 @@ mod status;
 mod tools;
 mod transcript;
 mod watch;
+mod workbench;
 
 pub use failure::Failure;
 pub use ids::{JobId, SignInId, TranscriptHandle};
@@ -40,6 +41,14 @@ pub const BINDINGS: &str = "ui/src/ipc/bindings.ts";
 pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
     Builder::new()
         .commands(collect_commands![
+            workbench::git_history,
+            workbench::worktree_create,
+            workbench::worktree_remove,
+            workbench::terminal_open,
+            workbench::terminal_input,
+            workbench::terminal_resize,
+            workbench::terminal_close,
+            workbench::terminal_restore,
             launch::launch,
             browse::browse,
             browse::redraw,
@@ -118,6 +127,7 @@ pub struct App {
     settings: settings::Settings,
     generation: generation::Generation,
     sites: tools::Sites,
+    terminals: workbench::Terminals,
 }
 
 impl App {
@@ -131,6 +141,7 @@ impl App {
             settings: settings::Settings::default(),
             generation: generation::Generation::default(),
             sites: tools::Sites::default(),
+            terminals: workbench::Terminals::default(),
         }
     }
 
@@ -155,7 +166,9 @@ impl App {
         self.human.cancel_all();
         let scans = self.currents.stop();
         let sign_ins = self.settings.close();
+        let terminals = self.terminals.close();
         async move {
+            terminals.await;
             scans.await;
             sign_ins.await;
         }

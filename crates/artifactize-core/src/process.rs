@@ -729,3 +729,31 @@ where
         .await,
     )?
 }
+
+/// Start the terminal host independently of its client. The host also learns when Windows
+/// refused Job breakaway, so every later attachment receives the persistence warning.
+pub(crate) fn launch_terminal(
+    worktree: &std::path::Path,
+    cols: u16,
+    rows: u16,
+) -> Result<bool, String> {
+    let executable = artifactize_executable()?;
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .arg("__terminal-host")
+        .arg(worktree)
+        .arg(cols.to_string())
+        .arg(rows.to_string())
+        .current_dir(worktree)
+        .env_clear()
+        .envs(platform::environment::for_command())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(false);
+    let (mut child, persistent) = platform::spawn_persistent(command).map_err(|e| e.to_string())?;
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+    Ok(persistent)
+}

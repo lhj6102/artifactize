@@ -326,7 +326,11 @@ fn resume(pid: u32) -> io::Result<()> {
 /// outlives it: a terminal, IDE or CI runner may hold artifactize in a kill-on-close job. A
 /// job that forbids breakaway refuses that spawn with access denied; the handoff then starts
 /// inside the job, as it did before.
-pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process::Child> {
+pub(crate) fn spawn_detached(command: Command) -> io::Result<tokio::process::Child> {
+    spawn_persistent(command).map(|(child, _)| child)
+}
+
+pub(crate) fn spawn_persistent(mut command: Command) -> io::Result<(tokio::process::Child, bool)> {
     // A new process inherits every inheritable handle, not only the standard handles it is
     // given. artifactize's own stdout, when a caller reads it through a pipe, would then stay
     // open until the handoff exits and keep that caller waiting. std gives each child its own
@@ -346,9 +350,10 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     match command.spawn() {
         Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
             command.creation_flags(detached);
-            command.spawn()
+            command.env("ARTIFACTIZE_TERMINAL_NOT_PERSISTENT", "1");
+            command.spawn().map(|child| (child, false))
         }
-        spawned => spawned,
+        spawned => spawned.map(|child| (child, true)),
     }
 }
 
@@ -616,5 +621,26 @@ mod exit_tests {
             process_start_time(pid).unwrap_err().kind(),
             io::ErrorKind::NotFound
         );
+    }
+}
+
+/// Terminal children share a cleanup Job independently of the desktop's Job.
+pub(crate) struct TerminalJob(Job);
+impl TerminalJob {
+    pub(crate) fn attach(child: &dyn portable_pty::Child) -> io::Result<Self> {
+        let job = Job::new()?;
+        let process = child
+            .as_raw_handle()
+            .ok_or_else(|| io::Error::other("PTY child has no handle"))?;
+        // SAFETY: the child and job keep both handles open across assignment.
+        if unsafe { AssignProcessToJobObject(job.0.as_raw_handle(), process) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Self(job))
+    }
+}
+impl Drop for TerminalJob {
+    fn drop(&mut self) {
+        let _ = self.0.terminate();
     }
 }
