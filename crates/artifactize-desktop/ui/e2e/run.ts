@@ -5,7 +5,7 @@ import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
+  nativeCrashReports, nodeProgram, prepareDisplay, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -82,6 +82,7 @@ async function batch(): Promise<void> {
 }
 
 async function suite(ids: string[]): Promise<void> {
+  prepareDisplay();
   const { selectedScenarios } = await import("./catalog.ts");
   const selected = selectedScenarios(ids);
   // A relaunch is one complete scenario with two service-owned app lifetimes. Keep it

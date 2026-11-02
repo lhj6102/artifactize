@@ -223,8 +223,10 @@ export const scenarios: Scenario[] = [
       await printed(browser, "side-mark", "the same terminal after the rename");
       assert.equal((await terminal(browser))?.offer, null, "no restore: the terminal never stopped");
 
-      // Removing the worktree ends its terminal: the panel says so, and the Pane drops it.
-      git(fixture.repo, "-C", fixture.repo, "worktree", "remove", "--force", fixture.side);
+      // Removing the worktree ends its terminal: the panel says so, and the Pane drops it. The app
+      // removes it, as a running terminal's folder cannot be deleted from outside on every system.
+      await askRemoval(browser);
+      await confirmRemoval(browser);
       await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
         { timeout: 30000, timeoutMsg: "the panel says the removed worktree's terminal ended" });
       await browser.waitUntil(async () => (await branch(browser, "repo  renamed")) === undefined, { timeout: 30000, timeoutMsg: "the removed worktree gone from the Pane" });

@@ -47,7 +47,14 @@ export const screenText = (shown: Terminal | null) => shown?.rows.join("") ?? ""
 async function until(browser: WebdriverIO.Browser, holds: (shown: Terminal | null) => boolean, what: string, timeout: number): Promise<void> {
   const seen: { last: Terminal | null } = { last: null };
   await browser.waitUntil(async () => holds(seen.last = await terminal(browser)), { timeout, timeoutMsg: what })
-    .catch((error: Error) => { throw new Error(`${error.message}: the screen showed ${JSON.stringify(seen.last?.rows ?? null)}`); });
+    .catch(async (error: Error) => {
+      // What the panel said and how its terminal commands fared, read only to explain the timeout.
+      const commands = await browser.execute(() => {
+        const shown = (window as unknown as { artifactizeCommands?: { commands: Record<string, unknown> } }).artifactizeCommands?.commands ?? {};
+        return Object.fromEntries(Object.entries(shown).filter(([name]) => name.startsWith("terminal")));
+      }).catch(() => null);
+      throw new Error(`${error.message}: the screen showed ${JSON.stringify(seen.last?.rows ?? null)}; the panel said ${JSON.stringify(seen.last?.notes ?? null)}; its commands ${JSON.stringify(commands)}`);
+    });
 }
 
 /** Wait until the expanded terminal's screen shows `text`. */
