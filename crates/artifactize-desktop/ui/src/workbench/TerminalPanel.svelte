@@ -12,7 +12,7 @@
   // presses its Run.
   import { tick } from "svelte";
   import { getAppState } from "../shell/app.svelte";
-  import { commandLine, resumeOf, type RestoreChoice, type WorktreeKey } from "./backend";
+  import { HARNESS, commandLine, type RestoreChoice, type WorktreeKey } from "./backend";
   import { screen } from "./screen";
 
   let {
@@ -40,9 +40,16 @@
   const offer = $derived(session.offer);
   /** The last directory, as the offer says it. */
   const where = $derived(offer?.cwd ? `in ${offer.cwd}` : "in the worktree (the last directory is not known)");
-  /** The harness's resume, as the person would type it: a session known for certain by its ID,
-   * or else its latest session, labelled so. */
-  const resuming = $derived(offer?.kind === "harness" ? resumeOf(offer.harness, offer.session) : null);
+  /** The harness's resume as core runs it: a session known for certain by its ID, or else its
+   * latest session, labelled so. */
+  const resuming = $derived(
+    offer?.kind === "harness"
+      ? {
+          label: offer.session.kind === "exact" ? `Resume the ${HARNESS[offer.harness]} session` : `Resume the latest ${HARNESS[offer.harness]} session`,
+          command: commandLine(offer.resume),
+        }
+      : null,
+  );
 
   function restore(choice: RestoreChoice) {
     void terminals.restore(worktree, choice);

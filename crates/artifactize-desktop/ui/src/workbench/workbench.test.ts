@@ -175,6 +175,7 @@ it("offers what a gone terminal can restore and runs only the choice the person 
       command: { program: "pnpm", args: ["test", "--filter", "a b"] },
       harness: "claudeCode",
       session: { kind: "latest" },
+      resume: { program: "claude", args: ["--continue"] },
     },
   });
   const offer = await within(panel).findByRole("region", { name: "Restore" });
@@ -189,7 +190,7 @@ it("offers what a gone terminal can restore and runs only the choice the person 
   // A session known for certain resumes by its ID.
   await hear("/work/main", {
     kind: "restoreOffer",
-    offer: { kind: "harness", cwd: "/work/main", command: { program: "codex", args: ["resume", "0199"] }, harness: "codex", session: { kind: "exact", id: "0199" } },
+    offer: { kind: "harness", cwd: "/work/main", command: { program: "codex", args: ["resume", "0199"] }, harness: "codex", session: { kind: "exact", id: "0199" }, resume: { program: "codex", args: ["resume", "0199"] } },
   });
   const exact = await within(panel).findByRole("region", { name: "Restore" });
   expect(within(exact).getByRole("button", { name: "Resume the Codex session" })).toBeTruthy();
