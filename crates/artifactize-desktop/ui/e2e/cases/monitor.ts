@@ -798,11 +798,13 @@ export const scenarios: Scenario[] = [
       await dragEdge(Math.round(room.left - 40));
       const maximum = (await placed())!;
       assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in the Main area, never over the Pane");
-      // The graph shows between the terminal floating on the left, if expanded, and the Detail.
+      // The graph shows between the terminal floating on the left (or its collapsed tab) and the
+      // Detail.
       const graphVisible = await browser.execute(() => {
         const stage = document.querySelector(".stage")!.getBoundingClientRect();
         const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
-        const left = document.querySelector('.stage aside[aria-label="Terminal"]')?.getBoundingClientRect().right ?? stage.left;
+        const terminal = document.querySelector('.stage aside[aria-label="Terminal"], .stage button[aria-label="Expand the terminal"]');
+        const left = terminal?.getBoundingClientRect().right ?? stage.left;
         return !!document.elementFromPoint((left + dock.left) / 2, stage.top + stage.height / 2)?.closest(".graph");
       });
       assert.ok(graphVisible, "some actual graph remains visible beside the maximum-width Detail");

@@ -11,6 +11,8 @@ export const GAP = 12;
 export const MIN = 320;
 /** What of the graph stays visible between the panels. */
 export const KEEP = 96;
+/** The collapsed terminal's tab, on the graph's left edge. */
+export const TAB = 28;
 /** The narrowest stage: both panels at their narrowest, with the graph between them. */
 export const STAGE = GAP + MIN + KEEP + MIN + GAP;
 
@@ -30,11 +32,15 @@ export const detailDefault = (room: number) => Math.min(room * 0.46, 680);
 /** The terminal's width before any drag, in a graph area `room` pixels wide. */
 export const terminalDefault = (room: number) => Math.min(room * 0.4, 560);
 
+/** What the terminal takes of the graph area from the left, its gap included: its fitted width
+ * `terminal` when expanded, its tab when collapsed (`tab`), else nothing. */
+export const leftTaken = (terminal: number | null, tab: boolean) => (terminal !== null ? GAP + terminal : tab ? GAP + TAB : 0);
+
 /** Both panels' widths in a graph area `room` pixels wide, from what each wants; a panel not
- * shown is `null`. */
-export function fitPanels(room: number, terminal: number | null, detail: number | null): { terminal: number | null; detail: number | null } {
+ * shown is `null`. A collapsed terminal (`tab`) keeps its tab's room beside the Detail. */
+export function fitPanels(room: number, terminal: number | null, detail: number | null, tab = false): { terminal: number | null; detail: number | null } {
   const left = terminal === null ? null : clampWidth(terminal, room, GAP + MIN);
-  return { terminal: left, detail: detail === null ? null : clampWidth(detail, room, left === null ? 0 : GAP + left) };
+  return { terminal: left, detail: detail === null ? null : clampWidth(detail, room, leftTaken(left, tab)) };
 }
 
 /** The width kept under `key` from an earlier drag, if any. Storage may be unavailable; then

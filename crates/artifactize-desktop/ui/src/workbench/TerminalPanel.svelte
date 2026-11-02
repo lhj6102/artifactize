@@ -273,6 +273,8 @@
     top: 50%;
     transform: translateY(-50%);
     width: 28px;
+    max-width: 28px;
+    overflow: hidden;
     padding: 12px 0;
     writing-mode: vertical-rl;
     font: inherit;

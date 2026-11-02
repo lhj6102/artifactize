@@ -1,7 +1,7 @@
 // The floating panels' dragged widths stay inside the graph's area, both panels and some graph
 // between them fitting, and are kept for the next launch.
 import { afterEach, expect, it } from "vitest";
-import { DETAIL_KEY, GAP, KEEP, MIN, STAGE, TERMINAL_KEY, clampWidth, fitPanels, loadWidth, saveWidth } from "./detail-width";
+import { DETAIL_KEY, GAP, KEEP, MIN, STAGE, TAB, TERMINAL_KEY, clampWidth, fitPanels, loadWidth, saveWidth } from "./detail-width";
 
 afterEach(() => localStorage.clear());
 
@@ -24,6 +24,8 @@ it("fits both panels with some graph between them, the terminal keeping room for
   const both = fitPanels(1100, 400, 5000);
   expect(both.terminal! + both.detail! + 2 * GAP + KEEP).toBe(1100);
   expect(fitPanels(1100, null, 5000).detail).toBe(1100 - GAP - KEEP);
+  // The collapsed terminal's tab keeps its room: the graph stays visible beside it too.
+  expect(fitPanels(1100, null, 5000, true).detail).toBe(1100 - GAP - KEEP - GAP - TAB);
   // Widths that fit stay as wanted.
   expect(fitPanels(1600, 480, 600)).toEqual({ terminal: 480, detail: 600 });
 });
