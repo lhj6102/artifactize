@@ -1,5 +1,7 @@
 //! Git display identity, separate from the artifactize workspace used for execution.
 
+mod generated;
+
 use crate::types::{GitObjectId, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -206,6 +208,8 @@ pub fn create_worktree(worktree: &Path, commit: &str) -> Result<CreatedWorktree,
             continue;
         }
         let args = [
+            OsStr::new("-c"),
+            OsStr::new("core.logAllRefUpdates=true"),
             OsStr::new("-C"),
             worktree.as_os_str(),
             OsStr::new("worktree"),
@@ -217,6 +221,7 @@ pub fn create_worktree(worktree: &Path, commit: &str) -> Result<CreatedWorktree,
             OsStr::new(revision.trim()),
         ];
         crate::process::tool_output("git", args).ok_or("Git could not create the worktree")?;
+        generated::record(&path, &branch)?;
         return Ok(CreatedWorktree {
             worktree: path,
             branch,
@@ -229,6 +234,10 @@ pub fn remove_worktree(worktree: &Path) -> Result<(), String> {
     let _terminal = crate::platform::terminal::before_remove(worktree)?;
     let identity = identify(worktree);
     let common = identity.common_dir.ok_or("Not a Git worktree")?;
+    let generated = identity
+        .branch
+        .as_deref()
+        .and_then(|branch| generated::Branch::read(worktree, branch));
     crate::process::tool_output(
         "git",
         [
@@ -243,6 +252,9 @@ pub fn remove_worktree(worktree: &Path) -> Result<(), String> {
     .ok_or_else(|| {
         "Git refused to remove the worktree (it may be primary, locked or dirty)".to_owned()
     })?;
+    if let Some(branch) = generated {
+        branch.remove_if_shared(&common);
+    }
     Ok(())
 }
 
