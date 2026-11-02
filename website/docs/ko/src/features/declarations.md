@@ -297,10 +297,10 @@ payload.instruction = "Review {fireball} against {skill-spec}."
 - label은 선언에 붙이는 이름일 뿐이므로 자유롭게 정하면 됩니다. label과 같은 이름의 파일이 있는
   선언에 `select`를 쓰면 오류이고, `index.artf`와 루트 `.artf`에 써도 오류입니다.
 - `fingerprint`를 생략하면 고른 경로를 artifactsum으로 해시하므로, 폴더의 다른 곳이 바뀌어도
-  aspect의 결과를 재사용합니다. artifactsum 형식을 직접 쓰면 `files`를 고른 범위 안으로 좁히고
+  aspect의 결과를 재사용합니다. artifactsum 형식을 직접 쓰면 `files`를 선택 범위 안으로 좁히고
   `ignore`를 더할 수 있습니다. 스크립트나 `fingerprint = false`는 다른 Artifact와 같습니다.
 - 도구에는 선언 파일이 있는 폴더가 보이지만, 고른 경로와 그 경로로 가는 폴더만 보입니다. aspect
-  참조 `{name}`은 그 폴더를 가리키고, `{name}/path`는 고른 범위 안에 있어야 합니다. 명령은 그 폴더에서
+  참조 `{name}`은 그 폴더를 가리키고, `{name}/path`는 선택 범위 안에 있어야 합니다. 명령은 그 폴더에서
   실행됩니다.
 - scope 항목과 저장된 정의에는 `kind = "aspect"`가 들어갑니다.
 
@@ -407,8 +407,8 @@ Runtime 인자, fingerprint 스크립트, 도구 인자는 `{name}`, `{name}/pat
 `--flag={name}/path`로 다른 Artifact를 가리킵니다. 경로는 폴더 Artifact나 aspect의 폴더에서
 시작합니다. Runtime 인자에서 폴더 Artifact의 경로는 그 안에 선언된 폴더 Artifact로 들어갈 수 없습니다.
 그런 경로는 `config check`가 알려 주므로 그 Artifact를 대신 참조하세요. fingerprint 스크립트와 도구
-인자에서는 안에 선언된 Artifact도 범위에 들어 있지 않으면 명령을 준비하거나 호출할 때 실패합니다. aspect의 경로는 고른 범위 안에 있어야
-하며, 고른 범위는 안에 선언된 폴더 Artifact까지 닿을 수 있습니다. 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
+인자에서는 안에 선언된 Artifact도 범위에 들어 있지 않으면 명령을 준비하거나 호출할 때 실패합니다. aspect의 경로는 선택 범위 안에 있어야
+하며, 선택 범위에는 안에 선언된 폴더 Artifact도 포함될 수 있습니다. 파일 참조는 파일 자체이므로 경로를 붙이지 않습니다. 참조는 명령이 실행될 때 절대
 경로로 바뀝니다. 지시문과 Runtime 인자에서 참조하면 eval이 그 Artifact에 의존하게 되고,
 fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽을 수 있게 될 뿐입니다. 도구
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
