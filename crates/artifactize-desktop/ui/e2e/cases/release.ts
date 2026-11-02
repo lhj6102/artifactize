@@ -172,7 +172,7 @@ export const scenarios: Scenario[] = [
       await closeByButton(browser);
     },
   ),
-  // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-CLOSE
+  // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-SELECT E-UPDATE-CLOSE
   scenario<Site>(
     "release-command",
     "an app installed with Cargo shows Cargo's update command, as text that can be selected, and runs nothing itself",

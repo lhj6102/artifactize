@@ -35,6 +35,20 @@ function gitEnvironment(root: NativePath, env: Environment): Environment {
 }
 
 export function git(repo: NativePath, ...args: string[]): void {
+  gitOutput(repo, ...args);
+}
+
+/** What fixture Git prints for `args`, run for the repository `repo`. */
+export function gitOutput(repo: NativePath, ...args: string[]): string {
   const root = parentOf(repo);
-  runProgramOk(gitProgram, args, { cwd: root, env: environment({ root, repo, state: nativePath(root, "state") }) });
+  return runProgramOk(gitProgram, args, { cwd: root, env: environment({ root, repo, state: nativePath(root, "state") }) });
+}
+
+/** Fixture Git committing at the fixed instant `date` (ISO 8601), so history orders exactly. */
+export function gitAt(repo: NativePath, date: string, ...args: string[]): void {
+  const root = parentOf(repo);
+  runProgramOk(gitProgram, args, {
+    cwd: root,
+    env: { ...environment({ root, repo, state: nativePath(root, "state") }), GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+  });
 }

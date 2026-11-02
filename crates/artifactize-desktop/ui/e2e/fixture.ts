@@ -4,12 +4,12 @@
 // Portable domain inputs only: WDIO's outer runner/service owns the native app lifecycle.
 import { readCandidate } from "./build.ts";
 import { settleRuns } from "./runs.ts";
-import { environment, git } from "./environment.ts";
+import { environment, git, gitAt, gitOutput } from "./environment.ts";
 import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
 import {
-  canonicalPath, claudeStandIn, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
+  agentStandIns, canonicalPath, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
   updateDatabase, writeText, type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
@@ -205,11 +205,12 @@ export function createGraph(): Fixture {
 }
 
 /** The workbench's repository: master with two commits, the first tagged `v1`, and a linked
- * worktree `side` on branch `side` with a commit of its own; no Run yet. A Claude Code
- * stand-in is first on the app's PATH: it says what it was started with and where, records
- * each start in `claude-runs.txt` (arguments, then directory), and works for a few seconds;
- * started with `--move NAME` it moves into the sibling folder NAME and keeps working there.
- * The fixture home holds Claude Code's record of session `session` in the repository. */
+ * worktree `side` on branch `side` with a commit of its own, each commit an hour after the
+ * last; no Run yet. Claude Code and Codex stand-ins are first on the app's PATH: each says what
+ * it was started with and where, records each start in `agent-runs.txt` (its name, arguments
+ * and directory), and works for a few seconds; started with `--move NAME` it moves into the
+ * sibling folder NAME and keeps working there. The fixture home holds each harness's own record
+ * of the session `session` in the repository. */
 export type Workbench = Fixture & { side: NativePath; runs: NativePath; session: string; env: Environment };
 export function createWorkbench(): Workbench {
   return prepareFixture((root) => {
@@ -217,41 +218,51 @@ export function createWorkbench(): Workbench {
     const side = nativePath(root, "side");
     declare(repo);
     git(repo, "-C", repo, "add", ".");
-    git(repo, "-C", repo, "commit", "-qm", "Fixture inputs");
+    gitAt(repo, "2026-01-01T10:00:00Z", "-C", repo, "commit", "-qm", "Fixture inputs");
     git(repo, "-C", repo, "tag", "v1");
     writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked twice.\n");
-    git(repo, "-C", repo, "commit", "-qam", "Check the docs twice");
+    gitAt(repo, "2026-01-01T11:00:00Z", "-C", repo, "commit", "-qam", "Check the docs twice");
     git(repo, "-C", repo, "worktree", "add", "-q", "-b", "side", side, "v1");
     writeText(nativePath(side, "docs", "notes.md"), "Documentation of the side.\n");
-    git(repo, "-C", side, "commit", "-qam", "Side work");
-    const runs = nativePath(root, "claude-runs.txt");
-    const script = nativePath(makeDirectory(nativePath(root, "agent")), "claude.mjs");
-    writeText(script, `// A Claude Code stand-in: the fixture's declared agent program.
+    gitAt(repo, "2026-01-01T12:00:00Z", "-C", side, "commit", "-qam", "Side work");
+    const runs = nativePath(root, "agent-runs.txt");
+    const agents = makeDirectory(nativePath(root, "agent"));
+    const scripts = { claude: nativePath(agents, "claude.mjs"), codex: nativePath(agents, "codex.mjs") };
+    for (const script of Object.values(scripts)) {
+      writeText(script, `// A harness stand-in: the fixture's declared agent program, named as the harness it stands for.
 import { appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(runs)}, args.join(" ") + String.fromCharCode(9) + process.cwd() + String.fromCharCode(10));
+const tab = String.fromCharCode(9);
+appendFileSync(${JSON.stringify(runs)}, basename(process.argv[1], ".mjs") + tab + args.join(" ") + tab + process.cwd() + String.fromCharCode(10));
 console.log("agent " + args.join("+") + " at " + process.cwd());
 if (args[0] === "--move") {
   setTimeout(() => process.chdir(join(process.cwd(), "..", args[1])), 1500);
   setTimeout(() => {}, 120000);
 } else setTimeout(() => console.log("agent done " + args.join("+")), 2500);
 `);
+    }
     quietShell(root);
-    // Claude Code's own record of a session in the repository, as its metadata names it.
+    // Each harness's own record of a session in the repository, as its metadata names it.
     const session = "0f1e2d3c-workbench";
-    const projects = makeDirectory(nativePath(root, "home", ".claude", "projects", "repo"));
-    writeText(nativePath(projects, `${session}.jsonl`), `${JSON.stringify({ type: "user", sessionId: session, cwd: canonicalPath(repo) })}\n`);
-    return { root, repo, state: nativePath(root, "state"), side, runs, session, env: claudeStandIn(root, {}, script) };
+    const cwd = canonicalPath(repo);
+    const claude = makeDirectory(nativePath(root, "home", ".claude", "projects", "repo"));
+    writeText(nativePath(claude, `${session}.jsonl`), `${JSON.stringify({ type: "user", sessionId: session, cwd })}\n`);
+    const codex = makeDirectory(nativePath(root, "home", ".codex", "sessions", "2026", "01", "01"));
+    writeText(nativePath(codex, `rollout-2026-01-01T12-00-00-${session}.jsonl`), `${JSON.stringify({ type: "session_meta", payload: { id: session, cwd } })}\n`);
+    return { root, repo, state: nativePath(root, "state"), side, runs, session, env: agentStandIns(root, {}, scripts) };
   });
 }
 
-/** The starts of the workbench's Claude Code stand-in: its arguments and its directory. */
-export function claudeRuns(fixture: Workbench): { args: string; cwd: string }[] {
-  return (readTextIfExists(fixture.runs) ?? "").split("\n").filter(Boolean).map((line) => {
-    const [args, cwd] = line.split("\t");
-    return { args, cwd };
-  });
+/** The starts of the workbench's `harness` stand-in, in order: its arguments and directory. */
+export function agentRuns(fixture: Workbench, harness: "claude" | "codex"): { args: string; cwd: string }[] {
+  return (readTextIfExists(fixture.runs) ?? "").split("\n").filter(Boolean).map((line) => line.split("\t"))
+    .filter(([name]) => name === harness).map(([, args, cwd]) => ({ args, cwd }));
+}
+
+/** The branches of the workbench's repository, by name. */
+export function branchNames(fixture: Fixture): string[] {
+  return gitOutput(fixture.repo, "-C", fixture.repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split("\n").filter(Boolean).sort();
 }
 
 /** A repository whose only eval is a runtime check that runs until its test writes `gate`,

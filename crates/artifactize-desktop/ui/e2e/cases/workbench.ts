@@ -4,12 +4,12 @@
 // it, offers what it can restore once it was gone and the worktree its agent moved to; and the
 // terminal panel's width, kept like the Detail's. Every case owns its fixture.
 import assert from "node:assert/strict";
-import { addFolder, claudeRuns, createWorkbench, type Workbench } from "../fixture.ts";
+import { addFolder, agentRuns, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { exists, nativePath, primaryModifier, terminalForeground } from "../platform.ts";
+import { asNativePath, childDirectories, exists, nameOf, nativePath, primaryModifier, terminalForeground, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { camera, detail, FIND, findField, offCentre, TERMINAL } from "../graph-view.ts";
 import { branch, branches, entriesFocused, listed, mainFocused, mainTitle, selectBranch } from "../pane.ts";
@@ -74,7 +74,7 @@ export const scenarios: Scenario[] = [
       // Every branch's commits, each with its summary, short ID and the branches and tags on it;
       // master's checked-out commit marked.
       const all = await history(browser, 3, "master's history lists the commits of every branch");
-      assert.deepEqual(all.map((commit) => commit.summary).sort(), ["Check the docs twice", "Fixture inputs", "Side work"]);
+      assert.deepEqual(all.map((commit) => commit.summary), ["Side work", "Check the docs twice", "Fixture inputs"], "newest at the top");
       assert.ok(all.every((commit) => /^[0-9a-f]{7}$/.test(commit.short)), `short IDs: ${JSON.stringify(all)}`);
       const refs = Object.fromEntries(all.map((commit) => [commit.summary, commit.refs]));
       assert.deepEqual(refs, { "Check the docs twice": ["HEAD", "master"], "Fixture inputs": ["v1"], "Side work": ["side"] });
@@ -89,14 +89,18 @@ export const scenarios: Scenario[] = [
 
       // A new worktree from the tagged commit: a new folder beside the primary checkout on a new
       // branch, said where; the Pane lists it and it shows with its own terminal.
+      const [branchesBefore, foldersBefore] = [branchNames(fixture), childDirectories(fixture.root)];
       await newWorktreeFrom(browser, "Fixture inputs");
       let said = "";
       await browser.waitUntil(async () => !!(said = (await gitLayer(browser)).notes.find((note) => note.startsWith("Created ")) ?? ""),
         { timeout: 30000, timeoutMsg: "the Git layer says which worktree it created" });
-      const name = said.match(/^Created (worktree-[0-9a-f]+) in /)?.[1];
-      assert.ok(name, `the created branch named: ${said}`);
-      assert.ok(said.includes(name), "the folder named like its branch");
-      assert.ok(exists(nativePath(fixture.root, name)), "the folder beside the primary checkout");
+      const [, name, where] = said.match(/^Created (\S+) in (.+?)(?:\.|; it opens once listed\.)$/) ?? [];
+      assert.ok(name && where, `the Git layer names the branch and the folder: ${said}`);
+      // A branch and a folder that did not exist before, the folder beside the primary checkout.
+      assert.ok(!branchesBefore.includes(name) && branchNames(fixture).includes(name), `a new branch ${name}: before ${JSON.stringify(branchesBefore)}`);
+      const folders = childDirectories(fixture.root).filter((folder) => !foldersBefore.includes(folder));
+      assert.equal(folders.length, 1, `one new folder beside the primary checkout: ${JSON.stringify(folders)}`);
+      assert.equal(nameOf(asNativePath(where)), nameOf(folders[0]), "the folder the Git layer names");
       await listed(browser, `repo  ${name}`, 30000);
       await currentOf(browser, `repo  ${name}`);
       assert.deepEqual((await branches(browser)).map((entry) => entry.name).sort(), ["repo  master", `repo  ${name}`, "repo  side"].sort());
@@ -129,10 +133,12 @@ export const scenarios: Scenario[] = [
 
       // Collapsed, it keeps running: what a program prints meanwhile shows once it is expanded.
       const shown = await camera(browser);
-      await typeLine(browser, "node -e \"setTimeout(()=>{console.log('while-'+'collapsed');require('fs').writeFileSync('printed','')},2000)\"");
+      // The program prints once its gate opens, which happens only after the collapse is seen.
+      await typeLine(browser, "node -e \"const fs=require('fs');const t=setInterval(()=>{if(fs.existsSync('gate')){clearInterval(t);console.log('while-'+'collapsed');fs.writeFileSync('printed','')}},50)\"");
       await collapse(browser);
       assert.equal(await camera(browser), shown, "the graph as it was");
-      await browser.waitUntil(() => exists(nativePath(fixture.repo, "printed")), { timeout: 30000, timeoutMsg: "the program finished while collapsed" });
+      writeText(nativePath(fixture.repo, "gate"), "");
+      await browser.waitUntil(() => exists(nativePath(fixture.repo, "printed")), { timeout: 30000, timeoutMsg: "the program printed while collapsed" });
       await expand(browser);
       await printed(browser, "while-collapsed", "what it printed while collapsed");
       assert.ok(shows(await terminal(browser), "master-mark"), "the screen as it was");
@@ -178,24 +184,31 @@ export const scenarios: Scenario[] = [
   // UX journey: J-TERMINAL-DETACH; UX edges: E-TERMINAL-TYPE E-QUIT-CLEAN E-TERMINAL-RELAUNCH
   scenario<Workbench>(
     "workbench-terminal-relaunch",
-    "keeps a worktree's terminal running when the app quits, and shows it as it was in the next launch",
+    "keeps a worktree's terminal and the program in it running when the app quits, and shows it as it was in the next launch",
     prepare,
     async (browser) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
       await typeLine(browser, "echo before-quit");
       await printed(browser, "before-quit", "the shell ran what was typed");
+      // A program that waits for its gate, which opens only in the next launch.
+      await typeLine(browser, "node -e \"const fs=require('fs');console.log('waiting-'+'for-gate');const t=setInterval(()=>{if(fs.existsSync('relaunched')){clearInterval(t);console.log('gate-'+'seen')}},50)\"");
+      await printed(browser, "waiting-for-gate", "the program waits for its gate");
       // q from the Pane quits at once.
       await selectBranch(browser, "repo  master");
       await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
         { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
       await sessionEndedByApp(browser, () => browser.keys(["q"]));
     },
-    async (browser) => {
+    async (browser, { data: fixture }) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
-      await printed(browser, "before-quit", "the screen as it was before the app quit");
+      await printed(browser, "waiting-for-gate", "the screen as it was before the app quit");
+      assert.ok(shows(await terminal(browser), "before-quit"));
       assert.equal((await terminal(browser))?.offer, null, "the terminal kept running: nothing to restore");
+      // The program that ran through the quit sees its gate open now.
+      writeText(nativePath(fixture.repo, "relaunched"), "");
+      await printed(browser, "gate-seen", "the program still runs after the relaunch");
       await typeLine(browser, "echo after-relaunch");
       await printed(browser, "after-relaunch", "the same shell takes what is typed");
     },
@@ -212,7 +225,7 @@ export const scenarios: Scenario[] = [
       // The agent runs, then the shell ends: the terminal is gone.
       await typeLine(browser, "claude --hello");
       await printed(browser, "agent done --hello", "the agent ran and finished");
-      assert.equal(claudeRuns(fixture).length, 1);
+      assert.equal(agentRuns(fixture, "claude").length, 1);
       await endShell(browser);
       /** Choose another worktree and the gone one again: a fresh shell with a restore offer. */
       const reopen = async () => {
@@ -224,7 +237,7 @@ export const scenarios: Scenario[] = [
         return (await terminal(browser))!.offer!;
       };
       const offer = await reopen();
-      assert.equal(claudeRuns(fixture).length, 1, "offering runs nothing");
+      assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");
       if (terminalForeground) {
         assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
         assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
@@ -238,10 +251,10 @@ export const scenarios: Scenario[] = [
       if (terminalForeground) {
         // Resuming runs the agent's resume command in its directory, and the offer goes.
         await browser.$(TERMINAL).$('button[aria-label="Resume the latest Claude Code session"]').click();
-        await browser.waitUntil(() => claudeRuns(fixture).length === 2, { timeout: 30000, timeoutMsg: "the resume command ran" });
-        const [, resumed] = claudeRuns(fixture);
+        await browser.waitUntil(() => agentRuns(fixture, "claude").length === 2, { timeout: 30000, timeoutMsg: "the resume command ran" });
+        const [, resumed] = agentRuns(fixture, "claude");
         assert.equal(resumed.args, "--continue");
-        assert.equal(resumed.cwd, claudeRuns(fixture)[0].cwd, "in the agent's directory");
+        assert.equal(resumed.cwd, agentRuns(fixture, "claude")[0].cwd, "in the agent's directory");
         assert.equal((await terminal(browser))?.offer, null, "the offer is gone");
         await printed(browser, "agent done --continue", "the resumed agent ran and finished");
       }
@@ -249,13 +262,13 @@ export const scenarios: Scenario[] = [
       // Keeping the fresh shell drops the offer and runs nothing.
       await endShell(browser);
       const again = await reopen();
-      const before = claudeRuns(fixture).length;
+      const before = agentRuns(fixture, "claude").length;
       assert.ok(again.buttons.includes("Keep the fresh shell"));
       await browser.$(TERMINAL).$("button=Keep the fresh shell").click();
       await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
       await typeLine(browser, "echo kept-shell");
       await printed(browser, "kept-shell", "the fresh shell kept");
-      assert.equal(claudeRuns(fixture).length, before, "keeping the fresh shell ran nothing");
+      assert.equal(agentRuns(fixture, "claude").length, before, "keeping the fresh shell ran nothing");
       if (!terminalForeground) return;
 
       // A session the agent's own records name for this directory resumes by its ID; rerunning
@@ -266,10 +279,10 @@ export const scenarios: Scenario[] = [
       const known = await reopen();
       assert.match(known.text, new RegExp(`Resume the Claude Code session: claude --resume ${fixture.session}`));
       assert.deepEqual(known.buttons, ["Run the last command again", "Resume the Claude Code session", "Keep the fresh shell"]);
-      const runs = claudeRuns(fixture).length;
+      const runs = agentRuns(fixture, "claude").length;
       await browser.$(TERMINAL).$('button[aria-label="Run the last command again"]').click();
-      await browser.waitUntil(() => claudeRuns(fixture).length === runs + 1, { timeout: 30000, timeoutMsg: "the last command ran again" });
-      assert.deepEqual(claudeRuns(fixture).at(-1), { args: `--resume ${fixture.session}`, cwd: claudeRuns(fixture)[0].cwd }, "the same command where it ran");
+      await browser.waitUntil(() => agentRuns(fixture, "claude").length === runs + 1, { timeout: 30000, timeoutMsg: "the last command ran again" });
+      assert.deepEqual(agentRuns(fixture, "claude").at(-1), { args: `--resume ${fixture.session}`, cwd: agentRuns(fixture, "claude")[0].cwd }, "the same command where it ran");
       await browser.waitUntil(async () => (await terminal(browser))?.offer === null, { timeout: 15000, timeoutMsg: "the offer is gone" });
     },
   ),
@@ -289,7 +302,7 @@ export const scenarios: Scenario[] = [
         { timeout: 30000, timeoutMsg: "the terminal offers the worktree its agent moved to" });
       assert.equal(await mainTitle(browser), "Current · repo  master", "the graph stays on the terminal's own worktree");
       assert.ok(await branch(browser, "repo  side"), "the other worktree listed as its own entry");
-      assert.equal(claudeRuns(fixture).length, 1);
+      assert.equal(agentRuns(fixture, "claude").length, 1);
       await browser.$(TERMINAL).$("button=Open detected worktree").click();
       await currentOf(browser, "repo  side");
       await terminalOf(browser, "repo / side");
