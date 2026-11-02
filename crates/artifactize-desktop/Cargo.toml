@@ -21,7 +21,7 @@ path = "src/e2e_observe.rs"
 required-features = ["e2e"]
 
 [dependencies]
-artifactize-core = { path = "../artifactize-core" }
+artifactize-core = { path = "../artifactize-core", features = ["desktop-types"] }
 clap = { version = "4.5", features = ["derive"] }
 artifactize-tools.workspace = true
 serde = { version = "1", features = ["derive"] }
