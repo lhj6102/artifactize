@@ -13,8 +13,6 @@ export const MIN = 320;
 export const KEEP = 96;
 /** The narrowest stage: both panels at their narrowest, with the graph between them. */
 export const STAGE = GAP + MIN + KEEP + MIN + GAP;
-/** The terminal's width before any drag. */
-export const TERMINAL = 520;
 
 export const DETAIL_KEY = "monitor-detail-width";
 export const TERMINAL_KEY = "monitor-terminal-width";
@@ -29,6 +27,8 @@ export function clampWidth(want: number, room: number, beside = 0): number {
 
 /** The Detail's width before any drag, in a graph area `room` pixels wide. */
 export const detailDefault = (room: number) => Math.min(room * 0.46, 680);
+/** The terminal's width before any drag, in a graph area `room` pixels wide. */
+export const terminalDefault = (room: number) => Math.min(room * 0.4, 560);
 
 /** Both panels' widths in a graph area `room` pixels wide, from what each wants; a panel not
  * shown is `null`. */

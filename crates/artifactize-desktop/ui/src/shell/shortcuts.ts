@@ -43,6 +43,9 @@ const GRAPH: Section = {
     ["Click ▶ under Tools", "Run one of the Artifact's tools in its worktree"],
     ["t / w", "Debug / pending evals"],
     ["Drag the left edge", "Resize the Detail"],
+    ["‹ · the Terminal tab", "Collapse the terminal (it keeps running) · expand it again"],
+    ["Drag the terminal's right edge", "Resize the terminal"],
+    ["+ beside a commit", "New worktree from that commit"],
     ["Esc", "Close the Detail, then back to the Pane"],
     [
       "Colours",

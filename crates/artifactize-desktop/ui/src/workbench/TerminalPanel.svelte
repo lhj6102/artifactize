@@ -135,7 +135,7 @@
     top: 12px;
     left: 12px;
     bottom: 12px;
-    width: var(--terminal-width, min(40%, 520px));
+    width: var(--terminal-width, min(40%, 560px));
     min-width: min(320px, calc(100% - 24px));
     display: grid;
     grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr);

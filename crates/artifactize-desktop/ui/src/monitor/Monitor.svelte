@@ -14,8 +14,8 @@
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { DETAIL_KEY, GAP, MIN, TERMINAL, TERMINAL_KEY, clampWidth, detailDefault, fitPanels, saveWidth } from "./detail-width";
-  import { GIT, PANE_MIN, fitLayout, limits } from "./columns";
+  import { DETAIL_KEY, GAP, MIN, TERMINAL_KEY, clampWidth, detailDefault, fitPanels, saveWidth, terminalDefault } from "./detail-width";
+  import { GIT, fitLayout } from "./columns";
   import GitLayer from "../workbench/GitLayer.svelte";
   import TerminalPanel from "../workbench/TerminalPanel.svelte";
   import type { WorktreeKey } from "../workbench/backend";
@@ -53,14 +53,17 @@
   /** Both panels' widths, fitted to the stage once it is measured. */
   const widths = $derived(
     m.stageWidth > 0
-      ? fitPanels(m.stageWidth, terminalShown ? (m.terminalWidth ?? TERMINAL) : null, detailShown ? (m.detailWidth ?? detailDefault(m.stageWidth)) : null)
+      ? fitPanels(m.stageWidth, terminalShown ? (m.terminalWidth ?? terminalDefault(m.stageWidth)) : null, detailShown ? (m.detailWidth ?? detailDefault(m.stageWidth)) : null)
       : { terminal: null, detail: null },
   );
-  /** How far the terminal (or its collapsed tab) covers the graph from the left. */
-  const coveredLeft = $derived(worktree === null ? 0 : terminalShown ? GAP + (widths.terminal ?? TERMINAL) : GAP + 28);
-  /** The Pane's widest and the stage's narrowest shares, from the columns' width. */
-  const shares = $derived(limits(m.columnsWidth));
-  let group = $state<ReturnType<typeof PaneGroup>>();
+  /** How far the terminal (or its collapsed tab) covers the graph from the left; before the
+   * stage is measured, the terminal's CSS width does. */
+  const coveredLeft = $derived(
+    worktree === null ? "0px" : !terminalShown ? `${GAP + 28}px` : widths.terminal === null ? `calc(${GAP}px + min(40%, 560px))` : `${GAP + widths.terminal}px`,
+  );
+  /** The divider's group, and the columns it splits; neither is drawn from. */
+  let group: ReturnType<typeof PaneGroup> | undefined;
+  let split: HTMLElement | undefined;
   const review = $derived(shown.kind === "review" ? app.reviews[shown.id] : undefined);
   /** The pane's search: the library's, overridden while typed until a pause searches it; a
    * failed search puts the library's back. */
@@ -409,16 +412,23 @@
     window.addEventListener("mouseup", drop);
   }
 
-  /** The columns right of the Git layer, measured: a layout kept from a wider window, or one
-   * the window shrank under, gives the stage back its narrowest. */
+  /** Keep the stage at least its narrowest in pixels: a drag stops there, and a layout kept
+   * from a wider window, or one the window shrank under, gives the stage its narrowest back.
+   * The divider's own limits stay shares, as its kept layout is filed under them. */
+  function fitColumns(layout: number[] | undefined = group?.getLayout()) {
+    const fitted = layout && split ? fitLayout(layout, split.clientWidth) : null;
+    if (fitted) group?.setLayout(fitted);
+  }
+
+  /** The columns right of the Git layer, refitted whenever their width changes. */
   const columns: Attachment<HTMLElement> = (element) => {
-    const resized = new ResizeObserver(() => {
-      m.columnsWidth = element.clientWidth;
-      const fitted = group ? fitLayout(group.getLayout(), element.clientWidth) : null;
-      if (fitted) group?.setLayout(fitted);
-    });
+    split = element;
+    const resized = new ResizeObserver(() => fitColumns());
     resized.observe(element);
-    return () => resized.disconnect();
+    return () => {
+      resized.disconnect();
+      split = undefined;
+    };
   };
 
   /** The stage, measured: both panels fit to its width. */
@@ -481,8 +491,8 @@
 <div class="monitor" style:--git-width="{GIT}px">
   <GitLayer {worktree} />
   <div class="split" {@attach columns}>
-    <PaneGroup bind:this={group} direction="horizontal" autoSaveId="monitor-layout" class="columns">
-      <Split defaultSize={24} minSize={PANE_MIN} maxSize={shares.paneMax}>
+    <PaneGroup bind:this={group} direction="horizontal" autoSaveId="monitor-layout" class="columns" onLayoutChange={fitColumns}>
+      <Split defaultSize={24} minSize={12}>
         <Pane
           bind:query={() => query, setQuery}
           {filled}
@@ -496,8 +506,8 @@
         />
       </Split>
       <PaneResizer class="resizer" />
-      <Split defaultSize={76} minSize={shares.stageMin}>
-        <div class="stage" style:--covered-left="{coveredLeft}px" {@attach stage}>
+      <Split defaultSize={76} minSize={30}>
+        <div class="stage" style:--covered-left={coveredLeft} {@attach stage}>
           <Panel
             {title}
             label="Main area"

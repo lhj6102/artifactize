@@ -3,7 +3,7 @@
 // only the person moves the camera. The Detail floats over the canvas and takes no part: Fit View
 // fits the whole graph into the whole canvas, a Detail open or not. Opening what the find field
 // found is the one exception the person asks for: it brings that Artifact to the middle of the
-// graph left of the Detail.
+// graph between the terminal floating on the left and the Detail on the right.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen } from "@testing-library/svelte";
@@ -40,6 +40,8 @@ const box = (left: number, top: number, width: number, height: number) =>
 const CANVAS = box(346, 110, 1094, 762);
 /** Where the Detail at its default width floats, 12px from the graph area's edges. */
 const DETAIL = box(925, 52, 503, 808);
+/** Where a 400px terminal floats over the graph's left side, 12px from its edges. */
+const TERMINAL = box(358, 52, 400, 808);
 
 /** The camera Svelte Flow would hold: the last viewport asked for, or one the person set. */
 let viewport: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -241,6 +243,44 @@ it("finds Artifacts and evals by name and brings the opened one to the middle of
   expect((at.top + at.bottom) / 2).toBeCloseTo(CANVAS.top + CANVAS.height / 2);
   expect(document.activeElement).toBe(detail);
   detail.remove();
+});
+
+it("brings a found Artifact to the middle of the graph between the terminal and the Detail", async () => {
+  const { app } = await drawn(() => PUBLISH);
+  const panel = (at: DOMRect) => {
+    const element = document.createElement("div");
+    element.tabIndex = -1;
+    element.getBoundingClientRect = () => at;
+    document.body.append(element);
+    return element;
+  };
+  app.monitor.panes.terminal = panel(TERMINAL);
+  app.monitor.panes.detail = panel(DETAIL);
+  viewport = { x: 0, y: 0, zoom: 0.8 };
+  camera.setViewport.mockClear();
+  await typeFind(app, "pub");
+  const [own] = await screen.findAllByRole("option");
+  await fireEvent.click(own);
+  await vi.waitFor(() => expect(camera.setViewport).toHaveBeenCalledOnce());
+  const at = onScreen("publish");
+  expect((at.left + at.right) / 2).toBeCloseTo((TERMINAL.right + DETAIL.left) / 2);
+  expect(at.left).toBeGreaterThan(TERMINAL.right);
+  expect(at.right).toBeLessThan(DETAIL.left);
+
+  // With the Detail closed, the middle is everything right of the terminal; Fit View still
+  // frames the whole graph in the whole canvas, under both panels.
+  app.monitor.panes.detail.remove();
+  app.monitor.panes.detail = undefined;
+  camera.setViewport.mockClear();
+  await typeFind(app, "pub");
+  await fireEvent.click((await screen.findAllByRole("option"))[0]);
+  await vi.waitFor(() => expect(camera.setViewport).toHaveBeenCalledOnce());
+  const alone = onScreen("publish");
+  expect((alone.left + alone.right) / 2).toBeCloseTo((TERMINAL.right + CANVAS.right) / 2);
+  screen.getByRole("button", { name: "Fit View" }).click();
+  expect(Object.keys(PLACED).filter((name) => !within(name, CANVAS.right))).toEqual([]);
+  expect(onScreen("docs").left).toBeLessThan(TERMINAL.right);
+  app.monitor.panes.terminal.remove();
 });
 
 it("opens a found Artifact on its own tab with a click, keeping a zoom that reads", async () => {

@@ -65,8 +65,7 @@ export class MonitorState {
   terminal = $state(true);
   /** The terminal panel's dragged width in pixels, or `null` for its default. */
   terminalWidth = $state<number | null>(loadWidth(TERMINAL_KEY));
-  /** The columns' and the stage's widths in pixels, as last measured; 0 before. */
-  columnsWidth = $state(0);
+  /** The stage's width in pixels, as last measured; 0 before. */
   stageWidth = $state(0);
   /** The worktree whose removal waits for the person's confirmation. */
   removing = $state<string | null>(null);
