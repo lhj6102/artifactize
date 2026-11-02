@@ -38,7 +38,8 @@ impl Metadata {
         file.as_file().sync_all()?;
         file.persist(identity.join("artifactize-terminal.json"))
             .map_err(io::Error::other)?;
-        Ok(())
+        // The renamed entry itself must survive a reboot, not only the file's contents.
+        platform::sync_dir(identity)
     }
     pub fn offer(&self) -> RestoreOffer {
         let resume = self.harness.as_ref().map(|harness| match harness {
@@ -116,13 +117,7 @@ fn harness(command: &TerminalCommand) -> Option<Harness> {
 // An exact resume/session argument plus matching metadata is proof. A matching cwd or newest
 // timestamp alone is not: concurrent agents may be working in the very same directory.
 fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) -> Option<String> {
-    let requested = command.args.windows(2).find_map(|pair| {
-        matches!(pair[0].as_str(), "--resume" | "--session-id" | "resume")
-            .then_some(pair[1].as_str())
-    })?;
-    if requested.starts_with('-') {
-        return None;
-    }
+    let requested = requested(harness, command)?;
     let home = platform::home_directory()?;
     let root = match harness {
         Harness::ClaudeCode => platform::environment::var("CLAUDE_CONFIG_DIR")
@@ -147,15 +142,15 @@ fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) 
                     .ends_with(&format!("{requested}.jsonl"))
             {
                 let file = fs::File::open(entry.path()).ok()?;
-                let records = serde_json::Deserializer::from_reader(io::BufReader::new(file))
-                    .into_iter::<Envelope>();
-                for record in records {
-                    let record = record.ok()?;
+                for line in io::BufRead::lines(io::BufReader::new(file)) {
+                    let line = line.ok()?;
+                    let record: Envelope = serde_json::from_str(&line).ok()?;
                     let (id, directory) = match harness {
                         Harness::ClaudeCode => (record.session_id, record.cwd),
+                        // Only a session_meta record's payload is decoded at all.
                         Harness::Codex if record.kind.as_deref() == Some("session_meta") => {
-                            let metadata = record.payload?;
-                            (metadata.id, metadata.cwd)
+                            let meta: SessionRecord = serde_json::from_str(&line).ok()?;
+                            (meta.payload.id, meta.payload.cwd)
                         }
                         Harness::Codex => break,
                     };
@@ -169,6 +164,37 @@ fn session_id(harness: &Harness, command: &TerminalCommand, cwd: Option<&Path>) 
     None
 }
 
+/// The session a harness command names in that harness's own syntax: Claude Code's
+/// `--resume ID`, `-r ID` or `--session-id ID` (also with `=`), and Codex's `resume ID`
+/// subcommand. Arguments after `--` are operands, and a harness started through its
+/// interpreter has its script first. The session's own metadata must still confirm the ID.
+fn requested<'a>(harness: &Harness, command: &'a TerminalCommand) -> Option<&'a str> {
+    let interpreted = Path::new(&command.program)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| matches!(stem, "node" | "nodejs" | "bun"));
+    let args = command.args.get(usize::from(interpreted)..)?;
+    let options = args.split(|arg| arg == "--").next().unwrap_or_default();
+    let value = match harness {
+        Harness::ClaudeCode => {
+            options
+                .iter()
+                .enumerate()
+                .find_map(|(at, arg)| match arg.as_str() {
+                    "--resume" | "-r" | "--session-id" => options.get(at + 1).map(String::as_str),
+                    other => other
+                        .strip_prefix("--resume=")
+                        .or_else(|| other.strip_prefix("--session-id=")),
+                })
+        }
+        Harness::Codex => match options {
+            [subcommand, id, ..] if subcommand == "resume" => Some(id.as_str()),
+            _ => None,
+        },
+    }?;
+    (!value.is_empty() && !value.starts_with('-')).then_some(value)
+}
+
 #[derive(Deserialize)]
 struct Envelope {
     #[serde(rename = "type")]
@@ -176,7 +202,10 @@ struct Envelope {
     #[serde(rename = "sessionId")]
     session_id: Option<String>,
     cwd: Option<PathBuf>,
-    payload: Option<SessionMeta>,
+}
+#[derive(Deserialize)]
+struct SessionRecord {
+    payload: SessionMeta,
 }
 #[derive(Deserialize)]
 struct SessionMeta {
