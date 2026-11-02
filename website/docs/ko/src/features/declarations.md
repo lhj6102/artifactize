@@ -428,8 +428,8 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 
 ## Runtime 실행 {#runtime-execution}
 
-artifactize는 프로그램을 적은 인자 그대로, 셸 없이, Artifact 폴더(파일 Artifact면 들어 있는
-폴더)에서 실행합니다.
+artifactize는 선언한 프로그램을 Artifact 폴더(파일 Artifact는 그 파일이 있는 폴더)에서 셸을
+거치지 않고 실행하며, 인자는 선언한 그대로 전달합니다.
 
 명령은 작성자의 평소 터미널 환경에서 실행되므로, 프로젝트에 명령을 선언할 때도 터미널에 입력하듯 쓰면 됩니다. 실제 홈과 캐시 위치(`HOME`, `XDG_*`, Windows에서는 `USERPROFILE`, `APPDATA`,
 `LOCALAPPDATA`와 시스템 변수)를 포함해 `artifactize` 프로세스의 환경을 모두 전달하므로, 버전
