@@ -139,15 +139,12 @@
     if (!openWorktree(path)) browse.error = `The worktree ${path} is not listed yet; it shows in the Pane once found.`;
   }
 
-  /** Remove the worktree waiting for confirmation; its terminal ends. */
+  /** Remove the worktree waiting for confirmation. Its terminal ends, and the panel stays to
+   * say so until another worktree is chosen; a refusal shows in the Git layer. */
   async function remove() {
     const path = m.removing;
     m.removing = null;
-    if (path !== null && (await git.remove(path)) && worktree === path) {
-      m.shown = { kind: "none" };
-      m.opened = null;
-      current.clear();
-    }
+    if (path !== null) await git.remove(path);
   }
 
   function showCurrent(item: BranchView) {

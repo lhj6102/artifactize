@@ -8,6 +8,7 @@ import { addFolder, agentRuns, branchNames, createWorkbench, type Workbench } fr
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { asNativePath, childDirectories, exists, nameOf, nativePath, primaryModifier, terminalForeground, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
@@ -53,6 +54,53 @@ async function endShell(browser: WebdriverIO.Browser): Promise<void> {
   await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
     { timeout: 15000, timeoutMsg: "the panel says the terminal ended" });
 }
+
+/** Choose another worktree and master, whose terminal is gone, again: a fresh shell with a
+ * restore offer. */
+async function reopen(browser: WebdriverIO.Browser): Promise<{ text: string; buttons: string[] }> {
+  await selectBranch(browser, "repo  side");
+  await terminalOf(browser, "repo / side");
+  await selectBranch(browser, "repo  master");
+  await browser.waitUntil(async () => (await terminal(browser))?.offer !== null && (await terminal(browser))?.heading === "Terminal · repo / master",
+    { timeout: 30000, timeoutMsg: "master's terminal offers a restore" });
+  return (await terminal(browser))!.offer!;
+}
+
+/** The worktree the Git layer says it created last, once it names another than `before`. */
+async function created(browser: WebdriverIO.Browser, before = ""): Promise<{ branch: string; folder: string }> {
+  let said = "";
+  await browser.waitUntil(async () => {
+    said = (await gitLayer(browser)).notes.find((note) => note.startsWith("Created ")) ?? "";
+    return said !== "" && !said.startsWith(`Created ${before} `);
+  }, { timeout: 30000, timeoutMsg: "the Git layer says which worktree it created" });
+  const [, branch, folder] = said.match(/^Created (\S+) in (.+?)(?:\.|; it opens once listed\.)$/) ?? [];
+  assert.ok(branch && folder, `the Git layer names the branch and the folder: ${said}`);
+  return { branch, folder };
+}
+
+/** The removal dialog's text, or null while it is closed. */
+const removal = (browser: WebdriverIO.Browser) => browser.execute(() => {
+  const dialog = [...document.querySelectorAll('[role="dialog"]')].find((each) => each.textContent?.includes("Remove this worktree?"));
+  return dialog ? (dialog.textContent ?? "").replace(/\s+/g, " ").trim() : null;
+});
+
+/** Ask to remove the shown worktree from the palette, and wait for the dialog. */
+async function askRemoval(browser: WebdriverIO.Browser): Promise<string> {
+  await browser.$("button*=Commands").click();
+  await choosePaletteCommand(browser, "Remove the shown", "Remove the shown worktree…");
+  await press(browser, ["Enter"], async () => (await removal(browser)) !== null, "the removal dialog asks");
+  return (await removal(browser))!;
+}
+
+/** Confirm the removal, and wait for the dialog to close. */
+async function confirmRemoval(browser: WebdriverIO.Browser): Promise<void> {
+  await browser.$('[role="dialog"]').$("button=Remove").click();
+  await browser.waitUntil(async () => (await removal(browser)) === null, { timeout: 15000, timeoutMsg: "the removal dialog closed" });
+}
+
+/** Wait until the Git layer says Git refused the removal. */
+const refused = (browser: WebdriverIO.Browser, what: string) => browser.waitUntil(async () =>
+  (await gitLayer(browser)).notes.some((note) => note.startsWith("Git refused to remove the worktree")), { timeout: 30000, timeoutMsg: what });
 
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-GIT-LAYER J-WORKTREE-NEW; UX edges: E-GIT-HISTORY E-GIT-WORKTREE-NEW E-TERMINAL-OPEN E-TERMINAL-TYPE
@@ -228,15 +276,7 @@ export const scenarios: Scenario[] = [
       assert.equal(agentRuns(fixture, "claude").length, 1);
       await endShell(browser);
       /** Choose another worktree and the gone one again: a fresh shell with a restore offer. */
-      const reopen = async () => {
-        await selectBranch(browser, "repo  side");
-        await terminalOf(browser, "repo / side");
-        await selectBranch(browser, "repo  master");
-        await browser.waitUntil(async () => (await terminal(browser))?.offer !== null && (await terminal(browser))?.heading === "Terminal · repo / master",
-          { timeout: 30000, timeoutMsg: "master's terminal offers a restore" });
-        return (await terminal(browser))!.offer!;
-      };
-      const offer = await reopen();
+      const offer = await reopen(browser);
       assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");
       if (terminalForeground) {
         assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
@@ -261,7 +301,7 @@ export const scenarios: Scenario[] = [
 
       // Keeping the fresh shell drops the offer and runs nothing.
       await endShell(browser);
-      const again = await reopen();
+      const again = await reopen(browser);
       const before = agentRuns(fixture, "claude").length;
       assert.ok(again.buttons.includes("Keep the fresh shell"));
       await browser.$(TERMINAL).$("button=Keep the fresh shell").click();
@@ -276,7 +316,7 @@ export const scenarios: Scenario[] = [
       await typeLine(browser, `claude --resume ${fixture.session}`);
       await printed(browser, `agent done --resume+${fixture.session}`, "the agent ran its session and finished");
       await endShell(browser);
-      const known = await reopen();
+      const known = await reopen(browser);
       assert.match(known.text, new RegExp(`Resume the Claude Code session: claude --resume ${fixture.session}`));
       assert.deepEqual(known.buttons, ["Run the last command again", "Resume the Claude Code session", "Keep the fresh shell"]);
       const runs = agentRuns(fixture, "claude").length;
@@ -411,6 +451,126 @@ export const scenarios: Scenario[] = [
       await terminalOf(browser, "repo / master");
       await browser.waitUntil(async () => Math.abs(((await terminal(browser))?.box.width ?? 0) - width) <= 1,
         { timeout: 15000, timeoutMsg: `the next launch restores the terminal's ${width}px` });
+    },
+  ),
+
+  // UX journey: J-TERMINAL-RESTORE; UX edges: E-TERMINAL-RESTORE-OFFER E-TERMINAL-RESTORE-RUN
+  scenario<Workbench>(
+    "workbench-terminal-restore-codex",
+    "offers Codex's latest session, labelled so, as `codex resume --last`, and a session its records name as `codex resume ID`, and runs the one chosen",
+    prepare,
+    async (browser, { data: fixture }) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await typeLine(browser, "codex --hello");
+      await printed(browser, "agent done --hello", "Codex ran and finished");
+      await endShell(browser);
+      const latest = await reopen(browser);
+      if (!terminalForeground) {
+        assert.deepEqual(latest.buttons, ["Keep the fresh shell"], "without the foreground program only the fresh shell");
+        return;
+      }
+      assert.match(latest.text, /Resume the latest Codex session: codex resume --last/);
+      assert.equal(agentRuns(fixture, "codex").length, 1, "offering runs nothing");
+      await browser.$(TERMINAL).$('button[aria-label="Resume the latest Codex session"]').click();
+      await printed(browser, "agent done resume+--last", "Codex resumed its latest session");
+      const [first, resumed] = agentRuns(fixture, "codex");
+      assert.deepEqual(resumed, { args: "resume --last", cwd: first.cwd }, "in Codex's directory");
+
+      // A session its own records name for this directory resumes by its ID.
+      await typeLine(browser, `codex resume ${fixture.session}`);
+      await printed(browser, `agent done resume+${fixture.session}`, "Codex ran its session and finished");
+      await endShell(browser);
+      const exact = await reopen(browser);
+      assert.match(exact.text, new RegExp(`Resume the Codex session: codex resume ${fixture.session}`));
+      const runs = agentRuns(fixture, "codex").length;
+      await browser.$(TERMINAL).$('button[aria-label="Resume the Codex session"]').click();
+      await browser.waitUntil(() => agentRuns(fixture, "codex").length === runs + 1, { timeout: 30000, timeoutMsg: "the session resumed" });
+      assert.deepEqual(agentRuns(fixture, "codex").at(-1), { args: `resume ${fixture.session}`, cwd: first.cwd });
+    },
+  ),
+
+  // UX journey: J-WORKTREE-REMOVE; UX edges: E-WORKTREE-REMOVE-ASK E-WORKTREE-REMOVE-CANCEL E-WORKTREE-REMOVE E-TERMINAL-REMOVED
+  scenario<Workbench>(
+    "workbench-worktree-remove",
+    "asks before removing a worktree, keeps everything on Cancel or Esc, says Git's refusal for the main checkout, a locked and a dirty worktree, and otherwise removes the folder and ends its terminal, deleting a generated branch only while unrenamed and without commits of its own",
+    prepare,
+    async (browser, { data: fixture }) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      // It asks first, saying what goes; Cancel and Esc keep everything.
+      const asked = await askRemoval(browser);
+      assert.ok(asked.includes("is removed with its folder") && asked.includes("its terminal ends with everything running in it"), asked);
+      assert.ok(asked.includes("deleted too while nobody renamed it and it has no commits of its own"), asked);
+      await browser.$('[role="dialog"]').$("button=Cancel").click();
+      await browser.waitUntil(async () => (await removal(browser)) === null, { timeout: 15000, timeoutMsg: "Cancel closed the dialog" });
+      await askRemoval(browser);
+      await press(browser, ["Escape"], async () => (await removal(browser)) === null, "Esc closes the dialog");
+      assert.ok(exists(fixture.repo) && await branch(browser, "repo  master"), "nothing removed");
+
+      // Git refuses the main checkout, a locked worktree and one with uncommitted work.
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await refused(browser, "the main checkout refused");
+      assert.ok(exists(fixture.repo) && await branch(browser, "repo  master"), "the main checkout stays");
+      git(fixture.repo, "-C", fixture.repo, "worktree", "lock", fixture.side);
+      await selectBranch(browser, "repo  side");
+      await terminalOf(browser, "repo / side");
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await refused(browser, "the locked worktree refused");
+      git(fixture.repo, "-C", fixture.repo, "worktree", "unlock", fixture.side);
+      writeText(nativePath(fixture.side, "docs", "notes.md"), "Unfinished work.\n");
+      await selectBranch(browser, "repo  master");
+      await selectBranch(browser, "repo  side");
+      await browser.waitUntil(async () => !(await gitLayer(browser)).notes.some((note) => note.startsWith("Git refused")), { timeout: 15000, timeoutMsg: "the history read again" });
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await refused(browser, "the dirty worktree refused");
+      assert.ok(exists(fixture.side) && await branch(browser, "repo  side"), "the refused worktree stays");
+
+      // A clean worktree goes with its folder, and its terminal ends; its own branch stays.
+      git(fixture.repo, "-C", fixture.side, "checkout", "--", ".");
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
+        { timeout: 30000, timeoutMsg: "the removed worktree's terminal ended" });
+      await browser.waitUntil(async () => (await branch(browser, "repo  side")) === undefined, { timeout: 30000, timeoutMsg: "gone from the Pane" });
+      assert.ok(!exists(fixture.side), "its folder removed");
+      assert.ok(branchNames(fixture).includes("side"), "a branch artifactize did not generate stays");
+
+      /** A new worktree from `commit`, opened: its generated branch and folder. */
+      let last = "";
+      const make = async (commit: string) => {
+        await selectBranch(browser, "repo  master");
+        await newWorktreeFrom(browser, commit);
+        const made = await created(browser, last);
+        last = made.branch;
+        await currentOf(browser, `repo  ${made.branch}`);
+        await terminalOf(browser, `repo / ${made.branch}`);
+        return made;
+      };
+      // Generated, never renamed, every commit on another branch: the branch goes too.
+      const plain = await make("Check the docs twice");
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await browser.waitUntil(() => !exists(asNativePath(plain.folder)), { timeout: 30000, timeoutMsg: "the generated worktree's folder removed" });
+      await browser.waitUntil(() => !branchNames(fixture).includes(plain.branch), { timeout: 15000, timeoutMsg: "its generated branch deleted" });
+      // With a commit of its own, the generated branch stays.
+      const worked = await make("Fixture inputs");
+      git(fixture.repo, "-C", asNativePath(worked.folder), "commit", "--allow-empty", "-qm", "Own work");
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await browser.waitUntil(() => !exists(asNativePath(worked.folder)), { timeout: 30000, timeoutMsg: "the worked-on worktree's folder removed" });
+      assert.ok(branchNames(fixture).includes(worked.branch), "a generated branch with its own commit stays");
+      // Renamed, the generated branch stays.
+      const renamed = await make("Fixture inputs");
+      git(fixture.repo, "-C", asNativePath(renamed.folder), "branch", "-m", renamed.branch, "kept-name");
+      await listed(browser, "repo  kept-name", 30000);
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await browser.waitUntil(() => !exists(asNativePath(renamed.folder)), { timeout: 30000, timeoutMsg: "the renamed worktree's folder removed" });
+      assert.ok(branchNames(fixture).includes("kept-name"), "a renamed generated branch stays");
     },
   ),
 ];
