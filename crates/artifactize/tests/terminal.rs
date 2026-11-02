@@ -132,11 +132,11 @@ async fn a_restore_offer_runs_nothing_until_a_choice_is_sent() {
             break offer;
         }
     };
-    assert_eq!(
-        offer.command.map(|command| command.program),
-        Some(os::path_text(&program))
-    );
-    assert_eq!(offer.cwd.as_deref(), Some(offered.as_path()));
+    let terminal::RestoreOffer::Command { cwd, command } = offer else {
+        panic!("the saved command is offered");
+    };
+    assert_eq!(command.program, os::path_text(&program));
+    assert_eq!(cwd, offered);
     // A fresh shell answers while the offer waits, and the offered program has not run.
     attachment
         .input(os::terminal_echo("fresh", "shell"))

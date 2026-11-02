@@ -6,18 +6,12 @@ use super::{
     screen::Screen,
     wire::{self, Request, Response},
 };
+use crate::platform::terminal::{Output, Pty, Size};
 use crate::{
     local_transport::{Endpoint, Stream, validate_peer},
     platform,
 };
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
-use std::{
-    collections::BTreeMap,
-    io::{self, Read, Write},
-    path::{Path, PathBuf},
-    sync::mpsc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, io, path::PathBuf, sync::mpsc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::mpsc as async_mpsc,
@@ -27,10 +21,11 @@ use tokio::{
 const CLIENT_QUEUE: usize = 256;
 /// Worktree deletion and foreground state are sampled even with no attached desktop.
 const OBSERVE_INTERVAL: Duration = Duration::from_secs(1);
-/// PTY reads are kept small enough for interactive delivery and bounded transport queues.
-const OUTPUT_CHUNK: usize = 8192;
 
 enum Event {
+    Shutdown {
+        completed: tokio::sync::oneshot::Sender<()>,
+    },
     Attach {
         id: u64,
         cols: u16,
@@ -42,105 +37,8 @@ enum Event {
         request: Request,
     },
     Detach(u64),
-    Output {
-        generation: u64,
-        data: Vec<u8>,
-    },
-    Eof {
-        generation: u64,
-    },
-}
-struct Pty {
-    // Close the process tree before releasing the PTY's handles.
-    _processes: platform::terminal::Processes,
-    master: Box<dyn MasterPty + Send>,
-    input: mpsc::SyncSender<Vec<u8>>,
-    child: Box<dyn Child + Send + Sync>,
-}
-impl Pty {
-    fn open(
-        worktree: &Path,
-        size: PtySize,
-        command: Option<&super::TerminalCommand>,
-        generation: u64,
-        events: mpsc::SyncSender<Event>,
-    ) -> io::Result<Self> {
-        let pair = portable_pty::native_pty_system()
-            .openpty(size)
-            .map_err(io::Error::other)?;
-        let mut launch = CommandBuilder::new_default_prog();
-        launch.cwd(worktree);
-        launch.env_clear();
-        for (name, value) in platform::environment::for_command() {
-            launch.env(name, value);
-        }
-        launch.env("TERM", "xterm-256color");
-        let confirmed = command
-            .map(|command| super::restore::input(&mut launch, command, worktree))
-            .transpose()?;
-        let mut child = pair.slave.spawn_command(launch).map_err(io::Error::other)?;
-        let processes = match platform::terminal::Processes::new(&*child) {
-            Ok(processes) => processes,
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error);
-            }
-        };
-        drop(pair.slave);
-        let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
-        let (input, pending) = mpsc::sync_channel::<Vec<u8>>(CLIENT_QUEUE);
-        std::thread::spawn(move || {
-            while let Ok(data) = pending.recv() {
-                if writer
-                    .write_all(&data)
-                    .and_then(|()| writer.flush())
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
-        if let Some(confirmed) = confirmed {
-            input.send(confirmed).map_err(io::Error::other)?;
-        }
-        let mut reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
-        std::thread::spawn(move || {
-            let mut buffer = [0u8; OUTPUT_CHUNK];
-            loop {
-                match reader.read(&mut buffer) {
-                    Ok(0) | Err(_) => {
-                        let _ = events.send(Event::Eof { generation });
-                        break;
-                    }
-                    Ok(count) => {
-                        if events
-                            .send(Event::Output {
-                                generation,
-                                data: buffer[..count].to_vec(),
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-        Ok(Self {
-            _processes: processes,
-            master: pair.master,
-            input,
-            child,
-        })
-    }
-}
-impl Drop for Pty {
-    fn drop(&mut self) {
-        // The platform owner kills descendants as well; kill/wait reaps the direct child.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
+    Output(Vec<u8>),
+    Eof,
 }
 
 /// Hidden CLI entry point. A losing election exits without touching the winning host.
@@ -155,8 +53,9 @@ pub async fn serve(worktree: PathBuf, cols: u16, rows: u16) -> Result<(), String
     let mut listener = endpoint.listen().map_err(|e| e.to_string())?;
     let (events, incoming) = mpsc::sync_channel(CLIENT_QUEUE);
     let sender = events.clone();
+    // The lock covers the actor's cleanup and the final connection drain.
+    let _election = election;
     let mut actor = tokio::task::spawn_blocking(move || {
-        let _election = election;
         Actor::new(worktree, identity, size, sender)?.run(incoming)
     });
     let mut next = 0;
@@ -206,17 +105,24 @@ async fn communicate(
 ) -> io::Result<()> {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read).lines();
-    let Some(Request::Attach {
-        identity: requested,
-        cols,
-        rows,
-    }) = wire::receive(&mut read).await?
-    else {
-        return Ok(());
+    let (cols, rows) = match wire::receive(&mut read).await? {
+        Some(Request::Attach {
+            identity: requested,
+            cols,
+            rows,
+        }) if requested == identity => (cols, rows),
+        Some(Request::Shutdown {
+            identity: requested,
+        }) if requested == identity => {
+            let (completed, stopped) = tokio::sync::oneshot::channel();
+            let host = platform::terminal::host_identity()?;
+            post(events, Event::Shutdown { completed }).await?;
+            stopped.await.map_err(io::Error::other)?;
+            wire::send(&mut write, &Response::Stopped { host }).await?;
+            return Ok(());
+        }
+        _ => return Err(io::ErrorKind::PermissionDenied.into()),
     };
-    if requested != identity {
-        return Err(io::ErrorKind::PermissionDenied.into());
-    }
     let (sender, mut frames) = async_mpsc::channel(CLIENT_QUEUE);
     post(
         events,
@@ -242,13 +148,17 @@ async fn communicate(
     }
 }
 
+enum Phase {
+    Shell,
+    Restored { cwd: PathBuf },
+}
+
 struct Actor {
     worktree: PathBuf,
     identity: PathBuf,
-    events: mpsc::SyncSender<Event>,
-    pty: Option<Pty>,
-    generation: u64,
-    size: PtySize,
+    pty: Pty,
+    phase: Phase,
+    size: Size,
     screen: Screen,
     clients: BTreeMap<u64, async_mpsc::Sender<Response>>,
     metadata: Metadata,
@@ -260,7 +170,7 @@ impl Actor {
     fn new(
         worktree: PathBuf,
         identity: PathBuf,
-        size: PtySize,
+        size: Size,
         events: mpsc::SyncSender<Event>,
     ) -> io::Result<Self> {
         let saved = Metadata::read(&identity)?;
@@ -270,13 +180,18 @@ impl Actor {
             ..Metadata::default()
         });
         metadata.save(&identity)?;
-        let pty = Pty::open(&worktree, size, None, 0, events.clone())?;
+        let pty = Pty::open(&worktree, size, move |output| {
+            let event = match output {
+                Output::Data(data) => Event::Output(data),
+                Output::Closed => Event::Eof,
+            };
+            let _ = events.send(event);
+        })?;
         Ok(Self {
             worktree,
             identity,
-            events,
-            pty: Some(pty),
-            generation: 0,
+            pty,
+            phase: Phase::Shell,
             size,
             screen: Screen::new(size.cols, size.rows),
             clients: BTreeMap::new(),
@@ -301,9 +216,7 @@ impl Actor {
     }
     fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
         let size = dimensions(cols, rows)?;
-        if let Some(pty) = &self.pty {
-            pty.master.resize(size).map_err(io::Error::other)?;
-        }
+        self.pty.resize(size)?;
         self.size = size;
         self.screen.resize(cols, rows);
         Ok(())
@@ -312,6 +225,12 @@ impl Actor {
         let mut observed = std::time::Instant::now();
         loop {
             match incoming.recv_timeout(OBSERVE_INTERVAL.saturating_sub(observed.elapsed())) {
+                Ok(Event::Shutdown { completed }) => {
+                    self.pty.stop()?;
+                    self.emit(TerminalFrame::Ended { exit_code: None });
+                    let _ = completed.send(());
+                    return Ok(());
+                }
                 Ok(Event::Attach {
                     id,
                     cols,
@@ -364,21 +283,30 @@ impl Actor {
                 Ok(Event::Detach(id)) => {
                     self.clients.remove(&id);
                 }
-                Ok(Event::Output { generation, data }) if generation == self.generation => {
+                Ok(Event::Output(data)) => {
                     self.screen.process(&data);
                     self.emit(TerminalFrame::Output { data });
                 }
-                Ok(Event::Eof { generation }) if generation == self.generation => {
-                    let exit_code = self
-                        .pty
-                        .as_mut()
-                        .and_then(|pty| pty.child.try_wait().ok().flatten())
-                        .map(|exit| exit.exit_code());
-                    self.emit(TerminalFrame::Ended { exit_code });
+                Ok(Event::Eof) => {
+                    self.emit(TerminalFrame::Ended { exit_code: None });
                     return Ok(());
                 }
-                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
+            }
+            if let Some(exit_code) = self.pty.try_wait()? {
+                match &self.phase {
+                    Phase::Restored { cwd } => {
+                        self.pty.run(cwd, None)?;
+                        self.phase = Phase::Shell;
+                    }
+                    Phase::Shell => {
+                        self.emit(TerminalFrame::Ended {
+                            exit_code: Some(exit_code),
+                        });
+                        return Ok(());
+                    }
+                }
             }
             if observed.elapsed() >= OBSERVE_INTERVAL {
                 if !self.worktree.exists() || !self.identity.exists() {
@@ -397,8 +325,7 @@ impl Actor {
         }
         let agent = self
             .pty
-            .as_ref()
-            .and_then(|pty| platform::terminal::foreground(&*pty.master, pty.child.process_id()))
+            .foreground()
             .is_some_and(|foreground| self.metadata.observe(foreground));
         if previous.cwd != self.metadata.cwd || previous.command != self.metadata.command {
             self.metadata.certify();
@@ -424,13 +351,7 @@ impl Actor {
     }
     fn request(&mut self, request: Request) -> io::Result<()> {
         match request {
-            Request::Input { data } => {
-                let pty = self
-                    .pty
-                    .as_mut()
-                    .ok_or_else(|| io::Error::other("Terminal ended"))?;
-                pty.input.try_send(data).map_err(io::Error::other)
-            }
+            Request::Input { data } => self.pty.input(data),
             Request::Resize { cols, rows } => {
                 if self.size.cols != cols || self.size.rows != rows {
                     self.resize(cols, rows)?;
@@ -443,56 +364,30 @@ impl Actor {
                     .offer
                     .as_ref()
                     .ok_or_else(|| io::Error::other("No restore offer remains"))?;
-                let command = match choice {
-                    RestoreChoice::FreshShell => {
-                        self.offer = None;
-                        return Ok(());
-                    }
-                    RestoreChoice::Rerun => offer.command.clone(),
-                    RestoreChoice::Resume => offer.resume.clone(),
+                if matches!(choice, RestoreChoice::FreshShell) {
+                    self.offer = None;
+                    return Ok(());
                 }
-                .ok_or_else(|| io::Error::other("That restore command is unknown"))?;
-                let cwd = offer.cwd.clone().unwrap_or_else(|| self.worktree.clone());
+                let (cwd, command) = offer.confirmed(choice).map_err(io::Error::other)?;
                 // A chosen offer is used up before it starts: a launch that fails after
                 // spawning must not leave the same command available to run again.
                 self.offer = None;
-                self.replace(Some(&command), cwd)
+                match self.pty.run(&cwd, Some(&command)) {
+                    Ok(()) => {
+                        self.phase = Phase::Restored { cwd };
+                        Ok(())
+                    }
+                    Err(error) => {
+                        self.pty.run(&self.worktree, None)?;
+                        self.phase = Phase::Shell;
+                        Err(error)
+                    }
+                }
             }
             Request::Detach => Ok(()),
-            Request::Attach { .. } => Err(io::Error::other("Already attached")),
+            Request::Attach { .. } | Request::Shutdown { .. } => {
+                Err(io::Error::other("Already attached"))
+            }
         }
-    }
-    fn replace(
-        &mut self,
-        command: Option<&super::TerminalCommand>,
-        cwd: PathBuf,
-    ) -> io::Result<()> {
-        self.generation += 1;
-        self.pty.take();
-        let opened = Pty::open(
-            &cwd,
-            self.size,
-            command,
-            self.generation,
-            self.events.clone(),
-        );
-        let error = match opened {
-            Ok(pty) => {
-                self.pty = Some(pty);
-                None
-            }
-            Err(error) => {
-                self.pty = Some(Pty::open(
-                    &self.worktree,
-                    self.size,
-                    None,
-                    self.generation,
-                    self.events.clone(),
-                )?);
-                Some(error)
-            }
-        };
-        self.emit(self.screen.snapshot());
-        error.map_or(Ok(()), Err)
     }
 }

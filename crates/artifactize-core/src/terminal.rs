@@ -2,15 +2,16 @@
 mod client;
 mod host;
 mod metadata;
-mod restore;
 mod screen;
+mod shutdown;
+pub(crate) use shutdown::stop_for_removal;
 #[cfg(test)]
 mod tests;
 mod wire;
 
+use crate::types::SessionId;
 pub use client::{Attachment, attach};
 pub use host::serve;
-pub use restore::run_confirmed;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -28,22 +29,92 @@ pub enum Harness {
 #[serde(rename_all = "camelCase")]
 pub struct TerminalCommand {
     #[serde(serialize_with = "crate::platform::serialize_program")]
+    #[cfg_attr(feature = "desktop-types", specta(type = String))]
     pub program: String,
     pub args: Vec<String>,
 }
 
+/// A known session and a latest-session choice are distinct states, never a nullable ID
+/// combined with a flag that can disagree with it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "desktop-types", derive(specta::Type))]
-#[serde(rename_all = "camelCase")]
-pub struct RestoreOffer {
-    #[serde(with = "crate::platform::path_serde::option")]
-    #[cfg_attr(feature = "desktop-types", specta(type = Option<String>))]
-    pub cwd: Option<PathBuf>,
-    pub command: Option<TerminalCommand>,
-    pub harness: Option<Harness>,
-    pub session_id: Option<String>,
-    pub resume: Option<TerminalCommand>,
-    pub latest_session: bool,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ResumeSession {
+    Exact {
+        #[cfg_attr(feature = "desktop-types", specta(type = String))]
+        id: SessionId,
+    },
+    Latest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "desktop-types", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RestoreOffer {
+    Shell {
+        #[serde(with = "crate::platform::path_serde::option")]
+        #[cfg_attr(feature = "desktop-types", specta(type = Option<String>))]
+        cwd: Option<PathBuf>,
+    },
+    Command {
+        #[serde(with = "crate::platform::path_serde")]
+        #[cfg_attr(feature = "desktop-types", specta(type = String))]
+        cwd: PathBuf,
+        command: TerminalCommand,
+    },
+    Harness {
+        #[serde(with = "crate::platform::path_serde")]
+        #[cfg_attr(feature = "desktop-types", specta(type = String))]
+        cwd: PathBuf,
+        command: TerminalCommand,
+        harness: Harness,
+        session: ResumeSession,
+    },
+}
+
+impl RestoreOffer {
+    pub(crate) fn confirmed(
+        &self,
+        choice: RestoreChoice,
+    ) -> Result<(PathBuf, TerminalCommand), String> {
+        match (self, choice) {
+            (
+                Self::Command { cwd, command } | Self::Harness { cwd, command, .. },
+                RestoreChoice::Rerun,
+            ) => Ok((cwd.clone(), command.clone())),
+            (
+                Self::Harness {
+                    cwd,
+                    harness,
+                    session,
+                    ..
+                },
+                RestoreChoice::Resume,
+            ) => {
+                let command = match harness {
+                    Harness::ClaudeCode => TerminalCommand {
+                        program: "claude".into(),
+                        args: match session {
+                            ResumeSession::Exact { id } => vec!["--resume".into(), id.to_string()],
+                            ResumeSession::Latest => vec!["--continue".into()],
+                        },
+                    },
+                    Harness::Codex => TerminalCommand {
+                        program: "codex".into(),
+                        args: vec![
+                            "resume".into(),
+                            match session {
+                                ResumeSession::Exact { id } => id.to_string(),
+                                ResumeSession::Latest => "--last".into(),
+                            },
+                        ],
+                    },
+                };
+                Ok((cwd.clone(), command))
+            }
+            _ => Err("That restore command is unknown".into()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,14 +158,14 @@ pub enum TerminalFrame {
     },
 }
 
-pub(crate) fn dimensions(cols: u16, rows: u16) -> std::io::Result<portable_pty::PtySize> {
+pub(crate) fn dimensions(cols: u16, rows: u16) -> std::io::Result<crate::platform::terminal::Size> {
     if cols == 0 || rows == 0 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "Terminal dimensions must be nonzero",
         ));
     }
-    Ok(portable_pty::PtySize {
+    Ok(crate::platform::terminal::Size {
         rows,
         cols,
         pixel_width: 0,

@@ -354,7 +354,7 @@ export type Commit = {
 	parents: string[],
 	refs: string[],
 	summary: string,
-	/**  Unix seconds, represented as text so JavaScript never rounds an identifier or time. */
+	/**  The commit time, parsed from Git and serialized as a UTC RFC 3339 timestamp. */
 	time: string,
 };
 
@@ -823,23 +823,9 @@ export type RestoreChoice = "freshShell" | "rerun" | "resume";
 
 export type RestoreOffer = RestoreOffer_Serialize | RestoreOffer_Deserialize;
 
-export type RestoreOffer_Deserialize = {
-	cwd: string | null,
-	command: TerminalCommand | null,
-	harness: Harness | null,
-	sessionId: string | null,
-	resume: TerminalCommand | null,
-	latestSession: boolean,
-};
+export type RestoreOffer_Deserialize = ({ kind: "shell"; cwd: string | null }) & { command?: never; harness?: never; session?: never } | ({ kind: "command"; cwd: string; command: TerminalCommand_Deserialize }) & { harness?: never; session?: never } | { kind: "harness"; cwd: string; command: TerminalCommand_Deserialize; harness: Harness; session: ResumeSession };
 
-export type RestoreOffer_Serialize = {
-	cwd: string | null,
-	command: TerminalCommand | null,
-	harness: Harness | null,
-	sessionId: string | null,
-	resume: TerminalCommand | null,
-	latestSession: boolean,
-};
+export type RestoreOffer_Serialize = ({ kind: "shell"; cwd: string | null }) & { command?: never; harness?: never; session?: never } | ({ kind: "command"; cwd: string; command: TerminalCommand_Serialize }) & { harness?: never; session?: never } | { kind: "harness"; cwd: string; command: TerminalCommand_Serialize; harness: Harness; session: ResumeSession };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
@@ -849,6 +835,12 @@ export type ResultItem = {
 	head: string | null,
 	fields: Field[],
 };
+
+/**
+ *  A known session and a latest-session choice are distinct states, never a nullable ID
+ *  combined with a flag that can disagree with it.
+ */
+export type ResumeSession = { kind: "exact"; id: string } | { kind: "latest" };
 
 export type Row = {
 	text: string,
@@ -991,7 +983,16 @@ export type Submitted = {
 export type Target = { kind: "alias"; provider: Provider } | { kind: "endpoint"; api: EndpointApi; url: string; key?: boolean };
 
 /**  An argv, not shell source. Confirmed restores execute this directly in `cwd`. */
-export type TerminalCommand = {
+export type TerminalCommand = TerminalCommand_Serialize | TerminalCommand_Deserialize;
+
+/**  An argv, not shell source. Confirmed restores execute this directly in `cwd`. */
+export type TerminalCommand_Deserialize = {
+	program: string,
+	args: string[],
+};
+
+/**  An argv, not shell source. Confirmed restores execute this directly in `cwd`. */
+export type TerminalCommand_Serialize = {
 	program: string,
 	args: string[],
 };
