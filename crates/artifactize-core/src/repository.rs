@@ -276,11 +276,69 @@ pub fn create_worktree(worktree: &Path, commit: &str) -> Result<CreatedWorktree,
     }
 }
 
+/// Why Git refuses to remove a worktree, checked as Git checks it, so that nothing is stopped
+/// for a removal that cannot happen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Refusal {
+    Main,
+    Locked,
+    Dirty,
+}
+impl Refusal {
+    fn message(self) -> String {
+        let reason = match self {
+            Self::Main => "it is the main checkout",
+            Self::Locked => "it is locked",
+            Self::Dirty => "it has uncommitted changes or untracked files",
+        };
+        format!("Git refused to remove the worktree: {reason}")
+    }
+}
+
+fn refusal(worktree: &Path, common: &Path) -> Option<Refusal> {
+    if git_path(worktree, "--git-dir").as_deref() == Some(common) {
+        return Some(Refusal::Main);
+    }
+    let args = [OsStr::new("--git-dir"), common.as_os_str()]
+        .into_iter()
+        .chain(["worktree", "list", "--porcelain", "-z"].map(OsStr::new));
+    let listed = crate::process::tool_output("git", args).unwrap_or_default();
+    if locked(&listed, worktree) {
+        return Some(Refusal::Locked);
+    }
+    // The very check `git worktree remove` makes: any change, untracked file or submodule
+    // change. A status Git cannot give counts as dirty; removal must never discard work.
+    let status = git(
+        worktree,
+        &["status", "--porcelain", "-z", "--ignore-submodules=none"],
+    );
+    (status.is_none_or(|status| !status.is_empty())).then_some(Refusal::Dirty)
+}
+
+/// Whether Git's porcelain worktree list marks `worktree` locked.
+fn locked(listed: &[u8], worktree: &Path) -> bool {
+    let mut current = false;
+    for field in listed.split(|byte| *byte == 0) {
+        if let Some(path) = field.strip_prefix(b"worktree ") {
+            let path = crate::platform::path_from_bytes(path);
+            current = crate::platform::canonicalize(&path).is_ok_and(|path| path == worktree);
+        } else if current && (field == b"locked" || field.starts_with(b"locked ")) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Git refuses a primary, locked or dirty checkout; removal never silently discards work.
+/// A refused removal leaves the worktree's terminal running.
 pub fn remove_worktree(worktree: &Path) -> Result<(), String> {
-    let _terminal = crate::platform::terminal::before_remove(worktree)?;
     let identity = identify(worktree);
     let common = identity.common_dir.ok_or("Not a Git worktree")?;
+    let path = identity.worktree_path.ok_or("Not a Git worktree")?;
+    if let Some(refusal) = refusal(&path, &common) {
+        return Err(refusal.message());
+    }
+    let _terminal = crate::platform::terminal::before_remove(worktree)?;
     let generated = identity
         .branch
         .as_deref()
@@ -297,7 +355,8 @@ pub fn remove_worktree(worktree: &Path) -> Result<(), String> {
         ],
     )
     .ok_or_else(|| {
-        "Git refused to remove the worktree (it may be primary, locked or dirty)".to_owned()
+        // Something changed after the check; a stopped terminal starts again on its next open.
+        "Git refused to remove the worktree".to_owned()
     })?;
     if let Some(branch) = generated {
         branch.remove_if_shared(&common);
@@ -468,7 +527,8 @@ mod tests {
     }
 
     #[test]
-    fn removal_refuses_the_primary_checkout_and_uncommitted_work_and_keeps_them() {
+    fn removal_refuses_the_primary_checkout_a_locked_worktree_and_uncommitted_work_and_keeps_them()
+    {
         let root = crate::test_os::tempdir();
         let (main, first, second) = project(root.path());
         let created = create_worktree(&main, &first).unwrap();
@@ -478,6 +538,17 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&work).unwrap(), "work in progress");
         assert!(remove_worktree(&main).is_err());
         assert_eq!(head(&main), second);
+        let locked = create_worktree(&main, &first).unwrap();
+        crate::test_os::git(
+            &main,
+            &[
+                "worktree",
+                "lock",
+                &crate::test_os::path_text(&locked.worktree),
+            ],
+        );
+        assert!(remove_worktree(&locked.worktree).is_err());
+        assert!(locked.worktree.exists());
     }
 
     /// Whether `main`'s repository still has the local branch `name`.

@@ -216,6 +216,33 @@ async fn removing_the_worktree_ends_its_host() {
     assert!(attach(&created.worktree, COLS, ROWS).await.is_err());
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removal_git_refuses_keeps_the_worktrees_terminal_running() {
+    let root = test_os::tempdir();
+    let main = project(root.path());
+    let created = crate::repository::create_worktree(&main, "HEAD").unwrap();
+    std::fs::write(created.worktree.join("unsaved.txt"), "work in progress").unwrap();
+    let served = hosted(&created.worktree, async {
+        let (terminal, frames) = attach(&created.worktree, COLS, ROWS).await.unwrap();
+        let mut frames = Frames::new(frames);
+        frames.snapshot().await;
+        let worktree = created.worktree.clone();
+        let removed =
+            tokio::task::spawn_blocking(move || crate::repository::remove_worktree(&worktree))
+                .await
+                .unwrap();
+        assert!(removed.is_err());
+        terminal
+            .input(test_os::terminal_echo("still", "running"))
+            .await
+            .unwrap();
+        frames.printed("stillrunning").await;
+        exit(&terminal, &mut frames).await;
+    })
+    .await;
+    assert_eq!(served, Ok(()));
+}
+
 #[tokio::test]
 async fn an_endpoint_others_can_reach_is_refused_and_not_repaired() {
     let root = test_os::tempdir();
