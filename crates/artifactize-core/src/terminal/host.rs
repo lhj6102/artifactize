@@ -303,8 +303,15 @@ impl Actor {
                     self.clients.remove(&id);
                 }
                 Ok(Event::Output(data)) => {
-                    self.screen.process(&data);
-                    self.emit(TerminalFrame::Output { data });
+                    let shown = self.screen.process(&data);
+                    // A program that stopped reading its input cannot take an answer either;
+                    // a full input queue drops the answer rather than ending the terminal.
+                    if !shown.answers.is_empty() {
+                        let _ = self.pty.input(shown.answers);
+                    }
+                    if !shown.output.is_empty() {
+                        self.emit(TerminalFrame::Output { data: shown.output });
+                    }
                 }
                 Ok(Event::Eof) => {
                     self.emit(TerminalFrame::Ended { exit_code: None });

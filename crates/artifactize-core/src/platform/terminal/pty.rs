@@ -1,6 +1,6 @@
 //! Native PTY and process lifetime. The slave stays open so a restored argv and its following
 //! fresh shell use the same terminal, including pending input, output and geometry.
-use super::{Foreground, Processes, Size};
+use super::{Foreground, Modes, Processes, Size};
 use crate::{platform, terminal::TerminalCommand};
 use portable_pty::{Child, CommandBuilder, MasterPty, SlavePty};
 use std::{
@@ -42,6 +42,7 @@ pub(crate) struct Pty {
     running: Option<Running>,
     slave: Box<dyn SlavePty + Send>,
     master: Box<dyn MasterPty + Send>,
+    modes: Modes,
     input: mpsc::SyncSender<Vec<u8>>,
 }
 impl Pty {
@@ -56,10 +57,12 @@ impl Pty {
         let mut writer = pair.master.take_writer().map_err(io::Error::other)?;
         let mut reader = pair.master.try_clone_reader().map_err(io::Error::other)?;
         let (input, pending) = mpsc::sync_channel::<Vec<u8>>(INPUT_QUEUE);
+        let modes = Modes::initial(&*pair.master)?;
         let mut pty = Self {
             running: None,
             slave: pair.slave,
             master: pair.master,
+            modes,
             input,
         };
         pty.run(cwd, None)?;
@@ -94,6 +97,8 @@ impl Pty {
     }
     pub fn run(&mut self, cwd: &Path, command: Option<&TerminalCommand>) -> io::Result<()> {
         self.stop()?;
+        // Every program starts on the PTY's initial settings, not on what the last one left.
+        self.modes.restore(&*self.master)?;
         let mut launch = match command {
             Some(command) => {
                 let program = platform::program::resolve(command.program.as_ref(), cwd)?;
@@ -141,5 +146,52 @@ impl Pty {
             Some(running) => Ok(running.child.try_wait()?.map(|exit| exit.exit_code())),
             None => Ok(None),
         }
+    }
+}
+
+// TEMPORARY diagnostic for #440 Windows: what ConPTY prints before and after a cursor answer.
+#[cfg(all(test, windows))]
+mod diagnostic {
+    use super::*;
+    use std::time::{Duration, Instant};
+    fn collect(receiver: &mpsc::Receiver<Vec<u8>>, wait: Duration) -> Vec<u8> {
+        let deadline = Instant::now() + wait;
+        let mut bytes = Vec::new();
+        while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+            match receiver.recv_timeout(left) {
+                Ok(data) => bytes.extend(data),
+                Err(_) => break,
+            }
+        }
+        bytes
+    }
+    #[test]
+    fn conpty_first_output() {
+        let (sender, receiver) = mpsc::channel();
+        let cwd = std::env::current_dir().unwrap();
+        let size = Size {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let mut pty = Pty::open(&cwd, size, move |output| {
+            if let Output::Data(data) = output {
+                let _ = sender.send(data);
+            }
+        })
+        .unwrap();
+        let before = collect(&receiver, Duration::from_secs(8));
+        pty.input(b"\x1b[1;1R".to_vec()).unwrap();
+        let after = collect(&receiver, Duration::from_secs(8));
+        pty.input(b"echo hello\r".to_vec()).unwrap();
+        let echoed = collect(&receiver, Duration::from_secs(5));
+        let _ = pty.stop();
+        panic!(
+            "DIAG before={:?}\nDIAG after={:?}\nDIAG echoed={:?}",
+            String::from_utf8_lossy(&before),
+            String::from_utf8_lossy(&after),
+            String::from_utf8_lossy(&echoed)
+        );
     }
 }
