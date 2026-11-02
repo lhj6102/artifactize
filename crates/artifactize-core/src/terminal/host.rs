@@ -77,12 +77,21 @@ pub async fn serve(worktree: PathBuf, cols: u16, rows: u16) -> Result<(), String
                 // Let already queued output and the final ended frame reach connected clients.
                 // A client that stopped reading cannot hold a finished host alive forever.
                 const DRAIN_GRACE: Duration = Duration::from_secs(1);
-                let _ = tokio::time::timeout(DRAIN_GRACE, async {
-                    while connections.join_next().await.is_some() {}
+                // A connection that panicked is a bug: its panic resumes here.
+                let drained = tokio::time::timeout(DRAIN_GRACE, async {
+                    while let Some(joined) = connections.join_next().await {
+                        crate::task::joined(joined)?;
+                    }
+                    Ok::<(), tokio::task::JoinError>(())
                 }).await;
+                if let Ok(drained) = drained {
+                    drained.map_err(|e| e.to_string())?;
+                }
                 return crate::task::joined(result).map_err(|e| e.to_string())?.map_err(|e| e.to_string());
             }
-            _ = connections.join_next(), if !connections.is_empty() => {},
+            Some(joined) = connections.join_next(), if !connections.is_empty() => {
+                crate::task::joined(joined).map_err(|e| e.to_string())?;
+            },
             stream = listener.accept() => {
                 let stream = stream.map_err(|e| e.to_string())?;
                 if validate_peer(&stream).is_err() { continue; }
