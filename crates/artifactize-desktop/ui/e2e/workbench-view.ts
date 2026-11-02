@@ -14,6 +14,9 @@ export type Terminal = {
   heading: string;
   /** The screen's rows as they read; a line wrapped across rows keeps its spaces at the wrap. */
   rows: string[];
+  /** Which rows a line longer than the screen fills to its right edge before it wraps onto
+   * the next: text, not padding, reaches the edge. */
+  full: boolean[];
   /** What the panel says above the screen, each note's text. */
   notes: string[];
   /** The restore offer's text and its buttons, or null without one. */
@@ -30,9 +33,20 @@ export function terminal(browser: WebdriverIO.Browser): Promise<Terminal | null>
     const words = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim();
     const offer = panel.querySelector('[aria-label="Restore"]');
     const box = panel.getBoundingClientRect();
+    const rows = [...panel.querySelectorAll(".xterm-rows > div")];
+    const right = panel.querySelector(".xterm-screen")?.getBoundingClientRect().right ?? 0;
+    const range = document.createRange();
     return {
       heading: words(panel.querySelector("h2")!),
-      rows: [...panel.querySelectorAll(".xterm-rows > div")].map((row) => (row.textContent ?? "").replace(/\u00a0/g, " ")),
+      rows: rows.map((row) => (row.textContent ?? "").replace(/\u00a0/g, " ")),
+      full: rows.map((row) => {
+        const cells = row.textContent?.length ?? 0;
+        if (cells === 0 || /\s$/.test(row.textContent ?? "")) return false;
+        range.selectNodeContents(row);
+        const text = range.getBoundingClientRect();
+        // Within half a cell of the screen's right edge.
+        return right - text.right < text.width / cells / 2;
+      }),
       notes: [...panel.querySelectorAll(".state, .offer, .failure")].map(words),
       offer: offer ? { text: words(offer), buttons: [...offer.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? words(button)) } : null,
       box: { left: box.left, right: box.right, width: box.width },
@@ -62,14 +76,25 @@ export async function screenShows(browser: WebdriverIO.Browser, text: string, wh
   await until(browser, (shown) => screenText(shown).includes(text), what, timeout);
 }
 
-/** Wait until a row of the expanded terminal's screen reads exactly `line`: what a program
+/** Wait until a line of the expanded terminal's screen reads exactly `line`: what a program
  * printed, not the command line that was typed. */
 export async function printed(browser: WebdriverIO.Browser, line: string, what: string, timeout = 15000): Promise<void> {
   await until(browser, (shown) => shows(shown, line), what, timeout);
 }
 
-/** Whether a row of the screen reads exactly `line`. */
-export const shows = (shown: Terminal | null, line: string) => shown?.rows.some((row) => row.trim() === line) === true;
+/** Whether a line of the screen reads exactly `line`: a row, joined with the rows it wraps
+ * onto while it fills the screen's width. */
+export const shows = (shown: Terminal | null, line: string) => {
+  const rows = shown?.rows ?? [];
+  const full = (at: number) => shown?.full[at] === true;
+  return rows.some((_, start) => {
+    let text = rows[start];
+    for (let end = start; text.trim() !== line; text += rows[++end]) {
+      if (!full(end) || end + 1 === rows.length) return false;
+    }
+    return true;
+  });
+};
 
 /** Wait until the expanded terminal of the worktree named `name` shows a live screen. */
 export async function terminalOf(browser: WebdriverIO.Browser, name: string): Promise<Terminal> {
