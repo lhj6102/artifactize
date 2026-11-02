@@ -62,7 +62,8 @@ that makes the transition happen and checks where it leads.
   included, that both panels and some of the graph always fit. States: expanded (its screen
   taking what is typed) or collapsed; offering a restore (a fresh shell running, with the last
   command to rerun from the last directory and, for Claude Code or Codex, its resume command
-  for the session known for certain or else its latest session, labelled so); offering to
+  for the session known for certain or else its latest session, labelled so; on Windows, where
+  the running program cannot be read, only keeping the fresh shell); offering to
   open the worktree its agent moved to; ended (its process ended or its worktree was removed);
   not persistent (Windows refused to let it leave the app's Job): saying that it ends when the
   app closes.
@@ -272,7 +273,7 @@ that makes the transition happen and checks where it leads.
 | E-TERMINAL-BRANCH | Terminal panel of a worktree | the worktree's branch is switched or renamed | the same terminal, its screen as it was, for the worktree's new branch entry |
 | E-TERMINAL-REMOVED | Terminal panel of a worktree | the worktree is removed | Terminal panel saying the terminal ended; the worktree gone from the Branches (E-PANE-WORKTREES) |
 | E-TERMINAL-RESTORE-OFFER | Pane | choose a worktree whose terminal is gone after it ran | Terminal panel offering a restore over a fresh shell in the worktree; nothing run |
-| E-TERMINAL-RESTORE-RUN | Terminal panel offering a restore | choose the rerun or the resume command | that command running in its directory in the terminal, the offer gone |
+| E-TERMINAL-RESTORE-RUN | Terminal panel offering a restore with a known last command (not on Windows) | choose the rerun or the resume command | that command running in its directory in the terminal, the offer gone |
 | E-TERMINAL-RESTORE-KEEP | Terminal panel offering a restore | keep the fresh shell | the fresh shell, the offer gone, nothing run |
 | E-TERMINAL-MOVED | Terminal panel of a worktree | its agent moves to another worktree | the graph staying on the panel's worktree, the panel offering to open the detected worktree; the other worktree listed in the Branches |
 | E-TERMINAL-FOLLOW | Terminal panel offering the detected worktree | open it | that worktree chosen, its graph and its own terminal shown |

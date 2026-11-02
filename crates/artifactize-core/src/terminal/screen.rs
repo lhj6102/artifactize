@@ -3,6 +3,21 @@
 use super::TerminalFrame;
 use std::{collections::BTreeSet, fmt::Write, path::PathBuf};
 
+// SGR (Select Graphic Rendition) parameters a snapshot uses to restore a cell's pen.
+const SGR_BOLD: u8 = 1;
+const SGR_FAINT: u8 = 2;
+const SGR_ITALIC: u8 = 3;
+const SGR_UNDERLINE: u8 = 4;
+const SGR_BLINK: u8 = 5;
+const SGR_INVERSE: u8 = 7;
+const SGR_STRIKETHROUGH: u8 = 9;
+/// Extended foreground and background colours, followed by a colour mode.
+const SGR_FOREGROUND: u8 = 38;
+const SGR_BACKGROUND: u8 = 48;
+/// Colour modes after 38/48: one 256-colour palette index, or three RGB components.
+const SGR_INDEXED: u8 = 5;
+const SGR_RGB: u8 = 2;
+
 // DEC private modes that change what the client sends rather than what the screen shows.
 const X10_MOUSE: u16 = 9;
 const MOUSE_PRESSES: u16 = 1000;
@@ -178,25 +193,28 @@ impl Screen {
 fn pen(text: &mut String, pen: &avt::Pen) {
     text.push_str("\x1b[0");
     for (enabled, code) in [
-        (pen.is_bold(), 1),
-        (pen.is_faint(), 2),
-        (pen.is_italic(), 3),
-        (pen.is_underline(), 4),
-        (pen.is_blink(), 5),
-        (pen.is_inverse(), 7),
-        (pen.is_strikethrough(), 9),
+        (pen.is_bold(), SGR_BOLD),
+        (pen.is_faint(), SGR_FAINT),
+        (pen.is_italic(), SGR_ITALIC),
+        (pen.is_underline(), SGR_UNDERLINE),
+        (pen.is_blink(), SGR_BLINK),
+        (pen.is_inverse(), SGR_INVERSE),
+        (pen.is_strikethrough(), SGR_STRIKETHROUGH),
     ] {
         if enabled {
             let _ = write!(text, ";{code}");
         }
     }
-    for (color, code) in [(pen.foreground(), 38), (pen.background(), 48)] {
+    for (color, code) in [
+        (pen.foreground(), SGR_FOREGROUND),
+        (pen.background(), SGR_BACKGROUND),
+    ] {
         match color {
             Some(avt::Color::Indexed(index)) => {
-                let _ = write!(text, ";{code};5;{index}");
+                let _ = write!(text, ";{code};{SGR_INDEXED};{index}");
             }
             Some(avt::Color::RGB(rgb)) => {
-                let _ = write!(text, ";{code};2;{};{};{}", rgb.r, rgb.g, rgb.b);
+                let _ = write!(text, ";{code};{SGR_RGB};{};{};{}", rgb.r, rgb.g, rgb.b);
             }
             None => {}
         }

@@ -22,21 +22,32 @@ const CLIENT_QUEUE: usize = 256;
 /// Worktree deletion and foreground state are sampled even with no attached desktop.
 const OBSERVE_INTERVAL: Duration = Duration::from_secs(1);
 
+/// One accepted connection of this host, numbered in accept order and never reused.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ClientId(u64);
+impl ClientId {
+    /// Take this identity for a new connection and move on to the next one.
+    fn advance(&mut self) -> Self {
+        self.0 += 1;
+        *self
+    }
+}
+
 enum Event {
     Shutdown {
         completed: tokio::sync::oneshot::Sender<()>,
     },
     Attach {
-        id: u64,
+        id: ClientId,
         cols: u16,
         rows: u16,
         sender: async_mpsc::Sender<Response>,
     },
     Request {
-        id: u64,
+        id: ClientId,
         request: Request,
     },
-    Detach(u64),
+    Detach(ClientId),
     Output(Vec<u8>),
     Eof,
 }
@@ -58,7 +69,7 @@ pub async fn serve(worktree: PathBuf, cols: u16, rows: u16) -> Result<(), String
     let mut actor = tokio::task::spawn_blocking(move || {
         Actor::new(worktree, identity, size, sender)?.run(incoming)
     });
-    let mut next = 0;
+    let mut next = ClientId::default();
     let mut connections = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
@@ -75,8 +86,7 @@ pub async fn serve(worktree: PathBuf, cols: u16, rows: u16) -> Result<(), String
             stream = listener.accept() => {
                 let stream = stream.map_err(|e| e.to_string())?;
                 if validate_peer(&stream).is_err() { continue; }
-                next += 1;
-                connections.spawn(connection(stream, endpoint.identity.clone(), next, events.clone()));
+                connections.spawn(connection(stream, endpoint.identity.clone(), next.advance(), events.clone()));
             }
         }
     }
@@ -91,7 +101,7 @@ async fn post(events: &mpsc::SyncSender<Event>, event: Event) -> io::Result<()> 
 async fn connection(
     stream: Stream,
     identity: crate::config::EndpointId,
-    id: u64,
+    id: ClientId,
     events: mpsc::SyncSender<Event>,
 ) {
     let _ = communicate(stream, identity, id, &events).await;
@@ -100,7 +110,7 @@ async fn connection(
 async fn communicate(
     stream: Stream,
     identity: crate::config::EndpointId,
-    id: u64,
+    id: ClientId,
     events: &mpsc::SyncSender<Event>,
 ) -> io::Result<()> {
     let (read, mut write) = tokio::io::split(stream);
@@ -160,7 +170,7 @@ struct Actor {
     phase: Phase,
     size: Size,
     screen: Screen,
-    clients: BTreeMap<u64, async_mpsc::Sender<Response>>,
+    clients: BTreeMap<ClientId, async_mpsc::Sender<Response>>,
     metadata: Metadata,
     offer: Option<RestoreOffer>,
     moved: Option<PathBuf>,
@@ -205,7 +215,7 @@ impl Actor {
         self.clients
             .retain(|_, sender| sender.try_send(Response::Frame(frame.clone())).is_ok());
     }
-    fn reply(&mut self, id: u64, response: Response) {
+    fn reply(&mut self, id: ClientId, response: Response) {
         if self
             .clients
             .get(&id)

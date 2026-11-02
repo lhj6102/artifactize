@@ -165,7 +165,8 @@ directory. If that command was Claude Code or Codex, it also offers to resume it
 session (`claude --resume ID`, `codex resume ID`) when the session is known for
 certain, and otherwise the latest session (`claude --continue`, `codex resume --last`),
 labelled as the latest. Nothing runs until you choose; **Keep the fresh shell** drops
-the offer.
+the offer. On Windows a terminal cannot tell which program runs in it, so the last
+command is unknown there and the offer is only to keep the fresh shell.
 
 When the agent in a terminal moves to another worktree, the graph stays on the
 terminal's own worktree, and the terminal offers to open the detected worktree. That

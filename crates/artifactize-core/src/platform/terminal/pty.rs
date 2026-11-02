@@ -63,29 +63,33 @@ impl Pty {
             input,
         };
         pty.run(cwd, None)?;
-        std::thread::spawn(move || {
-            while let Ok(data) = pending.recv() {
-                if writer
-                    .write_all(&data)
-                    .and_then(|()| writer.flush())
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
-        std::thread::spawn(move || {
-            let mut buffer = [0u8; OUTPUT_CHUNK];
-            loop {
-                match reader.read(&mut buffer) {
-                    Ok(0) | Err(_) => {
-                        output(Output::Closed);
+        std::thread::Builder::new()
+            .name("terminal-input".into())
+            .spawn(move || {
+                while let Ok(data) = pending.recv() {
+                    if writer
+                        .write_all(&data)
+                        .and_then(|()| writer.flush())
+                        .is_err()
+                    {
                         break;
                     }
-                    Ok(count) => output(Output::Data(buffer[..count].to_vec())),
                 }
-            }
-        });
+            })?;
+        std::thread::Builder::new()
+            .name("terminal-output".into())
+            .spawn(move || {
+                let mut buffer = [0u8; OUTPUT_CHUNK];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(0) | Err(_) => {
+                            output(Output::Closed);
+                            break;
+                        }
+                        Ok(count) => output(Output::Data(buffer[..count].to_vec())),
+                    }
+                }
+            })?;
         Ok(pty)
     }
     pub fn run(&mut self, cwd: &Path, command: Option<&TerminalCommand>) -> io::Result<()> {
