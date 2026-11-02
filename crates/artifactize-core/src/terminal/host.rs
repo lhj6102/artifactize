@@ -217,7 +217,10 @@ impl Actor {
             metadata,
             offer,
             moved: None,
-            persistent: platform::environment::var("ARTIFACTIZE_TERMINAL_NOT_PERSISTENT").is_none(),
+            // Refused breakaway is reported by the launcher; a granted one can still leave
+            // the host in a Job that ends it, which only the host itself can see.
+            persistent: platform::environment::var("ARTIFACTIZE_TERMINAL_NOT_PERSISTENT").is_none()
+                && !platform::terminal::ends_with_launcher(),
         })
     }
     fn emit(&mut self, frame: TerminalFrame) {

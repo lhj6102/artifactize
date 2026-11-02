@@ -10,11 +10,13 @@ mod unix;
 mod windows;
 #[cfg(unix)]
 pub(crate) use unix::{
-    Modes, PTY_PER_PROGRAM, Processes, STOP_BEFORE_REMOVE, foreground, wait_host,
+    Modes, PTY_PER_PROGRAM, Processes, STOP_BEFORE_REMOVE, ends_with_launcher, foreground,
+    wait_host,
 };
 #[cfg(windows)]
 pub(crate) use windows::{
-    Modes, PTY_PER_PROGRAM, Processes, STOP_BEFORE_REMOVE, foreground, wait_host,
+    Modes, PTY_PER_PROGRAM, Processes, STOP_BEFORE_REMOVE, ends_with_launcher, foreground,
+    wait_host,
 };
 
 pub(crate) struct Foreground {

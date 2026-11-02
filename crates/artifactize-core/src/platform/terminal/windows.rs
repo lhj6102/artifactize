@@ -27,6 +27,14 @@ impl Modes {
     }
 }
 
+/// Whether the host ends with the program that started it: a kill-on-close Job it could not
+/// leave ends it then.
+pub(crate) fn ends_with_launcher() -> bool {
+    // A Job Windows will not describe is assumed to end the host; the warning is then wrong
+    // at worst, never missing.
+    crate::platform::windows::process::in_closing_job().unwrap_or(true)
+}
+
 /// A pseudoconsole outlives the programs attached to it, and what was typed ahead with it.
 pub(crate) const PTY_PER_PROGRAM: bool = false;
 

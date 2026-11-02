@@ -55,6 +55,11 @@ impl Modes {
     }
 }
 
+/// A detached host has its own session; nothing ends it with the program that started it.
+pub(crate) fn ends_with_launcher() -> bool {
+    false
+}
+
 /// macOS revokes a terminal, flushing its unread input, once the process leading it exits,
 /// so each program needs a PTY of its own there. Linux keeps the PTY, and with it what was
 /// typed ahead, for the next program.

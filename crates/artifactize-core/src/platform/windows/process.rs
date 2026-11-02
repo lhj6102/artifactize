@@ -28,16 +28,16 @@ use windows_sys::Win32::{
             CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
         },
         JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_BASIC_LIMIT_INFORMATION,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
-            JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
-            TerminateJobObject,
+            AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+            JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
+            QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
         },
         Threading::{
             CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
-            CREATE_SUSPENDED, DETACHED_PROCESS, GetProcessTimes, OpenProcess, OpenThread,
-            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread,
+            CREATE_SUSPENDED, DETACHED_PROCESS, GetCurrentProcess, GetProcessTimes, OpenProcess,
+            OpenThread, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread,
             THREAD_SUSPEND_RESUME, WaitForSingleObject,
         },
     },
@@ -355,6 +355,39 @@ pub(crate) fn spawn_persistent(mut command: Command) -> io::Result<(tokio::proce
         }
         spawned => spawned.map(|child| (child, true)),
     }
+}
+
+/// Whether this process is in a Job that kills it once the Job's last handle closes, as the
+/// Job of a terminal, IDE or test runner does when that program ends. Breakaway can leave a
+/// process in such a Job even when it is granted: it leaves only the Jobs that allow it.
+/// Windows shows a process only its innermost Job and no handle to the ones around it, so a
+/// kill-on-close Job outside one that is not goes unseen.
+pub(crate) fn in_closing_job() -> io::Result<bool> {
+    let mut in_job = 0;
+    // SAFETY: the current-process pseudo handle needs no closing; a null job handle asks
+    // about any Job, and the result is a writable BOOL.
+    if unsafe { IsProcessInJob(GetCurrentProcess(), ptr::null_mut(), &mut in_job) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if in_job == 0 {
+        return Ok(false);
+    }
+    let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+    // SAFETY: a null job handle names the calling process's own Job; the buffer matches the
+    // information class and its exact size.
+    if unsafe {
+        QueryInformationJobObject(
+            ptr::null_mut(),
+            JobObjectExtendedLimitInformation,
+            (&raw mut limits).cast(),
+            mem::size_of_val(&limits) as u32,
+            ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(limits.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE != 0)
 }
 
 /// Run workers also detach from their requester when its enclosing Job forbids breakaway;
