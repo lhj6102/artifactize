@@ -25,8 +25,8 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
     그다음 RED eval로 넘어갑니다. 서로 겹치지 않는 수정이라면 여러 RED eval을 Run 하나에서
     함께 focus할 수 있습니다(`--evals app/review,docs/matches-app`, 또는 scope
     `{"kind": "evals", "evalIds": [...]}`). 수정 때문에 다시 리뷰해야 하는 eval은 반복할
-    때마다 실행하지 않습니다. 고칠 대상은 그 eval이 평가하는 Artifact이며, GREEN을 받으려고
-    eval을 느슨하게 바꾸지 않습니다.
+    때마다 실행하지 않습니다. 고칠 대상은 eval이 평가하는 Artifact이며, GREEN을 받으려고
+    평가 기준을 완화하지 않습니다.
     focus Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
     `verify_result`는 실패한 eval과 그 요청 ID를 알려 주고, 리뷰어가 보고한 결과는
     `request_show`로, Runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
