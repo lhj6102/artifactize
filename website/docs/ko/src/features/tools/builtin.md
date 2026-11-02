@@ -98,7 +98,7 @@ PNG와 그 밖의 형식은 거부합니다. 파일은 최대 **4 MiB**입니다
 명령 도구와 똑같이 적용되는 이미지 정리 방식과 MIME 유형·크기 검사는
 [이미지 결과 규약](agent.md#image-results)에서 설명합니다. 호출별 출력 디렉터리의 파일을 이미지 결과로 돌려줄 수 있는 것은 명령 도구뿐입니다.
 
-### 현재 프로젝트 그래프 {#current-project-graph}
+### 현재 프로젝트의 Artifact Graph {#current-project-graph}
 
 어느 Artifact에든 `builtin = "graph", args = []`를 선언하세요. 그래프 Artifact는 필요 없습니다.
 이 도구는 고른 리뷰의 Run 기록이나 범위와 관계없이 항상 현재 프로젝트의 선언 전체를 읽으며,
