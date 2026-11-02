@@ -77,7 +77,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(all.map((commit) => commit.summary), ["Side work", "Check the docs twice", "Fixture inputs"], "newest at the top");
       assert.ok(all.every((commit) => /^[0-9a-f]{7}$/.test(commit.short)), `short IDs: ${JSON.stringify(all)}`);
       const refs = Object.fromEntries(all.map((commit) => [commit.summary, commit.refs]));
-      assert.deepEqual(refs, { "Check the docs twice": ["HEAD", "master"], "Fixture inputs": ["v1"], "Side work": ["side"] });
+      assert.deepEqual(refs, { "Check the docs twice": ["master"], "Fixture inputs": ["v1"], "Side work": ["side"] });
       assert.deepEqual(marked(all), ["Check the docs twice"]);
 
       // Choosing the side worktree shows its history, its own commit marked.

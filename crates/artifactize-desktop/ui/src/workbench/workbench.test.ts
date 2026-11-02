@@ -37,10 +37,17 @@ beforeAll(() => {
   globalThis.DOMMatrixReadOnly ??= class { m22 = 1; } as unknown as typeof DOMMatrixReadOnly;
 });
 
-/** Git's history as `git_history` answers: newest first, refs as Git decorates them. */
+/** Git's history as `git_history` answers: newest first, refs classified, the checked-out one marked. */
 const COMMITS: Commit[] = [
-  { id: "1111111aaaa", parents: ["2222222bbbb"], refs: ["HEAD -> main", "tag: v1"], summary: "Second", time: "1793620000" },
-  { id: "2222222bbbb", parents: [], refs: [], summary: "First", time: "1793610000" },
+  {
+    id: "1111111aaaa",
+    parents: ["2222222bbbb"],
+    refs: [{ kind: "branch", name: "main" }, { kind: "tag", name: "v1" }, { kind: "remote", name: "origin/main" }],
+    head: true,
+    summary: "Second",
+    time: "2026-11-02T12:00:00Z",
+  },
+  { id: "2222222bbbb", parents: [], refs: [], head: false, summary: "First", time: "2026-11-02T11:00:00Z" },
 ];
 
 /** The workbench commands the app sent, with their arguments. */
@@ -236,9 +243,9 @@ it("lists the worktree's history and creates a worktree from a commit, opening i
   const layer = await screen.findByRole("region", { name: "Git layer" });
   const commits = await within(layer).findByRole("list", { name: "Commits" });
   expect(within(commits).getAllByRole("listitem").map((item) => item.querySelector(".subject")?.textContent)).toEqual(["Second", "First"]);
-  // Git's decorations read as chips; the checked-out commit is ringed.
+  // Its branches, tags and remotes read as chips; the checked-out commit is ringed.
   const [newest] = within(commits).getAllByRole("listitem");
-  expect([...newest.querySelectorAll(".ref")].map((ref) => ref.textContent)).toEqual(["HEAD", "main", "v1"]);
+  expect([...newest.querySelectorAll(".ref")].map((ref) => ref.textContent)).toEqual(["main", "v1", "origin/main"]);
   expect(newest.classList.contains("head")).toBe(true);
   expect(sent("git_history")).toContainEqual({ worktree: "/work/main" });
 

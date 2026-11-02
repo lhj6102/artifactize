@@ -31,10 +31,6 @@
 
   const short = (commit: Commit) => commit.id.slice(0, 7);
   const when = (commit: Commit) => new Date(commit.time).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  /** The commit's refs as chips: Git's `HEAD -> main` is the checked-out `HEAD` and `main`,
-   * and `tag: v1` the tag `v1`. */
-  const chips = (commit: Commit) => commit.refs.flatMap((ref) => (ref.startsWith("HEAD -> ") ? ["HEAD", ref.slice(8)] : [ref.replace(/^tag: /, "")]));
-  const checkedOut = (commit: Commit) => commit.refs.some((ref) => ref === "HEAD" || ref.startsWith("HEAD -> "));
 </script>
 
 <section class="git" aria-label="Git layer" {@attach reread}>
@@ -63,7 +59,7 @@
       {#each commits.slice(0, git.limit) as commit (commit.id)}
         <li
           class="commit"
-          class:head={checkedOut(commit)}
+          class:head={commit.head}
           class:merge={commit.parents.length > 1}
           class:root={commit.parents.length === 0}
           title="{short(commit)} {commit.summary}&#10;{when(commit)}"
@@ -71,7 +67,7 @@
           <span class="dot" aria-hidden="true"></span>
           <span class="text">
             {#if commit.refs.length > 0}
-              <span class="refs">{#each chips(commit) as ref (ref)}<span class="ref" class:here={ref === "HEAD"}>{ref}</span>{/each}</span>
+              <span class="refs">{#each commit.refs as ref (`${ref.kind} ${ref.name}`)}<span class="ref {ref.kind}" title={ref.kind}>{ref.name}</span>{/each}</span>
             {/if}
             <span class="subject">{commit.summary}</span>
             <span class="meta"><code>{short(commit)}</code></span>
@@ -222,9 +218,15 @@
     font-size: 11px;
     white-space: nowrap;
   }
-  .ref.here {
-    background: var(--accent);
-    color: white;
+  /* A tag is outlined; a remote's branch and any other ref are quieter. */
+  .ref.tag {
+    background: none;
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .ref.remote,
+  .ref.other {
+    background: var(--surface-2);
+    color: var(--muted);
   }
   .subject {
     white-space: nowrap;
