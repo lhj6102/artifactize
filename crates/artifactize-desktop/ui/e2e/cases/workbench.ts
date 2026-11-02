@@ -4,13 +4,15 @@
 // it, offers what it can restore once it was gone and the worktree its agent moved to; and the
 // terminal panel's width, kept like the Detail's. Every case owns its fixture.
 import assert from "node:assert/strict";
-import { addFolder, agentRuns, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
+import { addFolder, agentRuns, app, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { asNativePath, childDirectories, exists, nameOf, nativePath, primaryModifier, terminalForeground, writeText } from "../platform.ts";
+import {
+  appInJob, asNativePath, breakawayRefusable, childDirectories, exists, nameOf, nativePath, primaryModifier, terminalForeground, writeText,
+} from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { camera, detail, FIND, findField, offCentre, TERMINAL } from "../graph-view.ts";
 import { branch, branches, entriesFocused, listed, mainFocused, mainTitle, selectBranch } from "../pane.ts";
@@ -574,3 +576,37 @@ export const scenarios: Scenario[] = [
     },
   ),
 ];
+
+/** Only where the app can be started inside a Job that refuses its terminals' breakaway. */
+const inJob: Scenario[] = [
+  // UX journey: J-TERMINAL-DETACH; UX edges: E-TERMINAL-NOT-PERSISTENT E-QUIT-CLEAN
+  scenario<Workbench>(
+    "workbench-terminal-not-persistent",
+    "says a terminal ends with the app when the system keeps it in the app's Job, and it does end when the app closes",
+    async () => {
+      const fixture = createWorkbench();
+      const wrapped = appInJob(fixture.root, app(), fixture.env);
+      return { fixture, args: ["--repo", fixture.repo], env: wrapped.env, app: wrapped.app, data: fixture };
+    },
+    async (browser) => {
+      await currentOf(browser, "repo  master");
+      await terminalOf(browser, "repo / master");
+      await browser.waitUntil(async () => (await terminal(browser))?.notes.includes("Not persistent. This terminal ends when Artifactize closes.") === true,
+        { timeout: 30000, timeoutMsg: "the panel says the terminal ends with the app" });
+      await typeLine(browser, "echo in-the-job");
+      await printed(browser, "in-the-job", "a shell runs in the worktree");
+      await selectBranch(browser, "repo  master");
+      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
+        { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
+      await sessionEndedByApp(browser, () => browser.keys(["q"]));
+    },
+    async (browser) => {
+      // The terminal ended with the app: the next launch finds it gone and offers a fresh shell.
+      await currentOf(browser, "repo  master");
+      await browser.waitUntil(async () => (await terminal(browser))?.offer !== null && (await terminal(browser))?.heading === "Terminal · repo / master",
+        { timeout: 30000, timeoutMsg: "the terminal that ended with the app is gone" });
+      assert.ok(!shows(await terminal(browser), "in-the-job"), "not the terminal of the last launch");
+    },
+  ),
+];
+if (breakawayRefusable) scenarios.push(...inJob);

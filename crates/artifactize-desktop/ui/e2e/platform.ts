@@ -872,6 +872,99 @@ export function agentStandIns(root: NativePath, env: Environment, scripts: Recor
   return withVariable({ ...env, DESKTOP_TEST_NODE: process.execPath }, "PATH", `${bin}${delimiter}${path}`);
 }
 
+/** Whether a test can start the app inside a Job that refuses to let the app's terminals
+ * leave it: only Windows has Jobs. */
+export const breakawayRefusable = WINDOWS;
+
+/** Windows only: an executable, compiled under `root` from C# by Windows PowerShell, that puts
+ * itself in a new Job that kills its processes when it closes and allows no breakaway, then
+ * runs `app` with the arguments it was given, inside that Job, and exits with it. The app's
+ * terminal hosts cannot leave the Job, so they end when the app does. Started in the app's
+ * place, it is given the app through `DESKTOP_TEST_JOB_APP` in the returned environment. */
+export function appInJob(root: NativePath, app: NativePath, env: Environment): { app: NativePath; env: Environment } {
+  if (!WINDOWS) throw new Error("only Windows has Jobs");
+  const directory = makeDirectory(nativePath(root, "job"));
+  const source = nativePath(directory, "AppInJob.cs");
+  const wrapper = nativePath(directory, "app-in-job.exe");
+  writeFileSync(source, `using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class AppInJob {
+  [StructLayout(LayoutKind.Sequential)]
+  struct BasicLimits {
+    public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+    public uint LimitFlags;
+    public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+    public uint ActiveProcessLimit;
+    public UIntPtr Affinity;
+    public uint PriorityClass, SchedulingClass;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  struct IoCounters { public ulong Reads, Writes, Others, ReadBytes, WriteBytes, OtherBytes; }
+  [StructLayout(LayoutKind.Sequential)]
+  struct ExtendedLimits {
+    public BasicLimits Basic;
+    public IoCounters Io;
+    public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+  }
+  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool SetInformationJobObject(IntPtr job, int kind, ref ExtendedLimits limits, int length);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll")]
+  static extern IntPtr GetCurrentProcess();
+
+  // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, without JOB_OBJECT_LIMIT_BREAKAWAY_OK.
+  const uint KillOnClose = 0x2000;
+  const int ExtendedLimitInformation = 9;
+
+  /** One argument as the C runtime parses a command line back into it. */
+  static string Quote(string argument) {
+    if (argument.Length > 0 && argument.IndexOfAny(new[] { ' ', '\\t', '"' }) < 0) return argument;
+    var quoted = new StringBuilder("\\"");
+    var slashes = 0;
+    foreach (var character in argument) {
+      if (character == '\\\\') { slashes++; continue; }
+      quoted.Append('\\\\', character == '"' ? slashes * 2 + 1 : slashes);
+      slashes = 0;
+      quoted.Append(character);
+    }
+    return quoted.Append('\\\\', slashes * 2).Append('"').ToString();
+  }
+
+  public static int Main(string[] args) {
+    var job = CreateJobObject(IntPtr.Zero, null);
+    var limits = new ExtendedLimits();
+    limits.Basic.LimitFlags = KillOnClose;
+    if (job == IntPtr.Zero
+      || !SetInformationJobObject(job, ExtendedLimitInformation, ref limits, Marshal.SizeOf(typeof(ExtendedLimits)))
+      || !AssignProcessToJobObject(job, GetCurrentProcess())) {
+      Console.Error.WriteLine("the Job could not be made: " + Marshal.GetLastWin32Error());
+      return 2;
+    }
+    var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DESKTOP_TEST_JOB_APP")) {
+      UseShellExecute = false,
+      Arguments = string.Join(" ", Array.ConvertAll(args, Quote)),
+    };
+    using (var app = Process.Start(start)) {
+      app.WaitForExit();
+      return app.ExitCode;
+    }
+  }
+}
+`);
+  const compile = nativePath(directory, "compile.ps1");
+  writeFileSync(compile, "param([string]$Source, [string]$Output)\n$ErrorActionPreference = 'Stop'\n"
+    + "Add-Type -TypeDefinition ([IO.File]::ReadAllText($Source)) -OutputAssembly $Output -OutputType ConsoleApplication\n");
+  // Windows PowerShell's Add-Type compiles a console program; PowerShell 7's does not.
+  runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", compile, "-Source", source, "-Output", wrapper]);
+  return { app: wrapper, env: { ...env, DESKTOP_TEST_JOB_APP: app } };
+}
+
 /** The evaluated test-build device reaches only the engine's text-input API. This
  * test-only IPC command is not an application action and is absent from production. */
 export async function nativeInput(browser: WebdriverIO.Browser, input:
