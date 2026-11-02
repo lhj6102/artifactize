@@ -278,6 +278,9 @@ that makes the transition happen and checks where it leads.
 | E-TERMINAL-MOVED | Terminal panel of a worktree | its agent moves to another worktree | the graph staying on the panel's worktree, the panel offering to open the detected worktree; the other worktree listed in the Branches |
 | E-TERMINAL-FOLLOW | Terminal panel offering the detected worktree | open it | that worktree chosen, its graph and its own terminal shown |
 | E-TERMINAL-WIDTH | Terminal panel expanded | drag its right edge (hovering it shows only the resize cursor) | Terminal panel resized, never so wide that both panels and some graph no longer fit; the width kept for the next opening and launch |
+| E-WORKTREE-REMOVE-ASK | a worktree shown | the palette's "Remove the shown worktree…" | a dialog asking to confirm: the folder is removed, the terminal ends with everything running in it, and the generated branch goes only while unrenamed and with no commits of its own |
+| E-WORKTREE-REMOVE-CANCEL | the removal dialog | Cancel or Esc | the dialog closed, nothing removed |
+| E-WORKTREE-REMOVE | the removal dialog | Remove | the worktree and its folder removed, its terminal ended, gone from the Branches; its generated branch deleted only if never renamed and every commit on it is on another branch or tag, else kept; for the main checkout, a locked worktree or uncommitted work, Git's refusal said and nothing removed |
 
 ## Detail
 
@@ -396,6 +399,8 @@ E-PANE-SELECT.
 - J-TERMINAL-RESTORE: E-TERMINAL-RESTORE-OFFER → E-TERMINAL-TYPE → E-TERMINAL-RESTORE-RUN
   E-TERMINAL-RESTORE-OFFER → E-TERMINAL-RESTORE-KEEP
 - J-TERMINAL-MOVED: E-TERMINAL-OPEN → E-TERMINAL-MOVED → E-TERMINAL-FOLLOW
+- J-WORKTREE-REMOVE: E-WORKTREE-REMOVE-ASK → E-WORKTREE-REMOVE-CANCEL
+  E-WORKTREE-REMOVE-ASK → E-WORKTREE-REMOVE
 - J-MAIN-RUN: E-PANE-CHIP → E-MON-NOTICE
 - J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-CHECKED → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH → E-CURRENT-CHECKED
   E-CURRENT-CHIP → E-CURRENT-RUN-END → E-CURRENT-CHECKED

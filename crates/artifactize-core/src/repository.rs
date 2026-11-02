@@ -433,6 +433,47 @@ mod tests {
         assert_eq!(head(&main), second);
     }
 
+    /// Whether `main`'s repository still has the local branch `name`.
+    fn has_branch(main: &Path, name: &str) -> bool {
+        git(
+            main,
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{name}"),
+            ],
+        )
+        .is_some()
+    }
+
+    #[test]
+    fn removal_deletes_the_generated_branch_only_while_nothing_else_needs_it() {
+        let root = crate::test_os::tempdir();
+        let (main, first, second) = project(root.path());
+
+        // Never renamed and its tip is on main: nothing is lost, so the branch goes too.
+        let unused = create_worktree(&main, &first).unwrap();
+        remove_worktree(&unused.worktree).unwrap();
+        assert!(!has_branch(&main, &unused.branch));
+
+        // A branch the person renamed is theirs now.
+        let renamed = create_worktree(&main, &first).unwrap();
+        crate::test_os::git(&renamed.worktree, &["branch", "--move", "feature"]);
+        remove_worktree(&renamed.worktree).unwrap();
+        assert!(has_branch(&main, "feature"));
+
+        // A branch with commits of its own keeps them.
+        let worked = create_worktree(&main, &first).unwrap();
+        let own = commit(&worked.worktree, "own work");
+        remove_worktree(&worked.worktree).unwrap();
+        assert!(has_branch(&main, &worked.branch));
+        assert_eq!(output(&main, &["rev-parse", &worked.branch]), own);
+
+        assert_eq!(head(&main), second);
+        assert!(has_branch(&main, "main"));
+    }
+
     #[test]
     fn a_commit_that_is_not_in_the_repository_creates_no_worktree() {
         let root = crate::test_os::tempdir();

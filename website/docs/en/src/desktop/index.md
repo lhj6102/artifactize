@@ -172,6 +172,15 @@ When the agent in a terminal moves to another worktree, the graph stays on the
 terminal's own worktree, and the terminal offers to open the detected worktree. That
 worktree is also listed in the Pane.
 
+### Remove a worktree
+
+The palette's **Remove the shown worktree…** asks first. Removing deletes the worktree
+with its folder, ends its terminal and everything running in it, and takes it from the
+Pane. The temporary branch artifactize generated for the worktree goes too, but only
+while nobody renamed it and every commit on it is also on another branch or tag;
+otherwise the branch stays. Git refuses the main checkout, a locked worktree and one
+with uncommitted work, and the app says so without removing anything.
+
 ## Main area
 
 The Main area shows what was chosen in the Pane: a Run, a branch's Current, a
