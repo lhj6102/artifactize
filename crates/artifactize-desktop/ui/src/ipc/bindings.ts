@@ -352,7 +352,9 @@ export type CodexStatus =
 export type Commit = {
 	id: string,
 	parents: string[],
-	refs: string[],
+	refs: GitRef[],
+	/**  Whether this is the selected worktree's checked-out commit, including detached HEAD. */
+	head: boolean,
 	summary: string,
 	/**  The commit time, parsed from Git and serialized as a UTC RFC 3339 timestamp. */
 	time: string,
@@ -535,6 +537,9 @@ export type Found = {
 	glyph: string,
 	tone: Tone,
 };
+
+/**  A display ref classified from Git's full namespace at the repository boundary. */
+export type GitRef = { kind: "branch"; name: string } | { kind: "tag"; name: string } | { kind: "remote"; name: string } | { kind: "other"; name: string };
 
 export type Graph = {
 	source: Source,

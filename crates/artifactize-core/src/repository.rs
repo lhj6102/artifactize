@@ -102,6 +102,60 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
         .collect()
 }
 
+/// A display ref classified from Git's full namespace at the repository boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "desktop-types", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum GitRef {
+    Branch {
+        name: String,
+    },
+    Tag {
+        name: String,
+    },
+    Remote {
+        name: String,
+    },
+    // Refs outside the standard namespaces retain their full name.
+    Other {
+        name: String,
+    },
+}
+
+fn decorations(value: &str) -> (bool, Vec<GitRef>) {
+    let decorations = value.split(", ");
+    let head = decorations
+        .clone()
+        .any(|value| value == "HEAD" || value.starts_with("HEAD -> "));
+    let refs = decorations
+        .filter_map(|value| {
+            let value = value.strip_prefix("HEAD -> ").unwrap_or(value);
+            let value = value.strip_prefix("tag: ").unwrap_or(value);
+            if value.is_empty() || value == "HEAD" {
+                return None;
+            }
+            Some(if let Some(name) = value.strip_prefix("refs/heads/") {
+                GitRef::Branch {
+                    name: name.to_owned(),
+                }
+            } else if let Some(name) = value.strip_prefix("refs/tags/") {
+                GitRef::Tag {
+                    name: name.to_owned(),
+                }
+            } else if let Some(name) = value.strip_prefix("refs/remotes/") {
+                GitRef::Remote {
+                    name: name.to_owned(),
+                }
+            } else {
+                GitRef::Other {
+                    name: value.to_owned(),
+                }
+            })
+        })
+        .collect();
+    (head, refs)
+}
+
 /// A commit in Git's topological history, including every parent and decorating ref.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "desktop-types", derive(specta::Type))]
@@ -111,7 +165,9 @@ pub struct Commit {
     pub id: GitObjectId,
     #[cfg_attr(feature = "desktop-types", specta(type = Vec<String>))]
     pub parents: Vec<GitObjectId>,
-    pub refs: Vec<String>,
+    pub refs: Vec<GitRef>,
+    /// Whether this is the selected worktree's checked-out commit, including detached HEAD.
+    pub head: bool,
     pub summary: String,
     /// The commit time, parsed from Git and serialized as a UTC RFC 3339 timestamp.
     #[cfg_attr(feature = "desktop-types", specta(type = String))]
@@ -126,6 +182,7 @@ pub fn history(worktree: &Path) -> Result<Vec<Commit>, String> {
             // --all includes HEAD when it exists, without requiring an unborn HEAD.
             "--all",
             "--topo-order",
+            "--decorate=full",
             "--format=%H%x00%P%x00%D%x00%s%x00%cI%x00",
         ],
     )
@@ -137,17 +194,15 @@ pub fn history(worktree: &Path) -> Result<Vec<Commit>, String> {
         .0
         .iter()
         .map(|row| {
+            let (head, refs) = decorations(row[2]);
             Ok(Commit {
                 id: row[0].trim_start_matches(['\r', '\n']).parse()?,
                 parents: row[1]
                     .split_whitespace()
                     .map(str::parse)
                     .collect::<Result<_, _>>()?,
-                refs: row[2]
-                    .split(", ")
-                    .filter(|r| !r.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
+                refs,
+                head,
                 summary: row[3].to_owned(),
                 time: row[4].parse()?,
             })
@@ -512,10 +567,17 @@ mod tests {
         assert_eq!(commits.len(), 4);
         assert_eq!(merged.parents, [second.as_str(), third.as_str()]);
         assert_eq!(merged.summary, "merge side");
-        assert!(merged.refs.contains(&"HEAD -> main".to_owned()));
+        assert!(
+            merged.head
+                && merged.refs.contains(&GitRef::Branch {
+                    name: "main".to_owned()
+                })
+        );
         assert_eq!(second_commit.parents, [first.as_str()]);
         assert_eq!(third_commit.parents, [first.as_str()]);
-        assert!(third_commit.refs.contains(&"side".to_owned()));
+        assert!(third_commit.refs.contains(&GitRef::Branch {
+            name: "side".to_owned()
+        }));
         assert!(first_commit.parents.is_empty());
         assert!(merged_at < second_at.min(third_at));
         assert!(second_at.max(third_at) < first_at);
