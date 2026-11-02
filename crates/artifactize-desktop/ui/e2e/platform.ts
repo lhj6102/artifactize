@@ -743,6 +743,54 @@ export function assertRunnerMachine(): void {
   }
 }
 
+/** A desktop wide enough for the app, whose window is never narrower than 1280 px. A
+ * disposable GitHub-hosted Windows runner starts at 1024×768, where the window cannot be that
+ * wide; it is set to 1920×1080 there. Linux's Xvfb screen and macOS runners are wide enough. */
+export function prepareDisplay(): void {
+  if (!WINDOWS) return;
+  assertRunnerMachine();
+  const directory = newDirectory(scratchDirectory(), "display-");
+  const script = nativePath(directory, "display.ps1");
+  writeFileSync(script, `$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class Display {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public struct Mode {
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+    public short SpecVersion, DriverVersion, Size, DriverExtra;
+    public int Fields, PositionX, PositionY, DisplayOrientation, DisplayFixedOutput;
+    public short Color, Duplex, YResolution, TTOption, Collate;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string FormName;
+    public short LogPixels;
+    public int BitsPerPel, PelsWidth, PelsHeight, DisplayFlags, DisplayFrequency, ICMMethod, ICMIntent, MediaType, DitherType, Reserved1, Reserved2, PanningWidth, PanningHeight;
+  }
+  [DllImport("user32.dll", CharSet = CharSet.Ansi)] static extern bool EnumDisplaySettings(string device, int mode, ref Mode settings);
+  [DllImport("user32.dll", CharSet = CharSet.Ansi)] static extern int ChangeDisplaySettings(ref Mode settings, int flags);
+  public static string Widen(int width, int height) {
+    var mode = new Mode();
+    mode.Size = (short)Marshal.SizeOf(typeof(Mode));
+    if (!EnumDisplaySettings(null, -1, ref mode)) return "the display mode could not be read";
+    if (mode.PelsWidth >= width) return "";
+    mode.PelsWidth = width;
+    mode.PelsHeight = height;
+    mode.Fields = 0x80000 | 0x100000;
+    var changed = ChangeDisplaySettings(ref mode, 0);
+    return changed == 0 ? "" : "the display refused " + width + "x" + height + ": " + changed;
+  }
+}
+"@
+$failure = [Display]::Widen(1920, 1080)
+if ($failure) { throw $failure }
+`);
+  try {
+    runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script]);
+  } finally {
+    removeTree(directory);
+  }
+}
+
 export function assertHarnessPlatform(): void {
   assertRunnerMachine();
   if (!LINUX) return;
