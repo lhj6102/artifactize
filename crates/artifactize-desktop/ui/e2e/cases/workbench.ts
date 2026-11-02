@@ -306,7 +306,7 @@ export const scenarios: Scenario[] = [
       await printed(browser, "agent done --hello", "the agent ran and finished");
       await endShell(browser);
       const offer = await reopen(browser);
-      assert.match(offer.text, /Rerun the last command in .*: .*claude\.mjs --hello/);
+      assert.match(offer.text, /Rerun the last command in .*: claude --hello Run/, "the agent as it was run, not its interpreter");
       assert.match(offer.text, /Resume the latest Claude Code session: claude --continue/);
       assert.deepEqual(offer.buttons, ["Run the last command again", "Resume the latest Claude Code session", "Keep the fresh shell"]);
       assert.equal(agentRuns(fixture, "claude").length, 1, "offering runs nothing");

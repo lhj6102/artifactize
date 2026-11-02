@@ -6,7 +6,7 @@ use super::{
     screen::Screen,
     wire::{self, Request, Response},
 };
-use crate::platform::terminal::{Output, Pty, Size};
+use crate::platform::terminal::{Generation, Output, Pty, Size};
 use crate::{
     local_transport::{Endpoint, Stream, validate_peer},
     platform,
@@ -49,7 +49,7 @@ enum Event {
     },
     Detach(ClientId),
     Output(Vec<u8>),
-    Eof,
+    Eof(Generation),
 }
 
 /// Hidden CLI entry point. A losing election exits without touching the winning host.
@@ -202,7 +202,7 @@ impl Actor {
         let pty = Pty::open(&worktree, size, move |output| {
             let event = match output {
                 Output::Data(data) => Event::Output(data),
-                Output::Closed => Event::Eof,
+                Output::Closed(generation) => Event::Eof(generation),
             };
             let _ = events.send(event);
         })?;
@@ -313,10 +313,20 @@ impl Actor {
                         self.emit(TerminalFrame::Output { data: shown.output });
                     }
                 }
-                Ok(Event::Eof) => {
-                    self.emit(TerminalFrame::Ended { exit_code: None });
-                    return Ok(());
-                }
+                // The current program's terminal closed: macOS closes it as soon as the
+                // program leading it exits, possibly before its exit status is seen.
+                Ok(Event::Eof(generation)) if !self.pty.is_current(generation) => {}
+                Ok(Event::Eof(_)) => match &self.phase {
+                    Phase::Restored { cwd } => {
+                        let cwd = cwd.clone();
+                        self.pty.run(&cwd, None)?;
+                        self.phase = Phase::Shell;
+                    }
+                    Phase::Shell => {
+                        self.emit(TerminalFrame::Ended { exit_code: None });
+                        return Ok(());
+                    }
+                },
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
             }
