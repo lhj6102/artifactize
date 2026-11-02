@@ -45,8 +45,9 @@
     shown.kind === "run" || shown.kind === "current" ? (branches.find((item) => keyOf(item.key) === keyOf(shown.branch)) ?? null) : null,
   );
   const revision = $derived(shown.kind === "current" ? (current.view?.revision ?? 0) : browse.revision);
-  /** The worktree of the shown Run or Current: its history, its terminal. */
-  const worktree = $derived(branch?.workspace ?? null);
+  /** The Git worktree of the shown Run or Current: its history, its terminal. A folder outside
+   * Git is no worktree and has neither. */
+  const worktree = $derived(branch && branch.key.kind !== "folder" ? branch.workspace : null);
   /** Over the graph, the terminal panel expanded and the Detail open. */
   const terminalShown = $derived(worktree !== null && m.terminal);
   const detailShown = $derived(m.opened !== null && source !== null && keyOf(m.opened.source) === keyOf(source));
@@ -496,7 +497,7 @@
 </script>
 
 <div class="monitor" style:--git-width="{GIT}px">
-  <GitLayer {worktree} />
+  <GitLayer {worktree} outside={branch?.key.kind === "folder"} />
   <div class="split" {@attach columns}>
     <PaneGroup bind:this={group} direction="horizontal" autoSaveId="monitor-layout" class="columns" onLayoutChange={fitColumns}>
       <Split defaultSize={24} minSize={12}>

@@ -11,9 +11,12 @@
 
   let {
     worktree,
+    outside = false,
   }: {
     /** The worktree whose history shows, or `null` with none shown. */
     worktree: WorktreeKey | null;
+    /** The shown folder is outside Git: it has no history to show. */
+    outside?: boolean;
   } = $props();
   const { git } = getAppState();
 
@@ -41,11 +44,13 @@
       <button class="again" aria-label="Read the history again" title="Read the history again" onclick={() => git.asked++}>↻</button>
     {/if}
   </header>
-  {#if git.error}<p class="failure" role="status">{git.error}</p>{/if}
+  {#if git.error && worktree !== null}<p class="failure" role="status">{git.error}</p>{/if}
   {#if created}
     <p class="made" role="status">Created <code>{created.branch}</code> in <code>{created.worktree}</code>; it opens once listed.</p>
   {/if}
-  {#if worktree === null}
+  {#if outside}
+    <p class="empty">This folder is outside Git: it has no history and no worktrees.</p>
+  {:else if worktree === null}
     <p class="empty">Choose a worktree to see its history.</p>
   {:else if commits === null}
     {#if !git.error}<p class="empty">Reading the history…</p>{/if}

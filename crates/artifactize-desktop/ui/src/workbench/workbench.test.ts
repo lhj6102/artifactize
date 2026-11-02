@@ -244,3 +244,17 @@ it("lists the worktree's history and creates a worktree from a commit, opening i
   await waitFor(() => expect(sent("git_history").at(-1)).toEqual({ worktree: "/work/main-2" }));
   expect(sent("terminal_open").at(-1)).toMatchObject({ worktree: "/work/main-2" });
 });
+
+it("offers no terminal and no worktrees for a folder outside Git", async () => {
+  const folder: BranchView = { ...branch("notes", [{ kind: "current" }]), key: { kind: "folder", path: "/work/notes" }, name: "", workspace: "/work/notes" };
+  started(() => [folder]);
+  await waitFor(() => expect(mainTitle()).toMatch(/^Current/));
+  await waitFor(() => expect(screen.getByLabelText("app: reused")).toBeTruthy());
+  const layer = screen.getByRole("region", { name: "Git layer" });
+  expect(layer.textContent).toContain("This folder is outside Git: it has no history and no worktrees.");
+  expect(within(layer).queryByRole("button", { name: /^New worktree from/ })).toBeNull();
+  expect(screen.queryByRole("complementary", { name: "Terminal" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Expand the terminal" })).toBeNull();
+  expect(sent("terminal_open")).toEqual([]);
+  expect(sent("git_history")).toEqual([]);
+});
