@@ -64,8 +64,8 @@ that makes the transition happen and checks where it leads.
   command to rerun from the last directory and, for Claude Code or Codex, its resume command
   for the session known for certain or else its latest session, labelled so); offering to
   open the worktree its agent moved to; ended (its process ended or its worktree was removed);
-  where Windows keeps the terminal inside the app's Job, saying that it ends when the app
-  closes.
+  not persistent (Windows refused to let it leave the app's Job): saying that it ends when the
+  app closes.
 - **Main area**: shows one view at a time, with what went wrong (such as Runs that cannot be
   read) as the **notice**, one line in its header that neither moves nor hides what is below.
   - **Nothing chosen**: no branch or review chosen yet; the graph's place says so.
@@ -262,13 +262,13 @@ that makes the transition happen and checks where it leads.
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-GIT-HISTORY | Pane | choose a worktree (a branch or an entry of its timeline) | the Git layer showing that worktree's history, the checked-out commit marked |
-| E-GIT-WORKTREE-NEW | Git layer showing a history | ask for a new worktree from a commit | a worktree of that commit created in a new folder beside the primary checkout, on a newly generated branch, the Git layer saying which; within seconds the Branches list it (E-PANE-WORKTREES) |
+| E-GIT-WORKTREE-NEW | Git layer showing a history | ask for a new worktree from a commit | a worktree of that commit created in a new folder beside the primary checkout, on a newly generated branch, the Git layer saying which; within seconds the Branches list it like any other worktree |
 | E-TERMINAL-OPEN | Pane | choose a worktree whose terminal has not run yet | Terminal panel expanded over the graph's left side, a shell running in the worktree |
 | E-TERMINAL-TYPE | Terminal panel expanded | type into it | the typed text reaches the terminal's program and what it prints shows on the screen |
 | E-TERMINAL-COLLAPSE | Terminal panel expanded | collapse it | Terminal panel collapsed to a tab at the left edge, the terminal and its programs running on; the graph as it was |
 | E-TERMINAL-EXPAND | Terminal panel collapsed | expand it | Terminal panel expanded, its screen as it was, with what it printed while collapsed |
 | E-TERMINAL-SWITCH | Terminal panel of a worktree | choose another worktree, then the first again | the other worktree's own terminal, then the first's again with its screen as it was |
-| E-TERMINAL-RELAUNCH | window closed while a terminal runs | start the app and choose that worktree | its terminal, still running, its screen as it was |
+| E-TERMINAL-RELAUNCH | window closed while a terminal that is not marked not persistent runs | start the app and choose that worktree | its terminal, still running, its screen as it was |
 | E-TERMINAL-BRANCH | Terminal panel of a worktree | the worktree's branch is switched or renamed | the same terminal, its screen as it was, for the worktree's new branch entry |
 | E-TERMINAL-REMOVED | Terminal panel of a worktree | the worktree is removed | Terminal panel saying the terminal ended; the worktree gone from the Branches (E-PANE-WORKTREES) |
 | E-TERMINAL-RESTORE-OFFER | Pane | choose a worktree whose terminal is gone after it ran | Terminal panel offering a restore over a fresh shell in the worktree; nothing run |
@@ -386,7 +386,7 @@ E-PANE-SELECT.
   E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-WIDTH → E-MON-DETAIL-BACK → E-MON-DETAIL-ARTIFACT
   E-TERMINAL-OPEN → E-TERMINAL-WIDTH → E-TERMINAL-COLLAPSE → E-TERMINAL-EXPAND
 - J-GIT-LAYER: E-LAUNCH-MONITOR → E-GIT-HISTORY
-- J-WORKTREE-NEW: E-GIT-HISTORY → E-GIT-WORKTREE-NEW → E-PANE-WORKTREES → E-TERMINAL-OPEN
+- J-WORKTREE-NEW: E-GIT-HISTORY → E-GIT-WORKTREE-NEW → E-TERMINAL-OPEN
 - J-TERMINAL: E-TERMINAL-OPEN → E-TERMINAL-TYPE → E-TERMINAL-BRANCH
 - J-TERMINAL-DETACH: E-TERMINAL-OPEN → E-TERMINAL-TYPE → E-TERMINAL-COLLAPSE → E-TERMINAL-EXPAND
   E-TERMINAL-TYPE → E-TERMINAL-SWITCH

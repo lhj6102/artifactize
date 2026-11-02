@@ -408,6 +408,9 @@ impl Actor {
             .as_ref()
             .and_then(|pty| platform::terminal::foreground(&*pty.master, pty.child.process_id()))
             .is_some_and(|foreground| self.metadata.observe(foreground));
+        if previous.cwd != self.metadata.cwd || previous.command != self.metadata.command {
+            self.metadata.certify();
+        }
         if previous != self.metadata {
             self.metadata.save(&self.identity)?;
         }
@@ -458,8 +461,10 @@ impl Actor {
                 }
                 .ok_or_else(|| io::Error::other("That restore command is unknown"))?;
                 let cwd = offer.cwd.clone().unwrap_or_else(|| self.worktree.clone());
-                self.replace(Some(&command), cwd)?;
+                // A chosen offer is used up before it starts: a launch that fails after
+                // spawning must not leave the same command available to run again.
                 self.offer = None;
+                self.replace(Some(&command), cwd)?;
                 self.restored = true;
                 Ok(())
             }

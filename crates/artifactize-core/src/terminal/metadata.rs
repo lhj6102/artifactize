@@ -74,16 +74,18 @@ impl Metadata {
         if !foreground.shell
             && let Some(command) = foreground.command
         {
-            let harness = harness(&command);
-            if self.command.as_ref() != Some(&command) || self.harness != harness {
-                self.session_id = harness
-                    .as_ref()
-                    .and_then(|h| session_id(h, &command, self.cwd.as_deref()));
-                self.harness = harness;
-                self.command = Some(command);
-            }
+            self.harness = harness(&command);
+            self.command = Some(command);
         }
         agent
+    }
+    /// Prove the session again for the current command and directory: an ID proven for one
+    /// directory is never offered for another.
+    pub fn certify(&mut self) {
+        self.session_id = match (&self.harness, &self.command) {
+            (Some(harness), Some(command)) => session_id(harness, command, self.cwd.as_deref()),
+            _ => None,
+        };
     }
 }
 
