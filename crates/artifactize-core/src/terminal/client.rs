@@ -14,6 +14,8 @@ use tokio::{
 const START_TIMEOUT: Duration = Duration::from_secs(15);
 /// Retry only during startup; connected terminals use a continuous ordered stream.
 const START_RETRY: Duration = Duration::from_millis(50);
+/// Frames and requests in flight per attachment, matching the host's per-client queue: a
+/// client that stops reading holds at most this many output chunks before the host drops it.
 const CLIENT_QUEUE: usize = 256;
 
 type Pending = (Request, oneshot::Sender<Result<(), String>>);
