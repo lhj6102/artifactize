@@ -29,6 +29,12 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             artifactize_core::terminal::serve(worktree, cols, rows).await?;
             Ok(0)
         }
+        Some(Command::TerminalStop { worktree }) => {
+            artifactize_core::terminal::stop(&worktree)
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(0)
+        }
         Some(Command::Mcp) => {
             let executable = std::env::current_exe().map_err(|e| e.to_string())?;
             // Without --repo each call's `project`, the client's roots or the working

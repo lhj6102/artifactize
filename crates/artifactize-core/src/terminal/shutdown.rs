@@ -10,6 +10,13 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(45);
 /// Poll the election only while shutdown completes, not during normal terminal operation.
 const ELECTION_RETRY: Duration = Duration::from_millis(25);
 
+/// End a worktree's terminal process tree and wait for its host to exit. A worktree with no
+/// running host succeeds without starting one. This does not remove the worktree or branch.
+pub async fn stop(worktree: &Path) -> io::Result<()> {
+    drop(stop_for_removal(worktree).await?);
+    Ok(())
+}
+
 pub(crate) async fn stop_for_removal(worktree: &Path) -> io::Result<File> {
     let identity = crate::repository::worktree_id(worktree).map_err(io::Error::other)?;
     let endpoint = Endpoint::namespaced(&identity, "terminal")?;

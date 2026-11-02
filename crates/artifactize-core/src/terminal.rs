@@ -13,6 +13,7 @@ use crate::types::SessionId;
 pub use client::{Attachment, attach};
 pub use host::serve;
 use serde::{Deserialize, Serialize};
+pub use shutdown::stop;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

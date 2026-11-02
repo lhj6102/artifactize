@@ -81,6 +81,8 @@ pub enum Command {
         cols: u16,
         rows: u16,
     },
+    #[command(name = "__terminal-stop", hide = true)]
+    TerminalStop { worktree: PathBuf },
     /// Serve bounded verification and inspection tools over MCP stdio.
     Mcp,
     #[command(name = "__verify", hide = true)]
