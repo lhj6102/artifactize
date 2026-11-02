@@ -185,6 +185,7 @@ that makes the transition happen and checks where it leads.
 | E-HELP-CLOSE | Help | Esc | the view below |
 | E-UPDATE-NOTICE | any view, no newer release shown | the app's release lookup, at start or later that day, finds a newer release | the same view, the Release notice in the header |
 | E-UPDATE-OPEN | any view with the Release notice | a click on it | Update |
+| E-UPDATE-SELECT | Update with a command | click in the command, then select all | Update, the whole command selected as page text, ready to copy; nothing run |
 | E-UPDATE-LINK | Update with a download or the release page | a click on the link | Update, the link opened in the browser |
 | E-UPDATE-CLOSE | Update | Esc or Close | the view below, the Release notice still shown |
 | E-REFRESH | any view | F5, or Ctrl+R outside verdict editing (while editing a verdict Ctrl+R switches to RED, E-HUMAN-SWITCH) | same view, the state reloaded and the Branches scanned again; a shown Current scanned again (E-CURRENT-REFRESH) |
@@ -266,6 +267,7 @@ that makes the transition happen and checks where it leads.
 | E-GIT-WORKTREE-NEW | Git layer showing a history | ask for a new worktree from a commit | a worktree of that commit created in a new folder beside the primary checkout, on a newly generated branch, the Git layer saying which; within seconds the Branches list it like any other worktree |
 | E-TERMINAL-OPEN | Pane | choose a worktree whose terminal has not run yet | Terminal panel expanded over the graph's left side, a shell running in the worktree |
 | E-TERMINAL-TYPE | Terminal panel expanded | type into it | the typed text reaches the terminal's program and what it prints shows on the screen |
+| E-TERMINAL-NOT-PERSISTENT | Pane, on Windows when the system refuses to let a new terminal leave the app's Job | choose a worktree whose terminal has not run yet | Terminal panel expanded, a shell running in the worktree, the panel saying that this terminal ends when the app closes; closing the app (E-QUIT-CLEAN) then ends it |
 | E-TERMINAL-COLLAPSE | Terminal panel expanded | collapse it | Terminal panel collapsed to a tab at the left edge, the terminal and its programs running on; the graph as it was |
 | E-TERMINAL-EXPAND | Terminal panel collapsed | expand it | Terminal panel expanded, its screen as it was, with what it printed while collapsed |
 | E-TERMINAL-SWITCH | Terminal panel of a worktree | choose another worktree, then the first again | the other worktree's own terminal, then the first's again with its screen as it was |
@@ -369,6 +371,7 @@ E-PANE-SELECT.
 - J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
 - J-HELP: E-HELP-OPEN → E-HELP-CLOSE
 - J-UPDATE: E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-CLOSE
+  E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-SELECT → E-UPDATE-CLOSE
   E-UPDATE-NOTICE → E-UPDATE-OPEN → E-UPDATE-LINK → E-UPDATE-CLOSE
 - J-REFRESH: E-REFRESH
   E-CURRENT-CHIP → E-REFRESH
@@ -396,6 +399,7 @@ E-PANE-SELECT.
   E-TERMINAL-TYPE → E-TERMINAL-SWITCH
   E-TERMINAL-TYPE → E-QUIT-CLEAN → E-TERMINAL-RELAUNCH
   E-TERMINAL-OPEN → E-TERMINAL-REMOVED
+  E-TERMINAL-NOT-PERSISTENT → E-QUIT-CLEAN
 - J-TERMINAL-RESTORE: E-TERMINAL-RESTORE-OFFER → E-TERMINAL-TYPE → E-TERMINAL-RESTORE-RUN
   E-TERMINAL-RESTORE-OFFER → E-TERMINAL-RESTORE-KEEP
 - J-TERMINAL-MOVED: E-TERMINAL-OPEN → E-TERMINAL-MOVED → E-TERMINAL-FOLLOW
