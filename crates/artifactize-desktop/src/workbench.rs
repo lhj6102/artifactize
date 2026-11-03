@@ -39,13 +39,9 @@ impl Terminals {
                 stops.spawn(async move { terminal::stop(&worktree).await });
             }
             while let Some(stopped) = stops.join_next().await {
-                match stopped {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        eprintln!("cannot end a terminal that ends with the app: {error}");
-                    }
-                    Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
-                    Err(_) => {}
+                // A panic resumes here; a cancelled stop has nothing left to report.
+                if let Ok(Err(error)) = artifactize_core::task::joined(stopped) {
+                    eprintln!("cannot end a terminal that ends with the app: {error}");
                 }
             }
         }
