@@ -37,7 +37,7 @@
     나옵니다. 어시스턴트는 해당 eval을 먼저 고친 뒤 다시 실행합니다. ERROR는 검사를 실행하지 못했다는
     뜻이므로, 어시스턴트는 판정이 아니라 그 원인을 고칩니다.
     `--speculate`를 붙이면 수정으로 입력이 다시 리뷰 대상이 된 경우에도 해당
-    eval을 실행합니다. RED 승인을 다시 받을 때는 eval 대신 그 Artifact를 선택합니다. 같은
+    eval을 실행합니다. RED였던 승인을 다시 받으려면 eval이 아니라 해당 Artifact를 선택합니다. 같은
     Artifact의 자동 eval이 모두 GREEN이 된 뒤에야 사람에게 승인을 요청하기 때문입니다.
   - **Sweep**: RED eval이 모두 GREEN이 되면 전체를 한 번 실행합니다.
     `artifactize verify --all --wait`를 쓰거나, scope `{"kind": "all"}`로 `verify_start`를
