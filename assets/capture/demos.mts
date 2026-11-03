@@ -306,6 +306,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   mkdirSync(fixture.repo, { recursive: true });
   loopProject(root, fixture.repo);
   e2e.git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+  // A committed example, so the Git layer beside the Pane shows its history.
+  e2e.git(fixture.repo, "-C", fixture.repo, "add", ".");
+  e2e.gitAt(fixture.repo, "2026-01-01T10:00:00Z", "-C", fixture.repo, "commit", "-qm", "Declare the example project");
   const env = e2e.environment(fixture);
   // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
   const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
@@ -315,18 +318,27 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   /** The Main area while it shows the Run `id`. */
   const MAIN = 'section.panel[aria-label="Main area"]';
   try {
+    // The branch opens with its terminal over the graph's left side. The demo shows the graph,
+    // so the terminal is collapsed to its tab, as a person would, before anything is recorded.
+    const { collapseTerminal, TERMINAL } = await import("../../crates/artifactize-desktop/ui/e2e/graph-view.ts");
+    await browser.$(TERMINAL).waitForExist({ timeout: WAIT, timeoutMsg: "the branch's terminal opens over its graph" });
+    await collapseTerminal(browser);
     const chip = (id: string) => `[aria-label="Branches"] button[data-chip="${id}"]`;
     /** The Main area shows the Run `id`'s own graph, not the one drawn before it was opened: a
      * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
     const opened = (id: string) => browser.execute((id, main, edges) => {
       const panel = document.querySelector(main);
       const canvas = panel?.querySelector(":scope > header h2")?.textContent?.trim() === `Run ${id}` ? panel?.querySelector(".run .svelte-flow") : null;
-      const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
-      const box = node?.getBoundingClientRect();
+      // Every Artifact drawn where nothing covers it: a click at its centre reaches the node.
+      const nodes = [...(canvas?.querySelectorAll(".svelte-flow__node") ?? [])];
+      const unobscured = nodes.length > 0 && nodes.every((node) => {
+        const box = node.getBoundingClientRect();
+        return box.width > 0 && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
+      });
       const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
-      return !!canvas && (canvas !== before?.canvas || before.run === `Run ${id}`) && !!box && box.width > 0
-        && canvas.querySelectorAll(".svelte-flow__edge").length === edges
-        && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
+      return !!canvas && (canvas !== before?.canvas || before.run === `Run ${id}`) && unobscured
+        && !!canvas.querySelector('.svelte-flow__node[data-id="a:release"]')
+        && canvas.querySelectorAll(".svelte-flow__edge").length === edges;
     }, id, MAIN, EDGES());
     /** The Run `id` ended and its graph is drawn and lit as it ended: every Artifact settled,
      * exactly `fails` red, and every edge drawn. */

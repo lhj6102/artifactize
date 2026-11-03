@@ -138,10 +138,14 @@ its Artifacts in the graph.
 The **Git layer** shows the history of the worktree chosen in the Pane as a vertical
 line with a dot for each commit, newest at the top: the commits of every branch, each
 with its summary, its short ID and the branches and tags on it, the checked-out commit
-marked. Every commit offers a **new worktree** from it: artifactize creates a folder
-beside the main checkout, on a new temporary branch with a generated name that you can
-rename later, and says where. It never reuses an existing folder or branch. The new
-worktree appears in the Pane like any other.
+marked. It shows the newest 200 commits; **Show … older commits** at the end brings in
+the next 200. The history is read when you choose a worktree; **↻** (Read the history
+again) beside its heading reads it again after new commits. Every commit offers a **new
+worktree** from it: artifactize creates a folder beside the main checkout, on a new
+temporary branch with a generated name that you can rename later, and says where. It
+never reuses an existing folder or branch. The new worktree appears in the Pane like any
+other, and once it is listed the app opens it: its entry selected and expanded, its newest
+entry shown and its terminal beside the graph.
 
 ### Terminal
 
@@ -158,6 +162,10 @@ terminal and what runs in it keep going, and opening it again shows its screen a
 with what it printed meanwhile. Removing the worktree ends its terminal. On Windows,
 when the system does not let the terminal outlive the app, the panel says that it ends
 when the app closes.
+
+When the shell in an open terminal ends, the panel says that the terminal ended, with its
+exit status when there is one, and **Start a fresh shell** starts a new one in the
+worktree.
 
 When a terminal is gone, after a reboot or because its shell ended, opening it starts a
 fresh shell in the worktree and offers to rerun the last command from the last

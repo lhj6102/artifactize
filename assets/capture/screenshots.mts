@@ -161,8 +161,8 @@ async function capture(output: string, work: string): Promise<void> {
   const e2e = "../../crates/artifactize-desktop/ui/e2e";
   const { adopt, cleanup, prepare } = await import(`${e2e}/build.ts`);
   const fixtures = await import(`${e2e}/native-fixtures.ts`);
-  const { environment, git } = await import(`${e2e}/environment.ts`);
-  const { graphShown, openArtifact } = await import(`${e2e}/graph-view.ts`);
+  const { environment, git, gitAt } = await import(`${e2e}/environment.ts`);
+  const { collapseTerminal, graphShown, openArtifact } = await import(`${e2e}/graph-view.ts`);
   const { claimable, reviewing } = await import(`${e2e}/human-review.ts`);
   const { embeddedPorts } = await import(`${e2e}/platform.ts`);
   const service = createRequire(join(repository, "crates/artifactize-desktop/ui/package.json"))("@wdio/tauri-service");
@@ -176,6 +176,9 @@ async function capture(output: string, work: string): Promise<void> {
     mkdirSync(fixture.repo, { recursive: true });
     project(fixture.repo, fixtures);
     git(fixture.repo, "init", "-q", "--initial-branch=main", fixture.repo);
+    // A committed example, so the Git layer beside the Pane shows its history.
+    git(fixture.repo, "-C", fixture.repo, "add", ".");
+    gitAt(fixture.repo, "2026-01-01T10:00:00Z", "-C", fixture.repo, "commit", "-qm", "Declare the example project");
     // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
     const grace = spawnSync(candidate.cli, ["--state-dir", fixture.state, "limits", "--signoff-idle-grace", "0"],
       { env: environment(fixture), encoding: "utf8" });
@@ -220,6 +223,9 @@ async function capture(output: string, work: string): Promise<void> {
     await app.$(runChip).click();
     await app.waitUntil(() => app.execute((main) => /^Run /.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the Run" });
+    // The app opens with the branch's terminal over the graph's left side; the scene shows
+    // the graph itself, so the terminal is collapsed to its tab as a person would.
+    await collapseTerminal(app);
     await graphShown(app, "a:release", WAIT);
     await app.$('[aria-label="Waiting reviews"] [role="option"]').waitForExist({ timeout: WAIT, timeoutMsg: "the sign-off waits in the Pane" });
     // core → cli, core → release and cli → docs.
@@ -235,6 +241,8 @@ async function capture(output: string, work: string): Promise<void> {
       viewport = now;
       return still;
     }, { timeout: WAIT, interval: 250, timeoutMsg: "the fitted camera holds still" });
+    // Every Artifact of the example is drawn where nothing covers it, its verdict visible.
+    for (const id of ["a:core", "a:cli", "a:release", "a:docs"]) await graphShown(app, id, WAIT);
     await shot("monitor.png");
 
     // B. cli's Detail on its Artifact tab: cli between the core it uses and the docs that use
