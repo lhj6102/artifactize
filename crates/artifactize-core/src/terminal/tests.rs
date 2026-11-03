@@ -337,7 +337,17 @@ fn session_records_in_windows_spelling_prove_a_session_by_windows_rules() {
          \"originator\":\"codex_cli_rs\"}}}}\n\
          {{\"type\":\"response_item\",\"payload\":{{\"content\":\"not read\"}}}}\n"
     );
-    for (harness, records) in [(Harness::ClaudeCode, &claude), (Harness::Codex, &codex)] {
+    // JSON fields have no fixed order: the same rollout with its payload before its type.
+    let reversed = format!(
+        "{{\"payload\":{{\"cwd\":{directory},\"id\":\"0f1e2d3c-workbench\",\
+         \"originator\":\"codex_cli_rs\"}},\"type\":\"session_meta\",\
+         \"timestamp\":\"2026-01-01T12:00:00Z\"}}\n"
+    );
+    for (harness, records) in [
+        (Harness::ClaudeCode, &claude),
+        (Harness::Codex, &codex),
+        (Harness::Codex, &reversed),
+    ] {
         let proves = |id: &crate::types::SessionId, cwd: &Path, rules| {
             metadata::proves(&harness, records.as_bytes(), id, cwd, rules)
         };

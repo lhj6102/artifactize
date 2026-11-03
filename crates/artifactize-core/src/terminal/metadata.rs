@@ -278,8 +278,9 @@ struct ClaudeRecord {
     cwd: Option<PathBuf>,
 }
 
-/// A Codex rollout record's session metadata, decoded only when the record says it is
-/// `session_meta` before its payload; any other payload is skipped unread.
+/// A Codex rollout record's session metadata, kept only when the record says it is
+/// `session_meta`, whichever of its fields comes first. A payload is read only through
+/// [`SessionMeta`]'s two fields, so whatever else it carries is skipped unread.
 struct CodexRecord(Option<SessionMeta>);
 impl<'de> Deserialize<'de> for CodexRecord {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -301,7 +302,7 @@ impl<'de> Deserialize<'de> for CodexRecord {
                             session =
                                 map.next_value::<std::borrow::Cow<'de, str>>()? == "session_meta"
                         }
-                        "payload" if session => meta = Some(map.next_value::<SessionMeta>()?),
+                        "payload" => meta = Some(map.next_value::<SessionMeta>()?),
                         _ => {
                             map.next_value::<serde::de::IgnoredAny>()?;
                         }
