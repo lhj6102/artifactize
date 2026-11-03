@@ -7,11 +7,11 @@ import assert from "node:assert/strict";
 import { addFolder, agentRuns, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { needing, scenario, type Scenario } from "../scenario.ts";
+import { needing, scenario, servedBy, type Prepared, type Scenario } from "../scenario.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import {
-  asNativePath, childDirectories, exists, nameOf, nativePath, primaryModifier, serveLoopback, writeText, type LoopbackSocket,
+  asNativePath, childDirectories, exists, heldConnections, heldEndpoint, nameOf, nativePath, primaryModifier, writeText, type NativePath,
 } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { camera, detail, FIND, findField, offCentre, TERMINAL } from "../graph-view.ts";
@@ -24,6 +24,24 @@ import {
 async function prepare() {
   const fixture = createWorkbench();
   return { fixture, args: ["--repo", fixture.repo], env: fixture.env, data: fixture };
+}
+
+/** The workbench with a loopback endpoint that a program in a terminal holds open until it ends
+ * ([`heldEndpoint`]): its port and the record of its connections. */
+type Holding = Workbench & { held: { port: number; record: NativePath } };
+async function prepareHolding(): Promise<Prepared<Holding>> {
+  const prepared = await prepare();
+  const record = nativePath(prepared.fixture.root, "held-connections.txt");
+  const endpoint = await heldEndpoint(record);
+  return servedBy(endpoint, () => ({ ...prepared, data: { ...prepared.data, held: { port: endpoint.port, record } } }));
+}
+
+/** Wait until the held endpoint's connections reach `opened` and `ended`. */
+function held(browser: WebdriverIO.Browser, fixture: Holding, want: { opened: number; ended: number }, what: string) {
+  return browser.waitUntil(() => {
+    const seen = heldConnections(fixture.held.record);
+    return seen.opened === want.opened && seen.ended === want.ended;
+  }, { timeout: 30000, timeoutMsg: what });
 }
 
 /** The Git layer's history, once it lists `count` commits. */
@@ -530,10 +548,10 @@ export const scenarios: Scenario[] = [
   )),
 
   // UX journey: J-WORKTREE-REMOVE; UX edges: E-WORKTREE-REMOVE-ASK E-WORKTREE-REMOVE-CANCEL E-WORKTREE-REMOVE E-TERMINAL-REMOVED
-  scenario<Workbench>(
+  scenario<Holding>(
     "workbench-worktree-remove",
     "asks before removing a worktree, keeps everything on Cancel or Esc, says Git's refusal for the main checkout, a locked and a dirty worktree, and otherwise removes the folder and ends its terminal, deleting a generated branch only while unrenamed and without commits of its own",
-    prepare,
+    prepareHolding,
     async (browser, { data: fixture }) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
@@ -565,24 +583,11 @@ export const scenarios: Scenario[] = [
       // A clean worktree goes with its folder, and its terminal ends with the program running in
       // it, which holds a connection open until it ends; its own branch stays.
       git(fixture.repo, "-C", fixture.side, "checkout", "--", ".");
-      const held: LoopbackSocket[] = [];
-      let closed = 0;
-      const server = await serveLoopback((socket) => {
-        held.push(socket);
-        // Windows resets the connection of a program it terminates; that reset is its end too.
-        socket.on("error", () => {});
-        socket.on("close", () => { closed += 1; });
-      });
-      try {
-        await typeLine(browser, `claude --hold ${server.port}`);
-        await browser.waitUntil(() => held.length === 1, { timeout: 30000, timeoutMsg: "the program in side's terminal runs" });
-        await askRemoval(browser);
-        await confirmRemoval(browser);
-        await browser.waitUntil(() => closed === 1, { timeout: 30000, timeoutMsg: "the program in the removed worktree's terminal ended" });
-      } finally {
-        for (const socket of held) socket.destroy();
-        await server.close();
-      }
+      await typeLine(browser, `claude --hold ${fixture.held.port}`);
+      await held(browser, fixture, { opened: 1, ended: 0 }, "the program in side's terminal runs");
+      await askRemoval(browser);
+      await confirmRemoval(browser);
+      await held(browser, fixture, { opened: 1, ended: 1 }, "the program in the removed worktree's terminal ended");
       await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.startsWith("The terminal ended")) === true,
         { timeout: 30000, timeoutMsg: "the removed worktree's terminal ended" });
       await browser.waitUntil(async () => (await branch(browser, "repo  side")) === undefined, { timeout: 30000, timeoutMsg: "gone from the Pane" });
@@ -625,11 +630,11 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journey: J-TERMINAL-DETACH; UX edges: E-TERMINAL-NOT-PERSISTENT E-QUIT-CLEAN
-  needing(["breakaway-job"], scenario<Workbench>(
+  needing(["breakaway-job"], scenario<Holding>(
     "workbench-terminal-not-persistent",
     "says a worktree's terminal ends when the app closes when the system keeps it in the Job the app runs in, and quits at once",
-    prepare,
-    async (browser) => {
+    prepareHolding,
+    async (browser, { data: fixture }) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
       await browser.waitUntil(async () => (await terminal(browser))?.notes.includes("Not persistent. This terminal ends when Artifactize closes.") === true,
@@ -637,33 +642,14 @@ export const scenarios: Scenario[] = [
       await typeLine(browser, "echo in-the-job");
       await printed(browser, "in-the-job", "a shell runs in the worktree");
       // A program running in it holds a connection open until it ends; closing the app ends it.
-      const held: LoopbackSocket[] = [];
-      let closed = 0;
-      let programEnded = () => {};
-      const ended = new Promise<void>((done) => { programEnded = done; });
-      const server = await serveLoopback((socket) => {
-        held.push(socket);
-        // Windows resets the connection of a program it terminates; that reset is its end too.
-        socket.on("error", () => {});
-        socket.on("close", () => { closed += 1; programEnded(); });
-      });
-      let bound: NodeJS.Timeout | undefined;
-      try {
-        await typeLine(browser, `claude --hold ${server.port}`);
-        await browser.waitUntil(() => held.length === 1, { timeout: 30000, timeoutMsg: "the program in the terminal runs" });
-        await selectBranch(browser, "repo  master");
-        await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
-          { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
-        assert.equal(closed, 0, "the program runs until the app closes");
-        await sessionEndedByApp(browser, () => browser.keys(["q"]));
-        await Promise.race([ended, new Promise((_, fail) => {
-          bound = setTimeout(() => fail(new Error("closing the app ended the program in its terminal")), 30000);
-        })]);
-      } finally {
-        clearTimeout(bound);
-        for (const socket of held) socket.destroy();
-        await server.close();
-      }
+      await typeLine(browser, `claude --hold ${fixture.held.port}`);
+      await held(browser, fixture, { opened: 1, ended: 0 }, "the program in the terminal runs");
+      await selectBranch(browser, "repo  master");
+      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')),
+        { timeout: 15000, timeoutMsg: "the keyboard in the Pane" });
+      assert.deepEqual(heldConnections(fixture.held.record), { opened: 1, ended: 0 }, "the program runs until the app closes");
+      await sessionEndedByApp(browser, () => browser.keys(["q"]));
+      await held(browser, fixture, { opened: 1, ended: 1 }, "closing the app ended the program in its terminal");
     },
   )),
 ];

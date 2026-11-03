@@ -1042,9 +1042,9 @@ export function supports(needs: readonly Capability[] = []): boolean {
 
 /** Claude Code and Codex as they sit on this system's disk, for a fixture under `root` whose
  * home is `root/home`. This reproduces the harnesses' native on-disk format, so unlike every
- * other fixture file its text holds native paths: each harness's own record of the session
- * `session.id` names the directory `session.cwd` as the OS spells it, as the real harnesses
- * write it, and each program is a Node script found on PATH through the OS's own launcher (a
+ * other fixture file the session records hold native paths: each harness's own record of the
+ * session `session.id` names the directory `session.cwd` as the OS spells it, as the real
+ * harnesses write it. Each program is a Node script found on PATH through the OS's own launcher (a
  * shell shim that execs Node on a script named for its harness, as the real ones run; a `.cmd`
  * on Windows). The programs are declared stand-ins, first on the PATH of the returned
  * environment: each says what it was started with and where, adds a line to `runs` for each
@@ -1066,7 +1066,7 @@ import { connect } from "node:net";
 import { join, sep } from "node:path";
 const args = process.argv.slice(2);
 const where = () => process.cwd().split(sep).join("/");
-appendFileSync(${JSON.stringify(runs)}, ${JSON.stringify(name)} + "\\t" + args.join(" ") + "\\t" + where() + "\\n");
+appendFileSync(${JSON.stringify(portablePath(runs))}, ${JSON.stringify(name)} + "\\t" + args.join(" ") + "\\t" + where() + "\\n");
 console.log("agent " + args.join("+") + " at " + where());
 if (args[0] === "--move") {
   setTimeout(() => process.chdir(join(process.cwd(), "..", args[1])), 1500);
@@ -1076,11 +1076,48 @@ if (args[0] === "--move") {
   setInterval(() => {}, 60000);
 } else setTimeout(() => console.log("agent done " + args.join("+")), 2500);
 `);
-    if (WINDOWS) writeFileSync(join(bin, `${name}.cmd`), `@"%DESKTOP_TEST_NODE%" "${script}" %*\r\n`);
+    if (WINDOWS) writeFileSync(join(bin, `${name}.cmd`), `@"%DESKTOP_TEST_NODE%" "${portablePath(script as NativePath)}" %*\r\n`);
     else writeFileSync(join(bin, name), `#!/bin/sh\nexec "$DESKTOP_TEST_NODE" ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
   }
   const path = Object.entries(env).find(([name]) => name.toUpperCase() === "PATH")?.[1] ?? process.env.PATH ?? "";
   return withVariable({ ...env, DESKTOP_TEST_NODE: process.execPath }, "PATH", `${bin}${delimiter}${path}`);
+}
+
+/** A loopback endpoint a fixture program connects to and holds open until it ends, served by
+ * the preparation that owns the case's app and closed by its release. Each connection adds
+ * a line `open` to `record`, and its end a line `end`: closed, or reset, as Windows resets the
+ * connection of a program it terminates. */
+export async function heldEndpoint(record: NativePath): Promise<LoopbackServer> {
+  writeFileSync(record, "");
+  const sockets = new Set<Socket>();
+  const server = await serveLoopback((socket) => {
+    sockets.add(socket);
+    appendFileSync(record, "open\n");
+    socket.on("error", () => {});
+    socket.on("close", () => {
+      sockets.delete(socket);
+      appendFileSync(record, "end\n");
+    });
+  });
+  return {
+    ...server,
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      await server.close();
+    },
+  };
+}
+
+/** How many connections a held endpoint's `record` says opened, and how many of them ended. */
+export function heldConnections(record: NativePath): { opened: number; ended: number } {
+  const lines = (readTextIfExists(record) ?? "").split("\n");
+  return { opened: lines.filter((line) => line === "open").length, ended: lines.filter((line) => line === "end").length };
+}
+
+/** Run `name` with `args` as a shell finds it on the PATH of `env`, as a person types it, and
+ * return what it printed. */
+export function runAsFound(name: string, args: readonly string[], env: Environment): string {
+  return WINDOWS ? runProgramOk("cmd", ["/d", "/c", name, ...args], { env }) : runProgramOk(name, args, { env });
 }
 
 /** A declared stand-in for the program `name`, placed in `directory`, which only adds a line
@@ -1090,9 +1127,9 @@ export function recordingProgram(directory: NativePath, name: string, record: Na
   const script = join(directory, `${name}-stand-in.mjs`);
   writeFileSync(script, `// The ${name} stand-in: it records each start and does nothing else.
 import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(record)}, process.argv.slice(2).join(" ") + "\\n");
+appendFileSync(${JSON.stringify(portablePath(record))}, process.argv.slice(2).join(" ") + "\\n");
 `);
-  if (WINDOWS) writeFileSync(join(directory, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
+  if (WINDOWS) writeFileSync(join(directory, `${name}.cmd`), `@"${portablePath(nodeProgram)}" "${portablePath(script as NativePath)}" %*\r\n`);
   else writeFileSync(join(directory, name), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
   const path = Object.entries(process.env).find(([key]) => key.toUpperCase() === "PATH")?.[1] ?? "";
   return `${directory}${delimiter}${path}`;

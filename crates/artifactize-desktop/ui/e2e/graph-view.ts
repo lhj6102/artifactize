@@ -34,22 +34,25 @@ export async function uncover(browser: WebdriverIO.Browser, id: string): Promise
  * A timeout says what stood in the way: no node, an empty box, or what covers its centre. */
 export async function graphShown(browser: WebdriverIO.Browser, id: string, timeout = 15000): Promise<void> {
   let last = "";
-  await browser.waitUntil(async () => {
-    last = await browser.execute((want, terminal) => {
-      const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
-      const box = node?.getBoundingClientRect();
-      if (!node || !box) return "no node";
-      const at = [box.left, box.top, box.width, box.height].map(Math.round).join(",");
-      if (box.width <= 0 || box.height <= 0) return `an empty box at ${at}`;
-      const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-      if (target?.closest(".svelte-flow__node") === node) return "";
-      if (target?.closest(terminal)) return "terminal";
-      const cover = target?.closest("[aria-label]") ?? target;
-      return `its box ${at} in a ${innerWidth}×${innerHeight} window is covered at its centre by ${cover?.tagName ?? "nothing"} ${cover?.getAttribute("aria-label") ?? cover?.className ?? ""}`;
-    }, id, TERMINAL);
-    if (last === "terminal") await collapseTerminal(browser);
-    return last === "";
-  }, { timeout, timeoutMsg: `the graph draws ${id}` }).catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
+  const look = () => browser.execute((want, terminal) => {
+    const node = document.querySelector(`.svelte-flow__node[data-id="${want}"]`);
+    const box = node?.getBoundingClientRect();
+    if (!node || !box) return "no node";
+    const at = [box.left, box.top, box.width, box.height].map(Math.round).join(",");
+    if (box.width <= 0 || box.height <= 0) return `an empty box at ${at}`;
+    const target = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    if (target?.closest(".svelte-flow__node") === node) return "";
+    if (target?.closest(terminal)) return "terminal";
+    const cover = target?.closest("[aria-label]") ?? target;
+    return `its box ${at} in a ${innerWidth}×${innerHeight} window is covered at its centre by ${cover?.tagName ?? "nothing"} ${cover?.getAttribute("aria-label") ?? cover?.className ?? ""}`;
+  }, id, TERMINAL);
+  const until = (holds: () => boolean) => browser.waitUntil(async () => { last = await look(); return holds(); }, { timeout, timeoutMsg: `the graph draws ${id}` })
+    .catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
+  // Drawn where it can be reached, or under the expanded terminal, which then collapses.
+  await until(() => last === "" || last === "terminal");
+  if (last === "") return;
+  await collapseTerminal(browser);
+  await until(() => last === "");
 }
 
 /** The camera (translation and scale) of the Main area's graph, read once it holds still over a

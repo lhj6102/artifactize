@@ -12,7 +12,7 @@ import { mainTitle } from "../pane.ts";
 import { visibleCenter } from "../pointer.ts";
 import { scenario, servedBy, type Scenario } from "../scenario.ts";
 import {
-  appendText, diskImageAppDirectory, nativePath, placeApp, primaryModifier, readText, readTextIfExists, recordingProgram, replaceText,
+  appendText, diskImageAppDirectory, nativePath, placeApp, primaryModifier, readText, readTextIfExists, recordingProgram, replaceText, runAsFound,
   runProgramOk, serveLoopbackHttp, storePackageDirectory, withVariable, writeText,
   type Environment, type HttpServer, type NativePath,
 } from "../platform.ts";
@@ -47,6 +47,8 @@ async function site(fixture: Fixture, tag: string): Promise<{ data: Site; server
 
 /** Where the Cargo stand-in of an app installed with Cargo records each start. */
 const cargoRuns = (fixture: Fixture) => nativePath(fixture.root, "cargo-runs.txt");
+/** The arguments of each start the Cargo stand-in recorded. */
+const cargoStarts = (fixture: Fixture) => (readTextIfExists(cargoRuns(fixture)) ?? "").split("\n").filter(Boolean);
 
 const visited = (data: Site): string[] => readText(data.visits).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
 
@@ -191,7 +193,10 @@ export const scenarios: Scenario[] = [
         return { app: placed, env: { CARGO_HOME: cargo, PATH: recordingProgram(bin, "cargo", cargoRuns(fixture)) } };
       },
     }),
-    async (browser, { fixture, data }) => {
+    async (browser, { fixture, env, data }) => {
+      // The Cargo the app finds records a start: run as a person runs it, it records one.
+      runAsFound("cargo", ["--version"], env!);
+      assert.deepEqual(cargoStarts(fixture), ["--version"], "the Cargo stand-in records a start");
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
       const text = await openDialog(browser);
       assert.ok(text.includes("To update, run:"), text);
@@ -205,7 +210,7 @@ export const scenarios: Scenario[] = [
       assert.ok(selected.includes("cargo install artifactize artifactize-tools --locked"), `the command is selectable text: ${selected}`);
       await closeByButton(browser);
       onlyLookups(data);
-      assert.equal(readTextIfExists(cargoRuns(fixture)) ?? "", "", "selecting the command ran no update");
+      assert.deepEqual(cargoStarts(fixture), ["--version"], "selecting the command started no Cargo");
     },
   ),
   // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-LINK E-UPDATE-CLOSE
