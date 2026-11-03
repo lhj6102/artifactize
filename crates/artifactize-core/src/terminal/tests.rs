@@ -319,11 +319,19 @@ fn a_harness_run_through_its_interpreter_is_offered_as_it_was_run() {
 fn session_records_in_windows_spelling_prove_a_session_by_windows_rules() {
     use crate::platform::PathRules;
     let id: crate::types::SessionId = "0f1e2d3c-workbench".parse().unwrap();
-    let worktree = Path::new("c:/users/runneradmin/AppData/Local/Temp/fixture/repo/");
-    let other = Path::new(r"C:\Users\runneradmin\AppData\Local\Temp\fixture\side");
-    let directory = r"C:\Users\runneradmin\AppData\Local\Temp\fixture\repo";
+    // The worktree in lower case with a trailing slash; the records in native spelling.
+    let worktree = PathBuf::from(
+        test_os::windows_drive("Users/runneradmin/AppData/Local/Temp/fixture/repo/").to_lowercase(),
+    );
+    let worktree = worktree.as_path();
+    let other = PathBuf::from(test_os::windows_drive_native(
+        r"Users\runneradmin\AppData\Local\Temp\fixture\side",
+    ));
+    let other = other.as_path();
+    let directory =
+        test_os::windows_drive_native(r"Users\runneradmin\AppData\Local\Temp\fixture\repo");
     // Records as the harnesses write them, in their own field order; the directory as JSON.
-    let directory = serde_json::to_string(directory).unwrap();
+    let directory = serde_json::to_string(&directory).unwrap();
     // Claude Code: a project JSONL whose records name their session and directory.
     let claude = format!(
         "{{\"type\":\"summary\",\"summary\":\"earlier\"}}\n\

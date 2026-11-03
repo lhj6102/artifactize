@@ -190,8 +190,10 @@ fn inspect(pid: i32) -> Option<(Option<PathBuf>, Vec<String>)> {
         return None;
     }
     bytes.truncate(length);
-    let argc = i32::from_ne_bytes(bytes.get(..4)?.try_into().ok()?) as usize;
-    let rest = bytes.get(4..)?;
+    // KERN_PROCARGS2 opens with argc as a native C int, then the executable path and argv.
+    const ARGC_BYTES: usize = std::mem::size_of::<libc::c_int>();
+    let argc = libc::c_int::from_ne_bytes(bytes.get(..ARGC_BYTES)?.try_into().ok()?) as usize;
+    let rest = bytes.get(ARGC_BYTES..)?;
     let executable_end = rest.iter().position(|b| *b == 0)?;
     let arguments = &rest[executable_end..];
     let start = arguments.iter().position(|b| *b != 0)?;
