@@ -426,39 +426,27 @@ export async function runAsDesktop(
   const request = nativePath(directory, "request.json");
   const output = nativePath(directory, "output.log");
   const exit = nativePath(directory, "exit.json");
+  const started = nativePath(directory, "launcher.pid");
   const stopRequest = nativePath(directory, "interrupt");
   const launcher = nativePath(directory, "launch.mjs");
   const portable = (value: string) => isAbsolute(value) ? portablePath(value as NativePath) : value;
-  writeFileSync(output, "");
-  // The suite's own file names paths with '/'; the launcher makes them native where it uses them.
-  writeFileSync(request, JSON.stringify({
-    program: portable(program), args: args.map(portable), cwd: portable(cwd), output: portable(output), exit: portable(exit),
-    env: withVariable({ ...env }, INTERRUPT_REQUEST, portable(stopRequest)),
-  }));
-  writeFileSync(launcher, `// Started by WMI outside every Job: run the request's program with its environment.
-import { spawn } from "node:child_process";
-import { openSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, normalize } from "node:path";
-const native = (value) => isAbsolute(value) ? normalize(value) : value;
-const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
-const output = openSync(native(request.output), "a");
-let done = false;
-const finish = (result) => { if (!done) { done = true; writeFileSync(native(request.exit), JSON.stringify(result)); } };
-const child = spawn(native(request.program), request.args.map(native), { env: request.env, cwd: native(request.cwd), stdio: ["ignore", output, output] });
-child.once("error", (error) => finish({ error: String(error) }));
-child.once("close", (code, signal) => finish(signal ? { error: "terminated by " + signal } : { code: code ?? 1 }));
-`);
-  const quoted = (value: string) => `"${value}"`;
-  const commandLine = [process.execPath, launcher, request].map(quoted).join(" ");
-  const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
-  const created = runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'
-$startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
-$created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${literal(commandLine)}; CurrentDirectory = ${literal(cwd)}; ProcessStartupInformation = $startup }
-if ($created.ReturnValue -ne 0) { throw ('Win32_Process.Create returned ' + $created.ReturnValue) }
-$created.ProcessId`]).trim();
-  const pid = Number(created);
-  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`Win32_Process.Create gave no process: ${created}`);
-  reportJobs(pid, "the desktop-started launcher");
+  const alive = (pid: number) => {
+    try { process.kill(pid, 0); return true; }
+    catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+  };
+  const pause = () => new Promise((done) => setTimeout(done, 250));
+  /** Whether `pid` is gone within `bound` ms. */
+  const gone = async (pid: number, bound: number) => {
+    for (const deadline = Date.now() + bound; Date.now() < deadline; await pause()) if (!alive(pid)) return true;
+    return !alive(pid);
+  };
+  /** The launcher, by the number WMI gave or, failing that, by the one it wrote itself. */
+  let pid: number | undefined;
+  const launcherPid = () => {
+    if (pid !== undefined) return pid;
+    const own = Number(readTextIfExists(started)?.trim());
+    return Number.isSafeInteger(own) && own > 0 ? own : undefined;
+  };
   let asked: number | undefined;
   let killed = false;
   const stop = () => {
@@ -467,21 +455,53 @@ $created.ProcessId`]).trim();
     asked = Date.now();
     writeFileSync(stopRequest, "");
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  let shown = 0;
-  const carry = () => {
-    const text = readFileSync(output);
-    if (text.length > shown) process.stdout.write(text.subarray(shown));
-    shown = text.length;
-  };
-  const alive = () => {
-    try { process.kill(pid, 0); return true; }
-    catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
-  };
-  const forced = () => killed ? new Error(`the desktop-started program did not stop within ${INTERRUPT_BOUND} ms of its interrupt and was killed`) : undefined;
+  let listening = false;
+  let failure: { error: unknown } | undefined;
+  let code = 1;
   try {
-    for (;;) {
+    writeFileSync(output, "");
+    // The suite's own file names paths with '/'; the launcher makes them native where it uses them.
+    writeFileSync(request, JSON.stringify({
+      program: portable(program), args: args.map(portable), cwd: portable(cwd), output: portable(output), exit: portable(exit),
+      started: portable(started), env: withVariable({ ...env }, INTERRUPT_REQUEST, portable(stopRequest)),
+    }));
+    writeFileSync(launcher, `// Started by WMI outside every Job: run the request's program with its environment.
+import { spawn } from "node:child_process";
+import { openSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, normalize } from "node:path";
+const native = (value) => isAbsolute(value) ? normalize(value) : value;
+const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
+writeFileSync(native(request.started), String(process.pid));
+const output = openSync(native(request.output), "a");
+let done = false;
+const finish = (result) => { if (!done) { done = true; writeFileSync(native(request.exit), JSON.stringify(result)); } };
+const child = spawn(native(request.program), request.args.map(native), { env: request.env, cwd: native(request.cwd), stdio: ["ignore", output, output] });
+child.once("error", (error) => finish({ error: String(error) }));
+child.once("close", (code, signal) => finish(signal ? { error: "terminated by " + signal } : { code: code ?? 1 }));
+`);
+    const quoted = (value: string) => `"${value}"`;
+    const commandLine = [process.execPath, launcher, request].map(quoted).join(" ");
+    const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+    listening = true;
+    const created = runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'
+$startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+$created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${literal(commandLine)}; CurrentDirectory = ${literal(cwd)}; ProcessStartupInformation = $startup }
+if ($created.ReturnValue -ne 0) { throw ('Win32_Process.Create returned ' + $created.ReturnValue) }
+$created.ProcessId`]).trim();
+    const given = Number(created);
+    if (!Number.isSafeInteger(given) || given <= 0) throw new Error(`Win32_Process.Create gave no process: ${created}`);
+    pid = given;
+    reportJobs(pid, "the desktop-started launcher");
+    let shown = 0;
+    const carry = () => {
+      const text = readFileSync(output);
+      if (text.length > shown) process.stdout.write(text.subarray(shown));
+      shown = text.length;
+    };
+    const forced = () => killed ? new Error(`the desktop-started program did not stop within ${INTERRUPT_BOUND} ms of its interrupt and was killed`) : undefined;
+    for (;; await pause()) {
       carry();
       if (existsSync(exit)) {
         // The launcher writes its exit after the program closed its output.
@@ -490,9 +510,10 @@ $created.ProcessId`]).trim();
         const failure = forced();
         if (failure) throw failure;
         if (result.error !== undefined) throw new Error(`the desktop-started program failed: ${result.error}`);
-        return result.code ?? 1;
+        code = result.code ?? 1;
+        break;
       }
-      if (!alive() && !existsSync(exit)) {
+      if (!alive(pid) && !existsSync(exit)) {
         carry();
         throw forced() ?? new Error("the desktop-started launcher ended without recording an exit");
       }
@@ -501,13 +522,41 @@ $created.ProcessId`]).trim();
         killed = true;
         spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
       }
-      await new Promise((done) => setTimeout(done, 250));
     }
+  } catch (error) {
+    failure = { error };
   } finally {
-    process.off("SIGINT", stop);
-    process.off("SIGTERM", stop);
-    removeTree(directory);
+    if (listening) {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+    }
+    // A launcher WMI may have started before a failure here shows by the number it writes.
+    if (pid === undefined && existsSync(launcher)) {
+      for (const deadline = Date.now() + 15000; launcherPid() === undefined && Date.now() < deadline; await pause());
+    }
   }
+  // The launcher's inputs are deleted only once it is gone: asked to stop as an interrupt asks,
+  // then killed as a last resort, which fails the run; a launcher that outlives both keeps them.
+  const failures = failure ? [failure.error] : [];
+  const left = launcherPid();
+  let kept = false;
+  if (left !== undefined && alive(left)) {
+    if (!existsSync(exit) && asked === undefined) writeFileSync(stopRequest, "");
+    if (!(await gone(left, existsSync(exit) ? 30000 : INTERRUPT_BOUND))) {
+      spawnSync("taskkill", ["/PID", String(left), "/T", "/F"], { stdio: "ignore" });
+      failures.push(new Error(`the desktop-started launcher ${left} did not stop when asked and was killed`));
+      if (!(await gone(left, 30000))) {
+        kept = true;
+        failures.push(new Error(`the desktop-started launcher ${left} did not stop; its inputs are kept at ${directory}`));
+      }
+    }
+  }
+  if (!kept) {
+    try { removeTree(directory); } catch (error) { failures.push(error); }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, "the desktop-started program failed and its teardown too");
+  return code;
 }
 
 /** In a program `runAsDesktop` started on Windows, outside its starter's console: once the
