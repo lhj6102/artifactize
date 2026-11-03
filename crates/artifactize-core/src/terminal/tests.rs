@@ -310,3 +310,55 @@ fn a_harness_run_through_its_interpreter_is_offered_as_it_was_run() {
         }
     );
 }
+
+/// A harness on Windows records its directory in Windows spelling. Those records are read and
+/// matched to the worktree by Windows rules on every system, so a Windows-format reading bug
+/// shows on any of them: a drive letter, backslashes and another letter case name the same
+/// directory there, and only there.
+#[test]
+fn session_records_in_windows_spelling_prove_a_session_by_windows_rules() {
+    use crate::platform::PathRules;
+    let id: crate::types::SessionId = "0f1e2d3c-workbench".parse().unwrap();
+    let worktree = Path::new("c:/users/runneradmin/AppData/Local/Temp/fixture/repo/");
+    let other = Path::new(r"C:\Users\runneradmin\AppData\Local\Temp\fixture\side");
+    let directory = r"C:\Users\runneradmin\AppData\Local\Temp\fixture\repo";
+    // Records as the harnesses write them, in their own field order; the directory as JSON.
+    let directory = serde_json::to_string(directory).unwrap();
+    // Claude Code: a project JSONL whose records name their session and directory.
+    let claude = format!(
+        "{{\"type\":\"summary\",\"summary\":\"earlier\"}}\n\
+         {{\"type\":\"user\",\"sessionId\":\"0f1e2d3c-workbench\",\"cwd\":{directory},\
+         \"message\":{{\"role\":\"user\",\"content\":\"not read\"}}}}\n"
+    );
+    // Codex: a rollout that opens with its session_meta record.
+    let codex = format!(
+        "{{\"timestamp\":\"2026-01-01T12:00:00Z\",\"type\":\"session_meta\",\
+         \"payload\":{{\"id\":\"0f1e2d3c-workbench\",\"cwd\":{directory},\
+         \"originator\":\"codex_cli_rs\"}}}}\n\
+         {{\"type\":\"response_item\",\"payload\":{{\"content\":\"not read\"}}}}\n"
+    );
+    // JSON fields have no fixed order: the same rollout with its payload before its type.
+    let reversed = format!(
+        "{{\"payload\":{{\"cwd\":{directory},\"id\":\"0f1e2d3c-workbench\",\
+         \"originator\":\"codex_cli_rs\"}},\"type\":\"session_meta\",\
+         \"timestamp\":\"2026-01-01T12:00:00Z\"}}\n"
+    );
+    for (harness, records) in [
+        (Harness::ClaudeCode, &claude),
+        (Harness::Codex, &codex),
+        (Harness::Codex, &reversed),
+    ] {
+        let proves = |id: &crate::types::SessionId, cwd: &Path, rules| {
+            metadata::proves(&harness, records.as_bytes(), id, cwd, rules)
+        };
+        assert!(proves(&id, worktree, PathRules::Windows), "{harness:?}");
+        assert!(!proves(&id, other, PathRules::Windows), "{harness:?}");
+        let unrelated: crate::types::SessionId = "another-session".parse().unwrap();
+        assert!(
+            !proves(&unrelated, worktree, PathRules::Windows),
+            "{harness:?}"
+        );
+        // Elsewhere case and separators make another path.
+        assert!(!proves(&id, worktree, PathRules::Unix), "{harness:?}");
+    }
+}

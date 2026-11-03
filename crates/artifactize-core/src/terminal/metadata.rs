@@ -210,27 +210,7 @@ fn session_id(
                 let file = io::BufReader::new(
                     platform::open_no_follow(fs::OpenOptions::new().read(true), &path).ok()?,
                 );
-                // Records stream through metadata-only structs: serde skips every other
-                // field as it parses, so no message or tool-call content is ever held.
-                let proves = |id: &Option<SessionId>, directory: &Option<PathBuf>| {
-                    id.as_ref() == Some(&requested)
-                        && directory
-                            .as_deref()
-                            .is_some_and(|directory| platform::paths_equal(directory, cwd))
-                };
-                let proven = match harness {
-                    Harness::ClaudeCode => serde_json::Deserializer::from_reader(file)
-                        .into_iter::<ClaudeRecord>()
-                        .map_while(Result::ok)
-                        .any(|record| proves(&record.session_id, &record.cwd)),
-                    // A rollout opens with its session_meta record; nothing after it is read.
-                    Harness::Codex => serde_json::Deserializer::from_reader(file)
-                        .into_iter::<CodexRecord>()
-                        .next()
-                        .and_then(Result::ok)
-                        .and_then(|record| record.0)
-                        .is_some_and(|meta| proves(&meta.id, &meta.cwd)),
-                };
+                let proven = proves(harness, file, &requested, cwd, platform::PathRules::NATIVE);
                 if proven {
                     return Some(requested);
                 }
@@ -238,6 +218,38 @@ fn session_id(
         }
     }
     None
+}
+
+/// Whether a harness's session records prove `requested` for the directory `cwd`. Records
+/// stream through metadata-only structs: serde skips every other field as it parses, so no
+/// message or tool-call content is ever held. A record's directory is the harness's own
+/// spelling of it, compared by `rules` and then by the directory it opens.
+pub(super) fn proves(
+    harness: &Harness,
+    records: impl io::Read,
+    requested: &SessionId,
+    cwd: &Path,
+    rules: platform::PathRules,
+) -> bool {
+    let proves = |id: &Option<SessionId>, directory: &Option<PathBuf>| {
+        id.as_ref() == Some(requested)
+            && directory.as_deref().is_some_and(|directory| {
+                rules.same(directory, cwd) || platform::paths_equal(directory, cwd)
+            })
+    };
+    match harness {
+        Harness::ClaudeCode => serde_json::Deserializer::from_reader(records)
+            .into_iter::<ClaudeRecord>()
+            .map_while(Result::ok)
+            .any(|record| proves(&record.session_id, &record.cwd)),
+        // A rollout opens with its session_meta record; nothing after it is read.
+        Harness::Codex => serde_json::Deserializer::from_reader(records)
+            .into_iter::<CodexRecord>()
+            .next()
+            .and_then(Result::ok)
+            .and_then(|record| record.0)
+            .is_some_and(|meta| proves(&meta.id, &meta.cwd)),
+    }
 }
 
 /// Recognize only a complete, unambiguous resume invocation. Unknown options may consume
@@ -266,8 +278,9 @@ struct ClaudeRecord {
     cwd: Option<PathBuf>,
 }
 
-/// A Codex rollout record's session metadata, decoded only when the record says it is
-/// `session_meta` before its payload; any other payload is skipped unread.
+/// A Codex rollout record's session metadata, kept only when the record says it is
+/// `session_meta`, whichever of its fields comes first. A payload is read only through
+/// [`SessionMeta`]'s two fields, so whatever else it carries is skipped unread.
 struct CodexRecord(Option<SessionMeta>);
 impl<'de> Deserialize<'de> for CodexRecord {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -289,7 +302,7 @@ impl<'de> Deserialize<'de> for CodexRecord {
                             session =
                                 map.next_value::<std::borrow::Cow<'de, str>>()? == "session_meta"
                         }
-                        "payload" if session => meta = Some(map.next_value::<SessionMeta>()?),
+                        "payload" => meta = Some(map.next_value::<SessionMeta>()?),
                         _ => {
                             map.next_value::<serde::de::IgnoredAny>()?;
                         }
