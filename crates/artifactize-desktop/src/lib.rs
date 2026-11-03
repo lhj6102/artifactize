@@ -211,8 +211,13 @@ pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tau
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Resized(size) => keep_minimum(window, *size),
-            // Nothing waits for the scans to stop: the app is closing.
-            tauri::WindowEvent::Destroyed => drop(window.state::<App>().close()),
+            tauri::WindowEvent::Destroyed => {
+                let app = window.state::<App>();
+                // Nothing waits for the scans to stop: the app is closing.
+                drop(app.close());
+                // The terminals that end with the app must have ended before it exits.
+                tauri::async_runtime::block_on(app.terminals.end());
+            }
             _ => {}
         })
 }

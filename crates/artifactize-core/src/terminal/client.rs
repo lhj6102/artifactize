@@ -22,8 +22,14 @@ type Pending = (Request, oneshot::Sender<Result<(), String>>);
 #[derive(Clone)]
 pub struct Attachment {
     commands: mpsc::Sender<Pending>,
+    persistent: bool,
 }
 impl Attachment {
+    /// Whether the host outlives the app that attached: one the system keeps in a Job that
+    /// ends with the app is not, and the app ends it with [`super::stop`] as it closes.
+    pub fn persistent(&self) -> bool {
+        self.persistent
+    }
     async fn request(&self, request: Request) -> Result<(), String> {
         let (answer, result) = oneshot::channel();
         self.commands
@@ -101,10 +107,16 @@ pub async fn attach(
             let _ = frames.send(TerminalFrame::Ended { exit_code: None }).await;
         }
     });
-    started
+    let persistent = started
         .await
         .map_err(|_| "Terminal host disconnected".to_owned())??;
-    Ok((Attachment { commands }, output))
+    Ok((
+        Attachment {
+            commands,
+            persistent,
+        },
+        output,
+    ))
 }
 
 async fn connection(
@@ -113,7 +125,7 @@ async fn connection(
     mut commands: mpsc::Receiver<Pending>,
     persistent: bool,
     frames: &mpsc::Sender<TerminalFrame>,
-    ready: oneshot::Sender<Result<(), String>>,
+    ready: oneshot::Sender<Result<bool, String>>,
 ) -> io::Result<()> {
     let (read, mut write) = tokio::io::split(stream);
     let mut read = BufReader::new(read).lines();
@@ -127,7 +139,11 @@ async fn connection(
             .await
             .map_err(io::Error::other)?;
     }
-    let _ = ready.send(result.map_err(|e| e.to_string()));
+    let _ = ready.send(
+        result
+            .map(|()| persistent && !warned)
+            .map_err(|e| e.to_string()),
+    );
     if !success {
         return Ok(());
     }

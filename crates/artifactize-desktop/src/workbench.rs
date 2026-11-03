@@ -4,7 +4,11 @@ use artifactize_core::{
     repository::{self, Commit, CreatedWorktree},
     terminal::{self, Attachment, RestoreChoice, TerminalFrame},
 };
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    sync::Arc,
+};
 use tauri::{State, ipc::Channel};
 use tokio::sync::Mutex;
 
@@ -13,12 +17,37 @@ pub(crate) struct Terminals {
     // Client addresses are worktree paths, never branch keys. Core resolves the stable Git
     // identity once at attach; keystrokes require no filesystem scan or Git subprocess.
     attached: Arc<Mutex<BTreeMap<PathBuf, Attachment>>>,
+    /// Worktrees whose terminal ends with the app: the system keeps their hosts in the Job
+    /// the app runs in, so the app ends them itself as it closes rather than whenever that
+    /// Job does.
+    ending: Arc<Mutex<BTreeSet<PathBuf>>>,
 }
 impl Terminals {
     pub fn close(&self) -> impl Future<Output = ()> + use<> {
         let attached = self.attached.clone();
         async move {
             attached.lock().await.clear();
+        }
+    }
+    /// End the terminals that end with the app, their programs included, through core's
+    /// owner-checked shutdown. Persistent terminals keep running.
+    pub fn end(&self) -> impl Future<Output = ()> + use<> {
+        let ending = self.ending.clone();
+        async move {
+            let mut stops = tokio::task::JoinSet::new();
+            for worktree in std::mem::take(&mut *ending.lock().await) {
+                stops.spawn(async move { terminal::stop(&worktree).await });
+            }
+            while let Some(stopped) = stops.join_next().await {
+                match stopped {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        eprintln!("cannot end a terminal that ends with the app: {error}");
+                    }
+                    Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+                    Err(_) => {}
+                }
+            }
         }
     }
     async fn get(&self, worktree: PathBuf) -> Result<Attachment, Failure> {
@@ -66,6 +95,9 @@ pub async fn terminal_open(
     let (terminal, mut output) = terminal::attach(&worktree, cols, rows)
         .await
         .map_err(Failure::Action)?;
+    if !terminal.persistent() {
+        app.terminals.ending.lock().await.insert(worktree.clone());
+    }
     attached.insert(worktree, terminal);
     tokio::spawn(async move {
         while let Some(frame) = output.recv().await {
