@@ -159,7 +159,9 @@ keeps the same terminal. Drag the panel's right edge to resize it; it keeps that
 
 Collapsing the panel, choosing another worktree or closing the app only detaches: the
 terminal and what runs in it keep going, and opening it again shows its screen as it is,
-with what it printed meanwhile. Removing the worktree ends its terminal. On Windows,
+with what it printed meanwhile. The panel scrolls back through the last 5,000 lines of
+output; save longer output to a file when you need all of it. Removing the worktree ends
+its terminal. On Windows,
 when the system does not let the terminal outlive the app, the panel says that it ends
 when the app closes.
 

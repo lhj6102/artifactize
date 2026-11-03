@@ -102,11 +102,12 @@ rules do not filter results.
 Bounds are 10,000
 traversed entries, 8 MiB per grep file, 64 MiB searched,
 and 512 KiB per JSON result. Search limits or skipped oversized files set
-`truncated: true`; narrow the path/pattern to continue. Separately, encountering
-any one directory where the tool sees more than 10,000 entries fails `list`, `glob` or
-`grep` with an error, not a truncated search result. Only entries the Artifact reaches
-count: an aspect's selection, and not the nested Artifacts it leaves out, so a larger
-physical directory still works when few of its entries belong to the Artifact. Listing can page early at the result
+`truncated: true`; narrow the path/pattern to continue. Separately, `list`, `glob` or
+`grep` fails with an error, not a truncated search result, in any one directory where it
+has collected 10,000 entries the Artifact reaches while the directory holds more entries
+of any kind. Only entries the Artifact reaches are collected: an aspect's selection, and
+not the nested Artifacts it leaves out. A larger physical directory therefore works when
+fewer than 10,000 of its entries belong to the Artifact; narrow the scope below that. Listing can page early at the result
 byte cap. Built-in arguments use the same bounded JSON Schema admission as commands.
 
 The `json` protocol receives exactly one request on stdin:
