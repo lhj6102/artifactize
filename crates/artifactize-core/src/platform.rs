@@ -317,7 +317,7 @@ mod console;
 pub use console::pause_after_help;
 
 mod interaction;
-pub(crate) use interaction::{is_within, label, paths_equal, private_anonymous_file};
+pub(crate) use interaction::{PathRules, is_within, label, paths_equal, private_anonymous_file};
 
 /// Whether an entry exists without following links (including dangling links).
 pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
