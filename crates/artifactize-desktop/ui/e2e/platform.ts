@@ -402,6 +402,128 @@ export async function runForwardingInterrupts(
   }
 }
 
+/** Start `program args` in `cwd` as a person's desktop starts a program, wait for it and
+ * return its exit code, its output carried to this process's. On Linux and macOS it is a
+ * child, as `runForwardingInterrupts` runs it. On Windows it starts outside every Job this
+ * process is in: a CI runner keeps its steps in a Job that kills them when it closes, which a desktop
+ * never puts a program in, so the app and its terminals would see a Job no person's do. The
+ * process is created by WMI (`Win32_Process.Create`), whose processes belong to no caller's
+ * Job; a small Node launcher it starts gives the program its environment and records its
+ * output and exit. An interrupt stops that process tree. */
+export async function runAsDesktop(
+  program: string, args: readonly string[], env: Environment, cwd: NativePath, interrupted: () => void,
+): Promise<number> {
+  if (!WINDOWS) return runForwardingInterrupts(program, args, env, cwd, interrupted);
+  const directory = newDirectory(scratchDirectory(), "desktop-run-");
+  const request = nativePath(directory, "request.json");
+  const output = nativePath(directory, "output.log");
+  const exit = nativePath(directory, "exit.json");
+  const launcher = nativePath(directory, "launch.mjs");
+  writeFileSync(output, "");
+  writeFileSync(request, JSON.stringify({ program, args, env, cwd, output, exit }));
+  writeFileSync(launcher, `// Started by WMI outside every Job: run the request's program with its environment.
+import { spawn } from "node:child_process";
+import { openSync, readFileSync, writeFileSync } from "node:fs";
+const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const output = openSync(request.output, "a");
+let done = false;
+const finish = (result) => { if (!done) { done = true; writeFileSync(request.exit, JSON.stringify(result)); } };
+const child = spawn(request.program, request.args, { env: request.env, cwd: request.cwd, stdio: ["ignore", output, output] });
+child.once("error", (error) => finish({ error: String(error) }));
+child.once("close", (code, signal) => finish(signal ? { error: "terminated by " + signal } : { code: code ?? 1 }));
+`);
+  const quoted = (value: string) => `"${value}"`;
+  const commandLine = [process.execPath, launcher, request].map(quoted).join(" ");
+  const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
+  const created = runProgramOk("powershell", ["-NoProfile", "-NonInteractive", "-Command", `$ErrorActionPreference = 'Stop'
+$startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+$created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${literal(commandLine)}; CurrentDirectory = ${literal(cwd)}; ProcessStartupInformation = $startup }
+if ($created.ReturnValue -ne 0) { throw ('Win32_Process.Create returned ' + $created.ReturnValue) }
+$created.ProcessId`]).trim();
+  const pid = Number(created);
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`Win32_Process.Create gave no process: ${created}`);
+  reportJobs(pid, "the desktop-started launcher");
+  const stop = () => {
+    interrupted();
+    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  let shown = 0;
+  const carry = () => {
+    const text = readFileSync(output);
+    if (text.length > shown) process.stdout.write(text.subarray(shown));
+    shown = text.length;
+  };
+  const alive = () => {
+    try { process.kill(pid, 0); return true; }
+    catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+  };
+  try {
+    for (;;) {
+      carry();
+      if (existsSync(exit)) {
+        // The launcher writes its exit after the program closed its output.
+        carry();
+        const result = JSON.parse(readFileSync(exit, "utf8")) as { code?: number; error?: string };
+        if (result.error !== undefined) throw new Error(`the desktop-started program failed: ${result.error}`);
+        return result.code ?? 1;
+      }
+      if (!alive() && !existsSync(exit)) {
+        carry();
+        throw new Error("the desktop-started launcher ended without recording an exit");
+      }
+      await new Promise((done) => setTimeout(done, 250));
+    }
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    removeTree(directory);
+  }
+}
+
+/** Windows only: say, on this process's error output, which processes from `pid` up through
+ * its parents are in a Job, which shows where an enclosing Job begins; elsewhere nothing. */
+export function reportJobs(pid: number, what: string): void {
+  if (!WINDOWS) return;
+  const directory = newDirectory(scratchDirectory(), "jobs-");
+  const script = nativePath(directory, "jobs.ps1");
+  writeFileSync(script, `$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class Jobs {
+  [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  public static string InJob(int pid) {
+    var process = OpenProcess(0x1000, false, pid);
+    if (process == IntPtr.Zero) return "unknown (" + Marshal.GetLastWin32Error() + ")";
+    try {
+      bool result;
+      return IsProcessInJob(process, IntPtr.Zero, out result) ? (result ? "in a Job" : "in no Job") : "unknown";
+    } finally { CloseHandle(process); }
+  }
+}
+"@
+$id = ${pid}
+$lines = @()
+while ($id -and $lines.Count -lt 32) {
+  $process = Get-CimInstance Win32_Process -Filter "ProcessId = $id"
+  if (-not $process) { break }
+  $lines += "  $id $($process.Name): $([Jobs]::InJob($id))"
+  $id = $process.ParentProcessId
+}
+$lines -join [Environment]::NewLine
+`);
+  try {
+    const shown = runProgram("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script]);
+    process.stderr.write(`Jobs from ${what} up:\n${shown.stdout.trimEnd()}${shown.stderr ? `\n${shown.stderr.trimEnd()}` : ""}\n`);
+  } finally {
+    removeTree(directory);
+  }
+}
+
 /** A person's foreground program: keep its real display/environment and output, forward
  * interrupts, and await its exit before the caller deletes its build inputs. Unix children
  * get an owned group so an interrupted build does not leave its compiler children behind. */

@@ -5,7 +5,7 @@ import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  breakawayJobRunner, makeDirectory, nativeCrashReports, nodeProgram, prepareDisplay, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
+  breakawayJobRunner, makeDirectory, reportJobs, runAsDesktop, nativeCrashReports, nodeProgram, prepareDisplay, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -18,6 +18,11 @@ let interrupted = false;
 
 function execute(program: string, args: string[], env: Environment): Promise<number> {
   return runForwardingInterrupts(program, args, env, ui, () => { interrupted = true; });
+}
+
+/** As `execute`, started as a person's desktop starts a program ([`runAsDesktop`]). */
+function executeAsDesktop(program: string, args: string[], env: Environment): Promise<number> {
+  return runAsDesktop(program, args, env, ui, () => { interrupted = true; });
 }
 
 async function batch(): Promise<void> {
@@ -83,6 +88,7 @@ async function batch(): Promise<void> {
 
 async function suite(ids: string[]): Promise<void> {
   prepareDisplay();
+  reportJobs(process.pid, "the suite");
   const { selectedScenarios } = await import("./catalog.ts");
   const selected = selectedScenarios(ids);
   // A relaunch is one complete scenario with two service-owned app lifetimes, and a case in a
@@ -118,11 +124,12 @@ async function suite(ids: string[]): Promise<void> {
       confirmed = false;
       try {
         // The batch of a case that needs a Job runs inside one, so the WDIO service starts the
-        // real app there.
+        // real app there; every other batch starts as a desktop starts a program, so the app
+        // and its terminals are in no Job a person's are not.
         const inJob = batch.some((item) => item.needs?.includes("breakaway-job"));
         const code = inJob
           ? await execute(breakawayJobRunner(makeDirectory(nativePath(output, `job-${index + 1}`))), [nodeProgram, file, "batch"], env)
-          : await execute(nodeProgram, [file, "batch"], env);
+          : await executeAsDesktop(nodeProgram, [file, "batch"], env);
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
       try {
