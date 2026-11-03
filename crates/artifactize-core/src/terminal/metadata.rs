@@ -160,7 +160,7 @@ fn invoked(command: TerminalCommand, cwd: Option<&Path>) -> TerminalCommand {
 
 /// The file name `PATH` finds `script` by, if it finds this very file.
 fn by_name(script: &Path, cwd: &Path) -> Option<String> {
-    if !script.is_absolute() {
+    if !platform::paths::is_absolute(script) {
         return None;
     }
     let name = script.file_name()?;

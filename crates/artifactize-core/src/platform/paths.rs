@@ -75,3 +75,9 @@ pub(crate) fn drive_rooted(value: &str) -> bool {
         && value.as_bytes().get(1) == Some(&b':')
         && value.as_bytes().get(2) == Some(&b'/')
 }
+
+/// Whether `path` is absolute by this system's rules: rooted on Unix; on Windows it also needs
+/// a drive or UNC prefix, so `\dir` is relative to the current drive.
+pub(crate) fn is_absolute(path: &Path) -> bool {
+    path.is_absolute()
+}
