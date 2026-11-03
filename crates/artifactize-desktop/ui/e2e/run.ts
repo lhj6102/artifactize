@@ -5,7 +5,7 @@ import { checkIntegrity } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  breakawayJobRunner, makeDirectory, reportJobs, runAsDesktop, nativeCrashReports, nodeProgram, prepareDisplay, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
+  breakawayJobRunner, interruptOnRequest, makeDirectory, reportJobs, runAsDesktop, nativeCrashReports, nodeProgram, prepareDisplay, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -26,6 +26,7 @@ function executeAsDesktop(program: string, args: string[], env: Environment): Pr
 }
 
 async function batch(): Promise<void> {
+  interruptOnRequest();
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
   // Initialize the public loader before importing its config, so the fixture owner

@@ -9,7 +9,7 @@ import { prepareFixture, releaseFixtures } from "./build-fixtures.ts";
 import { commandFields, runtimeProfile, type Operation } from "./native-fixtures.ts";
 import { waitingRun } from "./run-fixtures.ts";
 import {
-  harnessesOnDisk, agentStarts, canonicalPath, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
+  harnessesOnDisk, agentStarts, asNativePath, canonicalPath, foregroundRecorded, releaseAgentStart, exists, makeDirectory, nativePath, parentOf, portablePath, quietShell, readTextIfExists, runProgram, runProgramAsync, textPath,
   updateDatabase, writeText, type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
@@ -229,6 +229,17 @@ export function createWorkbench(): Workbench {
     const env = harnessesOnDisk(root, {}, runs, { id: session, cwd: canonicalPath(repo) });
     return { root, repo, state: nativePath(root, "state"), side, runs, session, env };
   });
+}
+
+/** Release the workbench's latest stand-in start: it finishes, or moves. */
+export function releaseAgent(fixture: Workbench): void {
+  releaseAgentStart(fixture.runs);
+}
+
+/** Whether the terminal of the workbench's `worktree` has recorded a foreground program run
+ * with `args` ([`foregroundRecorded`]). */
+export function agentRecorded(worktree: NativePath, args: string): boolean {
+  return foregroundRecorded(asNativePath(gitOutput(worktree, "-C", worktree, "rev-parse", "--absolute-git-dir").trim()), args);
 }
 
 /** The starts of the workbench's `harness` stand-in, in order: its arguments and directory. */

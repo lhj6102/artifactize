@@ -4,7 +4,7 @@
 // it, offers what it can restore once it was gone and the worktree its agent moved to; and the
 // terminal panel's width, kept like the Detail's. Every case owns its fixture.
 import assert from "node:assert/strict";
-import { addFolder, agentRuns, branchNames, createWorkbench, type Workbench } from "../fixture.ts";
+import { addFolder, agentRecorded, agentRuns, branchNames, createWorkbench, releaseAgent, type Workbench } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { needing, scenario, servedBy, type Prepared, type Scenario } from "../scenario.ts";
@@ -24,6 +24,13 @@ import {
 async function prepare() {
   const fixture = createWorkbench();
   return { fixture, args: ["--repo", fixture.repo], env: fixture.env, data: fixture };
+}
+
+/** Let the agent started last in the workbench's master finish, or move, once its terminal has
+ * recorded it as the program in the foreground, which a restore offer is made from. */
+async function finishAgent(browser: WebdriverIO.Browser, fixture: Workbench, args: string): Promise<void> {
+  await browser.waitUntil(() => agentRecorded(fixture.repo, args), { timeout: 30000, timeoutMsg: `the terminal recorded the agent run with ${args}` });
+  releaseAgent(fixture);
 }
 
 /** The workbench with a loopback endpoint that a program in a terminal holds open until it ends
@@ -305,6 +312,7 @@ export const scenarios: Scenario[] = [
       await terminalOf(browser, "repo / master");
       // The agent runs, then the shell ends: the terminal is gone.
       await typeLine(browser, "claude --hello");
+      await finishAgent(browser, fixture, "--hello");
       await printed(browser, "agent done --hello", "the agent ran and finished");
       await endShell(browser);
       const offer = await reopen(browser);
@@ -334,6 +342,7 @@ export const scenarios: Scenario[] = [
       // The agent runs in a folder of the worktree the shell moved into, not the worktree itself.
       await typeLine(browser, "cd docs");
       await typeLine(browser, "claude --hello");
+      await finishAgent(browser, fixture, "--hello");
       await printed(browser, "agent done --hello", "the agent ran and finished");
       assert.match(agentRuns(fixture, "claude")[0].cwd, /\/repo\/docs$/, "the agent ran in docs");
       await endShell(browser);
@@ -348,12 +357,14 @@ export const scenarios: Scenario[] = [
       const [first, resumed] = agentRuns(fixture, "claude");
       assert.deepEqual(resumed, { args: "--continue", cwd: first.cwd }, "in the agent's directory, docs");
       assert.equal((await terminal(browser))?.offer, null, "the offer is gone");
+      await finishAgent(browser, fixture, "--continue");
       await printed(browser, "agent done --continue", "the resumed agent ran and finished");
 
       // A session the agent's own records name for the worktree resumes by its ID; rerunning
       // the last command runs it again where it ran.
       await typeLine(browser, "cd ..");
       await typeLine(browser, `claude --resume ${fixture.session}`);
+      await finishAgent(browser, fixture, `--resume ${fixture.session}`);
       await printed(browser, `agent done --resume+${fixture.session}`, "the agent ran its session and finished");
       const named = agentRuns(fixture, "claude").at(-1)!;
       assert.match(named.cwd, /\/repo$/, "the session ran in the worktree");
@@ -374,10 +385,11 @@ export const scenarios: Scenario[] = [
     "workbench-terminal-restore-shell-only",
     "offers only to keep the fresh shell where the system cannot tell which program ran in the terminal",
     prepare,
-    async (browser) => {
+    async (browser, { data: fixture }) => {
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
       await typeLine(browser, "claude --hello");
+      await finishAgent(browser, fixture, "--hello");
       await printed(browser, "agent done --hello", "the agent ran and finished");
       await endShell(browser);
       assert.deepEqual((await reopen(browser)).buttons, ["Keep the fresh shell"], "the last command and its resume are unknown");
@@ -394,6 +406,7 @@ export const scenarios: Scenario[] = [
       await terminalOf(browser, "repo / master");
       await typeLine(browser, "claude --move side");
       await screenShows(browser, "agent --move+side at", "the agent started");
+      await finishAgent(browser, fixture, "--move side");
       await browser.waitUntil(async () => (await terminal(browser))?.notes.some((note) => note.includes("The agent moved to another worktree")) === true,
         { timeout: 30000, timeoutMsg: "the terminal offers the worktree its agent moved to" });
       assert.equal(await mainTitle(browser), "Current · repo  master", "the graph stays on the terminal's own worktree");
@@ -524,18 +537,21 @@ export const scenarios: Scenario[] = [
       await currentOf(browser, "repo  master");
       await terminalOf(browser, "repo / master");
       await typeLine(browser, "codex --hello");
+      await finishAgent(browser, fixture, "--hello");
       await printed(browser, "agent done --hello", "Codex ran and finished");
       await endShell(browser);
       const latest = await reopen(browser);
       assert.match(latest.text, /Resume the latest Codex session: codex resume --last/);
       assert.equal(agentRuns(fixture, "codex").length, 1, "offering runs nothing");
       await browser.$(TERMINAL).$('button[aria-label="Resume the latest Codex session"]').click();
+      await finishAgent(browser, fixture, "resume --last");
       await printed(browser, "agent done resume+--last", "Codex resumed its latest session");
       const [first, resumed] = agentRuns(fixture, "codex");
       assert.deepEqual(resumed, { args: "resume --last", cwd: first.cwd }, "in Codex's directory");
 
       // A session its own records name for this directory resumes by its ID.
       await typeLine(browser, `codex resume ${fixture.session}`);
+      await finishAgent(browser, fixture, `resume ${fixture.session}`);
       await printed(browser, `agent done resume+${fixture.session}`, "Codex ran its session and finished");
       await endShell(browser);
       const exact = await reopen(browser);

@@ -402,14 +402,22 @@ export async function runForwardingInterrupts(
   }
 }
 
+/** The variable naming the file by which the starter of a desktop-started program asks it to
+ * stop ([`interruptOnRequest`]). */
+const INTERRUPT_REQUEST = "DESKTOP_TEST_INTERRUPT_REQUEST";
+/** How long a desktop-started program has to stop once asked, before it is killed. */
+const INTERRUPT_BOUND = 120000;
+
 /** Start `program args` in `cwd` as a person's desktop starts a program, wait for it and
  * return its exit code, its output carried to this process's. On Linux and macOS it is a
  * child, as `runForwardingInterrupts` runs it. On Windows it starts outside every Job this
- * process is in: a CI runner keeps its steps in a Job that kills them when it closes, which a desktop
- * never puts a program in, so the app and its terminals would see a Job no person's do. The
- * process is created by WMI (`Win32_Process.Create`), whose processes belong to no caller's
- * Job; a small Node launcher it starts gives the program its environment and records its
- * output and exit. An interrupt stops that process tree. */
+ * process is in: a CI runner keeps its steps in a Job that kills them when it closes, which a
+ * desktop never puts a program in, so the app and its terminals would see a Job no person's
+ * do. The process is created by WMI (`Win32_Process.Create`), whose processes belong to no
+ * caller's Job; a small Node launcher it starts gives the program its environment and records
+ * its output and exit. An interrupt here is passed on as a request the program takes as its
+ * own interrupt ([`interruptOnRequest`]), so its runner and service end the app; only if it has
+ * not stopped within a bound is its process tree killed, and then the run fails. */
 export async function runAsDesktop(
   program: string, args: readonly string[], env: Environment, cwd: NativePath, interrupted: () => void,
 ): Promise<number> {
@@ -418,17 +426,25 @@ export async function runAsDesktop(
   const request = nativePath(directory, "request.json");
   const output = nativePath(directory, "output.log");
   const exit = nativePath(directory, "exit.json");
+  const stopRequest = nativePath(directory, "interrupt");
   const launcher = nativePath(directory, "launch.mjs");
+  const portable = (value: string) => isAbsolute(value) ? portablePath(value as NativePath) : value;
   writeFileSync(output, "");
-  writeFileSync(request, JSON.stringify({ program, args, env, cwd, output, exit }));
+  // The suite's own file names paths with '/'; the launcher makes them native where it uses them.
+  writeFileSync(request, JSON.stringify({
+    program: portable(program), args: args.map(portable), cwd: portable(cwd), output: portable(output), exit: portable(exit),
+    env: withVariable({ ...env }, INTERRUPT_REQUEST, portable(stopRequest)),
+  }));
   writeFileSync(launcher, `// Started by WMI outside every Job: run the request's program with its environment.
 import { spawn } from "node:child_process";
 import { openSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, normalize } from "node:path";
+const native = (value) => isAbsolute(value) ? normalize(value) : value;
 const request = JSON.parse(readFileSync(process.argv[2], "utf8"));
-const output = openSync(request.output, "a");
+const output = openSync(native(request.output), "a");
 let done = false;
-const finish = (result) => { if (!done) { done = true; writeFileSync(request.exit, JSON.stringify(result)); } };
-const child = spawn(request.program, request.args, { env: request.env, cwd: request.cwd, stdio: ["ignore", output, output] });
+const finish = (result) => { if (!done) { done = true; writeFileSync(native(request.exit), JSON.stringify(result)); } };
+const child = spawn(native(request.program), request.args.map(native), { env: request.env, cwd: native(request.cwd), stdio: ["ignore", output, output] });
 child.once("error", (error) => finish({ error: String(error) }));
 child.once("close", (code, signal) => finish(signal ? { error: "terminated by " + signal } : { code: code ?? 1 }));
 `);
@@ -443,9 +459,13 @@ $created.ProcessId`]).trim();
   const pid = Number(created);
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`Win32_Process.Create gave no process: ${created}`);
   reportJobs(pid, "the desktop-started launcher");
+  let asked: number | undefined;
+  let killed = false;
   const stop = () => {
     interrupted();
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    if (asked !== undefined) return;
+    asked = Date.now();
+    writeFileSync(stopRequest, "");
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
@@ -459,6 +479,7 @@ $created.ProcessId`]).trim();
     try { process.kill(pid, 0); return true; }
     catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
   };
+  const forced = () => killed ? new Error(`the desktop-started program did not stop within ${INTERRUPT_BOUND} ms of its interrupt and was killed`) : undefined;
   try {
     for (;;) {
       carry();
@@ -466,12 +487,19 @@ $created.ProcessId`]).trim();
         // The launcher writes its exit after the program closed its output.
         carry();
         const result = JSON.parse(readFileSync(exit, "utf8")) as { code?: number; error?: string };
+        const failure = forced();
+        if (failure) throw failure;
         if (result.error !== undefined) throw new Error(`the desktop-started program failed: ${result.error}`);
         return result.code ?? 1;
       }
       if (!alive() && !existsSync(exit)) {
         carry();
-        throw new Error("the desktop-started launcher ended without recording an exit");
+        throw forced() ?? new Error("the desktop-started launcher ended without recording an exit");
+      }
+      if (asked !== undefined && !killed && Date.now() - asked > INTERRUPT_BOUND) {
+        // The last resort, which fails the run.
+        killed = true;
+        spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
       }
       await new Promise((done) => setTimeout(done, 250));
     }
@@ -480,6 +508,21 @@ $created.ProcessId`]).trim();
     process.off("SIGTERM", stop);
     removeTree(directory);
   }
+}
+
+/** In a program `runAsDesktop` started on Windows, outside its starter's console: once the
+ * starter asks it to stop, raise SIGINT in this process, as an interrupt typed in its terminal
+ * would, so the WDIO runner and its service end the app as they do on any interrupt. Elsewhere,
+ * where the interrupt itself arrives, nothing. */
+export function interruptOnRequest(): void {
+  const request = process.env[INTERRUPT_REQUEST];
+  if (!request) return;
+  const check = setInterval(() => {
+    if (!existsSync(request)) return;
+    clearInterval(check);
+    process.emit("SIGINT", "SIGINT");
+  }, 250);
+  check.unref();
 }
 
 /** Windows only: say, on this process's error output, which processes from `pid` up through
@@ -1048,8 +1091,9 @@ export function supports(needs: readonly Capability[] = []): boolean {
  * shell shim that execs Node on a script named for its harness, as the real ones run; a `.cmd`
  * on Windows). The programs are declared stand-ins, first on the PATH of the returned
  * environment: each says what it was started with and where, adds a line to `runs` for each
- * start (its name, arguments and directory as a portable path), and works for a few seconds;
- * `--move NAME` moves it into the sibling folder NAME, where it keeps working; `--hold PORT`
+ * start (its name, arguments and directory as a portable path), and works until the test
+ * releases that start ([`releaseAgentStart`]); then it says it is done and exits, or with
+ * `--move NAME` moves into the sibling folder NAME, where it keeps working. `--hold PORT`
  * connects to that loopback port and keeps working until it is ended. */
 export function harnessesOnDisk(root: NativePath, env: Environment, runs: NativePath, session: { id: string; cwd: NativePath }): Environment {
   const claude = makeDirectory(nativePath(root, "home", ".claude", "projects", "repo"));
@@ -1058,23 +1102,28 @@ export function harnessesOnDisk(root: NativePath, env: Environment, runs: Native
   writeFileSync(nativePath(codex, `rollout-2026-01-01T12-00-00-${session.id}.jsonl`), `${JSON.stringify({ type: "session_meta", payload: { id: session.id, cwd: session.cwd } })}\n`);
   const scripts = makeDirectory(nativePath(root, "agent"));
   const bin = makeDirectory(nativePath(root, "agent-bin"));
+  const gates = makeDirectory(agentGates(runs));
   for (const name of ["claude", "codex"]) {
     const script = join(scripts, `${name}.mjs`);
     writeFileSync(script, `// The ${name} stand-in: the fixture's declared agent program.
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join, sep } from "node:path";
 const args = process.argv.slice(2);
 const where = () => process.cwd().split(sep).join("/");
-appendFileSync(${JSON.stringify(portablePath(runs))}, ${JSON.stringify(name)} + "\\t" + args.join(" ") + "\\t" + where() + "\\n");
+const runs = ${JSON.stringify(portablePath(runs))};
+appendFileSync(runs, ${JSON.stringify(name)} + "\\t" + args.join(" ") + "\\t" + where() + "\\n");
+// This start's number among all the stand-ins' starts: its gate is the file of that name.
+const gate = ${JSON.stringify(portablePath(gates))} + "/" + readFileSync(runs, "utf8").split("\\n").filter(Boolean).length;
 console.log("agent " + args.join("+") + " at " + where());
-if (args[0] === "--move") {
-  setTimeout(() => process.chdir(join(process.cwd(), "..", args[1])), 1500);
-  setInterval(() => {}, 60000);
-} else if (args[0] === "--hold") {
+const released = (then) => { const check = setInterval(() => { if (existsSync(gate)) { clearInterval(check); then(); } }, 50); };
+if (args[0] === "--hold") {
   connect(Number(args[1]), "127.0.0.1");
   setInterval(() => {}, 60000);
-} else setTimeout(() => console.log("agent done " + args.join("+")), 2500);
+} else if (args[0] === "--move") {
+  released(() => process.chdir(join(process.cwd(), "..", args[1])));
+  setInterval(() => {}, 60000);
+} else released(() => console.log("agent done " + args.join("+")));
 `);
     if (WINDOWS) writeFileSync(join(bin, `${name}.cmd`), `@"%DESKTOP_TEST_NODE%" "${portablePath(script as NativePath)}" %*\r\n`);
     else writeFileSync(join(bin, name), `#!/bin/sh\nexec "$DESKTOP_TEST_NODE" ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
@@ -1133,6 +1182,27 @@ appendFileSync(${JSON.stringify(portablePath(record))}, process.argv.slice(2).jo
   else writeFileSync(join(directory, name), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
   const path = Object.entries(process.env).find(([key]) => key.toUpperCase() === "PATH")?.[1] ?? "";
   return `${directory}${delimiter}${path}`;
+}
+
+/** The folder of the stand-ins' gates, beside their `runs` record. */
+const agentGates = (runs: NativePath) => nativePath(parentOf(runs), "agent-gates");
+
+/** Release the stand-ins' latest start recorded in `runs`: it finishes, or moves. */
+export function releaseAgentStart(runs: NativePath): void {
+  const starts = agentStarts(runs).length;
+  if (starts === 0) throw new Error("no stand-in start to release");
+  writeFileSync(nativePath(agentGates(runs), String(starts)), "");
+}
+
+/** Whether the terminal host of the worktree whose Git directory is `gitDirectory` has recorded
+ * a foreground program run with `args`, the record a restore offer is made from; at once where
+ * this system tells no terminal's foreground program. */
+export function foregroundRecorded(gitDirectory: NativePath, args: string): boolean {
+  if (!supports(["terminal-foreground"])) return true;
+  const text = readTextIfExists(nativePath(gitDirectory, "artifactize-terminal.json"));
+  if (text === null) return false;
+  const record = JSON.parse(text) as { command?: { args?: string[] } | null; harness?: unknown };
+  return record.harness != null && record.command?.args?.join(" ") === args;
 }
 
 /** The starts the stand-ins recorded in `runs`, in order: each harness, arguments and directory. */
