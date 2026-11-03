@@ -11,7 +11,7 @@ import { needing, scenario, servedBy, type Prepared, type Scenario } from "../sc
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import {
-  asNativePath, childDirectories, exists, heldConnections, heldEndpoint, nameOf, nativePath, primaryModifier, writeText, type NativePath,
+  agentStarts, asNativePath, childDirectories, exists, heldConnections, heldEndpoint, nameOf, nativePath, primaryModifier, writeText, type NativePath,
 } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { camera, detail, FIND, findField, offCentre, TERMINAL } from "../graph-view.ts";
@@ -26,10 +26,13 @@ async function prepare() {
   return { fixture, args: ["--repo", fixture.repo], env: fixture.env, data: fixture };
 }
 
-/** Let the agent started last in the workbench's master finish, or move, once its terminal has
- * recorded it as the program in the foreground, which a restore offer is made from. */
+/** Let the agent run with `args` in the workbench's master finish, or move, once it has started
+ * and its terminal has recorded it as the program in the foreground, which a restore offer is
+ * made from. */
 async function finishAgent(browser: WebdriverIO.Browser, fixture: Workbench, args: string): Promise<void> {
-  await browser.waitUntil(() => agentRecorded(fixture.repo, args), { timeout: 30000, timeoutMsg: `the terminal recorded the agent run with ${args}` });
+  const started = () => agentStarts(fixture.runs).at(-1)?.args === args;
+  await browser.waitUntil(() => started() && agentRecorded(fixture.repo, args),
+    { timeout: 30000, timeoutMsg: `the agent run with ${args} started and its terminal recorded it` });
   releaseAgent(fixture);
 }
 
