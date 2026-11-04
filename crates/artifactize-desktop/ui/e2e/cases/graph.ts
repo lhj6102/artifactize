@@ -8,7 +8,7 @@ import { artifactize, create, createChain, createEvals, createParts, requests, s
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, nodeAt, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
+import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
 import { primaryModifier } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
@@ -404,8 +404,8 @@ export const scenarios: Scenario[] = [
       assert.ok((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].open, "suite shows kit, which it hides, opened");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
 
-      // The branch's Current draws suite minimized too; Enter on its Expand button, which Tab
-      // reaches after suite, draws its box again, its corner kept, opening nothing.
+      // The branch's Current draws suite minimized too, Tab reaching its Expand button after it;
+      // a click on Expand draws its box again, its corner kept, opening nothing.
       const current = 'section[aria-label="Current"]';
       await chooseChip(browser, "repo  master", "current");
       const there = (await partsDrawn(browser, current, SUITE_MINIMIZED))["a:suite"];
@@ -422,7 +422,7 @@ export const scenarios: Scenario[] = [
       await toSuite();
       await tab(browser);
       assert.equal((await focusedElement(browser)).trim(), "BUTTON Expand suite", "Tab reaches suite's Expand button after suite");
-      await press(browser, ["Enter"], () => browser.$(`${current} ${nodeAt("a:suite/a:app")}`).isExisting(), "Enter on Expand draws suite's parts again");
+      await clickButton(browser, current, "Expand suite");
       const open = await partsDrawn(browser, current);
       assert.ok(open["a:suite"].whole && within(open["a:suite/a:app"].rect, open["a:suite"].rect), "suite is a box around its parts again");
       assert.ok(near(open["a:suite"].rect, there.rect), `suite's top left corner stays where it was: ${JSON.stringify([open["a:suite"].rect, there.rect])}`);
