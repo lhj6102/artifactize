@@ -1,6 +1,9 @@
 [![CI](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml/badge.svg)](https://github.com/lhj6102/artifactize/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/artifactize.svg)](https://crates.io/crates/artifactize)
 [![License](https://img.shields.io/github/license/lhj6102/artifactize)](LICENSE)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS-black)](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg)
+[![Get it on Windows](https://img.shields.io/badge/Get%20it-Windows-0078D4)](https://apps.microsoft.com/detail/9PB6W4LL165D)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux%20.deb-E95420)](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)
 
 English · [한국어](assets/readme/README.kr.md)
 
@@ -8,95 +11,64 @@ Homepage: [artifactize.dev](https://artifactize.dev)
 
 # Build together on an Artifact Graph.
 
+Artifactize checks your project piece by piece, from code and documents to images and the
+running app, with tests, AI reviews and people's sign-offs. It remembers every result, so
+work that hasn't changed is never checked twice, and you can trust what you and your AI
+agents changed without watching every step.
+
+Test runners check code and review bots check pull requests. Artifactize puts both, and the
+people who sign off, on one Artifact Graph of your whole project: every check knows what it
+reads, runs again only when that changes, and keeps going while you step away.
+
 <p align="center">
   <img src="assets/others/roles.en.gif" width="800"
        alt="Animation, collaborate in Artifactize: three roles pass one Artifact Graph between them, made of Artifacts, the pieces of the project, each with its own checks. As Director, three people and two AI agents decide what to build and add an Artifact; as Builder, five AI agents build it; as Evaluator, four AI agents and one person check the Artifacts one by one. The new Artifact is RED, so the Artifact Graph goes back to the Builder to fix, then to the Evaluator again, and it turns GREEN. The Director adds another Artifact and changes one, and the Builder and the Evaluator go back and forth again until GREEN.">
 </p>
 
-**Who is it for?**
-
-- People who want to build together with others, reviewing efficiently and developing in modules.
-- People who want to trust changes made by AI agents without overseeing every step.
-- People who want code, documents, images, and running applications to stay consistent as the project grows.
-
-<p align="center">
-  <img src="assets/others/graph-example.en.png" width="800"
-       alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command.">
-</p>
+## Demo
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
     <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/promo.gif" width="640"
-         alt="A real terminal recording of Artifactize checking a project and reusing earlier reviews.">
+         alt="27-second introduction video, a real terminal recording of Artifactize checking a project and reusing earlier reviews. Select it for the full-quality video.">
   </a>
-  <br>
-  <sub>27-second introduction, no sound. Select it for the full-quality video.</sub>
 </p>
 
-**Our principles**
+## Quick Start
 
-- We don't restrict how you build. Use your preferred tools and agent harnesses (the apps that run your AI assistants).
-- We don't restrict individuality. Create freely within loose guardrails.
-- AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
+### 1. Install
 
-An **Artifact** is a piece of the project: code, writing, a design or an image.
-The **graph** shows how these pieces connect. Give each piece its own checks—a test,
-an AI review or a person's sign-off. When the work a check looked at hasn't changed,
-Artifactize can use its earlier result again, even across project versions and teammates’ copies.
+Pick whichever fits how you work.
 
-Checks keep running while you step away. Each verification has a tracking code
-called a Run ID; closing the command window doesn't stop it.
+**Download the app.** It brings the `artifactize` command with it, so you do not need
+Rust's build tools. Your coding agent has nothing new yet: add the plugin below before
+your first task.
 
-## Install
-
-Download the app for your operating system. It brings the `artifactize` command
-with it, so you do not need Rust’s build tools.
-
-- **macOS**: [Download Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg),
-  one disk image for Apple silicon and Intel. Drag Artifactize to Applications and
-  open it once to set up the Terminal command.
-- **Windows**: [Get Artifactize from the Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D)
+- **macOS**: [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg),
+  one disk image for Apple silicon and Intel. Drag Artifactize to Applications and open it
+  once to set up the Terminal command.
+- **Windows**: [Artifactize in the Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D)
   (x64), then open a new terminal.
-- **Linux**: [Download the .deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)
-  for x86_64 Ubuntu 22.04, Debian 12 or later, and open it with your software
-  installer or run `sudo apt install ./Artifactize-amd64.deb`.
+- **Linux**: [Artifactize-amd64.deb](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize-amd64.deb)
+  for x86_64 Ubuntu 22.04, Debian 12 or later: open it with your software installer or run
+  `sudo apt install ./Artifactize-amd64.deb`.
 
-### From the command line
+Or install from the command line:
 
-**Linux** (x86_64 and aarch64; also WSL 2 on Windows), with the desktop app on x86_64:
+| System | Command |
+|---|---|
+| Linux (x86_64 and aarch64; also WSL 2), desktop app on x86_64 | `curl -fsSL https://artifactize.dev/install.sh \| sh` |
+| macOS with [Homebrew](https://brew.sh/) | `brew install lhj6102/tap/artifactize` (add `--cask` for the desktop app too) |
+| macOS without Homebrew | `curl -fsSL https://artifactize.dev/install.sh \| sh` |
+| Windows, from the Microsoft Store | `winget install 9PB6W4LL165D --source msstore`, then open a new terminal |
 
-```sh
-curl -fsSL https://artifactize.dev/install.sh | sh
-```
+The [installation guide](https://artifactize.dev/docs/getting-started/install.html) covers
+the PowerShell script, AppImage, Cargo, building from source, updates and uninstalling.
 
-**macOS**, with [Homebrew](https://brew.sh/):
-
-```sh
-brew install lhj6102/tap/artifactize
-```
-
-For the desktop app with the commands, use `brew install --cask lhj6102/tap/artifactize`
-instead. Without Homebrew, the install script installs both:
-`curl -fsSL https://artifactize.dev/install.sh | sh`
-
-**Windows**, from the Microsoft Store; then open a new terminal:
-
-```powershell
-winget install 9PB6W4LL165D --source msstore
-```
-
-The [full installation guide](https://artifactize.dev/docs/getting-started/install.html)
-explains the alternatives—the PowerShell install script, AppImage, Cargo and building
-from source—along with prerequisites, updates and uninstalling.
-
-### Quick start with Arti
-
-We recommend starting with a conversation with Arti, Artifactize's guide inside your
-coding assistant. Arti explains Artifactize in terms of your own project, helps you
-move the tests and reviews you already have, or sets up a new project with you.
-Its [plugin](https://artifactize.dev/docs/agent-plugin/plugin.html) gives Claude Code
-and Codex [Hey Arti](https://artifactize.dev/docs/agent-plugin/hey-arti.html)'s
-instructions and Artifactize's tools in one install:
+**Add the plugin to your coding agent.** The
+[plugin](https://artifactize.dev/docs/agent-plugin/plugin.html) gives Claude Code and Codex
+Arti, Artifactize's guide, and Artifactize's tools. It runs the `artifactize` command, so
+install that first.
 
 ```text
 /plugin marketplace add lhj6102/artifactize          # Claude Code, in a session
@@ -105,24 +77,53 @@ codex plugin marketplace add lhj6102/artifactize     # Codex, in a terminal
 codex plugin add artifactize@artifactize
 ```
 
-**With your coding agent**, start with one of these (in Codex, write
-`$artifactize:hey-arti` instead):
+**Or let your coding agent set it up.** Paste this into Claude Code or Codex; afterwards
+it has the command and the plugin, so you can go straight to your first task:
+
+```text
+Install Artifactize on this machine following https://artifactize.dev/docs/getting-started/install.html, then add its plugin to yourself following https://artifactize.dev/docs/agent-plugin/plugin.html.
+```
+
+### 2. Try your first task
+
+In your project, ask Arti (in Codex, write `$artifactize:hey-arti`):
 
 ```text
 /artifactize:hey-arti Explain Artifactize and tell me how we could apply it to this project
-/artifactize:hey-arti Help me move our existing tests and reviews into Artifactize
-/artifactize:hey-arti Help me start this project with Artifactize from the beginning
 ```
 
-To try Artifactize without an AI account first, take the
-[5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html).
-It uses an example project and needs no provider access key (API key).
+Arti reads your project, asks what matters to you and proposes Artifacts and checks for it.
+It changes your declarations only after you agree, and you get back your project's first
+Artifact Graph and a `verify` you can run. To try Artifactize without an AI account, take
+the [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html) with an
+example project.
 
-## Learn more
+## Highlights
 
-- [Documentation](https://artifactize.dev/docs/): concepts, guides, examples and command reference.
-- [Community on Discord](https://discord.gg/VswgKkPkS9): questions, ideas and help.
-- [Source and license](LICENSE): open source under Apache License 2.0.
+<p align="center">
+  <img src="assets/others/graph-example.en.png" width="800"
+       alt="Example Artifact Graph: a project's PROBLEM.md, SPEC.md, code/ and docs/ are each declared by an .artf file. A person reviews the problem; AI agents check that the spec solves the problem, that the code's tests check the spec, that the docs explain the code and that the code and docs follow their own rules; the code's tests run as a command.">
+</p>
+
+| Feature | What it does |
+|---|---|
+| Artifact Graph | Each piece of the project, an Artifact, declares its own checks and what it reads, so the graph shows how the pieces connect. |
+| Three kinds of checks | A command such as your tests, a review by an AI agent, or a person's sign-off. |
+| Reuse | A check whose inputs did not change keeps its earlier result, across versions and teammates' copies. |
+| Runs that keep going | Each verification is a Run with its own ID; closing the window does not stop it. |
+| Desktop app | Watch Runs live on the graph, open any Artifact and sign off where you are asked to. |
+
+**Who is it for?**
+
+- People who want to build together with others, reviewing efficiently and developing in modules.
+- People who want to trust changes made by AI agents without overseeing every step.
+- People who want code, documents, images, and running applications to stay consistent as the project grows.
+
+**Our principles**
+
+- We don't restrict how you build. Use your preferred tools and agent harnesses (the apps that run your AI assistants).
+- We don't restrict individuality. Create freely within loose guardrails.
+- AI doesn't make every decision. Vision, taste, and important decisions about direction remain in human hands.
 
 ## The product running
 
@@ -157,3 +158,9 @@ release waits for a person's sign-off.
 example reviewer, after running its notes tool, with the GREEN form open.
 
 <img src="assets/screenshots/review.png" width="1200" alt="Real Artifactize desktop Review: the example's claimed sign-off with its instruction, notes tool, tool log and GREEN form.">
+
+## Learn more
+
+- [Documentation](https://artifactize.dev/docs/): concepts, guides, examples and command reference.
+- [Community on Discord](https://discord.gg/VswgKkPkS9): questions, ideas and help.
+- [Source and license](LICENSE): open source under Apache License 2.0.
