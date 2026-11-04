@@ -331,6 +331,34 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journeys: J-WAITING J-LIVE; UX edge: E-WAITING-CHANGE
+  scenario<{ runs: string[] }>(
+    "branches-waiting-shared-deleted",
+    "keeps a review two worktrees wait on in the Waiting stack when the folder its row names is deleted, now named by the other worktree",
+    async () => {
+      const fixture = await create();
+      const runs = await addWorktrees(fixture, ["shared-one", "shared-two"], () => "# Shared notes\n- One review for both.\n");
+      return { fixture, data: { runs } };
+    },
+    async (browser, { fixture, data: { runs } }) => {
+      const [first, second] = runs.map((run) => requests(fixture).find((request) => request.runId === run && request.status === "DEFERRED")!.id);
+      // The second worktree joined the first one's review: one row, named by the first.
+      await waitFor(browser, async () => (await waiting(browser)).rows.some((entry) => entry.id === first), "the shared review listed");
+      let stack = await waiting(browser);
+      assert.equal(stack.bar, "Waiting (2)", "the master's review and the shared one");
+      assert.equal(stack.rows.find((entry) => entry.id === first)?.where, "repo  shared-one");
+      assert.ok(!stack.rows.some((entry) => entry.id === second), "the joined request is not listed apart");
+      // Its folder deleted in another process, the review stays without a reload, now named by
+      // the worktree still waiting on it.
+      removeTree(nativePath(fixture.root, "shared-one"));
+      await waitFor(browser, async () => (await waiting(browser)).rows.some((entry) => entry.id === second), "the review listed under the other worktree");
+      stack = await waiting(browser);
+      assert.equal(stack.bar, "Waiting (2)", "still counted");
+      assert.equal(stack.rows.find((entry) => entry.id === second)?.where, "repo  shared-two");
+      assert.ok(!stack.rows.some((entry) => entry.id === first), "the deleted folder's request gone");
+    },
+  ),
+
   // UX journeys: J-WAITING J-LIVE; UX edges: E-WAITING-CHANGE E-REVIEW-OPEN
   scenario<Record<string, never>>(
     "branches-waiting-change",

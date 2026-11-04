@@ -76,6 +76,30 @@ async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
 const within = (inner: DOMRect, outer: DOMRect) =>
   inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
 
+/** Where the drawn relations `ids` of the Run graph start and end on screen. */
+function edgeEnds(browser: WebdriverIO.Browser, ids: string[]) {
+  return browser.execute((want) => Object.fromEntries(want.map((id) => {
+    const edge = [...document.querySelectorAll(`.svelte-flow__edge[data-id="${id}"]`)].find((found) => !found.closest('aside[aria-label="Detail"]'));
+    const path = edge?.querySelector<SVGPathElement>(".svelte-flow__edge-path");
+    const screen = path?.getScreenCTM();
+    if (!path || !screen) return [id, null];
+    const at = (length: number) => {
+      const point = path.getPointAtLength(length);
+      const shown = new DOMPoint(point.x, point.y).matrixTransform(screen);
+      return { x: shown.x, y: shown.y };
+    };
+    return [id, { start: at(0), end: at(path.getTotalLength()) }];
+  })), ids);
+}
+
+/** How far, in pixels, a relation's end may sit from the side of the box it meets: the
+ * handle's own size and the border's width. */
+const MEETS = 6;
+
+/** A point on the `side` of a box, within its height. */
+const meets = (point: { x: number; y: number }, box: DOMRect, side: "left" | "right") =>
+  Math.abs(point.x - box[side]) <= MEETS && point.y >= box.top && point.y <= box.bottom;
+
 /** Two rectangles that do not meet. */
 const apart = (one: DOMRect, other: DOMRect) =>
   one.left >= other.right || one.right <= other.left || one.top >= other.bottom || one.bottom <= other.top;
@@ -260,6 +284,16 @@ export const scenarios: Scenario[] = [
         "a:suite/a:site>a:suite/a:app": "green",
         "a:docs/a:site>a:suite/a:app": "green",
       }), { timeout: 15000, timeoutMsg: "every copy of site's edges drawn and lit like any other" });
+      // A whole's own relations meet its box: lib's goes into suite's left side, and suite's
+      // leaves its right side for docs's left side, lit like any other.
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), {}, { "a:lib>a:suite": "green", "a:suite>a:docs": "green" }),
+        { timeout: 15000, timeoutMsg: "the wholes' relations drawn and lit" });
+      const boxes = await partsDrawn(browser, ".graph");
+      const ends = await edgeEnds(browser, ["a:lib>a:suite", "a:suite>a:docs"]);
+      const [into, out] = [ends["a:lib>a:suite"], ends["a:suite>a:docs"]];
+      assert.ok(into && meets(into.end, boxes["a:suite"].rect, "left"), `lib's relation ends on suite's box: ${JSON.stringify(into)}`);
+      assert.ok(out && meets(out.start, boxes["a:suite"].rect, "right"), `suite's relation starts on its box: ${JSON.stringify(out)}`);
+      assert.ok(out && meets(out.end, boxes["a:docs"].rect, "left"), `suite's relation ends on docs's box: ${JSON.stringify(out)}`);
 
       // A click on suite's box outside its parts opens suite; a click on a part opens the part,
       // suite's box staying as it was.
