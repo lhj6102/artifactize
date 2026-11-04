@@ -83,8 +83,8 @@ argv가 아닌 stdin에서 읽으므로 토큰을 한 줄로 붙여 넣으세요
 터미널에서는 입력한 토큰이 화면에 나타나지 않도록 처리하며, Windows에서 입력을 숨기는 데 실패하면 토큰이 화면에 보인다고 경고한 뒤 계속 읽습니다. 터미널이 아닌 stdin은 터미널 에코를 건드리지 않고 읽습니다.
 `GET /v1/whoami`로 토큰을 확인한 다음, 내 계정만 읽을 수 있는
 `$STATE/auth/remote-token.json`에 저장하고 `$STATE/remote.json`에
-`{"url":"https://reviews.example/","share":"summary"}`를 씁니다. URL은 시스템 신뢰
-저장소로 검증하는 HTTPS여야 하며, 일반 `http://`는 `localhost`, `127.0.0.0/8`, `[::1]`에서만
+`{"url":"https://reviews.example/","share":"summary"}`를 씁니다. URL은 시스템이 신뢰하는
+인증서로 검증할 수 있는 HTTPS 주소여야 하며, 일반 HTTP는 `localhost`, `127.0.0.0/8`, `[::1]`에서만
 허용합니다. 자격 증명, 쿼리, 프래그먼트가 붙은 URL은 거부합니다. 저장된 토큰은 발급받은
 출처에서만 씁니다.
 
