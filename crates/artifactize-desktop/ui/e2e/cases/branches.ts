@@ -15,7 +15,7 @@ import { checkpoint, commandsRendered } from "../commands.ts";
 import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
-import { branch, branches, chooseChip, entriesFocused, expand, listed, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -152,6 +152,8 @@ export const scenarios: Scenario[] = [
       assert.ok((await runComment(browser))!.whole, "the whole comment is drawn, not cut short");
       // A click on an entry shows that Run, the only one marked; without a comment it shows none.
       await showRun(browser, "repo  master", runs[0]);
+      // Its panel is drawn only once that Run's read finished, so its comment, or none, is final.
+      await waitFor(browser, () => browser.execute((main) => document.querySelector(`${main} .run > .headline`) !== null, MAIN), "the Run read and drawn");
       assert.equal(await runComment(browser), null, "a Run without a comment shows none");
       await graphShown(browser, "a:n000");
       shown = (await branch(browser, "repo  master"))!;
@@ -273,7 +275,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-BRANCHES J-LIVE J-WAITING; UX edge: E-PANE-WORKTREES
+  // UX journeys: J-BRANCHES J-LIVE J-WAITING; UX edges: E-PANE-WORKTREES E-WAITING-CHANGE
   scenario<{ runs: string[]; plain: { folder: NativePath; run: string } }>(
     "branches-worktrees",
     "lists worktrees another process adds, a detached one by its folder, a folder outside Git by its name, and drops removed or deleted ones, the waiting reviews of a deleted folder too",
