@@ -6,9 +6,9 @@
 import assert from "node:assert/strict";
 import { artifactize, create, createChain, createEvals, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { visibleCenter } from "../pointer.ts";
+import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, camera, detail, fact, FIND, findField, focusedNode, graphShown, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
+import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, nodeAt, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
 import { primaryModifier } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
@@ -49,15 +49,19 @@ const READABLE = 126;
  * inside app, site inside both, and lib outside every whole. */
 const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib"];
 
-/** The copies of the graph under `root`, outside the Detail, once all of {@link PARTS} are
- * drawn: each one's box, whether it is drawn as a whole, its title text, its Artifact, its
+/** {@link PARTS} with suite minimized: suite a node, its parts hidden, site still inside docs. */
+const SUITE_MINIMIZED = ["a:suite", "a:docs", "a:docs/a:site", "a:lib"];
+
+/** The copies of the graph under `root`, outside the Detail, once exactly `keys` are drawn:
+ * each one's box, whether it is drawn as a box or minimized, its title text, its Artifact, its
  * spoken name, whether it shows as opened, and its light. */
-async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
+async function partsDrawn(browser: WebdriverIO.Browser, root: string, keys: string[] = PARTS) {
   const read = () => browser.execute((under) => Object.fromEntries([...document.querySelectorAll<HTMLElement>(`${under} .svelte-flow__node`)]
     .filter((node) => !node.closest('aside[aria-label="Detail"]'))
     .map((node) => [node.dataset.id ?? "", {
       rect: node.getBoundingClientRect().toJSON() as DOMRect,
       whole: node.classList.contains("svelte-flow__node-whole"),
+      minimized: node.classList.contains("svelte-flow__node-minimized"),
       text: node.textContent?.trim() ?? "",
       artifact: node.dataset.artifact ?? "",
       label: node.getAttribute("aria-label") ?? "",
@@ -67,9 +71,19 @@ async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
   let shown: Awaited<ReturnType<typeof read>> = {};
   await browser.waitUntil(async () => {
     shown = await read();
-    return PARTS.every((key) => key in shown);
-  }, { timeout: 15000, timeoutMsg: "every whole and part drawn" });
+    return JSON.stringify(Object.keys(shown).sort()) === JSON.stringify([...keys].sort());
+  }, { timeout: 15000, timeoutMsg: `exactly ${keys.join(", ")} drawn` }).catch((error: unknown) => {
+    throw new Error(`${String(error)}; drawn: ${Object.keys(shown).join(", ")}`);
+  });
   return shown;
+}
+
+/** Two screen positions at most a pixel apart. */
+const near = (one: DOMRect, other: DOMRect) => Math.abs(one.left - other.left) <= 1 && Math.abs(one.top - other.top) <= 1;
+
+/** Click the button named `name` in the graph under `root` at its centre. */
+async function clickButton(browser: WebdriverIO.Browser, root: string, name: string) {
+  await clickAt(browser, await visibleCenter(browser, await browser.$(`${root} .svelte-flow__node button[aria-label="${name}"]`).getElement()));
 }
 
 /** A rectangle wholly inside another. */
@@ -335,6 +349,90 @@ export const scenarios: Scenario[] = [
       assert.ok(note, "site's Detail says it is drawn in both wholes, naming them");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
       assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
+    },
+  ),
+
+  // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE E-GRAPH-MINIMIZED
+  // E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-EXPAND
+  scenario<{ run: string }>(
+    "graph-minimize",
+    "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it and its corner kept on the screen; opens it as a node, finds what it hides, keeps it minimized on the branch's Current and expands it there",
+    async () => ended(createParts()),
+    async (browser, { data }) => {
+      await shownRun(browser, data.run);
+      await graphShown(browser, "a:suite/a:app/a:kit");
+      const boxed = await partsDrawn(browser, ".graph");
+
+      // Minimize turns suite into a node of a node's size, its corner where the box's was; site
+      // stays drawn inside docs, and no Detail opens.
+      await clickButton(browser, ".graph", "Minimize suite");
+      const small = await partsDrawn(browser, ".graph", SUITE_MINIMIZED);
+      const suite = small["a:suite"];
+      assert.deepEqual([suite.minimized, suite.whole], [true, false], "suite is drawn minimized, not as a box");
+      assert.ok(suite.text.includes("suite") && suite.text.includes("2 parts"), `suite shows its name and its two parts: ${suite.text}`);
+      assert.equal(suite.label, "suite: GREEN, minimized, 2 parts");
+      assert.equal(suite.light, "green");
+      assert.ok(Math.abs(suite.rect.width - small["a:lib"].rect.width) <= 1 && Math.abs(suite.rect.height - small["a:lib"].rect.height) <= 1,
+        `suite is a node's size: ${JSON.stringify([suite.rect, small["a:lib"].rect])}`);
+      await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].rect, boxed["a:suite"].rect),
+        { timeout: 15000, timeoutMsg: "suite's top left corner stays where its box's was on the screen" });
+      assert.ok(within(small["a:docs/a:site"].rect, small["a:docs"].rect), "site stays inside docs");
+      assert.equal(await detail(browser), null, "minimizing opens no Detail");
+      // The edges of what suite hides meet it: lib into its site, docs's site into its app; none
+      // is drawn among them.
+      let edges: string[] = [];
+      await browser.waitUntil(async () => {
+        const shown = await graphAppearance(browser);
+        edges = Object.keys(shown.edges).sort();
+        return graphHasColours(shown, { "a:suite": "green", "a:lib": "green" }, { "a:lib>a:suite": "green", "a:lib>a:docs/a:site": "green", "a:docs/a:site>a:suite": "green" });
+      }, { timeout: 15000, timeoutMsg: "the hidden parts' edges meet suite, lit as before" });
+      assert.deepEqual(edges, ["a:docs/a:site>a:suite", "a:lib>a:docs/a:site", "a:lib>a:suite"], "each edge once, none within suite");
+
+      // A click on the minimized suite opens its Detail, as on a node; Esc closes it.
+      await openArtifact(browser, "a:suite", "Artifact suite");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes suite's Detail");
+
+      // The find field still lists kit, hidden in suite, and goes to the minimized suite for it.
+      await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over the Run");
+      await fill(browser, FIND, "kit");
+      await browser.waitUntil(async () => JSON.stringify((await findField(browser))?.entries.map((entry) => entry.name)) === JSON.stringify(["kit"]), { timeout: 15000, timeoutMsg: "kit listed" });
+      await press(browser, ["Enter"], async () => (await findField(browser)) === null && (await detail(browser))?.title === "Artifact kit", "Enter opens kit's Detail");
+      await browser.waitUntil(async () => {
+        const at = await offCentre(browser, "a:suite");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4;
+      }, { timeout: 15000, timeoutMsg: "the minimized suite in the middle of the graph left of the Detail" });
+      assert.ok((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].open, "suite shows kit, which it hides, opened");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
+
+      // The branch's Current draws suite minimized too; Enter on its Expand button, which Tab
+      // reaches after suite, draws its box again, its corner kept, opening nothing.
+      const current = 'section[aria-label="Current"]';
+      await chooseChip(browser, "repo  master", "current");
+      const there = (await partsDrawn(browser, current, SUITE_MINIMIZED))["a:suite"];
+      assert.ok(there.minimized, "suite is minimized on the branch's Current");
+      /** Tab until the graph's suite node itself has the keyboard. */
+      const toSuite = async () => {
+        // A bound on traversing this small fixture's controls, not a claimed tab order.
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          if ((await focusedNode(browser)) === "a:suite" && !(await focusedElement(browser)).startsWith("BUTTON")) return;
+          await tab(browser);
+        }
+        assert.fail("Tab reaches suite");
+      };
+      await toSuite();
+      await tab(browser);
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Expand suite", "Tab reaches suite's Expand button after suite");
+      await press(browser, ["Enter"], () => browser.$(`${current} ${nodeAt("a:suite/a:app")}`).isExisting(), "Enter on Expand draws suite's parts again");
+      const open = await partsDrawn(browser, current);
+      assert.ok(open["a:suite"].whole && within(open["a:suite/a:app"].rect, open["a:suite"].rect), "suite is a box around its parts again");
+      assert.ok(near(open["a:suite"].rect, there.rect), `suite's top left corner stays where it was: ${JSON.stringify([open["a:suite"].rect, there.rect])}`);
+      assert.equal(await detail(browser), null, "expanding opens no Detail");
+      // On the box, Tab reaches its Minimize button after suite and before its parts.
+      await toSuite();
+      await tab(browser);
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite", "Tab reaches suite's Minimize button after suite");
+      await tab(browser);
+      assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
     },
   ),
 

@@ -19,11 +19,12 @@
 // A whole's parts are laid out together inside its box (parts.ts), as a graph of their own: of
 // the copies drawn directly in it, a whole among them as large as its box, and the edges
 // between them, an edge between parts of different copies standing for the copies that hold
-// them. The graph around is then laid out with each box as one Artifact of its size. A graph
-// without parts is laid out as one, as before.
+// them. The graph around is then laid out with each box as one Artifact of its size. A
+// minimized whole is one Artifact of a node's size, its edges those of the Artifacts it hides.
+// A graph without parts is laid out as one, as before.
 import type { Shape } from "../ipc/client";
 import { NODE, type Point } from "./graph";
-import { BOX, around, copies, type Copy } from "./parts";
+import { BOX, around, copies, drawings, type Copy } from "./parts";
 
 export { NODE };
 /** The most Artifacts ELK lays out, in about half a second for a real graph this size. A larger
@@ -62,12 +63,13 @@ function largest(values: ArrayLike<number>): number {
   return top;
 }
 
-/** Top-left positions of `graph`'s copies that are no wholes, by key: by ELK while at most
- * `ELK_LIMIT` copies are drawn, else by `layered`; each whole's parts inside its box. */
-export async function layout(graph: Shape): Promise<Map<string, Point>> {
-  const drawn = copies(graph);
+/** Top-left positions of `graph`'s copies that are no boxes, by key: by ELK while at most
+ * `ELK_LIMIT` copies are drawn, else by `layered`; each whole's parts inside its box, and the
+ * wholes `minimized` names drawn as nodes. */
+export async function layout(graph: Shape, minimized: readonly string[] = []): Promise<Map<string, Point>> {
+  const drawn = copies(graph, minimized);
   const flat = drawn.length > ELK_LIMIT ? (level: Level) => Promise.resolve(layered(level, ROOM)) : (level: Level) => elk(level, ROOM);
-  if (drawn.every((copy) => copy.parts.length === 0)) return flat(graph);
+  if (drawn.every((copy) => copy.parts.length === 0 && !copy.minimized)) return flat(graph);
   return nest(graph, drawn, flat);
 }
 
@@ -75,8 +77,8 @@ export async function layout(graph: Shape): Promise<Map<string, Point>> {
  * first, then the copies drawn in no whole. */
 async function nest(graph: Shape, drawn: Copy[], flat: (level: Level) => Promise<Map<string, Point>>): Promise<Map<string, Point>> {
   const byKey = new Map(drawn.map((copy) => [copy.key, copy]));
-  const keys = new Map<string, string[]>();
-  for (const copy of drawn) keys.set(copy.node.id, [...(keys.get(copy.node.id) ?? []), copy.key]);
+  // An Artifact a minimized whole hides is where that whole is.
+  const keys = drawings(drawn);
   /** The keys of the boxes around `key`, the outermost first, then `key`. */
   const chain = (key: string) => {
     const found = [key];

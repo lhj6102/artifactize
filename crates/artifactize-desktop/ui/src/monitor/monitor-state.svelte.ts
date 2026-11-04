@@ -1,7 +1,7 @@
 // What the window's one screen holds of its own: where focus is, the Pane's selected entry,
-// what the Main area shows, the open Detail with its tab and width, and whether the notice
-// shows in full. One owner, kept in the AppState; the snapshot it shows is the Browse.
-import { SvelteSet } from "svelte/reactivity";
+// what the Main area shows, the open Detail with its tab and width, whether the notice shows in
+// full, and the wholes minimized on each branch's graphs. One owner, kept in the AppState; the snapshot it shows is the Browse.
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { BranchKey, Chip, DetailView, Source } from "../ipc/client";
 import { loadWidth } from "./detail-width";
 
@@ -75,4 +75,22 @@ export class MonitorState {
   started = $state(false);
   /** The parts focus moves into. */
   readonly panes: { pane?: HTMLElement; main?: HTMLElement; detail?: HTMLElement; search?: HTMLInputElement } = $state({});
+  /** The wholes minimized on each branch's graphs, its Runs' and its Current, by the branch's
+   * key: their tree ids, kept while the app runs. */
+  readonly minimized = new SvelteMap<string, readonly string[]>();
+
+  /** The wholes minimized on `branch`'s graphs. */
+  minimizedOn(branch: BranchKey): readonly string[] {
+    return this.minimized.get(keyOf(branch)) ?? NONE;
+  }
+
+  /** Minimize the whole `id` on `branch`'s graphs, or expand it. */
+  minimize(branch: BranchKey, id: string, minimized: boolean) {
+    // A new list, never changed: a graph laid out for the one before keeps it.
+    const others = this.minimizedOn(branch).filter((each) => each !== id);
+    this.minimized.set(keyOf(branch), minimized ? [...others, id] : others);
+  }
 }
+
+/** No whole minimized. */
+const NONE: readonly string[] = [];

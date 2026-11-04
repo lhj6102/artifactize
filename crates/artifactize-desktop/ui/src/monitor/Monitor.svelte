@@ -411,7 +411,7 @@
           {/snippet}
           {#if shown.kind === "run"}
             {#if run}
-              <RunView {run} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
+              <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
             {:else if view?.missing}
               <p class="empty">This Run cannot be read; choose another.</p>
             {:else}

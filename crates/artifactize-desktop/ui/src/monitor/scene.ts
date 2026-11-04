@@ -112,7 +112,7 @@ export function hit(at: Scene, point: Point): string | null {
 }
 
 /** What to paint: the graph's lights, the camera, the canvas's size and pixel ratio, whether
- * the Artifacts are painted as boxes, and the opened one. */
+ * the Artifacts are painted as boxes, and the copies that show the opened Artifact. */
 export type Paint = {
   graph: Shape;
   viewport: Viewport;
@@ -120,7 +120,7 @@ export type Paint = {
   height: number;
   ratio: number;
   boxes: boolean;
-  opened: string | null;
+  opened: ReadonlySet<string>;
 };
 
 /** The graph's edges by the numbers of their ends in a scene, with their lights. */
@@ -252,15 +252,15 @@ export class Picture {
     return painted;
   }
 
-  /** A ring around every copy of the opened Artifact, as its elements draw it. */
+  /** A ring around every copy that shows the opened Artifact, as its elements draw it. */
   #ring(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
-    if (what.opened === null) return;
+    if (what.opened.size === 0) return;
     const { viewport, ratio } = what;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
     context.lineWidth = RING;
-    at.nodes.forEach((node, number) => {
-      if (node !== what.opened) return;
+    at.ids.forEach((key, number) => {
+      if (!what.opened.has(key)) return;
       const place = at.places[number];
       const [x, y] = [place.x * viewport.zoom + viewport.x, place.y * viewport.zoom + viewport.y];
       context.strokeRect(x - RING, y - RING, place.width * viewport.zoom + 2 * RING, place.height * viewport.zoom + 2 * RING);
