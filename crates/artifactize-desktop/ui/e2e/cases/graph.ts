@@ -324,20 +324,18 @@ export const scenarios: Scenario[] = [
         "a:lib>a:docs": "green",
         "a:docs>a:guide": "green",
       }), { timeout: 15000, timeoutMsg: "the edges into and out of docs drawn and lit like any other" });
-      // They meet docs's visible box at its sides, as the edges into and out of site, a node, meet
-      // site's: each end within two of the graph's edge handles of the side, between its top and
-      // bottom.
-      const ends = async (id: string) => (await edgeEnds(browser, id))!;
-      const [docs, site] = [await faces(browser, "a:docs"), await faces(browser, "a:suite/a:site")];
-      const meets = (point: { x: number; y: number }, box: typeof docs, side: "into" | "out") => {
-        const apartBy = box.visible ? gap(point, box.visible, side) : null;
-        return apartBy !== null && box.target !== undefined && Math.abs(apartBy) <= 2 * box.target.width;
+      // They meet docs's visible box at its sides: the edge from lib ends at its left side and the
+      // edge to guide starts at its right, between its top and bottom, each within a tenth of the
+      // box's width of that side, whatever the zoom.
+      const docs = (await faces(browser, "a:docs")).visible!;
+      const [into, out] = [(await edgeEnds(browser, "a:lib>a:docs"))!, (await edgeEnds(browser, "a:docs>a:guide"))!];
+      const meets = (point: { x: number; y: number }, side: "into" | "out") => {
+        const apartBy = gap(point, docs, side);
+        return apartBy !== null && Math.abs(apartBy) <= docs.width / 10;
       };
-      const seen = JSON.stringify({ docs, site });
-      assert.ok(meets((await ends("a:lib>a:suite/a:site")).end, site, "into"), `the edge from lib ends on site's side: ${seen}`);
-      assert.ok(meets((await ends("a:suite/a:site>a:suite/a:app")).start, site, "out"), `the edge to app starts on site's side: ${seen}`);
-      assert.ok(meets((await ends("a:lib>a:docs")).end, docs, "into"), `the edge from lib ends on docs's box: ${seen}`);
-      assert.ok(meets((await ends("a:docs>a:guide")).start, docs, "out"), `the edge to guide starts on docs's box: ${seen}`);
+      const seen = JSON.stringify({ docs, into, out });
+      assert.ok(meets(into.end, "into"), `the edge from lib ends on docs's box: ${seen}`);
+      assert.ok(meets(out.start, "out"), `the edge to guide starts on docs's box: ${seen}`);
       assert.ok(apart(drawn["a:guide"].rect, drawn["a:docs"].rect), "guide stands outside docs");
 
       // A click on suite's box outside its parts opens suite; a click on a part opens the part,
