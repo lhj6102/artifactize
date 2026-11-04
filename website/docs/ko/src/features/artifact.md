@@ -28,7 +28,7 @@ payload.instruction = "Check that every link in the docs resolves."
 `game`의 부분이면 `combat`이 실패하는 동안 `game`은 통과하지 못합니다. 그렇다고 `game`의
 eval이 `combat`을 읽지는 않으며, 읽으려면 참조해야 합니다.
 
-각 eval은 자신이 참조한 입력 Artifact를 판정하는 eval이 끝날 때까지 기다립니다. [eval 의존성](#eval-dependencies)을 보세요.
+각 eval은 참조한 입력 Artifact를 평가하는 eval이 끝난 뒤 실행됩니다. [eval 의존성](#eval-dependencies)을 보세요.
 
 Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
