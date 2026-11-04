@@ -110,8 +110,13 @@ How to resolve a RED:
 - **A provider "server overloaded" ERROR is not a finding.** Run verify again;
   finished results are reused.
 
-Verify again after every fix until the outcome is GREEN or YELLOW.
-Unchanged results are reused, so a rerun costs only what changed.
+Iterate on RED evals with the focus-then-sweep skill of the artifactize plugin
+(`/artifactize:focus-then-sweep` in Claude Code, `$artifactize:focus-then-sweep`
+in Codex): rerun only the evals you are fixing until they are GREEN, then run
+the full verify above once. Only that full verify's outcome goes into the pull
+request; a focus Run normally ends INCOMPLETE. Verify again after every fix
+until the full verify is GREEN or YELLOW. Unchanged results are reused, so a
+rerun costs only what changed.
 
 ## 4. Open the pull request into dev
 

@@ -16,6 +16,7 @@
   import RecordDetail from "./RecordDetail.svelte";
   import Neighbours from "./Neighbours.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
+  import ArtifactStar from "./ArtifactStar.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
@@ -159,6 +160,10 @@
 </script>
 
 <Panel title={human ? "Human review" : (detail?.title ?? "Detail")} wholeTitle focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
+  {#snippet beside()}
+    <!-- An Artifact's Detail, on any of its tabs, stars the Artifact. -->
+    {#if tabbed && row && branch}<ArtifactStar branch={branch.key} artifact={row.name} />{/if}
+  {/snippet}
   {#snippet actions()}
     <!-- The one window-level control, on every tab: on a Human review's it first cancels the
          review's running work, then leaves its form, as Esc does. -->

@@ -179,8 +179,8 @@ approves nothing.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does, and Ctrl+F
-[finds an Artifact or an eval by name](#find-in-the-graph); they have no other keys of
-their own.
+[finds an Artifact or an eval by name, or lists your favorites](#find-in-the-graph), as the
+graph's bottom reminds you; they have no other keys of their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms.
 **Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
 whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
@@ -230,6 +230,10 @@ order: an Artifact by its whole name and an eval as `Artifact / eval`, each with
 verdict's mark and colour (on a Current, what verify would do). It lists the first 50 and
 says how many more match, or that none does.
 
+With nothing typed, it lists your favorites: the graph's [starred Artifacts](#detail), in
+the graph's order and the same way, as if you had found them. While none of the graph's
+Artifacts is starred, it says how to star one.
+
 ↑/↓ choose an entry. Enter (on the first entry when none is chosen) or a click opens its
 Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
 Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
@@ -251,6 +255,11 @@ and leaving some graph visible; it keeps that width, also in the next launch.
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`: the
 Artifact's own chip, then one per eval with its verdict's glyph and colour, on a
 Current whether it would run, would be reused or is still being checked.
+
+The ☆ beside the title of an Artifact's Detail, on any of its chips, stars the Artifact:
+it becomes one of your **favorites**, which Ctrl+F lists [with nothing typed](#find-in-the-graph).
+An Artifact stays starred on every branch of its project, in Runs and Currents alike, and the
+next time you open the app. Click the ★ again to take the star away.
 
 The Artifact's chip shows it between its neighbours, drawn with the graph's nodes and
 edges: the Artifacts its evals use on the left, the Artifacts whose evals use it on

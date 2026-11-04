@@ -63,6 +63,8 @@
   const v = new GraphViewState();
   setGraphViewState(v);
   const { monitor: m } = getAppState();
+  /** The branch whose Run or Current is shown: its find field lists its project's favorites. */
+  const branch = $derived(m.shown.kind === "run" || m.shown.kind === "current" ? m.shown.branch : null);
 
   const flow = useSvelteFlow();
   const camera = useViewport();
@@ -342,7 +344,8 @@
       </Controls>
       {#if drawn.length > 40 && !large}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
-    {#if m.finding}<GraphFind {source} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
+    {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
+    <p class="hint"><kbd>Ctrl+F</kbd> finds, or lists the favorites</p>
     <ul class="legend" aria-label="Legend">
       {#each current ? CURRENT_LEGEND : LEGEND as light (light)}
         <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
@@ -402,6 +405,20 @@
     margin: 0;
     padding: 4px 8px;
     list-style: none;
+    font-size: 11px;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    border-radius: 6px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  /* At the graph's bottom, right of the zoom controls and clear of the Detail on the right. */
+  .hint {
+    position: absolute;
+    left: 52px;
+    bottom: 15px;
+    margin: 0;
+    padding: 2px 8px;
     font-size: 11px;
     color: var(--muted);
     background: color-mix(in srgb, var(--surface) 85%, transparent);

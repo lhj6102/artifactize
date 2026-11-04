@@ -406,8 +406,9 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
 /**
  * A repository verified GREEN once whose Artifacts have parts: suite's folder holds app and site,
  * app's holds kit, and docs names site among its parts, so site is a part of two wholes. site's
- * check reads lib, which is a part of nothing, and app's reads site. Every Artifact but suite has
- * a runtime check.
+ * check reads lib, which is a part of nothing, and app's reads site; docs's check reads lib too,
+ * and guide's, outside every whole, reads suite, so edges come into and go out of a whole. Every
+ * Artifact but suite has a runtime check.
  */
 export function createParts(): Fixture {
   return prepareFixture((root) => {
