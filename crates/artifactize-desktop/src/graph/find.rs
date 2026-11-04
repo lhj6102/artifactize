@@ -51,7 +51,7 @@ pub(crate) struct Named<'a> {
 /// case, or the starred Artifacts.
 pub(crate) enum Wanted<'w> {
     Text(&'w str),
-    Starred(&'w BTreeSet<String>),
+    Starred(&'w BTreeSet<ArtifactName>),
 }
 
 /// The Artifacts and evals of `artifacts`, each Artifact with its evals, that `wanted` asks
@@ -195,7 +195,10 @@ pub async fn starred_artifacts(
     app: tauri::State<'_, App>,
     branch: BranchKey,
 ) -> Result<Vec<String>, Failure> {
-    Ok(starred_of(&app, &branch)?.into_iter().collect())
+    Ok(starred_of(&app, &branch)?
+        .into_iter()
+        .map(String::from)
+        .collect())
 }
 
 /// Star the Artifact `artifact` for every branch of `branch`'s project, or take its star away;
@@ -219,10 +222,9 @@ pub async fn star_artifact(
     Ok(kept.into_iter().map(String::from).collect())
 }
 
-fn starred_of(app: &App, branch: &BranchKey) -> Result<BTreeSet<String>, Failure> {
-    let kept = live::starred_artifacts(Some(&app.launch.state), &branch.to_place().project())
-        .map_err(Failure::Read)?;
-    Ok(kept.into_iter().map(String::from).collect())
+fn starred_of(app: &App, branch: &BranchKey) -> Result<BTreeSet<ArtifactName>, Failure> {
+    live::starred_artifacts(Some(&app.launch.state), &branch.to_place().project())
+        .map_err(Failure::Read)
 }
 
 #[cfg(test)]

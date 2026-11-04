@@ -80,7 +80,9 @@ fn the_starred_artifacts_of_the_graph_are_listed_in_its_order_without_their_eval
         (artifact("docs"), vec![]),
     ];
     // A starred Artifact this graph lacks, `gone`, is not listed.
-    let starred = ["docs", "release", "gone"].map(String::from).into();
+    let starred = ["docs", "release", "gone"]
+        .map(|name| name.parse::<ArtifactName>().unwrap())
+        .into();
     let finding = find_in(graph, &Wanted::Starred(&starred));
     let listed: Vec<_> = finding
         .found
