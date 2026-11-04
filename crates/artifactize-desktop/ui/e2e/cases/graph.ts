@@ -82,24 +82,28 @@ function edgeEnds(browser: WebdriverIO.Browser, id: string): Promise<{ start: { 
     const edge = [...document.querySelectorAll<SVGElement>(`.graph .svelte-flow__edge[data-id="${want}"]`)]
       .find((element) => !element.closest('aside[aria-label="Detail"]'));
     const path = edge?.querySelector<SVGPathElement>(".svelte-flow__edge-path");
-    const screen = path?.getScreenCTM();
-    if (!path || !screen) return null;
+    if (!path) return null;
+    // The graph's camera is a CSS transform, which WebKit's getScreenCTM leaves out on some
+    // platforms; the path's box on screen against its own box gives the camera's scale and
+    // offset, the same along both axes.
+    const [own, shown] = [path.getBBox(), path.getBoundingClientRect()];
+    if (own.width === 0) return null;
+    const scale = shown.width / own.width;
     const at = (length: number) => {
-      const point = new DOMPoint(path.getPointAtLength(length).x, path.getPointAtLength(length).y).matrixTransform(screen);
-      return { x: point.x, y: point.y };
+      const point = path.getPointAtLength(length);
+      return { x: shown.left + (point.x - own.x) * scale, y: shown.top + (point.y - own.y) * scale };
     };
     return { start: at(0), end: at(path.getTotalLength()) };
   }, id);
 }
 
-/** The Run graph's copy `id` as drawn: its visible box, and its edges' target and source handles. */
-function faces(browser: WebdriverIO.Browser, id: string) {
+/** The visible box of the Run graph's copy `id`: its own Artifact node or whole, not a part's. */
+function visibleBox(browser: WebdriverIO.Browser, id: string): Promise<DOMRect | undefined> {
   return browser.execute((want) => {
     const node = [...document.querySelectorAll<HTMLElement>(`.graph .svelte-flow__node[data-id="${want}"]`)]
       .find((element) => !element.closest('aside[aria-label="Detail"]'));
-    const rect = (element: Element | null | undefined) => element?.getBoundingClientRect().toJSON() as DOMRect | undefined;
-    const own = (selector: string) => [...(node?.querySelectorAll(selector) ?? [])].find((element) => element.closest(".svelte-flow__node") === node);
-    return { visible: rect(own(".artifact, .whole")), target: rect(own(".svelte-flow__handle.target")), source: rect(own(".svelte-flow__handle.source")) };
+    const own = [...(node?.querySelectorAll(".artifact, .whole") ?? [])].find((element) => element.closest(".svelte-flow__node") === node);
+    return own?.getBoundingClientRect().toJSON() as DOMRect | undefined;
   }, id);
 }
 
@@ -327,7 +331,7 @@ export const scenarios: Scenario[] = [
       // They meet docs's visible box at its sides: the edge from lib ends at its left side and the
       // edge to guide starts at its right, between its top and bottom, each within a tenth of the
       // box's width of that side, whatever the zoom.
-      const docs = (await faces(browser, "a:docs")).visible!;
+      const docs = (await visibleBox(browser, "a:docs"))!;
       const [into, out] = [(await edgeEnds(browser, "a:lib>a:docs"))!, (await edgeEnds(browser, "a:docs>a:guide"))!];
       const meets = (point: { x: number; y: number }, side: "into" | "out") => {
         const apartBy = gap(point, docs, side);
