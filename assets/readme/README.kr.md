@@ -11,13 +11,13 @@
 
 # Build together on an Artifact Graph.
 
-Artifactize는 코드와 문서부터 이미지, 실행 중인 앱까지 프로젝트를 조각마다 테스트, AI 리뷰,
-사람의 승인으로 검사합니다. 모든 결과를 기억하므로 바뀌지 않은 작업은 다시 검사하지 않고,
+Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트의 각 구성 요소를 테스트와 AI 리뷰,
+사람의 승인으로 검사합니다. 모든 검사 결과를 저장해 두므로 바뀌지 않은 작업은 다시 검사하지 않고,
 나와 AI 에이전트가 바꾼 내용을 일일이 지켜보지 않아도 믿을 수 있습니다.
 
-테스트 러너는 코드를, 리뷰 봇은 풀 리퀘스트를 검사합니다. Artifactize는 이 둘과 승인하는
-사람까지 프로젝트 전체의 Artifact Graph 하나에 올립니다. 검사마다 무엇을 읽는지 알기 때문에
-그것이 바뀔 때만 다시 실행하고, 자리를 비운 동안에도 계속 진행합니다.
+테스트 러너는 코드를, 리뷰 봇은 풀 리퀘스트를 검사합니다. Artifactize는 프로젝트 전체를
+하나의 Artifact Graph로 관리하면서 이 두 검사와 사람의 승인을 함께 연결합니다. 각 검사가 읽는 입력을
+추적해 입력이 바뀔 때만 검사를 다시 실행하고, 사용자가 자리를 비워도 작업을 계속합니다.
 
 <p align="center">
   <img src="../others/roles.en.gif" width="800"
@@ -44,7 +44,7 @@ Artifactize는 코드와 문서부터 이미지, 실행 중인 앱까지 프로�
 추가하세요.
 
 - **macOS**: [Artifactize.dmg](https://github.com/lhj6102/artifactize/releases/latest/download/Artifactize.dmg).
-  Apple silicon과 Intel 모두에 쓰는 디스크 이미지 하나입니다. Artifactize를 응용 프로그램 폴더로
+  디스크 이미지 하나로 Apple silicon과 Intel Mac에 모두 설치할 수 있습니다. Artifactize를 응용 프로그램 폴더로
   끌어 놓고, 한 번 열어 터미널 명령을 설정하세요.
 - **Windows**: [Microsoft Store의 Artifactize](https://apps.microsoft.com/detail/9PB6W4LL165D)
   (x64)를 설치한 뒤 새 터미널을 여세요.
@@ -89,9 +89,9 @@ Install Artifactize on this machine following https://artifactize.dev/docs/getti
 /artifactize:hey-arti Artifactize를 설명하고 이 프로젝트에 어떻게 적용할 수 있을지 알려 줘
 ```
 
-Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 Artifact와 검사를 제안합니다. 선언은
-동의를 받은 뒤에만 바꾸며, 그 결과로 프로젝트의 첫 Artifact Graph와 바로 실행할 수 있는
-`verify`를 받게 됩니다. AI 계정 없이 먼저 써 보고 싶다면 예제 프로젝트로 진행하는
+Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 Artifact와 검사를 제안합니다. Arti는
+동의를 받은 뒤에만 선언을 수정하고, 프로젝트의 첫 Artifact Graph와 바로 실행할 수 있는
+`verify`를 준비해 줍니다. AI 계정 없이 먼저 써 보고 싶다면 예제 프로젝트로 진행하는
 [5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
 
 ## 주요 특징
@@ -103,7 +103,7 @@ Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 
 
 | 기능 | 하는 일 |
 |---|---|
-| Artifact Graph | 프로젝트의 각 조각인 Artifact가 자기 검사와 읽는 대상을 선언하므로, 그래프에 조각들이 어떻게 연결되는지 드러납니다. |
+| Artifact Graph | 프로젝트의 각 구성 요소인 Artifact에 검사와 검사에 필요한 입력을 선언하면, Artifact Graph에서 구성 요소 사이의 연결 관계를 확인할 수 있습니다. |
 | 세 종류의 검사 | 테스트 같은 명령, AI 에이전트의 리뷰, 사람의 승인입니다. |
 | 재사용 | 입력이 바뀌지 않은 검사는 이전 결과를 그대로 씁니다. 다른 버전이나 팀원의 작업 사본에서도 마찬가지입니다. |
 | 계속 진행되는 Run | 검사를 실행할 때마다 ID가 붙은 Run이 만들어지고, 창을 닫아도 멈추지 않습니다. |
