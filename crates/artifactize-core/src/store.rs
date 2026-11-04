@@ -39,6 +39,8 @@ mod wait_timeout;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 pub(crate) mod reader;
+mod removed;
+pub use removed::retire_removed_signoffs;
 mod requests;
 pub(crate) use executions::read_profiled_executions;
 pub use executions::{

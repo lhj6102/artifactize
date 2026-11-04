@@ -142,6 +142,12 @@ can still be submitted after its Run ends; submission rechecks the fingerprints,
 changed files end the request ERROR (`INPUT_CHANGED`) without a verdict, so verify again
 for a new sign-off.
 
+A sign-off whose Run's repository folder no longer exists, for example because its worktree
+was deleted, ends as ERROR/REPOSITORY_REMOVED and leaves Review by itself; a claim on it
+ends with it. Requests joined to it from other removed folders end the same way. While
+another working tree still waits on the same review, the review goes on there: the newest
+of its requests takes it over, and it is claimed, checked and submitted in that tree.
+
 `status` labels current deferred waits and provisional results, and predicts that what
 relies on a sign-off without a result will execute. Run/result readers expose
 WAITING_HUMAN as open and YELLOW as terminal and not satisfied.
