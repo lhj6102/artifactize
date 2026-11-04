@@ -70,11 +70,9 @@ the PowerShell script, AppImage, Cargo, building from source, updates and uninst
 Arti, Artifactize's guide, and Artifactize's tools. It runs the `artifactize` command, so
 install that first.
 
-```text
-/plugin marketplace add lhj6102/artifactize          # Claude Code, in a session
-/plugin install artifactize@artifactize
-codex plugin marketplace add lhj6102/artifactize     # Codex, in a terminal
-codex plugin add artifactize@artifactize
+```sh
+claude plugin marketplace add lhj6102/artifactize && claude plugin install artifactize@artifactize   # Claude Code
+codex plugin marketplace add lhj6102/artifactize && codex plugin add artifactize@artifactize         # Codex
 ```
 
 **Or let your coding agent set it up.** Paste this into Claude Code or Codex; afterwards
