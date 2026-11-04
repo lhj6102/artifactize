@@ -276,7 +276,7 @@ export const scenarios: Scenario[] = [
   // UX journeys: J-BRANCHES J-LIVE J-WAITING; UX edge: E-PANE-WORKTREES
   scenario<{ runs: string[]; plain: { folder: NativePath; run: string } }>(
     "branches-worktrees",
-    "lists worktrees another process adds, a detached one by its folder, a folder outside Git by its name, and drops removed or deleted ones while their waiting reviews stay",
+    "lists worktrees another process adds, a detached one by its folder, a folder outside Git by its name, and drops removed or deleted ones, the waiting reviews of a deleted folder too",
     async () => {
       const fixture = await create();
       const runs = await addWorktrees(fixture);
@@ -298,8 +298,8 @@ export const scenarios: Scenario[] = [
       removeTree(plain.folder);
       await waitFor(browser, async () => (await names()).length === 3, "the deleted folder gone");
       assert.deepEqual(await names(), ["repo  master", "repo  scope-one", "repo  scope-two"]);
-      const reviews = requests(fixture).filter((request) => runs.includes(request.runId) && request.status === "DEFERRED").map((request) => request.id);
-      assert.equal(reviews.length, 2, "each worktree's Run waits for a person");
+      // Each worktree's Run waits for a person.
+      const [deleted, kept] = runs.map((run) => requests(fixture).find((request) => request.runId === run && request.status === "DEFERRED")!.id);
       // Git alone, in another process: a new branch's worktree and a detached one appear
       // within seconds, without a reload.
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "added", nativePath(fixture.root, "added"));
@@ -314,16 +314,18 @@ export const scenarios: Scenario[] = [
       removeTree(nativePath(fixture.root, "scope-one"));
       await waitFor(browser, async () => (await names()).length === 3, "the removed worktrees gone");
       assert.deepEqual(await names(), ["repo  loose", "repo  master", "repo  scope-two"]);
-      // The deleted branch's waiting review stays in the Waiting stack.
-      const stack = await waiting(browser);
-      for (const id of reviews) assert.ok(stack.rows.some((entry) => entry.id === id), `${id} still waits`);
-      assert.ok(stack.rows.some((entry) => entry.where === "repo  scope-one"), "with its removed branch named");
+      // The deleted folder's waiting review leaves the Waiting stack on its own; the other stays.
+      await waitFor(browser, async () => !(await waiting(browser)).rows.some((entry) => entry.id === deleted), "the deleted folder's review gone");
+      assert.ok((await waiting(browser)).rows.some((entry) => entry.id === kept), `${kept} still waits`);
       // A worktree Git no longer lists goes too, though its folder and files stay.
       removeTree(nativePath(fixture.root, "scope-two", ".git"));
       git(fixture.repo, "-C", fixture.repo, "worktree", "prune");
       await waitFor(browser, async () => (await names()).length === 2, "the unlisted worktree gone");
       assert.deepEqual(await names(), ["repo  loose", "repo  master"]);
       assert.equal(exists(nativePath(fixture.root, "scope-two", "release", "notes.md")), true, "its folder and files stay");
+      // Its folder stays, so its waiting review stays too, named by its removed branch.
+      await waitFor(browser, async () => (await waiting(browser)).rows.some((entry) => entry.id === kept && entry.where === "repo  scope-two"),
+        `${kept} still waits with its removed branch named`);
     },
   ),
 
