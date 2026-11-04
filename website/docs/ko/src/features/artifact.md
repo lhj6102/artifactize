@@ -121,8 +121,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 끝나지 않았으면 그 입력을 쓰는 eval은 실행을 미루고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 결과가 GREEN이 되려면 상위 리뷰를
 포함해 필요한 증거를 모두 확보해야 합니다.
 
-게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. 위의 `app/e2e`는 `e2e-tests`를 참조합니다.
+게이트는 eval마다 적용됩니다. eval 중 하나라도 ERROR나 RED이면 Artifact에도 그 상태를
+표시합니다. 그런 eval이 없어도 막힌 eval이 하나라도 있으면 BLOCKED로 표시합니다. 위의 `app/e2e`는 `e2e-tests`를 참조합니다.
 
 - `e2e-tests`의 eval이 RED나 BLOCKED이면 `app/e2e`가 막히고, `app`을 참조하는 eval도 차례로
   막힙니다.
@@ -146,8 +146,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 | `docs`나 `cli`의 eval이 서로도 `core`도 참조하지 않음 | 그 eval은 이들의 결과가 나오기 전에도 실행됩니다. 다만 Run이 GREEN으로 끝나려면 모든 결과가 필요합니다. |
 | 다른 곳의 eval이 `docs`를 참조함 | `docs`와 `cli`의 모든 eval 결과가 나와야 실행됩니다. |
 
-eval의 대상 Artifact도 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
-예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
+eval은 대상 Artifact 자체를 게이트로 삼지 않습니다. 예외는 [Human 형제 선행 조건](#human-sign-offs)
+하나입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
 
 BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval만
 표시하고, 단순히 실행 중인 eval은 표시하지 않습니다. 추측 실행하는 Run에서는 상위 eval의 ERROR도
