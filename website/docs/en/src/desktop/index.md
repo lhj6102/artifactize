@@ -167,8 +167,9 @@ Artifact says which, with how many of its evals would run. The header says how m
 Artifacts are still being checked, then when the branch was scanned, or why a scan failed.
 The Current scans again when you choose it again, when a Run of the branch ends, and on
 **Refresh** or Ctrl+R/F5. While a scan is still running, choosing the Current again or a
-Run ending continues that scan; **Refresh** or Ctrl+R/F5 scans again once it finishes, for
-files you changed meanwhile. If your search hides the branch, press **Refresh** after the
+Run ending continues that scan, and the Current's **Refresh** button is disabled; the
+palette's **Refresh** or Ctrl+R/F5 scans again once it finishes, for files you changed
+meanwhile. If your search hides the branch, press **Refresh** after the
 Run ends.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)

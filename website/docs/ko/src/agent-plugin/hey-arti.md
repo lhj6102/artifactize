@@ -68,7 +68,7 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
   `ui` 같은 부분은 `app`을 이루지만, `app`의 eval이 이름을 적지 않으면 그 입력이 아닙니다.
 - 부분이 실패했을 때 전체도 통과하지 않아야 한다면 그 Artifact를 전체의 부분으로 선언하세요
   ([구성](../features/artifact.md#composition) 참고). 전체의 폴더 안에 선언한 Artifact는 자동으로
-  부분이 됩니다. 다른 곳에 있거나 여러 전체가 함께 쓰는 부분은 각 전체의 `parts`에 적으세요. 부분이 실패하면 전체도 실패하고, `verify whole`은
+  부분이 됩니다. 다른 곳에 있거나 여러 상위 Artifact가 함께 쓰는 부분은 각 상위 Artifact의 `parts`에 적으세요. 부분이 실패하면 전체도 실패하고, `verify whole`은
   부분까지 함께 다룹니다. 각 부분은 자기 몫을 검사하고, 전체는 부분들이 함께 동작하는지만 검사하며
   그 eval이 쓰는 부분의 이름을 적습니다. 파일 하나인 부분은
   [파일 Artifact](../features/declarations.md#file-artifacts)로, 큰 폴더 곳곳에 파일이 흩어진 부분은
