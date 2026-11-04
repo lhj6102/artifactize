@@ -1,5 +1,5 @@
 //! The Human reviews waiting for a person, in every repository on this machine, those of
-//! removed branches included: what the pane's waiting stack lists.
+//! removed branches included while their folder exists: what the pane's waiting stack lists.
 use super::{Label, Labels};
 use crate::{
     review::search::{self, Entry, Query},

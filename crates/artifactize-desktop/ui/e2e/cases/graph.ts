@@ -11,7 +11,7 @@ import { dispatchInput, tab } from "../input.ts";
 import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
 import { exists, nativePath, primaryModifier, readText, type NativePath } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { graphAppearance, graphHasColours, type GraphAppearance } from "./graph-appearance.ts";
+import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
 
 /** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
@@ -174,6 +174,33 @@ async function clickButton(browser: WebdriverIO.Browser, root: string, name: str
 /** A rectangle wholly inside another. */
 const within = (inner: DOMRect, outer: DOMRect) =>
   inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
+
+/** The whole `key` under `root` shows `name` and its light at the top of its box, above every
+ * one of its `parts`, its light in the colour its box is drawn in. */
+async function titledAtTop(browser: WebdriverIO.Browser, root: string, key: string, name: string, parts: string[]) {
+  const drawn = await partsDrawn(browser, root);
+  const title = await browser.execute((under, want) => {
+    const node = [...document.querySelectorAll(`${under} .svelte-flow__node[data-id="${want}"]`)].find((found) => !found.closest('aside[aria-label="Detail"]'));
+    const whole = node?.querySelector<HTMLElement>(".whole");
+    const [text, dot] = [whole?.querySelector<HTMLElement>(".name"), whole?.querySelector<HTMLElement>(".dot")];
+    if (!whole || !text || !dot) return null;
+    return {
+      box: whole.getBoundingClientRect().toJSON() as DOMRect,
+      name: text.getBoundingClientRect().toJSON() as DOMRect,
+      dot: dot.getBoundingClientRect().toJSON() as DOMRect,
+      text: text.textContent?.trim() ?? "",
+      colour: getComputedStyle(dot).backgroundColor,
+      border: getComputedStyle(whole).borderTopColor,
+    };
+  }, root, key);
+  assert.ok(title, `${key} is drawn with a title`);
+  assert.equal(title.text, name, `${key} shows its name`);
+  for (const [what, rect] of [["name", title.name], ["light", title.dot]] as const) {
+    assert.ok(within(rect, title.box) && parts.every((part) => rect.bottom <= drawn[part].rect.top),
+      `${key}'s ${what} sits at the top of its box, above its parts: ${JSON.stringify({ rect, box: title.box })}`);
+  }
+  assert.ok(visibleColour(title.colour) && title.colour === title.border, `${key}'s light is drawn in its box's colour: ${title.colour} / ${title.border}`);
+}
 
 /** Two rectangles that do not meet. */
 const apart = (one: DOMRect, other: DOMRect) =>
@@ -350,6 +377,10 @@ export const scenarios: Scenario[] = [
       assert.equal(drawn["a:suite"].text, "suite");
       assert.equal(drawn["a:suite"].light, "green");
       assert.equal(drawn["a:suite"].label, "suite: GREEN");
+      await titledAtTop(browser, ".graph", "a:suite", "suite", ["a:suite/a:app", "a:suite/a:site"]);
+      await titledAtTop(browser, ".graph", "a:docs", "docs", ["a:docs/a:site"]);
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:suite": "green", "a:docs": "green" }, {}),
+        { timeout: 15000, timeoutMsg: "the wholes lit in their verdict's colour" });
       assert.deepEqual([drawn["a:suite/a:site"].artifact, drawn["a:docs/a:site"].artifact], ["a:site", "a:site"], "both copies are site");
       // Each copy of site carries site's edges: from lib outside every box into it, and out of
       // it to app, within suite and across from docs into suite.
@@ -395,6 +426,9 @@ export const scenarios: Scenario[] = [
       await browser.$(`${current} .svelte-flow__node[data-id="a:docs/a:site"]`).waitForExist({ timeout: 15000, timeoutMsg: "the Current's graph drawn with its wholes" });
       const drawn = await partsDrawn(browser, current);
       assert.ok(within(drawn["a:docs/a:site"].rect, drawn["a:docs"].rect) && within(drawn["a:suite/a:site"].rect, drawn["a:suite"].rect), "the Current draws site in both wholes");
+      // Each whole shows its name and light at the top of its box, as on a Run graph.
+      await titledAtTop(browser, current, "a:suite", "suite", ["a:suite/a:app", "a:suite/a:site"]);
+      await titledAtTop(browser, current, "a:docs", "docs", ["a:docs/a:site"]);
 
       // From the Pane, Enter gives the graph the keyboard; Tab reaches each whole before its
       // parts, opening nothing, and Enter opens the focused whole's or part's Detail.

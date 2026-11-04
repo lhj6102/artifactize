@@ -138,8 +138,8 @@ Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에
 waiting, blocked 중 하나입니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
 헤더에는 아직 확인 중인 Artifact 수가 나오고, 스캔이 끝나면 스캔한 시각이, 실패하면 그 이유가 나옵니다.
 Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나 Ctrl+R/F5를 누를 때 다시 스캔합니다.
-스캔이 아직 진행 중일 때 Current를 다시 고르거나 Run이 끝나면 진행 중인 스캔을 이어 갑니다. **Refresh**나
-Ctrl+R/F5를 누르면 그 스캔이 끝난 뒤 다시 스캔하므로, 그사이 바꾼 파일도 반영됩니다.
+스캔이 아직 진행 중일 때 Current를 다시 고르거나 Run이 끝나면 진행 중인 스캔을 이어 가며, 이때 Current의 **Refresh** 버튼은
+비활성화됩니다. 팔레트의 **Refresh**나 Ctrl+R/F5를 누르면 그 스캔이 끝난 뒤 다시 스캔하므로, 그사이 바꾼 파일도 반영됩니다.
 검색 때문에 브랜치가 Pane에 보이지 않으면 Run이 끝난 뒤 **Refresh**를 누르세요.
 **Structure and evaluation criteria**를 펼치면 전체 트리와 평가 기준, 이름이 붙은 관계를 텍스트로 확인할 수 있습니다. Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
@@ -303,8 +303,8 @@ Human 리뷰 화면에는 위에서부터 지시문, 사용할 **Tools**, 도구
 실행되지 않습니다. 백업을 복원하는 등으로 상태 디렉터리가 바뀌면 열린 리뷰가 닫히고, 그 초안과
 Tool log는 버립니다.
 
-완료된 결과는 화면에 열린 채로 남습니다. 원격 게시는 **로컬 확정 뒤에**
-실패할 수 있습니다. 그러면 양식이 닫히고, 결과는 로컬에 저장됐지만 원격 게시에는 실패했다는 알림이 나옵니다.
+완료된 결과는 화면에 열린 채로 남습니다. 결과를 **로컬에 저장한 뒤에도**
+원격 게시에 실패할 수 있습니다. 그러면 양식이 닫히고, 결과는 로컬에 저장됐지만 원격 게시에는 실패했다는 알림이 나옵니다.
 판정은 이미 기록되었으니, 다시 제출하지 말고 Settings의 **Push results**
 (또는 `artifactize remote push`)로 게시를 다시 시도하세요.
 
@@ -365,8 +365,7 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
 토큰은 제거하지 않습니다**. 저장소 관리자가 [그 토큰을 폐기](../cli/review-store.md#review-store-server)해야 합니다.
 [공유와 푸시 동작](../cli/review-store.md#remote-review-store-client)을 보세요.
 
-**Limits** 탭에서는 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 끝나기 전까지 기다리는
-시간을 정합니다. 따로 바꾸지 않았다면 2분입니다. 그 뒤에 시작하는 Run에 쓸 새 값을 초 단위(0–86400)로
+**Limits** 탭에서는 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 종료되기까지의 대기 시간을 설정합니다. 따로 바꾸지 않았다면 2분입니다. 그 뒤에 시작하는 Run에 쓸 새 값을 초 단위(0–86400)로
 저장합니다. `artifactize limits`와 같은 머신 전체 [설정](../features/others/state.md#sign-off-idle-grace)입니다.
 
 Settings에서 하는 계정과 저장소 관리 작업은 CLI와 같습니다. 자격 증명은

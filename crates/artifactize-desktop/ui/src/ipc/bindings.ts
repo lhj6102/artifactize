@@ -769,6 +769,8 @@ export type Pushed = {
 export type QueryView = {
 	text: string,
 	error: string | null,
+	/**  The query the search starts with, which Esc puts back. */
+	start: string,
 };
 
 /**  A newer release and how to update to it. */

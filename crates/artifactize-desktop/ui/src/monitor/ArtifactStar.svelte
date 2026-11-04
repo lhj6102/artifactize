@@ -43,9 +43,11 @@
       if (asked !== s.asked) return;
       s.starred = { branch: keyOf(at), names };
       s.error = null;
-    } catch (failure) {
-      if (asked !== s.asked) return;
-      on = !wanted;
+    } catch (failure) {      if (asked !== s.asked) return;
+      // Nothing changed in the library: show its stars as last read, not the click's opposite,
+      // which overlapping failed clicks would get wrong.
+      if (s.starred) s.starred = { ...s.starred };
+      else on = false;
       s.error = message(failure);
     }
   }

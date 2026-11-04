@@ -12,6 +12,7 @@ use artifactize_core::{
     human,
     project::{self, VerifyOptions, selection::Selection},
     store::{self, OwnedReceipts, RunView},
+    types::FailureCode,
 };
 use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
@@ -80,6 +81,57 @@ impl Fixture {
         );
         serde_json::from_slice(&output.stdout).unwrap()
     }
+
+    /// End Runs as soon as only unclaimed sign-offs are left, as a YELLOW Run whose
+    /// worktree is deleted afterwards has.
+    fn no_idle_grace(&self) {
+        let output = Command::new(support::os::cli())
+            .arg("--state-dir")
+            .arg(&self.state)
+            .args(["limits", "--signoff-idle-grace", "0"])
+            .record_output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Wait until the Run of a `cli_verify` has ended with only its sign-off left.
+    async fn yellow(&self, submitted: &Value) {
+        let id = submitted["id"].as_str().unwrap().parse().unwrap();
+        let ended = owned_run::terminal(&self.state, &id).await;
+        assert_eq!(ended.run.status().as_str(), "YELLOW");
+    }
+
+    /// Delete this fixture's repository folder, as removing a worktree does, after its ended
+    /// Runs are released.
+    fn remove_repo(&self) {
+        self._root.release(&self.state, &self.repo).unwrap();
+        fs::remove_dir_all(&self.repo).unwrap();
+    }
+}
+
+/// The sign-offs the review list starts with, by request.
+async fn listed(state: &Path) -> Vec<String> {
+    let query = artifactize_core::review::search::DEFAULT.parse().unwrap();
+    artifactize_core::review::search::search(state, &query, &"reviewer".parse().unwrap(), 0)
+        .await
+        .unwrap()
+        .requests
+        .into_iter()
+        .map(|(view, _)| view.request.id.as_str().to_owned())
+        .collect()
+}
+
+/// A request's status and failure code.
+async fn outcome(state: &Path, id: &str) -> (String, Option<FailureCode>) {
+    let view = store::read_request(state, id).await.unwrap();
+    (
+        view.request.status().as_str().to_owned(),
+        view.request.error_code(),
+    )
 }
 
 fn write_human(path: &Path, fingerprint: bool) {
@@ -1260,4 +1312,96 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     assert_eq!(reused.requests[0].execution_id, request.execution_id);
     assert_eq!(reused.requests[0].options.variant.as_deref(), Some("lead"));
     assert_eq!(reused.requests[0].reviewer.as_deref(), Some("alice"));
+}
+
+#[tokio::test]
+async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_signoff_over() {
+    let fixture = Fixture::new(true);
+    fixture.no_idle_grace();
+    let original = fixture.cli_verify();
+    let mut other = Fixture::new(true);
+    other.state = fixture.state.clone();
+    other._root.track(&other.state, &other.repo);
+    let joined = other.cli_verify();
+    fixture.yellow(&original).await;
+    fixture.yellow(&joined).await;
+    let owner = original["requests"][0]["id"].as_str().unwrap();
+    let follower = joined["requests"][0]["id"].as_str().unwrap();
+    assert_eq!(listed(&fixture.state).await, [owner]);
+    let (receipts, _) = human::open(&fixture.state, &rid(owner)).await.unwrap();
+    human::claim(&receipts, &rid(owner), &"alice".parse().unwrap())
+        .await
+        .unwrap();
+    receipts.close().await.unwrap();
+    fixture.remove_repo();
+    assert_eq!(listed(&fixture.state).await, [follower]);
+    assert_eq!(
+        outcome(&fixture.state, owner).await,
+        ("ERROR".to_owned(), Some(FailureCode::RepositoryRemoved))
+    );
+    // Its own repository now holds the review: a claim, tools and the submission reach it.
+    let (receipts, _) = human::open(&fixture.state, &rid(follower)).await.unwrap();
+    let bob = "bob".parse().unwrap();
+    assert_eq!(
+        human::claim(&receipts, &rid(follower), &bob)
+            .await
+            .unwrap()
+            .request_id
+            .as_str(),
+        follower
+    );
+    let inspected = human::run_human_tool(
+        &receipts,
+        &rid(follower),
+        &bob,
+        &"inspect_review".parse().unwrap(),
+        CancellationToken::new(),
+        artifactize_core::review::log::Run::unwatched(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(inspected).unwrap()["content"][0]["text"],
+        "human-v1\n"
+    );
+    human::submit(
+        &receipts,
+        &rid(follower),
+        &bob,
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    receipts.close().await.unwrap();
+    assert_eq!(outcome(&fixture.state, follower).await.0, "GREEN");
+    assert!(listed(&fixture.state).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_removed_follower_ends_alone_and_the_last_removed_repository_ends_the_signoff() {
+    let fixture = Fixture::new(true);
+    fixture.no_idle_grace();
+    let original = fixture.cli_verify();
+    let mut other = Fixture::new(true);
+    other.state = fixture.state.clone();
+    other._root.track(&other.state, &other.repo);
+    let joined = other.cli_verify();
+    fixture.yellow(&original).await;
+    fixture.yellow(&joined).await;
+    let owner = original["requests"][0]["id"].as_str().unwrap();
+    let follower = joined["requests"][0]["id"].as_str().unwrap();
+    other.remove_repo();
+    assert_eq!(listed(&fixture.state).await, [owner]);
+    assert_eq!(
+        outcome(&fixture.state, follower).await,
+        ("ERROR".to_owned(), Some(FailureCode::RepositoryRemoved))
+    );
+    assert_eq!(outcome(&fixture.state, owner).await.0, "DEFERRED");
+    fixture.remove_repo();
+    assert!(listed(&fixture.state).await.is_empty());
+    assert_eq!(
+        outcome(&fixture.state, owner).await,
+        ("ERROR".to_owned(), Some(FailureCode::RepositoryRemoved))
+    );
 }

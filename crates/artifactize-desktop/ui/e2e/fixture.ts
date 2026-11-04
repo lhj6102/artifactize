@@ -389,15 +389,21 @@ export async function createNavigationFixture(): Promise<{
   });
 }
 
-/** Real worktrees of the fixture's one Git repository, each with its own identified Run. */
-export async function addWorktrees(fixture: Fixture): Promise<string[]> {
+/** Real worktrees `names` of the fixture's one Git repository, each with its own identified Run
+ * waiting for a person on its `notes`: distinct by default, so no worktree joins another's
+ * sign-off; notes alike make each later worktree join the first one's. */
+export async function addWorktrees(
+  fixture: Fixture,
+  names = ["scope-one", "scope-two"],
+  notes = (name: string) => `# Notes of ${name}\n- Distinct consumer inputs.\n`,
+): Promise<string[]> {
   git(fixture.repo, "-C", fixture.repo, "add", ".");
   git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Fixture inputs");
   const runs: string[] = [];
-  for (const name of ["scope-one", "scope-two"]) {
+  for (const name of names) {
     const repo = nativePath(fixture.root, name);
     git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", name, repo);
-    writeText(nativePath(repo, "release", "notes.md"), `# Notes of ${name}\n- Distinct consumer inputs.\n`);
+    writeText(nativePath(repo, "release", "notes.md"), notes(name));
     runs.push(await verifyWaiting({ ...fixture, repo }));
   }
   return runs;
@@ -418,7 +424,7 @@ export function createParts(): Fixture {
       `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`;
     for (const [folder, text] of [
       [["lib"], check("lib")],
-      [["suite"], `name = "suite"\n`],
+      [["suite"], check("suite", " Read {lib}.")],
       [["suite", "app"], check("app", " Read {site}.")],
       [["suite", "app", "kit"], check("kit")],
       [["suite", "site"], check("site", " Read {lib}.")],

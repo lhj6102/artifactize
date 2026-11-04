@@ -379,7 +379,10 @@ fn the_pane_search_narrows_the_branches_and_waiting_reviews_alike_and_completes(
     };
     let (branches, waiting, query) = shown(artifactize_core::monitor::live::DEFAULT);
     assert_eq!((branches, waiting), (1, 1));
-    assert_eq!(query, json!({"text": "sort:recent", "error": null}));
+    assert_eq!(
+        query,
+        json!({"text": "sort:recent", "error": null, "start": "sort:recent"})
+    );
     assert_eq!(shown("repo:rep").0, 1);
     // Free text also finds a waiting review by its eval; the branch stays only by its own name.
     let (branches, waiting, _) = shown("signoff");

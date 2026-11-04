@@ -6,8 +6,8 @@
 
 ## 명령 레퍼런스 {#command-reference}
 
-모든 명령은 `--repo PATH`, `--state-dir PATH`, `--json`을 하위 명령 앞이나 뒤에 각각 한
-번까지 받습니다. 저장소를 읽는 명령은 `--repo`를 생략하면 대개 현재 디렉터리를 쓰지만,
+모든 명령에서 `--repo PATH`, `--state-dir PATH`, `--json`은 하위 명령 앞이나 뒤에 각각
+한 번만 지정할 수 있습니다. 저장소를 읽는 명령은 `--repo`를 생략하면 대개 현재 디렉터리를 쓰지만,
 기본값은 명령마다 다릅니다. **doctor는 `--repo`를 직접 줄 때만 프로젝트 선언을
 확인합니다**. Monitor와 Review는 아래 설명처럼 ALL에서 시작합니다. 상태는 기본으로 공유
 [상태 디렉터리](../features/others/state.md#state)에 저장됩니다. 저장소나 상태를 쓰지 않는 명령은 이
@@ -236,7 +236,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 ## 재사용만 하기 {#reuse-only}
 
 `verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
-목록에 있는 종류의 eval은 결과를 재사용만 할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
+목록에 있는 종류의 eval은 기존 결과만 재사용할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
 기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키로 진행 중인 리뷰가 있어도 그 리뷰가 끝날 때까지 대기하지 않습니다.
 강제로 실행하는 eval은 캐시 결과를 읽지 않으므로, 목록에 있는 종류에 `--force`를 주면 절대 실행되지
@@ -520,7 +520,7 @@ Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna 
 notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
 ```
 
-헤더에는 follow-up 번호와, `session show`처럼 리뷰의 백엔드, 모델, reasoning이 나옵니다.
+헤더에는 follow-up 번호와 리뷰의 백엔드, 모델, reasoning이 표시됩니다(`session show`와 같은 정보입니다).
 
 `--json`을 주면 `send`는 `{"reference", "sessionId", "requestId", "send", "filesChanged",
 "answer", "usage"}`를 출력합니다. `send`는 follow-up 번호, `filesChanged`는 리뷰한 입력이

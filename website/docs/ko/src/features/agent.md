@@ -97,7 +97,7 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 안내한 대기 시간이 지나면 자동으로 몇 차례 재시도합니다.
+provider가 안내한 대기 시간이 지난 뒤 자동으로 몇 차례 재시도합니다.
 provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 그 턴을 같은 횟수까지 다시 시도하며
 리뷰가 이미 해 둔 작업은 그대로 유지됩니다. 답변이 공백으로만
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
@@ -143,9 +143,7 @@ Ctrl-C로 `verify --wait`를 중단해도 진행 상황 표시만 멈추며, Age
 ### 백엔드 멈추기 {#stopping-a-backend}
 
 `AUTHENTICATION`이나 `QUOTA` 실패는 같은 백엔드의 모든 리뷰에서 똑같이 반복되므로, 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다. 이후 그 Run에서 같은 백엔드로 실행하려던 리뷰는 시작하지 않고
-`BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 자리가 날 때까지
-대기하던 리뷰([백엔드 수용량](others/state.md#backend-capacity))도 같은 방식으로 대기를
-멈추며, 멈춘 백엔드의 요청은 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
+`BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 실행 자리를 기다리던 요청([백엔드 수용량](others/state.md#backend-capacity))도 대기열에서 빠져 같은 방식으로 `BACKEND_STOPPED`인 ERROR가 되며, 멈춘 백엔드는 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
 재사용할 수 있는 결과는 계속 재사용하며, 다른 백엔드는 그대로 진행합니다. Run은 멈춘 백엔드를
 `stoppedBackends`(`verify --wait --json`과 `run show`)에 남기고, `verify`는 이렇게 출력합니다.
 

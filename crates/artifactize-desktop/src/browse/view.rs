@@ -146,6 +146,8 @@ pub struct WaitingRow {
 pub struct QueryView {
     pub text: String,
     pub error: Option<String>,
+    /// The query the search starts with, which Esc puts back.
+    pub start: String,
 }
 
 /// The completion of a search's last term.
@@ -466,6 +468,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         query: QueryView {
             text: shown.query.text.clone(),
             error: shown.query.parsed.as_ref().err().cloned(),
+            start: live::DEFAULT.to_owned(),
         },
         branches,
         waiting: waiting_rows,
