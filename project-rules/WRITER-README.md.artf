@@ -1,0 +1,74 @@
+name = "rules-writer-readme"
+
+[views.agent_tools]
+
+[views.agent_tools.read_rules]
+description = "Print the README rules WRITER-README.md of {artifactName}."
+builtin = "read"
+args = ["WRITER-README.md"]
+
+[views.human_tools]
+open = { description = "Open WRITER-README.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+
+[evals.follows-reference]
+title = "A README written to these rules has the reference README's shape"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+
+[evals.follows-reference.payload]
+instruction = """
+Read the README rules {rules-writer-readme}, the shared introduction rules {rules-writer-introduction} they include,
+and the reference README described in {rules-reference-readme}. Judge the rules, not any README: would a README
+written to follow every rule have the reference's introduction, demo video, skill connection and first-use flow,
+in the reference's order and style? Check that each of those four parts is required, placed where the reference
+places it, and shaped the way the reference shapes it, and that no rule requires something that would break that
+shape. Differences the product itself calls for, such as its own sections, images and commands, are not findings.
+Submit GREEN when the rules lead to the reference's shape for all four parts. Otherwise submit RED with up to 20
+findings, most important first, each with the rule id (or "missing"), the reference part it concerns, and one
+sentence on what to change in the rules.
+"""
+
+[evals.follows-reference.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-reference.fail_schema]
+type = "object"
+required = ["findings"]
+additionalProperties = false
+
+[evals.follows-reference.fail_schema.properties.findings]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.follows-reference.fail_schema.properties.findings.items]
+type = "object"
+properties.rule = { type = "string", minLength = 1 }
+properties.part = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["rule", "part", "change"]
+additionalProperties = false
+
+[evals.approved]
+title = "The owner approves the rules as the README standard"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open WRITER-README.md of {rules-writer-readme} with the open tool. Submit GREEN with approved: true when every rule \
+is one this project's README should follow; otherwise submit RED and list the items to change."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false
