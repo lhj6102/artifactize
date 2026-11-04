@@ -335,7 +335,7 @@ payload.instruction = "Run the end-to-end suite."
 
 태그는 한 Run 안에서만이 아니라 같은 상태를 쓰는 모든 Run, 워크트리, `verify`에 적용됩니다.
 `--state-dir`이 다르면 태그도 따로 적용됩니다. 대기 중인 요청은 `QUEUED`로 남고, `blockedReason`에
-태그를 잡고 있는 eval과 Run이 나옵니다. 대기하는 동안에는 실행 예산을 쓰지 않고, 백엔드 자리나
+태그를 잡고 있는 eval과 Run이 나옵니다. 실행이 보류된 동안에는 실행 예산을 쓰지 않고, 백엔드 자리나
 `--jobs` 자리도 차지하지 않으며, `timeout_ms`는 eval이 시작할 때부터 셉니다. 태그는 eval이 끝나거나 취소되면
 풀리고, 프로세스가 죽거나 Run이 끝날 때도 풀립니다.
 

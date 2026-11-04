@@ -188,7 +188,7 @@ Agent 세션 follow-up은 없습니다. 이런 동작은 CLI와 일반 Human 리
 
 `verify_start`로 제출하고 Run ID를 보관한 다음, `_meta`에 표준
 도구 호출 메타데이터 `{"progressToken":"your-observer"}`를 넣어 `verify_watch`를 호출하세요.
-이 호출이 대기하는 동안 artifactize는 Run이 바뀔 때마다
+호출이 처리되는 동안 artifactize는 Run이 바뀔 때마다
 `notifications/progress`를 보냅니다. 알림의 `message`는 JSON 객체입니다.
 
 - `{"kind":"update","data":...}`: 간결한 실시간 상태/개수입니다. **승인이 아닙니다**.
