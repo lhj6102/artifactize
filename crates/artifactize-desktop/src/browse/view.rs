@@ -466,7 +466,8 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         .collect();
     BrowseView {
         query: QueryView {
-            text: shown.query.text.clone(),            error: shown.query.parsed.as_ref().err().cloned(),
+            text: shown.query.text.clone(),
+            error: shown.query.parsed.as_ref().err().cloned(),
             start: live::DEFAULT.to_owned(),
         },
         branches,
