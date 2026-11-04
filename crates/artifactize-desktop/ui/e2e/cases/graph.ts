@@ -102,6 +102,40 @@ function edgeEnds(browser: WebdriverIO.Browser, root: string, id: string) {
 const meets = (point: { x: number; y: number }, box: DOMRect, side: "left" | "right") =>
   Math.abs(point.x - box[side]) <= 4 && point.y >= box.top && point.y <= box.bottom;
 
+/** Drag the background of the graph under `root`, left of the Detail, until the button named
+ * `name` lies clear of the Detail: as far as the window allows each time, a few times at most. */
+async function panClear(browser: WebdriverIO.Browser, root: string, name: string) {
+  const steps: unknown[] = [];
+  // A bound on the drags a narrow window needs, not a claimed number.
+  for (let drag = 0; drag < 4; drag += 1) {
+    const step = await browser.execute((under, want) => {
+      const canvas = document.querySelector(`${under} > .canvas`)?.getBoundingClientRect();
+      const cover = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const button = document.querySelector(`${under} .svelte-flow__node button[aria-label="${want}"]`)?.getBoundingClientRect();
+      if (!canvas || !cover || !button) return { failure: "the canvas, the Detail and the button drawn" };
+      const shift = button.right - (cover.left - 24);
+      if (shift <= 1) return null;
+      for (let x = Math.min(cover.left, canvas.right) - 24; x > canvas.left + 24; x -= 16) {
+        for (let y = canvas.bottom - 24; y > canvas.top + 48; y -= 16) {
+          if (document.elementFromPoint(x, y)?.classList.contains("svelte-flow__pane")) {
+            return { x: Math.round(x), y: Math.round(y), by: Math.ceil(Math.min(shift, x - canvas.left - 12)) };
+          }
+        }
+      }
+      return { failure: "background left of the Detail to drag" };
+    }, root, name);
+    steps.push(step);
+    if (step === null) return;
+    if ("failure" in step) assert.fail(`no pan clears ${name}: ${step.failure}`);
+    await dispatchInput(browser, { kind: "pointer", phase: "down", x: step.x, y: step.y });
+    await afterRender(browser);
+    await dispatchInput(browser, { kind: "pointer", phase: "move", x: step.x - step.by, y: step.y });
+    await dispatchInput(browser, { kind: "pointer", phase: "up", x: step.x - step.by, y: step.y });
+    await afterRender(browser);
+  }
+  assert.fail(`${name} still under the Detail after the drags: ${JSON.stringify(steps)}`);
+}
+
 /** Two screen positions at most a pixel apart. */
 const near = (one: DOMRect, other: DOMRect) => Math.abs(one.left - other.left) <= 1 && Math.abs(one.top - other.top) <= 1;
 
@@ -398,24 +432,9 @@ export const scenarios: Scenario[] = [
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
       await openTab(browser, "e:kit/check");
       const kitDetail = await detail(browser);
-      // The Detail floats over the graph's right side, where suite's Minimize button is: a drag
-      // on the background, left of the Detail, pans suite out from under it.
-      const grip = await browser.execute(() => {
-        const canvas = document.querySelector(".graph > .canvas")!.getBoundingClientRect();
-        const cover = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
-        for (let x = cover.left - 30; x > canvas.left + 460; x -= 20) {
-          for (let y = canvas.bottom - 30; y > canvas.top + 60; y -= 20) {
-            if (document.elementFromPoint(x, y)?.classList.contains("svelte-flow__pane")) return { x: Math.round(x), y: Math.round(y) };
-          }
-        }
-        return null;
-      });
-      assert.ok(grip, "the graph has background left of the Detail");
-      await dispatchInput(browser, { kind: "pointer", phase: "down", ...grip });
-      await afterRender(browser);
-      await dispatchInput(browser, { kind: "pointer", phase: "move", x: grip.x - 440, y: grip.y });
-      await dispatchInput(browser, { kind: "pointer", phase: "up", x: grip.x - 440, y: grip.y });
-      await afterRender(browser);
+      // The Detail floats over the graph's right side, where suite's Minimize button is: drags on
+      // the background, left of the Detail, pan suite out from under it.
+      await panClear(browser, ".graph", "Minimize suite");
       const boxed = await partsDrawn(browser, ".graph");
 
       // With kit's Detail open on its eval's tab, Minimize turns suite into a node of a node's
