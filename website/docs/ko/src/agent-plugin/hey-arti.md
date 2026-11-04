@@ -74,8 +74,7 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
   그 파일을 골라 담는 [aspect](../features/declarations.md#aspects)로 선언합니다.
 - eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
   필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
-  [Human eval](../features/human.md)을 쓰세요. 사람에게는
-  Artifact의 Runtime eval과 Agent eval이 GREEN이 된 뒤에만 요청합니다.
+  [Human eval](../features/human.md)을 쓰세요. Artifact의 Runtime eval과 Agent eval이 모두 GREEN이 된 뒤에만 사람에게 Human eval을 요청합니다.
 - Artifact 하나에 대한 기준은 그 eval 안에 두고, 여러 Artifact가 공유하는 규칙은
   그 eval들이 읽는 규칙 문서에 두세요.
 - 결과 스키마는 작게 유지하세요. GREEN에는 요약을, RED에는 구체적인 지적 사항을 담습니다(문법은
