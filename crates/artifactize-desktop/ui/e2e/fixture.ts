@@ -421,7 +421,8 @@ export function createParts(): Fixture {
       [["suite", "app"], check("app", " Read {site}.")],
       [["suite", "app", "kit"], check("kit")],
       [["suite", "site"], check("site", " Read {lib}.")],
-      [["docs"], `parts = ["site"]\n${check("docs")}`],
+      [["docs"], `parts = ["site"]\n${check("docs", " Read {lib}.")}`],
+      [["guide"], check("guide", " Read {suite}.")],
     ] as const) {
       writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
     }

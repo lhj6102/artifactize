@@ -55,7 +55,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `tools section PATH HEADING` | — | Markdown 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools help PROGRAM [SUBCOMMAND...]` | 뒤따르는 인자는 `--help` 앞에 붙여 PROGRAM에 전달합니다 | 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools open TARGET` | — | 기본 애플리케이션으로 엽니다 | 성공 0, 도구 오류 1, 사용법 오류 2 |
-| `login codex` | 로그인 URL은 stderr에 출력합니다. 터미널 stdin에서 붙여 넣은 리디렉션 URL을 읽을 수 있습니다 | `Signed in with Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":true}`입니다 | 0 |
+| `login codex` | 로그인 URL은 stderr에 출력합니다. 터미널에 붙여 넣은 리디렉션 URL을 표준 입력에서 읽을 수 있습니다 | `Signed in with Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":true}`입니다 | 0 |
 | `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽습니다 | `Saved the PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":true}`입니다 | 0 |
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도합니다. 읽기 전용 인증 파일은 건드리지 않습니다 | `Signed out of Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}`입니다 | 로컬 로그아웃 뒤 0 |
 | `logout openai\|anthropic\|gemini` | 저장한 키를 지웁니다. 변수는 건드리지 않습니다 | `Forgot the saved PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":false}`입니다 | 0 |

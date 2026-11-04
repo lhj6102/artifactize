@@ -46,11 +46,12 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
 const READABLE = 126;
 
 /** The copies of {@link createParts}'s graph: the wholes suite and docs, app inside suite, kit
- * inside app, site inside both, and lib outside every whole. */
-const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib"];
+ * inside app, site inside both, and lib, which docs reads, and guide, which reads suite, outside
+ * every whole. */
+const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib", "a:guide"];
 
 /** {@link PARTS} with suite minimized: suite a node, its parts hidden, site still inside docs. */
-const SUITE_MINIMIZED = ["a:suite", "a:docs", "a:docs/a:site", "a:lib"];
+const SUITE_MINIMIZED = ["a:suite", "a:docs", "a:docs/a:site", "a:lib", "a:guide"];
 
 /** The copies of the graph under `root`, outside the Detail, once exactly `keys` are drawn:
  * each one's box, whether it is drawn as a box or minimized, its title text, its Artifact, its
@@ -77,6 +78,29 @@ async function partsDrawn(browser: WebdriverIO.Browser, root: string, keys: stri
   });
   return shown;
 }
+
+/** Where the drawn edge `id` under `root`, outside the Detail, starts and ends on the screen:
+ * its path's points under the camera's transform, from the canvas's corner; null while it is
+ * not drawn. */
+function edgeEnds(browser: WebdriverIO.Browser, root: string, id: string) {
+  return browser.execute((under, want) => {
+    const path = [...document.querySelectorAll<SVGPathElement>(`${under} .svelte-flow__edge[data-id="${want}"] .svelte-flow__edge-path`)]
+      .find((each) => !each.closest('aside[aria-label="Detail"]'));
+    const [flow, viewport] = [path?.closest(".svelte-flow"), path?.closest<HTMLElement>(".svelte-flow__viewport")];
+    if (!path || !flow || !viewport) return null;
+    const corner = flow.getBoundingClientRect();
+    const camera = new DOMMatrix(getComputedStyle(viewport).transform);
+    const at = (length: number) => {
+      const point = camera.transformPoint(new DOMPoint(path.getPointAtLength(length).x, path.getPointAtLength(length).y));
+      return { x: corner.left + point.x, y: corner.top + point.y };
+    };
+    return { start: at(0), end: at(path.getTotalLength()) };
+  }, root, id);
+}
+
+/** A point on the `side` edge of a box, within a few pixels. */
+const meets = (point: { x: number; y: number }, box: DOMRect, side: "left" | "right") =>
+  Math.abs(point.x - box[side]) <= 4 && point.y >= box.top && point.y <= box.bottom;
 
 /** Two screen positions at most a pixel apart. */
 const near = (one: DOMRect, other: DOMRect) => Math.abs(one.left - other.left) <= 1 && Math.abs(one.top - other.top) <= 1;
@@ -273,7 +297,16 @@ export const scenarios: Scenario[] = [
         "a:lib>a:docs/a:site": "green",
         "a:suite/a:site>a:suite/a:app": "green",
         "a:docs/a:site>a:suite/a:app": "green",
-      }), { timeout: 15000, timeoutMsg: "every copy of site's edges drawn and lit like any other" });
+        "a:lib>a:docs": "green",
+        "a:suite>a:guide": "green",
+      }), { timeout: 15000, timeoutMsg: "every copy of site's edges and the wholes' own edges drawn and lit like any other" });
+      // Edges to and from a whole meet its box: lib's into docs on its left side, suite's to
+      // guide on its right.
+      const [into, out] = [await edgeEnds(browser, ".graph", "a:lib>a:docs"), await edgeEnds(browser, ".graph", "a:suite>a:guide")];
+      assert.ok(into && meets(into.end, drawn["a:docs"].rect, "left") && meets(into.start, drawn["a:lib"].rect, "right"),
+        `lib's edge ends on docs's box: ${JSON.stringify([into, drawn["a:docs"].rect])}`);
+      assert.ok(out && meets(out.start, drawn["a:suite"].rect, "right") && meets(out.end, drawn["a:guide"].rect, "left"),
+        `suite's edge starts on suite's box: ${JSON.stringify([out, drawn["a:suite"].rect])}`);
 
       // A click on suite's box outside its parts opens suite; a click on a part opens the part,
       // suite's box staying as it was.
@@ -354,18 +387,40 @@ export const scenarios: Scenario[] = [
 
   // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE E-GRAPH-MINIMIZED
   // E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-TAB
-  // E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND
+  // E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND E-PANE-CHIP
   scenario<{ run: string }>(
     "graph-minimize",
-    "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it and its corner kept on the screen; opens it as a node, finds what it hides, keeps it minimized on the branch's Current and expands it there",
+    "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it, its corner kept on the screen and an open Detail kept; opens it as a node, finds what it hides, keeps it minimized on the branch's Current, expands it there and on the Run, and draws every whole as a box again after the app quits",
     async () => ended(createParts()),
     async (browser, { data }) => {
       await shownRun(browser, data.run);
       await graphShown(browser, "a:suite/a:app/a:kit");
+      await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
+      await openTab(browser, "e:kit/check");
+      const kitDetail = await detail(browser);
+      // The Detail floats over the graph's right side, where suite's Minimize button is: a drag
+      // on the background, left of the Detail, pans suite out from under it.
+      const grip = await browser.execute(() => {
+        const canvas = document.querySelector(".graph > .canvas")!.getBoundingClientRect();
+        const cover = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
+        for (let x = cover.left - 30; x > canvas.left + 460; x -= 20) {
+          for (let y = canvas.bottom - 30; y > canvas.top + 60; y -= 20) {
+            if (document.elementFromPoint(x, y)?.classList.contains("svelte-flow__pane")) return { x: Math.round(x), y: Math.round(y) };
+          }
+        }
+        return null;
+      });
+      assert.ok(grip, "the graph has background left of the Detail");
+      await dispatchInput(browser, { kind: "pointer", phase: "down", ...grip });
+      await afterRender(browser);
+      await dispatchInput(browser, { kind: "pointer", phase: "move", x: grip.x - 440, y: grip.y });
+      await dispatchInput(browser, { kind: "pointer", phase: "up", x: grip.x - 440, y: grip.y });
+      await afterRender(browser);
       const boxed = await partsDrawn(browser, ".graph");
 
-      // Minimize turns suite into a node of a node's size, its corner where the box's was; site
-      // stays drawn inside docs, and no Detail opens.
+      // With kit's Detail open on its eval's tab, Minimize turns suite into a node of a node's
+      // size, its corner where the box's was; site stays drawn inside docs, and the Detail stays
+      // as it was, suite highlighted while it hides kit.
       await clickButton(browser, ".graph", "Minimize suite");
       const small = await partsDrawn(browser, ".graph", SUITE_MINIMIZED);
       const suite = small["a:suite"];
@@ -378,7 +433,10 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].rect, boxed["a:suite"].rect),
         { timeout: 15000, timeoutMsg: "suite's top left corner stays where its box's was on the screen" });
       assert.ok(within(small["a:docs/a:site"].rect, small["a:docs"].rect), "site stays inside docs");
-      assert.equal(await detail(browser), null, "minimizing opens no Detail");
+      const kept = await detail(browser);
+      assert.deepEqual([kept?.title, kept?.tabs.find((each) => each.selected)?.name], [kitDetail?.title, "check"], "kit's Detail stays on its eval's tab");
+      assert.ok(suite.open, "suite shows kit, which it hides, opened");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
       // The edges of what suite hides meet it: lib into its site, docs's site into its app; none
       // is drawn among them.
       let edges: string[] = [];
@@ -387,7 +445,7 @@ export const scenarios: Scenario[] = [
         edges = Object.keys(shown.edges).sort();
         return graphHasColours(shown, { "a:suite": "green", "a:lib": "green" }, { "a:lib>a:suite": "green", "a:lib>a:docs/a:site": "green", "a:docs/a:site>a:suite": "green" });
       }, { timeout: 15000, timeoutMsg: "the hidden parts' edges meet suite, lit as before" });
-      assert.deepEqual(edges, ["a:docs/a:site>a:suite", "a:lib>a:docs/a:site", "a:lib>a:suite"], "each edge once, none within suite");
+      assert.deepEqual(edges, ["a:docs/a:site>a:suite", "a:lib>a:docs", "a:lib>a:docs/a:site", "a:lib>a:suite", "a:suite>a:guide"], "each edge once, none within suite");
 
       // A click on the minimized suite opens its Detail, as on a node; Esc closes it.
       await openArtifact(browser, "a:suite", "Artifact suite");
@@ -434,6 +492,19 @@ export const scenarios: Scenario[] = [
       assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite", "Tab reaches suite's Minimize button after suite");
       await tab(browser);
       assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
+
+      // Expanded on the Current, suite is a box on the branch's Run too; minimized again there,
+      // it stays so until the app quits.
+      await showRun(browser, "repo  master", data.run);
+      assert.ok((await partsDrawn(browser, ".graph"))["a:suite"].whole, "suite is a box on the Run again");
+      await clickButton(browser, ".graph", "Minimize suite");
+      assert.ok((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].minimized, "suite minimized on the Run before the app quits");
+    },
+    async (browser, { data }) => {
+      // A new app draws every whole as a box: minimizing lasted only while the app ran.
+      await shownRun(browser, data.run);
+      const drawn = await partsDrawn(browser, ".graph");
+      assert.ok(drawn["a:suite"].whole && !drawn["a:suite"].minimized, "suite is a box again after the app quit");
     },
   ),
 
