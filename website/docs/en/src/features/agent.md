@@ -46,15 +46,14 @@ their inputs are checked again when the review ends. The backend, model, reasoni
 options, not part of the reuse key: a result another model or profile produced for
 the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was.
 
-Write in `payload.instruction` what to check and what counts as GREEN. The reviewer
-receives the eval's title and ID, its target and your instruction; artifactize adds the
-general review rules. The reviewer only reviews: it never implements or repairs anything,
+Write in `payload.instruction` what to check and what counts as GREEN: name the criteria the
+target must meet, and the reviewer answers with GREEN or RED and its findings against them. The
+reviewer only reviews: it never implements or repairs anything,
 and it runs only the declared Artifact tools. It judges tests by reading them, whether they
 cover what the criteria ask, without running them or importing the code under test. To check
-that a test suite passes, declare a [Runtime eval](runtime.md) that runs it. A `{name}`
-reference reaches the reviewer as the bare name. After the instruction, artifactize lists the
-target and each referenced Artifact once, with its role (`target` or `input`) and the names of
-the tools that read it, so the instruction need not name tools.
+that a test suite passes, declare a [Runtime eval](runtime.md) that runs it. Refer to
+other Artifacts with `{name}`; the reviewer already knows the target, each referenced Artifact
+and the tools that read them, so the instruction need not name tools.
 
 Agent reviews return schema-validated GREEN or RED verdicts. If the model returns
 an invalid result, artifactize asks once for a correction; a still-invalid result
@@ -110,8 +109,8 @@ capped at 16384 output tokens per turn, apart from the review's `max_tokens`.
 A turn that fails with a rate limit or a temporary error before it produced any output
 or used any tokens is retried automatically a few times, waiting as long as the provider
 asks.
-When the provider's answer itself fails after it began, the same turn is sent again, up to
-the same few times: the conversation up to its last tool results, not the whole review.
+When the provider's answer itself fails after it began, that turn is retried up to the same
+few times, and the review keeps what it had already done.
 This covers an answer that turned into whitespace (`DEGENERATE_OUTPUT`), one that stopped
 at the model's output limit (`PROVIDER_ERROR`, `Provider response was incomplete:
 Some(Length)`), and a stream that broke off after its output began (`TRANSIENT`). The
