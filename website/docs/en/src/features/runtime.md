@@ -20,8 +20,9 @@ payload.instruction = "Run the tests of {library}."
 argument, and no shell interprets quotes, pipes or `*`. The working directory is the Artifact folder, or the containing
 folder for a file Artifact. Programs use the author's normal toolchain environment,
 with artifactize's caller variables withheld and private output and temporary
-space outside the repository. See [Operating systems](others/platforms.md) for
-executable lookup and portable commands.
+space outside the repository. Standard input is empty: the program gets neither your terminal's
+input nor `payload.instruction`, so pass what it needs as arguments or files. See
+[Operating systems](others/platforms.md) for executable lookup and portable commands.
 
 Failure to start, a timeout, interruption or invalid inputs produce operational
 errors instead of a verdict. Runtime commands do not return Agent/Human owner fields. Saved results include the
