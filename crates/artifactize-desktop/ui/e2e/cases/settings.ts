@@ -133,6 +133,8 @@ export const scenarios: Scenario[] = [
       const fixture = createOutside();
       const seen = nativePath(fixture.root, "openai-authorization");
       writeText(seen, "");
+      // Everything that can fail comes before the server starts, so it is always released.
+      const env = settingsEnvironment(fixture);
       const openai = await serveLoopbackHttp((request, response) => {
         request.resume();
         const listing = request.url === "/v1/models";
@@ -142,7 +144,7 @@ export const scenarios: Scenario[] = [
       });
       return {
         fixture,
-        env: { ...settingsEnvironment(fixture), ARTIFACTIZE_OPENAI_BASE_URL: `${openai.url}/v1` },
+        env: { ...env, ARTIFACTIZE_OPENAI_BASE_URL: `${openai.url}/v1` },
         data: { key: KEY, saved: SAVED, shadowed: SHADOWED, seen },
         release: () => openai.close(),
       };
@@ -266,6 +268,8 @@ export const scenarios: Scenario[] = [
       const alias = nativePath(fixture.root, "alias-authorization");
       const review = nativePath(fixture.root, "endpoint-review");
       for (const path of [seen, alias, review]) writeText(path, "");
+      // Everything that can fail comes before the server starts, so it is always released.
+      const env = settingsEnvironment(fixture);
       const endpoint = await serveLoopbackHttp((request, response) => {
         const chunks: Buffer[] = [];
         request.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -289,7 +293,7 @@ export const scenarios: Scenario[] = [
       });
       return {
         fixture,
-        env: { ...settingsEnvironment(fixture), ARTIFACTIZE_OPENAI_BASE_URL: `${endpoint.url}/oai/v1` },
+        env: { ...env, ARTIFACTIZE_OPENAI_BASE_URL: `${endpoint.url}/oai/v1` },
         data: { root: endpoint.url, url: `${endpoint.url}/v1`, seen, alias, review, key: ENDPOINT_KEY },
         release: () => endpoint.close(),
       };
