@@ -20,7 +20,7 @@
   import { tick } from "svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
-  import type { Found, Shape, Source } from "../ipc/client";
+  import { PRECEDENCE, type Found, type Shape, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
@@ -93,7 +93,7 @@
   /** Where every copy is, wholes around their parts. */
   const rects = $derived(boxes(drawn, positions));
   /** The graph's edges between copies, lit as their edges. */
-  const lines = $derived(copyEdges(graph, drawn).map(({ source, target, edge }) => ({ ...edge, source, target })));
+  const lines = $derived(copyEdges(graph, drawn, current ? PRECEDENCE.current : PRECEDENCE.run).map(({ source, target, edge }) => ({ ...edge, source, target })));
   /** Where every copy is, indexed by area. */
   const laid = $derived(
     scene(

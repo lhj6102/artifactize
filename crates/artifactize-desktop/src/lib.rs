@@ -96,6 +96,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             human::log::HumanToolLog,
             graph::current::CurrentChanged
         ])
+        .constant("PRECEDENCE", graph::precedence())
 }
 
 /// Write the TypeScript bindings to `path`.

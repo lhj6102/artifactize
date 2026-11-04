@@ -78,8 +78,8 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
 | `server rm KEY` | | JSON | 0 |
 
-Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 2 ERROR 또는
-취소, 4 INCOMPLETE, 5 YELLOW입니다. YELLOW는 승인이 남아 있을 뿐, 승인된 상태는 아니라는 뜻입니다.
+`verify --wait`와 `run show --wait`는 Run 결과에 따라 종료 코드가 정해집니다. GREEN이면 0, RED이면 1,
+ERROR 또는 취소면 2, INCOMPLETE면 4, YELLOW면 5입니다. YELLOW는 승인이 남아 있을 뿐, 승인된 상태는 아니라는 뜻입니다.
 옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 진행 상황을 지켜보는
 명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING이나
 WAITING_HUMAN 상태의 Run이 끝날 때까지 상태를 계속 확인합니다. Run이 끝나기 전에 이 명령의 제한 시간이 지나면 현재 Run을 출력하고 3으로

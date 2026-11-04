@@ -231,11 +231,12 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again; its structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, nodes and edges recoloured in place |
-| E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
+| E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, or after a whole its Minimize or Expand button (E-GRAPH-TAB-WHOLE), nothing opened |
+| E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
-| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
+| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
 | E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
@@ -379,7 +380,7 @@ E-PANE-SELECT.
   E-GRAPH-PARTS → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
 - J-GRAPH-MINIMIZE: E-GRAPH-PARTS → E-GRAPH-MINIMIZE → E-GRAPH-MINIMIZED → E-MON-DETAIL-BACK → E-GRAPH-EXPAND
   E-GRAPH-MINIMIZE → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-MINIMIZED-FIND
-  E-GRAPH-MINIMIZE → E-CURRENT-CHIP → E-GRAPH-EXPAND
+  E-GRAPH-MINIMIZE → E-CURRENT-CHIP → E-GRAPH-PARTS → E-GRAPH-TAB → E-GRAPH-TAB-WHOLE → E-GRAPH-EXPAND → E-GRAPH-TAB-WHOLE
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO

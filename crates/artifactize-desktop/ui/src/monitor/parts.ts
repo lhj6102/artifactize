@@ -6,7 +6,8 @@
 // draws as it always did.
 //
 // A minimized whole is drawn as a node instead, its parts hidden: it stands for every Artifact
-// it hides, so their edges meet it, those between the same two copies joined into one.
+// it hides, so their edges meet it, those between the same two copies joined into one, lit by
+// the library's precedence of lights.
 //
 // The layout places only the copies that are no boxes; a box is where its parts are, with room
 // around them and above them for its name.
@@ -128,16 +129,14 @@ export function drawings(drawn: Copy[]): Map<string, string[]> {
   return found;
 }
 
-/** The lights in the order an Artifact takes them from its evals': a Run's, then a Current's. */
-const FIRST: Light[] = ["red", "error", "active", "run", "checking", "blocked", "waiting", "green", "reused"];
-
 /** An edge between two copies, lit as the edge of `graph` it stands for. */
 export type CopyEdge = { source: string; target: string; edge: Shape["edges"][number] };
 
 /** Every edge of `graph` between copies: from each copy that draws its source to each copy that
  * draws its target, none within one minimized whole, and the edges between the same two copies
- * once, in the light of theirs that comes first. */
-export function copyEdges(graph: Shape, drawn: Copy[]): CopyEdge[] {
+ * once, in the light of theirs that comes first in `order`, the graph's precedence the library
+ * gives (`PRECEDENCE`). */
+export function copyEdges(graph: Shape, drawn: Copy[], order: readonly Light[]): CopyEdge[] {
   const keys = drawings(drawn);
   const joined = new Map<string, CopyEdge>();
   for (const edge of graph.edges) {
@@ -146,7 +145,7 @@ export function copyEdges(graph: Shape, drawn: Copy[]): CopyEdge[] {
         if (source === target) continue;
         const pair = `${source}>${target}`;
         const known = joined.get(pair);
-        if (!known || FIRST.indexOf(edge.light) < FIRST.indexOf(known.edge.light)) joined.set(pair, { source, target, edge });
+        if (!known || order.indexOf(edge.light) < order.indexOf(known.edge.light)) joined.set(pair, { source, target, edge });
       }
     }
   }

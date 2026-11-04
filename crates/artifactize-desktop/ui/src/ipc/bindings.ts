@@ -221,6 +221,9 @@ export const events = {
 	stateChanged: makeEvent<StateChanged>("state-changed"),
 };
 
+/* Constants */
+export const PRECEDENCE = {"current":["run","checking","blocked","waiting","reused"],"run":["red","error","active","blocked","waiting","green"]} as const;
+
 /* Types */
 /**  What a Human action left: its notice and the request as it now stands. */
 export type Acted = {

@@ -40,6 +40,36 @@ pub enum Light {
     Checking,
 }
 
+/// The lights in the order an Artifact takes them from its evals, the first first: on a Run's
+/// graph by the library's verdict precedence, on a Current by its plan precedence. A view that
+/// draws several edges as one lights it with the first of theirs.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Precedence {
+    pub run: Vec<Light>,
+    pub current: Vec<Light>,
+}
+
+/// Every light of each graph in the library's precedence order.
+pub fn precedence() -> Precedence {
+    use monitor::{Light as Verdict, live::Plan};
+    let mut run = [
+        Verdict::Green,
+        Verdict::Waiting,
+        Verdict::Blocked,
+        Verdict::Active,
+        Verdict::Error,
+        Verdict::Red,
+    ];
+    run.sort();
+    let mut current = [Plan::Reuse, Plan::Wait, Plan::Blocked, Plan::Check, Plan::Run];
+    current.sort();
+    Precedence {
+        run: run.into_iter().map(Light::from).collect(),
+        current: current.into_iter().map(Light::from).collect(),
+    }
+}
+
 impl From<monitor::Light> for Light {
     fn from(light: monitor::Light) -> Self {
         match light {

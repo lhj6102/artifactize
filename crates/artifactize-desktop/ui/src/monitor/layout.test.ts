@@ -9,6 +9,7 @@ import type { Shape } from "../ipc/client";
 import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
+import { PRECEDENCE } from "../ipc/bindings";
 import { boxes, copies, copyEdges, drawings, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
@@ -263,7 +264,7 @@ describe("layout of wholes", () => {
     // kit is drawn inside docs's site and stands in suite: core ──> kit within suite is drawn
     // nowhere, but reaches docs's copy of kit from suite, and kit ──> lone leaves both.
     expect(drawings(drawn).get("a:kit")).toEqual(["a:suite", "a:docs/a:site/a:kit"]);
-    expect(copyEdges(graph, drawn).map(({ source, target }) => `${source}>${target}`).sort()).toEqual(
+    expect(copyEdges(graph, drawn, PRECEDENCE.run).map(({ source, target }) => `${source}>${target}`).sort()).toEqual(
       ["a:docs/a:site/a:kit>a:lone", "a:suite>a:docs/a:site/a:kit", "a:suite>a:lone"],
     );
     // A minimized whole inside a whole is a node inside its box.
@@ -284,11 +285,11 @@ describe("layout of wholes", () => {
         { source: "a:lone", target: "a:kit", light: "waiting" },
       ],
     };
-    const lines = (minimized: string[]) => copyEdges(lit, copies(lit, minimized)).map(({ source, target, edge }) => [`${source}>${target}`, edge.light]);
+    const lines = (minimized: string[]) => copyEdges(lit, copies(lit, minimized), PRECEDENCE.run).map(({ source, target, edge }) => [`${source}>${target}`, edge.light]);
     expect(lines(["a:app"])).toEqual([["a:app>a:lone", "red"], ["a:lone>a:app", "waiting"]]);
     expect(lines([])).toEqual([["a:app/a:kit>a:lone", "green"], ["a:app/a:core>a:lone", "red"], ["a:lone>a:app/a:kit", "waiting"]]);
-    // A Current's lights: would run before waiting before reused.
+    // A Current's lights, in a Current's precedence.
     const current = { ...lit, edges: lit.edges.map((edge, at) => ({ ...edge, light: (["reused", "run", "waiting"] as const)[at] })) };
-    expect(copyEdges(current, copies(current, ["a:app"])).map(({ edge }) => edge.light)).toEqual(["run", "waiting"]);
+    expect(copyEdges(current, copies(current, ["a:app"]), PRECEDENCE.current).map(({ edge }) => edge.light)).toEqual(["run", "waiting"]);
   });
 });

@@ -353,7 +353,8 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE E-GRAPH-MINIMIZED
-  // E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-EXPAND
+  // E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-TAB
+  // E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND
   scenario<{ run: string }>(
     "graph-minimize",
     "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it and its corner kept on the screen; opens it as a node, finds what it hides, keeps it minimized on the branch's Current and expands it there",

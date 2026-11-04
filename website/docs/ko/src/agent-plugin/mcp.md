@@ -112,7 +112,7 @@ Run에는 `jobs` 필드가 없습니다.
 `waiting_human`이 되고 언제 `yellow`로 끝나는지는 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)에 있습니다.
 `yellow` Run에서 `verify_result`는 판정 `YELLOW`를 보고하며, 이는 완전한 승인이 아닙니다.
 
-Run이 실행 중일 때 돌려주는 응답은 2 KiB보다 작습니다. 대기 상태는 오류가 아니라 정상입니다.
+Run 실행 중에는 응답 크기가 2 KiB 미만입니다. 대기 상태는 오류가 아니라 정상입니다.
 `verify_wait`는 Runtime, Agent, Human eval을 똑같이 다룹니다. 사람이 필요하다는 이유만으로
 일찍 끝나지 **않습니다**. `next_check`는 다음에 상태를 확인할 시점을 알려 주는 값일 뿐,
 빠르게 폴링하거나 모델 컨텍스트를 유지하라는 뜻이 아닙니다.
