@@ -110,6 +110,15 @@ export const commands = {
 	 *  branch's Current as its last scan found it.
 	 */
 	find: (source: Source, text: string) => typedError<Finding, Failure>(__TAURI_INVOKE("find", { source, text })),
+	/**  The starred Artifacts of `branch`'s project that `source` has, in the graph's order. */
+	favorites: (source: Source, branch: BranchKey) => typedError<Finding, Failure>(__TAURI_INVOKE("favorites", { source, branch })),
+	/**  The starred Artifacts of `branch`'s project, by name. */
+	starredArtifacts: (branch: BranchKey) => typedError<string[], Failure>(__TAURI_INVOKE("starred_artifacts", { branch })),
+	/**
+	 *  Star the Artifact `artifact` for every branch of `branch`'s project, or take its star away;
+	 *  answers the project's starred Artifacts as kept.
+	 */
+	starArtifact: (branch: BranchKey, artifact: string, on: boolean) => typedError<string[], Failure>(__TAURI_INVOKE("star_artifact", { branch, artifact, on })),
 	/**
 	 *  Scan `branch`'s worktree as it is now, answering with the scan's first step: the graph,
 	 *  every Artifact still being checked. Each later step is announced by [`CurrentChanged`].
@@ -220,6 +229,9 @@ export const events = {
 	sessionChanged: makeEvent<SessionChanged>("session-changed"),
 	stateChanged: makeEvent<StateChanged>("state-changed"),
 };
+
+/* Constants */
+export const PRECEDENCE = {"current":["run","checking","blocked","waiting","reused"],"run":["red","error","active","blocked","waiting","green"]} as const;
 
 /* Types */
 /**  What a Human action left: its notice and the request as it now stands. */
@@ -491,7 +503,7 @@ export type FormView = {
 	draft: Draft,
 };
 
-/**  An Artifact or an eval whose name contains the text. */
+/**  An Artifact or an eval whose name contains the text, or a starred Artifact. */
 export type Found = {
 	/**  The Artifact's node, whose Detail opens. */
 	node: string,

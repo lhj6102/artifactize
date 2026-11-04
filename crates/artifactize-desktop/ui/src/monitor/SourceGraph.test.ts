@@ -325,4 +325,25 @@ describe("SourceGraph", () => {
     const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")].map((item) => item.textContent?.trim());
     expect(legend).toEqual(["reused", "would run", "waiting", "blocked by upstream", "checking"]);
   });
+
+  it("lights a Current again by each scan's whole shape, its layout kept", async () => {
+    const current: Source = { kind: "current", branch: { kind: "branch", common: "/work/app/.git", branch: "main" } };
+    let light: "checking" | "run" = "checking";
+    mockIPC((cmd, args) =>
+      cmd === "graph"
+        ? {
+            source: (args as { source: Source }).source,
+            shape: 1,
+            update: { kind: "shape", nodes: [{ id: "a:app", name: "app", light, note: light, parts: [] }], edges: [] },
+          }
+        : null,
+    );
+    layout.mockImplementation(async (laid: Shape) => new Map(laid.nodes.map((item, index) => [item.id, { x: index * 240, y: 0 }])));
+    const { rerender } = render(SourceGraph, { source: current, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
+    await waitFor(() => expect(node("a:app")?.dataset.light).toBe("checking"));
+    light = "run";
+    await rerender({ revision: 2 });
+    await waitFor(() => expect(node("a:app")?.dataset.light).toBe("run"));
+    expect(layout).toHaveBeenCalledOnce();
+  });
 });

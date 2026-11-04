@@ -4,12 +4,12 @@
 // Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
+import { addWorktrees, artifactize, create, createChain, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { visibleCenter } from "../pointer.ts";
+import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, camera, detail, fact, FIND, findField, focusedNode, graphShown, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
-import { primaryModifier } from "../platform.ts";
+import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
+import { exists, nativePath, primaryModifier, readText, type NativePath } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
@@ -23,6 +23,33 @@ function ended(fixture: ReturnType<typeof createChain>) {
 async function shownRun(browser: WebdriverIO.Browser, run: string) {
   await listed(browser, "repo  master");
   await showRun(browser, "repo  master", run);
+}
+
+/** What the Main area's graph says at its bottom. */
+function hint(browser: WebdriverIO.Browser): Promise<string> {
+  return browser.execute(() => document.querySelector(".graph > .canvas > .hint")?.textContent?.trim() ?? "");
+}
+
+/** The star beside the open Detail's title of the Artifact `name`: as drawn, and whether it is on. */
+async function star(browser: WebdriverIO.Browser, name: string): Promise<{ glyph: string; on: boolean }> {
+  const button = aside(browser).$(`button[aria-label=${JSON.stringify(`Star ${name}`)}]`);
+  await button.waitForExist({ timeout: 15000, timeoutMsg: `${name}'s star beside the Detail's title` });
+  return { glyph: (await button.getText()).trim(), on: (await button.getAttribute("aria-pressed")) === "true" };
+}
+
+/** Click the star of the open Detail of `name` and wait until it is `on`, or off. */
+async function toggleStar(browser: WebdriverIO.Browser, name: string, on: boolean): Promise<void> {
+  await star(browser, name);
+  await aside(browser).$(`button[aria-label=${JSON.stringify(`Star ${name}`)}]`).click();
+  await browser.waitUntil(async () => JSON.stringify(await star(browser, name)) === JSON.stringify({ glyph: on ? "★" : "☆", on }),
+    { timeout: 15000, timeoutMsg: `${name} ${on ? "starred" : "no longer starred"}` });
+}
+
+/** The Artifacts starred in the fixture's one project, as the state directory keeps them. */
+function starredIn(state: NativePath): string[] {
+  const file = nativePath(state, "starred-artifacts.json");
+  const kept = exists(file) ? JSON.parse(readText(file)) as { artifacts: string[] }[] : [];
+  return kept.flatMap((project) => project.artifacts);
 }
 
 /** Arrow keys on the focused Artifact `id` are no keys of the graph's: its camera stays, the
@@ -46,18 +73,23 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
 const READABLE = 126;
 
 /** The copies of {@link createParts}'s graph: the wholes suite and docs, app inside suite, kit
- * inside app, site inside both, and lib outside every whole. */
-const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib"];
+ * inside app, site inside both, and lib, which docs reads, and guide, which reads suite, outside
+ * every whole. */
+const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib", "a:guide"];
 
-/** The copies of the graph under `root`, outside the Detail, once all of {@link PARTS} are
- * drawn: each one's box, whether it is drawn as a whole, its title text, its Artifact, its
+/** {@link PARTS} with suite minimized: suite a node, its parts hidden, site still inside docs. */
+const SUITE_MINIMIZED = ["a:suite", "a:docs", "a:docs/a:site", "a:lib", "a:guide"];
+
+/** The copies of the graph under `root`, outside the Detail, once exactly `keys` are drawn:
+ * each one's box, whether it is drawn as a box or minimized, its title text, its Artifact, its
  * spoken name, whether it shows as opened, and its light. */
-async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
+async function partsDrawn(browser: WebdriverIO.Browser, root: string, keys: string[] = PARTS) {
   const read = () => browser.execute((under) => Object.fromEntries([...document.querySelectorAll<HTMLElement>(`${under} .svelte-flow__node`)]
     .filter((node) => !node.closest('aside[aria-label="Detail"]'))
     .map((node) => [node.dataset.id ?? "", {
       rect: node.getBoundingClientRect().toJSON() as DOMRect,
       whole: node.classList.contains("svelte-flow__node-whole"),
+      minimized: node.classList.contains("svelte-flow__node-minimized"),
       text: node.textContent?.trim() ?? "",
       artifact: node.dataset.artifact ?? "",
       label: node.getAttribute("aria-label") ?? "",
@@ -67,41 +99,81 @@ async function partsDrawn(browser: WebdriverIO.Browser, root: string) {
   let shown: Awaited<ReturnType<typeof read>> = {};
   await browser.waitUntil(async () => {
     shown = await read();
-    return PARTS.every((key) => key in shown);
-  }, { timeout: 15000, timeoutMsg: "every whole and part drawn" });
+    return JSON.stringify(Object.keys(shown).sort()) === JSON.stringify([...keys].sort());
+  }, { timeout: 15000, timeoutMsg: `exactly ${keys.join(", ")} drawn` }).catch((error: unknown) => {
+    throw new Error(`${String(error)}; drawn: ${Object.keys(shown).join(", ")}`);
+  });
   return shown;
+}
+
+/** Where the drawn edge `id` under `root`, outside the Detail, starts and ends on the screen:
+ * its path's points under the camera's transform, from the canvas's corner; null while it is
+ * not drawn. */
+function edgeEnds(browser: WebdriverIO.Browser, root: string, id: string) {
+  return browser.execute((under, want) => {
+    const path = [...document.querySelectorAll<SVGPathElement>(`${under} .svelte-flow__edge[data-id="${want}"] .svelte-flow__edge-path`)]
+      .find((each) => !each.closest('aside[aria-label="Detail"]'));
+    const [flow, viewport] = [path?.closest(".svelte-flow"), path?.closest<HTMLElement>(".svelte-flow__viewport")];
+    if (!path || !flow || !viewport) return null;
+    const corner = flow.getBoundingClientRect();
+    const camera = new DOMMatrix(getComputedStyle(viewport).transform);
+    const at = (length: number) => {
+      const point = camera.transformPoint(new DOMPoint(path.getPointAtLength(length).x, path.getPointAtLength(length).y));
+      return { x: corner.left + point.x, y: corner.top + point.y };
+    };
+    return { start: at(0), end: at(path.getTotalLength()) };
+  }, root, id);
+}
+
+/** A point on the `side` edge of a box, within a few pixels. */
+const meets = (point: { x: number; y: number }, box: DOMRect, side: "left" | "right") =>
+  Math.abs(point.x - box[side]) <= 4 && point.y >= box.top && point.y <= box.bottom;
+
+/** Drag the background of the graph under `root`, left of the Detail, until the button named
+ * `name` lies clear of the Detail: as far as the window allows each time, a few times at most. */
+async function panClear(browser: WebdriverIO.Browser, root: string, name: string) {
+  const steps: unknown[] = [];
+  // A bound on the drags a narrow window needs, not a claimed number.
+  for (let drag = 0; drag < 4; drag += 1) {
+    const step = await browser.execute((under, want) => {
+      const canvas = document.querySelector(`${under} > .canvas`)?.getBoundingClientRect();
+      const cover = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect();
+      const button = document.querySelector(`${under} .svelte-flow__node button[aria-label="${want}"]`)?.getBoundingClientRect();
+      if (!canvas || !cover || !button) return { failure: "the canvas, the Detail and the button drawn" };
+      const shift = button.right - (cover.left - 24);
+      if (shift <= 1) return null;
+      for (let x = Math.min(cover.left, canvas.right) - 24; x > canvas.left + 24; x -= 16) {
+        for (let y = canvas.bottom - 24; y > canvas.top + 48; y -= 16) {
+          if (document.elementFromPoint(x, y)?.classList.contains("svelte-flow__pane")) {
+            return { x: Math.round(x), y: Math.round(y), by: Math.ceil(Math.min(shift, x - canvas.left - 12)) };
+          }
+        }
+      }
+      return { failure: "background left of the Detail to drag" };
+    }, root, name);
+    steps.push(step);
+    if (step === null) return;
+    if ("failure" in step) assert.fail(`no pan clears ${name}: ${step.failure}`);
+    await dispatchInput(browser, { kind: "pointer", phase: "down", x: step.x, y: step.y });
+    await afterRender(browser);
+    await dispatchInput(browser, { kind: "pointer", phase: "move", x: step.x - step.by, y: step.y });
+    await dispatchInput(browser, { kind: "pointer", phase: "up", x: step.x - step.by, y: step.y });
+    await afterRender(browser);
+  }
+  assert.fail(`${name} still under the Detail after the drags: ${JSON.stringify(steps)}`);
+}
+
+/** Two screen positions at most a pixel apart. */
+const near = (one: DOMRect, other: DOMRect) => Math.abs(one.left - other.left) <= 1 && Math.abs(one.top - other.top) <= 1;
+
+/** Click the button named `name` in the graph under `root` at its centre. */
+async function clickButton(browser: WebdriverIO.Browser, root: string, name: string) {
+  await clickAt(browser, await visibleCenter(browser, await browser.$(`${root} .svelte-flow__node button[aria-label="${name}"]`).getElement()));
 }
 
 /** A rectangle wholly inside another. */
 const within = (inner: DOMRect, outer: DOMRect) =>
   inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
-
-/** Where the drawn relations `ids` of the Run graph start and end on screen. A path's points
- * are placed by its drawn box, which follows the graph's zoom: WebKitGTK's screen matrix of an
- * SVG element leaves out the scale of the HTML around it. Each relation runs across, so its box
- * has a width. */
-function edgeEnds(browser: WebdriverIO.Browser, ids: string[]) {
-  return browser.execute((want) => Object.fromEntries(want.map((id) => {
-    const edge = [...document.querySelectorAll(`.svelte-flow__edge[data-id="${id}"]`)].find((found) => !found.closest('aside[aria-label="Detail"]'));
-    const path = edge?.querySelector<SVGPathElement>(".svelte-flow__edge-path");
-    const [box, shown] = [path?.getBBox(), path?.getBoundingClientRect()];
-    if (!path || !box || !shown || box.width === 0) return [id, null];
-    const scale = shown.width / box.width;
-    const at = (length: number) => {
-      const point = path.getPointAtLength(length);
-      return { x: shown.left + (point.x - box.x) * scale, y: shown.top + (point.y - box.y) * scale };
-    };
-    return [id, { start: at(0), end: at(path.getTotalLength()) }];
-  })), ids);
-}
-
-/** How far, in pixels, a relation's end may sit from the side of the box it meets: the
- * handle's own size and the border's width. */
-const MEETS = 6;
-
-/** A point on the `side` of a box, within its height. */
-const meets = (point: { x: number; y: number }, box: DOMRect, side: "left" | "right") =>
-  Math.abs(point.x - box[side]) <= MEETS && point.y >= box.top && point.y <= box.bottom;
 
 /** The whole `key` under `root` shows `name` and its light at the top of its box, above every
  * one of its `parts`, its light in the colour its box is drawn in. */
@@ -317,17 +389,16 @@ export const scenarios: Scenario[] = [
         "a:lib>a:docs/a:site": "green",
         "a:suite/a:site>a:suite/a:app": "green",
         "a:docs/a:site>a:suite/a:app": "green",
-      }), { timeout: 15000, timeoutMsg: "every copy of site's edges drawn and lit like any other" });
-      // A whole's own relations meet its box: lib's goes into suite's left side, and suite's
-      // leaves its right side for docs's left side, lit like any other.
-      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), {}, { "a:lib>a:suite": "green", "a:suite>a:docs": "green" }),
-        { timeout: 15000, timeoutMsg: "the wholes' relations drawn and lit" });
-      const boxes = await partsDrawn(browser, ".graph");
-      const ends = await edgeEnds(browser, ["a:lib>a:suite", "a:suite>a:docs"]);
-      const [into, out] = [ends["a:lib>a:suite"], ends["a:suite>a:docs"]];
-      assert.ok(into && meets(into.end, boxes["a:suite"].rect, "left"), `lib's relation ends on suite's box: ${JSON.stringify({ into, suite: boxes["a:suite"].rect })}`);
-      assert.ok(out && meets(out.start, boxes["a:suite"].rect, "right"), `suite's relation starts on its box: ${JSON.stringify(out)}`);
-      assert.ok(out && meets(out.end, boxes["a:docs"].rect, "left"), `suite's relation ends on docs's box: ${JSON.stringify(out)}`);
+        "a:lib>a:docs": "green",
+        "a:suite>a:guide": "green",
+      }), { timeout: 15000, timeoutMsg: "every copy of site's edges and the wholes' own edges drawn and lit like any other" });
+      // Edges to and from a whole meet its box: lib's into docs on its left side, suite's to
+      // guide on its right.
+      const [into, out] = [await edgeEnds(browser, ".graph", "a:lib>a:docs"), await edgeEnds(browser, ".graph", "a:suite>a:guide")];
+      assert.ok(into && meets(into.end, drawn["a:docs"].rect, "left") && meets(into.start, drawn["a:lib"].rect, "right"),
+        `lib's edge ends on docs's box: ${JSON.stringify([into, drawn["a:docs"].rect])}`);
+      assert.ok(out && meets(out.start, drawn["a:suite"].rect, "right") && meets(out.end, drawn["a:guide"].rect, "left"),
+        `suite's edge starts on suite's box: ${JSON.stringify([out, drawn["a:suite"].rect])}`);
 
       // A click on suite's box outside its parts opens suite; a click on a part opens the part,
       // suite's box staying as it was.
@@ -406,6 +477,114 @@ export const scenarios: Scenario[] = [
       assert.ok(note, "site's Detail says it is drawn in both wholes, naming them");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
       assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
+    },
+  ),
+
+  // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE E-GRAPH-MINIMIZED
+  // E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-TAB
+  // E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND E-PANE-CHIP
+  scenario<{ run: string }>(
+    "graph-minimize",
+    "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it, its corner kept on the screen and an open Detail kept; opens it as a node, finds what it hides, keeps it minimized on the branch's Current, expands it there and on the Run, and draws every whole as a box again after the app quits",
+    async () => ended(createParts()),
+    async (browser, { data }) => {
+      await shownRun(browser, data.run);
+      await graphShown(browser, "a:suite/a:app/a:kit");
+      await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
+      await openTab(browser, "e:kit/check");
+      const kitDetail = await detail(browser);
+      // The Detail floats over the graph's right side, where suite's Minimize button is: drags on
+      // the background, left of the Detail, pan suite out from under it.
+      await panClear(browser, ".graph", "Minimize suite");
+      const boxed = await partsDrawn(browser, ".graph");
+
+      // With kit's Detail open on its eval's tab, Minimize turns suite into a node of a node's
+      // size, its corner where the box's was; site stays drawn inside docs, and the Detail stays
+      // as it was, suite highlighted while it hides kit.
+      await clickButton(browser, ".graph", "Minimize suite");
+      const small = await partsDrawn(browser, ".graph", SUITE_MINIMIZED);
+      const suite = small["a:suite"];
+      assert.deepEqual([suite.minimized, suite.whole], [true, false], "suite is drawn minimized, not as a box");
+      assert.ok(suite.text.includes("suite") && suite.text.includes("2 parts"), `suite shows its name and its two parts: ${suite.text}`);
+      assert.equal(suite.label, "suite: GREEN, minimized, 2 parts");
+      assert.equal(suite.light, "green");
+      assert.ok(Math.abs(suite.rect.width - small["a:lib"].rect.width) <= 1 && Math.abs(suite.rect.height - small["a:lib"].rect.height) <= 1,
+        `suite is a node's size: ${JSON.stringify([suite.rect, small["a:lib"].rect])}`);
+      await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].rect, boxed["a:suite"].rect),
+        { timeout: 15000, timeoutMsg: "suite's top left corner stays where its box's was on the screen" });
+      assert.ok(within(small["a:docs/a:site"].rect, small["a:docs"].rect), "site stays inside docs");
+      const kept = await detail(browser);
+      assert.deepEqual([kept?.title, kept?.tabs.find((each) => each.selected)?.name], [kitDetail?.title, "check"], "kit's Detail stays on its eval's tab");
+      assert.ok(suite.open, "suite shows kit, which it hides, opened");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
+      // The edges of what suite hides meet it: lib into its site, docs's site into its app; none
+      // is drawn among them.
+      let edges: string[] = [];
+      await browser.waitUntil(async () => {
+        const shown = await graphAppearance(browser);
+        edges = Object.keys(shown.edges).sort();
+        return graphHasColours(shown, { "a:suite": "green", "a:lib": "green" }, { "a:lib>a:suite": "green", "a:lib>a:docs/a:site": "green", "a:docs/a:site>a:suite": "green" });
+      }, { timeout: 15000, timeoutMsg: "the hidden parts' edges meet suite, lit as before" });
+      assert.deepEqual(edges, ["a:docs/a:site>a:suite", "a:lib>a:docs", "a:lib>a:docs/a:site", "a:lib>a:suite", "a:suite>a:guide"], "each edge once, none within suite");
+
+      // A click on the minimized suite opens its Detail, as on a node; Esc closes it.
+      await openArtifact(browser, "a:suite", "Artifact suite");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes suite's Detail");
+
+      // The find field still lists kit, hidden in suite, and goes to the minimized suite for it.
+      await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over the Run");
+      await fill(browser, FIND, "kit");
+      await browser.waitUntil(async () => JSON.stringify((await findField(browser))?.entries.map((entry) => entry.name)) === JSON.stringify(["kit"]), { timeout: 15000, timeoutMsg: "kit listed" });
+      await press(browser, ["Enter"], async () => (await findField(browser)) === null && (await detail(browser))?.title === "Artifact kit", "Enter opens kit's Detail");
+      await browser.waitUntil(async () => {
+        const at = await offCentre(browser, "a:suite");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4;
+      }, { timeout: 15000, timeoutMsg: "the minimized suite in the middle of the graph left of the Detail" });
+      assert.ok((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].open, "suite shows kit, which it hides, opened");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes kit's Detail");
+
+      // The branch's Current draws suite minimized too, Tab reaching its Expand button after it;
+      // a click on Expand draws its box again, its corner kept, opening nothing.
+      const current = 'section[aria-label="Current"]';
+      await chooseChip(browser, "repo  master", "current");
+      const there = (await partsDrawn(browser, current, SUITE_MINIMIZED))["a:suite"];
+      assert.ok(there.minimized, "suite is minimized on the branch's Current");
+      /** Tab until the graph's suite node itself has the keyboard. */
+      const toSuite = async () => {
+        // A bound on traversing this small fixture's controls, not a claimed tab order.
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          if ((await focusedNode(browser)) === "a:suite" && !(await focusedElement(browser)).startsWith("BUTTON")) return;
+          await tab(browser);
+        }
+        assert.fail("Tab reaches suite");
+      };
+      await toSuite();
+      await tab(browser);
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Expand suite", "Tab reaches suite's Expand button after suite");
+      await clickButton(browser, current, "Expand suite");
+      const open = await partsDrawn(browser, current);
+      assert.ok(open["a:suite"].whole && within(open["a:suite/a:app"].rect, open["a:suite"].rect), "suite is a box around its parts again");
+      assert.ok(near(open["a:suite"].rect, there.rect), `suite's top left corner stays where it was: ${JSON.stringify([open["a:suite"].rect, there.rect])}`);
+      assert.equal(await detail(browser), null, "expanding opens no Detail");
+      // On the box, Tab reaches its Minimize button after suite and before its parts.
+      await toSuite();
+      await tab(browser);
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite", "Tab reaches suite's Minimize button after suite");
+      await tab(browser);
+      assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
+
+      // Expanded on the Current, suite is a box on the branch's Run too; minimized again there,
+      // it stays so until the app quits.
+      await showRun(browser, "repo  master", data.run);
+      assert.ok((await partsDrawn(browser, ".graph"))["a:suite"].whole, "suite is a box on the Run again");
+      await clickButton(browser, ".graph", "Minimize suite");
+      assert.ok((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].minimized, "suite minimized on the Run before the app quits");
+    },
+    async (browser, { data }) => {
+      // A new app draws every whole as a box: minimizing lasted only while the app ran.
+      await shownRun(browser, data.run);
+      const drawn = await partsDrawn(browser, ".graph");
+      assert.ok(drawn["a:suite"].whole && !drawn["a:suite"].minimized, "suite is a box again after the app quit");
     },
   ),
 
@@ -820,11 +999,12 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], () => entriesFocused(browser), "Esc on sort:recent back to the entries");
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
 
-      // Over the graph, Ctrl+F opens the find field, empty and focused; a text nothing is named
-      // so says so, and Esc closes it, the camera and the keyboard where they were.
+      // Over the graph, Ctrl+F opens the find field, empty and focused, saying how to star an
+      // Artifact while none is; a text nothing is named so says so, and Esc closes it, the
+      // camera and the keyboard where they were.
       const first = await camera(browser);
-      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open and focused");
-      assert.deepEqual(await field(), { focused: true, value: "", entries: [], note: "" });
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.note === NO_FAVORITES, "the find field open, saying how to star one");
+      assert.deepEqual(await field(), { focused: true, value: "", entries: [], note: NO_FAVORITES });
       assert.equal(await searchFocused(browser), false, "the Pane's search stays unfocused");
       await fill(browser, FIND, "nothing");
       await browser.waitUntil(async () => (await field())?.note === "No Artifact or eval matches.", { timeout: 15000, timeoutMsg: "nothing found said so" });
@@ -881,7 +1061,115 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-GRAPH-FIND; UX edges: E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
+  // UX journeys: J-DETAIL-STAR J-GRAPH-FIND; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-STAR E-MON-DETAIL-TAB
+  // E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-CHOOSE E-GRAPH-FIND-GO E-GRAPH-FIND-CLOSE E-CURRENT-EVALS
+  scenario<{ request: string; other: string }>(
+    "graph-favorites",
+    "stars Artifacts with the ☆ beside their Detail's title on any tab; Ctrl+F with nothing typed lists the starred ones in the graph's order and opens one as found, on the Run and the Current alike, says how to star one while none is; the stars stay for the next monitor and for every branch of the project",
+    async () => {
+      const fixture = await create();
+      // master's sign-off, taken before the other worktrees add theirs.
+      const request = signoff(fixture).id;
+      const [other] = await addWorktrees(fixture);
+      return { fixture, args: ["--repo", fixture.repo], data: { request, other } };
+    },
+    async (browser, { fixture, data: { request } }) => {
+      const field = () => findField(browser);
+      const names = async () => (await field())?.entries.map((entry) => entry.name) ?? null;
+      const ctrlF = (what: string) => press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, what);
+      await graphShown(browser, "a:release");
+      // The graph's bottom says what Ctrl+F does.
+      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites");
+      await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+
+      // None starred: with nothing typed the field says how to star one.
+      await ctrlF("the find field open with nothing starred");
+      await browser.waitUntil(async () => (await field())?.note === NO_FAVORITES, { timeout: 15000, timeoutMsg: "how to star one said" });
+      assert.deepEqual(await names(), []);
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
+
+      // ship starred on its Artifact tab; release on its signoff tab, a Human review's; docs
+      // starred and its star taken away again.
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "☆", on: false }, "ship not starred yet");
+      await toggleStar(browser, "ship", true);
+      await openArtifact(browser, "a:release", "Artifact release");
+      await openTab(browser, "e:release/signoff");
+      await toggleStar(browser, "release", true);
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      await toggleStar(browser, "docs", true);
+      await toggleStar(browser, "docs", false);
+      await browser.waitUntil(async () => JSON.stringify(starredIn(fixture.state)) === JSON.stringify(["release", "ship"]), { timeout: 15000, timeoutMsg: "the stars saved" });
+
+      // The graph's order, as a text every Artifact here contains lists them.
+      await ctrlF("the find field open over docs's Detail");
+      await browser.waitUntil(async () => (await names())?.length === 2, { timeout: 15000, timeoutMsg: "the two favorites listed" });
+      await fill(browser, FIND, "s");
+      await browser.waitUntil(async () => (await names())?.includes("docs") === true, { timeout: 15000, timeoutMsg: "every Artifact with s found" });
+      const order = (await names())!.filter((name) => !name.includes(" / "));
+      const favorites = order.filter((name) => name === "release" || name === "ship");
+      assert.equal(favorites.length, 2, `release and ship are both in the graph: ${JSON.stringify(order)}`);
+      // The text removed again lists the favorites, in that order, each with its glyph.
+      await fill(browser, FIND, "");
+      await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(favorites), { timeout: 15000, timeoutMsg: `the favorites listed: ${JSON.stringify(await field())}` });
+      assert.equal(await browser.$('[aria-label="Favorites"]').isExisting(), true, "listed as the favorites");
+      assert.ok((await field())!.entries.every((entry) => entry.glyph !== ""), "each with its verdict's glyph");
+      // ↓ twice chooses the second; Enter opens it as a found Artifact opens.
+      await press(browser, ["ArrowDown"], async () => (await field())?.entries[0]?.chosen === true, "↓ chooses the first");
+      await press(browser, ["ArrowDown"], async () => (await field())?.entries[1]?.chosen === true, "↓ chooses the second");
+      await press(browser, ["Enter"], async () => {
+        const shown = await detail(browser);
+        return (await field()) === null && shown?.title === `Artifact ${favorites[1]}` && shown.tabs[0]?.selected === true;
+      }, `Enter opens ${favorites[1]}'s Detail on its Artifact tab`);
+      assert.deepEqual(await star(browser, favorites[1]), { glyph: "★", on: true }, "its star on");
+      assert.ok(await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')), "the keyboard is in the Detail");
+
+      // The branch's Current, once its Run ended, has the same stars: its Detail shows ship
+      // starred, and Ctrl+F lists the favorites; a click on one opens it.
+      signOff(fixture, request);
+      await chooseChip(browser, "repo  master", "current");
+      await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "the Current shown" });
+      await graphShown(browser, "a:release");
+      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship starred on the Current");
+      await ctrlF("the find field open over the Current");
+      await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(favorites), { timeout: 15000, timeoutMsg: "the Current's favorites listed" });
+      await browser.$('[aria-label="Favorites"] [role="option"]').click();
+      await browser.waitUntil(async () => (await field()) === null && (await detail(browser))?.title === `Artifact ${favorites[0]}`, { timeout: 15000, timeoutMsg: `${favorites[0]}'s Detail opened from the favorites` });
+    },
+    // The next monitor keeps the stars, for every branch of the project: another worktree's Run
+    // shows them and lists them; a star taken away there is gone from master's Current too.
+    async (browser, { fixture, data: { other } }) => {
+      const field = () => findField(browser);
+      const listedNames = async () => [...(await field())?.entries.map((entry) => entry.name) ?? []].sort();
+      // master's Run ended: the launch shows its Current.
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship's star kept");
+
+      await listed(browser, "repo  scope-one");
+      await showRun(browser, "repo  scope-one", other);
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship starred on scope-one's Run");
+      await press(browser, [primaryModifier, "f"], async () => JSON.stringify(await listedNames()) === JSON.stringify(["release", "ship"]), "scope-one's Run lists both favorites");
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
+      await toggleStar(browser, "ship", false);
+      await browser.waitUntil(async () => JSON.stringify(starredIn(fixture.state)) === JSON.stringify(["release"]), { timeout: 15000, timeoutMsg: "the star's removal saved" });
+
+      await chooseChip(browser, "repo  master", "current");
+      await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "master's Current shown" });
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "☆", on: false }, "ship no longer starred on master's Current");
+      await press(browser, [primaryModifier, "f"], async () => JSON.stringify(await listedNames()) === JSON.stringify(["release"]), "only release listed on master's Current");
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
+    },
+  ),
+
+  // UX journey: J-GRAPH-FIND; UX edges: E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO E-GRAPH-FIND-CHOOSE
   scenario<Record<string, never>>(
     "graph-find-many",
     "lists the first 50 Artifacts of a Current that match, in the graph's order, says how many more do, and Enter opens the first",
@@ -918,6 +1206,45 @@ export const scenarios: Scenario[] = [
       assert.equal(reused.glyph, "↻", "the Detail's eval chip says reused");
       assert.deepEqual(shown.entries.filter((entry) => entry.glyph !== reused.glyph || entry.colour !== reused.colour), [],
         "every found Artifact showed reused, in its glyph and colour");
+
+      // ↓ and ↑ move the choice one entry at a time; Enter opens the chosen one, n001.
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open again");
+      await fill(browser, FIND, "N0");
+      await browser.waitUntil(async () => (await field())?.entries.length === 50, { timeout: 15000, timeoutMsg: "fifty found again" });
+      const chosen = async () => (await field())?.entries.findIndex((entry) => entry.chosen);
+      for (const [key, at] of [["ArrowDown", 0], ["ArrowDown", 1], ["ArrowDown", 2], ["ArrowUp", 1]] as const) {
+        await press(browser, [key], async () => (await chosen()) === at, `${key} chooses entry ${at}`);
+      }
+      await press(browser, ["Enter"], async () => (await field()) === null && (await detail(browser))?.title === "Artifact n001", "Enter opens the chosen n001's Detail");
+    },
+  ),
+
+  // UX journey: J-GRAPH-MINIMIZE; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE
+  scenario<{ run: string }>(
+    "graph-minimize-joined",
+    "draws the edges of a minimized whole's parts to the same Artifact as one, lit by the light that comes first",
+    async () => {
+      const fixture = createJoined();
+      const [run] = savedRuns(fixture);
+      return { fixture, args: ["--repo", fixture.repo], data: { run: run.id } };
+    },
+    async (browser, { data }) => {
+      await shownRun(browser, data.run);
+      await graphShown(browser, "a:pack/a:bad");
+      // Before: good's GREEN edge and bad's RED edge both reach user.
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:pack/a:good": "green", "a:pack/a:bad": "red" }, {
+        "a:pack/a:good>a:user": "green",
+        "a:pack/a:bad>a:user": "red",
+      }), { timeout: 15000, timeoutMsg: "good's and bad's edges to user drawn in their lights" });
+      // Minimized, pack sends user one edge, RED before GREEN.
+      await clickButton(browser, ".graph", "Minimize pack");
+      let edges: string[] = [];
+      await browser.waitUntil(async () => {
+        const shown = await graphAppearance(browser);
+        edges = Object.keys(shown.edges);
+        return graphHasColours(shown, {}, { "a:pack>a:user": "red" });
+      }, { timeout: 15000, timeoutMsg: "pack's one edge to user drawn RED" });
+      assert.deepEqual(edges, ["a:pack>a:user"], "the two edges drawn as one");
     },
   ),
 ];

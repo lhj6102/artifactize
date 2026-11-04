@@ -412,8 +412,9 @@ export async function addWorktrees(
 /**
  * A repository verified GREEN once whose Artifacts have parts: suite's folder holds app and site,
  * app's holds kit, and docs names site among its parts, so site is a part of two wholes. site's
- * check reads lib, which is a part of nothing, and app's reads site. The wholes have relations of
- * their own: suite's check reads lib and docs's reads suite. Every Artifact has a runtime check.
+ * check reads lib, which is a part of nothing, and app's reads site; docs's check reads lib too,
+ * and guide's, outside every whole, reads suite, so edges come into and go out of a whole. Every
+ * Artifact but suite has a runtime check.
  */
 export function createParts(): Fixture {
   return prepareFixture((root) => {
@@ -427,7 +428,8 @@ export function createParts(): Fixture {
       [["suite", "app"], check("app", " Read {site}.")],
       [["suite", "app", "kit"], check("kit")],
       [["suite", "site"], check("site", " Read {lib}.")],
-      [["docs"], `parts = ["site"]\n${check("docs", " Read {suite}.")}`],
+      [["docs"], `parts = ["site"]\n${check("docs", " Read {lib}.")}`],
+      [["guide"], check("guide", " Read {suite}.")],
     ] as const) {
       writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
     }
@@ -435,6 +437,33 @@ export function createParts(): Fixture {
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
     if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
+/**
+ * A repository verified once, its Run ended RED: the whole pack holds good, which passes, and
+ * bad, which fails; user, outside it, reads both.
+ */
+export function createJoined(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, operation: Operation, input = "") =>
+      `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile(operation)}\npayload.instruction = "Check ${name}.${input}"\n`;
+    for (const [folder, text] of [
+      [["pack"], `name = "pack"\n`],
+      [["pack", "good"], check("good", "pass")],
+      [["pack", "bad"], check("bad", "fail")],
+      [["user"], check("user", "pass", " Read {good} and {bad}.")],
+    ] as const) {
+      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+    }
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 1) throw new Error(`verify exited ${status}, expected 1 (RED)`);
+    settleRuns(cli(), repo, state);
     return fixture;
   });
 }

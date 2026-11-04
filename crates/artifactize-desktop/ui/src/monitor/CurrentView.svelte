@@ -39,7 +39,7 @@
       {#await import("./SourceGraph.svelte")}
         <p class="note">Loading the graph…</p>
       {:then { default: SourceGraph }}
-        <SourceGraph source={{ kind: "current", branch }} revision={view.revision} {opened} {onopen} {onclose} />
+        <SourceGraph source={{ kind: "current", branch }} {branch} revision={view.revision} {opened} {onopen} {onclose} />
       {/await}
     </div>
     <details open={current.structure} ontoggle={(event) => void current.expand(event.currentTarget.open)}>
