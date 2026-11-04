@@ -15,7 +15,7 @@ mod tests;
 pub use current::{Current, CurrentArtifact, CurrentEdge, CurrentEval, Plan, scan};
 pub use loader::{Input, Loader, Opened, Snapshot};
 pub use query::{DEFAULT, Query, Sort, complete, show};
-pub use starred::{star, starred};
+pub use starred::{star, star_artifact, starred, starred_artifacts};
 pub use waiting::{Waiting, waiting};
 
 use crate::{
@@ -98,6 +98,24 @@ pub enum Place {
         common: PathBuf,
         head: Head,
     },
+    Folder(#[serde(with = "crate::platform::path_serde")] PathBuf),
+}
+
+impl Place {
+    /// The project the branch belongs to: every branch of a Git repository shares one.
+    pub fn project(&self) -> Project {
+        match self {
+            Self::Git { common, .. } => Project::Git(common.clone()),
+            Self::Folder(path) => Project::Folder(path.clone()),
+        }
+    }
+}
+
+/// A project: a Git repository, by its common directory, or a folder outside Git.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Project {
+    Git(#[serde(with = "crate::platform::path_serde")] PathBuf),
     Folder(#[serde(with = "crate::platform::path_serde")] PathBuf),
 }
 

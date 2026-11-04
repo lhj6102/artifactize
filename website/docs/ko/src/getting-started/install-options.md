@@ -198,7 +198,7 @@ chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
   파일은 그곳에서 교체하지 않습니다. 셸이 `~/.local/bin`을 검색하지 않는다면 셸 시작 파일에
   `export PATH="$HOME/.local/bin:$PATH"`를 추가하고 새 터미널을 여세요.
 
-설정 오류는 기록만 하고 앱을 멈추지 않습니다. Windows 설치 프로그램, `.deb`,
+설정에 오류가 있어도 오류만 기록하고 앱은 계속 실행됩니다. Windows 설치 프로그램, `.deb`,
 `install.sh`가 풀어 놓은 Linux 앱은 이미 명령을 제공하므로 설정이 필요 없습니다.
 
 ### 소스에서 데스크톱 앱 빌드 {#build-the-desktop-app-from-source}

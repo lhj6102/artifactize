@@ -1,21 +1,26 @@
 <script lang="ts">
   // The graph's find field, opened with Ctrl+F: the library lists the Artifacts and evals of the
   // shown Run or Current whose names contain the typed text, in the graph's order, an eval as
-  // `{Artifact} / {eval}`. ↑/↓ choose one, Enter or a click opens it; Esc gives focus back to
+  // `{Artifact} / {eval}`; with nothing typed, the starred Artifacts of the graph in its order,
+  // or how to star one. ↑/↓ choose one, Enter or a click opens it; Esc gives focus back to
   // where it was and closes the field, as leaving it does. Keys mid-composition belong to the
   // input method.
+  import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { call, message, useIpc, type Found, type Source } from "../ipc/client";
+  import { call, message, useIpc, type BranchKey, type Found, type Source } from "../ipc/client";
   import { GraphFindState, setGraphFindState } from "./graph-find-state.svelte";
   import { composing } from "../shell/keys";
   import { tone } from "../shell/tone";
 
   let {
     source,
+    branch,
     onchoose,
     onclose,
   }: {
     source: Source;
+    /** The branch shown: with nothing typed, its project's starred Artifacts are listed. */
+    branch: BranchKey | null;
     /** Open what was found. */
     onchoose: (found: Found) => void;
     onclose: () => void;
@@ -27,19 +32,25 @@
   /** The answer for the text as typed now, if it has come. */
   const finding = $derived(f.found !== null && f.found.text === f.text ? f.found.finding : null);
   const found = $derived(finding?.found ?? []);
+  /** Nothing typed: the list is of the starred Artifacts. */
+  const favorites = $derived(f.text.trim() === "");
 
-  /** The field takes focus as it opens, noting what had it. */
+  /** The field takes focus as it opens, noting what had it, and lists the starred Artifacts;
+   * typing asks again, not this. */
   const take: Attachment<HTMLInputElement> = (input) => {
     f.before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     input.focus();
+    untrack(find);
   };
 
-  /** Ask the library for the text as typed; a slower answer to an older text never shows. */
+  /** Ask the library for the text as typed, or with nothing typed for the starred Artifacts; a
+   * slower answer to an older text never shows. */
   function find() {
     const [text, asked] = [f.text, ++f.asked];
     f.active = -1;
-    if (text.trim() === "") return void (f.found = null);
-    call(commands.find(source, text)).then(
+    const listing = text.trim() === "";
+    if (listing && branch === null) return void (f.found = null);
+    call(listing && branch !== null ? commands.favorites(source, branch) : commands.find(source, text)).then(
       (answer) => {
         if (asked !== f.asked) return;
         f.found = { text, finding: answer };
@@ -91,7 +102,7 @@
     <p class="note error">{f.error}</p>
   {:else if finding}
     {#if found.length > 0}
-      <ul class="found" id="graph-found" role="listbox" aria-label="Found">
+      <ul class="found" id="graph-found" role="listbox" aria-label={favorites ? "Favorites" : "Found"}>
         {#each found as item, at (`${item.node}\n${item.tab}`)}
           <!-- The keys belong to the field, which names the chosen entry as its active one. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -110,7 +121,7 @@
       </ul>
     {/if}
     <p class="note" role="status">
-      {#if found.length === 0}No Artifact or eval matches.{:else if finding.more > 0}{finding.more} more match.{/if}
+      {#if favorites && found.length === 0}No favorites here yet: star an Artifact with the ☆ beside its Detail's title.{:else if found.length === 0}No Artifact or eval matches.{:else if finding.more > 0}{finding.more} more match.{/if}
     </p>
   {/if}
 </div>

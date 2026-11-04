@@ -14,6 +14,7 @@
     notice = null,
     noticeOpen = $bindable(),
     actions,
+    beside,
     children,
     label,
     attach,
@@ -25,6 +26,8 @@
     onfocus?: () => void;
     onkeydown?: (event: KeyboardEvent) => void;
     actions?: Snippet;
+    /** Controls of what the title names, right after it. */
+    beside?: Snippet;
     children: Snippet;
     label?: string;
     /** Follows the pane's element for as long as it exists (an `{@attach}`). */
@@ -56,6 +59,7 @@
 >
   <header>
     <h2 class:whole={wholeTitle}>{title}</h2>
+    {#if beside}{@render beside()}{/if}
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
         <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>

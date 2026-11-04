@@ -87,16 +87,20 @@ that makes the transition happen and checks where it leads.
   States: a copy selected, its other copies highlighted with it.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does, and Ctrl+F opens their **Find field**; they have no other keys of their own. Hovering
-  only highlights.
+  only highlights. Each graph's bottom says that Ctrl+F finds, or lists the favorites.
 - **Find field**: floats over a graph's top left: a text field and, below it, the Artifacts and
   evals whose names contain its text, ignoring case, in the graph's order, an Artifact by its
   whole name and an eval as `{Artifact} / {eval}`, each with its verdict's glyph and colour (on a
-  Current, what would happen); the first 50, then how many more match, or that none does.
-  States: empty, listing (an entry chosen or not), nothing found.
+  Current, what would happen); the first 50, then how many more match, or that none does. With
+  nothing typed it lists the graph's starred Artifacts, the **favorites**, the same way, as if
+  they had been found, or says how to star one when none of the graph's Artifacts is starred.
+  States: favorites (listed, an entry chosen or not, or none starred), listing (an entry chosen
+  or not), nothing found.
 - **Detail**: floats over a graph docked toward its right edge, with a gap, and shows a Run or
   an Artifact; it never sits beside the Pane. Its left edge takes a drag that sets its width,
   between a readable column and a width that leaves some of the graph visible on its left.
-  An Artifact's Detail has tabs, a chip choice that reads as a path, `[Artifact icon] {name} /
+  An Artifact's Detail has a **star** beside its title on every tab: ☆, or ★ while the Artifact
+  is starred, for every branch of its project. An Artifact's Detail has tabs, a chip choice that reads as a path, `[Artifact icon] {name} /
   [eval] …`: the Artifact's own chip (the Artifact icon before its name, read aloud as
   "Artifact {name}"; only the name is cut short when long, the Detail's title showing it
   whole), then a `/` and one chip per eval with its verdict's glyph and colour, on a Current
@@ -231,10 +235,10 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
 | E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
-| E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused |
-| E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does |
-| E-GRAPH-FIND-CHOOSE | Find field listing | ↓ or ↑ | the next or previous entry chosen |
-| E-GRAPH-FIND-GO | Find field listing | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
+| E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused, listing the favorites: the graph's starred Artifacts in the graph's order, each with its verdict's glyph and colour, as if they had been found; with none of them starred, saying how to star one |
+| E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does; with the text removed again, the favorites as on opening |
+| E-GRAPH-FIND-CHOOSE | Find field listing, what was found or the favorites | ↓ or ↑ | the next or previous entry chosen |
+| E-GRAPH-FIND-GO | Find field listing, what was found or the favorites | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
 | E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
 
@@ -250,6 +254,7 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-NEIGHBOUR | Detail of an Artifact, on its Artifact tab | click a neighbour drawn beside it | Detail of that Artifact, on its Artifact tab, between its own neighbours |
 | E-MON-DETAIL-SWITCH | Detail | click another Artifact of the graph | Detail of that Artifact, on its Artifact tab |
 | E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened |
+| E-DETAIL-STAR | Detail of an Artifact of a Run or a Current, on any of its tabs | click the ☆ (or ★) beside its title | same Detail, the Artifact starred (★) or its star taken away (☆), for every branch of its project and every later monitor of this machine's user; the Find field lists it with nothing typed (E-GRAPH-FIND-OPEN) or no longer does |
 | E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab | `t`, or a click on Debug | Detail, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
 | E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
@@ -355,6 +360,8 @@ E-PANE-SELECT.
   E-CURRENT-EVALS → E-CURRENT-TAB → E-DETAIL-ARTIFACT-TAB → E-CURRENT-CLOSE
   E-MON-RUNS-GRAPH → E-GRAPH-TAB → E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-BACK
   E-MON-RUNS-GRAPH → E-GRAPH-TAB → E-CURRENT-EVALS → E-CURRENT-CLOSE
+- J-DETAIL-STAR: E-MON-DETAIL-ARTIFACT → E-DETAIL-STAR → E-MON-DETAIL-TAB → E-DETAIL-STAR
+  E-CURRENT-EVALS → E-DETAIL-STAR
 - J-DETAIL-NEIGHBOURS: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-TAB
 - J-DETAIL-TOOLS: E-MON-DETAIL-ARTIFACT → E-DETAIL-TOOL | E-DETAIL-TOOL-LAUNCH | E-DETAIL-TOOL-FAIL
   E-CURRENT-EVALS → E-DETAIL-TOOL
@@ -369,6 +376,7 @@ E-PANE-SELECT.
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
   E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CLOSE
+  E-MON-DETAIL-ARTIFACT → E-DETAIL-STAR → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
 - J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
