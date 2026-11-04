@@ -21,7 +21,7 @@ Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트�
 
 <p align="center">
   <img src="../others/roles.en.gif" width="800"
-       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 저마다 검사를 갖춘 프로젝트 조각인 Artifact로 이루어집니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
+       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 저마다 검사를 갖춘 프로젝트의 구성 요소인 Artifact로 이루어집니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
 </p>
 
 ## 데모
@@ -61,8 +61,8 @@ Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트�
 | Homebrew를 쓰지 않는 macOS | `curl -fsSL https://artifactize.dev/install.sh \| sh` |
 | Microsoft Store를 쓰는 Windows | `winget install 9PB6W4LL165D --source msstore`를 실행한 뒤 새 터미널을 여세요 |
 
-[설치 가이드](https://artifactize.dev/docs/ko/getting-started/install.html)에서 PowerShell 스크립트,
-AppImage, Cargo, 소스에서 빌드하는 방법과 업데이트, 제거 방법을 볼 수 있습니다.
+[설치 가이드](https://artifactize.dev/docs/ko/getting-started/install.html)에서 PowerShell 스크립트·AppImage·Cargo를
+이용한 설치 방법, 소스 빌드 방법, 업데이트 및 제거 방법을 볼 수 있습니다.
 
 **코딩 에이전트에 플러그인을 추가합니다.**
 [플러그인](https://artifactize.dev/docs/ko/agent-plugin/plugin.html)은 Claude Code와 Codex에
@@ -107,13 +107,13 @@ Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 
 | 세 종류의 검사 | 테스트 같은 명령, AI 에이전트의 리뷰, 사람의 승인입니다. |
 | 재사용 | 입력이 바뀌지 않은 검사는 이전 결과를 그대로 씁니다. 다른 버전이나 팀원의 작업 사본에서도 마찬가지입니다. |
 | 계속 진행되는 Run | 검사를 실행할 때마다 ID가 붙은 Run이 만들어지고, 창을 닫아도 멈추지 않습니다. |
-| 데스크톱 앱 | 그래프에서 Run을 실시간으로 지켜보고, 아무 Artifact나 열어 보고, 승인을 요청받은 곳에서 바로 승인합니다. |
+| 데스크톱 앱 | 그래프에서 Run을 실시간으로 지켜보고, 원하는 Artifact를 열어 보고, 승인 요청을 확인해 바로 처리할 수 있습니다. |
 
 **누구를 위한 도구인가요?**
 
 - 다른 사람과 함께 만들면서 효율적으로 리뷰하고 모듈 단위로 개발하고 싶은 사람.
 - AI 에이전트가 일하는 과정을 일일이 지켜보지 않고도 에이전트가 바꾼 내용을 믿고 싶은 사람.
-- 프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 애플리케이션이 서로 어긋나지 않기를 바라는 사람.
+- 프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 앱이 서로 어긋나지 않기를 바라는 사람.
 
 **우리의 원칙**
 
@@ -123,7 +123,7 @@ Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 
 
 ## 실제로 동작하는 제품
 
-아래는 데스크톱 앱의 실제 녹화와 스크린샷입니다. 실제 프로젝트에서 검사를 실행하는 화면을
+아래는 데스크톱 앱의 실제 녹화 영상과 스크린샷입니다. 실제 프로젝트에서 검사를 실행하는 화면을
 스크립트([데모](../capture/demos.mts), [스크린샷](../capture/screenshots.mts))로
 녹화하고 촬영했습니다. 예시 리뷰어 "alice"는 리뷰 양식을 보여 주려고 승인 요청을
 맡았을 뿐, 리뷰 결과를 제출하지는 않았습니다. 텍스트 기반 앱(CLI)에도 Monitor와
