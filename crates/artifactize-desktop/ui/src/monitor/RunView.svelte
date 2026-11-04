@@ -2,11 +2,12 @@
   // The shown Run: its headline (a click opens the Run's Detail), the comment it was requested
   // with in full, what needs attention, and the graph of its Artifacts (a click on one opens its
   // Detail).
-  import type { RunPanel } from "../ipc/client";
+  import type { BranchKey, RunPanel } from "../ipc/client";
   import { tone } from "../shell/tone";
 
   let {
     run,
+    branch,
     revision,
     opened = null,
     onopen,
@@ -14,6 +15,8 @@
     onrun,
   }: {
     run: RunPanel;
+    /** The branch the Run is of. */
+    branch: BranchKey;
     /** The browse revision: a new snapshot relights the graph. */
     revision: number;
     /** The Artifact whose Detail is open. */
@@ -48,7 +51,7 @@
     {#await import("./SourceGraph.svelte")}
       <p class="empty">Loading the graph…</p>
     {:then { default: SourceGraph }}
-      <SourceGraph source={{ kind: "run", run: run.id }} {revision} {opened} {onopen} {onclose} />
+      <SourceGraph source={{ kind: "run", run: run.id }} {branch} {revision} {opened} {onopen} {onclose} />
     {/await}
   </div>
 </div>

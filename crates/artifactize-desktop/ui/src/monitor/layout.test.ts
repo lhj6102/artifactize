@@ -9,7 +9,8 @@ import type { Shape } from "../ipc/client";
 import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
-import { boxes, copies, type Rect } from "./parts";
+import { PRECEDENCE } from "../ipc/bindings";
+import { boxes, copies, copyEdges, drawings, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
 const elk = vi.hoisted(() => ({ loads: 0, starts: 0, layouts: 0 }));
@@ -198,8 +199,8 @@ const made = (graph: Shape, parts: Record<string, string[]>): Shape => ({
 
 /** Every copy's box: each inside the box around it, and none overlapping another drawn beside
  * it in the same box (or in none). */
-function nested(graph: Shape, placed: Map<string, Point>) {
-  const drawn = copies(graph);
+function nested(graph: Shape, placed: Map<string, Point>, minimized: string[] = []) {
+  const drawn = copies(graph, minimized);
   const rects = boxes(drawn, placed);
   expect([...rects.keys()]).toEqual(drawn.map((copy) => copy.key));
   const inside = (inner: Rect, outer: Rect) =>
@@ -250,5 +251,45 @@ describe("layout of wholes", () => {
     expect(elk.layouts).toBe(before);
     expect(placed.size).toBe(1200);
     nested(big, placed);
+  });
+
+  it("draws a minimized whole as a node that stands for every Artifact it hides, a shared part still drawn in its other wholes", async () => {
+    const placed = await layout(graph, ["a:suite"]);
+    const { drawn, rects } = nested(graph, placed, ["a:suite"]);
+    // suite is placed as a node of a node's size; nothing inside it is drawn.
+    expect([...placed.keys()].sort()).toEqual(["a:docs/a:site/a:kit", "a:lone", "a:suite"].sort());
+    expect(rects.get("a:suite")).toMatchObject(NODE);
+    const suite = drawn.find((copy) => copy.key === "a:suite")!;
+    expect([suite.minimized, suite.count, suite.parts, [...suite.hides].sort()]).toEqual([true, 2, [], ["a:app", "a:core", "a:kit", "a:site"]]);
+    // kit is drawn inside docs's site and stands in suite: core ──> kit within suite is drawn
+    // nowhere, but reaches docs's copy of kit from suite, and kit ──> lone leaves both.
+    expect(drawings(drawn).get("a:kit")).toEqual(["a:suite", "a:docs/a:site/a:kit"]);
+    expect(copyEdges(graph, drawn, PRECEDENCE.run).map(({ source, target }) => `${source}>${target}`).sort()).toEqual(
+      ["a:docs/a:site/a:kit>a:lone", "a:suite>a:docs/a:site/a:kit", "a:suite>a:lone"],
+    );
+    // A minimized whole inside a whole is a node inside its box.
+    const inner = await layout(graph, ["a:app"]);
+    expect([...inner.keys()].sort()).toEqual(["a:docs/a:site/a:kit", "a:lone", "a:suite/a:app", "a:suite/a:site/a:kit"].sort());
+    nested(graph, inner, ["a:app"]);
+    // An Artifact without parts is no whole to minimize.
+    expect(await layout(graph, ["a:lone"])).toEqual(await layout(graph));
+  });
+
+  it("joins the edges between the same two copies into one, lit by the light that comes first", () => {
+    //   app ⊃ { kit, core }; kit ──> lone (green), core ──> lone (red), lone ──> kit (waiting)
+    const lit: Shape = {
+      ...made(shape(["app", "kit", "core", "lone"], []), { app: ["kit", "core"] }),
+      edges: [
+        { source: "a:kit", target: "a:lone", light: "green" },
+        { source: "a:core", target: "a:lone", light: "red" },
+        { source: "a:lone", target: "a:kit", light: "waiting" },
+      ],
+    };
+    const lines = (minimized: string[]) => copyEdges(lit, copies(lit, minimized), PRECEDENCE.run).map(({ source, target, edge }) => [`${source}>${target}`, edge.light]);
+    expect(lines(["a:app"])).toEqual([["a:app>a:lone", "red"], ["a:lone>a:app", "waiting"]]);
+    expect(lines([])).toEqual([["a:app/a:kit>a:lone", "green"], ["a:app/a:core>a:lone", "red"], ["a:lone>a:app/a:kit", "waiting"]]);
+    // A Current's lights, in a Current's precedence.
+    const current = { ...lit, edges: lit.edges.map((edge, at) => ({ ...edge, light: (["reused", "run", "waiting"] as const)[at] })) };
+    expect(copyEdges(current, copies(current, ["a:app"]), PRECEDENCE.current).map(({ edge }) => edge.light)).toEqual(["run", "waiting"]);
   });
 });

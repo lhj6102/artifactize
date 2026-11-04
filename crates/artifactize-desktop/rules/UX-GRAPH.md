@@ -84,7 +84,15 @@ that makes the transition happen and checks where it leads.
   a node is. Edges to and from a whole meet its box. The layout is built for a part of one
   whole: each whole's parts are laid out together inside its box. A **shared part**, a part of
   several wholes, is drawn as a **copy** inside each of them, each copy with the part's edges.
-  States: a copy selected, its other copies highlighted with it.
+  A box has a **Minimize** button at its top right, which Tab reaches after the whole and before
+  its parts. A **minimized whole** is drawn as a node of a node's size: its name, its verdict's
+  colour, how many parts it has and an **Expand** button; it hides its parts, the edges of the
+  Artifacts it hides meet it, those between the same two once in the light that comes first,
+  and those among them are not drawn. It is a node otherwise. A whole stays minimized on every
+  graph of its branch, its Runs' and its Current, until it is expanded or the app quits; a part
+  of several wholes stays drawn inside those not minimized.
+  States: a copy selected, its other copies highlighted with it; a whole drawn as a box or
+  minimized; a minimized whole highlighted while an Artifact it hides is open.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does, and Ctrl+F opens their **Find field**; they have no other keys of their own. Hovering
   only highlights. Each graph's bottom says that Ctrl+F finds, or lists the favorites.
@@ -227,20 +235,25 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again; its structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, nodes and edges recoloured in place |
-| E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, nothing opened |
+| E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, or after a whole its Minimize or Expand button (E-GRAPH-TAB-WHOLE), nothing opened |
+| E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
-| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
+| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
 | E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
+| E-GRAPH-MINIMIZE | Run graph or Current graph with a whole drawn as a box | click its Minimize button | the graph laid out again, the whole minimized: a node of a node's size with its name, verdict's colour, how many parts it has and its Expand button; the edges of the Artifacts it hides meeting it, those between the same two drawn once in the light that comes first, those among them not drawn; its top left corner where it was on the screen; no Detail opened or closed; minimized on every graph of its branch |
+| E-GRAPH-EXPAND | Run graph or Current graph with a minimized whole | click its Expand button | the graph laid out again, the whole a box around its parts (E-GRAPH-PARTS); its top left corner where it was on the screen; no Detail opened or closed; expanded on every graph of its branch |
+| E-GRAPH-MINIMIZED | Run graph or Current graph with a minimized whole | click it outside its button, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
+| E-GRAPH-MINIMIZED-FIND | Find field listing an Artifact a minimized whole hides | Enter on it, or a click on it | Find field closed; the Detail of that Artifact focused; the minimized whole highlighted and moved by the camera to the middle of the graph left of the Detail, as for a found Artifact (E-GRAPH-FIND-GO) |
 | E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused, listing the favorites: the graph's starred Artifacts in the graph's order, each with its verdict's glyph and colour, as if they had been found; with none of them starred, saying how to star one |
 | E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does; with the text removed again, the favorites as on opening |
 | E-GRAPH-FIND-CHOOSE | Find field listing, what was found or the favorites | ↓ or ↑ | the next or previous entry chosen |
 | E-GRAPH-FIND-GO | Find field listing, what was found or the favorites | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
 | E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
-| E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout | the graph, its camera neither zoomed nor panned |
+| E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout other than minimizing or expanding a whole (E-GRAPH-MINIMIZE, E-GRAPH-EXPAND) | the graph, its camera neither zoomed nor panned |
 
 ## Detail
 
@@ -372,12 +385,16 @@ E-PANE-SELECT.
 - J-GRAPH-PARTS: E-GRAPH-PARTS → E-GRAPH-WHOLE → E-GRAPH-PART → E-MON-DETAIL-BACK
   E-GRAPH-PARTS → E-GRAPH-SHARED → E-CURRENT-CLOSE
   E-GRAPH-PARTS → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
+- J-GRAPH-MINIMIZE: E-GRAPH-PARTS → E-GRAPH-MINIMIZE → E-GRAPH-MINIMIZED → E-MON-DETAIL-BACK → E-GRAPH-EXPAND
+  E-GRAPH-MINIMIZE → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-MINIMIZED-FIND
+  E-GRAPH-MINIMIZE → E-CURRENT-CHIP → E-GRAPH-PARTS → E-GRAPH-TAB → E-GRAPH-TAB-WHOLE → E-GRAPH-EXPAND → E-GRAPH-TAB-WHOLE
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
   E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CLOSE
   E-MON-DETAIL-ARTIFACT → E-DETAIL-STAR → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
 - J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
+  E-GRAPH-CAMERA → E-GRAPH-MINIMIZE → E-GRAPH-EXPAND
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
 - J-HUMAN-LAYOUT: E-MON-DETAIL-TAB | E-REVIEW-OPEN

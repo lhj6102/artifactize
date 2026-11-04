@@ -13,17 +13,19 @@
   //
   // A whole is a box around its parts (parts.ts), a parent node in Svelte Flow, and a part of
   // several wholes is drawn in each: every copy opens its Artifact, and the opened Artifact's
-  // copies all show it.
+  // copies all show it. A whole's Minimize button draws it as a node, which shows the opened
+  // Artifact too while it hides it, and its Expand button draws its box again; both keep the
+  // whole's top left corner where it was on the screen.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
-  import type { Found, Shape, Source } from "../ipc/client";
+  import { PRECEDENCE, type Found, type Shape, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
   import WholeNode from "./WholeNode.svelte";
-  import { boxes, copies, copyEdges, drawings } from "./parts";
+  import { boxes, copies, copyEdges, drawings, partsCount } from "./parts";
   import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
@@ -32,18 +34,22 @@
   let {
     source,
     graph,
+    minimized,
     positions,
     opened = null,
     current = false,
     onopen,
     onclose,
+    onminimize,
   }: {
     /** The Run or Current the graph is of: its find field searches it. */
     source: Source;
     graph: Shape;
     /** A Current: lit by what verify would do, with its structure text below. */
     current?: boolean;
-    /** Where the layout put each copy that is no whole, by key. */
+    /** The wholes drawn as nodes, by tree id: those `positions` was laid out for. */
+    minimized: readonly string[];
+    /** Where the layout put each copy that is no box, by key. */
     positions: Map<string, Point>;
     /** The Artifact whose Detail is open. */
     opened?: string | null;
@@ -51,6 +57,8 @@
     onopen: (id: string, tab?: string | null) => void;
     /** Close the open Detail. */
     onclose: () => void;
+    /** Minimize the whole `id`, or expand it; done once the graph is laid out again for it. */
+    onminimize: (id: string, minimized: boolean) => Promise<void>;
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
@@ -60,7 +68,7 @@
 
   const flow = useSvelteFlow();
   const camera = useViewport();
-  const nodeTypes = { artifact: ArtifactNode, whole: WholeNode };
+  const nodeTypes = { artifact: ArtifactNode, whole: WholeNode, minimized: WholeNode };
   /** A positive zoom floor clips sufficiently long graphs in the split canvas. Zero lets
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
@@ -77,15 +85,17 @@
   const fitViewOptions = { minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: FIT.padding };
 
   /** Every drawing of an Artifact, each whole before its parts. */
-  const drawn = $derived(copies(graph));
+  const drawn = $derived(copies(graph, minimized));
   /** Each copy by key. */
   const byKey = $derived(new Map(drawn.map((copy) => [copy.key, copy])));
   /** Each Artifact's copies by its tree id. */
   const keys = $derived(drawings(drawn));
+  /** The copies that show the opened Artifact: its own, and the minimized wholes hiding it. */
+  const showing = $derived(new Set(opened === null ? [] : (keys.get(opened) ?? [])));
   /** Where every copy is, wholes around their parts. */
   const rects = $derived(boxes(drawn, positions));
   /** The graph's edges between copies, lit as their edges. */
-  const lines = $derived(copyEdges(graph, drawn).map(({ source, target, edge }) => ({ ...edge, source, target })));
+  const lines = $derived(copyEdges(graph, drawn, current ? PRECEDENCE.current : PRECEDENCE.run).map(({ source, target, edge }) => ({ ...edge, source, target })));
   /** Where every copy is, indexed by area. */
   const laid = $derived(
     scene(
@@ -118,11 +128,11 @@
     const keep = kept === null ? null : new Set(kept === "" ? [] : kept.split(",").flatMap((number) => holding(laid.ids[Number(number)])));
     return drawn
       .filter((copy) => rects.has(copy.key) && (keep === null || keep.has(copy.key)))
-      .map(({ key, node, parent, parts }) => {
+      .map(({ key, node, parent, parts, minimized: folded, count }) => {
         const [at, around] = [rects.get(key)!, parent === null ? null : rects.get(parent)!];
         return {
           id: key,
-          type: parts.length > 0 ? "whole" : "artifact",
+          type: folded ? "minimized" : parts.length > 0 ? "whole" : "artifact",
           // A part's place is from its whole's corner.
           position: around ? { x: at.x - around.x, y: at.y - around.y } : { x: at.x, y: at.y },
           parentId: parent ?? undefined,
@@ -133,10 +143,17 @@
           width: at.width,
           height: at.height,
           measured: v.initialized ? { width: at.width, height: at.height } : undefined,
-          data: { name: node.name, light: node.light, open: node.id === opened, artifact: node.id },
+          data: {
+            name: node.name,
+            light: node.light,
+            open: showing.has(key),
+            artifact: node.id,
+            count,
+            onminimize: () => void minimize(key, !folded),
+          },
           draggable: false,
           connectable: false,
-          ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}`,
+          ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
         };
       });
@@ -209,7 +226,7 @@
   const draw: Attachment<HTMLCanvasElement> = (canvas) => {
     const at = v.area;
     if (!at) return;
-    const what = { graph: picturing, viewport: camera.current, width: at.width, height: at.height, ratio: window.devicePixelRatio || 1, boxes: painted, opened };
+    const what = { graph: picturing, viewport: camera.current, width: at.width, height: at.height, ratio: window.devicePixelRatio || 1, boxes: painted, opened: showing };
     const where = laid;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const show = (sharp: boolean) => {
@@ -259,9 +276,26 @@
     m.panes.detail?.focus();
   }
 
-  /** Enter on a focused Artifact node opens its Detail, as a click does. */
+  /** Minimize the whole drawn as `key`, or expand it, keeping its top left corner where it is
+   * on the screen once the graph is laid out again. */
+  async function minimize(key: string, folded: boolean) {
+    const [copy, before] = [byKey.get(key), rects.get(key)];
+    if (!copy || !before) return;
+    const { x, y, zoom } = flow.getViewport();
+    const corner = { x: before.x * zoom + x, y: before.y * zoom + y };
+    await onminimize(copy.node.id, folded);
+    await tick();
+    const after = rects.get(key);
+    const now = flow.getViewport();
+    if (after) void flow.setViewport({ x: corner.x - after.x * now.zoom, y: corner.y - after.y * now.zoom, zoom: now.zoom }, { duration: 0 });
+  }
+
+  /** Enter on a focused Artifact node opens its Detail, as a click does; on a button in it,
+   * the button acts. */
   function keydown(event: KeyboardEvent) {
-    const key = (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
+    const target = event.target as HTMLElement | null;
+    if (!target?.classList.contains("svelte-flow__node")) return;
+    const key = target.dataset.id;
     const copy = key === undefined ? undefined : byKey.get(key);
     if (!copy || !plain(event, "Enter")) return;
     event.preventDefault();

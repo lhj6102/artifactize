@@ -168,8 +168,7 @@ cargo install --path crates/artifactize-tools --locked
 
 ## 데스크톱 앱 {#desktop-app}
 
-[데스크톱 앱](../desktop/index.md)은 현재 브랜치 목록과 각 브랜치의 Run, 지금 verify하면
-실행할 작업, 대기 중인 Human 리뷰를 한 창에 보여 줍니다. 디스크 이미지나 AppImage로
+[데스크톱 앱](../desktop/index.md)은 현재 브랜치 목록과 브랜치별 Run, 지금 verify를 실행하면 처리할 작업, 대기 중인 Human 리뷰를 한 창에서 확인할 수 있습니다. 디스크 이미지나 AppImage로
 실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
 [내려받기](install.md#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage

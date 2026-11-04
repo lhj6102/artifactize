@@ -55,7 +55,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `tools section PATH HEADING` | — | Markdown 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools help PROGRAM [SUBCOMMAND...]` | 뒤따르는 인자는 `--help` 앞에 붙여 PROGRAM에 전달합니다 | 텍스트 | 성공 0, 도구 오류 1, 사용법 오류 2 |
 | `tools open TARGET` | — | 기본 애플리케이션으로 엽니다 | 성공 0, 도구 오류 1, 사용법 오류 2 |
-| `login codex` | 로그인 URL은 stderr에 출력합니다. 터미널 stdin에서 붙여 넣은 리디렉션 URL을 읽을 수 있습니다 | `Signed in with Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":true}`입니다 | 0 |
+| `login codex` | 로그인 URL은 stderr에 출력합니다. 터미널에 붙여 넣은 리디렉션 URL을 표준 입력에서 읽을 수 있습니다 | `Signed in with Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":true}`입니다 | 0 |
 | `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽습니다 | `Saved the PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":true}`입니다 | 0 |
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도합니다. 읽기 전용 인증 파일은 건드리지 않습니다 | `Signed out of Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}`입니다 | 로컬 로그아웃 뒤 0 |
 | `logout openai\|anthropic\|gemini` | 저장한 키를 지웁니다. 변수는 건드리지 않습니다 | `Forgot the saved PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":false}`입니다 | 0 |
@@ -78,10 +78,10 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
 | `server rm KEY` | | JSON | 0 |
 
-Run 결과 종료 코드(`verify --wait`, `run show --wait`)는 0 GREEN, 1 RED, 2 ERROR 또는
-취소, 4 INCOMPLETE, 5 YELLOW입니다. YELLOW는 승인이 남아 있을 뿐, 승인된 상태는 아니라는 뜻입니다.
-옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 진행 상황을 지켜보는
-명령을 멈추면 종료 코드 130으로 끝나며, 이 명령을 끝내도 Run은 취소되지 않습니다. `run show --wait`는 RUNNING이나
+`verify --wait`와 `run show --wait`는 Run 결과에 따라 종료 코드가 정해집니다. GREEN이면 0, RED이면 1,
+ERROR 또는 취소면 2, INCOMPLETE면 4, YELLOW면 5입니다. YELLOW는 승인이 남아 있을 뿐, 승인된 상태는 아니라는 뜻입니다.
+옵션 없는 `verify`는 검증 결과와 관계없이 Run이 접수되면 종료 코드 0으로 끝납니다. Ctrl-C로 지켜보기를
+중단하면 명령은 종료 코드 130으로 끝나지만 Run은 계속 실행됩니다. `run show --wait`는 RUNNING이나
 WAITING_HUMAN 상태의 Run이 끝날 때까지 상태를 계속 확인합니다. Run이 끝나기 전에 이 명령의 제한 시간이 지나면 현재 Run을 출력하고 3으로
 종료하며, Run은 계속 실행됩니다. 모든 명령은 사용법 오류(알 수 없는 옵션, 반복할 수 없는 옵션의 반복, 충돌하거나 빠진 옵션과 값)나 동작 오류가 나면 종료 코드 2로 끝납니다. 오류는 stderr에 텍스트로, 또는
 `--json`이면 stdout에 `{"error":"..."}`로 나옵니다(stdout을 프로토콜에만 쓰는 `mcp`는
@@ -162,7 +162,7 @@ Run 오류도 stderr에 나오며, `--json`일 때도 마찬가지입니다.
 | 기본 | 실행 게이트가 막지 않으면 eval을 시작합니다. 선택한 승인이 아직 대기 중이어도 그에 의존하는 eval은 바로 실행되며, GREEN 결과는 승인 결과가 GREEN이 될 때까지 PROVISIONAL로 표시됩니다 |
 | `--speculate` | 게이트가 정해지기 전에 Runtime과 Agent 리뷰를 시작합니다 |
 
-승인은 추측 실행으로 요청하지 않습니다. 승인을 언제 요청하는지, 그 승인에 의존하는 eval이 어떻게 실행되는지는
+승인은 앞선 eval이 통과하기 전에 추측으로 미리 요청하지 않으며, `--speculate` Run에서도 앞선 eval이 통과하면 평소처럼 요청합니다. 승인을 언제 요청하는지, 그 승인에 의존하는 eval이 어떻게 실행되는지는
 [승인과 Run 종료](../features/run.md#sign-offs-and-the-end-of-a-run)를 보세요. `--speculate`에서는 새로 준비된 작업을
 실행할 `--jobs`나 백엔드 자리가 모자라면 artifactize가 실행 중인 추측 실행 리뷰를 중단할 수 있습니다. 그 리뷰는 나중에
 다시 시작하며, 다시 시작할 때도 `--max-executions`로 정한 실행 횟수에 한 번 더 포함됩니다. 추측 실행은 실행 순서를 바꿀 뿐 승인 여부를

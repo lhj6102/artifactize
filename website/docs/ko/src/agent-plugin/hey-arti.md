@@ -1,7 +1,7 @@
 # Hey Arti: 프로젝트 리뷰 설계하기 {#hey-arti-shape-a-projects-reviews}
 
 코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰하면 좋을까요?"라고 물어보세요. Arti는
-프로젝트를 파악하고 무엇이 중요한지 물은 뒤, 리뷰가 제 역할을 하고 결과를 재사용할 수 있도록 Artifact와
+프로젝트를 파악하고 무엇이 중요한지 물은 뒤, 리뷰가 제대로 이뤄지고 결과를 재사용할 수 있도록 Artifact와
 eval 구성을 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
 대신해 승인하지도 않습니다.
 
@@ -41,7 +41,7 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
   다시 실행된다면 Artifact의 범위를 너무 넓게 잡았거나 fingerprint에 불필요한 파일까지
   포함했기 때문일 수 있고, 너무 드물다면 입력을 쓰는 eval이 그 Artifact를 이름으로 참조하지 않았을 수 있습니다.
   실행 옵션을 조정하는 대신, 찾은 원인을 해결할 방법을 제안합니다.
-- **결과 설명**, **리뷰어가 실행 중인 애플리케이션을 살펴봐야 하는 경우**, **팀 공유와 CI 설정**은 아래 섹션에서 다룹니다.
+- 아래에서는 **결과를 설명하는 방법**, **실행 중인 애플리케이션을 리뷰어가 확인해야 하는 상황**, **팀 공유와 CI 설정**을 다룹니다.
 
 새 프로젝트를 구성할 때 Arti는 다음 순서로 진행합니다.
 
@@ -75,8 +75,7 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
   그 파일을 골라 담는 [aspect](../features/declarations.md#aspects)로 선언합니다.
 - eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
   필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
-  [Human eval](../features/human.md)을 쓰세요. 사람에게는
-  Artifact의 Runtime eval과 Agent eval이 GREEN이 된 뒤에만 요청합니다.
+  [Human eval](../features/human.md)을 쓰세요. Artifact의 Runtime eval과 Agent eval이 모두 GREEN이 된 뒤에만 사람에게 Human eval을 요청합니다.
 - Artifact 하나에 대한 기준은 그 eval 안에 두고, 여러 Artifact가 공유하는 규칙은
   그 eval들이 읽는 규칙 문서에 두세요.
 - 결과 스키마는 작게 유지하세요. GREEN에는 요약을, RED에는 구체적인 지적 사항을 담습니다(문법은

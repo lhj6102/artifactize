@@ -238,8 +238,8 @@ protocol = "json"
 실패하거나 멈춰 있더라도 세션 폴더를 지웁니다. artifactize 자체가 강제로 종료되면 stop을 실행할
 수 없습니다. 정리에 실패하면 성공 결과 대신 그 실패를 알리며, 이전 세션이 정리되지 않으면 새 세션을 시작할 수 없습니다. 결과를 재사용하거나 실행 중인 리뷰에 합류할 때는 아무것도 시작하지 않습니다.
 
-start/stop에서 고정한 실행 경로는 원격 기록을 포함해 결과의 기존 `executionPaths` 출처 정보에
-`<session>_<artifact>.start`와 `.stop` 키로 기록됩니다. `tools check`는 명령을 실행하지 않고,
+`start`와 `stop`의 실행 경로는 결과의 `executionPaths`에 `<session>_<artifact>.start`와 `.stop`
+키로 기록되며, 이 정보는 원격 기록에도 포함됩니다. `tools check`는 명령을 실행하지 않고,
 참조한 세션의 실행 파일과 인자만 확인합니다. 세션에 묶인 도구에 대한 `tools check --execute`와
 `session send`는 각각 처음 세션 호출을 할 때 새 세션을 시작하고 끝나면 멈춥니다. 세션 도구를 호출하지 않는 follow-up은 아무것도 시작하지 않습니다.
 
