@@ -4,7 +4,7 @@
 // Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
+import { addWorktrees, artifactize, create, createChain, createEvals, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
@@ -73,8 +73,40 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
 const READABLE = 126;
 
 /** The copies of {@link createParts}'s graph: the wholes suite and docs, app inside suite, kit
- * inside app, site inside both, and lib outside every whole. */
-const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib"];
+ * inside app, site inside both, and lib and guide outside every whole. */
+const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:site", "a:docs", "a:docs/a:site", "a:lib", "a:guide"];
+
+/** Where the Run graph's edge `id` (`source>target`) starts and ends on the screen. */
+function edgeEnds(browser: WebdriverIO.Browser, id: string): Promise<{ start: { x: number; y: number }; end: { x: number; y: number } } | null> {
+  return browser.execute((want) => {
+    const edge = [...document.querySelectorAll<SVGElement>(`.graph .svelte-flow__edge[data-id="${want}"]`)]
+      .find((element) => !element.closest('aside[aria-label="Detail"]'));
+    const path = edge?.querySelector<SVGPathElement>(".svelte-flow__edge-path");
+    const screen = path?.getScreenCTM();
+    if (!path || !screen) return null;
+    const at = (length: number) => {
+      const point = new DOMPoint(path.getPointAtLength(length).x, path.getPointAtLength(length).y).matrixTransform(screen);
+      return { x: point.x, y: point.y };
+    };
+    return { start: at(0), end: at(path.getTotalLength()) };
+  }, id);
+}
+
+/** The Run graph's copy `id` as drawn: its visible box, and its edges' target and source handles. */
+function faces(browser: WebdriverIO.Browser, id: string) {
+  return browser.execute((want) => {
+    const node = [...document.querySelectorAll<HTMLElement>(`.graph .svelte-flow__node[data-id="${want}"]`)]
+      .find((element) => !element.closest('aside[aria-label="Detail"]'));
+    const rect = (element: Element | null | undefined) => element?.getBoundingClientRect().toJSON() as DOMRect | undefined;
+    const own = (selector: string) => [...(node?.querySelectorAll(selector) ?? [])].find((element) => element.closest(".svelte-flow__node") === node);
+    return { visible: rect(own(".artifact, .whole")), target: rect(own(".svelte-flow__handle.target")), source: rect(own(".svelte-flow__handle.source")) };
+  }, id);
+}
+
+/** How far an edge's end lies left of the box's left side (`into`), or its start right of the
+ * box's right side (`out`); null unless it lies between the box's top and bottom. */
+const gap = (point: { x: number; y: number }, box: DOMRect, side: "into" | "out") =>
+  point.y < box.top || point.y > box.bottom ? null : side === "into" ? box.left - point.x : point.x - box.right;
 
 /** The copies of the graph under `root`, outside the Detail, once all of {@link PARTS} are
  * drawn: each one's box, whether it is drawn as a whole, its title text, its Artifact, its
@@ -287,6 +319,26 @@ export const scenarios: Scenario[] = [
         "a:suite/a:site>a:suite/a:app": "green",
         "a:docs/a:site>a:suite/a:app": "green",
       }), { timeout: 15000, timeoutMsg: "every copy of site's edges drawn and lit like any other" });
+      // Edges to and from a whole meet its box: docs's eval reads lib, and guide's reads docs.
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:docs": "green", "a:guide": "green" }, {
+        "a:lib>a:docs": "green",
+        "a:docs>a:guide": "green",
+      }), { timeout: 15000, timeoutMsg: "the edges into and out of docs drawn and lit like any other" });
+      // They meet docs's visible box at its sides, as the edges into and out of site, a node, meet
+      // site's: each end within two of the graph's edge handles of the side, between its top and
+      // bottom.
+      const ends = async (id: string) => (await edgeEnds(browser, id))!;
+      const [docs, site] = [await faces(browser, "a:docs"), await faces(browser, "a:suite/a:site")];
+      const meets = (point: { x: number; y: number }, box: typeof docs, side: "into" | "out") => {
+        const apartBy = box.visible ? gap(point, box.visible, side) : null;
+        return apartBy !== null && box.target !== undefined && Math.abs(apartBy) <= 2 * box.target.width;
+      };
+      const seen = JSON.stringify({ docs, site });
+      assert.ok(meets((await ends("a:lib>a:suite/a:site")).end, site, "into"), `the edge from lib ends on site's side: ${seen}`);
+      assert.ok(meets((await ends("a:suite/a:site>a:suite/a:app")).start, site, "out"), `the edge to app starts on site's side: ${seen}`);
+      assert.ok(meets((await ends("a:lib>a:docs")).end, docs, "into"), `the edge from lib ends on docs's box: ${seen}`);
+      assert.ok(meets((await ends("a:docs>a:guide")).start, docs, "out"), `the edge to guide starts on docs's box: ${seen}`);
+      assert.ok(apart(drawn["a:guide"].rect, drawn["a:docs"].rect), "guide stands outside docs");
 
       // A click on suite's box outside its parts opens suite; a click on a part opens the part,
       // suite's box staying as it was.
@@ -840,12 +892,15 @@ export const scenarios: Scenario[] = [
 
   // UX journeys: J-DETAIL-STAR J-GRAPH-FIND; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-STAR E-MON-DETAIL-TAB
   // E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-CHOOSE E-GRAPH-FIND-GO E-GRAPH-FIND-CLOSE E-CURRENT-EVALS
-  scenario<{ request: string }>(
+  scenario<{ request: string; other: string }>(
     "graph-favorites",
-    "stars Artifacts with the ☆ beside their Detail's title on any tab; Ctrl+F with nothing typed lists the starred ones in the graph's order and opens one as found, on the Run and the Current alike, says how to star one while none is, and the stars stay for the next monitor",
+    "stars Artifacts with the ☆ beside their Detail's title on any tab; Ctrl+F with nothing typed lists the starred ones in the graph's order and opens one as found, on the Run and the Current alike, says how to star one while none is; the stars stay for the next monitor and for every branch of the project",
     async () => {
       const fixture = await create();
-      return { fixture, args: ["--repo", fixture.repo], data: { request: signoff(fixture).id } };
+      // master's sign-off, taken before the other worktrees add theirs.
+      const request = signoff(fixture).id;
+      const [other] = await addWorktrees(fixture);
+      return { fixture, args: ["--repo", fixture.repo], data: { request, other } };
     },
     async (browser, { fixture, data: { request } }) => {
       const field = () => findField(browser);
@@ -913,16 +968,33 @@ export const scenarios: Scenario[] = [
       await browser.$('[aria-label="Favorites"] [role="option"]').click();
       await browser.waitUntil(async () => (await field()) === null && (await detail(browser))?.title === `Artifact ${favorites[0]}`, { timeout: 15000, timeoutMsg: `${favorites[0]}'s Detail opened from the favorites` });
     },
-    // The next monitor keeps the stars; one taken away is no longer listed.
-    async (browser, { fixture }) => {
+    // The next monitor keeps the stars, for every branch of the project: another worktree's Run
+    // shows them and lists them; a star taken away there is gone from master's Current too.
+    async (browser, { fixture, data: { other } }) => {
       const field = () => findField(browser);
+      const listedNames = async () => [...(await field())?.entries.map((entry) => entry.name) ?? []].sort();
+      // master's Run ended: the launch shows its Current.
       await graphShown(browser, "a:release");
       await openArtifact(browser, "a:ship", "Artifact ship");
       assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship's star kept");
-      await toggleStar(browser, "ship", false);
-      await press(browser, [primaryModifier, "f"], async () => JSON.stringify((await field())?.entries.map((entry) => entry.name)) === JSON.stringify(["release"]), "only release listed");
+
+      await listed(browser, "repo  scope-one");
+      await showRun(browser, "repo  scope-one", other);
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship starred on scope-one's Run");
+      await press(browser, [primaryModifier, "f"], async () => JSON.stringify(await listedNames()) === JSON.stringify(["release", "ship"]), "scope-one's Run lists both favorites");
       await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
+      await toggleStar(browser, "ship", false);
       await browser.waitUntil(async () => JSON.stringify(starredIn(fixture.state)) === JSON.stringify(["release"]), { timeout: 15000, timeoutMsg: "the star's removal saved" });
+
+      await chooseChip(browser, "repo  master", "current");
+      await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "master's Current shown" });
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      assert.deepEqual(await star(browser, "ship"), { glyph: "☆", on: false }, "ship no longer starred on master's Current");
+      await press(browser, [primaryModifier, "f"], async () => JSON.stringify(await listedNames()) === JSON.stringify(["release"]), "only release listed on master's Current");
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
     },
   ),
 

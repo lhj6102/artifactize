@@ -28,7 +28,7 @@ payload.instruction = "Check that every link in the docs resolves."
 `game`의 부분이면 `combat`이 실패하는 동안 `game`은 통과하지 못합니다. 그렇다고 `game`의
 eval이 `combat`을 읽지는 않으며, 읽으려면 참조해야 합니다.
 
-각 eval은 참조한 입력을 판정하는 eval의 결과가 나올 때까지 실행되지 않습니다. [eval 의존성](#eval-dependencies)을 보세요.
+각 eval은 자신이 참조한 입력 Artifact를 판정하는 eval이 끝날 때까지 기다립니다. [eval 의존성](#eval-dependencies)을 보세요.
 
 Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
@@ -196,7 +196,7 @@ parts = ["physics"]
 | `combat` | 전투 구성 요소끼리 함께 동작함 |
 | `fireball` | 피해량, 재사용 대기시간, 효과 |
 
-부분이 정하는 것은 리뷰가 아니라 판정입니다.
+부분은 상위 Artifact가 무엇을 리뷰할지가 아니라 통과 여부를 정합니다.
 
 - **부분이 실패하면 그 부분으로 이루어진 Artifact도 실패합니다.** `fireball`이 RED인 동안
   `game`도 RED로 보이며, 부분의 부분까지 모든 부분과 자기 eval이 통과해야 `game`이 통과합니다.
@@ -210,8 +210,8 @@ parts = ["physics"]
 - **그 밖에는 영향이 없습니다.** 부분은 파일을 나누지 않으며, 각 Artifact는 선언이 다루는 파일을
   그대로 가집니다. 폴더 Artifact의 파일에 그 안에 중첩된 폴더 Artifact의 파일은 들어가지 않습니다.
   fireball이 바뀔 때는 fireball을 참조하는 eval만 다시 리뷰하고, `game`의 파일이 바뀌어도 fireball은
-  다시 리뷰하지 않습니다. 파일 Artifact나 aspect는 둘러싼 폴더 Artifact와 파일을 함께 가지며, 함께
-  가진 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
+  다시 리뷰하지 않습니다. 파일 Artifact나 aspect의 파일은 둘러싼 폴더 Artifact의 파일에도
+  포함되므로, 그 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
 
 부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [파일 Artifact](declarations.md#file-artifacts)는 파일
 하나이고, [aspect](declarations.md#aspects)는 fireball의
