@@ -4,7 +4,7 @@
 // Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
-import { artifactize, create, createChain, createEvals, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
+import { artifactize, create, createChain, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
@@ -909,7 +909,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-GRAPH-FIND; UX edges: E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
+  // UX journey: J-GRAPH-FIND; UX edges: E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO E-GRAPH-FIND-CHOOSE
   scenario<Record<string, never>>(
     "graph-find-many",
     "lists the first 50 Artifacts of a Current that match, in the graph's order, says how many more do, and Enter opens the first",
@@ -946,6 +946,45 @@ export const scenarios: Scenario[] = [
       assert.equal(reused.glyph, "↻", "the Detail's eval chip says reused");
       assert.deepEqual(shown.entries.filter((entry) => entry.glyph !== reused.glyph || entry.colour !== reused.colour), [],
         "every found Artifact showed reused, in its glyph and colour");
+
+      // ↓ and ↑ move the choice one entry at a time; Enter opens the chosen one, n001.
+      await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open again");
+      await fill(browser, FIND, "N0");
+      await browser.waitUntil(async () => (await field())?.entries.length === 50, { timeout: 15000, timeoutMsg: "fifty found again" });
+      const chosen = async () => (await field())?.entries.findIndex((entry) => entry.chosen);
+      for (const [key, at] of [["ArrowDown", 0], ["ArrowDown", 1], ["ArrowDown", 2], ["ArrowUp", 1]] as const) {
+        await press(browser, [key], async () => (await chosen()) === at, `${key} chooses entry ${at}`);
+      }
+      await press(browser, ["Enter"], async () => (await field()) === null && (await detail(browser))?.title === "Artifact n001", "Enter opens the chosen n001's Detail");
+    },
+  ),
+
+  // UX journey: J-GRAPH-MINIMIZE; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE
+  scenario<{ run: string }>(
+    "graph-minimize-joined",
+    "draws the edges of a minimized whole's parts to the same Artifact as one, lit by the light that comes first",
+    async () => {
+      const fixture = createJoined();
+      const [run] = savedRuns(fixture);
+      return { fixture, args: ["--repo", fixture.repo], data: { run: run.id } };
+    },
+    async (browser, { data }) => {
+      await shownRun(browser, data.run);
+      await graphShown(browser, "a:pack/a:bad");
+      // Before: good's GREEN edge and bad's RED edge both reach user.
+      await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:pack/a:good": "green", "a:pack/a:bad": "red" }, {
+        "a:pack/a:good>a:user": "green",
+        "a:pack/a:bad>a:user": "red",
+      }), { timeout: 15000, timeoutMsg: "good's and bad's edges to user drawn in their lights" });
+      // Minimized, pack sends user one edge, RED before GREEN.
+      await clickButton(browser, ".graph", "Minimize pack");
+      let edges: string[] = [];
+      await browser.waitUntil(async () => {
+        const shown = await graphAppearance(browser);
+        edges = Object.keys(shown.edges);
+        return graphHasColours(shown, {}, { "a:pack>a:user": "red" });
+      }, { timeout: 15000, timeoutMsg: "pack's one edge to user drawn RED" });
+      assert.deepEqual(edges, ["a:pack>a:user"], "the two edges drawn as one");
     },
   ),
 ];

@@ -61,7 +61,7 @@
           return;
         }
         const graph = { nodes: next.update.nodes, edges: next.update.edges };
-        lay(next.source, next.shape, graph, () => read === g.reads).catch((failure) => {
+        lay(next.source, next.shape, graph, () => read === g.reads, () => graph).catch((failure) => {
           if (read === g.reads) g.error = message(failure);
         });
       },
@@ -71,16 +71,14 @@
     );
   };
 
-  /** Lay `graph` out with the wholes minimized on the branch now and show it, while `still`
-   * holds; again if they changed meanwhile. */
-  function lay(at: Source, shape: ShapeKey, graph: Shape, still: () => boolean): Promise<void> {
+  /** Lay `graph` out with the wholes minimized on the branch now and show it lit as `lit` says
+   * once laid out, while `still` holds; again if they changed meanwhile. */
+  function lay(at: Source, shape: ShapeKey, graph: Shape, still: () => boolean, lit: () => Shape): Promise<void> {
     const minimized = m.minimizedOn(branch);
     return g.positions(at, shape, graph, minimized).then((positions) => {
       if (!still()) return;
-      if (m.minimizedOn(branch) !== minimized) return lay(at, shape, graph, still);
-      // The same shape may have been lit again meanwhile: its newest lights stay.
-      const same = g.shown !== null && keyOf(g.shown.source) === keyOf(at) && g.shown.shape === shape;
-      g.shown = { source: at, shape, graph: same ? g.shown!.graph : graph, minimized, positions };
+      if (m.minimizedOn(branch) !== minimized) return lay(at, shape, graph, still, lit);
+      g.shown = { source: at, shape, graph: lit(), minimized, positions };
     });
   }
 
@@ -91,7 +89,8 @@
     const held = g.shown;
     if (!held) return Promise.resolve();
     const still = () => g.shown !== null && keyOf(g.shown.source) === keyOf(held.source) && g.shown.shape === held.shape;
-    return lay(held.source, held.shape, held.graph, still).catch((failure) => {
+    // The graph may have been lit again meanwhile: its newest lights stay.
+    return lay(held.source, held.shape, held.graph, still, () => g.shown!.graph).catch((failure) => {
       if (still()) g.error = message(failure);
     });
   }

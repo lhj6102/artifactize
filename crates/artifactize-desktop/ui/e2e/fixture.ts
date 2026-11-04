@@ -434,6 +434,33 @@ export function createParts(): Fixture {
 }
 
 /**
+ * A repository verified once, its Run ended RED: the whole pack holds good, which passes, and
+ * bad, which fails; user, outside it, reads both.
+ */
+export function createJoined(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, operation: Operation, input = "") =>
+      `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile(operation)}\npayload.instruction = "Check ${name}.${input}"\n`;
+    for (const [folder, text] of [
+      [["pack"], `name = "pack"\n`],
+      [["pack", "good"], check("good", "pass")],
+      [["pack", "bad"], check("bad", "fail")],
+      [["user"], check("user", "pass", " Read {good} and {bad}.")],
+    ] as const) {
+      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+    }
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 1) throw new Error(`verify exited ${status}, expected 1 (RED)`);
+    settleRuns(cli(), repo, state);
+    return fixture;
+  });
+}
+
+/**
  * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
  * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
  */

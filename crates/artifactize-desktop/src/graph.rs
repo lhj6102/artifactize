@@ -62,7 +62,13 @@ pub fn precedence() -> Precedence {
         Verdict::Red,
     ];
     run.sort();
-    let mut current = [Plan::Reuse, Plan::Wait, Plan::Blocked, Plan::Check, Plan::Run];
+    let mut current = [
+        Plan::Reuse,
+        Plan::Wait,
+        Plan::Blocked,
+        Plan::Check,
+        Plan::Run,
+    ];
     current.sort();
     Precedence {
         run: run.into_iter().map(Light::from).collect(),
