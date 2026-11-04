@@ -10,6 +10,7 @@ import DetailPane from "./DetailPane.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { humanView } from "../review/fixtures";
+import { branch } from "./fixtures";
 
 beforeAll(() => {
   // jsdom lays nothing out; the neighbours' small graph only observes sizes and reads transforms.
@@ -129,6 +130,48 @@ it("shows the Artifact tab first with its evals' verdicts, and switches to an ev
   expect(read).toEqual(["a:app", "e:app/test"]);
   expect(screen.queryByRole("list", { name: "Evals of app" })).toBeNull();
   expect(within(screen.getByRole("tablist")).getByRole("tab", { selected: true }).textContent?.trim()).toBe("✗test");
+});
+
+it("stars the Artifact with the ☆ beside its title, and takes the star away; a failed star goes back", async () => {
+  const shown = branch("main", []);
+  let kept = ["docs"];
+  let refuse = false;
+  const asked: unknown[] = [];
+  mockIPC((command, args) => {
+    if (command === "detail_row") return rowOf(args);
+    if (command === "detail") return view((args as { node: string }).node, "Artifact app");
+    if (command === "starred_artifacts") return kept;
+    if (command === "star_artifact") {
+      asked.push(args);
+      if (refuse) throw { kind: "setting", message: "the state directory is read-only" };
+      const { artifact, on } = args as { artifact: string; on: boolean };
+      kept = on ? [...kept, artifact] : kept.filter((name) => name !== artifact);
+      return kept;
+    }
+    return null;
+  });
+  renderHosted(DetailPane, {
+    source: RUN, revision: 1, branch: shown, node: "a:app", tab: null, focused: false, active: true,
+    review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
+  });
+  await screen.findByRole("heading", { name: "Artifact app" });
+  const star = await screen.findByRole("button", { name: "Star app" });
+  expect(star.textContent).toBe("☆");
+  expect(star.getAttribute("aria-pressed")).toBe("false");
+  await fireEvent.click(star);
+  await waitFor(() => expect(star.textContent).toBe("★"));
+  expect(star.getAttribute("aria-pressed")).toBe("true");
+  await fireEvent.click(star);
+  await waitFor(() => expect(star.textContent).toBe("☆"));
+  expect(asked).toEqual([
+    { branch: shown.key, artifact: "app", on: true },
+    { branch: shown.key, artifact: "app", on: false },
+  ]);
+  // Not kept: the star goes back, and the Detail says why.
+  refuse = true;
+  await fireEvent.click(star);
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("the state directory is read-only"));
+  expect(star.textContent).toBe("☆");
 });
 
 it("closes with Close and with Esc", async () => {

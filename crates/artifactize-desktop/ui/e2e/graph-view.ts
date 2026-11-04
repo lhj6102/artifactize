@@ -168,6 +168,8 @@ export function fact(browser: WebdriverIO.Browser, name: string): Promise<string
 
 /** The graph's find field. */
 export const FIND = 'input[aria-label="Find in the graph"]';
+/** What the find field says with nothing typed while none of the graph's Artifacts is starred. */
+export const NO_FAVORITES = "No favorites here yet: star an Artifact with the ☆ beside its Detail's title.";
 
 /** An entry the find field lists: its text without the glyph, its verdict glyph and colour, and
  * whether it is the chosen one. */

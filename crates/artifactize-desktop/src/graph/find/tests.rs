@@ -1,6 +1,7 @@
-use super::{LISTED, Named, find_in};
+use super::{LISTED, Named, Wanted, find_in};
 use crate::status::Tone;
 use artifactize_core::{monitor::NodeId, types::ArtifactName};
+use std::collections::BTreeSet;
 
 fn artifact(name: &str) -> Named<'_> {
     Named {
@@ -33,7 +34,7 @@ fn listed(text: &str, graph: &[(&str, &[&str])]) -> (Vec<String>, u32) {
             let evals: Vec<_> = evals.iter().map(|each| eval(name, each)).collect();
             (artifact(name), evals)
         }),
-        text,
+        &Wanted::Text(text),
     );
     let names = finding
         .found
@@ -72,10 +73,34 @@ fn an_empty_text_finds_nothing() {
 }
 
 #[test]
+fn the_starred_artifacts_of_the_graph_are_listed_in_its_order_without_their_evals() {
+    let graph = [
+        (artifact("release"), vec![eval("release", "signoff")]),
+        (artifact("code"), vec![eval("code", "release")]),
+        (artifact("docs"), vec![]),
+    ];
+    // A starred Artifact this graph lacks, `gone`, is not listed.
+    let starred = ["docs", "release", "gone"].map(String::from).into();
+    let finding = find_in(graph, &Wanted::Starred(&starred));
+    let listed: Vec<_> = finding
+        .found
+        .iter()
+        .map(|found| (found.artifact.as_str(), found.tab.is_none()))
+        .collect();
+    assert_eq!(listed, [("release", true), ("docs", true)]);
+    assert_eq!(finding.more, 0);
+    let none = find_in(
+        [(artifact("docs"), vec![])],
+        &Wanted::Starred(&BTreeSet::new()),
+    );
+    assert!(none.found.is_empty());
+}
+
+#[test]
 fn an_eval_opens_its_artifact_on_its_own_tab() {
     let finding = find_in(
         [(artifact("release"), vec![eval("release", "signoff")])],
-        "sign",
+        &Wanted::Text("sign"),
     );
     let [found] = finding.found.as_slice() else {
         panic!("one eval found: {finding:?}");

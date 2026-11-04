@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     repository::Identity,
     store::CatalogRun,
-    types::{RunStatus, Timestamp},
+    types::{ArtifactName, RunStatus, Timestamp},
 };
 use std::path::Path;
 
@@ -359,6 +359,57 @@ fn starred_branches_come_first_in_the_search_order_and_stay_starred() {
             "beta main"
         ]
     );
+}
+
+#[test]
+fn starred_artifacts_are_kept_per_project_for_every_branch_of_it() {
+    let main = Place::Git {
+        common: "/repo/.git".into(),
+        head: Head::Branch(BranchName::try_from("main".to_owned()).unwrap()),
+    };
+    let feature = Place::Git {
+        common: "/repo/.git".into(),
+        head: Head::Branch(BranchName::try_from("feat/x".to_owned()).unwrap()),
+    };
+    let other = Place::Folder("/notes".into());
+    let name = |text: &str| text.parse::<ArtifactName>().unwrap();
+    let state = crate::test_os::tempdir();
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &main.project()).unwrap(),
+        BTreeSet::new(),
+        "none before the first star"
+    );
+    star_artifact(Some(state.path()), &main.project(), &name("docs"), true).unwrap();
+    let kept = star_artifact(Some(state.path()), &main.project(), &name("app"), true).unwrap();
+    assert_eq!(kept, BTreeSet::from([name("app"), name("docs")]));
+    // Every branch of the repository has them, read back for the next monitor of this user;
+    // another project has its own.
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &feature.project()).unwrap(),
+        kept
+    );
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &other.project()).unwrap(),
+        BTreeSet::new()
+    );
+    star_artifact(Some(state.path()), &other.project(), &name("app"), true).unwrap();
+    let kept = star_artifact(Some(state.path()), &feature.project(), &name("app"), false).unwrap();
+    assert_eq!(kept, BTreeSet::from([name("docs")]));
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &main.project()).unwrap(),
+        kept
+    );
+    assert_eq!(
+        starred_artifacts(Some(state.path()), &other.project()).unwrap(),
+        BTreeSet::from([name("app")])
+    );
+    // A stored star whose Artifact is no Artifact name is refused when read back.
+    std::fs::write(
+        state.path().join("starred-artifacts.json"),
+        r#"[{"project":{"folder":"/notes"},"artifacts":["no name"]}]"#,
+    )
+    .unwrap();
+    assert!(starred_artifacts(Some(state.path()), &other.project()).is_err());
 }
 
 #[test]
