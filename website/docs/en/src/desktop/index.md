@@ -167,8 +167,9 @@ Artifact says which, with how many of its evals would run. The header says how m
 Artifacts are still being checked, then when the branch was scanned, or why a scan failed.
 The Current scans again when you choose it again, when a Run of the branch ends, and on
 **Refresh** or Ctrl+R/F5. While a scan is still running, choosing the Current again or a
-Run ending continues that scan; **Refresh** or Ctrl+R/F5 scans again once it finishes, for
-files you changed meanwhile. If your search hides the branch, press **Refresh** after the
+Run ending continues that scan, and the Current's **Refresh** button is disabled; the
+palette's **Refresh** or Ctrl+R/F5 scans again once it finishes, for files you changed
+meanwhile. If your search hides the branch, press **Refresh** after the
 Run ends.
 Expand **Structure and evaluation criteria** for the full tree, criteria and labeled
 relations as text. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
@@ -179,13 +180,14 @@ approves nothing.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does, and Ctrl+F
-[finds an Artifact or an eval by name](#find-in-the-graph); they have no other keys of
-their own.
+[finds an Artifact or an eval by name, or lists your favorites](#find-in-the-graph), as the
+graph's bottom reminds you; they have no other keys of their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms.
 **Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
 whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
-appears; after that only you move its camera, also by opening what Find found: the
-Detail, new results, scans and layouts leave it where it is.
+appears; after that only you move its camera, also by opening what Find found or by
+minimizing or expanding a box (below): the Detail, new results, scans and layouts leave
+it where it is.
 
 Every graph is laid out at once, upstream on the left. An Artifact that a great many
 others use (such as one criteria file every review reads) stands in its own column on
@@ -195,7 +197,8 @@ pannable, zoomable minimap helps navigate the graph. **More than 500 nodes:** th
 graph has no minimap, and while more than 500 are in or near the view they are colored boxes without names
 that open only with a click or through [Find](#find-in-the-graph). Zoom in until names show again to
 reach them with Tab and Enter. When a Run changes, the graph's colors update in
-place; it is arranged again only when Artifacts or edges change. An Artifact's Detail draws at most 16
+place; it is arranged again only when Artifacts or edges change, or when you minimize or
+expand a box. An Artifact's Detail draws at most 16
 neighbours on each side, failing ones first, and counts the rest.
 
 An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
@@ -205,6 +208,20 @@ Detail, and a click on a part opens the part's. A part of several Artifacts is d
 each of them. Opening one of its copies highlights them all, and its Detail says how many
 times it is drawn and inside which Artifacts.
 
+A box has a **Minimize** button at its top right, which Tab reaches
+after the box and before its parts. It draws that Artifact as a node of the usual size,
+with its name, its colour and how many parts it has, and hides its parts. Their edges
+meet the minimized node instead: edges between the same two nodes are drawn once, in the
+colour that comes first (RED, ERROR, running, blocked, waiting, then GREEN; on a Current,
+would run, checking, blocked, waiting, then reused), and edges among the hidden Artifacts
+are not drawn. The minimized node works like any other: a click on it, or Tab and Enter,
+opens its Detail, and it is highlighted while an Artifact it hides is open. Find still
+lists the hidden Artifacts, and opening one centres the minimized node. **Expand** draws
+the box again. Minimizing and expanding keep the box's top left corner where it was on
+the screen. An Artifact stays minimized on every graph of its branch, its Runs' and its
+Current, until you expand it or quit the app; a part of several Artifacts stays drawn
+inside the ones that are not minimized.
+
 ### Find in the graph
 
 With a Run's graph or a Current shown and the keyboard outside the Pane (on the graph or
@@ -213,6 +230,10 @@ Artifacts and evals whose names contain what you type, ignoring case, in the gra
 order: an Artifact by its whole name and an eval as `Artifact / eval`, each with its
 verdict's mark and colour (on a Current, what verify would do). It lists the first 50 and
 says how many more match, or that none does.
+
+With nothing typed, it lists your favorites: the graph's [starred Artifacts](#detail), in
+the graph's order and the same way, as if you had found them. While none of the graph's
+Artifacts is starred, it says how to star one.
 
 ↑/↓ choose an entry. Enter (on the first entry when none is chosen) or a click opens its
 Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
@@ -235,6 +256,11 @@ and leaving some graph visible; it keeps that width, also in the next launch.
 An Artifact's Detail has chips that read as a path, `[icon] {name} / [eval] …`: the
 Artifact's own chip, then one per eval with its verdict's glyph and colour, on a
 Current whether it would run, would be reused or is still being checked.
+
+The ☆ beside the title of an Artifact's Detail, on any of its chips, stars the Artifact:
+it becomes one of your **favorites**, which Ctrl+F lists [with nothing typed](#find-in-the-graph).
+An Artifact stays starred on every branch of its project, in Runs and Currents alike, and the
+next time you open the app. Click the ★ again to take the star away.
 
 The Artifact's chip shows it between its neighbours, drawn with the graph's nodes and
 edges: the Artifacts its evals use on the left, the Artifacts whose evals use it on

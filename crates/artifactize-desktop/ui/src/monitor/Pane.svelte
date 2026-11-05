@@ -86,8 +86,7 @@
     bind:value={query}
     bind:input={m.panes.search}
     label="Search branches and reviews"
-    placeholder="Search: text, repo:, branch:, sort:recent, sort:name"
-    reset="sort:recent"
+    placeholder="Search: text, repo:, branch:, sort:recent, sort:name"    reset={browse.start}
     complete={(text) => browse.complete(text)}
     onleave={() => m.panes.pane?.focus()}
   />

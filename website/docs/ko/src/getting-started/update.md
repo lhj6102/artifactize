@@ -90,8 +90,7 @@ eval이나 프로필 변형을 찾아 대신 쓸 백엔드를 안내합니다. a
 
 ## 상태 {#state}
 
-Run, 저장된 Agent 대화, 로그인을 포함한 모든 상태는 한
-디렉터리에 있습니다. 기본값은 `~/.local/state/artifactize`(Windows에서는 `%LOCALAPPDATA%\artifactize`)입니다.
+Run, 저장된 Agent 대화, 로그인 정보는 모두 한 디렉터리에 저장됩니다. 기본값은 `~/.local/state/artifactize`(Windows에서는 `%LOCALAPPDATA%\artifactize`)입니다.
 [상태](../features/others/state.md#state)에 그 내용,
 상태 위치를 옮기는 환경 변수, Store 버전의 전용 사본이 정리되어 있습니다.
 

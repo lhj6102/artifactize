@@ -327,6 +327,8 @@ Summarize {docs}."""
       assert.deepEqual((await drawn()).nodes, allReused, "no scan without a choice, a Refresh or a Run's end");
       await chooseChip(browser, "repo  master", "current");
       await waitFor(browser, async () => (await drawn()).nodes["a:release"] === "release: would run (1 eval)", "release would run again");
+      // The scan learns each Artifact in turn: ship's plan, once known, is to run.
+      await waitFor(browser, async () => (await drawn()).nodes["a:ship"] !== "ship: checking", "ship's plan known");
       assert.equal((await drawn()).nodes["a:ship"], "ship: would run (1 eval)", "ship, reading the changed notes, would run again without waiting for the sign-off");
       /** Scans the app has completed, from its read-only command activity. */
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan?.completed ?? 0;

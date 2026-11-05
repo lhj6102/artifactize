@@ -526,13 +526,18 @@ pub struct Found {
 ///
 /// A waiting Human request that joined another waiting request's execution (a follower) is
 /// listed once, as the original that records its definition and receives every action; a
-/// follower whose original no longer waits is listed as itself.
+/// follower whose original no longer waits is listed as itself. The first page first ends the
+/// sign-offs whose repository folder is gone ([`store::retire_removed_signoffs`]): nothing can
+/// be reviewed in them any more.
 pub async fn search(
     state: &Path,
     query: &Query,
     reviewer: &ReviewerId,
     start: u64,
 ) -> Result<Found, String> {
+    if start == 0 {
+        store::retire_removed_signoffs(state).await?;
+    }
     page(state, query, reviewer, start, query.shown()).await
 }
 

@@ -5,8 +5,8 @@ Human 도구는 리뷰어가 리뷰하는 동안 실행하도록 미리 선언�
 선언 예는 [Human 리뷰](../human.md#human-tools)에 있습니다. `open`과 `graph`는 프로그램을
 실행하고, 나머지는 출력을 보여 줍니다. 이 아래에서는 명령 도구를 설명합니다.
 
-명령 도구는 Agent 도구처럼 `<operation>_<artifactId>`라는 이름으로 리뷰어에게 제공되며, 이 이름은 eval의
-범위 안에서 겹치면 안 됩니다. 예를 들어 Artifact `b_c`의 작업 `a`와 Artifact `c`의 작업 `a_b`는 둘 다
+리뷰어는 Agent 도구와 마찬가지로 명령 도구를 `<operation>_<artifactId>`라는 이름으로 씁니다. 이 이름은
+eval 범위 안에서 겹치지 않아야 합니다. 예를 들어 Artifact `b_c`의 작업 `a`와 Artifact `c`의 작업 `a_b`는 둘 다
 `a_b_c`가 됩니다. 이름이 겹치면 `Artifact tool names collide: a_b_c` 오류와 함께 리뷰의 도구를 쓸 수
 없습니다. 작업이나 Artifact의 이름을 바꾸면 됩니다.
 

@@ -168,8 +168,7 @@ cargo install --path crates/artifactize-tools --locked
 
 ## 데스크톱 앱 {#desktop-app}
 
-[데스크톱 앱](../desktop/index.md)은 현재 브랜치 목록과 각 브랜치의 Run, 지금 verify하면
-실행할 작업, 대기 중인 Human 리뷰를 한 창에 보여 줍니다. 디스크 이미지나 AppImage로
+[데스크톱 앱](../desktop/index.md)은 현재 브랜치 목록과 브랜치별 Run, 지금 verify를 실행하면 처리할 작업, 대기 중인 Human 리뷰를 한 창에서 확인할 수 있습니다. 디스크 이미지나 AppImage로
 실행하면 앱이 첫 실행 때 `artifactize` 명령을 설정합니다(아래 참고).
 
 [내려받기](install.md#download-the-app)에서 설치하세요. 각 릴리스에는 AppImage
@@ -198,7 +197,7 @@ chmod +x artifactize-desktop-vVERSION-x86_64-unknown-linux-gnu.AppImage
   파일은 그곳에서 교체하지 않습니다. 셸이 `~/.local/bin`을 검색하지 않는다면 셸 시작 파일에
   `export PATH="$HOME/.local/bin:$PATH"`를 추가하고 새 터미널을 여세요.
 
-설정 오류는 기록만 하고 앱을 멈추지 않습니다. Windows 설치 프로그램, `.deb`,
+설정에 오류가 있어도 오류만 기록하고 앱은 계속 실행됩니다. Windows 설치 프로그램, `.deb`,
 `install.sh`가 풀어 놓은 Linux 앱은 이미 명령을 제공하므로 설정이 필요 없습니다.
 
 ### 소스에서 데스크톱 앱 빌드 {#build-the-desktop-app-from-source}

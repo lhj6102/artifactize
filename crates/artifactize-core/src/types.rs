@@ -398,6 +398,7 @@ status!(FailureCode {
    RuntimeError => "RUNTIME_ERROR",
    Superseded => "SUPERSEDED",
    OwnerDied => "OWNER_DIED",
+   RepositoryRemoved => "REPOSITORY_REMOVED",
    Spawn => "SPAWN",
 });
 impl std::ops::Deref for FailureCode {

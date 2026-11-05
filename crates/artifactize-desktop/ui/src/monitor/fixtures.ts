@@ -4,7 +4,7 @@ import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc
 /** A snapshot with nothing listed, at `revision`. */
 export function browseView(revision: number, extra: Partial<BrowseView> = {}): BrowseView {
   return {
-    query: { text: "sort:recent", error: null },
+    query: { text: "sort:recent", error: null, start: "sort:recent" },
     branches: [],
     waiting: [],
     launch: null,

@@ -1,0 +1,33 @@
+name = "rules-reference-readme"
+
+[views.agent_tools]
+
+[views.agent_tools.read_reference]
+description = "Print the reference README description REFERENCE-README.md of {artifactName}."
+builtin = "read"
+args = ["REFERENCE-README.md"]
+
+[views.human_tools]
+open = { description = "Open REFERENCE-README.md of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}"] }
+
+[evals.approved]
+title = "The owner approves the reference README as the model for ours"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open REFERENCE-README.md of {rules-reference-readme} with the open tool. Submit GREEN with approved: true when it \
+describes the README this project models its own on; otherwise submit RED and list what to change."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false

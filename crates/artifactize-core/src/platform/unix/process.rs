@@ -215,7 +215,15 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
 
 #[cfg(not(target_os = "macos"))]
 fn process_stat(pid: u32) -> io::Result<(char, u64)> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    // A process that exits between opening its stat file and reading it answers ESRCH:
+    // it is gone, as when the file no longer exists.
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).map_err(|error| {
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            io::Error::new(io::ErrorKind::NotFound, error)
+        } else {
+            error
+        }
+    })?;
     let mut fields = stat
         .rsplit_once(')')
         .ok_or_else(|| io::Error::other("invalid process stat"))?

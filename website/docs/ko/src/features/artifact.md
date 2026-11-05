@@ -28,7 +28,7 @@ payload.instruction = "Check that every link in the docs resolves."
 `game`의 부분이면 `combat`이 실패하는 동안 `game`은 통과하지 못합니다. 그렇다고 `game`의
 eval이 `combat`을 읽지는 않으며, 읽으려면 참조해야 합니다.
 
-각 eval은 참조한 입력을 판정하는 eval의 결과가 나올 때까지 실행되지 않습니다. [eval 의존성](#eval-dependencies)을 보세요.
+각 eval은 참조한 입력 Artifact를 평가하는 eval이 끝난 뒤 실행됩니다. [eval 의존성](#eval-dependencies)을 보세요.
 
 Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
 선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
@@ -121,8 +121,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 효율을 위해 의존성을 먼저 실행합니다. 입력 리뷰가 끝나지 않았으면 그 입력을 쓰는 eval은 실행을 미루고, 입력 리뷰가 RED면 실행이 막힙니다. `--speculate`를 쓰면 입력 게이트가 확정되기 전에 작업을 시작할 수 있지만, 최종 통과에 필요한 요건은 그대로 모두 충족해야 합니다. 최종 결과가 GREEN이 되려면 상위 리뷰를
 포함해 필요한 증거를 모두 확보해야 합니다.
 
-게이트는 eval마다 적용됩니다. Artifact는 eval 중 하나라도 ERROR나 RED면 그 상태를, 그렇지 않고
-하나라도 막혔으면 BLOCKED를 보여 줍니다. 위의 `app/e2e`는 `e2e-tests`를 참조합니다.
+게이트는 eval마다 적용됩니다. eval 중 하나라도 ERROR나 RED이면 Artifact에도 그 상태를
+표시합니다. 그런 eval이 없어도 막힌 eval이 하나라도 있으면 BLOCKED로 표시합니다. 위의 `app/e2e`는 `e2e-tests`를 참조합니다.
 
 - `e2e-tests`의 eval이 RED나 BLOCKED이면 `app/e2e`가 막히고, `app`을 참조하는 eval도 차례로
   막힙니다.
@@ -146,8 +146,8 @@ payload.instruction = "Run {e2e-tests} against {app}."
 | `docs`나 `cli`의 eval이 서로도 `core`도 참조하지 않음 | 그 eval은 이들의 결과가 나오기 전에도 실행됩니다. 다만 Run이 GREEN으로 끝나려면 모든 결과가 필요합니다. |
 | 다른 곳의 eval이 `docs`를 참조함 | `docs`와 `cli`의 모든 eval 결과가 나와야 실행됩니다. |
 
-eval의 대상 Artifact도 그 eval의 게이트가 되지 않으며, [Human 형제 선행 조건](#human-sign-offs)만
-예외입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
+eval은 대상 Artifact 자체를 게이트로 삼지 않습니다. 예외는 [Human 형제 선행 조건](#human-sign-offs)
+하나입니다. 어떤 eval을 대기 상태로 두고 어떤 추측 실행 작업을 취소할지도 이 게이트에 따라 정해집니다.
 
 BLOCKED인 eval의 사유에는 `Dependency verdict RED: core/tests`처럼 실행을 막은 근본 원인인 RED eval만
 표시하고, 단순히 실행 중인 eval은 표시하지 않습니다. 추측 실행하는 Run에서는 상위 eval의 ERROR도
@@ -184,7 +184,7 @@ parts = ["physics"]
 선언한 `physics`는 `parts`에 적혀 있으므로 `game`의 부분입니다. 한 Artifact가 여러 Artifact의
 부분일 수도 있습니다. 두 애플리케이션이 함께 쓰는 모듈은 두 애플리케이션의 `parts`에 모두 적으며,
 그 모듈의 폴더는 둘 중 한쪽 안에 있어도 됩니다. 부분 관계가 이어져도 Artifact는 자기 자신을
-부분으로 삼을 수 없습니다. Graph Artifact는 부분을 갖지 않고 어떤 Artifact의 부분도 아닙니다.
+부분으로 삼을 수 없습니다. 그래프 Artifact는 부분을 갖지 않으며 어떤 Artifact의 부분도 아닙니다.
 
 각 부분도 독립된 Artifact입니다. Artifact는 eval 없이 부분을 모으기만 할 수도 있고,
 부분들이 함께 동작하는지 보는 검사처럼 자기 내용과 eval을 가질 수도 있습니다. 부분이 자기 몫을
@@ -196,7 +196,7 @@ parts = ["physics"]
 | `combat` | 전투 구성 요소끼리 함께 동작함 |
 | `fireball` | 피해량, 재사용 대기시간, 효과 |
 
-부분이 정하는 것은 리뷰가 아니라 판정입니다.
+부분은 상위 Artifact가 무엇을 리뷰할지가 아니라 통과 여부를 정합니다.
 
 - **부분이 실패하면 그 부분으로 이루어진 Artifact도 실패합니다.** `fireball`이 RED인 동안
   `game`도 RED로 보이며, 부분의 부분까지 모든 부분과 자기 eval이 통과해야 `game`이 통과합니다.
@@ -210,8 +210,8 @@ parts = ["physics"]
 - **그 밖에는 영향이 없습니다.** 부분은 파일을 나누지 않으며, 각 Artifact는 선언이 다루는 파일을
   그대로 가집니다. 폴더 Artifact의 파일에 그 안에 중첩된 폴더 Artifact의 파일은 들어가지 않습니다.
   fireball이 바뀔 때는 fireball을 참조하는 eval만 다시 리뷰하고, `game`의 파일이 바뀌어도 fireball은
-  다시 리뷰하지 않습니다. 파일 Artifact나 aspect는 둘러싼 폴더 Artifact와 파일을 함께 가지며, 함께
-  가진 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
+  다시 리뷰하지 않습니다. 파일 Artifact나 aspect의 파일은 둘러싼 폴더 Artifact의 파일에도
+  포함되므로, 그 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
 
 부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [파일 Artifact](declarations.md#file-artifacts)는 파일
 하나이고, [aspect](declarations.md#aspects)는 fireball의

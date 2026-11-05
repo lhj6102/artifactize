@@ -389,15 +389,21 @@ export async function createNavigationFixture(): Promise<{
   });
 }
 
-/** Real worktrees of the fixture's one Git repository, each with its own identified Run. */
-export async function addWorktrees(fixture: Fixture): Promise<string[]> {
+/** Real worktrees `names` of the fixture's one Git repository, each with its own identified Run
+ * waiting for a person on its `notes`: distinct by default, so no worktree joins another's
+ * sign-off; notes alike make each later worktree join the first one's. */
+export async function addWorktrees(
+  fixture: Fixture,
+  names = ["scope-one", "scope-two"],
+  notes = (name: string) => `# Notes of ${name}\n- Distinct consumer inputs.\n`,
+): Promise<string[]> {
   git(fixture.repo, "-C", fixture.repo, "add", ".");
   git(fixture.repo, "-C", fixture.repo, "commit", "-qm", "Fixture inputs");
   const runs: string[] = [];
-  for (const name of ["scope-one", "scope-two"]) {
+  for (const name of names) {
     const repo = nativePath(fixture.root, name);
     git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", name, repo);
-    writeText(nativePath(repo, "release", "notes.md"), `# Notes of ${name}\n- Distinct consumer inputs.\n`);
+    writeText(nativePath(repo, "release", "notes.md"), notes(name));
     runs.push(await verifyWaiting({ ...fixture, repo }));
   }
   return runs;
@@ -406,8 +412,9 @@ export async function addWorktrees(fixture: Fixture): Promise<string[]> {
 /**
  * A repository verified GREEN once whose Artifacts have parts: suite's folder holds app and site,
  * app's holds kit, and docs names site among its parts, so site is a part of two wholes. site's
- * check reads lib, which is a part of nothing, and app's reads site. Every Artifact but suite has
- * a runtime check.
+ * check reads lib, which is a part of nothing, and app's reads site; docs's check reads lib too,
+ * and guide's, outside every whole, reads suite, so edges come into and go out of a whole. Every
+ * Artifact but suite has a runtime check.
  */
 export function createParts(): Fixture {
   return prepareFixture((root) => {
@@ -417,11 +424,12 @@ export function createParts(): Fixture {
       `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ${name}.${input}"\n`;
     for (const [folder, text] of [
       [["lib"], check("lib")],
-      [["suite"], `name = "suite"\n`],
+      [["suite"], check("suite", " Read {lib}.")],
       [["suite", "app"], check("app", " Read {site}.")],
       [["suite", "app", "kit"], check("kit")],
       [["suite", "site"], check("site", " Read {lib}.")],
-      [["docs"], `parts = ["site"]\n${check("docs")}`],
+      [["docs"], `parts = ["site"]\n${check("docs", " Read {lib}.")}`],
+      [["guide"], check("guide", " Read {suite}.")],
     ] as const) {
       writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
     }
@@ -429,6 +437,33 @@ export function createParts(): Fixture {
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
     if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    return fixture;
+  });
+}
+
+/**
+ * A repository verified once, its Run ended RED: the whole pack holds good, which passes, and
+ * bad, which fails; user, outside it, reads both.
+ */
+export function createJoined(): Fixture {
+  return prepareFixture((root) => {
+    const repo = nativePath(root, "repo");
+    const state = nativePath(root, "state");
+    const check = (name: string, operation: Operation, input = "") =>
+      `name = "${name}"\n[evals.check]\ntitle = "Check ${name}"\nprofile = ${runtimeProfile(operation)}\npayload.instruction = "Check ${name}.${input}"\n`;
+    for (const [folder, text] of [
+      [["pack"], `name = "pack"\n`],
+      [["pack", "good"], check("good", "pass")],
+      [["pack", "bad"], check("bad", "fail")],
+      [["user"], check("user", "pass", " Read {good} and {bad}.")],
+    ] as const) {
+      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+    }
+    git(repo, "init", "-q", "--initial-branch=master", repo);
+    const fixture = { root, repo, state };
+    const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
+    if (status !== 1) throw new Error(`verify exited ${status}, expected 1 (RED)`);
+    settleRuns(cli(), repo, state);
     return fixture;
   });
 }

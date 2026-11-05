@@ -108,10 +108,12 @@ async function prepare(tag: string, options: {
 } = {}) {
   const fixture = options.used ? await create() : createOutside();
   const placed = options.place?.(fixture);
+  // Everything that can fail comes before the site starts, so its server is always released.
+  const env = { ...environment(fixture), ...placed?.env };
   const { data, server } = await site(fixture, tag);
   return {
     fixture,
-    env: { ...environment(fixture), ...placed?.env, ARTIFACTIZE_RELEASES_URL: data.url },
+    env: { ...env, ARTIFACTIZE_RELEASES_URL: data.url },
     data,
     ...(placed ? { app: placed.app } : {}),
     ...(options.browser ? { browser: `${data.url}${options.browser}` } : {}),

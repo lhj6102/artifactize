@@ -1,7 +1,7 @@
 # Focus then sweep: verify를 반복하는 방법 {#focus-then-sweep-iterate-with-verify}
 
-코딩 어시스턴트가 RED eval을 고치면 고친 Artifact의 내용이 달라지므로, 그 Artifact를 읽는 eval은
-GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마다 `verify --all`을 실행하면 반복할
+코딩 어시스턴트가 RED eval의 지적을 반영해 Artifact를 고치면, 그 Artifact를 읽는 eval을 모두 다시
+리뷰해야 합니다. 이전에 GREEN이었던 eval도 마찬가지입니다. 수정할 때마다 `verify --all`을 실행하면 반복할
 때마다 시간과 비용이 들지만, eval 하나를 겨냥한 수정이 다른 eval을 깨뜨리는 경우는 드뭅니다.
 **focus-then-sweep** 스킬은 어시스턴트가 고치고 있는 eval만 다시 실행하고, 나머지는 마지막에
 한 번에 리뷰하도록 안내합니다.
@@ -18,37 +18,38 @@ GREEN이었던 것까지 모두 다시 리뷰해야 합니다. 수정할 때마�
 어시스턴트는 작업마다 하나를 고르며, 기본은 방식 A입니다. 어시스턴트는
 [MCP 도구](mcp.md)로 답할 수 있으면 MCP 도구를 쓰고, 그렇지 않으면 CLI를 씁니다.
 
-- **방식 A: 먼저 focus, 마지막에 sweep**
-  - **Focus**: RED eval 하나를 고친 뒤 GREEN이 될 때까지 그 eval만 다시 실행하고
+- **방식 A: 먼저 집중 실행, 마지막에 전체 실행**
+  - **집중 실행(focus)**: RED eval 하나를 고친 뒤 GREEN이 될 때까지 그 eval만 다시 실행하고
     (`artifactize verify --eval app/review --speculate --wait`, 또는 scope
     `{"kind": "eval", "evalId": "app/review"}`와 `speculate: true`로 `verify_start`),
-    그다음 RED eval로 넘어갑니다. 서로 겹치지 않는 수정이라면 여러 RED eval을 Run 하나에서
-    함께 focus할 수 있습니다(`--evals app/review,docs/matches-app`, 또는 scope
+    그다음 RED eval로 넘어갑니다. 서로 겹치지 않는 수정을 한다면, 관련된 RED eval 여러 개를 한
+    Run에서 함께 실행 대상으로 선택할 수 있습니다(`--evals app/review,docs/matches-app`, 또는 scope
     `{"kind": "evals", "evalIds": [...]}`). 수정 때문에 다시 리뷰해야 하는 eval은 반복할
     때마다 실행하지 않습니다. 고칠 대상은 그 eval이 평가하는 Artifact이며, GREEN을 받으려고
     eval을 느슨하게 바꾸지 않습니다.
-    focus Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
+    집중 실행한 Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
     `verify_result`는 실패한 eval과 그 요청 ID를 알려 주고, 리뷰어가 보고한 결과는
     `request_show`로, Runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는
     `artifactize run show RUN_ID --json`). 다시 리뷰해야 하는 eval의 결과가 아직 없으므로 이런
     Run은 보통 `Unmet obligation:` 줄과 함께 INCOMPLETE(종료 코드 4)로 끝납니다. 예상한
-    결과이므로 어시스턴트는 focus한 eval의 판정만 봅니다. BLOCKED eval에는
+    결과이므로 어시스턴트는 집중 실행 대상으로 삼은 eval의 판정만 확인합니다. BLOCKED eval에는
     `Dependency verdict RED: core/tests`처럼 막고 있는 RED eval이나 ERROR로 끝난 eval이
     나옵니다. 어시스턴트는 해당 eval을 먼저 고친 뒤 다시 실행합니다. ERROR는 검사를 실행하지 못했다는
     뜻이므로, 어시스턴트는 판정이 아니라 그 원인을 고칩니다.
     `--speculate`를 붙이면 eval이 참조하는 입력이 수정 때문에 다시 리뷰 대상이 되었어도 그
     eval을 실행합니다. RED 승인을 다시 받을 때는 eval 대신 그 Artifact를 선택합니다. 같은
     Artifact의 자동 eval이 모두 GREEN이 된 뒤에야 사람에게 승인을 요청하기 때문입니다.
-  - **Sweep**: RED eval이 모두 GREEN이 되면 전체를 한 번 실행합니다.
+  - **전체 실행(sweep)**: RED eval이 모두 GREEN이 되면 전체를 한 번 실행합니다.
     `artifactize verify --all --wait`를 쓰거나, scope `{"kind": "all"}`로 `verify_start`를
-    호출한 뒤 `verify_wait`와 `verify_result`로 결과를 봅니다. 바뀌지 않은 결과는 focus Run의
-    결과까지 포함해 재사용하고, 다시 리뷰해야 하는 eval만 실행합니다. 새 RED eval이 나오면 focus 단계로 돌아가고, sweep 결과가 GREEN이나 YELLOW이면 반복을 마칩니다.
-- **방식 B: 영향받을 eval까지 focus, 마지막에 sweep**: 공유 명세나 규칙 문서를 바꾼 경우처럼
-  수정이 다른 eval에도 영향을 줄 수 있으면, focus 단계에서 해당 eval도 함께 실행합니다. 어시스턴트는
+    호출한 뒤 `verify_wait`와 `verify_result`로 결과를 봅니다. 바뀌지 않은 결과는 앞서 집중
+    실행한 Run의 결과까지 재사용하고, 다시 리뷰해야 하는 eval만 실행합니다. 새 RED eval이 나오면
+    해당 eval을 집중 실행하는 단계로 돌아가고, 전체 실행 결과가 GREEN이나 YELLOW이면 반복을 마칩니다.
+- **방식 B: 영향받을 eval까지 집중 실행, 마지막에 전체 실행**: 공유 명세나 규칙 문서를 바꾼 경우처럼
+  수정이 다른 eval에도 영향을 줄 수 있으면, 집중 실행 단계에서 해당 eval도 함께 실행합니다. 어시스턴트는
   `config graph ARTIFACT --impact`(MCP에서는 `impact`를 켠 `config_graph`)와 `status`로 그
   eval을 찾습니다. 순환에 속한 eval은 함께 실행합니다. Artifact를 선택하면 같은 순환에 속한
   Artifact의 eval도 함께 실행됩니다.
-- **방식 C: 매번 sweep**: 수정할 때마다 `verify --all`을 실행합니다. focus로 절약할 수 있는 것이 적을 때
+- **방식 C: 매번 전체 실행**: 수정할 때마다 `verify --all`을 실행합니다. 집중 실행으로 절약할 수 있는 것이 적을 때
   씁니다. eval이 적거나 비용이 적을 때, 대부분의 eval이 참조하는 입력을 바꿨을 때, 여러 RED eval의
   원인이 하나일 때가 그렇습니다.
 

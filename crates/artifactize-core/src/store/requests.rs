@@ -315,7 +315,7 @@ pub async fn read_request_repo(state: &Path, id: &str) -> Result<std::path::Path
 }
 
 /// A read-only connection to the database of the canonical `state`, or none before it has one.
-async fn open_read(state: &Path) -> Result<Option<Connection>, String> {
+pub(super) async fn open_read(state: &Path) -> Result<Option<Connection>, String> {
     check_files(state)?;
     if !state
         .join(DATABASE)

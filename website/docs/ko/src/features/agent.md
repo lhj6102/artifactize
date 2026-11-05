@@ -41,13 +41,13 @@ artifactize models codex
 Agent eval도 Runtime eval처럼 입력 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
-`payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 리뷰어는 eval의
-제목과 ID, 대상, 지시문을 받고, artifactize가 일반적인 리뷰 규칙을 덧붙입니다. 리뷰어는 리뷰만
+`payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 대상이 지켜야 할 기준을
+적으면, 리뷰어가 그 기준에 비추어 GREEN 또는 RED와 지적 사항을 돌려줍니다. 리뷰어는 리뷰만
 합니다. 구현이나 수정은 하지 않고, 선언된 Artifact 도구만 실행합니다. 테스트를 실행하거나 테스트
 대상 코드를 불러오지 않고, 테스트 코드를 읽어 평가 기준에서 요구하는 사항을 충분히 검증하는지 판단합니다. 테스트 모음이
-통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요. 리뷰어에게는
-`{name}`으로 참조한 Artifact의 이름만 전달합니다. artifactize가 지시문 뒤에 대상과 참조된 Artifact를 중복 없이 나열하고 각각의 역할(`target` 또는 `input`)과 읽기 도구를 표시하므로, 지시문에
-도구 이름을 적을 필요는 없습니다.
+통과하는지 확인하려면 그것을 실행하는 [Runtime eval](runtime.md)을 선언하세요. 다른
+Artifact는 `{name}`으로 참조하세요. 리뷰어는 대상과 참조된 Artifact, 그것을 읽는 도구를 이미 알고 있으므로
+지시문에 도구 이름을 적을 필요는 없습니다.
 
 Agent 리뷰는 스키마로 검사한 GREEN 또는 RED 판정을 돌려줍니다. 모델이 잘못된 결과를 돌려주면
 artifactize가 한 번 고쳐 달라고 요청하고, 그래도 잘못되면 리뷰는 ERROR가 됩니다.
@@ -97,9 +97,9 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 안내한 대기 시간이 지나면 자동으로 몇 차례 재시도합니다.
-provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 같은 턴을 같은 횟수까지 다시 보냅니다.
-리뷰 전체가 아니라 마지막 도구 결과까지의 대화를 그대로 다시 보냅니다. 답변이 공백으로만
+provider가 안내한 대기 시간이 지난 뒤 자동으로 몇 차례 재시도합니다.
+provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 그 턴을 같은 횟수까지 다시 시도하며
+리뷰가 이미 해 둔 작업은 그대로 유지됩니다. 답변이 공백으로만
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
 `Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
 여기에 해당합니다. 실패한 답변도 이미 비용이 들었으므로 그 토큰은 `max_tokens`에 포함되며, 한도에
@@ -143,9 +143,7 @@ Ctrl-C로 `verify --wait`를 중단해도 진행 상황 표시만 멈추며, Age
 ### 백엔드 멈추기 {#stopping-a-backend}
 
 `AUTHENTICATION`이나 `QUOTA` 실패는 같은 백엔드의 모든 리뷰에서 똑같이 반복되므로, 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다. 이후 그 Run에서 같은 백엔드로 실행하려던 리뷰는 시작하지 않고
-`BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 자리가 날 때까지
-대기하던 리뷰([백엔드 수용량](others/state.md#backend-capacity))도 같은 방식으로 대기를
-멈추며, 멈춘 백엔드의 요청은 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
+`BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 실행 자리를 기다리던 요청([백엔드 수용량](others/state.md#backend-capacity))도 대기열에서 빠져 같은 방식으로 `BACKEND_STOPPED`인 ERROR가 되며, 멈춘 백엔드는 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
 재사용할 수 있는 결과는 계속 재사용하며, 다른 백엔드는 그대로 진행합니다. Run은 멈춘 백엔드를
 `stoppedBackends`(`verify --wait --json`과 `run show`)에 남기고, `verify`는 이렇게 출력합니다.
 
@@ -170,7 +168,7 @@ eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 �
 
 ## 저장된 대화 {#saved-conversations}
 
-artifactize는 Agent 리뷰마다 대화를 이 머신에 남겨 둡니다. 그래서 저장된 대화에서 리뷰어가
+artifactize는 Agent 리뷰 대화를 이 머신에 저장합니다. 그래서 저장된 대화에서 리뷰어가
 무엇을 보고 어떤 답변을 했는지 확인하고, 채팅하듯 이어서 질문할 수 있습니다. 기록된 판정은 절대
 바뀌지 않습니다.
 

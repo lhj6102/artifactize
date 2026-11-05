@@ -6,8 +6,7 @@ Human eval은 사람에게 리뷰를 요청하고 GREEN이나 RED 판정을 받�
 
 사람은 Artifact의 자동 eval을 이미 통과한 것만 승인합니다. 상위 승인이 남아 있어
 PROVISIONAL로 보이는 GREEN 판정도 통과한 것으로 칩니다. 자동 eval이 아직 실행 중이면
-Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED나 ERROR면 BLOCKED가 되며 사유에 그
-eval이 나옵니다. [Human 승인](artifact.md#human-sign-offs)을
+Human eval은 대기 상태(`WAIT_DEPENDENCY`)로 남고, 그중 하나가 RED나 ERROR면 BLOCKED가 되며 사유에 해당 eval이 표시됩니다. [Human 승인](artifact.md#human-sign-offs)을
 보세요.
 
 eval 준비가 끝나면 artifactize는 사람이 판정해야 하는 요청을 **DEFERRED** 상태로
@@ -51,8 +50,8 @@ artifactize review [REQUEST_ID]
 이 명령들의 옵션, 출력, 종료 코드는 모두 [Human 요청](../cli/index.md#human-requests)에
 있습니다.
 
-[Run 종료 코드](../cli/index.md#command-reference)로 지켜보기 중단, 직접 취소, 충족되지 않은 최종 검증 요건을
-구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하지 않으며 결과가 나올 때까지 대기하지도 않습니다. CI에서는
+[Run의 종료 코드](../cli/index.md#command-reference)를 보면 지켜보기만 중단한 경우, Run을 직접 취소한 경우,
+최종 검증 요건을 충족하지 못한 경우를 구분할 수 있습니다. `verify --reuse-only human`은 Human 요청을 기록하지 않으며 결과가 나올 때까지 대기하지도 않습니다. CI에서는
 Human eval이 기존 승인을 재사용하고, 재사용할 승인이 없으면 [실행되지 않습니다](../cli/index.md#reuse-only).
 
 `request list`와 `request show`의 필드, Run 요약은 [레퍼런스](tools/human.md#in-a-review)에

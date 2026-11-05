@@ -224,14 +224,12 @@ connection closure, and a later call reattaches to the saved Run (see
 together may be merged into one notification; each one reflects the saved state, not
 a complete event history.
 
-The **client/agent host** must display progress or route it into its own task
-queue/conversation. MCP notifications do not themselves create model turns, keep
-inference caches alive, or deliver after the call/connection ends. Artifactize
-cannot inject messages into an arbitrary host. For a shell-capable host,
-`artifactize verify --all --watch` or `artifactize run watch RUN` streams the same
-JSON-line events until terminal; the host can supervise that process and route
-its output. These are implemented transports, not a claim that every coding host
-supports live conversation delivery.
+Whether you see this progress depends on your **coding host**: it shows the notifications
+or not. They do not start a new reply from the model, and they stop when the call or the
+connection ends; artifactize cannot post into a host's conversation. If your host can run
+shell commands, `artifactize verify --all --watch` or `artifactize run watch RUN` prints
+the same progress as JSON lines until the Run ends. Not every coding host
+can show progress live in its conversation.
 
 From a failed finding, use its `request` ID with `request_logs`, not `run_show`'s
 entire audit. `stream` defaults to both. Without a range, the last 50 matching

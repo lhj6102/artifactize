@@ -261,6 +261,41 @@ it("opens a found Artifact on its own tab with a click, keeping a zoom that read
   expect((at.left + at.right) / 2).toBeCloseTo(CANVAS.left + CANVAS.width / 2);
 });
 
+it("lists the branch's favorites with nothing typed, opens one as found, and says how to star one when none is", async () => {
+  const branch = { kind: "folder" as const, path: "/work/app" };
+  let starred: Finding = { found: [], more: 0 };
+  const asked: unknown[] = [];
+  const graph = served({ nodes: [{ id: "a:publish", name: "publish", light: "green", note: null, parts: [] }], edges: [] });
+  mockIPC((command, payload) => {
+    if (command === "graph") return graph;
+    if (command === "favorites") return (asked.push(payload), starred);
+    return null;
+  });
+  const onopen = vi.fn();
+  const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen, onclose: vi.fn() });
+  app.monitor.shown = { kind: "run", branch, run: "run-a" };
+  await screen.findByLabelText("publish: GREEN");
+  // The graph's bottom says what Ctrl+F does.
+  expect(document.querySelector(".hint")?.textContent).toBe("Ctrl+F finds, or lists the favorites");
+
+  // None starred yet: the field says how to star one.
+  app.monitor.finding = true;
+  let field = await screen.findByRole("combobox", { name: "Find in the graph" });
+  expect((await screen.findByRole("status")).textContent?.trim()).toBe("No favorites here yet: star an Artifact with the ☆ beside its Detail's title.");
+  expect(asked).toEqual([{ source: { kind: "run", run: "run-a" }, branch }]);
+  await fireEvent.keyDown(field, { key: "Escape" });
+
+  // Starred: listed as found, and Enter opens the first as a found Artifact opens.
+  starred = { found: [PUBLISH.found[0]], more: 0 };
+  app.monitor.finding = true;
+  field = await screen.findByRole("combobox", { name: "Find in the graph" });
+  const list = await screen.findByRole("listbox", { name: "Favorites" });
+  expect([...list.querySelectorAll("[role=option]")].map((option) => option.textContent)).toEqual(["✓publish"]);
+  await fireEvent.keyDown(field, { key: "Enter" });
+  expect(onopen).toHaveBeenCalledExactlyOnceWith("a:publish", null);
+  expect(app.monitor.finding).toBe(false);
+});
+
 it("says when nothing matches, and Esc closes the field leaving the graph and focus as they were", async () => {
   const { app, onopen } = await drawn();
   const before = document.createElement("button");
