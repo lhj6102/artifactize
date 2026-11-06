@@ -94,8 +94,9 @@ that makes the transition happen and checks where it leads.
   States: a copy selected, its other copies highlighted with it; a whole drawn as a box or
   minimized; a minimized whole highlighted while an Artifact it hides is open.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
-  does, and Ctrl+F opens their **Find field**; they have no other keys of their own. Hovering
-  only highlights. Each graph's bottom says that Ctrl+F finds, or lists the favorites.
+  does, Ctrl+F opens their **Find field** and `m` minimizes or expands a whole; they have no
+  other keys of their own. Hovering only highlights. Each graph's bottom says that Ctrl+F finds,
+  or lists the favorites, and that `m` minimizes or expands a whole.
 - **Find field**: floats over a graph's top left: a text field and, below it, the Artifacts and
   evals whose names contain its text, ignoring case, in the graph's order, an Artifact by its
   whole name and an eval as `{Artifact} / {eval}`, each with its verdict's glyph and colour (on a
@@ -246,6 +247,8 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
 | E-GRAPH-MINIMIZE | Run graph or Current graph with a whole drawn as a box | click its Minimize button | the graph laid out again, the whole minimized: a node of a node's size with its name, verdict's colour, how many parts it has and its Expand button; the edges of the Artifacts it hides meeting it, those between the same two drawn once in the light that comes first, those among them not drawn; its top left corner where it was on the screen; no Detail opened or closed; minimized on every graph of its branch |
 | E-GRAPH-EXPAND | Run graph or Current graph with a minimized whole | click its Expand button | the graph laid out again, the whole a box around its parts (E-GRAPH-PARTS); its top left corner where it was on the screen; no Detail opened or closed; expanded on every graph of its branch |
+| E-GRAPH-MINIMIZE-KEY | Run graph or Current graph with a whole drawn as a box, focus outside the Pane and outside a text field; the whole or its Minimize button focused, or else its Detail open | `m` | as E-GRAPH-MINIMIZE for that whole; focus where it was, on the whole or its button |
+| E-GRAPH-EXPAND-KEY | Run graph or Current graph with a minimized whole, focus outside the Pane and outside a text field; the whole or its Expand button focused, or else its Detail open | `m` | as E-GRAPH-EXPAND for that whole; focus where it was, on the whole or its button |
 | E-GRAPH-MINIMIZED | Run graph or Current graph with a minimized whole | click it outside its button, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-MINIMIZED-FIND | Find field listing an Artifact a minimized whole hides, or an eval of such an Artifact | Enter on it, or a click on it | Find field closed; the Detail of that Artifact focused, on its Artifact tab or on that eval's tab; the minimized whole highlighted and moved by the camera to the middle of the graph left of the Detail, as for a found Artifact (E-GRAPH-FIND-GO) |
 | E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused, listing the favorites: the graph's starred Artifacts in the graph's order, each with its verdict's glyph and colour, as if they had been found; with none of them starred, saying how to star one |
@@ -253,7 +256,7 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-FIND-CHOOSE | Find field listing, what was found or the favorites | ↓ or ↑ | the next or previous entry chosen |
 | E-GRAPH-FIND-GO | Find field listing, what was found or the favorites | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
 | E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
-| E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout other than minimizing or expanding a whole (E-GRAPH-MINIMIZE, E-GRAPH-EXPAND) | the graph, its camera neither zoomed nor panned |
+| E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout other than minimizing or expanding a whole (E-GRAPH-MINIMIZE, E-GRAPH-EXPAND, E-GRAPH-MINIMIZE-KEY, E-GRAPH-EXPAND-KEY) | the graph, its camera neither zoomed nor panned |
 
 ## Detail
 
@@ -388,6 +391,8 @@ E-PANE-SELECT.
 - J-GRAPH-MINIMIZE: E-GRAPH-PARTS → E-GRAPH-MINIMIZE → E-GRAPH-MINIMIZED → E-MON-DETAIL-BACK → E-GRAPH-EXPAND
   E-GRAPH-MINIMIZE → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-MINIMIZED-FIND
   E-GRAPH-MINIMIZE → E-CURRENT-CHIP → E-GRAPH-PARTS → E-GRAPH-TAB → E-GRAPH-TAB-WHOLE → E-GRAPH-EXPAND → E-GRAPH-TAB-WHOLE
+  E-GRAPH-PARTS → E-GRAPH-WHOLE → E-GRAPH-MINIMIZE-KEY → E-GRAPH-EXPAND-KEY
+  E-GRAPH-PARTS → E-GRAPH-TAB → E-GRAPH-MINIMIZE-KEY → E-GRAPH-EXPAND-KEY
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
