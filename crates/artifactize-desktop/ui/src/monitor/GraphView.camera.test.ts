@@ -275,8 +275,8 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
   const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen, onclose: vi.fn() });
   app.monitor.shown = { kind: "run", branch, run: "run-a" };
   await screen.findByLabelText("publish: GREEN");
-  // The graph's bottom says what Ctrl+F does.
-  expect(document.querySelector(".hint")?.textContent).toBe("Ctrl+F finds, or lists the favorites");
+  // The graph's bottom says what Ctrl+F and m do.
+  expect(document.querySelector(".hint")?.textContent).toBe("Ctrl+F finds, or lists the favorites · m minimizes or expands a whole");
 
   // None starred yet: the field says how to star one.
   app.monitor.finding = true;

@@ -180,8 +180,9 @@ approves nothing.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does, and Ctrl+F
-[finds an Artifact or an eval by name, or lists your favorites](#find-in-the-graph), as the
-graph's bottom reminds you; they have no other keys of their own.
+[finds an Artifact or an eval by name, or lists your favorites](#find-in-the-graph), and `m`
+minimizes or expands a box (below), as the graph's bottom reminds you; they have no other keys
+of their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms.
 **Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
 whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
@@ -217,7 +218,9 @@ would run, checking, blocked, waiting, then reused), and edges among the hidden 
 are not drawn. The minimized node works like any other: a click on it, or Tab and Enter,
 opens its Detail, and it is highlighted while an Artifact it hides is open. Find still
 lists the hidden Artifacts, and opening one centres the minimized node. **Expand** draws
-the box again. Minimizing and expanding keep the box's top left corner where it was on
+the box again. `m` does what the button does: for the box or its button you reached with
+Tab, or else for the box whose Detail is open, and focus stays where it was. It does nothing
+while focus is in the Pane or you type in a text field; the button's tooltip names the key too. Minimizing and expanding keep the box's top left corner where it was on
 the screen. An Artifact stays minimized on every graph of its branch, its Runs' and its
 Current, until you expand it or quit the app; a part of several Artifacts stays drawn
 inside the ones that are not minimized.
