@@ -143,7 +143,7 @@ Ctrl-C로 `verify --wait`를 중단해도 진행 상황 표시만 멈추며, Age
 ### 백엔드 멈추기 {#stopping-a-backend}
 
 `AUTHENTICATION`이나 `QUOTA` 실패는 같은 백엔드의 모든 리뷰에서 똑같이 반복되므로, 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다. 이후 그 Run에서 같은 백엔드로 실행하려던 리뷰는 시작하지 않고
-`BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드의 실행 자리를 기다리던 요청([백엔드 수용량](others/state.md#backend-capacity))도 대기열에서 빠져 같은 방식으로 `BACKEND_STOPPED`인 ERROR가 되며, 멈춘 백엔드는 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
+`BACKEND_STOPPED`인 ERROR가 되며, 오류 메시지에 원래 실패가 나옵니다. 그 백엔드에 실행 자리가 없어 대기 중이던 요청([백엔드 수용량](others/state.md#backend-capacity))도 대기열에서 빠져 같은 방식으로 `BACKEND_STOPPED`인 ERROR가 되며, 멈춘 백엔드는 자리를 차지하지 않습니다. 이미 실행 중이던 리뷰는 끝까지 실행되고,
 재사용할 수 있는 결과는 계속 재사용하며, 다른 백엔드는 그대로 진행합니다. Run은 멈춘 백엔드를
 `stoppedBackends`(`verify --wait --json`과 `run show`)에 남기고, `verify`는 이렇게 출력합니다.
 
