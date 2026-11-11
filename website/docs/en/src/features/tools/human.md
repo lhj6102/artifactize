@@ -72,8 +72,10 @@ instead of running the new version. A tool error is something to fix and retry, 
 a verdict, and tool runs are not recorded with the result. Before a tool runs, the
 declarations of the Artifacts the eval reviews must still load: if they do not, for
 example because one of them is a file Artifact whose file is missing, the tool refuses
-to run and the request keeps waiting, so you can restore the file and try again. A
-declaration elsewhere in the project that does not load does not stop it. Then the
+to run and the request keeps waiting, so you can restore the file and try again. The
+declarations of folders nested inside those Artifacts are read with them, so one of them that
+does not load stops the tool too, even when the eval does not read that folder; a declaration
+elsewhere in the project does not. Then the
 reviewed files are checked: if
 their fingerprint changed, or cannot be computed, the request ends ERROR (INPUT_CHANGED or FINGERPRINT_RECHECK_FAILED) without running the tool,
 and the next `verify` asks again.
