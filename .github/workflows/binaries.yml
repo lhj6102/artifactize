@@ -170,12 +170,10 @@ jobs:
           name: binaries-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
-      - name: Build winget manifests and Store upload (including prereleases)
+      - name: Build the Store upload (including prereleases)
         if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: powershell
         run: |
-          python -I .github/scripts/channels.py generate winget --version $env:VERSION --dist dist --output channel-dist/winget
-          if ($LASTEXITCODE -ne 0) { throw 'winget generation failed' }
           .github/scripts/build-msix.ps1 -Version $env:VERSION -Dist dist -Output channel-dist/store
       - uses: actions/upload-artifact@v4
         if: matrix.target == 'x86_64-pc-windows-msvc'
@@ -228,11 +226,7 @@ jobs:
       - name: Install signed MSIX; check private state and child AppData virtualization
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
-        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel msix
-      - name: Validate and install the winget portable manifest
-        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
-        shell: powershell
-        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget
+        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist
 
   # One universal app for both Mac CPUs, built on Apple Silicon (signed and notarized when
   # the secrets exist) and opened on both CPUs. The CLI archives above never wait on it.

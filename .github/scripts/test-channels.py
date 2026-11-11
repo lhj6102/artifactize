@@ -85,7 +85,7 @@ class ChannelsTest(unittest.TestCase):
                                           {"application": application, "status": {"status": "PendingCommit"}})
                     self.assertIn("::warning title=store not published::", output)
                 lines = summary.read_text().splitlines()
-                self.assertEqual(len(lines), 8)
+                self.assertEqual(len(lines), 2 * len(channels.SECRETS) + 2)
                 self.assertTrue(all("skipped" in line for line in lines))
                 self.assertNotIn("fixture-not-a-credential", summary.read_text())
 
@@ -115,20 +115,6 @@ class ChannelsTest(unittest.TestCase):
             self.assertIn("formula already current", summary.read_text())
             self.assertIn("published formula 1.2.3", summary.read_text())
 
-    def test_winget_success_summarizes_only_the_pr_url_not_creator_credentials(self):
-        args = SimpleNamespace(channel="winget", version="1.2.3", dry_run=False, manifests="fixture")
-        pull = "https://github.com/microsoft/winget-pkgs/pull/123"
-        with tempfile.TemporaryDirectory() as tmp:
-            summary = Path(tmp) / "summary"
-            with patch.dict(os.environ, {"WINGET_TOKEN": "fixture-secret", "GITHUB_STEP_SUMMARY": str(summary)}):
-                with patch("subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=f"fixture-secret {pull}")):
-                    with contextlib.redirect_stdout(io.StringIO()) as output:
-                        channels.publish(args)
-            self.assertIn(f"winget: PR {pull}", output.getvalue())
-            self.assertNotIn("::warning", output.getvalue())
-            self.assertNotIn("fixture-secret", output.getvalue())
-            self.assertEqual(summary.read_text(), f"- winget: PR {pull}\n")
-
     def test_api_status_text_cannot_inject_a_workflow_command_or_summary_line(self):
         with tempfile.TemporaryDirectory() as tmp:
             summary = Path(tmp) / "summary"
@@ -152,12 +138,12 @@ class ChannelsTest(unittest.TestCase):
     def test_workflow_gate_emits_skip_and_enable_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "actions-output"
-            env = {**os.environ, "GITHUB_OUTPUT": str(output), "WINGET_TOKEN": ""}
-            command = [sys.executable, "-I", str(SCRIPT), "gate", "winget", "--version", "1.2.3"]
+            env = {**os.environ, "GITHUB_OUTPUT": str(output), "HOMEBREW_TAP_TOKEN": ""}
+            command = [sys.executable, "-I", str(SCRIPT), "gate", "homebrew", "--version", "1.2.3"]
             result = subprocess.run(command, env=env, text=True, capture_output=True, check=True)
-            self.assertIn("missing WINGET_TOKEN", result.stdout)
+            self.assertIn("missing HOMEBREW_TAP_TOKEN", result.stdout)
             self.assertEqual(output.read_text(), "enabled=false\n")
-            env["WINGET_TOKEN"] = "fixture-not-a-credential"
+            env["HOMEBREW_TAP_TOKEN"] = "fixture-not-a-credential"
             subprocess.run(command, env=env, check=True)
             self.assertEqual(output.read_text(), "enabled=false\nenabled=true\n")
 
@@ -171,26 +157,18 @@ class ChannelsTest(unittest.TestCase):
         fixture = {"application": {}, "status": {}}
         self.assertIn("first submission", self.dry_run("store", "1.2.3", env, fixture))
 
-    def test_metadata_references_both_archive_binaries(self):
+    def test_formula_references_both_archive_binaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for target in (*channels.MAC_TARGETS, channels.WINDOWS_TARGET):
+            for target in channels.MAC_TARGETS:
                 (root / channels.archive_name("1.2.3", target)).write_bytes(b"fixture archive")
-            for kind in ("homebrew", "winget"):
-                subprocess.run([sys.executable, "-I", str(SCRIPT), "generate", kind, "--version", "1.2.3",
-                                "--dist", tmp, "--output", str(root / kind)], check=True)
+            subprocess.run([sys.executable, "-I", str(SCRIPT), "generate", "homebrew", "--version", "1.2.3",
+                            "--dist", tmp, "--output", str(root / "homebrew")], check=True)
             formula = (root / "homebrew/artifactize.rb").read_text()
             self.assertIn('bin.install "artifactize", "artifactize-tools"', formula)
             self.assertIn("test do", formula)
             for target in channels.MAC_TARGETS:
                 self.assertIn(channels.archive_name("1.2.3", target), formula)
-            text = (root / f"winget/{channels.PACKAGE}.installer.yaml").read_text()
-            self.assertTrue(text.startswith('# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.'))
-            manifest = json.loads(text.split('\n', 1)[1])
-            nested = manifest["NestedInstallerFiles"]
-            self.assertEqual([item["PortableCommandAlias"] for item in nested],
-                             ["artifactize", "artifactize-tools", "artifactize-desktop"])
-            self.assertTrue(all(item["RelativeFilePath"].startswith("artifactize-v1.2.3-") for item in nested))
 
     def test_cask_installs_the_universal_desktop_app(self):
         with tempfile.TemporaryDirectory() as tmp:

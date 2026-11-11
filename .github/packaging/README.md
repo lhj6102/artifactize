@@ -12,20 +12,20 @@ and as one universal macOS dmg for both Mac CPUs and the Linux AppImage and deb
 and the deb as `Artifactize-amd64.deb`, the stable names the landing page's download
 buttons and the README link to through `releases/latest/download`.
 The other channels carry the app too: the Homebrew cask `artifactize` installs
-`Artifactize.app` from the dmg and links its bundled commands onto Homebrew's PATH (the CLI-only formula must be uninstalled first), the winget manifest adds
-an `artifactize-desktop` alias from the zip, `install.ps1` adds an Artifactize Start
+`Artifactize.app` from the dmg and links its bundled commands onto Homebrew's PATH (the CLI-only formula must be uninstalled first), `install.ps1` adds an Artifactize Start
 menu shortcut, and `install.sh` installs `Artifactize.app` into `~/Applications` on
 macOS or unpacks the AppImage on glibc x86_64 Linux with an `artifactize-desktop`
 launcher and a menu entry. Missing channel credentials produce an
 explicit skip message; they never fail a release. Every expected skip also emits an
 Actions warning annotation and a job-summary line, so a green skipped job cannot
 be mistaken for a publication. Successful publications write their outcome to the
-summary too (Store submission ID, winget PR URL when available, or Homebrew formula and cask). These scripts never sign or
+summary too (Store submission ID, or Homebrew formula and cask). These scripts never sign or
 submit a Windows zip.
 
-The Microsoft Store listing is published and is the default Windows install; each
-stable release submits an update. winget distribution is in preparation, not
-available yet: the winget submissions are still open.
+The Microsoft Store listing is published and is the Windows install; each
+stable release submits an update. `winget install 9PB6W4LL165D --source msstore`
+installs the same Store app. Artifactize is not submitted to the community winget
+repository (microsoft/winget-pkgs).
 
 ## Policy and credentials
 
@@ -36,12 +36,11 @@ values in scripts, command history or issue comments.
 | Channel | Policy | Secrets |
 | --- | --- | --- |
 | Homebrew | Stable only; a normal tap formula tracks stable, not prereleases | `HOMEBREW_TAP_TOKEN` |
-| winget | Stable only | `WINGET_TOKEN` |
 | Microsoft Store | Stable only; any pending submission is left untouched and logged/skipped | `STORE_TENANT_ID`, `STORE_CLIENT_ID`, `STORE_CLIENT_SECRET` |
 | macOS desktop signing | Every build, PRs included; without them the app is signed ad hoc and only runs where it was built | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
 
 Homebrew deliberately does not promote prereleases into the ordinary formula.
-Prereleases still carry the winget metadata and unsigned MSIX/Store upload for
+Prereleases still carry the unsigned MSIX/Store upload for
 manual rehearsal. Neither metadata generation nor installation smoke tests use
 channel credentials.
 
@@ -72,30 +71,6 @@ python3 -I .github/scripts/channels.py generate cask \
   --version 1.2.3 --dist dist --output cask
 ```
 
-### winget first submission
-
-Identifier: **lhj6102.Artifactize**. Each release attaches
-`winget-manifests.zip` with the version, defaultLocale and installer manifests.
-The installer is a zip with three nested portable files and command aliases:
-`artifactize`, `artifactize-tools` and `artifactize-desktop`.
-
-1. Owner downloads/unpacks the manifests from a **stable** GitHub release.
-2. Run `winget validate --manifest <directory>` and install locally with
-   `winget install --manifest <directory>` (enable `LocalManifestFiles` as admin).
-3. Submit the first set manually with Microsoft's
-   [wingetcreate](https://github.com/microsoft/winget-create):
-   `wingetcreate submit --no-open <directory>`. Wait for its winget-pkgs PR to merge.
-4. Create a GitHub **classic PAT** in Developer settings with **public_repo**
-   (Microsoft's wingetcreate authentication requirement), under an account able to
-   fork/open PRs to **microsoft/winget-pkgs**. Store it as `WINGET_TOKEN` above.
-   Only then enable automatic later submissions.
-
-Automation uses `wingetcreate submit` on freshly generated manifests instead of
-`update`: the nested archive directory includes the version and must change too.
-Microsoft's documented standalone `https://aka.ms/wingetcreate/latest` executable
-is downloaded only in an enabled stable release job. Tokens are passed to the
-creator process, never included in generated metadata or logged by our scripts.
-
 ### Microsoft Store first submission
 
 Product: **Artifactize**, Store ID **9PB6W4LL165D**.
@@ -113,8 +88,8 @@ On a Windows SDK host, reproduce the unsigned release upload with:
 .github/scripts/build-msix.ps1 -Version 1.2.3 -Dist dist -Output channel-dist/store
 ```
 
-Every Windows build retains the unsigned `.msix`, `.msixupload`, checksums and
-winget manifests in Actions artifact **channels-windows**. The release attaches
+Every Windows build retains the unsigned `.msix`, `.msixupload` and checksums in
+Actions artifact **channels-windows**. The release attaches
 the same files. Do not upload the throwaway CI-signed package; it is test-only.
 
 1. In **Partner Center → Apps and games → Artifactize**, complete the first
@@ -148,7 +123,7 @@ The package uses Microsoft's default file-system and registry virtualization. It
 has no virtualization-disable properties, no Flexible Virtualization exclusions and
 no `unvirtualizedResources` capability; `runFullTrust` remains. Windows 10 1903
 support is unchanged. New AppData state is package-private, not shared Runs,
-authentication or cache with zip/winget/Cargo installs, and Windows removes that
+authentication or cache with zip/Cargo installs, and Windows removes that
 private state on uninstall. This is not a sandbox: on supported Windows versions,
 Microsoft documents that reads can fall back to existing unvirtualized AppData files
 and writes to those existing files can affect the real files. Explicit state outside
@@ -191,13 +166,7 @@ run from Homebrew's PATH) and opens each installed copy; an Intel runner then op
 same dmg. The Linux desktop job installs with `install.sh` from its AppImage
 and opens the app through the installed launcher. The informational Windows
 build parses all PowerShell scripts, installs with `install.ps1` and opens the app
-from its Start shortcut, validates/installs local winget manifests,
-executes both portable aliases, opens the app through its `artifactize-desktop`
-alias, and uninstalls them. The MSIX seam runs first in a
-separate step so a winget bootstrap limitation cannot hide its outcome. Hosted
-Windows Server images may omit winget: the test uses Microsoft's maintained
-`Microsoft.WinGet.Client` / `Repair-WinGetPackageManager` bootstrap rather than
-silently substituting metadata checks for installation.
+from its Start shortcut, then runs the MSIX seam.
 
 The MSIX seam takes the retained `.msix` (packed with SDK schema validation), checks that
 the retained `.msixupload` carries exactly that package, signs a *copy* with a throwaway
