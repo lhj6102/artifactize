@@ -800,6 +800,95 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
     }
 }
 
+/// Issue #456: verifies repeated over parts while nobody signs off. A Run whose waiting
+/// sign-off a newer Run superseded ends as if it were unsubmitted, never ERROR, and the
+/// waiting list asks each sign-off once, however many Runs joined it.
+#[tokio::test]
+async fn c2_a_superseded_signoff_ends_its_run_yellow_and_joined_ones_are_listed_once() {
+    let fixture = Fixture::new();
+    // Each Run stays open on its unclaimed sign-offs until the next one supersedes them.
+    fixture.grace(24 * 60 * 60);
+    fixture.declare("docs", Vec::new());
+    fixture.declare_at("docs/changed", "changed", vec![human_eval(&[])]);
+    let first = fixture.submit(&[], None);
+    fixture
+        .until(&first, |view| {
+            status(view, "changed/sign") == RequestStatus::Deferred
+        })
+        .await;
+    fixture.declare_at("docs/kept", "kept", vec![human_eval(&[])]);
+    let kept = fixture.submit(&[], None);
+    let kept = fixture
+        .until(&kept, |view| {
+            status(view, "kept/sign") == RequestStatus::Deferred
+        })
+        .await;
+
+    fs::write(
+        fixture.repo.join("docs/changed/fingerprint"),
+        "changed-again",
+    )
+    .unwrap();
+    let newer = fixture.submit(&[], None);
+    let newer = fixture
+        .until(&newer, |view| {
+            status(view, "changed/sign") == RequestStatus::Deferred
+                && status(view, "kept/sign") == RequestStatus::Deferred
+        })
+        .await;
+    let ended = fixture.settled(&first).await;
+    assert_eq!(status(&ended, "changed/sign"), RequestStatus::Error);
+    assert_eq!(
+        ended.run.status(),
+        RunStatus::Yellow,
+        "a sign-off a newer Run took over is unanswered here, not an ERROR"
+    );
+
+    let query = artifactize_core::review::search::DEFAULT.parse().unwrap();
+    let found = artifactize_core::review::search::search(
+        &fixture.state,
+        &query,
+        &"reviewer".parse().unwrap(),
+        0,
+    )
+    .await
+    .unwrap();
+    let listed: Vec<_> = found
+        .requests
+        .iter()
+        .map(|(view, _)| {
+            (
+                view.request.eval_id.to_string(),
+                view.request.run_id.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(listed.len(), 2, "each sign-off is asked once: {listed:?}");
+    assert!(listed.contains(&("changed/sign".into(), newer.run.id.clone())));
+    assert!(
+        listed.contains(&("kept/sign".into(), kept.run.id.clone())),
+        "the unchanged sign-off is listed once, as the request the newer Run joined"
+    );
+    let joined = newer
+        .requests
+        .iter()
+        .find(|request| request.eval_id.as_str() == "kept/sign")
+        .unwrap();
+    let original = kept
+        .requests
+        .iter()
+        .find(|request| request.eval_id.as_str() == "kept/sign")
+        .unwrap();
+    assert_eq!(joined.execution_id, original.execution_id);
+
+    fixture.sign(&newer, "changed/sign", "GREEN").await;
+    fixture.sign(&kept, "kept/sign", "GREEN").await;
+    assert_eq!(
+        fixture.settled(&newer.run.id).await.run.status(),
+        RunStatus::Green
+    );
+}
+
 #[tokio::test]
 async fn c2_superseding_a_signoff_leaves_other_worktrees() {
     let fixture = Fixture::new();
