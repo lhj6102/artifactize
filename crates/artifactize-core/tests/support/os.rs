@@ -629,6 +629,10 @@ fn run(steps: Vec<String>) {
             "ignore-term" => unsafe {
                 signal(SIGTERM, 1);
             },
+            // Windows asks no process to terminate before ending it, so there is nothing to
+            // ignore: the step lets the same scenario run on every system.
+            #[cfg(not(unix))]
+            "ignore-term" => {}
             #[cfg(unix)]
             "terminate" => unsafe {
                 raise(SIGTERM);

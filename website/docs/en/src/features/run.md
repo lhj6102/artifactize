@@ -123,7 +123,8 @@ then ends:
 - **GREEN** when every result, sign-offs included, is GREEN;
 - **RED** when any result, a sign-off included, is RED;
 - **YELLOW** (exit 5) when every other result is GREEN and a sign-off is still
-  unsubmitted: **only sign-offs remain**, which is not approval.
+  unsubmitted: **only sign-offs remain**, which is not approval. A sign-off a newer Run
+  superseded (below) counts as unsubmitted here, not as an ERROR result.
 
 `verify --wait`, `run show --wait` and the [MCP](../agent-plugin/mcp.md) waits return when
 the Run ends, so they keep waiting while a claim holds it or its grace runs. YELLOW is
@@ -136,7 +137,9 @@ GREEN and stays suitable for CI.
 When a newer Run issues a Human request for the same eval in the same working
 tree, earlier DEFERRED sign-offs with a different reuse key end as ERROR/SUPERSEDED,
 including requests joined to them. Claimed sign-offs are retired too. They leave
-Review and cannot be claimed again. The same key still joins the existing review;
+Review and cannot be claimed again; a Run still waiting on one ends as if it had not been
+submitted, so YELLOW when only sign-offs remain. The same key still joins the existing
+review, which Review lists once however many Runs joined it;
 original sign-offs in another working tree stay untouched. Until retirement, a sign-off
 can still be submitted after its Run ends; submission rechecks the fingerprints, and
 changed files end the request ERROR (`INPUT_CHANGED`) without a verdict, so verify again

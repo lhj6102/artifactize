@@ -209,21 +209,14 @@ Detail, and a click on a part opens the part's. A part of several Artifacts is d
 each of them. Opening one of its copies highlights them all, and its Detail says how many
 times it is drawn and inside which Artifacts.
 
-A box has a **Minimize** button at its top right, which Tab reaches
-after the box and before its parts. It draws that Artifact as a node of the usual size,
-with its name, its colour and how many parts it has, and hides its parts. Their edges
-meet the minimized node instead: edges between the same two nodes are drawn once, in the
-colour that comes first (RED, ERROR, running, blocked, waiting, then GREEN; on a Current,
-would run, checking, blocked, waiting, then reused), and edges among the hidden Artifacts
-are not drawn. The minimized node works like any other: a click on it, or Tab and Enter,
-opens its Detail, and it is highlighted while an Artifact it hides is open. Find still
-lists the hidden Artifacts, and opening one centres the minimized node. **Expand** draws
-the box again. `m` does what the button does: for the box or its button you reached with
-Tab, or else for the box whose Detail is open, and focus stays where it was. It does nothing
-while focus is in the Pane or you type in a text field; the button's tooltip names the key too. Minimizing and expanding keep the box's top left corner where it was on
-the screen. An Artifact stays minimized on every graph of its branch, its Runs' and its
-Current, until you expand it or quit the app; a part of several Artifacts stays drawn
-inside the ones that are not minimized.
+A box has a **Minimize** button at its top right, reached with Tab after the box. It
+draws that Artifact as a node of the usual size, with its name, its colour and how many parts
+it has, and hides its parts; their edges meet the node instead, and edges among them are not
+drawn. The node opens its Detail like any other, and Find still lists what it hides.
+**Expand** draws the box again. `m` does the same for the box you reached with Tab, or else
+for the box whose Detail is open; it does nothing while you type or the keyboard is in the
+Pane. An Artifact stays minimized on every graph of its branch until you expand it or quit
+the app.
 
 ### Find in the graph
 
