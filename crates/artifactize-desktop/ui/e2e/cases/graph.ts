@@ -5,11 +5,11 @@
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
 import { addWorktrees, artifactize, create, createChain, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
-import { afterRender, fill, press } from "../keys.ts";
+import { afterRender, fill, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
 import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
-import { exists, nativePath, primaryModifier, readText, type NativePath } from "../platform.ts";
+import { exists, nativeInput, nativePath, primaryModifier, readText, type NativePath } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
@@ -79,6 +79,14 @@ const PARTS = ["a:suite", "a:suite/a:app", "a:suite/a:app/a:kit", "a:suite/a:sit
 
 /** {@link PARTS} with suite minimized: suite a node, its parts hidden, site still inside docs. */
 const SUITE_MINIMIZED = ["a:suite", "a:docs", "a:docs/a:site", "a:lib", "a:guide"];
+
+/** Whether exactly `keys` are the copies drawn under `root` now, outside the Detail. */
+async function drawnNow(browser: WebdriverIO.Browser, root: string, keys: string[]): Promise<boolean> {
+  const drawn = await browser.execute((under) => [...document.querySelectorAll<HTMLElement>(`${under} .svelte-flow__node`)]
+    .filter((node) => !node.closest('aside[aria-label="Detail"]'))
+    .map((node) => node.dataset.id ?? ""), root);
+  return JSON.stringify(drawn.sort()) === JSON.stringify([...keys].sort());
+}
 
 /** The copies of the graph under `root`, outside the Detail, once exactly `keys` are drawn:
  * each one's box, whether it is drawn as a box or minimized, its title text, its Artifact, its
@@ -481,11 +489,11 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE E-GRAPH-MINIMIZED
-  // E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-TAB
-  // E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND E-PANE-CHIP
+  // E-GRAPH-WHOLE E-GRAPH-MINIMIZE-KEY E-GRAPH-EXPAND-KEY E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE
+  // E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-TAB E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND E-PANE-CHIP
   scenario<{ run: string }>(
     "graph-minimize",
-    "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it, its corner kept on the screen and an open Detail kept; opens it as a node, finds what it hides, keeps it minimized on the branch's Current, expands it there and on the Run, and draws every whole as a box again after the app quits",
+    "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it, its corner kept on the screen and an open Detail kept; opens it as a node, expands and minimizes it with m while its Detail is open, leaves it as it is when m is typed in a field, during a composition or with focus in the Pane, finds what it hides, keeps it minimized on the branch's Current, expands it there, minimizes and expands it there with m while it is focused, expands it on the Run, and draws every whole as a box again after the app quits",
     async () => ended(createParts()),
     async (browser, { data }) => {
       await shownRun(browser, data.run);
@@ -527,9 +535,48 @@ export const scenarios: Scenario[] = [
       }, { timeout: 15000, timeoutMsg: "the hidden parts' edges meet suite, lit as before" });
       assert.deepEqual(edges, ["a:docs/a:site>a:suite", "a:lib>a:docs", "a:lib>a:docs/a:site", "a:lib>a:suite", "a:suite>a:guide"], "each edge once, none within suite");
 
-      // A click on the minimized suite opens its Detail, as on a node; Esc closes it.
+      // A click on the minimized suite opens its Detail, as on a node. With it open, m expands
+      // suite and m minimizes it again as its buttons do, its corner kept on the screen and its
+      // Detail open; Esc closes the Detail.
       await openArtifact(browser, "a:suite", "Artifact suite");
+      const folded = (await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"];
+      await press(browser, ["m"], () => drawnNow(browser, ".graph", PARTS), "m expands suite, whose Detail is open");
+      const unfolded = await partsDrawn(browser, ".graph");
+      assert.ok(unfolded["a:suite"].whole && within(unfolded["a:suite/a:app"].rect, unfolded["a:suite"].rect), "m draws suite as a box around its parts");
+      await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph"))["a:suite"].rect, folded.rect),
+        { timeout: 15000, timeoutMsg: "m keeps suite's top left corner where it was on the screen" });
+      await press(browser, ["m"], () => drawnNow(browser, ".graph", SUITE_MINIMIZED), "m minimizes suite again");
+      await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].rect, folded.rect),
+        { timeout: 15000, timeoutMsg: "m keeps suite's top left corner where it was on the screen again" });
+      assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open");
+      // Typed in a field, m is text, also during an input method's composition: in the find
+      // field, with suite's Detail still open, it minimizes or expands nothing.
+      await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over suite's Detail");
+      await typeText(browser, "m");
+      await afterRender(browser);
+      assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "m typed in the find field leaves suite minimized");
+      await nativeInput(browser, { type: "set", text: "ㅡ" });
+      await browser.waitUntil(async () => (await findField(browser))?.value === "mㅡ", { timeout: 15000, timeoutMsg: "the engine composes ㅡ in the find field" });
+      // E2E-INPUT: these fields are the app's own shortcut guard, not an OS input test.
+      for (const [composing, keyCode] of [[true, 0], [false, 229]] as const) {
+        await browser.execute((input) => {
+          const target = document.activeElement;
+          if (!(target instanceof HTMLInputElement)) throw new Error("the composing find field lost focus");
+          target.dispatchEvent(new KeyboardEvent("keydown", { key: "m", code: "KeyM", bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode }));
+        }, { composing, keyCode });
+      }
+      await afterRender(browser);
+      assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "m during a composition leaves suite minimized");
+      await nativeInput(browser, { type: "commit", text: "ㅡ" });
+      await press(browser, ["Escape"], async () => (await findField(browser)) === null, "Esc closes the find field");
+      assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open after the find field");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes suite's Detail");
+      // With focus in the Pane, m minimizes or expands nothing; Enter goes back to the Main area.
+      await press(browser, ["Escape"], () => entriesFocused(browser), "Esc steps back to the Pane");
+      await press(browser, ["m"], () => true, "m reaches the Pane");
+      await afterRender(browser);
+      assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "m in the Pane leaves suite minimized");
+      await press(browser, ["Enter"], () => mainFocused(browser), "Enter goes to the Main area");
 
       // The find field still lists kit, hidden in suite, and goes to the minimized suite for it.
       await press(browser, [primaryModifier, "f"], async () => (await findField(browser))?.focused === true, "the find field open over the Run");
@@ -572,6 +619,14 @@ export const scenarios: Scenario[] = [
       assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite", "Tab reaches suite's Minimize button after suite");
       await tab(browser);
       assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
+      // With suite focused and no Detail open, m minimizes it and m expands it again, the
+      // keyboard staying on suite and no Detail opening.
+      await toSuite();
+      await press(browser, ["m"], () => drawnNow(browser, current, SUITE_MINIMIZED), "m minimizes the focused suite");
+      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:suite", { timeout: 15000, timeoutMsg: "the keyboard stays on the minimized suite" });
+      await press(browser, ["m"], () => drawnNow(browser, current, PARTS), "m expands the focused suite");
+      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:suite", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's box" });
+      assert.equal(await detail(browser), null, "m opens no Detail");
 
       // Expanded on the Current, suite is a box on the branch's Run too; minimized again there,
       // it stays so until the app quits.
@@ -1079,7 +1134,7 @@ export const scenarios: Scenario[] = [
       const ctrlF = (what: string) => press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, what);
       await graphShown(browser, "a:release");
       // The graph's bottom says what Ctrl+F does.
-      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites");
+      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites · m minimizes or expands a whole");
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
 
@@ -1131,7 +1186,7 @@ export const scenarios: Scenario[] = [
       await chooseChip(browser, "repo  master", "current");
       await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "the Current shown" });
       await graphShown(browser, "a:release");
-      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites");
+      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites · m minimizes or expands a whole");
       await openArtifact(browser, "a:ship", "Artifact ship");
       assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship starred on the Current");
       await ctrlF("the find field open over the Current");

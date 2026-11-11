@@ -15,7 +15,8 @@
   // several wholes is drawn in each: every copy opens its Artifact, and the opened Artifact's
   // copies all show it. A whole's Minimize button draws it as a node, which shows the opened
   // Artifact too while it hides it, and its Expand button draws its box again; both keep the
-  // whole's top left corner where it was on the screen.
+  // whole's top left corner where it was on the screen. `m` does what the button does, for the
+  // whole focused on the graph or else the whole whose Detail is open.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
   import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
@@ -62,7 +63,8 @@
   } = $props();
   const v = new GraphViewState();
   setGraphViewState(v);
-  const { monitor: m } = getAppState();
+  const app = getAppState();
+  const m = app.monitor;
   /** The branch whose Run or Current is shown: its find field lists its project's favorites. */
   const branch = $derived(m.shown.kind === "run" || m.shown.kind === "current" ? m.shown.branch : null);
 
@@ -290,6 +292,32 @@
     if (after) void flow.setViewport({ x: corner.x - after.x * now.zoom, y: corner.y - after.y * now.zoom, zoom: now.zoom }, { duration: 0 });
   }
 
+  /** A whole's copy, drawn as a box or minimized: one `m` minimizes or expands. */
+  const isWhole = (key: string | undefined) => {
+    const copy = key === undefined ? undefined : byKey.get(key);
+    return copy !== undefined && (copy.parts.length > 0 || copy.minimized);
+  };
+
+  /** `m` minimizes or expands a whole as its button does: the whole focused on the graph, or
+   * whose button is focused, else the whole whose Detail is open (its first copy), while focus
+   * is outside the Pane and no dialog is open. Focus stays on the whole or its button. */
+  async function minimizeKey(event: KeyboardEvent) {
+    if (event.defaultPrevented || !plain(event, "m") || m.focus === "pane" || m.settings || app.palette || app.help || app.asking) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
+    const held = target?.closest<HTMLElement>(".svelte-flow__node");
+    const focused = held && v.canvas?.contains(held) ? held.dataset.id : undefined;
+    const open = opened === null ? undefined : keys.get(opened)?.find((key) => byKey.get(key)?.node.id === opened);
+    const key = isWhole(focused) ? focused : isWhole(open) ? open : undefined;
+    if (key === undefined) return;
+    event.preventDefault();
+    const onButton = key === focused && target?.closest("button") !== null;
+    await minimize(key, !byKey.get(key)!.minimized);
+    if (key !== focused) return;
+    const again = v.canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(key)}"]`);
+    (onButton ? again?.querySelector<HTMLElement>("button") : again)?.focus({ preventScroll: true });
+  }
+
   /** Enter on a focused Artifact node opens its Detail, as a click does; on a button in it,
    * the button acts. */
   function keydown(event: KeyboardEvent) {
@@ -302,6 +330,8 @@
     onopen(copy.node.id);
   }
 </script>
+
+<svelte:window onkeydown={(event) => void minimizeKey(event)} />
 
 <div class="graph">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -345,7 +375,7 @@
       {#if drawn.length > 40 && !large}<MiniMap pannable zoomable />{/if}
     </SvelteFlow>
     {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
-    <p class="hint"><kbd>Ctrl+F</kbd> finds, or lists the favorites</p>
+    <p class="hint"><kbd>Ctrl+F</kbd> finds, or lists the favorites · <kbd>m</kbd> minimizes or expands a whole</p>
     <ul class="legend" aria-label="Legend">
       {#each current ? CURRENT_LEGEND : LEGEND as light (light)}
         <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>

@@ -4,7 +4,7 @@
   // node's size, its parts hidden: its name, how it is lit, how many parts it has and its Expand
   // button. It is an Artifact of its own: the pointer and the keyboard reach it as they reach a
   // node, its button after it, and the parts of a box, drawn above it, take the pointer within
-  // their own boxes. A click on its button only minimizes or expands it.
+  // their own boxes. A click on its button only minimizes or expands it, as `m` does (GraphView).
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
   import type { Light } from "../ipc/client";
   import { BOX, partsCount } from "./parts";
@@ -39,7 +39,7 @@
       <span class="name">{data.name}</span>
       {#if minimized}<span class="count">{partsCount(data.count)}</span>{/if}
     </span>
-    <button class="toggle nodrag nopan" type="button" title={action} aria-label="{action} {data.name}" onclick={toggle}>
+    <button class="toggle nodrag nopan" type="button" title="{action} (m)" aria-label="{action} {data.name}" aria-keyshortcuts="m" onclick={toggle}>
       <svg viewBox="0 0 12 12" aria-hidden="true">
         {#if minimized}
           <path d="M2 6h8M6 2v8" />

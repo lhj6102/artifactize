@@ -163,3 +163,58 @@ it("keeps a whole minimized on every graph of its branch, and only there", async
   await waitFor(() => expect(laid.minimized.at(-1)).toEqual([]));
   await waitFor(() => expect(node("a:suite/a:app")).not.toBeNull());
 });
+
+it("minimizes and expands with m the whole focused on the graph, focus staying on it, as its button does", async () => {
+  const { app, onopen } = await drawn();
+  app.monitor.focus = "main";
+  node("a:suite")!.focus();
+  await fireEvent.keyDown(node("a:suite")!, { key: "m" });
+  await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true));
+  expect(app.monitor.minimizedOn(BRANCH)).toEqual(["a:suite"]);
+  await waitFor(() => expect(document.activeElement).toBe(node("a:suite")));
+
+  // On its Expand button, m expands it and focus stays on the button.
+  button("Expand suite")!.focus();
+  await fireEvent.keyDown(button("Expand suite")!, { key: "m" });
+  await waitFor(() => expect(node("a:suite/a:app")).not.toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(button("Minimize suite")));
+  expect(onopen).not.toHaveBeenCalled();
+});
+
+it("minimizes and expands with m the whole whose Detail is open, and only a whole", async () => {
+  const { app, rerender } = await drawn();
+  app.monitor.focus = "detail";
+  // A part's Detail: m does nothing.
+  await rerender({ opened: "a:app" });
+  await fireEvent.keyDown(document.body, { key: "m" });
+  expect(app.monitor.minimizedOn(BRANCH)).toEqual([]);
+
+  await rerender({ opened: "a:suite" });
+  await fireEvent.keyDown(document.body, { key: "m" });
+  await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true));
+  await fireEvent.keyDown(document.body, { key: "m" });
+  await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-whole")).toBe(true));
+  expect(app.monitor.minimizedOn(BRANCH)).toEqual([]);
+});
+
+it("ignores m typed in a field, during a composition, with a modifier or with focus in the Pane", async () => {
+  const { app, rerender } = await drawn();
+  await rerender({ opened: "a:suite" });
+  // Focus in the Pane.
+  await fireEvent.keyDown(document.body, { key: "m" });
+  app.monitor.focus = "detail";
+  const field = document.createElement("input");
+  document.body.append(field);
+  await fireEvent.keyDown(field, { key: "m" });
+  await fireEvent.keyDown(document.body, { key: "m", isComposing: true });
+  await fireEvent.keyDown(document.body, { key: "m", ctrlKey: true });
+  field.remove();
+  expect(app.monitor.minimizedOn(BRANCH)).toEqual([]);
+  expect(laid.minimized).toEqual([[]]);
+});
+
+it("names m on the graph's bottom and in the button's tooltip", async () => {
+  await drawn();
+  expect(document.querySelector(".hint")?.textContent).toContain("m minimizes or expands a whole");
+  expect(button("Minimize suite")?.title).toBe("Minimize (m)");
+});

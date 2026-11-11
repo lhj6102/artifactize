@@ -39,6 +39,7 @@ const GRAPH: Section = {
     ["Click the background", "Close the Detail"],
     ["Tab · Enter", "Focus an Artifact · open its Detail"],
     ["Ctrl+F", "Find an Artifact or an eval by name; ↑ / ↓ choose, Enter opens, Esc closes"],
+    ["m", "Minimize or expand the focused whole, else the one whose Detail is open"],
     ["Click a tab or an eval", "Show the Artifact or that eval"],
     ["Click ▶ under Tools", "Run one of the Artifact's tools in its worktree"],
     ["t / w", "Debug / pending evals"],
