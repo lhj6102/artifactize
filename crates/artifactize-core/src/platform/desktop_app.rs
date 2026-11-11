@@ -1,7 +1,7 @@
 //! Where the desktop app is installed, read from file metadata only: nothing is started.
 //! Every install channel leaves `artifactize-desktop` beside the commands it bundles (the
 //! deb, the Windows zip and MSIX, the Mac app the cask links), on `PATH` (install.sh's
-//! launcher, winget's alias), or at one of this system's app locations.
+//! launcher), or at one of this system's app locations.
 
 use std::{
     ffi::{OsStr, OsString},

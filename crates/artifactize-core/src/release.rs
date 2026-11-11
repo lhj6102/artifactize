@@ -48,8 +48,6 @@ const CACHE: &str = "release-check.json";
 pub enum Channel {
     /// The Microsoft Store package, which the Store updates.
     Store,
-    /// winget's own package `lhj6102.Artifactize`.
-    Winget,
     /// `install.sh`, on Linux or macOS.
     InstallSh,
     /// `install.ps1`, on Windows.

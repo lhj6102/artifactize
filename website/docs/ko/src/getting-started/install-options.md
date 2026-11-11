@@ -119,10 +119,6 @@ artifactize --version   # in a new terminal
 실행할 수 있고, `Path`도 바뀌지 않습니다. 애플리케이션 제어
 정책을 우회하지 말고 Microsoft Store에서 설치하세요.
 
-**winget 자체 패키지**는 아직 없습니다. `lhj6102.Artifactize` 패키지가
-[winget](https://learn.microsoft.com/windows/package-manager/winget/)
-저장소에 아직 등록되지 않았습니다. 위의 Store 패키지나 설치 스크립트를 쓰세요.
-
 **WSL.** WSL 2 안에서는 artifactize의 Linux 빌드를 씁니다. 배포판 안에
 [Linux](#linux) 안내대로 설치하세요. Windows 설치와는 별개이며
 상태도 따로 저장합니다. 내장 `open`과 `login codex`는 Windows 프로그램이 아니라
