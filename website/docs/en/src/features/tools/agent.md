@@ -102,10 +102,10 @@ rules do not filter results.
 Bounds are 10,000
 traversed entries, 8 MiB per grep file, 64 MiB searched,
 and 512 KiB per JSON result. Search limits or skipped oversized files set
-`truncated: true`; narrow the path/pattern to continue. Separately, a directory with more than 10,000 entries inside the tool's scope fails
-`list`, `glob` or `grep` with an error, not a truncated search result. Entries outside
-the scope do not count: an aspect that selects one file from a larger directory lists
-and searches it normally. Listing can page early at the result
+`truncated: true`; narrow the path/pattern to continue. Separately, a directory fails `list`, `glob` or `grep` with an error, not a truncated
+search result, once 10,000 of its entries inside the tool's scope have been read and it has
+any further entry, inside the scope or not. Fewer entries outside the scope do not count:
+an aspect that selects one file from a larger directory lists and searches it normally. Listing can page early at the result
 byte cap. Built-in arguments use the same bounded JSON Schema admission as commands.
 
 The `json` protocol receives exactly one request on stdin:

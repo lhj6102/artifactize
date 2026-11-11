@@ -3,8 +3,7 @@
 #   irm https://artifactize.dev/install.ps1 | iex
 #
 # The Microsoft Store (9PB6W4LL165D) is the default Windows install method; this script
-# is the alternative without the Store. winget (lhj6102.Artifactize) is in preparation
-# and not available yet. See https://artifactize.dev/docs/getting-started/install.html
+# is the alternative without the Store. See https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
 # the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
@@ -238,7 +237,7 @@
                 $otherVersion = try { (& $other --version 2>$null) -join ' ' } catch { 'version unknown' }
                 Write-Host "    $other ($otherVersion)"
             }
-            Say "remove that install (cargo: 'cargo uninstall $command'; winget: 'winget uninstall lhj6102.Artifactize') or put $dir first on your user Path, then open a new terminal."
+            Say "remove that install (cargo: 'cargo uninstall $command') or put $dir first on your user Path, then open a new terminal."
         }
     }
 }

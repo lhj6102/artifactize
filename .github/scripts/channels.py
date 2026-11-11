@@ -16,16 +16,13 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-PACKAGE = "lhj6102.Artifactize"
 STORE_ID = "9PB6W4LL165D"
-SCHEMA = "1.9.0"
 MAC_TARGETS = ("aarch64-apple-darwin", "x86_64-apple-darwin")
 # The desktop app ships as one dmg that runs on both Mac CPUs.
 MAC_DESKTOP_TARGET = "universal-apple-darwin"
 WINDOWS_TARGET = "x86_64-pc-windows-msvc"
 SECRETS = {
     "homebrew": ("HOMEBREW_TAP_TOKEN",),
-    "winget": ("WINGET_TOKEN",),
     "store": ("STORE_TENANT_ID", "STORE_CLIENT_ID", "STORE_CLIENT_SECRET"),
 }
 
@@ -67,7 +64,7 @@ def generate(args):
                   '    assert_match "artifactize packaging test", shell_output("#{bin}/artifactize-tools read sample.txt")',
                   "  end", "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
-    elif args.kind == "cask":
+    else:
         # The app, and its bundled commands linked onto PATH; the formula is the CLI alone.
         digest = sha256(Path(args.dist) / desktop_name(args.version, MAC_DESKTOP_TARGET)).lower()
         dmg = desktop_name("#{version}", MAC_DESKTOP_TARGET)
@@ -80,33 +77,6 @@ def generate(args):
                  '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize"',
                  '  binary "#{appdir}/Artifactize.app/Contents/MacOS/artifactize-tools"', "end", ""]
         (output / "artifactize.rb").write_text("\n".join(lines), encoding="utf-8")
-    else:
-        common = {"PackageIdentifier": PACKAGE, "PackageVersion": args.version}
-        archive = archive_name(args.version, WINDOWS_TARGET)
-        # JSON is a YAML 1.2 subset accepted by winget and avoids YAML quoting bugs.
-        manifests = {
-            "": {**common, "DefaultLocale": "en-US", "ManifestType": "version"},
-            ".locale.en-US": {**common, "PackageLocale": "en-US", "Publisher": "lhj6102",
-                              "PackageName": "Artifactize", "License": "Apache-2.0",
-                              "LicenseUrl": "https://github.com/lhj6102/artifactize/blob/main/LICENSE",
-                              "ShortDescription": "Declare and verify artifacts with reusable evidence",
-                              "PackageUrl": "https://artifactize.dev", "ManifestType": "defaultLocale"},
-            ".installer": {**common, "InstallerType": "zip", "NestedInstallerType": "portable",
-                           # The desktop app opens by its alias, beside the commands that start Runs.
-                           "NestedInstallerFiles": [
-                               {"RelativeFilePath": f"artifactize-v{args.version}-{WINDOWS_TARGET}/{command}.exe",
-                                "PortableCommandAlias": command}
-                               for command in ("artifactize", "artifactize-tools", "artifactize-desktop")],
-                           "Commands": ["artifactize", "artifactize-tools", "artifactize-desktop"],
-                           "Installers": [{"Architecture": "x64", "InstallerUrl": f"{base}/{archive}",
-                                           "InstallerSha256": sha256(Path(args.dist) / archive)}],
-                           "ManifestType": "installer"},
-        }
-        for suffix, manifest in manifests.items():
-            manifest["ManifestVersion"] = SCHEMA
-            header = f"# yaml-language-server: $schema=https://aka.ms/winget-manifest.{manifest['ManifestType']}.{SCHEMA}.schema.json\n"
-            (output / f"{PACKAGE}{suffix}.yaml").write_text(header + json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-
 
 
 def channel_result(channel, reason, *, skipped=False):
@@ -217,7 +187,7 @@ def publish(args):
         return
     if args.channel == "store":
         submit_store(Path(args.package), os.environ)
-    elif args.channel == "homebrew":
+    else:
         with tempfile.TemporaryDirectory() as tmp:
             env = {**os.environ, "GH_TOKEN": os.environ["HOMEBREW_TAP_TOKEN"]}
             subprocess.run(["gh", "repo", "clone", "lhj6102/homebrew-tap", tmp], env=env, check=True)
@@ -241,23 +211,13 @@ def publish(args):
             subprocess.run(["git", "-C", tmp, "push"], env=env, check=True)
             what = "formula and cask" if getattr(args, "cask", None) else "formula"
             channel_result("homebrew", f"published {what} {args.version} to lhj6102/homebrew-tap")
-    else:
-        # Submit the generated set, not `update`: archive-root names change per version.
-        result = subprocess.run(["wingetcreate", "submit", "--no-open", "--token", os.environ["WINGET_TOKEN"],
-                                 str(Path(args.manifests).resolve())], capture_output=True, text=True)
-        if result.returncode:
-            # CalledProcessError would include argv, including the credential.
-            raise RuntimeError(f"wingetcreate submission failed: exit {result.returncode}")
-        # Never echo creator output wholesale: the command was passed a credential.
-        pull = re.search(r"https://github\.com/microsoft/winget-pkgs/pull/[0-9]+", result.stdout)
-        channel_result("winget", f"PR {pull.group()}" if pull else f"submitted {args.version} through wingetcreate")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     gen = sub.add_parser("generate")
-    gen.add_argument("kind", choices=("homebrew", "cask", "winget"))
+    gen.add_argument("kind", choices=("homebrew", "cask"))
     gen.add_argument("--dist", required=True)
     gen.add_argument("--output", required=True)
     gen.add_argument("--base-url")
@@ -271,7 +231,6 @@ def main():
     pub.add_argument("--package")
     pub.add_argument("--formula")
     pub.add_argument("--cask", help="the desktop app's cask, published beside the formula")
-    pub.add_argument("--manifests")
     for cmd in (gen, gate, pub):
         cmd.add_argument("--version", required=True)
     args = parser.parse_args()

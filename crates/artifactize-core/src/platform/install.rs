@@ -108,15 +108,6 @@ pub(crate) fn classify(executable: &Path, places: &Places) -> Channel {
     if named("WindowsApps") {
         return Channel::Store;
     }
-    // winget keeps a portable package in Packages\<identifier>_<source>.
-    if names.windows(2).any(|pair| {
-        pair[0].eq_ignore_ascii_case("Packages")
-            && pair[1]
-                .to_ascii_lowercase()
-                .starts_with("lhj6102.artifactize_")
-    }) {
-        return Channel::Winget;
-    }
     if names
         .windows(2)
         .any(|pair| pair == ["Cellar", "artifactize"])
@@ -174,7 +165,6 @@ pub(crate) fn update(channel: Channel, latest: &semver::Version, site: &str) -> 
     };
     match channel {
         Channel::Store => None,
-        Channel::Winget => command("winget upgrade lhj6102.Artifactize"),
         Channel::InstallSh => command("curl -fsSL https://artifactize.dev/install.sh | sh"),
         Channel::InstallPs1 => command("irm https://artifactize.dev/install.ps1 | iex"),
         Channel::Homebrew => command("brew upgrade artifactize"),

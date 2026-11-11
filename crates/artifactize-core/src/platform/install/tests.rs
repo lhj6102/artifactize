@@ -38,10 +38,6 @@ fn package_managers_are_known_by_their_directories() {
             Channel::Store,
         ),
         (
-            "Microsoft/WinGet/Packages/lhj6102.Artifactize_Microsoft.Winget.Source_8wekyb3d8bbwe/artifactize-v0.15.1/artifactize.exe",
-            Channel::Winget,
-        ),
-        (
             "homebrew/Cellar/artifactize/0.15.1/bin/artifactize",
             Channel::Homebrew,
         ),
@@ -131,10 +127,6 @@ fn every_channel_but_the_store_says_how_to_update() {
     assert_eq!(
         update(Channel::InstallPs1, &latest, SITE),
         command("irm https://artifactize.dev/install.ps1 | iex")
-    );
-    assert_eq!(
-        update(Channel::Winget, &latest, SITE),
-        command("winget upgrade lhj6102.Artifactize")
     );
     assert_eq!(
         update(Channel::HomebrewCask, &latest, SITE),

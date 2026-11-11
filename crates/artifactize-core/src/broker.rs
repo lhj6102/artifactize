@@ -347,16 +347,7 @@ impl Scheduler<'_, '_> {
                         .iter_mut()
                         .find(|saved| saved.id == request.id && saved.status().is_human_wait())
                     {
-                        evidence.insert(
-                            request.eval_id.clone(),
-                            match request.status() {
-                                crate::types::RequestStatus::Green => {
-                                    Evidence::Current(Verdict::Green)
-                                }
-                                crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
-                                _ => Evidence::OperationalError,
-                            },
-                        );
+                        evidence.insert(request.eval_id.clone(), settled(&request));
                         *saved = request;
                     }
                 }
@@ -374,6 +365,7 @@ impl Scheduler<'_, '_> {
                             || admissions[index].running()
                             || matches!(admissions[index], Admission::Joining)
                             || self.requests[index].status().is_human_wait()
+                            || superseded(&self.requests[index])
                             || self.requests[index].force
                     }) {
                         continue;
@@ -483,6 +475,7 @@ impl Scheduler<'_, '_> {
                     if ready
                         && can_start
                         && !current.status().is_human_wait()
+                        && !superseded(current)
                         && !admissions[index].running()
                         && !admissions[index].blocked()
                     {
@@ -531,6 +524,7 @@ impl Scheduler<'_, '_> {
                     if admissions[index].blocked()
                         || admissions[index].running()
                         || request.status().is_human_wait()
+                        || superseded(request)
                         || matches!(evidence.get(&request.eval_id), Some(value) if *value != Evidence::Deferred)
                     {
                         continue;
@@ -777,18 +771,7 @@ impl Scheduler<'_, '_> {
                             );
                             *request = self.receipts.follow_human(request).await?;
                             if !request.status().is_human_wait() {
-                                evidence.insert(
-                                    request.eval_id.clone(),
-                                    match request.status() {
-                                        crate::types::RequestStatus::Green => {
-                                            Evidence::Current(Verdict::Green)
-                                        }
-                                        crate::types::RequestStatus::Red => {
-                                            Evidence::Current(Verdict::Red)
-                                        }
-                                        _ => Evidence::OperationalError,
-                                    },
-                                );
+                                evidence.insert(request.eval_id.clone(), settled(request));
                                 evaluation = evaluated.evaluation(
                                     self.graph,
                                     &evidence,
@@ -1100,18 +1083,29 @@ impl Scheduler<'_, '_> {
             self.receipts.save_run(self.run).await?;
         }
         if !request.status().is_human_wait() {
-            evidence.insert(
-                request.eval_id.clone(),
-                match request.status() {
-                    crate::types::RequestStatus::Green => Evidence::Current(Verdict::Green),
-                    crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
-                    _ => Evidence::OperationalError,
-                },
-            );
+            evidence.insert(request.eval_id.clone(), settled(&request));
         }
         self.requests[index] = request;
         Ok(())
     }
+}
+
+/// The evidence a request that stopped waiting gives its eval. A sign-off that a newer request
+/// for its eval in the same working tree took over is unanswered here, as if nobody had
+/// claimed it; any other failure is an operational error.
+fn settled(request: &Request) -> Evidence {
+    match request.status() {
+        crate::types::RequestStatus::Green => Evidence::Current(Verdict::Green),
+        crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
+        _ if superseded(request) => Evidence::Deferred,
+        _ => Evidence::OperationalError,
+    }
+}
+
+/// Whether a newer request for this sign-off's eval in the same working tree took it over:
+/// that request asks for it now, so this Run never asks again.
+fn superseded(request: &Request) -> bool {
+    request.error_code() == Some(crate::types::FailureCode::Superseded)
 }
 
 /// Claim an execution for a request: a forced review takes no claim of its key and joins

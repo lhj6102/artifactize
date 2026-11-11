@@ -126,10 +126,6 @@ replacing anything: your previous `artifactize` and `artifactize-tools` stay ins
 and runnable, and `Path` is left unchanged. Do not bypass your application-control
 policy; install from the Microsoft Store instead.
 
-**winget's own package** is not available yet: `lhj6102.Artifactize` has not been
-accepted into the [winget](https://learn.microsoft.com/windows/package-manager/winget/)
-repository. Use the Store package above or the install script.
-
 **WSL.** Inside WSL 2, artifactize is the Linux build: install it in the distribution
 with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
 its own state. Built-in `open` and `login codex` use the distribution's `xdg-open`,
