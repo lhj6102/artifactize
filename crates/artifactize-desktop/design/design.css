@@ -84,6 +84,10 @@ p {
 .figure {
   margin: 0;
 }
+.figure + .figure,
+.notes + .figure {
+  margin-top: 20px;
+}
 .stage {
   position: relative;
   width: 100%;

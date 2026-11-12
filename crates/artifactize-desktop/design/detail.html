@@ -196,6 +196,47 @@
   <li><span class="n">9</span><div><b>Header → label → value</b><span>Each block: an 11px uppercase label, then its content; facts as a key/value grid, keys right-aligned in secondary ink, values in tabular figures.</span></div></li>
 </ol>
 
+<figure class="figure">
+<div class="stage" style="--w: 520; --h: 400; max-width: 540px">
+<div class="stage-inner">
+<div class="m-window" style="background: var(--surface-app)">
+  <div style="position: absolute; inset: 0">
+    <aside class="m-dock focused" style="left: 8px; right: auto; width: 500px">
+      <div class="m-main-head"><div class="m-dock-title"><h2>Run run-7SR0YW</h2></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
+      <div class="m-body">
+        <div class="m-section">
+          <p class="m-section-label">Outcome</p>
+          <dl class="m-kv"><dt>Status</dt><dd><span class="tone-red">✗ RED</span> · NOT SATISFIED at Run end</dd><dt>Evals</dt><dd>✗1 ⊘1 ?1 ✓4 · took 12m 04s</dd><dt>Comment</dt><dd>dogfood: desktop design pages and the restyle of the app toward them</dd></dl>
+        </div>
+        <div class="m-section">
+          <p class="m-section-label">Waits for</p>
+          <ul class="m-rows" style="padding: 0"><li>release/signoff · waiting Human · unclaimed</li></ul>
+          <p class="m-fold" style="margin: 4px 0 0">1 pending evals · w shows</p>
+        </div>
+        <div class="m-section">
+          <p class="m-section-label">What</p>
+          <dl class="m-kv"><dt>Selection</dt><dd>all</dd><dt>Modes</dt><dd>speculate</dd></dl>
+        </div>
+        <div class="m-section">
+          <p class="m-section-label">Provenance</p>
+          <dl class="m-kv"><dt>Branch</dt><dd>artifactize / dev</dd><dt>Started</dt><dd>2026-11-13 02:02:05</dd></dl>
+          <p class="m-fold" style="margin: 8px 0 0">▸ Technical <span class="m-cost">state dir, worker, supervisor · t shows</span></p>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+<span class="callout" style="left: 230px; top: 20px">10</span>
+<span class="callout" style="left: 230px; top: 120px">11</span>
+</div>
+<figcaption>Stage 520 × 400. The Run's Detail, opened by a click on the Run's headline: no chips, its sections in reading order.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">10</span><div><b>Run Detail</b><span>The same dock, titled with the Run's ID; it has no chip path, since a Run has no evals of its own to tab through.</span></div></li>
+  <li><span class="n">11</span><div><b>Sections</b><span>Outcome, Waits for (pending evals folded behind <kbd>w</kbd>), What and Provenance as key/value grids under section labels; Technical folds behind <kbd>t</kbd>.</span></div></li>
+</ol>
+
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-INS-1">D-INS-1</dt>
@@ -208,6 +249,8 @@
   <dd>The Artifact's tab, top to bottom: the neighbours drawing (at least 72px, non-interactive camera), the eval rows (<code>--row-dense</code>: glyph in the status colour, name, status words in the status colour, the right column in <code>--ink-2</code> tabular), then Tools, Tool log and Path under section labels, then Debug folded. Section labels are 11px uppercase <code>--ink-2</code>; each section after the first is opened above by <code>--line-group</code>. <span class="avoid">accent-coloured section headings; a tool button on the graph's nodes.</span></dd>
   <dt id="D-INS-5">D-INS-5</dt>
   <dd>An eval's tab: the view switch as plain text (the chosen view <code>--ink</code> bold, the other <code>--ink-2</code>, no radius, no fill), the status line (glyph and word bold in the status colour; what it took and spent, or saved, in <code>--ink-2</code>), the instruction, then Result, Execution options, Execution metadata and Fingerprint each under a section label, facts in a key/value grid with keys right-aligned in <code>--ink-2</code> and values in tabular figures; a list as numbered items; Debug folded last. A log replaces the body below the switch in <code>--mono</code> at <code>--text-small</code>, wrapping and scrolling in its own box. <span class="avoid">a JSON dump as the Summary; costs in the status colour.</span></dd>
+  <dt id="D-INS-7">D-INS-7</dt>
+  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row: its sections Outcome, Waits for, What and Provenance each under a section label, their facts as key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), the pending evals of Waits for folded behind a <code>--ink-2</code> line that names <kbd>w</kbd>, and Technical folded last behind a line that names its keys and <kbd>t</kbd>. <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it.</span></dd>
   <dt id="D-INS-6">D-INS-6</dt>
   <dd>Selection and inspector agree: the node with the <code>--outline-selected</code> outline, every copy of a shared part included, is the Artifact the Detail is titled with, or, when that Artifact is hidden inside a minimized whole, the minimized whole that hides it while the Detail still names the Artifact; opening a neighbour or another node moves both; closing the Detail removes the outline. The Find field's choice opens the Detail and moves only the camera. <span class="avoid">a Detail left open for a node no longer highlighted.</span></dd>
 </dl>
