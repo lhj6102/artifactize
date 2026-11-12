@@ -99,7 +99,7 @@ example project.
 ## How it works
 
 1. Evaluations define the result; AI agents iterate until it passes.
-2. Tests, AI agents and people are equal evaluators, each with its own strengths.
+2. Tests, AI agents and people can all be equal evaluators, each good at different evaluations.
 3. Each evaluated result becomes part of the next evaluation, all the way to the final result.
 
 ## Highlights

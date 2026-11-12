@@ -26,7 +26,7 @@ The root README also follows the [introduction checklist](WRITER-INTRODUCTION.md
 - **R-HOW**: A How it works section holding exactly these three numbered lines, in this
   order and wording:
   1. Evaluations define the result; AI agents iterate until it passes.
-  2. Tests, AI agents and people are equal evaluators, each with its own strengths.
+  2. Tests, AI agents and people can all be equal evaluators, each good at different evaluations.
   3. Each evaluated result becomes part of the next evaluation, all the way to the final
      result.
 - **R-HIGHLIGHTS**: Who it is for, the principles and the features, concise and concrete,
