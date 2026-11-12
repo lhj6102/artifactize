@@ -143,8 +143,9 @@ of the eval's tools (for a directory, of its files and symbolic links) in the re
 `executionPaths: {"TOOL": {"PATH": "sha256"}}`, by published tool name such as
 `coverage_spec`. The record travels with remote results and stays with a reused result,
 so a reused verdict shows which binary produced it. A path that is missing, is a special
-file, holds more than 1 GiB or more than 10,000 files and symbolic links (directories
-do not count) fails the review with
+file, holds more than 1 GiB, or holds any entry at all after its first 10,000 files and
+symbolic links (directories are not counted, but one found after those also fails) fails
+the review with
 `PREPARATION_FAILED` before the Agent is called. These hashes are a record, not part of
 the [reuse key](../fingerprint.md#the-reuse-key): to review again when a binary changes,
 cover it in a fingerprint.
