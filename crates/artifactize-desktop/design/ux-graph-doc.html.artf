@@ -3,7 +3,7 @@ name = "desktop-design-graph-doc"
 # screens it leaves and reaches, as a document people read together.
 
 [views.agent_tools]
-read = { builtin = "read", args = ["ux-graph-doc.html"] }
+read = { builtin = "read" }
 
 [evals.cites-every-edge]
 title = "The graph doc places every edge of the UX graph, and no other, between known screens"
@@ -24,7 +24,7 @@ sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoni
 
 [evals.places-edges.payload]
 instruction = """
-Read {desktop-design-graph-doc} and the UX graph {desktop-ux-graph}. The doc describes its screens (monitor, \
+Read {desktop-design-graph-doc} whole, in pages with offset and limit since it is longer than one read prints, and the UX graph {desktop-ux-graph}. The doc describes its screens (monitor, \
 current, detail, review, settings, overlays) and terminals (start, any, quit) at its top, and places each edge \
 between screens with data-from and data-to. Check every row: the screens it leaves are where the edge's From \
 state is shown, the screens it reaches are where its To state is shown (a Run's and a Current's graphs are the \
