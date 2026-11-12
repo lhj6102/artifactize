@@ -174,9 +174,10 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   review: its tools display as unknown and GREEN/RED forms are refused. Browsing
   that old request does not invent missing tool or schema declarations.
 - **Editing.** While you hold the claim, ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and
-  Tab belong to the fields, not navigation. When the claim is released or lost, editing stops
-  and the draft stays, read-only; once the request is unclaimed, `c` claims it again and
-  editing resumes. A bracketed keyboard paste goes into the focused field as
+  Tab belong to the fields, not navigation. When the claim is released or lost, editing stops:
+  the fields take no more edits and the CLAIM line shows in place of the kept draft, but the
+  form still holds those keys, so press Esc to leave it; once the request is unclaimed, `c`
+  claims it again and editing resumes. A bracketed keyboard paste goes into the focused field as
   one edit, in standalone `review` as in the monitor. A paste that would push the
   result past the 256000-byte Human result limit is refused as a whole with an
   error, leaving the draft unchanged. Esc steps back as the key table says; Monitor's
