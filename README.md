@@ -96,6 +96,12 @@ Artifact Graph and a `verify` you can run. To try Artifactize without an AI acco
 the [5-minute quick start](https://artifactize.dev/docs/getting-started/guide.html) with an
 example project.
 
+## How it works
+
+1. Evaluations define the result; AI agents iterate until it passes.
+2. Tests, AI agents and people can all be equal evaluators, each good at different evaluations.
+3. Each evaluated result becomes part of the next evaluation, all the way to the final result.
+
 ## Highlights
 
 <p align="center">
