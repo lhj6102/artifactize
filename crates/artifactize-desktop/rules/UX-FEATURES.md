@@ -72,8 +72,9 @@ Both graphs, a Run's and the Current, take the pointer: Tab reaches their Artifa
 
 ## Settings
 
-- **J-SET-PROVIDERS**: the Providers tab lists the built-in providers vertically on the left (Codex, OpenAI, Anthropic, Gemini), then the custom providers by name, then **+ Custom provider** at the bottom. Choosing one shows its setup on the right.
+- **J-SET-PROVIDERS**: the Providers tab lists the built-in providers vertically on the left (Codex, Claude Agent, OpenAI, Anthropic, Gemini), then the custom providers by name, then **+ Custom provider** at the bottom. Choosing one shows its setup on the right.
 - **J-SET-CODEX**: Codex signs in to or out of the ChatGPT account through the browser; when the browser cannot return, the redirect URL can be pasted; a sign-in in progress can be cancelled.
+- **J-SET-CLAUDE-AGENT**: Claude Agent says that Claude Code signs in on its own, with `claude auth login` in a terminal, and that artifactize never reads that login.
 - **J-SET-KEY**: OpenAI, Anthropic and Gemini each show whether their key is set, from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) or saved here, never its value. A key can be pasted and saved, or removed; a set environment variable is used first.
 - **J-SET-CUSTOM**: **+ Custom provider** adds a provider with a name: an alias of a built-in provider, used with its sign-in or key, or an endpoint with its API (OpenAI Responses, OpenAI Chat Completions, Anthropic Messages or Gemini), base URL and optional key. Any number can be added; a custom provider can be changed or removed. An eval uses it by its name in `backend`.
 - **J-SET-MODELS**: a provider's setup lists the models it offers.
