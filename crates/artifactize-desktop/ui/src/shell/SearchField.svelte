@@ -167,8 +167,11 @@
     font: var(--text-small) var(--mono);
     cursor: pointer;
   }
-  .suggestions li:hover,
+  .suggestions li:hover {
+    background: var(--surface-group);
+  }
   .suggestions .active {
     background: var(--selection);
+    box-shadow: inset 2px 0 0 var(--accent);
   }
 </style>

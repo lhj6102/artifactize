@@ -69,7 +69,11 @@
 
 <style>
   .section {
-    padding: 0 var(--pad) 12px;
+    padding: 0 var(--pad) 10px;
+  }
+  .section + .section {
+    padding-top: 8px;
+    border-top: 1px solid var(--line-group);
   }
   /* A section label: 11px uppercase in secondary ink. */
   .heading {

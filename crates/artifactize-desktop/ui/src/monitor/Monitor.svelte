@@ -567,6 +567,9 @@
   :global(.dialog.open-id) {
     width: min(480px, 92vw);
   }
+  .input::placeholder {
+    color: var(--ink-3);
+  }
   .input {
     width: 100%;
     height: var(--control);

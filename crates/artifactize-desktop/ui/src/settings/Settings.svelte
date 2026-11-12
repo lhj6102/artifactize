@@ -206,9 +206,17 @@
   .settings :global(.pending p) {
     margin: 0 0 6px;
   }
-  .settings :global(.url code) {
+  /* The URL a sign-in printed: wrapping, selectable text one step below the panel. */
+  .settings :global(pre.url) {
+    margin: 0 0 6px;
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    font: var(--text-small) / 1.5 var(--mono);
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: var(--text-label);
+    user-select: text;
   }
   .settings :global(.warn) {
     color: var(--yellow);

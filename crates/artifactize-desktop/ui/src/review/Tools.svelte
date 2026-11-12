@@ -92,10 +92,19 @@
   }
   .tool {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
     align-items: baseline;
     gap: 2px 10px;
     padding: 2px 0 2px 18px;
+  }
+  /* A long operation name wraps inside its button rather than widening the Detail. */
+  .tool .button {
+    height: auto;
+    min-height: 22px;
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+    overflow-wrap: anywhere;
   }
   .description,
   .reason {

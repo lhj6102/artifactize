@@ -57,9 +57,9 @@
       <span class="error"><span data-testid="remote-status">{s.remote.url}</span> · share {s.remote.share} · token {s.remote.tokenSource} ·
         {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</span>
     {/if}
+    {#if s.remoteNotice}<span class="muted"> · </span><span class="notice" role="status">{s.remoteNotice}</span>{/if}
+    {#if s.remoteError}<span class="muted"> · </span><span class="error" role="alert">{s.remoteError}</span>{/if}
   </p>
-  {#if s.remoteNotice}<p class="notice" role="status">{s.remoteNotice}</p>{/if}
-  {#if s.remoteError}<p class="error" role="alert">{s.remoteError}</p>{/if}
   {#if s.remote?.state === "configured"}
     <div class="row">
       <button class="button" disabled={s.working || !principal} onclick={() => void s.push(true)}>Push (dry run)</button>

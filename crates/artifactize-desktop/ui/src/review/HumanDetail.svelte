@@ -222,7 +222,6 @@
     grid-template-columns: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
-    outline: none;
     padding: 0 var(--pad) 8px;
     gap: var(--gap);
   }
@@ -282,8 +281,10 @@
     min-height: 0;
     overflow: auto;
   }
-  .instruction {
-    outline: none;
+  .human:focus-visible,
+  .instruction:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
   }
   /* A section label: 11px uppercase in secondary ink. */
   .result h4,

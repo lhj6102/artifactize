@@ -77,7 +77,9 @@
       <button class="view" role="tab" aria-selected={showLog} onclick={() => (log = true)}>{logName}</button>
     </div>
   {/if}
-  {#if detail.plan}
+  {#if showLog}
+    <!-- A log replaces everything below the switch. -->
+  {:else if detail.plan}
     <!-- A Current: what verify would do, and why, in place of a status. -->
     <p class="summary">
       <span class="status {tone(detail.plan.tone)}">{detail.plan.glyph} {detail.plan.text}</span>
@@ -133,7 +135,7 @@
       {#if card.instruction}<p class="instruction">{card.instruction}</p>{/if}
       {#if hasResult}
         <section class="block result">
-          <h3>Result</h3>
+          <h3>{detail.plan ? "Result it would reuse" : "Result"}</h3>
           {#if card.error}<p class="error">{card.error}</p>{/if}
           {#if card.exitCode !== null}<p>exit {card.exitCode}</p>{/if}
           {#each card.result ?? [] as entry (entry.key)}
@@ -155,8 +157,15 @@
           {/each}
         </section>
       {/if}
+      {#if !hasResult && detail.plan}
+        <section class="block result">
+          <h3>Result it would reuse</h3>
+          <p class="muted">None matches: the eval would run.</p>
+        </section>
+      {/if}
+      <!-- A Current's eval keeps its options; what a past run spent and its fingerprint belong to that run. -->
       {#each [["Execution options", pick(OPTIONS).map((field) => [field.key, field.value])], ["Execution metadata", spent.length > 0 ? [["spent", spent.join(" · ")]] : []], ["Fingerprint", pick(["Fingerprint"]).map((field) => [field.key, field.value])]] as const as [title, facts] (title)}
-        {#if facts.length > 0}
+        {#if facts.length > 0 && (!detail.plan || title === "Execution options")}
           <section class="block">
             <h3>{title}</h3>
             <dl>
@@ -258,8 +267,11 @@
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
-    outline: none;
     min-height: 0;
+  }
+  .full:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
   }
   .shown {
     overflow: auto;
