@@ -208,7 +208,10 @@ fn settings_command_probe() {
         ])
     };
     let providers = call("providers_list", json!({})).unwrap();
-    assert_eq!(providers, json!({"builtin": builtin, "keys": keys("absent"), "custom": []}));
+    assert_eq!(
+        providers,
+        json!({"builtin": builtin, "keys": keys("absent"), "custom": []})
+    );
     call(
         "provider_key_save",
         json!({"provider": "gemini", "key": SAVED_KEY}),
