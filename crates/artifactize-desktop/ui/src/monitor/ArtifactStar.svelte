@@ -64,7 +64,7 @@
     padding: 0 2px;
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     font-size: 14px;
     line-height: 1.4;
     cursor: pointer;
@@ -80,7 +80,7 @@
   .error {
     min-width: 0;
     color: var(--red);
-    font-size: 12px;
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
 </style>

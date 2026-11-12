@@ -190,13 +190,15 @@
     grid-template-columns: minmax(0, 1fr);
     height: 100%;
   }
+  /* The global bar: the darkest surface, closed below by a panel line. */
   .bar {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 8px var(--pad);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    gap: var(--gap);
+    height: var(--bar-height);
+    padding: 0 var(--pad);
+    border-bottom: 1px solid var(--line-panel);
+    background: var(--surface-bar);
   }
   /* Above the Settings overlay and dialog. */
   .raised {
@@ -215,7 +217,7 @@
     flex: 1;
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   main {
     min-height: 0;

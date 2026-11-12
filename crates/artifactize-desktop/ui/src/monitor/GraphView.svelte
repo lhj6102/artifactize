@@ -396,8 +396,8 @@
   .canvas {
     position: relative;
     min-height: 0;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
+    border-top: 1px solid var(--line-group);
+    background: var(--surface-app);
   }
   /* Under the graph's elements, filling the same box. */
   .paint {
@@ -412,10 +412,29 @@
   .canvas :global(.svelte-flow) {
     overflow: clip;
     --xy-background-color: transparent;
-    --xy-edge-stroke-width: 1.5;
+    --xy-edge-stroke-width: 1.25;
+    --xy-controls-button-background-color: var(--surface-panel);
+    --xy-controls-button-background-color-hover: var(--surface-group);
+    --xy-controls-button-color: var(--ink-2);
+    --xy-controls-button-color-hover: var(--ink);
+    --xy-controls-button-border-color: var(--line-group);
+    --xy-controls-box-shadow: none;
+    --xy-minimap-background-color: var(--surface-panel);
+    --xy-minimap-mask-background-color: var(--scrim);
+  }
+  /* The zoom controls: one bordered group of 24px squares at the canvas's bottom left. */
+  .canvas :global(.svelte-flow__controls) {
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
+    overflow: hidden;
+  }
+  .canvas :global(.svelte-flow__controls-button) {
+    width: 24px;
+    height: 24px;
+    border-bottom-color: var(--line-group);
   }
   .canvas :global(.svelte-flow__edge path) {
-    stroke: var(--light, var(--faint));
+    stroke: var(--light, var(--ink-3));
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
@@ -423,7 +442,7 @@
   .canvas :global(.svelte-flow__node:focus-visible) {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
-    border-radius: var(--radius);
+    border-radius: var(--radius-control);
   }
   .legend {
     position: absolute;
@@ -433,12 +452,12 @@
     flex-wrap: wrap;
     gap: 4px 10px;
     margin: 0;
-    padding: 4px 8px;
+    padding: 3px 8px;
     list-style: none;
-    font-size: 11px;
-    color: var(--muted);
-    background: color-mix(in srgb, var(--surface) 85%, transparent);
-    border-radius: 6px;
+    font-size: var(--text-label);
+    color: var(--ink-2);
+    background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+    border-radius: var(--radius-control);
     pointer-events: none;
     z-index: 5;
   }
@@ -448,11 +467,11 @@
     left: 52px;
     bottom: 15px;
     margin: 0;
-    padding: 2px 8px;
-    font-size: 11px;
-    color: var(--muted);
-    background: color-mix(in srgb, var(--surface) 85%, transparent);
-    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: var(--text-label);
+    color: var(--ink-2);
+    background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+    border-radius: var(--radius-control);
     pointer-events: none;
     z-index: 5;
   }

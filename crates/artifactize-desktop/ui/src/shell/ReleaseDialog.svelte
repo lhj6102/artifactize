@@ -44,11 +44,11 @@
   }
   .command {
     margin: 0 0 8px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface-2);
-    font-family: var(--mono);
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    font: var(--text-small) / 1.5 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: text;

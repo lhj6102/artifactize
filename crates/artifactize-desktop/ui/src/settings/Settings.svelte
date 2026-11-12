@@ -113,37 +113,42 @@
   }
   h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: 15px;
   }
   .tabs {
     display: flex;
-    gap: 4px;
+    gap: 2px;
   }
+  /* Text tabs: the active one in ink with an accent line under it. */
   .tab {
     font: inherit;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 3px 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 4px 10px;
     background: none;
-    color: var(--text);
+    color: var(--ink-2);
     cursor: pointer;
   }
+  .tab:hover {
+    color: var(--ink);
+  }
   .tab[aria-selected="true"] {
-    background: var(--text);
-    color: var(--bg);
-    border-color: var(--text);
+    color: var(--ink);
+    font-weight: 600;
+    border-bottom-color: var(--accent);
   }
   .settings :global(.lead),
   .settings :global(.muted) {
-    color: var(--muted);
+    color: var(--ink-2);
     margin: 8px 0 10px;
   }
   .settings :global(section) {
-    border-top: 1px solid var(--border);
-    padding: 14px 0;
+    border-top: 1px solid var(--line-group);
+    padding: 10px 0;
   }
   .settings :global(h2) {
-    font-size: 14px;
+    font-size: var(--text-title);
     margin: 0 0 4px;
   }
   .settings :global(.facts) {
@@ -153,7 +158,7 @@
     margin: 8px 0 12px;
   }
   .settings :global(dt) {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .settings :global(dd) {
     margin: 0;
@@ -166,13 +171,15 @@
     flex-wrap: wrap;
     margin: 6px 0;
   }
+  /* Fields sit one step below the panel, outlined by the faintest line. */
   .settings :global(.input) {
     font: inherit;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
+    height: var(--control);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
     min-width: 0;
     flex: 1;
   }
@@ -190,18 +197,18 @@
     grid-column: 2;
   }
   .settings :global(.pending) {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 12px;
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
+    padding: 8px 10px;
     margin: 8px 0;
-    background: var(--surface-2);
+    background: var(--surface-group);
   }
   .settings :global(.pending p) {
     margin: 0 0 6px;
   }
   .settings :global(.url code) {
     overflow-wrap: anywhere;
-    font-size: 11px;
+    font-size: var(--text-label);
   }
   .settings :global(.warn) {
     color: var(--yellow);
@@ -222,8 +229,10 @@
     padding: 3px 16px 3px 0;
   }
   .settings :global(th) {
-    color: var(--muted);
+    color: var(--ink-2);
     font-weight: 600;
-    font-size: 12px;
+    font-size: var(--text-label);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 </style>

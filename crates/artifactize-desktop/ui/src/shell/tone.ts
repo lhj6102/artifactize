@@ -24,9 +24,11 @@ const STATUS: Record<Status, Shade> = {
   BASIS: "muted",
 };
 
-/** The theme colour of a status, as a CSS value, for what a tone class cannot reach (a tint). */
+/** The theme colour of a status, as a CSS value, for what a tone class cannot reach (a tint).
+ * A muted status takes the secondary ink. */
 export function toneColour(status: Status): string {
-  return `var(--${STATUS[status]})`;
+  const shade = STATUS[status];
+  return `var(--${shade === "muted" ? "ink-2" : shade})`;
 }
 
 /** The theme class of a status, or of a tone. */

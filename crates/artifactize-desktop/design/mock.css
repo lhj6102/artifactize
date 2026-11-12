@@ -1,0 +1,916 @@
+/* The anatomy of the desktop app's screens, as the design pages draw them. Every colour, size
+   and radius is a token of tokens.css: this sheet names roles, never values. The UI's own
+   stylesheets follow the same anatomy (the D- rules of each page say what must hold). */
+
+.m-window {
+  display: grid;
+  grid-template-rows: var(--bar-height) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface-app);
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font);
+  text-align: left;
+}
+
+/* The global bar: brand left, the window's own controls right. */
+.m-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 0 var(--pad);
+  background: var(--surface-bar);
+  border-bottom: 1px solid var(--line-panel);
+}
+.m-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.m-brand .m-mark {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 3px;
+  transform: rotate(45deg) scale(0.8);
+}
+.m-bar .m-spacer,
+.m-spacer {
+  flex: 1;
+}
+.m-reviewer {
+  color: var(--ink-2);
+}
+
+/* Controls: a quiet button, the one primary button, and a key cap. */
+.m-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control);
+  padding: 0 10px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  color: var(--ink);
+  font: inherit;
+  white-space: nowrap;
+}
+.m-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--ink-on-accent);
+}
+.m-button.small {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--text-small);
+}
+.m-button.quiet {
+  background: transparent;
+  border-color: transparent;
+}
+.m-kbd {
+  font: var(--text-label) var(--mono);
+  color: var(--ink-2);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  padding: 0 4px;
+}
+.m-button.primary .m-kbd {
+  color: var(--ink-on-accent);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--ink-on-accent) 40%, transparent);
+}
+.m-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Fields sit one step below their panel, outlined by the faintest line. */
+.m-input {
+  display: flex;
+  align-items: center;
+  height: var(--control);
+  padding: 0 8px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink);
+  font: var(--text-small) var(--mono);
+}
+.m-input.text {
+  font: var(--text-body) var(--font);
+}
+.m-input.area {
+  height: auto;
+  min-height: 44px;
+  align-items: flex-start;
+  padding: 6px 8px;
+}
+.m-input .m-placeholder {
+  color: var(--ink-3);
+}
+.m-input.focused {
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}
+
+/* The one screen: the Pane left, the Main area right, a panel line between them. */
+.m-screen {
+  display: grid;
+  grid-template-columns: var(--pane-width, 280px) 1px minmax(0, 1fr);
+  min-height: 0;
+}
+.m-divider {
+  background: var(--line-panel);
+}
+.m-pane,
+.m-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface-panel);
+  border-top: 2px solid transparent;
+}
+.m-pane.focused,
+.m-main.focused {
+  border-top-color: var(--accent);
+}
+
+/* The Pane: Search, Branches, the Waiting stack. */
+.m-search {
+  padding: 8px var(--pad);
+  border-bottom: 1px solid var(--line-group);
+}
+.m-branches {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.m-branch {
+  padding: 4px var(--pad) 6px 6px;
+  border-bottom: 1px solid var(--line-group);
+}
+.m-branch-head {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 4px;
+  min-height: 28px;
+}
+.m-chevron {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.m-chevron::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.m-branch.open .m-chevron::before {
+  transform: rotate(45deg);
+}
+.m-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-title);
+}
+.m-branch-name .m-project {
+  color: var(--ink-2);
+}
+.m-branch-name b {
+  font-weight: 600;
+}
+.m-star {
+  color: var(--ink-2);
+  opacity: 0.55;
+  font-size: 13px;
+}
+.m-star.on {
+  color: var(--light-active);
+  opacity: 1;
+}
+.m-latest {
+  display: grid;
+  grid-template-columns: 10px auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+  margin-left: 24px;
+  font-size: var(--text-small);
+}
+.m-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dot, var(--ink-3));
+  justify-self: center;
+}
+.m-dot.hollow {
+  background: var(--surface-panel);
+  box-shadow: inset 0 0 0 1.5px var(--ink-2);
+}
+.m-status {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.m-num {
+  font-variant-numeric: tabular-nums;
+}
+.m-age {
+  justify-self: end;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.m-timeline {
+  margin: 2px 0 0 24px;
+}
+.m-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  align-items: baseline;
+  padding: 3px 8px 3px 0;
+  border-radius: var(--radius-control);
+  font-size: var(--text-small);
+}
+.m-entry .m-dot {
+  align-self: center;
+}
+.m-entry.filled {
+  background: var(--surface-group);
+}
+.m-entry .m-sub {
+  grid-column: 2 / 4;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.m-entry:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 8.5px;
+  top: 18px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--line-group);
+}
+.m-waiting {
+  border-top: 1px solid var(--line-group);
+}
+.m-waiting h2,
+.m-label {
+  margin: 0;
+  padding: 4px var(--pad);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.m-waiting-row {
+  display: grid;
+  grid-template-columns: 1em minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 3px var(--pad);
+  font-size: var(--text-small);
+}
+.m-waiting-row.selected {
+  background: var(--selection);
+}
+.m-waiting-row .m-where,
+.m-waiting-row .m-meta {
+  grid-column: 2;
+  color: var(--ink-2);
+}
+
+/* The Main area: a header row, then the view. */
+.m-main-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 var(--pad);
+}
+.m-main-head h2 {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.m-main.focused .m-main-head h2 {
+  color: var(--ink);
+}
+.m-notice {
+  flex: 1;
+  min-width: 0;
+  color: var(--red);
+  font-size: var(--text-small);
+  text-align: end;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-headline {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 0 var(--pad) 4px;
+}
+.m-headline .m-status {
+  font-weight: 700;
+}
+.m-headline .m-text {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.m-attention {
+  margin: 0;
+  padding: 0 var(--pad) 6px;
+  list-style: none;
+  font-size: var(--text-small);
+}
+
+/* The graph: the working area, with quiet overlays. */
+.m-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-app);
+  border-top: 1px solid var(--line-group);
+  overflow: hidden;
+}
+.m-legend,
+.m-hint {
+  position: absolute;
+  display: flex;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 3px 8px;
+  list-style: none;
+  font-size: var(--text-label);
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+  border-radius: var(--radius-control);
+}
+.m-legend {
+  left: 8px;
+  top: 8px;
+}
+.m-hint {
+  left: 48px;
+  bottom: 12px;
+}
+.m-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--light);
+}
+.m-controls {
+  position: absolute;
+  left: 8px;
+  bottom: 12px;
+  display: grid;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+  overflow: hidden;
+}
+.m-controls span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+.m-controls span + span {
+  border-top: 1px solid var(--line-group);
+}
+
+/* A node: a light and a name on a neutral face, its border in its light's colour. */
+.m-node {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 168px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--light);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+  font-weight: 500;
+}
+.m-node .m-dot {
+  background: var(--light);
+}
+.m-node.selected {
+  outline: 2px solid var(--outline-selected);
+  outline-offset: 1px;
+}
+.m-node.hovered {
+  outline: 1px solid var(--ink-3);
+  outline-offset: 1px;
+}
+.m-node.focused {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.m-whole {
+  position: absolute;
+  border: 1px solid var(--light);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
+}
+.m-whole-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 6px 0 10px;
+  font-weight: 600;
+}
+.m-whole-title .m-dot {
+  background: var(--light);
+}
+.m-whole-title .m-toggle {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+  color: var(--ink-2);
+  font-size: 11px;
+}
+.m-edge {
+  position: absolute;
+  height: 0;
+  border-top: 1.25px solid var(--light);
+  transform-origin: 0 0;
+}
+.light-green { --light: var(--light-green); }
+.light-active { --light: var(--light-active); }
+.light-waiting { --light: var(--light-waiting); }
+.light-red { --light: var(--light-red); }
+.light-error { --light: var(--light-error); }
+.light-blocked { --light: var(--light-blocked); }
+.light-run { --light: var(--light-run); }
+.light-reused { --light: var(--light-reused); }
+.light-checking { --light: var(--light-checking); }
+
+/* The Detail: the inspector, docked over the graph's right side with a gap. */
+.m-dock {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: var(--detail-width, 46%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-panel);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 2px 8px var(--scrim);
+  overflow: hidden;
+}
+.m-dock .m-main-head {
+  border-top: 2px solid transparent;
+}
+.m-dock.focused .m-main-head {
+  border-top-color: var(--accent);
+}
+.m-dock.focused .m-main-head h2 {
+  color: var(--ink);
+}
+.m-dock-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.m-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--pad) 8px;
+  border-bottom: 1px solid var(--line-group);
+}
+.m-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+.m-chip.chosen {
+  background: var(--surface-group);
+  color: var(--ink);
+  font-weight: 600;
+}
+.m-chip .m-mark {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.75);
+}
+.m-slash {
+  color: var(--ink-2);
+}
+.m-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: 8px;
+}
+.m-section {
+  padding: 0 var(--pad) 10px;
+}
+.m-section-label {
+  margin: 0 0 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.m-section + .m-section .m-section-label {
+  padding-top: 8px;
+  border-top: 1px solid var(--line-group);
+}
+.m-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, auto) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  min-height: var(--row-dense);
+  padding: 1px var(--pad);
+}
+.m-row .m-right {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.m-glyph {
+  font-weight: 700;
+}
+.m-kv {
+  display: grid;
+  grid-template-columns: fit-content(40%) minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 0;
+}
+.m-kv dt {
+  color: var(--ink-2);
+  text-align: right;
+}
+.m-kv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.m-log {
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  font: var(--text-small) / 1.5 var(--mono);
+  white-space: pre-wrap;
+}
+.m-log .m-quiet {
+  color: var(--ink-2);
+}
+.m-log .m-stderr {
+  color: var(--red);
+}
+.m-views {
+  display: flex;
+  gap: 8px;
+  padding: 0 var(--pad) 8px;
+  font-size: var(--text-body);
+}
+.m-views .chosen {
+  color: var(--ink);
+  font-weight: 700;
+}
+.m-views .other,
+.m-views .m-bar-sep {
+  color: var(--ink-2);
+}
+.m-summary {
+  padding: 0 var(--pad) 10px;
+}
+.m-summary .m-status {
+  font-weight: 700;
+  margin-right: 10px;
+}
+.m-cost {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.m-fold {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.m-neighbours {
+  position: relative;
+  height: 72px;
+  margin: 0 var(--pad) 10px;
+}
+.m-neighbours .m-node {
+  width: 132px;
+  height: 32px;
+  font-size: var(--text-small);
+}
+
+/* A Human review: instruction, Tools, Tool log, Result. */
+.m-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 var(--pad) 8px;
+}
+.m-review-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.m-review-title h3 {
+  margin: 0;
+  font-size: var(--text-title);
+}
+.m-stage {
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-group);
+  color: var(--ink-2);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 18px;
+}
+.m-stage.review {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.m-meta {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.m-tool {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 10px;
+  padding: 2px 0 2px 18px;
+  font-size: var(--text-small);
+  color: var(--ink-2);
+}
+.m-verdicts {
+  display: flex;
+  gap: 6px;
+}
+.m-verdict {
+  height: var(--control);
+  padding: 0 12px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  line-height: 22px;
+}
+.m-verdict.green.chosen {
+  color: var(--green);
+  border-color: var(--green);
+  font-weight: 600;
+}
+.m-verdict.red.chosen {
+  color: var(--red);
+  border-color: var(--red);
+  font-weight: 600;
+}
+.m-field {
+  display: grid;
+  gap: 4px;
+}
+.m-field .m-name {
+  font-weight: 600;
+}
+.m-required {
+  color: var(--red);
+  margin-left: 2px;
+}
+.m-hint-text {
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+
+/* Overlays: a scrim, a raised dialog with a panel line. */
+.m-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+.m-dialog {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  transform: translateX(-50%);
+  width: min(640px, 92%);
+  padding: 16px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 8px 24px var(--scrim);
+}
+.m-dialog h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.m-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.m-palette {
+  padding: 0;
+}
+.m-palette-input {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-group);
+  color: var(--ink-3);
+}
+.m-palette-group {
+  padding: 6px;
+}
+.m-palette-heading {
+  padding: 6px 8px 2px;
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.m-palette-item {
+  display: flex;
+  justify-content: space-between;
+  min-height: var(--row);
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+}
+.m-palette-item.selected {
+  background: var(--selection);
+}
+.m-find {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 380px;
+  padding: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+  box-shadow: 0 2px 8px var(--scrim);
+}
+.m-find .m-found {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.m-find .m-found li {
+  display: flex;
+  gap: 6px;
+  min-height: var(--row-dense);
+  align-items: center;
+  padding: 0 8px;
+  font: var(--text-small) var(--mono);
+  border-radius: var(--radius-control);
+}
+.m-find .m-found li.active {
+  background: var(--selection);
+}
+
+/* Settings: a wide dialog with text tabs; Providers is a list beside a setup. */
+.m-settings {
+  top: 48px;
+  width: min(900px, 94%);
+  padding: 12px 16px;
+}
+.m-settings-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.m-settings-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.m-tabs {
+  display: flex;
+  gap: 2px;
+}
+.m-tab {
+  padding: 4px 10px;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-2);
+}
+.m-tab.active {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.m-providers {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+.m-choice {
+  min-height: var(--row);
+  padding: 0 8px;
+  line-height: var(--row);
+  border-radius: var(--radius-control);
+}
+.m-choice.current {
+  background: var(--selection);
+  font-weight: 600;
+}
+.m-setup section {
+  padding: 10px 0;
+  border-top: 1px solid var(--line-group);
+}
+.m-setup section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.m-setup h3 {
+  margin: 0 0 4px;
+  font-size: var(--text-title);
+}
+.m-setup .m-row-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+.m-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 12px;
+  margin: 6px 0 10px;
+}
+.m-facts dt {
+  color: var(--ink-2);
+}
+.m-facts dd {
+  margin: 0;
+}
+
+/* Tone helpers, used only on the element that carries the meaning. */
+.tone-green { color: var(--green); }
+.tone-red { color: var(--red); }
+.tone-error { color: var(--error); }
+.tone-running { color: var(--running); }
+.tone-human { color: var(--human); }
+.tone-yellow { color: var(--yellow); }
+.tone-queued { color: var(--queued); }
+.tone-blocked { color: var(--blocked); }
+.tone-muted { color: var(--ink-2); }

@@ -52,23 +52,28 @@
 </section>
 
 <style>
+  /* A section label: 11px uppercase in secondary ink. */
   h4 {
-    margin: 0 0 6px;
-    font-size: 12px;
+    margin: 0 0 4px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .logbox {
     min-width: 0;
   }
+  /* One step below the panel, outlined by the faintest line. */
   .log {
     max-height: 260px;
-    min-height: 72px;
+    min-height: 56px;
     overflow: auto;
-    padding: 8px 10px;
-    border-radius: var(--radius);
-    background: var(--surface-2);
-    font: 12px/1.5 var(--mono);
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    font: var(--text-small) / 1.5 var(--mono);
     outline: none;
     user-select: text;
   }
@@ -83,7 +88,7 @@
   }
   .start,
   .end {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .end {
     margin-bottom: 6px !important;
@@ -92,7 +97,7 @@
     color: var(--red) !important;
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
     margin: 0 0 6px;
     font-family: inherit;
   }

@@ -57,36 +57,26 @@
     width: 100%;
     height: 100%;
     box-sizing: border-box;
-    border: 1.5px solid var(--light);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--light) 5%, transparent);
-    color: var(--text);
+    border: 1px solid var(--light);
+    border-radius: var(--radius-control);
+    background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
+    color: var(--ink);
   }
-  .light-waiting {
-    background: color-mix(in srgb, var(--surface) 40%, transparent);
-  }
-  /* Minimized, it is filled as a node is, with a second edge behind it for the parts it holds. */
+  /* Minimized, it is a node's neutral face, with a second edge behind it for the parts it holds. */
   .minimized {
-    background: color-mix(in srgb, var(--light) 12%, var(--surface));
-    box-shadow: 3px 3px 0 -1.5px var(--bg), 3px 3px 0 0 var(--light);
+    background: var(--surface-panel);
+    box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--light);
   }
-  .minimized.light-waiting {
-    background: var(--surface);
-  }
-  /* The pointer only highlights the whole under it. */
+  /* The pointer only highlights the whole under it: a thin neutral outline. */
   .whole:hover {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+    outline: 1px solid var(--ink-3);
+    outline-offset: 1px;
   }
-  .selected,
-  .open {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
-  }
-  .minimized:hover {
-    box-shadow: 3px 3px 0 -1.5px var(--bg), 3px 3px 0 0 var(--light), 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
-  }
-  .minimized.selected,
-  .minimized.open {
-    box-shadow: 3px 3px 0 -1.5px var(--bg), 3px 3px 0 0 var(--light), 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  /* The opened whole: a neutral outline outside its border, its face unchanged. */
+  .whole.selected,
+  .whole.open {
+    outline: 2px solid var(--outline-selected);
+    outline-offset: 1px;
   }
   .title {
     height: var(--header);
@@ -103,8 +93,8 @@
   }
   .dot {
     flex: none;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--light);
   }
@@ -121,9 +111,10 @@
     white-space: nowrap;
   }
   .count {
-    font-size: 11px;
+    font-size: var(--text-label);
     font-weight: 400;
-    color: var(--muted);
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
   }
   .toggle {
     flex: none;
@@ -132,15 +123,15 @@
     display: grid;
     place-items: center;
     padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--surface);
-    color: var(--muted);
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
+    background: var(--surface-panel);
+    color: var(--ink-2);
     cursor: pointer;
   }
   .toggle:hover {
-    background: var(--surface-2);
-    color: var(--text);
+    background: var(--surface-group);
+    color: var(--ink);
   }
   .toggle:focus-visible {
     outline: 2px solid var(--focus);

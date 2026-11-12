@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Monitor screen</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / monitor</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="monitor.html" aria-current="page">Monitor</a>
+    <a href="current.html">Current</a>
+    <a href="detail.html">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="ux-graph-doc.html">UX graph</a>
+  </nav>
+</header>
+<main data-screen="monitor">
+<h1>Monitor: the one screen with a Run shown</h1>
+<p class="lead">
+  The window after <code>artifactize-desktop</code> starts: the global bar, the Pane on the left
+  (search, branches, the Waiting stack) and the Main area with the shown Run's headline and
+  graph. Nothing is selected on the graph yet; the Detail is closed.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 800">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span>
+    <span class="m-spacer"></span>
+    <span class="m-reviewer">alice</span>
+    <span class="m-button">0.22.0 available</span>
+    <span class="m-button">Settings</span>
+    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+  </header>
+  <div class="m-screen">
+    <section class="m-pane focused">
+      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
+      <div class="m-branches">
+        <div class="m-branch open">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
+            <span class="m-star on">★</span>
+          </div>
+          <div class="m-timeline">
+            <div class="m-entry">
+              <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
+              <span class="m-sub">Working tree</span>
+            </div>
+            <div class="m-entry filled">
+              <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
+              <span class="m-sub">run-7SR0YW</span>
+              <span class="m-sub">dogfood: desktop design pages and the restyle…</span>
+            </div>
+            <div class="m-entry">
+              <span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">3h ago</span>
+              <span class="m-sub">run-5K2QXA</span>
+            </div>
+            <div class="m-entry">
+              <span class="m-dot" style="--dot: var(--yellow)"></span><span class="m-status tone-yellow">YELLOW</span><span class="m-age">1d ago</span>
+              <span class="m-sub">run-3PZ8MN</span>
+            </div>
+          </div>
+        </div>
+        <div class="m-branch">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>experimental/466-uiux</b></span>
+            <span class="m-star">☆</span>
+          </div>
+          <div class="m-latest"><span class="m-dot" style="--dot: var(--running)"></span><span class="m-status tone-running">Running</span><span class="m-age">4m 12s</span></div>
+        </div>
+        <div class="m-branch">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
+            <span class="m-star">☆</span>
+          </div>
+          <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
+        </div>
+        <div class="m-branch">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">웹툰-플랫폼 /</span> <b>feature/결제-흐름-정리-및-검증</b></span>
+            <span class="m-star">☆</span>
+          </div>
+          <div class="m-latest"><span class="m-dot" style="--dot: var(--ink-3)"></span><span class="m-status tone-muted">No Runs yet</span><span class="m-age"></span></div>
+        </div>
+      </div>
+      <section class="m-waiting">
+        <h2>Waiting (2)</h2>
+        <div class="m-waiting-row">
+          <span class="m-glyph tone-human">?</span><span>desktop-design/approved</span>
+          <span class="m-where">artifactize  experimental/466-uiux</span>
+          <span class="m-meta">4m · –</span>
+        </div>
+        <div class="m-waiting-row">
+          <span class="m-glyph tone-human">?</span><span>release/signoff</span>
+          <span class="m-where">shop  main</span>
+          <span class="m-meta">2d · bob</span>
+        </div>
+      </section>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main">
+      <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-notice">2 Runs cannot be read: state/runs/run-1A… is not valid JSON</span></div>
+      <div class="m-headline"><span class="m-status tone-red">✗ RED</span><span class="m-text">NOT SATISFIED at Run end · ✗1 ⊘1 ?1 ✓4 · took 12m 04s</span></div>
+      <ul class="m-attention"><li><span class="tone-human">?</span> release/signoff waiting Human · unclaimed</li><li><span class="tone-red">✗</span> cli/tests RED · exit 1</li></ul>
+      <div class="m-canvas">
+        <ul class="m-legend">
+          <li class="light-green"><span class="m-swatch"></span>GREEN</li>
+          <li class="light-active"><span class="m-swatch"></span>in progress</li>
+          <li class="light-waiting"><span class="m-swatch"></span>waiting</li>
+          <li class="light-red"><span class="m-swatch"></span>RED</li>
+          <li class="light-error"><span class="m-swatch"></span>ERROR</li>
+          <li class="light-blocked"><span class="m-swatch"></span>blocked by upstream</li>
+        </ul>
+        <div class="m-edge light-green" style="left: 388px; top: 250px; width: 170px; transform: rotate(-22deg)"></div>
+        <div class="m-edge light-green" style="left: 388px; top: 250px; width: 170px; transform: rotate(22deg)"></div>
+        <div class="m-edge light-red" style="left: 716px; top: 314px; width: 92px"></div>
+        <div class="m-node light-green" style="left: 220px; top: 230px"><span class="m-dot"></span>core</div>
+        <div class="m-node light-active" style="left: 548px; top: 166px"><span class="m-dot"></span>release</div>
+        <div class="m-node light-red hovered" style="left: 548px; top: 294px"><span class="m-dot"></span>cli</div>
+        <div class="m-node light-blocked" style="left: 808px; top: 294px"><span class="m-dot"></span>docs</div>
+        <div class="m-whole light-green" style="left: 220px; top: 420px; width: 496px; height: 150px">
+          <div class="m-whole-title"><span class="m-dot"></span>desktop<span class="m-toggle">−</span></div>
+          <div class="m-node light-green" style="left: 24px; top: 40px"><span class="m-dot"></span>desktop-backend</div>
+          <div class="m-node light-green" style="left: 24px; top: 92px"><span class="m-dot"></span>desktop-ui</div>
+          <div class="m-node light-green" style="left: 300px; top: 66px"><span class="m-dot"></span>desktop-e2e</div>
+        </div>
+        <div class="m-controls"><span>+</span><span>−</span><span>⛶</span></div>
+        <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 12px; top: 8px">1</span>
+<span class="callout" style="left: 250px; top: 56px">2</span>
+<span class="callout" style="left: 250px; top: 110px">3</span>
+<span class="callout" style="left: 250px; top: 640px">4</span>
+<span class="callout" style="left: 300px; top: 56px">5</span>
+<span class="callout" style="left: 300px; top: 100px">6</span>
+<span class="callout" style="left: 420px; top: 452px">7</span>
+<span class="callout" style="left: 760px; top: 480px">8</span>
+<span class="callout" style="left: 310px; top: 740px">9</span>
+</div>
+<figcaption>Stage 1280 × 800. Dark scheme; the light scheme keeps every role and step.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>Global bar</b><span>Brand left; reviewer, update notice, Settings and Commands right. One line below it separates it from the work.</span></div></li>
+  <li><span class="n">2</span><div><b>Search</b><span>A field one step below the Pane, monospace query, its starting <code>sort:recent</code>.</span></div></li>
+  <li><span class="n">3</span><div><b>Branches</b><span>Chevron, <i>project /</i> quiet and <b>branch</b> bold, star at the line's end; folded, the newest Run's dot, status word and age; expanded, the timeline with the Current's ring and the shown entry's pill.</span></div></li>
+  <li><span class="n">4</span><div><b>Waiting stack</b><span>Grows upward from a thin labelled bar; each row an eval, where it waits, for how long and who claimed it.</span></div></li>
+  <li><span class="n">5</span><div><b>Main area header</b><span>The view's title in 12px; a notice takes the room to the right in one red line; actions at the end.</span></div></li>
+  <li><span class="n">6</span><div><b>Run headline</b><span>The verdict's glyph and word in its colour, the headline in secondary ink with tabular figures, then what needs attention.</span></div></li>
+  <li><span class="n">7</span><div><b>Node</b><span>A light and a name on a neutral face; the border takes the light's colour. Hover is a thin neutral outline.</span></div></li>
+  <li><span class="n">8</span><div><b>Whole</b><span>A box in its light's colour around its parts, its name and light in a 24px title row, the Minimize button at the right.</span></div></li>
+  <li><span class="n">9</span><div><b>Canvas furniture</b><span>Legend top-left, zoom controls and the key hint bottom-left, all quiet overlays on the working surface.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-BAR-1">D-BAR-1</dt>
+  <dd>One global bar of <code>--bar-height</code> on <code>--surface-bar</code>, closed below by <code>--line-panel</code>: the brand (mark and name, semibold) at the left; at the right, in this order, the reviewer in <code>--ink-2</code>, the update notice, Settings and Commands with its <kbd>Ctrl+K</kbd> key cap. <span class="avoid">a shadow under the bar; a second toolbar; page-like navigation.</span></dd>
+  <dt id="D-PANE-1">D-PANE-1</dt>
+  <dd>The Pane is one <code>--surface-panel</code> column, top to bottom: the Search field (a <code>--surface-input</code> field in <code>--mono</code>, closed below by <code>--line-group</code>), the Branches, and the Waiting stack opened above by <code>--line-group</code>. The Pane and the Main area meet at a 1px <code>--line-panel</code> divider that takes a drag. <span class="avoid">headings such as Scope or Runs; a screen switch; a gap instead of the divider.</span></dd>
+  <dt id="D-PANE-2">D-PANE-2</dt>
+  <dd>A branch row: a 28px head with the chevron (20px), the name at <code>--text-title</code> as <i>project /</i> in <code>--ink-2</code> and the branch semibold, cut with an ellipsis, and the star at the end (faint until on, then <code>--light-active</code>); folded, a 12px line under the name with an 8px dot in the status colour, the status word semibold in the same colour and the age right-aligned in tabular figures. Rows are separated by <code>--line-group</code>. <span class="avoid">a card per branch; the project louder than the branch; an age in proportional figures.</span></dd>
+  <dt id="D-PANE-3">D-PANE-3</dt>
+  <dd>An expanded branch's timeline: entries of two 12px lines (status word semibold and age right; Run ID, then a comment cut to one line, in <code>--ink-2</code>), dots of 8px joined by a 1px <code>--line-group</code> line, the Current a ring, the entry shown in the Main area in a <code>--surface-group</code> pill of <code>--radius-control</code>; the selected entry has the <code>--selection</code> background and a 2px inset bar while the keyboard is in the Pane. <span class="avoid">pills on every entry; a status colour as the pill.</span></dd>
+  <dt id="D-PANE-4">D-PANE-4</dt>
+  <dd>The Waiting stack: an 11px uppercase label <code>WAITING (n)</code> in <code>--ink-2</code>, then 12px rows of the eval (its glyph in <code>--human</code>), the project and branch, and <code>age · claimant</code> in <code>--ink-2</code>; selected rows use <code>--selection</code>. <span class="avoid">a bold heading; the stack taller than half the Pane.</span></dd>
+  <dt id="D-MAIN-1">D-MAIN-1</dt>
+  <dd>The Main area header is a 32px row: the view's title at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus), a notice in <code>--red</code> as one cut line taking the remaining room, actions at the end as small buttons with key caps. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a notice that moves the graph.</span></dd>
+  <dt id="D-MAIN-2">D-MAIN-2</dt>
+  <dd>A Run shows, above its graph, its headline row (verdict glyph and word bold in the status colour; the headline in <code>--ink-2</code> with tabular figures), its comment, and what needs attention as 12px lines each led by the glyph in its status colour. <span class="avoid">a coloured banner; the attention list inside the graph.</span></dd>
+  <dt id="D-GRAPH-1">D-GRAPH-1</dt>
+  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the header; its furniture floats quietly: the legend top-left and the key hint bottom-left at 11px in <code>--ink-2</code> on <code>--surface-panel</code> at 85%, the zoom controls bottom-left as one bordered group of 24px squares. <span class="avoid">a white canvas inside a dark panel; furniture that takes the pointer from the graph.</span></dd>
+  <dt id="D-NODE-1">D-NODE-1</dt>
+  <dd>A node is 168 × 40–44px: a <code>--surface-panel</code> face, a 1px border in its light's colour, <code>--radius-control</code> corners; inside, an 8–10px dot in the light's colour, then the name at 13px medium cut with an ellipsis. The legend's swatch, a node's border and dot and an edge's stroke share one light colour per verdict. <span class="avoid">a face tinted by the verdict; a border thicker than 1.5px; a name in the status colour.</span></dd>
+  <dt id="D-NODE-2">D-NODE-2</dt>
+  <dd>Selection and focus are outlines, the face unchanged: the opened Artifact's node has a 2px <code>--outline-selected</code> outline outside its border; the node under the pointer a 1px <code>--ink-3</code> outline; the focused node a 2px <code>--focus</code> ring. The opened node and the Detail name the same Artifact. <span class="avoid">the accent as the selection; a filled face for selection.</span></dd>
+  <dt id="D-NODE-3">D-NODE-3</dt>
+  <dd>A whole is a box with a 1px border in its light's colour and a face of <code>--surface-panel</code> at 40%, its title row (28–32px) holding the dot, the name semibold and the Minimize button (18–20px, <code>--line-group</code> border) at the right; minimized, it is a node with its parts' count in <code>--ink-2</code> under its name and a second edge drawn behind it. <span class="avoid">a whole filled like a node; the button inside the parts' area.</span></dd>
+  <dt id="D-NODE-4">D-NODE-4</dt>
+  <dd>Edges are 1.25–1.5px strokes in their light's colour, meeting nodes at their sides and boxes at their edges; a selected node gets no highlighted edges. <span class="avoid">thick or animated edges; arrowheads larger than the node's dot.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

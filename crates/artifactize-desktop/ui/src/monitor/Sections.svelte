@@ -71,14 +71,17 @@
   .section {
     padding: 0 var(--pad) 12px;
   }
+  /* A section label: 11px uppercase in secondary ink. */
   .heading {
-    margin: 0 0 6px;
-    font-size: 12px;
+    margin: 0 0 4px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .inline {
-    color: var(--text);
+    color: var(--ink);
   }
   .toggle {
     border: 0;
@@ -86,12 +89,14 @@
     padding: 0;
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .keys {
-    color: var(--muted);
+    color: var(--ink-2);
     font-weight: 400;
     margin-left: 8px;
   }
@@ -102,13 +107,15 @@
     margin: 0;
   }
   dt {
-    color: var(--muted);
+    color: var(--ink-2);
+    text-align: right;
     overflow-wrap: anywhere;
   }
   dd {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
   }
   .waits {
     list-style: none;
@@ -118,15 +125,15 @@
   }
   .pending {
     padding-left: 18px;
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .link {
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0;
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: var(--text-small);
   }
 </style>

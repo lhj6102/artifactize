@@ -524,17 +524,17 @@
   .dock {
     position: absolute;
     z-index: 20;
-    top: 12px;
-    right: 12px;
-    bottom: 12px;
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
     width: var(--detail-width, min(46%, 680px));
-    min-width: min(320px, calc(100% - 24px));
-    max-width: calc(100% - 108px);
+    min-width: min(320px, calc(100% - 16px));
+    max-width: calc(100% - 100px);
     contain: inline-size;
     overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
+    border: 1px solid var(--line-panel);
+    border-radius: var(--radius-panel);
+    box-shadow: 0 2px 8px var(--scrim);
   }
   .edge {
     position: absolute;
@@ -547,7 +547,7 @@
     touch-action: none;
   }
   .empty {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .review {
@@ -559,16 +559,18 @@
   .crumb {
     margin: 0;
     padding: 0 var(--pad) 6px;
-    color: var(--muted);
+    color: var(--ink-2);
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
   .input {
     width: 100%;
+    height: 28px;
     font: inherit;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
   }
 </style>

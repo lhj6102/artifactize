@@ -128,20 +128,23 @@
 <style>
   .search {
     position: relative;
-    padding: 0 var(--pad) 6px;
+    padding: 8px var(--pad);
+    border-bottom: 1px solid var(--line-group);
   }
+  /* A field one step below the Pane, outlined by the faintest line. */
   .query {
     width: 100%;
-    font: 12px var(--mono);
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
+    height: var(--control);
+    font: var(--text-small) var(--mono);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
   }
   .query:focus {
-    outline: none;
-    border-color: var(--accent);
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
   }
   .suggestions {
     position: absolute;
@@ -153,14 +156,15 @@
     list-style: none;
     max-height: 240px;
     overflow: auto;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 18px rgb(0 0 0 / 20%);
+    background: var(--surface-raised);
+    border: 1px solid var(--line-panel);
+    border-radius: var(--radius-control);
+    box-shadow: 0 2px 8px var(--scrim);
   }
   .suggestions li {
-    padding: 4px 10px;
-    font: 12px var(--mono);
+    min-height: var(--row-dense);
+    padding: 2px 8px;
+    font: var(--text-small) var(--mono);
     cursor: pointer;
   }
   .suggestions li:hover,

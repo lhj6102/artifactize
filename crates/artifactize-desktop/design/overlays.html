@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Overlays screen</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / overlays</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="monitor.html">Monitor</a>
+    <a href="current.html">Current</a>
+    <a href="detail.html">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html" aria-current="page">Overlays</a>
+    <a href="ux-graph-doc.html">UX graph</a>
+  </nav>
+</header>
+<main data-screen="overlays">
+<h1>Overlays: the palette, Help, dialogs and the find field</h1>
+<p class="lead">
+  What opens over the screen and closes with Esc: the command palette (<kbd>Ctrl+K</kbd>), Help
+  (<kbd>?</kbd>), Open a request by ID (<kbd>Ctrl+O</kbd>), the Leave dialog (quit while claims
+  are held), the Update dialog (from the bar's release notice), and the graph's find field
+  (<kbd>Ctrl+F</kbd>), which floats over the graph's top left rather than over the screen.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 560">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <div class="m-screen" style="position: relative">
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>Waiting (0)</h2></section></section>
+    <div class="m-divider"></div>
+    <section class="m-main"><div class="m-main-head"><h2>Run run-5K2QXA</h2></div><div class="m-canvas"></div></section>
+    <div class="m-scrim"></div>
+    <div class="m-dialog m-palette" style="top: 60px">
+      <div class="m-palette-input">Type a command…</div>
+      <div class="m-palette-group">
+        <div class="m-palette-heading">App</div>
+        <div class="m-palette-item selected"><span>Command palette</span><span class="m-kbd">Ctrl+K</span></div>
+        <div class="m-palette-item"><span>Keyboard shortcuts</span><span class="m-kbd">?</span></div>
+        <div class="m-palette-item"><span>Show Settings</span><span class="m-kbd">Ctrl+,</span></div>
+        <div class="m-palette-item"><span>Refresh</span><span class="m-kbd">Ctrl+R</span></div>
+        <div class="m-palette-heading">Main area</div>
+        <div class="m-palette-item"><span>Open a request by ID</span><span class="m-kbd">Ctrl+O</span></div>
+        <div class="m-palette-item"><span>Open the Run's Detail</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 300px; top: 70px">1</span>
+<span class="callout" style="left: 300px; top: 150px">2</span>
+</div>
+<figcaption>Stage 1280 × 560. The command palette.</figcaption>
+</figure>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 420">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <div class="m-screen" style="position: relative">
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>Waiting (0)</h2></section></section>
+    <div class="m-divider"></div>
+    <section class="m-main"><div class="m-main-head"><h2>Run run-5K2QXA</h2></div><div class="m-canvas"></div></section>
+    <div class="m-scrim"></div>
+    <div class="m-dialog" style="top: 40px; left: 24%; width: 420px">
+      <h2>Keyboard shortcuts</h2>
+      <p class="m-section-label" style="margin: 0 0 6px">Pane</p>
+      <dl class="m-kv" style="grid-template-columns: max-content 1fr"><dt style="text-align: left"><span class="m-kbd">/</span></dt><dd>Search</dd><dt style="text-align: left"><span class="m-kbd">↑ ↓ j k</span></dt><dd>Move the selection</dd><dt style="text-align: left"><span class="m-kbd">→ ←</span></dt><dd>Expand or fold a branch</dd><dt style="text-align: left"><span class="m-kbd">Enter</span></dt><dd>Go to the Main area</dd></dl>
+      <div class="m-dialog-actions"><span class="m-button">Close</span></div>
+    </div>
+    <div class="m-dialog" style="top: 40px; left: 76%; width: 420px">
+      <h2>Leave the review?</h2>
+      <p style="margin: 0 0 8px">This window holds 1 review claim: release/signoff.</p>
+      <div class="m-dialog-actions"><span class="m-button">Stay <span class="m-kbd">Esc</span></span><span class="m-button primary">Release and quit <span class="m-kbd">u</span></span></div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 130px; top: 70px">3</span>
+<span class="callout" style="left: 790px; top: 70px">4</span>
+</div>
+<figcaption>Stage 1280 × 420. Help (left) and the Leave dialog (right), shown side by side here; the app opens one at a time.</figcaption>
+</figure>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 420">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">0.22.0 available</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <div class="m-screen" style="position: relative">
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>Waiting (0)</h2></section></section>
+    <div class="m-divider"></div>
+    <section class="m-main">
+      <div class="m-main-head"><h2>Run run-5K2QXA</h2></div>
+      <div class="m-canvas">
+        <div class="m-node light-green" style="left: 560px; top: 120px"><span class="m-dot"></span>core</div>
+        <div class="m-find">
+          <div class="m-input focused"><span>des</span></div>
+          <ul class="m-found">
+            <li class="active"><span class="m-glyph tone-green">✓</span><span>desktop</span></li>
+            <li><span class="m-glyph tone-green">✓</span><span>desktop-ui</span></li>
+            <li><span class="m-glyph tone-red">✗</span><span>desktop-ui / follows-design</span></li>
+            <li><span class="m-glyph tone-human">?</span><span>desktop-design / approved</span></li>
+          </ul>
+          <p class="m-fold" style="margin: 4px 8px 0">4 of 4 · ↑ ↓ choose · Enter opens</p>
+        </div>
+      </div>
+    </section>
+    <div class="m-dialog" style="top: 60px; left: 72%; width: 440px">
+      <h2>Update artifactize</h2>
+      <p style="margin: 0 0 6px">Running 0.21.1 · 0.22.0 is out. Installed with the .deb: run</p>
+      <div class="m-log" style="min-height: 0">curl -fsSL https://artifactize.dev/install.sh | sh</div>
+      <p style="margin: 8px 0 0"><span class="m-link">Release notes</span></p>
+      <div class="m-dialog-actions"><span class="m-button">Close <span class="m-kbd">Esc</span></span></div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 300px; top: 90px">5</span>
+<span class="callout" style="left: 700px; top: 90px">6</span>
+</div>
+<figcaption>Stage 1280 × 420. The find field over the graph (left) and the Update dialog (right).</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>Palette</b><span>A 640px raised dialog near the top: an input closed below by a group line, groups with 11px headings, 24px items with the key cap at the right; the selected item on the selection background.</span></div></li>
+  <li><span class="n">2</span><div><b>Key caps</b><span>Every command that has a key shows it as a key cap, the same cap the bar and the hints use.</span></div></li>
+  <li><span class="n">3</span><div><b>Help</b><span>The keys of what has focus, as a key-cap / action grid under section labels.</span></div></li>
+  <li><span class="n">4</span><div><b>Leave dialog</b><span>Says what is held; Stay (Esc) and the primary Release and quit (u).</span></div></li>
+  <li><span class="n">5</span><div><b>Find field</b><span>Over the graph's top left: a monospace input and 22px result rows with the verdict glyph in its colour; the chosen row on the selection background.</span></div></li>
+  <li><span class="n">6</span><div><b>Update dialog</b><span>The running and the new version, how to update the way the app was installed, the command as selectable monospace in an input-surface box, a link to the release page.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-OVL-1">D-OVL-1</dt>
+  <dd>A dialog is a <code>--surface-raised</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-chip</code> corners, 16px padding and a shadow no stronger than 8px offset, 24px blur in <code>--scrim</code>, over a <code>--scrim</code> overlay; its title is 15px semibold; its actions are right-aligned 24px buttons, at most one primary, each with its key cap when a key does the same. <span class="avoid">a 12px radius; a borderless card floating on a blur.</span></dd>
+  <dt id="D-OVL-2">D-OVL-2</dt>
+  <dd>The command palette is 640px wide near the top: an input of 36px closed below by <code>--line-group</code>, group headings at <code>--text-label</code> uppercase in <code>--ink-2</code>, items of <code>--row</code> with the label left and the key cap right, the selected item on <code>--selection</code>; Enter runs, Esc closes. <span class="avoid">icons per command; the selection shown by colour alone.</span></dd>
+  <dt id="D-OVL-3">D-OVL-3</dt>
+  <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>; on the primary button it is transparent with <code>--ink-on-accent</code>. <span class="avoid">a second kbd style; keys written as plain text where a cap is used elsewhere.</span></dd>
+  <dt id="D-OVL-4">D-OVL-4</dt>
+  <dd>The find field floats over the graph's top left (8px in), 380px wide on <code>--surface-raised</code> with a <code>--line-panel</code> border: a <code>--mono</code> input, then result rows of <code>--row-dense</code> in <code>--mono</code> at <code>--text-small</code> led by the verdict glyph in its colour, the chosen row on <code>--selection</code>, and a <code>--ink-2</code> note (how many, how to star). <span class="avoid">a modal find; results that move the graph.</span></dd>
+  <dt id="D-OVL-5">D-OVL-5</dt>
+  <dd>Help lists the keys of what has focus as sections (Pane, Main area, Settings) with a key cap / action grid; the Leave dialog says which claims are held and offers Stay (<kbd>Esc</kbd>) and Release and quit (<kbd>u</kbd>); the Update dialog shows the running and the new version, the way to update as a selectable <code>--mono</code> command on <code>--surface-input</code> or a link, and never installs anything itself. <span class="avoid">a Help page outside the app; an update that starts on its own.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

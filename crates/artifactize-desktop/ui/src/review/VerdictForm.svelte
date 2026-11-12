@@ -192,13 +192,15 @@
     flex-wrap: wrap;
     gap: 6px;
   }
+  /* The chosen verdict takes its colour as text and border; the face stays. */
   .verdict {
     font: inherit;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--muted);
-    border-radius: 6px;
-    padding: 3px 12px;
+    height: var(--control);
+    border: 1px solid var(--line-group);
+    background: var(--surface-group);
+    color: var(--ink-2);
+    border-radius: var(--radius-control);
+    padding: 0 12px;
     cursor: pointer;
   }
   .verdict.green[aria-checked="true"] {
@@ -225,25 +227,27 @@
   }
   .hint,
   .muted {
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
+  /* Fields sit one step below the panel, outlined by the faintest line. */
   input,
   textarea,
   select {
     font: inherit;
-    color: var(--text);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 8px;
+    color: var(--ink);
+    background: var(--surface-input);
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    padding: 4px 8px;
+    min-height: var(--control);
     width: 100%;
   }
   textarea {
     resize: vertical;
   }
   ::placeholder {
-    color: var(--faint);
+    color: var(--ink-3);
   }
   .items {
     display: grid;
@@ -260,13 +264,13 @@
   .remove {
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     cursor: pointer;
     font: inherit;
     padding: 4px;
   }
   .remove:hover {
-    color: var(--text);
+    color: var(--ink);
   }
   .add {
     justify-self: start;
@@ -279,15 +283,15 @@
     display: grid;
     gap: 8px;
     padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
   }
   .group-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
   .submit {
     display: flex;
@@ -311,8 +315,8 @@
     color: var(--red);
     white-space: pre-wrap;
     border: 1px solid var(--red);
-    border-radius: 6px;
+    border-radius: var(--radius-control);
     padding: 8px 10px;
-    font-size: 12px;
+    font-size: var(--text-small);
   }
 </style>

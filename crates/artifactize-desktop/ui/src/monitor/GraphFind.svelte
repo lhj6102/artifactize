@@ -134,23 +134,24 @@
     top: 8px;
     width: min(380px, calc(100% - 16px));
     padding: 6px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 18px rgb(0 0 0 / 20%);
+    background: var(--surface-raised);
+    border: 1px solid var(--line-panel);
+    border-radius: var(--radius-control);
+    box-shadow: 0 2px 8px var(--scrim);
   }
   .query {
     width: 100%;
-    font: 12px var(--mono);
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
+    height: var(--control);
+    font: var(--text-small) var(--mono);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
   }
   .query:focus {
-    outline: none;
-    border-color: var(--accent);
+    outline: 2px solid var(--focus);
+    outline-offset: -1px;
   }
   .found {
     margin: 4px 0 0;
@@ -162,9 +163,11 @@
   .found li {
     display: flex;
     gap: 6px;
-    padding: 4px 8px;
-    font: 12px var(--mono);
-    border-radius: 4px;
+    min-height: var(--row-dense);
+    align-items: center;
+    padding: 0 8px;
+    font: var(--text-small) var(--mono);
+    border-radius: var(--radius-control);
     cursor: pointer;
   }
   .found li:hover,
@@ -177,8 +180,8 @@
   }
   .note {
     margin: 4px 8px 0;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
   .note:empty {
     display: none;

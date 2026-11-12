@@ -67,7 +67,7 @@
     min-height: 240px;
   }
   .empty {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .headline {
@@ -85,13 +85,14 @@
     cursor: pointer;
   }
   .headline:hover .text {
-    color: var(--text);
+    color: var(--ink);
   }
   .headline .status {
     font-weight: 600;
   }
   .headline .text {
-    color: var(--muted);
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
   }
   .comment {
     margin: 0;
@@ -104,12 +105,12 @@
     padding: 0 var(--pad) 8px;
   }
   .attention li {
+    font-size: var(--text-small);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .more {
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
   }
 </style>

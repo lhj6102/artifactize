@@ -220,19 +220,20 @@
     width: 100%;
     text-align: left;
     font: inherit;
-    color: var(--text);
+    color: var(--ink);
     background: none;
     border: 0;
-    border-radius: 6px;
-    padding: 6px 8px;
+    border-radius: var(--radius-control);
+    min-height: var(--row);
+    padding: 2px 8px;
     cursor: pointer;
     overflow-wrap: anywhere;
   }
   .choice:hover {
-    background: var(--surface-2);
+    background: var(--surface-group);
   }
   .choice[aria-current="true"] {
-    background: var(--surface-2);
+    background: var(--selection);
     font-weight: 600;
   }
   .setup {

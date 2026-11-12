@@ -76,79 +76,81 @@
     content: "";
     position: absolute;
     left: 8.5px;
-    top: 20px;
-    bottom: -12px;
+    top: 16px;
+    bottom: -8px;
     width: 1px;
-    background: var(--border);
+    background: var(--line-group);
   }
   .entry {
     position: relative;
     width: 100%;
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
-    column-gap: 10px;
+    column-gap: 8px;
     align-items: baseline;
     margin: 0;
-    padding: 5px 10px 5px 0;
+    padding: 3px 8px 3px 0;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     background: none;
-    color: var(--text);
+    color: var(--ink);
     font: inherit;
     text-align: left;
     cursor: pointer;
   }
   .entry:hover {
-    background: color-mix(in srgb, var(--surface-2) 60%, var(--surface));
+    background: color-mix(in srgb, var(--surface-group) 60%, var(--surface-panel));
   }
   /* What the Main area shows: a soft grey pill around the entry. */
   .entry.filled {
-    background: var(--surface-2);
+    background: var(--surface-group);
   }
   .dot {
     grid-row: 1;
     align-self: center;
     justify-self: center;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--dot);
   }
   /* The Current is no Run: a ring, not a light. */
   .dot.hollow {
-    background: var(--surface);
-    box-shadow: inset 0 0 0 1.5px var(--muted);
+    background: var(--surface-panel);
+    box-shadow: inset 0 0 0 1.5px var(--ink-2);
   }
   .status {
     grid-column: 2;
     font-weight: 600;
-    font-size: 13px;
+    font-size: var(--text-small);
   }
   .running .status {
     color: var(--running);
   }
   .age {
     grid-column: 3;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .sub {
     grid-column: 2 / 4;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .older {
-    margin: 4px 0 0 28px;
+    margin: 2px 0 0 26px;
     padding: 2px 0;
     border: 0;
     background: none;
     color: var(--accent);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--text-small);
     cursor: pointer;
   }
   .older:hover {

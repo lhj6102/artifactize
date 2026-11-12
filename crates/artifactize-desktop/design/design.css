@@ -1,0 +1,288 @@
+/* The design pages' own chrome: the page around a screen's figure, its callouts, notes and
+   rules. It uses the same tokens as the screens, so the pages read in both schemes. */
+:root {
+  --page-max: 1120px;
+}
+html {
+  background: var(--surface-app);
+}
+body {
+  margin: 0;
+  background: var(--surface-app);
+  color: var(--ink);
+  font: var(--text-body) / 1.55 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--accent);
+}
+code,
+kbd {
+  font: 0.92em var(--mono);
+}
+kbd {
+  color: var(--ink-2);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+  padding: 0 4px;
+}
+.doc {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 16px 64px;
+}
+.doc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0 10px;
+  border-bottom: 1px solid var(--line-panel);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.doc-head nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--text-small);
+}
+.doc-head nav a[aria-current] {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+h1 {
+  margin: 20px 0 6px;
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.lead {
+  margin: 0 0 20px;
+  max-width: 72ch;
+  color: var(--ink-2);
+}
+h2 {
+  margin: 32px 0 10px;
+  font-size: 16px;
+}
+h3 {
+  margin: 20px 0 6px;
+  font-size: 14px;
+}
+p {
+  max-width: 76ch;
+}
+
+/* The figure: a screen drawn at its stage size and scaled to the page's width. */
+.figure {
+  margin: 0;
+}
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--w) / var(--h);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+  background: var(--surface-app);
+}
+.stage-inner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--w) * 1px);
+  height: calc(var(--h) * 1px);
+  transform-origin: 0 0;
+  transform: scale(var(--scale, 1));
+}
+.stage-inner > .m-window {
+  position: absolute;
+  inset: 0;
+}
+figcaption {
+  margin: 8px 0 0;
+  font-size: var(--text-small);
+  color: var(--ink-2);
+}
+.callout {
+  position: absolute;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--light-active);
+  color: var(--surface-bar);
+  font: 700 12px var(--font);
+  box-shadow: 0 0 0 2px var(--surface-bar);
+  pointer-events: none;
+}
+.notes {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px 20px;
+}
+.notes li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.notes .n {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--light-active);
+  color: var(--surface-bar);
+  font: 700 12px var(--font);
+}
+.notes b {
+  display: block;
+  font-weight: 600;
+}
+.notes span {
+  color: var(--ink-2);
+}
+
+/* Rules: an id, what must hold, and what to avoid. */
+.rules {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+}
+.rules dt {
+  font: 600 var(--text-small) var(--mono);
+  color: var(--ink);
+  padding-top: 1px;
+}
+.rules dd {
+  margin: 0;
+}
+.rules dd .avoid {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.rules dd .avoid::before {
+  content: "Don't: ";
+  font-weight: 600;
+}
+.tag {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  vertical-align: middle;
+}
+
+/* Tables (tokens, edges). */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--line-group);
+}
+th {
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+td code {
+  white-space: nowrap;
+}
+.swatch {
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  margin-right: 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  vertical-align: middle;
+  background: var(--token);
+}
+.screens {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.screens li {
+  padding: 10px 12px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-panel);
+}
+.screens a {
+  font-weight: 600;
+  text-decoration: none;
+}
+.screens span {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+}
+.checklist {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: 24px;
+}
+.checklist li {
+  break-inside: avoid;
+  padding: 3px 0 3px 22px;
+  position: relative;
+}
+.checklist li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--ink-2);
+  border-radius: 2px;
+}
+@media (max-width: 720px) {
+  .checklist {
+    columns: 1;
+  }
+  .rules {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .rules dd {
+    margin-bottom: 8px;
+  }
+}

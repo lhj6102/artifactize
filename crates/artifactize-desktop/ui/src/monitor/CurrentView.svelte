@@ -65,7 +65,8 @@
     padding: 0 var(--pad) 6px;
   }
   .when {
-    color: var(--muted);
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
   }
   .canvas {
     position: relative;
@@ -73,21 +74,32 @@
     min-height: 200px;
     min-width: 0;
   }
+  /* The structure text folds under the graph, opened above by a group line; expanded, it is
+   * saved-output text one step below the panel. */
   details {
-    padding: var(--pad);
+    padding: 8px var(--pad) var(--pad);
+    border-top: 1px solid var(--line-group);
     overflow: auto;
     max-height: 40vh;
   }
   summary {
+    color: var(--ink-2);
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
     cursor: pointer;
   }
   pre {
+    margin: 8px 0 0;
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    font: var(--text-small) / 1.5 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .note {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .failure {

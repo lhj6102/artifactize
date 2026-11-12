@@ -21,27 +21,27 @@
     align-items: center;
     gap: 8px;
     padding: 0 12px;
-    border: 1.5px solid var(--light);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--light) 12%, var(--surface));
-    color: var(--text);
+    border: 1px solid var(--light);
+    border-radius: var(--radius-control);
+    background: var(--surface-panel);
+    color: var(--ink);
     font-weight: 500;
   }
-  .light-waiting {
-    background: var(--surface);
-  }
-  /* The pointer only highlights the Artifact under it. */
+  /* The pointer only highlights the Artifact under it: a thin neutral outline. */
   .artifact:hover {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+    outline: 1px solid var(--ink-3);
+    outline-offset: 1px;
   }
-  .selected,
-  .open {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  /* The opened Artifact: a neutral outline outside its border, its face unchanged. */
+  .artifact.selected,
+  .artifact.open {
+    outline: 2px solid var(--outline-selected);
+    outline-offset: 1px;
   }
   .dot {
     flex: none;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--light);
   }

@@ -61,11 +61,14 @@
     min-width: 0;
     padding: 0 var(--pad) 10px;
   }
+  /* A section label: 11px uppercase in secondary ink. */
   h4 {
-    margin: 0 0 6px;
-    font-size: 12px;
+    margin: 0 0 4px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .tool {
     display: grid;
@@ -76,12 +79,12 @@
   }
   .description,
   .reason {
-    font-size: 12px;
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
   .description,
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .reason,
   .error {

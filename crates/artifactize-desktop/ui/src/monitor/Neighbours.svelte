@@ -141,17 +141,17 @@
   .neighbours :global(.svelte-flow) {
     overflow: clip;
     --xy-background-color: transparent;
-    --xy-edge-stroke-width: 1.5;
+    --xy-edge-stroke-width: 1.25;
   }
   .neighbours :global(.svelte-flow__edge path) {
-    stroke: var(--light, var(--faint));
+    stroke: var(--light, var(--ink-3));
   }
   .neighbours :global(.svelte-flow__node) {
     cursor: pointer;
   }
   .more {
     margin: -6px var(--pad) 12px;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
 </style>

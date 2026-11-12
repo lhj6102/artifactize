@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Detail screen</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / detail</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="monitor.html">Monitor</a>
+    <a href="current.html">Current</a>
+    <a href="detail.html" aria-current="page">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="ux-graph-doc.html">UX graph</a>
+  </nav>
+</header>
+<main data-screen="detail">
+<h1>Detail: the inspector of the selected Artifact</h1>
+<p class="lead">
+  A click on a node opens its Detail, docked over the graph's right side with a gap. The
+  selection drives it: the outlined node and the Detail's title name the same Artifact. Its
+  tabs read as a path, the Artifact's own chip then one chip per eval; the first figure shows
+  the Artifact's tab, the second an eval's Summary.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 800">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span>
+    <span class="m-spacer"></span>
+    <span class="m-reviewer">alice</span>
+    <span class="m-button">Settings</span>
+    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+  </header>
+  <div class="m-screen">
+    <section class="m-pane">
+      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
+      <div class="m-branches">
+        <div class="m-branch open">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
+            <span class="m-star on">★</span>
+          </div>
+          <div class="m-timeline">
+            <div class="m-entry"><span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span><span class="m-sub">Working tree</span></div>
+            <div class="m-entry filled"><span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span><span class="m-sub">run-7SR0YW</span></div>
+          </div>
+        </div>
+      </div>
+      <section class="m-waiting"><h2>Waiting (1)</h2>
+        <div class="m-waiting-row"><span class="m-glyph tone-human">?</span><span>release/signoff</span><span class="m-where">artifactize  dev</span><span class="m-meta">2m · –</span></div>
+      </section>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main">
+      <div class="m-main-head"><h2>Run run-7SR0YW</h2></div>
+      <div class="m-headline"><span class="m-status tone-red">✗ RED</span><span class="m-text">NOT SATISFIED at Run end · ✗1 ⊘1 ?1 ✓4 · took 12m 04s</span></div>
+      <div class="m-canvas">
+        <ul class="m-legend">
+          <li class="light-green"><span class="m-swatch"></span>GREEN</li>
+          <li class="light-active"><span class="m-swatch"></span>in progress</li>
+          <li class="light-waiting"><span class="m-swatch"></span>waiting</li>
+          <li class="light-red"><span class="m-swatch"></span>RED</li>
+          <li class="light-error"><span class="m-swatch"></span>ERROR</li>
+          <li class="light-blocked"><span class="m-swatch"></span>blocked by upstream</li>
+        </ul>
+        <div class="m-edge light-green" style="left: 228px; top: 250px; width: 170px; transform: rotate(-22deg)"></div>
+        <div class="m-edge light-green" style="left: 228px; top: 250px; width: 170px; transform: rotate(22deg)"></div>
+        <div class="m-edge light-red" style="left: 556px; top: 314px; width: 92px"></div>
+        <div class="m-node light-green" style="left: 60px; top: 230px"><span class="m-dot"></span>core</div>
+        <div class="m-node light-active" style="left: 388px; top: 166px"><span class="m-dot"></span>release</div>
+        <div class="m-node light-red selected" style="left: 388px; top: 294px"><span class="m-dot"></span>cli</div>
+        <div class="m-controls"><span>+</span><span>−</span><span>⛶</span></div>
+        <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
+        <aside class="m-dock focused" style="--detail-width: 420px">
+          <div class="m-main-head"><div class="m-dock-title"><h2>Artifact cli</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
+          <div class="m-chips">
+            <span class="m-chip chosen"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
+            <span class="m-chip"><span class="m-glyph tone-green">✓</span>lint</span>
+            <span class="m-chip"><span class="m-glyph tone-red">✗</span>tests</span>
+            <span class="m-chip"><span class="m-glyph tone-green">✓</span>matches-docs</span>
+          </div>
+          <div class="m-body">
+            <div class="m-neighbours">
+              <div class="m-edge light-green" style="left: 132px; top: 36px; width: 36px"></div>
+              <div class="m-edge light-red" style="left: 300px; top: 36px; width: 36px"></div>
+              <div class="m-node light-green" style="left: 0; top: 20px"><span class="m-dot"></span>core</div>
+              <div class="m-node light-red selected" style="left: 168px; top: 20px"><span class="m-dot"></span>cli</div>
+              <div class="m-node light-blocked" style="left: 336px; top: 20px; width: 60px"><span class="m-dot"></span>docs</div>
+            </div>
+            <ul class="m-rows">
+              <li class="m-row"><span class="m-glyph tone-green">✓</span><span>lint</span><span class="tone-green">GREEN</span><span class="m-right">4s</span></li>
+              <li class="m-row"><span class="m-glyph tone-red">✗</span><span><b>tests</b></span><span class="tone-red"><b>RED</b> · exit 1</span><span class="m-right">1m 12s</span></li>
+              <li class="m-row"><span class="m-glyph tone-green">✓</span><span>matches-docs</span><span class="tone-green">GREEN</span><span class="m-right">3m 08s · 48.2k tokens</span></li>
+            </ul>
+            <div class="m-section" style="margin-top: 8px">
+              <p class="m-section-label">Tools</p>
+              <div class="m-tool"><span class="m-button small">▶ help</span><span>Print the CLI's help.</span></div>
+            </div>
+            <div class="m-section">
+              <p class="m-section-label">Tool log</p>
+              <div class="m-log"><span class="m-quiet">What its tools print shows here while the app runs.</span></div>
+            </div>
+            <div class="m-section">
+              <p class="m-section-label">Path</p>
+              <p style="margin: 0" class="m-cost">crates/artifactize</p>
+              <p class="m-fold" style="margin: 8px 0 0">▸ Debug</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 560px; top: 300px">1</span>
+<span class="callout" style="left: 840px; top: 90px">2</span>
+<span class="callout" style="left: 840px; top: 136px">3</span>
+<span class="callout" style="left: 840px; top: 200px">4</span>
+<span class="callout" style="left: 840px; top: 292px">5</span>
+<span class="callout" style="left: 840px; top: 390px">6</span>
+</div>
+<figcaption>Stage 1280 × 800. The Artifact's tab: neighbours, evals, Tools, Tool log, path, Debug.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>Selection</b><span>The opened node keeps its face and border and gains a neutral 2px outline. It is the Artifact the Detail is titled with.</span></div></li>
+  <li><span class="n">2</span><div><b>Dock header</b><span>The title (the whole name, wrapping), the star beside it, Close with its key cap. The 2px accent line at the top says the Detail has focus.</span></div></li>
+  <li><span class="n">3</span><div><b>Chip path</b><span><i>[mark] cli / ✓ lint ✗ tests ✓ matches-docs</i>: rounded chips of 22px, the chosen one filled; eval chips lead with the verdict glyph in its colour; many chips wrap.</span></div></li>
+  <li><span class="n">4</span><div><b>Neighbours</b><span>The Artifact between the Artifacts its evals use and those whose evals use it, drawn with the graph's nodes; a click on a neighbour opens it.</span></div></li>
+  <li><span class="n">5</span><div><b>Eval rows</b><span>Dense rows: glyph, name, status words in the status colour, the right column (time, tokens) in secondary ink with tabular figures.</span></div></li>
+  <li><span class="n">6</span><div><b>Sections</b><span>Tools, Tool log and Path under 11px uppercase labels in secondary ink, each section opened above by a group line; the Tool log in an input-surface box; the rest folds under Debug.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 520; --h: 560">
+<div class="stage-inner">
+<div class="m-window" style="background: var(--surface-app)">
+  <div style="position: absolute; inset: 0">
+    <aside class="m-dock" style="--detail-width: 420px; left: 8px; right: auto; width: 500px">
+      <div class="m-main-head"><div class="m-dock-title"><h2>Artifact cli</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
+      <div class="m-chips">
+        <span class="m-chip"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
+        <span class="m-chip"><span class="m-glyph tone-green">✓</span>lint</span>
+        <span class="m-chip chosen"><span class="m-glyph tone-red">✗</span>tests</span>
+        <span class="m-chip"><span class="m-glyph tone-green">✓</span>matches-docs</span>
+      </div>
+      <div class="m-body">
+        <div class="m-views"><span class="chosen">Summary</span><span class="m-bar-sep">|</span><span class="other">Runtime log</span></div>
+        <p class="m-summary"><span class="m-status tone-red">✗ RED</span><span class="m-cost">1m 12s · exit 1</span></p>
+        <div class="m-section">
+          <p style="margin: 0 0 10px">Run the CLI's tests of {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}.</p>
+          <p class="m-section-label">Result</p>
+          <p style="margin: 0 0 4px">exit 1</p>
+          <p style="margin: 0" class="m-cost">2 findings</p>
+          <ol style="margin: 4px 0 0; padding-left: 20px"><li>verify_waits_for_signoff · <span class="m-cost">crates/artifactize/tests/verify.rs:212</span></li><li>status_json_lists_parts · <span class="m-cost">crates/artifactize/tests/status.rs:88</span></li></ol>
+        </div>
+        <div class="m-section">
+          <p class="m-section-label">Execution options</p>
+          <dl class="m-kv"><dt>profile</dt><dd>runtime · cargo test -p artifactize</dd><dt>timeout</dt><dd>1 800 000 ms</dd></dl>
+        </div>
+        <div class="m-section">
+          <p class="m-section-label">Execution metadata</p>
+          <dl class="m-kv"><dt>took</dt><dd>1m 12s</dd><dt>finished</dt><dd>2026-11-13 02:14:09</dd></dl>
+        </div>
+        <div class="m-section">
+          <p class="m-section-label">Fingerprint</p>
+          <dl class="m-kv"><dt>artifactsum</dt><dd>c9a1…0f3e</dd></dl>
+          <p class="m-fold" style="margin: 8px 0 0">▸ Debug</p>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+<span class="callout" style="left: 220px; top: 94px">7</span>
+<span class="callout" style="left: 220px; top: 128px">8</span>
+<span class="callout" style="left: 220px; top: 300px">9</span>
+</div>
+<figcaption>Stage 520 × 560. An eval's tab: the view switch, the status line, the instruction and the result, then options, metadata and fingerprint.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">7</span><div><b>View switch</b><span>Plain text a level below the chips: the chosen view dark and bold, the other light; no chip, no fill.</span></div></li>
+  <li><span class="n">8</span><div><b>Status line</b><span>Glyph and word bold in the status colour; what it took and spent beside it in neutral secondary ink.</span></div></li>
+  <li><span class="n">9</span><div><b>Header → label → value</b><span>Each block: an 11px uppercase label, then its content; facts as a key/value grid, keys right-aligned in secondary ink, values in tabular figures.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-INS-1">D-INS-1</dt>
+  <dd>The Detail docks over the graph toward its right edge with an 8–12px gap on three sides, never beside the Pane: a <code>--surface-panel</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-panel</code> corners and a faint shadow (<code>--scrim</code>, 2px offset, 8px blur); its left edge takes a drag and its width is remembered; part of the graph stays visible on its left. <span class="avoid">a heavy shadow or large radius; the Detail pushing the graph aside.</span></dd>
+  <dt id="D-INS-2">D-INS-2</dt>
+  <dd>The Detail's header is the panel header row (D-MAIN-1): the title at <code>--text-small</code> semibold, wrapping to show a long name whole, the star beside it, Close with its <kbd>Esc</kbd> key cap at the end; focus shows as the 2px <code>--accent</code> top line. <span class="avoid">a cut title; a second close control.</span></dd>
+  <dt id="D-INS-3">D-INS-3</dt>
+  <dd>The chip row sits under the header, closed below by <code>--line-group</code>: chips of <code>--row-dense</code> height, <code>--radius-chip</code>, <code>--text-small</code>, a 1px <code>--line-group</code> border and <code>--ink-2</code> text; the chosen chip is filled with <code>--surface-group</code> in <code>--ink</code> semibold; the Artifact's chip leads with the Artifact mark and cuts only its name; each eval chip leads with its verdict glyph in the status colour; the <code>/</code> stays with the Artifact's chip and the rest wrap. <span class="avoid">pills in the accent; a chip without its glyph.</span></dd>
+  <dt id="D-INS-4">D-INS-4</dt>
+  <dd>The Artifact's tab, top to bottom: the neighbours drawing (at least 72px, non-interactive camera), the eval rows (<code>--row-dense</code>: glyph in the status colour, name, status words in the status colour, the right column in <code>--ink-2</code> tabular), then Tools, Tool log and Path under section labels, then Debug folded. Section labels are 11px uppercase <code>--ink-2</code>; each section after the first is opened above by <code>--line-group</code>. <span class="avoid">accent-coloured section headings; a tool button on the graph's nodes.</span></dd>
+  <dt id="D-INS-5">D-INS-5</dt>
+  <dd>An eval's tab: the view switch as plain text (the chosen view <code>--ink</code> bold, the other <code>--ink-2</code>, no radius, no fill), the status line (glyph and word bold in the status colour; what it took and spent, or saved, in <code>--ink-2</code>), the instruction, then Result, Execution options, Execution metadata and Fingerprint each under a section label, facts in a key/value grid with keys right-aligned in <code>--ink-2</code> and values in tabular figures; a list as numbered items; Debug folded last. A log replaces the body below the switch in <code>--mono</code> at <code>--text-small</code>, wrapping and scrolling in its own box. <span class="avoid">a JSON dump as the Summary; costs in the status colour.</span></dd>
+  <dt id="D-INS-6">D-INS-6</dt>
+  <dd>Selection and inspector agree: the node with the <code>--outline-selected</code> outline, every copy of a shared part included, is the Artifact the Detail is titled with; opening a neighbour or another node moves both; closing the Detail removes the outline. The Find field's choice opens the Detail and moves only the camera. <span class="avoid">a Detail left open for a node no longer highlighted.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

@@ -127,7 +127,7 @@
     display: contents;
   }
   .note {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .note.error {

@@ -62,11 +62,14 @@
 <ToolLog entries={review.log} empty="What the tools print shows here while this review is open." />
 
 <style>
+  /* A section label: 11px uppercase in secondary ink. */
   h4 {
-    margin: 0 0 6px;
-    font-size: 12px;
+    margin: 0 0 4px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .tools {
     min-width: 0;
@@ -96,18 +99,18 @@
   }
   .description,
   .reason {
-    font-size: 12px;
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
   .description {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .reason {
     grid-column: 2;
     color: var(--red);
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
     margin: 0 0 6px;
   }
 </style>

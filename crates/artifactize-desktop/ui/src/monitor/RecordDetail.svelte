@@ -206,15 +206,15 @@
     border: 0;
     background: none;
     font: inherit;
-    color: var(--muted);
+    color: var(--ink-2);
     font-weight: 400;
     cursor: pointer;
   }
   .view:hover {
-    color: var(--text);
+    color: var(--ink);
   }
   .view[aria-selected="true"] {
-    color: var(--text);
+    color: var(--ink);
     font-weight: 700;
   }
   .view:focus-visible {
@@ -222,7 +222,7 @@
     outline-offset: 2px;
   }
   .bar {
-    color: var(--faint);
+    color: var(--ink-3);
   }
   .summary {
     grid-row: 2;
@@ -237,8 +237,9 @@
     margin-right: 10px;
   }
   .cost {
-    color: var(--muted);
+    color: var(--ink-2);
     font-weight: 400;
+    font-variant-numeric: tabular-nums;
   }
   /* Sizes flow from the Detail down: every column is at most the width it is given. The
    * switch and the summary take their rows only when shown. */
@@ -267,15 +268,23 @@
   .instruction {
     margin-bottom: 14px !important;
   }
+  /* Header → label → value: each block under an 11px uppercase label in secondary ink, the
+   * blocks after the first opened above by a group line. */
   .block {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
+  }
+  .block + .block {
+    padding-top: 8px;
+    border-top: 1px solid var(--line-group);
   }
   .block h3,
   .fold {
     margin: 0 0 4px;
-    font-size: 12px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .fold {
     border: 0;
@@ -286,10 +295,10 @@
   }
   .key,
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .count {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .items {
     margin: 0;
@@ -311,30 +320,37 @@
     margin: 4px 0 0;
   }
   dt {
-    color: var(--muted);
+    color: var(--ink-2);
+    text-align: right;
     overflow-wrap: anywhere;
   }
   dd {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
   }
   .evidence {
     padding: 0 var(--pad) 12px;
   }
   .evidence h3 {
-    margin: 0 0 6px;
-    font-size: 12px;
-    color: var(--accent);
+    margin: 0 0 4px;
+    font-size: var(--text-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
     overflow-wrap: anywhere;
   }
+  /* Saved output: one step below the panel, outlined by the faintest line. */
   pre {
     margin: 0;
-    font: 12px/1.5 var(--mono);
+    font: var(--text-small) / 1.5 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    background: var(--surface-2);
-    border-radius: var(--radius);
-    padding: 10px 12px;
+    background: var(--surface-input);
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    padding: 6px 8px;
   }
 </style>

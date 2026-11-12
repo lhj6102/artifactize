@@ -184,8 +184,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding-top: 10px;
-    background: var(--surface);
+    background: var(--surface-panel);
     border-top: 2px solid transparent;
   }
   .pane.focused {
@@ -210,26 +209,27 @@
   }
   .branch {
     min-width: 0;
-    padding: 6px var(--pad) 8px 6px;
-    border-bottom: 1px solid var(--border);
+    padding: 4px var(--pad) 6px 6px;
+    border-bottom: 1px solid var(--line-group);
   }
   /* A chevron, then the name over its newest Run's status, then the star. */
   .head {
     display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) auto;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
     align-items: start;
     column-gap: 4px;
     min-width: 0;
-    border-radius: 8px;
+    min-height: 28px;
+    border-radius: var(--radius-control);
   }
   .chevron {
-    width: 22px;
-    height: 22px;
-    margin: 0;
-    padding: 3px;
+    width: 20px;
+    height: 20px;
+    margin: 2px 0 0;
+    padding: 2px;
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     cursor: pointer;
   }
   .chevron svg {
@@ -254,20 +254,20 @@
     padding: 2px 0;
     border: 0;
     background: none;
-    color: var(--text);
+    color: var(--ink);
     font: inherit;
     text-align: left;
     cursor: pointer;
   }
   /* The branch reads first; its project is the quieter half of the name. */
   .label {
-    font-size: 14px;
+    font-size: var(--text-title);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .project {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .branch-name {
     font-weight: 600;
@@ -277,11 +277,11 @@
     grid-template-columns: 10px auto minmax(0, 1fr);
     align-items: center;
     column-gap: 8px;
-    font-size: 12px;
+    font-size: var(--text-small);
   }
   .latest .dot {
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--dot);
   }
@@ -291,12 +291,13 @@
   }
   .latest .age {
     justify-self: end;
-    color: var(--muted);
+    color: var(--ink-2);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .latest .none {
     grid-column: 1 / -1;
-    color: var(--muted);
+    color: var(--ink-2);
   }
   /* A star is quiet until it is on; on, it carries the amber of attention. */
   .star {
@@ -304,7 +305,7 @@
     padding: 0 2px;
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     font-size: 13px;
     line-height: 1.4;
     cursor: pointer;
@@ -318,10 +319,10 @@
     color: var(--light-active);
   }
   .branch :global(.timeline) {
-    margin-left: 26px;
+    margin-left: 24px;
   }
   .branch :global(.older) {
-    margin-left: 54px;
+    margin-left: 50px;
   }
   /* A selected timeline entry is the one shown, already in its grey pill; keys add the bar. */
   .selected {
@@ -338,14 +339,17 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--line-group);
   }
+  /* A section label: 11px uppercase in secondary ink. */
   .bar {
     margin: 0;
     padding: 4px var(--pad);
-    font-size: 12px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .waiting ul {
     min-height: 0;
@@ -355,11 +359,12 @@
     display: grid;
     grid-template-columns: 1em minmax(0, 1fr);
     gap: 0 8px;
-    padding: 4px var(--pad);
+    padding: 3px var(--pad);
+    font-size: var(--text-small);
     cursor: pointer;
   }
   .waiting li:hover {
-    background: var(--surface-2);
+    background: var(--surface-group);
   }
   .waiting li.selected {
     background: var(--selection);
@@ -375,12 +380,12 @@
   .where,
   .meta {
     grid-column: 2;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
     white-space: pre;
+    font-variant-numeric: tabular-nums;
   }
   .empty {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .empty.error {

@@ -1,76 +1,7 @@
-/* Theme tokens and the few global classes that portal content (dialogs, menus) needs. */
-:root {
-  --bg: #fbfbfc;
-  --surface: #ffffff;
-  --surface-2: #f3f4f6;
-  --border: #e4e6ea;
-  --text: #1f2328;
-  --muted: #6b7280;
-  --faint: #9aa1ab;
-  --accent: #5b5bd6;
-  --accent-soft: #ececfb;
-  --selection: #e8e8fa;
-  --focus: #5b5bd6;
-  --green: #16833a;
-  --red: #c4322a;
-  --error: #c2410c;
-  /* An open Run is blue, a shade deeper while it waits for a person; yellow is a Run that
-     ended with only sign-offs left. */
-  --running: #1e6fd9;
-  --human: #1650a8;
-  --yellow: #9a6700;
-  --queued: #6b7280;
-  --blocked: #a21caf;
-  /* The graphs' lights: a Run's, then a Current's. */
-  --light-green: #16833a;
-  --light-active: #c99a06;
-  --light-waiting: #9aa1ab;
-  --light-red: #dc2626;
-  --light-error: #7c3aed;
-  --light-blocked: #7f1d1d;
-  --light-run: #1e6fd9;
-  --light-reused: #0f766e;
-  --light-checking: #d4d8de;
-  --radius: 8px;
-  --gap: 12px;
-  --pad: 16px;
-  --font: "Inter", system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;
-  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "D2Coding", "Noto Sans Mono CJK KR", monospace;
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17181c;
-    --surface: #1d1f24;
-    --surface-2: #25272e;
-    --border: #30333b;
-    --text: #e6e7ea;
-    --muted: #9ba1ad;
-    --faint: #6c7280;
-    --accent: #8b8cf0;
-    --accent-soft: #2b2c4a;
-    --selection: #2d2f4d;
-    --focus: #8b8cf0;
-    --green: #4ac26b;
-    --red: #f2675d;
-    --error: #f0883e;
-    --running: #6cb6ff;
-    --human: #4c8ff0;
-    --yellow: #e3b341;
-    --queued: #9ba1ad;
-    --blocked: #d68ef0;
-    --light-green: #4ac26b;
-    --light-active: #e3b341;
-    --light-waiting: #8b929e;
-    --light-red: #f2675d;
-    --light-error: #b48cf5;
-    --light-blocked: #9b2c2c;
-    --light-run: #6cb6ff;
-    --light-reused: #2dd4bf;
-    --light-checking: #4a4f59;
-  }
-}
+/* The tokens (a copy of the design's tokens.css, kept equal by desktop-ui/tokens-match-design)
+   and the few global classes that portal content (dialogs, menus) needs. Surfaces step by role,
+   lines separate panels, groups and fields, and colour means something only where it sits. */
+@import "./tokens.css";
 
 /* A graph node or edge takes its light's colour as --light. */
 .light-green {
@@ -113,9 +44,9 @@ body,
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font: 13px/1.5 var(--font);
+  background: var(--surface-app);
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -125,13 +56,14 @@ body {
   outline-offset: -2px;
 }
 
+/* The one key cap: a key wherever a key does the same as a control. */
 kbd {
-  font: 11px var(--mono);
-  color: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  font: var(--text-label) var(--mono);
+  color: var(--ink-2);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
   padding: 0 4px;
-  background: var(--surface-2);
+  background: var(--surface-group);
 }
 
 .sr-only {
@@ -142,37 +74,46 @@ kbd {
   clip: rect(0 0 0 0);
 }
 
+/* A quiet button, one step above its panel; the one primary button takes the accent. */
 .button {
   font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 12px;
+  color: var(--ink);
+  background: var(--surface-group);
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  height: var(--control);
+  padding: 0 10px;
   cursor: pointer;
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+  white-space: nowrap;
 }
 .button:hover:not(:disabled) {
-  background: var(--surface-2);
+  border-color: var(--line-input);
+  background: color-mix(in srgb, var(--surface-group) 70%, var(--surface-raised));
 }
 .button:disabled {
   opacity: 0.45;
   cursor: default;
 }
+.button.small {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--text-small);
+}
 .button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--ink-on-accent);
 }
 .button.primary kbd {
-  color: white;
+  color: var(--ink-on-accent);
   background: transparent;
-  border-color: rgb(255 255 255 / 40%);
+  border-color: color-mix(in srgb, var(--ink-on-accent) 40%, transparent);
 }
 
-/* Status tones, shared by every list and tree. */
+/* Status tones, shared by every list and tree: only on the element that has the meaning. */
 .tone-green { color: var(--green); }
 .tone-red { color: var(--red); }
 .tone-error { color: var(--error); }
@@ -181,13 +122,13 @@ kbd {
 .tone-yellow { color: var(--yellow); }
 .tone-queued { color: var(--queued); }
 .tone-blocked { color: var(--blocked); }
-.tone-muted { color: var(--muted); }
+.tone-muted { color: var(--ink-2); }
 
-/* Dialogs and menus render in a portal. */
+/* Dialogs and menus render in a portal: raised one step, set apart by a panel line. */
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgb(0 0 0 / 30%);
+  background: var(--scrim);
   z-index: 50;
 }
 .dialog {
@@ -198,37 +139,38 @@ kbd {
   width: min(640px, 92vw);
   max-height: 72vh;
   overflow: auto;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
-  padding: 20px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 8px 24px var(--scrim);
+  padding: 16px;
   z-index: 51;
 }
 .dialog-title {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 15px;
   font-weight: 600;
 }
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--gap);
+  margin-top: 12px;
 }
 .palette {
   padding: 0;
 }
 .palette-input {
   width: 100%;
+  height: 36px;
   border: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 14px 16px;
+  border-bottom: 1px solid var(--line-group);
+  padding: 0 12px;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--text-body);
   background: transparent;
-  color: var(--text);
+  color: var(--ink);
   outline: none;
 }
 .palette-list {
@@ -237,25 +179,27 @@ kbd {
   padding: 6px;
 }
 .palette-heading {
-  font-size: 11px;
-  color: var(--muted);
-  padding: 8px 10px 4px;
+  font-size: var(--text-label);
+  color: var(--ink-2);
+  padding: 6px 8px 2px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 .palette-item {
   display: flex;
   justify-content: space-between;
-  padding: 7px 10px;
-  border-radius: 6px;
+  align-items: center;
+  min-height: var(--row);
+  padding: 0 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 .palette-item[data-selected] {
   background: var(--selection);
 }
 .palette-empty {
-  padding: 16px;
-  color: var(--muted);
+  padding: 12px;
+  color: var(--ink-2);
 }
 .help-grid {
   display: grid;
@@ -264,8 +208,11 @@ kbd {
 }
 .help-grid h3 {
   margin: 0 0 6px;
-  font-size: 12px;
-  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
 }
 .help-grid dl {
   display: grid;
@@ -278,10 +225,10 @@ kbd {
 }
 .menu {
   min-width: 200px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 20%);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-chip);
+  box-shadow: 0 8px 24px var(--scrim);
   padding: 4px;
   z-index: 60;
 }
@@ -289,8 +236,10 @@ kbd {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 6px 10px;
-  border-radius: 5px;
+  min-height: var(--row);
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   outline: none;
 }
@@ -298,19 +247,19 @@ kbd {
   background: var(--selection);
 }
 .menu-item[data-disabled] {
-  color: var(--faint);
+  color: var(--ink-3);
 }
 .menu-separator {
   height: 1px;
-  background: var(--border);
+  background: var(--line-group);
   margin: 4px 0;
 }
 
-/* Resizable panes. The grab zone reaches 3px over both neighbouring panes, so the divider
-   stacks above them: a press on either side of the line starts the drag. */
+/* Resizable panes meet at a panel line. The grab zone reaches 3px over both neighbouring
+   panes, so the divider stacks above them: a press on either side of the line starts the drag. */
 .resizer {
   width: 1px;
-  background: var(--border);
+  background: var(--line-panel);
   position: relative;
   z-index: 1;
 }
@@ -344,34 +293,52 @@ kbd {
   gap: 6px;
   align-items: baseline;
   max-width: 100%;
+  height: var(--row-dense);
   margin: 0;
-  padding: 3px 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--muted);
+  padding: 0 8px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--ink-2);
   font: inherit;
+  font-size: var(--text-small);
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
 }
 .chip:hover {
-  color: var(--text);
-  background: var(--surface-2);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-group) 60%, transparent);
 }
 .chip[aria-selected="true"] {
-  color: var(--text);
+  color: var(--ink);
   font-weight: 600;
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  background: var(--surface-group);
+  border-color: var(--line-input);
 }
 .chip:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 .settings-dialog {
-  top: 64px;
+  top: 48px;
   width: min(900px, 94vw);
   max-height: calc(100vh - 80px);
+}
+
+/* A section label: 11px uppercase in secondary ink, never the accent. */
+.section-label {
+  margin: 0 0 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* Numbers that align or change read in tabular figures. */
+.num {
+  font-variant-numeric: tabular-nums;
 }

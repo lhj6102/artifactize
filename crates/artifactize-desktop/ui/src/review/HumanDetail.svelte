@@ -224,11 +224,11 @@
     min-height: 0;
     outline: none;
     padding: 0 var(--pad) 8px;
-    gap: 10px;
+    gap: var(--gap);
   }
   header h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: var(--text-title);
     min-width: 0;
     overflow-wrap: anywhere;
   }
@@ -239,12 +239,12 @@
     align-items: center;
   }
   .stage {
-    font-size: 11px;
+    font-size: var(--text-label);
     font-weight: 600;
     padding: 1px 8px;
-    border-radius: 99px;
-    background: var(--surface-2);
-    color: var(--muted);
+    border-radius: var(--radius-chip);
+    background: var(--surface-group);
+    color: var(--ink-2);
   }
   .stage[data-stage="review"] {
     background: var(--accent-soft);
@@ -254,6 +254,7 @@
     margin: 4px 0 0;
     font-weight: 600;
     overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
   }
   .shared {
     margin: 2px 0 0;
@@ -261,13 +262,13 @@
     overflow-wrap: anywhere;
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .link {
     border: 0;
     background: none;
     padding: 0;
-    color: var(--muted);
+    color: var(--ink-2);
     cursor: pointer;
     font: inherit;
     margin-left: auto;
@@ -277,19 +278,22 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
-    gap: 16px;
+    gap: 12px;
     min-height: 0;
     overflow: auto;
   }
   .instruction {
     outline: none;
   }
+  /* A section label: 11px uppercase in secondary ink. */
   .result h4,
   .result :global(h4) {
-    margin: 0 0 6px;
-    font-size: 12px;
+    margin: 0 0 4px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .verdicts {
     display: flex;
@@ -302,6 +306,11 @@
   }
   h4 {
     margin: 12px 0 4px;
+    font-size: var(--text-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   dl {
     display: grid;
@@ -310,19 +319,26 @@
     margin: 0;
   }
   dt {
-    color: var(--muted);
+    color: var(--ink-2);
+    text-align: right;
     overflow-wrap: anywhere;
   }
   dd {
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
   }
+  /* The completed result: one step below the panel, outlined by the faintest line. */
   pre {
     margin: 0;
-    font: 12px/1.5 var(--mono);
+    font: var(--text-small) / 1.5 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    background: var(--surface-input);
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    padding: 6px 8px;
   }
   footer {
     display: grid;

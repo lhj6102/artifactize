@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Current screen</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / current</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="monitor.html">Monitor</a>
+    <a href="current.html" aria-current="page">Current</a>
+    <a href="detail.html">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="ux-graph-doc.html">UX graph</a>
+  </nav>
+</header>
+<main data-screen="current">
+<h1>Current: a branch's worktree as it is now</h1>
+<p class="lead">
+  The Main area when a branch's Current is chosen: the scan header, the Current graph lit by
+  what <code>verify</code> would do, and the expandable structure text. The bar and the Pane are
+  as on the Monitor page; the Pane's Current entry sits in its pill.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 800">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span>
+    <span class="m-spacer"></span>
+    <span class="m-reviewer">alice</span>
+    <span class="m-button">Settings</span>
+    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+  </header>
+  <div class="m-screen">
+    <section class="m-pane">
+      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
+      <div class="m-branches">
+        <div class="m-branch open">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
+            <span class="m-star on">★</span>
+          </div>
+          <div class="m-timeline">
+            <div class="m-entry filled">
+              <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
+              <span class="m-sub">Working tree</span>
+            </div>
+            <div class="m-entry">
+              <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
+              <span class="m-sub">run-7SR0YW</span>
+            </div>
+          </div>
+        </div>
+        <div class="m-branch">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
+            <span class="m-star">☆</span>
+          </div>
+          <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
+        </div>
+      </div>
+      <section class="m-waiting"><h2>Waiting (0)</h2></section>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main focused">
+      <div class="m-main-head"><h2>Current · artifactize  dev</h2></div>
+      <div class="m-headline"><span class="m-text">Checking 3 of 24 Artifacts…</span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+      <div class="m-canvas" style="flex: 0 0 470px">
+        <ul class="m-legend">
+          <li class="light-reused"><span class="m-swatch"></span>reused</li>
+          <li class="light-run"><span class="m-swatch"></span>would run</li>
+          <li class="light-waiting"><span class="m-swatch"></span>waiting</li>
+          <li class="light-blocked"><span class="m-swatch"></span>blocked</li>
+          <li class="light-checking"><span class="m-swatch"></span>checking</li>
+        </ul>
+        <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(-22deg)"></div>
+        <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(22deg)"></div>
+        <div class="m-edge light-run" style="left: 716px; top: 254px; width: 92px"></div>
+        <div class="m-node light-reused" style="left: 220px; top: 170px"><span class="m-dot"></span>core</div>
+        <div class="m-node light-checking" style="left: 548px; top: 106px"><span class="m-dot"></span>release</div>
+        <div class="m-node light-run" style="left: 548px; top: 234px"><span class="m-dot"></span>cli</div>
+        <div class="m-node light-run" style="left: 808px; top: 234px"><span class="m-dot"></span>docs</div>
+        <div class="m-controls"><span>+</span><span>−</span><span>⛶</span></div>
+        <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
+      </div>
+      <div class="m-section" style="padding-top: 8px; border-top: 1px solid var(--line-group)">
+        <p class="m-fold" style="margin: 0 0 6px">▾ Structure and evaluation criteria · graph:4f0e…9a21</p>
+        <div class="m-log" style="height: 150px"><span class="m-quiet">Artifacts (24)</span>
+core
+  tests · The library's tests pass
+  clippy · Clippy passes for every target
+cli  ← core
+  tests · The CLI's tests pass
+  matches-docs · The CLI matches its documentation  ← docs</div>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 300px; top: 92px">1</span>
+<span class="callout" style="left: 560px; top: 240px">2</span>
+<span class="callout" style="left: 300px; top: 600px">3</span>
+</div>
+<figcaption>Stage 1280 × 800. The Current's lights differ from a Run's: reused, would run, waiting, blocked, checking.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>Scan header</b><span>While the scan runs, how many Artifacts are still being checked; once it ends, when it was scanned; a failure says why. Refresh at the right.</span></div></li>
+  <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the declarations, every node first <i>checking</i>, then lit in place as the scan learns what verify would do.</span></div></li>
+  <li><span class="n">3</span><div><b>Structure text</b><span>Folded under the graph; expanded, every criterion and labeled relation as monospace text in an input-surface box.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-CUR-1">D-CUR-1</dt>
+  <dd>The Current's header is one row under the Main area header: the scan's state in <code>--ink-2</code> (<i>Checking n of m Artifacts…</i>, <i>Scanned at HH:MM:SS</i> in tabular figures, or why it failed in <code>--red</code>) and a small Refresh button at the right, disabled while a scan runs. <span class="avoid">a spinner without the count; the state in a banner.</span></dd>
+  <dt id="D-CUR-2">D-CUR-2</dt>
+  <dd>The Current graph is drawn and furnished as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) with its own legend (reused, would run, waiting, blocked, checking); a node still being checked uses <code>--light-checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
+  <dt id="D-CUR-3">D-CUR-3</dt>
+  <dd>The structure text folds under the graph behind a <code>▸</code>/<code>▾</code> summary line opened above by <code>--line-group</code>; expanded, it is a <code>--surface-input</code> box in <code>--mono</code> at <code>--text-small</code> that wraps and scrolls within at most 40% of the window's height. <span class="avoid">the text widening the Main area; the fold hiding the graph.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

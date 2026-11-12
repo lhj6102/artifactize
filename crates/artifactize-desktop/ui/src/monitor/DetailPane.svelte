@@ -246,7 +246,7 @@
   .strip {
     align-items: baseline;
     padding: 2px var(--pad) 8px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line-group);
   }
   /* The Artifact's chip and its `/` wrap as one; a long name is cut inside the chip. */
   .head {
@@ -274,7 +274,7 @@
   }
   .slash {
     flex: none;
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .content {
     display: grid;
@@ -302,8 +302,9 @@
     grid-template-columns: 16px minmax(0, auto) auto minmax(0, 1fr);
     gap: 8px;
     width: 100%;
+    min-height: var(--row-dense);
     margin: 0;
-    padding: 4px var(--pad);
+    padding: 2px var(--pad);
     border: 0;
     background: none;
     color: inherit;
@@ -312,7 +313,7 @@
     cursor: pointer;
   }
   .eval:hover {
-    background: var(--surface-2);
+    background: var(--surface-group);
   }
   .eval .name {
     min-width: 0;
@@ -321,22 +322,23 @@
   .eval .right {
     min-width: 0;
     overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
   }
   .weight-bold .name,
   .weight-bold .status {
     font-weight: 600;
   }
   .weight-dim {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .none {
     padding: 0 var(--pad);
   }
   .empty {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .error {
