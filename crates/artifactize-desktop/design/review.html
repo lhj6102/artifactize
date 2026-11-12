@@ -66,7 +66,7 @@
       <p class="m-cost" style="margin: 0; padding: 0 var(--pad) 6px">release/signoff · A person approves the release notes · Artifact release</p>
       <div class="m-review">
         <div>
-          <div class="m-review-title"><h3>release/signoff · A person approves the release notes</h3><span class="m-stage review">REVIEW (yours)</span><span class="m-spacer"></span><span class="m-fold">Technical ▸ <span class="m-kbd">t</span></span></div>
+          <div class="m-review-title"><h3>release/signoff · A person approves the release notes</h3><span class="m-stage review">REVIEW (yours)</span></div>
           <p class="m-meta tone-human" style="margin: 4px 0 0">Request run-7SR0YW-7 · DEFERRED · claimed by you (alice) · waiting 2m 14s</p>
         </div>
         <p style="margin: 0">Read the release notes and approve them for publication. Check that every change since v0.21.1 is named and that the install commands are current.</p>
@@ -107,7 +107,7 @@
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Title and state</b><span>The eval's title at 14px, the stage pill (CLAIM, REVIEW (yours), completed), Technical's fold at the right; under it the request's facts in the status colour.</span></div></li>
+  <li><span class="n">1</span><div><b>Title and state</b><span>The eval's title at 14px and the stage pill (CLAIM, REVIEW (yours), completed); under it the request's facts in the status colour.</span></div></li>
   <li><span class="n">2</span><div><b>Tools</b><span>Grouped by the Artifact that declares them, the reviewed one first, each a small ▶ button with its description in secondary ink.</span></div></li>
   <li><span class="n">3</span><div><b>Tool log</b><span>Monospace in an input-surface box: the run's start line and end line quiet, printed lines in ink, stderr in red; it follows its newest line unless scrolled up.</span></div></li>
   <li><span class="n">4</span><div><b>Result</b><span>GREEN and RED as a segmented choice outlined in the chosen verdict's colour; then the form from the eval's schema: label semibold, <code>*</code> on a required field, Optional in grey inside an empty optional one.</span></div></li>
@@ -117,7 +117,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-REV-1">D-REV-1</dt>
-  <dd>A review reads top to bottom in one scrolling column: title row (title at <code>--text-title</code>, the stage pill of <code>--radius-chip</code> on <code>--surface-group</code>, or <code>--accent-soft</code> in <code>--accent</code> while it is yours; the Technical fold at the right), the request's facts in the status colour, the instruction, Tools, Tool log, Result, then the footer. Opened from the Pane, the eval and its Artifact are named in one <code>--ink-2</code> line above it. <span class="avoid">two columns; the Result above the Tools.</span></dd>
+  <dd>A review reads top to bottom in one scrolling column: title row (title at <code>--text-title</code>, the stage pill of <code>--radius-chip</code> on <code>--surface-group</code>, or <code>--accent-soft</code> in <code>--accent</code> while it is yours), the request's facts in the status colour, the instruction, Tools, Tool log, Result, then the footer. Opened from the Pane, the eval and its Artifact are named in one <code>--ink-2</code> line above it. <span class="avoid">two columns; the Result above the Tools.</span></dd>
   <dt id="D-REV-2">D-REV-2</dt>
   <dd>Tools are grouped by the Artifact that declares them, the reviewed one first, each group led by the Artifact mark and name semibold; each tool is a small (22px) <code>▶ operation</code> button with its description in <code>--ink-2</code> at <code>--text-small</code>, an error under it in <code>--red</code>. Before a claim the buttons are disabled and a line says so. <span class="avoid">tool buttons in the accent; a tool without its description.</span></dd>
   <dt id="D-REV-3">D-REV-3</dt>
