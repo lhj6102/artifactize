@@ -21,7 +21,7 @@ Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트�
 
 <p align="center">
   <img src="../others/roles.en.gif" width="800"
-       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 저마다 검사를 갖춘 프로젝트의 구성 요소인 Artifact로 이루어집니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
+       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 프로젝트의 구성 요소인 Artifact로 이루어지고, Artifact마다 검사가 붙어 있습니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
 </p>
 
 ## 데모
@@ -98,7 +98,7 @@ Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 
 
 1. 평가로 결과물의 조건을 정하면, AI 에이전트가 평가를 통과할 때까지 결과물을 고쳐 나갑니다.
 2. 테스트, AI 에이전트, 사람 모두 같은 자격으로 평가를 맡고, 각각 잘 확인하는 부분이 다릅니다.
-3. 평가를 통과한 결과물은 다음 평가의 입력이 되고, 이렇게 최종 결과물까지 이어집니다.
+3. 평가를 거친 결과물은 다음 평가의 입력이 되고, 이렇게 최종 결과물까지 이어집니다.
 
 ## 주요 특징
 
