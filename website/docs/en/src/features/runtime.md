@@ -25,7 +25,9 @@ input nor `payload.instruction`, so pass what it needs as arguments or files. Se
 [Operating systems](others/platforms.md) for executable lookup and portable commands.
 
 Failure to start, a timeout, interruption or invalid inputs produce operational
-errors instead of a verdict. Runtime commands do not return Agent/Human owner fields. Saved results include the
+errors instead of a verdict. So does output artifactize cannot capture to the end, even
+after exit 0: stdout or stderr that cannot be read or saved, or a helper the command left
+running that keeps them open. Fix that output or storage problem, then verify again. Runtime commands do not return Agent/Human owner fields. Saved results include the
 exit code and bounded stdout/stderr after completion. While execution is still
 appending output, `artifactize request logs REQUEST_ID` can read bounded snapshots;
 unconfirmed captures are explicitly marked partial. This is snapshot inspection,
