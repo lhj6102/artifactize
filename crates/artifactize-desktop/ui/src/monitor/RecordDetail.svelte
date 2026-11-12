@@ -286,12 +286,16 @@
     text-transform: uppercase;
     color: var(--ink-2);
   }
+  /* The fold reads as a quiet line, not a label. */
   .fold {
     border: 0;
     background: none;
     padding: 0;
     cursor: pointer;
     font-family: inherit;
+    font-size: var(--text-small);
+    letter-spacing: 0;
+    text-transform: none;
   }
   .key,
   .muted {
