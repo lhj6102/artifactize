@@ -58,7 +58,7 @@
 <style>
   /* Each section after the neighbours and evals is opened above by a group line. */
   .tools,
-  section.tools + :global(.logbox) {
+  .log {
     min-width: 0;
     margin: 0 var(--pad);
     padding: 8px 0 10px;

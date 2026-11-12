@@ -131,12 +131,35 @@
 <figcaption>Stage 1280 × 420. The find field over the graph (left) and the Update dialog (right).</figcaption>
 </figure>
 
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 300">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
+  <div class="m-screen" style="position: relative">
+    <section class="m-pane"><div class="m-search"><div class="m-input"><span>sort:recent</span></div></div><div class="m-branches"></div><section class="m-waiting"><h2>Waiting (0)</h2></section></section>
+    <div class="m-divider"></div>
+    <section class="m-main"><div class="m-main-head"><h2>Run run-5K2QXA</h2></div><div class="m-canvas"></div></section>
+    <div class="m-scrim"></div>
+    <div class="m-dialog" style="top: 40px; width: 480px">
+      <h2>Open a request by ID</h2>
+      <div class="m-input text focused"><span>run-7SR0YW-7</span></div>
+      <div class="m-dialog-actions"><span class="m-button">Cancel <span class="m-kbd">Esc</span></span><span class="m-button primary">Open <span class="m-kbd">Enter</span></span></div>
+    </div>
+  </div>
+</div>
+<span class="callout" style="left: 380px; top: 70px">7</span>
+</div>
+<figcaption>Stage 1280 × 300. Open a request by ID: a waiting Human review opens actionable, any other request read-only.</figcaption>
+</figure>
+
 <ol class="notes">
   <li><span class="n">1</span><div><b>Palette</b><span>A 640px raised dialog near the top: an input closed below by a group line, groups with 11px headings, 24px items with the key cap at the right; the selected item on the selection background.</span></div></li>
   <li><span class="n">2</span><div><b>Key caps</b><span>Every command that has a key shows it as a key cap, the same cap the bar and the hints use.</span></div></li>
   <li><span class="n">3</span><div><b>Help</b><span>The keys of what has focus, as a key-cap / action grid under section labels.</span></div></li>
   <li><span class="n">4</span><div><b>Leave dialog</b><span>Says what is held; Stay (Esc) and the primary Release and quit (u).</span></div></li>
   <li><span class="n">5</span><div><b>Find field</b><span>Over the graph's top left: a monospace input and 22px result rows with the verdict glyph in its colour; the chosen row on the selection background.</span></div></li>
+  <li><span class="n">7</span><div><b>Open by ID</b><span>One text field for the request ID (placeholder <code>req-…</code>) and two actions, Cancel and the primary Open; Enter opens, Esc cancels.</span></div></li>
   <li><span class="n">6</span><div><b>Update dialog</b><span>The running and the new version, how to update the way the app was installed, the command as selectable monospace in an input-surface box, a link to the release page.</span></div></li>
 </ol>
 
@@ -150,6 +173,8 @@
   <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>; on the primary button it is transparent with <code>--ink-on-accent</code>. <span class="avoid">a second kbd style; keys written as plain text where a cap is used elsewhere.</span></dd>
   <dt id="D-OVL-4">D-OVL-4</dt>
   <dd>The find field floats over the graph's top left (8px in), 380px wide on <code>--surface-raised</code> with a <code>--line-panel</code> border: a <code>--mono</code> input, then result rows of <code>--row-dense</code> in <code>--mono</code> at <code>--text-small</code> led by the verdict glyph in its colour, the chosen row on <code>--selection</code>, and a <code>--ink-2</code> note (how many, how to star). <span class="avoid">a modal find; results that move the graph.</span></dd>
+  <dt id="D-OVL-6">D-OVL-6</dt>
+  <dd>Open a request by ID (<kbd>Ctrl+O</kbd> or the palette) is a dialog of D-OVL-1 at most 480px wide: its title, one <code>--surface-input</code> text field taking the request ID with <code>req-…</code> in <code>--ink-3</code> as its placeholder, and the actions Cancel (<kbd>Esc</kbd>) and the primary Open (<kbd>Enter</kbd>); what opens is the Review screen, actionable for a waiting Human review and read-only otherwise. <span class="avoid">a list of recent IDs; validation before Open is pressed.</span></dd>
   <dt id="D-OVL-5">D-OVL-5</dt>
   <dd>Help lists the keys of what has focus as sections (Pane, Main area, Settings) with a key cap / action grid; the Leave dialog says which claims are held and offers Stay (<kbd>Esc</kbd>) and Release and quit (<kbd>u</kbd>); the Update dialog shows the running and the new version, the way to update as a selectable <code>--mono</code> command on <code>--surface-input</code> or a link, and never installs anything itself. <span class="avoid">a Help page outside the app; an update that starts on its own.</span></dd>
 </dl>

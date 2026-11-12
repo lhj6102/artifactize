@@ -28,7 +28,9 @@
 <p class="lead">
   The window after <code>artifactize-desktop</code> starts: the global bar, the Pane on the left
   (search, branches, the Waiting stack) and the Main area with the shown Run's headline and
-  graph. Nothing is selected on the graph yet; the Detail is closed.
+  graph. Nothing is selected on the graph yet; the Detail is closed. Started without arguments, the
+  Main area shows <i>Nothing chosen</i> instead (D-MAIN-3) until a branch or a waiting review is
+  chosen in the Pane.
 </p>
 
 <figure class="figure">
@@ -116,6 +118,7 @@
     <section class="m-main">
       <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-notice">2 Runs cannot be read: state/runs/run-1A… is not valid JSON</span></div>
       <div class="m-headline"><span class="m-status tone-red">✗ RED</span><span class="m-text">NOT SATISFIED at Run end · ✗1 ⊘1 ?1 ✓4 · took 12m 04s</span></div>
+      <p style="margin: 0; padding: 0 var(--pad) 6px">dogfood: desktop design pages and the restyle of the app toward them, before the full verify</p>
       <ul class="m-attention"><li><span class="tone-human">?</span> release/signoff waiting Human · unclaimed</li><li><span class="tone-red">✗</span> cli/tests RED · exit 1</li></ul>
       <div class="m-canvas">
         <ul class="m-legend">
@@ -160,11 +163,11 @@
 
 <ol class="notes">
   <li><span class="n">1</span><div><b>Global bar</b><span>Brand left; reviewer, update notice, Settings and Commands right. One line below it separates it from the work.</span></div></li>
-  <li><span class="n">2</span><div><b>Search</b><span>A field one step below the Pane, monospace query, its starting <code>sort:recent</code>.</span></div></li>
+  <li><span class="n">2</span><div><b>Search</b><span>A field one step below the Pane, monospace query, its starting <code>sort:recent</code>. Focused with suggestions, a raised list of key and value completions drops under it, the active one on the selection background.</span></div></li>
   <li><span class="n">3</span><div><b>Branches</b><span>Chevron, <i>project /</i> quiet and <b>branch</b> bold, star at the line's end; folded, the newest Run's dot, status word and age; expanded, the timeline with the Current's ring and the shown entry's pill.</span></div></li>
   <li><span class="n">4</span><div><b>Waiting stack</b><span>Grows upward from a thin labelled bar; each row an eval, where it waits, for how long and who claimed it.</span></div></li>
   <li><span class="n">5</span><div><b>Main area header</b><span>The view's title in 12px; a notice takes the room to the right in one red line; actions at the end.</span></div></li>
-  <li><span class="n">6</span><div><b>Run headline</b><span>The verdict's glyph and word in its colour, the headline in secondary ink with tabular figures, then what needs attention.</span></div></li>
+  <li><span class="n">6</span><div><b>Run headline</b><span>The verdict's glyph and word in its colour, the headline in secondary ink with tabular figures, the Run's comment in full, then what needs attention.</span></div></li>
   <li><span class="n">7</span><div><b>Node</b><span>A light and a name on a neutral face; the border takes the light's colour. Hover is a thin neutral outline.</span></div></li>
   <li><span class="n">8</span><div><b>Whole</b><span>A box in its light's colour around its parts, its name and light in a 24px title row, the Minimize button at the right.</span></div></li>
   <li><span class="n">9</span><div><b>Canvas furniture</b><span>Legend top-left, zoom controls and the key hint bottom-left, all quiet overlays on the working surface.</span></div></li>
@@ -175,7 +178,7 @@
   <dt id="D-BAR-1">D-BAR-1</dt>
   <dd>One global bar of <code>--bar-height</code> on <code>--surface-bar</code>, closed below by <code>--line-panel</code>: the brand (mark and name, semibold) at the left; at the right, in this order, the reviewer in <code>--ink-2</code>, the update notice, Settings and Commands with its <kbd>Ctrl+K</kbd> key cap. <span class="avoid">a shadow under the bar; a second toolbar; page-like navigation.</span></dd>
   <dt id="D-PANE-1">D-PANE-1</dt>
-  <dd>The Pane is one <code>--surface-panel</code> column, top to bottom: the Search field (a <code>--surface-input</code> field in <code>--mono</code>, closed below by <code>--line-group</code>), the Branches, and the Waiting stack opened above by <code>--line-group</code>. The Pane and the Main area meet at a 1px <code>--line-panel</code> divider that takes a drag. <span class="avoid">headings such as Scope or Runs; a screen switch; a gap instead of the divider.</span></dd>
+  <dd>The Pane is one <code>--surface-panel</code> column, top to bottom: the Search field (a <code>--surface-input</code> field in <code>--mono</code>, closed below by <code>--line-group</code>), the Branches, and the Waiting stack opened above by <code>--line-group</code>. The Pane and the Main area meet at a 1px <code>--line-panel</code> divider that takes a drag. Focused with suggestions, the Search drops a list under the field on <code>--surface-raised</code> with a <code>--line-panel</code> border: <code>--row-dense</code> rows in <code>--mono</code> at <code>--text-small</code> (keys, projects, branches, sort orders), the active one on <code>--selection</code>; Tab or Enter takes it, Esc closes it. <span class="avoid">headings such as Scope or Runs; a screen switch; a gap instead of the divider; suggestions that widen the Pane.</span></dd>
   <dt id="D-PANE-2">D-PANE-2</dt>
   <dd>A branch row: a 28px head with the chevron (20px), the name at <code>--text-title</code> as <i>project /</i> in <code>--ink-2</code> and the branch semibold, cut with an ellipsis, and the star at the end (faint until on, then <code>--light-active</code>); folded, a 12px line under the name with an 8px dot in the status colour, the status word semibold in the same colour and the age right-aligned in tabular figures. Rows are separated by <code>--line-group</code>. <span class="avoid">a card per branch; the project louder than the branch; an age in proportional figures.</span></dd>
   <dt id="D-PANE-3">D-PANE-3</dt>
@@ -185,15 +188,17 @@
   <dt id="D-MAIN-1">D-MAIN-1</dt>
   <dd>The Main area header is a 32px row: the view's title at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus), a notice in <code>--red</code> as one cut line taking the remaining room, actions at the end as small buttons with key caps. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a notice that moves the graph.</span></dd>
   <dt id="D-MAIN-2">D-MAIN-2</dt>
-  <dd>A Run shows, above its graph, its headline row (verdict glyph and word bold in the status colour; the headline in <code>--ink-2</code> with tabular figures), its comment, and what needs attention as 12px lines each led by the glyph in its status colour. <span class="avoid">a coloured banner; the attention list inside the graph.</span></dd>
+  <dd>A Run shows, above its graph, its headline row (verdict glyph and word bold in the status colour; the headline in <code>--ink-2</code> with tabular figures), its comment in full (wrapping, in <code>--ink</code>), and what needs attention as 12px lines each led by the glyph in its status colour. <span class="avoid">a coloured banner; the attention list inside the graph; the comment cut short here.</span></dd>
+  <dt id="D-MAIN-3">D-MAIN-3</dt>
+  <dd>The graph's place is kept whatever the Main area has to say about it: with nothing chosen (a launch without arguments), while a Run loads, when a Run cannot be read, or with an empty graph, one <code>--ink-2</code> line at the top of the Main area's body says so (<i>Choose a branch or a waiting review in the Pane.</i>, <i>Loading the Run…</i>, <i>This Run cannot be read; choose another.</i>) and the area below stays empty on <code>--surface-panel</code>; a notice about other Runs still goes to the header (D-MAIN-1). <span class="avoid">an empty-state illustration; a dialog for a Run that cannot be read; the Pane changing size with the Main area's state.</span></dd>
   <dt id="D-GRAPH-1">D-GRAPH-1</dt>
   <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the header; its furniture floats quietly: the legend top-left and the key hint bottom-left at 11px in <code>--ink-2</code> on <code>--surface-panel</code> at 85%, the zoom controls bottom-left as one bordered group of 24px squares. <span class="avoid">a white canvas inside a dark panel; furniture that takes the pointer from the graph.</span></dd>
   <dt id="D-NODE-1">D-NODE-1</dt>
   <dd>A node is 168 × 40–44px: a <code>--surface-panel</code> face, a 1px border in its light's colour, <code>--radius-control</code> corners; inside, an 8–10px dot in the light's colour, then the name at 13px medium cut with an ellipsis. The legend's swatch, a node's border and dot and an edge's stroke share one light colour per verdict. <span class="avoid">a face tinted by the verdict; a border thicker than 1.5px; a name in the status colour.</span></dd>
   <dt id="D-NODE-2">D-NODE-2</dt>
-  <dd>Selection and focus are outlines, the face unchanged: the opened Artifact's node has a 2px <code>--outline-selected</code> outline outside its border; the node under the pointer a 1px <code>--ink-3</code> outline; the focused node a 2px <code>--focus</code> ring. The opened node and the Detail name the same Artifact. <span class="avoid">the accent as the selection; a filled face for selection.</span></dd>
+  <dd>Selection and focus are outlines, the face unchanged: the opened Artifact's node has a 2px <code>--outline-selected</code> outline outside its border; the node under the pointer a 1px <code>--ink-3</code> outline; the focused node a 2px <code>--focus</code> ring. The opened node and the Detail name the same Artifact; when the opened Artifact is hidden inside a minimized whole, that whole carries the outline (every copy of a shared part carries it too). <span class="avoid">the accent as the selection; a filled face for selection.</span></dd>
   <dt id="D-NODE-3">D-NODE-3</dt>
-  <dd>A whole is a box with a 1px border in its light's colour and a face of <code>--surface-panel</code> at 40%, its title row (28–32px) holding the dot, the name semibold and the Minimize button (18–20px, <code>--line-group</code> border) at the right; minimized, it is a node with its parts' count in <code>--ink-2</code> under its name and a second edge drawn behind it. <span class="avoid">a whole filled like a node; the button inside the parts' area.</span></dd>
+  <dd>A whole is a box with a 1px border in its light's colour and a face of <code>--surface-panel</code> at 40%, its title row (28–32px) holding the dot, the name semibold and the Minimize button (18–20px, <code>--line-group</code> border) at the right; minimized, it is a node of a node's size with its parts' count in <code>--ink-2</code> under its name, a second edge drawn behind it, and the same button at its right now reading Expand (<code>+</code>). <span class="avoid">a whole filled like a node; the button inside the parts' area; a minimized whole without its Expand button.</span></dd>
   <dt id="D-NODE-4">D-NODE-4</dt>
   <dd>Edges are 1.25–1.5px strokes in their light's colour, meeting nodes at their sides and boxes at their edges; a selected node gets no highlighted edges. <span class="avoid">thick or animated edges; arrowheads larger than the node's dot.</span></dd>
 </dl>
