@@ -254,13 +254,11 @@ artifactize verify --all --wait
   알려 줍니다. `PATH`에 2.1.248 이상의 `claude`가 있어야 하며, 그보다 오래된 버전이면
   `claude update`를 실행하라는 메시지와 함께 거부합니다. `doctor`는 `claude`를 실행하지 않고
   위치만 보여 줍니다.
-- **요청.** 리뷰마다 `claude -p`를 실행하고, eval의 Artifact 도구를 artifactize가 자기 프로세스 안에서
-  띄운 MCP 서버 하나로 제공합니다. 그래서 도구 호출, 예산, 기록은 다른 백엔드와 같습니다. Claude Code는
-  내 설정을 하나도 쓰지 않습니다. Claude Code 자체 도구, Claude Code 설정, 훅, `CLAUDE.md`, 메모리,
-  스킬, 다른 MCP 서버를 모두 끄고, 세션도 남기지 않습니다. 선언한 모델과 `reasoning`은 그대로 넘기며,
-  적응형 thinking을 켜서 그 요약을 Monitor에 보여 줍니다. 판정 스키마는 Claude Code의 구조화된
-  출력으로 받습니다. 메시지는 Claude Code가 아무것도 덧붙이지 않은 채 그대로 보냅니다. 형식 수정
-  요청 한 번은 다른 백엔드와 같습니다.
+- **리뷰.** 리뷰어는 eval에 선언한 Artifact 도구만 쓸 수 있으며, `max_tool_calls`, `max_tokens`,
+  마감 시간도 다른 백엔드와 같습니다. 그 밖의 Claude Code 설정은 리뷰에 쓰이지 않습니다. Claude Code
+  자체 도구, Claude Code 설정, 훅, `CLAUDE.md`, 메모리, 스킬, MCP 서버는 모두 빠지고, 리뷰 내용이 내
+  Claude Code 세션 목록에 남지도 않습니다. 선언한 모델과 `reasoning`을 그대로 쓰며, Monitor에는 모델의
+  thinking 요약과 답변이 나오는 대로 표시됩니다. 판정과 형식 수정 요청 한 번은 다른 백엔드와 같습니다.
 - **오류.** Claude Code가 실패한 요청을 직접 재시도하므로 artifactize는 다시 보내지 않습니다.
   구독 사용량 한도에 걸리면 `QUOTA`이며, 어느 구간(5시간 또는 주간)인지와 초기화 시각을 알려 주고
   그 Run에서 `claude-agent`를 멈춥니다. Claude Code가 로그아웃된 상태면 `AUTHENTICATION`이며
@@ -270,8 +268,9 @@ artifactize verify --all --wait
 - **모델.** `models claude-agent`는 모델을 호출하지 않고, Claude Code가 지금 로그인으로 제공하는
   모델을 `model`에 쓰는 모델 ID로 나열합니다. 프로필에는 목록에 없더라도 Claude Code가 받는 모델을
   지정할 수 있습니다.
-- **follow-up.** Claude Code는 세션을 남기지 않으므로, [follow-up](#saved-conversations)은 새 세션을
-  열어 저장된 대화를 근거로 먼저 보내고 그다음 질문을 보냅니다.
+- **follow-up.** 다른 백엔드처럼 `session send`나 데스크톱 앱에서 [follow-up](#saved-conversations)을
+  보낼 수 있습니다. 리뷰어는 리뷰 대화를 바탕으로 일반 텍스트로 답하며, 필요하면 Artifact를 다시
+  읽습니다. 기록된 판정은 바뀌지 않습니다.
 
 ## 커스텀 provider {#custom-providers}
 

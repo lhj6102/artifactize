@@ -131,13 +131,11 @@ dependencies. It shows the same graph the
   Prints a name-based, cycle-safe tree of
   Artifacts and their evals, the complete extracted definitions/evaluation criteria,
   the graph fingerprint, and labeled arrows from input to consumer.
-- **Human:** `kind = "launch"`. Starts `artifactize-desktop graph --repo PATH`
-  using the normal detached application handoff. `artifactize-desktop` must be
-  installed and discoverable through the program search path. The app opens on that
-  branch's [Current](../../desktop/index.md#current), which reads the worktree's files to
-  predict what would be reused or run: the same graph renderer and
-  keyboard/zoom interactions as a Run's, but current declarations, each Artifact
-  marked as reused or would run, rather than Run verdicts. Expand **Structure and
+- **Human:** `kind = "launch"`. Opens the [desktop app](../../desktop/index.md#open-the-app),
+  which must be installed, on the project's [Current](../../desktop/index.md#current) view.
+  Current reads the worktree's files and shows the current declarations, each Artifact
+  marked as reused or would run, rather than Run verdicts; you move around it as in a
+  Run's graph. Expand **Structure and
   evaluation criteria** for the same complete text tree as the Agent sees;
   **Refresh** or Ctrl+R/F5 scans again. This works before any Run exists. The tool
   returns a launch acknowledgement, not an approval; the app keeps running when the

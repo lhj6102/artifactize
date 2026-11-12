@@ -293,14 +293,13 @@ artifactize verify --all --wait
   `logout claude-agent` only say so. `claude` must be on `PATH`, version 2.1.248 or
   newer: an older one is refused with a message to run `claude update`. `doctor` shows
   where `claude` is, without starting it.
-- **Requests.** Each review starts `claude -p` and offers the eval's Artifact tools to it
-  as one MCP server that artifactize hosts in its own process, so tool calls, budgets and
-  their audit work as for every backend. Claude Code runs with nothing else of yours: its
-  own tools, your Claude Code settings, hooks, `CLAUDE.md`, memory, skills and other MCP
-  servers are off, and it keeps no session. The declared model and `reasoning` are passed
-  as they are, with adaptive thinking whose summaries Monitor shows, and the verdict schema
-  is Claude Code's structured output. Messages are sent verbatim. The one format repair
-  works as for every backend.
+- **Reviews.** The reviewer can use only the eval's declared Artifact tools, with the
+  same `max_tool_calls`, `max_tokens` and deadline as on every backend. None of your other
+  Claude Code setup applies to a review: its own tools, your Claude Code settings, hooks,
+  `CLAUDE.md`, memory, skills and MCP servers stay out, and nothing of the review appears
+  in your Claude Code sessions. The declared model and `reasoning` are used exactly,
+  Monitor shows the model's thinking summaries and answer as they arrive, and the verdict
+  and its one format repair work as for every backend.
 - **Errors.** Claude Code retries failed requests itself, so artifactize sends nothing
   again. A reached subscription limit is `QUOTA`: it names the window (5-hour or weekly)
   and when it resets, and stops `claude-agent` for the Run. A signed-out Claude Code is
@@ -311,8 +310,9 @@ artifactize verify --all --wait
 - **Models.** `models claude-agent` lists the models Claude Code offers to its login,
   each under the model ID that `model` takes, without a model call. A profile may name
   any model Claude Code accepts, listed or not.
-- **Follow-ups.** Claude Code keeps no session, so a [follow-up](#saved-conversations)
-  starts a new one with the saved conversation as evidence, then the question.
+- **Follow-ups.** Ask a [follow-up](#saved-conversations) with `session send` or in the
+  desktop app, as on every backend. The reviewer answers in plain text from the review's
+  conversation and may read the Artifacts again; the recorded verdict stays.
 
 ## Custom providers
 

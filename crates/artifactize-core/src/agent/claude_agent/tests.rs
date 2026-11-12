@@ -12,7 +12,7 @@ use tokio::io::{
 };
 
 use super::*;
-use crate::config::read_workspace_config;
+use crate::{config::read_workspace_config, llm::claude_agent::channel::Channel};
 
 const SESSION: &str = "7d1c8e2a-claude-agent-session";
 const MODEL: &str = "claude-opus-5-5";

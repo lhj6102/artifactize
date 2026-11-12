@@ -12,8 +12,12 @@ use crate::{
     agent::error::{Code, Failure},
     llm::claude_agent::{
         command, shown,
-        wire::{AssistantError, Block, LimitStatus, RateLimit, ResultBlock, ResultContent, Usage},
+        wire::{
+            AssistantError, Block, Ending, LimitStatus, RateLimit, ResultBlock, ResultContent,
+            Usage,
+        },
     },
+    types::{ClaudeMessageId, ClaudeToolUseId},
 };
 
 /// Who issued the thinking a saved conversation keeps.
@@ -26,7 +30,7 @@ pub fn tool_name(name: &str) -> &str {
 }
 
 /// One response's blocks as the assistant message the conversation saves.
-pub fn assistant(id: &str, blocks: &[Block]) -> Option<Message> {
+pub fn assistant(id: &ClaudeMessageId, blocks: &[Block]) -> Option<Message> {
     let content: Vec<AssistantContent> = blocks
         .iter()
         .filter_map(|block| match block {
@@ -42,7 +46,7 @@ pub fn assistant(id: &str, blocks: &[Block]) -> Option<Message> {
                 .sealed(ISSUER),
             )),
             Block::ToolUse { id, name, input } => Some(AssistantContent::tool_call(
-                id.clone(),
+                id.as_str(),
                 ToolName::new(tool_name(name)).ok()?,
                 input.clone(),
             )),
@@ -50,13 +54,17 @@ pub fn assistant(id: &str, blocks: &[Block]) -> Option<Message> {
         })
         .collect();
     (!content.is_empty()).then(|| Message::Assistant {
-        id: Some(id.to_owned()),
+        id: Some(id.to_string()),
         content,
     })
 }
 
 /// One tool result: the call it answers, by id and name, its content, and whether it failed.
-pub fn tool_result(id: &str, name: &str, content: ResultContent) -> Option<UserContent> {
+pub fn tool_result(
+    id: &ClaudeToolUseId,
+    name: &str,
+    content: ResultContent,
+) -> Option<UserContent> {
     let content = match content {
         ResultContent::Text(text) => vec![ToolResultContent::text(text)],
         ResultContent::Blocks(blocks) => blocks
@@ -79,7 +87,7 @@ pub fn tool_result(id: &str, name: &str, content: ResultContent) -> Option<UserC
             .collect(),
     };
     Some(UserContent::tool_result(
-        CallId::from_wire(id),
+        CallId::from_wire(id.as_str()),
         ToolName::new(tool_name(name)).ok()?,
         content,
     ))
@@ -194,7 +202,6 @@ pub fn limit_failure(limit: &RateLimit) -> Failure {
     };
     let reset = limit
         .resets_at
-        .and_then(|at| time::OffsetDateTime::from_unix_timestamp(at).ok())
         .and_then(|at| {
             at.format(&time::format_description::well_known::Rfc3339)
                 .ok()
@@ -212,14 +219,17 @@ pub fn reached(limit: &RateLimit) -> bool {
 }
 
 /// The end of a turn that did not succeed.
-pub fn finish_failure(subtype: &str, errors: &[String]) -> Failure {
+pub fn finish_failure(ending: &Ending, errors: &[String]) -> Failure {
     let detail = shown(&errors.join(" "));
-    if subtype == "error_max_structured_output_retries" {
-        return Failure::new(
-            Code::InvalidResult,
-            format!("Claude Code gave no answer matching the verdict schema. {detail}"),
-        );
-    }
+    let subtype = match ending {
+        Ending::NoStructuredOutput => {
+            return Failure::new(
+                Code::InvalidResult,
+                format!("Claude Code gave no answer matching the verdict schema. {detail}"),
+            );
+        }
+        Ending::Other(subtype) => subtype,
+    };
     Failure::new(
         Code::ProviderError,
         format!("Claude Code ended the turn with {subtype}. {detail}")
@@ -273,13 +283,13 @@ mod tests {
     #[test]
     fn tool_calls_are_saved_under_artifactize_tool_names() {
         let message = assistant(
-            "msg_1",
+            &"msg_1".parse().unwrap(),
             &[
                 Block::Text {
                     text: "Reading.".into(),
                 },
                 Block::ToolUse {
-                    id: "toolu_1".into(),
+                    id: "toolu_1".parse().unwrap(),
                     name: "mcp__artifactize__read".into(),
                     input: json!({"path": "README.md"}),
                 },

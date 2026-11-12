@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn the_environment_keeps_the_login_and_turns_off_the_users_customizations() {
         let inherited = [
-            ("PATH", "/usr/bin"),
+            ("USER_SETTING", "kept"),
             ("CLAUDE_CODE_OAUTH_TOKEN", "token"),
             ("CLAUDE_CODE_SIMPLE", "1"),
             ("CLAUDE_CODE_EFFORT_LEVEL", "low"),
@@ -206,7 +206,7 @@ mod tests {
         .collect();
         let environment = environment(inherited);
         let get = |name: &str| environment.get(&OsString::from(name)).cloned();
-        assert_eq!(get("PATH"), Some("/usr/bin".into()));
+        assert_eq!(get("USER_SETTING"), Some("kept".into()));
         assert_eq!(get("CLAUDE_CODE_OAUTH_TOKEN"), Some("token".into()));
         for cleared in [
             "CLAUDE_CODE_SIMPLE",

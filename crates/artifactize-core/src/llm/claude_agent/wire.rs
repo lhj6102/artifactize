@@ -5,6 +5,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::types::{ClaudeMessageId, ClaudeToolUseId};
+
 /// One line from Claude Code.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -139,11 +141,15 @@ pub struct Account {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct System {
-    #[serde(default)]
-    pub subtype: String,
-    #[serde(default)]
-    pub model: Option<String>,
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum System {
+    /// The session started, with the model it runs.
+    Init {
+        #[serde(default)]
+        model: Option<String>,
+    },
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,8 +176,9 @@ pub enum AssistantError {
 
 #[derive(Debug, Deserialize)]
 pub struct AssistantMessage {
-    #[serde(default)]
-    pub id: String,
+    /// Absent, or empty, on the synthetic message of an error.
+    #[serde(default, deserialize_with = "nonempty")]
+    pub id: Option<ClaudeMessageId>,
     #[serde(default)]
     pub model: String,
     #[serde(default)]
@@ -193,7 +200,7 @@ pub enum Block {
         signature: String,
     },
     ToolUse {
-        id: String,
+        id: ClaudeToolUseId,
         name: String,
         #[serde(default)]
         input: Value,
@@ -225,7 +232,7 @@ pub enum UserContent {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UserBlock {
     ToolResult {
-        tool_use_id: String,
+        tool_use_id: ClaudeToolUseId,
         #[serde(default)]
         content: ResultContent,
         #[serde(default)]
@@ -296,7 +303,7 @@ pub enum StreamEvent {
 
 #[derive(Debug, Deserialize)]
 pub struct StartedMessage {
-    pub id: String,
+    pub id: ClaudeMessageId,
     #[serde(default)]
     pub model: String,
     #[serde(default)]
@@ -349,9 +356,9 @@ pub struct OutputDetails {
 #[serde(rename_all = "camelCase")]
 pub struct RateLimit {
     pub status: LimitStatus,
-    /// When the window resets, in Unix seconds.
-    #[serde(default)]
-    pub resets_at: Option<i64>,
+    /// When the window resets; Claude Code writes Unix seconds.
+    #[serde(default, deserialize_with = "unix_time")]
+    pub resets_at: Option<time::OffsetDateTime>,
     /// The window: `five_hour`, `seven_day` and others.
     #[serde(default)]
     pub rate_limit_type: Option<String>,
@@ -367,19 +374,88 @@ pub enum LimitStatus {
     Other,
 }
 
-/// The end of one user turn.
-#[derive(Debug, Deserialize)]
-pub struct Finished {
-    #[serde(default)]
-    pub subtype: String,
-    #[serde(default)]
-    pub is_error: bool,
-    #[serde(default)]
-    pub result: Option<String>,
-    #[serde(default)]
-    pub structured_output: Option<Value>,
-    #[serde(default)]
-    pub errors: Vec<String>,
+/// The end of one user turn: the answer, or why there is none.
+#[derive(Debug)]
+pub enum Finished {
+    /// The final answer's structured output, when a schema asked for one.
+    Structured(Value),
+    /// The final answer's text.
+    Text(String),
+    Failed {
+        ending: Ending,
+        errors: Vec<String>,
+    },
+}
+
+/// Why a turn ended without an answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ending {
+    /// Claude Code gave up getting an answer that matches the schema.
+    NoStructuredOutput,
+    /// Any other ending, by Claude Code's name for it.
+    Other(String),
+}
+
+/// The success subtype; every other one is an ending without an answer.
+const SUCCESS: &str = "success";
+/// The subtype of a turn whose answer never matched the schema.
+const MAX_STRUCTURED_OUTPUT_RETRIES: &str = "error_max_structured_output_retries";
+
+impl<'de> Deserialize<'de> for Finished {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            subtype: String,
+            #[serde(default)]
+            is_error: bool,
+            #[serde(default)]
+            result: Option<String>,
+            #[serde(default)]
+            structured_output: Option<Value>,
+            #[serde(default)]
+            errors: Vec<String>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        Ok(match raw {
+            Raw {
+                ref subtype,
+                is_error: false,
+                ..
+            } if subtype == SUCCESS => match raw.structured_output {
+                Some(output) => Self::Structured(output),
+                None => Self::Text(raw.result.unwrap_or_default()),
+            },
+            Raw {
+                subtype, errors, ..
+            } => Self::Failed {
+                ending: if subtype == MAX_STRUCTURED_OUTPUT_RETRIES {
+                    Ending::NoStructuredOutput
+                } else {
+                    Ending::Other(subtype)
+                },
+                errors,
+            },
+        })
+    }
+}
+
+/// An id that may be absent or empty: `None` then.
+fn nonempty<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ClaudeMessageId>, D::Error> {
+    Option::<String>::deserialize(deserializer)?
+        .filter(|id| !id.is_empty())
+        .map(|id| id.parse().map_err(serde::de::Error::custom))
+        .transpose()
+}
+
+/// Unix seconds as a time; a time out of range is unknown.
+fn unix_time<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<time::OffsetDateTime>, D::Error> {
+    Ok(Option::<i64>::deserialize(deserializer)?
+        .and_then(|seconds| time::OffsetDateTime::from_unix_timestamp(seconds).ok()))
 }
 
 /// The id of the one control request artifactize sends.

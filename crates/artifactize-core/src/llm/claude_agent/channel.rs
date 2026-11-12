@@ -26,6 +26,8 @@ use crate::{
 const LINE_LIMIT: u64 = 32 * 1024 * 1024;
 /// Keep the end of Claude Code's stderr for an error; it rarely writes more.
 const STDERR_LIMIT: usize = 16 * 1024;
+/// Read stderr a page at a time; it is small and only its end is kept.
+const STDERR_READ: usize = 4096;
 /// Claude Code exits on its own once its input closes; past this it is stopped.
 const STOP_GRACE: Duration = Duration::from_secs(2);
 
@@ -205,7 +207,7 @@ pub async fn start(
     let mut stderr = child.stderr().take().expect("stderr is piped");
     let stderr = tokio::spawn(async move {
         let mut kept = Vec::new();
-        let mut buffer = [0; 4096];
+        let mut buffer = [0; STDERR_READ];
         while let Ok(count) = stderr.read(&mut buffer).await {
             if count == 0 {
                 break;

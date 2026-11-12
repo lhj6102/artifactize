@@ -109,11 +109,10 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 - **Agent:** 모델 입력이 없습니다(`{}`만). 소스 파일은 읽지 않고 선언만 읽습니다. Artifact와
   그 eval을 이름 기준으로 정리한 트리를 출력하며, 순환 참조가 있어도 같은 항목을 끝없이 반복하지 않습니다. 추출한
   정의와 평가 기준 전체, 그래프 fingerprint, 입력에서 사용처로 향하는 화살표와 각 화살표의 이름도 함께 출력합니다.
-- **Human:** `kind = "launch"`. 다른 launch 도구와 마찬가지로 애플리케이션을 호출 프로세스와 분리해 실행하는 방식으로
-  `artifactize-desktop graph --repo PATH`를 시작합니다. `artifactize-desktop`이 설치되어 있고
-  프로그램 검색 경로에서 찾을 수 있어야 합니다. 앱은 그 브랜치의
-  [Current](../../desktop/index.md#current)로 열리며, 워크트리의 파일을 읽어 무엇을
-  재사용하거나 실행할지 미리 보여 줍니다. 그래프 렌더러와 키보드 조작, 확대·축소 방식은 Run 화면과 같습니다. 다만 Run 판정 대신 현재 선언을 보여 주며, 각 Artifact에 기존 결과를 재사용할지 새로 실행할지 표시합니다.
+- **Human:** `kind = "launch"`. 설치된 [데스크톱 앱](../../desktop/index.md#open-the-app)을 프로젝트의
+  [Current](../../desktop/index.md#current) 화면으로 엽니다. Current는 워크트리의 파일을 읽어 Run 판정 대신
+  현재 선언을 보여 주며, 각 Artifact에 기존 결과를 재사용할지 새로 실행할지 표시합니다. 화면을
+  다루는 방법은 Run의 그래프와 같습니다.
   **Structure and evaluation criteria**를 펼치면 Agent가 보는 것과 같은 전체 텍스트 트리가
   나옵니다. **Refresh**나 Ctrl+R/F5로 다시 읽습니다. Run이 하나도 없어도 동작합니다. 도구 실행 결과는 승인이 아니라 앱을 시작했다는 확인일 뿐이며, 도구 호출이 끝나도 앱은 계속 실행됩니다.
 
