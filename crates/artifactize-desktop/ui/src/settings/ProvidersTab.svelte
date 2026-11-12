@@ -9,7 +9,7 @@
   const s = getSettingsState();
 
   const BUILTIN: Provider[] = ["codex", "openai", "anthropic", "gemini"];
-  const NAMES: Record<Provider, string> = { codex: "Codex (ChatGPT)", openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini" };
+  const NAMES: Record<Provider, string> = { codex: "Codex (ChatGPT)", claudeAgent: "Claude Agent", openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini" };
   const APIS: Record<EndpointApi, string> = {
     openaiResponses: "OpenAI Responses",
     openaiChat: "OpenAI Chat Completions",

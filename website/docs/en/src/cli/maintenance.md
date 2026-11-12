@@ -42,8 +42,8 @@ and `run show`. How keys are built and what a hit returns is in
 ```sh
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
 artifactize models PROVIDER [--json]
-artifactize login openai|anthropic|gemini|codex [--json]
-artifactize logout openai|anthropic|gemini|codex [--json]
+artifactize login openai|anthropic|gemini|codex|claude-agent [--json]
+artifactize logout openai|anthropic|gemini|codex|claude-agent [--json]
 artifactize provider list [--json]
 artifactize provider add NAME (--alias PROVIDER | --api API --url URL [--key]) [--json]
 artifactize provider remove NAME [--json]
@@ -91,6 +91,9 @@ the `supported` one. `--repo` also runs the checks of `config check`. Further ch
   [inside a repository](../features/others/state.md#state) is a warning, with the refusal message in `refused`, until a
   sign-in is stored there, then a hard error. Details name the `source` (`stored`, `file`
   or `none`), `expiresAt`, `expired` and any test endpoints.
+- `claude-agent`: where `claude` is on `PATH`, found without starting it, as `program`.
+  Without it, a warning. Its login and version are checked when a review or
+  `models claude-agent` starts it.
 - `providers`: the [custom providers](../features/agent.md#custom-providers) of this machine,
   each with what it reaches, never a key. A `$STATE/auth` inside a repository is a warning
   while nothing is saved there, then a hard error.
@@ -113,7 +116,9 @@ Exit is 0 without hard errors, 1 with hard errors, and 2 for invocation errors.
 
 `models PROVIDER` takes any name a profile's `backend` may use. `models openai`,
 `models anthropic` and `models gemini` list the models the API key can use; `models codex`
-lists those of the signed-in [Codex](../features/agent.md#codex) account; a custom provider lists
+lists those of the signed-in [Codex](../features/agent.md#codex) account; `models claude-agent`
+lists those Claude Code offers to its login, read from a Claude Code session that sends no
+message ([Claude Agent](../features/agent.md#claude-agent)); a custom provider lists
 what its alias or endpoint offers. A test endpoint replaces the provider here too, and there
 is no fallback to another account or backend. Text lists tab-separated slug/name pairs; JSON
 is `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`, in the

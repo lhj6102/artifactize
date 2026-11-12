@@ -265,7 +265,7 @@ where
 
 /// A registration nobody makes: the type of [`run_inner`]'s and [`spawn_owned`]'s absent
 /// `register`.
-type Unregistered = fn(ChildIdentity) -> std::future::Ready<io::Result<()>>;
+pub(crate) type Unregistered = fn(ChildIdentity) -> std::future::Ready<io::Result<()>>;
 
 /// Run a child nobody registers, such as a fingerprint script or a tool's protocol call: it
 /// runs at once, in its own process group or Job Object, and is cleaned up with its children.
@@ -690,7 +690,7 @@ pub(crate) fn is_alive(owner: Option<ChildIdentity>) -> io::Result<bool> {
     }
 }
 
-async fn terminate(child: &mut Child) -> io::Result<()> {
+pub(crate) async fn terminate(child: &mut Child) -> io::Result<()> {
     let _ = child.interrupt();
     tokio::select! {
         _ = sleep(CLEANUP_GRACE) => {},

@@ -140,7 +140,7 @@ CLI 대응 명령과 같은 JSON을 세부 페이지로 나눠 돌려줍니다.
 | `session_show` | **`reference`**, `summary`(기본 false) | `session show REF [--summary]` |
 | `tools_check` | `eval`, 또는 `artifact`/`audience`/`tool` | 정적 `tools check`입니다. `audience`는 `agent` 또는 `human`입니다 |
 | `doctor` | 없음 | `doctor` |
-| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex` 또는 커스텀 provider 이름입니다. 이름은 ASCII 영문자, 숫자, `_`, `-`로 된 1–64자이며 영문자나 숫자로 시작합니다) | `models PROVIDER` |
+| `models` | **`provider`**(기본 provider `openai`, `anthropic`, `gemini`, `codex`, `claude-agent` 또는 커스텀 provider 이름입니다. 이름은 ASCII 영문자, 숫자, `_`, `-`로 된 1–64자이며 영문자나 숫자로 시작합니다) | `models PROVIDER` |
 | `remote_status` | 없음 | `remote status` |
 | `cache_show` | **`key`**, `history`(기본 false) | `cache show KEY [--history]` |
 

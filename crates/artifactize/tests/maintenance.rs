@@ -131,6 +131,11 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(check(&absent, "providers")["details"]["custom"], json!({}));
     assert_eq!(check(&absent, "codex")["status"], "WARN");
     assert_eq!(check(&absent, "codex")["details"]["source"], "none");
+    assert_eq!(check(&absent, "claude-agent")["status"], "WARN");
+    assert_eq!(
+        check(&absent, "claude-agent")["details"],
+        json!({"program": null})
+    );
     // 0.5.0 removed the chatgpt and claude backends and their checks.
     let names: Vec<_> = absent["checks"]
         .as_array()
@@ -150,6 +155,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "gemini",
             "providers",
             "codex",
+            "claude-agent",
             "remote",
             "desktop",
             "release"

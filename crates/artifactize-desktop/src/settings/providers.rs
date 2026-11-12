@@ -13,6 +13,7 @@ use specta::Type;
 #[serde(rename_all = "camelCase")]
 pub enum Provider {
     Codex,
+    ClaudeAgent,
     Openai,
     Anthropic,
     Gemini,
@@ -22,6 +23,7 @@ impl From<Provider> for config::Provider {
     fn from(provider: Provider) -> Self {
         match provider {
             Provider::Codex => Self::Codex,
+            Provider::ClaudeAgent => Self::ClaudeAgent,
             Provider::Openai => Self::Openai,
             Provider::Anthropic => Self::Anthropic,
             Provider::Gemini => Self::Gemini,
@@ -33,6 +35,7 @@ impl From<config::Provider> for Provider {
     fn from(provider: config::Provider) -> Self {
         match provider {
             config::Provider::Codex => Self::Codex,
+            config::Provider::ClaudeAgent => Self::ClaudeAgent,
             config::Provider::Openai => Self::Openai,
             config::Provider::Anthropic => Self::Anthropic,
             config::Provider::Gemini => Self::Gemini,

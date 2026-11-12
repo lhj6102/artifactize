@@ -750,7 +750,7 @@ export type PlanLine = {
 export type Profile = "runtime" | "agent" | "human";
 
 /**  A built-in provider, as the CLI names it. */
-export type Provider = "codex" | "openai" | "anthropic" | "gemini";
+export type Provider = "codex" | "claudeAgent" | "openai" | "anthropic" | "gemini";
 
 /**  The providers of this machine. */
 export type Providers = {

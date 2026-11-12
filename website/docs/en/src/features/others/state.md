@@ -117,7 +117,8 @@ on that state:
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-Keys are backend names as profiles write them (`openai`, `anthropic`, `gemini`, `codex`, or
+Keys are backend names as profiles write them (`openai`, `anthropic`, `gemini`, `codex`,
+`claude-agent`, or
 a [custom provider](../agent.md#custom-providers)'s name), and each limit is 1–100000. A
 backend without an entry, or a machine without the file, is unlimited. `verify` reads the
 file when it starts. The file must be a regular UTF-8 JSON file of at most 64 KiB with only
