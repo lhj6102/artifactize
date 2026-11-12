@@ -26,13 +26,10 @@ pub(super) async fn tools(
     Ok(u8::from(!report.ok))
 }
 
-/// Claude Code signs in and out on its own; artifactize never reads or keeps its login.
-const CLAUDE_AGENT_LOGIN: &str = "The claude-agent backend uses Claude Code's own login, which artifactize never reads or keeps: run `claude auth login` or `claude auth logout` in a terminal.";
-
 pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, String> {
     let (state, repo) = (context.state_dir.as_deref(), context.repo.as_deref());
     if provider == Provider::ClaudeAgent {
-        return Err(CLAUDE_AGENT_LOGIN.into());
+        return claude_agent_login(&context).await;
     }
     if provider != Provider::Codex {
         let key = super::secret::read(&format!("{provider} API key"))?.parse()?;
@@ -54,9 +51,36 @@ pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, St
     Ok(0)
 }
 
+/// Run Claude Code's own sign-in, then say how Claude Code reports it.
+async fn claude_agent_login(context: &Context) -> Result<u8, String> {
+    use artifactize_core::auth::claude_agent::{self, Status};
+    claude_agent::login().await?;
+    let status = claude_agent::status().await;
+    if context.json {
+        print_json(&json!({ "provider": Provider::ClaudeAgent, "signed_in": true }))?;
+        return Ok(0);
+    }
+    let said = match status {
+        Status::SignedIn { method, plan } => match plan {
+            Some(plan) => format!("Claude Code is signed in with {method} ({plan})."),
+            None => format!("Claude Code is signed in with {method}."),
+        },
+        _ => "Claude Code signed in.".to_owned(),
+    };
+    writeln!(io::stdout().lock(), "{said}").map_err(|e| e.to_string())?;
+    Ok(0)
+}
+
 pub(super) async fn logout(context: Context, provider: Provider) -> Result<u8, String> {
     if provider == Provider::ClaudeAgent {
-        return Err(CLAUDE_AGENT_LOGIN.into());
+        artifactize_core::auth::claude_agent::logout().await?;
+        if context.json {
+            print_json(&json!({ "provider": provider, "signed_in": false }))?;
+        } else {
+            writeln!(io::stdout().lock(), "Signed out of Claude Code.")
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(0);
     }
     if provider != Provider::Codex {
         artifactize_core::auth::providers::remove_key(

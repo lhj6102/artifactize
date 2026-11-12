@@ -847,6 +847,73 @@ try {
   return { ...env, PATH: `${bin}${delimiter}${env.PATH ?? ""}`, DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_BROWSER_PROGRAM: program };
 }
 
+/** A scripted Claude Code (`claude auth status|login|logout`) first on the app's PATH, keeping
+ * its sign-in as the file `signed-in` in `root`. `login` serves a loopback origin, prints its
+ * sign-in URL there and signs in when the browser returns to its `/callback` or the code
+ * `good-code` is pasted; any other path of it answers while it runs, and its input closing
+ * stops it. Claude Code's own configuration points into `root`, never the user's. */
+export function claudeCodeEnvironment(root: NativePath, env: Environment): Environment {
+  const bin = makeDirectory(nativePath(root, "claude-bin"));
+  const program = nativePath(bin, "claude.mjs");
+  writeText(program, `import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+const [group, command] = process.argv.slice(2);
+const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
+const say = (text) => process.stdout.write(text);
+if (group !== "auth") process.exit(2);
+if (command === "status") {
+  const signed = existsSync(signedIn);
+  say(JSON.stringify(signed
+    ? { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max", email: "person@example.com" }
+    : { loggedIn: false, authMethod: "none" }) + "\\n");
+  process.exit(signed ? 0 : 1);
+}
+if (command === "logout") {
+  rmSync(signedIn, { force: true });
+  say("Successfully logged out.\\n");
+  process.exit(0);
+}
+if (command !== "login") process.exit(2);
+const finish = () => {
+  writeFileSync(signedIn, "claude.ai");
+  say("Login successful.\\n");
+  process.exit(0);
+};
+const server = createServer((request, response) => {
+  response.end("signed in");
+  if (request.url.startsWith("/callback")) finish();
+});
+server.listen(0, "127.0.0.1", () => {
+  const address = \`http://127.0.0.1:\${server.address().port}\`;
+  say(\`Opening browser to sign in\\nIf the browser didn't open, visit: \${address}/oauth/authorize?code=true\\nPaste code here if prompted > \`);
+});
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (text) => {
+  input += text;
+  if (!input.includes("\\n")) return;
+  if (input.split("\\n")[0].trim() === "good-code") finish();
+  process.stderr.write("Login failed: That code was not accepted.\\n");
+  process.exit(1);
+});
+process.stdin.on("end", () => process.exit(1));
+`);
+  // Paths are arguments, never interpreted as shell source.
+  if (WINDOWS) {
+    writeText(nativePath(bin, "claude.cmd"), '@"%DESKTOP_TEST_NODE%" "%DESKTOP_TEST_CLAUDE_PROGRAM%" %*\r\n');
+  } else {
+    writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_CLAUDE_PROGRAM" "$@"\n', { mode: 0o755 });
+  }
+  return {
+    ...env,
+    PATH: `${bin}${delimiter}${env.PATH ?? ""}`,
+    DESKTOP_TEST_NODE: process.execPath,
+    DESKTOP_TEST_CLAUDE_PROGRAM: program,
+    DESKTOP_TEST_CLAUDE_SIGNED_IN: nativePath(root, "signed-in"),
+    CLAUDE_CONFIG_DIR: makeDirectory(nativePath(root, "claude-config"), { private: true }),
+  };
+}
+
 /** The evaluated test-build device reaches only the engine's text-input API. This
  * test-only IPC command is not an application action and is absent from production. */
 export async function nativeInput(browser: WebdriverIO.Browser, input:

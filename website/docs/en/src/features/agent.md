@@ -281,18 +281,23 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 login it has: a Claude Pro or Max subscription, an API key or a cloud account.
 
 ```sh
-claude auth login                   # sign in to Claude Code, in a terminal
+artifactize login claude-agent      # runs Claude Code's own claude auth login
 artifactize models claude-agent     # the models Claude Code offers
 # Declare backend = "claude-agent", model = "claude-opus-5-5", reasoning = "high", then:
 artifactize verify --all --wait
 ```
 
-- **Sign-in.** Claude Code signs in on its own, with `claude auth login`, and out with
-  `claude auth logout`. artifactize never reads, copies or stores its login and never
-  sits between Claude Code and its service; `login claude-agent` and
-  `logout claude-agent` only say so. `claude` must be on `PATH`, version 2.1.248 or
-  newer: an older one is refused with a message to run `claude update`. `doctor` shows
-  where `claude` is, without starting it.
+- **Sign-in.** Claude Code keeps its own login. `login claude-agent` and the desktop's
+  **Settings → Providers → Claude Agent** run Claude Code's own `claude auth login`:
+  Claude Code opens the browser and prints a URL to open if it did not, and a code the
+  page shows can be pasted (into the terminal, or the desktop's code field). The sign-in
+  ends when Claude Code exits, signed in or with its error, and stops after ten minutes.
+  `logout claude-agent` runs `claude auth logout`. The desktop shows the sign-in as
+  `claude auth status` reports it: its login method and plan, never the account.
+  artifactize never reads, copies or stores the login and never sits between Claude Code
+  and its service; signing in with `claude auth login` yourself works the same. `claude`
+  must be on `PATH`, version 2.1.248 or newer: an older one is refused with a message to
+  run `claude update`. `doctor` shows where `claude` is, without starting it.
 - **Reviews.** The reviewer can use only the eval's declared Artifact tools, with the
   same `max_tool_calls`, `max_tokens` and deadline as on every backend. None of your other
   Claude Code setup applies to a review: its own tools, your Claude Code settings, hooks,

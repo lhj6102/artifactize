@@ -343,9 +343,17 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
   전체 `http://localhost:1455/auth/callback?code=…` URL을 복사해
   Settings에 붙여 넣은 다음 **Finish sign-in**을 고르세요.
   로그아웃하면 로컬 토큰이 삭제되며, 서버에서 토큰이 폐기됐는지 확인할 수 없으면 경고합니다.
-- **Claude Agent:** Claude Code는 터미널에서 `claude auth login`으로 직접 로그인하며, artifactize는
-  그 로그인 정보를 읽지 않는다고 안내합니다. **List models**를 누르면 Claude Code가 그 로그인으로
-  제공하는 모델이 나옵니다([Claude Agent](../features/agent.md#claude-agent)).
+- **Claude Agent:** Claude Code의 로그인 상태를 Claude Code가 직접 알려 주는 그대로
+  (`claude auth status`) 보여 줍니다. `PATH`에 `claude`가 없음, 로그인 안 됨, 로그인 방식과
+  요금제(예: `claude.ai · max`)로 로그인됨, 또는 실패한 오류 중 하나입니다. 터미널에서 로그인한
+  뒤처럼 상태를 다시 확인하려면 **Check again**을 누르세요. **Sign in with Claude Code**는
+  `artifactize login claude-agent`처럼 `claude auth login`을 실행합니다. Claude Code가 브라우저를
+  열고, 열리지 않았을 때를 위해 출력한 URL이 화면에 나옵니다. 브라우저에서 마치거나, 페이지에 나온
+  코드를 붙여 넣고 **Finish sign-in**을 누르세요. **Cancel sign-in**은 Claude Code를 멈춥니다.
+  **Sign out of Claude Code**는 `claude auth logout`을 실행합니다. 어느 쪽이든 끝나면 상태를 다시
+  보여 줍니다. 로그인 정보는 Claude Code가 보관하며, artifactize는 이를 읽거나 복사하거나 저장하지
+  않습니다. **List models**를 누르면 Claude Code가 그 로그인으로 제공하는 모델이 나옵니다
+  ([Claude Agent](../features/agent.md#claude-agent)).
 - **OpenAI, Anthropic, Gemini:** 키가 환경 변수에서 오는지, 저장되어 있는지, 없는지를 보여 주며,
   값 자체는 보여 주지 않습니다. 키를 붙여 넣고 **Save key**를 누르면 `artifactize login`처럼
   저장하고, **Remove saved key**로 지웁니다. 환경 변수가 설정되어 있으면 그 키를 먼저 씁니다. 이때

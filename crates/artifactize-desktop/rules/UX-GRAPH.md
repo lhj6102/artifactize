@@ -65,7 +65,7 @@ that makes the transition happen and checks where it leads.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
 - **Settings**: a modal over the screen with three tabs. **Providers** lists the built-in providers
   (Codex, Claude Agent, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
-  the chosen one's setup on the right: the Codex account, how Claude Code signs in, an API key, or
+  the chosen one's setup on the right: the Codex account, Claude Code's sign-in, an API key, or
   a custom provider's form,
   each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
   sign-off idle grace.
@@ -327,7 +327,13 @@ that makes the transition happen and checks where it leads.
 | E-SET-CODEX-PASTE | sign-in in progress | paste the redirect URL | signed in |
 | E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Codex, signed out |
 | E-SET-CODEX-LOGOUT | Codex, signed in | Sign out of Codex | Codex, signed out |
-| E-SET-CLAUDE-AGENT | Providers | choose Claude Agent | how Claude Code signs in shown: `claude auth login` in a terminal, a login artifactize never reads |
+| E-SET-CLAUDE-AGENT | Providers | choose Claude Agent | Claude Code's sign-in shown as Claude Code reports it: `claude` not found, not signed in, signed in with its login method and plan, or its error |
+| E-SET-CLAUDE-AGENT-CHECK | Claude Agent | Check again | Claude Code's sign-in asked again and shown |
+| E-SET-CLAUDE-AGENT-LOGIN | Claude Agent | Sign in with Claude Code | Claude Code sign-in in progress: `claude auth login` running, the browser opened by Claude Code, the URL it printed shown |
+| E-SET-CLAUDE-AGENT-RETURN | Claude Code sign-in in progress | the browser returns to Claude Code | Claude Agent, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-PASTE | Claude Code sign-in in progress | paste the code the sign-in page gives, then Finish sign-in | Claude Agent, its sign-in shown again, or the error Claude Code ended with |
+| E-SET-CLAUDE-AGENT-CANCEL | Claude Code sign-in in progress | Cancel sign-in | Claude Agent, Claude Code stopped, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-LOGOUT | Claude Agent, signed in | Sign out of Claude Code | `claude auth logout` run; Claude Agent, not signed in |
 | E-SET-MODELS | a provider's setup | List models | models of the chosen provider shown |
 | E-SET-REMOTE-LOGIN | Remote | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
 | E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
@@ -418,7 +424,7 @@ E-PANE-SELECT.
   E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
 - J-SET-PROVIDERS: E-SCREEN-SETTINGS → E-SET-PROVIDER
 - J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
-- J-SET-CLAUDE-AGENT: E-SET-PROVIDER → E-SET-CLAUDE-AGENT
+- J-SET-CLAUDE-AGENT: E-SET-PROVIDER → E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-CHECK | E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-RETURN | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-PASTE | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-CANCEL; E-SET-CLAUDE-AGENT-LOGOUT
 - J-SET-KEY: E-SET-PROVIDER → E-SET-KEY → E-SET-KEY-SAVE → E-SET-KEY-REMOVE
 - J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
 - J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS

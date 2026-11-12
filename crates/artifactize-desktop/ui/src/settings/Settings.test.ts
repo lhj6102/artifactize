@@ -1,5 +1,5 @@
 // Settings against a mocked command boundary: the Providers tab (key sources without values,
-// saved keys, custom providers, the Codex sign-in states and model listings), the Remote tab
+// saved keys, custom providers, the Codex and Claude Code sign-in states and model listings), the Remote tab
 // (the store's masked token, which leaves the screen's state when submitted) and the Limits tab
 // (the sign-off idle grace the next Runs take).
 import { renderHosted } from "../test-host";
@@ -7,7 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import Settings from "./Settings.svelte";
-import type { CodexStatus, CustomProvider, KeySource, Provider, RemoteStatus } from "../ipc/client";
+import type { ClaudeAgentStatus, CodexStatus, CustomProvider, KeySource, Provider, RemoteStatus } from "../ipc/client";
 
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
@@ -28,6 +28,8 @@ function backend(options: {
   codex?: () => CodexStatus;
   wait?: () => Promise<unknown>;
   login?: (token: string) => RemoteStatus | Error;
+  claude?: () => ClaudeAgentStatus;
+  claudeWait?: () => Promise<unknown>;
 }) {
   const calls: Calls = [];
   let remote = none;
@@ -83,6 +85,17 @@ function backend(options: {
         return null;
       case "codex_logout":
         return { revoked: true, status: { state: "absent" } };
+      case "claude_agent_status":
+        return options.claude?.() ?? { state: "signedOut" };
+      case "claude_agent_login_start":
+        return { url: "https://claude.example/oauth/authorize?code=true", signIn: 9 };
+      case "claude_agent_login_wait":
+        return options.claudeWait?.() ?? { state: "signedIn", method: "claude.ai", plan: "max" };
+      case "claude_agent_login_paste":
+      case "claude_agent_login_cancel":
+        return null;
+      case "claude_agent_logout":
+        return { state: "signedOut" };
       case "models_list":
         if (payload.provider === "anthropic") throw { kind: "account", message: "ANTHROPIC_API_KEY is required to list models." };
         return [{ slug: "gpt-fake", displayName: "GPT Fake" }];
@@ -318,15 +331,65 @@ describe("Settings", () => {
     expect(calls.filter((call) => call.cmd === "provider_custom_save").map((call) => call.args.name)).toEqual([""]);
   });
 
-  it("says Claude Code signs in on its own and lists Claude Agent's models by its backend name", async () => {
-    const calls = backend({});
+  it("shows Claude Code's own sign-in and lists Claude Agent's models by its backend name", async () => {
+    let state: ClaudeAgentStatus = { state: "missing" };
+    const calls = backend({ claude: () => state });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
-    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/claude auth login/);
+    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/never reads, copies\s+or stores it/);
     expect(screen.queryByLabelText("API key")).toBeNull();
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent).toMatch(/not found on PATH/));
+    expect(screen.getByRole("button", { name: "Sign in with Claude Code" }).hasAttribute("disabled")).toBe(true);
+    state = { state: "failed", error: "Claude Code could not report its sign-in: boom" };
+    await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent).toMatch(/Claude Code failed: Claude Code could not report its sign-in: boom/));
+    state = { state: "signedIn", method: "claude.ai", plan: "max" };
+    await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
+    expect(calls.filter((call) => call.cmd === "claude_agent_status")).toHaveLength(3);
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
     expect(calls.filter((call) => call.cmd === "models_list").at(-1)?.args).toEqual({ provider: "claude-agent" });
+  });
+
+  it("signs Claude Code in with a pasted code, then out", async () => {
+    let finish: (status: ClaudeAgentStatus) => void = () => {};
+    const calls = backend({ claudeWait: () => new Promise((done) => (finish = done)) });
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in"));
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with Claude Code" }));
+    await screen.findByText("https://claude.example/oauth/authorize?code=true");
+    expect(calls.find((call) => call.cmd === "claude_agent_login_wait")?.args).toEqual({ signIn: 9 });
+    const field = screen.getByLabelText(/When the page gives a code/);
+    await fireEvent.input(field, { target: { value: " abc#def " } });
+    await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
+    expect(calls.find((call) => call.cmd === "claude_agent_login_paste")?.args).toEqual({ code: "abc#def" });
+    finish({ state: "signedIn", method: "claude.ai", plan: "max" });
+    await screen.findByText("Claude Code signed in.");
+    expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max");
+    expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Sign out of Claude Code" }));
+    await screen.findByText("Claude Code signed out.");
+    expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in");
+  });
+
+  it("cancels a Claude Code sign-in and shows the status Claude Code then reports", async () => {
+    let fail: (error: unknown) => void = () => {};
+    const calls = backend({ claudeWait: () => new Promise((_, reject) => (fail = reject)) });
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Claude Code" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
+    expect(calls.some((call) => call.cmd === "claude_agent_login_cancel")).toBe(true);
+    const asked = calls.filter((call) => call.cmd === "claude_agent_status").length;
+    fail({ kind: "account", message: "Claude Code sign-in was cancelled." });
+    await screen.findByText("Claude Code sign-in was cancelled.");
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
+      expect(calls.filter((call) => call.cmd === "claude_agent_status")).toHaveLength(asked + 1);
+    });
+    expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in");
   });
 
   it("lists models and shows the CLI's error for a provider without its key", async () => {
