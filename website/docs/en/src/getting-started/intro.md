@@ -1,6 +1,6 @@
 # Artifactize
 
-Build together on an Artifact Graph.
+Evaluation-driven development for people and AI agents.
 
 Artifactize helps you and your teammates review each part of a project without
 redoing checks on unchanged work. An **Artifact** is a reviewable piece of work:

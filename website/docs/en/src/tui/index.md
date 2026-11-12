@@ -174,10 +174,12 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   review: its tools display as unknown and GREEN/RED forms are refused. Browsing
   that old request does not invent missing tool or schema declarations.
 - **Editing.** While you hold the claim, ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and
-  Tab belong to the fields, not navigation. When the claim is released or lost, editing stops:
-  the fields take no more edits and the CLAIM line shows in place of the kept draft, but the
-  form still holds those keys, so press Esc to leave it; once the request is unclaimed, `c`
-  claims it again and editing resumes. A bracketed keyboard paste goes into the focused field as
+  Tab belong to the fields, not navigation. While a form is open or a claim, tool, submission
+  or release is running, a click outside Human Detail does nothing; the wheel still scrolls.
+  When the claim is released or lost, editing stops: Fields shows the claim notice instead of
+  the draft, which is kept, and the open form still holds `q`, `i`, `t` and Monitor's `?`/`!`
+  until Esc closes it. Once the request is unclaimed, `c` claims it again and the kept draft
+  comes back for editing. A bracketed keyboard paste goes into the focused field as
   one edit, in standalone `review` as in the monitor. A paste that would push the
   result past the 256000-byte Human result limit is refused as a whole with an
   error, leaving the draft unchanged. Esc steps back as the key table says; Monitor's

@@ -9,7 +9,7 @@
 
 홈페이지: [artifactize.dev](https://artifactize.dev)
 
-# Build together on an Artifact Graph.
+# Artifactize: Evaluation-driven development for people and AI agents.
 
 Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트의 각 구성 요소를 테스트와 AI 리뷰,
 사람의 승인으로 검사합니다. 모든 검사 결과를 저장해 두므로 바뀌지 않은 작업은 다시 검사하지 않으며,
@@ -21,7 +21,7 @@ Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트�
 
 <p align="center">
   <img src="../others/roles.en.gif" width="800"
-       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 저마다 검사를 갖춘 프로젝트의 구성 요소인 Artifact로 이루어집니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
+       alt="애니메이션, Artifactize에서 함께 일하기: 사람과 AI 에이전트가 세 역할을 나눠 맡아 Artifact Graph 하나를 주고받습니다. Artifact Graph는 프로젝트의 구성 요소인 Artifact로 이루어지고, Artifact마다 검사가 붙어 있습니다. 사람 세 명과 AI 에이전트 두 개가 Director를 맡아 무엇을 만들지 정하고 Artifact를 추가하면, AI 에이전트 다섯 개가 Builder를 맡아 만들고, AI 에이전트 네 개와 사람 한 명이 Evaluator를 맡아 Artifact를 하나씩 검사합니다. 새 Artifact가 RED라서 Artifact Graph는 Builder에게 돌아가 수정을 거친 뒤 다시 Evaluator에게 가고, 그 Artifact는 GREEN이 됩니다. 이어서 Director가 Artifact를 하나 더 추가하고 하나를 바꾸면, Artifact가 GREEN이 될 때까지 Builder와 Evaluator가 다시 Artifact Graph를 주고받습니다.">
 </p>
 
 ## 데모
@@ -94,6 +94,12 @@ Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 
 `verify`를 준비해 줍니다. AI 계정 없이 먼저 써 보고 싶다면 예제 프로젝트로 진행하는
 [5분 빠른 시작](https://artifactize.dev/docs/ko/getting-started/guide.html)을 따라 해 보세요.
 
+## 동작 방식
+
+1. 평가로 결과물의 조건을 정하면, AI 에이전트가 평가를 통과할 때까지 결과물을 고쳐 나갑니다.
+2. 테스트, AI 에이전트, 사람 모두 동등한 평가자가 될 수 있고, 각각 잘 평가하는 부분이 다릅니다.
+3. 평가를 거친 결과물은 다음 평가의 입력이 되고, 이렇게 최종 결과물까지 이어집니다.
+
 ## 주요 특징
 
 <p align="center">
@@ -107,7 +113,7 @@ Arti는 프로젝트를 읽고 무엇이 중요한지 물은 뒤, 그에 맞는 
 | 세 종류의 검사 | 테스트 같은 명령, AI 에이전트의 리뷰, 사람의 승인입니다. |
 | 재사용 | 입력이 바뀌지 않은 검사는 이전 결과를 그대로 씁니다. 다른 버전이나 팀원의 작업 사본에서도 마찬가지입니다. |
 | 계속 진행되는 Run | 검사를 실행할 때마다 ID가 붙은 Run이 만들어지고, 창을 닫아도 멈추지 않습니다. |
-| 데스크톱 앱 | 그래프에서 Run을 실시간으로 지켜보고, 원하는 Artifact를 열어 보고, 승인 요청을 확인해 바로 처리할 수 있습니다. |
+| 데스크톱 앱 | Artifact Graph에서 Run을 실시간으로 지켜보고, 원하는 Artifact를 열어 보고, 승인 요청을 확인해 바로 처리할 수 있습니다. |
 
 **누구를 위한 도구인가요?**
 
