@@ -31,9 +31,9 @@
     <span class="when" role="status">
       {#if current.scanning}{#if view?.scanning && view.checking > 0}Checking {view.checking} of {view.artifacts} Artifacts…{:else}Scanning…{/if}{:else if scanned}Scanned at <time datetime={scanned.at}>{scanned.local}</time>{/if}
     </span>
-    <button class="button small" disabled={current.scanning} onclick={() => void current.scan(branch, true)}>Refresh</button>
+    {#if current.error}<span class="failure">{current.error}</span>{/if}
+    <button class="button small refresh" disabled={current.scanning} onclick={() => void current.scan(branch, true)}>Refresh</button>
   </header>
-  {#if current.error}<p class="failure">{current.error}</p>{/if}
   {#if view}
     <div class="canvas">
       {#await import("./SourceGraph.svelte")}
@@ -67,6 +67,9 @@
   .when {
     color: var(--ink-2);
     font-variant-numeric: tabular-nums;
+  }
+  .refresh {
+    margin-left: auto;
   }
   .canvas {
     position: relative;
@@ -103,8 +106,10 @@
     padding: 0 var(--pad);
   }
   .failure {
+    flex: 1 1 0;
+    min-width: 0;
     color: var(--red);
-    padding: 0 var(--pad);
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
 </style>

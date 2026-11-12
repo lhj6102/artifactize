@@ -353,7 +353,7 @@
   const title = $derived.by(() => {
     if (shown.kind === "run") return `Run ${shown.run}`;
     if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
-    if (shown.kind === "review") return "Review";
+    if (shown.kind === "review") return review?.settled ? "Review · read-only" : "Review";
     if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });
@@ -470,7 +470,7 @@
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
     <Dialog.Content
-      class="dialog"
+      class="dialog open-id"
       onCloseAutoFocus={(event) => {
         // An opened request takes focus, not what had it before the dialog.
         if (m.focus !== "main") return;
@@ -491,8 +491,8 @@
       >
         <input class="input" placeholder="req-…" bind:value={m.wanted} aria-label="Request ID" />
         <div class="dialog-actions">
-          <Dialog.Close class="button">Cancel</Dialog.Close>
-          <button class="button primary" type="submit">Open</button>
+          <Dialog.Close class="button">Cancel <kbd aria-hidden="true">Esc</kbd></Dialog.Close>
+          <button class="button primary" type="submit">Open <kbd aria-hidden="true">Enter</kbd></button>
         </div>
       </form>
     </Dialog.Content>
@@ -521,10 +521,11 @@
    * Detail sets its own width, by default or by a drag, within the graph's area (as
    * detail-width.ts fits a drag); its content never sizes it, and wraps or scrolls in its own
    * boxes. */
+  /* Below the Main area's header row (its 2px focus line and 32px), over the graph's side. */
   .dock {
     position: absolute;
     z-index: 20;
-    top: 8px;
+    top: 42px;
     right: 8px;
     bottom: 8px;
     width: var(--detail-width, min(46%, 680px));
@@ -562,6 +563,9 @@
     color: var(--ink-2);
     font-size: var(--text-small);
     overflow-wrap: anywhere;
+  }
+  :global(.dialog.open-id) {
+    width: min(480px, 92vw);
   }
   .input {
     width: 100%;

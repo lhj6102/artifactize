@@ -27,7 +27,7 @@
   </p>
   <dl class="facts" aria-label="Sign-off idle grace">
     <dt>In force</dt>
-    <dd data-testid="grace-status">{s.grace ? span(s.grace.seconds) : "…"}</dd>
+    <dd data-testid="grace-status" class="num">{s.grace ? span(s.grace.seconds) : "…"}</dd>
   </dl>
   <form class="row" onsubmit={save} aria-label="Change the sign-off idle grace">
     <label for="grace-seconds">Seconds</label>
@@ -42,7 +42,7 @@
       aria-describedby="grace-help"
     />
     <button
-      class="button"
+      class="button primary"
       type="submit"
       disabled={s.graceSaving || s.grace === null || s.graceSeconds === null || s.graceSeconds === s.grace.seconds}>Save</button
     >

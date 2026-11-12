@@ -52,8 +52,8 @@
       {#if l.error}<p class="error" role="alert">{l.error}</p>{/if}
       <div class="dialog-actions">
         <AlertDialog.Cancel class="button">Stay <kbd>Esc</kbd></AlertDialog.Cancel>
-        <button class="button" disabled={l.working} onclick={() => void release()}>Release and quit <kbd>u</kbd></button>
-        <AlertDialog.Action class="button primary" disabled={l.working} onclick={onleave}>Keep and quit <kbd>k</kbd></AlertDialog.Action>
+        <button class="button primary" disabled={l.working} onclick={() => void release()}>Release and quit <kbd>u</kbd></button>
+        <AlertDialog.Action class="button" disabled={l.working} onclick={onleave}>Keep and quit <kbd>k</kbd></AlertDialog.Action>
       </div>
     </AlertDialog.Content>
   </AlertDialog.Portal>

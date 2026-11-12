@@ -12,9 +12,36 @@
   }
 </script>
 
+<div class="remote">
 <section aria-labelledby="remote-title" aria-busy={s.remotePending > 0 || s.working}>
   <h2 id="remote-title">Shared remote review store</h2>
-  <p class="muted">Signs in, out and checks status as <code>artifactize remote</code> does; the token is checked with the store and saved with remote.json.</p>
+  <p class="muted">Signs in, out and checks status as <code>artifactize remote</code> does; the token is checked with the store and saved with remote.json, never shown.</p>
+  <form class="login" onsubmit={login} aria-label="Sign in to a remote store">
+    <label for="remote-url">Store URL</label>
+    <input id="remote-url" class="input" bind:value={s.url} placeholder="https://reviews.example/" autocomplete="off" spellcheck="false" />
+    <span class="label">Share</span>
+    <div class="row" role="radiogroup" aria-label="Share">
+      <label><input type="radio" name="share" value="summary" bind:group={s.share} /> summary</label>
+      <label><input type="radio" name="share" value="full" bind:group={s.share} /> full</label>
+    </div>
+    <label for="remote-token">Token</label>
+    <input
+      id="remote-token"
+      class="input"
+      type="password"
+      bind:value={s.token}
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="azt_…"
+    />
+    <div class="row">
+      <button class="button primary" type="submit" disabled={s.working || !s.url.trim() || !s.token}>Sign in to the store</button>
+      <button class="button" type="button" disabled={s.working} onclick={() => void s.loadRemote()}>Check status</button>
+    </div>
+  </form>
+</section>
+<section aria-labelledby="remote-status-title" aria-busy={s.remotePending > 0 || s.working}>
+  <h2 id="remote-status-title">Status</h2>
   <dl class="facts" aria-label="Remote store">
     {#if !s.remote}
       <dt>Status</dt>
@@ -40,36 +67,25 @@
       {/if}
     {/if}
   </dl>
-  <div class="row">
-    <button class="button" disabled={s.working} onclick={() => void s.loadRemote()}>Check status</button>
-    {#if s.remote?.state === "configured"}
-      <button class="button" disabled={s.working} onclick={() => void s.remoteLogout()}>Sign out of the store</button>
-      <button class="button" disabled={s.working || !principal} onclick={() => void s.push(true)}>Push (dry run)</button>
-      <button class="button" disabled={s.working || !principal} onclick={() => void s.push(false)}>Push results</button>
-    {/if}
-  </div>
-  <form class="login" onsubmit={login} aria-label="Sign in to a remote store">
-    <label for="remote-url">Store URL</label>
-    <input id="remote-url" class="input" bind:value={s.url} placeholder="https://reviews.example/" autocomplete="off" spellcheck="false" />
-    <span class="label">Share</span>
-    <div class="row" role="radiogroup" aria-label="Share">
-      <label><input type="radio" name="share" value="summary" bind:group={s.share} /> summary</label>
-      <label><input type="radio" name="share" value="full" bind:group={s.share} /> full</label>
-    </div>
-    <label for="remote-token">Token</label>
-    <input
-      id="remote-token"
-      class="input"
-      type="password"
-      bind:value={s.token}
-      autocomplete="off"
-      spellcheck="false"
-      placeholder="azt_…"
-    />
-    <div class="row">
-      <button class="button primary" type="submit" disabled={s.working || !s.url.trim() || !s.token}>Sign in to the store</button>
-    </div>
-  </form>
   {#if s.remoteNotice}<p class="notice" role="status">{s.remoteNotice}</p>{/if}
   {#if s.remoteError}<p class="error" role="alert">{s.remoteError}</p>{/if}
+  {#if s.remote?.state === "configured"}
+    <div class="row">
+      <button class="button" disabled={s.working || !principal} onclick={() => void s.push(true)}>Push (dry run)</button>
+      <button class="button" disabled={s.working || !principal} onclick={() => void s.push(false)}>Push results</button>
+      <span class="spacer"></span>
+      <button class="button" disabled={s.working} onclick={() => void s.remoteLogout()}>Sign out of the store</button>
+    </div>
+  {/if}
 </section>
+</div>
+
+<style>
+  /* One column of at most 640px: the sign-in first, then the status with its pushes. */
+  .remote {
+    max-width: 640px;
+  }
+  .spacer {
+    flex: 1;
+  }
+</style>

@@ -239,11 +239,14 @@
     background: var(--surface-input);
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
-    padding: 4px 8px;
-    min-height: var(--control);
+    height: var(--control);
+    padding: 0 8px;
     width: 100%;
   }
   textarea {
+    height: auto;
+    min-height: 44px;
+    padding: 4px 8px;
     resize: vertical;
   }
   ::placeholder {

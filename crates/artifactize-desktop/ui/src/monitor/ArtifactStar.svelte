@@ -65,7 +65,7 @@
     border: 0;
     background: none;
     color: var(--ink-2);
-    font-size: 14px;
+    font-size: var(--text-title);
     line-height: 1.4;
     cursor: pointer;
     opacity: 0.55;

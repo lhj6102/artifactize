@@ -19,7 +19,7 @@ const GRAIN = 8;
 const FAR = 1024;
 const SPAN = 2 * FAR + 1;
 /** The width of the ring around the opened Artifact, as its element draws it. */
-const RING = 3;
+const RING = 2;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the
  * camera pans this far before the picture is painted again. */
 const AROUND = 0.5;
@@ -203,9 +203,12 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     context.strokeStyle = colour(light);
     context.stroke(path);
   }
+  // A node's face is neutral; its light colours its border, as the elements draw it.
+  context.fillStyle = style.getPropertyValue("--surface-panel").trim();
+  for (const path of boxes.values()) context.fill(path);
   for (const [light, path] of boxes) {
-    context.fillStyle = colour(light);
-    context.fill(path);
+    context.strokeStyle = colour(light);
+    context.stroke(path);
   }
 }
 
@@ -257,7 +260,7 @@ export class Picture {
     if (what.opened.size === 0) return;
     const { viewport, ratio } = what;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--outline-selected").trim();
     context.lineWidth = RING;
     at.ids.forEach((key, number) => {
       if (!what.opened.has(key)) return;

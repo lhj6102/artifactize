@@ -155,11 +155,16 @@
           {/each}
         </section>
       {/if}
-      {#each [["Execution options", pick(OPTIONS).map((field) => field.value)], ["Execution metadata", spent.length > 0 ? [spent.join(" · ")] : []], ["Fingerprint", pick(["Fingerprint"]).map((field) => field.value)]] as const as [title, lines] (title)}
-        {#if lines.length > 0}
+      {#each [["Execution options", pick(OPTIONS).map((field) => [field.key, field.value])], ["Execution metadata", spent.length > 0 ? [["spent", spent.join(" · ")]] : []], ["Fingerprint", pick(["Fingerprint"]).map((field) => [field.key, field.value])]] as const as [title, facts] (title)}
+        {#if facts.length > 0}
           <section class="block">
             <h3>{title}</h3>
-            {#each lines as line, at (at)}<p class="line">{line}</p>{/each}
+            <dl>
+              {#each facts as [key, value], at (at)}
+                <dt>{key}</dt>
+                <dd>{value}</dd>
+              {/each}
+            </dl>
           </section>
         {/if}
       {/each}

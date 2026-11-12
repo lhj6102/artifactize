@@ -101,9 +101,13 @@
   .entry:hover {
     background: color-mix(in srgb, var(--surface-group) 60%, var(--surface-panel));
   }
-  /* What the Main area shows: a soft grey pill around the entry. */
+  /* What the Main area shows: a soft grey pill around the entry; the selected entry takes the
+   * selection background over it. */
   .entry.filled {
     background: var(--surface-group);
+  }
+  li.selected .entry {
+    background: var(--selection);
   }
   .dot {
     grid-row: 1;

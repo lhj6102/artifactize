@@ -38,11 +38,15 @@
         Cannot store tokens here: {s.codex.reason}
       {/if}
     </dd>
+    {#if s.prompt}
+      <dt>Sign-in</dt>
+      <dd class="warn">in progress · {s.prompt.callback ? "waiting for the browser" : "the browser cannot return here"}</dd>
+    {/if}
   </dl>
   {#if s.prompt}
     <div class="pending" role="status">
-      <p>{s.prompt.callback ? "Waiting for the browser." : "Finish signing in with the browser, then paste its redirect URL below."} If it did not open, open this URL:</p>
-      <p class="url"><code>{s.prompt.url}</code></p>
+      <p class="muted">{s.prompt.callback ? "Finish signing in with the browser." : "Finish signing in with the browser, then paste its redirect URL below."} If it did not open, open this URL:</p>
+      <pre class="url">{s.prompt.url}</pre>
       {#if !s.prompt.callback}
         <p class="warn">Port 1455 is in use (another sign-in, such as the Codex CLI or app, may hold it), so the browser cannot return here. Paste the full URL it was sent to below.</p>
       {/if}
@@ -52,9 +56,9 @@
         <div class="row">
           <input id="codex-redirect" class="input" bind:value={s.redirect} aria-describedby="codex-redirect-help" autocomplete="off" spellcheck="false" />
           <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
+          <button class="button" type="button" onclick={() => s.cancelSignIn()}>Cancel sign-in</button>
         </div>
       </form>
-      <button class="button" onclick={() => s.cancelSignIn()}>Cancel sign-in</button>
     </div>
   {/if}
   <div class="row">

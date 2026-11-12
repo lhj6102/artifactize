@@ -149,7 +149,7 @@
 <div class="m-window" style="background: var(--surface-app)">
   <div style="position: absolute; inset: 0">
     <aside class="m-dock" style="--detail-width: 420px; left: 8px; right: auto; width: 500px">
-      <div class="m-main-head"><div class="m-dock-title"><h2>Artifact cli</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
+      <div class="m-main-head"><div class="m-dock-title"><h2>cli/tests · The CLI's tests pass</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
       <div class="m-chips">
         <span class="m-chip"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
         <span class="m-chip"><span class="m-glyph tone-green">✓</span>lint</span>
@@ -243,7 +243,7 @@
 <div class="m-window" style="background: var(--surface-app)">
   <div style="position: absolute; inset: 0">
     <aside class="m-dock" style="left: 8px; right: auto; width: 500px">
-      <div class="m-main-head"><div class="m-dock-title"><h2>Artifact cli</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
+      <div class="m-main-head"><div class="m-dock-title"><h2>cli/tests · The CLI's tests pass</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
       <div class="m-chips">
         <span class="m-chip"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
         <span class="m-chip"><span class="m-glyph" style="color: var(--light-reused)">↻</span>lint</span>
@@ -280,9 +280,9 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-INS-1">D-INS-1</dt>
-  <dd>The Detail docks over the graph toward its right edge with an 8–12px gap on three sides, never beside the Pane: a <code>--surface-panel</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-panel</code> corners and a faint shadow (<code>--scrim</code>, 2px offset, 8px blur); its left edge takes a drag and its width is remembered; part of the graph stays visible on its left. <span class="avoid">a heavy shadow or large radius; the Detail pushing the graph aside.</span></dd>
+  <dd>The Detail docks over the Main area's right side below its header row (the row stays readable), with an 8–12px gap under the header, at its right and at its bottom, never beside the Pane: a <code>--surface-panel</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-panel</code> corners and a faint shadow (<code>--scrim</code>, 2px offset, 8px blur); its left edge takes a drag and its width is remembered; part of the graph stays visible on its left. <span class="avoid">a heavy shadow or large radius; the Detail pushing the graph aside.</span></dd>
   <dt id="D-INS-2">D-INS-2</dt>
-  <dd>The Detail's header is the panel header row (D-MAIN-1): the title at <code>--text-small</code> semibold, wrapping to show a long name whole, the star beside it, Close with its <kbd>Esc</kbd> key cap at the end; focus shows as the 2px <code>--accent</code> top line. <span class="avoid">a cut title; a second close control.</span></dd>
+  <dd>The Detail's header is the panel header row (D-MAIN-1): the title at <code>--text-small</code> semibold, wrapping to show a long name whole, naming what the tab shows (<i>Artifact {name}</i> on the Artifact's tab, <i>{Artifact}/{eval} · {eval title}</i> on an eval's tab, <i>Human review</i> on a Human eval's tab, <i>Run {id}</i> on a Run's), the star beside it on an Artifact's tabs, Close with its <kbd>Esc</kbd> key cap at the end; the chip path below keeps the Artifact's name on every tab; focus shows as the 2px <code>--accent</code> top line. <span class="avoid">a cut title; a second close control.</span></dd>
   <dt id="D-INS-3">D-INS-3</dt>
   <dd>The chip row sits under the header, closed below by <code>--line-group</code>: chips of <code>--row-dense</code> height, <code>--radius-chip</code>, <code>--text-small</code>, a 1px <code>--line-group</code> border and <code>--ink-2</code> text; the chosen chip is filled with <code>--surface-group</code> in <code>--ink</code> semibold; the Artifact's chip leads with the Artifact mark and cuts only its name; each eval chip leads with its verdict glyph in the status colour (on a Current, with what verify would do, D-INS-8); the <code>/</code> stays with the Artifact's chip and the rest wrap. <span class="avoid">pills in the accent; a chip without its glyph.</span></dd>
   <dt id="D-INS-4">D-INS-4</dt>
@@ -292,7 +292,7 @@
   <dt id="D-INS-7">D-INS-7</dt>
   <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row: its sections Outcome, Waits for, What and Provenance each under a section label, their facts as key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), the pending evals of Waits for folded behind a <code>--ink-2</code> line (<code>▸ n pending evals</code>) that a click unfolds, and Technical folded last behind a <code>▸</code> line that names its keys. <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it.</span></dd>
   <dt id="D-INS-8">D-INS-8</dt>
-  <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip and each eval row lead with what verify would do (reused, would run with its count of evals, waiting, blocked, or still being checked) as a glyph in the Current's light colour and the matching words; an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in the light's colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse under a section label or that none matches, then the execution options and Debug; there is no log and no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show.</span></dd>
+  <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip and each eval row lead with what verify would do (reused, would run with its count of evals, waiting, blocked, or still being checked) as a glyph and the matching words in the tone the library gives that plan (the tone classes, which parallel the legend's lights); an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in the light's colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse under a section label or that none matches, then the execution options and Debug; there is no log and no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show.</span></dd>
   <dt id="D-INS-6">D-INS-6</dt>
   <dd>Selection and inspector agree: the node with the <code>--outline-selected</code> outline, every copy of a shared part included, is the Artifact the Detail is titled with, or, when that Artifact is hidden inside a minimized whole, the minimized whole that hides it while the Detail still names the Artifact; opening a neighbour or another node moves both; closing the Detail removes the outline. The Find field's choice opens the Detail and moves only the camera. <span class="avoid">a Detail left open for a node no longer highlighted.</span></dd>
 </dl>

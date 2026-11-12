@@ -173,6 +173,10 @@ kbd {
   color: var(--ink);
   outline: none;
 }
+.palette-input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
 .palette-list {
   max-height: 50vh;
   overflow: auto;
@@ -194,8 +198,10 @@ kbd {
   border-radius: var(--radius-control);
   cursor: pointer;
 }
+/* The selected command: the selection background and a 2px inset bar. */
 .palette-item[data-selected] {
   background: var(--selection);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .palette-empty {
   padding: 12px;

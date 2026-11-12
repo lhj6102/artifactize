@@ -340,13 +340,17 @@
     border-radius: var(--radius-control);
     padding: 6px 8px;
   }
+  /* One row: the busy state or the last notice at the left, Release at the right. */
   footer {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
   }
   footer p {
     margin: 0;
+    min-width: 0;
   }
   .busy {
     color: var(--human);
@@ -366,5 +370,6 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    margin-left: auto;
   }
 </style>
