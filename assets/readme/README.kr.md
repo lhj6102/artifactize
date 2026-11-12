@@ -9,7 +9,7 @@
 
 홈페이지: [artifactize.dev](https://artifactize.dev)
 
-# Build together on an Artifact Graph.
+# Artifactize: Evaluation-driven development for people and AI agents.
 
 Artifactize는 코드와 문서, 이미지, 실행 중인 앱 등 프로젝트의 각 구성 요소를 테스트와 AI 리뷰,
 사람의 승인으로 검사합니다. 모든 검사 결과를 저장해 두므로 바뀌지 않은 작업은 다시 검사하지 않으며,
