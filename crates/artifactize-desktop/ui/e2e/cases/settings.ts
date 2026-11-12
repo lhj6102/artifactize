@@ -126,10 +126,10 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX journey: J-SET-CLAUDE-AGENT; UX edges: E-SET-CLAUDE-AGENT E-SET-CLAUDE-AGENT-CHECK E-SET-CLAUDE-AGENT-LOGOUT
-  // E-SET-CLAUDE-AGENT-LOGIN E-SET-CLAUDE-AGENT-CANCEL E-SET-CLAUDE-AGENT-PASTE E-SET-CLAUDE-AGENT-RETURN
+  // E-SET-CLAUDE-AGENT-LOGIN E-SET-CLAUDE-AGENT-CANCEL E-SET-CLAUDE-AGENT-END E-SET-CLAUDE-AGENT-PASTE E-SET-CLAUDE-AGENT-RETURN
   scenario(
     "settings-claude-agent",
-    "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, with a pasted code and by the browser returning",
+    "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, refused, with a pasted code and by the browser returning",
     async () => {
       const fixture = createOutside();
       return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null };
@@ -179,6 +179,13 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => httpGet(`${cancelled}/alive`).then(() => false, () => true),
         { timeout: 15000, timeoutMsg: "the cancelled Claude Code stops" });
       assert.equal(exists(marker), false);
+
+      // A code Claude Code refuses ends its sign-in with Claude Code's own error.
+      await begin();
+      await fill(browser, "#claude-agent-code", "bad-code");
+      await browser.$("button=Finish sign-in").click();
+      await shows("Not signed in", "the refused sign-in ends");
+      await browser.$("p=Claude Code could not sign in: Login failed: That code was not accepted.").waitForExist({ timeout: 15000 });
 
       // The code the sign-in page gives, pasted.
       await begin();
