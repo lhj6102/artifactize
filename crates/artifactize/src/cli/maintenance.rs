@@ -54,7 +54,14 @@ pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, St
 /// Run Claude Code's own sign-in, then say how Claude Code reports it.
 async fn claude_agent_login(context: &Context) -> Result<u8, String> {
     use artifactize_core::auth::claude_agent::{self, Status};
-    claude_agent::login().await?;
+    let (cancellation, listener) = cancellation_listener()?;
+    // An interrupt stops the sign-in, and with it Claude Code.
+    let signed_in = tokio::select! {
+        signed_in = claude_agent::login() => signed_in,
+        () = cancellation.cancelled() => Err("Claude Code sign-in was cancelled.".to_owned()),
+    };
+    listener.abort();
+    signed_in?;
     let status = claude_agent::status().await;
     if context.json {
         print_json(&json!({ "provider": Provider::ClaudeAgent, "signed_in": true }))?;

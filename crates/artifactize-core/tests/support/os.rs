@@ -2496,6 +2496,15 @@ pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> C
     command
 }
 
+/// Write `contents` to `path` at once: a temporary file beside it is renamed over it, so a
+/// reader never sees a partial write, also where renaming over an open file differs by OS.
+pub fn publish_file(path: &Path, contents: impl AsRef<[u8]>) {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new_in(path.parent().unwrap()).unwrap();
+    file.write_all(contents.as_ref()).unwrap();
+    file.persist(path).unwrap();
+}
+
 /// Create or replace an owner-only fixture file. Replacement keeps the inode for tests
 /// of same-sized rewrites; atomic replacement is set up explicitly by those tests.
 pub fn rewrite_private_file(path: &Path, contents: impl AsRef<[u8]>) {

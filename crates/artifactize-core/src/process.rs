@@ -525,9 +525,10 @@ pub(crate) fn launch_detached(
 }
 
 /// A program that hands part of its work to the desktop, such as a sign-in that opens the
-/// browser, with its standard streams piped to this process. Dropping the child stops only
-/// the program itself, never what it started: that may be the person's browser.
-pub(crate) fn spawn_handoff(command: &Command) -> Result<tokio::process::Child, Error> {
+/// browser, with its standard streams piped to this process and no console window. It and
+/// what it starts are stopped when the child drops, also when its owner dies where the
+/// system allows; [`Child::release`] lets what it started go on once it has ended.
+pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
     let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
         environment_value(&command.env, name).map(ToOwned::to_owned)
     })
@@ -542,7 +543,9 @@ pub(crate) fn spawn_handoff(command: &Command) -> Result<tokio::process::Child, 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    platform::spawn_watched(child).map_err(Error::Spawn)
+    platform::spawn_windowless(child)
+        .await
+        .map_err(Error::Spawn)
 }
 
 /// A desktop handoff whose output a Tool log shows: like [`launch_detached`] it is never
