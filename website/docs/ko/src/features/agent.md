@@ -238,8 +238,9 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 ## Claude Agent {#claude-agent}
 
-`claude-agent` 백엔드는 내 [Claude Code](https://code.claude.com)로, Claude Code에 로그인된 계정
-그대로 리뷰합니다. Claude Pro나 Max 구독, API 키, 클라우드 계정 모두 됩니다.
+`claude-agent` 백엔드는 사용자의 [Claude Code](https://code.claude.com)를 통해 리뷰하며, Claude Code에
+로그인한 계정을 그대로 사용합니다. Claude Pro·Max 구독이나 API 키, 클라우드 계정으로 로그인한 Claude Code를
+사용할 수 있습니다.
 
 ```sh
 artifactize login claude-agent      # runs Claude Code's own claude auth login

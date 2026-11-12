@@ -1,7 +1,7 @@
 # 백엔드와 로그인 {#backends-and-sign-in}
 
 Agent eval은 백엔드를 통해 모델 서비스에 리뷰를 요청하며, Runtime eval과 Human eval에는 백엔드가 필요하지 않습니다.
-Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini 가운데 사용할 서비스의 API 키를 준비하거나, Codex를 쓸 수 있는 ChatGPT 요금제를 사용하거나, Claude Pro·Max 구독 같은 로그인이 된 내 Claude Code를 쓰세요.
+Agent eval이 쓰는 백엔드만 사용할 서비스에 맞춰 준비하세요. OpenAI·Anthropic·Gemini는 API 키를, Codex는 Codex를 쓸 수 있는 ChatGPT 요금제를, Claude Agent는 Claude Code에 로그인한 계정(Claude Pro·Max 구독 등)을 사용합니다.
 
 Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. artifactize는
 모델 목록을 따로 제공하지 않으며, 지정한 백엔드나 모델을 다른 것으로 바꾸지도 않습니다.
