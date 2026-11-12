@@ -20,6 +20,17 @@ const FAR = 1024;
 const SPAN = 2 * FAR + 1;
 /** The width of the ring around the opened Artifact, as its element draws it. */
 const RING = 2;
+/** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its corner radius, its
+ * side padding, its dot, the gap before its name and the name's font size. */
+const NODE_RADIUS = 3;
+const NODE_PAD = 12;
+const NODE_DOT = 8;
+const NODE_GAP = 8;
+const NODE_FONT = 13;
+/** The smallest font, in device-independent pixels, at which a name is still painted. */
+const LEGIBLE = 5;
+/** An edge's stroke in graph pixels, as the graph's elements draw it. */
+const EDGE_WIDTH = 1.25;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the
  * camera pans this far before the picture is painted again. */
 const AROUND = 0.5;
@@ -144,8 +155,9 @@ function ends(at: Scene, graph: Shape): Ends {
 }
 
 /** Paint `what` onto `context`, which is `what.width` × `what.height` at `what.ratio`: the
- * edges in view, then the Artifacts in view as boxes if asked, in the theme's lights. Edges are
- * one device pixel wide, which the canvas draws many times faster than wider ones. Of edges
+ * edges in view, then the Artifacts in view as nodes if asked, in the theme's lights. Edges are
+ * at least one device pixel wide, the regular stroke once the zoom asks for more; one pixel is
+ * what the canvas draws many times faster than wider ones. Of edges
  * whose ends fall into the same `GRAIN` cells of the screen only the first is drawn, and one
  * shorter than a cell not at all: at a whole catalog's scale, thousands of edges from one
  * shared input end in the same few pixels. */
@@ -157,7 +169,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, width * ratio, height * ratio);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  context.lineWidth = 1 / ratio;
+  context.lineWidth = Math.max(1 / ratio, EDGE_WIDTH * zoom);
 
   const { sources, targets, lights } = ends(at, what.graph);
   const paths = new Map<Light, Path2D>();
@@ -187,28 +199,60 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   }
   if (!what.boxes) return;
 
-  const lit = new Map(what.graph.nodes.map((node) => [node.id, node.light]));
+  // The Artifacts in view, painted as their elements draw them: a whole as its box's outline, a
+  // node as a neutral face with a border and a dot in its light's colour and its name, cut to
+  // the face, once the zoom makes a name legible.
+  const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
   const boxes = new Map<Light, Path2D>();
   const outlines = new Map<Light, Path2D>();
+  const dots = new Map<Light, Path2D>();
+  const names: { x: number; y: number; width: number; text: string }[] = [];
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
+  const radius = Math.min(NODE_RADIUS * zoom, 3);
+  const legible = NODE_FONT * zoom >= LEGIBLE;
   for (const number of within(at, shown) ?? []) {
-    const light = lit.get(at.nodes[number]) ?? "waiting";
-    const paths = at.wholes.has(number) ? outlines : boxes;
+    const node = named.get(at.nodes[number]);
+    const light = node?.light ?? "waiting";
+    const whole = at.wholes.has(number);
+    const paths = whole ? outlines : boxes;
     let path = paths.get(light);
     if (!path) paths.set(light, (path = new Path2D()));
     const place = at.places[number];
-    path.rect(place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1));
+    const [x, y, w, h] = [place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1)];
+    path.roundRect(x, y, w, h, radius);
+    if (whole) continue;
+    let dot = dots.get(light);
+    if (!dot) dots.set(light, (dot = new Path2D()));
+    const [cx, cy] = [x + NODE_PAD * zoom + (NODE_DOT / 2) * zoom, y + h / 2];
+    dot.moveTo(cx + (NODE_DOT / 2) * zoom, cy);
+    dot.arc(cx, cy, Math.max((NODE_DOT / 2) * zoom, 0.5), 0, 2 * Math.PI);
+    if (legible && node) names.push({ x: x + (NODE_PAD + NODE_DOT + NODE_GAP) * zoom, y: cy, width: w - (2 * NODE_PAD + NODE_DOT + NODE_GAP) * zoom, text: node.name });
   }
   for (const [light, path] of outlines) {
     context.strokeStyle = colour(light);
     context.stroke(path);
   }
-  // A node's face is neutral; its light colours its border, as the elements draw it.
   context.fillStyle = style.getPropertyValue("--surface-panel").trim();
   for (const path of boxes.values()) context.fill(path);
   for (const [light, path] of boxes) {
     context.strokeStyle = colour(light);
     context.stroke(path);
+  }
+  for (const [light, path] of dots) {
+    context.fillStyle = colour(light);
+    context.fill(path);
+  }
+  if (names.length === 0) return;
+  context.fillStyle = style.getPropertyValue("--ink").trim();
+  context.font = `500 ${NODE_FONT * zoom}px ${style.getPropertyValue("--font").trim()}`;
+  context.textBaseline = "middle";
+  for (const name of names) {
+    context.save();
+    context.beginPath();
+    context.rect(name.x, name.y - NODE_FONT * zoom, name.width, 2 * NODE_FONT * zoom);
+    context.clip();
+    context.fillText(name.text, name.x, name.y);
+    context.restore();
   }
 }
 
