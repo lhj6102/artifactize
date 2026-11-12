@@ -8,11 +8,12 @@ use artifactize_core::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-/// A built-in provider, as the CLI names it.
+/// A built-in provider, by the name the CLI and an eval's `backend` give it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Provider {
     Codex,
+    ClaudeAgent,
     Openai,
     Anthropic,
     Gemini,
@@ -22,6 +23,7 @@ impl From<Provider> for config::Provider {
     fn from(provider: Provider) -> Self {
         match provider {
             Provider::Codex => Self::Codex,
+            Provider::ClaudeAgent => Self::ClaudeAgent,
             Provider::Openai => Self::Openai,
             Provider::Anthropic => Self::Anthropic,
             Provider::Gemini => Self::Gemini,
@@ -33,6 +35,7 @@ impl From<config::Provider> for Provider {
     fn from(provider: config::Provider) -> Self {
         match provider {
             config::Provider::Codex => Self::Codex,
+            config::Provider::ClaudeAgent => Self::ClaudeAgent,
             config::Provider::Openai => Self::Openai,
             config::Provider::Anthropic => Self::Anthropic,
             config::Provider::Gemini => Self::Gemini,
@@ -124,6 +127,8 @@ pub struct CustomProvider {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Providers {
+    /// The built-in providers, in the order Settings lists them.
+    pub builtin: Vec<Provider>,
     pub keys: Vec<KeyStatus>,
     pub custom: Vec<CustomProvider>,
 }
@@ -151,6 +156,7 @@ pub fn providers_list(app: tauri::State<'_, App>) -> Result<Providers, Failure> 
     let (state, repo) = location(&app);
     let list = providers::list(state, repo).map_err(Failure::Account)?;
     Ok(Providers {
+        builtin: config::Provider::ALL.into_iter().map(Into::into).collect(),
         keys: list
             .keys
             .into_iter()

@@ -5,7 +5,7 @@ use owned_run::Watcher;
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
     thread,
     time::{Duration, Instant},
 };
@@ -162,12 +162,7 @@ fn waiting_request(fixture: &Fixture) -> Value {
 #[test]
 fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     let fixture = Fixture::new();
-    let child = fixture
-        .command()
-        .args(["verify", "human"])
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(fixture.command().args(["verify", "human"]));
     let child = Watcher::new(child);
     let waiting = waiting_request(&fixture);
     let (id, run) = (
@@ -318,12 +313,7 @@ fn redirected_or_no_console_help_never_waits_for_input() {
     for with_console in [true, false] {
         let mut command = Command::new(support::os::cli());
         support::os::console_launch(&mut command, with_console);
-        let child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let child = support::os::start(command.stdin(std::process::Stdio::piped()));
         let mut child = Watcher::new(child);
         // Keep the empty input pipe OPEN until the child has exited: an accidental read
         // cannot succeed on EOF, so completion proves it did not pause. No clock involved.

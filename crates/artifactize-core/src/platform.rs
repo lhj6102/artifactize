@@ -173,6 +173,11 @@ pub(crate) fn path_from_line(bytes: &[u8]) -> std::path::PathBuf {
     path_from_bytes(path)
 }
 
+/// This system's directory for temporary files.
+pub(crate) fn temporary_directory() -> std::path::PathBuf {
+    std::env::temp_dir()
+}
+
 /// Default state directory policy belongs with the platform's environment names.
 pub(crate) fn state_directory() -> Option<std::path::PathBuf> {
     resolve_state_directory(

@@ -756,6 +756,17 @@ pub fn start(command: &mut Command) -> std::process::Child {
         .expect("the command starts")
 }
 
+/// Start a test's child process as its command sets it up: `command.launch()`.
+pub trait Launch {
+    fn launch(&mut self) -> std::process::Child;
+}
+
+impl Launch for Command {
+    fn launch(&mut self) -> std::process::Child {
+        self.spawn().expect("the command starts")
+    }
+}
+
 /// Observe and reap an exited standard child without changing its caller's ownership.
 pub fn child_exited(child: &mut std::process::Child) -> bool {
     child

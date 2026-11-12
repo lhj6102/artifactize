@@ -170,8 +170,8 @@ impl Fixture {
                 ),
                 "fake-anthropic-key".into(),
             ),
-            Provider::Codex | Provider::Gemini => {
-                unreachable!("Codex and Gemini reviews are tested end to end")
+            Provider::Codex | Provider::Gemini | Provider::ClaudeAgent => {
+                unreachable!("Codex, Gemini and Claude Code reviews are tested on their own")
             }
         };
         self.reviews.set(self.reviews.get() + 1);

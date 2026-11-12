@@ -183,14 +183,14 @@ struct Saved {
     custom: BTreeMap<Backend, Custom>,
 }
 
-/// The environment variable that holds an API-key provider's key; `None` for Codex, which
-/// signs in instead.
+/// The environment variable that holds an API-key provider's key; `None` for Codex and Claude
+/// Code, which sign in instead.
 pub fn key_variable(provider: Provider) -> Option<&'static str> {
     match provider {
         Provider::Openai => Some("OPENAI_API_KEY"),
         Provider::Anthropic => Some("ANTHROPIC_API_KEY"),
         Provider::Gemini => Some("GEMINI_API_KEY"),
-        Provider::Codex => None,
+        Provider::Codex | Provider::ClaudeAgent => None,
     }
 }
 

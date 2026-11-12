@@ -39,8 +39,8 @@ artifactize cache rm KEY
 ```sh
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
 artifactize models PROVIDER [--json]
-artifactize login openai|anthropic|gemini|codex [--json]
-artifactize logout openai|anthropic|gemini|codex [--json]
+artifactize login openai|anthropic|gemini|codex|claude-agent [--json]
+artifactize logout openai|anthropic|gemini|codex|claude-agent [--json]
 artifactize provider list [--json]
 artifactize provider add NAME (--alias PROVIDER | --api API --url URL [--key]) [--json]
 artifactize provider remove NAME [--json]
@@ -87,6 +87,9 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
   [저장소 안에](../features/others/state.md#state) 있으면 거부 메시지를 `refused`에 담은
   경고가 나오고, 그곳에 로그인 정보가 저장되어 있으면 심각한 오류가 됩니다. 세부 정보에는 `source`
   (`stored`, `file`, `none`), `expiresAt`, `expired`, 테스트 엔드포인트가 나옵니다.
+- `claude-agent`: `PATH`에서 찾은 `claude`의 위치를 실행하지 않고 `program`으로 보여 줍니다.
+  없으면 경고입니다. 로그인과 버전은 리뷰나 `models claude-agent`가 Claude Code를 실행할 때
+  확인합니다.
 - `providers`: 이 머신에 등록한 [커스텀 provider](../features/agent.md#custom-providers)와 각각이
   연결되는 곳을 보여 줍니다. 키 값은 보여 주지 않습니다. `$STATE/auth`가 저장소 안에 있으면, 저장한 것이
   없는 동안에는 경고이고 저장한 것이 있으면 심각한 오류입니다.
@@ -109,7 +112,9 @@ session ID`)를 한 줄씩 출력하고, 마지막에 데이터베이스와 저�
 
 `models PROVIDER`에는 프로필의 `backend`에 쓸 수 있는 이름이면 무엇이든 줄 수 있습니다.
 `models openai`, `models anthropic`, `models gemini`는 API 키로 쓸 수 있는 모델을, `models codex`는
-로그인한 [Codex](../features/agent.md#codex) 계정의 모델을, 커스텀 provider는 그 별칭이나
+로그인한 [Codex](../features/agent.md#codex) 계정의 모델을, `models claude-agent`는 메시지를 보내지 않는
+Claude Code 세션에서 읽은, Claude Code가 지금 로그인으로 제공하는 모델을
+([Claude Agent](../features/agent.md#claude-agent)), 커스텀 provider는 그 별칭이나
 엔드포인트가 제공하는 모델을 보여 줍니다. 여기서도 테스트 엔드포인트가 provider를 대신하며, 다른
 계정이나 백엔드로 넘어가지 않습니다. 텍스트 출력은 탭으로 구분한 slug와 이름 쌍이고, JSON은
 provider가 준 순서대로 `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`

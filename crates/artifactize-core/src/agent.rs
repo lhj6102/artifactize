@@ -3,6 +3,7 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
+mod claude_agent;
 pub mod error;
 pub mod session;
 pub mod verdict;
@@ -95,8 +96,24 @@ pub async fn execute(
     let Profile::Agent { backend, model, .. } = eval.declaration.profile() else {
         unreachable!("Agent executor requires an Agent profile")
     };
-    match Client::new(backend, model, state, &config.root) {
-        Ok(client) => review(&client, config, eval, output, recorder, cancellation, tools).await,
+    let client = llm::route(
+        backend,
+        Some(state),
+        Some(&config.root),
+        "for this Agent backend",
+    )
+    .and_then(|route| {
+        if route.api == llm::Api::ClaudeAgent {
+            Ok(None)
+        } else {
+            Client::at(route, model, state, &config.root).map(Some)
+        }
+    });
+    match client {
+        Ok(None) => claude_agent::review(config, eval, output, recorder, cancellation, tools).await,
+        Ok(Some(client)) => {
+            review(&client, config, eval, output, recorder, cancellation, tools).await
+        }
         Err(error) => Review {
             result: Err(error),
             attempts: Vec::new(),
@@ -499,16 +516,28 @@ pub async fn follow_up(
     recorder: &mut Recorder,
     cancellation: CancellationToken,
 ) -> FollowUp {
-    let result = continue_conversation(
-        config,
-        eval,
-        &continuation,
-        message,
-        recorder,
-        &cancellation,
-        Client::new,
-    )
-    .await;
+    let result = if claude_agent::continues(config, &continuation) {
+        claude_agent::follow_up(
+            config,
+            eval,
+            &continuation,
+            message,
+            recorder,
+            &cancellation,
+        )
+        .await
+    } else {
+        continue_conversation(
+            config,
+            eval,
+            &continuation,
+            message,
+            recorder,
+            &cancellation,
+            Client::new,
+        )
+        .await
+    };
     complete_follow_up(recorder, result)
 }
 
@@ -693,6 +722,23 @@ fn prompt(
     eval: &Eval,
     registry: &Registry<'_>,
 ) -> Result<CompletionRequest, String> {
+    let Prompt { system, text } = prompt_text(config, eval, registry)?;
+    let mut request = CompletionRequest::new(text).preamble(system);
+    request.tools = definitions(registry);
+    Ok(request)
+}
+
+/// A review's system prompt and its first message.
+struct Prompt {
+    system: &'static str,
+    text: String,
+}
+
+fn prompt_text(
+    config: &RepoConfig,
+    eval: &Eval,
+    registry: &Registry<'_>,
+) -> Result<Prompt, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let payload = eval
         .declaration
@@ -722,9 +768,7 @@ fn prompt(
         "Eval: {} ({})\nTarget Artifact: {}\nInstruction: {}\nArtifacts:\n{}",
         eval.declaration.title, eval.id, eval.target, instruction, artifacts,
     );
-    let mut request = CompletionRequest::new(text).preamble(system);
-    request.tools = definitions(registry);
-    Ok(request)
+    Ok(Prompt { system, text })
 }
 
 #[derive(Serialize)]

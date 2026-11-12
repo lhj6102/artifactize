@@ -23,6 +23,7 @@ use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 /// Bound fixture observation, not executor lifetimes or elapsed-time assertions.
@@ -120,8 +121,7 @@ impl Fixture {
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         Child::new(child, &self.state, repo)
     }
 

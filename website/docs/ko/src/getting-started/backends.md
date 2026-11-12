@@ -1,7 +1,7 @@
 # 백엔드와 로그인 {#backends-and-sign-in}
 
 Agent eval은 백엔드를 통해 모델 서비스에 리뷰를 요청하며, Runtime eval과 Human eval에는 백엔드가 필요하지 않습니다.
-Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini 가운데 사용할 서비스의 API 키를 준비하거나, Codex를 쓸 수 있는 ChatGPT 요금제를 사용하세요.
+Agent eval이 쓰는 백엔드만 준비하세요. OpenAI, Anthropic, Gemini 가운데 사용할 서비스의 API 키를 준비하거나, Codex를 쓸 수 있는 ChatGPT 요금제를 사용하거나, Claude Pro·Max 구독 같은 로그인이 된 내 Claude Code를 쓰세요.
 
 Agent eval에는 백엔드 하나와 사용할 모델의 정확한 ID를 지정하세요. artifactize는
 모델 목록을 따로 제공하지 않으며, 지정한 백엔드나 모델을 다른 것으로 바꾸지도 않습니다.
@@ -16,7 +16,7 @@ API 키 백엔드를 쓰려면 [OpenAI 계정](https://platform.openai.com/api-k
 [Google AI Studio](https://aistudio.google.com/apikey)에서 키를 만든 다음 `artifactize login`으로
 저장하세요. 키를 묻는 프롬프트에 붙여 넣으면 artifactize가 stdin에서 키를 읽습니다. 데스크톱 앱의
 **Settings → Providers**에 붙여 넣어 저장해도 됩니다. 키를 커밋하거나 Artifact 선언에 넣지 마세요.
-Codex는 대신 아래의 별도 브라우저 로그인을 씁니다.
+Codex는 대신 아래의 별도 브라우저 로그인을, Claude Agent는 Claude Code 자체 로그인을 씁니다.
 
 | 백엔드 | 설정 | 모델 목록 |
 |---|---|---|
@@ -24,6 +24,7 @@ Codex는 대신 아래의 별도 브라우저 로그인을 씁니다.
 | `anthropic` | `artifactize login anthropic` | `artifactize models anthropic` |
 | `gemini` | `artifactize login gemini` | `artifactize models gemini` |
 | `codex` | `artifactize login codex` | `artifactize models codex` |
+| `claude-agent` | `claude auth login`(Claude Code 자체 로그인) | `artifactize models claude-agent` |
 
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 키가 있으면 저장한 키보다 먼저 씁니다.
 예를 들어 `export OPENAI_API_KEY=...`처럼 설정하세요(PowerShell에서는
@@ -44,8 +45,13 @@ Windows에서는 기본 브라우저). 로그인은 같은 머신의 브라우�
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`을 설정하세요. artifactize는 그 파일을 읽기만 합니다.
 [Codex](../features/agent.md#codex)를 보세요.
 
+`claude-agent`는 설치된 Claude Code(`PATH`에 있는 2.1.248 이상의 `claude`)를 이미 로그인된
+계정 그대로 실행합니다. 터미널에서 `claude auth login`으로 한 번 로그인하세요. artifactize는 그
+로그인 정보를 읽거나 보관하지 않으므로 `login claude-agent`와 `logout claude-agent`는 그 방법만
+알려 줍니다. [Claude Agent](../features/agent.md#claude-agent)를 보세요.
+
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app, newer release
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, Claude Code on PATH, review store, desktop app, newer release
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 

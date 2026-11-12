@@ -26,8 +26,14 @@ pub(super) async fn tools(
     Ok(u8::from(!report.ok))
 }
 
+/// Claude Code signs in and out on its own; artifactize never reads or keeps its login.
+const CLAUDE_AGENT_LOGIN: &str = "The claude-agent backend uses Claude Code's own login, which artifactize never reads or keeps: run `claude auth login` or `claude auth logout` in a terminal.";
+
 pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, String> {
     let (state, repo) = (context.state_dir.as_deref(), context.repo.as_deref());
+    if provider == Provider::ClaudeAgent {
+        return Err(CLAUDE_AGENT_LOGIN.into());
+    }
     if provider != Provider::Codex {
         let key = super::secret::read(&format!("{provider} API key"))?.parse()?;
         artifactize_core::auth::providers::save_key(state, repo, provider, key).await?;
@@ -49,6 +55,9 @@ pub(super) async fn login(context: Context, provider: Provider) -> Result<u8, St
 }
 
 pub(super) async fn logout(context: Context, provider: Provider) -> Result<u8, String> {
+    if provider == Provider::ClaudeAgent {
+        return Err(CLAUDE_AGENT_LOGIN.into());
+    }
     if provider != Provider::Codex {
         artifactize_core::auth::providers::remove_key(
             context.state_dir.as_deref(),

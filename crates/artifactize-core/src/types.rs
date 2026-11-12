@@ -502,6 +502,13 @@ impl RequestStatus {
 // OAuth account claims are opaque provider strings, historically any nonempty text.
 identity!(CodexAccountId, |value: &str| !value.is_empty());
 
+// The Messages API's opaque ids that Claude Code passes on: a response's (`msg_…`) and a
+// tool call's (`toolu_…`). Any nonempty text is valid; artifactize only matches them.
+identity!(ClaudeMessageId, |value: &str| !value.is_empty());
+identity!(ClaudeToolUseId, |value: &str| !value.is_empty());
+// The id Claude Code gives a control request, echoed in its answer.
+identity!(ClaudeRequestId, |value: &str| !value.is_empty());
+
 // The block a streamed delivery belongs to: a response text part, a reasoning summary, or
 // the whole attempt, which an interruption ends. Summary blocks carry the provider's item
 // identity, so any non-empty text is valid.

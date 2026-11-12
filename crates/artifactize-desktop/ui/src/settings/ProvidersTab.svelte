@@ -8,8 +8,15 @@
 
   const s = getSettingsState();
 
-  const BUILTIN: Provider[] = ["codex", "openai", "anthropic", "gemini"];
-  const NAMES: Record<Provider, string> = { codex: "Codex (ChatGPT)", openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini" };
+  const NAMES: Record<Provider, string> = {
+    codex: "Codex (ChatGPT)",
+    "claude-agent": "Claude Agent",
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    gemini: "Gemini",
+  };
+  /** The built-in providers, in the order the library lists them. */
+  const builtin = $derived(s.providers?.builtin ?? []);
   const APIS: Record<EndpointApi, string> = {
     openaiResponses: "OpenAI Responses",
     openaiChat: "OpenAI Chat Completions",
@@ -54,7 +61,7 @@
 <div class="providers">
   <nav aria-label="Providers">
     <ul>
-      {#each BUILTIN as provider (provider)}
+      {#each builtin as provider (provider)}
         {@render item({ kind: "builtin", provider }, NAMES[provider])}
       {/each}
       {#each s.providers?.custom ?? [] as one (one.name)}
@@ -67,6 +74,13 @@
   <div class="setup">
     {#if s.choice.kind === "builtin" && s.choice.provider === "codex"}
       <CodexAccount />
+    {:else if s.choice.kind === "builtin" && s.choice.provider === "claude-agent"}
+      <section aria-labelledby="claude-agent-title">
+        <h2 id="claude-agent-title">Claude Agent</h2>
+        <p class="muted" data-testid="claude-agent-sign-in">
+          Reviews run with your own Claude Code and its login. Claude Code signs in on its own: run <code>claude auth login</code> in a terminal. Artifactize never reads that login.
+        </p>
+      </section>
     {:else if s.choice.kind === "builtin"}
       {@const provider = s.choice.provider}
       <section aria-labelledby="key-title">
@@ -124,7 +138,7 @@
           {#if s.draft.kind === "alias"}
             <label for="custom-provider">Provider</label>
             <select id="custom-provider" class="input" bind:value={s.draft.provider}>
-              {#each BUILTIN as provider (provider)}
+              {#each builtin as provider (provider)}
                 <option value={provider}>{NAMES[provider]}</option>
               {/each}
             </select>

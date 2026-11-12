@@ -15,6 +15,7 @@ use support::os::{steps, symlink_file, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 struct Fixture {
@@ -678,8 +679,7 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
             .args(["status", "--json", "--fingerprint-jobs", jobs])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         let mut child = FingerprintCaller {
             child: Some(Watcher::new(child)),
             release: markers.join("release"),

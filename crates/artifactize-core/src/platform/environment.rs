@@ -56,6 +56,19 @@ pub(crate) fn set(
     environment.insert(name.into(), value.into());
 }
 
+/// Remove one variable of a built environment, matching its name as this system compares
+/// names.
+pub(crate) fn remove(environment: &mut BTreeMap<OsString, OsString>, name: &str) {
+    if super::ENV_NAMES_IGNORE_CASE {
+        environment.retain(|key, _| {
+            !key.to_str()
+                .is_some_and(|key| key.eq_ignore_ascii_case(name))
+        });
+    } else {
+        environment.remove(OsStr::new(name));
+    }
+}
+
 /// One variable of an environment built for a child, matching names as this system does:
 /// exactly on Unix, without regard to case on Windows.
 pub(crate) fn lookup<'a>(

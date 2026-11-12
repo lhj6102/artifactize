@@ -64,8 +64,9 @@ that makes the transition happen and checks where it leads.
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
 - **Settings**: a modal over the screen with three tabs. **Providers** lists the built-in providers
-  (Codex, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
-  the chosen one's setup on the right: the Codex account, an API key, or a custom provider's form,
+  (Codex, Claude Agent, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
+  the chosen one's setup on the right: the Codex account, how Claude Code signs in, an API key, or
+  a custom provider's form,
   each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
   sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
@@ -326,6 +327,7 @@ that makes the transition happen and checks where it leads.
 | E-SET-CODEX-PASTE | sign-in in progress | paste the redirect URL | signed in |
 | E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Codex, signed out |
 | E-SET-CODEX-LOGOUT | Codex, signed in | Sign out of Codex | Codex, signed out |
+| E-SET-CLAUDE-AGENT | Providers | choose Claude Agent | how Claude Code signs in shown: `claude auth login` in a terminal, a login artifactize never reads |
 | E-SET-MODELS | a provider's setup | List models | models of the chosen provider shown |
 | E-SET-REMOTE-LOGIN | Remote | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
 | E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
@@ -416,6 +418,7 @@ E-PANE-SELECT.
   E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
 - J-SET-PROVIDERS: E-SCREEN-SETTINGS → E-SET-PROVIDER
 - J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
+- J-SET-CLAUDE-AGENT: E-SET-PROVIDER → E-SET-CLAUDE-AGENT
 - J-SET-KEY: E-SET-PROVIDER → E-SET-KEY → E-SET-KEY-SAVE → E-SET-KEY-REMOVE
 - J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
 - J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS

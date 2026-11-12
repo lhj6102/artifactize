@@ -125,7 +125,7 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
     },
   ),
-  // UX journeys: J-SET-PROVIDERS J-SET-KEY; UX edges: E-SET-PROVIDER E-SET-KEY E-SET-KEY-SAVE E-SET-KEY-REMOVE
+  // UX journeys: J-SET-PROVIDERS J-SET-CLAUDE-AGENT J-SET-KEY; UX edges: E-SET-PROVIDER E-SET-CLAUDE-AGENT E-SET-KEY E-SET-KEY-SAVE E-SET-KEY-REMOVE
   scenario(
     "settings-keys",
     "settings: lists the providers on the left, shows where each key comes from without its value, saves and removes a key as the CLI sees it, and keeps a set variable first",
@@ -152,8 +152,18 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data: { key, saved, shadowed, seen } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
-      await browser.waitUntil(async () => (await listed(browser)).length === 5, { timeout: 15000, timeoutMsg: "the providers are listed" });
-      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"]);
+      const providers = ["Codex (ChatGPT)", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"];
+      await browser.waitUntil(async () => JSON.stringify(await listed(browser)) === JSON.stringify(providers), {
+        timeout: 15000,
+        timeoutMsg: "the providers are listed",
+      });
+      // Claude Agent has no key here: Claude Code signs in on its own.
+      await choose(browser, "Claude Agent");
+      const signIn = browser.$('[data-testid="claude-agent-sign-in"]');
+      await signIn.waitForDisplayed({ timeout: 15000, timeoutMsg: "Claude Agent's sign-in is explained" });
+      const explained = await signIn.getText();
+      assert.ok(explained.includes("claude auth login") && explained.includes("never reads that login"), explained);
+      assert.equal(await browser.$("#provider-key").isExisting(), false, "Claude Agent takes no key");
       await choose(browser, "OpenAI");
       await browser.waitUntil(async () => (await keyText(browser, "openai")) === "Set from OPENAI_API_KEY", { timeout: 15000, timeoutMsg: "the OpenAI key is set from its variable" });
       // A vertical list on the left; the chosen provider's setup on its right.
@@ -368,7 +378,7 @@ Review the agent folder."""
         await browser.$("#custom-url").click();
         await typeText(browser, root);
       });
-      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
+      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
       assert.deepEqual(await custom(), {
         "claude-local": { kind: "endpoint", api: "anthropic", url: root, key: false },
         local: { kind: "endpoint", api: "openai-chat", url, key: true },

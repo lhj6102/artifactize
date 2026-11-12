@@ -88,11 +88,13 @@ pub enum Command {
         command: ToolsCommand,
     },
     /// Sign in with Codex (ChatGPT) in the system browser, or save an API key read from stdin.
+    /// Claude Code signs in on its own, with `claude auth login`.
     Login {
         #[arg(value_enum)]
         provider: artifactize_core::config::Provider,
     },
     /// Revoke and remove artifactize's own Codex tokens, or forget a saved API key.
+    /// Claude Code signs out on its own, with `claude auth logout`.
     Logout {
         #[arg(value_enum)]
         provider: artifactize_core::config::Provider,

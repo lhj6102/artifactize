@@ -25,6 +25,7 @@ use support::os::{cat_program, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 struct Server {
@@ -42,8 +43,7 @@ impl Server {
             .arg(&state)
             .args(["server", "run", "--listen", "127.0.0.1:0"])
             .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         let mut child = Watcher::new(child);
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
         let mut line = String::new();
