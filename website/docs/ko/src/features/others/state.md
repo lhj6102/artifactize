@@ -116,7 +116,7 @@ slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 Q
 오류로 [백엔드 사용이 중단되면](../agent.md#stopping-a-backend), 그 Run에서 대기 중이던 요청은 해당
 백엔드로 실행하지 않습니다.
 
-## 승인 유휴 유예 시간 {#sign-off-idle-grace}
+## 승인 유예 시간 {#sign-off-idle-grace}
 
 `limits.json`으로 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 종료되기까지의 대기 시간도
 설정합니다([승인과 Run 종료](../run.md#sign-offs-and-the-end-of-a-run)).
