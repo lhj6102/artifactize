@@ -42,7 +42,7 @@ pub(crate) use os::{
     is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
     private_options, private_tempdir_in, process_start_time, release_free_memory,
     remove_abandoned_directory, resolve_system_aliases, restrict_file, running_process_start_time,
-    spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched, sync_dir,
+    spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched, spawn_windowless, sync_dir,
     transient_file_access,
 };
 pub use os::{HiddenInput, VISIBLE_INPUT_FALLBACK, stop_requested};

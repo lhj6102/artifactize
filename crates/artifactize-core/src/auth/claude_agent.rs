@@ -201,22 +201,23 @@ async fn tail(reader: Option<impl AsyncRead + Unpin>) -> Vec<u8> {
 /// The sign-in behind `login claude-agent` for any interface: run `claude auth login`, give
 /// `show` the URL it prints once it has opened the browser, and write a code arriving on
 /// `pasted` to its input. It ends when Claude Code exits, signed in or with its error, or
-/// after ten minutes; dropping the future stops Claude Code.
+/// after ten minutes; dropping the future stops Claude Code and
+/// whatever it started, which Claude Code ending on its own leaves running.
 pub async fn login_with(
     pasted: Option<oneshot::Receiver<String>>,
     show: impl FnOnce(&Prompt),
 ) -> Result<(), String> {
     let deadline = Instant::now() + LOGIN_TIMEOUT;
-    let mut child = match process::spawn_handoff(&claude(&["auth", "login"], LOGIN_TIMEOUT)) {
+    let mut child = match process::spawn_handoff(&claude(&["auth", "login"], LOGIN_TIMEOUT)).await {
         Ok(child) => child,
         Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound => {
             return Err(MISSING.into());
         }
         Err(error) => return Err(format!("Cannot start Claude Code: {error}.")),
     };
-    let input = child.stdin.take();
-    let stdout = child.stdout.take().expect("stdout is piped");
-    let stderr = child.stderr.take();
+    let input = child.stdin().take();
+    let stdout = child.stdout().take().expect("stdout is piped");
+    let stderr = child.stderr().take();
     let signing_in = async {
         let mut lines = BufReader::new(stdout).lines();
         let mut said = Vec::new();
@@ -256,13 +257,17 @@ pub async fn login_with(
     };
     let (said, errors, exited) = tokio::select! {
         biased;
-        ended = async { tokio::join!(signing_in, tail(stderr), child.wait()) } => ended,
+        ended = async { tokio::join!(signing_in, tail(stderr), child.wait_leader()) } => ended,
         Err(error) = paste => return Err(error),
         () = tokio::time::sleep_until(deadline) => {
             return Err("Claude Code sign-in timed out; run `artifactize login claude-agent` again.".into());
         }
     };
     let exited = exited.map_err(|error| format!("Cannot wait for Claude Code: {error}."))?;
+    // Claude Code ended on its own: what it started, such as the browser, goes on.
+    child
+        .release()
+        .map_err(|error| format!("Cannot let go of Claude Code's sign-in: {error}."))?;
     if exited.success() {
         Ok(())
     } else {

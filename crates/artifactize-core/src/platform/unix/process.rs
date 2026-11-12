@@ -71,6 +71,13 @@ impl Child {
         self.kill()?;
         self.wait().await
     }
+
+    /// Let what the child left running in its group, such as a browser it opened, go on:
+    /// dropping this kills nothing.
+    pub fn release(mut self) -> io::Result<()> {
+        self.group = None;
+        Ok(())
+    }
 }
 
 /// Darwin proc_info.h: a process committed to exit() can still report SRUN
@@ -177,6 +184,12 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
 
 pub(crate) fn spawn_run(command: Command) -> io::Result<tokio::process::Child> {
     spawn_detached(command)
+}
+
+/// Spawn a program that hands part of its work to the desktop, such as a sign-in that opens
+/// the browser, as [`spawn_now`] does: Unix programs open no console window.
+pub(crate) async fn spawn_windowless(command: Command) -> io::Result<Child> {
+    spawn_now(command).await
 }
 
 /// A desktop handoff whose output pipes a Tool log drains. Like [`spawn_detached`] it gets

@@ -47,10 +47,12 @@ use windows_sys::Win32::{
 /// have completed successfully; keep the existing generic failure code of one.
 const FORCED_TERMINATION_EXIT_CODE: u32 = 1;
 
-/// The child and its job; every process in the job is killed when this drops.
+/// The child and its job; every process in the job is killed when this drops, unless the
+/// child was released.
 pub(crate) struct Child {
     child: tokio::process::Child,
     job: Job,
+    released: bool,
 }
 
 impl Child {
@@ -108,11 +110,21 @@ impl Child {
     pub fn kill(&mut self) -> io::Result<()> {
         self.job.terminate()
     }
+
+    /// Let what the child left running, such as a browser it opened, go on: the job no longer
+    /// kills its processes when it closes, and dropping this kills nothing.
+    pub fn release(mut self) -> io::Result<()> {
+        self.job.keep_on_close()?;
+        self.released = true;
+        Ok(())
+    }
 }
 
 impl Drop for Child {
     fn drop(&mut self) {
-        let _ = self.job.terminate();
+        if !self.released {
+            let _ = self.job.terminate();
+        }
     }
 }
 
@@ -128,9 +140,15 @@ impl Job {
         }
         // SAFETY: CreateJobObjectW returned a new handle that nothing else owns.
         let job = Self(unsafe { OwnedHandle::from_raw_handle(handle) });
+        job.limit(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)?;
+        Ok(job)
+    }
+
+    /// Set the job's limits to exactly `flags`.
+    fn limit(&self, flags: u32) -> io::Result<()> {
         let limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
             BasicLimitInformation: JOBOBJECT_BASIC_LIMIT_INFORMATION {
-                LimitFlags: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                LimitFlags: flags,
                 ..Default::default()
             },
             ..Default::default()
@@ -138,7 +156,7 @@ impl Job {
         // SAFETY: the information class matches the structure and its size.
         let ok = unsafe {
             SetInformationJobObject(
-                job.0.as_raw_handle(),
+                self.0.as_raw_handle(),
                 JobObjectExtendedLimitInformation,
                 (&raw const limits).cast(),
                 mem::size_of_val(&limits) as u32,
@@ -147,7 +165,12 @@ impl Job {
         if ok == 0 {
             return Err(io::Error::last_os_error());
         }
-        Ok(job)
+        Ok(())
+    }
+
+    /// Closing the job no longer kills its processes.
+    fn keep_on_close(&self) -> io::Result<()> {
+        self.limit(0)
     }
 
     fn assign(&self, child: &tokio::process::Child) -> io::Result<()> {
@@ -237,11 +260,17 @@ impl Drop for Gate {
 
 /// Spawn `command` suspended, in a new console process group and a kill-on-close job. The
 /// task yields the child once the gate admits it, or kills it if the gate drops first.
-pub(crate) fn spawn_gated(
+pub(crate) fn spawn_gated(command: Command) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
+    spawn_gated_with(command, 0)
+}
+
+/// [`spawn_gated`] with `flags` added to its creation flags.
+fn spawn_gated_with(
     mut command: Command,
+    flags: u32,
 ) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let job = Job::new()?;
-    command.creation_flags(CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP);
+    command.creation_flags(CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP | flags);
     let child = command
         .spawn()
         .and_then(|mut child| match job.assign(&child) {
@@ -265,7 +294,11 @@ pub(crate) fn spawn_gated(
             let _ = child.wait().await;
             return Err(io::Error::from_raw_os_error(ERROR_CANCELLED as i32));
         }
-        Ok(Child { child, job })
+        Ok(Child {
+            child,
+            job,
+            released: false,
+        })
     });
     Ok((gate, spawning))
 }
@@ -273,10 +306,24 @@ pub(crate) fn spawn_gated(
 /// Spawn `command` as [`spawn_gated`] does and admit it at once: it joins its job before it
 /// runs.
 pub(crate) async fn spawn_now(command: Command) -> io::Result<Child> {
-    let (gate, spawning) = spawn_gated(command)?;
+    admitted(spawn_gated(command)?).await
+}
+
+/// Admit a gated child at once.
+async fn admitted((gate, spawning): (Gate, JoinHandle<io::Result<Child>>)) -> io::Result<Child> {
     gate.admit()?;
     drop(gate);
     crate::task::joined(spawning.await).map_err(io::Error::other)?
+}
+
+/// Spawn a program that hands part of its work to the desktop, such as a sign-in that opens
+/// the browser, as [`spawn_now`] does but without a console window. It gets a hidden console
+/// of its own rather than none: a console program it starts, such as the `node` behind a
+/// `.cmd` shim, then shares that console and the pipes, where without a console
+/// (`DETACHED_PROCESS`) Windows would give it a new console and its output would go there.
+/// Its job keeps it and everything it starts from outliving its owner.
+pub(crate) async fn spawn_windowless(command: Command) -> io::Result<Child> {
+    admitted(spawn_gated_with(command, CREATE_NO_WINDOW)?).await
 }
 
 /// Resume every thread of a process created suspended; it has exactly one. Its handle is

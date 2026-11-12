@@ -874,6 +874,8 @@ if (command === "logout") {
   process.exit(0);
 }
 if (command !== "login") process.exit(2);
+// A sign-in nobody finishes, such as one a failed scenario left, ends on its own.
+setTimeout(() => process.exit(1), 120000);
 const finish = () => {
   writeFileSync(signedIn, "claude.ai");
   say("Login successful.\\n");

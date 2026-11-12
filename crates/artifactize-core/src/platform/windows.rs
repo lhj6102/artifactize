@@ -26,6 +26,7 @@ use windows_sys::Win32::{
 pub(crate) use process::{
     Child, hide_console_window, kill_saved_group, kill_saved_session, process_start_time,
     running_process_start_time, spawn_detached, spawn_gated, spawn_now, spawn_run, spawn_watched,
+    spawn_windowless,
 };
 pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
