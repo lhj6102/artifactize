@@ -176,7 +176,7 @@
     <div class="error" role="alert">{form.error}</div>
   {/if}
   <div class="submit">
-    <button class="button primary" disabled={review.busy !== null} onclick={onsubmit}>Submit {form.verdict}</button>
+    <button class="button primary" disabled={review.busy !== null} onclick={onsubmit}>Submit {form.verdict} <kbd aria-hidden="true">Ctrl+S</kbd></button>
   </div>
 </div>
 

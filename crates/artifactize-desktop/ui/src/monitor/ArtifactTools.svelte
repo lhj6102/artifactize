@@ -56,10 +56,13 @@
 </div>
 
 <style>
+  /* Each section after the neighbours and evals is opened above by a group line. */
   .tools,
-  .log {
+  section.tools + :global(.logbox) {
     min-width: 0;
-    padding: 0 var(--pad) 10px;
+    margin: 0 var(--pad);
+    padding: 8px 0 10px;
+    border-top: 1px solid var(--line-group);
   }
   /* A section label: 11px uppercase in secondary ink. */
   h4 {

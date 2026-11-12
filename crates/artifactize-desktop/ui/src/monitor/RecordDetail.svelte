@@ -104,7 +104,12 @@
     </div>
   {:else if artifact}
     <div class="shown card">
-      {#each pick(["Path"]) as field (field.key)}<p class="line muted">{field.value}</p>{/each}
+      {#each pick(["Path"]) as field (field.key)}
+        <section class="block path">
+          <h3>Path</h3>
+          <p class="line muted">{field.value}</p>
+        </section>
+      {/each}
       {#if debugFields.length > 0 || waits.length > 0}
         <section class="block">
           <button class="fold" aria-expanded={debug} onclick={() => (debug = !debug)}>{debug ? "▾" : "▸"} Debug</button>
@@ -273,7 +278,8 @@
   .block {
     margin-bottom: 10px;
   }
-  .block + .block {
+  .block + .block,
+  .card > .block:first-child.path {
     padding-top: 8px;
     border-top: 1px solid var(--line-group);
   }
