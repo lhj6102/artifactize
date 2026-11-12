@@ -1,7 +1,7 @@
 # Introduction checklist
 
 - **W-INTRO-SENTENCE**: The first headline is the exact project sentence:
-  “Build together on an Artifact Graph.”
+  “Artifactize: Evaluation-driven development for people and AI agents.”
 - **W-INTRO-FIRST-READER**: A first-time reader can understand what the project does
   and why it helps without already knowing the project.
 - **W-INTRO-PLAIN-LANGUAGE**: Use language general readers understand, not language

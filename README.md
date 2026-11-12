@@ -9,7 +9,7 @@ English · [한국어](assets/readme/README.kr.md)
 
 Homepage: [artifactize.dev](https://artifactize.dev)
 
-# Build together on an Artifact Graph.
+# Artifactize: Evaluation-driven development for people and AI agents.
 
 Artifactize checks your project piece by piece, from code and documents to images and the
 running app, with tests, AI reviews and people's sign-offs. It remembers every result, so

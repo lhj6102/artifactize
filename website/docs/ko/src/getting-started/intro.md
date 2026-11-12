@@ -1,6 +1,6 @@
 # Artifactize {#artifactize}
 
-Build together on an Artifact Graph.
+Evaluation-driven development for people and AI agents.
 
 artifactize는 여러분과 팀원이 프로젝트의 각 부분을 리뷰하되, 바뀌지 않은 작업은
 다시 검사하지 않도록 도와줍니다. **Artifact**는 리뷰할 수 있는 작업 단위입니다.
