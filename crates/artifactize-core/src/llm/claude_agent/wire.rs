@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::types::{ClaudeMessageId, ClaudeToolUseId};
+use crate::types::{ClaudeMessageId, ClaudeRequestId, ClaudeToolUseId};
 
 /// One line from Claude Code.
 #[derive(Debug, Deserialize)]
@@ -13,7 +13,7 @@ use crate::types::{ClaudeMessageId, ClaudeToolUseId};
 pub enum Line {
     /// Claude Code asks the host something: here, a message for the host's MCP server.
     ControlRequest {
-        request_id: String,
+        request_id: ClaudeRequestId,
         request: ControlRequest,
     },
     /// The answer to a request the host sent: here, `initialize`.
@@ -96,12 +96,12 @@ pub struct CallParams {
 #[serde(tag = "subtype", rename_all = "snake_case")]
 pub enum ControlResponse {
     Success {
-        request_id: String,
+        request_id: ClaudeRequestId,
         #[serde(default)]
         response: Option<Initialized>,
     },
     Error {
-        request_id: String,
+        request_id: ClaudeRequestId,
         #[serde(default)]
         error: String,
     },
@@ -482,7 +482,7 @@ pub fn user(text: &str) -> Value {
 }
 
 /// The answer to an MCP control request: the server's JSON-RPC `reply`.
-pub fn mcp_reply(request_id: &str, reply: Value) -> Value {
+pub fn mcp_reply(request_id: &ClaudeRequestId, reply: Value) -> Value {
     json!({
         "type": "control_response",
         "response": {"subtype": "success", "request_id": request_id, "response": {"mcp_response": reply}},
@@ -490,7 +490,7 @@ pub fn mcp_reply(request_id: &str, reply: Value) -> Value {
 }
 
 /// The refusal of a control request artifactize does not serve.
-pub fn refusal(request_id: &str, error: &str) -> Value {
+pub fn refusal(request_id: &ClaudeRequestId, error: &str) -> Value {
     json!({
         "type": "control_response",
         "response": {"subtype": "error", "request_id": request_id, "error": error},

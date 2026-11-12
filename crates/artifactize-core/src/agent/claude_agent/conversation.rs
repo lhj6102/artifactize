@@ -21,7 +21,7 @@ use crate::{
         },
         delivery::Sink,
     },
-    types::{ClaudeMessageId, ClaudeToolUseId, DeliveryBlock},
+    types::{ClaudeMessageId, ClaudeRequestId, ClaudeToolUseId, DeliveryBlock},
 };
 
 /// The text of one content block while it streams.
@@ -200,7 +200,7 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
     /// Serve a control request: a message for artifactize's MCP server.
     async fn control(
         &mut self,
-        request_id: &str,
+        request_id: &ClaudeRequestId,
         request: wire::ControlRequest,
     ) -> Result<(), Failure> {
         let wire::ControlRequest::McpMessage {

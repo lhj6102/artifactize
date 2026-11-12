@@ -5,6 +5,7 @@ use owned_run::{RunChild, Watcher};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 use serde_json::{Value, json};
@@ -356,8 +357,7 @@ fn diagnostic_fixture_releases_detached_processes_before_removal_on_drop_and_unw
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         let owner = Watcher::new(owner);
         support::os::wait_until(Duration::from_secs(10), || {
             !fixture.records("call").is_empty()
@@ -439,8 +439,7 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         let mut owner = Watcher::new(owner);
         support::os::wait_until(Duration::from_secs(10), || {
             !fixture.records("call").is_empty()
@@ -535,8 +534,7 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         let mut owner = Watcher::new(owner);
         let kind = if stop { "stop" } else { "call" };
         support::os::wait_until(Duration::from_secs(10), || {
@@ -710,8 +708,7 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .launch();
     let owner = Watcher::new(owner);
     support::os::wait_until(Duration::from_secs(10), || {
         !fixture.records("call").is_empty()
@@ -760,8 +757,7 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .launch();
     let mut owner = Watcher::new(owner);
     fs::write(fixture.log().join("owner"), owner.id().to_string()).unwrap();
     support::os::wait_until(Duration::from_secs(10), || {

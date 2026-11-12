@@ -10,6 +10,7 @@ mod order;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 use std::{
@@ -618,8 +619,7 @@ fn concurrent_sends_take_turns_in_one_thread() {
                         &["session", "send", &id, message],
                     )
                     .stdout(Stdio::piped())
-                    .spawn()
-                    .unwrap(),
+                    .launch(),
             )
         })
         .collect();

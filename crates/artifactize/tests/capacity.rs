@@ -7,6 +7,7 @@ use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 use std::{
@@ -127,8 +128,7 @@ impl Fixture {
             )
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         Child::new(child, &self.state(), repo)
     }
 
@@ -341,8 +341,7 @@ async fn a_slot_waiter_finishes_by_reusing_a_forced_producers_completed_result()
         )
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .launch();
     let producer = Child::new(child, &fixture.state(), &repo);
     wait_until(|| fixture.active.load(Ordering::SeqCst) == 1);
     let waiter = fixture.spawn(&repo, &["--jobs", "1"]);
