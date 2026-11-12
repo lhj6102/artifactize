@@ -236,7 +236,9 @@ Detail, on the eval's tab for an eval, and centres the Artifact in the graph lef
 Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
 click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
 graph too large to show their names. A part drawn inside several Artifacts is listed once,
-and opening it centres its first copy.
+and opening it centres its first copy. A part inside a minimized Artifact stays hidden:
+opening it opens its Detail and centres and highlights the minimized Artifact instead;
+expand that one to see the part on the graph.
 
 ### Detail
 
