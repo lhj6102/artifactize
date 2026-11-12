@@ -234,7 +234,7 @@ it("keeps Close alone in the header on a Human review's tab, the review showing 
     review: () => reviewing, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onopen: vi.fn(), onback, ongone: vi.fn(),
   });
   await screen.findByText("REVIEW (yours)");
-  const header = screen.getByRole("heading", { name: "Human review" }).parentElement!;
+  const header = screen.getByRole("heading", { name: "app/test · Sign-off" }).parentElement!;
   expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close Esc"]);
   expect(screen.getAllByRole("button", { name: /Close/ })).toHaveLength(1);
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));

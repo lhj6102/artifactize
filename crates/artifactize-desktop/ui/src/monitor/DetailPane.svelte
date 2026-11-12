@@ -159,8 +159,8 @@
   }
 </script>
 
-<!-- The title names what the tab shows: the Artifact on its own tab, the eval on an eval's tab, the Human review on a Human eval's; the chip path keeps the Artifact's name on every tab. -->
-<Panel title={human ? "Human review" : (detail?.title ?? "Detail")} wholeTitle focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
+<!-- The title names what the tab shows, the Artifact's name whole in it: the Artifact on its own tab, `{Artifact}/{eval} · {title}` on an eval's tab, a Human eval's included. -->
+<Panel title={detail?.title ?? "Detail"} wholeTitle focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
   {#snippet beside()}
     <!-- An Artifact's Detail, on any of its tabs, stars the Artifact. -->
     {#if tabbed && row && branch}<ArtifactStar branch={branch.key} artifact={row.name} />{/if}
