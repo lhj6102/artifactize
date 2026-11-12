@@ -122,6 +122,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning 
 [evals.follows-write-in-korean.payload]
 instruction = """
 Read {rules-write-in-korean}. Read index.html and site.js of {docs-landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Artifactize: Evaluation-driven development for people and AI agents." stays in English by design, and "Artifact Graph" is the product's name for the graph.
+The How it works section says "evaluations" in English, so its Korean says 평가 there by the owner's choice, not 검사.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as
 the English is reviewed elsewhere. Use the list, glob, grep and read tools of {docs-landing}; tool paths are Artifact-relative.
