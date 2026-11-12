@@ -7,7 +7,7 @@
 //! when the browser did not, and then waits until the browser returns to it or the code that
 //! URL's page shows is written to its input.
 
-use std::{io, time::Duration};
+use std::{io, process::ExitStatus, time::Duration};
 
 use serde::Deserialize;
 use tokio::{
@@ -101,14 +101,14 @@ async fn ask(args: &[&str]) -> Result<Option<process::Output>, String> {
 pub async fn status() -> Status {
     match ask(&["auth", "status", "--json"]).await {
         Ok(None) => Status::Missing,
-        Ok(Some(output)) => read_status(&output.stdout, &output.stderr, output.status.code()),
+        Ok(Some(output)) => read_status(&output.stdout, &output.stderr, &output.status),
         Err(error) => Status::Failed { error },
     }
 }
 
 /// What `claude auth status --json` printed. It prints its JSON also when signed out, then
 /// with exit status 1.
-fn read_status(stdout: &[u8], stderr: &[u8], code: Option<i32>) -> Status {
+fn read_status(stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> Status {
     match serde_json::from_slice::<Reported>(stdout) {
         Ok(reported) if reported.logged_in => Status::SignedIn {
             method: reported
@@ -119,21 +119,24 @@ fn read_status(stdout: &[u8], stderr: &[u8], code: Option<i32>) -> Status {
         },
         Ok(_) => Status::SignedOut,
         Err(_) => Status::Failed {
-            error: failure("could not report its sign-in", stdout, stderr, code),
+            error: failure("could not report its sign-in", stdout, stderr, ended),
         },
     }
 }
 
-/// Why Claude Code failed to `doing`: what it wrote on stderr, else on stdout, else its exit.
-fn failure(doing: &str, stdout: &[u8], stderr: &[u8], code: Option<i32>) -> String {
+/// Why Claude Code failed to `doing`: what it wrote on stderr, else on stdout, else how it
+/// ended.
+fn failure(doing: &str, stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> String {
     let said = [stderr, stdout]
         .into_iter()
         .map(|bytes| shown(&String::from_utf8_lossy(bytes)))
         .find(|text| !text.is_empty());
-    match (said, code) {
-        (Some(said), _) => format!("Claude Code {doing}: {said}"),
-        (None, Some(code)) => format!("Claude Code {doing}; it exited with status {code}."),
-        (None, None) => format!("Claude Code {doing}; it was stopped."),
+    match said {
+        Some(said) => format!("Claude Code {doing}: {said}"),
+        None => format!(
+            "Claude Code {doing}; it ended with {}.",
+            platform::exit_description(ended)
+        ),
     }
 }
 
@@ -147,7 +150,7 @@ pub async fn logout() -> Result<(), String> {
             "could not sign out",
             &output.stdout,
             &output.stderr,
-            output.status.code(),
+            &output.status,
         ))
     }
 }
@@ -263,7 +266,7 @@ pub async fn login_with(
     if exited.success() {
         Ok(())
     } else {
-        Err(failure("could not sign in", &said, &errors, exited.code()))
+        Err(failure("could not sign in", &said, &errors, &exited))
     }
 }
 
@@ -303,7 +306,7 @@ mod tests {
     fn a_signed_in_status_names_the_method_and_plan_but_not_the_account() {
         let stdout = br#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"a@example.com","orgName":"A","subscriptionType":"max"}"#;
         assert_eq!(
-            read_status(stdout, b"", Some(0)),
+            read_status(stdout, b"", &ExitStatus::default()),
             Status::SignedIn {
                 method: "claude.ai".into(),
                 plan: Some("max".into())
@@ -312,15 +315,22 @@ mod tests {
     }
 
     #[test]
-    fn a_signed_out_status_is_read_from_its_json_despite_the_exit_status() {
+    fn a_signed_out_status_is_read_from_its_json() {
         let stdout = br#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#;
-        assert_eq!(read_status(stdout, b"", Some(1)), Status::SignedOut);
+        assert_eq!(
+            read_status(stdout, b"", &ExitStatus::default()),
+            Status::SignedOut
+        );
     }
 
     #[test]
     fn an_unreadable_status_is_claude_codes_own_error() {
         assert_eq!(
-            read_status(b"", b"error: unknown command 'auth'\n", Some(1)),
+            read_status(
+                b"",
+                b"error: unknown command 'auth'\n",
+                &ExitStatus::default()
+            ),
             Status::Failed {
                 error: "Claude Code could not report its sign-in: error: unknown command 'auth'"
                     .into()

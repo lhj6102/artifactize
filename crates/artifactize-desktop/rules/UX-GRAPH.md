@@ -196,8 +196,8 @@ that makes the transition happen and checks where it leads.
 | E-PANE-SELECT | Pane | click a branch's name | that branch selected and expanded, its newest entry (the running Run, else Current) shown in the Main area in its pill |
 | E-PANE-STAR | Pane | click a branch's star | the branch starred, or its star taken away; starred branches listed first, each group in the search's order, kept for the next monitor |
 | E-PANE-CHIP | Pane, a branch expanded | click an entry of its timeline | that entry selected and shown in the Main area (a Run as Run, the Current as Current), in its pill |
-| E-PANE-FOLD | Pane | click a branch's chevron | the branch expanded to its timeline, or folded back to its newest Run's status; nothing chosen |
-| E-PANE-OLDER | Pane, a branch expanded with older Runs | click Older runs | older Runs listed below the oldest; nothing chosen |
+| E-PANE-FOLD | Pane | click a branch's chevron | the branch expanded to its timeline, or folded back to its newest Run's status; the selection and the main area as they were |
+| E-PANE-OLDER | Pane, a branch expanded with older Runs | click Older runs | older Runs listed below the oldest; the selection and the main area as they were |
 | E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches, the timelines of expanded branches and then the Waiting stack; a branch shows its newest entry in the Main area, a timeline entry shows itself, a waiting review is only selected; the list scrolls to show the selected entry |
 | E-MON-EXPAND | Pane entries focused, a branch or a timeline entry selected | → or ← | → expands a folded branch, or enters an expanded one's timeline on its newest entry; ← steps from a timeline entry back to its branch, or folds an expanded branch; what is shown stays unless an entry is entered |
 | E-MON-RUNS-MOVE | Pane entries focused, a timeline entry selected | ↓ or ↑ | the next or previous entry shown in the Main area and in its pill, the list scrolling to show it |
