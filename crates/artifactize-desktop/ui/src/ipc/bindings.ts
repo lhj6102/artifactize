@@ -749,11 +749,13 @@ export type PlanLine = {
 
 export type Profile = "runtime" | "agent" | "human";
 
-/**  A built-in provider, as the CLI names it. */
-export type Provider = "codex" | "claudeAgent" | "openai" | "anthropic" | "gemini";
+/**  A built-in provider, by the name the CLI and an eval's `backend` give it. */
+export type Provider = "codex" | "claude-agent" | "openai" | "anthropic" | "gemini";
 
 /**  The providers of this machine. */
 export type Providers = {
+	/**  The built-in providers, in the order Settings lists them. */
+	builtin: Provider[],
 	keys: KeyStatus[],
 	custom: CustomProvider[],
 };

@@ -329,7 +329,7 @@ Settings는 화면 위에 모달 창으로 열립니다. Esc를 누르거나 **C
 다시 불러오며, 팔레트의 **Refresh settings** 명령으로도 다시 불러올 수 있습니다. 탭은
 **Providers**, **Remote**, **Limits** 세 개이며, 탭 목록에 초점이 있을 때 ←와 →로 차례로 오갈 수 있습니다.
 
-**Providers** 탭 왼쪽에는 기본 provider(Codex, OpenAI, Anthropic, Gemini)가 차례로 나오고, 그 아래에
+**Providers** 탭 왼쪽에는 기본 provider(Codex, Claude Agent, OpenAI, Anthropic, Gemini)가 차례로 나오고, 그 아래에
 직접 추가한 커스텀 provider의 이름과 **+ Custom provider**가 나옵니다. 하나를 고르면 오른쪽에 그
 provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 수 있습니다.
 
@@ -343,6 +343,9 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
   전체 `http://localhost:1455/auth/callback?code=…` URL을 복사해
   Settings에 붙여 넣은 다음 **Finish sign-in**을 고르세요.
   로그아웃하면 로컬 토큰이 삭제되며, 서버에서 토큰이 폐기됐는지 확인할 수 없으면 경고합니다.
+- **Claude Agent:** Claude Code는 터미널에서 `claude auth login`으로 직접 로그인하며, artifactize는
+  그 로그인 정보를 읽지 않는다고 안내합니다. **List models**를 누르면 Claude Code가 그 로그인으로
+  제공하는 모델이 나옵니다([Claude Agent](../features/agent.md#claude-agent)).
 - **OpenAI, Anthropic, Gemini:** 키가 환경 변수에서 오는지, 저장되어 있는지, 없는지를 보여 주며,
   값 자체는 보여 주지 않습니다. 키를 붙여 넣고 **Save key**를 누르면 `artifactize login`처럼
   저장하고, **Remove saved key**로 지웁니다. 환경 변수가 설정되어 있으면 그 키를 먼저 씁니다. 이때

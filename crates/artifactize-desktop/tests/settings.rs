@@ -198,6 +198,8 @@ fn settings_command_probe() {
     };
 
     // API keys: where each comes from, never its value.
+    // Every built-in provider, in the library's order, with the name `backend` takes.
+    let builtin = json!(["codex", "claude-agent", "openai", "anthropic", "gemini"]);
     let keys = |gemini: &str| {
         json!([
             {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
@@ -206,7 +208,7 @@ fn settings_command_probe() {
         ])
     };
     let providers = call("providers_list", json!({})).unwrap();
-    assert_eq!(providers, json!({"keys": keys("absent"), "custom": []}));
+    assert_eq!(providers, json!({"builtin": builtin, "keys": keys("absent"), "custom": []}));
     call(
         "provider_key_save",
         json!({"provider": "gemini", "key": SAVED_KEY}),

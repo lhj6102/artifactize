@@ -153,7 +153,7 @@ export const scenarios: Scenario[] = [
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
       await browser.waitUntil(async () => (await listed(browser)).length === 5, { timeout: 15000, timeoutMsg: "the providers are listed" });
-      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"]);
+      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"]);
       await choose(browser, "OpenAI");
       await browser.waitUntil(async () => (await keyText(browser, "openai")) === "Set from OPENAI_API_KEY", { timeout: 15000, timeoutMsg: "the OpenAI key is set from its variable" });
       // A vertical list on the left; the chosen provider's setup on its right.
@@ -368,7 +368,7 @@ Review the agent folder."""
         await browser.$("#custom-url").click();
         await typeText(browser, root);
       });
-      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
+      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
       assert.deepEqual(await custom(), {
         "claude-local": { kind: "endpoint", api: "anthropic", url: root, key: false },
         local: { kind: "endpoint", api: "openai-chat", url, key: true },

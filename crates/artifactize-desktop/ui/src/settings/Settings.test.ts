@@ -43,6 +43,7 @@ function backend(options: {
     switch (cmd) {
       case "providers_list":
         return {
+          builtin: ["codex", "claude-agent", "openai", "anthropic", "gemini"],
           keys: Object.keys(VARIABLES).map((provider) => ({
             provider: provider as Provider,
             variable: VARIABLES[provider],
@@ -124,13 +125,16 @@ describe("Settings", () => {
     backend({});
     renderHosted(Settings, { active: true });
     const list = await screen.findByRole("navigation", { name: "Providers" });
-    expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-      "Codex (ChatGPT)",
-      "OpenAI",
-      "Anthropic",
-      "Gemini",
-      "+ Custom provider",
-    ]);
+    await waitFor(() =>
+      expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+        "Codex (ChatGPT)",
+        "Claude Agent",
+        "OpenAI",
+        "Anthropic",
+        "Gemini",
+        "+ Custom provider",
+      ]),
+    );
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
     await fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
     await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
@@ -314,6 +318,17 @@ describe("Settings", () => {
     expect(calls.filter((call) => call.cmd === "provider_custom_save").map((call) => call.args.name)).toEqual([""]);
   });
 
+  it("says Claude Code signs in on its own and lists Claude Agent's models by its backend name", async () => {
+    const calls = backend({});
+    renderHosted(Settings, { active: true });
+    await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
+    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/claude auth login/);
+    expect(screen.queryByLabelText("API key")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "List models" }));
+    await screen.findByText("GPT Fake");
+    expect(calls.filter((call) => call.cmd === "models_list").at(-1)?.args).toEqual({ provider: "claude-agent" });
+  });
+
   it("lists models and shows the CLI's error for a provider without its key", async () => {
     backend({});
     renderHosted(Settings, { active: true });
@@ -362,7 +377,7 @@ describe("Settings", () => {
     mockIPC((cmd) => {
       switch (cmd) {
         case "providers_list":
-          return { keys: [], custom: [] };
+          return { builtin: [], keys: [], custom: [] };
         case "codex_status":
           return { state: "absent" };
         case "remote_status":

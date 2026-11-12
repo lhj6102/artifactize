@@ -385,7 +385,8 @@ information each time it opens; the palette's **Refresh settings** command reloa
 It has three tabs, **Providers**, **Remote** and **Limits**; while the tab list has focus, ← and →
 cycle through them.
 
-**Providers** lists the built-in providers on the left (Codex, OpenAI, Anthropic, Gemini),
+**Providers** lists the built-in providers on the left (Codex, Claude Agent, OpenAI, Anthropic,
+Gemini),
 then your custom providers by name, then **+ Custom provider**. Choosing one shows its setup
 on the right, with **List models** for the models it offers.
 
@@ -400,6 +401,9 @@ on the right, with **List models** for the models it offers.
   address bar after a failed load, or DevTools → Network if it keeps loading,
   paste it in Settings, then choose **Finish sign-in**.
   Sign-out removes local tokens and warns when server revocation cannot be confirmed.
+- **Claude Agent:** says that Claude Code signs in on its own, with `claude auth login` in a
+  terminal, and that artifactize never reads that login. **List models** shows the models
+  Claude Code offers to it ([Claude Agent](../features/agent.md#claude-agent)).
 - **OpenAI, Anthropic, Gemini:** shows whether the key is set from its environment
   variable, saved, or not set, never its value. Paste a key and choose **Save key** to save
   it, as `artifactize login` does; **Remove saved key** forgets it. A set environment
