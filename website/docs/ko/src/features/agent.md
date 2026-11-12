@@ -273,7 +273,7 @@ artifactize verify --all --wait
 - **모델.** `models claude-agent`는 모델을 호출하지 않고, Claude Code가 지금 로그인으로 제공하는
   모델을 `model`에 쓰는 모델 ID로 나열합니다. 프로필에는 목록에 없더라도 Claude Code가 받는 모델을
   지정할 수 있습니다.
-- **follow-up.** 다른 백엔드처럼 `session send`나 데스크톱 앱에서 [follow-up](#saved-conversations)을
+- **follow-up.** 다른 백엔드처럼 `session send`로 [follow-up](#saved-conversations)을
   보낼 수 있습니다. 리뷰어는 리뷰 대화를 바탕으로 일반 텍스트로 답하며, 필요하면 Artifact를 다시
   읽습니다. 기록된 판정은 바뀌지 않습니다.
 

@@ -315,8 +315,8 @@ artifactize verify --all --wait
 - **Models.** `models claude-agent` lists the models Claude Code offers to its login,
   each under the model ID that `model` takes, without a model call. A profile may name
   any model Claude Code accepts, listed or not.
-- **Follow-ups.** Ask a [follow-up](#saved-conversations) with `session send` or in the
-  desktop app, as on every backend. The reviewer answers in plain text from the review's
+- **Follow-ups.** Ask a [follow-up](#saved-conversations) with `session send`, as on
+  every backend. The reviewer answers in plain text from the review's
   conversation and may read the Artifacts again; the recorded verdict stays.
 
 ## Custom providers
