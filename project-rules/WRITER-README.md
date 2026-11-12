@@ -5,7 +5,7 @@ The root README also follows the [introduction checklist](WRITER-INTRODUCTION.md
 - **R-FLOW**: In this order: badges, including a download badge for each operating system's
   app, the language switcher and the homepage link; the
   exact project sentence as the first headline; the introduction (R-INTRO); the demo
-  (R-DEMO); the quick start (R-QUICKSTART); the highlights (R-HIGHLIGHTS); real product
+  (R-DEMO); the quick start (R-QUICKSTART); how it works (R-HOW); the highlights (R-HIGHLIGHTS); real product
   screenshots (R-REAL-SCREENS); then short Learn more links to the documentation, the
   community and the license.
 - **R-INTRO**: Exactly two short paragraphs: the first says what Artifactize does for the
@@ -23,6 +23,12 @@ The root README also follows the [introduction checklist](WRITER-INTRODUCTION.md
      what the agent does with it and what the reader gets back.
 - **R-SKILL**: The skill connection is shown in use: what the plugin gives the coding agent,
   how to add it, and the command the reader types first.
+- **R-HOW**: A How it works section holding exactly these three numbered lines, in this
+  order and wording:
+  1. Evaluations define the result; AI agents iterate until it passes.
+  2. Tests, AI agents and people are equal evaluators, each with its own strengths.
+  3. Each evaluated result becomes part of the next evaluation, all the way to the final
+     result.
 - **R-HIGHLIGHTS**: Who it is for, the principles and the features, concise and concrete,
   mostly as a table or short lists. The example Artifact Graph, the English image rendered
   in assets/others/graph-example.en.png, shows what an Artifact Graph is.
