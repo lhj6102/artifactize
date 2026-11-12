@@ -32,7 +32,7 @@
         {#if release.failure}<p class="failure">{release.failure}</p>{/if}
       {/if}
       <div class="dialog-actions">
-        <Dialog.Close class="button">Close</Dialog.Close>
+        <Dialog.Close class="button">Close <kbd aria-hidden="true">Esc</kbd></Dialog.Close>
       </div>
     </Dialog.Content>
   </Dialog.Portal>

@@ -317,9 +317,6 @@
   .error {
     color: var(--red);
     white-space: pre-wrap;
-    border: 1px solid var(--red);
-    border-radius: var(--radius-control);
-    padding: 8px 10px;
     font-size: var(--text-small);
   }
 </style>

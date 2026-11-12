@@ -306,7 +306,7 @@
     border: 0;
     background: none;
     color: var(--ink-2);
-    font-size: 13px;
+    font-size: var(--text-body);
     line-height: 1.4;
     cursor: pointer;
     opacity: 0.55;

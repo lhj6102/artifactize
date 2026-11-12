@@ -93,6 +93,10 @@ kbd {
   border-color: var(--line-input);
   background: color-mix(in srgb, var(--surface-group) 70%, var(--surface-raised));
 }
+.button.primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 88%, var(--ink));
+}
 .button:disabled {
   opacity: 0.45;
   cursor: default;
@@ -322,7 +326,6 @@ kbd {
   color: var(--ink);
   font-weight: 600;
   background: var(--surface-group);
-  border-color: var(--line-input);
 }
 .chip:focus-visible {
   outline: 2px solid var(--focus);

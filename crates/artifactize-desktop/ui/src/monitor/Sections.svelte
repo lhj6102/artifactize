@@ -52,7 +52,7 @@
       </ul>
       {#if !pending && pendingCount > 0}
         <button class="link" onclick={onpending}>
-          {pendingCount} pending evals · w shows
+          ▸ {pendingCount} pending evals · w shows
         </button>
       {/if}
     {:else if section.name !== "technical" || technical}

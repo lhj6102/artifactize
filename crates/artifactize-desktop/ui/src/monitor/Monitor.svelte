@@ -569,7 +569,7 @@
   }
   .input {
     width: 100%;
-    height: 28px;
+    height: var(--control);
     font: inherit;
     padding: 0 8px;
     border: 1px solid var(--line-input);

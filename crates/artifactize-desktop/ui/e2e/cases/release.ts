@@ -93,7 +93,7 @@ async function follow(browser: WebdriverIO.Browser, data: Site, path: string): P
 }
 
 async function closeByButton(browser: WebdriverIO.Browser): Promise<void> {
-  await dialog(browser).$("button=Close").click();
+  await dialog(browser).$("button*=Close").click();
   await browser.waitUntil(closed(browser), { timeout: 15000, timeoutMsg: "the dialog closes by Close" });
   assert.equal(await notice(browser).isExisting(), true, "the notice stays in the header after Close");
 }

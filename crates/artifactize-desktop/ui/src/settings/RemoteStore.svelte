@@ -42,31 +42,22 @@
 </section>
 <section aria-labelledby="remote-status-title" aria-busy={s.remotePending > 0 || s.working}>
   <h2 id="remote-status-title">Status</h2>
-  <dl class="facts" aria-label="Remote store">
+  <!-- One line in its tone: the store, the share level, the token's source, and the principal
+       or the error. -->
+  <p class="status" aria-label="Remote store">
     {#if !s.remote}
-      <dt>Status</dt>
-      <dd>…</dd>
+      …
     {:else if s.remote.state === "unconfigured"}
-      <dt>Status</dt>
-      <dd data-testid="remote-status">No remote review store is configured.</dd>
+      <span class="muted" data-testid="remote-status">No remote review store is configured.</span>
+    {:else if s.remote.connection.state === "signedIn"}
+      <span class="notice">Signed in to <span data-testid="remote-status">{s.remote.url}</span> as
+        <span data-testid="remote-principal">{s.remote.connection.principal} (scopes: {s.remote.connection.scopes.join(", ")})</span>
+        · share {s.remote.share} · token {s.remote.tokenSource}</span>
     {:else}
-      <dt>Remote</dt>
-      <dd data-testid="remote-status">{s.remote.url}</dd>
-      <dt>Share</dt>
-      <dd>{s.remote.share}</dd>
-      <dt>Token</dt>
-      <dd>{s.remote.tokenSource}</dd>
-      <dt>Reachable</dt>
-      <dd>{s.remote.connection.state === "unreachable" ? "no" : "yes"}</dd>
-      {#if s.remote.connection.state === "signedIn"}
-        <dt>Principal</dt>
-        <dd data-testid="remote-principal">{s.remote.connection.principal} (scopes: {s.remote.connection.scopes.join(", ")})</dd>
-      {:else}
-        <dt>Error</dt>
-        <dd class="error">{s.remote.connection.error}</dd>
-      {/if}
+      <span class="error"><span data-testid="remote-status">{s.remote.url}</span> · share {s.remote.share} · token {s.remote.tokenSource} ·
+        {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</span>
     {/if}
-  </dl>
+  </p>
   {#if s.remoteNotice}<p class="notice" role="status">{s.remoteNotice}</p>{/if}
   {#if s.remoteError}<p class="error" role="alert">{s.remoteError}</p>{/if}
   {#if s.remote?.state === "configured"}
@@ -87,5 +78,9 @@
   }
   .spacer {
     flex: 1;
+  }
+  .status {
+    margin: 0 0 6px;
+    overflow-wrap: anywhere;
   }
 </style>

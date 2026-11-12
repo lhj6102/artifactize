@@ -35,19 +35,23 @@
         Claude Code failed: {s.claude.error}
       {/if}
     </dd>
+    {#if s.claudePrompt}
+      <dt>Sign-in</dt>
+      <dd class="warn">in progress · Claude Code opened the browser</dd>
+    {/if}
   </dl>
   {#if s.claudePrompt}
     <div class="pending" role="status">
-      <p>Claude Code opened the browser to sign in. If it did not open, open this URL:</p>
-      <p class="url"><code>{s.claudePrompt.url}</code></p>
+      <p class="muted">If the browser did not open, open this URL:</p>
+      <pre class="url">{s.claudePrompt.url}</pre>
       <form onsubmit={paste}>
         <label for="claude-agent-code">When the page gives a code, paste it here</label>
         <div class="row">
           <input id="claude-agent-code" class="input" bind:value={s.claudeCode} autocomplete="off" spellcheck="false" />
           <button class="button" type="submit" disabled={!s.claudeCode.trim()}>Finish sign-in</button>
+          <button class="button" type="button" onclick={() => s.cancelClaudeSignIn()}>Cancel sign-in</button>
         </div>
       </form>
-      <button class="button" onclick={() => s.cancelClaudeSignIn()}>Cancel sign-in</button>
     </div>
   {/if}
   <div class="row">
