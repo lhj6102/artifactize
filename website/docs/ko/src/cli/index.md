@@ -59,7 +59,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽습니다 | `Saved the PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":true}`입니다 | 0 |
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도합니다. 읽기 전용 인증 파일은 건드리지 않습니다 | `Signed out of Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}`입니다 | 로컬 로그아웃 뒤 0 |
 | `logout openai\|anthropic\|gemini` | 저장한 키를 지웁니다. 변수는 건드리지 않습니다 | `Forgot the saved PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":false}`입니다 | 0 |
-| `login claude-agent` | Claude Code 자체 명령인 `claude auth login`을 실행합니다. 그 URL은 stderr에 출력하고, stdin에 붙여 넣은 코드는 Claude Code에 전달합니다 | `Claude Code is signed in with METHOD (PLAN).`이라고 출력합니다. JSON은 `{"provider":"claude-agent","signed_in":true}`입니다 | 0. `claude`가 없거나 Claude Code가 실패하면 2 |
+| `login claude-agent` | Claude Code 자체 명령인 `claude auth login`을 실행합니다. 그 URL은 stderr에 출력하고, stdin에 붙여 넣은 코드는 Claude Code에 전달합니다 | `Claude Code is signed in with METHOD (PLAN).`이라고 출력합니다. Claude Code가 요금제를 알려 주지 않으면 ` (PLAN)` 없이, 그 뒤 상태에 로그인 정보가 없으면 `Claude Code signed in.`이라고 출력합니다. JSON은 `{"provider":"claude-agent","signed_in":true}`입니다 | 0. `claude`가 없거나 Claude Code가 실패하면 2 |
 | `logout claude-agent` | Claude Code 자체 명령인 `claude auth logout`을 실행합니다 | `Signed out of Claude Code.`라고 출력합니다. JSON은 `{"provider":"claude-agent","signed_in":false}`입니다 | 0. `claude`가 없거나 Claude Code가 실패하면 2 |
 | `provider list` | | 기본 provider별 키 출처와 커스텀 provider 전체를 보여 줍니다. 키 값은 출력하지 않습니다. 형식은 텍스트 또는 JSON입니다 | 0 |
 | `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 선택 항목 `--key`(키는 stdin에서 읽습니다. 없으면 엔드포인트에 키가 없습니다) | `Saved custom provider NAME.`라고 출력합니다. JSON은 `{"provider":NAME,"saved":true}`입니다 | 0 |
