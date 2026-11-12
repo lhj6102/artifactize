@@ -12,7 +12,7 @@ import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { makeDirectory, nativePath, primaryModifier, readText, serveLoopbackHttp, writeText } from "../platform.ts";
+import { claudeCodeEnvironment, exists, httpGet, makeDirectory, nativePath, primaryModifier, readText, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const SAVED = "sk-e2e-saved-gemini-key";
@@ -125,7 +125,84 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
     },
   ),
-  // UX journeys: J-SET-PROVIDERS J-SET-CLAUDE-AGENT J-SET-KEY; UX edges: E-SET-PROVIDER E-SET-CLAUDE-AGENT E-SET-KEY E-SET-KEY-SAVE E-SET-KEY-REMOVE
+  // UX journey: J-SET-CLAUDE-AGENT; UX edges: E-SET-CLAUDE-AGENT E-SET-CLAUDE-AGENT-CHECK E-SET-CLAUDE-AGENT-LOGOUT
+  // E-SET-CLAUDE-AGENT-LOGIN E-SET-CLAUDE-AGENT-CANCEL E-SET-CLAUDE-AGENT-END E-SET-CLAUDE-AGENT-PASTE E-SET-CLAUDE-AGENT-RETURN
+  scenario(
+    "settings-claude-agent",
+    "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, refused, with a pasted code and by the browser returning",
+    async () => {
+      const fixture = createOutside();
+      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null };
+    },
+    async (browser, { fixture }) => {
+      const status = () => browser.$('[data-testid="claude-agent-status"]').getText();
+      const shows = (expected: string, why: string) =>
+        browser.waitUntil(async () => (await status()).trim() === expected && !(await browser.$("button=Cancel sign-in").isExisting()),
+          { timeout: 15000, timeoutMsg: why });
+      const signedIn = "Signed in · claude.ai · max";
+      const marker = nativePath(fixture.root, "signed-in");
+      /** Sign in with Claude Code; returns the loopback origin of the running `claude auth login`. */
+      async function begin(): Promise<string> {
+        await browser.$("button=Sign in with Claude Code").click();
+        await browser.$("#claude-agent-code").waitForExist({ timeout: 15000, timeoutMsg: "the sign-in waits for the browser or a code" });
+        const address = new URL(await browser.$(".pending .url code").getText());
+        assert.equal(address.pathname, "/oauth/authorize", "the URL Claude Code printed is shown");
+        // The shown origin is the running Claude Code's own.
+        assert.equal(await httpGet(`${address.origin}/alive`), 200);
+        return address.origin;
+      }
+      async function signOut() {
+        await browser.$("button=Sign out of Claude Code").click();
+        await shows("Not signed in", "Claude Code signs out");
+        assert.equal(exists(marker), false, "claude auth logout ran");
+      }
+
+      await openSettings(browser);
+      await choose(browser, "Claude Agent");
+      await shows("Not signed in", "Claude Code reports it is not signed in");
+      const explained = (await browser.$('[data-testid="claude-agent-sign-in"]').getText()).replace(/\s+/g, " ");
+      assert.ok(explained.includes("claude auth login") && explained.includes("never reads, copies or stores it"), explained);
+      assert.equal(await browser.$("#provider-key").isExisting(), false, "Claude Agent takes no key");
+
+      // Claude Code signed in elsewhere, in a terminal: Check again asks it again.
+      writeText(marker, "claude.ai");
+      assert.equal((await status()).trim(), "Not signed in");
+      await browser.$("button=Check again").click();
+      await shows(signedIn, "Check again shows Claude Code signed in");
+      await signOut();
+
+      // A cancelled sign-in stops Claude Code before it signs in.
+      const cancelled = await begin();
+      await browser.$("button=Cancel sign-in").click();
+      await shows("Not signed in", "the cancelled sign-in ends");
+      await browser.$("p*=Claude Code sign-in was cancelled.").waitForExist({ timeout: 15000 });
+      await browser.waitUntil(() => httpGet(`${cancelled}/alive`).then(() => false, () => true),
+        { timeout: 15000, timeoutMsg: "the cancelled Claude Code stops" });
+      assert.equal(exists(marker), false);
+
+      // A code Claude Code refuses ends its sign-in with Claude Code's own error.
+      await begin();
+      await fill(browser, "#claude-agent-code", "bad-code");
+      await browser.$("button=Finish sign-in").click();
+      await shows("Not signed in", "the refused sign-in ends");
+      await browser.$("p=Claude Code could not sign in: Login failed: That code was not accepted.").waitForExist({ timeout: 15000 });
+
+      // The code the sign-in page gives, pasted.
+      await begin();
+      await fill(browser, "#claude-agent-code", "good-code");
+      await browser.$("button=Finish sign-in").click();
+      await shows(signedIn, "the pasted code signs Claude Code in");
+      await browser.$("p=Claude Code signed in.").waitForExist({ timeout: 15000 });
+      await signOut();
+
+      // The browser returns to Claude Code.
+      const returned = await begin();
+      assert.equal(await httpGet(`${returned}/callback?code=e2e`), 200);
+      await shows(signedIn, "the browser's return signs Claude Code in");
+      await signOut();
+    },
+  ),
+  // UX journeys: J-SET-PROVIDERS J-SET-KEY; UX edges: E-SET-PROVIDER E-SET-KEY E-SET-KEY-SAVE E-SET-KEY-REMOVE
   scenario(
     "settings-keys",
     "settings: lists the providers on the left, shows where each key comes from without its value, saves and removes a key as the CLI sees it, and keeps a set variable first",
@@ -157,13 +234,6 @@ export const scenarios: Scenario[] = [
         timeout: 15000,
         timeoutMsg: "the providers are listed",
       });
-      // Claude Agent has no key here: Claude Code signs in on its own.
-      await choose(browser, "Claude Agent");
-      const signIn = browser.$('[data-testid="claude-agent-sign-in"]');
-      await signIn.waitForDisplayed({ timeout: 15000, timeoutMsg: "Claude Agent's sign-in is explained" });
-      const explained = await signIn.getText();
-      assert.ok(explained.includes("claude auth login") && explained.includes("never reads that login"), explained);
-      assert.equal(await browser.$("#provider-key").isExisting(), false, "Claude Agent takes no key");
       await choose(browser, "OpenAI");
       await browser.waitUntil(async () => (await keyText(browser, "openai")) === "Set from OPENAI_API_KEY", { timeout: 15000, timeoutMsg: "the OpenAI key is set from its variable" });
       // A vertical list on the left; the chosen provider's setup on its right.

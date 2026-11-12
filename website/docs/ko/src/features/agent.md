@@ -238,22 +238,28 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 
 ## Claude Agent {#claude-agent}
 
-`claude-agent` 백엔드는 내 [Claude Code](https://code.claude.com)로, Claude Code에 로그인된 계정
-그대로 리뷰합니다. Claude Pro나 Max 구독, API 키, 클라우드 계정 모두 됩니다.
+`claude-agent` 백엔드는 사용자의 [Claude Code](https://code.claude.com)를 통해 리뷰하며, Claude Code에
+로그인한 계정을 그대로 사용합니다. Claude Pro·Max 구독이나 API 키, 클라우드 계정으로 로그인한 Claude Code를
+사용할 수 있습니다.
 
 ```sh
-claude auth login                   # sign in to Claude Code, in a terminal
+artifactize login claude-agent      # runs Claude Code's own claude auth login
 artifactize models claude-agent     # the models Claude Code offers
 # Declare backend = "claude-agent", model = "claude-opus-5-5", reasoning = "high", then:
 artifactize verify --all --wait
 ```
 
-- **로그인.** Claude Code는 `claude auth login`으로 직접 로그인하고 `claude auth logout`으로
-  로그아웃합니다. artifactize는 그 로그인 정보를 읽거나 복사하거나 저장하지 않으며, Claude Code와
-  서비스 사이에 끼어들지도 않습니다. `login claude-agent`와 `logout claude-agent`는 이 사실만
-  알려 줍니다. `PATH`에 2.1.248 이상의 `claude`가 있어야 하며, 그보다 오래된 버전이면
-  `claude update`를 실행하라는 메시지와 함께 거부합니다. `doctor`는 `claude`를 실행하지 않고
-  위치만 보여 줍니다.
+- **로그인.** 로그인 정보는 Claude Code가 직접 보관합니다. `login claude-agent`와 데스크톱 앱의
+  **Settings → Providers → Claude Agent**는 Claude Code 자체 명령인 `claude auth login`을
+  실행합니다. Claude Code가 브라우저를 열고, 열리지 않았을 때 열 URL을 출력하며, 페이지에 나온
+  코드는 터미널이나 데스크톱 앱의 코드 입력란에 붙여 넣을 수 있습니다. 로그인은 Claude Code가
+  종료되면 끝나며(로그인 성공 또는 Claude Code의 오류), 10분이 지나면 멈춥니다.
+  `logout claude-agent`는 `claude auth logout`을 실행합니다. 데스크톱 앱은 `claude auth status`가
+  알려 주는 대로 로그인 방식과 요금제를 보여 주며, 계정 정보는 보여 주지 않습니다. artifactize는
+  로그인 정보를 읽거나 복사하거나 저장하지 않으며, Claude Code와 서비스 사이에 끼어들지도 않습니다.
+  직접 `claude auth login`으로 로그인해도 똑같이 쓸 수 있습니다. `PATH`에 2.1.248 이상의 `claude`가
+  있어야 하며, 그보다 오래된 버전이면 `claude update`를 실행하라는 메시지와 함께 거부합니다.
+  `doctor`는 `claude`를 실행하지 않고 위치만 보여 줍니다.
 - **리뷰.** 리뷰어는 eval에 선언한 Artifact 도구만 쓸 수 있으며, `max_tool_calls`, `max_tokens`,
   마감 시간도 다른 백엔드와 같습니다. 그 밖의 Claude Code 설정은 리뷰에 쓰이지 않습니다. Claude Code
   자체 도구, Claude Code 설정, 훅, `CLAUDE.md`, 메모리, 스킬, MCP 서버는 모두 빠지고, 리뷰 내용이 내
@@ -268,7 +274,7 @@ artifactize verify --all --wait
 - **모델.** `models claude-agent`는 모델을 호출하지 않고, Claude Code가 지금 로그인으로 제공하는
   모델을 `model`에 쓰는 모델 ID로 나열합니다. 프로필에는 목록에 없더라도 Claude Code가 받는 모델을
   지정할 수 있습니다.
-- **follow-up.** 다른 백엔드처럼 `session send`나 데스크톱 앱에서 [follow-up](#saved-conversations)을
+- **follow-up.** 다른 백엔드처럼 `session send`로 [follow-up](#saved-conversations)을
   보낼 수 있습니다. 리뷰어는 리뷰 대화를 바탕으로 일반 텍스트로 답하며, 필요하면 Artifact를 다시
   읽습니다. 기록된 판정은 바뀌지 않습니다.
 

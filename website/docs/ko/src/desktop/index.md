@@ -136,7 +136,7 @@ Detail이 열리며, 저장된 검증과 충족되지 않은 최종 검증 요�
 Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에 확인 중(checking)으로 표시되다가,
 지금 verify를 실행하면 어떻게 될지에 따라 색이 바뀝니다. reused(모든 eval에서 기존 결과를 재사용), would run,
 waiting, blocked 중 하나입니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
-헤더에는 아직 확인 중인 Artifact 수가 나오고, 스캔이 끝나면 스캔한 시각이, 실패하면 그 이유가 나옵니다.
+헤더에는 확인 중인 Artifact 수를 표시합니다. 스캔이 끝나면 완료 시각을, 실패하면 원인을 표시합니다.
 Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나 Ctrl+R/F5를 누를 때 다시 스캔합니다.
 스캔이 아직 진행 중일 때 Current를 다시 고르거나 Run이 끝나면 진행 중인 스캔을 이어 가며, 이때 Current의 **Refresh** 버튼은
 비활성화됩니다. 팔레트의 **Refresh**나 Ctrl+R/F5를 누르면 그 스캔이 끝난 뒤 다시 스캔하므로, 그사이 바꾼 파일도 반영됩니다.
@@ -177,8 +177,8 @@ Artifact의 Detail이 열리고, 부분을 클릭하면 그 부분의 Detail이 
 부분들을 숨기고 그 Artifact를 보통 노드 크기로 줄여 이름, 색, 부분 개수만 보여 줍니다. 숨긴 부분에
 이어진 간선은 이 노드에 이어지고, 숨긴 부분끼리 잇는 간선은 그리지 않습니다. 이 노드도 다른 노드처럼
 Detail을 열 수 있고, 찾기 칸에는 숨긴 Artifact도 그대로 나옵니다. **Expand**를 누르면 상자가 다시
-펼쳐집니다. `m`을 누르면 Tab으로 옮겨 간 상자에, 그런 상자가 없으면 Detail이 열려 있는 상자에 같은
-동작을 합니다. 입력하는 중이거나 키보드 초점이 Pane에 있으면 동작하지 않습니다. 최소화는 그 브랜치의
+펼쳐집니다. `m`을 누르면 Tab으로 초점을 옮긴 상자를 최소화하거나 펼칩니다. 초점이 상자에 없으면 Detail이
+열린 상자에서 같은 동작을 합니다. 입력하는 중이거나 키보드 초점이 Pane에 있으면 동작하지 않습니다. 최소화는 그 브랜치의
 모든 그래프에 적용되고, 다시 펼치거나 앱을 끌 때까지 유지됩니다.
 
 ### 그래프에서 찾기 {#find-in-the-graph}
@@ -198,7 +198,9 @@ Run의 그래프나 Current가 보이고 키보드 초점이 Pane 밖(그래프�
 이름을 읽을 수 있을 만큼 확대됩니다. Esc를 누르면 찾기 칸이 닫히고 키보드 초점이 돌아갑니다. 찾기 칸
 바깥을 클릭해도 닫히며, 그 클릭은 평소처럼 동작합니다. 그래프가 너무 커서 이름이 보이지 않을 때도
 찾기 기능으로 모든 Artifact를 찾아 열 수 있습니다. 여러 Artifact 안에 그려진 부분은 한 번만 나오고, 열면 첫
-번째 사본이 가운데로 옵니다.
+번째 사본이 가운데로 옵니다. 최소화된 Artifact 안의 부분은 계속 숨겨져 있습니다. 열면 그 부분의 Detail이
+열리고, 대신 최소화된 Artifact가 가운데로 오며 강조됩니다. 그래프에서 그 부분을 보려면 최소화된 Artifact를
+펼치세요.
 
 ### Detail {#detail}
 
@@ -236,8 +238,7 @@ eval의 칩은 **Summary**를 보여 줍니다. 상태와 함께, 실행에 든 
 **Execution options**, **Execution metadata**, **Fingerprint**도 함께 표시합니다.
 Current에서는 eval이 실행될지, 재사용될지, 아직 확인 중인지와 그 이유, 그리고 재사용할 결과를
 보여 줍니다. 그 밖의 정보는 **Debug** 아래에 접혀 있으며, Artifact나 eval의 읽기 전용
-Summary(Current의 Human eval 포함)에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 판정을 제출할 수 있는 Human 리뷰에서는 `t`가 **Technical**을 표시하거나 숨깁니다. 로그가 있는 eval은 칩 아래에서
-먼저 보이는 Summary와 로그 사이를 오갈 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
+Summary(Current의 Human eval 포함)에서 `t`를 눌러 표시하거나 숨길 수 있습니다. 판정을 제출할 수 있는 Human 리뷰에서는 `t`가 **Technical**을 표시하거나 숨깁니다. 로그가 있는 eval에서는 칩 아래의 Summary와 로그를 전환해 볼 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
 항목은 굵고 진한 글씨로 강조됩니다. 로그는 Agent eval의 **Agent log**(대화. 별도의 스크롤 막대가 있음) 또는 Runtime eval의 **Runtime log**(저장된 stdout/stderr. 실시간
 로그 스트림이 아님)입니다. 대화가 없거나 원격에만 있으면
 이 머신에서 볼 수 없는 이유를 보여 줍니다. Run 안의 Human eval 칩에는 리뷰와 승인이 들어 있으며,
@@ -338,14 +339,22 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
   외부 파일 모드와 저장 거부 모드에서는 여기서 로그인할 수 없으며, 로그아웃은
   artifactize가 저장한 계정에서만 쓸 수 있습니다. 브라우저 로그인은
   취소할 수 있으며, 로그인 결과가 앱에 자동으로 전달되지 않으면 리디렉션 URL을 붙여 넣을 수 있습니다.
-  다른 프로세스가 포트 1455를 쓰고 있으면 앱이 붙여 넣기가 필요하다고 알려 줍니다.
+  포트 1455를 다른 프로세스가 사용 중이면, 앱에서 리디렉션 URL을 직접 붙여 넣으라고 안내합니다.
   페이지 로드에 실패하면 브라우저 주소 표시줄에서, 또는 계속 로딩 중이면 개발자 도구 → Network에서
   전체 `http://localhost:1455/auth/callback?code=…` URL을 복사해
   Settings에 붙여 넣은 다음 **Finish sign-in**을 고르세요.
   로그아웃하면 로컬 토큰이 삭제되며, 서버에서 토큰이 폐기됐는지 확인할 수 없으면 경고합니다.
-- **Claude Agent:** Claude Code는 터미널에서 `claude auth login`으로 직접 로그인하며, artifactize는
-  그 로그인 정보를 읽지 않는다고 안내합니다. **List models**를 누르면 Claude Code가 그 로그인으로
-  제공하는 모델이 나옵니다([Claude Agent](../features/agent.md#claude-agent)).
+- **Claude Agent:** Claude Code의 로그인 상태를 Claude Code가 직접 알려 주는 그대로
+  (`claude auth status`) 보여 줍니다. `PATH`에 `claude`가 없음, 로그인 안 됨, 로그인 방식과
+  요금제(예: `claude.ai · max`)로 로그인됨, 또는 실패한 오류 중 하나입니다. 터미널에서 로그인한
+  뒤처럼 상태를 다시 확인하려면 **Check again**을 누르세요. **Sign in with Claude Code**는
+  `artifactize login claude-agent`처럼 `claude auth login`을 실행합니다. Claude Code가 브라우저를
+  열고, 열리지 않았을 때를 위해 출력한 URL이 화면에 나옵니다. 브라우저에서 마치거나, 페이지에 나온
+  코드를 붙여 넣고 **Finish sign-in**을 누르세요. **Cancel sign-in**은 Claude Code를 멈춥니다.
+  **Sign out of Claude Code**는 `claude auth logout`을 실행합니다. 어느 쪽이든 끝나면 상태를 다시
+  보여 줍니다. 로그인 정보는 Claude Code가 보관하며, artifactize는 이를 읽거나 복사하거나 저장하지
+  않습니다. **List models**를 누르면 Claude Code가 그 로그인으로 제공하는 모델이 나옵니다
+  ([Claude Agent](../features/agent.md#claude-agent)).
 - **OpenAI, Anthropic, Gemini:** 키가 환경 변수에서 오는지, 저장되어 있는지, 없는지를 보여 주며,
   값 자체는 보여 주지 않습니다. 키를 붙여 넣고 **Save key**를 누르면 `artifactize login`처럼
   저장하고, **Remove saved key**로 지웁니다. 환경 변수가 설정되어 있으면 그 키를 먼저 씁니다. 이때

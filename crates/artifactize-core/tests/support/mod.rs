@@ -28,6 +28,55 @@ use std::{
 
 use serde_json::{Value, json};
 
+/// A scripted Claude Code for the `claude-agent` sign-in.
+pub mod claude_code {
+    use std::path::Path;
+
+    /// A scripted Claude Code that keeps its sign-in as a file in `dir`: `auth status --json`
+    /// reports it, `auth login` prints its URL and signs in when the code `good-code` is pasted,
+    /// and `auth logout` removes it.
+    pub fn scripted(dir: &Path) {
+        let signed_in = super::os::path_text(&dir.join("signed-in"));
+        let script = r#"if test "$2" = status; then
+  if test -f "SIGNED_IN"; then
+    printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max","email":"person@example.com"}'
+    exit 0
+  fi
+  printf '%s\n' '{"loggedIn":false,"authMethod":"none"}'
+  exit 1
+fi
+if test "$2" = login; then
+  printf 'Opening browser to sign in\n'
+  printf 'If the browser did not open, visit: https://claude.example/oauth/authorize?code=true\n'
+  printf 'Paste code here if prompted > '
+  if grep -q '^good-code$'; then
+    touch "SIGNED_IN"
+    printf 'Login successful.\n'
+    exit 0
+  fi
+  printf 'Login failed: That code was not accepted.\n' >&2
+  exit 1
+fi
+if test "$2" = logout; then
+  rm -f "SIGNED_IN"
+  printf 'Successfully logged out.\n'
+  exit 0
+fi
+exit 2
+"#
+        .replace("SIGNED_IN", &signed_in);
+        super::os::write_script(&dir.join("claude"), &script);
+    }
+
+    /// `PATH` for a spawned artifactize that finds the scripted Claude Code in `dir` first.
+    pub fn path(dir: &Path) -> std::ffi::OsString {
+        std::env::join_paths(
+            std::iter::once(dir.to_owned()).chain(std::env::split_paths(&super::os::path())),
+        )
+        .unwrap()
+    }
+}
+
 pub mod declaration;
 pub mod os;
 pub mod runs;

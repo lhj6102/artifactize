@@ -236,7 +236,9 @@ Detail, on the eval's tab for an eval, and centres the Artifact in the graph lef
 Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
 click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
 graph too large to show their names. A part drawn inside several Artifacts is listed once,
-and opening it centres its first copy.
+and opening it centres its first copy. A part inside a minimized Artifact stays hidden:
+opening it opens its Detail and centres and highlights the minimized Artifact instead;
+expand that one to see the part on the graph.
 
 ### Detail
 
@@ -401,9 +403,17 @@ on the right, with **List models** for the models it offers.
   address bar after a failed load, or DevTools → Network if it keeps loading,
   paste it in Settings, then choose **Finish sign-in**.
   Sign-out removes local tokens and warns when server revocation cannot be confirmed.
-- **Claude Agent:** says that Claude Code signs in on its own, with `claude auth login` in a
-  terminal, and that artifactize never reads that login. **List models** shows the models
-  Claude Code offers to it ([Claude Agent](../features/agent.md#claude-agent)).
+- **Claude Agent:** shows Claude Code's sign-in as Claude Code itself reports it
+  (`claude auth status`): `claude` not found on `PATH`, not signed in, signed in with its
+  login method and plan (for example `claude.ai · max`), or the error it failed with.
+  **Check again** asks again, for example after signing in from a terminal. **Sign in with
+  Claude Code** runs `claude auth login`, as `artifactize login claude-agent` does: Claude
+  Code opens the browser, and the URL it printed is shown in case it did not. Finish in the
+  browser, or paste the code the page shows and choose **Finish sign-in**; **Cancel
+  sign-in** stops Claude Code. **Sign out of Claude Code** runs `claude auth logout`. The
+  status shows again when either ends. Claude Code keeps its login; artifactize never reads,
+  copies or stores it. **List models** shows the models Claude Code offers to it
+  ([Claude Agent](../features/agent.md#claude-agent)).
 - **OpenAI, Anthropic, Gemini:** shows whether the key is set from its environment
   variable, saved, or not set, never its value. Paste a key and choose **Save key** to save
   it, as `artifactize login` does; **Remove saved key** forgets it. A set environment

@@ -3,6 +3,7 @@
   // the left; the chosen one's setup and Models on the right. Keys are typed, saved and never
   // read back.
   import type { EndpointApi, Provider } from "../ipc/client";
+  import ClaudeAgentAccount from "./ClaudeAgentAccount.svelte";
   import CodexAccount from "./CodexAccount.svelte";
   import { getSettingsState, type Choice } from "./settings-state.svelte";
 
@@ -75,12 +76,7 @@
     {#if s.choice.kind === "builtin" && s.choice.provider === "codex"}
       <CodexAccount />
     {:else if s.choice.kind === "builtin" && s.choice.provider === "claude-agent"}
-      <section aria-labelledby="claude-agent-title">
-        <h2 id="claude-agent-title">Claude Agent</h2>
-        <p class="muted" data-testid="claude-agent-sign-in">
-          Reviews run with your own Claude Code and its login. Claude Code signs in on its own: run <code>claude auth login</code> in a terminal. Artifactize never reads that login.
-        </p>
-      </section>
+      <ClaudeAgentAccount />
     {:else if s.choice.kind === "builtin"}
       {@const provider = s.choice.provider}
       <section aria-labelledby="key-title">

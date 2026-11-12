@@ -25,7 +25,7 @@ the separate browser sign-in below instead, and Claude Agent uses Claude Code's 
 | `anthropic` | `artifactize login anthropic` | `artifactize models anthropic` |
 | `gemini` | `artifactize login gemini` | `artifactize models gemini` |
 | `codex` | `artifactize login codex` | `artifactize models codex` |
-| `claude-agent` | `claude auth login` (Claude Code's own) | `artifactize models claude-agent` |
+| `claude-agent` | `artifactize login claude-agent` (runs Claude Code's own `claude auth login`) | `artifactize models claude-agent` |
 
 A key in `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` is used before a saved
 one, for example `export OPENAI_API_KEY=...` (in PowerShell,
@@ -47,9 +47,12 @@ and asks the server to revoke them; it warns when the revocation is not confirme
 See [Codex](../features/agent.md#codex).
 
 `claude-agent` runs your installed Claude Code (`claude` on `PATH`, version 2.1.248 or
-newer) with the login it already has. Sign in once with `claude auth login` in a
-terminal; artifactize never reads or keeps that login, so `login claude-agent` and
-`logout claude-agent` only point you there. See [Claude Agent](../features/agent.md#claude-agent).
+newer) with the login it already has. `login claude-agent` runs Claude Code's own
+`claude auth login`: Claude Code opens the browser and prints a URL to open if it did not;
+when the page then shows a code, paste it into the terminal. `logout claude-agent` runs
+`claude auth logout`. Claude Code keeps its login; artifactize never reads, copies or
+stores it. Signing in with `claude auth login` yourself works the same. See
+[Claude Agent](../features/agent.md#claude-agent).
 
 ```sh
 artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, Claude Code on PATH, review store, desktop app, newer release

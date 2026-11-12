@@ -127,6 +127,8 @@ provider가 준 순서대로 `{"backend":"openai","models":[{"slug":"model-id","
 공백을 제거합니다. 터미널에서는 입력이 화면에 나타나지 않으며, Windows에서 입력을 숨기는 데 실패하면 키가
 화면에 보인다고 경고한 뒤 계속 읽습니다. 같은 이름으로 `logout`을 실행하면 저장한 키를 지웁니다. 키 변수가 설정되어 있으면
 그 변수를 먼저 씁니다. `login codex`와 `logout codex`는 [Codex 로그인](../features/agent.md#codex)입니다.
+`login claude-agent`와 `logout claude-agent`는 Claude Code 자체 명령인 `claude auth login`과
+`claude auth logout`을 실행합니다([Claude Agent](../features/agent.md#claude-agent)).
 
 `provider add NAME`은 [커스텀 provider](../features/agent.md#custom-providers)를 저장하며, 같은 이름이
 있으면 바꿉니다. `--alias PROVIDER`는 기본 provider를 다른 이름으로 쓰고, 엔드포인트는

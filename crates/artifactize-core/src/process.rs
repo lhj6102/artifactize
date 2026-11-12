@@ -524,6 +524,27 @@ pub(crate) fn launch_detached(
     Ok(())
 }
 
+/// A program that hands part of its work to the desktop, such as a sign-in that opens the
+/// browser, with its standard streams piped to this process. Dropping the child stops only
+/// the program itself, never what it started: that may be the person's browser.
+pub(crate) fn spawn_handoff(command: &Command) -> Result<tokio::process::Child, Error> {
+    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
+        environment_value(&command.env, name).map(ToOwned::to_owned)
+    })
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(program);
+    child
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .env_clear()
+        .envs(&command.env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    platform::spawn_watched(child).map_err(Error::Spawn)
+}
+
 /// A desktop handoff whose output a Tool log shows: like [`launch_detached`] it is never
 /// owned, killed or waited on by the review, but its stdout and stderr are pipes, drained
 /// line by line into `run` until the program closes them and exits, whoever still listens.

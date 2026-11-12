@@ -132,7 +132,9 @@ the same name forgets it. A key is read as `remote login` reads a
 with surrounding whitespace dropped; at a terminal the input is hidden, and on Windows, if
 hiding fails, a warning says the key will be visible and reading goes on. The key's variable, when
 set, is still used first. `login codex` and `logout codex` are the
-[Codex sign-in](../features/agent.md#codex).
+[Codex sign-in](../features/agent.md#codex); `login claude-agent` and `logout claude-agent`
+run Claude Code's own `claude auth login` and `claude auth logout`
+([Claude Agent](../features/agent.md#claude-agent)).
 
 `provider add NAME` saves a [custom provider](../features/agent.md#custom-providers), or
 replaces the one with that name: `--alias PROVIDER` for a built-in provider under another
