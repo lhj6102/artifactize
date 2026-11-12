@@ -150,14 +150,11 @@ impl Fixture {
     }
 
     fn release(&self, artifact: &str, eval: &str, code: u8) {
-        use std::io::Write;
-        let folder = self.repo.join(artifact);
-        let mut marker = tempfile::NamedTempFile::new_in(&folder).unwrap();
-        write!(marker, "{code}").unwrap();
         // Publish complete control bytes at once; the child must never parse a partial write.
-        marker
-            .persist(folder.join(format!("{eval}-release")))
-            .unwrap();
+        support::os::publish_file(
+            &self.repo.join(artifact).join(format!("{eval}-release")),
+            code.to_string(),
+        );
     }
     fn ready(&self, artifact: &str, eval: &str) -> bool {
         fs::read_to_string(self.repo.join(artifact).join(format!("{eval}-ready")))

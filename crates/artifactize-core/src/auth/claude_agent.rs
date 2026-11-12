@@ -33,6 +33,9 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// lines.
 const KEPT_BYTES: usize = 16 * 1024;
 
+/// Read Claude Code's stderr a page at a time: it writes a few lines.
+const READ_CHUNK: usize = 4096;
+
 const MISSING: &str =
     "Claude Code (`claude`) is not on PATH; install it to use the claude-agent backend.";
 
@@ -185,7 +188,7 @@ async fn tail(reader: Option<impl AsyncRead + Unpin>) -> Vec<u8> {
         return Vec::new();
     };
     let mut kept = Vec::new();
-    let mut buffer = [0; 4096];
+    let mut buffer = [0; READ_CHUNK];
     while let Ok(count) = reader.read(&mut buffer).await {
         if count == 0 {
             break;
