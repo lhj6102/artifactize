@@ -17,6 +17,14 @@
     void s.paste();
   }
 
+  /** A redirect URL pasted whole signs in on its own, once the paste has landed in the field;
+   * anything else waits for Finish sign-in. */
+  function pasted() {
+    setTimeout(() => {
+      if (/^https?:\/\/[^/]+\/auth\/callback\?/.test(s.redirect.trim())) void s.paste();
+    }, 0);
+  }
+
   const signedIn = $derived(s.codex?.state === "stored");
 </script>
 
@@ -54,7 +62,7 @@
         <label for="codex-redirect">When the browser cannot return here, paste the URL it was sent to</label>
         <p id="codex-redirect-help" class="muted">Copy the full URL starting <code>http://localhost:1455/auth/callback?code=</code> from the browser's address bar after the failed load, or from DevTools → Network if the page keeps loading.</p>
         <div class="row">
-          <input id="codex-redirect" class="input" bind:value={s.redirect} aria-describedby="codex-redirect-help" autocomplete="off" spellcheck="false" />
+          <input id="codex-redirect" class="input" bind:value={s.redirect} onpaste={pasted} aria-describedby="codex-redirect-help" autocomplete="off" spellcheck="false" />
           <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
           <button class="button" type="button" onclick={() => s.cancelSignIn()}>Cancel sign-in</button>
         </div>
