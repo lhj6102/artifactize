@@ -145,19 +145,27 @@ async fn many_short_runs_keep_their_exit_and_output_while_their_evidence_waits_f
     .await;
 }
 
-/// A process the test started outside the run's group: killed when the test ends, also on
-/// unwinding, and gone before the test's temporary directory is.
+/// The process a `leave` step starts outside the run's group, known by the process id the step
+/// records in this file. The test owns it from before the run starts: it is killed when the
+/// test ends, whatever failed in between, and gone before the test's temporary directory is.
 #[cfg(unix)]
-struct Left(u32);
+struct Left(std::path::PathBuf);
 
 #[cfg(unix)]
 impl Drop for Left {
     fn drop(&mut self) {
-        crate::test_os::kill(self.0);
+        // Without a recorded process id the step started no process.
+        let Some(pid) = std::fs::read_to_string(&self.0)
+            .ok()
+            .and_then(|record| record.trim().parse().ok())
+        else {
+            return;
+        };
+        crate::test_os::kill(pid);
         // Its new parent reaps it; a panic here would abort an unwinding test, so the wait
         // only stops at the watchdog.
         let killed = std::time::Instant::now();
-        while !crate::test_os::gone(self.0) && killed.elapsed() < WATCHDOG {
+        while !crate::test_os::gone(pid) && killed.elapsed() < WATCHDOG {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -170,14 +178,11 @@ impl Drop for Left {
 async fn output_a_process_outside_the_group_still_holds_is_named_and_the_exit_is_kept() {
     let scratch = crate::test_os::tempdir();
     let record = scratch.path().join("left");
+    // Declared after `scratch`, so it is dropped first.
+    let _left = Left(record.clone());
     let command = Command {
         program: crate::test_os::steps().into(),
-        args: vec![
-            "print".into(),
-            "done".into(),
-            "leave".into(),
-            record.clone().into(),
-        ],
+        args: vec!["print".into(), "done".into(), "leave".into(), record.into()],
         cwd: scratch.path().to_owned(),
         env: BTreeMap::from([("PATH".into(), crate::test_os::path())]),
         timeout: WATCHDOG,
@@ -196,13 +201,6 @@ async fn output_a_process_outside_the_group_still_holds_is_named_and_the_exit_is
             }
         })
         .await;
-        let _left = Left(
-            std::fs::read_to_string(&record)
-                .unwrap()
-                .trim()
-                .parse()
-                .unwrap(),
-        );
         // Time passes only here, a second at a time, until the run gives up on its pipes.
         let result = busy(async {
             while !running.is_finished() {
