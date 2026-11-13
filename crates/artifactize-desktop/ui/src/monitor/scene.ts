@@ -20,13 +20,12 @@ const FAR = 1024;
 const SPAN = 2 * FAR + 1;
 /** The width of the ring around the opened Artifact, as its element draws it. */
 const RING = 2;
-/** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its corner radius, its
- * side padding, its dot, the gap before its name and the name's font size. */
-const NODE_RADIUS = 3;
+/** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its side padding, its
+ * dot and the gap before its name. Its corner radius and its name's font size are the theme's
+ * tokens, read when painting. */
 const NODE_PAD = 12;
 const NODE_DOT = 8;
 const NODE_GAP = 8;
-const NODE_FONT = 13;
 /** The smallest font, in device-independent pixels, at which a name is still painted. */
 const LEGIBLE = 5;
 /** An edge's stroke in graph pixels, as the graph's elements draw it. */
@@ -161,6 +160,19 @@ function ends(at: Scene, graph: Shape): Ends {
  * whose ends fall into the same `GRAIN` cells of the screen only the first is drawn, and one
  * shorter than a cell not at all: at a whole catalog's scale, thousands of edges from one
  * shared input end in the same few pixels. */
+/** `text` as it fits in `width` with `context`'s font: whole, or cut with an ellipsis, as a
+ * node's element cuts its name. */
+function cut(context: CanvasRenderingContext2D, text: string, width: number): string {
+  if (context.measureText(text).width <= width) return text;
+  let [fits, over] = [0, text.length];
+  while (over - fits > 1) {
+    const middle = (fits + over) >> 1;
+    if (context.measureText(`${text.slice(0, middle)}…`).width <= width) fits = middle;
+    else over = middle;
+  }
+  return `${text.slice(0, fits)}…`;
+}
+
 function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const style = getComputedStyle(document.documentElement);
   const colour = (light: Light) => style.getPropertyValue(`--light-${light}`).trim();
@@ -208,8 +220,10 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const dots = new Map<Light, Path2D>();
   const names: { x: number; y: number; width: number; text: string }[] = [];
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
-  const radius = Math.min(NODE_RADIUS * zoom, 3);
-  const legible = NODE_FONT * zoom >= LEGIBLE;
+  const pixels = (token: string) => Number.parseFloat(style.getPropertyValue(token)) || 0;
+  const [corner, font] = [pixels("--radius-control"), pixels("--text-body")];
+  const radius = Math.min(corner * zoom, corner);
+  const legible = font * zoom >= LEGIBLE;
   for (const number of within(at, shown) ?? []) {
     const node = named.get(at.nodes[number]);
     const light = node?.light ?? "waiting";
@@ -246,14 +260,14 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   }
   if (names.length === 0) return;
   context.fillStyle = style.getPropertyValue("--ink").trim();
-  context.font = `500 ${NODE_FONT * zoom}px ${style.getPropertyValue("--font").trim()}`;
+  context.font = `500 ${font * zoom}px ${style.getPropertyValue("--font").trim()}`;
   context.textBaseline = "middle";
   for (const name of names) {
     context.save();
     context.beginPath();
-    context.rect(name.x, name.y - NODE_FONT * zoom, name.width, 2 * NODE_FONT * zoom);
+    context.rect(name.x, name.y - font * zoom, name.width, 2 * font * zoom);
     context.clip();
-    context.fillText(name.text, name.x, name.y);
+    context.fillText(cut(context, name.text, name.width), name.x, name.y);
     context.restore();
   }
 }
