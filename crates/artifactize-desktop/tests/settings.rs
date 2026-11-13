@@ -198,6 +198,8 @@ fn settings_command_probe() {
     };
 
     // API keys: where each comes from, never its value.
+    // Every built-in provider, in the library's order, with the name `backend` takes.
+    let builtin = json!(["codex", "claude-agent", "openai", "anthropic", "gemini"]);
     let keys = |gemini: &str| {
         json!([
             {"provider": "openai", "variable": "OPENAI_API_KEY", "source": "environment", "saved": false},
@@ -206,7 +208,10 @@ fn settings_command_probe() {
         ])
     };
     let providers = call("providers_list", json!({})).unwrap();
-    assert_eq!(providers, json!({"keys": keys("absent"), "custom": []}));
+    assert_eq!(
+        providers,
+        json!({"builtin": builtin, "keys": keys("absent"), "custom": []})
+    );
     call(
         "provider_key_save",
         json!({"provider": "gemini", "key": SAVED_KEY}),
@@ -479,4 +484,105 @@ fn settings_command_probe() {
     let out = call("remote_logout", json!({})).unwrap();
     assert_eq!(out["state"], json!("unconfigured"));
     // The owned window and app drop before the fixture root and fake provider, also on panic.
+}
+
+#[test]
+fn claude_agent_settings_run_claude_codes_own_sign_in() {
+    let root = support::os::tempdir();
+    let bin = root.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    support::claude_code::scripted(&bin);
+    let mut command = support::os::test_command(
+        "claude_agent_command_probe",
+        &[
+            ("PATH", support::claude_code::path(&bin)),
+            // Claude Code's own configuration, never the real one, should it ever run.
+            ("CLAUDE_CONFIG_DIR", bin.join("config").into()),
+        ],
+    );
+    command.arg("--ignored");
+    let child = support::os::start(&mut command);
+    let output = support::os::finish(child, "Claude Agent settings probe");
+    assert!(
+        output.status.success(),
+        "Claude Agent settings probe failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // Signed in through the pasted code, then out again.
+    assert!(!bin.join("signed-in").exists());
+}
+
+#[test]
+#[ignore = "launched with a scripted Claude Code first on PATH by the Claude Agent settings test"]
+fn claude_agent_command_probe() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    let launch = Launch {
+        mode: Mode::Monitor,
+        state: state.clone(),
+        repo: None,
+        reviewer: "alice".parse().unwrap(),
+        request: None,
+    };
+    let app = artifactize_desktop::app(mock_builder(), launch)
+        .setup(|_| Ok(()))
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let owned = Owned { window, app };
+    let call = |command: &str, args: Value| invoke(&owned.window, command, args);
+    let wait = |prompt: &Value| json!({"signIn": prompt["signIn"]});
+    let signed_out = json!({"state": "signedOut"});
+
+    assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_out);
+
+    // A cancelled sign-in stops Claude Code before it signs in.
+    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    assert_eq!(
+        prompt["url"],
+        "https://claude.example/oauth/authorize?code=true"
+    );
+    std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
+        call("claude_agent_login_cancel", json!({})).unwrap();
+        assert_eq!(
+            waiting.join().unwrap().unwrap_err(),
+            json!({"kind": "account", "message": "Claude Code sign-in was cancelled."})
+        );
+    });
+    assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_out);
+    assert_eq!(
+        call("claude_agent_login_paste", json!({"code": "good-code"})).unwrap_err(),
+        json!({"kind": "missing", "message": "No Claude Code sign-in is waiting for a code."})
+    );
+
+    // The pasted code reaches Claude Code; the status is Claude Code's, without the account.
+    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let status = std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
+        call("claude_agent_login_paste", json!({"code": " good-code\n"})).unwrap();
+        waiting.join().unwrap().unwrap()
+    });
+    let signed_in = json!({"state": "signedIn", "method": "claude.ai", "plan": "max"});
+    assert_eq!(status, signed_in);
+    assert_eq!(call("claude_agent_status", json!({})).unwrap(), signed_in);
+
+    // A refused code ends the sign-in with Claude Code's own error.
+    let prompt = call("claude_agent_login_start", json!({})).unwrap();
+    let refused = std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| call("claude_agent_login_wait", wait(&prompt)));
+        call("claude_agent_login_paste", json!({"code": "bad-code"})).unwrap();
+        waiting.join().unwrap().unwrap_err()
+    });
+    assert_eq!(
+        refused,
+        json!({"kind": "account", "message": "Claude Code could not sign in: Login failed: That code was not accepted."})
+    );
+
+    assert_eq!(call("claude_agent_logout", json!({})).unwrap(), signed_out);
+    // artifactize keeps nothing of Claude Code's login.
+    assert!(!state.join("auth").exists());
 }

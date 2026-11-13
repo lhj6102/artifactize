@@ -22,7 +22,7 @@ use std::{
 };
 
 /// Flush display updates at ten frames per second, independently of transport polling.
-pub(super) const CADENCE: Duration = Duration::from_millis(100);
+pub(crate) const CADENCE: Duration = Duration::from_millis(100);
 /// Observer-only framing cap. Oversized frames degrade observation, never the original stream.
 const FRAME_BYTES: usize = 256 * 1024;
 /// Bound coalesced deltas until the consuming task drains them.
@@ -115,6 +115,14 @@ impl Sink {
             .map(|entry| entry.text.len())
             .sum::<usize>()
             >= READY_BYTES
+    }
+    /// Part of a block's text, for a backend that streams blocks itself.
+    pub fn delta(&self, kind: DeliveryKind, block: DeliveryBlock, text: &str) {
+        self.push(kind, block, text);
+    }
+    /// A block's whole text, once it ended, for a backend that streams blocks itself.
+    pub fn finished(&self, kind: DeliveryKind, block: DeliveryBlock, text: String) {
+        self.complete(kind, block, text);
     }
     pub fn take(&self, turn: usize, attempt: usize) -> Vec<Delivery> {
         let mut buffer = self.0.lock().unwrap();

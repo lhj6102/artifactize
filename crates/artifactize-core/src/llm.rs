@@ -2,9 +2,10 @@
 //! of this machine, and the loopback-only test endpoint override for offline fake providers.
 
 mod api;
+pub mod claude_agent;
 pub mod codex;
 mod degenerate;
-mod delivery;
+pub(crate) mod delivery;
 #[cfg(test)]
 mod delivery_tests;
 pub mod models;
@@ -198,8 +199,26 @@ impl Client {
         state: &Path,
         repo: &Path,
     ) -> Result<Self, Failure> {
-        let Route { api, base, key } =
-            route(backend, Some(state), Some(repo), "for this Agent backend")?;
+        Self::at(
+            route(backend, Some(state), Some(repo), "for this Agent backend")?,
+            model,
+            state,
+            repo,
+        )
+    }
+
+    /// The client of a resolved `route`. Claude Code runs its own conversation, so its
+    /// reviews never reach this ([`claude_agent`]).
+    pub(crate) fn at(
+        Route { api, base, key }: Route,
+        model: &crate::config::ModelId,
+        state: &Path,
+        repo: &Path,
+    ) -> Result<Self, Failure> {
+        assert!(
+            api != Api::ClaudeAgent,
+            "Claude Code reviews run in llm::claude_agent"
+        );
         if api == Api::Codex {
             return Ok(Self::Codex(codex::Codex::new(model, &base, state, repo)?));
         }
@@ -234,7 +253,7 @@ impl Client {
                 ),
                 key,
             ),
-            Api::Codex => unreachable!("built above"),
+            Api::Codex | Api::ClaudeAgent => unreachable!("handled above"),
         })
     }
 
@@ -285,6 +304,15 @@ impl Client {
                 json!({}),
                 |effort| json!({"thinking":{"type":"adaptive"}, "output_config":{"effort":effort}}),
             ),
+            // Claude Code's own options: adaptive thinking with its summaries shown, and the
+            // declared effort.
+            Api::ClaudeAgent => {
+                let mut value = json!({"thinking":"adaptive", "thinkingDisplay":"summarized"});
+                if let Some(effort) = reasoning {
+                    value["effort"] = json!(effort);
+                }
+                value
+            }
             // rig's Codex contract states store:false and encrypted reasoning itself. The
             // `session-id` header repeats the cache key (see `codex::envelope`).
             Api::Codex => {
@@ -321,6 +349,9 @@ impl Client {
                 parameters["response_format"] = json!({"type":"json_schema", "json_schema":{
                     "name":"artifactize_verdict", "strict":true, "schema":schema,
                 }});
+            }
+            Api::ClaudeAgent => {
+                parameters["jsonSchema"] = schema;
             }
             Api::Anthropic => {
                 section(parameters, "output_config").insert(
@@ -759,13 +790,15 @@ fn message(error: &ProviderError) -> String {
         .unwrap_or_else(|| error.to_string())
 }
 
-/// The environment variable that points a built-in provider at a loopback test endpoint.
-pub fn base_url_variable(provider: Provider) -> &'static str {
+/// The environment variable that points a built-in provider at a loopback test endpoint;
+/// `None` for Claude Code, which reaches its service itself.
+pub fn base_url_variable(provider: Provider) -> Option<&'static str> {
     match provider {
-        Provider::Openai => "ARTIFACTIZE_OPENAI_BASE_URL",
-        Provider::Anthropic => "ARTIFACTIZE_ANTHROPIC_BASE_URL",
-        Provider::Gemini => "ARTIFACTIZE_GEMINI_BASE_URL",
-        Provider::Codex => "ARTIFACTIZE_CODEX_BASE_URL",
+        Provider::Openai => Some("ARTIFACTIZE_OPENAI_BASE_URL"),
+        Provider::Anthropic => Some("ARTIFACTIZE_ANTHROPIC_BASE_URL"),
+        Provider::Gemini => Some("ARTIFACTIZE_GEMINI_BASE_URL"),
+        Provider::Codex => Some("ARTIFACTIZE_CODEX_BASE_URL"),
+        Provider::ClaudeAgent => None,
     }
 }
 
@@ -812,7 +845,7 @@ impl Serialize for TestEndpoint {
 
 /// The loopback test endpoint that replaces the provider's API root, if one is set.
 pub fn test_endpoint(provider: Provider) -> Result<Option<TestEndpoint>, String> {
-    variable_endpoint(base_url_variable(provider))
+    base_url_variable(provider).map_or(Ok(None), variable_endpoint)
 }
 
 /// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
@@ -866,7 +899,8 @@ fn loopback_url(value: &str) -> Result<TestEndpoint, String> {
     Ok(TestEndpoint(url))
 }
 
-/// The provider's API root: its loopback test endpoint, else the provider's.
+/// The provider's API root: its loopback test endpoint, else the provider's. Claude Code
+/// has none: it reaches its service itself.
 fn base_url(provider: Provider) -> Result<String, String> {
     Ok(test_endpoint(provider)?.map_or_else(
         || {
@@ -875,6 +909,7 @@ fn base_url(provider: Provider) -> Result<String, String> {
                 Provider::Anthropic => "https://api.anthropic.com",
                 Provider::Gemini => gemini::BASE_URL,
                 Provider::Codex => codex::BASE_URL,
+                Provider::ClaudeAgent => "",
             }
             .into()
         },

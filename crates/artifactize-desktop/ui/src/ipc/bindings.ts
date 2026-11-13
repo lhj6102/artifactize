@@ -200,6 +200,27 @@ export const commands = {
 	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
 	/**  `logout codex`: revoke and remove artifactize's own tokens. */
 	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
+	/**  Ask Claude Code whether it is signed in (`claude auth status`). */
+	claudeAgentStatus: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_status")),
+	/**
+	 *  Start `login claude-agent`: `claude auth login` runs and opens the browser. Returns the URL
+	 *  it printed; finish with [`claude_agent_login_wait`].
+	 */
+	claudeAgentLoginStart: () => typedError<ClaudeAgentPrompt, Failure>(__TAURI_INVOKE("claude_agent_login_start")),
+	/**
+	 *  Wait for sign-in `sign_in` (from [`claude_agent_login_start`]) to end; returns Claude Code's
+	 *  sign-in as it then reports it.
+	 */
+	claudeAgentLoginWait: (signIn: SignInId) => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_login_wait", { signIn })),
+	/**  Give the sign-in the code Claude Code's sign-in page shows, as the CLI accepts on stdin. */
+	claudeAgentLoginPaste: (code: string) => typedError<null, Failure>(__TAURI_INVOKE("claude_agent_login_paste", { code })),
+	/**  Stop the sign-in in progress: Claude Code is stopped before it saves a login. */
+	claudeAgentLoginCancel: () => __TAURI_INVOKE<void>("claude_agent_login_cancel"),
+	/**
+	 *  `logout claude-agent`: run `claude auth logout`; returns the sign-in as Claude Code then
+	 *  reports it.
+	 */
+	claudeAgentLogout: () => typedError<ClaudeAgentStatus, Failure>(__TAURI_INVOKE("claude_agent_logout")),
 	/**  `models <provider>`: what a built-in or custom provider offers to this key or account. */
 	modelsList: (provider: string) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
 	/**  `remote status`: URL, share level, token source, reachability, principal and scopes. */
@@ -329,6 +350,25 @@ export type Claimant = {
 	reviewer: string,
 	mine: boolean,
 };
+
+/**
+ *  What a Claude Code sign-in shows: the URL to open when the browser Claude Code opened did
+ *  not, whose page then gives a code to paste.
+ */
+export type ClaudeAgentPrompt = {
+	url: string,
+	/**  The sign-in to wait for with [`claude_agent_login_wait`]. */
+	signIn: SignInId,
+};
+
+/**  Claude Code's sign-in, as Claude Code reports it. */
+export type ClaudeAgentStatus = 
+/**  `claude` is not on `PATH`. */
+{ state: "missing" } | { state: "signedOut" } | 
+/**  Signed in with `method` (for example `claude.ai`), on `plan` (for example `max`). */
+{ state: "signedIn"; method: string; plan: string | null } | 
+/**  Claude Code could not tell, and why. */
+{ state: "failed"; error: string };
 
 /**
  *  What the sign-in asks for: open `url`; `callback` says whether the browser can return
@@ -749,11 +789,13 @@ export type PlanLine = {
 
 export type Profile = "runtime" | "agent" | "human";
 
-/**  A built-in provider, as the CLI names it. */
-export type Provider = "codex" | "openai" | "anthropic" | "gemini";
+/**  A built-in provider, by the name the CLI and an eval's `backend` give it. */
+export type Provider = "codex" | "claude-agent" | "openai" | "anthropic" | "gemini";
 
 /**  The providers of this machine. */
 export type Providers = {
+	/**  The built-in providers, in the order Settings lists them. */
+	builtin: Provider[],
 	keys: KeyStatus[],
 	custom: CustomProvider[],
 };

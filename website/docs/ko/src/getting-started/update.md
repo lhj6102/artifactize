@@ -37,7 +37,7 @@ Human 승인은 유지되며, `SIGNOFFS_PENDING`으로 끝난 Run은 YELLOW로 �
 `gate = "blocking"`은 제거되었습니다. 스크립트에서는 플래그를, 선언에서는 필드를 지우세요. 이 플래그나 필드를
 사용하면 삭제하라는 오류 메시지가 표시됩니다. Run은 진행 중에 제출되지 않은 승인이 있는 동안 **WAITING_HUMAN**이며, 제출되지 않은 승인만
 남으면 **YELLOW**(종료 코드 5, 이전의 SIGNOFFS_PENDING)로 끝납니다. 담당자가 맡은 승인이 제출될 때까지는 Run을
-종료하지 않고, 아무도 맡지 않은 승인만 남으면 2분의 [유휴 유예 시간](../features/others/state.md#sign-off-idle-grace)이
+종료하지 않고, 아무도 맡지 않은 승인만 남으면 2분의 [승인 유예 시간](../features/others/state.md#sign-off-idle-grace)이
 지난 뒤 종료합니다.
 종료 코드 5가 즉시 반환된다고 가정한 스크립트는 `artifactize limits --signoff-idle-grace 0`으로 이 시간을 0으로
 설정할 수 있습니다. `--reuse-only agent,human`을 쓰는 CI는 바뀌지 않습니다.

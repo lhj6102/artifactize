@@ -33,6 +33,8 @@ pub async fn list(
         super::route(&backend, state, repo, "to list models").map_err(|failure| failure.message)?;
     let models = if route.api == Api::Codex {
         super::codex::models(&route.base, state, repo).await?
+    } else if route.api == Api::ClaudeAgent {
+        super::claude_agent::models().await?
     } else {
         let key = route.key.as_ref().map_or("", |key| key.expose());
         list_at(route.api, key, &route.base).await?
@@ -65,7 +67,7 @@ async fn list_at(api: Api, key: &str, base: &str) -> Result<Vec<ListedModel>, St
                     .list_models()
                     .await
             }
-            Api::Codex => unreachable!("Codex lists its own models"),
+            Api::Codex | Api::ClaudeAgent => unreachable!("they list their own models"),
         }
     };
     let models = tokio::time::timeout(LIST_TIMEOUT, request)

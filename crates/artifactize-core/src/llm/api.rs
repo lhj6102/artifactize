@@ -12,6 +12,8 @@ pub enum Api {
     Anthropic,
     Gemini,
     Codex,
+    /// The user's own Claude Code, run as a subprocess (`llm::claude_agent`).
+    ClaudeAgent,
 }
 
 impl From<Provider> for Api {
@@ -21,6 +23,7 @@ impl From<Provider> for Api {
             Provider::Anthropic => Self::Anthropic,
             Provider::Gemini => Self::Gemini,
             Provider::Codex => Self::Codex,
+            Provider::ClaudeAgent => Self::ClaudeAgent,
         }
     }
 }
@@ -47,6 +50,8 @@ impl Api {
                 "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
             ),
             Self::Anthropic => matches!(reasoning, "low" | "medium" | "high" | "max"),
+            // Claude Code's `--effort` levels.
+            Self::ClaudeAgent => matches!(reasoning, "low" | "medium" | "high" | "xhigh" | "max"),
             // Gemini 3's thinking levels.
             Self::Gemini => matches!(reasoning, "minimal" | "low" | "medium" | "high"),
         };

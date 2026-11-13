@@ -2,7 +2,8 @@
 
 Agent evals send their reviews to a model service; Runtime and Human evals need none.
 Set up only the backends your Agent evals use: an OpenAI, Anthropic or Gemini API key,
-or a ChatGPT plan that includes Codex.
+a ChatGPT plan that includes Codex, or your own Claude Code with its login, such as a
+Claude Pro or Max subscription.
 
 An Agent eval names exactly one backend and one exact model ID. There is no model
 catalog and no fallback to another backend or model. Besides the built-in backends below,
@@ -16,7 +17,7 @@ API-key backends, create a key in your [OpenAI account](https://platform.openai.
 [Google AI Studio](https://aistudio.google.com/apikey), then save it with `artifactize login`,
 which reads it from stdin (paste it when asked), or paste it in the desktop app's
 **Settings → Providers**. Never commit it or put it in an Artifact declaration. Codex uses
-the separate browser sign-in below instead.
+the separate browser sign-in below instead, and Claude Agent uses Claude Code's own login.
 
 | Backend | Setup | List models |
 |---|---|---|
@@ -24,6 +25,7 @@ the separate browser sign-in below instead.
 | `anthropic` | `artifactize login anthropic` | `artifactize models anthropic` |
 | `gemini` | `artifactize login gemini` | `artifactize models gemini` |
 | `codex` | `artifactize login codex` | `artifactize models codex` |
+| `claude-agent` | `artifactize login claude-agent` (runs Claude Code's own `claude auth login`) | `artifactize models claude-agent` |
 
 A key in `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` is used before a saved
 one, for example `export OPENAI_API_KEY=...` (in PowerShell,
@@ -44,8 +46,16 @@ and asks the server to revoke them; it warns when the revocation is not confirme
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
 See [Codex](../features/agent.md#codex).
 
+`claude-agent` runs your installed Claude Code (`claude` on `PATH`, version 2.1.248 or
+newer) with the login it already has. `login claude-agent` runs Claude Code's own
+`claude auth login`: Claude Code opens the browser and prints a URL to open if it did not;
+when the page then shows a code, paste it into the terminal. `logout claude-agent` runs
+`claude auth logout`. Claude Code keeps its login; artifactize never reads, copies or
+stores it. Signing in with `claude auth login` yourself works the same. See
+[Claude Agent](../features/agent.md#claude-agent).
+
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, review store, desktop app, newer release
+artifactize doctor                 # state and its schema, API-key presence, Codex sign-in, Claude Code on PATH, review store, desktop app, newer release
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 

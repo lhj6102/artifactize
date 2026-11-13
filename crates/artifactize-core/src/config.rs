@@ -98,6 +98,10 @@ impl ConfigError {
 pub enum Provider {
     /// The ChatGPT/Codex account (artifactize login codex).
     Codex,
+    /// The user's own Claude Code and its login (claude auth login).
+    #[serde(rename = "claude-agent")]
+    #[value(name = "claude-agent")]
+    ClaudeAgent,
     /// The OpenAI API (OPENAI_API_KEY or a saved key).
     Openai,
     /// The Anthropic API (ANTHROPIC_API_KEY or a saved key).
@@ -108,11 +112,18 @@ pub enum Provider {
 
 impl Provider {
     /// In the order Settings lists them.
-    pub const ALL: [Self; 4] = [Self::Codex, Self::Openai, Self::Anthropic, Self::Gemini];
+    pub const ALL: [Self; 5] = [
+        Self::Codex,
+        Self::ClaudeAgent,
+        Self::Openai,
+        Self::Anthropic,
+        Self::Gemini,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
+            Self::ClaudeAgent => "claude-agent",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
             Self::Openai => "openai",
@@ -163,7 +174,7 @@ impl std::str::FromStr for Backend {
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         if REMOVED_BACKENDS.contains(&name) {
             return Err(format!(
-                r#"backend "{name}" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, or "codex" with a ChatGPT/Codex sign-in"#
+                r#"backend "{name}" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, "codex" with a ChatGPT/Codex sign-in, or "claude-agent" with your Claude Code login"#
             ));
         }
         identifier(name, "backend")?;

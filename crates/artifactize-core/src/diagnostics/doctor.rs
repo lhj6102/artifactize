@@ -125,6 +125,11 @@ pub enum Details {
         #[serde(rename = "testAuthEndpoint", skip_serializing_if = "Option::is_none")]
         test_auth_endpoint: Option<llm::TestEndpoint>,
     },
+    /// Claude Code's executable on `PATH`, or `null` without one.
+    ClaudeAgent {
+        #[serde(with = "crate::platform::path_serde::option")]
+        program: Option<PathBuf>,
+    },
     /// The installed desktop app, or `null` without one.
     Desktop {
         #[serde(with = "crate::platform::path_serde::option")]
@@ -304,7 +309,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 CheckStatus::Warn,
                 &format!(
                     "{key}; {} sends this backend's requests to the local test endpoint {endpoint}.",
-                    llm::base_url_variable(backend)
+                    llm::base_url_variable(backend).unwrap_or_default()
                 ),
                 Details::ApiKey { present, test_endpoint: Some(endpoint) },
             ),
@@ -358,6 +363,30 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     }
     let (status, message, details) = codex(&state, repo);
     report.add("codex", status, &message, details);
+    // Offline: only where `claude` is; its login and version are checked when a review or a
+    // model listing starts it.
+    match crate::platform::program::resolve(
+        std::ffi::OsStr::new(llm::claude_agent::command::PROGRAM),
+        &crate::platform::temporary_directory(),
+    ) {
+        Ok(program) => report.add(
+            "claude-agent",
+            CheckStatus::Pass,
+            &format!(
+                "Claude Code is on PATH: {}; it signs in on its own (`claude auth status`).",
+                crate::platform::path_text(&program)
+            ),
+            Details::ClaudeAgent {
+                program: Some(program),
+            },
+        ),
+        Err(_) => report.add(
+            "claude-agent",
+            CheckStatus::Warn,
+            "Claude Code (`claude`) is not on PATH; the claude-agent backend needs it, signed in with `claude auth login`.",
+            Details::ClaudeAgent { program: None },
+        ),
+    }
     // Offline: configuration and token storage only; `remote status` checks reachability.
     match auth::remote::remote(Some(&state), repo) {
         Ok(None) => report.add(
@@ -590,7 +619,10 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
         ),
     };
     for (variable, endpoint) in [
-        (llm::base_url_variable(Provider::Codex), &base),
+        (
+            llm::base_url_variable(Provider::Codex).expect("Codex has a test endpoint"),
+            &base,
+        ),
         (auth::codex::AUTH_URL_VARIABLE, &sign_in),
     ] {
         if let Some(endpoint) = endpoint {

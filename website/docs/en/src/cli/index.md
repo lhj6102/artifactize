@@ -64,6 +64,8 @@ on the root command and on `artifactize tools`.
 | `login openai\|anthropic\|gemini` | API key on stdin | `Saved the PROVIDER API key.`; JSON `{"provider":…,"saved":true}` | 0 |
 | `logout codex` | removes local tokens and attempts revocation; leaves read-only auth files alone | `Signed out of Codex.`; JSON `{"provider":"codex","signed_in":false,"revoked":BOOL}` | 0 after local sign-out |
 | `logout openai\|anthropic\|gemini` | forgets the saved key; the variable is untouched | `Forgot the saved PROVIDER API key.`; JSON `{"provider":…,"saved":false}` | 0 |
+| `login claude-agent` | runs Claude Code's own `claude auth login`: its URL on stderr; a code pasted on stdin goes to Claude Code | `Claude Code is signed in with METHOD (PLAN).`, without ` (PLAN)` when Claude Code names no plan, or `Claude Code signed in.` when its status then names no login; JSON `{"provider":"claude-agent","signed_in":true}` | 0; 2 when `claude` is missing or Claude Code fails |
+| `logout claude-agent` | runs Claude Code's own `claude auth logout` | `Signed out of Claude Code.`; JSON `{"provider":"claude-agent","signed_in":false}` | 0; 2 when `claude` is missing or Claude Code fails |
 | `provider list` | | each built-in key's source and every custom provider, never a key; text or JSON | 0 |
 | `provider add NAME` | `--alias PROVIDER`, or `--api API --url URL` with optional `--key` (key on stdin; without it the endpoint has no key) | `Saved custom provider NAME.`; JSON `{"provider":NAME,"saved":true}` | 0 |
 | `provider remove NAME` | | `Removed custom provider NAME.`; JSON `{"provider":NAME,"saved":false}` | 0 |

@@ -733,7 +733,7 @@ fn removed_backend_messages_name_codex_without_a_version() {
     let error = failure["error"].as_str().unwrap();
     assert!(
         error.trim_end().ends_with(
-            r#"backend "chatgpt" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, or "codex" with a ChatGPT/Codex sign-in"#
+            r#"backend "chatgpt" was removed in 0.5.0; use "openai", "anthropic" or "gemini" with an API key, "codex" with a ChatGPT/Codex sign-in, or "claude-agent" with your Claude Code login"#
         ),
         "{error}"
     );

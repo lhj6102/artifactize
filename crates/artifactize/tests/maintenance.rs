@@ -131,6 +131,11 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(check(&absent, "providers")["details"]["custom"], json!({}));
     assert_eq!(check(&absent, "codex")["status"], "WARN");
     assert_eq!(check(&absent, "codex")["details"]["source"], "none");
+    assert_eq!(check(&absent, "claude-agent")["status"], "WARN");
+    assert_eq!(
+        check(&absent, "claude-agent")["details"],
+        json!({"program": null})
+    );
     // 0.5.0 removed the chatgpt and claude backends and their checks.
     let names: Vec<_> = absent["checks"]
         .as_array()
@@ -150,6 +155,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "gemini",
             "providers",
             "codex",
+            "claude-agent",
             "remote",
             "desktop",
             "release"
@@ -707,5 +713,91 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
             .as_str()
             .unwrap()
             .contains("symlink")
+    );
+}
+
+/// `login`/`logout claude-agent` with `PATH` starting at `bin`, and `code` on stdin. Claude
+/// Code's own configuration points into the test's folder, so no real login is ever touched.
+fn claude_agent(state: &Path, bin: &Path, args: &[&str], code: &str) -> std::process::Output {
+    let mut command = command(state);
+    command
+        .args(args)
+        .env("PATH", support::claude_code::path(bin))
+        .env("CLAUDE_CONFIG_DIR", bin.join("config"))
+        .stdin(std::process::Stdio::piped());
+    let mut child = support::os::start(&mut command);
+    {
+        use std::io::Write;
+        let mut input = child.stdin.take().unwrap();
+        input.write_all(code.as_bytes()).unwrap();
+    }
+    support::os::finish(child, "login claude-agent")
+}
+
+#[test]
+fn claude_agent_signs_in_and_out_through_claude_codes_own_commands() {
+    let root = owned_run::Root::from(support::os::tempdir());
+    let state = root.path().join("state");
+    let bin = root.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    support::claude_code::scripted(&bin);
+    let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
+
+    // A code Claude Code refuses: its own error, and no sign-in.
+    let refused = claude_agent(&state, &bin, &["login", "claude-agent"], "bad-code\n");
+    assert_eq!(refused.status.code(), Some(2), "{}", text(&refused.stderr));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&refused.stdout).unwrap(),
+        json!({"error": "Claude Code could not sign in: Login failed: That code was not accepted."})
+    );
+    assert!(!bin.join("signed-in").exists());
+
+    // The pasted code reaches Claude Code, which signs in; the URL it printed is shown.
+    let signed_in = claude_agent(&state, &bin, &["login", "claude-agent"], "\ngood-code\n");
+    assert_eq!(
+        signed_in.status.code(),
+        Some(0),
+        "{}",
+        text(&signed_in.stderr)
+    );
+    assert!(
+        text(&signed_in.stderr).contains("https://claude.example/oauth/authorize?code=true"),
+        "{}",
+        text(&signed_in.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&signed_in.stdout).unwrap(),
+        json!({"provider": "claude-agent", "signed_in": true})
+    );
+    assert!(bin.join("signed-in").exists());
+
+    let signed_out = claude_agent(&state, &bin, &["logout", "claude-agent"], "");
+    assert_eq!(
+        signed_out.status.code(),
+        Some(0),
+        "{}",
+        text(&signed_out.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&signed_out.stdout).unwrap(),
+        json!({"provider": "claude-agent", "signed_in": false})
+    );
+    assert!(!bin.join("signed-in").exists());
+    // artifactize keeps nothing of Claude Code's login.
+    assert!(!state.join("auth").exists());
+
+    // Without Claude Code there is nothing to run.
+    let empty = root.path().join("empty");
+    fs::create_dir(&empty).unwrap();
+    let mut missing = command(&state);
+    missing
+        .args(["login", "claude-agent"])
+        .env("PATH", &empty)
+        .stdin(std::process::Stdio::null());
+    let missing = missing.record_output().unwrap();
+    assert_eq!(missing.status.code(), Some(2));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&missing.stdout).unwrap(),
+        json!({"error": "Claude Code (`claude`) is not on PATH; install it to use the claude-agent backend."})
     );
 }

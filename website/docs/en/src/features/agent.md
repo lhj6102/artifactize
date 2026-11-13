@@ -14,7 +14,8 @@ There is no bundled model catalog, credential search or fallback:
 profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", reasoning = "high", timeout_ms = 240000 }
 ```
 
-`backend` names a built-in provider (`openai`, `anthropic`, `gemini` or `codex`) or a
+`backend` names a built-in provider (`openai`, `anthropic`, `gemini`, `codex` or
+`claude-agent`) or a
 [custom provider](#custom-providers) set up on the machine that runs the eval. `openai`,
 `anthropic` and `gemini` use the key in `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or
 `GEMINI_API_KEY`, or else the key saved with `artifactize login openai|anthropic|gemini`
@@ -22,7 +23,8 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 printable ASCII characters without spaces; surrounding whitespace is trimmed. A set variable is
 the key in use: an invalid value is an error, never a reason to use the saved key. A value that
 is not valid Unicode counts as unset, so the saved key is used. `codex` uses a
-ChatGPT sign-in (see [Codex](#codex)). `provider` and `effort` are not config aliases.
+ChatGPT sign-in (see [Codex](#codex)), and `claude-agent` your own Claude Code and its
+login (see [Claude Agent](#claude-agent)). `provider` and `effort` are not config aliases.
 0.5.0 removed the `chatgpt` (Sign in with ChatGPT) and `claude` (Claude CLI) backends;
 `config check` names the replacements for any profile that still declares one.
 
@@ -31,10 +33,12 @@ artifactize models openai            # model ID and display name, in provider or
 artifactize models anthropic --json
 artifactize models gemini
 artifactize models codex
+artifactize models claude-agent
 ```
 
 `reasoning` is optional. OpenAI and Codex accept `none`, `minimal`, `low`, `medium`,
-`high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`; Gemini
+`high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`; Claude
+Agent accepts `low`, `medium`, `high`, `xhigh` and `max`; Gemini
 accepts `minimal`, `low`, `medium` and `high`. Other values are a declaration error and are
 never changed into another value. A custom provider's values are those of its API, checked
 when the review starts. A model that does not support
@@ -108,7 +112,8 @@ capped at 16384 output tokens per turn, apart from the review's `max_tokens`.
 
 A turn that fails with a rate limit or a temporary error before it produced any output
 or used any tokens is retried automatically a few times, waiting as long as the provider
-asks.
+asks. Claude Code retries its own requests, so a `claude-agent` review is never sent
+again ([Claude Agent](#claude-agent)).
 When the provider's answer itself fails after it began, that turn is retried up to the same
 few times, and the review keeps what it had already done.
 This covers an answer that turned into whitespace (`DEGENERATE_OUTPUT`), one that stopped
@@ -136,8 +141,8 @@ A failed Agent review records one of these `errorCode` values:
 
 | `errorCode` | Cause | Retried |
 |---|---|---|
-| `AUTHENTICATION` | Missing, expired or rejected credentials: HTTP 401/403, no API key, no Codex sign-in or an expired auth file | no; stops the backend |
-| `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit) | no; stops the backend |
+| `AUTHENTICATION` | Missing, expired or rejected credentials: HTTP 401/403, no API key, no Codex sign-in or an expired auth file, no `claude` on `PATH` or a signed-out Claude Code | no; stops the backend |
+| `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit, a Claude subscription limit) | no; stops the backend |
 | `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` reaches the deadline | yes |
 | `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes; after output, the turn is sent again |
 | `TIMEOUT` | The review's `timeout_ms` deadline | no |
@@ -270,6 +275,50 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
   account, in the server's order. A profile may name any model your account can use,
   listed or not.
 
+## Claude Agent
+
+`claude-agent` reviews with your own [Claude Code](https://code.claude.com) and whatever
+login it has: a Claude Pro or Max subscription, an API key or a cloud account.
+
+```sh
+artifactize login claude-agent      # runs Claude Code's own claude auth login
+artifactize models claude-agent     # the models Claude Code offers
+# Declare backend = "claude-agent", model = "claude-opus-5-5", reasoning = "high", then:
+artifactize verify --all --wait
+```
+
+- **Sign-in.** Claude Code keeps its own login. `login claude-agent` and the desktop's
+  **Settings → Providers → Claude Agent** run Claude Code's own `claude auth login`:
+  Claude Code opens the browser and prints a URL to open if it did not, and a code the
+  page shows can be pasted (into the terminal, or the desktop's code field). The sign-in
+  ends when Claude Code exits, signed in or with its error, and stops after ten minutes.
+  `logout claude-agent` runs `claude auth logout`. The desktop shows the sign-in as
+  `claude auth status` reports it: its login method and plan, never the account.
+  artifactize never reads, copies or stores the login and never sits between Claude Code
+  and its service; signing in with `claude auth login` yourself works the same. `claude`
+  must be on `PATH`, version 2.1.248 or newer: an older one is refused with a message to
+  run `claude update`. `doctor` shows where `claude` is, without starting it.
+- **Reviews.** The reviewer can use only the eval's declared Artifact tools, with the
+  same `max_tool_calls`, `max_tokens` and deadline as on every backend. None of your other
+  Claude Code setup applies to a review: its own tools, your Claude Code settings, hooks,
+  `CLAUDE.md`, memory, skills and MCP servers stay out, and nothing of the review appears
+  in your Claude Code sessions. The declared model and `reasoning` are used exactly,
+  Monitor shows the model's thinking summaries and answer as they arrive, and the verdict
+  and its one format repair work as for every backend.
+- **Errors.** Claude Code retries failed requests itself, so artifactize sends nothing
+  again. A reached subscription limit is `QUOTA`: it names the window (5-hour or weekly)
+  and when it resets, and stops `claude-agent` for the Run. A signed-out Claude Code is
+  `AUTHENTICATION` with a message to run `claude auth login`; a billing problem is
+  `QUOTA`.
+- **Usage.** Each response is one attempt in `usage`, with the token counters Claude Code
+  reports; a subscription reports no cost.
+- **Models.** `models claude-agent` lists the models Claude Code offers to its login,
+  each under the model ID that `model` takes, without a model call. A profile may name
+  any model Claude Code accepts, listed or not.
+- **Follow-ups.** Ask a [follow-up](#saved-conversations) with `session send`, as on
+  every backend. The reviewer answers in plain text from the review's
+  conversation and may read the Artifacts again; the recorded verdict stays.
+
 ## Custom providers
 
 A project only names a provider; what the name reaches is set up on each machine that runs
@@ -341,6 +390,7 @@ a fake provider on this machine. The variable replaces the provider's API root:
   set, `verify` refuses to use a review store, so set `ARTIFACTIZE_REMOTE=off`.
   Never `remote push` a state that holds fake results.
 - `doctor` warns while a test endpoint is set and reports it as `testEndpoint`.
+- `claude-agent` has no test endpoint: Claude Code reaches its service itself.
 
 The fake streams its answer as `text/event-stream`, in the provider's wire format,
 for the requested model. For `openai`, one `response.completed` event is enough.

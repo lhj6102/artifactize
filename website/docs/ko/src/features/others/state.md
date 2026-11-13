@@ -99,7 +99,7 @@ Agent 리뷰가 그 백엔드의 사용량 한도나 구독 요금제가 허용�
 {"backends": {"codex": 4, "openai": 16}}
 ```
 
-키는 프로필에 적는 백엔드 이름(`openai`, `anthropic`, `gemini`, `codex`, 또는
+키는 프로필에 적는 백엔드 이름(`openai`, `anthropic`, `gemini`, `codex`, `claude-agent`, 또는
 [커스텀 provider](../agent.md#custom-providers) 이름)이고 한도는 1–100000입니다. 이 파일에
 항목이 없는 백엔드는 동시 실행 수를 제한하지 않으며, 파일 자체가 없으면 어떤 백엔드도 제한하지 않습니다. `verify`는 시작할 때 이 파일을 읽습니다. 파일은 artifactize가
 지원하는 필드만 담은 64 KiB 이하의 일반 UTF-8 JSON 파일이어야 합니다. 그렇지 않으면 `verify`가 Run을
@@ -116,7 +116,7 @@ slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 Q
 오류로 [백엔드 사용이 중단되면](../agent.md#stopping-a-backend), 그 Run에서 대기 중이던 요청은 해당
 백엔드로 실행하지 않습니다.
 
-## 승인 유휴 유예 시간 {#sign-off-idle-grace}
+## 승인 유예 시간 {#sign-off-idle-grace}
 
 `limits.json`으로 아무도 맡지 않은 승인만 남은 Run이 YELLOW로 종료되기까지의 대기 시간도
 설정합니다([승인과 Run 종료](../run.md#sign-offs-and-the-end-of-a-run)).

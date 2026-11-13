@@ -265,7 +265,7 @@ where
 
 /// A registration nobody makes: the type of [`run_inner`]'s and [`spawn_owned`]'s absent
 /// `register`.
-type Unregistered = fn(ChildIdentity) -> std::future::Ready<io::Result<()>>;
+pub(crate) type Unregistered = fn(ChildIdentity) -> std::future::Ready<io::Result<()>>;
 
 /// Run a child nobody registers, such as a fingerprint script or a tool's protocol call: it
 /// runs at once, in its own process group or Job Object, and is cleaned up with its children.
@@ -524,6 +524,30 @@ pub(crate) fn launch_detached(
     Ok(())
 }
 
+/// A program that hands part of its work to the desktop, such as a sign-in that opens the
+/// browser, with its standard streams piped to this process and no console window. It and
+/// what it starts are stopped when the child drops, also when its owner dies where the
+/// system allows; [`Child::release`] lets what it started go on once it has ended.
+pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
+    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
+        environment_value(&command.env, name).map(ToOwned::to_owned)
+    })
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(program);
+    child
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .env_clear()
+        .envs(&command.env)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    platform::spawn_windowless(child)
+        .await
+        .map_err(Error::Spawn)
+}
+
 /// A desktop handoff whose output a Tool log shows: like [`launch_detached`] it is never
 /// owned, killed or waited on by the review, but its stdout and stderr are pipes, drained
 /// line by line into `run` until the program closes them and exits, whoever still listens.
@@ -690,7 +714,7 @@ pub(crate) fn is_alive(owner: Option<ChildIdentity>) -> io::Result<bool> {
     }
 }
 
-async fn terminate(child: &mut Child) -> io::Result<()> {
+pub(crate) async fn terminate(child: &mut Child) -> io::Result<()> {
     let _ = child.interrupt();
     tokio::select! {
         _ = sleep(CLEANUP_GRACE) => {},

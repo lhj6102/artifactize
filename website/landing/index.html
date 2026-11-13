@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Build together on an Artifact Graph.</title>
-<meta name="description" content="Build together on an Artifact Graph. Split a project into Artifacts, pieces with their own checks: every teammate, human or AI agent, works their own way, and integration reuses every review that still holds."
-      data-ko-content="Build together on an Artifact Graph. 프로젝트를 Artifact라는 조각으로 나누고 조각마다 검사를 붙이세요. 사람이든 AI 에이전트든 모든 팀원이 자기 방식대로 일하고, 통합할 때는 아직 유효한 리뷰를 모두 재사용합니다.">
+<title>Artifactize: Evaluation-driven development for people and AI agents.</title>
+<meta name="description" content="Artifactize: Evaluation-driven development for people and AI agents. Split a project into Artifacts, pieces with their own checks: every teammate, human or AI agent, works their own way, and integration reuses every review that still holds."
+      data-ko-content="Artifactize: Evaluation-driven development for people and AI agents. 프로젝트를 Artifact라는 조각으로 나누고 조각마다 검사를 붙이세요. 사람이든 AI 에이전트든 모든 팀원이 자기 방식대로 일하고, 통합할 때는 아직 유효한 리뷰를 모두 재사용합니다.">
 <link rel="canonical" href="https://artifactize.dev/" data-ko-href="https://artifactize.dev/ko/">
 <link rel="alternate" hreflang="en" href="https://artifactize.dev/">
 <link rel="alternate" hreflang="ko" href="https://artifactize.dev/ko/">
@@ -16,9 +16,9 @@
 <meta property="og:site_name" content="Artifactize">
 <meta property="og:url" content="https://artifactize.dev/" data-ko-content="https://artifactize.dev/ko/">
 <meta property="og:locale" content="en_US" data-ko-content="ko_KR">
-<meta property="og:title" content="Build together on an Artifact Graph.">
-<meta property="og:description" content="Build together on an Artifact Graph. Every part carries its own checks, and integration never pays for the same review twice."
-      data-ko-content="Build together on an Artifact Graph. 조각마다 검사가 따로 붙어 있어, 통합할 때 같은 리뷰에 두 번 비용을 들이지 않습니다.">
+<meta property="og:title" content="Artifactize: Evaluation-driven development for people and AI agents.">
+<meta property="og:description" content="Artifactize: Evaluation-driven development for people and AI agents. Every part carries its own checks, and integration never pays for the same review twice."
+      data-ko-content="Artifactize: Evaluation-driven development for people and AI agents. 조각마다 검사가 따로 붙어 있어, 통합할 때 같은 리뷰에 두 번 비용을 들이지 않습니다.">
 <meta property="og:image" content="https://artifactize.dev/media/og.jpg" data-ko-content="https://artifactize.dev/media/og.ko.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -86,7 +86,7 @@
 
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-copy">
-      <h1 id="hero-title">Build together on an <em><span class="nowrap">Artifact Graph</span></em>.</h1>
+      <h1 id="hero-title">Artifactize: <em><span class="nowrap">Evaluation-driven</span></em> development for people and AI agents.</h1>
       <figure class="hero-roles">
         <img src="/media/roles.en.gif" width="1280" height="720" loading="eager" decoding="async"
              alt="Animation, collaborate in Artifactize: three roles pass one Artifact Graph between them, made of Artifacts, the pieces of the project, each with its own checks. As Director, three people and two AI agents decide what to build and add an Artifact; as Builder, five AI agents build it; as Evaluator, four AI agents and one person check the Artifacts one by one. The new Artifact is RED, so the Artifact Graph goes back to the Builder to fix, then to the Evaluator again, and it turns GREEN. The Director adds another Artifact and changes one, and the Builder and the Evaluator go back and forth again until GREEN."
@@ -125,6 +125,19 @@
       <li data-locale="en">People who want code, documents, images, and running applications to stay consistent as the project grows.</li>
       <li data-locale="ko">프로젝트가 커져도 코드, 문서, 이미지, 실행 중인 앱이 서로 어긋나지 않기를 바라는 분</li>
     </ul>
+  </section>
+
+  <section class="wrap audience" aria-labelledby="how-title">
+    <h2 data-locale="en" id="how-title">How it works</h2>
+    <h2 data-locale="ko" id="how-title">동작 방식</h2>
+    <ol class="audience-list">
+      <li data-locale="en">Evaluations define the result; AI agents iterate until it passes.</li>
+      <li data-locale="ko">평가로 결과물의 조건을 정하면, AI 에이전트가 평가를 통과할 때까지 결과물을 고쳐 나갑니다.</li>
+      <li data-locale="en">Tests, AI agents and people can all be equal evaluators, each good at different evaluations.</li>
+      <li data-locale="ko">테스트, AI 에이전트, 사람 모두 동등한 평가자가 될 수 있고, 각각 잘 평가하는 부분이 다릅니다.</li>
+      <li data-locale="en">Each evaluated result becomes part of the next evaluation, all the way to the final result.</li>
+      <li data-locale="ko">평가를 거친 결과물은 다음 평가의 입력이 되고, 이렇게 최종 결과물까지 이어집니다.</li>
+    </ol>
   </section>
 
   <section class="story" id="story" aria-labelledby="story-title" data-story>

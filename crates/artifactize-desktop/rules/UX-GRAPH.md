@@ -64,8 +64,9 @@ that makes the transition happen and checks where it leads.
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
 - **Settings**: a modal over the screen with three tabs. **Providers** lists the built-in providers
-  (Codex, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
-  the chosen one's setup on the right: the Codex account, an API key, or a custom provider's form,
+  (Codex, Claude Agent, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
+  the chosen one's setup on the right: the Codex account, Claude Code's sign-in, an API key, or
+  a custom provider's form,
   each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
   sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
@@ -195,8 +196,8 @@ that makes the transition happen and checks where it leads.
 | E-PANE-SELECT | Pane | click a branch's name | that branch selected and expanded, its newest entry (the running Run, else Current) shown in the Main area in its pill |
 | E-PANE-STAR | Pane | click a branch's star | the branch starred, or its star taken away; starred branches listed first, each group in the search's order, kept for the next monitor |
 | E-PANE-CHIP | Pane, a branch expanded | click an entry of its timeline | that entry selected and shown in the Main area (a Run as Run, the Current as Current), in its pill |
-| E-PANE-FOLD | Pane | click a branch's chevron | the branch expanded to its timeline, or folded back to its newest Run's status; nothing chosen |
-| E-PANE-OLDER | Pane, a branch expanded with older Runs | click Older runs | older Runs listed below the oldest; nothing chosen |
+| E-PANE-FOLD | Pane | click a branch's chevron | the branch expanded to its timeline, or folded back to its newest Run's status; the selection and the main area as they were |
+| E-PANE-OLDER | Pane, a branch expanded with older Runs | click Older runs | older Runs listed below the oldest; the selection and the main area as they were |
 | E-MON-SCOPE-MOVE | Pane entries focused | `j`, `k`, ↑ or ↓ | the next or previous entry selected, through the Branches, the timelines of expanded branches and then the Waiting stack; a branch shows its newest entry in the Main area, a timeline entry shows itself, a waiting review is only selected; the list scrolls to show the selected entry |
 | E-MON-EXPAND | Pane entries focused, a branch or a timeline entry selected | → or ← | → expands a folded branch, or enters an expanded one's timeline on its newest entry; ← steps from a timeline entry back to its branch, or folds an expanded branch; what is shown stays unless an entry is entered |
 | E-MON-RUNS-MOVE | Pane entries focused, a timeline entry selected | ↓ or ↑ | the next or previous entry shown in the Main area and in its pill, the list scrolling to show it |
@@ -247,8 +248,8 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
 | E-GRAPH-MINIMIZE | Run graph or Current graph with a whole drawn as a box | click its Minimize button | the graph laid out again, the whole minimized: a node of a node's size with its name, verdict's colour, how many parts it has and its Expand button; the edges of the Artifacts it hides meeting it, those between the same two drawn once in the light that comes first, those among them not drawn; its top left corner where it was on the screen; no Detail opened or closed; minimized on every graph of its branch |
 | E-GRAPH-EXPAND | Run graph or Current graph with a minimized whole | click its Expand button | the graph laid out again, the whole a box around its parts (E-GRAPH-PARTS); its top left corner where it was on the screen; no Detail opened or closed; expanded on every graph of its branch |
-| E-GRAPH-MINIMIZE-KEY | Run graph or Current graph with a whole drawn as a box, focus outside the Pane and outside a text field; the whole or its Minimize button focused, or else its Detail open | `m` | as E-GRAPH-MINIMIZE for that whole; focus where it was, on the whole or its button |
-| E-GRAPH-EXPAND-KEY | Run graph or Current graph with a minimized whole, focus outside the Pane and outside a text field; the whole or its Expand button focused, or else its Detail open | `m` | as E-GRAPH-EXPAND for that whole; focus where it was, on the whole or its button |
+| E-GRAPH-MINIMIZE-KEY | Run graph or Current graph with a whole drawn as a box, focus outside the Pane and outside a field typed in (a text field or a choice list; a true/false box is not typed in); the whole or its Minimize button focused, or else its Detail open | `m` | as E-GRAPH-MINIMIZE for that whole; focus where it was: on the whole, on its button or in its Detail |
+| E-GRAPH-EXPAND-KEY | Run graph or Current graph with a minimized whole, focus outside the Pane and outside a field typed in (a text field or a choice list; a true/false box is not typed in); the whole or its Expand button focused, or else its Detail open | `m` | as E-GRAPH-EXPAND for that whole; focus where it was: on the whole, on its button or in its Detail |
 | E-GRAPH-MINIMIZED | Run graph or Current graph with a minimized whole | click it outside its button, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-MINIMIZED-FIND | Find field listing an Artifact a minimized whole hides, or an eval of such an Artifact | Enter on it, or a click on it | Find field closed; the Detail of that Artifact focused, on its Artifact tab or on that eval's tab; the minimized whole highlighted and moved by the camera to the middle of the graph left of the Detail, as for a found Artifact (E-GRAPH-FIND-GO) |
 | E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused, listing the favorites: the graph's starred Artifacts in the graph's order, each with its verdict's glyph and colour, as if they had been found; with none of them starred, saying how to star one |
@@ -326,6 +327,14 @@ that makes the transition happen and checks where it leads.
 | E-SET-CODEX-PASTE | sign-in in progress | paste the redirect URL | signed in |
 | E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Codex, signed out |
 | E-SET-CODEX-LOGOUT | Codex, signed in | Sign out of Codex | Codex, signed out |
+| E-SET-CLAUDE-AGENT | Providers | choose Claude Agent | Claude Code's sign-in shown as Claude Code reports it: `claude` not found, not signed in, signed in with its login method and plan, or its error |
+| E-SET-CLAUDE-AGENT-CHECK | Claude Agent | Check again | Claude Code's sign-in asked again and shown |
+| E-SET-CLAUDE-AGENT-LOGIN | Claude Agent | Sign in with Claude Code | Claude Code sign-in in progress: `claude auth login` running, the browser opened by Claude Code, the URL it printed shown |
+| E-SET-CLAUDE-AGENT-RETURN | Claude Code sign-in in progress | the browser returns to Claude Code | Claude Agent, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-PASTE | Claude Code sign-in in progress | paste the code the sign-in page gives, then Finish sign-in | Claude Code takes the code and signs in; Claude Agent, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-END | Claude Code sign-in in progress | Claude Code ends without signing in: it refuses a pasted code, fails, or ten minutes pass | Claude Agent, the error Claude Code ended with shown and its sign-in shown again |
+| E-SET-CLAUDE-AGENT-CANCEL | Claude Code sign-in in progress | Cancel sign-in | Claude Agent, Claude Code stopped, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-LOGOUT | Claude Agent, signed in | Sign out of Claude Code | `claude auth logout` run; Claude Agent, not signed in |
 | E-SET-MODELS | a provider's setup | List models | models of the chosen provider shown |
 | E-SET-REMOTE-LOGIN | Remote | enter the store URL, share level and token, then Sign in to the store | store signed in, status shown, token cleared from the form |
 | E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
@@ -416,6 +425,7 @@ E-PANE-SELECT.
   E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
 - J-SET-PROVIDERS: E-SCREEN-SETTINGS → E-SET-PROVIDER
 - J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
+- J-SET-CLAUDE-AGENT: E-SET-PROVIDER → E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-CHECK | E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-RETURN | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-PASTE | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-CANCEL | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-END; E-SET-CLAUDE-AGENT-LOGOUT
 - J-SET-KEY: E-SET-PROVIDER → E-SET-KEY → E-SET-KEY-SAVE → E-SET-KEY-REMOVE
 - J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
 - J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS

@@ -17,6 +17,7 @@ use std::{
 };
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 
 struct Fixture {
     _root: owned_run::Root,
@@ -109,8 +110,7 @@ impl Fixture {
                 .args(args)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .spawn()
-                .unwrap(),
+                .launch(),
         )
     }
 }

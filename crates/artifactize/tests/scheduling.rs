@@ -16,6 +16,7 @@ use owned_run::RunChild as Child;
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
+use support::os::Launch;
 use support::runs::RecordOutput;
 
 // One fixture-owned writer records acknowledged events. Concurrent Python text-file
@@ -134,8 +135,7 @@ impl Fixture {
             .command(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .launch();
         Child::new(child, &self.state, &self.repo)
     }
 
@@ -658,8 +658,7 @@ fn run_guard_constructor_reaps_the_caller_if_setup_unwinds_before_announcement()
         .args(["-c", "import sys; sys.stdin.read()"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .launch();
     let pid = caller.id();
     let result = std::panic::catch_unwind(|| Child::new(caller, &fixture.state, &fixture.repo));
     assert!(result.is_err());

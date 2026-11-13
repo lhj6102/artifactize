@@ -756,6 +756,17 @@ pub fn start(command: &mut Command) -> std::process::Child {
         .expect("the command starts")
 }
 
+/// Start a test's child process as its command sets it up: `command.launch()`.
+pub trait Launch {
+    fn launch(&mut self) -> std::process::Child;
+}
+
+impl Launch for Command {
+    fn launch(&mut self) -> std::process::Child {
+        self.spawn().expect("the command starts")
+    }
+}
+
 /// Observe and reap an exited standard child without changing its caller's ownership.
 pub fn child_exited(child: &mut std::process::Child) -> bool {
     child
@@ -2483,6 +2494,15 @@ pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> C
     }
     worker::prepare_probe(&mut command);
     command
+}
+
+/// Write `contents` to `path` at once: a temporary file beside it is renamed over it, so a
+/// reader never sees a partial write, also where renaming over an open file differs by OS.
+pub fn publish_file(path: &Path, contents: impl AsRef<[u8]>) {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new_in(path.parent().unwrap()).unwrap();
+    file.write_all(contents.as_ref()).unwrap();
+    file.persist(path).unwrap();
 }
 
 /// Create or replace an owner-only fixture file. Replacement keeps the inode for tests

@@ -15,13 +15,13 @@ artifactize는 모델 목록을 따로 제공하지 않으며, 여러 위치에�
 profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", reasoning = "high", timeout_ms = 240000 }
 ```
 
-`backend`에는 기본 provider(`openai`, `anthropic`, `gemini`, `codex`)나, eval을 실행하는
+`backend`에는 기본 provider(`openai`, `anthropic`, `gemini`, `codex`, `claude-agent`)나, eval을 실행하는
 머신에 등록한 [커스텀 provider](#custom-providers)의 이름을 씁니다. `openai`, `anthropic`,
 `gemini`는 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`에 든 키를 쓰고, 없으면
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
 그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
 지웁니다. 변수가 설정되어 있으면 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
-납니다. 유효한 유니코드가 아닌 값은 설정되지 않은 것으로 보아 저장한 키를 씁니다. `codex`는 ChatGPT 로그인을 씁니다([Codex](#codex) 참고).
+납니다. 유효한 유니코드가 아닌 값은 설정되지 않은 것으로 보아 저장한 키를 씁니다. `codex`는 ChatGPT 로그인을, `claude-agent`는 내 Claude Code와 그 로그인을 씁니다([Codex](#codex), [Claude Agent](#claude-agent) 참고).
 `provider`와 `effort`는 설정에서 쓸 수 있는 별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
 없어졌으며, 아직 이를 선언한 프로필이 있으면 `config check`가 대신 쓸 백엔드를 알려 줍니다.
 
@@ -30,10 +30,12 @@ artifactize models openai            # model ID and display name, in provider or
 artifactize models anthropic --json
 artifactize models gemini
 artifactize models codex
+artifactize models claude-agent
 ```
 
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
-`xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Gemini는 `minimal`, `low`,
+`xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Claude Agent는 `low`, `medium`,
+`high`, `xhigh`, `max`를, Gemini는 `minimal`, `low`,
 `medium`, `high`를 받습니다. 그 밖의 값은 선언 오류이며, 다른 값으로 바꿔서 보내지 않습니다.
 커스텀 provider에서는 해당 API가 지원하는 값을 쓸 수 있으며, 지원 여부는 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
@@ -97,7 +99,8 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
 출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 안내한 대기 시간이 지난 뒤 자동으로 몇 차례 재시도합니다.
+provider가 안내한 대기 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. `claude-agent` 리뷰는 Claude Code가
+요청을 직접 재시도하므로 artifactize가 다시 보내지 않습니다([Claude Agent](#claude-agent)).
 provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 그 턴을 같은 횟수까지 다시 시도하며
 리뷰가 이미 해 둔 작업은 그대로 유지됩니다. 답변이 공백으로만
 계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
@@ -120,8 +123,8 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 
 | `errorCode` | 원인 | 재시도 |
 |---|---|---|
-| `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일이 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
-| `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
+| `AUTHENTICATION` | 자격 증명이 없거나 만료됐거나 거부된 경우입니다. HTTP 401/403, API 키나 Codex 로그인이 없는 경우, 만료된 인증 파일, `PATH`에 `claude`가 없거나 Claude Code가 로그아웃된 경우가 여기에 해당합니다 | 하지 않습니다. 백엔드를 멈춥니다 |
+| `QUOTA` | 결제, 크레딧, 요금제 사용량 한도(`insufficient_quota`, Codex 사용량 한도, Claude 구독 사용량 한도) | 하지 않습니다. 백엔드를 멈춥니다 |
 | `RATE_LIMIT` | 할당량 문제가 아닌 HTTP 429입니다. 재시도 뒤에도 실패했거나, `Retry-After`에 따른 대기 시간이 리뷰의 남은 시간 이상인 경우입니다 | 합니다 |
 | `TRANSIENT` | 연결 실패, HTTP 5xx나 과부하, 끊긴 스트림입니다. 요청한 재시도 대기가 너무 길어도 이 분류를 유지합니다 | 합니다. 출력 뒤에는 그 턴을 다시 보냅니다 |
 | `TIMEOUT` | 리뷰의 `timeout_ms` 제한 시간 | 하지 않습니다 |
@@ -233,6 +236,48 @@ artifactize logout codex    # delete artifactize's tokens; their revocation is a
 - **모델.** `models codex`는 지금 계정으로 Codex 모델 선택기에서 고를 수 있는 모델을 서버가 보내 준
   순서대로 나열합니다. 프로필에는 목록에 표시되지 않더라도 계정에서 사용할 수 있는 모델을 지정할 수 있습니다.
 
+## Claude Agent {#claude-agent}
+
+`claude-agent` 백엔드는 사용자의 [Claude Code](https://code.claude.com)를 통해 리뷰하며, Claude Code에
+로그인한 계정을 그대로 사용합니다. Claude Pro·Max 구독이나 API 키, 클라우드 계정으로 로그인한 Claude Code를
+사용할 수 있습니다.
+
+```sh
+artifactize login claude-agent      # runs Claude Code's own claude auth login
+artifactize models claude-agent     # the models Claude Code offers
+# Declare backend = "claude-agent", model = "claude-opus-5-5", reasoning = "high", then:
+artifactize verify --all --wait
+```
+
+- **로그인.** 로그인 정보는 Claude Code가 직접 보관합니다. `login claude-agent`와 데스크톱 앱의
+  **Settings → Providers → Claude Agent**는 Claude Code 자체 명령인 `claude auth login`을
+  실행합니다. Claude Code가 브라우저를 열고, 열리지 않았을 때 열 URL을 출력하며, 페이지에 나온
+  코드는 터미널이나 데스크톱 앱의 코드 입력란에 붙여 넣을 수 있습니다. 로그인은 Claude Code가
+  종료되면 끝나며(로그인 성공 또는 Claude Code의 오류), 10분이 지나면 멈춥니다.
+  `logout claude-agent`는 `claude auth logout`을 실행합니다. 데스크톱 앱은 `claude auth status`가
+  알려 주는 대로 로그인 방식과 요금제를 보여 주며, 계정 정보는 보여 주지 않습니다. artifactize는
+  로그인 정보를 읽거나 복사하거나 저장하지 않으며, Claude Code와 서비스 사이에 끼어들지도 않습니다.
+  직접 `claude auth login`으로 로그인해도 똑같이 쓸 수 있습니다. `PATH`에 2.1.248 이상의 `claude`가
+  있어야 하며, 그보다 오래된 버전이면 `claude update`를 실행하라는 메시지와 함께 거부합니다.
+  `doctor`는 `claude`를 실행하지 않고 위치만 보여 줍니다.
+- **리뷰.** 리뷰어는 eval에 선언한 Artifact 도구만 쓸 수 있으며, `max_tool_calls`, `max_tokens`,
+  마감 시간도 다른 백엔드와 같습니다. 그 밖의 Claude Code 설정은 리뷰에 쓰이지 않습니다. Claude Code
+  자체 도구, Claude Code 설정, 훅, `CLAUDE.md`, 메모리, 스킬, MCP 서버는 모두 빠지고, 리뷰 내용이 내
+  Claude Code 세션 목록에 남지도 않습니다. 선언한 모델과 `reasoning`을 그대로 쓰며, Monitor에는 모델의
+  thinking 요약과 답변이 나오는 대로 표시됩니다. 판정과 형식 수정 요청 한 번은 다른 백엔드와 같습니다.
+- **오류.** Claude Code가 실패한 요청을 직접 재시도하므로 artifactize는 다시 보내지 않습니다.
+  구독 사용량 한도에 걸리면 `QUOTA`이며, 어느 구간(5시간 또는 주간)인지와 초기화 시각을 알려 주고
+  그 Run에서 `claude-agent`를 멈춥니다. Claude Code가 로그아웃된 상태면 `AUTHENTICATION`이며
+  `claude auth login`을 실행하라고 알려 줍니다. 결제 문제는 `QUOTA`입니다.
+- **사용량.** 응답 하나가 `usage`의 시도 하나이며, Claude Code가 알려 준 토큰 수를 기록합니다.
+  구독에서는 비용이 나오지 않습니다.
+- **모델.** `models claude-agent`는 모델을 호출하지 않고, Claude Code가 지금 로그인으로 제공하는
+  모델을 `model`에 쓰는 모델 ID로 나열합니다. 프로필에는 목록에 없더라도 Claude Code가 받는 모델을
+  지정할 수 있습니다.
+- **follow-up.** 다른 백엔드처럼 `session send`로 [follow-up](#saved-conversations)을
+  보낼 수 있습니다. 리뷰어는 리뷰 대화를 바탕으로 일반 텍스트로 답하며, 필요하면 Artifact를 다시
+  읽습니다. 기록된 판정은 바뀌지 않습니다.
+
 ## 커스텀 provider {#custom-providers}
 
 프로젝트에는 provider 이름만 적습니다. 그 이름이 어디로 연결되는지는 eval을 실행하는 머신마다
@@ -303,6 +348,7 @@ profile = { kind = "agent", backend = "local", model = "YOUR_EXACT_MODEL_ID" }
   저장소 사용을 거부하므로 `ARTIFACTIZE_REMOTE=off`로 설정하세요. 가짜 결과가 든 상태는 절대
   `remote push`하지 마세요.
 - 테스트 엔드포인트가 설정되어 있는 동안 `doctor`는 경고하고 이를 `testEndpoint`로 알립니다.
+- `claude-agent`에는 테스트 엔드포인트가 없습니다. Claude Code가 서비스에 직접 연결하기 때문입니다.
 
 가짜 provider는 요청에 지정된 모델의 응답을 해당 provider의 전송 형식에 맞춰 `text/event-stream`으로 스트리밍합니다.
 `openai`라면 `response.completed` 이벤트 하나면 됩니다. GREEN 스키마가 `{"verdict":"GREEN"}`만으로 충족되는 리뷰는 이 가짜 provider로 통과시킬 수 있습니다. `pass_schema`에 다른 필드가 필요하면

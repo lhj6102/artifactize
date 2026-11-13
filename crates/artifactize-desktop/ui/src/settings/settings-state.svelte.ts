@@ -2,6 +2,8 @@ import { createContext } from "svelte";
 import {
   call,
   message,
+  type ClaudeAgentPrompt,
+  type ClaudeAgentStatus,
   type CodexPrompt,
   type CodexStatus,
   type Commands,
@@ -82,6 +84,16 @@ export class SettingsState {
   prompt = $state.raw<CodexPrompt | null>(null);
   redirect = $state("");
   busy = $state(false);
+  /** Claude Code's sign-in as Claude Code last reported it; asked whenever Claude Agent is
+   * chosen. */
+  claude = $state.raw<ClaudeAgentStatus | null>(null);
+  claudeError = $state<string | null>(null);
+  claudeNotice = $state<string | null>(null);
+  claudePrompt = $state.raw<ClaudeAgentPrompt | null>(null);
+  /** The code Claude Code's sign-in page gives, while typed. */
+  claudeCode = $state("");
+  /** Claude Code is being asked, signed in or signed out. */
+  claudeBusy = $state(false);
   models = $state.raw<Model[] | null>(null);
   modelsError = $state<string | null>(null);
   listing = $state(false);
@@ -163,6 +175,7 @@ export class SettingsState {
     this.providersError = null;
     const custom = choice.kind === "custom" ? this.providers?.custom.find((one) => one.name === choice.name) : undefined;
     this.draft = custom ? draftOf(custom) : blank();
+    if (choice.kind === "builtin" && choice.provider === "claude-agent" && !this.claudeBusy) void this.loadClaude();
   }
 
   async saveKey(provider: Provider) {
@@ -314,6 +327,75 @@ export class SettingsState {
       this.codexError = message(failure);
     } finally {
       this.busy = false;
+    }
+  }
+
+  /** Ask Claude Code again whether it is signed in. */
+  async loadClaude() {
+    this.claudeBusy = true;
+    this.claudeError = null;
+    try {
+      this.claude = await call(this.#commands.claudeAgentStatus());
+    } catch (failure) {
+      this.claudeError = message(failure);
+    } finally {
+      this.claudeBusy = false;
+    }
+  }
+
+  /** Run Claude Code's own sign-in; its status shows again when it ends. */
+  async claudeSignIn() {
+    this.claudeError = null;
+    this.claudeNotice = null;
+    this.claudeBusy = true;
+    try {
+      this.claudePrompt = await call(this.#commands.claudeAgentLoginStart());
+      this.claude = await call(this.#commands.claudeAgentLoginWait(this.claudePrompt.signIn));
+      this.claudeNotice = "Claude Code signed in.";
+    } catch (failure) {
+      this.claudeError = message(failure);
+    } finally {
+      this.claudePrompt = null;
+      this.claudeCode = "";
+      this.claudeBusy = false;
+    }
+    if (this.claudeError !== null) await this.#refreshClaude();
+  }
+
+  /** The status after a failed or cancelled sign-in, keeping the error shown. */
+  async #refreshClaude() {
+    try {
+      this.claude = await call(this.#commands.claudeAgentStatus());
+    } catch {
+      // The sign-in's own error stays shown.
+    }
+  }
+
+  async claudePaste() {
+    const code = this.claudeCode.trim();
+    if (!code) return;
+    try {
+      await call(this.#commands.claudeAgentLoginPaste(code));
+    } catch (failure) {
+      this.claudeError = message(failure);
+    }
+  }
+
+  cancelClaudeSignIn() {
+    void this.#commands.claudeAgentLoginCancel();
+  }
+
+  async claudeSignOut() {
+    this.claudeError = null;
+    this.claudeNotice = null;
+    this.claudeBusy = true;
+    try {
+      this.claude = await call(this.#commands.claudeAgentLogout());
+      this.claudeNotice = "Claude Code signed out.";
+    } catch (failure) {
+      this.claudeError = message(failure);
+    } finally {
+      this.claudeBusy = false;
     }
   }
 

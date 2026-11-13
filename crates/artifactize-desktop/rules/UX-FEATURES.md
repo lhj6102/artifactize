@@ -72,8 +72,9 @@ Both graphs, a Run's and the Current, take the pointer: Tab reaches their Artifa
 
 ## Settings
 
-- **J-SET-PROVIDERS**: the Providers tab lists the built-in providers vertically on the left (Codex, OpenAI, Anthropic, Gemini), then the custom providers by name, then **+ Custom provider** at the bottom. Choosing one shows its setup on the right.
+- **J-SET-PROVIDERS**: the Providers tab lists the built-in providers vertically on the left (Codex, Claude Agent, OpenAI, Anthropic, Gemini), then the custom providers by name, then **+ Custom provider** at the bottom. Choosing one shows its setup on the right.
 - **J-SET-CODEX**: Codex signs in to or out of the ChatGPT account through the browser; when the browser cannot return, the redirect URL can be pasted; a sign-in in progress can be cancelled.
+- **J-SET-CLAUDE-AGENT**: Claude Agent shows Claude Code's sign-in as Claude Code itself reports it: `claude` not found, not signed in, signed in with its login method and plan, or the error it failed with; Check again asks again. It signs in and out by running the user's own `claude auth login` and `claude auth logout`: Claude Code opens the browser and keeps its own login, which artifactize never reads, copies or stores. While it signs in, the URL Claude Code prints is shown, the code its page gives can be pasted, and the sign-in can be cancelled; the status updates when it ends.
 - **J-SET-KEY**: OpenAI, Anthropic and Gemini each show whether their key is set, from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) or saved here, never its value. A key can be pasted and saved, or removed; a set environment variable is used first.
 - **J-SET-CUSTOM**: **+ Custom provider** adds a provider with a name: an alias of a built-in provider, used with its sign-in or key, or an endpoint with its API (OpenAI Responses, OpenAI Chat Completions, Anthropic Messages or Gemini), base URL and optional key. Any number can be added; a custom provider can be changed or removed. An eval uses it by its name in `backend`.
 - **J-SET-MODELS**: a provider's setup lists the models it offers.
