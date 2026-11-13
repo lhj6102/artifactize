@@ -113,7 +113,7 @@
   }
   h1 {
     margin: 0;
-    font-size: 15px;
+    font-size: var(--text-title);
   }
   .tabs {
     display: flex;

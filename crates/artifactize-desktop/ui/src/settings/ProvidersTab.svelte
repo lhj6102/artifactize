@@ -236,6 +236,10 @@
     background: var(--selection);
     font-weight: 600;
   }
+  /* While the keyboard is in the list, the chosen provider carries the selection's bar. */
+  nav:focus-within .choice[aria-current="true"] {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
   .setup {
     min-width: 0;
   }

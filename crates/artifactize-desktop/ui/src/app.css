@@ -89,13 +89,12 @@ kbd {
   align-items: center;
   white-space: nowrap;
 }
+/* Hover only highlights: a button keeps its face, and its edge steps up to a field's line. */
 .button:hover:not(:disabled) {
   border-color: var(--line-input);
-  background: color-mix(in srgb, var(--surface-group) 70%, var(--surface-raised));
 }
 .button.primary:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 88%, var(--ink));
+  border-color: var(--ink-on-accent);
 }
 .button:disabled {
   opacity: 0.45;

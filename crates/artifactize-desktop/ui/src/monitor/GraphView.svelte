@@ -361,7 +361,17 @@
       onnodeclick={({ node }) => onopen(byKey.get(node.id)?.node.id ?? node.id)}
       onpaneclick={({ event }) => background(event)}
     >
-      <Controls showLock={false} showFitView={false}>
+      <!-- The zoom buttons are the graph's own: the built-in ones carry a native tooltip, and
+           hovering opens nothing here. -->
+      <Controls showLock={false} showFitView={false} showZoom={false}>
+        {#snippet before()}
+          <ControlButton class="svelte-flow__controls-zoomin" onclick={() => void flow.zoomIn()} aria-label="Zoom In">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true"><path d="M32 18.133H18.133V32h-4.266V18.133H0v-4.266h13.867V0h4.266v13.867H32z" /></svg>
+          </ControlButton>
+          <ControlButton class="svelte-flow__controls-zoomout" onclick={() => void flow.zoomOut()} aria-label="Zoom Out">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 5" aria-hidden="true"><path d="M0 0h32v4.2H0z" /></svg>
+          </ControlButton>
+        {/snippet}
         {#snippet after()}
           <ControlButton class="svelte-flow__controls-fitview" onclick={fitAll} aria-label="Fit View">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 30" aria-hidden="true">

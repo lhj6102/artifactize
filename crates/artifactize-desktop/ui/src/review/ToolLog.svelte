@@ -44,7 +44,7 @@
       {#each entry.lines as line, at (at)}
         <p class:error={line.error}>{line.text}</p>
       {/each}
-      {#if entry.end}<p class="end" class:error={entry.end.error}>{entry.end.text}</p>{/if}
+      {#if entry.end}<p class="end">{entry.end.text}</p>{/if}
     {:else}
       <p class="muted">{empty}</p>
     {/each}

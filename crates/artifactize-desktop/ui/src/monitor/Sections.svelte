@@ -38,7 +38,7 @@
     {#if section.name === "technical" && !peek}
       <button class="heading toggle" aria-expanded={technical} onclick={ontechnical}>
         {technical ? "▾" : "▸"} Technical
-        {#if !technical}<span class="keys">{keys} · t shows</span>{/if}
+        {#if !technical}<span class="keys">{keys} · <kbd>t</kbd> shows</span>{/if}
       </button>
     {:else if !peek}
       <h3 class="heading">{section.title}</h3>
@@ -52,7 +52,7 @@
       </ul>
       {#if !pending && pendingCount > 0}
         <button class="link" onclick={onpending}>
-          ▸ {pendingCount} pending evals · w shows
+          ▸ {pendingCount} pending evals · <kbd>w</kbd> shows
         </button>
       {/if}
     {:else if section.name !== "technical" || technical}
