@@ -261,6 +261,7 @@
   }
   .window {
     position: relative;
+    background: var(--surface-input);
     overflow: hidden;
     padding: 0 var(--pad);
     font: var(--text-small) / 18px var(--mono);
@@ -295,6 +296,7 @@
     cursor: pointer;
   }
   .group:hover {
+    background: var(--surface-group);
     color: var(--ink);
   }
   .thinking {

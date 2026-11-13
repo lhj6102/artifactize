@@ -50,6 +50,10 @@
       <dt>Sign-in</dt>
       <dd class="warn">in progress · {s.prompt.callback ? "waiting for the browser" : "the browser cannot return here"}</dd>
     {/if}
+    {#if s.codexError}
+      <dt>Sign-in</dt>
+      <dd class="error" role="alert">{s.codexError}</dd>
+    {/if}
   </dl>
   {#if s.prompt}
     <div class="pending" role="status">
@@ -78,5 +82,4 @@
     <button class="button" disabled={s.busy || !signedIn} onclick={() => void s.signOut()}>Sign out of Codex</button>
   </div>
   {#if s.codexNotice}<p class="notice" role="status">{s.codexNotice}</p>{/if}
-  {#if s.codexError}<p class="error" role="alert">{s.codexError}</p>{/if}
 </section>

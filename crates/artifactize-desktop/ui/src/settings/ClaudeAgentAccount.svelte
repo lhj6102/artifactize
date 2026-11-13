@@ -38,7 +38,8 @@
     {#if s.claudePrompt}
       <dt>Sign-in</dt>
       <dd class="warn">in progress · Claude Code opened the browser</dd>
-    {:else if s.claudeError}
+    {/if}
+    {#if s.claudeError}
       <dt>Sign-in</dt>
       <dd class="error" role="alert">{s.claudeError}</dd>
     {/if}

@@ -84,6 +84,9 @@
     text-align: left;
     cursor: pointer;
   }
+  .headline:hover {
+    background: var(--surface-group);
+  }
   .headline:hover .text {
     color: var(--ink);
   }

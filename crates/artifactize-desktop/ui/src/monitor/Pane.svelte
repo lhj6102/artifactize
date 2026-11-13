@@ -316,6 +316,10 @@
     cursor: pointer;
     opacity: 0.55;
   }
+  .star:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+  }
   .star:hover,
   .star.on {
     opacity: 1;

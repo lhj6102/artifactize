@@ -277,6 +277,8 @@
     padding: 4px;
   }
   .remove:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
     color: var(--ink);
   }
   .add {
