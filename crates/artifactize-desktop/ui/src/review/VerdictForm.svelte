@@ -108,7 +108,7 @@
         class="verdict {verdict.toLowerCase()}"
         onclick={() => void review.choose(verdict)}
       >
-        {verdict}
+        {verdict} <kbd aria-hidden="true">{verdict === "GREEN" ? "Ctrl+G" : "Ctrl+R"}</kbd>
       </button>
     {/each}
   </div>
@@ -202,6 +202,10 @@
     border-radius: var(--radius-control);
     padding: 0 12px;
     cursor: pointer;
+  }
+  /* Hover only highlights: the face stays and the edge steps up to a field's line. */
+  .verdict:hover {
+    border-color: var(--line-input);
   }
   .verdict.green[aria-checked="true"] {
     color: var(--green);

@@ -182,7 +182,7 @@
         </span>
         {#each evals as item (item.id)}
           <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
-            <span class="glyph {tone(item.tone)}">{item.glyph}</span>{item.name}
+            <span class="glyph {tone(item.tone)}">{item.glyph}</span><span class="label">{item.name}</span>
           </button>
         {/each}
       </div>

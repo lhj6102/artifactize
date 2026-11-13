@@ -87,12 +87,12 @@
         </div>
         <div>
           <p class="m-section-label">Result</p>
-          <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
+          <div class="m-verdicts"><span class="m-verdict green chosen">GREEN <span class="m-kbd">Ctrl+G</span></span><span class="m-verdict red">RED <span class="m-kbd">Ctrl+R</span></span></div>
           <div class="m-field" style="margin-top: 10px"><span class="m-name">approved<span class="m-required">*</span></span><div class="m-verdicts"><span>◉ true</span><span class="m-cost">○ false</span></div></div>
           <div class="m-field" style="margin-top: 10px"><span class="m-name">comment</span><div class="m-input area text"><span class="m-placeholder">Optional</span></div></div>
           <div style="display: flex; justify-content: flex-end; margin-top: 10px"><span class="m-button primary">Submit GREEN <span class="m-kbd">Ctrl+S</span></span></div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center"><span class="tone-green">notes_release finished.</span><span class="m-spacer"></span><span class="m-button">Release</span></div>
+        <div style="display: flex; gap: 8px; align-items: center"><span class="tone-green">notes_release finished.</span><span class="m-spacer"></span><span class="m-button">Release <span class="m-kbd">u</span></span></div>
       </div>
     </section>
   </div>
@@ -123,9 +123,9 @@
   <dt id="D-REV-3">D-REV-3</dt>
   <dd>The Tool log is a <code>--surface-input</code> box with a <code>--line-input</code> border in <code>--mono</code> at <code>--text-small</code>: each run's <code>▶ HH:MM:SS · operation · Artifact</code> and its end line in <code>--ink-2</code>, printed lines in <code>--ink</code>, stderr in <code>--red</code>; lines wrap within the box, which scrolls on its own and follows its newest line unless scrolled up; its text selects. <span class="avoid">a log that grows the review; stderr told apart only by colour (the line keeps its text as printed).</span></dd>
   <dt id="D-REV-4">D-REV-4</dt>
-  <dd>The Result begins with the GREEN / RED choice as two <code>--control</code> buttons with <code>--line-group</code> borders; the chosen one takes its verdict's colour as text and border, semibold, its face unchanged. The form's fields follow: the label semibold with <code>*</code> in <code>--red</code> when required, inputs on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-3</code> inside an empty optional field; lists add with <code>+ Add</code> and remove with <code>✕</code>; a failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a JSON editor.</span></dd>
+  <dd>The Result begins with the GREEN / RED choice as two <code>--control</code> buttons with <code>--line-group</code> borders; the chosen one takes its verdict's colour as text and border, semibold, its face unchanged; each carries the key cap of the key that chooses it (<kbd>g</kbd> and <kbd>r</kbd> before a form is open, <kbd>Ctrl+G</kbd> and <kbd>Ctrl+R</kbd> while editing), as Claim to review carries <kbd>c</kbd>. The form's fields follow: the label semibold with <code>*</code> in <code>--red</code> when required, inputs on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-3</code> inside an empty optional field; lists add with <code>+ Add</code> and remove with <code>✕</code>; a failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a JSON editor.</span></dd>
   <dt id="D-REV-5">D-REV-5</dt>
-  <dd>Submit is the one primary (<code>--accent</code>) button, right-aligned under the form with its <kbd>Ctrl+S</kbd> key cap; the footer holds the busy spinner with its seconds and Cancel, or the last notice (<code>--green</code> done, <code>--red</code> failed), and Release at the right. <span class="avoid">two primary buttons; a notice as a toast.</span></dd>
+  <dd>Submit is the one primary (<code>--accent</code>) button, right-aligned under the form with its <kbd>Ctrl+S</kbd> key cap; the footer holds the busy spinner with its seconds and Cancel, or the last notice (<code>--green</code> done, <code>--red</code> failed), and Release with its <kbd>u</kbd> key cap at the right. <span class="avoid">two primary buttons; a notice as a toast.</span></dd>
   <dt id="D-REV-6">D-REV-6</dt>
   <dd>A request opened by ID that is not a waiting review shows its sections read-only in the same column, its title suffixed <code>read-only</code> in the Main area header. <span class="avoid">a disabled form standing in for read-only.</span></dd>
 </dl>

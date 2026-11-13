@@ -222,6 +222,11 @@
     min-height: 28px;
     border-radius: var(--radius-control);
   }
+  /* Hover only highlights the branch under the pointer, and the control under it. */
+  .head:not(.selected):hover,
+  .chevron:hover {
+    background: var(--surface-group);
+  }
   .chevron {
     width: 20px;
     height: 20px;

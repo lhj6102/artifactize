@@ -182,13 +182,13 @@
           <VerdictForm {review} form={review.form} onsubmit={() => void submit()} />
         {:else if review.owned}
           <div class="verdicts">
-            <button class="button" onclick={() => void review.choose("GREEN")}>GREEN</button>
-            <button class="button" onclick={() => void review.choose("RED")}>RED</button>
+            <button class="button" onclick={() => void review.choose("GREEN")}>GREEN <kbd aria-hidden="true">g</kbd></button>
+            <button class="button" onclick={() => void review.choose("RED")}>RED <kbd aria-hidden="true">r</kbd></button>
           </div>
         {:else if view.claim}
           <p class="muted">Claimed by {view.claim.reviewer}. Read-only until released.</p>
         {:else}
-          <button class="button primary" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
+          <button class="button primary" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review <kbd aria-hidden="true">c</kbd></button>
         {/if}
       </section>
     </div>
@@ -206,7 +206,7 @@
       <!-- Close belongs to the pane that shows the review, in its header. -->
       {#if !review.busy && !review.settled && review.owned}
         <div class="buttons">
-          <button class="button" onclick={() => void review.release()}>Release</button>
+          <button class="button" onclick={() => void review.release()}>Release <kbd aria-hidden="true">u</kbd></button>
         </div>
       {/if}
     </footer>

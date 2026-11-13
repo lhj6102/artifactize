@@ -228,6 +228,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     dot.arc(cx, cy, Math.max((NODE_DOT / 2) * zoom, 0.5), 0, 2 * Math.PI);
     if (legible && node) names.push({ x: x + (NODE_PAD + NODE_DOT + NODE_GAP) * zoom, y: cy, width: w - (2 * NODE_PAD + NODE_DOT + NODE_GAP) * zoom, text: node.name });
   }
+  // A node's border is its own: one pixel at the node's scale, never an edge's stroke.
+  context.lineWidth = Math.max(1 / ratio, zoom);
   for (const [light, path] of outlines) {
     context.strokeStyle = colour(light);
     context.stroke(path);
