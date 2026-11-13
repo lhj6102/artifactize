@@ -350,3 +350,9 @@ kbd {
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* Every field's placeholder is faint ink, never the browser's own colour. */
+::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}

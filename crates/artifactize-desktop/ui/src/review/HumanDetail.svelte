@@ -263,6 +263,10 @@
   .muted {
     color: var(--ink-2);
   }
+  .link:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+  }
   .link {
     border: 0;
     background: none;

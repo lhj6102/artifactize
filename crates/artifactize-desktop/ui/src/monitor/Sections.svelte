@@ -131,6 +131,11 @@
     padding-left: 18px;
     color: var(--ink-2);
   }
+  .toggle:hover,
+  .link:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+  }
   .link {
     border: 0;
     background: none;

@@ -85,6 +85,9 @@
     overflow: auto;
     max-height: 40vh;
   }
+  summary:hover {
+    background: var(--surface-group);
+  }
   summary {
     color: var(--ink-2);
     font-size: var(--text-small);

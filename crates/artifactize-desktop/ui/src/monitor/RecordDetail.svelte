@@ -303,6 +303,10 @@
     text-transform: uppercase;
     color: var(--ink-2);
   }
+  .fold:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+  }
   /* The fold reads as a quiet line, not a label. */
   .fold {
     border: 0;
