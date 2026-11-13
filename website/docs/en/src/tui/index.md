@@ -141,8 +141,10 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   has no confirmation step.
   The run needs your claim on a request that still waits, checked when it starts:
   after a release or a settlement elsewhere it neither claims nor runs. Each run
-  reloads and resolves the declarations again, but refuses the action if the
-  recorded Artifact scope or eval declarations (including tools) have changed.
+  reloads and resolves the declarations again. If the recorded Artifact scope or eval
+  declarations (including tools) have changed, the action is refused and the request
+  ends ERROR (INPUT_CHANGED); opening such a waiting request ends it the same way.
+  Verify again for a new request.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. A nonzero exit is a tool error, not a verdict.

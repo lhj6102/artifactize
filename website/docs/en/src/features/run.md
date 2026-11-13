@@ -141,9 +141,9 @@ Review and cannot be claimed again; a Run still waiting on one ends as if it had
 submitted, so YELLOW when only sign-offs remain. The same key still joins the existing
 review, which Review lists once however many Runs joined it;
 original sign-offs in another working tree stay untouched. Until retirement, a sign-off
-can still be submitted after its Run ends; submission rechecks the fingerprints, and
-changed files end the request ERROR (`INPUT_CHANGED`) without a verdict, so verify again
-for a new sign-off.
+can still be submitted after its Run ends; submission rechecks the declarations and the
+fingerprints, and changed declarations or files end the request ERROR (`INPUT_CHANGED`)
+without a verdict, so verify again for a new sign-off.
 
 A sign-off whose Run's repository folder no longer exists, for example because its worktree
 was deleted, ends as ERROR/REPOSITORY_REMOVED and leaves Review by itself; a claim on it

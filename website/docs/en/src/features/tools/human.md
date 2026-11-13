@@ -66,9 +66,12 @@ Artifact's Tool log, which lasts while the app runs.
 ## In a review
 
 Only the reviewer who claimed the request can run its tools; see
-[Human reviews](../human.md). A tool runs the declaration recorded with the request:
-if the eval's scope or declarations changed since then, the tool refuses to run
-instead of running the new version. A tool error is something to fix and retry, not
+[Human reviews](../human.md). A tool runs the declaration recorded with the request.
+If the eval's scope or declarations changed since then, the request can no longer be
+reviewed as recorded: it ends ERROR (INPUT_CHANGED) without running the tool, and the
+next `verify` asks again with the new declarations. Submitting a result, or opening the
+waiting request in Review or the desktop app, checks the same and ends it the same way.
+A tool error is something to fix and retry, not
 a verdict, and tool runs are not recorded with the result. Before a tool runs, the
 declarations of the Artifacts the eval reviews must still load: if they do not, for
 example because one of them is a file Artifact whose file is missing, the tool refuses
