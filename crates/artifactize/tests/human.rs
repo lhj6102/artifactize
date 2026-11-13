@@ -43,6 +43,33 @@ impl Fixture {
         }
     }
 
+    /// A repository whose Human eval's scope is its Artifact `review` and the `spec` its
+    /// instruction references, beside an Artifact `other` outside that scope.
+    fn referencing() -> Self {
+        let root = owned_run::Root::from(support::os::tempdir());
+        let repo = root.path().join("repo");
+        write_human(&repo.join("review"), false);
+        let review = repo.join("review/index.artf");
+        let declaration = fs::read_to_string(&review).unwrap();
+        assert!(declaration.contains("Review."));
+        fs::write(&review, declaration.replace("Review.", "Review {spec}.")).unwrap();
+        for name in ["spec", "other"] {
+            fs::create_dir(repo.join(name)).unwrap();
+            support::declaration::write(
+                repo.join(name).join("index.artf"),
+                json!({"name":name,"basis":true}).to_string(),
+            )
+            .unwrap();
+        }
+        let state = root.path().join("state");
+        root.track(&state, &repo);
+        Self {
+            repo,
+            state,
+            _root: root,
+        }
+    }
+
     async fn verify(&self, options: VerifyOptions) -> RunView {
         tokio::time::timeout(
             Duration::from_secs(10),
@@ -465,82 +492,139 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
     }
 }
 
+/// How a waiting request's declarations stop matching those it recorded.
+#[derive(Clone, Copy)]
+enum Change {
+    /// A new child Artifact joins the eval's scope.
+    Child,
+    /// The declaration of the Artifact the eval references differs.
+    Referenced,
+    /// The eval's own declaration differs.
+    Title,
+    /// The eval is no longer declared.
+    Removed,
+}
+
+/// The Human action that meets the changed declarations.
+#[derive(Clone, Copy)]
+enum Action {
+    Tool,
+    Submit,
+    /// Resolving what the tools would run, which needs no claim.
+    Commands,
+}
+
 #[tokio::test]
-async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
+async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_again() {
+    for (change, action, message) in [
+        (Change::Child, Action::Tool, "declarations changed"),
+        (Change::Referenced, Action::Submit, "declarations changed"),
+        (Change::Title, Action::Commands, "declarations changed"),
+        (Change::Removed, Action::Commands, "no longer exists"),
+    ] {
+        let fixture = Fixture::referencing();
+        let run = fixture.verify(returning()).await;
+        let id = run.requests[0].id.clone();
+        let alice = "alice".parse().unwrap();
+        let receipts = fixture.receipts().await;
+        human::claim(&receipts, &id, &alice).await.unwrap();
+        let review = fixture.repo.join("review");
+        match change {
+            Change::Child => {
+                fs::create_dir(review.join("child")).unwrap();
+                support::declaration::write(
+                    review.join("child/index.artf"),
+                    r#"{"name":"child","basis":true}"#,
+                )
+                .unwrap();
+            }
+            Change::Referenced => support::declaration::write(
+                fixture.repo.join("spec/index.artf"),
+                r#"{"name":"spec","basis":true,"tags":["changed"]}"#,
+            )
+            .unwrap(),
+            Change::Title => {
+                let recorded = fs::read_to_string(review.join("index.artf")).unwrap();
+                assert!(recorded.contains("Human check"));
+                fs::write(
+                    review.join("index.artf"),
+                    recorded.replace("Human check", "Another check"),
+                )
+                .unwrap();
+            }
+            Change::Removed => support::declaration::write(
+                review.join("index.artf"),
+                r#"{"name":"review","basis":true}"#,
+            )
+            .unwrap(),
+        }
+        let error = match action {
+            Action::Tool => human::run_human_tool(
+                &receipts,
+                &id,
+                &alice,
+                &"inspect_review".parse().unwrap(),
+                CancellationToken::new(),
+                artifactize_core::review::log::Run::unwatched(),
+            )
+            .await
+            .map(drop)
+            .unwrap_err(),
+            Action::Submit => {
+                human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
+                    .await
+                    .map(drop)
+                    .unwrap_err()
+            }
+            Action::Commands => human::tool_commands(&receipts, &id)
+                .await
+                .map(drop)
+                .unwrap_err(),
+        };
+        assert!(error.contains(message), "{error}");
+        let saved = store::read_request(&fixture.state, &id).await.unwrap();
+        assert_eq!(saved.request.status().as_str(), "ERROR");
+        assert_eq!(saved.request.error_code(), Some(FailureCode::InputChanged));
+        assert!(saved.request.result().is_none());
+        assert!(saved.claim.is_none(), "the claim ends with the request");
+        assert!(listed(&fixture.state).await.is_empty());
+        let ended = owned_run::terminal(&fixture.state, &run.run.id).await;
+        assert_eq!(ended.run.status().as_str(), "ERROR");
+        // The next verify asks for the sign-off again, where the eval is still declared.
+        if !matches!(change, Change::Removed) {
+            fixture.verify(returning()).await;
+            let asked = listed(&fixture.state).await;
+            assert_eq!(asked.len(), 1);
+            assert_ne!(asked[0], id.as_str());
+        }
+    }
+}
+
+#[tokio::test]
+async fn unreadable_declarations_refuse_the_action_and_the_request_keeps_waiting() {
     let fixture = Fixture::new(false);
     let run = fixture.verify(returning()).await;
-    let id = &run.requests[0].id;
+    let id = run.requests[0].id.clone();
+    let alice = "alice".parse().unwrap();
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
+    human::claim(&receipts, &id, &alice).await.unwrap();
+    let declaration = fixture.repo.join("index.artf");
+    let recorded = fs::read(&declaration).unwrap();
+    fs::write(&declaration, "name = ").unwrap();
+    human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert_eq!(listed(&fixture.state).await, [id.as_str()]);
+    fs::write(&declaration, recorded).unwrap();
+    let submitted = human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
         .await
         .unwrap();
-    fs::create_dir(fixture.repo.join("child")).unwrap();
-    support::declaration::write(
-        fixture.repo.join("child/index.artf"),
-        r#"{"name":"child","basis":true}"#,
-    )
-    .unwrap();
-    assert!(
-        human::run_human_tool(
-            &receipts,
-            id,
-            &"alice".parse().unwrap(),
-            &"inspect_review".parse().unwrap(),
-            CancellationToken::new(),
-            artifactize_core::review::log::Run::unwatched()
-        )
-        .await
-        .unwrap_err()
-        .contains("declarations changed")
-    );
-    assert!(
-        human::submit(
-            &receipts,
-            &rid(id),
-            &"alice".parse().unwrap(),
-            &green(),
-            CancellationToken::new()
-        )
-        .await
-        .is_err()
-    );
-    fs::remove_file(fixture.repo.join("child/index.artf")).unwrap();
-    human::submit(
-        &receipts,
-        &rid(id),
-        &"alice".parse().unwrap(),
-        &green(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
+    assert_eq!(submitted.status().as_str(), "GREEN");
 }
 
 #[tokio::test]
 async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outside_the_scope() {
-    let root = owned_run::Root::from(support::os::tempdir());
-    let repo = root.path().join("repo");
-    write_human(&repo.join("review"), false);
-    // The eval's scope is its Artifact and the one its instruction references.
-    let review = repo.join("review/index.artf");
-    let declaration = fs::read_to_string(&review).unwrap();
-    assert!(declaration.contains("Review."));
-    fs::write(&review, declaration.replace("Review.", "Review {spec}.")).unwrap();
-    for name in ["spec", "other"] {
-        fs::create_dir(repo.join(name)).unwrap();
-        support::declaration::write(
-            repo.join(name).join("index.artf"),
-            json!({"name":name,"basis":true}).to_string(),
-        )
-        .unwrap();
-    }
-    let state = root.path().join("state");
-    root.track(&state, &repo);
-    let fixture = Fixture {
-        repo,
-        state,
-        _root: root,
-    };
+    let fixture = Fixture::referencing();
     let run = fixture.verify(returning()).await;
     let id = run.requests[0].id.clone();
     // The Run's saved graph no longer decodes, and the workspace no longer reads as a whole:
@@ -565,25 +649,6 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     let (receipts, repo) = human::open(&fixture.state, &id).await.unwrap();
     assert_eq!(repo, support::os::canonical(&fixture.repo));
     human::claim(&receipts, &id, &alice).await.unwrap();
-    // The declarations of the scope are still compared with those the request recorded.
-    let spec = fixture.repo.join("spec/index.artf");
-    let recorded = fs::read(&spec).unwrap();
-    support::declaration::write(&spec, r#"{"name":"spec","basis":true,"tags":["changed"]}"#)
-        .unwrap();
-    assert!(
-        human::run_human_tool(
-            &receipts,
-            &id,
-            &alice,
-            &"inspect_review".parse().unwrap(),
-            CancellationToken::new(),
-            artifactize_core::review::log::Run::unwatched(),
-        )
-        .await
-        .unwrap_err()
-        .contains("declarations changed")
-    );
-    fs::write(&spec, recorded).unwrap();
     let tool = human::run_human_tool(
         &receipts,
         &id,

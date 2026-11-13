@@ -335,7 +335,8 @@ Each is a `▶ operation` button with its description, and the reason when it ca
 run. **A click, or Enter or Space on the focused button, runs it immediately**; Tab
 moves between them. A launch tool opens its application and returns at once; a
 failing tool says so without a verdict. The saved definition must still match before
-an action runs.
+an action runs: when the declarations changed, opening the review, running a tool or
+submitting ends the request ERROR (INPUT_CHANGED), and the next verify asks again.
 
 The [Tool log](../features/tools/human.md#tool-log) shows every run of this review
 as it happens, its start times in local time. The log wraps,
