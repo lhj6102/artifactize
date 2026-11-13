@@ -521,9 +521,10 @@
   bottom: 8px;
   width: 172px;
   padding: 3px;
-  background: var(--surface-panel);
+  background: var(--surface-raised);
   border: 1px solid var(--line-panel);
   border-radius: var(--radius-control);
+  box-shadow: 0 2px 8px var(--scrim);
 }
 .m-navigator svg {
   display: block;

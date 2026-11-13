@@ -16,9 +16,9 @@ that makes the transition happen and checks where it leads.
   even before its first Run (J-BRANCHES). There is no screen switch.
 - **Pane**: one column: the **Search** field at the top, the **Branches** below it and the
   **Waiting** stack at the bottom. There is no Scope heading and no Runs list. States: shown
-  (as at launch) or hidden. The header's **Pane button**, right after the app's name, Ctrl+B
+  (as at launch) or hidden. The header's **Pane switch**, right after the app's name, Ctrl+B
   and the palette's "Show or hide the Pane" hide the Pane and its divider, the Main area taking
-  the window's width, and show them again; the button reads as on while the Pane is shown.
+  the window's width, and show them again; the switch reads as on while the Pane is shown.
   - **Search**: its starting query is `sort:recent`. Free text and `key:value` terms (`repo:`,
     `branch:`, `sort:recent`, `sort:name`) must all match; they narrow the Branches and the
     Waiting stack alike. States: not focused, focused, focused with suggestions.
@@ -79,9 +79,9 @@ that makes the transition happen and checks where it leads.
   that verdict's icon before its name and a strip along its bottom, both in the one colour
   that status has everywhere in the app; its face and outline are neutral. After its name a
   node with evals says how many of them are GREEN of how many it has. Edges are neutral, except
-  one that leaves a RED, ERROR or blocked Artifact, drawn in that Artifact's colour. Zoomed out
-  so far that names would be too small to read, a node is a block of its verdict's colour and a
-  whole its box's outline in its colour.
+  one that leaves a RED, ERROR or blocked Artifact, drawn in that Artifact's colour. In a graph
+  too large to draw at once, zoomed out so far that names would be too small to read, a node is
+  a block of its verdict's colour and a whole its box's outline in its colour.
 - **Current graph**: the current declarations' Artifacts and relations, drawn as soon as the
   declarations are read, each Artifact first still being checked and then coloured, as soon as
   the scan knows, by what verify would do now: reused (every eval's result would be reused
@@ -244,8 +244,8 @@ that makes the transition happen and checks where it leads.
 | E-MON-NOTICE | Main area with a notice, focus anywhere | click the notice in the Main area's header | the notice shown in full, wrapped within the header, what is below neither moved nor hidden; another click shows it as one line again |
 | E-MON-LIVE | any view | another process changes the state (a new Run, a result, a claim, a submission) | same view, updated without a reload |
 | E-MON-RESIZE | Pane and Main area | drag the divider between them (hovering it shows only the resize cursor) | same view, the split resized and kept whatever the Main area shows, also when a hidden Pane is shown again |
-| E-PANE-HIDE | any view, the Pane shown | the header's Pane button, Ctrl+B, or the palette's "Show or hide the Pane" | the Pane and its divider hidden, the Main area as wide as the window, its view as it was and a graph's camera neither zoomed nor panned; focus that was in the Pane now in the Main area; the Pane button reading as off |
-| E-PANE-SHOW | any view, the Pane hidden | the header's Pane button, Ctrl+B, or the palette's "Show or hide the Pane" | the Pane and its divider shown again, the Pane at the width it had, its Search, selection and expanded branches as they were; the Pane button reading as on |
+| E-PANE-HIDE | any view, the Pane shown | the header's Pane switch, Ctrl+B, or the palette's "Show or hide the Pane" | the Pane and its divider hidden, the Main area as wide as the window, its view as it was and a graph's camera neither zoomed nor panned; focus that was in the Pane now in the Main area; the Pane switch reading as off |
+| E-PANE-SHOW | any view, the Pane hidden | the header's Pane switch, Ctrl+B, or the palette's "Show or hide the Pane" | the Pane and its divider shown again, the Pane at the width it had, its Search, selection and expanded branches as they were; the Pane switch reading as on |
 
 ## Search
 
@@ -310,8 +310,8 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab | `t`, or a click on Debug | Detail, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
 | E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
-| E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log until it exits |
-| E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log |
+| E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log, unfolded if it was folded, until it exits |
+| E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log, unfolded if it was folded |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
 | E-CURRENT-CLOSE | Detail over a Current | Esc, Close, or a click on the graph's background | the Current graph, Detail closed |
 | E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no graph shows on its left, never over the Pane; the width kept for the next opening and launch |
