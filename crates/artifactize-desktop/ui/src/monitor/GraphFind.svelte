@@ -170,7 +170,7 @@
     border-radius: var(--radius-control);
     cursor: pointer;
   }
-  .found li:hover {
+  .found li:not(.active):hover {
     background: var(--surface-group);
   }
   /* The chosen result: the selection background and a 2px inset bar. */

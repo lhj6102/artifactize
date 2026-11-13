@@ -32,7 +32,7 @@
       {#if current.scanning}{#if view?.scanning && view.checking > 0}Checking {view.checking} of {view.artifacts} Artifacts…{:else}Scanning…{/if}{:else if scanned}Scanned at <time datetime={scanned.at}>{scanned.local}</time>{/if}
     </span>
     {#if current.error}<span class="failure">{current.error}</span>{/if}
-    <button class="button small refresh" disabled={current.scanning} onclick={() => void current.scan(branch, true)}>Refresh</button>
+    <button class="button small refresh" disabled={current.scanning} onclick={() => void current.scan(branch, true)}>Refresh <kbd aria-hidden="true">Ctrl+R</kbd></button>
   </header>
   {#if view}
     <div class="canvas">

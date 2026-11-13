@@ -355,6 +355,7 @@
   }
   .busy {
     color: var(--human);
+    font-variant-numeric: tabular-nums;
     display: flex;
     gap: 8px;
     align-items: center;

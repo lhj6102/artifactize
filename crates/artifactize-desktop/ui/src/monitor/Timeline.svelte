@@ -158,6 +158,7 @@
     cursor: pointer;
   }
   .older:hover {
-    text-decoration: underline;
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
   }
 </style>

@@ -152,7 +152,7 @@ kbd {
 }
 .dialog-title {
   margin: 0 0 10px;
-  font-size: 15px;
+  font-size: var(--text-title);
   font-weight: 600;
 }
 .dialog-actions {
