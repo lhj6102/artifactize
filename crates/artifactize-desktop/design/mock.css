@@ -446,13 +446,14 @@
 }
 
 /* The graph's tool strip: what acts on the graph, in one row between the header and the
-   canvas, and the legend at its end. Nothing floats on the canvas but the find field. */
+   canvas, and the legend at its end, cut there when the row is short. */
 .m-strip {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px var(--gap);
-  min-height: var(--row-head);
+  gap: var(--gap);
+  height: var(--row-head);
+  overflow: hidden;
+  white-space: nowrap;
   padding: 0 var(--pad);
   border-top: 1px solid var(--line-group);
   font-size: var(--text-small);
@@ -479,14 +480,21 @@
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
+.m-strip > .m-button,
+.m-strip > .m-zoomer,
+.m-strip-hint,
+.m-legend li {
+  flex: none;
+}
 .m-strip-hint {
   color: var(--ink-2);
   font-size: var(--text-label);
 }
 .m-legend {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
+  min-width: 0;
+  overflow: hidden;
+  gap: 10px;
   margin: 0 0 0 auto;
   padding: 0;
   list-style: none;

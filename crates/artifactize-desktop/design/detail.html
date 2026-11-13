@@ -66,7 +66,7 @@
     </section>
     <div class="m-divider"></div>
     <section class="m-main">
-      <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>1</span><span><span class="m-icon i-human"></span>1</span><span><span class="m-icon i-green"></span>4</span></span> · took 12m 04s</span></span></div>
+      <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red tone-red"></span>1</span><span><span class="m-icon i-blocked tone-blocked"></span>1</span><span><span class="m-icon i-human tone-human"></span>1</span><span><span class="m-icon i-green tone-green"></span>4</span></span> · took 12m 04s</span></span></div>
       <div class="m-strip">
         <span class="m-button small"><span class="m-icon i-find"></span>Find <span class="m-kbd">Ctrl+F</span></span>
         <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
@@ -217,11 +217,11 @@
       <div class="m-body">
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Outcome</div>
-          <div class="m-sec-body"><dl class="m-kv"><dt>Status</dt><dd><span class="tone-red"><span class="m-icon i-red"></span> RED</span> · NOT SATISFIED at Run end</dd><dt>Evals</dt><dd><span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>1</span><span><span class="m-icon i-human"></span>1</span><span><span class="m-icon i-green"></span>4</span></span> · took 12m 04s</dd><dt>Comment</dt><dd>dogfood: desktop design pages and the restyle of the app toward them</dd></dl></div>
+          <div class="m-sec-body"><dl class="m-kv"><dt>Status</dt><dd><span class="tone-red"><span class="m-icon i-red"></span> RED</span> · NOT SATISFIED at Run end</dd><dt>Evals</dt><dd><span class="m-counts"><span><span class="m-icon i-red tone-red"></span>1</span><span><span class="m-icon i-blocked tone-blocked"></span>1</span><span><span class="m-icon i-human tone-human"></span>1</span><span><span class="m-icon i-green tone-green"></span>4</span></span> · took 12m 04s</dd><dt>Comment</dt><dd>dogfood: desktop design pages and the restyle of the app toward them</dd></dl></div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-unfold"></span>Waits for<span class="m-sum">1 sign-off</span></div>
-          <div class="m-sec-body"><ul class="m-rows" style="padding: 0"><li>release/signoff · waiting Human · unclaimed</li></ul><p class="m-fold" style="margin: 4px 0 0"><span class="m-icon i-fold"></span> 1 pending eval</p></div>
+          <div class="m-sec-head"><span class="m-icon i-unfold"></span>Waits for<span class="m-sum">1 sign-off · 1 pending eval</span></div>
+          <div class="m-sec-body"><ul class="m-rows" style="padding: 0"><li>release/signoff · waiting Human · unclaimed</li><li class="m-cost">docs/matches-cli · blocked by cli/tests</li></ul></div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>What</div>
@@ -246,7 +246,7 @@
 
 <ol class="notes">
   <li><span class="n">10</span><div><b>Run Detail</b><span>The same dock, titled with the Run's ID; it has no chip path, since a Run has no evals of its own to tab through.</span></div></li>
-  <li><span class="n">11</span><div><b>Sections</b><span>Outcome, Waits for (its pending evals folded behind a quiet line), What and Provenance as key/value grids under section header rows; Technical is folded last, its row's summary naming its keys.</span></div></li>
+  <li><span class="n">11</span><div><b>Sections</b><span>Outcome, Waits for (what the Run waits for, then its pending evals, counted in the row's summary), What and Provenance under section header rows, their facts as key/value grids; Technical is folded last, its row's summary naming its keys.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -300,7 +300,7 @@
   <dt id="D-INS-5">D-INS-5</dt>
   <dd>An eval's tab: the view switch as plain text (the chosen view <code>--ink</code> bold, the other <code>--ink-2</code>, no radius, no fill), the status line (the verdict's icon and word bold in the status colour; what it took and spent, or saved, in <code>--ink-2</code>), the instruction, then Result, Execution options, Execution metadata and Fingerprint each a section under its header row (D-INS-9), facts in a key/value grid with keys right-aligned in <code>--ink-2</code> and values in tabular figures; a list as numbered items; Debug folded last. A log replaces the body below the switch in <code>--mono</code> at <code>--text-small</code>, wrapping and scrolling in its own box. <span class="avoid">a JSON dump as the Summary; costs in the status colour.</span></dd>
   <dt id="D-INS-7">D-INS-7</dt>
-  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row: its sections Outcome, Waits for, What and Provenance each under a section header row (D-INS-9), their facts as key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), the pending evals of Waits for folded behind a <code>--ink-2</code> line led by the fold icon (<i>n pending evals</i>) that a click unfolds, and Technical folded last, a section whose header row names its keys as its summary. <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it.</span></dd>
+  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row: its sections Outcome, Waits for, What and Provenance each under a section header row (D-INS-9), their facts as key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), Waits for listing what the Run waits for and then its pending evals in <code>--ink-2</code>, its header row's summary counting both, folded and unfolded by that row like any section, and Technical folded last, a section whose header row names its keys as its summary. <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it.</span></dd>
   <dt id="D-INS-8">D-INS-8</dt>
   <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip and each eval row lead with what verify would do with that eval (reused, would run, waiting, blocked, or still being checked) as that plan's icon and the matching words in its one colour, the legend's (would run <code>--running</code>, reused <code>--reused</code>, waiting <code>--queued</code>, blocked <code>--blocked</code>, checking <code>--checking</code>); an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in its colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse as a section under its header row when there is one (the plan line already says why an eval would run), then the execution options and Debug; there is no log and no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show.</span></dd>
   <dt id="D-INS-9">D-INS-9</dt>
