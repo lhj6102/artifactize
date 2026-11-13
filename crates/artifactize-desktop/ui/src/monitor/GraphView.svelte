@@ -382,7 +382,7 @@
           </ControlButton>
         {/snippet}
       </Controls>
-      {#if drawn.length > 40 && !large}<MiniMap pannable zoomable />{/if}
+      {#if drawn.length > 40 && !large}<MiniMap pannable zoomable ariaLabel="" aria-label="Mini map" />{/if}
     </SvelteFlow>
     {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
     <p class="hint"><kbd>Ctrl+F</kbd> finds, or lists the favorites · <kbd>m</kbd> minimizes or expands a whole</p>
@@ -431,6 +431,12 @@
     --xy-controls-box-shadow: none;
     --xy-minimap-background-color: var(--surface-panel);
     --xy-minimap-mask-background-color: var(--scrim);
+    --xy-minimap-node-background-color: var(--line-input);
+  }
+  /* The minimap's nodes take a control's corner. */
+  .canvas :global(.svelte-flow__minimap-node) {
+    rx: var(--radius-control);
+    ry: var(--radius-control);
   }
   /* The zoom controls: one bordered group of 24px squares at the canvas's bottom left. */
   .canvas :global(.svelte-flow__controls) {
