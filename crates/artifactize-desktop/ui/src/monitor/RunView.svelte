@@ -91,7 +91,7 @@
     color: var(--ink);
   }
   .headline .status {
-    font-weight: 600;
+    font-weight: 700;
   }
   .headline .text {
     color: var(--ink-2);
