@@ -63,8 +63,8 @@ export type Detail = {
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
   /** Whether the Detail is a panel docked in the Main area, right of the Pane: at the area's
-   * right edge and down to its bottom without a gap, under the area's header, some of the area
-   * left on its left. */
+   * right edge, from the bottom of the area's header down to the area's bottom, without a gap
+   * on any of the three, some of the area left on its left. */
   docked: boolean;
 };
 
@@ -73,7 +73,9 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
   return browser.execute(() => {
     const aside = document.querySelector<HTMLElement>('.stage aside[aria-label="Detail"]');
     if (!aside) return null;
-    const stage = aside.closest<HTMLElement>(".stage")!.getBoundingClientRect();
+    const area = aside.closest<HTMLElement>(".stage")!;
+    const stage = area.getBoundingClientRect();
+    const header = area.querySelector('section[aria-label="Main area"] > header')!.getBoundingClientRect();
     const box = aside.getBoundingClientRect();
     return {
       title: aside.querySelector("h2")?.textContent?.trim() ?? "",
@@ -104,7 +106,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",
       })),
-      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && box.top > stage.top && Math.abs(stage.bottom - box.bottom) <= 1,
+      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && Math.abs(box.top - header.bottom) <= 1 && Math.abs(stage.bottom - box.bottom) <= 1,
     };
   });
 }

@@ -147,7 +147,9 @@ A Run chosen in the Pane fills the Main area with the graph of its Artifacts and
 under the Run's headline, the Run's comment in full when it has one, and what needs
 attention. Node and relation colours show
 review states (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked)
-and recolour in place as results arrive. Inspect dependencies through the graph's
+and recolour in place as results arrive. A relation runs from an input to its consumer: it
+leaves the input at the square on its right side and reaches the consumer at the triangle on
+its left. Inspect dependencies through the graph's
 input-to-consumer relations and **Waits for** under an Artifact's or eval's
 **Debug**. Run-end validation stays historical: a later Human submission can change
 the current request display without rewriting the old verdict. Click the Run's

@@ -39,7 +39,7 @@ const box = (left: number, top: number, width: number, height: number) =>
 /** At 1440×872: the graph's canvas right of the Pane, under the Run's headline. */
 const CANVAS = box(346, 110, 1094, 762);
 /** Where the Detail at its default width is docked: at the graph area's right edge, under its header. */
-const DETAIL = box(937, 44, 503, 828);
+const DETAIL = box(937, 42, 503, 830);
 
 /** The camera Svelte Flow would hold: the last viewport asked for, or one the person set. */
 let viewport: Viewport = { x: 0, y: 0, zoom: 1 };

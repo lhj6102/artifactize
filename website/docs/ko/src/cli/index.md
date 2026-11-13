@@ -201,7 +201,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 `--jobs`와는 별개입니다. Human 도구 실행과 제출은 CPU 수만큼 따로 fingerprint를 계산하며 이
 설정을 따르지 않습니다. 결과와 출력은 이 한도나 완료 순서와 상관없이 같습니다.
 
-`verify --max-executions N`은 Run 하나에서 실행기를 시작할 수 있는 횟수를 0–18446744073709551615
+`verify --max-executions N`은 Run 하나에서 실행을 시작할 수 있는 횟수를 0–18446744073709551615
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
@@ -240,7 +240,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 `verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
 목록에 있는 종류의 eval은 기존 결과만 재사용할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
-기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키의 리뷰가 진행 중이어도 완료를 기다리지 않습니다.
+기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행 프로세스를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키의 리뷰가 진행 중이어도 완료를 기다리지 않습니다.
 강제로 실행하는 eval은 캐시 결과를 읽지 않으므로, 목록에 있는 종류에 `--force`를 주면 절대 실행되지
 않습니다. 목록에 없는 종류는 평소처럼 실행합니다. CI에서
 `artifactize verify --all --wait --reuse-only agent,human`을 쓰면 테스트는 실행하고 리뷰는

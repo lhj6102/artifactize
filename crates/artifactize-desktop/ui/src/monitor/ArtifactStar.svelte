@@ -64,19 +64,14 @@
     padding: 0 2px;
     border: 0;
     background: none;
-    color: var(--ink-2);
+    color: var(--ink-3);
     font-size: var(--text-title);
     line-height: 1.4;
     cursor: pointer;
-    opacity: 0.55;
   }
   .star:hover {
     background: var(--surface-group);
     border-radius: var(--radius-control);
-  }
-  .star:hover,
-  .star.on {
-    opacity: 1;
   }
   .star.on {
     color: var(--light-active);

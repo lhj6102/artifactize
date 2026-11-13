@@ -12,7 +12,7 @@ import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { claudeCodeEnvironment, exists, httpGet, makeDirectory, nativePath, primaryModifier, readText, serveLoopbackHttp, writeText } from "../platform.ts";
+import { claudeCodeEnvironment, claudeCodeInstalled, exists, httpGet, makeDirectory, nativePath, primaryModifier, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const SAVED = "sk-e2e-saved-gemini-key";
@@ -163,6 +163,23 @@ export const scenarios: Scenario[] = [
       const explained = (await browser.$('[data-testid="claude-agent-sign-in"]').getText()).replace(/\s+/g, " ");
       assert.ok(explained.includes("claude auth login") && explained.includes("never reads, copies or stores it"), explained);
       assert.equal(await browser.$("#provider-key").isExisting(), false, "Claude Agent takes no key");
+
+      // Claude Code that cannot report its sign-in shows the error it failed with, and Claude
+      // Code taken off PATH shows as not found, with nothing to sign in with; Check again asks
+      // again each time, and shows it signed out once it is back and answers.
+      const broken = nativePath(fixture.root, "claude-broken");
+      writeText(broken, "");
+      await browser.$("button=Check again").click();
+      await shows("Claude Code failed: Claude Code could not report its sign-in: error: unknown command 'auth'", "Claude Code's own error is shown");
+      removeTree(broken);
+      claudeCodeInstalled(fixture.root, false);
+      await browser.$("button=Check again").click();
+      await shows("Claude Code (claude) not found on PATH", "Claude Code is reported as not found");
+      assert.equal(await browser.$("button=Sign in with Claude Code").isEnabled(), false, "nothing to sign in with while Claude Code is not found");
+      claudeCodeInstalled(fixture.root, true);
+      await browser.$("button=Check again").click();
+      await shows("Not signed in", "Claude Code is found again and reports it is not signed in");
+      assert.equal(await browser.$("button=Sign in with Claude Code").isEnabled(), true, "signing in is offered again");
 
       // Claude Code signed in elsewhere, in a terminal: Check again asks it again.
       writeText(marker, "claude.ai");

@@ -521,11 +521,11 @@
    * with the graph visible on its left. It sets its own width, by default or by a drag, within
    * the graph's area (as detail-width.ts fits a drag); its content never sizes it, and wraps or
    * scrolls in its own boxes. */
-  /* From under the Main area's header row (its 2px focus line and 32px) to the area's bottom. */
+  /* From under the Main area's 32px header row to the area's bottom. */
   .dock {
     position: absolute;
     z-index: 20;
-    top: 34px;
+    top: 32px;
     right: 0;
     bottom: 0;
     width: var(--detail-width, min(46%, 680px));

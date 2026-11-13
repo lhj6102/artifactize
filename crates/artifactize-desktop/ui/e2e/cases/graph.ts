@@ -412,6 +412,10 @@ export const scenarios: Scenario[] = [
       // suite's box staying as it was.
       await clickWhole(browser, ".graph", "a:suite");
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact suite", { timeout: 15000, timeoutMsg: "the click on suite's box opened suite's Detail" });
+      const whole = (await detail(browser))!;
+      assert.deepEqual([whole.tabs[0].label, whole.tabs[0].selected], ["Artifact suite", true], `suite's Detail opens on its Artifact tab: ${JSON.stringify(whole.tabs)}`);
+      assert.ok(await aside(browser).$('[aria-label="Evals of suite"]').isExisting() && await aside(browser).$('[aria-label="Neighbours"]').isExisting(),
+        "the tab shows the whole's own Artifact content: its neighbours and its evals");
       const suite = (await partsDrawn(browser, ".graph"))["a:suite"].rect;
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
       assert.deepEqual((await partsDrawn(browser, ".graph"))["a:suite"].rect, suite, "suite's box stays");
@@ -451,10 +455,14 @@ export const scenarios: Scenario[] = [
         assert.ok(PARTS.includes(focused), `Tab reached a copy of the graph: ${focused}`);
         assert.equal(await detail(browser), null, `focusing ${focused} opens nothing`);
         order.push(focused);
-        const opens: Record<string, string | undefined> = { "a:suite/a:app": "app", "a:suite/a:app/a:kit": "kit" };
+        const opens: Record<string, string | undefined> = { "a:suite": "suite", "a:suite/a:app": "app", "a:suite/a:app/a:kit": "kit" };
         const name = opens[focused];
         if (name === undefined) continue;
-        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter on ${focused} opens ${name}'s Detail`);
+        // Enter on a whole or on a part opens that Artifact's own Detail, on its Artifact tab.
+        await press(browser, ["Enter"], async () => {
+          const shown = await detail(browser);
+          return shown?.title === `Artifact ${name}` && shown.tabs[0]?.label === `Artifact ${name}` && shown.tabs[0].selected;
+        }, `Enter on ${focused} opens ${name}'s Detail on its Artifact tab`);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closes`);
       }
       assert.deepEqual([...order].sort(), [...PARTS].sort(), "Tab reaches every whole and every part");
@@ -540,12 +548,21 @@ export const scenarios: Scenario[] = [
       // Detail open; Esc closes the Detail.
       await openArtifact(browser, "a:suite", "Artifact suite");
       const folded = (await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"];
+      // A press on the Detail's text, as a pointer gives it, puts the keyboard in suite's Detail;
+      // m then leaves it on the very element that had it.
+      await dispatchInput(browser, { kind: "text-click", ...await visibleCenter(browser, await aside(browser).$("h2").getElement()) });
+      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')),
+        { timeout: 15000, timeoutMsg: "the press moved the keyboard into suite's Detail" });
+      const inDetail = await focusedElement(browser);
+      assert.ok(await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')), `the keyboard is in suite's Detail: ${inDetail}`);
       await press(browser, ["m"], () => drawnNow(browser, ".graph", PARTS), "m expands suite, whose Detail is open");
+      assert.equal(await focusedElement(browser), inDetail, "m with the Detail focused leaves the keyboard where it was");
       const unfolded = await partsDrawn(browser, ".graph");
       assert.ok(unfolded["a:suite"].whole && within(unfolded["a:suite/a:app"].rect, unfolded["a:suite"].rect), "m draws suite as a box around its parts");
       await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph"))["a:suite"].rect, folded.rect),
         { timeout: 15000, timeoutMsg: "m keeps suite's top left corner where it was on the screen" });
       await press(browser, ["m"], () => drawnNow(browser, ".graph", SUITE_MINIMIZED), "m minimizes suite again");
+      assert.equal(await focusedElement(browser), inDetail, "m with the Detail focused leaves the keyboard where it was again");
       await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].rect, folded.rect),
         { timeout: 15000, timeoutMsg: "m keeps suite's top left corner where it was on the screen again" });
       assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open");
@@ -621,12 +638,23 @@ export const scenarios: Scenario[] = [
       assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
       // With suite focused and no Detail open, m minimizes it and m expands it again, the
       // keyboard staying on suite and no Detail opening.
+      /** The keyboard is on suite's own node, not on a button or a part inside it. */
+      const onSuite = async () => (await focusedNode(browser)) === "a:suite" && (await focusedElement(browser)).startsWith("DIV ");
       await toSuite();
       await press(browser, ["m"], () => drawnNow(browser, current, SUITE_MINIMIZED), "m minimizes the focused suite");
-      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:suite", { timeout: 15000, timeoutMsg: "the keyboard stays on the minimized suite" });
+      await browser.waitUntil(onSuite, { timeout: 15000, timeoutMsg: "the keyboard stays on the minimized suite itself" });
       await press(browser, ["m"], () => drawnNow(browser, current, PARTS), "m expands the focused suite");
-      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:suite", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's box" });
+      await browser.waitUntil(onSuite, { timeout: 15000, timeoutMsg: "the keyboard stays on suite's box itself" });
       assert.equal(await detail(browser), null, "m opens no Detail");
+      // With suite's button focused, m does what the button does and the keyboard stays on the
+      // button, which then reads the other action.
+      await tab(browser);
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite", "Tab reaches suite's Minimize button");
+      await press(browser, ["m"], () => drawnNow(browser, current, SUITE_MINIMIZED), "m minimizes suite from its focused button");
+      await browser.waitUntil(async () => (await focusedElement(browser)).trim() === "BUTTON Expand suite", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's button, now Expand" });
+      await press(browser, ["m"], () => drawnNow(browser, current, PARTS), "m expands suite from its focused button");
+      await browser.waitUntil(async () => (await focusedElement(browser)).trim() === "BUTTON Minimize suite", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's button, Minimize again" });
+      assert.equal(await detail(browser), null, "m on the button opens no Detail");
 
       // Expanded on the Current, suite is a box on the branch's Run too; minimized again there,
       // it stays so until the app quits.

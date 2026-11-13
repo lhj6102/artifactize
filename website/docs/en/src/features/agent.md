@@ -101,11 +101,7 @@ across calls. Saved Agent conversations below are separate from tool sessions.
 [Local diagnostics and maintenance](../cli/maintenance.md#doctor-models-and-prune).
 
 Agent reviews stream the model's answer as it is produced. One review deadline
-(default 240 seconds) covers all turns, retries and tools. Truncated or incomplete
-responses are not accepted, even if they contain a JSON verdict. An answer that turns into a
-long run of whitespace is stopped within seconds with `DEGENERATE_OUTPUT`. Both are sent
-again as described below; if the review still ends ERROR with them, try another model or
-`reasoning`. An Anthropic answer is also
+(default 240 seconds) covers all turns, retries and tools. An Anthropic answer is also
 capped at 16384 output tokens per turn, apart from the review's `max_tokens`.
 
 ### Retries and error codes
@@ -116,16 +112,19 @@ asks. Claude Code retries its own requests, so a `claude-agent` review is never 
 again ([Claude Agent](#claude-agent)).
 When the provider's answer itself fails after it began, that turn is retried up to the same
 few times, and the review keeps what it had already done.
-This covers an answer that turned into whitespace (`DEGENERATE_OUTPUT`), one that stopped
-at the model's output limit (`PROVIDER_ERROR`, `Provider response was incomplete:
-Some(Length)`), and a stream that broke off after its output began (`TRANSIENT`). The
+This covers an answer that turned into a long run of whitespace and was stopped within
+seconds (`DEGENERATE_OUTPUT`), one that stopped at the model's output limit and is not
+accepted even if it contains a JSON verdict (`PROVIDER_ERROR`, `Provider response was
+incomplete: Some(Length)`), and a stream that broke off after its output began
+(`TRANSIENT`). The
 failed answer is already paid for, so its tokens count against `max_tokens`, and once they
 reach it the turn is not sent again. Other failures after output or usage, such as a
 rejected request or another model, are never retried.
 When the retries do not help, or the provider asks to wait past the review's deadline,
 the review ends ERROR with the last attempt's code. Wait a moment and run `verify`
-again: finished results are reused, so only the failed reviews run. Each attempt is saved
-in `usage` with its counters, `error` and `errorCode`.
+again: finished results are reused, so only the failed reviews run; if a review keeps
+ending with whitespace or an incomplete response, try another model or `reasoning`. Each
+attempt is saved in `usage` with its counters, `error` and `errorCode`.
 
 ### Prompt caching
 
