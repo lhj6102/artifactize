@@ -32,12 +32,15 @@
       {:else if s.claude.state === "signedIn"}
         Signed in · {s.claude.method}{s.claude.plan ? ` · ${s.claude.plan}` : ""}
       {:else}
-        Claude Code failed: {s.claude.error}
+        <span class="error">Claude Code failed: {s.claude.error}</span>
       {/if}
     </dd>
     {#if s.claudePrompt}
       <dt>Sign-in</dt>
       <dd class="warn">in progress · Claude Code opened the browser</dd>
+    {:else if s.claudeError}
+      <dt>Sign-in</dt>
+      <dd class="error" role="alert">{s.claudeError}</dd>
     {/if}
   </dl>
   {#if s.claudePrompt}
@@ -62,5 +65,4 @@
     <button class="button" disabled={s.claudeBusy || !signedIn} onclick={() => void s.claudeSignOut()}>Sign out of Claude Code</button>
   </div>
   {#if s.claudeNotice}<p class="notice" role="status">{s.claudeNotice}</p>{/if}
-  {#if s.claudeError}<p class="error" role="alert">{s.claudeError}</p>{/if}
 </section>

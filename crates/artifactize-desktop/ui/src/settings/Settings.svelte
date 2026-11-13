@@ -228,14 +228,18 @@
   .settings :global(.error) {
     color: var(--red);
   }
+  /* A table stays within its column: its cells share the width and wrap what is long. */
   .settings :global(table) {
     border-collapse: collapse;
     margin-top: 8px;
+    width: 100%;
+    table-layout: fixed;
   }
   .settings :global(th),
   .settings :global(td) {
     text-align: left;
     padding: 3px 16px 3px 0;
+    overflow-wrap: anywhere;
   }
   .settings :global(th) {
     color: var(--ink-2);

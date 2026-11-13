@@ -99,7 +99,7 @@
     cursor: pointer;
   }
   .entry:hover {
-    background: color-mix(in srgb, var(--surface-group) 60%, var(--surface-panel));
+    background: var(--surface-group);
   }
   /* What the Main area shows: a soft grey pill around the entry; the selected entry takes the
    * selection background over it. */

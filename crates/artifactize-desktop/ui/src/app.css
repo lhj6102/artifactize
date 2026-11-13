@@ -319,7 +319,7 @@ kbd {
 }
 .chip:hover {
   color: var(--ink);
-  background: color-mix(in srgb, var(--surface-group) 60%, transparent);
+  background: var(--surface-group);
 }
 .chip[aria-selected="true"] {
   color: var(--ink);

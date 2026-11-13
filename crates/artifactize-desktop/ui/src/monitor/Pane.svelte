@@ -333,8 +333,8 @@
   .selected {
     background: var(--selection);
   }
-  .entries:focus-visible .selected,
-  .entries:focus-visible .branch :global(li.selected > .entry) {
+  .entries:focus-within .selected,
+  .entries:focus-within .branch :global(li.selected > .entry) {
     box-shadow: inset 2px 0 0 var(--accent);
   }
   /* Grows upward like a stack, up to half the Pane; beyond that it scrolls. */
