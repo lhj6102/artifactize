@@ -485,7 +485,7 @@
   place-items: center;
   border: 1px solid var(--line-group);
   border-radius: var(--radius-control);
-  background: var(--surface-panel);
+  background: var(--surface-group);
   color: var(--ink-2);
   font-size: 11px;
 }

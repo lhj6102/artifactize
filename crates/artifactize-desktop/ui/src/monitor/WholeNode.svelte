@@ -127,12 +127,12 @@
     padding: 0;
     border: 1px solid var(--line-group);
     border-radius: var(--radius-control);
-    background: var(--surface-panel);
+    background: var(--surface-group);
     color: var(--ink-2);
     cursor: pointer;
   }
   .toggle:hover {
-    background: var(--surface-group);
+    border-color: var(--line-input);
     color: var(--ink);
   }
   .toggle:focus-visible {
