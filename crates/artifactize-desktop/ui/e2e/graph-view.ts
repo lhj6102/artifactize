@@ -63,8 +63,9 @@ export type Detail = {
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
   /** Whether the Detail is a panel docked in the Main area, right of the Pane: at the area's
-   * right edge, from the bottom of the area's header down to the area's bottom, without a gap
-   * on any of the three, some of the area left on its left. */
+   * right edge, from the graph's top (below the area's header and the view's own header, a
+   * Run's headline or a Current's scan header) down to the area's bottom, without a gap on any
+   * of the three, some of the area left on its left. */
   docked: boolean;
 };
 
@@ -76,6 +77,8 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
     const area = aside.closest<HTMLElement>(".stage")!;
     const stage = area.getBoundingClientRect();
     const header = area.querySelector('section[aria-label="Main area"] > header')!.getBoundingClientRect();
+    // The graph's box, below whatever the view shows above it.
+    const graph = area.querySelector("[data-graph-area]")?.getBoundingClientRect();
     const box = aside.getBoundingClientRect();
     return {
       title: aside.querySelector("h2")?.textContent?.trim() ?? "",
@@ -106,7 +109,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",
       })),
-      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && Math.abs(box.top - header.bottom) <= 1 && Math.abs(stage.bottom - box.bottom) <= 1,
+      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && !!graph && graph.top >= header.bottom && Math.abs(box.top - graph.top) <= 1 && Math.abs(stage.bottom - box.bottom) <= 1,
     };
   });
 }

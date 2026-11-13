@@ -40,7 +40,7 @@ keyboard and runs nothing, Ctrl+R is its RED command instead, with or without it
 form open: it opens or switches to RED once claimed, and says the review must be
 claimed first otherwise. In a completed, read-only Human review Ctrl+R does nothing. In
 either, F5 or the palette's **Refresh** reloads the state.
-The app follows the system's light or dark appearance.
+The app is always dark, whatever the system's appearance.
 
 When a [newer release](../getting-started/update.md#newer-releases) is out, the header
 shows `VERSION available` before **Settings**. A click on it opens a dialog with this

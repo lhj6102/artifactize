@@ -35,7 +35,7 @@
     <button class="button small refresh" disabled={current.scanning} onclick={() => void current.scan(branch, true)}>Refresh <kbd aria-hidden="true">Ctrl+R</kbd></button>
   </header>
   {#if view}
-    <div class="canvas">
+    <div class="canvas" data-graph-area>
       {#await import("./SourceGraph.svelte")}
         <p class="note">Loading the graph…</p>
       {:then { default: SourceGraph }}

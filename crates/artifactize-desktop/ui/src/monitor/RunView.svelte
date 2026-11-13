@@ -46,7 +46,7 @@
       {/if}
     </ul>
   {/if}
-  <div class="area">
+  <div class="area" data-graph-area>
     <!-- Loaded on first use: the graph's libraries stay out of the window's start-up. -->
     {#await import("./SourceGraph.svelte")}
       <p class="empty">Loading the graph…</p>

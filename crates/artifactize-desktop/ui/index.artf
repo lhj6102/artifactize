@@ -65,7 +65,7 @@ profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}"
 [evals.tokens-match-design.payload]
 instruction = """
 Check with {desktop-design-check} that src/tokens.css of {desktop-ui} declares the same custom properties with the \
-same values, in the default and the light scheme, as tokens.css of {desktop-design}."""
+same values and the same one dark scheme, as tokens.css of {desktop-design}."""
 
 [evals.follows-design]
 title = "The desktop UI follows the design's screens and rules"

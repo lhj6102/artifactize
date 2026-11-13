@@ -1,5 +1,5 @@
 /* The design pages' own chrome: the page around a screen's figure, its callouts, notes and
-   rules. It uses the same tokens as the screens, so the pages read in both schemes. */
+   rules. It uses the same tokens as the screens, so the pages read in the app's one dark scheme. */
 :root {
   --page-max: 1120px;
 }

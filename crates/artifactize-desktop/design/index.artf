@@ -18,7 +18,7 @@ profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}"
 
 [evals.well-formed.payload]
 instruction = """
-Check {desktop-design} with {desktop-design-check}: tokens.css gives every colour token a value in both schemes; \
+Check {desktop-design} with {desktop-design-check}: tokens.css declares the one dark scheme (color-scheme: dark, no second scheme); \
 every page links tokens.css, mock.css and design.css and declares its screen; D- rule ids are unique across the pages \
 and each has its text; every callout has its note; every screen page is linked from index.html and listed in \
 ux-graph-doc.html; index.html names every token; no colour literal appears outside tokens.css."""

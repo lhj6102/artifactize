@@ -8,7 +8,7 @@
    its panel. Colour carries meaning only on the element that has the meaning (a status dot or
    word, a node's light, a verdict button); the accent is for what is interactive.
 
-   Dark is the primary scheme; the light scheme keeps every role and step. The values are our
+   The app is dark only, whatever the system's appearance. The values are our
    own: the handoff's sampled HEX values were a comparison point, not a source. */
 :root {
   /* Surfaces */
@@ -79,51 +79,5 @@
   --text-label: 11px;
   --text-title: 14px;
 
-  color-scheme: dark light;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --surface-bar: #e9ebef;
-    --surface-app: #f3f4f6;
-    --surface-panel: #ffffff;
-    --surface-group: #eff0f3;
-    --surface-input: #f8f9fa;
-    --surface-raised: #ffffff;
-
-    --line-panel: #c9cdd4;
-    --line-group: #e2e4e9;
-    --line-input: #d3d6dc;
-
-    --ink: #1f2328;
-    --ink-2: #626975;
-    --ink-3: #979ea9;
-    --ink-on-accent: #ffffff;
-
-    --accent: #5b5bd6;
-    --accent-soft: #ececfb;
-    --selection: #e6e7f7;
-    --focus: #5b5bd6;
-    --outline-selected: #3a3e49;
-    --scrim: rgb(0 0 0 / 30%);
-
-    --green: #16833a;
-    --red: #c4322a;
-    --error: #c2410c;
-    --running: #1e6fd9;
-    --human: #1650a8;
-    --yellow: #9a6700;
-    --queued: #6b7280;
-    --blocked: #a21caf;
-
-    --light-green: #16833a;
-    --light-active: #c99a06;
-    --light-waiting: #9aa1ab;
-    --light-red: #dc2626;
-    --light-error: #7c3aed;
-    --light-blocked: #7f1d1d;
-    --light-run: #1e6fd9;
-    --light-reused: #0f766e;
-    --light-checking: #d4d8de;
-  }
+  color-scheme: dark;
 }

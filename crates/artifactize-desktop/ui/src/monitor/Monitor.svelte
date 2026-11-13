@@ -7,6 +7,7 @@
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
@@ -374,6 +375,35 @@
       run: closeDetail,
     },
   ]);
+
+  /** The graph's top within the stage, kept as `--graph-top`: the Detail docks from there, below
+   * the Main area's header and below what the view shows above its graph (a Run's headline, a
+   * Current's scan header). The graph's box fills the rest of the area, so a header that grows
+   * resizes it and the top is read again; a mutation only looks for a new graph box. */
+  const graphTop: Attachment<HTMLElement> = (stage) => {
+    let watched: Element | null = null;
+    const read = () => {
+      if (!watched) return;
+      const top = watched.getBoundingClientRect().top - stage.getBoundingClientRect().top;
+      stage.style.setProperty("--graph-top", `${Math.round(top)}px`);
+    };
+    const sized = new ResizeObserver(read);
+    const find = () => {
+      const area = stage.querySelector("[data-graph-area]");
+      if (area === watched) return;
+      if (watched) sized.unobserve(watched);
+      watched = area;
+      if (area) sized.observe(area);
+    };
+    sized.observe(stage);
+    const changed = new MutationObserver(find);
+    changed.observe(stage, { childList: true, subtree: true });
+    find();
+    return () => {
+      sized.disconnect();
+      changed.disconnect();
+    };
+  };
 </script>
 
 <div class="monitor">
@@ -393,7 +423,7 @@
     </Split>
     <PaneResizer class="resizer" />
     <Split defaultSize={76} minSize={30}>
-      <div class="stage">
+      <div class="stage" {@attach graphTop}>
         <Panel
           {title}
           label="Main area"
@@ -521,11 +551,12 @@
    * with the graph visible on its left. It sets its own width, by default or by a drag, within
    * the graph's area (as detail-width.ts fits a drag); its content never sizes it, and wraps or
    * scrolls in its own boxes. */
-  /* From under the Main area's 32px header row to the area's bottom. */
+  /* From the graph's top (--graph-top, below the Main area's header and the view's own header
+   * above its graph) to the area's bottom; under the header row alone until a graph is drawn. */
   .dock {
     position: absolute;
     z-index: 20;
-    top: 32px;
+    top: var(--graph-top, 32px);
     right: 0;
     bottom: 0;
     width: var(--detail-width, min(46%, 680px));

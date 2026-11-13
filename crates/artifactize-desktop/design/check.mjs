@@ -2,7 +2,7 @@
 //   node check.mjs page PAGE.html          one screen page: links the three sheets, has its
 //                                          data-screen main, numbered callouts with notes,
 //                                          unique D- rules each with a dd, no colour literal
-//   node check.mjs whole [DIR]             the whole design: tokens in both schemes, every page
+//   node check.mjs whole [DIR]             the whole design: dark only, every page
 //                                          well formed, D- ids unique across pages, every screen
 //                                          page listed on index.html and in ux-graph-doc.html,
 //                                          every token named on index.html, no colour literal
@@ -10,7 +10,7 @@
 //   node check.mjs doc DOC.html UX-GRAPH.md  the graph doc cites every edge of UX-GRAPH.md
 //                                          exactly once, no other edge, and only known screens
 //   node check.mjs tokens A.css B.css      the two sheets declare the same tokens with the
-//                                          same values in the same scheme blocks
+//                                          same values, neither with a second scheme
 // Exit 0 when everything holds; 1 with one line per problem; 2 on a usage error.
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
@@ -23,18 +23,17 @@ const read = (path) => readFileSync(path, "utf8");
 const problems = [];
 const fail = (text) => problems.push(text);
 
-/** The custom properties a sheet declares, by scheme block: `root` and `light`. */
+/** The custom properties a sheet declares in its one :root, the `color-scheme` it states and
+ * whether it adds a second scheme (an `@media (prefers-color-scheme …)` block). */
 function tokens(css) {
   const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  const blocks = { root: new Map(), light: new Map() };
-  const media = bare.match(/@media \(prefers-color-scheme: light\)\s*\{([\s\S]*?)\}\s*\}/);
-  const rootOnly = media ? bare.replace(media[0], "") : bare;
-  const take = (text, into) => {
-    for (const match of text.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) into.set(match[1], match[2].trim().replace(/\s+/g, " "));
+  const root = new Map();
+  for (const match of bare.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) root.set(match[1], match[2].trim().replace(/\s+/g, " "));
+  return {
+    root,
+    scheme: bare.match(/(?<![-\w])color-scheme\s*:\s*([^;]+);/)?.[1].trim() ?? null,
+    second: /prefers-color-scheme/.test(bare),
   };
-  take(rootOnly, blocks.root);
-  if (media) take(media[1], blocks.light);
-  return blocks;
 }
 
 /** Colour literals in `text` outside tokens.css: hex, rgb(), hsl(), white, black. */
@@ -68,9 +67,8 @@ function page(path, { report = fail } = {}) {
 
 function whole(dir) {
   const sheet = tokens(read(join(dir, "tokens.css")));
-  const colourish = (value) => /#|rgb|hsl/.test(value);
-  for (const [name, value] of sheet.root) if (colourish(value) && !sheet.light.has(name)) report(`tokens.css: --${name} has no light value`);
-  for (const name of sheet.light.keys()) if (!sheet.root.has(name)) report(`tokens.css: --${name} is only in the light scheme`);
+  if (sheet.scheme !== "dark") report(`tokens.css: color-scheme is ${sheet.scheme ?? "not stated"}; the app is dark only`);
+  if (sheet.second) report("tokens.css: adds a second colour scheme; the app is dark only");
   for (const sheetName of ["mock.css", "design.css"]) for (const literal of literals(read(join(dir, sheetName)).replace(/\/\*[\s\S]*?\*\//g, ""))) report(`${sheetName}: colour literal ${literal}`);
   const pages = readdirSync(dir).filter((entry) => entry.endsWith(".html")).sort();
   const seen = new Map();
@@ -124,13 +122,13 @@ function doc(docPath, graphPath) {
 function same(aPath, bPath) {
   const a = tokens(read(aPath));
   const b = tokens(read(bPath));
-  for (const block of ["root", "light"]) {
-    for (const [name, value] of a[block]) {
-      if (!b[block].has(name)) fail(`${basename(bPath)}: ${block} lacks --${name}`);
-      else if (b[block].get(name) !== value) fail(`${basename(bPath)}: ${block} --${name} is ${b[block].get(name)}, the design says ${value}`);
-    }
-    for (const name of b[block].keys()) if (!a[block].has(name)) fail(`${basename(bPath)}: ${block} adds --${name}, which the design does not define`);
+  for (const [name, value] of a.root) {
+    if (!b.root.has(name)) fail(`${basename(bPath)}: lacks --${name}`);
+    else if (b.root.get(name) !== value) fail(`${basename(bPath)}: --${name} is ${b.root.get(name)}, the design says ${value}`);
   }
+  for (const name of b.root.keys()) if (!a.root.has(name)) fail(`${basename(bPath)}: adds --${name}, which the design does not define`);
+  if (b.scheme !== a.scheme) fail(`${basename(bPath)}: color-scheme is ${b.scheme ?? "not stated"}, the design says ${a.scheme}`);
+  if (b.second) fail(`${basename(bPath)}: adds a second colour scheme, which the design does not have`);
 }
 
 const [mode, ...rest] = process.argv.slice(2);
