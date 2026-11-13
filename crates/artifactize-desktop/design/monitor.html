@@ -27,8 +27,8 @@
 <h1>Monitor: the one screen with a Run shown</h1>
 <p class="lead">
   The window after <code>artifactize-desktop</code> starts: the global bar, the Pane on the left
-  (search, branches, the Waiting stack) and the Main area with the shown Run's headline and
-  graph. Nothing is selected on the graph yet; the Detail is closed. Started without arguments, the
+  (search, branches, the Waiting stack) and the Main area: one header row with the shown Run's
+  name and headline, the graph's tool strip and the graph. Nothing is selected on the graph yet; the Detail is closed. Started without arguments, the
   Main area shows <i>Nothing chosen</i> instead (D-MAIN-3) until a branch or a waiting review is
   chosen in the Pane.
 </p>
@@ -117,11 +117,14 @@
     </section>
     <div class="m-divider"></div>
     <section class="m-main">
-      <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-notice">2 Runs cannot be read: state/runs/run-1A… is not valid JSON</span></div>
-      <div class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>1</span><span><span class="m-icon i-human"></span>1</span><span><span class="m-icon i-green"></span>4</span></span> · took 12m 04s</span></div>
-      <p style="margin: 0; padding: 0 var(--pad) 6px">dogfood: desktop design pages and the restyle of the app toward them, before the full verify</p>
+      <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>1</span><span><span class="m-icon i-human"></span>1</span><span><span class="m-icon i-green"></span>4</span></span> · took 12m 04s</span></span><span class="m-notice">2 Runs cannot be read: state/runs/run-1A… is not valid JSON</span></div>
+      <p class="m-comment">dogfood: desktop design pages and the restyle of the app toward them, before the full verify</p>
       <ul class="m-attention"><li><span class="m-icon i-human tone-human"></span> release/signoff waiting Human · unclaimed</li><li><span class="m-icon i-red tone-red"></span> cli/tests RED · exit 1</li></ul>
-      <div class="m-canvas">
+      <div class="m-strip">
+        <span class="m-button small"><span class="m-icon i-find"></span>Find <span class="m-kbd">Ctrl+F</span></span>
+        <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
+        <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+        <span class="m-strip-hint"><span class="m-kbd">m</span> minimizes or expands a whole</span>
         <ul class="m-legend">
           <li class="light-green"><span class="m-light"></span>GREEN</li>
           <li class="light-active"><span class="m-light"></span>in progress</li>
@@ -130,6 +133,8 @@
           <li class="light-error"><span class="m-light"></span>ERROR</li>
           <li class="light-blocked"><span class="m-light"></span>blocked by upstream</li>
         </ul>
+      </div>
+      <div class="m-canvas">
         <div class="m-edge light-green" style="left: 328px; top: 250px; width: 170px; transform: rotate(-22deg)"></div>
         <div class="m-edge light-green" style="left: 328px; top: 250px; width: 170px; transform: rotate(22deg)"></div>
         <div class="m-edge blocking light-red" style="left: 656px; top: 314px; width: 92px"></div>
@@ -145,8 +150,6 @@
           <div class="m-node light-green" style="left: 24px; top: 92px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">4/4</span></div>
           <div class="m-node light-green" style="left: 300px; top: 66px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">2/2</span></div>
         </div>
-        <div class="m-controls"><span><span class="m-icon i-add"></span></span><span><span class="m-icon i-minus"></span></span><span><span class="m-icon i-fit"></span></span></div>
-        <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
       </div>
     </section>
   </div>
@@ -155,11 +158,11 @@
 <span class="callout" style="left: 244px; top: 44px">2</span>
 <span class="callout" style="left: 200px; top: 108px">3</span>
 <span class="callout" style="left: 200px; top: 646px">4</span>
-<span class="callout" style="left: 470px; top: 46px">5</span>
-<span class="callout" style="left: 740px; top: 76px">6</span>
+<span class="callout" style="left: 268px; top: 43px">5</span>
+<span class="callout" style="left: 905px; top: 66px">6</span>
 <span class="callout" style="left: 420px; top: 480px">7</span>
 <span class="callout" style="left: 700px; top: 660px">8</span>
-<span class="callout" style="left: 330px; top: 700px">9</span>
+<span class="callout" style="left: 790px; top: 138px">9</span>
 <span class="callout" style="left: 975px; top: 482px">10</span>
 <span class="callout" style="left: 1150px; top: 300px">11</span>
 </div>
@@ -171,17 +174,17 @@
   <li><span class="n">2</span><div><b>Search</b><span>A field one step below the Pane, monospace query, its starting <code>sort:recent</code>. Focused with suggestions, a raised list of key and value completions drops under it, the active one on the selection background.</span></div></li>
   <li><span class="n">3</span><div><b>Branches</b><span>Chevron, <i>project /</i> quiet and <b>branch</b> bold, star at the line's end; folded, the newest Run's dot, status word and age; expanded, the timeline with the Current's ring and the shown entry's pill, and <i>Older runs</i> at its end while older Runs exist.</span></div></li>
   <li><span class="n">4</span><div><b>Waiting stack</b><span>Grows upward from a thin labelled bar; each row an eval, where it waits, for how long and who claimed it.</span></div></li>
-  <li><span class="n">5</span><div><b>Main area header</b><span>The view's title in 12px; a notice takes the room to the right in one red line; actions at the end.</span></div></li>
-  <li><span class="n">6</span><div><b>Run headline</b><span>The verdict's icon and word in its colour, the headline in secondary ink with tabular figures, the Run's comment in full, then what needs attention.</span></div></li>
+  <li><span class="n">5</span><div><b>Main area header</b><span>One row: the view's name in 12px, then the Run's headline (the verdict's icon and word in its colour, the rest in secondary ink with tabular figures); a notice takes the room to the right in one red line; actions at the end.</span></div></li>
+  <li><span class="n">6</span><div><b>Under the header</b><span>Only what the Run has to add: its comment in full, then what needs attention, each line led by its status's icon.</span></div></li>
   <li><span class="n">7</span><div><b>Node</b><span>A neutral face in a neutral outline: the status's icon, the name, and how many of its evals are GREEN of how many; a 2px strip along its bottom repeats the status's colour. Where edges reach it a triangle points in on its left side, and where they leave it a square sits on its right: shape and side tell the direction. Under the pointer its outline only steps up.</span></div></li>
   <li><span class="n">8</span><div><b>Whole</b><span>A neutral box around its parts; its title row holds its status's icon, its name, its tally and the Minimize button, closed below by the strip in its status's colour.</span></div></li>
-  <li><span class="n">9</span><div><b>Canvas furniture</b><span>Legend top-left, each status's icon and word; zoom controls and the key hint bottom-left, all quiet overlays on the working surface.</span></div></li>
+  <li><span class="n">9</span><div><b>Tool strip</b><span>What acts on the graph, in one row above the canvas: Find with its key, the zoom group with the zoom in percent, Fit, the hint for <kbd>m</kbd>, and the legend at the row's end. Nothing floats on the canvas.</span></div></li>
   <li><span class="n">10</span><div><b>Edges</b><span>Neutral lines. The one coloured edge leaves a RED, ERROR or blocked Artifact, in that Artifact's colour: here cli, RED, holds docs.</span></div></li>
   <li><span class="n">11</span><div><b>Minimized whole</b><span>A node with a second outline behind it, its parts' count under its name and the Expand button at its right.</span></div></li>
 </ol>
 
 <figure class="figure">
-<div class="stage" style="--w: 1280; --h: 384">
+<div class="stage" style="--w: 1280; --h: 392">
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
@@ -207,8 +210,21 @@
     </section>
     <div class="m-divider"></div>
     <section class="m-main focused">
-      <div class="m-main-head"><h2>Run run-9QK2LD</h2></div>
-      <div class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>3</span><span><span class="m-icon i-green"></span>211</span></span> · took 41m 20s</span></div>
+      <div class="m-main-head"><h2>Run run-9QK2LD</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>3</span><span><span class="m-icon i-green"></span>211</span></span> · took 41m 20s</span></span></div>
+      <div class="m-strip">
+        <span class="m-button small"><span class="m-icon i-find"></span>Find <span class="m-kbd">Ctrl+F</span></span>
+        <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">12%</span><span><span class="m-icon i-add"></span></span></span>
+        <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+        <span class="m-strip-hint"><span class="m-kbd">m</span> minimizes or expands a whole</span>
+        <ul class="m-legend">
+          <li class="light-green"><span class="m-light"></span>GREEN</li>
+          <li class="light-active"><span class="m-light"></span>in progress</li>
+          <li class="light-waiting"><span class="m-light"></span>waiting</li>
+          <li class="light-red"><span class="m-light"></span>RED</li>
+          <li class="light-error"><span class="m-light"></span>ERROR</li>
+          <li class="light-blocked"><span class="m-light"></span>blocked by upstream</li>
+        </ul>
+      </div>
       <div class="m-canvas" style="flex: 0 0 290px">
         <svg class="m-wires light-red" viewBox="0 0 999 290" style="width: 999px; height: 290px" aria-hidden="true"><path d="M58 111L116 87M58 111L116 99M58 123L116 111M58 135L116 123M58 159L116 123M58 147L116 135M58 135L116 147M58 147L116 159M58 147L116 171M58 159L116 183M58 135L116 183M138 87L196 57M138 111L196 69M138 87L196 81M138 123L196 93M138 99L196 105M138 123L196 117M138 135L196 129M138 135L196 141M138 111L196 141M138 147L196 153M138 159L196 165M138 159L196 177M138 183L196 177M138 171L196 189M138 183L196 201M138 183L196 213M218 57L276 33M218 81L276 45M218 81L276 57M218 93L276 69M218 93L276 81M218 105L276 93M218 81L276 93M218 117L276 105M218 129L276 117M218 117L276 129M218 93L276 129M218 153L276 141M218 141L276 153M218 153L276 165M218 177L276 177M218 153L276 177M218 177L276 189M218 201L276 201M218 189L276 213M218 201L276 225M218 201L276 237M298 33L356 21M298 45L356 33M298 45L356 45M298 69L356 45M298 69L356 57M298 93L356 69M298 69L356 69M298 81L356 81M298 105L356 93M298 105L356 105M298 117L356 117M298 117L356 129M298 153L356 141M298 153L356 153M298 129L356 153M298 165L356 165M298 165L356 177M298 189L356 189M298 189L356 201M298 213L356 201M298 213L356 213M298 213L356 225M298 189L356 225M298 237L356 237M298 225L356 249M378 21L436 27M378 45L436 27M378 45L436 39M378 45L436 51M378 21L436 51M378 45L436 63M378 69L436 75M378 81L436 87M378 105L436 111M378 129L436 123M378 105L436 123M378 129L436 135M378 141L436 147M378 165L436 159M378 177L436 171M378 201L436 171M378 189L436 183M378 189L436 195M378 213L436 207M378 225L436 219M378 237L436 231M378 249L436 243M458 27L516 45M458 27L516 57M458 39L516 69M458 63L516 69M458 63L516 81M458 39L516 81M458 75L516 93M458 111L516 105M458 123L516 117M458 123L516 129M458 147L516 141M458 147L516 153M458 183L516 165M458 183L516 177M458 195L516 189M458 207L516 201M458 231L516 213M458 243L516 225M538 57L596 63M538 69L596 75M538 81L596 87M538 81L596 99M538 105L596 111M538 129L596 135M538 153L596 147M538 153L596 159M538 189L596 171M538 177L596 183M538 213L596 195M538 213L596 207M618 75L676 81M618 87L676 93M618 111L676 105M618 135L676 105M618 111L676 117M618 135L676 129M618 159L676 141M618 147L676 153M618 171L676 165M618 195L676 177M618 207L676 189M618 183L676 189M698 93L756 93M698 81L756 105M698 117L756 117M698 141L756 129M698 165L756 129M698 141L756 141M698 153L756 153M698 177L756 153M698 165L756 165M698 189L756 177M778 105L836 111M778 129L836 111M778 105L836 123M778 93L836 123M778 141L836 135M778 153L836 147M778 177L836 147M778 177L836 159M858 123L916 123M858 147L916 135M858 159L916 147" /><path class="blocking" d="M378 93L436 99M458 99L516 117M538 117L596 123" /></svg>
         <div class="m-far-whole light-green" style="left: 110px; top: 80px; width: 114px; height: 118px"></div>
@@ -360,7 +376,7 @@
 <span class="callout" style="left: 760px; top: 190px">13</span>
 <span class="callout" style="left: 420px; top: 150px">14</span>
 </div>
-<figcaption>Stage 1280 × 384. A Run of 140 Artifacts zoomed out until names no longer read: every node a block of its status's colour (the canvas furniture left out here).</figcaption>
+<figcaption>Stage 1280 × 392. A Run of 140 Artifacts zoomed out until names no longer read: every node a block of its status's colour.</figcaption>
 </figure>
 
 <ol class="notes">
@@ -382,13 +398,15 @@
   <dt id="D-PANE-4">D-PANE-4</dt>
   <dd>The Waiting stack: an 11px uppercase label <code>WAITING (n)</code> in <code>--ink-2</code>, then 12px rows of the eval (its status's icon in <code>--human</code>), the project and branch, and <code>age · claimant</code> in <code>--ink-2</code>; selected rows use <code>--selection</code>. <span class="avoid">a bold heading; the stack taller than half the Pane.</span></dd>
   <dt id="D-MAIN-1">D-MAIN-1</dt>
-  <dd>The Main area header is a 32px row: the view's title at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus), a notice in <code>--red</code> as one cut line taking the remaining room, actions at the end as small buttons with key caps; a click on the notice shows it in full, wrapped within the header's width on <code>--surface-raised</code> with a <code>--line-panel</code> border, what is below it neither moved nor resized (E-MON-NOTICE); another click folds it to one line. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a notice that moves the graph; a notice that cannot be read whole.</span></dd>
+  <dd>The Main area header is one 32px row that says what is shown: the view's name at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus): <i>Run {id}</i>, <i>Current · {project} {branch}</i>, <i>Review</i>; then, in the same row at <code>--text-small</code>, the view's headline (a Run's verdict icon and word bold in the status colour and its headline in <code>--ink-2</code> with tabular figures, its tally as each status's icon and count; a Current's scan state, D-CUR-1; a review's eval, title and Artifact, D-REV-1), cut with an ellipsis when the row is short; then a notice in <code>--red</code> as one cut line, at least 96px wide, taking the remaining room; actions at the end as small buttons with key caps. A click on the notice shows it in full, wrapped within the header's width on <code>--surface-raised</code> with a <code>--line-panel</code> border, what is below it neither moved nor resized (E-MON-NOTICE); another click folds it to one line. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a second row for the headline; a notice that moves the graph; a notice that cannot be read whole.</span></dd>
   <dt id="D-MAIN-2">D-MAIN-2</dt>
-  <dd>A Run shows, above its graph, its headline row (the verdict's icon and word bold in the status colour; the headline in <code>--ink-2</code> with tabular figures), its comment in full (wrapping, in <code>--ink</code>), and what needs attention as 12px lines each led by its status's icon in the status colour. <span class="avoid">a coloured banner; the attention list inside the graph; the comment cut short here.</span></dd>
+  <dd>Under the header a Run shows only what it has to add, above its graph's tool strip: its comment in full (wrapping, in <code>--ink</code>) when it has one, and what needs attention as 12px lines each led by its status's icon in the status colour; a Run with neither goes straight from the header to the tool strip. The Run's headline, in the header row, takes the click that opens the Run's Detail. <span class="avoid">a coloured banner; the attention list inside the graph; the comment cut short here.</span></dd>
   <dt id="D-MAIN-3">D-MAIN-3</dt>
-  <dd>The graph's place is kept whatever the Main area has to say about it: with nothing chosen (a launch without arguments), while a Run loads, when a Run cannot be read, or with an empty graph, one <code>--ink-2</code> line says so at the top of the Main area's body (for a Run whose graph is empty, under that Run's headline, comment and attention of D-MAIN-2, where its graph would begin) (<i>Choose a branch or a waiting review in the Pane.</i>, <i>Loading the Run…</i>, <i>This Run cannot be read; choose another.</i>) and the area below stays empty on <code>--surface-panel</code>; a notice about other Runs still goes to the header (D-MAIN-1). <span class="avoid">an empty-state illustration; a dialog for a Run that cannot be read; the Pane changing size with the Main area's state.</span></dd>
+  <dd>The graph's place is kept whatever the Main area has to say about it: with nothing chosen (a launch without arguments), while a Run loads, when a Run cannot be read, or with an empty graph, one <code>--ink-2</code> line says so at the top of the Main area's body (for a Run whose graph is empty, under that Run's header, comment and attention of D-MAIN-1 and D-MAIN-2, where its graph's tool strip would begin) (<i>Choose a branch or a waiting review in the Pane.</i>, <i>Loading the Run…</i>, <i>This Run cannot be read; choose another.</i>) and the area below stays empty on <code>--surface-panel</code>, without a tool strip, which comes with a graph; a notice about other Runs still goes to the header (D-MAIN-1). <span class="avoid">an empty-state illustration; a dialog for a Run that cannot be read; the Pane changing size with the Main area's state.</span></dd>
   <dt id="D-GRAPH-1">D-GRAPH-1</dt>
-  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the header; its furniture floats quietly: the legend top-left, each status's icon in its colour and its word, and the key hint bottom-left at 11px in <code>--ink-2</code> on <code>--surface-panel</code> at 85%, the zoom controls bottom-left as one bordered group of 24px squares. <span class="avoid">a white canvas inside a dark panel; furniture that takes the pointer from the graph.</span></dd>
+  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the graph's tool strip (D-GRAPH-4). Nothing rests on it but the graph: the find field (D-OVL-4) floats over its top left only while it is open; the legend, the zoom controls and the key hint are in the tool strip. <span class="avoid">a white canvas inside a dark panel; a legend, controls or a hint floating on the canvas.</span></dd>
+  <dt id="D-GRAPH-4">D-GRAPH-4</dt>
+  <dd>The graph's tool strip is one row of <code>--row-head</code> between what the view shows above its graph and the canvas, on <code>--surface-panel</code>, opened above by <code>--line-group</code>; a Run's and a Current's graph each have it. From the left: <b>Find</b>, a small button with the find icon, its word and its <kbd>Ctrl+F</kbd> key cap, which opens the find field as the key does; the zoom group, one bordered group 22px high of Zoom out (the minus icon), the zoom in percent in tabular figures, and Zoom in (the add icon); <b>Fit</b>, a small button with the fit icon and its word, which is Fit View; then the hint that <kbd>m</kbd> minimizes or expands a whole, the key cap and its words at <code>--text-label</code> in <code>--ink-2</code>. At the row's end sits the legend at <code>--text-label</code> in <code>--ink-2</code>: each status's icon in its colour and its word (a Run's: GREEN, in progress, waiting, RED, ERROR, blocked by upstream; a Current's: D-CUR-2). The Detail docks under the strip, so the strip stays whole and usable with the Detail open. When the row is too short the legend wraps onto a second line of the strip; nothing is dropped. <span class="avoid">controls floating on the canvas; Find as an icon alone; a legend of colour dots; the strip under the Detail; a second strip.</span></dd>
   <dt id="D-NODE-5">D-NODE-5</dt>
   <dd>Ports tell an edge's direction by shape and side, and carry no status: a node, a whole's box or a minimized whole that edges reach shows one input port, a triangle pointing into it, at the middle of its left side; one that edges leave shows one output port, a square, at the middle of its right side. A port is <code>--port</code> wide and high, straddles the outline, is filled in the edges' neutral <code>--edge</code> and takes no pointer; a side that no drawn edge meets has no port, and many edges on one side share its one port. The neighbours drawing in the Detail draws the same ports. <span class="avoid">a port per edge; the same shape on both sides; a port in a status colour; arrowheads on the edges instead; a port that can be dragged or clicked.</span></dd>
   <dt id="D-GRAPH-2">D-GRAPH-2</dt>

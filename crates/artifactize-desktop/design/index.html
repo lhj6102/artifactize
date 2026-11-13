@@ -41,8 +41,8 @@
   The window is one screen. A global bar carries what belongs to the window (brand, the
   reviewer, an update notice, Settings, the command palette). Below it, the work reads left
   to right: <b>find</b> (the Pane: a search, the live branches with their Runs, the reviews
-  waiting for a person), <b>look</b> (the Main area: a Run's or a Current's graph, or a Human
-  review) and <b>inspect</b> (the Detail, a panel docked at the graph's right edge, showing the
+  waiting for a person), <b>look</b> (the Main area: one header row, then a Run's or a Current's graph under its
+  tool strip, or a Human review) and <b>inspect</b> (the Detail, a panel docked at the graph's right edge, showing the
   selected Artifact or eval). Each view keeps the bar and the Pane and changes only what the
   Main area gives its main representation: a graph, a review, a read-only request.
 </p>
@@ -87,7 +87,7 @@
   <thead><tr><th>Token</th><th>Role</th></tr></thead>
   <tbody>
     <tr><td><span class="swatch" style="--token: var(--ink)"></span><code>--ink</code></td><td>Text, names, values</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--ink-2)"></span><code>--ink-2</code></td><td>Secondary text: labels, ages, projects, costs, section labels</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--ink-2)"></span><code>--ink-2</code></td><td>Secondary text: labels, ages, projects, costs, group labels, a section's summary</td></tr>
     <tr><td><span class="swatch" style="--token: var(--ink-3)"></span><code>--ink-3</code></td><td>Faint text: placeholders, separators, an off star</td></tr>
     <tr><td><span class="swatch" style="--token: var(--ink-on-accent)"></span><code>--ink-on-accent</code></td><td>Text on the accent</td></tr>
     <tr><td><span class="swatch" style="--token: var(--accent)"></span><code>--accent</code></td><td>What is interactive and emphasised: links, the primary button, the focused panel's top line, the active tab's line</td></tr>
@@ -121,8 +121,9 @@
     <tr><td><code>--radius-panel</code></td><td>A panel's or the Detail's corner: nearly square</td></tr>
     <tr><td><code>--radius-control</code></td><td>Buttons, fields, nodes, key caps, rows that highlight</td></tr>
     <tr><td><code>--radius-chip</code></td><td>The Detail's chips and the stage pill: rounded, the chosen one filled</td></tr>
-    <tr><td><code>--row</code></td><td>A list row: palette items, Settings choices</td></tr>
+    <tr><td><code>--row</code></td><td>A list row: palette items, Settings choices; a section's header row</td></tr>
     <tr><td><code>--row-dense</code></td><td>A dense row: eval rows, find results, chips</td></tr>
+    <tr><td><code>--row-head</code></td><td>A strip of tools: the graph's tool strip</td></tr>
     <tr><td><code>--control</code></td><td>A button's or field's height</td></tr>
     <tr><td><code>--bar-height</code></td><td>The global bar</td></tr>
     <tr><td><code>--pad</code></td><td>A panel's side padding (12); spacing follows the 4 / 8 / 12 / 16 scale</td></tr>
@@ -133,8 +134,8 @@
     <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
     <tr><td><code>--font</code>, <code>--mono</code></td><td>The UI face with Korean fallbacks; the monospace face for logs, IDs and queries</td></tr>
     <tr><td><code>--text-body</code></td><td>13px: text, names, values</td></tr>
-    <tr><td><code>--text-small</code></td><td>12px: secondary text, chips, logs</td></tr>
-    <tr><td><code>--text-label</code></td><td>11px: section labels (uppercase, letter-spaced), legends, hints</td></tr>
+    <tr><td><code>--text-small</code></td><td>12px: secondary text, chips, logs, a section's header row, the Main area's header row</td></tr>
+    <tr><td><code>--text-label</code></td><td>11px: group labels in lists (uppercase, letter-spaced), legends, hints, a node's tally</td></tr>
     <tr><td><code>--text-title</code></td><td>14px: a branch's name line, a review's title</td></tr>
   </tbody>
 </table>
@@ -192,7 +193,7 @@
   <dt id="D-SYS-4">D-SYS-4</dt>
   <dd>Density: a list row is <code>--row</code> (24px), a dense row <code>--row-dense</code> (22px), a control <code>--control</code> (24px) tall; a panel pads its sides by <code>--pad</code> (12px); spacing uses the 4 / 8 / 12 / 16 scale and never exceeds 16px between groups of one panel. <span class="avoid">32px controls; 20px panel paddings; empty space doing a line's job.</span></dd>
   <dt id="D-SYS-5">D-SYS-5</dt>
-  <dd>Type: body 13px, secondary 12px, labels 11px uppercase and letter-spaced in <code>--ink-2</code>; a section label is neutral ink, never the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; proportional figures in an age column.</span></dd>
+  <dd>Type: body 13px, secondary 12px. A section of the inspector, of a review or of Settings stands under a header row: its name at 12px semibold in <code>--ink</code>, in sentence case (D-INS-9). A group label inside a list (the Pane's Waiting, a palette group, a Help group, a table's head) is 11px uppercase and letter-spaced in <code>--ink-2</code>. Neither is ever the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; uppercase letter-spaced labels as section headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>
   <dd>Colour carries meaning only on the element that has it: a status dot, icon or word, a node's icon and strip, an edge that leaves a RED, ERROR or blocked Artifact, a verdict button, stderr lines. A graph's own lines, a node's outline and every other edge, are neutral. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, outline, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
   <dt id="D-SYS-7">D-SYS-7</dt>

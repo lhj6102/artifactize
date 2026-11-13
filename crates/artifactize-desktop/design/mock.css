@@ -368,15 +368,17 @@
   color: var(--ink-2);
 }
 
-/* The Main area: a header row, then the view. */
+/* The Main area: one header row (the view's name, its headline, a notice, its actions), then
+   what the view says under it, then the view. */
 .m-main-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 32px;
   padding: 0 var(--pad);
 }
 .m-main-head h2 {
+  flex: none;
   margin: 0;
   font-size: var(--text-small);
   font-weight: 600;
@@ -385,9 +387,30 @@
 .m-main.focused .m-main-head h2 {
   color: var(--ink);
 }
+.m-headline {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-small);
+}
+.m-headline .m-status {
+  flex: none;
+  font-weight: 700;
+}
+.m-headline .m-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
 .m-notice {
   flex: 1;
-  min-width: 0;
+  min-width: 96px;
   color: var(--red);
   font-size: var(--text-small);
   text-align: end;
@@ -395,18 +418,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.m-headline {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 0 var(--pad) 4px;
-}
-.m-headline .m-status {
-  font-weight: 700;
-}
-.m-headline .m-text {
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
+.m-comment {
+  margin: 0;
+  padding: 0 var(--pad) 6px;
 }
 .m-attention {
   margin: 0;
@@ -415,7 +429,58 @@
   font-size: var(--text-small);
 }
 
-/* The graph: the working area, with quiet overlays. */
+/* The graph's tool strip: what acts on the graph, in one row between the header and the
+   canvas, and the legend at its end. Nothing floats on the canvas but the find field. */
+.m-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--gap);
+  min-height: var(--row-head);
+  padding: 0 var(--pad);
+  border-top: 1px solid var(--line-group);
+  font-size: var(--text-small);
+}
+.m-zoomer {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  border: 1px solid var(--line-group);
+  border-radius: var(--radius-control);
+  background: var(--surface-group);
+}
+.m-zoomer > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  color: var(--ink-2);
+}
+.m-zoomer > .m-zoom {
+  width: 44px;
+  border-left: 1px solid var(--line-group);
+  border-right: 1px solid var(--line-group);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.m-strip-hint {
+  color: var(--ink-2);
+  font-size: var(--text-label);
+}
+.m-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-label);
+  color: var(--ink-2);
+}
+.m-legend .m-light {
+  margin-right: 4px;
+}
+/* The graph: the working area. */
 .m-canvas {
   position: relative;
   flex: 1;
@@ -423,50 +488,6 @@
   background: var(--surface-app);
   border-top: 1px solid var(--line-group);
   overflow: hidden;
-}
-.m-legend,
-.m-hint {
-  position: absolute;
-  display: flex;
-  gap: 4px 10px;
-  margin: 0;
-  padding: 3px 8px;
-  list-style: none;
-  font-size: var(--text-label);
-  color: var(--ink-2);
-  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
-  border-radius: var(--radius-control);
-}
-.m-legend {
-  left: 8px;
-  top: 8px;
-}
-.m-hint {
-  left: 48px;
-  bottom: 12px;
-}
-.m-legend .m-light {
-  margin-right: 4px;
-}
-.m-controls {
-  position: absolute;
-  left: 8px;
-  bottom: 12px;
-  display: grid;
-  border: 1px solid var(--line-group);
-  border-radius: var(--radius-control);
-  background: var(--surface-panel);
-  overflow: hidden;
-}
-.m-controls > span {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  color: var(--ink-2);
-}
-.m-controls > span + span {
-  border-top: 1px solid var(--line-group);
 }
 
 /* A node: a neutral face in a neutral outline. Its status shows in two places and nowhere
@@ -639,11 +660,11 @@
 .light-reused { --light: var(--reused); --light-icon: var(--i-reused); }
 .light-checking { --light: var(--checking); --light-icon: var(--i-checking); }
 
-/* The Detail: the inspector, a panel docked at the Main area's right edge over the graph, from
-   under the area's header row to its bottom, meeting the graph at a line. */
+/* The Detail: the inspector, a panel docked at the graph's right edge over the canvas, from the
+   canvas's top, under the graph's tool strip, to its bottom, meeting the graph at a line. */
 .m-dock {
   position: absolute;
-  top: 32px;
+  top: 0;
   right: 0;
   bottom: 0;
   width: var(--detail-width, 46%);
@@ -651,7 +672,6 @@
   flex-direction: column;
   min-height: 0;
   background: var(--surface-panel);
-  border-top: 1px solid var(--line-group);
   border-left: 1px solid var(--line-panel);
   overflow: hidden;
 }
@@ -710,7 +730,49 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-top: 8px;
+}
+/* A section of the inspector: a header row (the fold icon, its name, a short summary at the
+   right), opened above by a group line, then its body; folded, the row alone. In a review and
+   in Settings the same row stands without the fold icon. */
+.m-sec {
+  border-top: 1px solid var(--line-group);
+}
+.m-chips + .m-body > .m-sec:first-child,
+.m-main-head + .m-body > .m-sec:first-child {
+  border-top: 0;
+}
+.m-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--row);
+  padding: 0 var(--pad);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+.m-sec-head > .m-icon {
+  color: var(--ink-2);
+}
+.m-sec-head .m-sum {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.m-sec-body {
+  padding: 2px var(--pad) 10px;
+}
+.m-sec-head.plain {
+  padding: 0;
+}
+.m-sec-head.plain + .m-sec-body {
+  padding-left: 0;
+  padding-right: 0;
 }
 .m-section {
   padding: 0 var(--pad) 10px;
@@ -732,16 +794,21 @@
   padding: 0;
   list-style: none;
 }
+/* An eval row: four columns, the last pinned to the panel's right edge. */
 .m-row {
   display: grid;
-  grid-template-columns: 16px minmax(0, auto) auto minmax(0, 1fr);
+  grid-template-columns: var(--icon) minmax(0, max-content) minmax(0, 1fr) max-content;
   gap: 8px;
   align-items: baseline;
   min-height: var(--row-dense);
   padding: 1px var(--pad);
 }
+.m-row > .m-icon {
+  align-self: center;
+}
 .m-row .m-right {
   color: var(--ink-2);
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .m-glyph {
@@ -788,7 +855,7 @@
 .m-views {
   display: flex;
   gap: 8px;
-  padding: 0 var(--pad) 8px;
+  padding: 8px var(--pad) 8px;
   font-size: var(--text-body);
 }
 .m-views .chosen {
@@ -800,6 +867,11 @@
   color: var(--ink-2);
 }
 .m-summary {
+  margin: 0;
+  padding: 0 var(--pad) 8px;
+}
+.m-instruction {
+  margin: 0;
   padding: 0 var(--pad) 10px;
 }
 .m-summary .m-status {
@@ -817,7 +889,7 @@
 .m-neighbours {
   position: relative;
   height: 72px;
-  margin: 0 var(--pad) 10px;
+  margin: 0 var(--pad) 4px;
 }
 .m-neighbours .m-node {
   width: 116px;
@@ -1048,16 +1120,20 @@
   font-weight: 600;
 }
 .m-setup section {
-  padding: 10px 0;
+  padding: 0 0 10px;
   border-top: 1px solid var(--line-group);
 }
 .m-setup section:first-child {
   border-top: 0;
-  padding-top: 0;
 }
+/* A setup's sections stand under the inspector's header row, without the fold icon. */
 .m-setup h3 {
-  margin: 0 0 4px;
-  font-size: var(--text-title);
+  display: flex;
+  align-items: center;
+  min-height: var(--row);
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: 600;
 }
 .m-setup .m-row-line {
   display: flex;

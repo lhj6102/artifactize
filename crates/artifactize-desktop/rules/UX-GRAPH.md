@@ -50,17 +50,19 @@ that makes the transition happen and checks where it leads.
 - **Main area**: shows one view at a time, with what went wrong (such as Runs that cannot be
   read) as the **notice**, one line in its header that neither moves nor hides what is below.
   - **Nothing chosen**: no branch or review chosen yet; the graph's place says so.
-  - **Run**: the shown Run's headline, its comment in full when it has one, and what needs
-    attention above the **Run graph**; while
+  - **Run**: the Run's name and, beside it in the same header row, the shown Run's headline;
+    under the header its comment in full when it has one and what needs attention; then the
+    graph's **tool strip** and the **Run graph**; while
     loading, on an error or with an empty graph the graph's place stays and says so.
-  - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: a
-    header saying how many Artifacts are still being checked while the scan runs, when it was
-    scanned once it ends, or why it failed, a Refresh button, the **Current graph** and, below
+  - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: the
+    Main area's header saying, beside the Current's name, how many Artifacts are still being
+    checked while the scan runs, when it was scanned once it ends, or why it failed, a Refresh
+    button at that row's end, the graph's **tool strip**, the **Current graph** and, below
     it, the expandable **Structure and evaluation criteria** text (every criterion and labeled
     relation). It scans again when chosen again, on Refresh and when a Run of the branch ends;
     while a scan of the branch is still running, these show that scan instead of starting over.
-  - **Review**: a waiting Human review opened from the Pane, its eval and Artifact above the
-    **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
+  - **Review**: a waiting Human review opened from the Pane, its eval and Artifact named in
+    the Main area's header above the **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
     and Tool log stay for when it is opened again.
   - **Request**: a request opened by ID that is not a waiting Human review, read-only.
 - **Settings**: a modal over the screen with three tabs. **Providers** lists the built-in providers
@@ -103,8 +105,10 @@ that makes the transition happen and checks where it leads.
   minimized; a minimized whole highlighted while an Artifact it hides is open.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does, Ctrl+F opens their **Find field** and `m` minimizes or expands a whole; they have no
-  other keys of their own. Hovering only highlights. Each graph's bottom says that Ctrl+F finds,
-  or lists the favorites, and that `m` minimizes or expands a whole.
+  other keys of their own. Hovering only highlights. Above each graph sits its **tool strip**,
+  one row: a Find button showing its key Ctrl+F, Zoom out, the zoom in percent and Zoom in,
+  Fit View, a hint that `m` minimizes or expands a whole and, at the row's end, the legend,
+  each verdict's icon and word. Nothing but the Find field floats on a graph.
 - **Find field**: floats over a graph's top left: a text field and, below it, the Artifacts and
   evals whose names contain its text, ignoring case, in the graph's order, an Artifact by its
   whole name and an eval as `{Artifact} / {eval}`, each with its verdict's glyph and colour (on a
@@ -114,7 +118,8 @@ that makes the transition happen and checks where it leads.
   States: favorites (listed, an entry chosen or not, or none starred), listing (an entry chosen
   or not), nothing found.
 - **Detail**: a panel docked at a graph's right edge over the graph, from the graph's top to the
-  area's bottom without a gap, below a Run's headline or a Current's scan header, that shows a Run or
+  area's bottom without a gap, below the Main area's header, a Run's comment and attention and
+  the graph's tool strip, that shows a Run or
   an Artifact; it never sits beside the Pane. Its left edge takes a drag that sets its width,
   between a readable column and a width that leaves some of the graph visible on its left.
   An Artifact's Detail has a **star** beside its title on every tab: ☆, or ★ while the Artifact
@@ -138,8 +143,14 @@ that makes the transition happen and checks where it leads.
   and why and the result it would reuse, or, switched below the tabs, its Agent log or Runtime
   log; in a Run a Human eval's tab holds its Human review. Everything in the Detail,
   transcript and log lines, long words and code included, wraps or scrolls within its width.
+  Below its tabs the Detail shows **sections**, each under a header row with its name and a
+  short summary at the row's right end (an Artifact's Neighbours, Evals, Tools, Tool log and
+  Path; an eval's Result, Execution options, Execution metadata and Fingerprint; a Run's
+  Outcome, Waits for, What and Provenance; Debug, or a Run's Technical, last); a section is
+  unfolded or folded to its header row alone, as a person left it by its name, Debug and
+  Technical folded until then. A Human review's Tools, Tool log and Result do not fold.
   States: open on a tab (the Artifact's, an eval's Summary, Debug unfolded, or a log), its
-  chips on one line or wrapped; an Artifact's tool running.
+  chips on one line or wrapped; a section folded or unfolded; an Artifact's tool running.
 - **Human review** (on a Human eval's tab of a Run's Detail, or the Review view): its
   instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the
   reviewed one first), the Tool log of every run in this review, and the Result, in one column
@@ -250,7 +261,7 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn: as nodes where their names read, as blocks of their verdict's colour where the zoom makes names too small to read |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole, never enlarged beyond its nodes' own size |
-| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size |
+| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom (the wheel, or the tool strip's Zoom out or Zoom in), or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size |
 | E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name, its verdict's icon and a strip in its verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
@@ -261,11 +272,11 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-EXPAND-KEY | Run graph or Current graph with a minimized whole, focus outside the Pane and outside a field typed in (a text field or a choice list; a true/false box is not typed in); the whole or its Expand button focused, or else its Detail open | `m` | as E-GRAPH-EXPAND for that whole; focus where it was: on the whole, on its button or in its Detail |
 | E-GRAPH-MINIMIZED | Run graph or Current graph with a minimized whole | click it outside its button, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-MINIMIZED-FIND | Find field listing an Artifact a minimized whole hides, or an eval of such an Artifact | Enter on it, or a click on it | Find field closed; the Detail of that Artifact focused, on its Artifact tab or on that eval's tab; the minimized whole highlighted and moved by the camera to the middle of the graph left of the Detail, as for a found Artifact (E-GRAPH-FIND-GO) |
-| E-GRAPH-FIND-OPEN | Run graph or Current graph, focus outside the Pane (on the graph or in the Detail) | Ctrl+F | the Find field over the graph's top left, empty and focused, listing the favorites: the graph's starred Artifacts in the graph's order, each with its verdict's glyph and colour, as if they had been found; with none of them starred, saying how to star one |
+| E-GRAPH-FIND-OPEN | Run graph or Current graph | Ctrl+F with focus outside the Pane (on the graph or in the Detail), or a click on the tool strip's Find button | the Find field over the graph's top left, empty and focused, listing the favorites: the graph's starred Artifacts in the graph's order, each with its verdict's glyph and colour, as if they had been found; with none of them starred, saying how to star one |
 | E-GRAPH-FIND-TYPE | Find field | type text | Find field listing the Artifacts and evals whose names contain the text, ignoring case, in the graph's order, an eval as `{Artifact} / {eval}` with its verdict's glyph and colour; the first 50 and how many more match, or that none does; with the text removed again, the favorites as on opening |
 | E-GRAPH-FIND-CHOOSE | Find field listing, what was found or the favorites | ↓ or ↑ | the next or previous entry chosen |
 | E-GRAPH-FIND-GO | Find field listing, what was found or the favorites | Enter (on the chosen entry, else the first) or a click on an entry | Find field closed; the Detail of that Artifact on its Artifact tab, or of the eval's Artifact on that eval's tab, focused; the camera moved so the Artifact sits in the middle of the graph left of the Detail, zoomed in only as far as its name needs to be readable; a shared part listed once, the camera moved to its copy in the first of its wholes |
-| E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before Ctrl+F |
+| E-GRAPH-FIND-CLOSE | Find field | Esc, or a click outside the field | Find field closed; the graph, its camera and the Detail as they were; after Esc, focus where it was before the field opened |
 | E-GRAPH-CAMERA-KEPT | Run graph or Current graph | open, switch, resize or close the Detail; a result or scan arrives; a new layout other than minimizing or expanding a whole (E-GRAPH-MINIMIZE, E-GRAPH-EXPAND, E-GRAPH-MINIMIZE-KEY, E-GRAPH-EXPAND-KEY) | the graph, its camera neither zoomed nor panned |
 
 ## Detail
@@ -281,9 +292,10 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-SWITCH | Detail | click another Artifact of the graph | Detail of that Artifact, on its Artifact tab |
 | E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened |
 | E-DETAIL-STAR | Detail of an Artifact of a Run or a Current, on any of its tabs | click the ☆ (or ★) beside its title | same Detail, the Artifact starred (★) or its star taken away (☆), for every branch of its project and every later monitor of this machine's user; the Find field lists it with nothing typed (E-GRAPH-FIND-OPEN) or no longer does |
+| E-DETAIL-SECTION | Detail on a tab with sections (an Artifact's tab, an eval's Summary, a Run's Detail) | click a section's header row, or Enter or Space on it focused | same Detail, that section folded to its header row alone, or unfolded again; kept by the section's name for every Detail opened later and for the next launch |
 | E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab | `t`, or a click on Debug | Detail, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
-| E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
+| E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
 | E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log until it exits |
 | E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
@@ -397,6 +409,10 @@ E-PANE-SELECT.
 - J-DETAIL-STAR: E-MON-DETAIL-ARTIFACT → E-DETAIL-STAR → E-MON-DETAIL-TAB → E-DETAIL-STAR
   E-CURRENT-EVALS → E-DETAIL-STAR
 - J-DETAIL-NEIGHBOURS: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-NEIGHBOUR → E-MON-DETAIL-TAB
+- J-DETAIL-SECTIONS: E-MON-DETAIL-ARTIFACT → E-DETAIL-SECTION → E-DETAIL-SECTION
+  E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-DETAIL-SECTION
+  E-MON-DETAIL-RUN → E-DETAIL-SECTION
+  E-CURRENT-EVALS → E-DETAIL-SECTION
 - J-DETAIL-TOOLS: E-MON-DETAIL-ARTIFACT → E-DETAIL-TOOL | E-DETAIL-TOOL-LAUNCH | E-DETAIL-TOOL-FAIL
   E-CURRENT-EVALS → E-DETAIL-TOOL
 - J-DETAIL-SUMMARY: E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-TAB → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-LOG
