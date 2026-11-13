@@ -8,14 +8,17 @@ that makes the transition happen and checks where it leads.
 ## Screens and states
 
 - **Launch**: the window opening, titled "Artifactize". It opens on its one screen, the
-  **Pane** beside the **Main area**, the divider between them always shown. Started with
+  **Pane** beside the **Main area**, the divider between them shown whenever the Pane is. Started with
   `--repo PATH` it selects the branch of PATH; with `review ID` it opens that review, with
   `review` alone the newest waiting one; with `graph --repo PATH` (also the declared Human
   `graph` tool) it shows the Current of the branch of PATH. The Branches list the projects with
   Runs on this machine and the one the app was started for with `--repo` or `graph --repo`,
   even before its first Run (J-BRANCHES). There is no screen switch.
 - **Pane**: one column: the **Search** field at the top, the **Branches** below it and the
-  **Waiting** stack at the bottom. There is no Scope heading and no Runs list.
+  **Waiting** stack at the bottom. There is no Scope heading and no Runs list. States: shown
+  (as at launch) or hidden. The header's **Pane button**, right after the app's name, Ctrl+B
+  and the palette's "Show or hide the Pane" hide the Pane and its divider, the Main area taking
+  the window's width, and show them again; the button reads as on while the Pane is shown.
   - **Search**: its starting query is `sort:recent`. Free text and `key:value` terms (`repo:`,
     `branch:`, `sort:recent`, `sort:name`) must all match; they narrow the Branches and the
     Waiting stack alike. States: not focused, focused, focused with suggestions.
@@ -108,7 +111,11 @@ that makes the transition happen and checks where it leads.
   other keys of their own. Hovering only highlights. Above each graph sits its **tool strip**,
   one row: a Find button showing its key Ctrl+F, Zoom out, the zoom in percent and Zoom in,
   Fit View, a hint that `m` minimizes or expands a whole and, at the row's end, the legend,
-  each verdict's icon and word. Nothing but the Find field floats on a graph.
+  each verdict's icon and word. Whenever part of a graph lies outside the view, a **Navigator**
+  shows at the graph's bottom right, left of the Detail when one is open: the whole graph in
+  small, each Artifact a block of its verdict's colour, the part in view framed; a click or a
+  drag in it moves the camera, and it goes when the whole graph is in view. Nothing else but
+  the Find field floats on a graph.
 - **Find field**: floats over a graph's top left: a text field and, below it, the Artifacts and
   evals whose names contain its text, ignoring case, in the graph's order, an Artifact by its
   whole name and an eval as `{Artifact} / {eval}`, each with its verdict's glyph and colour (on a
@@ -153,8 +160,12 @@ that makes the transition happen and checks where it leads.
   chips on one line or wrapped; a section folded or unfolded; an Artifact's tool running.
 - **Human review** (on a Human eval's tab of a Run's Detail, or the Review view): its
   instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the
-  reviewed one first), the Tool log of every run in this review, and the Result, in one column
-  no wider than a readable measure, Submit, the last notice and Release right under the Result. States:
+  reviewed one first), the Tool log of every run in this review, and the Result, in that order.
+  On a Human eval's tab, and in a Main area less than twice as wide as the Detail, it is one
+  column no wider than a readable measure; in a Main area at least twice as wide as the Detail
+  the Tool log is the large view on the left and the instruction, the Tools and the Result are
+  a column at the right, where the Detail docks and of the Detail's width. Submit, the last
+  notice and Release sit right under the Result. States:
   Unclaimed, Taken (another reviewer holds the claim), Claimed (by this reviewer), Editing
   GREEN (the form built from the eval's pass schema), Editing RED (built from its fail schema),
   Submitted (the completed result shown); a tool or a submission may be running, and a
@@ -223,8 +234,8 @@ that makes the transition happen and checks where it leads.
 | E-MON-RUNS-MOVE | Pane entries focused, a timeline entry selected | ↓ or ↑ | the next or previous entry shown in the Main area and in its pill, the list scrolling to show it |
 | E-MON-RUNS-OLDER | Pane entries focused, the oldest listed entry of a timeline selected, older Runs existing | ↓ | older Runs listed below it, the selection staying; ↓ again moves into them |
 | E-MON-RUNS-GRAPH | Pane entries focused, a branch or a timeline entry selected | Enter | Main area focused, on the shown view |
-| E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open, no Human review in it running work or editing its form (those take E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM first) | Esc | Pane entries focused, the same entry selected |
-| E-REVIEW-OPEN | Pane, a waiting review in the Waiting stack | click it, or Enter on it selected | Review of that request in the Main area |
+| E-MON-GRAPH-TO-RUNS | Main area focused, no Detail open, no Human review in it running work or editing its form (those take E-HUMAN-ESC-CANCEL or E-HUMAN-ESC-FORM first) | Esc | Pane entries focused, the same entry selected; a hidden Pane shown first |
+| E-REVIEW-OPEN | Pane, a waiting review in the Waiting stack | click it, or Enter on it selected | Review of that request in the Main area, the Tool log at the left and the rest in a column at the right when the Main area is at least twice as wide as the Detail, else in one column |
 | E-PANE-WORKTREES | Pane | a worktree of a listed project is added or removed (or its folder deleted), in another process | within seconds and without a reload, its branch appears in the Branches or goes from them |
 | E-BRANCH-RUNNING | Pane | a Run starts on a listed branch, in another process | its timeline starts with that Run, `Running` and its time so far, the Current gone; folded, its status line says the same |
 | E-BRANCH-RUN-END | Pane, a branch's timeline starting with a running Run | that Run ends | its entry shows its final status and age; the timeline starts with the Current |
@@ -232,13 +243,15 @@ that makes the transition happen and checks where it leads.
 | E-MAIN-REVIEW-LEAVE | Review in the Main area | choose a branch or an entry of its timeline | that view shown, the review left without being closed; opening it again shows it as it was left |
 | E-MON-NOTICE | Main area with a notice, focus anywhere | click the notice in the Main area's header | the notice shown in full, wrapped within the header, what is below neither moved nor hidden; another click shows it as one line again |
 | E-MON-LIVE | any view | another process changes the state (a new Run, a result, a claim, a submission) | same view, updated without a reload |
-| E-MON-RESIZE | Pane and Main area | drag the divider between them (hovering it shows only the resize cursor) | same view, the split resized and kept whatever the Main area shows |
+| E-MON-RESIZE | Pane and Main area | drag the divider between them (hovering it shows only the resize cursor) | same view, the split resized and kept whatever the Main area shows, also when a hidden Pane is shown again |
+| E-PANE-HIDE | any view, the Pane shown | the header's Pane button, Ctrl+B, or the palette's "Show or hide the Pane" | the Pane and its divider hidden, the Main area as wide as the window, its view as it was and a graph's camera neither zoomed nor panned; focus that was in the Pane now in the Main area; the Pane button reading as off |
+| E-PANE-SHOW | any view, the Pane hidden | the header's Pane button, Ctrl+B, or the palette's "Show or hide the Pane" | the Pane and its divider shown again, the Pane at the width it had, its Search, selection and expanded branches as they were; the Pane button reading as on |
 
 ## Search
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-REVIEW-SEARCH-FOCUS | Pane or Main area, outside fields | `/`, or Ctrl+F unless a Run graph or Current graph is shown and focus is outside the Pane (E-GRAPH-FIND-OPEN) | Search focused |
+| E-REVIEW-SEARCH-FOCUS | Pane or Main area, outside fields | `/`, or Ctrl+F unless a Run graph or Current graph is shown and focus is outside the Pane (E-GRAPH-FIND-OPEN) | Search focused; a hidden Pane shown first |
 | E-REVIEW-SEARCH-TERMS | Search | type free text, `repo:` or `branch:` terms, all of which must match | Search, the Branches and the Waiting stack narrowed alike (free text: part of a project, a branch or a waiting review's eval; `repo:` part of the project; `branch:` part of the branch), suggestions for the last term |
 | E-PANE-SORT | Search | replace `sort:recent` with `sort:name`, or back | Branches ordered by project and branch, or most recent Run first with branches without Runs last |
 | E-REVIEW-SUGGEST | Search with suggestions | ↑ ↓ then Tab or Enter | Search, the suggestion (a key, a project, a branch or a sort order) taken |
@@ -261,7 +274,8 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn: as nodes where their names read, as blocks of their verdict's colour where the zoom makes names too small to read |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole, never enlarged beyond its nodes' own size |
-| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom (the wheel, or the tool strip's Zoom out or Zoom in), or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size |
+| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom (the wheel, or the tool strip's Zoom out or Zoom in), or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size; the Navigator shown at the graph's bottom right while part of the graph lies outside the view, gone while all of it is in view |
+| E-GRAPH-NAVIGATE | Run graph or Current graph, part of it outside the view and the Navigator shown | click a place in the Navigator, or drag in it | the graph, its camera moved so that place is in the middle of the view, its zoom kept; the Navigator's frame on the part now in view |
 | E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name, its verdict's icon and a strip in its verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
@@ -329,7 +343,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-LOG-COPY | Editing, the Tool log holding lines | select text in the Tool log, copy it and paste it into a Result field | Editing, the field holding the log's text as shown |
 | E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, the review's Close, or Esc on the graph or a click on its background | same state, the running work cancelled, the review still open |
 | E-HUMAN-ESC-FORM | Editing, nothing running | Esc, Close or a click as for E-HUMAN-ESC-CANCEL | Claimed, the form left with its draft kept, the review still open |
-| E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | in a Run's Detail the graph, Detail closed; for a review opened from the Pane, Pane entries focused |
+| E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | in a Run's Detail the graph, Detail closed; for a review opened from the Pane, Pane entries focused, a hidden Pane shown first |
 
 ## Settings
 
@@ -382,6 +396,9 @@ E-PANE-SELECT.
 - J-QUIT: E-QUIT-CLEAN | E-QUIT-ASK → E-QUIT-STAY | E-QUIT-ASK → E-QUIT-RELEASE
 - J-OPEN-ID: E-REVIEW-OPEN-ID | E-REVIEW-READONLY
 - J-PANE: E-LAUNCH-MONITOR → E-MON-RESIZE
+- J-PANE-TOGGLE: E-PANE-HIDE → E-PANE-SHOW
+  E-PANE-HIDE → E-REVIEW-SEARCH-FOCUS
+  E-MON-RUNS-GRAPH → E-PANE-HIDE → E-MON-GRAPH-TO-RUNS
 - J-BRANCHES: E-LAUNCH-MONITOR → E-PANE-SELECT
   E-PANE-WORKTREES
 - J-BRANCH-RUNS: E-PANE-FOLD → E-PANE-SELECT → E-PANE-OLDER → E-PANE-CHIP
@@ -428,11 +445,13 @@ E-PANE-SELECT.
   E-GRAPH-PARTS → E-GRAPH-WHOLE → E-GRAPH-MINIMIZE-KEY → E-GRAPH-EXPAND-KEY
   E-GRAPH-PARTS → E-GRAPH-TAB → E-GRAPH-MINIMIZE-KEY → E-GRAPH-EXPAND-KEY
 - J-GRAPH-LARGE: E-PANE-CHIP → E-GRAPH-BEYOND
+- J-GRAPH-NAVIGATOR: E-GRAPH-CAMERA → E-GRAPH-NAVIGATE → E-GRAPH-CAMERA
 - J-GRAPH-FIND: E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
   E-MON-DETAIL-ARTIFACT → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-GO
   E-GRAPH-FIND-OPEN → E-GRAPH-FIND-TYPE → E-GRAPH-FIND-CLOSE
   E-MON-DETAIL-ARTIFACT → E-DETAIL-STAR → E-GRAPH-FIND-OPEN → E-GRAPH-FIND-CHOOSE → E-GRAPH-FIND-GO
 - J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
+  E-GRAPH-CAMERA → E-GRAPH-NAVIGATE
   E-GRAPH-CAMERA → E-GRAPH-MINIMIZE → E-GRAPH-EXPAND
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM

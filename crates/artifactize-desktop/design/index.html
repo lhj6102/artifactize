@@ -39,7 +39,7 @@
 <h2>Layout by workflow</h2>
 <p>
   The window is one screen. A global bar carries what belongs to the window (brand, the
-  reviewer, an update notice, Settings, the command palette). Below it, the work reads left
+  Pane switch, the reviewer, an update notice, Settings, the command palette). Below it, the work reads left
   to right: <b>find</b> (the Pane: a search, the live branches with their Runs, the reviews
   waiting for a person), <b>look</b> (the Main area: one header row, then a Run's or a Current's graph under its
   tool strip, or a Human review) and <b>inspect</b> (the Detail, a panel docked at the graph's right edge, showing the
@@ -49,10 +49,10 @@
 
 <h2>Screens</h2>
 <ul class="screens">
-  <li><a href="monitor.html">Monitor</a><span>The one screen with a Run shown: bar, Pane, Main area and the Run graph.</span></li>
-  <li><a href="current.html">Current</a><span>The Main area as a branch's Current: the scan header, the Current graph and the structure text.</span></li>
+  <li><a href="monitor.html">Monitor</a><span>The one screen with a Run shown: bar, Pane, the Main area's header row, the graph's tool strip and the Run graph, with its nodes, its Navigator and a large graph zoomed out.</span></li>
+  <li><a href="current.html">Current</a><span>The Main area as a branch's Current: the scan's state in the header row, the tool strip, the Current graph and the structure text.</span></li>
   <li><a href="detail.html">Detail</a><span>The inspector, a panel docked at the graph's right edge: an Artifact's tab and an eval's Summary.</span></li>
-  <li><a href="review.html">Review</a><span>A Human review in the Main area: instruction, Tools, Tool log and the Result form.</span></li>
+  <li><a href="review.html">Review</a><span>A Human review: with room, the Tool log as the view and the instruction, Tools and Result form in a column at the right; in the Detail, one column.</span></li>
   <li><a href="settings.html">Settings</a><span>The modal over the screen: Providers, Remote and Limits.</span></li>
   <li><a href="overlays.html">Overlays</a><span>The command palette, Help, Open by ID, the Leave and Update dialogs and the graph's find field.</span></li>
   <li><a href="ux-graph-doc.html">UX graph</a><span>How one screen leads to another: every transition of UX-GRAPH.md, read by screen.</span></li>
@@ -90,7 +90,7 @@
     <tr><td><span class="swatch" style="--token: var(--ink-2)"></span><code>--ink-2</code></td><td>Secondary text: labels, ages, projects, costs, group labels, a section's summary</td></tr>
     <tr><td><span class="swatch" style="--token: var(--ink-3)"></span><code>--ink-3</code></td><td>Faint text: placeholders, separators, an off star</td></tr>
     <tr><td><span class="swatch" style="--token: var(--ink-on-accent)"></span><code>--ink-on-accent</code></td><td>Text on the accent</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--accent)"></span><code>--accent</code></td><td>What is interactive and emphasised: links, the primary button, the focused panel's top line, the active tab's line</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--accent)"></span><code>--accent</code></td><td>What is interactive and emphasised: links, the primary button, the focused panel's top line, the active tab's line, the line under a bar switch that is on</td></tr>
     <tr><td><span class="swatch" style="--token: var(--accent-soft)"></span><code>--accent-soft</code></td><td>A soft accent fill: the "yours" stage pill</td></tr>
     <tr><td><span class="swatch" style="--token: var(--selection)"></span><code>--selection</code></td><td>The selected row of a list</td></tr>
     <tr><td><span class="swatch" style="--token: var(--focus)"></span><code>--focus</code></td><td>The keyboard focus ring, 2px, on every control</td></tr>
@@ -131,6 +131,7 @@
     <tr><td><code>--measure</code></td><td>The widest a column of reading and form gets: a Human review's column</td></tr>
     <tr><td><code>--icon</code></td><td>An icon's box (12): a status's, an action's</td></tr>
     <tr><td><code>--strip</code></td><td>The strip in its status's colour along a node's bottom and under a whole's title row (2)</td></tr>
+    <tr><td><code>--grid</code></td><td>The canvas grid's cell (24)</td></tr>
     <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
     <tr><td><code>--font</code>, <code>--mono</code></td><td>The UI face with Korean fallbacks; the monospace face for logs, IDs and queries</td></tr>
     <tr><td><code>--text-body</code></td><td>13px: text, names, values</td></tr>
@@ -195,7 +196,7 @@
   <dt id="D-SYS-5">D-SYS-5</dt>
   <dd>Type: body 13px, secondary 12px. A section of the inspector, of a review or of Settings stands under a header row: its name at 12px semibold in <code>--ink</code>, in sentence case (D-INS-9). A group label inside a list (the Pane's Waiting, a palette group, a Help group, a table's head) is 11px uppercase and letter-spaced in <code>--ink-2</code>. Neither is ever the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; uppercase letter-spaced labels as section headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>
-  <dd>Colour carries meaning only on the element that has it: a status dot, icon or word, a node's icon and strip, an edge that leaves a RED, ERROR or blocked Artifact, a verdict button, stderr lines. A graph's own lines, a node's outline and every other edge, are neutral. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, outline, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
+  <dd>Colour carries meaning only on the element that has it: a status dot, icon or word, a node's icon and strip, an edge that leaves a RED, ERROR or blocked Artifact, a verdict button, stderr lines. A graph's own lines, a node's outline and every other edge, are neutral. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line, the line under a bar switch that is on). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, outline, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
   <dt id="D-SYS-7">D-SYS-7</dt>
   <dd>States are told apart without colour: every status shows its icon or word with its colour, each status's icon a silhouette of its own, a graph's node included; the selected row has the <code>--selection</code> background and, while the keyboard is in its list, a 2px inset bar; keyboard focus is a 2px <code>--focus</code> ring on every control; hover only highlights and opens nothing: a row or a borderless control takes <code>--surface-group</code>, and a button, whose face already is that surface, keeps its face while its edge steps up to <code>--line-input</code> (the primary button's to <code>--ink-on-accent</code>); the one exception the journeys ask for is the whole's Minimize/Expand button, whose native title names its key <kbd>m</kbd>, and no other control has a tooltip. <span class="avoid">a selection shown by colour alone; a focus ring removed; a popup, summary or menu on hover.</span></dd>
   <dt id="D-SYS-8">D-SYS-8</dt>
@@ -203,7 +204,7 @@
   <dt id="D-SYS-9">D-SYS-9</dt>
   <dd>Long and Korean labels keep the layout: a name wraps or is cut with an ellipsis inside its own box; nothing a panel shows widens the panel; logs and transcripts wrap within their width. <span class="avoid">a pane sized by its content; a title that pushes its actions out of the header.</span></dd>
   <dt id="D-SYS-10">D-SYS-10</dt>
-  <dd>The core task works with the side panels out of the way: a graph can be read and an Artifact opened with the Pane at its minimum width and the Detail closed; a Human review can be claimed, its tools run and its result submitted inside the Detail alone. <span class="avoid">a control that exists only in the Pane for a task of the Main area.</span></dd>
+  <dd>The core task works with the side panels out of the way: a graph can be read and an Artifact opened with the Pane hidden by the bar's switch, or at its minimum width, and the Detail closed; a Human review can be claimed, its tools run and its result submitted inside the Detail alone. <span class="avoid">a control that exists only in the Pane for a task of the Main area.</span></dd>
 </dl>
 
 <h2>Before handing over a screen</h2>
@@ -214,7 +215,7 @@
   <li>A status has the same colour everywhere it shows.</li>
   <li>A long Korean label and large text keep the layout.</li>
   <li>Keyboard focus is visible on every control.</li>
-  <li>The core task works with the Pane narrowed and the Detail closed.</li>
+  <li>The core task works with the Pane hidden and the Detail closed.</li>
   <li>Contrast and click targets are checked in our own environment.</li>
   <li>No value is copied from another product's screenshot; every value is a role token.</li>
 </ul>

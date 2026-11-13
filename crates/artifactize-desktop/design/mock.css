@@ -113,6 +113,18 @@
 .m-reviewer {
   color: var(--ink-2);
 }
+/* A switch of the bar: it shows or hides a panel and reads as on, in ink over a 2px accent
+   line, while that panel is shown. */
+.m-button.m-switch {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+  color: var(--ink-2);
+}
+.m-button.m-switch.on {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 
 /* Controls: a quiet button, the one primary button, and a key cap. */
 .m-button {
@@ -197,6 +209,10 @@
 }
 .m-divider {
   background: var(--line-panel);
+}
+/* With the Pane hidden the Main area takes the window's width. */
+.m-screen.pane-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 .m-pane,
 .m-main {
@@ -480,14 +496,48 @@
 .m-legend .m-light {
   margin-right: 4px;
 }
-/* The graph: the working area. */
+/* The graph: the working area, under a faint grid that moves and scales with the camera and
+   is left out where the zoom makes its cells too small. */
 .m-canvas {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: var(--surface-app);
+  background-color: var(--surface-app);
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px);
+  background-size: var(--grid) var(--grid);
   border-top: 1px solid var(--line-group);
   overflow: hidden;
+}
+.m-canvas.far {
+  background-image: none;
+}
+/* The Navigator: the whole graph in small at the canvas's bottom right, left of the Detail,
+   the part in view framed; shown only while part of the graph lies outside the view. */
+.m-navigator {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 172px;
+  padding: 3px;
+  background: var(--surface-panel);
+  border: 1px solid var(--line-panel);
+  border-radius: var(--radius-control);
+}
+.m-navigator svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.m-navigator rect {
+  fill: var(--light);
+}
+.m-navigator rect.view {
+  fill: var(--selection);
+  stroke: var(--outline-selected);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 /* A node: a neutral face in a neutral outline. Its status shows in two places and nowhere
@@ -646,8 +696,19 @@
   stroke: var(--edge);
   stroke-width: 1;
 }
+.m-wires path {
+  vector-effect: non-scaling-stroke;
+}
 .m-wires .blocking {
   stroke: var(--light);
+}
+.m-far {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 999px;
+  height: 290px;
+  transform-origin: 0 50%;
 }
 /* A light is a status seen on a graph: it takes that status's one colour and its icon. */
 .light-green { --light: var(--green); --light-icon: var(--i-green); }
@@ -984,6 +1045,51 @@
 .m-hint-text {
   color: var(--ink-2);
   font-size: var(--text-small);
+}
+
+/* A review with room: the Tool log is the view at the left, the rest a column docked where the
+   Detail docks, of the Detail's width. */
+.m-review-split {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--detail-width, 46%);
+  border-top: 1px solid var(--line-group);
+}
+.m-viewer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-input);
+}
+.m-viewer > .m-sec-head {
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-group);
+}
+.m-viewer-log {
+  flex: 1;
+  min-height: 0;
+  padding: 8px var(--pad);
+  font: var(--text-small) / 1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+.m-viewer-log .m-quiet {
+  color: var(--ink-2);
+}
+.m-viewer-log .m-stderr {
+  display: block;
+  padding-left: 6px;
+  color: var(--red);
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.m-review-split > .m-review {
+  max-width: none;
+  padding-top: 8px;
+  border-left: 1px solid var(--line-panel);
+  background: var(--surface-panel);
+  overflow: hidden;
 }
 
 /* Overlays: a scrim, a raised dialog with a panel line. */
