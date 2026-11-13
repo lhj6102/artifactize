@@ -50,7 +50,7 @@ is unknown, the release page. A link opens in your browser; Esc or **Close** clo
 dialog. The app looks the release up when it starts and once a day while it runs, and
 never updates itself. A Microsoft Store install never shows it: the Store updates the app.
 
-Hovering only highlights; information opens on a click.
+Hovering only highlights; information opens on a click. The one exception is a box's **Minimize** or **Expand** button, whose tooltip names its key, `m`.
 
 ## Pane
 
