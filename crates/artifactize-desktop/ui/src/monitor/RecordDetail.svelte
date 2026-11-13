@@ -157,12 +157,6 @@
           {/each}
         </section>
       {/if}
-      {#if !hasResult && detail.plan}
-        <section class="block result">
-          <h3>Result it would reuse</h3>
-          <p class="muted">None matches: the eval would run.</p>
-        </section>
-      {/if}
       <!-- A Current's eval keeps its options; what a past run spent and its fingerprint belong to that run. -->
       {#each [["Execution options", pick(OPTIONS).map((field) => [field.key, field.value])], ["Execution metadata", spent.length > 0 ? [["spent", spent.join(" · ")]] : []], ["Fingerprint", pick(["Fingerprint"]).map((field) => [field.key, field.value])]] as const as [title, facts] (title)}
         {#if facts.length > 0 && (!detail.plan || title === "Execution options")}

@@ -376,20 +376,19 @@ describe("Settings", () => {
 
   it("cancels a Claude Code sign-in and shows the status Claude Code then reports", async () => {
     let fail: (error: unknown) => void = () => {};
-    const calls = backend({ claudeWait: () => new Promise((_, reject) => (fail = reject)) });
+    let state: ClaudeAgentStatus = { state: "signedOut" };
+    const calls = backend({ claude: () => state, claudeWait: () => new Promise((_, reject) => (fail = reject)) });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Claude Code" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     expect(calls.some((call) => call.cmd === "claude_agent_login_cancel")).toBe(true);
-    const asked = calls.filter((call) => call.cmd === "claude_agent_status").length;
+    // What Claude Code reports after the cancellation differs from what it reported before.
+    state = { state: "missing" };
     fail({ kind: "account", message: "Claude Code sign-in was cancelled." });
     await screen.findByText("Claude Code sign-in was cancelled.");
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
-      expect(calls.filter((call) => call.cmd === "claude_agent_status")).toHaveLength(asked + 1);
-    });
-    expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in");
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent).toMatch(/not found on PATH/));
+    expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
   });
 
   it("lists models and shows the CLI's error for a provider without its key", async () => {
