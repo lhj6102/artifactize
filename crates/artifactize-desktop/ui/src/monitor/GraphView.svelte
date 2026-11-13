@@ -75,6 +75,8 @@
    * Fit View choose the positive scale needed to fit any layout, also on a narrow window. */
   const MIN_ZOOM = 0;
   const MAX_ZOOM = 2;
+  /** What one press of a zoom button multiplies or divides the zoom by, as Svelte Flow's own do. */
+  const ZOOM_STEP = 1.2;
   /** The zoom from which an Artifact's name reads: bringing a found one into view zooms in to
    * it, never out. */
   const READABLE = 0.75;
@@ -365,10 +367,10 @@
            hovering opens nothing here. -->
       <Controls showLock={false} showFitView={false} showZoom={false}>
         {#snippet before()}
-          <ControlButton class="svelte-flow__controls-zoomin" onclick={() => void flow.zoomIn()} aria-label="Zoom In">
+          <ControlButton class="svelte-flow__controls-zoomin" onclick={() => void flow.setZoom(flow.getZoom() * ZOOM_STEP)} aria-label="Zoom In">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true"><path d="M32 18.133H18.133V32h-4.266V18.133H0v-4.266h13.867V0h4.266v13.867H32z" /></svg>
           </ControlButton>
-          <ControlButton class="svelte-flow__controls-zoomout" onclick={() => void flow.zoomOut()} aria-label="Zoom Out">
+          <ControlButton class="svelte-flow__controls-zoomout" onclick={() => void flow.setZoom(flow.getZoom() / ZOOM_STEP)} aria-label="Zoom Out">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 5" aria-hidden="true"><path d="M0 0h32v4.2H0z" /></svg>
           </ControlButton>
         {/snippet}

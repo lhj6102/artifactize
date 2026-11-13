@@ -526,11 +526,11 @@
     position: absolute;
     z-index: 20;
     top: 42px;
-    right: 8px;
+    right: 12px;
     bottom: 8px;
     width: var(--detail-width, min(46%, 680px));
-    min-width: min(320px, calc(100% - 16px));
-    max-width: calc(100% - 100px);
+    min-width: min(320px, calc(100% - 24px));
+    max-width: calc(100% - 108px);
     contain: inline-size;
     overflow: hidden;
     border: 1px solid var(--line-panel);

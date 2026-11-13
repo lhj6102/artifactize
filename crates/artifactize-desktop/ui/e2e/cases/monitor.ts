@@ -859,7 +859,7 @@ export const scenarios: Scenario[] = [
       const order = await browser.execute((root) => {
         const dock = document.querySelector(root)!;
         const parts = [dock.querySelector('[aria-label^="Evals of "]'), dock.querySelector('section[aria-label="Tools of release"]'),
-          dock.querySelector('[role="log"][aria-label="Tool log"]'), dock.querySelector('[role="document"] .card > p.line')];
+          dock.querySelector('[role="log"][aria-label="Tool log"]'), dock.querySelector('[role="document"] .card .path > p.line')];
         return parts.every(Boolean) && parts.every((part, at) => at === 0 || (parts[at - 1]!.compareDocumentPosition(part!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
       }, DETAIL);
       assert.ok(order, "its evals, then its Tools and their Tool log, then its path");

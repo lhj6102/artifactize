@@ -998,7 +998,7 @@ export const scenarios: Scenario[] = [
       // Below the drawing: its evals with their verdicts, then its path; every other fact folds
       // under Debug, unfolded with t.
       const path = () => browser.execute(() =>
-        document.querySelector('aside[aria-label="Detail"] [role="document"] .card > p.line')?.textContent?.trim() ?? "");
+        document.querySelector('aside[aria-label="Detail"] [role="document"] .card .path > p.line')?.textContent?.trim() ?? "");
       await browser.waitUntil(async () => (await path()) === "release", { timeout: 15000, timeoutMsg: "release's path below its evals" });
       assert.deepEqual((await detail(browser))?.evals.map((row) => row.name), ["signoff"], "release's one eval listed");
       assert.equal((await summary(browser)).debug, false, "the Artifact's Debug starts folded");

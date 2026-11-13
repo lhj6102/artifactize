@@ -145,7 +145,7 @@ export const scenarios: Scenario[] = [
       async function begin(): Promise<string> {
         await browser.$("button=Sign in with Claude Code").click();
         await browser.$("#claude-agent-code").waitForExist({ timeout: 15000, timeoutMsg: "the sign-in waits for the browser or a code" });
-        const address = new URL(await browser.$(".pending .url code").getText());
+        const address = new URL(await browser.$(".pending .url").getText());
         assert.equal(address.pathname, "/oauth/authorize", "the URL Claude Code printed is shown");
         // The shown origin is the running Claude Code's own.
         assert.equal(await httpGet(`${address.origin}/alive`), 200);
@@ -175,7 +175,7 @@ export const scenarios: Scenario[] = [
       const cancelled = await begin();
       await browser.$("button=Cancel sign-in").click();
       await shows("Not signed in", "the cancelled sign-in ends");
-      await browser.$("p*=Claude Code sign-in was cancelled.").waitForExist({ timeout: 15000 });
+      await browser.$("dd*=Claude Code sign-in was cancelled.").waitForExist({ timeout: 15000 });
       await browser.waitUntil(() => httpGet(`${cancelled}/alive`).then(() => false, () => true),
         { timeout: 15000, timeoutMsg: "the cancelled Claude Code stops" });
       assert.equal(exists(marker), false);
@@ -185,7 +185,7 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#claude-agent-code", "bad-code");
       await browser.$("button=Finish sign-in").click();
       await shows("Not signed in", "the refused sign-in ends");
-      await browser.$("p=Claude Code could not sign in: Login failed: That code was not accepted.").waitForExist({ timeout: 15000 });
+      await browser.$("dd=Claude Code could not sign in: Login failed: That code was not accepted.").waitForExist({ timeout: 15000 });
 
       // The code the sign-in page gives, pasted.
       await begin();
@@ -526,7 +526,7 @@ Review the agent folder."""
       writeText(principalFile, "alice-desktop");
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await text()).includes("alice-desktop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "Check status displays the fresh remote principal" });
-      await browser.waitUntil(() => browser.execute(() => [...document.querySelectorAll("dt")].some((term) => term.textContent === "Reachable" && term.nextElementSibling?.textContent === "yes")), { timeout: 15000, timeoutMsg: "the store is reachable" });
+      await browser.waitUntil(() => browser.execute(() => document.querySelector('[aria-label="Remote store"] .notice [data-testid="remote-principal"]') !== null), { timeout: 15000, timeoutMsg: "the store is reachable" });
       await browser.$("button=Push (dry run)").click();
       await browser.waitUntil(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run reports its result" });
       await browser.$("button=Sign out of the store").click();

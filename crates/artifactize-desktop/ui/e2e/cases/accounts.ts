@@ -88,9 +88,9 @@ export const scenarios: Scenario[] = [
         const baseline = visited().length;
         await browser.$("button=Sign in with ChatGPT").click();
         await browser.$("#codex-redirect").waitForExist({ timeout: 15000 });
-        assert.match(await text(), /Waiting for the browser/);
+        assert.match(await text(), /waiting for the browser/);
         assert.doesNotMatch(await text(), /Port 1455 is in use/, "the product must own its loopback callback port");
-        const address = await browser.$(".pending .url code").getText();
+        const address = await browser.$(".pending .url").getText();
         assert.equal(new URL(address).pathname, "/oauth/authorize");
         const state = new URL(address).searchParams.get("state");
         assert.ok(state, "the displayed sign-in address names a state");

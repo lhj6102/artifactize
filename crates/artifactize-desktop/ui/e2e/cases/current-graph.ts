@@ -275,7 +275,7 @@ Summarize {docs}."""
       await openTab(browser, "e:app/beta", { row: true });
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("↻ reused"), `beta's plan: ${JSON.stringify(await summary(browser))}`);
       const shown = await summary(browser);
-      assert.ok(shown.blocks.includes("Result"), `the result it would reuse: ${shown.blocks}`);
+      assert.ok(shown.blocks.includes("Result it would reuse"), `the result it would reuse: ${shown.blocks}`);
       assert.equal(shown.status, `↻ reused ${CACHED}`, "with why");
       assert.equal(shown.instruction, "Check beta.");
       // app's own chip shows its Artifact tab again, listing what each eval would do.
@@ -311,7 +311,7 @@ Summarize {docs}."""
       await openTab(browser, "e:release/signoff");
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("↻ reused"), `the sign-off's plan: ${JSON.stringify(await summary(browser))}`);
       assert.equal((await summary(browser)).status, `↻ reused ${CACHED}`);
-      const result = await block(browser, "Result");
+      const result = await block(browser, "Result it would reuse");
       assert.match(result, /comment.*Checked notes 7f3a against the tag\./s, `the reused comment: ${result}`);
       assert.match(result, /approved.*true/s, `the reused approval: ${result}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
