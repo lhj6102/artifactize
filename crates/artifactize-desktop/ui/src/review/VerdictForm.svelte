@@ -68,13 +68,14 @@
     {@const chosen = value?.kind === "choice" ? value.value : null}
     <select
       {id}
+      class:empty={chosen === null}
       value={chosen === null ? "" : String(chosen)}
       onchange={(event) => {
         const raw = (event.currentTarget as HTMLSelectElement).value;
         onset({ kind: "choice", value: raw === "" ? null : Number(raw) });
       }}
     >
-      <option value="">–</option>
+      <option value="">{field.required ? "–" : "Optional"}</option>
       {#each field.input.options as option, at (at)}
         <option value={String(at)}>{option}</option>
       {/each}
@@ -252,6 +253,13 @@
     min-height: 44px;
     padding: 4px 8px;
     resize: vertical;
+  }
+  /* An empty choice reads as a placeholder does. */
+  select.empty {
+    color: var(--ink-3);
+  }
+  select.empty option {
+    color: var(--ink);
   }
   ::placeholder {
     color: var(--ink-3);

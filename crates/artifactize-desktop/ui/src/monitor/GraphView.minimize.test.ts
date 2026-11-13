@@ -150,8 +150,11 @@ it("keeps a whole minimized on every graph of its branch, and only there", async
   expect(app.monitor.minimizedOn(BRANCH)).toEqual(["a:suite"]);
 
   // Another Run of the branch, and its Current, draw suite minimized.
+  const before = laid.minimized.length;
   await rerender({ source: { kind: "run", run: "run-b" }, revision: 2 });
-  await waitFor(() => expect(laid.minimized.at(-1)).toEqual(["a:suite"]));
+  // The new Run's own layout, not the one already drawn.
+  await waitFor(() => expect(laid.minimized.length).toBe(before + 1));
+  expect(laid.minimized.at(-1)).toEqual(["a:suite"]);
   await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true));
   await rerender({ source: { kind: "current", branch: BRANCH }, revision: 3 });
   await waitFor(() => expect(laid.minimized.length).toBe(3));

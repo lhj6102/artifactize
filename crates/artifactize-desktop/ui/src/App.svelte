@@ -145,7 +145,7 @@
     <div class="brand"><img src={brandMark} alt="" width="24" height="24" />Artifactize</div>
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
-    {#if app.launch}<span class="muted" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
+    {#if app.launch}<span class="muted reviewer" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
     {#if release.notice}
       <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
     {/if}
@@ -218,6 +218,17 @@
   }
   .muted {
     color: var(--ink-2);
+  }
+  /* A long reviewer name is cut inside the bar; the buttons after it keep their place. */
+  .reviewer {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bar :global(.button),
+  .brand {
+    flex: none;
   }
   main {
     min-height: 0;
