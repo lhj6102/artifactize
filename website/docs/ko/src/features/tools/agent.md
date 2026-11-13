@@ -22,7 +22,7 @@
 
 | 내장 도구 | 인자 | 결과 |
 |---|---|---|
-| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
+| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름순으로 정리한 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
 | `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄이며(기본 1, 최대 9007199254740991), limit은 기본 80, 범위 1–500입니다 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
 | `list` | `{path?, offset?, limit?}`. offset은 0부터 세며(기본 0, 최대 9007199254740991), limit은 기본 200, 범위 1–200입니다 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
 | `glob` | `{pattern, path?}`. `path`는 디렉터리여야 합니다 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |

@@ -203,6 +203,10 @@ kbd {
   border-radius: var(--radius-control);
   cursor: pointer;
 }
+/* Hover only highlights; the selected command keeps its own background under the pointer. */
+.palette-item:hover:not([data-selected]) {
+  background: var(--surface-group);
+}
 /* The selected command: the selection background and a 2px inset bar. */
 .palette-item[data-selected] {
   background: var(--selection);
