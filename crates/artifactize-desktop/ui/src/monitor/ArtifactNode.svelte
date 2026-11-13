@@ -1,12 +1,13 @@
 <script lang="ts">
-  // One Artifact of a graph: its name and how it is lit, nothing about its evals.
+  // One Artifact of a graph: its name and how it is lit, nothing about its evals. Where edges
+  // reach it or leave it, a port says which by its shape and side (app.css).
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
   import type { Light } from "../ipc/client";
 
-  let { data, selected }: NodeProps & { data: { name: string; light: Light; open: boolean } } = $props();
+  let { data, selected }: NodeProps & { data: { name: string; light: Light; open: boolean; inward: boolean; outward: boolean } } = $props();
 </script>
 
-<div class="artifact light-{data.light}" class:selected class:open={data.open}>
+<div class="artifact ported light-{data.light}" class:selected class:open={data.open} class:inward={data.inward} class:outward={data.outward}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="dot" aria-hidden="true"></span>
   <span class="name">{data.name}</span>
@@ -49,9 +50,5 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .artifact :global(.svelte-flow__handle) {
-    opacity: 0;
-    pointer-events: none;
   }
 </style>

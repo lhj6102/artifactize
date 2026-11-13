@@ -1,6 +1,6 @@
 // The public camera-command seam: the viewport the graph asks Svelte Flow for, read against its
 // canvas as a 1440×872 window lays it out. The graph's first view shows it whole; from then on
-// only the person moves the camera. The Detail floats over the canvas and takes no part: Fit View
+// only the person moves the camera. The Detail is docked over the canvas and takes no part: Fit View
 // fits the whole graph into the whole canvas, a Detail open or not. Opening what the find field
 // found is the one exception the person asks for: it brings that Artifact to the middle of the
 // graph left of the Detail.
@@ -38,8 +38,8 @@ const box = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
 /** At 1440×872: the graph's canvas right of the Pane, under the Run's headline. */
 const CANVAS = box(346, 110, 1094, 762);
-/** Where the Detail at its default width floats, 12px from the graph area's edges. */
-const DETAIL = box(925, 52, 503, 808);
+/** Where the Detail at its default width is docked: at the graph area's right edge, under its header. */
+const DETAIL = box(937, 44, 503, 828);
 
 /** The camera Svelte Flow would hold: the last viewport asked for, or one the person set. */
 let viewport: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -160,7 +160,7 @@ it("shows the whole graph first, then leaves the camera as the Detail opens, cha
   camera.setViewport.mockClear();
 
   // Opening publish's Detail, a new snapshot and closing it move nothing; the canvas keeps its
-  // size under the floating Detail.
+  // size under the docked Detail.
   await rerender({ opened: "a:publish" });
   layOut(canvas, CANVAS.width, CANVAS.height, CANVAS);
   await rerender({ revision: 2 });
@@ -186,7 +186,7 @@ it("keeps a camera the person moved, and fits the whole graph into the whole can
   expect(within("publish", DETAIL.left)).toBe(false);
 
   // Fit View, the person's own, shows every Artifact in the canvas, the same with the Detail
-  // open as without: publish lies under the floating Detail again.
+  // open as without: publish lies under the docked Detail again.
   screen.getByRole("button", { name: "Fit View" }).click();
   expect(Object.keys(PLACED).filter((name) => !within(name, CANVAS.right))).toEqual([]);
   expect(viewport).toEqual(first);

@@ -2,7 +2,7 @@
   // The window's one screen: the Pane on the left and the Main area on the right, always with
   // the divider between them. A chip shows its Run or the branch's Current in the Main area, a
   // waiting review opens there as Review, and Settings take its place until left. A click on an
-  // Artifact (or on the Run's headline) opens its Detail, floating over the graph's right side;
+  // Artifact (or on the Run's headline) opens its Detail, a panel docked at the graph's right edge;
   // dragging its left edge sets its width, kept like the split ratio.
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
@@ -11,7 +11,7 @@
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { GAP, clampWidth, saveWidth } from "./detail-width";
+  import { clampWidth, saveWidth } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
@@ -339,7 +339,7 @@
     event.preventDefault();
     const drag = (moved: MouseEvent) => {
       const room = stage.getBoundingClientRect();
-      m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width);
+      m.detailWidth = clampWidth(room.right - moved.clientX, room.width);
     };
     const drop = () => {
       window.removeEventListener("mousemove", drag);
@@ -517,25 +517,24 @@
     min-height: 0;
     min-width: 0;
   }
-  /* Docked toward the graph's right edge with a gap; the graph stays visible behind it. The
-   * Detail sets its own width, by default or by a drag, within the graph's area (as
-   * detail-width.ts fits a drag); its content never sizes it, and wraps or scrolls in its own
-   * boxes. */
-  /* Below the Main area's header row (its 2px focus line and 32px), over the graph's side. */
+  /* The inspector: a panel docked at the graph's right edge, panel meeting panel at a line,
+   * with the graph visible on its left. It sets its own width, by default or by a drag, within
+   * the graph's area (as detail-width.ts fits a drag); its content never sizes it, and wraps or
+   * scrolls in its own boxes. */
+  /* From under the Main area's header row (its 2px focus line and 32px) to the area's bottom. */
   .dock {
     position: absolute;
     z-index: 20;
-    top: 42px;
-    right: 12px;
-    bottom: 8px;
+    top: 34px;
+    right: 0;
+    bottom: 0;
     width: var(--detail-width, min(46%, 680px));
-    min-width: min(320px, calc(100% - 24px));
-    max-width: calc(100% - 108px);
+    min-width: min(320px, 100%);
+    max-width: calc(100% - 96px);
     contain: inline-size;
     overflow: hidden;
-    border: 1px solid var(--line-panel);
-    border-radius: var(--radius-panel);
-    box-shadow: 0 2px 8px var(--scrim);
+    border-top: 1px solid var(--line-group);
+    border-left: 1px solid var(--line-panel);
   }
   .edge {
     position: absolute;

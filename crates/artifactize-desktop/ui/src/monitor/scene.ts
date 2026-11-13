@@ -28,6 +28,8 @@ const NODE_DOT = 8;
 const NODE_GAP = 8;
 /** The smallest font, in device-independent pixels, at which a name is still painted. */
 const LEGIBLE = 5;
+/** The smallest port, in device-independent pixels, whose shape still reads. */
+const PORT_SHOWN = 3;
 /** An edge's stroke in graph pixels, as the graph's elements draw it. */
 const EDGE_WIDTH = 1.25;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the
@@ -187,7 +189,11 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const paths = new Map<Light, Path2D>();
   const drawn = new Set<number>();
   const grain = (value: number) => Math.min(Math.max(Math.floor(value / GRAIN), -FAR), FAR) + FAR;
+  // The Artifacts edges reach, and those they leave: each shows its port on that side.
+  const [inward, outward] = [new Uint8Array(at.places.length), new Uint8Array(at.places.length)];
   for (let edge = 0; edge < sources.length; edge += 1) {
+    inward[targets[edge]] = 1;
+    outward[sources[edge]] = 1;
     const [source, target] = [at.places[sources[edge]], at.places[targets[edge]]];
     const [x1, y1] = [(source.x + source.width) * zoom + left, (source.y + source.height / 2) * zoom + top];
     const [x2, y2] = [target.x * zoom + left, (target.y + target.height / 2) * zoom + top];
@@ -213,15 +219,17 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
 
   // The Artifacts in view, painted as their elements draw them: a whole as its box's outline, a
   // node as a neutral face with a border and a dot in its light's colour and its name, cut to
-  // the face, once the zoom makes a name legible.
+  // the face, once the zoom makes a name legible; and each one's ports, a triangle pointing in
+  // on its left side and a square on its right, once the zoom makes their shapes read.
   const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
   const boxes = new Map<Light, Path2D>();
   const outlines = new Map<Light, Path2D>();
   const dots = new Map<Light, Path2D>();
+  const ports = new Map<Light, Path2D>();
   const names: { x: number; y: number; width: number; text: string }[] = [];
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
   const pixels = (token: string) => Number.parseFloat(style.getPropertyValue(token)) || 0;
-  const [corner, font] = [pixels("--radius-control"), pixels("--text-body")];
+  const [corner, font, port] = [pixels("--radius-control"), pixels("--text-body"), pixels("--port") * zoom];
   const radius = Math.min(corner * zoom, corner);
   const legible = font * zoom >= LEGIBLE;
   for (const number of within(at, shown) ?? []) {
@@ -234,6 +242,18 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const place = at.places[number];
     const [x, y, w, h] = [place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1)];
     path.roundRect(x, y, w, h, radius);
+    if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
+      let shapes = ports.get(light);
+      if (!shapes) ports.set(light, (shapes = new Path2D()));
+      const [middle, half] = [y + h / 2, port / 2];
+      if (inward[number]) {
+        shapes.moveTo(x - half, middle - half);
+        shapes.lineTo(x + half, middle);
+        shapes.lineTo(x - half, middle + half);
+        shapes.closePath();
+      }
+      if (outward[number]) shapes.rect(x + w - half, middle - half, port, port);
+    }
     if (whole) continue;
     let dot = dots.get(light);
     if (!dot) dots.set(light, (dot = new Path2D()));
@@ -254,9 +274,11 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     context.strokeStyle = colour(light);
     context.stroke(path);
   }
-  for (const [light, path] of dots) {
-    context.fillStyle = colour(light);
-    context.fill(path);
+  for (const paths of [dots, ports]) {
+    for (const [light, path] of paths) {
+      context.fillStyle = colour(light);
+      context.fill(path);
+    }
   }
   if (names.length === 0) return;
   context.fillStyle = style.getPropertyValue("--ink").trim();

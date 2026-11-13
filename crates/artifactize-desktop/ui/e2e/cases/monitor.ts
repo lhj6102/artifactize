@@ -768,7 +768,7 @@ export const scenarios: Scenario[] = [
         return !!widened && widened.width > shown.width + 60;
       }, { timeout: 15000, timeoutMsg: "the dragged Detail widened" })
         .catch((error: unknown) => { throw new Error(`${String(error)}: ${JSON.stringify({ shown, widened })}`); });
-      assert.ok(widened!.left > 0 && widened!.right > 0, `the Detail stays within the Main area: ${JSON.stringify(widened)}`);
+      assert.ok(widened!.left > 0 && widened!.right === 0, `the Detail stays within the Main area, at its right edge: ${JSON.stringify(widened)}`);
       await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closed");
       await openArtifact(browser, "a:docs", "Artifact docs");
       assert.equal((await placed())?.width, widened!.width, "the Detail opens again at its dragged width");
@@ -791,13 +791,13 @@ export const scenarios: Scenario[] = [
         const tab = dock.querySelector<HTMLElement>('[role="tab"] .label')!;
         return dock.scrollWidth <= dock.clientWidth && heading.scrollWidth <= heading.clientWidth && tab.scrollWidth <= tab.clientWidth;
       });
-      assert.ok(readable && minimum.width <= shown.width && minimum.left > 0 && minimum.right > 0, "the minimum is a readable, contained column, not collapsed text");
+      assert.ok(readable && minimum.width <= shown.width && minimum.left > 0 && minimum.right === 0, "the minimum is a readable, contained column at the right edge, not collapsed text");
       await dragEdge(Math.round(room.right - 1));
       assert.equal((await placed())?.width, minimum.width, "dragging past the minimum cannot shrink the column further");
       // Dragged as far left as the pointer goes, over the Pane: it stops short of the Pane.
       await dragEdge(Math.round(room.left - 40));
       const maximum = (await placed())!;
-      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in the Main area, never over the Pane");
+      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right === 0, "the widest Detail stays in the Main area, never over the Pane");
       const graphVisible = await browser.execute(() => {
         const stage = document.querySelector(".stage")!.getBoundingClientRect();
         const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The Detail of an Artifact or of the Run, floating over the graph of a Run or a Current. An
+  // The Detail of an Artifact or of the Run, docked over the graph of a Run or a Current. An
   // Artifact's Detail has tabs, a chip choice that reads as a path: `[Artifact icon] {name} /
   // [eval] [eval] …`. The Artifact's own draws it between its neighbours, lists its evals with
   // their verdicts (on a Current whether each would run or be reused), then its own Human tools

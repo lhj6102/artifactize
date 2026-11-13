@@ -64,13 +64,15 @@
       ...column([node], step),
       ...column(usedBy.map((edge) => edge.target), 2 * step),
     ];
+    // The Artifacts the drawing's edges reach, and those they leave: each shows its port.
+    const [reached, left] = [new Set([...uses, ...usedBy].map((edge) => edge.target)), new Set([...uses, ...usedBy].map((edge) => edge.source))];
     const nodes: Node[] = placed.map(({ item, x, y }) => ({
       id: item.id,
       type: "artifact",
       position: { x, y },
       width: NODE.width,
       height: NODE.height,
-      data: { name: item.name, light: item.light, open: item.id === node },
+      data: { name: item.name, light: item.light, open: item.id === node, inward: reached.has(item.id), outward: left.has(item.id) },
       draggable: false,
       connectable: false,
       ariaLabel: `Artifact ${item.name}`,

@@ -3,7 +3,7 @@
 
    Surfaces step by role, one step at a time: the global bar is the darkest, the working area
    (window and graph canvas) next, then a panel, then a group inside it; a field is darker than
-   the panel around it, and what floats (a Detail, a dialog, a menu) is raised one step. Lines
+   the panel around it, and what floats (a dialog, a menu, the find field) is raised one step. Lines
    separate what surfaces alone cannot: a panel from a panel, a group from a group, a field from
    its panel. Colour carries meaning only on the element that has the meaning (a status dot or
    word, a node's light, a verdict button); the accent is for what is interactive.
@@ -69,6 +69,7 @@
   --bar-height: 36px;
   --pad: 12px;
   --gap: 8px;
+  --port: 7px;
 
   /* Type */
   --font: "Inter", system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;

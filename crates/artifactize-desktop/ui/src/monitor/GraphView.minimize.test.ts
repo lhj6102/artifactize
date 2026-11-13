@@ -221,3 +221,22 @@ it("names m on the graph's bottom and in the button's tooltip", async () => {
   expect(document.querySelector(".hint")?.textContent).toContain("m minimizes or expands a whole");
   expect(button("Minimize suite")?.title).toBe("Minimize (m)");
 });
+
+it("shows a port only on the side edges reach or leave, on a minimized whole those of the Artifacts it hides", async () => {
+  await drawn();
+  const ports = (id: string) => {
+    const face = node(id)?.querySelector(".ported");
+    return face ? { inward: face.classList.contains("inward"), outward: face.classList.contains("outward") } : null;
+  };
+  expect(ports("a:lib")).toEqual({ inward: false, outward: true });
+  expect(ports("a:suite/a:app")).toEqual({ inward: true, outward: true });
+  expect(ports("a:suite/a:site")).toEqual({ inward: true, outward: false });
+  // No edge meets the box itself while its parts are drawn.
+  expect(ports("a:suite")).toEqual({ inward: false, outward: false });
+
+  await fireEvent.click(button("Minimize suite")!);
+  await waitFor(() => expect(node("a:suite/a:app")).toBeNull());
+  // lib's edge meets the minimized whole; the edge between the parts it hides is not drawn.
+  await waitFor(() => expect(ports("a:suite")).toEqual({ inward: true, outward: false }));
+  expect(ports("a:lib")).toEqual({ inward: false, outward: true });
+});

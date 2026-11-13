@@ -185,7 +185,7 @@ minimizes or expands a box (below), as the graph's bottom reminds you; they have
 of their own.
 Drag the graph background to pan; wheel, pinch or a background double-click zooms.
 **Zoom In** and **Zoom Out** do the same, and **Fit View** shows the whole graph in the
-whole canvas, whether the Detail floats over it or not. A graph shows whole when it first
+whole canvas, whether the Detail covers part of it or not. A graph shows whole when it first
 appears; after that only you move its camera, also by opening what Find found or by
 minimizing or expanding a box (below): the Detail, new results, scans and layouts leave
 it where it is.
@@ -242,8 +242,8 @@ expand that one to see the part on the graph.
 
 ### Detail
 
-A click on an Artifact opens its **Detail**, floating over the graph's right side
-with the graph still visible behind it, never beside the Pane.
+A click on an Artifact opens its **Detail**, a panel docked at the graph's right edge
+with the graph still visible on its left, never beside the Pane.
 Clicking another Artifact switches
 the Detail to it; clicking the graph's
 background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only

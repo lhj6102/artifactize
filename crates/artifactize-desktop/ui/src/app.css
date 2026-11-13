@@ -358,3 +358,25 @@ kbd {
   color: var(--ink-3);
   opacity: 1;
 }
+
+/* A graph node's ports: where edges reach it, a triangle pointing in on its left side; where
+   they leave it, a square on its right; each in the node's light, straddling its border.
+   Shape and side tell the direction; a side without an edge shows no port. */
+.ported > .svelte-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  width: var(--port);
+  height: var(--port);
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--light);
+}
+.ported.inward > .svelte-flow__handle.target {
+  opacity: 1;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.ported.outward > .svelte-flow__handle.source {
+  opacity: 1;
+}

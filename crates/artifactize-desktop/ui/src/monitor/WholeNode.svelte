@@ -13,7 +13,7 @@
     data,
     selected,
     type,
-  }: NodeProps & { data: { name: string; light: Light; open: boolean; count: number; onminimize: () => void } } = $props();
+  }: NodeProps & { data: { name: string; light: Light; open: boolean; inward: boolean; outward: boolean; count: number; onminimize: () => void } } = $props();
   const minimized = $derived(type === "minimized");
   const action = $derived(minimized ? "Expand" : "Minimize");
 
@@ -25,7 +25,9 @@
 </script>
 
 <div
-  class="whole light-{data.light}"
+  class="whole ported light-{data.light}"
+  class:inward={data.inward}
+  class:outward={data.outward}
   class:minimized
   class:selected
   class:open={data.open}
@@ -144,9 +146,5 @@
     stroke: currentColor;
     stroke-width: 1.5;
     stroke-linecap: round;
-  }
-  .whole :global(.svelte-flow__handle) {
-    opacity: 0;
-    pointer-events: none;
   }
 </style>

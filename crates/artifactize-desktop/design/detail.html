@@ -26,7 +26,8 @@
 <main data-screen="detail">
 <h1>Detail: the inspector of the selected Artifact</h1>
 <p class="lead">
-  A click on a node opens its Detail, docked over the graph's right side with a gap. The
+  A click on a node opens its Detail: a panel docked at the graph's right edge, meeting the
+  graph at a line, with the graph still visible on its left. The
   selection drives it: the outlined node and the Detail's title name the same Artifact. Its
   tabs read as a path, the Artifact's own chip then one chip per eval; the first figure shows
   the Artifact's tab, the second an eval's Summary.
@@ -79,11 +80,12 @@
         <div class="m-edge light-green" style="left: 228px; top: 250px; width: 170px; transform: rotate(-22deg)"></div>
         <div class="m-edge light-green" style="left: 228px; top: 250px; width: 170px; transform: rotate(22deg)"></div>
         <div class="m-edge light-red" style="left: 556px; top: 314px; width: 92px"></div>
-        <div class="m-node light-green" style="left: 60px; top: 230px"><span class="m-dot"></span>core</div>
-        <div class="m-node light-active" style="left: 388px; top: 166px"><span class="m-dot"></span>release</div>
-        <div class="m-node light-red selected" style="left: 388px; top: 294px"><span class="m-dot"></span>cli</div>
+        <div class="m-node out light-green" style="left: 60px; top: 230px"><span class="m-dot"></span>core</div>
+        <div class="m-node in light-active" style="left: 388px; top: 166px"><span class="m-dot"></span>release</div>
+        <div class="m-node in out light-red selected" style="left: 388px; top: 294px"><span class="m-dot"></span>cli</div>
         <div class="m-controls"><span>+</span><span>−</span><span>⛶</span></div>
         <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
+      </div>
         <aside class="m-dock focused" style="--detail-width: 420px">
           <div class="m-main-head"><div class="m-dock-title"><h2>Artifact cli</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
           <div class="m-chips">
@@ -96,9 +98,9 @@
             <div class="m-neighbours">
               <div class="m-edge light-green" style="left: 132px; top: 36px; width: 36px"></div>
               <div class="m-edge light-red" style="left: 300px; top: 36px; width: 36px"></div>
-              <div class="m-node light-green" style="left: 0; top: 20px"><span class="m-dot"></span>core</div>
-              <div class="m-node light-red selected" style="left: 168px; top: 20px"><span class="m-dot"></span>cli</div>
-              <div class="m-node light-blocked" style="left: 336px; top: 20px; width: 60px"><span class="m-dot"></span>docs</div>
+              <div class="m-node out light-green" style="left: 0; top: 20px"><span class="m-dot"></span>core</div>
+              <div class="m-node in out light-red selected" style="left: 168px; top: 20px"><span class="m-dot"></span>cli</div>
+              <div class="m-node in light-blocked" style="left: 336px; top: 20px; width: 60px"><span class="m-dot"></span>docs</div>
             </div>
             <ul class="m-rows">
               <li class="m-row"><span class="m-glyph tone-green">✓</span><span>lint</span><span class="tone-green">GREEN</span><span class="m-right">4s</span></li>
@@ -120,7 +122,6 @@
             </div>
           </div>
         </aside>
-      </div>
     </section>
   </div>
 </div>
@@ -148,7 +149,7 @@
 <div class="stage-inner">
 <div class="m-window" style="background: var(--surface-app)">
   <div style="position: absolute; inset: 0">
-    <aside class="m-dock" style="--detail-width: 420px; left: 8px; right: auto; width: 500px">
+    <aside class="m-dock" style="top: 0; width: 500px">
       <div class="m-main-head"><div class="m-dock-title"><h2>cli/tests · The CLI's tests pass</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
       <div class="m-chips">
         <span class="m-chip"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
@@ -201,7 +202,7 @@
 <div class="stage-inner">
 <div class="m-window" style="background: var(--surface-app)">
   <div style="position: absolute; inset: 0">
-    <aside class="m-dock focused" style="left: 8px; right: auto; width: 500px">
+    <aside class="m-dock focused" style="top: 0; width: 500px">
       <div class="m-main-head"><div class="m-dock-title"><h2>Run run-7SR0YW</h2></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
       <div class="m-body">
         <div class="m-section">
@@ -242,7 +243,7 @@
 <div class="stage-inner">
 <div class="m-window" style="background: var(--surface-app)">
   <div style="position: absolute; inset: 0">
-    <aside class="m-dock" style="left: 8px; right: auto; width: 500px">
+    <aside class="m-dock" style="top: 0; width: 500px">
       <div class="m-main-head"><div class="m-dock-title"><h2>cli/tests · The CLI's tests pass</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
       <div class="m-chips">
         <span class="m-chip"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
@@ -278,7 +279,7 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-INS-1">D-INS-1</dt>
-  <dd>The Detail docks over the Main area's right side below its header row (the row stays readable), with an 8–12px gap under the header, at its right and at its bottom, never beside the Pane: a <code>--surface-panel</code> panel with a 1px <code>--line-panel</code> border, <code>--radius-panel</code> corners and a faint shadow (<code>--scrim</code>, 2px offset, 8px blur); its left edge takes a drag and its width is remembered; part of the graph stays visible on its left. <span class="avoid">a heavy shadow or large radius; the Detail pushing the graph aside.</span></dd>
+  <dd>The Detail is the inspector: a panel docked at the Main area's right edge over the graph, from under the area's header row (the row stays readable) to the area's bottom, with no gap at its top, right or bottom, never beside the Pane. It is a <code>--surface-panel</code> panel meeting the graph at lines, <code>--line-panel</code> at its left and <code>--line-group</code> at its top, with square corners and no shadow; its left edge takes a drag and its width is remembered; part of the graph stays visible on its left. <span class="avoid">a floating card (a gap, a radius or a shadow around the Detail); the Detail pushing the graph aside or moving its camera.</span></dd>
   <dt id="D-INS-2">D-INS-2</dt>
   <dd>The Detail's header is the panel header row (D-MAIN-1): the title at <code>--text-small</code> semibold, wrapping to show a long name whole, naming what the tab shows with the Artifact's name whole in it (<i>Artifact {name}</i> on the Artifact's tab, <i>{Artifact}/{eval} · {eval title}</i> on every eval's tab, a Human eval's included, <i>Run {id}</i> on a Run's), the star beside it on an Artifact's tabs, Close with its <kbd>Esc</kbd> key cap at the end; the chip path below keeps the Artifact's name on every tab; focus shows as the 2px <code>--accent</code> top line. <span class="avoid">a cut title; a second close control.</span></dd>
   <dt id="D-INS-3">D-INS-3</dt>

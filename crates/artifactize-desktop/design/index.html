@@ -42,7 +42,7 @@
   reviewer, an update notice, Settings, the command palette). Below it, the work reads left
   to right: <b>find</b> (the Pane: a search, the live branches with their Runs, the reviews
   waiting for a person), <b>look</b> (the Main area: a Run's or a Current's graph, or a Human
-  review) and <b>inspect</b> (the Detail, docked over the graph's right side, showing the
+  review) and <b>inspect</b> (the Detail, a panel docked at the graph's right edge, showing the
   selected Artifact or eval). Each view keeps the bar and the Pane and changes only what the
   Main area gives its main representation: a graph, a review, a read-only request.
 </p>
@@ -51,7 +51,7 @@
 <ul class="screens">
   <li><a href="monitor.html">Monitor</a><span>The one screen with a Run shown: bar, Pane, Main area and the Run graph.</span></li>
   <li><a href="current.html">Current</a><span>The Main area as a branch's Current: the scan header, the Current graph and the structure text.</span></li>
-  <li><a href="detail.html">Detail</a><span>The inspector docked over the graph: an Artifact's tab and an eval's Summary.</span></li>
+  <li><a href="detail.html">Detail</a><span>The inspector, a panel docked at the graph's right edge: an Artifact's tab and an eval's Summary.</span></li>
   <li><a href="review.html">Review</a><span>A Human review in the Main area: instruction, Tools, Tool log and the Result form.</span></li>
   <li><a href="settings.html">Settings</a><span>The modal over the screen: Providers, Remote and Limits.</span></li>
   <li><a href="overlays.html">Overlays</a><span>The command palette, Help, Open by ID, the Leave and Update dialogs and the graph's find field.</span></li>
@@ -132,6 +132,7 @@
     <tr><td><code>--bar-height</code></td><td>The global bar</td></tr>
     <tr><td><code>--pad</code></td><td>A panel's side padding (12); spacing follows the 4 / 8 / 12 / 16 scale</td></tr>
     <tr><td><code>--gap</code></td><td>The gap between controls in a row (8)</td></tr>
+    <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
     <tr><td><code>--font</code>, <code>--mono</code></td><td>The UI face with Korean fallbacks; the monospace face for logs, IDs and queries</td></tr>
     <tr><td><code>--text-body</code></td><td>13px: text, names, values</td></tr>
     <tr><td><code>--text-small</code></td><td>12px: secondary text, chips, logs</td></tr>

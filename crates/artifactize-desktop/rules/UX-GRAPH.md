@@ -106,7 +106,7 @@ that makes the transition happen and checks where it leads.
   they had been found, or says how to star one when none of the graph's Artifacts is starred.
   States: favorites (listed, an entry chosen or not, or none starred), listing (an entry chosen
   or not), nothing found.
-- **Detail**: floats over a graph docked toward its right edge, with a gap, and shows a Run or
+- **Detail**: a panel docked at a graph's right edge over the graph, without a gap, that shows a Run or
   an Artifact; it never sits beside the Pane. Its left edge takes a drag that sets its width,
   between a readable column and a width that leaves some of the graph visible on its left.
   An Artifact's Detail has a **star** beside its title on every tab: ☆, or ★ while the Artifact

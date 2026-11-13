@@ -1,7 +1,7 @@
 // A Run's graph in the Main area, in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them and follows a submission made by
 // another process live without moving any node while release's Detail stays open; a click on an
-// Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
+// Artifact opens its Detail with a tab per eval, docked at the graph's right edge, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
 import { addWorktrees, artifactize, create, createChain, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
@@ -257,7 +257,7 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
       assert.equal(opened.tabs[1].glyph, "?", "the sign-off's tab shows it waiting for a Human");
       assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
-      assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
+      assert.ok(opened.docked, "the Detail is docked at the graph's right edge without a gap");
 
       // Another process signs the release off; the change hint recolours the graph and the tab.
       const id = signoff(fixture).id;
@@ -334,9 +334,9 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
 
-      // The Detail floats over the graph's right side with a gap, docked where another Artifact
-      // was drawn without it, and the graph stays visible on its left.
-      assert.ok((await detail(browser))?.docked, "the Detail docks over the graph's right side with a gap");
+      // The Detail is a panel docked at the graph's right edge without a gap, where another
+      // Artifact was drawn without it, and the graph stays visible on its left.
+      assert.ok((await detail(browser))?.docked, "the Detail is docked at the graph's right edge without a gap");
       const edge = (await placed()).detail!;
       const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
@@ -501,7 +501,7 @@ export const scenarios: Scenario[] = [
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
       await openTab(browser, "e:kit/check");
       const kitDetail = await detail(browser);
-      // The Detail floats over the graph's right side, where suite's Minimize button is: drags on
+      // The Detail is docked over the graph's right side, where suite's Minimize button is: drags on
       // the background, left of the Detail, pan suite out from under it.
       await panClear(browser, ".graph", "Minimize suite");
       const boxed = await partsDrawn(browser, ".graph");
@@ -722,7 +722,7 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the selected Run's own Detail heading" });
       const shown = (await detail(browser))!;
       assert.deepEqual(shown.tabs, [], "the Run's Detail has no Artifact or eval tabs");
-      assert.ok(shown.docked, "the Run's Detail floats over the graph's right side");
+      assert.ok(shown.docked, "the Run's Detail is docked at the graph's right edge");
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       await graphShown(browser, "a:release");
@@ -812,7 +812,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await width()) > narrow + 60, { timeout: 15000, timeoutMsg: "the dragged Detail widened" });
       assert.equal((await settled()).transform, zoomed.transform, "resizing the Detail moved nothing");
 
-      // Fit View, the person's own, shows the whole graph in its whole canvas: the Detail floats
+      // Fit View, the person's own, shows the whole graph in its whole canvas: the Detail is docked
       // over it and takes no part, so the camera is the graph's first one again.
       await browser.$(".graph .svelte-flow__controls-fitview").click();
       const fitted = await settled();

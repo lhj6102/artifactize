@@ -62,8 +62,9 @@ export type Detail = {
   path: string;
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
-  /** Whether the Detail lies within the Main area, right of the Pane, with a gap from the
-   * area's right edge. */
+  /** Whether the Detail is a panel docked in the Main area, right of the Pane: at the area's
+   * right edge and down to its bottom without a gap, under the area's header, some of the area
+   * left on its left. */
   docked: boolean;
 };
 
@@ -103,8 +104,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",
       })),
-      docked: box.left > stage.left && box.right < stage.right && box.top >= stage.top && box.bottom <= stage.bottom
-        && stage.right - box.right + 1 < box.left - stage.left,
+      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && box.top > stage.top && Math.abs(stage.bottom - box.bottom) <= 1,
     };
   });
 }

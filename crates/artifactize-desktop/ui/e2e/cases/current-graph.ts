@@ -110,7 +110,7 @@ export const scenarios: Scenario[] = [
       // A click on release opens its Detail over the Current: its eval would run, and its tools.
       const opened = await openArtifact(browser, "a:release", "Artifact release");
       assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"]);
-      assert.ok(opened.docked, "the Detail floats over the Current's graph, docked right with a gap");
+      assert.ok(opened.docked, "the Detail is docked at the right edge of the Current's graph without a gap");
       assert.deepEqual(await evalRows(browser), [{ name: "signoff", status: "would run" }]);
       const tools = () => browser.$(`${DETAIL} section[aria-label="Tools of release"]`);
       await tools().$("button=▶ notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own Human tools listed" });

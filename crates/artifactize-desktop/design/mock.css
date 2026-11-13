@@ -130,6 +130,7 @@
 }
 .m-pane,
 .m-main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -435,6 +436,30 @@
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+/* Ports: where edges reach a node or a box, a triangle pointing in on its left side; where they
+   leave it, a square on its right; each in its light, straddling its border. */
+.m-node.in::before,
+.m-whole.in::before,
+.m-node.out::after,
+.m-whole.out::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: var(--port);
+  height: var(--port);
+  background: var(--light);
+}
+.m-node.in::before,
+.m-whole.in::before {
+  left: -0.5px;
+  transform: translate(-50%, -50%);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.m-node.out::after,
+.m-whole.out::after {
+  right: -0.5px;
+  transform: translate(50%, -50%);
+}
 .m-whole {
   position: absolute;
   border: 1px solid var(--light);
@@ -480,20 +505,20 @@
 .light-reused { --light: var(--light-reused); }
 .light-checking { --light: var(--light-checking); }
 
-/* The Detail: the inspector, docked over the graph's right side with a gap. */
+/* The Detail: the inspector, a panel docked at the Main area's right edge over the graph, from
+   under the area's header row to its bottom, meeting the graph at a line. */
 .m-dock {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
+  top: 32px;
+  right: 0;
+  bottom: 0;
   width: var(--detail-width, 46%);
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--surface-panel);
-  border: 1px solid var(--line-panel);
-  border-radius: var(--radius-panel);
-  box-shadow: 0 2px 8px var(--scrim);
+  border-top: 1px solid var(--line-group);
+  border-left: 1px solid var(--line-panel);
   overflow: hidden;
 }
 .m-dock .m-main-head {

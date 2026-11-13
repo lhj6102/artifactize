@@ -2,7 +2,7 @@
   // The laid-out graph. It takes the pointer: a click on an Artifact asks for its Detail, a
   // click on the background closes it. The keyboard reaches the nodes with Tab, and Enter on a
   // focused node does what a click does. Its first view shows the whole graph in its canvas; the
-  // Detail floats over the canvas and takes no part in it. From then on only the person moves the
+  // Detail is docked over the canvas and takes no part in it. From then on only the person moves the
   // camera, by panning, zooming, Fit View or opening what its find field (Ctrl+F) found: that
   // brings the Artifact to the middle of the graph left of the Detail.
   //
@@ -100,6 +100,8 @@
   const rects = $derived(boxes(drawn, positions));
   /** The graph's edges between copies, lit as their edges. */
   const lines = $derived(copyEdges(graph, drawn, current ? PRECEDENCE.current : PRECEDENCE.run).map(({ source, target, edge }) => ({ ...edge, source, target })));
+  /** The copies edges reach, and those they leave: each shows its port on that side. */
+  const ported = $derived({ inward: new Set(lines.map((edge) => edge.target)), outward: new Set(lines.map((edge) => edge.source)) });
   /** Where every copy is, indexed by area. */
   const laid = $derived(
     scene(
@@ -151,6 +153,8 @@
             name: node.name,
             light: node.light,
             open: showing.has(key),
+            inward: ported.inward.has(key),
+            outward: ported.outward.has(key),
             artifact: node.id,
             count,
             onminimize: () => void minimize(key, !folded),
