@@ -103,15 +103,15 @@
     <section class="m-main">
       <div class="m-main-head"><h2>Run run-5K2QXA</h2></div>
       <div class="m-canvas">
-        <div class="m-node light-green" style="left: 560px; top: 120px"><span class="m-dot"></span>core</div>
+        <div class="m-node light-green" style="left: 560px; top: 120px"><span class="m-light"></span><span class="m-name">core</span><span class="m-tally">2/2</span></div>
         <div class="m-find">
           <div class="m-input focused"><span>des</span></div>
           <ul class="m-found">
-            <li class="active"><span class="m-glyph tone-green">✓</span><span>desktop</span></li>
-            <li><span class="m-glyph tone-human">?</span><span>desktop-design</span></li>
-            <li><span class="m-glyph tone-green">✓</span><span>desktop-ui</span></li>
-            <li><span class="m-glyph tone-red">✗</span><span>desktop-ui / follows-design</span></li>
-            <li><span class="m-glyph tone-human">?</span><span>desktop-design / approved</span></li>
+            <li class="active"><span class="m-icon i-green tone-green"></span><span>desktop</span></li>
+            <li><span class="m-icon i-human tone-human"></span><span>desktop-design</span></li>
+            <li><span class="m-icon i-green tone-green"></span><span>desktop-ui</span></li>
+            <li><span class="m-icon i-red tone-red"></span><span>desktop-ui / follows-design</span></li>
+            <li><span class="m-icon i-human tone-human"></span><span>desktop-design / approved</span></li>
           </ul>
         </div>
       </div>
@@ -158,7 +158,7 @@
   <li><span class="n">2</span><div><b>Key caps</b><span>Every command that has a key shows it as a key cap, the same cap the bar and the hints use.</span></div></li>
   <li><span class="n">3</span><div><b>Help</b><span>The keys of what has focus, as a key-cap / action grid under section labels.</span></div></li>
   <li><span class="n">4</span><div><b>Leave dialog</b><span>Says what is held; Stay (Esc) and the primary Release and quit (u).</span></div></li>
-  <li><span class="n">5</span><div><b>Find field</b><span>Over the graph's top left: a monospace input and 22px result rows with the verdict glyph in its colour; the chosen row on the selection background.</span></div></li>
+  <li><span class="n">5</span><div><b>Find field</b><span>Over the graph's top left: a monospace input and 22px result rows with the verdict's icon in its colour; the chosen row on the selection background.</span></div></li>
   <li><span class="n">7</span><div><b>Open by ID</b><span>One text field for the request ID (placeholder <code>req-…</code>) and two actions, Cancel and the primary Open; Enter opens, Esc cancels.</span></div></li>
   <li><span class="n">6</span><div><b>Update dialog</b><span>The running and the new version, how to update the way the app was installed, the command as selectable monospace in an input-surface box, a link to the release page.</span></div></li>
 </ol>
@@ -172,7 +172,7 @@
   <dt id="D-OVL-3">D-OVL-3</dt>
   <dd>A key cap is the one <code>kbd</code> style: <code>--mono</code> at <code>--text-label</code>, <code>--ink-2</code>, a 1px <code>--line-input</code> border, <code>--radius-control</code>, <code>--surface-group</code>; on the primary button it is transparent with <code>--ink-on-accent</code>. <span class="avoid">a second kbd style; keys written as plain text where a cap is used elsewhere.</span></dd>
   <dt id="D-OVL-4">D-OVL-4</dt>
-  <dd>The find field floats over the graph's top left (8px in), 380px wide on <code>--surface-raised</code> with a <code>--line-panel</code> border: a <code>--mono</code> input, then result rows of <code>--row-dense</code> in <code>--mono</code> at <code>--text-small</code> led by the verdict glyph in its colour, the chosen row on <code>--selection</code> with a 2px inset bar, a hovered row on <code>--surface-group</code>, and, only when there is something to say, a <code>--ink-2</code> note under the rows: how many more match beyond the first 50 listed, that none does, or how to star one when no favorite is starred. <span class="avoid">a modal find; results that move the graph.</span></dd>
+  <dd>The find field floats over the graph's top left (8px in), 380px wide on <code>--surface-raised</code> with a <code>--line-panel</code> border: a <code>--mono</code> input, then result rows of <code>--row-dense</code> in <code>--mono</code> at <code>--text-small</code> led by the verdict's icon in its colour, the chosen row on <code>--selection</code> with a 2px inset bar, a hovered row on <code>--surface-group</code>, and, only when there is something to say, a <code>--ink-2</code> note under the rows: how many more match beyond the first 50 listed, that none does, or how to star one when no favorite is starred. <span class="avoid">a modal find; results that move the graph.</span></dd>
   <dt id="D-OVL-6">D-OVL-6</dt>
   <dd>Open a request by ID (<kbd>Ctrl+O</kbd> or the palette) is a dialog of D-OVL-1 at most 480px wide: its title, one <code>--surface-input</code> text field taking the request ID with <code>req-…</code> in <code>--ink-3</code> as its placeholder, and the actions Cancel (<kbd>Esc</kbd>) and the primary Open (<kbd>Enter</kbd>); what opens is the Review screen, actionable for a waiting Human review and read-only otherwise. <span class="avoid">a list of recent IDs; a second field.</span></dd>
   <dt id="D-OVL-5">D-OVL-5</dt>

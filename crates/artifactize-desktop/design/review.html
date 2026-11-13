@@ -51,13 +51,13 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
-            <span class="m-star on">★</span>
+            <span class="m-star on m-icon i-star-on"></span>
           </div>
           <div class="m-latest"><span class="m-dot" style="--dot: var(--yellow)"></span><span class="m-status tone-yellow">YELLOW</span><span class="m-age">2m ago</span></div>
         </div>
       </div>
       <section class="m-waiting"><h2>Waiting (1)</h2>
-        <div class="m-waiting-row selected"><span class="m-glyph tone-human">?</span><span>release/signoff</span><span class="m-where">artifactize  dev</span><span class="m-meta">2m · alice (you)</span></div>
+        <div class="m-waiting-row selected"><span class="m-icon i-human tone-human"></span><span>release/signoff</span><span class="m-where">artifactize  dev</span><span class="m-meta">2m · alice (you)</span></div>
       </section>
     </section>
     <div class="m-divider"></div>
@@ -67,14 +67,14 @@
       <div class="m-review">
         <div>
           <div class="m-review-title"><h3>release/signoff · A person approves the release notes</h3><span class="m-stage review">REVIEW (yours)</span></div>
-          <p class="m-meta" style="margin: 4px 0 0">Request run-7SR0YW-7 · <b class="tone-human">? DEFERRED</b> · claimed by you (alice) · waiting 2m 14s</p>
+          <p class="m-meta" style="margin: 4px 0 0">Request run-7SR0YW-7 · <b class="tone-human"><span class="m-icon i-human"></span> DEFERRED</b> · claimed by you (alice) · waiting 2m 14s</p>
         </div>
         <p style="margin: 0">Read the release notes and approve them for publication. Check that every change since v0.21.1 is named and that the install commands are current.</p>
         <div>
           <p class="m-section-label">Tools</p>
           <p style="margin: 0 0 4px; font-weight: 600"><span class="m-mark" style="display: inline-block; width: 11px; height: 11px; border: 1.5px solid currentColor; border-radius: 2px; transform: rotate(45deg) scale(0.75); margin-right: 6px"></span>release</p>
-          <div class="m-tool"><span class="m-button small">▶ notes</span><span>Print the release notes.</span></div>
-          <div class="m-tool"><span class="m-button small">▶ open</span><span>Open CHANGELOG.md in the default application.</span></div>
+          <div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>notes</span><span>Print the release notes.</span></div>
+          <div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>open</span><span>Open CHANGELOG.md in the default application.</span></div>
         </div>
         <div>
           <p class="m-section-label">Tool log</p>
@@ -107,8 +107,8 @@
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Title and state</b><span>The eval's title at 14px and the stage pill (CLAIM while unclaimed or taken by another reviewer, REVIEW (yours) once claimed here, completed); under it the request's facts in secondary ink, naming the claimant, only the state's glyph and word in its status colour.</span></div></li>
-  <li><span class="n">2</span><div><b>Tools</b><span>Grouped by the Artifact that declares them, the reviewed one first, each a small ▶ button with its description in secondary ink.</span></div></li>
+  <li><span class="n">1</span><div><b>Title and state</b><span>The eval's title at 14px and the stage pill (CLAIM while unclaimed or taken by another reviewer, REVIEW (yours) once claimed here, completed); under it the request's facts in secondary ink, naming the claimant, only the state's icon and word in its status colour.</span></div></li>
+  <li><span class="n">2</span><div><b>Tools</b><span>Grouped by the Artifact that declares them, the reviewed one first, each a small button led by the run icon, with its description in secondary ink.</span></div></li>
   <li><span class="n">3</span><div><b>Tool log</b><span>Monospace in an input-surface box: the run's start line and end line quiet, printed lines in ink, stderr in red; it follows its newest line unless scrolled up.</span></div></li>
   <li><span class="n">4</span><div><b>Result</b><span>GREEN and RED as a segmented choice outlined in the chosen verdict's colour; then the form from the eval's schema: label semibold, <code>*</code> on a required field, Optional in grey inside an empty optional one.</span></div></li>
   <li><span class="n">5</span><div><b>Footer</b><span>Right under the Result, inside the column: busy state or the last notice at the left; Release at the right; Submit is the one primary button.</span></div></li>
@@ -117,13 +117,13 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-REV-1">D-REV-1</dt>
-  <dd>A review reads top to bottom in one scrolling column, left-aligned in the Main area and no wider than <code>--measure</code>, whatever the window's width, so the form, the log and their actions stay within one glance: title row (title at <code>--text-title</code>, the stage pill of <code>--radius-chip</code> on <code>--surface-group</code>, or <code>--accent-soft</code> in <code>--accent</code> while it is yours), the request's facts in <code>--ink-2</code> with only the state's glyph and word (<i>? DEFERRED</i>) in the status colour, the instruction, Tools, Tool log, Result, then the footer. Opened from the Pane, the eval and its Artifact are named in one <code>--ink-2</code> line above it. Its states read without colour: Unclaimed shows the primary <b>Claim to review</b> button in the Result; Taken (another reviewer holds the claim) keeps the CLAIM pill, names the claimant in the facts line and says <i>Claimed by {reviewer}. Read-only until released.</i> in <code>--ink-2</code> in the Result, with no Claim button and the tools disabled; Claimed shows REVIEW (yours), the GREEN / RED choice and the enabled tools; Submitted shows the completed result in place of the form. <span class="avoid">a column stretched to the window's width; a whole line in a status colour; the Result above the Tools; a Taken review that looks claimable.</span></dd>
+  <dd>A review reads top to bottom in one scrolling column, left-aligned in the Main area and no wider than <code>--measure</code>, whatever the window's width, so the form, the log and their actions stay within one glance: title row (title at <code>--text-title</code>, the stage pill of <code>--radius-chip</code> on <code>--surface-group</code>, or <code>--accent-soft</code> in <code>--accent</code> while it is yours), the request's facts in <code>--ink-2</code> with only the state's icon and word (<i>DEFERRED</i>) in the status colour, the instruction, Tools, Tool log, Result, then the footer. Opened from the Pane, the eval and its Artifact are named in one <code>--ink-2</code> line above it. Its states read without colour: Unclaimed shows the primary <b>Claim to review</b> button in the Result; Taken (another reviewer holds the claim) keeps the CLAIM pill, names the claimant in the facts line and says <i>Claimed by {reviewer}. Read-only until released.</i> in <code>--ink-2</code> in the Result, with no Claim button and the tools disabled; Claimed shows REVIEW (yours), the GREEN / RED choice and the enabled tools; Submitted shows the completed result in place of the form. <span class="avoid">a column stretched to the window's width; a whole line in a status colour; the Result above the Tools; a Taken review that looks claimable.</span></dd>
   <dt id="D-REV-2">D-REV-2</dt>
-  <dd>Tools are grouped by the Artifact that declares them, the reviewed one first, each group led by the Artifact mark and name semibold; each tool is a small (22px) <code>▶ operation</code> button with its description in <code>--ink-2</code> at <code>--text-small</code>, an error under it in <code>--red</code>. Before a claim the buttons are disabled and a line says so. <span class="avoid">tool buttons in the accent; a tool without its description.</span></dd>
+  <dd>Tools are grouped by the Artifact that declares them, the reviewed one first, each group led by the Artifact mark and name semibold; each tool is a small (22px) button, the run icon then the operation's name, with its description in <code>--ink-2</code> at <code>--text-small</code>, an error under it in <code>--red</code>. Before a claim the buttons are disabled and a line says so. <span class="avoid">tool buttons in the accent; a tool without its description.</span></dd>
   <dt id="D-REV-3">D-REV-3</dt>
   <dd>The Tool log is a <code>--surface-input</code> box with a <code>--line-input</code> border in <code>--mono</code> at <code>--text-small</code>: each run's <code>▶ HH:MM:SS · operation · Artifact</code> and its end line in <code>--ink-2</code> (a failing end in <code>--red</code>), printed lines in <code>--ink</code>, stderr in <code>--red</code> behind a 2px <code>--red</code> rule at its left, so it is told apart without colour too; lines wrap within the box, which scrolls on its own and follows its newest line unless scrolled up; its text selects. <span class="avoid">a log that grows the review; a marker typed into a printed line (the line keeps its text as printed).</span></dd>
   <dt id="D-REV-4">D-REV-4</dt>
-  <dd>The Result begins with the GREEN / RED choice as two <code>--control</code> buttons with <code>--line-group</code> borders; the chosen one takes its verdict's colour as text and border, semibold, its face unchanged; each carries the key cap of the key that chooses it (<kbd>g</kbd> and <kbd>r</kbd> before a form is open, <kbd>Ctrl+G</kbd> and <kbd>Ctrl+R</kbd> while editing), as Claim to review carries <kbd>c</kbd>. The form's fields follow: the label semibold with <code>*</code> in <code>--red</code> when required, inputs on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-3</code> inside an empty optional field; lists add with <code>+ Add</code> and remove with <code>✕</code>; a failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a JSON editor.</span></dd>
+  <dd>The Result begins with the GREEN / RED choice as two <code>--control</code> buttons with <code>--line-group</code> borders; the chosen one takes its verdict's colour as text and border, semibold, its face unchanged; each carries the key cap of the key that chooses it (<kbd>g</kbd> and <kbd>r</kbd> before a form is open, <kbd>Ctrl+G</kbd> and <kbd>Ctrl+R</kbd> while editing), as Claim to review carries <kbd>c</kbd>. The form's fields follow: the label semibold with <code>*</code> in <code>--red</code> when required, inputs on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-3</code> inside an empty optional field; lists add with <b>Add</b> led by the add icon and remove with the remove icon; a failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a JSON editor.</span></dd>
   <dt id="D-REV-5">D-REV-5</dt>
   <dd>Submit is the one primary (<code>--accent</code>) button, right-aligned under the form, at the column's right edge, with its <kbd>Ctrl+S</kbd> key cap; the footer follows the Result inside the column, never pinned to the window's bottom, and holds the busy spinner with its seconds and Cancel, or the last notice (<code>--green</code> done, <code>--red</code> failed), and Release with its <kbd>u</kbd> key cap at the right. <span class="avoid">two primary buttons; a notice as a toast; Submit or Release a window's width away from the form.</span></dd>
   <dt id="D-REV-6">D-REV-6</dt>

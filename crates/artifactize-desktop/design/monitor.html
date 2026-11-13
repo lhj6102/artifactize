@@ -53,7 +53,7 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
-            <span class="m-star on">★</span>
+            <span class="m-star on m-icon i-star-on"></span>
           </div>
           <div class="m-timeline">
             <div class="m-entry">
@@ -80,7 +80,7 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>experimental/466-uiux</b></span>
-            <span class="m-star">☆</span>
+            <span class="m-star m-icon i-star"></span>
           </div>
           <div class="m-latest"><span class="m-dot" style="--dot: var(--running)"></span><span class="m-status tone-running">Running</span><span class="m-age">4m 12s</span></div>
         </div>
@@ -88,7 +88,7 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
-            <span class="m-star">☆</span>
+            <span class="m-star m-icon i-star"></span>
           </div>
           <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
         </div>
@@ -96,7 +96,7 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">웹툰-플랫폼 /</span> <b>feature/결제-흐름-정리-및-검증</b></span>
-            <span class="m-star">☆</span>
+            <span class="m-star m-icon i-star"></span>
           </div>
           <div class="m-latest"><span class="m-dot" style="--dot: var(--ink-3)"></span><span class="m-status tone-muted">No Runs yet</span><span class="m-age"></span></div>
         </div>
@@ -104,12 +104,12 @@
       <section class="m-waiting">
         <h2>Waiting (2)</h2>
         <div class="m-waiting-row">
-          <span class="m-glyph tone-human">?</span><span>desktop-design/approved</span>
+          <span class="m-icon i-human tone-human"></span><span>desktop-design/approved</span>
           <span class="m-where">artifactize  experimental/466-uiux</span>
           <span class="m-meta">4m · –</span>
         </div>
         <div class="m-waiting-row">
-          <span class="m-glyph tone-human">?</span><span>release/signoff</span>
+          <span class="m-icon i-human tone-human"></span><span>release/signoff</span>
           <span class="m-where">shop  main</span>
           <span class="m-meta">2d · bob</span>
         </div>
@@ -118,32 +118,34 @@
     <div class="m-divider"></div>
     <section class="m-main">
       <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-notice">2 Runs cannot be read: state/runs/run-1A… is not valid JSON</span></div>
-      <div class="m-headline"><span class="m-status tone-red">✗ RED</span><span class="m-text">NOT SATISFIED at Run end · ✗1 ⊘1 ?1 ✓4 · took 12m 04s</span></div>
+      <div class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>1</span><span><span class="m-icon i-human"></span>1</span><span><span class="m-icon i-green"></span>4</span></span> · took 12m 04s</span></div>
       <p style="margin: 0; padding: 0 var(--pad) 6px">dogfood: desktop design pages and the restyle of the app toward them, before the full verify</p>
-      <ul class="m-attention"><li><span class="tone-human">?</span> release/signoff waiting Human · unclaimed</li><li><span class="tone-red">✗</span> cli/tests RED · exit 1</li></ul>
+      <ul class="m-attention"><li><span class="m-icon i-human tone-human"></span> release/signoff waiting Human · unclaimed</li><li><span class="m-icon i-red tone-red"></span> cli/tests RED · exit 1</li></ul>
       <div class="m-canvas">
         <ul class="m-legend">
-          <li class="light-green"><span class="m-swatch"></span>GREEN</li>
-          <li class="light-active"><span class="m-swatch"></span>in progress</li>
-          <li class="light-waiting"><span class="m-swatch"></span>waiting</li>
-          <li class="light-red"><span class="m-swatch"></span>RED</li>
-          <li class="light-error"><span class="m-swatch"></span>ERROR</li>
-          <li class="light-blocked"><span class="m-swatch"></span>blocked by upstream</li>
+          <li class="light-green"><span class="m-light"></span>GREEN</li>
+          <li class="light-active"><span class="m-light"></span>in progress</li>
+          <li class="light-waiting"><span class="m-light"></span>waiting</li>
+          <li class="light-red"><span class="m-light"></span>RED</li>
+          <li class="light-error"><span class="m-light"></span>ERROR</li>
+          <li class="light-blocked"><span class="m-light"></span>blocked by upstream</li>
         </ul>
         <div class="m-edge light-green" style="left: 328px; top: 250px; width: 170px; transform: rotate(-22deg)"></div>
         <div class="m-edge light-green" style="left: 328px; top: 250px; width: 170px; transform: rotate(22deg)"></div>
-        <div class="m-edge light-red" style="left: 656px; top: 314px; width: 92px"></div>
-        <div class="m-node out light-green" style="left: 160px; top: 230px"><span class="m-dot"></span>core</div>
-        <div class="m-node in light-active" style="left: 488px; top: 166px"><span class="m-dot"></span>release</div>
-        <div class="m-node in out light-red hovered" style="left: 488px; top: 294px"><span class="m-dot"></span>cli</div>
-        <div class="m-node in light-blocked" style="left: 748px; top: 294px"><span class="m-dot"></span>docs</div>
+        <div class="m-edge blocking light-red" style="left: 656px; top: 314px; width: 92px"></div>
+        <div class="m-node out light-green" style="left: 160px; top: 230px"><span class="m-light"></span><span class="m-name">core</span><span class="m-tally">2/2</span></div>
+        <div class="m-node in out light-active" style="left: 488px; top: 166px"><span class="m-light"></span><span class="m-name">release</span><span class="m-tally">1/2</span></div>
+        <div class="m-node in out light-red hovered" style="left: 488px; top: 294px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">2/3</span></div>
+        <div class="m-node in light-blocked" style="left: 748px; top: 294px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
+        <div class="m-edge light-active" style="left: 656px; top: 186px; width: 92px"></div>
+        <div class="m-node minimized in light-waiting" style="left: 748px; top: 166px"><span class="m-light"></span><span class="m-text"><span class="m-name">site</span><span class="m-count">4 parts</span></span><span class="m-tally">0/1</span><span class="m-toggle"><span class="m-icon i-add"></span></span></div>
         <div class="m-whole light-green" style="left: 160px; top: 420px; width: 496px; height: 150px">
-          <div class="m-whole-title"><span class="m-dot"></span>desktop<span class="m-toggle">−</span></div>
-          <div class="m-node light-green" style="left: 24px; top: 40px"><span class="m-dot"></span>desktop-backend</div>
-          <div class="m-node light-green" style="left: 24px; top: 92px"><span class="m-dot"></span>desktop-ui</div>
-          <div class="m-node light-green" style="left: 300px; top: 66px"><span class="m-dot"></span>desktop-e2e</div>
+          <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-tally">1/1</span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
+          <div class="m-node light-green" style="left: 24px; top: 40px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
+          <div class="m-node light-green" style="left: 24px; top: 92px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">4/4</span></div>
+          <div class="m-node light-green" style="left: 300px; top: 66px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">2/2</span></div>
         </div>
-        <div class="m-controls"><span>+</span><span>−</span><span>⛶</span></div>
+        <div class="m-controls"><span><span class="m-icon i-add"></span></span><span><span class="m-icon i-minus"></span></span><span><span class="m-icon i-fit"></span></span></div>
         <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
       </div>
     </section>
@@ -158,6 +160,8 @@
 <span class="callout" style="left: 420px; top: 480px">7</span>
 <span class="callout" style="left: 700px; top: 660px">8</span>
 <span class="callout" style="left: 330px; top: 700px">9</span>
+<span class="callout" style="left: 975px; top: 482px">10</span>
+<span class="callout" style="left: 1150px; top: 300px">11</span>
 </div>
 <figcaption>Stage 1280 × 800. The app's one scheme, dark.</figcaption>
 </figure>
@@ -168,10 +172,201 @@
   <li><span class="n">3</span><div><b>Branches</b><span>Chevron, <i>project /</i> quiet and <b>branch</b> bold, star at the line's end; folded, the newest Run's dot, status word and age; expanded, the timeline with the Current's ring and the shown entry's pill, and <i>Older runs</i> at its end while older Runs exist.</span></div></li>
   <li><span class="n">4</span><div><b>Waiting stack</b><span>Grows upward from a thin labelled bar; each row an eval, where it waits, for how long and who claimed it.</span></div></li>
   <li><span class="n">5</span><div><b>Main area header</b><span>The view's title in 12px; a notice takes the room to the right in one red line; actions at the end.</span></div></li>
-  <li><span class="n">6</span><div><b>Run headline</b><span>The verdict's glyph and word in its colour, the headline in secondary ink with tabular figures, the Run's comment in full, then what needs attention.</span></div></li>
-  <li><span class="n">7</span><div><b>Node</b><span>A light and a name on a neutral face; the border takes the light's colour. Where edges reach it a triangle points in on its left side, and where they leave it a square sits on its right: shape and side tell the direction. Hover is a thin neutral outline.</span></div></li>
-  <li><span class="n">8</span><div><b>Whole</b><span>A box in its light's colour around its parts, its name and light in a 24px title row, the Minimize button at the right.</span></div></li>
-  <li><span class="n">9</span><div><b>Canvas furniture</b><span>Legend top-left, zoom controls and the key hint bottom-left, all quiet overlays on the working surface.</span></div></li>
+  <li><span class="n">6</span><div><b>Run headline</b><span>The verdict's icon and word in its colour, the headline in secondary ink with tabular figures, the Run's comment in full, then what needs attention.</span></div></li>
+  <li><span class="n">7</span><div><b>Node</b><span>A neutral face in a neutral outline: the status's icon, the name, and how many of its evals are GREEN of how many; a 2px strip along its bottom repeats the status's colour. Where edges reach it a triangle points in on its left side, and where they leave it a square sits on its right: shape and side tell the direction. Under the pointer its outline only steps up.</span></div></li>
+  <li><span class="n">8</span><div><b>Whole</b><span>A neutral box around its parts; its title row holds its status's icon, its name, its tally and the Minimize button, closed below by the strip in its status's colour.</span></div></li>
+  <li><span class="n">9</span><div><b>Canvas furniture</b><span>Legend top-left, each status's icon and word; zoom controls and the key hint bottom-left, all quiet overlays on the working surface.</span></div></li>
+  <li><span class="n">10</span><div><b>Edges</b><span>Neutral lines. The one coloured edge leaves a RED, ERROR or blocked Artifact, in that Artifact's colour: here cli, RED, holds docs.</span></div></li>
+  <li><span class="n">11</span><div><b>Minimized whole</b><span>A node with a second outline behind it, its parts' count under its name and the Expand button at its right.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 384">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span>
+    <span class="m-spacer"></span>
+    <span class="m-reviewer">alice</span>
+    <span class="m-button">Settings</span>
+    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+  </header>
+  <div class="m-screen">
+    <section class="m-pane">
+      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
+      <div class="m-branches">
+        <div class="m-branch open">
+          <div class="m-branch-head"><span class="m-chevron"></span><span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span><span class="m-star m-icon i-star"></span></div>
+          <div class="m-timeline">
+            <div class="m-entry"><span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span><span class="m-sub">Working tree</span></div>
+            <div class="m-entry filled"><span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">8m ago</span><span class="m-sub">run-9QK2LD</span></div>
+          </div>
+        </div>
+      </div>
+      <section class="m-waiting"><h2>Waiting (0)</h2></section>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main focused">
+      <div class="m-main-head"><h2>Run run-9QK2LD</h2></div>
+      <div class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red"></span>1</span><span><span class="m-icon i-blocked"></span>3</span><span><span class="m-icon i-green"></span>211</span></span> · took 41m 20s</span></div>
+      <div class="m-canvas" style="flex: 0 0 290px">
+        <svg class="m-wires light-red" viewBox="0 0 999 290" style="width: 999px; height: 290px" aria-hidden="true"><path d="M58 111L116 87M58 111L116 99M58 123L116 111M58 135L116 123M58 159L116 123M58 147L116 135M58 135L116 147M58 147L116 159M58 147L116 171M58 159L116 183M58 135L116 183M138 87L196 57M138 111L196 69M138 87L196 81M138 123L196 93M138 99L196 105M138 123L196 117M138 135L196 129M138 135L196 141M138 111L196 141M138 147L196 153M138 159L196 165M138 159L196 177M138 183L196 177M138 171L196 189M138 183L196 201M138 183L196 213M218 57L276 33M218 81L276 45M218 81L276 57M218 93L276 69M218 93L276 81M218 105L276 93M218 81L276 93M218 117L276 105M218 129L276 117M218 117L276 129M218 93L276 129M218 153L276 141M218 141L276 153M218 153L276 165M218 177L276 177M218 153L276 177M218 177L276 189M218 201L276 201M218 189L276 213M218 201L276 225M218 201L276 237M298 33L356 21M298 45L356 33M298 45L356 45M298 69L356 45M298 69L356 57M298 93L356 69M298 69L356 69M298 81L356 81M298 105L356 93M298 105L356 105M298 117L356 117M298 117L356 129M298 153L356 141M298 153L356 153M298 129L356 153M298 165L356 165M298 165L356 177M298 189L356 189M298 189L356 201M298 213L356 201M298 213L356 213M298 213L356 225M298 189L356 225M298 237L356 237M298 225L356 249M378 21L436 27M378 45L436 27M378 45L436 39M378 45L436 51M378 21L436 51M378 45L436 63M378 69L436 75M378 81L436 87M378 105L436 111M378 129L436 123M378 105L436 123M378 129L436 135M378 141L436 147M378 165L436 159M378 177L436 171M378 201L436 171M378 189L436 183M378 189L436 195M378 213L436 207M378 225L436 219M378 237L436 231M378 249L436 243M458 27L516 45M458 27L516 57M458 39L516 69M458 63L516 69M458 63L516 81M458 39L516 81M458 75L516 93M458 111L516 105M458 123L516 117M458 123L516 129M458 147L516 141M458 147L516 153M458 183L516 165M458 183L516 177M458 195L516 189M458 207L516 201M458 231L516 213M458 243L516 225M538 57L596 63M538 69L596 75M538 81L596 87M538 81L596 99M538 105L596 111M538 129L596 135M538 153L596 147M538 153L596 159M538 189L596 171M538 177L596 183M538 213L596 195M538 213L596 207M618 75L676 81M618 87L676 93M618 111L676 105M618 135L676 105M618 111L676 117M618 135L676 129M618 159L676 141M618 147L676 153M618 171L676 165M618 195L676 177M618 207L676 189M618 183L676 189M698 93L756 93M698 81L756 105M698 117L756 117M698 141L756 129M698 165L756 129M698 141L756 141M698 153L756 153M698 177L756 153M698 165L756 165M698 189L756 177M778 105L836 111M778 129L836 111M778 105L836 123M778 93L836 123M778 141L836 135M778 153L836 147M778 177L836 147M778 177L836 159M858 123L916 123M858 147L916 135M858 159L916 147" /><path class="blocking" d="M378 93L436 99M458 99L516 117M538 117L596 123" /></svg>
+        <div class="m-far-whole light-green" style="left: 110px; top: 80px; width: 114px; height: 118px"></div>
+        <div class="m-block light-green" style="left: 36px; top: 108px"></div>
+        <div class="m-block light-green" style="left: 36px; top: 120px"></div>
+        <div class="m-block light-green" style="left: 36px; top: 132px"></div>
+        <div class="m-block light-green" style="left: 36px; top: 144px"></div>
+        <div class="m-block light-green" style="left: 36px; top: 156px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 84px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 96px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 108px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 120px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 132px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 144px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 156px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 168px"></div>
+        <div class="m-block light-green" style="left: 116px; top: 180px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 54px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 66px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 78px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 90px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 102px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 114px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 126px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 138px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 150px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 162px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 174px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 186px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 198px"></div>
+        <div class="m-block light-green" style="left: 196px; top: 210px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 30px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 42px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 54px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 66px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 78px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 90px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 102px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 114px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 126px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 138px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 150px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 162px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 174px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 186px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 198px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 210px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 222px"></div>
+        <div class="m-block light-green" style="left: 276px; top: 234px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 18px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 30px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 42px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 54px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 66px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 78px"></div>
+        <div class="m-block light-red" style="left: 356px; top: 90px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 102px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 114px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 126px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 138px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 150px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 162px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 174px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 186px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 198px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 210px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 222px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 234px"></div>
+        <div class="m-block light-green" style="left: 356px; top: 246px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 24px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 36px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 48px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 60px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 72px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 84px"></div>
+        <div class="m-block light-blocked" style="left: 436px; top: 96px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 108px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 120px"></div>
+        <div class="m-block light-green selected" style="left: 436px; top: 132px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 144px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 156px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 168px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 180px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 192px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 204px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 216px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 228px"></div>
+        <div class="m-block light-green" style="left: 436px; top: 240px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 42px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 54px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 66px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 78px"></div>
+        <div class="m-block light-active" style="left: 516px; top: 90px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 102px"></div>
+        <div class="m-block light-blocked" style="left: 516px; top: 114px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 126px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 138px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 150px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 162px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 174px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 186px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 198px"></div>
+        <div class="m-block light-green" style="left: 516px; top: 210px"></div>
+        <div class="m-block light-active" style="left: 516px; top: 222px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 60px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 72px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 84px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 96px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 108px"></div>
+        <div class="m-block light-blocked" style="left: 596px; top: 120px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 132px"></div>
+        <div class="m-block light-active" style="left: 596px; top: 144px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 156px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 168px"></div>
+        <div class="m-block light-green" style="left: 596px; top: 180px"></div>
+        <div class="m-block light-active" style="left: 596px; top: 192px"></div>
+        <div class="m-block light-active" style="left: 596px; top: 204px"></div>
+        <div class="m-block light-green" style="left: 676px; top: 78px"></div>
+        <div class="m-block light-green" style="left: 676px; top: 90px"></div>
+        <div class="m-block light-waiting" style="left: 676px; top: 102px"></div>
+        <div class="m-block light-waiting" style="left: 676px; top: 114px"></div>
+        <div class="m-block light-waiting" style="left: 676px; top: 126px"></div>
+        <div class="m-block light-green" style="left: 676px; top: 138px"></div>
+        <div class="m-block light-waiting" style="left: 676px; top: 150px"></div>
+        <div class="m-block light-waiting" style="left: 676px; top: 162px"></div>
+        <div class="m-block light-green" style="left: 676px; top: 174px"></div>
+        <div class="m-block light-green" style="left: 676px; top: 186px"></div>
+        <div class="m-block light-waiting" style="left: 756px; top: 90px"></div>
+        <div class="m-block light-waiting" style="left: 756px; top: 102px"></div>
+        <div class="m-block light-waiting" style="left: 756px; top: 114px"></div>
+        <div class="m-block light-waiting" style="left: 756px; top: 126px"></div>
+        <div class="m-block light-waiting" style="left: 756px; top: 138px"></div>
+        <div class="m-block light-green" style="left: 756px; top: 150px"></div>
+        <div class="m-block light-green" style="left: 756px; top: 162px"></div>
+        <div class="m-block light-waiting" style="left: 756px; top: 174px"></div>
+        <div class="m-block light-waiting" style="left: 836px; top: 108px"></div>
+        <div class="m-block light-waiting" style="left: 836px; top: 120px"></div>
+        <div class="m-block light-waiting" style="left: 836px; top: 132px"></div>
+        <div class="m-block light-waiting" style="left: 836px; top: 144px"></div>
+        <div class="m-block light-waiting" style="left: 836px; top: 156px"></div>
+        <div class="m-block light-waiting" style="left: 916px; top: 120px"></div>
+        <div class="m-block light-waiting" style="left: 916px; top: 132px"></div>
+        <div class="m-block light-waiting" style="left: 916px; top: 144px"></div>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 560px; top: 250px">12</span>
+<span class="callout" style="left: 760px; top: 190px">13</span>
+<span class="callout" style="left: 420px; top: 150px">14</span>
+</div>
+<figcaption>Stage 1280 × 384. A Run of 140 Artifacts zoomed out until names no longer read: every node a block of its status's colour (the canvas furniture left out here).</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">12</span><div><b>Blocks</b><span>Where a name would be too small to read, a node is painted as one block of its status's colour: the whole graph reads as where it is GREEN, where it waits and where it failed.</span></div></li>
+  <li><span class="n">13</span><div><b>The trace of a block</b><span>Edges stay neutral at one device pixel; those that leave the RED Artifact and the Artifacts it blocks keep their colour, so the failure's reach shows.</span></div></li>
+  <li><span class="n">14</span><div><b>Whole and opened node</b><span>A whole is its box's outline in its status's colour; the opened Artifact keeps its neutral outline.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -181,33 +376,33 @@
   <dt id="D-PANE-1">D-PANE-1</dt>
   <dd>The Pane is one <code>--surface-panel</code> column, top to bottom: the Search field (a <code>--surface-input</code> field in <code>--mono</code>, closed below by <code>--line-group</code>), the Branches, and the Waiting stack opened above by <code>--line-group</code>. The Pane and the Main area meet at a 1px <code>--line-panel</code> divider that takes a drag. Focused with suggestions, the Search drops a list under the field on <code>--surface-raised</code> with a <code>--line-panel</code> border: <code>--row-dense</code> rows in <code>--mono</code> at <code>--text-small</code> (keys, projects, branches, sort orders), the active one on <code>--selection</code>; Tab or Enter takes it, Esc closes it. <span class="avoid">headings such as Scope or Runs; a screen switch; a gap instead of the divider; suggestions that widen the Pane.</span></dd>
   <dt id="D-PANE-2">D-PANE-2</dt>
-  <dd>A branch row: a 28px head with the chevron (20px), the name at <code>--text-title</code> as <i>project /</i> in <code>--ink-2</code> and the branch semibold, cut with an ellipsis, and the star at the end (faint until on, then <code>--ink</code>); folded, a 12px line under the name with an 8px dot in the status colour, the status word semibold in the same colour and the age right-aligned in tabular figures. Rows are separated by <code>--line-group</code>. <span class="avoid">a card per branch; the project louder than the branch; an age in proportional figures.</span></dd>
+  <dd>A branch row: a 28px head with the chevron (the fold icon in a 20px box, the unfold icon while expanded), the name at <code>--text-title</code> as <i>project /</i> in <code>--ink-2</code> and the branch semibold, cut with an ellipsis, and the star at the end (the star icon in <code>--ink-3</code> until on, then the filled star in <code>--ink</code>); folded, a 12px line under the name with an 8px dot in the status colour, the status word semibold in the same colour and the age right-aligned in tabular figures. Rows are separated by <code>--line-group</code>. <span class="avoid">a card per branch; the project louder than the branch; an age in proportional figures.</span></dd>
   <dt id="D-PANE-3">D-PANE-3</dt>
   <dd>An expanded branch's timeline: entries of two 12px lines (status word semibold and age right; Run ID, then a comment cut to one line, in <code>--ink-2</code>), dots of 8px joined by a 1px <code>--line-group</code> line, the Current a ring, the entry shown in the Main area in a <code>--surface-group</code> pill of <code>--radius-control</code>; the selected entry has the <code>--selection</code> background and a 2px inset bar while the keyboard is in the Pane. While older Runs exist, <b>Older runs</b> ends the timeline as a text button in <code>--accent</code> at <code>--text-small</code>, indented to the entries' text, and brings them in below the oldest. <span class="avoid">pills on every entry; a status colour as the pill; a pager instead of Older runs.</span></dd>
   <dt id="D-PANE-4">D-PANE-4</dt>
-  <dd>The Waiting stack: an 11px uppercase label <code>WAITING (n)</code> in <code>--ink-2</code>, then 12px rows of the eval (its glyph in <code>--human</code>), the project and branch, and <code>age · claimant</code> in <code>--ink-2</code>; selected rows use <code>--selection</code>. <span class="avoid">a bold heading; the stack taller than half the Pane.</span></dd>
+  <dd>The Waiting stack: an 11px uppercase label <code>WAITING (n)</code> in <code>--ink-2</code>, then 12px rows of the eval (its status's icon in <code>--human</code>), the project and branch, and <code>age · claimant</code> in <code>--ink-2</code>; selected rows use <code>--selection</code>. <span class="avoid">a bold heading; the stack taller than half the Pane.</span></dd>
   <dt id="D-MAIN-1">D-MAIN-1</dt>
   <dd>The Main area header is a 32px row: the view's title at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus), a notice in <code>--red</code> as one cut line taking the remaining room, actions at the end as small buttons with key caps; a click on the notice shows it in full, wrapped within the header's width on <code>--surface-raised</code> with a <code>--line-panel</code> border, what is below it neither moved nor resized (E-MON-NOTICE); another click folds it to one line. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a notice that moves the graph; a notice that cannot be read whole.</span></dd>
   <dt id="D-MAIN-2">D-MAIN-2</dt>
-  <dd>A Run shows, above its graph, its headline row (verdict glyph and word bold in the status colour; the headline in <code>--ink-2</code> with tabular figures), its comment in full (wrapping, in <code>--ink</code>), and what needs attention as 12px lines each led by the glyph in its status colour. <span class="avoid">a coloured banner; the attention list inside the graph; the comment cut short here.</span></dd>
+  <dd>A Run shows, above its graph, its headline row (the verdict's icon and word bold in the status colour; the headline in <code>--ink-2</code> with tabular figures), its comment in full (wrapping, in <code>--ink</code>), and what needs attention as 12px lines each led by its status's icon in the status colour. <span class="avoid">a coloured banner; the attention list inside the graph; the comment cut short here.</span></dd>
   <dt id="D-MAIN-3">D-MAIN-3</dt>
   <dd>The graph's place is kept whatever the Main area has to say about it: with nothing chosen (a launch without arguments), while a Run loads, when a Run cannot be read, or with an empty graph, one <code>--ink-2</code> line says so at the top of the Main area's body (for a Run whose graph is empty, under that Run's headline, comment and attention of D-MAIN-2, where its graph would begin) (<i>Choose a branch or a waiting review in the Pane.</i>, <i>Loading the Run…</i>, <i>This Run cannot be read; choose another.</i>) and the area below stays empty on <code>--surface-panel</code>; a notice about other Runs still goes to the header (D-MAIN-1). <span class="avoid">an empty-state illustration; a dialog for a Run that cannot be read; the Pane changing size with the Main area's state.</span></dd>
   <dt id="D-GRAPH-1">D-GRAPH-1</dt>
-  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the header; its furniture floats quietly: the legend top-left and the key hint bottom-left at 11px in <code>--ink-2</code> on <code>--surface-panel</code> at 85%, the zoom controls bottom-left as one bordered group of 24px squares. <span class="avoid">a white canvas inside a dark panel; furniture that takes the pointer from the graph.</span></dd>
+  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the header; its furniture floats quietly: the legend top-left, each status's icon in its colour and its word, and the key hint bottom-left at 11px in <code>--ink-2</code> on <code>--surface-panel</code> at 85%, the zoom controls bottom-left as one bordered group of 24px squares. <span class="avoid">a white canvas inside a dark panel; furniture that takes the pointer from the graph.</span></dd>
   <dt id="D-NODE-5">D-NODE-5</dt>
-  <dd>Ports tell an edge's direction by shape and side, not by colour: a node, a whole's box or a minimized whole that edges reach shows one input port, a triangle pointing into it, at the middle of its left side; one that edges leave shows one output port, a square, at the middle of its right side. A port is <code>--port</code> wide and high, straddles the border, is filled in its node's light colour and takes no pointer; a side that no drawn edge meets has no port, and many edges on one side share its one port. The neighbours drawing in the Detail draws the same ports. <span class="avoid">a port per edge; the same shape on both sides; arrowheads on the edges instead; a port that can be dragged or clicked.</span></dd>
+  <dd>Ports tell an edge's direction by shape and side, and carry no status: a node, a whole's box or a minimized whole that edges reach shows one input port, a triangle pointing into it, at the middle of its left side; one that edges leave shows one output port, a square, at the middle of its right side. A port is <code>--port</code> wide and high, straddles the outline, is filled in the edges' neutral <code>--edge</code> and takes no pointer; a side that no drawn edge meets has no port, and many edges on one side share its one port. The neighbours drawing in the Detail draws the same ports. <span class="avoid">a port per edge; the same shape on both sides; a port in a status colour; arrowheads on the edges instead; a port that can be dragged or clicked.</span></dd>
   <dt id="D-GRAPH-2">D-GRAPH-2</dt>
-  <dd>A graph too large to keep as elements (J-GRAPH-LARGE) is a picture of the same graph wherever the camera has more Artifacts in view than the window keeps as elements: each node painted as its element draws it (the <code>--surface-panel</code> face, the 1px border and the dot in its light's colour, its name once the zoom makes it legible, its ports once the zoom makes their shapes read), a whole as its box's outline in its light's colour, and edges in their lights' colours, at least one device pixel wide and their regular stroke once the zoom asks for more; the opened Artifact keeps its <code>--outline-selected</code> outline. Nothing a graph can do is lost in the picture: a click on a painted node or whole opens its Detail, which names it, and <kbd>m</kbd> minimizes or expands the whole whose Detail is open; zooming or panning draws the Artifacts it brings into view as elements again, a whole's title row, name and Minimize button included, whole in every part of D-NODE-1 to D-NODE-4. <span class="avoid">a second palette for the picture; a painted button that takes no click.</span></dd>
+  <dd>A graph too large to keep as elements (J-GRAPH-LARGE) is a picture of the same graph wherever the camera has more Artifacts in view than the window keeps as elements, painted at two levels by what the zoom lets a person read. Where a node's name would be too small to read, the node is one block filled with its status's colour, without outline, icon, name, tally or ports; a whole is its box's outline in its status's colour; an edge is one device pixel of <code>--edge</code>, or of its Artifact's colour when it leaves a RED, ERROR or blocked one (D-NODE-4). From the zoom at which names read, each node is painted as its element draws it (the <code>--surface-panel</code> face, the <code>--line-node</code> outline, the icon and the strip in its status's colour, its name, its tally, its ports), a whole as its neutral box with its title row, and edges at their regular stroke. At both levels the opened Artifact keeps its <code>--outline-selected</code> outline. Nothing a graph can do is lost in the picture: a click on a painted node, block or whole opens its Detail, which names it, and <kbd>m</kbd> minimizes or expands the whole whose Detail is open; zooming or panning draws the Artifacts it brings into view as elements again, a whole's title row, name and Minimize button included, whole in every part of D-NODE-1 to D-NODE-4. <span class="avoid">a second palette for the picture; blocks where names would read; neutral boxes too small to tell apart; a painted button that takes no click.</span></dd>
   <dt id="D-GRAPH-3">D-GRAPH-3</dt>
   <dd>A graph first shows whole and never enlarged: the camera fits every node into the canvas and stops at the nodes' own size, so a small graph sits at 168 × 40–44px nodes with 13px names in the middle of the canvas, the working surface empty around it; Fit View does the same. Only the person's own zooming goes beyond that size. <span class="avoid">a few nodes blown up to fill the canvas; a node's name larger than the UI's text when the graph first shows.</span></dd>
   <dt id="D-NODE-1">D-NODE-1</dt>
-  <dd>A node is 168 × 40–44px: a <code>--surface-panel</code> face, a 1px border in its light's colour, <code>--radius-control</code> corners; inside, an 8–10px dot in the light's colour, then the name at 13px medium cut with an ellipsis. The legend's swatch, a node's border and dot and an edge's stroke take the one colour of that status (D-SYS-6): GREEN <code>--green</code>, in progress <code>--running</code>, waiting <code>--queued</code>, RED <code>--red</code>, ERROR <code>--error</code>, blocked <code>--blocked</code>. <span class="avoid">a face tinted by the verdict; a border thicker than 1.5px; a name in the status colour; a colour for a status that a list does not use for it.</span></dd>
+  <dd>A node is 168 × 40–44px: a <code>--surface-panel</code> face, a 1px <code>--line-node</code> outline, <code>--radius-control</code> corners. Its status shows in two places and nowhere else, both in the status's one colour (D-SYS-6): the status's icon (<code>--icon</code>, D-SYS-8) before the name, and a strip <code>--strip</code> high along its bottom, inside the outline. After the icon comes the name at 13px medium in <code>--ink</code>, cut with an ellipsis; then, when the Artifact has evals, its tally at <code>--text-label</code> in <code>--ink-2</code> with tabular figures: how many of its evals are GREEN of how many it has (<code>2/3</code>), on a Current how many would be reused; an Artifact still being checked shows none. The legend pairs each status's icon with its word. <span class="avoid">an outline or a face in the status colour; a plain dot where the icon goes; a name or a tally in the status colour; a colour for a status that a list does not use for it.</span></dd>
   <dt id="D-NODE-2">D-NODE-2</dt>
-  <dd>Selection and focus are outlines, the face unchanged, and never more than two at once: the opened Artifact's node has one 2px <code>--outline-selected</code> outline hugging its border, with no gap; the node under the pointer a 1px <code>--ink-3</code> outline; the 2px <code>--focus</code> ring sits 2px outside and shows only while the keyboard moves focus, so a node opened by a click carries the one outline. The opened node and the Detail name the same Artifact; when the opened Artifact is hidden inside a minimized whole, that whole carries the outline (every copy of a shared part carries it too). <span class="avoid">the accent as the selection; a filled face for selection; a focus ring left on a node after a click; three rings on one node.</span></dd>
+  <dd>Selection and focus change the outline, the face and the strip unchanged, and show never more than two marks at once: the opened Artifact's node has its own outline turned <code>--outline-selected</code> and 2px, with no gap; the node under the pointer has its outline stepped up to <code>--ink-3</code>; the 2px <code>--focus</code> ring sits 2px outside and shows only while the keyboard moves focus, so a node opened by a click carries the one outline. The opened node and the Detail name the same Artifact; when the opened Artifact is hidden inside a minimized whole, that whole carries the outline (every copy of a shared part carries it too). <span class="avoid">the accent as the selection; a filled face for selection; a focus ring left on a node after a click; three rings on one node.</span></dd>
   <dt id="D-NODE-3">D-NODE-3</dt>
-  <dd>A whole is a box with a 1px border in its light's colour and a face of <code>--surface-panel</code> at 40%, its title row (28–32px) holding the dot, the name semibold and the Minimize button (18–20px, <code>--line-group</code> border) at the right; minimized, it is a node of a node's size with its parts' count in <code>--ink-2</code> under its name, a second edge drawn behind it, and the same button at its right now reading Expand (<code>+</code>). <span class="avoid">a whole filled like a node; the button inside the parts' area; a minimized whole without its Expand button.</span></dd>
+  <dd>A whole is a box with a 1px <code>--line-node</code> outline and a face of <code>--surface-panel</code> at 40%; its title row (28–32px) holds its status's icon, its name semibold, its tally and the Minimize button (18–20px, <code>--line-group</code> border, the minus icon) at the right, and is closed below by the strip in its status's colour, across the box. Minimized, it is a node of a node's size and anatomy with its parts' count in <code>--ink-2</code> under its name, a second <code>--line-node</code> outline drawn behind it, and the same button at its right now reading Expand (the plus icon). <span class="avoid">a whole's outline or face in its status colour; the button inside the parts' area; a minimized whole without its Expand button.</span></dd>
   <dt id="D-NODE-4">D-NODE-4</dt>
-  <dd>Edges are 1.25–1.5px strokes in their light's colour, meeting nodes at their sides and boxes at their edges; a selected node gets no highlighted edges. <span class="avoid">thick or animated edges; arrowheads larger than the node's dot.</span></dd>
+  <dd>Edges are 1.25–1.5px strokes in the neutral <code>--edge</code>, meeting nodes at their sides and boxes at their edges. One kind of edge is coloured: an edge that leaves a RED, ERROR or blocked Artifact is drawn in that Artifact's status colour, so what holds a blocked Artifact can be traced upstream by eye; every other edge, from a GREEN, in progress or waiting Artifact, is neutral. A selected node gets no highlighted edges. <span class="avoid">an edge in the colour of GREEN, in progress or waiting; thick or animated edges; arrowheads larger than the node's icon.</span></dd>
 </dl>
 </main>
 </div>

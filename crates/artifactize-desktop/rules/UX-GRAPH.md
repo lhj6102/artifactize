@@ -69,18 +69,24 @@ that makes the transition happen and checks where it leads.
   a custom provider's form,
   each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
   sign-off idle grace.
-- **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
-  by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked, each in the
-  one colour that status has everywhere in the app.
+- **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges. A node
+  says its verdict (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked) with
+  that verdict's icon before its name and a strip along its bottom, both in the one colour
+  that status has everywhere in the app; its face and outline are neutral. After its name a
+  node with evals says how many of them are GREEN of how many it has. Edges are neutral, except
+  one that leaves a RED, ERROR or blocked Artifact, drawn in that Artifact's colour. Zoomed out
+  so far that names would be too small to read, a node is a block of its verdict's colour and a
+  whole its box's outline in its colour.
 - **Current graph**: the current declarations' Artifacts and relations, drawn as soon as the
   declarations are read, each Artifact first still being checked and then coloured, as soon as
   the scan knows, by what verify would do now: reused (every eval's result would be reused
-  without evaluation), would run, waiting, blocked. A node shows only its name, as on a Run
-  graph; read aloud it says which, would run with how many of its evals would run, or that it
-  is still being checked.
+  without evaluation), would run, waiting, blocked. A node is drawn as on a Run graph: the icon
+  and the strip say what would happen, and after its name it says how many of its evals would
+  be reused of how many, or nothing while it is still being checked; read aloud it says which,
+  would run with how many of its evals would run, or that it is still being checked.
 - On both graphs an Artifact made of **parts** (those its folder holds and those its `parts`
-  names) is a **whole**, drawn as a **box** that encloses its parts' nodes, its name and its
-  verdict's colour at the box's top; a part that is a whole too is a box inside it, as deep as
+  names) is a **whole**, drawn as a **box** that encloses its parts' nodes, its name, its
+  verdict's icon and a strip in its verdict's colour at the box's top; a part that is a whole too is a box inside it, as deep as
   the parts go. The box is the whole's Artifact: Tab reaches it before its parts, Enter on it
   or a click on it outside its parts does what a click on a node does, and it is read aloud as
   a node is. Edges to and from a whole meet its box. The layout is built for a part of one
@@ -88,7 +94,7 @@ that makes the transition happen and checks where it leads.
   several wholes, is drawn as a **copy** inside each of them, each copy with the part's edges.
   A box has a **Minimize** button at its top right, which Tab reaches after the whole and before
   its parts. A **minimized whole** is drawn as a node of a node's size: its name, its verdict's
-  colour, how many parts it has and an **Expand** button; it hides its parts, the edges of the
+  icon and colour, how many parts it has and an **Expand** button; it hides its parts, the edges of the
   Artifacts it hides meet it, those between the same two once in the light that comes first,
   and those among them are not drawn. It is a node otherwise. A whole stays minimized on every
   graph of its branch, its Runs' and its Current, until it is expanded or the app quits; a part
@@ -239,17 +245,17 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; the graph recoloured in place |
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again; its structure text updated |
 | E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
-| E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, nodes and edges recoloured in place |
+| E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, its nodes' icons, strips and counts and its edges changed in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, or after a whole its Minimize or Expand button (E-GRAPH-TAB-WHOLE), nothing opened |
 | E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
-| E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
+| E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn: as nodes where their names read, as blocks of their verdict's colour where the zoom makes names too small to read |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole, never enlarged beyond its nodes' own size |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size |
-| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
+| E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name, its verdict's icon and a strip in its verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |
 | E-GRAPH-SHARED | Run graph or Current graph with a shared part | click one of its copies, or Enter on it focused | Detail of the part on its Artifact tab, saying that it is drawn in each of its wholes and naming them; every copy of it highlighted as selected |
-| E-GRAPH-MINIMIZE | Run graph or Current graph with a whole drawn as a box | click its Minimize button | the graph laid out again, the whole minimized: a node of a node's size with its name, verdict's colour, how many parts it has and its Expand button; the edges of the Artifacts it hides meeting it, those between the same two drawn once in the light that comes first, those among them not drawn; its top left corner where it was on the screen; no Detail opened or closed; minimized on every graph of its branch |
+| E-GRAPH-MINIMIZE | Run graph or Current graph with a whole drawn as a box | click its Minimize button | the graph laid out again, the whole minimized: a node of a node's size with its name, its verdict's icon and colour, how many parts it has and its Expand button; the edges of the Artifacts it hides meeting it, those between the same two drawn once in the light that comes first, those among them not drawn; its top left corner where it was on the screen; no Detail opened or closed; minimized on every graph of its branch |
 | E-GRAPH-EXPAND | Run graph or Current graph with a minimized whole | click its Expand button | the graph laid out again, the whole a box around its parts (E-GRAPH-PARTS); its top left corner where it was on the screen; no Detail opened or closed; expanded on every graph of its branch |
 | E-GRAPH-MINIMIZE-KEY | Run graph or Current graph with a whole drawn as a box, focus outside the Pane and outside a field typed in (a text field or a choice list; a true/false box is not typed in); the whole or its Minimize button focused, or else its Detail open | `m` | as E-GRAPH-MINIMIZE for that whole; focus where it was: on the whole, on its button or in its Detail |
 | E-GRAPH-EXPAND-KEY | Run graph or Current graph with a minimized whole, focus outside the Pane and outside a field typed in (a text field or a choice list; a true/false box is not typed in); the whole or its Expand button focused, or else its Detail open | `m` | as E-GRAPH-EXPAND for that whole; focus where it was: on the whole, on its button or in its Detail |

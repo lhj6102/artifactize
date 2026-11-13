@@ -233,6 +233,18 @@ td code {
   vertical-align: middle;
   background: var(--token);
 }
+.icon-sheet td:first-child,
+.icon-sheet td:nth-child(2) {
+  width: 72px;
+  vertical-align: middle;
+}
+.icon-sheet .m-icon.big {
+  width: 36px;
+  height: 36px;
+}
+.icon-sheet th[colspan] {
+  padding-top: 12px;
+}
 .screens {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

@@ -76,8 +76,10 @@
     <tr><td><span class="swatch" style="--token: var(--surface-input)"></span><code>--surface-input</code></td><td>A field, a log box, saved output: one step below its panel</td><td>−1 from the panel</td></tr>
     <tr><td><span class="swatch" style="--token: var(--surface-raised)"></span><code>--surface-raised</code></td><td>What floats: dialogs, menus, the find field</td><td>+1 from the panel</td></tr>
     <tr><td><span class="swatch" style="--token: var(--line-panel)"></span><code>--line-panel</code></td><td>Panel beside panel: the bar's bottom, the Pane/Main divider, the Detail's and a dialog's edge</td><td>strongest</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--line-node)"></span><code>--line-node</code></td><td>A graph node's and a whole's outline on the canvas: neutral, whatever the node's status</td><td>strongest</td></tr>
     <tr><td><span class="swatch" style="--token: var(--line-group)"></span><code>--line-group</code></td><td>Groups inside a panel: section tops, branch rows, the chip row's bottom, a quiet button's edge</td><td>weaker</td></tr>
     <tr><td><span class="swatch" style="--token: var(--line-input)"></span><code>--line-input</code></td><td>A field's outline, a key cap's edge</td><td>faintest</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--edge)"></span><code>--edge</code></td><td>A graph's edge and a node's ports: neutral, read against the canvas</td><td>a line that is content</td></tr>
   </tbody>
 </table>
 <h3>Ink and interaction</h3>
@@ -92,7 +94,7 @@
     <tr><td><span class="swatch" style="--token: var(--accent-soft)"></span><code>--accent-soft</code></td><td>A soft accent fill: the "yours" stage pill</td></tr>
     <tr><td><span class="swatch" style="--token: var(--selection)"></span><code>--selection</code></td><td>The selected row of a list</td></tr>
     <tr><td><span class="swatch" style="--token: var(--focus)"></span><code>--focus</code></td><td>The keyboard focus ring, 2px, on every control</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--outline-selected)"></span><code>--outline-selected</code></td><td>The opened node's outline: neutral, hugging its border</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--outline-selected)"></span><code>--outline-selected</code></td><td>The opened node's outline: its own outline turned neutral-bright</td></tr>
     <tr><td><span class="swatch" style="--token: var(--scrim)"></span><code>--scrim</code></td><td>Behind a dialog; the faint shadow under what floats</td></tr>
   </tbody>
 </table>
@@ -126,12 +128,55 @@
     <tr><td><code>--pad</code></td><td>A panel's side padding (12); spacing follows the 4 / 8 / 12 / 16 scale</td></tr>
     <tr><td><code>--gap</code></td><td>The gap between controls in a row (8)</td></tr>
     <tr><td><code>--measure</code></td><td>The widest a column of reading and form gets: a Human review's column</td></tr>
+    <tr><td><code>--icon</code></td><td>An icon's box (12): a status's, an action's</td></tr>
+    <tr><td><code>--strip</code></td><td>The strip in its status's colour along a node's bottom and under a whole's title row (2)</td></tr>
     <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
     <tr><td><code>--font</code>, <code>--mono</code></td><td>The UI face with Korean fallbacks; the monospace face for logs, IDs and queries</td></tr>
     <tr><td><code>--text-body</code></td><td>13px: text, names, values</td></tr>
     <tr><td><code>--text-small</code></td><td>12px: secondary text, chips, logs</td></tr>
     <tr><td><code>--text-label</code></td><td>11px: section labels (uppercase, letter-spaced), legends, hints</td></tr>
     <tr><td><code>--text-title</code></td><td>14px: a branch's name line, a review's title</td></tr>
+  </tbody>
+</table>
+
+<h2>Icons</h2>
+<p>
+  The app draws its marks itself, so a status reads by its shape as well as by its colour and
+  looks the same on every system. Each icon sits on a 12 by 12 box with a 1.5 stroke, round
+  caps and joins; a shape is solid only where it is a solid (the half of in progress, the
+  dots of queued and waiting, the run triangle, a star that is on). An icon takes the colour of its text: a
+  status's icon is in that status's colour, an action's in the ink of its control. The sheet
+  shows each at its size and enlarged; <code>mock.css</code> holds the drawings.
+</p>
+<table class="icon-sheet">
+  <thead><tr><th>12px</th><th>Enlarged</th><th>Name</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><th colspan="4">Statuses</th></tr>
+    <tr><td><span class="m-icon i-green tone-green"></span></td><td><span class="m-icon i-green tone-green big"></span></td><td><code>i-green</code></td><td>GREEN</td></tr>
+    <tr><td><span class="m-icon i-red tone-red"></span></td><td><span class="m-icon i-red tone-red big"></span></td><td><code>i-red</code></td><td>RED</td></tr>
+    <tr><td><span class="m-icon i-error tone-error"></span></td><td><span class="m-icon i-error tone-error big"></span></td><td><code>i-error</code></td><td>ERROR</td></tr>
+    <tr><td><span class="m-icon i-running tone-running"></span></td><td><span class="m-icon i-running tone-running big"></span></td><td><code>i-running</code></td><td>In progress: running</td></tr>
+    <tr><td><span class="m-icon i-human tone-human"></span></td><td><span class="m-icon i-human tone-human big"></span></td><td><code>i-human</code></td><td>Waiting for a person</td></tr>
+    <tr><td><span class="m-icon i-queued tone-queued"></span></td><td><span class="m-icon i-queued tone-queued big"></span></td><td><code>i-queued</code></td><td>Queued</td></tr>
+    <tr><td><span class="m-icon i-waiting tone-queued"></span></td><td><span class="m-icon i-waiting tone-queued big"></span></td><td><code>i-waiting</code></td><td>Waiting</td></tr>
+    <tr><td><span class="m-icon i-blocked tone-blocked"></span></td><td><span class="m-icon i-blocked tone-blocked big"></span></td><td><code>i-blocked</code></td><td>Blocked by an upstream Artifact</td></tr>
+    <tr><td><span class="m-icon i-notrun tone-muted"></span></td><td><span class="m-icon i-notrun tone-muted big"></span></td><td><code>i-notrun</code></td><td>Not run, or a provisional result</td></tr>
+    <tr><th colspan="4">What verify would do, on a Current</th></tr>
+    <tr><td><span class="m-icon i-run tone-running"></span></td><td><span class="m-icon i-run tone-running big"></span></td><td><code>i-run</code></td><td>Would run</td></tr>
+    <tr><td><span class="m-icon i-reused tone-reused"></span></td><td><span class="m-icon i-reused tone-reused big"></span></td><td><code>i-reused</code></td><td>Would be reused</td></tr>
+    <tr><td><span class="m-icon i-checking tone-checking"></span></td><td><span class="m-icon i-checking tone-checking big"></span></td><td><code>i-checking</code></td><td>Still being checked</td></tr>
+    <tr><th colspan="4">Actions</th></tr>
+    <tr><td><span class="m-icon i-play"></span></td><td><span class="m-icon i-play big"></span></td><td><code>i-play</code></td><td>Run a tool</td></tr>
+    <tr><td><span class="m-icon i-star tone-muted"></span></td><td><span class="m-icon i-star tone-muted big"></span></td><td><code>i-star</code></td><td>Star: not a favorite</td></tr>
+    <tr><td><span class="m-icon i-star-on"></span></td><td><span class="m-icon i-star-on big"></span></td><td><code>i-star-on</code></td><td>Starred: a favorite</td></tr>
+    <tr><td><span class="m-icon i-fold tone-muted"></span></td><td><span class="m-icon i-fold tone-muted big"></span></td><td><code>i-fold</code></td><td>Folded: a branch, a section, Debug</td></tr>
+    <tr><td><span class="m-icon i-unfold tone-muted"></span></td><td><span class="m-icon i-unfold tone-muted big"></span></td><td><code>i-unfold</code></td><td>Unfolded</td></tr>
+    <tr><td><span class="m-icon i-remove"></span></td><td><span class="m-icon i-remove big"></span></td><td><code>i-remove</code></td><td>Remove an item, clear a field</td></tr>
+    <tr><td><span class="m-icon i-add"></span></td><td><span class="m-icon i-add big"></span></td><td><code>i-add</code></td><td>Add an item; expand a whole; zoom in</td></tr>
+    <tr><td><span class="m-icon i-minus"></span></td><td><span class="m-icon i-minus big"></span></td><td><code>i-minus</code></td><td>Minimize a whole; zoom out</td></tr>
+    <tr><td><span class="m-icon i-fit"></span></td><td><span class="m-icon i-fit big"></span></td><td><code>i-fit</code></td><td>Fit View</td></tr>
+    <tr><td><span class="m-icon i-find"></span></td><td><span class="m-icon i-find big"></span></td><td><code>i-find</code></td><td>Find in the graph</td></tr>
+    <tr><td><span class="m-icon i-pane"></span></td><td><span class="m-icon i-pane big"></span></td><td><code>i-pane</code></td><td>Show or hide the Pane</td></tr>
   </tbody>
 </table>
 
@@ -149,11 +194,11 @@
   <dt id="D-SYS-5">D-SYS-5</dt>
   <dd>Type: body 13px, secondary 12px, labels 11px uppercase and letter-spaced in <code>--ink-2</code>; a section label is neutral ink, never the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>
-  <dd>Colour carries meaning only on the element that has it: a status dot, glyph or word, a node's light and border, an edge, a verdict button, stderr lines. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
+  <dd>Colour carries meaning only on the element that has it: a status dot, icon or word, a node's icon and strip, an edge that leaves a RED, ERROR or blocked Artifact, a verdict button, stderr lines. A graph's own lines, a node's outline and every other edge, are neutral. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, outline, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
   <dt id="D-SYS-7">D-SYS-7</dt>
-  <dd>States are told apart without colour: every status shows its glyph or word beside its colour; the selected row has the <code>--selection</code> background and, while the keyboard is in its list, a 2px inset bar; keyboard focus is a 2px <code>--focus</code> ring on every control; hover only highlights and opens nothing: a row or a borderless control takes <code>--surface-group</code>, and a button, whose face already is that surface, keeps its face while its edge steps up to <code>--line-input</code> (the primary button's to <code>--ink-on-accent</code>); the one exception the journeys ask for is the whole's Minimize/Expand button, whose native title names its key <kbd>m</kbd>, and no other control has a tooltip. <span class="avoid">a selection shown by colour alone; a focus ring removed; a popup, summary or menu on hover.</span></dd>
+  <dd>States are told apart without colour: every status shows its icon or word with its colour, each status's icon a silhouette of its own, a graph's node included; the selected row has the <code>--selection</code> background and, while the keyboard is in its list, a 2px inset bar; keyboard focus is a 2px <code>--focus</code> ring on every control; hover only highlights and opens nothing: a row or a borderless control takes <code>--surface-group</code>, and a button, whose face already is that surface, keeps its face while its edge steps up to <code>--line-input</code> (the primary button's to <code>--ink-on-accent</code>); the one exception the journeys ask for is the whole's Minimize/Expand button, whose native title names its key <kbd>m</kbd>, and no other control has a tooltip. <span class="avoid">a selection shown by colour alone; a focus ring removed; a popup, summary or menu on hover.</span></dd>
   <dt id="D-SYS-8">D-SYS-8</dt>
-  <dd>The same action has the same mark everywhere: <code>▶</code> runs a tool and <code>■</code> ends its run, <code>☆</code>/<code>★</code> stars, <code>✕</code> removes, <code>+ Add</code> adds, <code>▸</code>/<code>▾</code> folds, one chevron expands a branch, the Artifact mark precedes an Artifact's name. A key cap (<kbd>Ctrl+K</kbd>) names a key wherever a key does the same as a control. <span class="avoid">two glyphs for one action; an icon without a label or an accessible name.</span></dd>
+  <dd>Marks are the app's own icon set (the sheet above), never characters of whatever font the system falls back to: each is drawn on a <code>--icon</code> box with a 1.5 stroke, round caps and joins, solid only where the shape is a solid, and takes the colour of the text around it. The same meaning has the same icon everywhere: each status its own (a node, a chip, a row, the Run's headline and tally, the find field); the run icon starts a tool, the star and the filled star mark a favorite, the fold and unfold icons fold a branch, a section and Debug, the remove icon removes, the add icon adds, minus and add minimize and expand a whole and zoom, the fit icon fits the view; the Artifact mark precedes an Artifact's name. Where the journeys write a mark as a character (<code>▶</code>, <code>☆</code>/<code>★</code>, <code>✕</code>, <code>+ Add</code>, a verdict's glyph), the app draws that mark's icon and keeps the character as its accessible name and as the text a copy takes. A Tool log's lines are text and keep their characters (<code>▶ HH:MM:SS</code>, <code>■ exit 0</code>); the two rare marks without an icon (a budget's <code>$</code>, an absent eval's <code>-</code>) stay characters in <code>--mono</code>. An action's icon stands with its word or its key cap, or carries an accessible name; a key cap (<kbd>Ctrl+K</kbd>) names a key wherever a key does the same as a control. <span class="avoid">two icons for one meaning; a font's dingbat where an icon exists; an icon in a colour its meaning does not have; an icon without a label or an accessible name.</span></dd>
   <dt id="D-SYS-9">D-SYS-9</dt>
   <dd>Long and Korean labels keep the layout: a name wraps or is cut with an ellipsis inside its own box; nothing a panel shows widens the panel; logs and transcripts wrap within their width. <span class="avoid">a pane sized by its content; a title that pushes its actions out of the header.</span></dd>
   <dt id="D-SYS-10">D-SYS-10</dt>
@@ -163,7 +208,8 @@
 <h2>Before handing over a screen</h2>
 <ul class="checklist">
   <li>The selected node and the open Detail name the same Artifact.</li>
-  <li>Every state is told apart without colour (glyph, word, weight, outline).</li>
+  <li>Every state is told apart without colour (icon, word, weight, outline).</li>
+  <li>Every mark is an icon of the sheet, not a font's character.</li>
   <li>A status has the same colour everywhere it shows.</li>
   <li>A long Korean label and large text keep the layout.</li>
   <li>Keyboard focus is visible on every control.</li>

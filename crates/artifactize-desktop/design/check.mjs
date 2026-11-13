@@ -5,8 +5,8 @@
 //   node check.mjs whole [DIR]             the whole design: dark only, every page
 //                                          well formed, D- ids unique across pages, every screen
 //                                          page listed on index.html and in ux-graph-doc.html,
-//                                          every token named on index.html, no colour literal
-//                                          outside tokens.css
+//                                          every token and every icon named on index.html,
+//                                          no colour literal outside tokens.css
 //   node check.mjs doc DOC.html UX-GRAPH.md  the graph doc cites every edge of UX-GRAPH.md
 //                                          exactly once, no other edge, and only known screens
 //   node check.mjs tokens A.css B.css      the two sheets declare the same tokens with the
@@ -92,6 +92,10 @@ function whole(dir) {
   }
   for (const screen of screens.keys()) if (!SCREENS.includes(screen) && screen !== "ux-graph-doc" && screen !== "index") report(`whole: unknown screen ${screen}`);
   for (const name of sheet.root.keys()) if (!index.includes(`--${name}</code>`)) report(`index.html: does not name the token --${name}`);
+  // The icon set lives in mock.css as --i-NAME drawings; index.html's sheet names every one.
+  const icons = [...read(join(dir, "mock.css")).matchAll(/^\s*--i-([a-z-]+)\s*:/gm)].map((match) => match[1]);
+  if (icons.length === 0) report("mock.css: declares no icon (--i-NAME)");
+  for (const icon of icons) if (!index.includes(`<code>i-${icon}</code>`)) report(`index.html: does not name the icon i-${icon}`);
   if (!index.includes('href="ux-graph-doc.html"')) report("index.html: does not link ux-graph-doc.html");
 }
 

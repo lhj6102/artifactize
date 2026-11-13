@@ -14,6 +14,76 @@
   text-align: left;
 }
 
+/* The icon set: our own marks, each drawn on a 12 by 12 box with a 1.5 stroke, round caps and
+   joins, solid only where the shape is a solid (the half of in progress, the dots of queued and
+   waiting, the run triangle, a star that is on). An icon is a mask: it takes the colour of the text around it,
+   so a status's icon is in that status's colour and an action's in the ink of its control.
+   index.html lists every one by name. */
+:root {
+  --i-green: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.5 5 9l4.5-6'/%3E%3C/svg%3E");
+  --i-red: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3l6 6M9 3l-6 6'/%3E%3C/svg%3E");
+  --i-error: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2v5M6 9.75v.01'/%3E%3C/svg%3E");
+  --i-running: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3Cpath d='M6 1.75a4.25 4.25 0 0 0 0 8.5z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-human: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='3.75' r='2'/%3E%3Cpath d='M2.25 10.5c.4-2 1.9-3 3.75-3s3.35 1 3.75 3'/%3E%3C/svg%3E");
+  --i-queued: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-waiting: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='2.25' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3Ccircle cx='6' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3Ccircle cx='9.75' cy='6' r='1.1' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-blocked: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3Cpath d='M3 9l6-6'/%3E%3C/svg%3E");
+  --i-notrun: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25'/%3E%3C/svg%3E");
+  --i-run: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 2.75v6.5L9.5 6z'/%3E%3C/svg%3E");
+  --i-reused: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.75 6a3.75 3.75 0 1 1-1.2-2.75M9.75 2v2.25H7.5'/%3E%3C/svg%3E");
+  --i-checking: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='4.25' stroke-dasharray='1.4 2.05'/%3E%3C/svg%3E");
+  --i-play: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 2.25v7.5L10 6z' fill='currentColor' stroke='none'/%3E%3C/svg%3E");
+  --i-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z' stroke-width='1.1'/%3E%3C/svg%3E");
+  --i-star-on: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 1.5l1.35 2.9 3.15.4-2.3 2.2.6 3.2L6 8.65 3.2 10.2l.6-3.2-2.3-2.2 3.15-.4z' fill='currentColor' stroke-width='1.1'/%3E%3C/svg%3E");
+  --i-fold: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.5 8 6 4.5 9.5'/%3E%3C/svg%3E");
+  --i-unfold: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  --i-remove: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 3.5l5 5M8.5 3.5l-5 5'/%3E%3C/svg%3E");
+  --i-add: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 2.5v7M2.5 6h7'/%3E%3C/svg%3E");
+  --i-minus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6h7'/%3E%3C/svg%3E");
+  --i-fit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 4.5V2h2.5M7.5 2H10v2.5M10 7.5V10H7.5M4.5 10H2V7.5'/%3E%3C/svg%3E");
+  --i-find: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='5.25' cy='5.25' r='3.25'/%3E%3Cpath d='M7.75 7.75 10.5 10.5'/%3E%3C/svg%3E");
+  --i-pane: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='2.25' width='8.5' height='7.5' rx='1'/%3E%3Cpath d='M4.75 2.25v7.5'/%3E%3C/svg%3E");
+}
+.m-icon,
+.m-light {
+  flex: none;
+  display: inline-block;
+  width: var(--icon);
+  height: var(--icon);
+  background: currentColor;
+  -webkit-mask: var(--icon-src) center / contain no-repeat;
+  mask: var(--icon-src) center / contain no-repeat;
+  vertical-align: -1px;
+}
+.i-green { --icon-src: var(--i-green); }
+.i-red { --icon-src: var(--i-red); }
+.i-error { --icon-src: var(--i-error); }
+.i-running { --icon-src: var(--i-running); }
+.i-human { --icon-src: var(--i-human); }
+.i-queued { --icon-src: var(--i-queued); }
+.i-waiting { --icon-src: var(--i-waiting); }
+.i-blocked { --icon-src: var(--i-blocked); }
+.i-notrun { --icon-src: var(--i-notrun); }
+.i-run { --icon-src: var(--i-run); }
+.i-reused { --icon-src: var(--i-reused); }
+.i-checking { --icon-src: var(--i-checking); }
+.i-play { --icon-src: var(--i-play); }
+.i-star { --icon-src: var(--i-star); }
+.i-star-on { --icon-src: var(--i-star-on); }
+.i-fold { --icon-src: var(--i-fold); }
+.i-unfold { --icon-src: var(--i-unfold); }
+.i-remove { --icon-src: var(--i-remove); }
+.i-add { --icon-src: var(--i-add); }
+.i-minus { --icon-src: var(--i-minus); }
+.i-fit { --icon-src: var(--i-fit); }
+.i-find { --icon-src: var(--i-find); }
+.i-pane { --icon-src: var(--i-pane); }
+.m-light {
+  background: var(--light);
+  -webkit-mask-image: var(--light-icon);
+  mask-image: var(--light-icon);
+}
+
 /* The global bar: brand left, the window's own controls right. */
 .m-bar {
   display: flex;
@@ -173,14 +243,15 @@
 }
 .m-chevron::before {
   content: "";
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
+  width: var(--icon);
+  height: var(--icon);
+  background: currentColor;
+  -webkit-mask: var(--i-fold) center / contain no-repeat;
+  mask: var(--i-fold) center / contain no-repeat;
 }
 .m-branch.open .m-chevron::before {
-  transform: rotate(45deg);
+  -webkit-mask-image: var(--i-unfold);
+  mask-image: var(--i-unfold);
 }
 .m-branch-name {
   min-width: 0;
@@ -196,13 +267,10 @@
   font-weight: 600;
 }
 .m-star {
-  color: var(--ink-2);
-  opacity: 0.55;
-  font-size: 13px;
+  color: var(--ink-3);
 }
 .m-star.on {
   color: var(--ink);
-  opacity: 1;
 }
 .m-latest {
   display: grid;
@@ -377,13 +445,8 @@
   left: 48px;
   bottom: 12px;
 }
-.m-swatch {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
+.m-legend .m-light {
   margin-right: 4px;
-  border-radius: 50%;
-  background: var(--light);
 }
 .m-controls {
   position: absolute;
@@ -395,50 +458,69 @@
   background: var(--surface-panel);
   overflow: hidden;
 }
-.m-controls span {
+.m-controls > span {
   display: grid;
   place-items: center;
   width: 24px;
   height: 24px;
   color: var(--ink-2);
-  font-size: 14px;
 }
-.m-controls span + span {
+.m-controls > span + span {
   border-top: 1px solid var(--line-group);
 }
 
-/* A node: a light and a name on a neutral face, its border in its light's colour. */
+/* A node: a neutral face in a neutral outline. Its status shows in two places and nowhere
+   else: the icon before its name and the strip along its bottom, both in the status's colour.
+   After the name, how many of its evals are GREEN of how many. */
 .m-node {
   position: absolute;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
   width: 168px;
   height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--light);
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line-node);
   border-radius: var(--radius-control);
   background: var(--surface-panel);
+  box-shadow: inset 0 calc(-1 * var(--strip)) 0 var(--light);
   font-weight: 500;
 }
-.m-node .m-dot {
-  background: var(--light);
+.m-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-/* The opened node: one neutral outline hugging its border. The focus ring is a second mark,
-   outside it, only while the keyboard moves focus; hover is a thin neutral outline. */
-.m-node.selected {
-  box-shadow: 0 0 0 2px var(--outline-selected);
+.m-tally {
+  flex: none;
+  color: var(--ink-2);
+  font-size: var(--text-label);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+/* The opened node: its own outline turns neutral-bright and 2px, the strip staying. Under the
+   pointer the outline only steps up. The focus ring is a second mark, 2px outside, only while
+   the keyboard moves focus. */
+.m-node.selected,
+.m-whole.selected {
+  border-color: var(--outline-selected);
+  box-shadow: 0 0 0 1px var(--outline-selected), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-whole.selected {
+  box-shadow: 0 0 0 1px var(--outline-selected);
 }
 .m-node.hovered {
-  outline: 1px solid var(--ink-3);
-  outline-offset: 1px;
+  border-color: var(--ink-3);
 }
 .m-node.focused {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 /* Ports: where edges reach a node or a box, a triangle pointing in on its left side; where they
-   leave it, a square on its right; each in its light, straddling its border. */
+   leave it, a square on its right; each in the edges' neutral colour, straddling its outline. */
 .m-node.in::before,
 .m-whole.in::before,
 .m-node.out::after,
@@ -448,7 +530,7 @@
   top: 50%;
   width: var(--port);
   height: var(--port);
-  background: var(--light);
+  background: var(--edge);
 }
 .m-node.in::before,
 .m-whole.in::before {
@@ -463,7 +545,7 @@
 }
 .m-whole {
   position: absolute;
-  border: 1px solid var(--light);
+  border: 1px solid var(--line-node);
   border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
 }
@@ -474,12 +556,10 @@
   height: 32px;
   padding: 0 6px 0 10px;
   font-weight: 600;
+  box-shadow: inset 0 calc(-1 * var(--strip)) 0 var(--light);
 }
-.m-whole-title .m-dot {
-  background: var(--light);
-}
-.m-whole-title .m-toggle {
-  margin-left: auto;
+.m-toggle {
+  flex: none;
   width: 18px;
   height: 18px;
   display: grid;
@@ -488,24 +568,76 @@
   border-radius: var(--radius-control);
   background: var(--surface-group);
   color: var(--ink-2);
-  font-size: 11px;
 }
+/* A minimized whole: a node, a second outline behind it for the parts it holds, their count
+   under its name. */
+.m-node.minimized {
+  box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--line-node), inset 0 calc(-1 * var(--strip)) 0 var(--light);
+}
+.m-node .m-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.m-count {
+  color: var(--ink-2);
+  font-size: var(--text-label);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+/* An edge is neutral. The one coloured edge leaves a RED, ERROR or blocked Artifact, in that
+   Artifact's colour: it shows where a block comes from. */
 .m-edge {
   position: absolute;
   height: 0;
-  border-top: 1.25px solid var(--light);
+  border-top: 1.25px solid var(--edge);
   transform-origin: 0 0;
 }
-/* A light is a status seen on a graph: it takes that status's one colour. */
-.light-green { --light: var(--green); }
-.light-active { --light: var(--running); }
-.light-waiting { --light: var(--queued); }
-.light-red { --light: var(--red); }
-.light-error { --light: var(--error); }
-.light-blocked { --light: var(--blocked); }
-.light-run { --light: var(--running); }
-.light-reused { --light: var(--reused); }
-.light-checking { --light: var(--checking); }
+.m-edge.blocking {
+  border-top-color: var(--light);
+}
+/* Far out, where names do not read, a node is a block of its status's colour, a whole its
+   outline in its colour, and the edges one device pixel. */
+.m-block {
+  position: absolute;
+  width: 22px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--light);
+}
+.m-block.selected {
+  outline: 2px solid var(--outline-selected);
+  outline-offset: 1px;
+}
+.m-far-whole {
+  position: absolute;
+  border: 1px solid var(--light);
+  border-radius: 1px;
+}
+.m-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1;
+}
+.m-wires .blocking {
+  stroke: var(--light);
+}
+/* A light is a status seen on a graph: it takes that status's one colour and its icon. */
+.light-green { --light: var(--green); --light-icon: var(--i-green); }
+.light-active { --light: var(--running); --light-icon: var(--i-running); }
+.light-waiting { --light: var(--queued); --light-icon: var(--i-waiting); }
+.light-red { --light: var(--red); --light-icon: var(--i-red); }
+.light-error { --light: var(--error); --light-icon: var(--i-error); }
+.light-blocked { --light: var(--blocked); --light-icon: var(--i-blocked); }
+.light-run { --light: var(--running); --light-icon: var(--i-run); }
+.light-reused { --light: var(--reused); --light-icon: var(--i-reused); }
+.light-checking { --light: var(--checking); --light-icon: var(--i-checking); }
 
 /* The Detail: the inspector, a panel docked at the Main area's right edge over the graph, from
    under the area's header row to its bottom, meeting the graph at a line. */
@@ -615,6 +747,14 @@
 .m-glyph {
   font-weight: 700;
 }
+/* A tally of evals by status: each status's icon and its count, in secondary ink. */
+.m-counts {
+  display: inline-flex;
+  gap: 8px;
+}
+.m-counts .m-icon {
+  margin-right: 2px;
+}
 .m-kv {
   display: grid;
   grid-template-columns: fit-content(40%) minmax(0, 1fr);
@@ -680,8 +820,10 @@
   margin: 0 var(--pad) 10px;
 }
 .m-neighbours .m-node {
-  width: 132px;
+  width: 116px;
   height: 32px;
+  padding: 0 8px;
+  gap: 6px;
   font-size: var(--text-small);
 }
 

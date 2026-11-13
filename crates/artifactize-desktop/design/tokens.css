@@ -5,7 +5,8 @@
    (window and graph canvas) next, then a panel, then a group inside it; a field is darker than
    the panel around it, and what floats (a dialog, a menu, the find field) is raised one step. Lines
    separate what surfaces alone cannot: a panel from a panel, a group from a group, a field from
-   its panel. Colour carries meaning only on the element that has the meaning (a status dot or
+   its panel, a node from the canvas. A graph is drawn in neutral lines (a node's outline, an
+   edge); a status shows on it as an icon and a strip, not as the colour of its lines. Colour carries meaning only on the element that has the meaning (a status dot or
    word, a node's light, a verdict button), and a meaning has one colour wherever the app shows
    it, in a list, a chip or a graph; the accent is for what is interactive.
 
@@ -22,8 +23,10 @@
 
   /* Lines, strongest first */
   --line-panel: #101114;
+  --line-node: #101114;
   --line-group: #363840;
   --line-input: #40434c;
+  --edge: #7f8490;
 
   /* Ink */
   --ink: #e8e9ec;
@@ -64,6 +67,8 @@
   --gap: 8px;
   --measure: 720px;
   --port: 7px;
+  --icon: 12px;
+  --strip: 2px;
 
   /* Type */
   --font: "Inter", system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Noto Sans CJK KR", sans-serif;

@@ -50,7 +50,7 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
-            <span class="m-star on">★</span>
+            <span class="m-star on m-icon i-star-on"></span>
           </div>
           <div class="m-timeline">
             <div class="m-entry filled">
@@ -67,7 +67,7 @@
           <div class="m-branch-head">
             <span class="m-chevron"></span>
             <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
-            <span class="m-star">☆</span>
+            <span class="m-star m-icon i-star"></span>
           </div>
           <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
         </div>
@@ -80,24 +80,24 @@
       <div class="m-headline"><span class="m-text">Checking 3 of 24 Artifacts…</span><span class="m-spacer"></span><span class="m-button small">Refresh <span class="m-kbd">Ctrl+R</span></span></div>
       <div class="m-canvas" style="flex: 0 0 470px">
         <ul class="m-legend">
-          <li class="light-reused"><span class="m-swatch"></span>reused</li>
-          <li class="light-run"><span class="m-swatch"></span>would run</li>
-          <li class="light-waiting"><span class="m-swatch"></span>waiting</li>
-          <li class="light-blocked"><span class="m-swatch"></span>blocked</li>
-          <li class="light-checking"><span class="m-swatch"></span>checking</li>
+          <li class="light-reused"><span class="m-light"></span>reused</li>
+          <li class="light-run"><span class="m-light"></span>would run</li>
+          <li class="light-waiting"><span class="m-light"></span>waiting</li>
+          <li class="light-blocked"><span class="m-light"></span>blocked</li>
+          <li class="light-checking"><span class="m-light"></span>checking</li>
         </ul>
         <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(-22deg)"></div>
         <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(22deg)"></div>
         <div class="m-edge light-run" style="left: 716px; top: 254px; width: 92px"></div>
-        <div class="m-node out light-reused" style="left: 220px; top: 170px"><span class="m-dot"></span>core</div>
-        <div class="m-node in light-checking" style="left: 548px; top: 106px"><span class="m-dot"></span>release</div>
-        <div class="m-node in out light-run" style="left: 548px; top: 234px"><span class="m-dot"></span>cli</div>
-        <div class="m-node in light-run" style="left: 808px; top: 234px"><span class="m-dot"></span>docs</div>
-        <div class="m-controls"><span>+</span><span>−</span><span>⛶</span></div>
+        <div class="m-node out light-reused" style="left: 220px; top: 170px"><span class="m-light"></span><span class="m-name">core</span><span class="m-tally">2/2</span></div>
+        <div class="m-node in light-checking" style="left: 548px; top: 106px"><span class="m-light"></span><span class="m-name">release</span></div>
+        <div class="m-node in out light-run" style="left: 548px; top: 234px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">1/3</span></div>
+        <div class="m-node in light-run" style="left: 808px; top: 234px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
+        <div class="m-controls"><span><span class="m-icon i-add"></span></span><span><span class="m-icon i-minus"></span></span><span><span class="m-icon i-fit"></span></span></div>
         <p class="m-hint"><span class="m-kbd">Ctrl+F</span> finds, or lists the favorites · <span class="m-kbd">m</span> minimizes or expands a whole</p>
       </div>
       <div class="m-section" style="padding-top: 8px; border-top: 1px solid var(--line-group)">
-        <p class="m-fold" style="margin: 0 0 6px">▾ Structure and evaluation criteria · graph:4f0e…9a21</p>
+        <p class="m-fold" style="margin: 0 0 6px"><span class="m-icon i-unfold"></span> Structure and evaluation criteria · graph:4f0e…9a21</p>
         <div class="m-log" style="height: 150px"><span class="m-quiet">Artifacts (24)</span>
 core
   tests · The library's tests pass
@@ -129,7 +129,7 @@ cli  ← core
   <dt id="D-CUR-2">D-CUR-2</dt>
   <dd>The Current graph is drawn and furnished as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) with its own legend (reused, would run, waiting, blocked, checking); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
   <dt id="D-CUR-3">D-CUR-3</dt>
-  <dd>The structure text folds under the graph behind a <code>▸</code>/<code>▾</code> summary line opened above by <code>--line-group</code>; expanded, it is a <code>--surface-input</code> box in <code>--mono</code> at <code>--text-small</code> that wraps and scrolls within at most 40% of the window's height. <span class="avoid">the text widening the Main area; the fold hiding the graph.</span></dd>
+  <dd>The structure text folds under the graph behind a summary line led by the fold icon (the unfold icon while expanded) opened above by <code>--line-group</code>; expanded, it is a <code>--surface-input</code> box in <code>--mono</code> at <code>--text-small</code> that wraps and scrolls within at most 40% of the window's height. <span class="avoid">the text widening the Main area; the fold hiding the graph.</span></dd>
 </dl>
 </main>
 </div>
