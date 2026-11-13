@@ -932,6 +932,9 @@
   margin: 0;
   padding: 0 var(--pad) 8px;
 }
+.m-chips + .m-body > .m-summary {
+  padding-top: 8px;
+}
 .m-instruction {
   margin: 0;
   padding: 0 var(--pad) 10px;
