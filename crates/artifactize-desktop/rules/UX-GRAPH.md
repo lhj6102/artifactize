@@ -70,7 +70,8 @@ that makes the transition happen and checks where it leads.
   each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
   sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges, coloured
-  by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
+  by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked, each in the
+  one colour that status has everywhere in the app.
 - **Current graph**: the current declarations' Artifacts and relations, drawn as soon as the
   declarations are read, each Artifact first still being checked and then coloured, as soon as
   the scan knows, by what verify would do now: reused (every eval's result would be reused
@@ -135,7 +136,8 @@ that makes the transition happen and checks where it leads.
   chips on one line or wrapped; an Artifact's tool running.
 - **Human review** (on a Human eval's tab of a Run's Detail, or the Review view): its
   instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the
-  reviewed one first), the Tool log of every run in this review, and the Result. States:
+  reviewed one first), the Tool log of every run in this review, and the Result, in one column
+  no wider than a readable measure, Submit, the last notice and Release right under the Result. States:
   Unclaimed, Taken (another reviewer holds the claim), Claimed (by this reviewer), Editing
   GREEN (the form built from the eval's pass schema), Editing RED (built from its fail schema),
   Submitted (the completed result shown); a tool or a submission may be running, and a
@@ -241,8 +243,8 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, or after a whole its Minimize or Expand button (E-GRAPH-TAB-WHOLE), nothing opened |
 | E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn |
-| E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole |
-| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View |
+| E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole, never enlarged beyond its nodes' own size |
+| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom, or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size |
 | E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name and verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
 | E-GRAPH-PART | Run graph or Current graph with a whole | click a part inside the whole's box, or Enter on it focused | Detail of the part on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS); the whole's box stays as it was |

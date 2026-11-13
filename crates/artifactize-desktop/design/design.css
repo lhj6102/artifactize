@@ -123,7 +123,7 @@ figcaption {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--light-active);
+  background: var(--ink);
   color: var(--surface-bar);
   font: 700 12px var(--font);
   box-shadow: 0 0 0 2px var(--surface-bar);
@@ -149,7 +149,7 @@ figcaption {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--light-active);
+  background: var(--ink);
   color: var(--surface-bar);
   font: 700 12px var(--font);
 }

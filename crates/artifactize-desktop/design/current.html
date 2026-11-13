@@ -113,7 +113,7 @@ cli  ← core
 <span class="callout" style="left: 560px; top: 240px">2</span>
 <span class="callout" style="left: 700px; top: 606px">3</span>
 </div>
-<figcaption>Stage 1280 × 800. The Current's lights differ from a Run's: reused, would run, waiting, blocked, checking.</figcaption>
+<figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking; would run takes the colour of in progress, waiting and blocked their own.</figcaption>
 </figure>
 
 <ol class="notes">
@@ -127,7 +127,7 @@ cli  ← core
   <dt id="D-CUR-1">D-CUR-1</dt>
   <dd>The Current's header is one row under the Main area header: the scan's state in <code>--ink-2</code> (<i>Checking n of m Artifacts…</i>, <i>Scanned at HH:MM:SS</i> in tabular figures, or why it failed in <code>--red</code>) and a small Refresh button at the right with its <kbd>Ctrl+R</kbd> key cap (<kbd>F5</kbd> does the same); a refresh asked while a scan runs keeps that scan shown, the header still saying its progress, and one more scan follows once it ends. <span class="avoid">a spinner without the count; the state in a banner.</span></dd>
   <dt id="D-CUR-2">D-CUR-2</dt>
-  <dd>The Current graph is drawn and furnished as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) with its own legend (reused, would run, waiting, blocked, checking); a node still being checked uses <code>--light-checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
+  <dd>The Current graph is drawn and furnished as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) with its own legend (reused, would run, waiting, blocked, checking); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
   <dt id="D-CUR-3">D-CUR-3</dt>
   <dd>The structure text folds under the graph behind a <code>▸</code>/<code>▾</code> summary line opened above by <code>--line-group</code>; expanded, it is a <code>--surface-input</code> box in <code>--mono</code> at <code>--text-small</code> that wraps and scrolls within at most 40% of the window's height. <span class="avoid">the text widening the Main area; the fold hiding the graph.</span></dd>
 </dl>

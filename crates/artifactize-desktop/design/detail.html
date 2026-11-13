@@ -247,12 +247,12 @@
       <div class="m-main-head"><div class="m-dock-title"><h2>cli/tests · The CLI's tests pass</h2><span class="m-star">☆</span></div><span class="m-button small">Close <span class="m-kbd">Esc</span></span></div>
       <div class="m-chips">
         <span class="m-chip"><span class="m-mark"></span>cli</span><span class="m-slash">/</span>
-        <span class="m-chip"><span class="m-glyph" style="color: var(--light-reused)">↻</span>lint</span>
-        <span class="m-chip chosen"><span class="m-glyph" style="color: var(--light-run)">▶</span>tests</span>
-        <span class="m-chip"><span class="m-glyph" style="color: var(--light-checking)">…</span>matches-docs</span>
+        <span class="m-chip"><span class="m-glyph tone-reused">↻</span>lint</span>
+        <span class="m-chip chosen"><span class="m-glyph tone-running">▶</span>tests</span>
+        <span class="m-chip"><span class="m-glyph tone-checking">…</span>matches-docs</span>
       </div>
       <div class="m-body">
-        <p class="m-summary"><span class="m-status" style="color: var(--light-run)">▶ would run</span><span class="m-cost">the fingerprint of cli changed since run-5K2QXA</span></p>
+        <p class="m-summary"><span class="m-status tone-running">▶ would run</span><span class="m-cost">the fingerprint of cli changed since run-5K2QXA</span></p>
         <div class="m-section">
           <p style="margin: 0 0 10px">Run the CLI's tests of {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}.</p>
         </div>
@@ -272,8 +272,8 @@
 </figure>
 
 <ol class="notes">
-  <li><span class="n">12</span><div><b>A Current's chips</b><span>Each eval chip leads with what verify would do, in the Current's lights: reused, would run, waiting, blocked, or still being checked.</span></div></li>
-  <li><span class="n">13</span><div><b>A Current's Summary</b><span>The plan line replaces the verdict line: what would happen and why, in the light's colour and secondary ink; then the result it would reuse, when there is one; no log.</span></div></li>
+  <li><span class="n">12</span><div><b>A Current's chips</b><span>Each eval chip leads with what verify would do, in the plan's colour, the same as its node's: reused, would run, waiting, blocked, or still being checked.</span></div></li>
+  <li><span class="n">13</span><div><b>A Current's Summary</b><span>The plan line replaces the verdict line: what would happen and why, in the plan's colour and secondary ink; then the result it would reuse, when there is one; no log.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -291,7 +291,7 @@
   <dt id="D-INS-7">D-INS-7</dt>
   <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row: its sections Outcome, Waits for, What and Provenance each under a section label, their facts as key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), the pending evals of Waits for folded behind a <code>--ink-2</code> line (<code>▸ n pending evals</code>) that a click unfolds, and Technical folded last behind a <code>▸</code> line that names its keys. <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it.</span></dd>
   <dt id="D-INS-8">D-INS-8</dt>
-  <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip and each eval row lead with what verify would do with that eval (reused, would run, waiting, blocked, or still being checked) as a glyph and the matching words in the tone the library gives that plan (the tone classes, which parallel the legend's lights); an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in the light's colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse under a section label when there is one (the plan line already says why an eval would run), then the execution options and Debug; there is no log and no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show.</span></dd>
+  <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip and each eval row lead with what verify would do with that eval (reused, would run, waiting, blocked, or still being checked) as a glyph and the matching words in that plan's one colour, the legend's (would run <code>--running</code>, reused <code>--reused</code>, waiting <code>--queued</code>, blocked <code>--blocked</code>, checking <code>--checking</code>); an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in its colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse under a section label when there is one (the plan line already says why an eval would run), then the execution options and Debug; there is no log and no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show.</span></dd>
   <dt id="D-INS-6">D-INS-6</dt>
   <dd>Selection and inspector agree: the node with the <code>--outline-selected</code> outline, every copy of a shared part included, is the Artifact the Detail is titled with, or, when that Artifact is hidden inside a minimized whole, the minimized whole that hides it while the Detail still names the Artifact; opening a neighbour or another node moves both; closing the Detail removes the outline. The Find field's choice opens the Detail and moves only the camera. <span class="avoid">a Detail left open for a node no longer highlighted.</span></dd>
 </dl>

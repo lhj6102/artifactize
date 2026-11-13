@@ -6,7 +6,8 @@
    the panel around it, and what floats (a dialog, a menu, the find field) is raised one step. Lines
    separate what surfaces alone cannot: a panel from a panel, a group from a group, a field from
    its panel. Colour carries meaning only on the element that has the meaning (a status dot or
-   word, a node's light, a verdict button); the accent is for what is interactive.
+   word, a node's light, a verdict button), and a meaning has one colour wherever the app shows
+   it, in a list, a chip or a graph; the accent is for what is interactive.
 
    The app is dark only, whatever the system's appearance. The values are our
    own: the handoff's sampled HEX values were a comparison point, not a source. */
@@ -38,7 +39,8 @@
   --outline-selected: #dcdee5;
   --scrim: rgb(0 0 0 / 45%);
 
-  /* Statuses, read with their glyph or word */
+  /* Statuses, one colour each wherever they show (a list, a chip, a graph's node), read with
+     their glyph or word; the last two are what verify would do, on a Current */
   --green: #4ac26b;
   --red: #f2675d;
   --error: #f0883e;
@@ -46,18 +48,9 @@
   --human: #4c8ff0;
   --yellow: #e3b341;
   --queued: #9ba1ad;
-  --blocked: #d68ef0;
-
-  /* The graphs' lights: a Run's, then a Current's */
-  --light-green: #4ac26b;
-  --light-active: #e3b341;
-  --light-waiting: #8b929e;
-  --light-red: #f2675d;
-  --light-error: #b48cf5;
-  --light-blocked: #9b2c2c;
-  --light-run: #6cb6ff;
-  --light-reused: #2dd4bf;
-  --light-checking: #4a4f59;
+  --blocked: #c27c8e;
+  --reused: #2dd4bf;
+  --checking: #6f7480;
 
   /* Shape and rhythm */
   --radius-panel: 2px;
@@ -69,6 +62,7 @@
   --bar-height: 36px;
   --pad: 12px;
   --gap: 8px;
+  --measure: 720px;
   --port: 7px;
 
   /* Type */

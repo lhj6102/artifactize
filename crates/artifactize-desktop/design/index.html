@@ -62,8 +62,8 @@
 <p>
   Every colour, size and radius in the app comes from <code>tokens.css</code>, named by role.
   The app has one appearance, dark, whatever the system's; the swatches below render its
-  tokens. Status and light colours are read with a glyph or a word beside them, never
-  alone.
+  tokens. A status has one colour wherever it shows (a list, a chip, a graph's node) and is
+  read with a glyph or a word beside it, never alone.
 </p>
 <h3>Surfaces and lines</h3>
 <table>
@@ -92,31 +92,24 @@
     <tr><td><span class="swatch" style="--token: var(--accent-soft)"></span><code>--accent-soft</code></td><td>A soft accent fill: the "yours" stage pill</td></tr>
     <tr><td><span class="swatch" style="--token: var(--selection)"></span><code>--selection</code></td><td>The selected row of a list</td></tr>
     <tr><td><span class="swatch" style="--token: var(--focus)"></span><code>--focus</code></td><td>The keyboard focus ring, 2px, on every control</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--outline-selected)"></span><code>--outline-selected</code></td><td>A selected node's outline: neutral, outside its light-coloured border</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--outline-selected)"></span><code>--outline-selected</code></td><td>The opened node's outline: neutral, hugging its border</td></tr>
     <tr><td><span class="swatch" style="--token: var(--scrim)"></span><code>--scrim</code></td><td>Behind a dialog; the faint shadow under what floats</td></tr>
   </tbody>
 </table>
-<h3>Statuses and lights</h3>
+<h3>Statuses</h3>
 <table>
-  <thead><tr><th>Token</th><th>Meaning, always with its glyph or word</th></tr></thead>
+  <thead><tr><th>Token</th><th>Meaning, always with its glyph or word, the same colour in a list, a chip and a graph</th></tr></thead>
   <tbody>
-    <tr><td><span class="swatch" style="--token: var(--green)"></span><code>--green</code></td><td>GREEN</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--red)"></span><code>--red</code></td><td>RED, and what a tool printed to stderr</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--error)"></span><code>--error</code></td><td>ERROR</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--running)"></span><code>--running</code></td><td>A Run or eval in progress</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--human)"></span><code>--human</code></td><td>Waiting for a person</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--yellow)"></span><code>--yellow</code></td><td>A Run that ended with only sign-offs left</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--queued)"></span><code>--queued</code></td><td>Queued</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--blocked)"></span><code>--blocked</code></td><td>Blocked</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-green)"></span><code>--light-green</code></td><td>A node or edge: GREEN</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-active)"></span><code>--light-active</code></td><td>A node or edge: in progress or waiting for a person; also a star that is on</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-waiting)"></span><code>--light-waiting</code></td><td>A node or edge: waiting</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-red)"></span><code>--light-red</code></td><td>A node or edge: RED</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-error)"></span><code>--light-error</code></td><td>A node or edge: ERROR</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-blocked)"></span><code>--light-blocked</code></td><td>A node or edge: blocked by upstream</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-run)"></span><code>--light-run</code></td><td>A Current's node: would run</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-reused)"></span><code>--light-reused</code></td><td>A Current's node: reused</td></tr>
-    <tr><td><span class="swatch" style="--token: var(--light-checking)"></span><code>--light-checking</code></td><td>A Current's node: still being checked</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--green)"></span><code>--green</code></td><td>GREEN: a Run, an eval, a node whose evals are all GREEN</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--red)"></span><code>--red</code></td><td>RED: a Run, an eval, a node with a RED eval; also what a tool printed to stderr</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--error)"></span><code>--error</code></td><td>ERROR: an eval that failed operationally, a node with one</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--running)"></span><code>--running</code></td><td>In progress: a running Run or eval, a node in progress (running or waiting for a person); on a Current, what would run</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--human)"></span><code>--human</code></td><td>Waiting for a person: a Human eval, a waiting review</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--yellow)"></span><code>--yellow</code></td><td>YELLOW: a Run that ended with only sign-offs left, a warning line in Settings; nothing on a graph</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--queued)"></span><code>--queued</code></td><td>Queued or waiting: an eval, a node that waits</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--blocked)"></span><code>--blocked</code></td><td>Blocked by an upstream Artifact: an eval, a node; a dimmed relative of RED</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--reused)"></span><code>--reused</code></td><td>On a Current: a result that would be reused</td></tr>
+    <tr><td><span class="swatch" style="--token: var(--checking)"></span><code>--checking</code></td><td>On a Current: still being checked</td></tr>
   </tbody>
 </table>
 <h3>Shape, rhythm and type</h3>
@@ -132,6 +125,7 @@
     <tr><td><code>--bar-height</code></td><td>The global bar</td></tr>
     <tr><td><code>--pad</code></td><td>A panel's side padding (12); spacing follows the 4 / 8 / 12 / 16 scale</td></tr>
     <tr><td><code>--gap</code></td><td>The gap between controls in a row (8)</td></tr>
+    <tr><td><code>--measure</code></td><td>The widest a column of reading and form gets: a Human review's column</td></tr>
     <tr><td><code>--port</code></td><td>A graph node's port: the triangle where edges reach it, the square where they leave it</td></tr>
     <tr><td><code>--font</code>, <code>--mono</code></td><td>The UI face with Korean fallbacks; the monospace face for logs, IDs and queries</td></tr>
     <tr><td><code>--text-body</code></td><td>13px: text, names, values</td></tr>
@@ -155,7 +149,7 @@
   <dt id="D-SYS-5">D-SYS-5</dt>
   <dd>Type: body 13px, secondary 12px, labels 11px uppercase and letter-spaced in <code>--ink-2</code>; a section label is neutral ink, never the accent. Numbers that align or change (ages, times, counts, tokens, IDs) use tabular figures. Names may be semibold; nothing else is bold but a status word, a chosen choice and a title. <span class="avoid">accent-coloured headings; proportional figures in an age column.</span></dd>
   <dt id="D-SYS-6">D-SYS-6</dt>
-  <dd>Colour carries meaning only on the element that has it: a status dot, glyph or word, a node's light and border, an edge, a verdict button, stderr lines. The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, a row or a panel by status.</span></dd>
+  <dd>Colour carries meaning only on the element that has it: a status dot, glyph or word, a node's light and border, an edge, a verdict button, stderr lines. A meaning has one colour: a status takes the same token in the Pane, a chip, a row and a graph's node, and a graph has no palette of its own (in progress is <code>--running</code> on a node as in a list, waiting <code>--queued</code>, blocked <code>--blocked</code>, ERROR <code>--error</code>). The accent marks only what is interactive or emphasised (links, the primary button, the focused panel's top line, the active tab's line). <span class="avoid">reading every red as an error or every green as success; tinting a node's face, a row or a panel by status; a second colour for a status on a graph; a star or a selection in a status colour.</span></dd>
   <dt id="D-SYS-7">D-SYS-7</dt>
   <dd>States are told apart without colour: every status shows its glyph or word beside its colour; the selected row has the <code>--selection</code> background and, while the keyboard is in its list, a 2px inset bar; keyboard focus is a 2px <code>--focus</code> ring on every control; hover only highlights and opens nothing: a row or a borderless control takes <code>--surface-group</code>, and a button, whose face already is that surface, keeps its face while its edge steps up to <code>--line-input</code> (the primary button's to <code>--ink-on-accent</code>); the one exception the journeys ask for is the whole's Minimize/Expand button, whose native title names its key <kbd>m</kbd>, and no other control has a tooltip. <span class="avoid">a selection shown by colour alone; a focus ring removed; a popup, summary or menu on hover.</span></dd>
   <dt id="D-SYS-8">D-SYS-8</dt>
@@ -170,6 +164,7 @@
 <ul class="checklist">
   <li>The selected node and the open Detail name the same Artifact.</li>
   <li>Every state is told apart without colour (glyph, word, weight, outline).</li>
+  <li>A status has the same colour everywhere it shows.</li>
   <li>A long Korean label and large text keep the layout.</li>
   <li>Keyboard focus is visible on every control.</li>
   <li>The core task works with the Pane narrowed and the Detail closed.</li>

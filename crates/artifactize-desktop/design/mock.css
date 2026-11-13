@@ -201,7 +201,7 @@
   font-size: 13px;
 }
 .m-star.on {
-  color: var(--light-active);
+  color: var(--ink);
   opacity: 1;
 }
 .m-latest {
@@ -424,9 +424,10 @@
 .m-node .m-dot {
   background: var(--light);
 }
+/* The opened node: one neutral outline hugging its border. The focus ring is a second mark,
+   outside it, only while the keyboard moves focus; hover is a thin neutral outline. */
 .m-node.selected {
-  outline: 2px solid var(--outline-selected);
-  outline-offset: 1px;
+  box-shadow: 0 0 0 2px var(--outline-selected);
 }
 .m-node.hovered {
   outline: 1px solid var(--ink-3);
@@ -495,15 +496,16 @@
   border-top: 1.25px solid var(--light);
   transform-origin: 0 0;
 }
-.light-green { --light: var(--light-green); }
-.light-active { --light: var(--light-active); }
-.light-waiting { --light: var(--light-waiting); }
-.light-red { --light: var(--light-red); }
-.light-error { --light: var(--light-error); }
-.light-blocked { --light: var(--light-blocked); }
-.light-run { --light: var(--light-run); }
-.light-reused { --light: var(--light-reused); }
-.light-checking { --light: var(--light-checking); }
+/* A light is a status seen on a graph: it takes that status's one colour. */
+.light-green { --light: var(--green); }
+.light-active { --light: var(--running); }
+.light-waiting { --light: var(--queued); }
+.light-red { --light: var(--red); }
+.light-error { --light: var(--error); }
+.light-blocked { --light: var(--blocked); }
+.light-run { --light: var(--running); }
+.light-reused { --light: var(--reused); }
+.light-checking { --light: var(--checking); }
 
 /* The Detail: the inspector, a panel docked at the Main area's right edge over the graph, from
    under the area's header row to its bottom, meeting the graph at a line. */
@@ -683,11 +685,13 @@
   font-size: var(--text-small);
 }
 
-/* A Human review: instruction, Tools, Tool log, Result. */
+/* A Human review: instruction, Tools, Tool log, Result, in one column no wider than a
+   readable measure, its actions beside what they act on. */
 .m-review {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-width: var(--measure);
   padding: 0 var(--pad) 8px;
 }
 .m-review-title {
@@ -715,8 +719,11 @@
   color: var(--accent);
 }
 .m-meta {
-  font-weight: 600;
+  color: var(--ink-2);
   font-variant-numeric: tabular-nums;
+}
+.m-meta b {
+  font-weight: 600;
 }
 .m-tool {
   display: grid;
@@ -938,4 +945,6 @@
 .tone-yellow { color: var(--yellow); }
 .tone-queued { color: var(--queued); }
 .tone-blocked { color: var(--blocked); }
+.tone-reused { color: var(--reused); }
+.tone-checking { color: var(--checking); }
 .tone-muted { color: var(--ink-2); }
