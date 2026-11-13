@@ -149,6 +149,12 @@
     border-top: 1px solid var(--line-group);
     padding: 10px 0;
   }
+  /* A long name wraps inside its column. */
+  .settings :global(h2),
+  .settings :global(h3) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .settings :global(h2) {
     font-size: var(--text-title);
     margin: 0 0 4px;

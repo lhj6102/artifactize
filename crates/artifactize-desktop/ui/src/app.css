@@ -47,6 +47,8 @@ body {
   background: var(--surface-app);
   color: var(--ink);
   font: var(--text-body) / 1.45 var(--font);
+  /* Every number that aligns or changes (ages, times, counts, tokens, IDs) keeps its width. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
