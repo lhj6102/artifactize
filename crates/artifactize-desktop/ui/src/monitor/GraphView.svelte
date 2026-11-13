@@ -431,7 +431,7 @@
     --xy-controls-box-shadow: none;
     --xy-minimap-background-color: var(--surface-panel);
     --xy-minimap-mask-background-color: var(--scrim);
-    --xy-minimap-node-background-color: var(--line-input);
+    --xy-minimap-node-background-color: var(--surface-group);
   }
   /* The minimap's nodes take a control's corner. */
   .canvas :global(.svelte-flow__minimap-node) {

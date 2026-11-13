@@ -66,6 +66,10 @@
     overflow-wrap: anywhere;
     cursor: pointer;
   }
+  .link:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+  }
   .failure {
     color: var(--red);
   }

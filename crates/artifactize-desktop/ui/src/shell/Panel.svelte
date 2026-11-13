@@ -117,6 +117,11 @@
     min-width: 0;
     height: 1.5em;
   }
+  /* Folded, the notice highlights under the pointer like any borderless control. */
+  .notice:not(.open) button:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+  }
   .notice button {
     display: block;
     width: 100%;
