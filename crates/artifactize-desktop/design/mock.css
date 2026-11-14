@@ -960,20 +960,37 @@
   font-size: var(--text-small);
 }
 
-/* A Human review: instruction, Tools, Tool log, Result, in one column no wider than a
-   readable measure, its actions beside what they act on. */
+/* A Human review: a head row with its stage, the instruction, then Tools, Tool log and Result
+   as sections of the inspector, each opened above by a group line that runs the panel's whole
+   width, in one column no wider than a readable measure. */
 .m-review {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   max-width: var(--measure);
-  padding: 0 var(--pad) 8px;
 }
-.m-review-title {
+/* A panel's head row in a review: the stage pill over the review, the view's name over the
+   Tool log; the two stand in one band, closed below by a group line. */
+.m-review-head {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: var(--gap);
+  height: var(--row-head);
+  padding: 0 var(--pad);
+  border-bottom: 1px solid var(--line-group);
+  background: var(--surface-panel);
+  font-size: var(--text-small);
+  font-weight: 600;
+}
+.m-review > .m-instruction {
+  padding-top: 8px;
+}
+/* The review's actions: the last row of its Result section. */
+.m-review .m-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  margin-top: 12px;
 }
 .m-stage {
   height: 18px;
@@ -1044,14 +1061,15 @@
   margin-left: 2px;
 }
 
-/* A review with room: the Tool log is the view at the left, the rest a column docked where the
-   Detail docks, of the Detail's width. */
+/* A review with room: two panels under the Main area's header row, which a panel line closes:
+   the Tool log's view at the left, the review's column docked where the Detail docks, of the
+   Detail's width. They meet at a panel line from the header row to the area's bottom. */
 .m-review-split {
   flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--detail-width, 46%);
-  border-top: 1px solid var(--line-group);
+  border-top: 1px solid var(--line-panel);
 }
 .m-viewer {
   display: flex;
@@ -1059,10 +1077,6 @@
   min-width: 0;
   min-height: 0;
   background: var(--surface-input);
-}
-.m-viewer > .m-sec-head {
-  background: var(--surface-panel);
-  border-bottom: 1px solid var(--line-group);
 }
 .m-viewer-log {
   flex: 1;
@@ -1083,7 +1097,6 @@
 }
 .m-review-split > .m-review {
   max-width: none;
-  padding-top: 8px;
   border-left: 1px solid var(--line-panel);
   background: var(--surface-panel);
   overflow: hidden;
