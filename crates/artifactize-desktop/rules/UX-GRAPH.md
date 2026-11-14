@@ -30,7 +30,7 @@ that makes the transition happen and checks where it leads.
     Runs are its project's Runs on that branch, from whichever folder they ran in. Each entry
     has a **chevron** before its name and its **star** at its line's end. Folded, the name
     sits over the branch's newest Run, its status dot and word on the left and its age on the
-    right (a running one its time so far), or `No Runs yet`. Expanded, its **timeline** sits
+    right (a running one its time so far); without Runs, nothing. Expanded, its **timeline** sits
     under the name instead: one entry per Run, newest first, each a dot in its status colour,
     its status word, its age on the right and one line below: the comment the Run was
     requested with (`verify --comment`), cut short to one line, or else its Run ID, joined by a
