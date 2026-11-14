@@ -19,7 +19,7 @@
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
   import { useCommands } from "../shell/commands.svelte";
-  import { chord, composing, editable, plain } from "../shell/keys";
+  import { chord, composing, editable, label, plain } from "../shell/keys";
   import { clampWidth } from "../monitor/detail-width";
 
   let {
@@ -194,30 +194,30 @@
           <VerdictForm {review} form={review.form} />
         {:else if review.owned}
           <div class="verdicts">
-            <button class="button" aria-keyshortcuts="g" onclick={() => void review.choose("GREEN")}>GREEN</button>
-            <button class="button" aria-keyshortcuts="r" onclick={() => void review.choose("RED")}>RED</button>
+            <button class="button" aria-label="GREEN (g)" aria-keyshortcuts="g" onclick={() => void review.choose("GREEN")}>GREEN</button>
+            <button class="button" aria-label="RED (r)" aria-keyshortcuts="r" onclick={() => void review.choose("RED")}>RED</button>
           </div>
         {:else if view.claim}
           <p class="muted">Read-only until released.</p>
         {:else}
-          <button class="button primary" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
+          <button class="button primary" aria-label="Claim to review (c)" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
         {/if}
         <!-- One row of actions, the last of the Result: Release claim at the left, Submit at the
              right, and between them what running work or a failure has to say. -->
         {#if !review.settled && (review.owned || review.busy || review.notice?.error)}
           <div class="actions">
             {#if review.owned}
-              <button class="button" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
+              <button class="button" aria-label="Release claim (u)" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
             {/if}
             <span class="said">
               {#if review.busy}
-                <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
+                <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-label="Cancel (Esc)" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
               {:else if review.notice?.error}
                 <span class="error" role="status">{review.notice.text}</span>
               {/if}
             </span>
             {#if review.form}
-              <button class="button primary" aria-keyshortcuts="Control+S" disabled={review.busy !== null} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+              <button class="button primary" aria-label="Submit {review.form.verdict} ({label('Ctrl+S')})" aria-keyshortcuts="Control+S" disabled={review.busy !== null} onclick={() => void submit()}>Submit {review.form.verdict}</button>
             {/if}
           </div>
         {/if}

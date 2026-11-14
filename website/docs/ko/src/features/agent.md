@@ -102,18 +102,14 @@ Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
-출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 안내한 대기 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. `claude-agent` 리뷰는 Claude Code가
-요청을 직접 재시도하므로 artifactize가 다시 보내지 않습니다([Claude Agent](#claude-agent)).
-provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 그 턴을 같은 횟수까지 다시 시도하며
-리뷰가 이미 해 둔 작업은 그대로 유지됩니다. 답변이 긴 공백으로만
-계속되어 몇 초 안에 중단된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
-`Provider response was incomplete: Some(Length)`. JSON 판정이 들어 있어도 유효한 응답으로 처리하지 않습니다),
-출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가 여기에 해당합니다. 실패한 답변도 이미 비용이 들었으므로 그 토큰은 `max_tokens`에 포함되며, 한도에
-이르면 그 턴을 다시 보내지 않습니다. 거부된 요청이나 다른 모델의 응답처럼 출력이나 사용량이 생긴 뒤의
-다른 실패는 재시도하지 않습니다.
-재시도로도 해결되지 않거나 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 마지막
-시도의 코드와 함께 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 리뷰가 계속 공백 답변이나 끝나지 않은 응답으로 끝나면 다른 모델이나 `reasoning`을 써 보세요. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
+출력이나 토큰 사용이 생기기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면, provider가 안내한 만큼
+기다렸다가 몇 차례 재시도합니다. `claude-agent` 리뷰는 Claude Code가 요청을 직접 재시도하므로 다시 보내지
+않습니다([Claude Agent](#claude-agent)). 답변이 나오기 시작한 뒤에 실패한 턴(`DEGENERATE_OUTPUT`, 출력이
+끝나지 않은 `PROVIDER_ERROR`, `TRANSIENT`)도 같은 횟수까지 재시도하며, 그 토큰은 `max_tokens`에 포함됩니다.
+출력이나 사용량이 생긴 뒤의 다른 실패는 재시도하지 않습니다. 재시도로도 해결되지 않거나 provider가 요구한
+대기 시간이 리뷰의 남은 시간보다 길면, 리뷰는 마지막 시도의 코드와 함께 ERROR로 끝납니다. 잠시 뒤
+`verify`를 다시 실행하세요(완료된 결과는 재사용됩니다). 같은 식으로 계속 끝나면 다른 모델이나
+`reasoning`을 써 보세요. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 

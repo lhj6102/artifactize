@@ -345,7 +345,7 @@ it("closes a review in the Main area with the one Close in its header, after lea
   const main = await screen.findByLabelText("Main area");
   await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("Review"));
   const region = await within(main).findByLabelText("Human review");
-  await within(main).findByRole("button", { name: "Claim to review" });
+  await within(main).findByRole("button", { name: "Claim to review (c)" });
   // Close is the header's one control, and the review keeps none of its own.
   const header = main.querySelector("h2")!.parentElement!;
   expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);

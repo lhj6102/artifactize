@@ -67,7 +67,11 @@ export const scenarios: Scenario[] = [
       assert.ok(initial.clipped && initial.icon && initial.slash && initial.rows > 1 && initial.contained && initial.rounded, JSON.stringify(initial));
       assert.ok(initial.selected > 0 && initial.fills[initial.selected] !== initial.fills[0], `the chosen eval chip is filled, unlike the Artifact's: ${JSON.stringify(initial.fills)}`);
       await browser.waitUntil(async () => (await summary(browser)).status.includes("REUSED"), { timeout: 15000, timeoutMsg: "the reused Agent Summary" });
-      for (const section of ["Execution options", "Execution metadata", "Fingerprint"]) await unfold(browser, section);
+      // Read now and then, they start folded to their rows.
+      for (const section of ["Execution options", "Execution metadata", "Fingerprint"]) {
+        assert.equal(await aside(browser).$(`button.head=${section}`).getAttribute("aria-expanded"), "false", `${section} starts folded`);
+        await unfold(browser, section);
+      }
       const record = () => browser.execute(() => {
         const shown = document.querySelector('aside[aria-label="Detail"] [role="document"]')!;
         const block = (title: string) => [...shown.querySelectorAll(".section")].find((section) => section.querySelector(".head")?.textContent?.trim() === title)?.querySelector(".body")?.textContent ?? "";

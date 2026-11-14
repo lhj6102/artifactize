@@ -916,10 +916,14 @@ export const scenarios: Scenario[] = [
       assert.equal((await logIn(browser, DETAIL)).noticeError, false);
       assert.ok(((await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0) > toolRunsBefore, "the same probe observes this tool's run");
       assert.equal(signoff(fixture).claim, null, "running a tool claimed nothing");
+      // The Tool log folded after a run unfolds again for the next one.
+      await browser.$(DETAIL).$("button.head=Tool log").click();
+      await browser.waitUntil(async () => !(await browser.$(DETAIL).$('[role="log"][aria-label="Tool log"]').isExisting()), { timeout: 15000, timeoutMsg: "the Tool log folded" });
       // A launch tool answers at once and says so; its application runs and its exit ends the run.
       assert.equal(launched(fixture), false);
       await tools().$("button=open").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "open")) !== null && await tools().$("button=notes").isEnabled(), { timeout: 15000, timeoutMsg: "the launch returned" });
+      assert.equal(await browser.$(DETAIL).$("button.head=Tool log").getAttribute("aria-expanded"), "true", "the run unfolded the Tool log again");
       assert.equal((await logIn(browser, DETAIL)).notice, "", "what ended well is said by the log alone");
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application ran" });
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "its exit logged" });

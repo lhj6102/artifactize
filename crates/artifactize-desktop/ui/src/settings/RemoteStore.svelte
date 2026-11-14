@@ -12,11 +12,12 @@
     event.preventDefault();
     void s.remoteLogin();
   }
-  /** What this machine pushed since the local day began, by the pushes the status lists. */
+  /** What this machine pushed since the local day began when the status was read, by the
+   * pushes the status lists. */
   const pushedToday = $derived.by(() => {
     if (s.remote?.state !== "configured") return 0;
-    const today = new Date();
-    const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const read = new Date(s.remoteRead);
+    const midnight = new Date(read.getFullYear(), read.getMonth(), read.getDate()).getTime();
     return s.remote.pushes.filter((push) => (push.at ?? 0) >= midnight).reduce((sum, push) => sum + push.count, 0);
   });
   /** Signed in: the store's URL and share level as facts, without the fields that sign in. */

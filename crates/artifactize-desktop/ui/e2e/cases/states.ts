@@ -180,8 +180,12 @@ export const scenarios: Scenario[] = [
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(read)}`); });
       assert.equal(read.statusIcon, shown.verdict[0], `its status, said once, by the headline's mark: ${read.status}`);
       assert.deepEqual(read.failed, [["red", "red/check"], ["error", "crash/check"]], "the evals that failed, by name");
-      for (const [icon, word] of [["green", "GREEN"], ["red", "RED"], ["error", "ERROR"]]) {
-        assert.ok(read.tally.some(([shownIcon, text]) => shownIcon === icon && /^\d+ /.test(text) && text.endsWith(` ${word}`)), `the tally counts ${word}: ${JSON.stringify(read.tally)}`);
+      assert.equal(read.status, "WAITING HUMAN", "its status in words");
+      // How many evals ended in each status, as the fixture's nine Artifacts leave them.
+      assert.deepEqual(read.tally.map(([, text]) => text),
+        ["1 DEFERRED", "2 PROVISIONAL", "1 GREEN", "1 RED", "1 ERROR", "1 WAIT DEPENDENCY", "2 BLOCKED"], JSON.stringify(read.tally));
+      for (const [icon, word] of [["green", "GREEN"], ["red", "RED"], ["error", "ERROR"], ["blocked", "BLOCKED"]]) {
+        assert.ok(read.tally.some(([shownIcon, text]) => shownIcon === icon && text.endsWith(` ${word}`)), `the tally marks ${word} with its icon: ${JSON.stringify(read.tally)}`);
       }
       assert.match(read.time, /\d/, "what the Run took so far");
       assert.match(read.waits, /gate\/signoff/, "what it waits for");

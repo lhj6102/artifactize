@@ -7,6 +7,7 @@
   import type { FieldValue, FormField } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
   import Icon from "../shell/Icon.svelte";
+  import { label } from "../shell/keys";
 
   let { review, form }: { review: Review; form: FormDraft } = $props();
   /** What a person enters: constants are the form's own. */
@@ -108,6 +109,7 @@
         role="radio"
         aria-checked={form.verdict === verdict}
         class="verdict {verdict.toLowerCase()}"
+        aria-label="{verdict} ({label(verdict === 'GREEN' ? 'Ctrl+G' : 'Ctrl+R')})"
         aria-keyshortcuts={verdict === "GREEN" ? "Control+G" : "Control+R"}
         onclick={() => void review.choose(verdict)}
       >

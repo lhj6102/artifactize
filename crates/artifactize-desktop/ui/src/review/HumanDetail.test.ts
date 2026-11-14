@@ -79,7 +79,7 @@ describe("HumanDetail", () => {
     const calls = backend("claim");
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByRole("button", { name: "Claim to review" });
+    await screen.findByRole("button", { name: "Claim to review (c)" });
 
     await fireEvent.keyDown(region, { key: "c", isComposing: true });
     await fireEvent.keyDown(region, { key: "c", keyCode: 229 });
@@ -263,7 +263,7 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "RED" }));
+    await user.click(screen.getByRole("button", { name: "RED (r)" }));
     const first = await screen.findByLabelText("change 1");
     // The constant is the form's own: nothing to enter, so nothing shown.
     expect(screen.queryByText(/approved/)).toBeNull();
@@ -278,7 +278,7 @@ describe("HumanDetail", () => {
       ["human_add_item", "change", undefined],
       ["human_remove_item", "change", 0],
     ]);
-    expect(screen.getByRole("button", { name: "Submit RED" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" })).toBeTruthy();
   });
 
   it("groups the tools by their Artifact, the reviewed one first, and logs each run's lines under it", async () => {
@@ -356,7 +356,7 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "RED" }));
+    await user.click(screen.getByRole("button", { name: "RED (r)" }));
     const first = await screen.findByRole("group", { name: "findings 1" });
     // The group's constant is filled in, not shown.
     expect(within(first).queryByText(/kind/)).toBeNull();
@@ -367,7 +367,7 @@ describe("HumanDetail", () => {
     await user.selectOptions(within(second).getByLabelText(/severity/), '"high"');
     await user.click(screen.getByRole("button", { name: "Remove findings 1" }));
     await waitFor(() => expect(screen.queryByRole("group", { name: "findings 2" })).toBeNull());
-    await user.click(screen.getByRole("button", { name: "Submit RED" }));
+    await user.click(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" }));
     await waitFor(() =>
       expect(submitted).toEqual([
         {
@@ -384,7 +384,7 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "GREEN" }));
+    await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
     const comment = await screen.findByLabelText(/comment/);
     expect(comment.getAttribute("placeholder")).toBe("Optional");
   });

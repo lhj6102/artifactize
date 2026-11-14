@@ -101,6 +101,9 @@ export class SettingsState {
   remote = $state.raw<RemoteStatus | null>(null);
   remoteError = $state<string | null>(null);
   remoteNotice = $state<string | null>(null);
+  /** When the remote status was last read, in milliseconds since 1970: what was pushed today
+   * counts from the local midnight before it. */
+  remoteRead = $state(0);
   url = $state("");
   share = $state<Share>("summary");
   token = $state("");
@@ -395,6 +398,7 @@ export class SettingsState {
     try {
       const status = await run();
       if (mine !== this.remoteCalls) return;
+      this.remoteRead = Date.now();
       this.remote = status;
     } catch (failure) {
       if (mine === this.remoteCalls) this.remoteError = message(failure);

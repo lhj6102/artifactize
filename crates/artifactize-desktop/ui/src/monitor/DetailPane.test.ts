@@ -263,7 +263,7 @@ it("shows an Artifact without evals with no chips and no rows", async () => {
   });
   await screen.findByRole("heading", { name: "Artifact lone" });
   expect(screen.queryByRole("tablist")).toBeNull();
-  expect(within(screen.getByRole("list", { name: "Evals of lone" })).queryAllByRole("button")).toEqual([]);
+  expect(screen.queryByRole("list", { name: "Evals of lone" })).toBeNull();
 });
 
 it("draws the Artifact between the Artifacts its evals use and those that use it once Neighbours is unfolded, and opens a neighbour on a click", async () => {

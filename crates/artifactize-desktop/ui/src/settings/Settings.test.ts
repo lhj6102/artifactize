@@ -5,13 +5,16 @@
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Settings from "./Settings.svelte";
 import type { ClaudeAgentStatus, CodexStatus, CustomProvider, KeySource, Provider, RemoteStatus } from "../ipc/client";
 
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
 const KEY = "sk-secret-provider-key";
+
+/** The tests' clock: local noon of a fixed day, so a midnight never falls inside a test. */
+const NOON = new Date(2026, 10, 14, 12).getTime();
 
 const none: RemoteStatus = { state: "unconfigured" };
 const signedIn: RemoteStatus = {
@@ -20,11 +23,11 @@ const signedIn: RemoteStatus = {
   share: "summary",
   tokenSource: "file",
   connection: { state: "signedIn", principal: "alice-laptop", scopes: ["read", "publish"] },
-  // Two pushes today, one two days back.
+  // Two pushes on the frozen day, one two days before it.
   pushes: [
-    { at: Date.now() - 2 * 86400000, count: 9 },
-    { at: Date.now(), count: 2 },
-    { at: Date.now(), count: 3 },
+    { at: NOON - 2 * 86400000, count: 9 },
+    { at: NOON - 3600000, count: 2 },
+    { at: NOON, count: 3 },
   ],
 };
 
@@ -134,7 +137,13 @@ function backend(options: {
   return calls;
 }
 
+beforeEach(() => {
+  // Only the date is frozen: the timers the tests wait with keep running.
+  vi.useFakeTimers({ toFake: ["Date"], now: NOON });
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   clearMocks();
 });

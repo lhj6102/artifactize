@@ -73,14 +73,10 @@ it("runs a tool on the branch checked out in the worktree now", async () => {
 });
 
 it("shows no Tools section when the Artifact declares no Human tools", async () => {
-  let asked = false;
-  mockIPC((command) => {
-    if (command !== "artifact_tools") return null;
-    asked = true;
-    return [];
-  });
-  renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "core" });
-  await waitFor(() => expect(asked).toBe(true));
+  mockIPC((command) => (command === "artifact_tools" ? [] : null));
+  const { app } = renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "core" });
+  // The owner has read the Artifact's tools, none, and the component has drawn what it read.
+  await waitFor(() => expect(app.artifactTools("/work/main", "core").tools).toEqual([]));
   await tick();
   expect(screen.queryByRole("region", { name: "Tools of core" })).toBeNull();
   expect(screen.queryByText("Tools")).toBeNull();

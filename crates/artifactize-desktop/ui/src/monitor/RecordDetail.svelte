@@ -261,8 +261,8 @@
     padding: 0 var(--pad) 8px;
   }
   .view {
-    margin: 0;
-    padding: 0;
+    margin: 0 -4px;
+    padding: 0 4px;
     border: 0;
     background: none;
     font: inherit;
@@ -272,6 +272,7 @@
   }
   .view:hover {
     color: var(--ink);
+    background: var(--surface-group);
   }
   .view[aria-selected="true"] {
     color: var(--ink);

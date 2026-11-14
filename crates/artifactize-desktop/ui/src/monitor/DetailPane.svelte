@@ -192,6 +192,8 @@
     {/if}
     <div class="content" class:listing={tabbed && tab === null} role={tabbed && tab !== null ? "tabpanel" : undefined}>
       {#if tabbed && row && tab === null}
+        <!-- A section with nothing to hold is not shown: an Artifact without evals has no Evals. -->
+        {#if evals.length > 0}
         <Section name="Evals">
           <ul class="evals" aria-label="Evals of {row.name}">
             {#each evals as item (item.id)}
@@ -206,11 +208,10 @@
                   <span class="muted right">{item.right}</span>
                 </button>
               </li>
-            {:else}
-              <li class="muted">No evals.</li>
             {/each}
           </ul>
         </Section>
+        {/if}
         <Section name="Neighbours">
           <Neighbours {source} {revision} {node} {onopen} />
         </Section>

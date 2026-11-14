@@ -28,6 +28,12 @@ const RING = 2;
 const NODE_PAD = 12;
 const NODE_PAD_END = 10;
 const NODE_GAP = 8;
+/** A whole's Minimize or Expand button: its side, and its gap to the title row's end, as its
+ * element draws it. */
+const TOGGLE = 20;
+const TOGGLE_END = 6;
+/** The line height of a minimized whole's name and its parts count, as its element sets it. */
+const LINE = 1.2;
 /** How far a minimized whole's second outline sits behind it, down and right. */
 const STACK = 3;
 /** A whole's box face: the panel's colour at this opacity. */
@@ -251,7 +257,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   /** A minimized whole's second outline behind it, for the parts it holds. */
   const stacked = new Path2D();
   const neutral = new Path2D();
-  /** Each whole's Minimize or Expand control at its title row's end. */
+  /** Each whole's Minimize or Expand control at its title row's end, by its button's corner. */
   const toggles: { icon: "minus" | "add"; x: number; y: number }[] = [];
   const strips = new Map<Light, Path2D>();
   const ports = new Path2D();
@@ -286,8 +292,10 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const start = (NODE_PAD + icon + NODE_GAP) * zoom;
     let end = NODE_PAD_END * zoom;
     if (whole || folded !== undefined) {
-      toggles.push({ icon: whole ? "minus" : "add", x: x + w - end - icon * zoom, y: y + row / 2 - (icon * zoom) / 2 });
-      end += (icon + NODE_GAP) * zoom;
+      // The control as its element draws it: a button of TOGGLE pixels with its own outline.
+      const side = TOGGLE * zoom;
+      toggles.push({ icon: whole ? "minus" : "add", x: x + w - TOGGLE_END * zoom - side, y: y + row / 2 - side / 2 });
+      end = (TOGGLE_END + TOGGLE + NODE_GAP) * zoom;
     }
     const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
     const count = folded === undefined ? "" : partsCount(folded);
@@ -356,7 +364,17 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     context.restore();
   };
   for (const mark of marks) drawIcon(LIGHTS[mark.light].icon, colour(mark.light), mark.x, mark.y);
-  for (const toggle of toggles) drawIcon(toggle.icon, token("--ink-2"), toggle.x, toggle.y);
+  const side = TOGGLE * zoom;
+  context.lineWidth = Math.max(1 / ratio, Math.min(zoom, 1));
+  context.strokeStyle = token("--line-group");
+  context.fillStyle = token("--surface-group");
+  for (const toggle of toggles) {
+    context.beginPath();
+    context.roundRect(toggle.x, toggle.y, side, side, radius);
+    context.fill();
+    context.stroke();
+    drawIcon(toggle.icon, token("--ink-2"), toggle.x + (side - icon * zoom) / 2, toggle.y + (side - icon * zoom) / 2);
+  }
   const face = token("--font");
   context.textBaseline = "middle";
   for (const name of names) {
@@ -375,14 +393,13 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     context.beginPath();
     context.rect(name.x, name.y - font * zoom, room, 2 * font * zoom);
     context.clip();
-    const text = cut(context, name.text, room);
-    context.fillText(text, name.x, name.y);
-    // A minimized whole says how many parts it holds after its name.
+    // A minimized whole says how many parts it holds below its name, the two lines centred.
+    const lines = name.count ? [name.y - (label * zoom * LINE) / 2, name.y + (font * zoom * LINE) / 2] : [name.y];
+    context.fillText(cut(context, name.text, room), name.x, lines[0]);
     if (name.count) {
-      const after = name.x + context.measureText(text).width + NODE_GAP * zoom;
       context.font = `400 ${label * zoom}px ${face}`;
       context.fillStyle = token("--ink-2");
-      context.fillText(name.count, after, name.y);
+      context.fillText(cut(context, name.count, room), name.x, lines[1]);
     }
     context.restore();
   }

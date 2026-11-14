@@ -257,6 +257,12 @@ export const scenarios: Scenario[] = [
       }, { timeout: 15000, timeoutMsg: "release, ship, docs and the relation are painted in their verdict's own colours" });
       assert.ok(drawn);
       const before = drawn;
+      /** release's node as drawn: its mark's icon and its tally. */
+      const releaseNode = () => browser.execute(() => {
+        const node = [...document.querySelectorAll('.svelte-flow__node[data-id="a:release"]')].find((element) => !element.closest('aside[aria-label="Detail"]'));
+        return [node?.querySelector(".light svg")?.getAttribute("data-icon") ?? "", node?.querySelector(".tally")?.textContent?.trim() ?? ""];
+      });
+      assert.deepEqual(await releaseNode(), ["running", "0/1"], "release in progress, none of its one eval GREEN");
 
       // A click opens release's Detail on its Artifact tab: its one eval, waiting for a Human.
       const opened = await openArtifact(browser, "a:release", "Artifact release");
@@ -296,6 +302,8 @@ export const scenarios: Scenario[] = [
       for (const node of ["a:release", "a:ship", "a:docs"]) {
         assert.equal(after.nodes[node].at, before.nodes[node].at, `${node} kept its place`);
       }
+      await browser.waitUntil(async () => JSON.stringify(await releaseNode()) === JSON.stringify(["green", "1/1"]),
+        { timeout: 15000, timeoutMsg: `release's mark and tally updated in place: ${JSON.stringify(await releaseNode())}` });
       const row = () => browser.execute(() => document.querySelector('aside[aria-label="Detail"] button[data-eval="e:release/signoff"] .glyph svg')?.getAttribute("data-icon") ?? "");
       await browser.waitUntil(async () => (await row()) === "green", { timeout: 15000, timeoutMsg: "the open Detail's sign-off row turned GREEN" });
       assert.equal((await detail(browser))?.title, "Artifact release", "a live update keeps the open Detail on release");
@@ -642,6 +650,7 @@ export const scenarios: Scenario[] = [
       await toSuite();
       await tab(browser);
       assert.equal((await focusedElement(browser)).trim(), "BUTTON Expand suite (m)", "Tab reaches suite's Expand button after suite");
+      assert.equal(await browser.$(`${current} button[aria-label="Expand suite (m)"]`).getAttribute("title"), "Expand (m)", "its tooltip names m");
       await clickButton(browser, current, "Expand suite (m)");
       const open = await partsDrawn(browser, current);
       assert.ok(open["a:suite"].whole && within(open["a:suite/a:app"].rect, open["a:suite"].rect), "suite is a box around its parts again");
@@ -651,6 +660,7 @@ export const scenarios: Scenario[] = [
       await toSuite();
       await tab(browser);
       assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite (m)", "Tab reaches suite's Minimize button after suite");
+      assert.equal(await browser.$(`${current} button[aria-label="Minimize suite (m)"]`).getAttribute("title"), "Minimize (m)", "its tooltip names m");
       await tab(browser);
       assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
       // With suite focused and no Detail open, m minimizes it and m expands it again, the
@@ -1208,7 +1218,20 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
 
-      // None starred: with nothing typed the field says how to star one.
+      // None starred: the tool strip's Find opens the field, empty and with the keyboard, over the
+      // graph's top left, saying how to star one; so does Ctrl+F.
+      await browser.$('[aria-label="Graph tools"]').$("button=Find").click();
+      await browser.waitUntil(async () => (await field())?.focused === true && (await field())?.note === NO_FAVORITES,
+        { timeout: 15000, timeoutMsg: "Find opened the field, saying how to star one" });
+      assert.deepEqual(await names(), []);
+      assert.equal((await field())?.value, "", "it opens empty");
+      const placedAt = await browser.execute((find) => {
+        const input = document.querySelector(find)!.getBoundingClientRect();
+        const canvas = document.querySelector(".graph .canvas")!.getBoundingClientRect();
+        return { left: input.left - canvas.left, top: input.top - canvas.top, width: canvas.width };
+      }, FIND);
+      assert.ok(placedAt.left >= 0 && placedAt.top >= 0 && placedAt.left < placedAt.width / 2 && placedAt.top < 80, `over the graph's top left: ${JSON.stringify(placedAt)}`);
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
       await ctrlF("the find field open with nothing starred");
       await browser.waitUntil(async () => (await field())?.note === NO_FAVORITES, { timeout: 15000, timeoutMsg: "how to star one said" });
       assert.deepEqual(await names(), []);
@@ -1440,6 +1463,15 @@ export const scenarios: Scenario[] = [
       await dispatchInput(browser, { kind: "pointer", phase: "down", x: there, y: middle });
       await dispatchInput(browser, { kind: "pointer", phase: "up", x: there, y: middle });
       await browser.waitUntil(async () => Math.abs((await centre()) - there) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place clicked" });
+      /** Where the place `at` of the Navigator lies on the screen, from the canvas's middle,
+       * across the chain: the Navigator spans the chain's drawn nodes end to end. */
+      const offset = (at: number) => browser.execute((fraction) => {
+        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter((node) => !node.closest('aside[aria-label="Detail"]')).map((node) => node.getBoundingClientRect());
+        const [left, right] = [Math.min(...nodes.map((box) => box.left)), Math.max(...nodes.map((box) => box.right))];
+        return left + fraction * (right - left) - (canvas.left + canvas.right) / 2;
+      }, (at - shown.map.left) / shown.map.width);
+      assert.ok(Math.abs(await offset(there)) <= 12, `the place clicked is in the middle of the view: ${await offset(there)}`);
       assert.notEqual(await camera(browser), before, "the click moved the camera");
       assert.equal(await zoom(), kept, "the click kept the zoom");
       // A drag in it moves the camera along.
@@ -1449,6 +1481,7 @@ export const scenarios: Scenario[] = [
       await dispatchInput(browser, { kind: "pointer", phase: "move", x: further, y: middle });
       await dispatchInput(browser, { kind: "pointer", phase: "up", x: further, y: middle });
       await browser.waitUntil(async () => Math.abs((await centre()) - further) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place dragged to" });
+      assert.ok(Math.abs(await offset(further)) <= 12, `the place dragged to is in the middle of the view: ${await offset(further)}`);
       assert.equal(await zoom(), kept, "the drag kept the zoom");
       // With a Detail open, it sits left of the Detail.
       const inView = await browser.execute(() => {

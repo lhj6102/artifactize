@@ -30,20 +30,22 @@ after a mode (`artifactize-desktop monitor --help`), and `artifactize-desktop he
 help on stderr and exit 2, as invalid arguments do. The app
 exits 0 when you quit and 1 if it cannot start.
 
-Shortcut labels below use Ctrl; macOS uses its primary modifier, Command, instead.
-Ctrl+K, F1 or the **Commands** button opens a searchable command palette that lists
-every command you can run now with its key: the app's first, then those of what the Main
-area shows, a graph's or a Human review's. Enter runs a command and Esc closes it.
-**Commands** is the one control that shows its key; every other key is named in the
-palette and in Help, and read aloud with its control. Ctrl+, or the **Settings** button opens
-[Settings](#settings) over the screen. Ctrl+B or the **Pane** button after the app's name
-hides or shows the [Pane](#pane). Ctrl+O opens a request by ID. `?` opens Help: the
-keys of what has focus and, on a graph, what each of its marks means. Ctrl+R or F5 reloads
-the state from disk, scans the branches again and, on a Current, scans its worktree again. While a Human review has the
-keyboard and runs nothing, Ctrl+R is its RED command instead, with or without its
-form open: it opens or switches to RED once claimed, and says the review must be
-claimed first otherwise. In a completed, read-only Human review Ctrl+R does nothing. In
-either, F5 or the palette's **Refresh** reloads the state.
+Ctrl+K, F1 or the **Commands** button opens a searchable command palette of every command
+you can run now, with its key; Enter runs one and Esc closes it. `?` opens Help: the keys of
+what has focus and, on a graph, what each mark means. The window's keys (macOS uses Command
+for Ctrl):
+
+| Key | Does |
+|---|---|
+| Ctrl+K, F1 | Command palette |
+| `?` | Help |
+| Ctrl+, | [Settings](#settings), and back |
+| Ctrl+B | Hide or show the [Pane](#pane) |
+| `/` | [Search](#search) the branches |
+| Ctrl+O | [Open a request by ID](#requests-by-id) |
+| Ctrl+R, F5 | Reload the state and scan the branches (and a shown Current) again; in a Human review, Ctrl+R is RED, so use F5 |
+| `q` | [Quit](#leave-and-quit) |
+
 The app is always dark, whatever the system's appearance.
 
 When a [newer release](../getting-started/update.md#newer-releases) is out, the header
@@ -209,18 +211,10 @@ left of the Detail when one is open, shows the whole graph in small, each Artifa
 its status's colour, with the part in view framed. A click or a drag in it moves the camera
 there, the zoom kept. It goes when the whole graph is in view.
 
-Every graph is laid out at once, upstream on the left. An Artifact that a great many
-others use (such as one criteria file every review reads) stands in its own column on
-the left, its edges still drawn to each Artifact that uses it. **More than 500 nodes**
-(a part drawn inside several Artifacts counts once for each): while more than 500 are in or
-near the view, the graph is drawn as a picture of the same nodes. Zoomed out so far that
-names would be too small to read, each node is a block of its status's colour and each box
-its outline in its colour; zoomed in until names read, each is drawn as a node again. A
-click on one still opens its Detail, and [Find](#find-in-the-graph) reaches every one. Zoom
-in until fewer are in view to reach them with Tab and Enter. When a Run changes, the graph
-updates in place; it is arranged again only when Artifacts or edges change, or when you
-minimize or expand a box. An Artifact's Detail draws at most 16 neighbours on each side,
-failing ones first, and counts the rest.
+Every graph is laid out upstream on the left. With **more than 500 nodes** in view, too far
+out for names, each Artifact is a block of its status's colour; a click still opens it, and
+[Find](#find-in-the-graph) reaches every one. Zoom in until fewer are in view to use Tab and
+Enter. An Artifact's Detail draws at most 16 neighbours on each side and counts the rest.
 
 An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
 its parts, under a title row with its mark, its name and its count, closed by the strip in

@@ -119,12 +119,17 @@
                 >{#if branch.name}<span class="project">{branch.project} /</span> <span class="branch-name">{branch.name}</span
                   >{:else}<span class="branch-name">{branch.project}</span>{/if}</span
               >
-              <!-- Folded, the newest Run's status under the name; a branch without Runs says nothing. -->
-              {#if !open && newest?.kind === "run"}
+              <!-- Folded, the newest Run's status under the name, or No Runs yet beside a faint dot. -->
+              {#if !open}
                 <span class="latest">
-                  <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
-                  <span class="status {tone(newest.mark.status)}">{newest.status}</span>
-                  <span class="age">{newest.age}</span>
+                  {#if newest?.kind === "run"}
+                    <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
+                    <span class="status {tone(newest.mark.status)}">{newest.status}</span>
+                    <span class="age">{newest.age}</span>
+                  {:else}
+                    <span class="dot" style:--dot="var(--ink-3)" aria-hidden="true"></span>
+                    <span class="status tone-muted">No Runs yet</span>
+                  {/if}
                 </span>
               {/if}
             </button>

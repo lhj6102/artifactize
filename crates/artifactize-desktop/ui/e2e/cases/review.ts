@@ -230,6 +230,28 @@ export const scenarios: Scenario[] = [
       assert.ok(wide.log.bottom >= wide.area.bottom - 2 && wide.viewer.top <= wide.area.top + 2, `the Tool log fills its panel's height: ${JSON.stringify(wide)}`);
       assert.deepEqual(wide.sections, ["Tools", "Result", "Debug"], "the column holds the Tools, the Result and Debug");
       assert.ok(wide.actionsLast, "the row of actions ends the Result");
+      // While a tool runs, its time and Cancel stand between Release claim and Submit; Cancel
+      // stops it, the review and its draft staying.
+      await fill(browser, "#field-comment", "draft kept through the tool");
+      await browser.$('[aria-label="Human review"]').$("button=slow").click();
+      const row = () => browser.execute(() => {
+        const actions = document.querySelector('[aria-label="Human review"] .actions');
+        const at = (selector: string) => actions?.querySelector(selector)?.getBoundingClientRect().left ?? null;
+        return {
+          release: at('button[aria-label="Release claim (u)"]'),
+          seconds: actions?.querySelector(".busy .seconds")?.textContent?.trim() ?? "",
+          cancel: at('button[aria-label="Cancel (Esc)"]'),
+          submit: at("button.primary"),
+        };
+      });
+      let running = await row();
+      await browser.waitUntil(async () => /^\d+s$/.test((running = await row()).seconds), { timeout: 15000, timeoutMsg: "the running tool's time in the row" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(running)}`); });
+      assert.ok(running.release !== null && running.cancel !== null && running.submit !== null && running.release < running.cancel && running.cancel < running.submit,
+        `Release claim, then the running tool's time and Cancel, then Submit: ${JSON.stringify(running)}`);
+      await browser.$('[aria-label="Human review"] button[aria-label="Cancel (Esc)"]').click();
+      await browser.waitUntil(async () => (await row()).seconds === "", { timeout: 15000, timeoutMsg: "Cancel stopped the tool" });
+      assert.equal(await browser.$("#field-comment").getValue(), "draft kept through the tool", "the draft stays");
       // Narrow: one column, top to bottom, the Tool log a box between the Tools and the Result.
       await browser.setWindowSize(800, 760);
       await browser.waitUntil(async () => !(await arranged()).split, { timeout: 15000, timeoutMsg: "one column in a narrow Main area" });

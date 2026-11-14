@@ -317,7 +317,7 @@ export const scenarios: Scenario[] = [
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "--detach", nativePath(fixture.root, "loose"));
       await waitFor(browser, async () => (await names()).length === 5, "the added worktrees listed");
       assert.deepEqual(await names(), ["repo  added", "repo  loose", "repo  master", "repo  scope-one", "repo  scope-two"]);
-      assert.equal((await branch(browser, "repo  added"))?.latest, "", "folded, a branch without Runs says nothing under its name");
+      assert.equal((await branch(browser, "repo  added"))?.latest, "No Runs yet", "folded, a branch without Runs says so");
       await expand(browser, "repo  added");
       assert.deepEqual((await branch(browser, "repo  added"))?.chips.map((chip) => chip.id), ["current"], "a branch without Runs has its Current");
       // A worktree Git removes and one whose folder is deleted both go.
