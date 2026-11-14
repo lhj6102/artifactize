@@ -385,7 +385,7 @@
 }
 
 /* The Main area: one header row (the view's name, its headline, a notice, its actions), then
-   what the view says under it, then the view. */
+   the view. */
 .m-main-head {
   display: flex;
   align-items: center;
@@ -434,19 +434,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.m-comment {
-  margin: 0;
-  padding: 0 var(--pad) 6px;
-}
+/* What needs attention, in a Run's headline: each eval's status icon and its name, cut at the
+   row's end. */
 .m-attention {
-  margin: 0;
-  padding: 0 var(--pad) 6px;
-  list-style: none;
-  font-size: var(--text-small);
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+}
+.m-attention > span {
+  flex: none;
+}
+.m-attention .m-icon {
+  margin-right: 4px;
 }
 
 /* The graph's tool strip: what acts on the graph, in one row between the header and the
-   canvas, and the legend at its end, cut there when the row is short. */
+   canvas, and nothing else. */
 .m-strip {
   display: flex;
   align-items: center;
@@ -481,28 +486,21 @@
   font-variant-numeric: tabular-nums;
 }
 .m-strip > .m-button,
-.m-strip > .m-zoomer,
-.m-strip-hint,
-.m-legend li {
+.m-strip > .m-zoomer {
   flex: none;
 }
-.m-strip-hint {
-  color: var(--ink-2);
-  font-size: var(--text-label);
-}
+/* The marks of a graph, in Help: each status's icon in its colour beside its word. */
 .m-legend {
-  display: flex;
-  min-width: 0;
-  overflow: hidden;
-  gap: 10px;
-  margin: 0 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+  margin: 0;
   padding: 0;
   list-style: none;
-  font-size: var(--text-label);
-  color: var(--ink-2);
+  font-size: var(--text-small);
 }
 .m-legend .m-light {
-  margin-right: 4px;
+  margin-right: 6px;
 }
 /* The graph: the working area, under a faint grid that moves and scales with the camera and
    is left out where the zoom makes its cells too small. */
@@ -987,10 +985,6 @@
   align-items: center;
   gap: 4px 10px;
 }
-.m-review-title h3 {
-  margin: 0;
-  font-size: var(--text-title);
-}
 .m-stage {
   height: 18px;
   padding: 0 8px;
@@ -1020,6 +1014,11 @@
   padding: 2px 0 2px 18px;
   font-size: var(--text-small);
   color: var(--ink-2);
+}
+/* In a review the tools stand right under their header row; a group's heading, shown only when
+   more than one Artifact declares tools, indents them. */
+.m-review .m-tool {
+  padding-left: 0;
 }
 .m-verdicts {
   display: flex;
@@ -1053,10 +1052,6 @@
 .m-required {
   color: var(--red);
   margin-left: 2px;
-}
-.m-hint-text {
-  color: var(--ink-2);
-  font-size: var(--text-small);
 }
 
 /* A review with room: the Tool log is the view at the left, the rest a column docked where the
@@ -1258,6 +1253,22 @@
   gap: 8px;
   align-items: center;
   margin: 6px 0;
+}
+/* A provider's models: each its name, its ID beside it as the detail. */
+.m-models {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.m-models li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-height: var(--row);
+}
+.m-models code {
+  color: var(--ink-2);
+  font: var(--text-small) var(--mono);
 }
 .m-facts {
   display: grid;

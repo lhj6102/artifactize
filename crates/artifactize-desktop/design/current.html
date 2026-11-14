@@ -36,7 +36,7 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane <span class="m-kbd">Ctrl+B</span></span>
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
     <span class="m-spacer"></span>
     <span class="m-reviewer">alice</span>
     <span class="m-button">Settings</span>
@@ -55,7 +55,7 @@
           <div class="m-timeline">
             <div class="m-entry filled">
               <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
-              <span class="m-sub">Working tree</span>
+              
             </div>
             <div class="m-entry">
               <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
@@ -76,19 +76,11 @@
     </section>
     <div class="m-divider"></div>
     <section class="m-main focused">
-      <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">Checking 3 of 24 Artifacts…</span></span><span class="m-spacer"></span><span class="m-button small">Refresh <span class="m-kbd">Ctrl+R</span></span></div>
+      <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 3/24</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
       <div class="m-strip">
-        <span class="m-button small"><span class="m-icon i-find"></span>Find <span class="m-kbd">Ctrl+F</span></span>
+        <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
         <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
         <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-        <span class="m-strip-hint"><span class="m-kbd">m</span> minimizes or expands a whole</span>
-        <ul class="m-legend">
-          <li class="light-reused"><span class="m-light"></span>reused</li>
-          <li class="light-run"><span class="m-light"></span>would run</li>
-          <li class="light-waiting"><span class="m-light"></span>waiting</li>
-          <li class="light-blocked"><span class="m-light"></span>blocked</li>
-          <li class="light-checking"><span class="m-light"></span>checking</li>
-        </ul>
       </div>
       <div class="m-canvas">
         <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(-22deg)"></div>
@@ -105,20 +97,20 @@
 <span class="callout" style="left: 645px; top: 43px">1</span>
 <span class="callout" style="left: 560px; top: 240px">2</span>
 </div>
-<figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking; would run takes the colour of in progress, waiting and blocked their own.</figcaption>
+<figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Scan state</b><span>In the Main area's header row, after the view's name: while the scan runs, how many Artifacts are still being checked; once it ends, when it was scanned; a failure says why. Refresh at the row's end.</span></div></li>
+  <li><span class="n">1</span><div><b>Scan state</b><span>In the Main area's header row, after the view's name: while the scan runs, the checking icon and how many Artifacts are still being checked of how many (3/24); once it ends, the time it was scanned at; only a failure is said in words. Refresh at the row's end.</span></div></li>
   <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the declarations, every node first <i>checking</i>, then lit in place as the scan learns what verify would do.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CUR-1">D-CUR-1</dt>
-  <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> (<i>Checking n of m Artifacts…</i>, <i>Scanned at HH:MM:SS</i> in tabular figures, or why it failed in <code>--red</code>) and a small Refresh button at the row's end with its <kbd>Ctrl+R</kbd> key cap (<kbd>F5</kbd> does the same); a refresh asked while a scan runs keeps that scan shown, the header still saying its progress, and one more scan follows once it ends. <span class="avoid">a spinner without the count; the state in a banner; a second row for the scan's state.</span></dd>
+  <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n/m</i>, how many Artifacts are still being checked of how many, read aloud as <i>Checking n of m Artifacts</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. A small Refresh button sits at the row's end (<kbd>Ctrl+R</kbd> and <kbd>F5</kbd> do the same); a refresh asked while a scan runs keeps that scan shown, the header still counting, and one more scan follows once it ends. <span class="avoid">a sentence for a scan that runs or ended well; a spinner without the count; the state in a banner; a second row for the scan's state; a key cap on Refresh.</span></dd>
   <dt id="D-CUR-2">D-CUR-2</dt>
-  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), whose legend is its own (reused, would run, waiting, blocked, checking, each with its icon); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
+  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
 </dl>
 </main>
 </div>

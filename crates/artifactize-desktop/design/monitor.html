@@ -28,7 +28,7 @@
 <p class="lead">
   The window after <code>artifactize-desktop</code> starts: the global bar, the Pane on the left
   (search, branches, the Waiting stack) and the Main area: one header row with the shown Run's
-  name and headline, the graph's tool strip and the graph. Nothing is selected on the graph yet; the Detail is closed. Started without arguments, the
+  name, its verdict and what needs attention, the graph's tool strip and the graph. Nothing is selected on the graph yet; the Detail is closed. Started without arguments, the
   Main area shows <i>Nothing chosen</i> instead (D-MAIN-3) until a branch or a waiting review is
   chosen in the Pane.
 </p>
@@ -38,7 +38,7 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane <span class="m-kbd">Ctrl+B</span></span>
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
     <span class="m-spacer"></span>
     <span class="m-reviewer">alice</span>
     <span class="m-button">0.22.0 available</span>
@@ -58,11 +58,9 @@
           <div class="m-timeline">
             <div class="m-entry">
               <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
-              <span class="m-sub">Working tree</span>
             </div>
             <div class="m-entry filled">
               <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
-              <span class="m-sub">run-7SR0YW</span>
               <span class="m-sub">dogfood: desktop design pages and the restyle…</span>
             </div>
             <div class="m-entry">
@@ -106,7 +104,7 @@
         <div class="m-waiting-row">
           <span class="m-icon i-human tone-human"></span><span>desktop-design/approved</span>
           <span class="m-where">artifactize  experimental/466-uiux</span>
-          <span class="m-meta">4m · –</span>
+          <span class="m-meta">4m</span>
         </div>
         <div class="m-waiting-row">
           <span class="m-icon i-human tone-human"></span><span>release/signoff</span>
@@ -117,22 +115,11 @@
     </section>
     <div class="m-divider"></div>
     <section class="m-main">
-      <div class="m-main-head"><h2>Run run-7SR0YW</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red tone-red"></span>1</span><span><span class="m-icon i-blocked tone-blocked"></span>1</span><span><span class="m-icon i-human tone-human"></span>1</span><span><span class="m-icon i-green tone-green"></span>4</span></span> · took 12m 04s</span></span><span class="m-notice">2 Runs cannot be read: state/runs/run-1A… is not valid JSON</span></div>
-      <p class="m-comment">dogfood: desktop design pages and the restyle of the app toward them, before the full verify</p>
-      <ul class="m-attention"><li><span class="m-icon i-human tone-human"></span> release/signoff waiting Human · unclaimed</li><li><span class="m-icon i-red tone-red"></span> cli/tests RED · exit 1</li></ul>
+      <div class="m-main-head"><h2>run-7SR0YW</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-attention"><span><span class="m-icon i-red tone-red"></span>cli/tests</span><span><span class="m-icon i-human tone-human"></span>release/signoff</span></span></span><span class="m-notice">2 Runs cannot be read</span></div>
       <div class="m-strip">
-        <span class="m-button small"><span class="m-icon i-find"></span>Find <span class="m-kbd">Ctrl+F</span></span>
+        <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
         <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
         <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-        <span class="m-strip-hint"><span class="m-kbd">m</span> minimizes or expands a whole</span>
-        <ul class="m-legend">
-          <li class="light-green"><span class="m-light"></span>GREEN</li>
-          <li class="light-active"><span class="m-light"></span>in progress</li>
-          <li class="light-waiting"><span class="m-light"></span>waiting</li>
-          <li class="light-red"><span class="m-light"></span>RED</li>
-          <li class="light-error"><span class="m-light"></span>ERROR</li>
-          <li class="light-blocked"><span class="m-light"></span>blocked by upstream</li>
-        </ul>
       </div>
       <div class="m-canvas">
         <div class="m-edge light-green" style="left: 328px; top: 250px; width: 170px; transform: rotate(-22deg)"></div>
@@ -159,27 +146,25 @@
 <span class="callout" style="left: 200px; top: 108px">3</span>
 <span class="callout" style="left: 200px; top: 646px">4</span>
 <span class="callout" style="left: 268px; top: 43px">5</span>
-<span class="callout" style="left: 905px; top: 66px">6</span>
-<span class="callout" style="left: 420px; top: 480px">7</span>
-<span class="callout" style="left: 700px; top: 660px">8</span>
-<span class="callout" style="left: 762px; top: 138px">9</span>
-<span class="callout" style="left: 975px; top: 482px">10</span>
-<span class="callout" style="left: 1150px; top: 300px">11</span>
-<span class="callout" style="left: 1130px; top: 640px">17</span>
+<span class="callout" style="left: 420px; top: 412px">7</span>
+<span class="callout" style="left: 700px; top: 592px">8</span>
+<span class="callout" style="left: 600px; top: 68px">9</span>
+<span class="callout" style="left: 975px; top: 414px">10</span>
+<span class="callout" style="left: 1150px; top: 232px">11</span>
+<span class="callout" style="left: 1130px; top: 572px">17</span>
 </div>
 <figcaption>Stage 1280 × 800. The app's one scheme, dark.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">1</span><div><b>Global bar</b><span>Brand left, then the Pane switch, on while the Pane is shown; reviewer, update notice, Settings and Commands right. One line below it separates it from the work.</span></div></li>
+  <li><span class="n">1</span><div><b>Global bar</b><span>Brand left, then the Pane switch, on while the Pane is shown; reviewer, update notice, Settings and Commands right, Commands with the one key cap a working screen shows. One line below it separates it from the work.</span></div></li>
   <li><span class="n">2</span><div><b>Search</b><span>A field one step below the Pane, monospace query, its starting <code>sort:recent</code>. Focused with suggestions, a raised list of key and value completions drops under it, the active one on the selection background.</span></div></li>
-  <li><span class="n">3</span><div><b>Branches</b><span>Chevron, <i>project /</i> quiet and <b>branch</b> bold, star at the line's end; folded, the newest Run's dot, status word and age; expanded, the timeline with the Current's ring and the shown entry's pill, and <i>Older runs</i> at its end while older Runs exist.</span></div></li>
-  <li><span class="n">4</span><div><b>Waiting stack</b><span>Grows upward from a thin labelled bar; each row an eval, where it waits, for how long and who claimed it.</span></div></li>
-  <li><span class="n">5</span><div><b>Main area header</b><span>One row: the view's name in 12px, then the Run's headline (the verdict's icon and word in its colour, the rest in secondary ink with tabular figures); a notice takes the room to the right in one red line; actions at the end.</span></div></li>
-  <li><span class="n">6</span><div><b>Under the header</b><span>Only what the Run has to add: its comment in full, then what needs attention, each line led by its status's icon.</span></div></li>
+  <li><span class="n">3</span><div><b>Branches</b><span>Chevron, <i>project /</i> quiet and <b>branch</b> bold, star at the line's end; folded, the newest Run's dot, status word and age; expanded, the timeline with the Current's ring and the shown entry's pill, each Run with one line under its status (its comment, or else its ID), and <i>Older runs</i> at its end while older Runs exist.</span></div></li>
+  <li><span class="n">4</span><div><b>Waiting stack</b><span>Grows upward from a thin labelled bar; each row an eval, where it waits, for how long and, once claimed, by whom.</span></div></li>
+  <li><span class="n">5</span><div><b>Main area header</b><span>One row: the Run's ID in 12px, then its headline: the verdict's icon and word in its colour, then what needs attention, each eval its status's icon and its name. A notice says what went wrong in a few red words at the right; a click shows it in full. The tally, the duration and the comment are in the Run's Detail, which a click on the headline opens.</span></div></li>
   <li><span class="n">7</span><div><b>Node</b><span>A neutral face in a neutral outline: the status's icon, the name, and how many of its evals are GREEN of how many; a 2px strip along its bottom repeats the status's colour. Where edges reach it a triangle points in on its left side, and where they leave it a square sits on its right: shape and side tell the direction. Under the pointer its outline only steps up.</span></div></li>
   <li><span class="n">8</span><div><b>Whole</b><span>A neutral box around its parts; its title row holds its status's icon, its name, its tally and the Minimize button, closed below by the strip in its status's colour.</span></div></li>
-  <li><span class="n">9</span><div><b>Tool strip</b><span>What acts on the graph, in one row above the canvas: Find with its key, the zoom group with the zoom in percent, Fit, the hint for <kbd>m</kbd>, and the legend at the row's end. Nothing floats on the canvas.</span></div></li>
+  <li><span class="n">9</span><div><b>Tool strip</b><span>What acts on the graph, in one row above the canvas: Find, the zoom group with the zoom in percent, and Fit. Nothing else is in it, and nothing floats on the canvas; Help says what the marks mean and which keys act on a graph.</span></div></li>
   <li><span class="n">10</span><div><b>Edges</b><span>Neutral lines. The one coloured edge leaves a RED, ERROR or blocked Artifact, in that Artifact's colour: here cli, RED, holds docs.</span></div></li>
   <li><span class="n">17</span><div><b>Grid</b><span>A faint grid marks the canvas as the working surface and moves with the camera; it never competes with a node's outline or an edge.</span></div></li>
   <li><span class="n">11</span><div><b>Minimized whole</b><span>A node with a second outline behind it, its parts' count under its name and the Expand button at its right.</span></div></li>
@@ -190,7 +175,7 @@
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar">
-    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch"><span class="m-icon i-pane"></span>Pane <span class="m-kbd">Ctrl+B</span></span>
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch"><span class="m-icon i-pane"></span>Pane</span>
     <span class="m-spacer"></span>
     <span class="m-reviewer">alice</span>
     <span class="m-button">Settings</span>
@@ -198,20 +183,11 @@
   </header>
   <div class="m-screen pane-hidden">
     <section class="m-main focused">
-      <div class="m-main-head"><h2>Run run-9QK2LD</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-text">NOT SATISFIED at Run end · <span class="m-counts"><span><span class="m-icon i-red tone-red"></span>1</span><span><span class="m-icon i-blocked tone-blocked"></span>3</span><span><span class="m-icon i-green tone-green"></span>211</span></span> · took 41m 20s</span></span></div>
+      <div class="m-main-head"><h2>run-9QK2LD</h2><span class="m-headline"><span class="m-status tone-red"><span class="m-icon i-red"></span> RED</span><span class="m-attention"><span><span class="m-icon i-red tone-red"></span>billing/tests</span></span></span></div>
       <div class="m-strip">
-        <span class="m-button small"><span class="m-icon i-find"></span>Find <span class="m-kbd">Ctrl+F</span></span>
+        <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
         <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">21%</span><span><span class="m-icon i-add"></span></span></span>
         <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
-        <span class="m-strip-hint"><span class="m-kbd">m</span> minimizes or expands a whole</span>
-        <ul class="m-legend">
-          <li class="light-green"><span class="m-light"></span>GREEN</li>
-          <li class="light-active"><span class="m-light"></span>in progress</li>
-          <li class="light-waiting"><span class="m-light"></span>waiting</li>
-          <li class="light-red"><span class="m-light"></span>RED</li>
-          <li class="light-error"><span class="m-light"></span>ERROR</li>
-          <li class="light-blocked"><span class="m-light"></span>blocked by upstream</li>
-        </ul>
       </div>
       <div class="m-canvas far" style="flex: 0 0 290px">
         <div class="m-far" style="transform: scale(1.6)">
@@ -383,25 +359,25 @@
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-BAR-1">D-BAR-1</dt>
-  <dd>One global bar of <code>--bar-height</code> on <code>--surface-bar</code>, closed below by <code>--line-panel</code>: the brand (mark and name, semibold) at the left, then the Pane switch (the pane icon, <i>Pane</i> and its <kbd>Ctrl+B</kbd> key cap, borderless: <code>--ink</code> over a 2px <code>--accent</code> line at its bottom while the Pane is shown, <code>--ink-2</code> without the line while it is hidden); at the right, in this order, the reviewer in <code>--ink-2</code>, the update notice, Settings and Commands with its <kbd>Ctrl+K</kbd> key cap. <span class="avoid">a shadow under the bar; a second toolbar; page-like navigation; a switch whose state shows by colour alone; a switch for the Detail, which a node opens and Esc closes.</span></dd>
+  <dd>One global bar of <code>--bar-height</code> on <code>--surface-bar</code>, closed below by <code>--line-panel</code>: the brand (mark and name, semibold) at the left, then the Pane switch (the pane icon and <i>Pane</i>, borderless: <code>--ink</code> over a 2px <code>--accent</code> line at its bottom while the Pane is shown, <code>--ink-2</code> without the line while it is hidden); at the right, in this order, the reviewer in <code>--ink-2</code>, the update notice, Settings and Commands with its <kbd>Ctrl+K</kbd> key cap, the one key cap a working screen shows (D-SYS-12). <span class="avoid">a shadow under the bar; a second toolbar; page-like navigation; a key cap on the Pane switch; a switch whose state shows by colour alone; a switch for the Detail, which a node opens and Esc closes.</span></dd>
   <dt id="D-PANE-1">D-PANE-1</dt>
   <dd>The Pane is one <code>--surface-panel</code> column, top to bottom: the Search field (a <code>--surface-input</code> field in <code>--mono</code>, closed below by <code>--line-group</code>), the Branches, and the Waiting stack opened above by <code>--line-group</code>. The Pane and the Main area meet at a 1px <code>--line-panel</code> divider that takes a drag. Hidden by the bar's Pane switch (D-BAR-1), the Pane and its divider are gone and the Main area takes the window's width; shown again, the Pane has the width it had. Focused with suggestions, the Search drops a list under the field on <code>--surface-raised</code> with a <code>--line-panel</code> border: <code>--row-dense</code> rows in <code>--mono</code> at <code>--text-small</code> (keys, projects, branches, sort orders), the active one on <code>--selection</code>; Tab or Enter takes it, Esc closes it. <span class="avoid">headings such as Scope or Runs; a screen switch; a gap instead of the divider; suggestions that widen the Pane.</span></dd>
   <dt id="D-PANE-2">D-PANE-2</dt>
   <dd>A branch row: a 28px head with the chevron (the fold icon in a 20px box, the unfold icon while expanded), the name at <code>--text-title</code> as <i>project /</i> in <code>--ink-2</code> and the branch semibold, cut with an ellipsis, and the star at the end (the star icon in <code>--ink-3</code> until on, then the filled star in <code>--ink</code>); folded, a 12px line under the name with an 8px dot in the status colour, the status word semibold in the same colour and the age right-aligned in tabular figures. Rows are separated by <code>--line-group</code>. <span class="avoid">a card per branch; the project louder than the branch; an age in proportional figures.</span></dd>
   <dt id="D-PANE-3">D-PANE-3</dt>
-  <dd>An expanded branch's timeline: entries of two 12px lines (status word semibold and age right; Run ID, then a comment cut to one line, in <code>--ink-2</code>), dots of 8px joined by a 1px <code>--line-group</code> line, the Current a ring, the entry shown in the Main area in a <code>--surface-group</code> pill of <code>--radius-control</code>; the selected entry has the <code>--selection</code> background and a 2px inset bar while the keyboard is in the Pane. While older Runs exist, <b>Older runs</b> ends the timeline as a text button in <code>--accent</code> at <code>--text-small</code>, indented to the entries' text, and brings them in below the oldest. <span class="avoid">pills on every entry; a status colour as the pill; a pager instead of Older runs.</span></dd>
+  <dd>An expanded branch's timeline: entries of at most two 12px lines (status word semibold and age right; under it one line in <code>--ink-2</code>, the comment the Run was requested with, cut to one line, or else its Run ID; the Current has its word alone), dots of 8px joined by a 1px <code>--line-group</code> line, the Current a ring, the entry shown in the Main area in a <code>--surface-group</code> pill of <code>--radius-control</code>; the selected entry has the <code>--selection</code> background and a 2px inset bar while the keyboard is in the Pane. While older Runs exist, <b>Older runs</b> ends the timeline as a text button in <code>--accent</code> at <code>--text-small</code>, indented to the entries' text, and brings them in below the oldest. <span class="avoid">pills on every entry; a status colour as the pill; a Run's ID and its comment both; a line that explains the Current; a pager instead of Older runs.</span></dd>
   <dt id="D-PANE-4">D-PANE-4</dt>
-  <dd>The Waiting stack: an 11px uppercase label <code>WAITING (n)</code> in <code>--ink-2</code>, then 12px rows of the eval (its status's icon in <code>--human</code>), the project and branch, and <code>age · claimant</code> in <code>--ink-2</code>; selected rows use <code>--selection</code>. <span class="avoid">a bold heading; the stack taller than half the Pane.</span></dd>
+  <dd>The Waiting stack: an 11px uppercase label <code>WAITING (n)</code> in <code>--ink-2</code>, then 12px rows of the eval (its status's icon in <code>--human</code>), the project and branch, and the age in <code>--ink-2</code>, followed by <code>· claimant</code> only once it is claimed; selected rows use <code>--selection</code>. <span class="avoid">a bold heading; a dash where there is no claimant; the stack taller than half the Pane.</span></dd>
   <dt id="D-MAIN-1">D-MAIN-1</dt>
-  <dd>The Main area header is one 32px row that says what is shown: the view's name at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus): <i>Run {id}</i>, <i>Current · {project} {branch}</i>, <i>Review</i>; then, in the same row at <code>--text-small</code>, the view's headline (a Run's verdict icon and word bold in the status colour and its headline in <code>--ink-2</code> with tabular figures, its tally as each status's icon in that status's colour and its count in <code>--ink-2</code>; a Current's scan state, D-CUR-1; a review's eval, title and Artifact, D-REV-1), cut with an ellipsis when the row is short; then a notice in <code>--red</code> as one cut line, at least 96px wide, taking the remaining room; actions at the end as small buttons with key caps. A click on the notice shows it in full, wrapped within the header's width on <code>--surface-raised</code> with a <code>--line-panel</code> border, what is below it neither moved nor resized (E-MON-NOTICE); another click folds it to one line. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a second row for the headline; a notice that moves the graph; a notice that cannot be read whole.</span></dd>
+  <dd>The Main area header is one 32px row that says what is shown: the view's name at <code>--text-small</code> semibold in <code>--ink-2</code> (<code>--ink</code> while the Main area has focus): a Run's ID, <i>Current · {project} {branch}</i>, <i>Review</i>; then, in the same row at <code>--text-small</code>, the view's headline (a Run's verdict icon and word bold in the status colour, then what needs attention: each eval that is RED or ERROR and each sign-off that waits, as its status's icon in that status's colour and its name in <code>--ink</code>, the failures first; a Current's scan state, D-CUR-1; a review's eval, title and Artifact, D-REV-1), cut at the row's end when the row is short; then a notice in <code>--red</code>, a few words that say what went wrong and how many (<i>2 Runs cannot be read</i>), at least 96px wide, taking the remaining room; actions at the end as small buttons. A Run's tally, its duration, its comment and the sentence of its outcome are in the Run's Detail (D-INS-7), which a click on the headline opens. A click on the notice shows it in full, with its details, wrapped within the header's width on <code>--surface-raised</code> with a <code>--line-panel</code> border, what is below it neither moved nor resized (E-MON-NOTICE); another click folds it to one line. A focused panel shows a 2px <code>--accent</code> line at its top. <span class="avoid">a large title; a second row for the headline; a sentence that repeats the verdict; a tally or a duration in the header; a notice that moves the graph; a notice that cannot be read whole.</span></dd>
   <dt id="D-MAIN-2">D-MAIN-2</dt>
-  <dd>Under the header a Run shows only what it has to add, above its graph's tool strip: its comment in full (wrapping, in <code>--ink</code>) when it has one, and what needs attention as 12px lines each led by its status's icon in the status colour; a Run with neither goes straight from the header to the tool strip. The Run's headline, in the header row, takes the click that opens the Run's Detail. <span class="avoid">a coloured banner; the attention list inside the graph; the comment cut short here.</span></dd>
+  <dd>Nothing stands between the header row and a graph's tool strip. What needs attention is in the Run's headline (D-MAIN-1); its comment in full and what it waits for are in the Run's Detail (D-INS-7), and the Pane's timeline shows the comment cut to one line (D-PANE-3). The Run's headline, in the header row, takes the click that opens the Run's Detail. <span class="avoid">a coloured banner; a row of comment or attention under the header; the attention list inside the graph.</span></dd>
   <dt id="D-MAIN-3">D-MAIN-3</dt>
-  <dd>The graph's place is kept whatever the Main area has to say about it: with nothing chosen (a launch without arguments), while a Run loads, when a Run cannot be read, or with an empty graph, one <code>--ink-2</code> line says so at the top of the Main area's body (for a Run whose graph is empty, under that Run's header, comment and attention of D-MAIN-1 and D-MAIN-2, where its graph's tool strip would begin) (<i>Choose a branch or a waiting review in the Pane.</i>, <i>Loading the Run…</i>, <i>This Run cannot be read; choose another.</i>) and the area below stays empty on <code>--surface-panel</code>, without a tool strip, which comes with a graph; a notice about other Runs still goes to the header (D-MAIN-1). <span class="avoid">an empty-state illustration; a dialog for a Run that cannot be read; the Pane changing size with the Main area's state.</span></dd>
+  <dd>The graph's place is kept whatever the Main area has to say about it: with nothing chosen (a launch without arguments), while a Run loads, when a Run cannot be read, or with an empty graph, one <code>--ink-2</code> line says so at the top of the Main area's body (for a Run whose graph is empty, under that Run's header row, where its graph's tool strip would begin) (<i>Choose a branch or a waiting review in the Pane.</i>, <i>Loading the Run…</i>, <i>This Run cannot be read; choose another.</i>) and the area below stays empty on <code>--surface-panel</code>, without a tool strip, which comes with a graph; a notice about other Runs still goes to the header (D-MAIN-1). <span class="avoid">an empty-state illustration; a dialog for a Run that cannot be read; the Pane changing size with the Main area's state.</span></dd>
   <dt id="D-GRAPH-1">D-GRAPH-1</dt>
-  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the graph's tool strip (D-GRAPH-4). Nothing rests on it but the graph, over its grid (D-GRAPH-6): the find field (D-OVL-4) floats over its top left only while it is open, and the Navigator (D-GRAPH-5) sits at its bottom right only while part of the graph lies outside the view; the legend, the zoom controls and the key hint are in the tool strip. <span class="avoid">a white canvas inside a dark panel; a legend, controls or a hint floating on the canvas.</span></dd>
+  <dd>The graph canvas is the working surface, <code>--surface-app</code>, opened by a <code>--line-group</code> line under the graph's tool strip (D-GRAPH-4). Nothing rests on it but the graph, over its grid (D-GRAPH-6): the find field (D-OVL-4) floats over its top left only while it is open, and the Navigator (D-GRAPH-5) sits at its bottom right only while part of the graph lies outside the view; the zoom controls are in the tool strip, and what a graph's marks mean is in Help (D-OVL-5). <span class="avoid">a white canvas inside a dark panel; a legend, controls or a hint floating on the canvas.</span></dd>
   <dt id="D-GRAPH-4">D-GRAPH-4</dt>
-  <dd>The graph's tool strip is one row of <code>--row-head</code> between what the view shows above its graph and the canvas, on <code>--surface-panel</code>, opened above by <code>--line-group</code>; a Run's and a Current's graph each have it. From the left: <b>Find</b>, a small button with the find icon, its word and its <kbd>Ctrl+F</kbd> key cap, which opens the find field as the key does; the zoom group, one bordered group 22px high of Zoom out (the minus icon), the zoom in percent in tabular figures, and Zoom in (the add icon); <b>Fit</b>, a small button with the fit icon and its word, which is Fit View; then the hint that <kbd>m</kbd> minimizes or expands a whole, the key cap and its words at <code>--text-label</code> in <code>--ink-2</code>. At the row's end sits the legend at <code>--text-label</code> in <code>--ink-2</code>: each status's icon in its colour and its word (a Run's: GREEN, in progress, waiting, RED, ERROR, blocked by upstream; a Current's: D-CUR-2). The Detail docks under the strip, so the strip stays whole and usable with the Detail open. The strip is always one row: when it is too short for everything, Find, the zoom group, Fit and the hint stay whole and the legend, last in the row, is cut at the row's end. <span class="avoid">controls floating on the canvas; Find as an icon alone; a legend of colour dots; the strip under the Detail; a second strip or a second line.</span></dd>
+  <dd>The graph's tool strip is one row of <code>--row-head</code> between the Main area's header row and the canvas, on <code>--surface-panel</code>, opened above by <code>--line-group</code>; a Run's and a Current's graph each have it. It holds what acts on the graph and nothing else, from the left: <b>Find</b>, a small button with the find icon and its word, which opens the find field as <kbd>Ctrl+F</kbd> does; the zoom group, one bordered group 22px high of Zoom out (the minus icon), the zoom in percent in tabular figures, and Zoom in (the add icon); <b>Fit</b>, a small button with the fit icon and its word, which is Fit View. The rest of the row stays empty. The Detail docks under the strip, so the strip stays whole and usable with the Detail open. <span class="avoid">controls floating on the canvas; Find as an icon alone; a legend, a hint or a key cap in the strip; the strip under the Detail; a second strip or a second line.</span></dd>
   <dt id="D-NODE-5">D-NODE-5</dt>
   <dd>Ports tell an edge's direction by shape and side, and carry no status: a node, a whole's box or a minimized whole that edges reach shows one input port, a triangle pointing into it, at the middle of its left side; one that edges leave shows one output port, a square, at the middle of its right side. A port is <code>--port</code> wide and high, straddles the outline, is filled in the edges' neutral <code>--edge</code> and takes no pointer; a side that no drawn edge meets has no port, and many edges on one side share its one port. The neighbours drawing in the Detail draws the same ports. <span class="avoid">a port per edge; the same shape on both sides; a port in a status colour; arrowheads on the edges instead; a port that can be dragged or clicked.</span></dd>
   <dt id="D-GRAPH-2">D-GRAPH-2</dt>
@@ -413,7 +389,7 @@
   <dt id="D-GRAPH-6">D-GRAPH-6</dt>
   <dd>The canvas carries a faint grid: 1px lines of <code>--line-group</code> at 40% every <code>--grid</code>, moving and scaling with the camera, under the edges and the nodes. It is left out wherever the zoom makes its cells smaller than 8px on screen, as in the picture of a large graph zoomed far out. <span class="avoid">a grid as strong as a group line; dots or crosses; a grid that stays still while the graph pans; a grid on a panel.</span></dd>
   <dt id="D-NODE-1">D-NODE-1</dt>
-  <dd>A node is 168 × 40–44px: a <code>--surface-panel</code> face, a 1px <code>--line-node</code> outline, <code>--radius-control</code> corners. Its status shows in two places and nowhere else, both in the status's one colour (D-SYS-6): the status's icon (<code>--icon</code>, D-SYS-8) before the name, and a strip <code>--strip</code> high along its bottom, inside the outline. After the icon comes the name at 13px medium in <code>--ink</code>, cut with an ellipsis; then, when the Artifact has evals, its tally at <code>--text-label</code> in <code>--ink-2</code> with tabular figures: how many of its evals are GREEN of how many it has (<code>2/3</code>), on a Current how many would be reused; an Artifact still being checked shows none. The legend pairs each status's icon with its word. <span class="avoid">an outline or a face in the status colour; a plain dot where the icon goes; a name or a tally in the status colour; a colour for a status that a list does not use for it.</span></dd>
+  <dd>A node is 168 × 40–44px: a <code>--surface-panel</code> face, a 1px <code>--line-node</code> outline, <code>--radius-control</code> corners. Its status shows in two places and nowhere else, both in the status's one colour (D-SYS-6): the status's icon (<code>--icon</code>, D-SYS-8) before the name, and a strip <code>--strip</code> high along its bottom, inside the outline. After the icon comes the name at 13px medium in <code>--ink</code>, cut with an ellipsis; then, when the Artifact has evals, its tally at <code>--text-label</code> in <code>--ink-2</code> with tabular figures: how many of its evals are GREEN of how many it has (<code>2/3</code>), on a Current how many would be reused; an Artifact still being checked shows none. Help pairs each status's icon with its word (D-OVL-5), as does every list that names a status (the Pane, an eval row, a status line). <span class="avoid">an outline or a face in the status colour; a plain dot where the icon goes; a name or a tally in the status colour; a colour for a status that a list does not use for it.</span></dd>
   <dt id="D-NODE-2">D-NODE-2</dt>
   <dd>Selection and focus change the outline, the face and the strip unchanged, and show never more than two marks at once: the opened Artifact's node has its own outline turned <code>--outline-selected</code> and 2px, with no gap; the node under the pointer has its outline stepped up to <code>--ink-3</code>; the 2px <code>--focus</code> ring sits 2px outside and shows only while the keyboard moves focus, so a node opened by a click carries the one outline. The opened node and the Detail name the same Artifact; when the opened Artifact is hidden inside a minimized whole, that whole carries the outline (every copy of a shared part carries it too). <span class="avoid">the accent as the selection; a filled face for selection; a focus ring left on a node after a click; three rings on one node.</span></dd>
   <dt id="D-NODE-3">D-NODE-3</dt>
