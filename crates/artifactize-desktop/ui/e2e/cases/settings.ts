@@ -8,6 +8,8 @@ import {
   type Fixture,
 } from "../fixture.ts";
 import { clickOption } from "../input.ts";
+import { git } from "../environment.ts";
+import { runtimeProfile } from "../native-fixtures.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { mainTitle } from "../pane.ts";
@@ -510,24 +512,44 @@ Review the agent folder."""
     async () => {
       const fixture = createOutside();
       const env = settingsEnvironment(fixture);
+      // One saved GREEN result to push.
+      writeText(nativePath(fixture.repo, ".artf"), `name = "repo"\n[evals.check]\ntitle = "Check"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check."\n`);
+      git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
+      const verified = await verifyAll(fixture);
+      assert.equal(verified.code, 0, verified.stdout);
       // The outer owner serves HTTP while WDIO runs elsewhere. Only this fixture's
-      // domain state crosses that process boundary, never a server or live closure.
+      // domain state crosses that process boundary, never a server or live closure: the
+      // principal it answers with, and each record the store received.
       const principalFile = nativePath(fixture.root, "remote-principal");
+      const receivedFile = nativePath(fixture.root, "remote-received");
       writeText(principalFile, "alice-laptop");
+      writeText(receivedFile, "");
       const store = await serveLoopbackHttp((request, response) => {
         request.resume();
-        const ok = request.url === "/v1/whoami" && request.headers.authorization === `Bearer ${TOKEN}`;
-        response.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
-        response.end(JSON.stringify(ok ? { principal: readText(principalFile), scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
+        const signedIn = request.headers.authorization === `Bearer ${TOKEN}`;
+        const answer = (status: number, body: unknown) => {
+          response.writeHead(status, { "content-type": "application/json" });
+          response.end(JSON.stringify(body));
+        };
+        if (!signedIn) return answer(401, { error: "Invalid or revoked token." });
+        if (request.method === "GET" && request.url === "/v1/whoami") return answer(200, { principal: readText(principalFile), scopes: ["read", "publish"] });
+        // Nothing is in the store yet; each record put is received once.
+        if (request.method === "POST" && request.url === "/v1/lookup") return answer(200, { entries: [] });
+        if (request.method === "PUT" && request.url?.startsWith("/v1/entries/")) {
+          writeText(receivedFile, `${readText(receivedFile)}${request.url}\n`);
+          return answer(200, { created: true });
+        }
+        return answer(404, { error: "Not found." });
       });
       return {
         fixture,
         env,
-        data: { url: `${store.url}/`, principalFile, token: TOKEN },
+        data: { url: `${store.url}/`, principalFile, receivedFile, token: TOKEN },
         release: () => store.close(),
       };
     },
-    async (browser, { fixture, data: { url, principalFile, token } }) => {
+    async (browser, { fixture, data: { url, principalFile, receivedFile, token } }) => {
+      const received = () => readText(receivedFile).split("\n").filter(Boolean).length;
       const text = () => browser.execute(() => document.body.innerText);
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
@@ -566,12 +588,21 @@ Review the agent folder."""
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await text()).includes("alice-desktop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "Check status displays the fresh remote principal" });
       await browser.waitUntil(() => browser.execute(() => document.querySelector('[aria-label="Remote store"] .notice [data-testid="remote-principal"]') !== null), { timeout: 15000, timeoutMsg: "the store is reachable" });
+      /** What the status says was pushed today, or "" while it says nothing. */
+      const pushedToday = async () => (await browser.$('[data-testid="remote-pushed"]').isExisting()) ? await browser.$('[data-testid="remote-pushed"]').getText() : "";
       await browser.$("button=Push (dry run)").click();
-      await browser.waitUntil(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run reports its result" });
-      // A dry run pushes nothing: the status, read again, says nothing was pushed today.
+      await browser.waitUntil(async () => /Would push 1, already in the store 0, skipped 0\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run would push the one result" });
+      // A dry run pushes nothing: the store received nothing, and the status, read again,
+      // says nothing was pushed today.
+      assert.equal(received(), 0, "the dry run sent no record");
       await browser.$("button=Check status").click();
-      await browser.waitUntil(async () => (await browser.$('[data-testid="remote-pushed"]').isExisting()) && (await browser.$('[data-testid="remote-pushed"]').getText()) === "0 pushed today",
-        { timeout: 15000, timeoutMsg: "nothing pushed today" });
+      await browser.waitUntil(async () => (await pushedToday()) === "0 pushed today", { timeout: 15000, timeoutMsg: "nothing pushed today" });
+      // A real push: the store receives the record, and the same status counts it.
+      await browser.$("button=Push results").click();
+      await browser.waitUntil(async () => /Pushed 1, already in the store 0, skipped 0\./.test(await text()), { timeout: 15000, timeoutMsg: "the push reports its result" });
+      assert.equal(received(), 1, "the store received the one record");
+      await browser.$("button=Check status").click();
+      await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the push counted today" });
       await browser.$("button=Sign out of the store").click();
       await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "the store is signed out, its fields back" });
       assert.equal(await browser.$("#remote-token").getValue(), "", "the token field is empty");
