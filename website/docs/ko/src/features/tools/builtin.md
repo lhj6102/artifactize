@@ -146,7 +146,7 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 ## `artifactize-tools` CLI {#artifactize-tools-cli}
 
 Microsoft Store를 포함해 어떤 방법으로 설치하든 `artifactize tools`로 현재 디렉터리에서 같은 도구를
-쓸 수 있습니다. Store 이외의 방법으로 설치하면 `artifactize-tools`도 `artifactize`와 같은 디렉터리에 설치됩니다. 어느 명령을 쓰든 인자, 출력, 종료 코드는 같으며, `artifactize tools --version`도 같은 방식으로 동작합니다. 기존의
+쓸 수 있습니다. Store 이외의 방법으로 설치하면 `artifactize-tools`도 `artifactize`와 같은 디렉터리에 설치됩니다. 어느 명령을 쓰든 도구 하위 명령과 그 인자·옵션, 출력, 종료 코드는 같으며, `artifactize tools --version`도 같은 방식으로 동작합니다. 단, 단독 `artifactize-tools`는 `artifactize`의 `--json`, `--repo`, `--state-dir` 옵션을 받지 않습니다. 기존의
 `artifactize tools check`는 현재 디렉터리 도구를 실행하는 것이 아니라 선언한 리뷰 도구를
 확인합니다.
 

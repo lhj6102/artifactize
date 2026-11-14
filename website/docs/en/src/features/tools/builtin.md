@@ -177,8 +177,10 @@ fingerprint; the default artifactsum covers the Artifact's own files.
 
 `artifactize tools` exposes the same current-directory tools on every install,
 including the Microsoft Store package. Non-Store channels also put `artifactize-tools`
-next to `artifactize`; both spellings take the same arguments and give the same output and
-exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
+next to `artifactize`; both spellings take the same tool subcommands, operands and options
+and give the same output and exit codes, including `artifactize tools --version`. The
+standalone `artifactize-tools` does not take `artifactize`'s `--json`, `--repo` or
+`--state-dir`. The existing `artifactize tools check` checks declared review tools
 rather than running a current-directory tool.
 
 For runtime evals, fingerprint scripts and your own scripts:
