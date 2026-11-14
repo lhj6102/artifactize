@@ -108,7 +108,8 @@ that makes the transition happen and checks where it leads.
   minimized; a minimized whole highlighted while an Artifact it hides is open.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
   does, Ctrl+F opens their **Find field** and `m` minimizes or expands a whole; they have no
-  other keys of their own. Hovering only highlights. Above each graph sits its **tool strip**,
+  other keys of their own. Hovering only highlights; the one thing it shows is the native
+  tooltip of a whole's Minimize or Expand button, which names `m`. Above each graph sits its **tool strip**,
   one row of what acts on the graph and nothing else: a Find button, Zoom out, the zoom in
   percent and Zoom in, and Fit View; the graph's keys and what its marks mean are in Help.
   Whenever part of a graph lies outside the view, a **Navigator**
@@ -169,8 +170,8 @@ that makes the transition happen and checks where it leads.
   (CLAIM, with the claimant while another reviewer holds it, or REVIEW (yours)), its
   instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the
   reviewed one first, a group named by its Artifact only when more than one declares tools),
-  the Tool log of every run in this review, and the Result, in that order, then Debug, folded,
-  with the request's ID, its mode, its claimant and how long it has waited. Its eval's title
+  the Tool log of every run in this review, and the Result, in that order, then Debug, folded
+  until `t` or a click unfolds it, with the request's ID, its mode, its claimant and how long it has waited. Its eval's title
   is said once, above it: in the Main area's header, or in the Detail's title.
   On a Human eval's tab, and in a Main area less than twice as wide as the Detail, it is one
   column no wider than a readable measure; in a Main area at least twice as wide as the Detail
@@ -285,7 +286,7 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, its nodes' icons, strips and counts and its edges changed in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, or after a whole its Minimize or Expand button (E-GRAPH-TAB-WHOLE), nothing opened |
-| E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
+| E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button, the button's name, read aloud and shown as its native tooltip, naming its key `m`; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn: as nodes where their names read, as blocks of their verdict's colour where the zoom makes names too small to read |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole, never enlarged beyond its nodes' own size |
 | E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom (the wheel, or the tool strip's Zoom out or Zoom in), or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size; the Navigator shown at the graph's bottom right while part of the graph lies outside the view, gone while all of it is in view |
@@ -321,7 +322,7 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened: its outcome (its status, the evals that failed, its tally, how long it took, its comment in full) and what it waits for unfolded, the rest folded |
 | E-DETAIL-STAR | Detail of an Artifact of a Run or a Current, on any of its tabs | click the ☆ (or ★) beside its title | same Detail, the Artifact starred (★) or its star taken away (☆), for every branch of its project and every later monitor of this machine's user; the Find field lists it with nothing typed (E-GRAPH-FIND-OPEN) or no longer does |
 | E-DETAIL-SECTION | Detail on a tab with sections (an Artifact's tab, an eval's Summary, a Run's Detail) | click a section's header row, or Enter or Space on it focused | same Detail, that section folded to its header row alone, or unfolded again; kept by the section's name for every Detail opened later and for the next launch |
-| E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab | `t`, or a click on Debug | Detail, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts) shown or hidden |
+| E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab, or a Human review (on a Human eval's tab, or in the Main area) | `t` outside a field typed in, or a click on Debug | the same view, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts; a Human review's request ID, mode, claimant and how long it has waited) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
 | E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, shown from the first run on and unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
 | E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log, unfolded if it was folded, until it exits |
@@ -335,7 +336,7 @@ that makes the transition happen and checks where it leads.
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-HUMAN-CLAIM | Unclaimed | `c`, or a click on Claim to review | Claimed |
-| E-HUMAN-RELEASE | Claimed, or Editing with nothing running | `u` outside a field typed in (typed in a text field it is text), or a click on Release claim | Unclaimed; a form that was being edited is left, its draft kept |
+| E-HUMAN-RELEASE | Claimed or Editing, nothing running | `u` outside a field typed in (typed in a text field it is text), or a click on Release claim | Unclaimed; a form that was being edited is left, its draft kept |
 | E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Taken, the claimant named beside its stage; claiming here is refused |
 | E-HUMAN-RELEASED-ELSEWHERE | Taken | the other process releases | Unclaimed |
 | E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0` |
@@ -351,7 +352,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-GROUP-ADD | Editing a form with a list of groups | `+ Add` | Editing, another empty group of the list's fields |
 | E-HUMAN-GROUP-REMOVE | Editing a form with a list of groups | `✕` on a group | Editing, that group removed; one empty group stays when it was the last |
 | E-HUMAN-INVALID | Editing RED or Editing GREEN | Ctrl+S, or a click on Submit, with a result failing its schema | the same form, its entries kept and correctable, failing path shown |
-| E-HUMAN-TEXT | Editing | type text, including composed Korean | Editing, no shortcut fires |
+| E-HUMAN-TEXT | Editing | type text, including composed Korean | Editing, the field holding the text typed or corrected, no shortcut fired |
 | E-HUMAN-LOG-UP | Tool log Following, longer than its box | scroll it up | Tool log Scrolled up; new lines arrive below without moving it, and the rest of the review does not scroll |
 | E-HUMAN-LOG-FOLLOW | Tool log Scrolled up | scroll it back to its bottom | Tool log Following, showing each newest line again |
 | E-HUMAN-LOG-COPY | Editing, the Tool log holding lines | select text in the Tool log, copy it and paste it into a Result field | Editing, the field holding the log's text as shown |
@@ -379,7 +380,7 @@ that makes the transition happen and checks where it leads.
 | E-SET-CLAUDE-AGENT | Providers | choose Claude Agent | Claude Code's sign-in shown as Claude Code reports it: `claude` not found, not signed in, signed in with its login method and plan, or its error |
 | E-SET-CLAUDE-AGENT-CHECK | Claude Agent | Check again | Claude Code's sign-in asked again and shown |
 | E-SET-CLAUDE-AGENT-LOGIN | Claude Agent | Sign in with Claude Code | Claude Code sign-in in progress: `claude auth login` running, the browser opened by Claude Code, the URL it printed shown once Finish by hand is unfolded |
-| E-SET-CLAUDE-AGENT-RETURN | Claude Code sign-in in progress | the browser returns to Claude Code | Claude Agent, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-RETURN | Claude Code sign-in in progress | the browser returns to Claude Code and its `claude auth login` ends signed in | Claude Agent, Claude Code's sign-in asked again and shown: signed in with its login method and plan |
 | E-SET-CLAUDE-AGENT-PASTE | Claude Code sign-in in progress | unfold Finish by hand, paste the code the sign-in page gives, then Finish sign-in | Claude Code takes the code and signs in; Claude Agent, its sign-in shown again |
 | E-SET-CLAUDE-AGENT-END | Claude Code sign-in in progress | Claude Code ends without signing in: it refuses a pasted code, fails, or ten minutes pass | Claude Agent, the error Claude Code ended with shown and its sign-in shown again |
 | E-SET-CLAUDE-AGENT-CANCEL | Claude Code sign-in in progress | Cancel sign-in | Claude Agent, Claude Code stopped, its sign-in shown again |
@@ -471,7 +472,9 @@ E-PANE-SELECT.
   E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
 - J-HUMAN-LAYOUT: E-MON-DETAIL-TAB | E-REVIEW-OPEN
-  E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-GREEN → E-HUMAN-INVALID → E-HUMAN-SUBMIT
+  E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-GREEN → E-HUMAN-SUBMIT
+  E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-RED → E-HUMAN-INVALID → E-HUMAN-TEXT → E-HUMAN-SUBMIT
+  E-REVIEW-OPEN → E-MON-DETAIL-TECHNICAL
 - J-HUMAN-TOOL: E-HUMAN-CLAIM → E-HUMAN-TOOL | E-HUMAN-TOOL-LAUNCH | E-HUMAN-TOOL-FAIL
 - J-HUMAN-LOG: E-HUMAN-TOOL → E-HUMAN-TOOL-FAIL
   E-HUMAN-TOOL-LAUNCH → E-HUMAN-GREEN → E-HUMAN-LOG-LIVE
