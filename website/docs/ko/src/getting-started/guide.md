@@ -45,7 +45,7 @@ PowerShell에서는 첫 줄을
 그 경로를 위와 같은 환경 변수에 저장합니다. `artifactize` 명령은 그대로입니다.
 
 `config check`는 프로젝트 프로그램을 실행하지 않고 선언을 검증합니다.
-`status`에는 eval 두 개가 실행 대상으로 표시되고, 나머지 하나는 앞선 결과가 나온 뒤 실행되는 것으로 표시됩니다.
+`status`에서는 eval 두 개를 실행 대상으로, 나머지 하나를 선행 eval의 결과가 나온 뒤 실행할 대상으로 표시합니다.
 프로젝트에 필요한 eval이 아직 모두 통과하지 않았으므로 종료 코드는 1입니다. `config graph`는
 Artifact들과 그 입력 관계를 보여 줍니다. 이제 세 eval을 모두 실행하고
 결과를 기다리세요.
@@ -62,7 +62,7 @@ artifactize verify --all --wait
 artifactize run show RUN_ID
 ```
 
-이 명령은 저장된 Run을 JSON(구조화된 텍스트 기록) 형식으로 출력합니다. `argv`는
+이 명령은 저장된 Run을 JSON 형식의 구조화된 텍스트로 출력합니다. `argv`는
 프로그램에 전달된 인자 목록이고, `stdout`은 그 프로그램이 출력한 텍스트입니다.
 기록에는 리뷰된 입력을 식별하는 fingerprint도 들어 있습니다.
 
