@@ -59,8 +59,7 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 eval의 키에는 대상 Artifact, 대상의 모든 [부분](artifact.md#composition)(그 부분의 부분까지),
 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact의 fingerprint가 들어갑니다. 포함된 Artifact마다
-이름, 종류, 자체 fingerprint를 한 번씩 넣습니다. Merkle 방식으로 값을 결합하므로 전체에서 부분의
-파일을 다시 해시하지 않습니다. 파일 부분이나 안에 선언된 폴더 부분이 바뀌면 전체의 파일이 바뀔 때와
+이름, 종류, 자체 fingerprint를 한 번씩 넣습니다. 파일 부분이나 안에 선언된 폴더 부분이 바뀌면 전체의 파일이 바뀔 때와
 마찬가지로 전체의 eval을 다시 리뷰합니다. `status`에서는 전체의 파일 변경과 구분해 어느 부분이
 바뀌었는지 알 수 있습니다. 한 부분만 검사하는 eval은 그 부분에 선언하세요.
 

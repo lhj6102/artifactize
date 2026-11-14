@@ -304,7 +304,7 @@ payload.instruction = "Review {fireball} against {skill-spec}."
   실행됩니다.
 - scope 항목과 저장된 정의에는 `kind = "aspect"`가 들어갑니다.
 
-겹쳐도 됩니다. 오히려 그것이 aspect를 쓰는 이유입니다. `game`의 다른 파일이 바뀌어도
+범위가 겹쳐도 괜찮습니다. 여러 aspect가 겹치는 파일을 다룰 수 있다는 점이 aspect의 장점입니다. `game`의 다른 파일이 바뀌어도
 `fireball`의 결과는 재사용되고, `src/`를 담은 폴더 Artifact는 여전히 그 안을 모두
 리뷰합니다. aspect는 선언이 있는 폴더를 둘러싼 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 
@@ -358,7 +358,7 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 
 artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일에 ignore되지 않은 심볼릭 링크나 특수 파일이 있으면 오류가 발생해 검증을 중단합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
 심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 해당 Artifact에 속하지 않은 파일은 해시하지
-않습니다. 다만 무엇을 제외할지 알기 위해 저장소 루트까지 그 위 폴더들의 `.gitignore`도 읽습니다. 항목 10,000개나 1 GiB를 넘으면 오류와 함께 멈춥니다. 해시는 준비 단계와 리뷰가
+않습니다. 다만 무엇을 제외할지 알기 위해 저장소 루트까지 그 위 폴더들의 `.gitignore`도 읽습니다. 탐색 항목이 10,000개를 넘거나 전체 용량이 1 GiB를 초과하면 오류를 내고 중단합니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
 파일이 생겨도 `INPUT_CHANGED`가 일어나지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
 `status`가 그 뒤로 바뀐 파일(`path`, `+path`, `-path`)과 바뀐 의존성을 알려 줄 수 있습니다.

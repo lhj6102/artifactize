@@ -66,10 +66,8 @@ Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the s
 An eval's key combines the fingerprints of its target Artifact, all of the target's
 [parts](artifact.md#composition) (their parts included), and the Artifacts the eval
 names in its instruction or runtime args. Each covered Artifact contributes its
-name, kind and own fingerprint once. This Merkle-style combination does not hash
-part files again in the whole. A change to a file part or a nested folder part
-therefore reviews the whole's evals again, just as a change to the whole's own
-files does. `status` can name the changed part separately from the whole's own
+name, kind and own fingerprint once. Changing a file part or a nested folder part
+reviews the whole's evals again, just as changing the whole's own files does. `status` can name the changed part separately from the whole's own
 changed files. An eval that needs only a part should target that part.
 
 References still stop at one hop: naming another Artifact does not add its parts
