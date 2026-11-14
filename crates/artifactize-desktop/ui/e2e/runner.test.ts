@@ -36,8 +36,8 @@ it("a failed preparation stops the real service before its executable boundary",
     writeJson(nativePath(directory, "candidate.json"), { root: directory, cli: app, app, observer: app, manifest: nativePath(directory, "candidate.json") });
     // Fail on a private external input after setup has acquired its HTTP fixture.
     // Never occupy the product's fixed auth callback port: the suite may run beside us.
-    const context = makeDirectory(nativePath(directory, "settings-remote-logs", "settings-remote.json"));
-    const blocked = await launch(directory, "settings-remote", test.signal);
+    const context = makeDirectory(nativePath(directory, "settings-keys-logs", "settings-keys.json"));
+    const blocked = await launch(directory, "settings-keys", test.signal);
     assert.equal(blocked.code, 1, blocked.stdout + blocked.stderr);
     assert.match(blocked.stderr, /Desktop scenario preparation failed/);
     assert.doesNotMatch(blocked.stderr, /Failed to start embedded WebDriver/);
@@ -47,7 +47,7 @@ it("a failed preparation stops the real service before its executable boundary",
     // Positive control: fixing only that input must reach the same real service's
     // executable boundary, proving the first rejection was before app admission.
     removeTree(context);
-    const admitted = await launch(directory, "settings-remote", test.signal, "settings-remote-retry-logs");
+    const admitted = await launch(directory, "settings-keys", test.signal, "settings-keys-retry-logs");
     assert.equal(admitted.code, 1, admitted.stdout + admitted.stderr);
     assert.match(admitted.stderr, /Failed to start embedded WebDriver/);
     assert.match(admitted.stderr, /EACCES|EINVAL|ENOEXEC|spawn/);

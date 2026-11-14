@@ -605,9 +605,10 @@ export const scenarios: Scenario[] = [
           if (!(target instanceof HTMLInputElement)) throw new Error("the composing find field lost focus");
           target.dispatchEvent(new KeyboardEvent("keydown", { key: "m", code: "KeyM", bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode }));
         }, { composing, keyCode });
+        // Each guarded keystroke on its own: an expand undone by the next one would show here.
+        await afterRender(browser);
+        assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), `m during a composition (isComposing ${composing}, keyCode ${keyCode}) leaves suite minimized`);
       }
-      await afterRender(browser);
-      assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "m during a composition leaves suite minimized");
       await nativeInput(browser, { type: "commit", text: "ㅡ" });
       await press(browser, ["Escape"], async () => (await findField(browser)) === null, "Esc closes the find field");
       assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open after the find field");
