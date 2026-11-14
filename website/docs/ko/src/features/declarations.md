@@ -233,10 +233,10 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 파일 Artifact는 가장 가까운 상위 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 그 폴더 Artifact를 선택하면 파일 Artifact도 함께 선택되고, 파일 Artifact가 통과해야 폴더 Artifact도
-통과합니다. 다만 부분이라고 입력이 되지는 않습니다. 폴더 Artifact의 eval이 이름을 적지 않으면 그
-파일 Artifact를 읽지 않으며, 재사용 키에도 그 fingerprint가 들어가지 않습니다. 하위 폴더에
-`index.artf`를 두면 그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
-artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
+통과합니다. 폴더 Artifact의 eval 키에는 참조가 없어도 파일 부분의 fingerprint가 들어갑니다.
+부분에 선언된 도구로 읽으려면 여전히 그 부분을 참조해야 합니다. 폴더의 artifactsum에서는
+옆에 있는 파일 Artifact의 대상, 자체 `index.artf`가 있는 하위 폴더를 비롯해 모든 부분의 파일과
+모든 `*.artf` 선언을 제외합니다. 각 부분의 파일은 그 부분의 fingerprint로 반영합니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
 실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 같은 폴더의 다른 파일에 접근할 수 있는 것은 아닙니다.

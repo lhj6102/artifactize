@@ -275,12 +275,11 @@ and directories such as `bundle.artf` fail discovery. A file named `index` canno
 
 A file Artifact is a [part](artifact.md#composition) of the nearest folder Artifact
 around it: selecting that folder Artifact selects the file Artifact too, and the folder
-Artifact passes only while it does. Being a part makes it no input: the folder
-Artifact's evals neither read it nor carry its fingerprint in their reuse keys unless they
-name it. A subfolder with its own `index.artf` still takes its files out of the folder
-Artifact around it.
-A folder's artifactsum includes neighboring file Artifact targets and excludes every
-`*.artf` declaration.
+Artifact passes only while it does. The folder Artifact's eval keys include the
+file part's fingerprint even without a reference; reading the part through its own
+tools still requires naming it. A folder's artifactsum excludes every part's files,
+including neighboring file targets and subfolders with their own `index.artf`,
+and every `*.artf` declaration. Each part fingerprints its own files instead.
 
 The containing folder is the working directory of runtime commands, tools and
 fingerprint scripts, so a relative executable may be a sibling file. It grants no

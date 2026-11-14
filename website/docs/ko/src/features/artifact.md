@@ -20,8 +20,8 @@ payload.instruction = "Check that every link in the docs resolves."
 ## Artifact Graph {#artifact-graph}
 
 **Artifact Graph**는 입력과 그 입력을 쓰는 eval을 연결합니다. eval에 `{spec}` 같은 참조를
-쓰면 그 eval이 `spec`을 읽을 수 있습니다. `spec`이 바뀌면 `spec`을 참조한 eval만 다시 리뷰하고,
-나머지 결과는 그대로 재사용합니다. 같은 저장소나 같은 폴더에 있다는 이유만으로 한 Artifact가
+쓰면 그 eval이 `spec`을 읽을 수 있습니다. `spec`이 바뀌면 이를 참조한 eval과 `spec`을 부분으로
+포함하는 전체의 eval을 다시 리뷰하고, 관계없는 결과는 재사용합니다. 같은 저장소나 같은 폴더에 있다는 이유만으로 한 Artifact가
 다른 Artifact의 eval 입력이 되지는 않습니다.
 
 부분 관계는 입력 관계와 별개이며, 이를 [구성](#composition)이라고 합니다. `combat`이
@@ -196,7 +196,7 @@ parts = ["physics"]
 | `combat` | 전투 구성 요소끼리 함께 동작함 |
 | `fireball` | 피해량, 재사용 대기시간, 효과 |
 
-부분은 상위 Artifact가 무엇을 리뷰할지가 아니라 통과 여부를 정합니다.
+부분 관계는 판정, 선택 범위, 재사용에 영향을 줍니다.
 
 - **부분이 실패하면 그 부분으로 이루어진 Artifact도 실패합니다.** `fireball`이 RED인 동안
   `game`도 RED로 보이며, 부분의 부분까지 모든 부분과 자기 eval이 통과해야 `game`이 통과합니다.
@@ -207,11 +207,12 @@ parts = ["physics"]
 - **Artifact가 필요하면 그 부분도 필요합니다.** `{game}`을 참조하는 eval이 GREEN으로 끝나려면
   `game`이 통과해야 하므로, Run에는 부분의 결과도 필요합니다. 다만 실행 게이트는 여전히
   `game`에 선언된 eval뿐입니다.
-- **그 밖에는 영향이 없습니다.** 부분은 파일을 나누지 않으며, 각 Artifact는 선언이 다루는 파일을
-  그대로 가집니다. 폴더 Artifact의 파일에 그 안에 중첩된 폴더 Artifact의 파일은 들어가지 않습니다.
-  fireball이 바뀔 때는 fireball을 참조하는 eval만 다시 리뷰하고, `game`의 파일이 바뀌어도 fireball은
-  다시 리뷰하지 않습니다. 파일 Artifact나 aspect의 파일은 둘러싼 폴더 Artifact의 파일에도
-  포함되므로, 그 파일이 바뀌면 둘 다 다시 리뷰합니다. fireball을 쓰는 `game`의 eval은 `{fireball}`을 참조합니다.
+- **부분이 바뀌면 전체도 다시 리뷰합니다.** 각 Artifact의 artifactsum에서는 부분의 파일을 제외합니다.
+  파일, 폴더, aspect가 고른 경로 모두 해당합니다. 전체의 eval 재사용 키에는 자체 fingerprint와
+  모든 부분의 fingerprint를 넣으며, 부분의 부분까지 포함합니다. fireball이 바뀌면 `fireball`,
+  `combat`, `game`의 eval과 `{fireball}`을 참조하는 eval을 다시 리뷰하고, 관계없는 eval은 재사용합니다.
+  `game`의 파일만 바뀌면 fireball은 다시 리뷰하지 않습니다. 재사용 키에 포함된다고 접근 권한이
+  생기지는 않습니다. fireball을 읽는 `game`의 eval은 여전히 `{fireball}`을 참조해야 합니다.
 
 부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [파일 Artifact](declarations.md#file-artifacts)는 파일
 하나이고, [aspect](declarations.md#aspects)는 fireball의

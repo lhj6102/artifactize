@@ -225,6 +225,57 @@ fn rid(id: &str) -> artifactize_core::types::RequestId {
 }
 
 #[tokio::test]
+async fn a_folder_whole_with_parts_can_be_claimed_inspected_submitted_and_reused() {
+    let fixture = Fixture::new(true);
+    fs::write(fixture.repo.join("part.txt"), "file part").unwrap();
+    support::declaration::write(
+        fixture.repo.join("part.txt.artf"),
+        json!({"name":"file-part","basis":true}).to_string(),
+    )
+    .unwrap();
+    fs::create_dir(fixture.repo.join("nested")).unwrap();
+    fs::write(fixture.repo.join("nested/input.txt"), "folder part").unwrap();
+    support::declaration::write(
+        fixture.repo.join("nested/index.artf"),
+        json!({"name":"folder-part","basis":true}).to_string(),
+    )
+    .unwrap();
+    let run = fixture.verify(returning()).await;
+    let request = &run.requests[0];
+    assert_eq!(request.status().as_str(), "DEFERRED");
+    let receipts = fixture.receipts().await;
+    let reviewer = "alice".parse().unwrap();
+    human::claim(&receipts, &request.id, &reviewer)
+        .await
+        .unwrap();
+    let inspected = human::run_human_tool(
+        &receipts,
+        &request.id,
+        &reviewer,
+        &"inspect_review".parse().unwrap(),
+        CancellationToken::new(),
+        artifactize_core::review::log::Run::unwatched(),
+    )
+    .await
+    .unwrap();
+    assert!(!inspected.is_error());
+    let submitted = human::submit(
+        &receipts,
+        &request.id,
+        &reviewer,
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(submitted.status().as_str(), "GREEN");
+    drop(receipts);
+    let reused = fixture.verify(returning()).await;
+    assert_eq!(reused.requests[0].status().as_str(), "GREEN");
+    assert_eq!(reused.run.executions_started, 0);
+}
+
+#[tokio::test]
 async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims() {
     let fixture = Fixture::new(true);
     let run = fixture.cli_verify();

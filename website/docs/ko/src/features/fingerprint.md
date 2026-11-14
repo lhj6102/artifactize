@@ -34,8 +34,10 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   안에 선언된 폴더 Artifact를 가리키는 경로는 거부합니다. 디렉터리를 훑을 때 안에 선언된 폴더 Artifact와
   `*.artf` 선언은 모두 건너뜁니다. `.artf` 파일을 직접 입력으로 적으면 알림 없이 건너뛰지 않고
   `config check`가 실패합니다. 이름이 `.artf`로 끝나는 디렉터리가 있으면
-  잘못된 선언으로 처리하며 선언 찾기가 실패합니다. 옆에 있는 파일 Artifact는 폴더 Artifact의
-  [부분](artifact.md#composition)이지만, 그 대상은 폴더 해시에 그대로 들어갑니다.
+  잘못된 선언으로 처리하며 선언 찾기가 실패합니다. 전체의 해시에서는 모든
+  [부분](artifact.md#composition)의 파일을 제외합니다. 옆에 있는 파일 Artifact의 대상,
+  안에 선언된 폴더의 내용, aspect가 고른 경로 모두 해당하며, `files`에 직접 적어도 제외합니다.
+  각 부분의 파일은 그 부분에서 한 번만 해시하고, 전체의 eval 키에는 부분의 fingerprint를 넣습니다.
 - `ignore`: 그 Artifact의 폴더를 기준으로 한 `.gitignore` 형식의 glob 패턴을 최대 64개 지정할 수 있으며, 패턴은
   중복될 수 없고 부정 패턴은 쓸 수 없습니다. 비어 있거나, `#`로 시작하거나, 제어 문자가 든 패턴은 안 됩니다. 이 패턴에 맞는 파일은
   `.git`, `__pycache__/`, `*.pyc`, `target/`, `node_modules/` 같은 내장 ignore처럼 항상 제외합니다. `.gitignore`에
@@ -55,21 +57,29 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 
 ## 재사용 키 {#the-reuse-key}
 
-eval은 대상 Artifact와, eval이 지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact에 의존합니다.
-대상 폴더 안에 선언된 폴더 Artifact를 포함해 대상의 [부분](artifact.md#composition)은 eval이 이름을
-적지 않는 한 키에 들어가지 않습니다.
+eval의 키에는 대상 Artifact, 대상의 모든 [부분](artifact.md#composition)(그 부분의 부분까지),
+지시문이나 Runtime 인자에서 이름으로 가리킨 Artifact의 fingerprint가 들어갑니다. 포함된 Artifact마다
+이름, 종류, 자체 fingerprint를 한 번씩 넣습니다. Merkle 방식으로 값을 결합하므로 전체에서 부분의
+파일을 다시 해시하지 않습니다. 파일 부분이나 안에 선언된 폴더 부분이 바뀌면 전체의 파일이 바뀔 때와
+마찬가지로 전체의 eval을 다시 리뷰합니다. `status`에서는 전체의 파일 변경과 구분해 어느 부분이
+바뀌었는지 알 수 있습니다. 한 부분만 검사하는 eval은 그 부분에 선언하세요.
 
-artifactize는 그보다 더 이어지는 의존 관계까지 추적하지 않습니다. 두 단계 떨어진 Artifact의 변경을 반영할지는
-fingerprint를 어떻게 정하느냐에 달려 있습니다. fingerprint 스크립트는 인자에서 이름으로 가리킨
-Artifact의 파일이면 무엇이든 읽을 수 있습니다. 그래서 eval의 기준이 바뀌거나, 대상이나 포함한
-Artifact의 이름, 종류, fingerprint가 바뀌면 그 eval을 다시 실행합니다.
+참조 관계는 여전히 한 단계만 반영합니다. 다른 Artifact를 참조해도 그 Artifact의 부분이나 그 eval이
+참조한 Artifact까지 키에 넣지는 않습니다. fingerprint 스크립트는 인자에서 이름으로 가리킨 Artifact의
+파일을 읽을 수 있습니다. eval의 기준이 바뀌거나, 키에 포함된 Artifact의 이름, 종류, fingerprint가
+바뀌면 그 eval을 다시 리뷰합니다. 부분 관계로 키에 입력이 추가되어도 도구의 접근 범위가 늘어나지는
+않습니다. 부분의 도구를 쓰거나 `{part}`로 파일을 가리키려면 eval에서 그 부분을 참조해야 합니다.
+
+부분을 반영하는 키로 업그레이드하면 첫 `verify`에서 부분이 있는 대상의 eval을 한 번 다시 리뷰합니다.
+Human 승인도 해당하며, 스크립트 출력이 그대로이거나 eval이 이미 그 부분을 참조했어도 다시 리뷰합니다.
+그다음 Run부터는 평소처럼 재사용합니다. 저장된 Run과 결과는 계속 읽을 수 있으며 상태를 초기화할 필요는 없습니다.
 
 키에는 대상 Artifact와 포함된 모든 의존성의 이름과 종류(`folder`, `file`, `aspect`, `graph`)가
 들어갑니다. 폴더가 파일로 바뀌면 스크립트가 같은 fingerprint를 내더라도 이전 결과를 재사용하지
 않습니다. 실제 경로는 키에 들어가지 않으므로, 복사본의 이름, 종류, fingerprint가 원본과 같으면
 기존 리뷰 결과를 재사용합니다. 포함한 Artifact의 이름을 바꾸면 키가 바뀝니다. 대상 이름이 달라도 평가 기준과
-포함한 Artifact 전체가 같으면 결과를 함께 쓸 수 있습니다. 키는 포함한 Artifact 중 어느 것이
-대상인지 따로 구분하지 않기 때문입니다. 예를 들어 두 Artifact에 같은 eval을 선언하고 각 eval에서
+포함한 Artifact 전체가 같고, 두 대상 모두 부분이 있거나 둘 다 없으면 결과를 함께 쓸 수 있습니다.
+키는 포함한 Artifact 중 어느 것이 대상인지 따로 구분하지 않기 때문입니다. 예를 들어 두 Artifact에 같은 eval을 선언하고 각 eval에서
 상대 Artifact를 참조하면 두 eval은 결과를 공유합니다. **eval 정의 해시**는 eval의 **평가 기준** 중 하나가 바뀔 때마다
 바뀝니다.
 

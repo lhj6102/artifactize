@@ -34,6 +34,9 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 더 새로운 artifactize가 쓴 상태는 `Unsupported state schema version: N; a newer artifactize
 wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 
+부분을 반영하는 재사용 키로 바뀌어도 상태 형식은 그대로입니다. 다만 업그레이드 후 첫 `verify`에서는
+부분이 있는 대상의 eval을 Human 승인까지 한 번 다시 리뷰합니다.
+[재사용 키](../fingerprint.md#the-reuse-key)를 보세요.
 0.9로 업그레이드하면 모든 eval을 한 번 리뷰합니다.
 [0.9로 업그레이드](../../getting-started/update.md#upgrading-to-09)를 보세요.
 
