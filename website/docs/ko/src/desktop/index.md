@@ -155,7 +155,7 @@ Run의 그래프와 Current 그래프는 모두 마우스로 조작합니다. Ta
 Artifact에 초점을 옮기고, 그 위에서 Enter를 누르면 클릭과 같은 동작을 합니다. Ctrl+F로
 [Artifact나 eval을 이름으로 찾거나 즐겨찾기를 볼 수 있고](#find-in-the-graph), `m`으로 상자를
 최소화하거나 펼칠 수 있습니다(아래 설명). 그 밖의 그래프 전용 단축키는 없습니다.
-그래프 위의 도구 줄에는 **Find**(Ctrl+F와 같음), **Zoom out**, 확대 비율, **Zoom in**, **Fit**이 있습니다. **Fit**은 Detail이 일부를 가리고 있든 아니든 캔버스에 그래프 전체를 보여 줍니다. 그래프를 옮기려면 배경을 드래그하고, 휠이나 핀치, 배경 더블 클릭으로 확대·축소하세요. 캔버스에는 화면과 함께 움직이는 옅은 격자가 있습니다. 처음에는 노드의 원래 크기보다 크게 키우지 않고 그래프 전체를 보여 줍니다. 그 뒤로는
+그래프 위의 도구 줄에는 **Find**(Ctrl+F와 같음), **Zoom out**, 확대 비율, **Zoom in**(최대 200%), **Fit**이 있습니다. **Fit**은 Detail이 일부를 가리고 있든 아니든 캔버스에 그래프 전체를 보여 주며, 100%보다 크게 키우지는 않습니다. 그래프를 옮기려면 배경을 드래그하고, 휠이나 핀치, 배경 더블 클릭으로 확대·축소하세요. 캔버스에는 화면과 함께 움직이는 옅은 격자가 있습니다. 처음에는 노드의 원래 크기보다 크게 키우지 않고 그래프 전체를 보여 줍니다. 그 뒤로는
 사용자가 직접 조작하거나, 찾은 항목을 열거나, Navigator를 쓰거나, 상자를 최소화하거나 펼칠(아래 설명) 때만 보기 영역이 바뀝니다. Detail을 열거나, 새 결과를 받거나, 다시 스캔하거나, 그래프를 다시 배치해도 보기 영역은 바뀌지 않습니다.
 
 그래프 일부가 화면 밖에 있으면 그래프 오른쪽 아래(Detail이 열려 있으면 그 왼쪽)에 **Navigator**가 나옵니다. 그래프 전체를 작게 보여 주며, 각 Artifact는 그 상태 색의 사각형으로, 지금 보이는 부분은 테두리로 표시합니다. 그 안을 클릭하거나 드래그하면 확대 비율은 그대로 두고 그곳으로 보기 영역을 옮깁니다. 그래프 전체가 화면에 들어오면 사라집니다.
@@ -204,7 +204,7 @@ Artifact를 클릭하면 그래프 오른쪽 끝에 그 **Detail**이 열립니�
 배경을 클릭하거나 **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는
 것이 없을 때만 Detail을 닫고, 나머지는 [리뷰에서 Esc를 누를 때](#human-reviews)처럼 먼저 한 단계씩 되돌아갑니다. Detail의 왼쪽 가장자리를 드래그해, 내용을 읽기 편하면서도 그래프가 조금 보이는 너비로 조절하세요. 그 폭은 다음 실행에서도 유지됩니다.
 
-섹션의 머리 행을 클릭하거나 그 위에서 Enter나 Space를 누르면 섹션을 접거나 펼칩니다. 섹션마다 마지막으로 선택한 접기·펼치기 상태를 저장해 두므로, 이후 열리는 Detail과 다음 실행에도 그 상태가 유지됩니다. 처음에 펼쳐진 섹션은 **Evals**, **Tools**, **Path**, **Result**, **Outcome**, **Waits for**이고, 처음에 접힌 섹션은 **Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**, **Provenance**, **Debug**, **Technical**입니다.
+섹션의 머리 행을 클릭하거나 그 위에서 Enter나 Space를 누르면 섹션을 접거나 펼칩니다. 섹션마다 마지막으로 선택한 접기·펼치기 상태를 저장해 두므로, 이후 열리는 Detail과 다음 실행에도 그 상태가 유지됩니다. 단, Human 리뷰의 Tools, Tool log, Result는 항상 펼쳐져 있습니다. 처음에 펼쳐진 섹션은 **Evals**, **Tools**, **Path**, **Result**, **Outcome**, **Waits for**이고, 처음에 접힌 섹션은 **Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**, **Provenance**, **Debug**, **Technical**입니다.
 
 Artifact Detail은 해당 Artifact 탭에서 열리고, 제목에는 Artifact 이름이 나옵니다. **Evals**에는 eval마다 판정 표시, 그 색으로 쓴 상태, 오른쪽 끝의 시간이 나오고, 클릭하면 그 eval의 탭이 열립니다. **Neighbours**를 펼치면 그 Artifact를 중심으로 이웃 Artifact와의 관계를 그래프와 같은 노드와 간선으로 보여 줍니다. 왼쪽에는 이 Artifact의 eval이 사용하는 Artifact가, 오른쪽에는 이 Artifact를 사용하는 eval이 속한 Artifact가 있습니다. 이 그림은 이동하거나 확대할 수 없으며, 이웃을 클릭하면 그 이웃의 Detail이 열립니다. 그다음에 **Tools**, 도구를 한 번 실행한 뒤부터 나오는 **Tool log**, **Path**, 그리고 대기 중인 의존성을 포함한 나머지 정보가 모두 접혀 있는 **Debug**가 이어집니다.
 
@@ -227,7 +227,7 @@ eval의 탭은 **Summary**를 보여 줍니다. 상태 줄에는 표시와 상�
 **Result**(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
 **Execution options**, **Execution metadata**(시간과 사용량), **Fingerprint**, 그리고 나머지 정보를 담은 **Debug**가 이어집니다. 상태 줄에 나온 내용은 그 아래에서 다시 말하지 않습니다.
 Current에서는 eval이 실행될지, 재사용될지, 아직 확인 중인지와 그 이유, 그리고 재사용할 결과를
-보여 줍니다. Artifact나 eval의 탭(Current의 Human eval 포함)과 Human 리뷰에서 `t`를 누르면 **Debug**가 표시되거나 숨겨집니다. 로그가 있는 eval에서는 칩 아래의 Summary와 로그를 전환해 볼 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
+보여 줍니다. Artifact나 eval의 탭(Current의 Human eval 포함)의 Summary와 Human 리뷰에서 `t`를 누르면 **Debug**가 표시되거나 숨겨집니다. 로그를 보고 있을 때는 Summary로 돌아간 뒤 누르세요. 로그가 있는 eval에서는 칩 아래의 Summary와 로그를 전환해 볼 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
 항목은 굵고 진한 글씨로 강조됩니다. 로그는 Agent eval의 **Agent log**(대화. 별도의 스크롤 막대가 있음) 또는 Runtime eval의 **Runtime log**(저장된 stdout/stderr. 실시간
 로그 스트림이 아님)입니다. 대화가 없거나 원격에만 있으면
 이 머신에서 볼 수 없는 이유를 보여 줍니다. Run 안의 Human eval 탭에는 리뷰와 승인이 들어 있으며,
@@ -247,7 +247,7 @@ Ctrl+O나 팔레트의 **Open a request by ID**를 쓰면 저장소에 관계없
 저장된 요청을 Main area에서 열 수 있습니다. 대기 중인 Human 리뷰는 Pane에서 열 때처럼 조작할 수 있고,
 다른 요청은 읽기 전용이며 헤더 행의 제목에 read-only가 붙습니다. 완료된 Human 요청을 열면 Human 리뷰 화면이 읽기 전용으로 표시되며,
 `t`를 누르면 **Debug**가 표시되거나 숨겨집니다. 로그가 있는 다른 읽기 전용 요청을 열면 eval의 탭에서처럼 Summary와 Agent log
-또는 Runtime log를 전환해 볼 수 있고, `t`로 **Debug**를 표시하거나 숨길 수 있습니다. **Close**를 누르면 Pane으로 돌아갑니다. 다른 곳에서 일어난
+또는 Runtime log를 전환해 볼 수 있고, Summary에서 `t`로 **Debug**를 표시하거나 숨길 수 있습니다. **Close**를 누르면 Pane으로 돌아갑니다. 다른 곳에서 일어난
 요청의 변경도 화면에 반영되며, Ctrl+R이나 F5로 다시 열지 않고 다시 읽을 수 있습니다.
 
 ## Human 리뷰 {#human-reviews}

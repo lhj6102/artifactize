@@ -198,8 +198,8 @@ Artifacts and Enter on one does what a click does, and Ctrl+F
 [finds an Artifact or an eval by name, or lists your favorites](#find-in-the-graph), and `m`
 minimizes or expands a box (below); they have no other keys of their own.
 Above each graph, a tool strip holds **Find** (as Ctrl+F does), **Zoom out**, the zoom in
-percent and **Zoom in**, and **Fit**, which shows the whole graph in the canvas whether the
-Detail covers part of it or not. Drag the graph background to pan; wheel, pinch or a
+percent and **Zoom in** (up to 200%), and **Fit**, which shows the whole graph in the canvas
+whether the Detail covers part of it or not, never larger than 100%. Drag the graph background to pan; wheel, pinch or a
 background double-click zooms. The canvas has a faint grid that moves with the camera. A
 graph shows whole when it first appears, never larger than its nodes' own size; after that
 only you move its camera, also by opening what Find found, through the Navigator or by
@@ -265,7 +265,8 @@ when you are not editing or running something, and the others first step back as
 and leaving some graph visible; it keeps that width, also in the next launch.
 
 A click on a section's header row (or Enter or Space on it) folds or unfolds the section,
-and every Detail remembers that, also in the next launch. Unfolded at first: **Evals**,
+and every Detail remembers that, also in the next launch; a Human review's Tools, Tool log
+and Result always stay open. Unfolded at first: **Evals**,
 **Tools**, **Path**, **Result**, **Outcome** and **Waits for**. Folded at first:
 **Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**,
 **Provenance**, **Debug** and **Technical**.
@@ -309,7 +310,8 @@ its instruction; its **Result**, with findings as numbered items headed by their
 says is not repeated below it.
 On a Current it shows whether the eval would run, would be reused or is still being checked
 and why, and the result it would reuse. `t` shows or hides **Debug** on an Artifact's or an
-eval's tab, a Current's Human eval included, and in a Human review. An eval with a log switches
+eval's tab, a Current's Human eval included, and in a Human review; with a log shown, go back
+to its Summary first. An eval with a log switches
 below the chips between its Summary, shown first, and its log, a plain-text choice whose chosen view
 is bold and higher-contrast: an Agent eval's **Agent log** (its conversation, with
 its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr, not a
@@ -332,7 +334,7 @@ repository in the Main area: a waiting Human review actionable, as from the Pane
 any other request read-only, its title marked read-only in the header row. A finished Human
 request opens read-only in the Human review view, where `t` shows or hides **Debug**. Another
 read-only request with a log switches between its Summary and its Agent or Runtime log, as
-an eval's tab does, and `t` shows or hides its **Debug**; **Close** returns to the Pane. It follows its request's changes
+an eval's tab does, and `t` shows or hides its **Debug** in its Summary; **Close** returns to the Pane. It follows its request's changes
 made elsewhere, and Ctrl+R or F5 reads it again, without opening it again.
 
 ## Human reviews
