@@ -129,7 +129,7 @@ ID로 연 요청이 표시되며, 맨 위 헤더 행 하나가 무엇을 보여 
 
 ### Run {#run}
 
-Pane에서 Run을 고르면 Main area에 그 Run의 Artifact Graph가 표시됩니다. 헤더 행에는 Run ID와 요약이 나옵니다. Run 요약에는 판정 표시와 이름이 해당 색으로 나옵니다. 이어서 RED·ERROR eval과 대기 중인 승인이 각각 표시와 이름으로 나오며, 공간이 부족하면 행 끝이 잘립니다. 요약을 클릭하거나 팔레트 명령 **Open the Run's Detail**을 쓰면 [Run의 Detail](#detail)이 열립니다. 그 Run의 결과(상태, 실패한 eval, 상태별 eval 수, 걸린 시간, 코멘트 전문)와 기다리는 대상이 먼저 나오고, **What**, **Provenance**, **Technical**은 펼칠 때까지 접혀 있습니다. `t`를 누르면 **Technical**이 표시되거나 숨겨집니다. Run이 끝날 때의 검증 결과는 기록으로 남습니다. 나중에 Human 판정을 제출해도
+Pane에서 Run을 고르면 Main area에 그 Run의 Artifact Graph가 표시됩니다. 헤더 행에는 Run ID와 요약이 나옵니다. Run 요약에는 판정 표시와 이름이 해당 색으로 나옵니다. 이어서 RED·ERROR eval과 대기 중인 승인이 각각 표시와 이름으로 나오며, 공간이 부족하면 행 끝이 잘립니다. 요약을 클릭하거나 팔레트 명령 **Open the Run's Detail**을 쓰면 [Run의 Detail](#detail)이 열립니다. 그 Run의 결과(상태, 실패한 eval, 상태별 eval 수, 걸린 시간, 코멘트 전문)와 대기 중인 항목을 먼저 보여 주고, **What**, **Provenance**, **Technical**은 펼칠 때까지 접혀 있습니다. `t`를 누르면 **Technical**이 표시되거나 숨겨집니다. Run이 끝날 때의 검증 결과는 기록으로 남습니다. 나중에 Human 판정을 제출해도
 이전 Run의 판정은 바뀌지 않고, 현재 요청의 상태 표시만 바뀔 수 있습니다.
 
 ### Current {#current}
