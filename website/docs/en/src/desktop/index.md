@@ -133,7 +133,9 @@ is a thin bar reading **Waiting (0)**; each waiting review adds a row and the ar
 grows upward like a stack, up to half of the Pane's height, beyond which the list
 scrolls. A click or Enter on one opens the [review](#human-reviews) in the Main area.
 Followers of one Human execution wait as one review: opening a follower opens the
-original review.
+original review. A review of a removed branch stays listed while its repository folder
+exists; once the folder is deleted, its row goes, unless another worktree still waits on
+the same review, which then lists it under that worktree.
 
 New Runs, results, claims and submissions made elsewhere, and worktrees added or
 removed, appear without a manual reload.
