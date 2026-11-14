@@ -107,8 +107,9 @@
 <div class="navigator nodrag nopan nowheel" data-navigator>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="map" style:width="{WIDE}px" style:height="{box}px" onpointerdown={press}>
-    <canvas style:left="{inset}px" style:top="{offset}px" style:width="{size.width}px" style:height="{size.height}px" {@attach paint}></canvas>
+    <!-- The part in view under the drawing: the blocks keep their own colours inside it. -->
     <span class="frame" style:left="{frame.x}px" style:top="{frame.y}px" style:width="{frame.width}px" style:height="{frame.height}px"></span>
+    <canvas style:left="{inset}px" style:top="{offset}px" style:width="{size.width}px" style:height="{size.height}px" {@attach paint}></canvas>
   </div>
 </div>
 
