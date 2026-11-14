@@ -272,7 +272,8 @@ and Result always stay open. Unfolded at first: **Evals**,
 **Provenance**, **Debug** and **Technical**.
 
 An Artifact's Detail opens on its own tab, titled with its name. **Evals** lists its evals,
-each with its verdict's mark, its status in its colour and its time on the right; a click on
+each with its verdict's mark, its status in its colour and, on the right, its time in a Run
+or its declared title on a Current; a click on
 one opens that eval's tab. **Neighbours**, once unfolded, draws the Artifact between its
 neighbours with the graph's nodes and edges: the Artifacts its evals use on the left, the
 Artifacts whose evals use it on the right. The drawing holds still; a click on a neighbour
@@ -390,7 +391,7 @@ claim** on the left and **Submit GREEN** or **Submit RED** on the right, with wh
 work or a failure has to say between them. Ctrl+S or **Submit** submits; Enter in a field
 does not. A schema error names the failing field and
 leaves the form open to correct. Each verdict keeps its own draft until you submit, also
-when you leave the form or open the request from elsewhere. Typing through an input
+when you leave the form or open the request from elsewhere in the same window. Typing through an input
 method, such as Korean, never fires shortcuts. If the state directory is replaced, for
 example from a backup, open reviews close and their drafts and Tool logs are discarded.
 
@@ -413,7 +414,8 @@ first:
 | **Stay** | Esc | Nothing changes; the app stays open. |
 | **Release and quit** | `u` | Released, so another reviewer can take them. |
 
-Quitting cancels tools that are still producing output and review work in progress.
+Quitting cancels tools that are still producing output and review work in progress, and
+discards unsubmitted drafts.
 Programs a launch tool opened keep running, so close them yourself.
 
 ## Settings
@@ -440,7 +442,8 @@ on the right, with **List models** for the models it offers.
   process holds port 1455, it says the browser cannot return here, so paste the full
   `http://localhost:1455/auth/callback?code=…` URL from the browser's address bar after the
   failed load. **Sign out of Codex** removes local tokens and warns when server revocation
-  cannot be confirmed.
+  cannot be confirmed. While signed in, Commands offers **Sign in to Codex again** to sign in
+  anew without signing out first.
 - **Claude Agent:** shows Claude Code's sign-in as Claude Code itself reports it
   (`claude auth status`): `claude` not found on `PATH`, not signed in, signed in with its
   login method and plan (for example `claude.ai · max`), or the error it failed with.
