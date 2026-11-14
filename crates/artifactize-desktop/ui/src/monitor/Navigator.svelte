@@ -138,7 +138,7 @@
   .frame {
     position: absolute;
     box-sizing: border-box;
-    background: color-mix(in srgb, var(--selection) 60%, transparent);
+    background: var(--selection);
     border: 1px solid var(--outline-selected);
     pointer-events: none;
   }
