@@ -60,7 +60,7 @@ that makes the transition happen and checks where it leads.
     loading, on an error or with an empty graph the graph's place stays and says so.
   - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: the
     Main area's header showing, beside the Current's name, the checking icon and how many
-    Artifacts are still being checked of how many while the scan runs, the time it was scanned
+    Artifacts are still being checked, as `n left`, while the scan runs, the time it was scanned
     at once it ends, or why it failed in words, a Refresh
     button at that row's end, the graph's **tool strip** and the **Current graph**. It scans again when chosen again, on Refresh and when a Run of the branch ends;
     while a scan of the branch is still running, these show that scan instead of starting over.
@@ -175,7 +175,7 @@ that makes the transition happen and checks where it leads.
   On a Human eval's tab, and in a Main area less than twice as wide as the Detail, it is one
   column no wider than a readable measure; in a Main area at least twice as wide as the Detail
   the Tool log is the large view on the left and the instruction, the Tools and the Result are
-  a column at the right, where the Detail docks and of the Detail's width. Release and Submit
+  a column at the right, where the Detail docks and of the Detail's width. Release claim and Submit
   sit in one row right under the Result, and between them what running work has to say: its
   seconds and Cancel, or its failure. States:
   Unclaimed, Taken (another reviewer holds the claim), Claimed (by this reviewer), Editing
@@ -277,7 +277,7 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-CURRENT-CHIP | Pane | choose a branch's Current (a click on it, ↓ or ↑ onto it, or a branch selected without a Run in progress), also when it is already shown | Current: the scan of the branch still running shown as it is, else the worktree scanned again with every Artifact being checked again, read aloud so; its header showing how many Artifacts are still being checked of how many; the Current graph, drawn whole the first time it is shown (E-GRAPH-FIRST), its camera kept otherwise (E-GRAPH-CAMERA-KEPT) |
+| E-CURRENT-CHIP | Pane | choose a branch's Current (a click on it, ↓ or ↑ onto it, or a branch selected without a Run in progress), also when it is already shown | Current: the scan of the branch still running shown as it is, else the worktree scanned again with every Artifact being checked again, read aloud so; its header showing how many Artifacts are still being checked, as `n left`; the Current graph, drawn whole the first time it is shown (E-GRAPH-FIRST), its camera kept otherwise (E-GRAPH-CAMERA-KEPT) |
 | E-CURRENT-CHECKED | Current, its scan running | the scan learns what verify would do with Artifacts | Current: those Artifacts coloured in place reused, would run, waiting or blocked, each name read aloud with which (would run with its count of evals); the header's count lower, and once none remain, the header showing the time it was scanned at |
 | E-CURRENT-FAILED | Current, its scan running | the scan fails | Current: the header saying why, the graph staying as it was |
 | E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; the graph recoloured in place |

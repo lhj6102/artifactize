@@ -90,7 +90,7 @@
           <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
           <div class="m-field" style="margin-top: 10px"><span class="m-name">approved<span class="m-required">*</span></span><div class="m-verdicts"><span>◉ true</span><span class="m-cost">○ false</span></div></div>
           <div class="m-field" style="margin-top: 10px"><span class="m-name">comment</span><div class="m-input area text"><span class="m-placeholder">Optional</span></div></div>
-          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px"><span class="m-button">Release</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px"><span class="m-button">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
         </div>
         <div class="m-sec"><div class="m-sec-head plain"><span class="m-icon i-fold"></span>Debug</div></div>
         </div>
@@ -113,7 +113,7 @@
   <li><span class="n">2</span><div><b>Tools</b><span>Each a small button led by the run icon, with its description in secondary ink. The declaring Artifact's name heads a group only when more than one Artifact declares tools.</span></div></li>
   <li><span class="n">3</span><div><b>Tool log, the view</b><span>What the reviewer looks at gets the room: monospace on the input surface from the header row to the bottom, the run's start line and end line quiet, printed lines in ink, stderr in red behind a red rule; it follows its newest line unless scrolled up.</span></div></li>
   <li><span class="n">4</span><div><b>Result</b><span>GREEN and RED as a segmented choice outlined in the chosen verdict's colour; then the form from the eval's schema: label semibold, <code>*</code> on a required field, Optional in grey inside an empty optional one.</span></div></li>
-  <li><span class="n">5</span><div><b>Actions</b><span>One row right under the form, inside the column: Release at the left, Submit, the one primary button, at the right; between them the busy state or a failure. A tool that ended well is said by the log's end line alone.</span></div></li>
+  <li><span class="n">5</span><div><b>Actions</b><span>One row right under the form, inside the column: Release claim at the left, Submit, the one primary button, at the right; between them the busy state or a failure. A tool that ended well is said by the log's end line alone.</span></div></li>
   <li><span class="n">6</span><div><b>Two columns</b><span>The column takes the place and the width of the Detail, so what is acted on is always at the right; the two meet at a panel line.</span></div></li>
 </ol>
 
@@ -152,7 +152,7 @@
           <div class="m-verdicts"><span class="m-verdict green chosen">GREEN</span><span class="m-verdict red">RED</span></div>
           <div class="m-field" style="margin-top: 10px"><span class="m-name">approved<span class="m-required">*</span></span><div class="m-verdicts"><span>◉ true</span><span class="m-cost">○ false</span></div></div>
           <div class="m-field" style="margin-top: 10px"><span class="m-name">comment</span><div class="m-input area text"><span class="m-placeholder">Optional</span></div></div>
-          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px"><span class="m-button">Release</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
+          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px"><span class="m-button">Release claim</span><span class="m-spacer"></span><span class="m-button primary">Submit GREEN</span></div>
         </div>
         <div class="m-sec"><div class="m-sec-head plain"><span class="m-icon i-fold"></span>Debug</div></div>
       </div>
@@ -182,7 +182,7 @@
   <dt id="D-REV-4">D-REV-4</dt>
   <dd>The Result begins with the GREEN / RED choice as two <code>--control</code> buttons with <code>--line-group</code> borders; the chosen one takes its verdict's colour as text and border, semibold, its face unchanged. Their keys (<kbd>g</kbd> and <kbd>r</kbd> before a form is open, <kbd>Ctrl+G</kbd> and <kbd>Ctrl+R</kbd> while editing, <kbd>c</kbd> for Claim to review) are named by Help and the palette, not on the buttons (D-SYS-12). The form's fields follow: the label semibold with <code>*</code> in <code>--red</code> when required, inputs on <code>--surface-input</code> with <code>--line-input</code>, <code>Optional</code> in <code>--ink-3</code> inside an empty optional field; lists add with <b>Add</b> led by the add icon and remove with the remove icon; a failing path shows in <code>--red</code> under the form and the entries stay. <span class="avoid">a filled green or red button; a key cap on a verdict; a JSON editor.</span></dd>
   <dt id="D-REV-5">D-REV-5</dt>
-  <dd>One row under the form holds the review's actions, inside the column and never pinned to the window's bottom: Release, a quiet button, at the left; Submit, the one primary (<code>--accent</code>) button, naming its verdict (<i>Submit GREEN</i>), at the column's right edge; between them, while a tool or a submission runs, the busy spinner with its seconds and Cancel, or what failed in <code>--red</code>. What ended well is not said here: a tool's end line in the Tool log and the completed result of a submission say it. <kbd>Ctrl+S</kbd> submits and <kbd>u</kbd> releases, keys named by Help and the palette (D-SYS-12). <span class="avoid">two primary buttons; a notice as a toast; a notice for what ended well; Submit or Release a window's width away from the form; a key cap on Submit or Release.</span></dd>
+  <dd>One row under the form holds the review's actions, inside the column and never pinned to the window's bottom: <b>Release claim</b>, a quiet button named for what it releases, at the left; Submit, the one primary (<code>--accent</code>) button, naming its verdict (<i>Submit GREEN</i>), at the column's right edge; between them, while a tool or a submission runs, the busy spinner with its seconds and Cancel, or what failed in <code>--red</code>. What ended well is not said here: a tool's end line in the Tool log and the completed result of a submission say it. <kbd>Ctrl+S</kbd> submits and <kbd>u</kbd> releases, keys named by Help and the palette (D-SYS-12). <span class="avoid">two primary buttons; a notice as a toast; a notice for what ended well; Submit or Release claim a window's width away from the form; a button that says Release alone, which reads as releasing what is reviewed; a key cap on Submit or Release claim.</span></dd>
   <dt id="D-REV-6">D-REV-6</dt>
   <dd>A request opened by ID that is not a waiting review shows its sections read-only in the same column, its title suffixed <code>read-only</code> in the Main area header. <span class="avoid">a disabled form standing in for read-only.</span></dd>
 </dl>
