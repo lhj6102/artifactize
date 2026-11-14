@@ -1,5 +1,5 @@
 //! Composition by folders and `parts`, and aspects: a part's verdict is part of each
-//! whole's, while only references decide what an eval reads, reuses and waits for.
+//! whole's; references decide access and gates, while reuse also covers target composition.
 #[path = "support/run.rs"]
 mod owned_run;
 
@@ -266,7 +266,7 @@ fn parts_reject_cycles_unknown_names_the_graph_and_spaced_names() {
 }
 
 #[test]
-fn a_part_change_reviews_only_the_evals_that_name_it() {
+fn a_part_change_reviews_its_wholes_evals_and_the_evals_that_name_it() {
     let fixture = Fixture::new();
     fixture.write("app/main.txt", "main\n");
     fixture.write("app/ui/view.txt", "view\n");
@@ -288,7 +288,92 @@ fn a_part_change_reviews_only_the_evals_that_name_it() {
     let second = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
     let mut ran = executed(&second);
     ran.sort();
-    assert_eq!(ran, ["integration/check", "ui/check"]);
+    assert_eq!(ran, ["app/check", "integration/check", "ui/check"]);
+}
+
+#[test]
+fn whole_reuse_tracks_each_parts_fingerprint_separately_from_its_own_files() {
+    let fixture = Fixture::new();
+    fixture.declare(
+        "app/index.artf",
+        json!({"name":"app","parts":["external"],"evals":runtime(true, "the whole")}),
+    );
+    fixture.write("app/own.txt", "own");
+    fixture.write("app/part.txt", "file part");
+    fixture.declare(
+        "app/part.txt.artf",
+        json!({"name":"file-part","evals":runtime(true, "the file")}),
+    );
+    fixture.declare(
+        "app/nested/index.artf",
+        json!({"name":"nested","evals":runtime(true, "the folder")}),
+    );
+    fixture.write("app/nested/own.txt", "nested part");
+    fixture.declare(
+        "app/nested/deep/index.artf",
+        json!({"name":"deep","evals":runtime(true, "the deep part")}),
+    );
+    fixture.write("app/nested/deep/own.txt", "deep part");
+    fixture.declare(
+        "external/index.artf",
+        json!({"name":"external","evals":runtime(true, "the external part")}),
+    );
+    fixture.write("external/own.txt", "external part");
+    fixture.declare(
+        "unrelated/index.artf",
+        json!({"name":"unrelated","evals":runtime(true, "an unrelated Artifact")}),
+    );
+    let first = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
+    assert_eq!(first["executionsStarted"], 6);
+    let unchanged = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
+    assert!(executed(&unchanged).is_empty());
+
+    for (path, changed_part, expected) in [
+        (
+            "app/part.txt",
+            "file-part",
+            vec!["app/check", "file-part/check"],
+        ),
+        (
+            "app/nested/own.txt",
+            "nested",
+            vec!["app/check", "nested/check"],
+        ),
+        (
+            "app/nested/deep/own.txt",
+            "deep",
+            vec!["app/check", "deep/check", "nested/check"],
+        ),
+        (
+            "external/own.txt",
+            "external",
+            vec!["app/check", "external/check"],
+        ),
+        ("app/own.txt", "", vec!["app/check"]),
+    ] {
+        fixture.write(path, "changed");
+        let prediction = fixture.json(&["status", "--all", "--json"], 1);
+        let whole = prediction["evals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|eval| eval["id"] == "app/check")
+            .unwrap();
+        if !changed_part.is_empty() {
+            assert_eq!(whole["changes"]["dependencies"], json!([changed_part]));
+            assert!(
+                whole["changes"]["files"]
+                    .as_array()
+                    .is_none_or(Vec::is_empty)
+            );
+        }
+        let run = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
+        let mut ran = executed(&run);
+        ran.sort();
+        assert_eq!(ran, expected, "{path}");
+        let unchanged = fixture.json(&["verify", "--all", "--wait", "--json"], 0);
+        assert!(executed(&unchanged).is_empty(), "{path}");
+    }
 }
 
 #[test]

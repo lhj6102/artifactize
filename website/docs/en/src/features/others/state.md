@@ -47,6 +47,9 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 A state written by a newer artifactize is refused with `Unsupported state schema
 version: N; a newer artifactize wrote it.`: update artifactize to open it.
 
+Composition-aware reuse keys leave this state format unchanged, but the first
+`verify` after that upgrade reviews evals whose target has parts once, Human
+sign-offs included; see [The reuse key](../fingerprint.md#the-reuse-key).
 After an upgrade to 0.9, every eval is reviewed once; see
 [Upgrading to 0.9](../../getting-started/update.md#upgrading-to-09).
 

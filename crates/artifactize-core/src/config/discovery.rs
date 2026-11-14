@@ -71,7 +71,7 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
 pub(super) enum Reach<'a> {
     /// Every declaration in the workspace.
     Workspace,
-    /// A folder Artifact's `index.artf` and those below it: the folder Artifacts it composes.
+    /// A folder Artifact's `index.artf` and every declaration of the parts its folder holds.
     Folder(&'a Path),
     /// The declaration of the file Artifact for target `.1` in folder `.0`, or with an empty
     /// target the graph Artifact's `.artf`.
@@ -196,10 +196,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 .into());
             }
         }
-        for marker in entries
-            .iter()
-            .filter(|_| !matches!(reach, Reach::Folder(_)))
-        {
+        for marker in &entries {
             if marker.file_name() != ".artf" && ignored.matched(marker.path(), false).is_ignore() {
                 continue;
             }
@@ -216,6 +213,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 continue;
             };
             if filename == CONFIG_FILE
+                || (target.is_empty() && matches!(reach, Reach::Folder(_)))
                 || matches!(reach, Reach::File(_, wanted) if wanted != target)
             {
                 continue;

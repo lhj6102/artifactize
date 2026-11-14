@@ -1159,7 +1159,7 @@ pub struct Artifact {
     pub path: PathBuf,
     pub kind: ArtifactKind,
     /// Folder Artifacts declared in subfolders, by their path here. Their files are theirs,
-    /// not this Artifact's; nesting is no relation between the two.
+    /// not this Artifact's; discovery also records them as parts.
     pub nested: BTreeMap<ChildPrefix, ArtifactName>,
     /// An aspect's selected paths below its folder; empty for other kinds.
     #[serde(skip_serializing_if = "Vec::is_empty")]

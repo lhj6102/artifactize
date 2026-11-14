@@ -36,6 +36,12 @@ artifactize models codex
 artifactize models claude-agent
 ```
 
+Model discovery has separate, fixed deadlines: API-key and custom-provider listings,
+and Codex model requests, allow 30 seconds; Claude Agent initialization allows 25
+seconds. A timeout fails the listing (`Model listing timed out.` for API listings).
+An eval's `timeout_ms` does not extend these deadlines. Check the connection, or
+Claude Code startup for `claude-agent`, and retry.
+
 `reasoning` is optional. OpenAI and Codex accept `none`, `minimal`, `low`, `medium`,
 `high`, `xhigh` and `max`; Anthropic accepts `low`, `medium`, `high` and `max`; Claude
 Agent accepts `low`, `medium`, `high`, `xhigh` and `max`; Gemini

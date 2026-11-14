@@ -82,7 +82,6 @@ fn an_artifacts_declarations_are_its_own_and_those_it_composes() {
     // Declarations it does not compose are not read: broken ones elsewhere change nothing,
     // though a full read refuses them.
     workspace.write("docs/index.artf", "name = \"docs\"\n[evals.read\n");
-    workspace.write("app/main.rs.artf", "name = 7\n");
     assert!(read_workspace_config(&workspace.0).is_err());
     let app = workspace
         .read("app", &sites[&Workspace::name("app")])
@@ -106,6 +105,30 @@ fn an_artifacts_declarations_are_its_own_and_those_it_composes() {
         .read("lib", &sites[&Workspace::name("lib")])
         .unwrap();
     assert_eq!(declared.tools().unwrap()[0].0.name.as_str(), "open_lib");
+}
+
+#[test]
+fn scoped_eval_declarations_match_the_full_read_with_every_kind_of_part() {
+    let workspace = Workspace::new();
+    workspace.write(
+        "app/selected.artf",
+        "name = 'selected'\nselect = ['main.rs']\n",
+    );
+    let full = read_workspace_config(&workspace.0).unwrap();
+    let eval = &full.evals[0];
+    let sites = crate::scope::eval_scope(&full, eval)
+        .unwrap()
+        .artifacts
+        .into_iter()
+        .map(|(name, artifact)| (name, artifact.site()))
+        .collect();
+    let scoped = read_eval_scope(&workspace.0, &eval.id, &sites)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        crate::human::definition(&scoped, &scoped.evals[0]).unwrap(),
+        crate::human::definition(&full, eval).unwrap(),
+    );
 }
 
 #[test]

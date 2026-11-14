@@ -413,6 +413,55 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 }
 
 #[test]
+fn composition_keys_publish_and_reuse_across_machines() {
+    let root = owned_run::Root::from(support::os::tempdir());
+    let server = Server::start(root.path());
+    let alice = Machine::new(
+        &root,
+        "alice",
+        &server.url,
+        &server.token("author", "read,publish"),
+    );
+    let bob = Machine::new(&root, "bob", &server.url, &server.token("reader", "read"));
+    let repos: Vec<_> = ["a", "b"]
+        .map(|name| {
+            let repo = runtime_repo(root.path(), name, "v1");
+            write(&repo.join("app/part"), json!({"name":"part","basis":true}));
+            fs::write(repo.join("app/part/input"), "part-v1").unwrap();
+            repo
+        })
+        .into_iter()
+        .collect();
+    let first = alice.json(&repos[0], &["verify", "--all", "--wait"], 0);
+    assert_eq!(first["executionsStarted"], 2);
+    let shared = server.entries();
+    let whole = shared
+        .iter()
+        .find(|(_, record)| record["evalId"] == "app/check")
+        .unwrap();
+    assert!(whole.1["fingerprints"].get("part").is_some());
+    let second = bob.json(&repos[1], &["verify", "--all", "--wait"], 0);
+    assert_eq!(second["executionsStarted"], 0);
+    assert!(
+        second["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|request| request["origin"].is_object())
+    );
+    fs::write(repos[1].join("app/part/input"), "part-v2").unwrap();
+    let third = bob.json(&repos[1], &["verify", "--all", "--wait"], 0);
+    assert_eq!(third["executionsStarted"], 1);
+    let whole = third["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["evalId"] == "app/check")
+        .unwrap();
+    assert_eq!(whole["provenance"]["runId"], third["id"]);
+}
+
+#[test]
 fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
     let root = owned_run::Root::from(support::os::tempdir());
     let mut server = Server::start(root.path());

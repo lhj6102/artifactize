@@ -135,8 +135,8 @@ struct Walk {
     prefix: LogicalTarget,
     inputs: Vec<LogicalTarget>,
     file: bool,
-    /// Child Artifact folders and declaration files, skipped while walking.
-    excluded: BTreeSet<crate::config::ChildPrefix>,
+    /// Part-owned paths under this owner, skipped for both walks and explicit inputs.
+    excluded: BTreeSet<PathBuf>,
     ignore: Gitignore,
 }
 
@@ -165,7 +165,28 @@ impl Walk {
         let prefix = platform::path_text(artifact.folder())
             .parse::<LogicalTarget>()
             .map_err(|error| error.to_string())?;
-        let excluded = artifact.nested.keys().cloned().collect();
+        let excluded = config
+            .descendants(id)
+            .into_iter()
+            .flat_map(|name| {
+                let part = &config.artifacts[name];
+                if part.kind == crate::config::ArtifactKind::Aspect {
+                    part.select
+                        .iter()
+                        .map(|path| part.folder().join(path))
+                        .collect()
+                } else {
+                    vec![part.referenced_path().to_owned()]
+                }
+            })
+            .filter_map(|path| path.strip_prefix(artifact.folder()).ok().map(PathBuf::from))
+            .chain(
+                artifact
+                    .nested
+                    .keys()
+                    .map(|path| PathBuf::from(path.as_str())),
+            )
+            .collect();
         let inputs = inputs
             .iter()
             .map(|input| {
@@ -193,6 +214,9 @@ impl Walk {
     fn digest(&self, cancellation: &CancellationToken) -> Result<Files, String> {
         let mut state = State::default();
         for input in &self.inputs {
+            if self.excluded(input) {
+                continue;
+            }
             let label = if input.is_empty() {
                 "."
             } else {
@@ -224,6 +248,12 @@ impl Walk {
                 .expect("SHA-256 input digest"),
             files: state.files,
         })
+    }
+
+    fn excluded(&self, path: &LogicalTarget) -> bool {
+        self.excluded
+            .iter()
+            .any(|part| std::path::Path::new(path.as_str()).starts_with(part))
     }
 
     fn directory(
@@ -259,7 +289,7 @@ impl Walk {
             }
             let child = join(path, &name)?;
             if (!is_dir && name.ends_with(".artf"))
-                || self.excluded.contains(child.as_str())
+                || self.excluded(&child)
                 || self.ignored(&child, is_dir, gitignores)?
             {
                 continue;

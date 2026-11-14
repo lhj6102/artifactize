@@ -112,6 +112,27 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
 }
 
 #[tokio::test]
+async fn a_wholes_manifest_excludes_file_and_aspect_parts_even_as_explicit_inputs() {
+    let repo = Repo::new();
+    repo.write("app/own.txt", "own");
+    repo.write("app/part.txt.artf", "name = 'file-part'\n");
+    repo.write(
+        "app/aspect.artf",
+        "name = 'aspect'\nselect = ['selected']\n",
+    );
+    for files in [json!(["."]), json!(["own.txt", "part.txt", "selected"])] {
+        repo.write("app/part.txt", "file part");
+        repo.write("app/selected/input.txt", "aspect part");
+        repo.artifact("app", json!({"name":"app","fingerprint":{"files":files}}));
+        assert_eq!(repo.files("app").await, ["own.txt"]);
+        let own = repo.fingerprint("app").await.unwrap().value;
+        repo.write("app/part.txt", "changed file part");
+        repo.write("app/selected/input.txt", "changed aspect part");
+        assert_eq!(repo.fingerprint("app").await.unwrap().value, own);
+    }
+}
+
+#[tokio::test]
 async fn tag_changes_leave_artifactsum_eval_definition_and_reuse_key_unchanged() {
     let repo = Repo::new();
     let mut app = json!({"name":"app","tags":["type:code"],"evals":[{

@@ -141,7 +141,15 @@ pub(crate) fn read_eval_scope(
         .keys()
         .flat_map(|owner| named(&config.artifacts[owner]))
         .any(|name| !config.artifacts.contains_key(name.as_str()));
-    if outside || crate::scope::resolve_evals(&mut config).is_err() {
+    // Explicit parts may be declared outside the folders this read visited. A full read
+    // must place those before fingerprint preparation can use the target's composition.
+    let missing_parts = config.artifacts.values().any(|artifact| {
+        artifact
+            .parts
+            .iter()
+            .any(|part| !config.artifacts.contains_key(part))
+    });
+    if outside || missing_parts || crate::scope::resolve_evals(&mut config).is_err() {
         return Ok(None);
     }
     Ok(Some(config))
