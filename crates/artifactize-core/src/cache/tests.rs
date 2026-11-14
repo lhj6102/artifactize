@@ -116,10 +116,8 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
             ".gitignore",
             "a.txt",
             "data/kept",
-            "file.png",
             "sub/.gitignore",
-            "sub/keep.tmp",
-            "sub/nested"
+            "sub/keep.tmp"
         ]
     );
     let before = repo.fingerprint("root").await.unwrap().value;
@@ -135,6 +133,8 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         "target/debug/app",
         ".git",
         "child/c.txt",
+        "file.png",
+        "sub/nested",
         "build/new/file",
     ] {
         repo.write(path, "v2");
@@ -256,7 +256,7 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
 }
 
 #[test]
-fn an_eval_depends_on_its_target_and_named_artifacts_only() {
+fn an_eval_keys_its_target_composition_and_one_hop_references() {
     let check = |instruction: &str| {
         json!([{"id":"check","title":"Check","profile":{"kind":"human"},
             "payload":{"instruction":instruction}}])
@@ -283,7 +283,7 @@ fn an_eval_depends_on_its_target_and_named_artifacts_only() {
         }),
     );
     repo.artifact("c", json!({"name":"c","evals":check("Check {a}.")}));
-    // A part, here the folder nested in a, is in no key that does not name it.
+    // A target includes its parts, but not the Artifacts its parts reference.
     repo.artifact(
         "a/child",
         json!({"name":"child","evals":check("Check {c}.")}),
@@ -294,11 +294,11 @@ fn an_eval_depends_on_its_target_and_named_artifacts_only() {
     let config = read_workspace_config(repo.root.path()).unwrap();
     let names = |id: &str| {
         let eval = config.evals.iter().find(|eval| eval.id == id).unwrap();
-        dependencies(eval).into_iter().collect::<Vec<_>>()
+        dependencies(&config, eval).into_iter().collect::<Vec<_>>()
     };
     // Two connections away (c, which child and e reference) is never followed.
-    assert_eq!(names("a/plain"), ["a"]);
-    assert_eq!(names("a/named"), ["a", "d", "e"]);
+    assert_eq!(names("a/plain"), ["a", "child"]);
+    assert_eq!(names("a/named"), ["a", "child", "d", "e"]);
 }
 
 #[test]
@@ -620,7 +620,7 @@ async fn missing_dependency_keeps_its_validated_artifact_name_and_omits_eval_key
     let config = read_workspace_config(repo.root.path()).unwrap();
     let fingerprints = prepare(
         &config,
-        dependencies(&config.evals[0]),
+        dependencies(&config, &config.evals[0]),
         repo.output.path(),
         &Parallelism::new(2),
         CancellationToken::new(),

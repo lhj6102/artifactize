@@ -40,6 +40,9 @@ const FINGERPRINT_INPUT_VERSION: u32 = 1;
 const MANIFEST_DIGEST_PREFIX_BYTES: usize = 8;
 /// Domain-separated kind-aware key format; changes invalidate persisted cache keys.
 const KIND_KEY_FORMAT_PREFIX: &[u8] = b"artifactize-kind-key-v1\n";
+/// Composition keys have new coverage semantics. Invalidate old whole results even when
+/// their eval already named every part. Stored rows need no migration: old keys miss naturally.
+const PARTS_KEY_FORMAT_PREFIX: &[u8] = b"artifactize-parts-key-v1\n";
 /// Domain-separate and version the reuse-key hash input, including its terminating newline.
 /// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
 const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
@@ -126,11 +129,13 @@ pub struct Changes {
     pub summary: String,
 }
 
-/// The Artifacts an eval depends on: its target and the Artifacts the eval names in its
-/// instruction or runtime args. Neither the target's parts nor connections further
-/// away count, except through how the developer defines fingerprints.
-pub fn dependencies(eval: &Eval) -> BTreeSet<&ArtifactName> {
-    std::iter::once(&eval.target).chain(&eval.deps).collect()
+/// Key inputs: the target, every part it is made of, and the Artifacts the eval names.
+/// Composition is recursive; references stay one hop and grant no additional tool access.
+pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a ArtifactName> {
+    std::iter::once(&eval.target)
+        .chain(config.descendants(&eval.target))
+        .chain(&eval.deps)
+        .collect()
 }
 
 /// Restrict fingerprint preparation to the required Eval key inputs.
@@ -142,7 +147,7 @@ pub(crate) fn fingerprint_targets<'a>(
         .evals
         .iter()
         .filter(|eval| required.contains(&eval.target))
-        .flat_map(dependencies)
+        .flat_map(|eval| dependencies(config, eval))
         .collect()
 }
 
@@ -180,6 +185,17 @@ pub fn key_with_kinds(
         .expect("SHA-256 is a reuse key")
 }
 
+/// Versioned composition format over the complete, kind-aware input map. The map already
+/// contains each part once; no content is rehashed and no persistence schema changes.
+pub(crate) fn parts_key(value: &crate::types::ReuseKey) -> crate::types::ReuseKey {
+    let mut digest = Sha256::new();
+    digest.update(PARTS_KEY_FORMAT_PREFIX);
+    digest.update(value.as_bytes());
+    content::hex(&digest.finalize())
+        .parse()
+        .expect("SHA-256 is a reuse key")
+}
+
 /// The eval's reuse key from prepared fingerprints. Without a fingerprint on every Artifact
 /// it depends on, the eval has no key, so it is never reused or published.
 pub fn eval_key(
@@ -191,7 +207,7 @@ pub fn eval_key(
         return Err(Unkeyed::Target);
     }
     let mut values: BTreeMap<ArtifactName, crate::types::Fingerprint> = BTreeMap::new();
-    for id in dependencies(eval) {
+    for id in dependencies(config, eval) {
         let fingerprint = fingerprints
             .get(id)
             .ok_or_else(|| Unkeyed::Dependency(id.clone()))?;
@@ -202,8 +218,14 @@ pub fn eval_key(
         .keys()
         .map(|id| (id.clone(), config.artifacts[id].kind))
         .collect();
+    let value = key_with_kinds(&eval_def_hash, &values, &artifact_kinds);
+    let value = if config.artifacts[&eval.target].parts.is_empty() {
+        value
+    } else {
+        parts_key(&value)
+    };
     Ok(Key {
-        value: key_with_kinds(&eval_def_hash, &values, &artifact_kinds),
+        value,
         eval_def_hash,
         fingerprints: values,
         artifact_kinds,
@@ -382,7 +404,7 @@ pub async fn recheck(
     validate_file_inputs(config, eval)?;
     let fingerprints = prepare(
         config,
-        dependencies(eval),
+        dependencies(config, eval),
         output_root,
         parallelism,
         cancellation,

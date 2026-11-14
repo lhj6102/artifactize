@@ -33,6 +33,12 @@ artifactize models codex
 artifactize models claude-agent
 ```
 
+모델 목록 조회에는 별도의 고정 제한 시간이 있습니다. API 키를 쓰는 백엔드와 커스텀 provider의
+목록 조회, Codex 모델 요청은 30초, Claude Agent 초기화는 25초까지입니다. 시간이 초과되면 목록을
+가져오지 못합니다(API 목록 조회에서는 `Model listing timed out.`). eval의 `timeout_ms`를 늘려도
+이 제한 시간은 늘어나지 않습니다. 연결 상태를 확인하고, `claude-agent`라면 Claude Code가 정상적으로
+시작되는지도 확인한 뒤 다시 시도하세요.
+
 `reasoning`은 선택 항목입니다. OpenAI와 Codex는 `none`, `minimal`, `low`, `medium`, `high`,
 `xhigh`, `max`를, Anthropic은 `low`, `medium`, `high`, `max`를, Claude Agent는 `low`, `medium`,
 `high`, `xhigh`, `max`를, Gemini는 `minimal`, `low`,

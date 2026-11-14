@@ -390,11 +390,11 @@ describe("Settings", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Claude Code" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     expect(calls.some((call) => call.cmd === "claude_agent_login_cancel")).toBe(true);
-    // What Claude Code reports after the cancellation differs from what it reported before.
-    state = { state: "missing" };
+    // Claude Code was signed in elsewhere meanwhile: only a status read after the cancellation shows it.
+    state = { state: "signedIn", method: "claude.ai", plan: "max" };
     fail({ kind: "account", message: "Claude Code sign-in was cancelled." });
     await screen.findByText("Claude Code sign-in was cancelled.");
-    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("claude not found"));
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
   });
 

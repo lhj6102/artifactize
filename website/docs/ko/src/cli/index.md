@@ -59,7 +59,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `login openai\|anthropic\|gemini` | API 키를 stdin에서 읽습니다 | `Saved the PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":true}`입니다 | 0 |
 | `logout codex` | 로컬 토큰을 지우고 폐기를 시도합니다. 읽기 전용 인증 파일은 건드리지 않습니다 | `Signed out of Codex.`라고 출력합니다. JSON은 `{"provider":"codex","signed_in":false,"revoked":BOOL}`입니다 | 로컬 로그아웃 뒤 0 |
 | `logout openai\|anthropic\|gemini` | 저장한 키를 지웁니다. 변수는 건드리지 않습니다 | `Forgot the saved PROVIDER API key.`라고 출력합니다. JSON은 `{"provider":…,"saved":false}`입니다 | 0 |
-| `login claude-agent` | Claude Code 자체 명령인 `claude auth login`을 실행합니다. 그 URL은 stderr에 출력하고, stdin에 붙여 넣은 코드는 Claude Code에 전달합니다 | `Claude Code is signed in with METHOD (PLAN).`이라고 출력합니다. Claude Code가 요금제를 알려 주지 않으면 ` (PLAN)` 없이, 그 뒤 상태에 로그인 정보가 없으면 `Claude Code signed in.`이라고 출력합니다. JSON은 `{"provider":"claude-agent","signed_in":true}`입니다 | 0. `claude`가 없거나 Claude Code가 실패하면 2 |
+| `login claude-agent` | Claude Code 자체 명령인 `claude auth login`을 실행합니다. 그 URL은 stderr에 출력하고, stdin에 붙여 넣은 코드는 Claude Code에 전달합니다 | `Claude Code is signed in with METHOD (PLAN).`이라고 출력합니다. Claude Code가 요금제를 알려 주지 않으면 ` (PLAN)` 부분을 뺍니다. 로그인한 뒤 확인한 상태에 로그인 정보가 없으면 `Claude Code signed in.`이라고 출력합니다. JSON은 `{"provider":"claude-agent","signed_in":true}`입니다 | 0. `claude`가 없거나 Claude Code가 실패하면 2 |
 | `logout claude-agent` | Claude Code 자체 명령인 `claude auth logout`을 실행합니다 | `Signed out of Claude Code.`라고 출력합니다. JSON은 `{"provider":"claude-agent","signed_in":false}`입니다 | 0. `claude`가 없거나 Claude Code가 실패하면 2 |
 | `provider list` | | 기본 provider별 키 출처와 커스텀 provider 전체를 보여 줍니다. 키 값은 출력하지 않습니다. 형식은 텍스트 또는 JSON입니다 | 0 |
 | `provider add NAME` | `--alias PROVIDER`, 또는 `--api API --url URL`과 선택 항목 `--key`(키는 stdin에서 읽습니다. 없으면 엔드포인트에 키가 없습니다) | `Saved custom provider NAME.`라고 출력합니다. JSON은 `{"provider":NAME,"saved":true}`입니다 | 0 |
@@ -415,11 +415,11 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다.
 판정이 잘못되면 2로 종료하며, 요청은 수정 후 다시 제출할 수 있는 상태로 남습니다. 제출에 성공하면 RED여도
 0으로 종료하며, 별도의 검증 과정을 시작하지 않습니다.
 
-도구를 실행하거나 제출을 저장하기 전에 리뷰한 파일과 선언을 다시 확인합니다. fingerprint가
-바뀌었거나 계산할 수 없으면 요청은 판정 없이 ERROR(`INPUT_CHANGED`나
-`FINGERPRINT_RECHECK_FAILED`)로 끝나고 명령은 종료 코드 2로 끝납니다. 새 요청을 받으려면
-`verify`를 다시 실행하세요. eval의 선언이나 범위가 바뀌었으면 제출을 거부하고 종료 코드 2로
-끝나며, 요청은 대기 상태로 남습니다. 선언을 되돌린 뒤 제출하거나 다시 verify하세요.
+도구를 실행하거나 제출을 저장하기 전에 선언과 리뷰한 파일을 다시 확인합니다. 요청을 기록한 뒤로
+eval의 선언이나 범위가 바뀌었거나, fingerprint가 바뀌었거나 계산할 수 없으면 요청은 판정 없이
+ERROR로 끝나고 명령은 종료 코드 2로 끝납니다. 오류 코드는 `INPUT_CHANGED`이며, fingerprint를
+계산할 수 없을 때만 `FINGERPRINT_RECHECK_FAILED`입니다. 새 요청을 받으려면 `verify`를 다시
+실행하세요.
 
 이미 맡은 요청에 같은 리뷰어로 `request claim`을 다시 실행해도 기존 담당 정보를 돌려주고 0으로
 종료하므로, 담당 지정은 반복해도 안전합니다. 제출은 한 번만 받으며, 다시 제출하면 종료 코드 2로 끝납니다. 명령이 중단되는 등 제출
@@ -543,7 +543,7 @@ follow-up을 저장하는 방식은 [follow-up 재생 레퍼런스](../features/
 [Agent 세션](../features/others/state.md#agent-sessions)에 있습니다.
 
 **개인정보.** 대화에는 리뷰어가 도구로 읽은 모든 내용(파일 내용 포함)과 리뷰어가 쓴 모든 내용이
-들어 있습니다. 이 머신에서 소유자만 읽을 수 있는 파일로 남고, 팀 리뷰 저장소를 포함해 어디에도
+들어 있습니다. 대화는 이 머신에 본인만 읽을 수 있는 파일로 저장하며, 팀 리뷰 저장소를 비롯해 어디에도
 올리지 않습니다. follow-up은 리뷰의 매 턴과 마찬가지로 대화를 그 리뷰의 백엔드로 보냅니다.
 저장하지 않으려면 `"agentSessions": {"enabled": false}`로 끄고, 이미 저장된 대화는
 `$STATE/agent-sessions`를 지워서 없애세요.

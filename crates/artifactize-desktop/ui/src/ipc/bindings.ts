@@ -665,7 +665,7 @@ export type LaunchView = {
 	request: string | null,
 };
 
-/**  How a node or edge is lit, in precedence order; the frontend maps each to one colour. */
+/**  How a node or edge is lit; each source's library type determines precedence. */
 export type Light = 
 /**  An eval's verdict is RED. */
 "red" | 
@@ -751,7 +751,7 @@ export type Navigate = {
 
 /**
  *  An Artifact between its neighbours, at most [`NEAR`] on each side: those shown first are the
- *  ones lit first in [`Light`]'s precedence (failing before passing), then in the tree's order.
+ *  ones lit first in the library's Run or Current precedence, then in the tree's order.
  */
 export type Neighbours = {
 	/**  The Artifact, the neighbours shown, and the edges between it and them. */
