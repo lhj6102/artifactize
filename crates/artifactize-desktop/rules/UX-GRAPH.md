@@ -325,7 +325,7 @@ that makes the transition happen and checks where it leads.
 | E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab, or a Human review (on a Human eval's tab, or in the Main area) | `t` outside a field typed in, or a click on Debug | the same view, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts; a Human review's request ID, mode, claimant and how long it has waited) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
 | E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, shown from the first run on and unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
-| E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log, unfolded if it was folded, until it exits |
+| E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened, its run started in the Artifact's Tool log (unfolded if it was folded) and open there until it exits |
 | E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log, unfolded if it was folded |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
 | E-CURRENT-CLOSE | Detail over a Current | Esc, Close, or a click on the graph's background | the Current graph, Detail closed |
@@ -340,7 +340,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Taken, the claimant named beside its stage; claiming here is refused |
 | E-HUMAN-RELEASED-ELSEWHERE | Taken | the other process releases | Unclaimed |
 | E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0` |
-| E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened and said so; its run open in the Tool log |
+| E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened, its run started in the Tool log and open there until it exits |
 | E-HUMAN-LOG-LIVE | a launched application logging | it prints, then exits | same state, its lines (stderr in red) and then its end added under its own run |
 | E-HUMAN-TOOL-FAIL | Claimed or Editing | click a tool that fails | same state, the failure said and its run ended red in the Tool log |
 | E-HUMAN-GREEN | Claimed | `g`, or a click on GREEN | Editing GREEN, the form built from the pass schema |

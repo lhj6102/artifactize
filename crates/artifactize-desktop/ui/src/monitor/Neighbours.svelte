@@ -97,7 +97,8 @@
       height: rows * (NODE.height + GAP.y) + 24,
       key: placed.map(({ item }) => item.id).join(),
       more: more.length > 0 ? `And ${more.join(" and ")}, not shown.` : "",
-      copies: copies > 1 ? `Drawn ${copies.toLocaleString()} times on the graph, inside ${new Intl.ListFormat("en").format(wholes)}.` : "",
+      // A part drawn in several wholes: how many copies, and the wholes, as facts.
+      copies: copies > 1 ? { count: copies.toLocaleString(), inside: wholes.join(", ") } : null,
     };
   });
 </script>
@@ -130,7 +131,12 @@
     {/key}
   </div>
   {#if shown.more}<p class="more">{shown.more}</p>{/if}
-  {#if shown.copies}<p class="more">{shown.copies}</p>{/if}
+  {#if shown.copies}
+    <dl class="more copies" aria-label="Copies">
+      <dt>Copies</dt><dd>{shown.copies.count}</dd>
+      <dt>Inside</dt><dd>{shown.copies.inside}</dd>
+    </dl>
+  {/if}
 {/if}
 </div>
 
@@ -160,5 +166,15 @@
     margin: 4px 0 0;
     color: var(--ink-2);
     font-size: var(--text-small);
+  }
+  .copies {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+  .copies dd {
+    margin: 0;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
   }
 </style>

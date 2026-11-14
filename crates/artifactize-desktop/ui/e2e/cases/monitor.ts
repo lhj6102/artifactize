@@ -423,6 +423,26 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journey: J-HUMAN-LOG; UX edges: E-HUMAN-TOOL-FAIL
+  scenario<null>(
+    "monitor-tool-missing",
+    "ends the run of a tool that could not run with its error, in red",
+    () => atRepo({ title: "A person approves the release", instruction: "Read the release notes and approve them.", missing: true }),
+    async (browser, { fixture }) => {
+      const { toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      const gone = await tool("gone");
+      await gone.button.click();
+      await browser.waitUntil(async () => (await runOf("gone"))?.at(-1)?.kind === "end" && (await toolLog()).noticeError,
+        { timeout: 15000, timeoutMsg: "the tool's error ends its run" });
+      const rows = (await runOf("gone"))!;
+      assert.equal(rows[0].text, "▶ HH:MM:SS · gone · release");
+      const end = rows.at(-1)!;
+      assert.match(end.text, /^■ error: \S/, `its end line says the error: ${end.text}`);
+      assert.ok(end.error, "in red");
+      assert.equal(signoff(fixture).status, "DEFERRED", "a tool error is not a verdict");
+    },
+  ),
   // UX edges: E-HUMAN-TOOL-FAIL
   scenario<null>(
     "monitor-tool-failure",

@@ -339,6 +339,7 @@
     overflow-wrap: anywhere;
   }
   .eval .right {
+    font-size: var(--text-small);
     justify-self: end;
     min-width: 0;
     text-align: right;

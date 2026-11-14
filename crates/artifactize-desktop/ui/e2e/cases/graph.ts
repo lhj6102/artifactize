@@ -513,9 +513,8 @@ export const scenarios: Scenario[] = [
         const shown = await partsDrawn(browser, current);
         return shown["a:docs/a:site"].open && shown["a:suite/a:site"].open && !shown["a:docs"].open && !shown["a:suite"].open;
       }, { timeout: 15000, timeoutMsg: "both copies of site, and no whole, highlighted" });
-      const note = await aside(browser).$("p=Drawn 2 times on the graph, inside suite and docs.").isExisting()
-        || await aside(browser).$("p=Drawn 2 times on the graph, inside docs and suite.").isExisting();
-      assert.ok(note, "site's Detail says it is drawn in both wholes, naming them");
+      const copies = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] dl[aria-label="Copies"] dd')].map((fact) => fact.textContent?.trim() ?? ""));
+      assert.ok(copies[0] === "2" && ["suite, docs", "docs, suite"].includes(copies[1]), `site's Detail counts its copies and names both wholes: ${JSON.stringify(copies)}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
       assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
     },

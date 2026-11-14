@@ -328,5 +328,7 @@ it("lets go of a Detail whose node the Run no longer has", async () => {
 it("says that a part of several wholes is drawn in each of them, naming them", async () => {
   setup(null, { wholes: ["kit", "site"], copies: 2 });
   await fireEvent.click(await screen.findByRole("button", { name: "Neighbours" }));
-  expect(await screen.findByText("Drawn 2 times on the graph, inside kit and site.")).toBeTruthy();
+  const facts = within(await screen.findByLabelText("Copies"));
+  expect(facts.getByText("Copies").nextElementSibling?.textContent).toBe("2");
+  expect(facts.getByText("Inside").nextElementSibling?.textContent).toBe("kit, site");
 });
