@@ -129,7 +129,7 @@ ID로 연 요청이 표시되며, 맨 위 헤더 행 하나가 무엇을 보여 
 
 ### Run {#run}
 
-Pane에서 Run을 고르면 Main area에 그 Run의 Artifact 그래프가 표시됩니다. 헤더 행에는 Run ID와 요약이 나옵니다. Run 요약에는 판정 표시와 이름이 해당 색으로 나옵니다. 이어서 RED·ERROR eval과 대기 중인 승인이 각각 표시와 이름으로 나오며, 공간이 부족하면 행 끝이 잘립니다. 요약을 클릭하거나 팔레트 명령 **Open the Run's Detail**을 쓰면 [Run의 Detail](#detail)이 열립니다. 그 Run의 결과(상태, 실패한 eval, 상태별 eval 수, 걸린 시간, 코멘트 전문)와 기다리는 대상이 먼저 나오고, **What**, **Provenance**, **Technical**은 펼칠 때까지 접혀 있습니다. `t`를 누르면 **Technical**이 표시되거나 숨겨집니다. Run이 끝날 때의 검증 결과는 기록으로 남습니다. 나중에 Human 판정을 제출해도
+Pane에서 Run을 고르면 Main area에 그 Run의 Artifact Graph가 표시됩니다. 헤더 행에는 Run ID와 요약이 나옵니다. Run 요약에는 판정 표시와 이름이 해당 색으로 나옵니다. 이어서 RED·ERROR eval과 대기 중인 승인이 각각 표시와 이름으로 나오며, 공간이 부족하면 행 끝이 잘립니다. 요약을 클릭하거나 팔레트 명령 **Open the Run's Detail**을 쓰면 [Run의 Detail](#detail)이 열립니다. 그 Run의 결과(상태, 실패한 eval, 상태별 eval 수, 걸린 시간, 코멘트 전문)와 기다리는 대상이 먼저 나오고, **What**, **Provenance**, **Technical**은 펼칠 때까지 접혀 있습니다. `t`를 누르면 **Technical**이 표시되거나 숨겨집니다. Run이 끝날 때의 검증 결과는 기록으로 남습니다. 나중에 Human 판정을 제출해도
 이전 Run의 판정은 바뀌지 않고, 현재 요청의 상태 표시만 바뀔 수 있습니다.
 
 ### Current {#current}
@@ -243,8 +243,8 @@ Space나 Enter로 화면에 보이는 묶음을 펼치거나 접을 수 있으�
 
 ### ID로 요청 열기 {#requests-by-id}
 
-Ctrl+O 또는 팔레트의 **Open a request by ID**는 어느
-저장소의 저장된 요청이든 Main area에 엽니다. 대기 중인 Human 리뷰는 Pane에서 열 때처럼 조작할 수 있고,
+Ctrl+O나 팔레트의 **Open a request by ID**를 쓰면 저장소에 관계없이
+저장된 요청을 Main area에서 열 수 있습니다. 대기 중인 Human 리뷰는 Pane에서 열 때처럼 조작할 수 있고,
 다른 요청은 읽기 전용이며 헤더 행의 제목에 read-only가 붙습니다. 완료된 Human 요청을 열면 Human 리뷰 화면이 읽기 전용으로 표시되며,
 `t`를 누르면 **Debug**가 표시되거나 숨겨집니다. 로그가 있는 다른 읽기 전용 요청을 열면 eval의 탭에서처럼 Summary와 Agent log
 또는 Runtime log를 전환해 볼 수 있고, `t`로 **Debug**를 표시하거나 숨길 수 있습니다. **Close**를 누르면 Pane으로 돌아갑니다. 다른 곳에서 일어난

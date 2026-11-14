@@ -36,7 +36,7 @@
   import { BLOCKING, WORDS, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
-  import { plain } from "../shell/keys";
+  import { label, plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
 
   let {
@@ -419,7 +419,7 @@
 <div class="graph">
   <!-- What acts on the graph, in one row above the canvas, and nothing else. -->
   <div class="tools" role="toolbar" aria-label="Graph tools">
-    <button class="button small" aria-keyshortcuts="Control+F" onclick={() => (m.finding = true)}><Icon name="find" />Find</button>
+    <button class="button small" aria-label="Find ({label('Ctrl+F')})" aria-keyshortcuts="Control+F" onclick={() => (m.finding = true)}><Icon name="find" />Find</button>
     <span class="zoom">
       <button aria-label="Zoom out" onclick={() => zoomBy(1 / ZOOM_STEP)}><Icon name="minus" /></button>
       <span class="percent" aria-label="Zoom">{Math.round(camera.current.zoom * 100)}%</span>
