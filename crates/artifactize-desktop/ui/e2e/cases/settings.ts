@@ -546,6 +546,9 @@ Review the agent folder."""
       await browser.waitUntil(async () => (await text()).includes("alice-laptop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "the remote principal appears" });
       // Signed in: the store's URL and share level as facts, without the fields that sign in.
       assert.equal(await browser.$("#remote-token").isExisting(), false, "the token field is gone once signed in");
+      assert.equal(await browser.$("#remote-url").isExisting(), false, "so is the URL field");
+      assert.equal(await browser.$('input[name="share"]').isExisting(), false, "and the share level's choices");
+      assert.equal(await browser.$("button=Sign in to the store").isExisting(), false, "and Sign in");
       assert.equal(await browser.$('[data-testid="remote-status"]').getText(), url, "the store's URL as a fact");
       assert.ok(!(await html()).includes(token), "the token is nowhere on the page");
 

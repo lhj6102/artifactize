@@ -368,6 +368,11 @@ Summarize {docs}."""
       const waiting = JSON.stringify({ "a:other": "other: would run (1 eval)", "a:quick": "quick: checking", "a:slow": "slow: checking" });
       await waitFor(browser, async () => (await nodes()) === waiting, `slow and quick still being checked: ${await nodes()}`);
       assert.equal(await scanned(browser), "2 left", "the header counts what is still being checked");
+      const announced = await browser.execute((main) => {
+        const mark = document.querySelector(`${main} > header .scan .checking`);
+        return { label: mark?.getAttribute("aria-label") ?? "", icon: mark?.querySelector("svg")?.getAttribute("data-icon") ?? "" };
+      }, MAIN);
+      assert.deepEqual(announced, { label: "Checking, 2 Artifacts left", icon: "checking" }, "with the checking icon, announced in words");
       let look = await graphAppearance(browser);
       await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:other": "run", "a:quick": "checking", "a:slow": "checking" }, {}),
         { timeout: 15000, timeoutMsg: "checking painted in its own colour" })
