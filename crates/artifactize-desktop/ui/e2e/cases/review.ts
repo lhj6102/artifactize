@@ -3,7 +3,7 @@
 // unsubmitted claim (stay, then release and quit), and the completed result kept open.
 import assert from "node:assert/strict";
 import { addRepository, artifactize, create, type Fixture, orderRuns, requests, signoff } from "../fixture.ts";
-import { claimable, reviewing } from "../human-review.ts";
+import { claimable, requestState, reviewing } from "../human-review.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
@@ -34,7 +34,7 @@ async function openById(browser: WebdriverIO.Browser, id: string) {
   await fill(browser, '[aria-label="Request ID"]', id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
   await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-  await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · `), `${id}'s review`);
+  await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · `), `${id}'s review`);
 }
 
 export const scenarios: Scenario[] = [
@@ -49,12 +49,12 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await row()) !== undefined, "the waiting row");
       const shown = (await row())!;
       assert.deepEqual([shown.eval, shown.where], ["release/signoff", "repo  master"]);
-      assert.match(shown.meta, / · -$/, "nobody claimed it");
+      assert.doesNotMatch(shown.meta, / · /, "nobody claimed it: only how long it waits");
       assert.equal(signoff(fixture).claim, null, "listing claims nothing");
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => / · bob$/.test((await row())?.meta ?? ""), "bob's claim in the row");
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
-      await waitFor(browser, async () => / · -$/.test((await row())?.meta ?? ""), "bob's release in the row");
+      await waitFor(browser, async () => { const meta = (await row())?.meta; return meta !== undefined && !/ · /.test(meta); }, "bob's release in the row");
       assert.equal(await mainTitle(browser), "Nothing chosen", "nothing opened by itself");
     },
   ),
@@ -79,8 +79,10 @@ export const scenarios: Scenario[] = [
       // The older one by its ID, not the newest at the top of the stack.
       assert.equal((await waiting(browser)).rows[0].id, added.id);
       await openById(browser, original);
-      const technical = () => browser.$('[aria-label="Human review"]').$("button*=Technical").getAttribute("aria-expanded");
+      // Debug, unfolded to read the request's state above, folds and unfolds by t.
+      const technical = () => browser.$('[aria-label="Human review"]').$("button.head=Debug").getAttribute("aria-expanded");
       await browser.$('[aria-label="Human review"]').click();
+      await press(browser, ["t"], async () => (await technical()) === "false", "Debug folded by t");
       await press(browser, ["t"], async () => (await technical()) === "true", "the opened review's identity");
       const openedId = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] dt')]
         .find((field) => field.textContent === "Request")?.nextElementSibling?.textContent ?? "");

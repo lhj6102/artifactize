@@ -6,7 +6,7 @@ import { createOutside, createUnreadableRuns, savedRuns, spoilRun } from "../fix
 import { createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
-import { aside, camera, detail, graphShown, nodeAt } from "../graph-view.ts";
+import { aside, camera, detail, graphShown, nodeAt, ZOOM_IN } from "../graph-view.ts";
 import { afterRender } from "../keys.ts";
 
 function slot(browser: WebdriverIO.Browser) {
@@ -154,7 +154,7 @@ export const scenarios: Scenario[] = [
       });
       const drawnBefore = new Set(await visible());
       const brought = async () => (await visible()).filter((id) => !drawnBefore.has(id));
-      const zoomIn = await browser.$(".monitor .svelte-flow__controls-zoomin");
+      const zoomIn = await browser.$(ZOOM_IN);
       let zooms = 0;
       for (; zooms < 20 && (await brought()).length === 0; zooms += 1) {
         await zoomIn.click();
@@ -165,7 +165,9 @@ export const scenarios: Scenario[] = [
       const [id] = await brought();
       assert.match(id, /^a:n\d{4}$/);
       await graphShown(browser, id);
-      assert.equal(await browser.$(nodeAt(id)).getAttribute("aria-label"), `${id.slice(2)}: GREEN`, "the drawn Artifact is named with its verdict");
+      const named = `${id.slice(2)}: GREEN`;
+      const label = (await browser.$(nodeAt(id)).getAttribute("aria-label")) ?? "";
+      assert.ok(label.startsWith(named) && /^(, \d+ of \d+ evals GREEN)?$/.test(label.slice(named.length)), `the drawn Artifact is named with its verdict: ${label}`);
       await browser.$(nodeAt(id)).click();
       await browser.waitUntil(async () => (await detail(browser))?.title.startsWith(`Artifact ${id.slice(2)}`) === true,
         { timeout: 15000, timeoutMsg: `${id}'s Detail opened` });

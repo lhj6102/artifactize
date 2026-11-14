@@ -377,7 +377,7 @@
 
   useCommands(() => [
     { id: "graph.find", group: "Graph", label: "Find", keys: "Ctrl+F", run: () => (m.finding = true) },
-    { id: "graph.fit", group: "Graph", label: "Fit View", run: fitAll },
+    { id: "graph.fit", group: "Graph", label: "Fit", run: fitAll },
     {
       id: "graph.minimize",
       group: "Graph",

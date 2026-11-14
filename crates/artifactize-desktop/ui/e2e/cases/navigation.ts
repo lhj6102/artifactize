@@ -3,6 +3,7 @@
 // into the Main area and back, a Detail stepped back out of, unreadable Runs beside a readable
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
+import { requestState } from "../human-review.ts";
 import { addWaiting, create, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { press } from "../keys.ts";
@@ -11,8 +12,9 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
-import { aside, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
-import { branch, branches, chooseChip, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, showRun, waiting } from "../pane.ts";
+import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
+import { branch, branches, chooseChip, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, SEARCH, showRun, waiting } from "../pane.ts";
+import { choosePaletteCommand } from "../palette-commands.ts";
 
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture"> & { review: string };
 
@@ -54,27 +56,38 @@ export const scenarios: Scenario[] = [
       };
       await graphShown(browser, "a:release");
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      /** The marks the open Help pairs with their words; empty without any. */
+      const marks = async () => {
+        await press(browser, ["?"], helpOpen, "Help open for its marks");
+        const shown = await browser.execute(() => [...document.querySelectorAll('[role="dialog"].help [aria-label="Marks"] li')].map((item) => item.textContent?.trim() ?? ""));
+        await press(browser, ["Escape"], async () => !(await helpOpen()), "Help closed");
+        return shown;
+      };
       await listed([
-        [/^↑ \/ ↓ · j \/ k$/, /Select a branch or a timeline entry, then a waiting review/],
-        [/^← \/ →$/, /Fold \/ expand the selected branch/],
+        [/^↑ \/ ↓ · j \/ k$/, /^Select a branch, a timeline entry or a waiting review$/],
+        [/^← \/ →$/, /^Fold or expand the branch/],
         [/^Esc$/, /sort:recent/],
-        [/\bF5\b/, /^Refresh/],
+        [/\bF5\b/, /^Refresh$/],
         [shortcutLabel("Ctrl+O"), /^Open a request by ID$/],
-        [shortcutLabel("/ · Ctrl+F"), /^Search branches and reviews$/],
-      ], [/^Click an Artifact$/, /^c$/], "the Pane");
+        [shortcutLabel("Ctrl+B"), /^Show or hide the Pane$/],
+        [shortcutLabel("Ctrl+K"), /^Command palette$/],
+      ], [/^m$/, /^c$/], "the Pane");
+      assert.deepEqual(await marks(), [], "the Pane's Help has no marks");
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
       await listed([
-        [/^Click an Artifact$/, /Open its Detail/],
-        [/^Click the background$/, /Close the Detail/],
-        [/^Click a tab or an eval$/, /Show the Artifact or that eval/],
-        [shortcutLabel("Ctrl+F"), /^Find an Artifact or an eval by name/],
-        [/^c$/, /^Claim$/],
-        [/\bF5\b/, /^Refresh/],
-      ], [/^↑ \/ ↓ · j \/ k$/, /^v$/, /^(?:!|o|b \/ Backspace)$/], "the Main area");
+        [/^Tab$/, /^Next Artifact$/],
+        [/^Enter$/, /^Open its Detail$/],
+        [shortcutLabel("Ctrl+F"), /^Find an Artifact or an eval$/],
+        [/^m$/, /^Minimize or expand a whole$/],
+        [/\bF5\b/, /^Refresh$/],
+      ], [/^↑ \/ ↓ · j \/ k$/, /^c$/], "the Main area");
+      // On a graph, Help pairs each mark with its word.
+      const words = await marks();
+      for (const word of ["GREEN", "RED", "ERROR", "waiting"]) assert.ok(words.some((shown) => shown.includes(word)), `the graph's Help names ${word}: ${JSON.stringify(words)}`);
       const beneath = await mainTitle(browser);
       await press(browser, [primaryModifier, ","], () => browser.$("#settings-title").isExisting(), "Settings open");
       assert.equal(await mainTitle(browser), beneath, "Settings opens over the Main area's view");
-      await listed([[/^Esc$/, /^Close Settings$/], [/^← \/ →$/, /Providers and Remote tabs/]], [/^Click an Artifact$/, /^c$/], "Settings");
+      await listed([[/^Esc$/, /^Close Settings$/], [/^← \/ →$/, /^Previous or next tab$/]], [/^m$/, /^c$/], "Settings");
     },
   ),
 
@@ -94,7 +107,7 @@ export const scenarios: Scenario[] = [
       orderRuns(fixture, [run, id]);
       await waitFor(browser, async () => JSON.stringify((await branch(browser, "repo  master"))?.chips.map((chip) => chip.id)) === JSON.stringify([id, run]),
         "the new Run arrives in the timeline without F5");
-      assert.equal(await mainTitle(browser), `Run ${run}`, "the shown Run stays shown");
+      assert.equal(await mainTitle(browser), run, "the shown Run stays shown");
     },
   ),
 
@@ -118,21 +131,26 @@ export const scenarios: Scenario[] = [
         "F5's refresh shown", { handled: true });
       await refreshed(browser, before);
       assert.ok(await branch(browser, "repo  after-refresh"), "the refresh scanned the branches again: the new worktree listed");
-      assert.equal(await mainTitle(browser), `Run ${run}`, "on the same view");
+      assert.equal(await mainTitle(browser), run, "on the same view");
       assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
       // The new branch's Current: only a refresh or its Refresh button scans it again.
       await chooseChip(browser, "repo  after-refresh", "current");
       await waitFor(browser, async () => /^Scanned at /.test(await scanned(browser)), "its Current scanned");
-      const structure = () => browser.$('section[aria-label="Current"] pre').getText();
-      await browser.$('section[aria-label="Current"] details summary').click();
+      // docs' eval open in the Detail shows its instruction as the last scan read it.
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      await openTab(browser, "e:docs/lint");
+      const instruction = async () => (await summary(browser)).instruction;
+      await waitFor(browser, async () => (await instruction()) === "Build the docs.", "docs' eval open");
       const declaration = nativePath(data.worktree, "docs", "index.artf");
+      let previous = "Build the docs.";
       for (const [index, keys] of [["F5"], [primaryModifier, "r"]].entries()) {
-        const title = `Refreshed docs ${index}`;
-        writeText(declaration, readText(declaration).replace(/title = "[^"]*"/, `title = "${title}"`));
-        assert.doesNotMatch(await structure(), new RegExp(title), "the changed declaration is not shown before the refresh");
+        const wanted = `Build the docs, refreshed ${index}.`;
+        writeText(declaration, readText(declaration).replace(previous, wanted));
+        assert.equal(await instruction(), previous, "the changed declaration is not shown before the refresh");
         before = await checkpoint(browser);
-        await press(browser, keys, async () => (await structure()).includes(title), `${keys.join("+")} scanned the Current again`, { handled: true });
+        await press(browser, keys, async () => (await instruction()) === wanted, `${keys.join("+")} scanned the Current again`, { handled: true });
         await refreshed(browser, before);
+        previous = wanted;
         assert.equal(await mainTitle(browser), "Current · repo  after-refresh", "on the same view");
       }
     },
@@ -231,15 +249,15 @@ export const scenarios: Scenario[] = [
       const filled = async (name: string) => (await branch(browser, name))?.chips.find((chip) => chip.filled)?.id ?? null;
       const expanded = async (name: string) => (await branch(browser, name))?.expanded === true;
       // ↓ and j select the next branch, which shows its newest entry; k and ↑ go back.
-      await press(browser, ["ArrowDown"], async () => (await selected()) === "gates  master" && /^Run /.test(await mainTitle(browser)), "the first branch's Run in progress shown");
+      await press(browser, ["ArrowDown"], async () => (await selected()) === "gates  master" && /^run-/.test(await mainTitle(browser)), "the first branch's Run in progress shown");
       await press(browser, ["j"], async () => (await selected()) === "other  master" && (await mainTitle(browser)) === "Current · other  master", "the next branch's Current shown");
       await press(browser, ["ArrowDown"], async () => (await selected()) === "repo  master" && (await mainTitle(browser)) === "Current · repo  master", "repo's Current shown");
       // → expands it; → again enters its timeline on its Current; ↓ and ↑ move through its Runs,
       // each shown and marked.
       await press(browser, ["ArrowRight"], () => expanded("repo  master"), "repo expanded");
       await press(browser, ["ArrowRight"], async () => (await filled("repo  master")) === "current", "on its Current");
-      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === `Run ${newer.id}` && (await filled("repo  master")) === newer.id, "the newer Run shown");
-      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === `Run ${older.id}` && (await filled("repo  master")) === older.id, "the older Run shown");
+      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === newer.id && (await filled("repo  master")) === newer.id, "the newer Run shown");
+      await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === older.id && (await filled("repo  master")) === older.id, "the older Run shown");
       await press(browser, ["ArrowUp"], async () => (await filled("repo  master")) === newer.id, "the newer Run again");
       await press(browser, ["ArrowUp"], async () => (await filled("repo  master")) === "current", "its Current again");
       await press(browser, ["ArrowDown"], async () => (await filled("repo  master")) === newer.id, "back on the newer Run");
@@ -247,7 +265,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["ArrowLeft"], async () => (await browser.execute(() =>
         document.querySelector('[aria-label="Branches"] > [aria-selected="true"]')?.getAttribute("aria-expanded"))) === "true", "the branch itself selected");
       await press(browser, ["ArrowLeft"], async () => !(await expanded("repo  master")), "repo folded");
-      assert.equal(await mainTitle(browser), `Run ${newer.id}`, "stepping out and folding keep what is shown");
+      assert.equal(await mainTitle(browser), newer.id, "stepping out and folding keep what is shown");
       // Enter goes into the Main area, on the shown Run: its own historical criterion.
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
       await graphShown(browser, "a:subject");
@@ -255,7 +273,8 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(opened.evals.map((row) => row.name), [newer.eval], "only the shown Run's criterion");
       await openTab(browser, `e:subject/${newer.eval}`);
       const human = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"][tabindex="0"]');
-      await waitFor(browser, () => browser.execute((name) => document.querySelector('[aria-label="Human review"] h3')?.textContent?.includes(`subject/${name}`) ?? false,
+      await waitFor(browser, () => browser.execute((name) => !!document.querySelector('aside[aria-label="Detail"] [aria-label="Human review"]')
+        && (document.querySelector('aside[aria-label="Detail"] h2')?.textContent?.includes(`subject/${name}`) ?? false),
         newer.eval), "the eval's tab holds its Human review");
       await human().click();
       // Esc leaves the review's Detail, back on the graph; Esc again returns to the Pane.
@@ -264,9 +283,9 @@ export const scenarios: Scenario[] = [
       assert.equal(await selected(), "repo  master", "the same entry stays selected");
       // Past the last branch the waiting reviews: one is only selected, Enter opens it.
       await press(browser, ["j"], async () => (await selected()) === example.review, "the waiting review selected");
-      assert.equal(await mainTitle(browser), `Run ${newer.id}`, "selecting a waiting review opens nothing");
+      assert.equal(await mainTitle(browser), newer.id, "selecting a waiting review opens nothing");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "Enter opened the review");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${example.review} · DEFERRED`),
+      await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${example.review} · DEFERRED`),
         "the selected review opened");
       // Esc in a review opened from the Pane returns to the Pane, the review still selected.
       await browser.$('[aria-label="Human review"]').click();
@@ -319,7 +338,7 @@ export const scenarios: Scenario[] = [
           assert.equal((await shown()).filled, at, "the selection stays while older Runs are listed");
           assert.equal(await mainTitle(browser), title, "the Main area still shows the selected entry");
         }
-        await press(browser, ["ArrowDown"], async () => (await shown()).filled === id && (await mainTitle(browser)) === `Run ${id}`, `${id} chosen`);
+        await press(browser, ["ArrowDown"], async () => (await shown()).filled === id && (await mainTitle(browser)) === id, `${id} chosen`);
         await waitFor(browser, async () => (await shown()).visible, `${id} shows within the list: ${JSON.stringify(await shown())}`);
       }
       assert.equal((await branch(browser, "repo  master"))!.chips.length, runs.length + 1, "the older Runs arrived on the way");
@@ -430,6 +449,66 @@ export const scenarios: Scenario[] = [
     async (browser) => {
       await graphShown(browser, "a:release");
       await sessionEndedByApp(browser, () => requestWindowClose(browser));
+    },
+  ),
+  // UX journey: J-PANE-TOGGLE; UX edges: E-PANE-HIDE E-PANE-SHOW E-REVIEW-SEARCH-FOCUS E-MON-RUNS-GRAPH E-MON-GRAPH-TO-RUNS
+  scenario<Record<string, never>>(
+    "navigation-pane-toggle",
+    "hides the Pane by Ctrl+B, its switch or the palette, the Main area taking the window's width with its view as it was, and shows it again as it was",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const toggle = () => browser.$('button[aria-label="Pane (Ctrl+B)"]');
+      /** The Pane's width (null while hidden), whether the divider is there, and the Main area's and the window's widths. */
+      const layout = () => browser.execute(() => {
+        const pane = document.querySelector<HTMLElement>('section[aria-label="Pane"]');
+        const stage = document.querySelector<HTMLElement>(".monitor .stage")!.getBoundingClientRect();
+        return {
+          pane: pane ? Math.round(pane.getBoundingClientRect().width) : null,
+          divider: !!document.querySelector(".monitor [data-pane-resizer]"),
+          main: Math.round(stage.width),
+          window: document.documentElement.clientWidth,
+        };
+      });
+      await graphShown(browser, "a:release");
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused at launch");
+      const shown = await layout();
+      assert.ok(shown.pane !== null && shown.pane > 0 && shown.divider, `the Pane and its divider shown: ${JSON.stringify(shown)}`);
+      assert.equal(await toggle().getAttribute("aria-pressed"), "true", "the switch reads as on");
+      const title = await mainTitle(browser);
+      const view = await camera(browser);
+      const before = await branch(browser, "repo  master");
+
+      // Ctrl+B with the keyboard in the Pane hides it: the Main area as wide as the window, its
+      // view and camera as they were, and the keyboard there.
+      await press(browser, [primaryModifier, "b"], async () => (await layout()).pane === null, "Ctrl+B hid the Pane");
+      const hidden = await layout();
+      assert.ok(!hidden.divider && Math.abs(hidden.main - hidden.window) <= 1, `the Main area takes the window's width: ${JSON.stringify(hidden)}`);
+      assert.equal(await toggle().getAttribute("aria-pressed"), "false", "the switch reads as off");
+      await waitFor(browser, () => mainFocused(browser), "the keyboard moved to the Main area");
+      assert.equal(await mainTitle(browser), title, "the same view");
+      assert.equal(await camera(browser), view, "the graph neither zoomed nor panned");
+      // The graph and its Detail work whole with the Pane hidden.
+      await openArtifact(browser, "a:release", "Artifact release");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+
+      // The switch shows it again, as it was.
+      await toggle().click();
+      await waitFor(browser, async () => (await layout()).pane !== null, "the switch showed the Pane");
+      const again = await layout();
+      assert.ok(again.divider && Math.abs(again.pane! - shown.pane!) <= 1, `the Pane at the width it had: ${JSON.stringify({ shown, again })}`);
+      assert.equal(await toggle().getAttribute("aria-pressed"), "true", "the switch reads as on again");
+      const after = await branch(browser, "repo  master");
+      assert.deepEqual([after?.selected, after?.expanded, after?.chips.map((chip) => chip.filled)], [before?.selected, before?.expanded, before?.chips.map((chip) => chip.filled)],
+        "its selection and expanded branch as they were");
+
+      // The palette's command hides it too; / shows it first and focuses its search.
+      await press(browser, [primaryModifier, "k"], () => browser.execute(() => !!document.querySelector('[aria-label="Command palette"][data-state="open"]')), "the palette open");
+      await choosePaletteCommand(browser, "Show or hide the Pane");
+      await press(browser, ["Enter"], async () => (await layout()).pane === null, "the palette's command hid the Pane");
+      await press(browser, ["/"], async () => (await layout()).pane !== null && await browser.$(SEARCH).isFocused(), "/ showed the Pane and focused its search");
     },
   ),
 ];

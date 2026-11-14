@@ -2,6 +2,7 @@
 // what each way of starting the app opens first: nothing, a branch's newest entry, the newest
 // waiting review or a named one.
 import assert from "node:assert/strict";
+import { requestState } from "../human-review.ts";
 import { addRepository, addWorktrees, create, orderRuns, requests, signoff, type Fixture } from "../fixture.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -95,30 +96,32 @@ export const scenarios: Scenario[] = [
       }
       // A click on a branch's name expands it and shows its newest entry, its one Run, marked.
       await selectBranch(browser, "repo  master");
-      await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${initialRun}`, "the branch's running Run shown");
+      await waitFor(browser, async () => (await mainTitle(browser)) === initialRun, "the branch's running Run shown");
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[initialRun, true]], "its one Run, shown");
       await graphShown(browser, "a:release");
       // The shown Run's own verdicts: release waits for its Human, ship is done but held by that sign-off, docs is GREEN.
-      for (const [id, label] of [["a:release", "release: in progress"], ["a:ship", "ship: waiting"], ["a:docs", "docs: GREEN"]]) {
+      for (const [id, label] of [
+        ["a:release", "release: in progress, 0 of 1 evals GREEN"], ["a:ship", "ship: waiting, 0 of 1 evals GREEN"], ["a:docs", "docs: GREEN, 1 of 1 evals GREEN"],
+      ]) {
         await waitFor(browser, async () => (await browser.$(nodeAt(id)).getAttribute("aria-label")) === label, `${id} drawn as ${label}`);
       }
       for (const [artifact, path, glyph, status] of [
-        ["release", "e:release/signoff", "?", /Human sign-off · unclaimed/],
-        ["ship", "e:ship/check", "○", /PROVISIONAL · sign-offs remain/],
-        ["docs", "e:docs/lint", "✓", /^GREEN(?: · reused)?$/],
+        ["release", "e:release/signoff", "human", /Human sign-off · unclaimed/],
+        ["ship", "e:ship/check", "notrun", /PROVISIONAL · sign-offs remain/],
+        ["docs", "e:docs/lint", "green", /^GREEN(?: · reused)?$/],
       ] as const) {
         await openArtifact(browser, `a:${artifact}`, `Artifact ${artifact}`);
         const shown = await browser.execute((selector) => {
           const row = document.querySelector(selector);
-          return { glyph: row?.querySelector(".glyph")?.textContent?.trim(), status: row?.querySelector(".status")?.textContent?.trim() };
+          return { glyph: row?.querySelector(".glyph svg")?.getAttribute("data-icon"), status: row?.querySelector(".status")?.textContent?.trim() };
         }, evalAt(path));
-        assert.equal(shown.glyph, glyph, `${path}'s verdict glyph`);
+        assert.equal(shown.glyph, glyph, `${path}'s verdict mark`);
         assert.match(shown.status ?? "missing row", status, `${path}'s own status`);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${artifact}'s Detail closed`);
       }
       // Another branch's name shows that branch's own Run instead.
       await selectBranch(browser, "repo  scope-one");
-      await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${worktreeRuns[0]}`, "scope-one's own Run shown");
+      await waitFor(browser, async () => (await mainTitle(browser)) === worktreeRuns[0], "scope-one's own Run shown");
       assert.deepEqual((await branch(browser, "repo  scope-one"))?.chips.map((chip) => chip.id), [worktreeRuns[0]], "scope-one's one Run");
       assert.equal((await branch(browser, "repo  master"))?.selected, false, "one branch selected at a time");
     },
@@ -135,7 +138,7 @@ export const scenarios: Scenario[] = [
       return { fixture, args: ["--repo", fixture.repo], data: { run } };
     },
     async (browser, { data: { run } }) => {
-      await waitFor(browser, async () => (await mainTitle(browser)) === `Run ${run}`, "the branch's newest entry shown");
+      await waitFor(browser, async () => (await mainTitle(browser)) === run, "the branch's newest entry shown");
       const shown = await branch(browser, "repo  master");
       assert.equal(shown?.selected, true, "the branch of --repo is selected");
       assert.equal(shown?.expanded, true, "and expanded");
@@ -176,7 +179,7 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { ids } }) => {
       const newest = ids[2];
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${newest} · DEFERRED · unclaimed`),
+      await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${newest} · DEFERRED · unclaimed`),
         "the newest waiting review opened");
       assert.equal(await nativeTitle(browser), "Artifactize");
       const stack = await waiting(browser);
@@ -197,7 +200,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { data: { ids } }) => {
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${ids[1]} · DEFERRED · unclaimed`),
+      await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${ids[1]} · DEFERRED · unclaimed`),
         "the named review opened");
       assert.deepEqual((await waiting(browser)).rows.map((row) => row.id), [...ids].reverse(), "the newest one stays at the top, not opened");
     },

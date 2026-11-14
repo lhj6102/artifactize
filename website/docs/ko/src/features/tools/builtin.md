@@ -113,8 +113,7 @@ eval을 시작하거나 의존성을 더하지 않습니다.
   [Current](../../desktop/index.md#current) 화면으로 엽니다. Current는 워크트리의 파일을 읽어 Run 판정 대신
   현재 선언을 보여 주며, 각 Artifact에 기존 결과를 재사용할지 새로 실행할지 표시합니다. 화면을
   다루는 방법은 Run의 그래프와 같습니다.
-  **Structure and evaluation criteria**를 펼치면 Agent가 보는 것과 같은 전체 텍스트 트리가
-  나옵니다. **Refresh**나 Ctrl+R/F5로 다시 읽습니다. Run이 하나도 없어도 동작합니다. 도구 실행 결과는 승인이 아니라 앱을 시작했다는 확인일 뿐이며, 도구 호출이 끝나도 앱은 계속 실행됩니다.
+  Artifact Detail의 eval 탭에는 그 eval의 지시문이 나오고, 선언된 나머지 정보는 **Debug** 아래에 있습니다. **Refresh**나 Ctrl+R/F5로 다시 읽습니다. Run이 하나도 없어도 동작합니다. 도구 실행 결과는 승인이 아니라 앱을 시작했다는 확인일 뿐이며, 도구 호출이 끝나도 앱은 계속 실행됩니다.
 
 ### `args`의 경로 {#paths-in-args}
 

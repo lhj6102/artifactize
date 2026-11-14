@@ -141,6 +141,14 @@
     element?.querySelector<HTMLElement>(`[role="tab"][data-tab="${CSS.escape(id)}"]`)?.focus();
   }
 
+  /** The Artifact's own tab, chosen by its chip: its tab has no chips, so the keyboard stays in
+   * the Detail rather than going with the chip. */
+  async function showArtifact() {
+    ontab(null);
+    await tick();
+    element?.focus();
+  }
+
   function keydown(event: KeyboardEvent) {
     // A Human review takes its own keys; from the tabs only Esc and ← close.
     if (human && (event.target as HTMLElement | null)?.closest(".human")) return;
@@ -169,7 +177,7 @@
       <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}">
         <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
         <span class="head">
-          <button class="chip" role="tab" aria-selected={false} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>
+          <button class="chip" role="tab" aria-selected={false} aria-label="Artifact {row.name}" onclick={() => void showArtifact()}>
             <img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span>
           </button>
           <span class="slash" aria-hidden="true">/</span>
@@ -300,10 +308,11 @@
     padding: 0;
   }
   /* Four columns: the verdict's icon, the name, the status words in the status colour, and
-     time and tokens pinned to the panel's right edge. */
+     time and tokens pinned to the panel's right edge. The name and the status keep one line
+     while there is room; what the right column says wraps in what is left. */
   .eval {
     display: grid;
-    grid-template-columns: var(--icon) minmax(0, auto) minmax(0, 1fr) auto;
+    grid-template-columns: var(--icon) minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     width: 100%;
@@ -330,7 +339,9 @@
   }
   .eval .right {
     justify-self: end;
+    min-width: 0;
     text-align: right;
+    overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
   }
   .weight-bold .name,

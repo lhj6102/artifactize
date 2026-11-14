@@ -18,3 +18,15 @@ export function claimable(browser: WebdriverIO.Browser, selector = '[aria-label=
     return !!detail && detail.querySelector(".stage")?.textContent?.trim() === "CLAIM" && !!claim && !claim.disabled && !detail.querySelector(".busy");
   }, selector);
 }
+
+/** The request's state as the review's Debug section says it (`Request {id} · {status} · …`),
+ * unfolding Debug with a click on its header row when it is folded; "" without a review. */
+export async function requestState(browser: WebdriverIO.Browser, selector = '[aria-label="Human review"]'): Promise<string> {
+  const head = browser.$(selector).$("button.head=Debug");
+  if (!(await head.isExisting())) return "";
+  if ((await head.getAttribute("aria-expanded")) === "false") await head.click();
+  return browser.execute((query) => {
+    const term = [...document.querySelectorAll(`${query} dt`)].find((dt) => dt.textContent?.trim() === "State");
+    return term?.nextElementSibling?.textContent?.trim() ?? "";
+  }, selector);
+}

@@ -172,7 +172,7 @@
               <span class="glyph tone-human"><Icon name={statusIcon(row.mark.status)} /></span>
               <span class="eval">{row.eval}</span>
               <span class="where">{row.branch ? `${row.project}  ${row.branch}` : row.project}</span>
-              <span class="meta">{row.age}{#if row.claim !== "-"} · {row.claim}{/if}</span>
+              <span class="meta">{row.age}{#if row.claim !== "-"}{` · ${row.claim}`}{/if}</span>
             </li>
           {/each}
         </ul>

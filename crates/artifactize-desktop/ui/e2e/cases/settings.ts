@@ -80,7 +80,7 @@ async function select(browser: WebdriverIO.Browser, selector: string, value: str
 /** The models the Models table lists. */
 async function listModels(browser: WebdriverIO.Browser, expected: string) {
   await browser.$("button=List models").click();
-  await browser.waitUntil(async () => (await browser.$('table[aria-label="Models"]').getText()).includes(expected), { timeout: 15000, timeoutMsg: `${expected} is listed` });
+  await browser.waitUntil(async () => (await browser.$('ul[aria-label="Models"]').getText()).includes(expected), { timeout: 15000, timeoutMsg: `${expected} is listed` });
 }
 
 /** A Chat Completions stream answering `text`, as compatible servers send it. */
@@ -104,7 +104,7 @@ export const scenarios: Scenario[] = [
     async (browser) => {
       await graphShown(browser, "a:release");
       const before = await mainTitle(browser);
-      assert.match(before, /^Run /);
+      assert.match(before, /^run-/);
       const button = () => browser.$("button=Settings");
       const open = () => settingsOpen(browser);
       const closed = async () => !(await browser.$("#settings-title").isExisting()) && (await button().getAttribute("aria-pressed")) === "false";
@@ -144,8 +144,14 @@ export const scenarios: Scenario[] = [
       /** Sign in with Claude Code; returns the loopback origin of the running `claude auth login`. */
       async function begin(): Promise<string> {
         await browser.$("button=Sign in with Claude Code").click();
+        // In progress, said in the sign-in's fact, with Cancel sign-in; what finishes it by hand
+        // stays folded until asked for.
+        await browser.waitUntil(async () => (await status()).trim() === "sign-in in progress" && (await browser.$("button=Cancel sign-in").isExisting()),
+          { timeout: 15000, timeoutMsg: "the sign-in is in progress" });
+        assert.equal(await browser.$("#claude-agent-code").isExisting(), false, "Finish by hand starts folded");
+        await browser.$("button=Finish by hand").click();
         await browser.$("#claude-agent-code").waitForExist({ timeout: 15000, timeoutMsg: "the sign-in waits for the browser or a code" });
-        const address = new URL(await browser.$(".pending .url").getText());
+        const address = new URL(await browser.$("pre.url").getText());
         assert.equal(address.pathname, "/oauth/authorize", "the URL Claude Code printed is shown");
         // The shown origin is the running Claude Code's own.
         assert.equal(await httpGet(`${address.origin}/alive`), 200);
@@ -161,7 +167,7 @@ export const scenarios: Scenario[] = [
       await choose(browser, "Claude Agent");
       await shows("Not signed in", "Claude Code reports it is not signed in");
       const explained = (await browser.$('[data-testid="claude-agent-sign-in"]').getText()).replace(/\s+/g, " ");
-      assert.ok(explained.includes("claude auth login") && explained.includes("never reads, copies or stores it"), explained);
+      assert.ok(explained.includes("Claude Code's own") && explained.includes("never reads, copies or stores it"), explained);
       assert.equal(await browser.$("#provider-key").isExisting(), false, "Claude Agent takes no key");
 
       // Claude Code that cannot report its sign-in shows the error it failed with, and Claude
@@ -170,11 +176,12 @@ export const scenarios: Scenario[] = [
       const broken = nativePath(fixture.root, "claude-broken");
       writeText(broken, "");
       await browser.$("button=Check again").click();
-      await shows("Claude Code failed: Claude Code could not report its sign-in: error: unknown command 'auth'", "Claude Code's own error is shown");
+      await shows("Claude Code could not report its sign-in: error: unknown command 'auth'", "Claude Code's own error is shown");
+      assert.ok((await browser.$('[data-testid="claude-agent-status"]').getAttribute("class"))?.includes("error"), "in red, as a fact of the grid");
       removeTree(broken);
       claudeCodeInstalled(fixture.root, false);
       await browser.$("button=Check again").click();
-      await shows("Claude Code (claude) not found on PATH", "Claude Code is reported as not found");
+      await shows("claude not found", "Claude Code is reported as not found");
       assert.equal(await browser.$("button=Sign in with Claude Code").isEnabled(), false, "nothing to sign in with while Claude Code is not found");
       claudeCodeInstalled(fixture.root, true);
       await browser.$("button=Check again").click();
@@ -186,6 +193,8 @@ export const scenarios: Scenario[] = [
       assert.equal((await status()).trim(), "Not signed in");
       await browser.$("button=Check again").click();
       await shows(signedIn, "Check again shows Claude Code signed in");
+      // Signed in, the facts stand alone.
+      assert.equal(await browser.$('[data-testid="claude-agent-sign-in"]').isExisting(), false, "no line about the login once signed in");
       await signOut();
 
       // A cancelled sign-in stops Claude Code before it signs in.
@@ -209,7 +218,6 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#claude-agent-code", "good-code");
       await browser.$("button=Finish sign-in").click();
       await shows(signedIn, "the pasted code signs Claude Code in");
-      await browser.$("p=Claude Code signed in.").waitForExist({ timeout: 15000 });
       await signOut();
 
       // The browser returns to Claude Code.
@@ -246,13 +254,13 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data: { key, saved, shadowed, seen } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
-      const providers = ["Codex (ChatGPT)", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"];
+      const providers = ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"];
       await browser.waitUntil(async () => JSON.stringify(await listed(browser)) === JSON.stringify(providers), {
         timeout: 15000,
         timeoutMsg: "the providers are listed",
       });
       await choose(browser, "OpenAI");
-      await browser.waitUntil(async () => (await keyText(browser, "openai")) === "Set from OPENAI_API_KEY", { timeout: 15000, timeoutMsg: "the OpenAI key is set from its variable" });
+      await browser.waitUntil(async () => (await keyText(browser, "openai")) === "set from the environment (OPENAI_API_KEY)", { timeout: 15000, timeoutMsg: "the OpenAI key is set from its variable" });
       // A vertical list on the left; the chosen provider's setup on its right.
       const layout = await browser.execute(() => {
         const nav = document.querySelector('nav[aria-label="Providers"]')!.getBoundingClientRect();
@@ -264,7 +272,7 @@ export const scenarios: Scenario[] = [
       assert.equal(new Set(layout.lefts).size, 1, "the providers line up in one column");
       assert.ok(layout.tops.every((top, index) => index === 0 || top > layout.tops[index - 1]), "each provider is below the one before");
       await choose(browser, "Anthropic");
-      await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "Not set", { timeout: 15000, timeoutMsg: "the Anthropic key is not set" });
+      await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "not set", { timeout: 15000, timeoutMsg: "the Anthropic key is not set" });
       assert.ok(!(await html()).includes(key), "the key's value is nowhere on the page");
 
       await choose(browser, "Gemini");
@@ -272,7 +280,7 @@ export const scenarios: Scenario[] = [
       await typeText(browser, saved);
       assert.equal(await browser.$("#provider-key").getAttribute("type"), "password");
       await browser.$("button=Save key").click();
-      await browser.waitUntil(async () => (await keyText(browser, "gemini")) === "Saved", { timeout: 15000, timeoutMsg: "the Gemini key is saved" });
+      await browser.waitUntil(async () => (await keyText(browser, "gemini")) === "saved here", { timeout: 15000, timeoutMsg: "the Gemini key is saved" });
       assert.equal(await browser.$("#provider-key").getValue(), "", "the key left the field");
       assert.ok(!(await html()).includes(saved), "the saved key is nowhere on the page");
       const after = await providerList(fixture, { OPENAI_API_KEY: key });
@@ -281,7 +289,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(sources(after.stdout), { openai: "environment", anthropic: "absent", gemini: "saved" });
 
       await browser.$("button=Remove saved key").click();
-      await browser.waitUntil(async () => (await keyText(browser, "gemini")) === "Not set", { timeout: 15000, timeoutMsg: "the saved Gemini key is removed" });
+      await browser.waitUntil(async () => (await keyText(browser, "gemini")) === "not set", { timeout: 15000, timeoutMsg: "the saved Gemini key is removed" });
       const removed = await providerList(fixture, { OPENAI_API_KEY: key });
       assert.equal(sources(removed.stdout).gemini, "absent");
 
@@ -292,14 +300,14 @@ export const scenarios: Scenario[] = [
       await browser.$("button=Save key").click();
       await browser.waitUntil(async () => (await browser.$("#provider-key").getValue()) === "" && (await browser.$("button=Remove saved key").isExisting()),
         { timeout: 15000, timeoutMsg: "the OpenAI key is saved" });
-      assert.equal(await keyText(browser, "openai"), "Set from OPENAI_API_KEY; a saved key is kept but not used", "the variable is still the key in use");
+      assert.equal(await keyText(browser, "openai"), "set from the environment (OPENAI_API_KEY); a saved key is kept but not used", "the variable is still the key in use");
       const both = JSON.parse((await providerList(fixture, { OPENAI_API_KEY: key })).stdout).keys.find((one: { provider: string }) => one.provider === "openai");
       assert.deepEqual([both.source, both.saved], ["environment", true]);
       await listModels(browser, "openai-model");
       assert.equal(readText(seen), `Bearer ${key}`, "the listing used the variable's key, not the saved one");
       await browser.$("button=Remove saved key").click();
       await browser.waitUntil(async () => !(await browser.$("button=Remove saved key").isExisting()), { timeout: 15000, timeoutMsg: "the saved OpenAI key is removed" });
-      assert.equal(await keyText(browser, "openai"), "Set from OPENAI_API_KEY", "the variable is still set");
+      assert.equal(await keyText(browser, "openai"), "set from the environment (OPENAI_API_KEY)", "the variable is still set");
     },
   ),
   // UX journey: J-SET-KEY
@@ -313,9 +321,9 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { key } }) => {
       await openSettings(browser);
       await choose(browser, "OpenAI");
-      await browser.waitUntil(async () => (await keyText(browser, "openai")) === "Not set", { timeout: 15000, timeoutMsg: "the OpenAI key is not set" });
+      await browser.waitUntil(async () => (await keyText(browser, "openai")) === "not set", { timeout: 15000, timeoutMsg: "the OpenAI key is not set" });
       await choose(browser, "Anthropic");
-      await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "Set from ANTHROPIC_API_KEY", { timeout: 15000, timeoutMsg: "the Anthropic key is set from its variable" });
+      await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "set from the environment (ANTHROPIC_API_KEY)", { timeout: 15000, timeoutMsg: "the Anthropic key is set from its variable" });
       assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(key), "the Anthropic fixture value is nowhere in the page");
     },
   ),
@@ -329,26 +337,27 @@ export const scenarios: Scenario[] = [
       return { fixture, env: settingsEnvironment(fixture), data: null };
     },
     async (browser, { fixture }) => {
-      const shown = () => browser.execute(() => document.querySelector('[data-testid="grace-status"]')?.textContent ?? null);
+      // The grace in force is in the seconds field that changes it; once saved, Save has nothing
+      // more to save.
+      const shown = () => browser.$("#grace-seconds").getValue();
+      const saved = async () => !(await browser.$("button=Save").isEnabled());
       await showLimits(browser);
-      await browser.waitUntil(async () => (await shown()) === "2 minutes", { timeout: 15000, timeoutMsg: "the default idle grace" });
-      assert.equal(await browser.$("#grace-seconds").getValue(), "120");
+      await browser.waitUntil(async () => (await shown()) === "120", { timeout: 15000, timeoutMsg: "the default idle grace" });
       await fill(browser, "#grace-seconds", "300");
       await browser.$("button=Save").click();
-      await browser.waitUntil(async () => (await shown()) === "5 minutes", { timeout: 15000, timeoutMsg: "the saved idle grace" });
-      assert.equal(signoffGrace(fixture), 300, "the CLI reads what Settings saved");
+      await browser.waitUntil(async () => signoffGrace(fixture) === 300 && (await saved()) && (await shown()) === "300", { timeout: 15000, timeoutMsg: "the saved idle grace" });
       // Set by the CLI, it shows when Settings is shown again.
       assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "45"), 0);
       await showLimits(browser);
-      await browser.waitUntil(async () => (await shown()) === "45 seconds", { timeout: 15000, timeoutMsg: "the idle grace the CLI set" });
+      await browser.waitUntil(async () => (await shown()) === "45", { timeout: 15000, timeoutMsg: "the idle grace the CLI set" });
       // A day's grace from the CLI, then none from Settings: a Run started afterwards with only
       // its unclaimed sign-off left ends YELLOW at once, which only the saved 0 allows.
       assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "86400"), 0);
       await showLimits(browser);
-      await browser.waitUntil(async () => (await shown()) === "1440 minutes", { timeout: 15000, timeoutMsg: "the day the CLI set" });
+      await browser.waitUntil(async () => (await shown()) === "86400", { timeout: 15000, timeoutMsg: "the day the CLI set" });
       await fill(browser, "#grace-seconds", "0");
       await browser.$("button=Save").click();
-      await browser.waitUntil(async () => (await shown()) === "0 seconds", { timeout: 15000, timeoutMsg: "no idle grace saved" });
+      await browser.waitUntil(async () => signoffGrace(fixture) === 0 && (await saved()), { timeout: 15000, timeoutMsg: "no idle grace saved" });
       assert.equal(artifactize(fixture, "verify", "--all"), 0);
       await browser.waitUntil(async () => newestRunStatus(fixture) === "YELLOW", {
         timeout: 15000, timeoutMsg: "the Run started after the save ends YELLOW without a grace",
@@ -397,7 +406,6 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { fixture, data: { root, url, seen, alias, review, key } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
-      const text = () => browser.execute(() => document.body.innerText);
       const custom = async () => {
         const listing = await providerList(fixture);
         assert.equal(listing.code, 0, listing.stdout);
@@ -413,7 +421,7 @@ export const scenarios: Scenario[] = [
         await typeText(browser, name);
         await fill();
         await browser.$("button=Save").click();
-        await browser.waitUntil(async () => (await listed(browser)).includes(name) && (await text()).includes(`Saved ${name}.`),
+        await browser.waitUntil(async () => (await listed(browser)).includes(name) && (await browser.$("button=Save").isEnabled()),
           { timeout: 15000, timeoutMsg: `${name} is saved and listed` });
         assert.equal(await browser.$('nav[aria-label="Providers"]').$(`button=${name}`).getAttribute("aria-current"), "true", `${name} is chosen`);
       };
@@ -465,7 +473,7 @@ Review the agent folder."""
         await browser.$("#custom-url").click();
         await typeText(browser, root);
       });
-      assert.deepEqual(await listed(browser), ["Codex (ChatGPT)", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
+      assert.deepEqual(await listed(browser), ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
       assert.deepEqual(await custom(), {
         "claude-local": { kind: "endpoint", api: "anthropic", url: root, key: false },
         local: { kind: "endpoint", api: "openai-chat", url, key: true },
@@ -478,7 +486,8 @@ Review the agent folder."""
       assert.equal(await browser.$("#custom-key").getAttribute("placeholder"), "Saved; type to replace");
       await select(browser, "#custom-api", "openaiResponses");
       await browser.$("button=Save").click();
-      await browser.waitUntil(async () => (await text()).includes("Saved local."), { timeout: 15000, timeoutMsg: "local is saved again" });
+      await browser.waitUntil(async () => ((await custom()).local as { api?: string } | undefined)?.api === "openai-responses",
+        { timeout: 15000, timeoutMsg: "local is saved again" });
       const changed = await custom();
       assert.deepEqual(changed.local, { kind: "endpoint", api: "openai-responses", url, key: true });
       assert.deepEqual(Object.keys(changed), ["claude-local", "local", "work"]);
@@ -518,7 +527,9 @@ Review the agent folder."""
       await openSettings(browser);
       await browser.$("button=Remote").click();
       await browser.waitUntil(async () => (await browser.$('[role="tab"][aria-selected="true"]').getText()) === "Remote", { timeout: 15000, timeoutMsg: "the Remote tab shows" });
-      await browser.waitUntil(async () => (await text()).includes("No remote review store is configured."), { timeout: 15000, timeoutMsg: "no store is configured yet" });
+      // No store yet: the fields that sign in to one, and nothing said about it.
+      await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "no store is configured yet" });
+      assert.ok(!(await text()).includes("No remote review store is configured."), "no sentence for the normal state");
       await browser.$("#remote-url").click();
       await typeText(browser, url);
       await browser.$("#remote-token").click();
@@ -527,7 +538,9 @@ Review the agent folder."""
       assert.equal(await browser.$("#remote-token").getAttribute("type"), "password");
       await browser.$("button=Sign in to the store").click();
       await browser.waitUntil(async () => (await text()).includes("alice-laptop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "the remote principal appears" });
-      assert.equal(await browser.$("#remote-token").getValue(), "", "the token left the field");
+      // Signed in: the store's URL and share level as facts, without the fields that sign in.
+      assert.equal(await browser.$("#remote-token").isExisting(), false, "the token field is gone once signed in");
+      assert.equal(await browser.$('[data-testid="remote-status"]').getText(), url, "the store's URL as a fact");
       assert.ok(!(await html()).includes(token), "the token is nowhere on the page");
 
       // The asynchronous CLI query shares saved state without blocking this store.
@@ -547,7 +560,8 @@ Review the agent folder."""
       await browser.$("button=Push (dry run)").click();
       await browser.waitUntil(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run reports its result" });
       await browser.$("button=Sign out of the store").click();
-      await browser.waitUntil(async () => (await text()).includes("No remote review store is configured."), { timeout: 15000, timeoutMsg: "the store is signed out" });
+      await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "the store is signed out, its fields back" });
+      assert.equal(await browser.$("#remote-token").getValue(), "", "the token field is empty");
       const after = await remoteStatus(fixture);
       assert.equal(after.code, 1, after.stdout);
       assert.deepEqual(JSON.parse(after.stdout), { configured: false });

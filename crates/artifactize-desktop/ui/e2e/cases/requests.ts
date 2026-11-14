@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { artifactize, create, signoff } from "../fixture.ts";
 import { fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-import { reviewing } from "../human-review.ts";
-import { mainTitle } from "../pane.ts";
+import { requestState, reviewing } from "../human-review.ts";
+import { MAIN, mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, primaryModifier } from "../platform.ts";
 import { graphShown, openArtifact, openTab } from "../graph-view.ts";
@@ -22,14 +22,13 @@ async function prepareReview() {
 
 function opening(browser: WebdriverIO.Browser, requestId: string) {
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
-  /** The review open in the Main area, unclaimed. */
-  const exists = () => browser.execute((id) => {
+  /** The review open in the Main area, unclaimed, its title in the header row. */
+  const exists = async () => (await browser.execute((main) => {
     const opened = document.querySelector('[aria-label="Human review"][tabindex="0"]');
-    return opened?.querySelector("h3")?.textContent?.trim() === "release/signoff · A person approves the release"
-      && opened.querySelector(".instruction .text")?.textContent?.trim() === "Read the release notes and approve them."
-      && opened.querySelector(".stage")?.textContent?.trim() === "CLAIM"
-      && (opened.querySelector(".meta")?.textContent?.trim() ?? "").startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `);
-  }, requestId);
+    return document.querySelector(`${main} > header .headline .title`)?.textContent?.trim() === "release/signoff · A person approves the release"
+      && opened?.querySelector(".instruction .text")?.textContent?.trim() === "Read the release notes and approve them."
+      && opened.querySelector(".stage")?.textContent?.trim() === "CLAIM";
+  }, MAIN)) && (await requestState(browser)).startsWith(`Request ${requestId} · DEFERRED · unclaimed · waiting `);
   return { human, exists };
 }
 
@@ -57,7 +56,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await exists(), "the waiting review open at launch");
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();
-      await press(browser, ["c"], async () => (await browser.execute(() => document.body.innerText)).includes("claimed by you") && await reviewing(browser), "claimed");
+      await press(browser, ["c"], () => reviewing(browser), "claimed");
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       assert.ok(!(await browser.$("#field-reason").isExisting()), "no RED field in the GREEN form");
       await fill(browser, "#field-comment", "GREEN draft stays");
@@ -89,24 +88,25 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await human().isExisting(), "the waiting review open at launch");
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
-      await waitFor(browser, async () => (await text()).includes("claimed by bob"), "bob's claim shown");
-      // Taken: the review says who holds it and offers no Claim button.
-      await waitFor(browser, async () => (await human().getText()).includes("Claimed by bob. Read-only until released.")
+      await waitFor(browser, async () => (await requestState(browser)).includes("claimed by bob"), "bob's claim shown");
+      // Taken: the review names who holds it beside its stage and offers no Claim button.
+      await waitFor(browser, async () => (await human().$(".claimant").isExisting()) && (await human().$(".claimant").getText()) === "bob"
+        && (await human().getText()).includes("Read-only until released.")
         && !(await human().$("button*=Claim").isExisting()), "bob's claim shown as read-only");
       await human().click();
       await press(browser, ["c"], () => browser.execute(() =>
-        [...document.querySelectorAll('[aria-label="Human review"] .notice.error')].some((notice) => /bob/.test(notice.textContent ?? "")),
+        [...document.querySelectorAll('[aria-label="Human review"] [role="status"].error')].some((notice) => /bob/.test(notice.textContent ?? "")),
       ), "this opened review's claim refusal names bob");
       assert.equal(signoff(fixture).claim?.reviewer, "bob", "the claim stays bob's");
       assert.doesNotMatch(await text(), /claimed by you/);
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => signoff(fixture).claim === null, "released");
       await waitFor(browser, async () =>
-        (await human().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `)
+        (await requestState(browser)).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `)
         && await human().$("button*=Claim").isEnabled(), "the loaded review shows the release and offers Claim again");
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed here after the release");
-      await waitFor(browser, async () => (await human().$(".meta").getText()).includes("claimed by you (alice)"), "this review displays the new claim");
+      await waitFor(browser, async () => (await requestState(browser)).includes("claimed by you (alice)"), "this review displays the new claim");
     },
   ),
   // UX journeys: J-HUMAN-TEXT J-HUMAN-GREEN; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
@@ -127,7 +127,7 @@ export const scenarios: Scenario[] = [
       await human().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
       // The window shows the claim before a verdict can be chosen.
-      await waitFor(browser, async () => (await text()).includes("claimed by you") && await reviewing(browser), "the claim shown");
+      await waitFor(browser, () => reviewing(browser), "the claim shown as the review stage");
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form of the pass schema");
       assert.equal(await browser.$("#field-approved").isExisting(), false, "the schema's approved constant is filled in, not shown");
       const comment = browser.$("#field-comment");

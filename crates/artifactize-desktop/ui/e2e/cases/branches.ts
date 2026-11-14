@@ -8,12 +8,12 @@ import {
   orderRuns, requests, signOff, signoff, verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
-import { reviewing } from "../human-review.ts";
+import { requestState, reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
-import { graphShown } from "../graph-view.ts";
+import { detail, fact, graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
@@ -98,17 +98,17 @@ export const scenarios: Scenario[] = [
       assert.ok(first > 0 && first < runs.length, `some of the newest Runs first: ${first} of ${runs.length}`);
       assert.deepEqual(shown.chips.map((chip) => chip.id), ["current", ...newest.slice(0, first)]);
       assert.deepEqual(shown.chips.map((chip) => chip.filled), [true, ...Array(first).fill(false)]);
-      assert.deepEqual([shown.chips[0].text, shown.chips[0].sub], ["Current", "Working tree"]);
+      assert.deepEqual([shown.chips[0].text, shown.chips[0].sub], ["Current", ""], "the Current has no line under it");
       for (const chip of shown.chips.slice(1)) {
         assert.match(chip.text, /^GREEN \d+[smhd]( \d+[smh])? ago$/, `${chip.id} reads its status and age`);
-        assert.equal(chip.sub, chip.id, `${chip.id} names its Run`);
         assert.ok(leans(chip.dot, 1), `${chip.id}'s dot is green: ${JSON.stringify(chip)}`);
       }
-      // The newest Run was requested with a comment: below its Run ID, on one line, cut short.
+      // The newest Run was requested with a comment: under its status, on one line, cut short;
+      // a Run without one names its Run ID there.
       const [commented, ...plain] = shown.chips.slice(1);
-      assert.ok(commented.noteOneLine && commented.noteCut && COMMENT.startsWith(commented.note.replace(/…$/, "")),
-        `the comment under its Run ID, cut short to one line: ${JSON.stringify(commented)}`);
-      assert.deepEqual(plain.map((chip) => chip.note), plain.map(() => ""), "a Run without a comment shows none");
+      assert.ok(commented.subOneLine && commented.subCut && COMMENT.startsWith(commented.sub.replace(/…$/, "")),
+        `the comment under its status, cut short to one line: ${JSON.stringify(commented)}`);
+      assert.deepEqual(plain.map((chip) => chip.sub), plain.map((chip) => chip.id), "a Run without a comment names its Run ID");
       // Drawn as a timeline: the Current a ring, a line joining each dot to the next, and a
       // grey pill around the shown entry only.
       const look = await browser.execute((first: string) => {
@@ -146,15 +146,24 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$(`${FIRST} button.older`).isExisting(), false, "no Older runs once every Run is listed");
       assert.equal(await mainTitle(browser), "Current · repo  master", "Older runs chooses nothing");
 
-      // A click on the commented Run shows its comment in full under its headline.
+      // A click on the commented Run shows it; its headline opens the Run's Detail, whose
+      // Outcome holds the comment in full.
+      const runDetail = async (run: string) => {
+        await waitFor(browser, () => browser.execute((main) => document.querySelector(`${main} > header button.headline`) !== null, MAIN), "the Run read and drawn");
+        await browser.$(`${MAIN} > header button.headline`).click();
+        await waitFor(browser, async () => (await detail(browser))?.title === `Run ${run}`, `${run}'s Detail open`);
+      };
       await showRun(browser, "repo  master", newest[0]);
-      await waitFor(browser, async () => (await runComment(browser))?.text === COMMENT, "the Run's comment under its headline");
+      await runDetail(newest[0]);
+      await waitFor(browser, async () => (await runComment(browser))?.text === COMMENT, "the Run's comment in its Detail");
       assert.ok((await runComment(browser))!.whole, "the whole comment is drawn, not cut short");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Run's Detail closed");
       // A click on an entry shows that Run, the only one marked; without a comment it shows none.
       await showRun(browser, "repo  master", runs[0]);
-      // Its panel is drawn only once that Run's read finished, so its comment, or none, is final.
-      await waitFor(browser, () => browser.execute((main) => document.querySelector(`${main} .run > .headline`) !== null, MAIN), "the Run read and drawn");
+      await runDetail(runs[0]);
+      await waitFor(browser, async () => (await fact(browser, "Status")) !== "", "the Run's Outcome drawn");
       assert.equal(await runComment(browser), null, "a Run without a comment shows none");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Run's Detail closed again");
       await graphShown(browser, "a:n000");
       shown = (await branch(browser, "repo  master"))!;
       assert.deepEqual(shown.chips.filter((chip) => chip.filled).map((chip) => chip.id), [runs[0]], "only the clicked entry is marked");
@@ -376,11 +385,11 @@ export const scenarios: Scenario[] = [
       stack = await waiting(browser);
       assert.equal(stack.bar, "Waiting (1)");
       assert.deepEqual(stack.rows.map((entry) => [entry.id, entry.eval, entry.where]), [[id, "gate00/signoff", "gates  master"]]);
-      assert.match(stack.rows[0].meta, /^\d+[smh]\S* · -$/, `how long it waits and that nobody claimed it: ${stack.rows[0].meta}`);
+      assert.match(stack.rows[0].meta, /^\d+[smh]\S*$/, `how long it waits, nobody named while unclaimed: ${stack.rows[0].meta}`);
       assert.ok((await height()) > empty, "the stack grew upward by its row");
       // A click opens it in the Main area.
       await openWaiting(browser, id);
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · DEFERRED · unclaimed`),
+      await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · DEFERRED · unclaimed`),
         "the clicked review open");
       // Submitted elsewhere, it stops waiting: its row goes and the bar reads (0) again.
       signOff(fixture, id, "{}");
@@ -427,7 +436,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await selected()) === last, "the bottom review selected");
       await waitFor(browser, visible, "the list scrolled the selected review into view");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "its Review shown");
-      await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${last} · DEFERRED`), "the scrolled-to review open");
+      await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${last} · DEFERRED`), "the scrolled-to review open");
     },
   ),
 
@@ -443,15 +452,15 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       await openWaiting(browser, id);
       const review = () => browser.$('[aria-label="Human review"]');
-      await waitFor(browser, async () => (await review().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed`), "the review open");
-      // Its eval and Artifact read above it.
-      assert.equal(await browser.$('section.panel[aria-label="Main area"] .crumb').getText(), "release/signoff · A person approves the release · Artifact release");
+      await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · DEFERRED · unclaimed`), "the review open");
+      // Its eval and title read above it, in the header row.
+      assert.equal(await browser.$('section.panel[aria-label="Main area"] > header .headline .title').getText(), "release/signoff · A person approves the release");
       await review().click();
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "claimed");
       // A tool run of the review, in its Tool log before the review is left.
       const REVIEW = '[aria-label="Human review"]';
-      await review().$('[aria-label="Tools of release"]').$("button=▶ notes").waitForEnabled({ timeout: 15000, timeoutMsg: "the notes tool usable" });
-      await review().$('[aria-label="Tools of release"]').$("button=▶ notes").click();
+      await review().$('[aria-label="Tools of release"]').$("button=notes").waitForEnabled({ timeout: 15000, timeoutMsg: "the notes tool usable" });
+      await review().$('[aria-label="Tools of release"]').$("button=notes").click();
       await waitFor(browser, async () => (await runOf(browser, REVIEW, "notes"))?.at(-1)?.kind === "end", "the notes run ended in the review's Tool log");
       const logged = await runOf(browser, REVIEW, "notes");
       assert.deepEqual(logged, [
@@ -473,7 +482,7 @@ export const scenarios: Scenario[] = [
       await openWaiting(browser, id);
       await browser.$("#field-comment").waitForExist({ timeout: 15000, timeoutMsg: "the form as it was left" });
       assert.equal(await browser.$("#field-comment").getValue(), "half-written note");
-      assert.match(await review().$(".meta").getText(), /claimed by you \(alice\)/);
+      assert.match(await requestState(browser), /claimed by you \(alice\)/);
       assert.deepEqual(await runOf(browser, REVIEW, "notes"), logged, "its Tool log kept the run made before it was left");
     },
   ),

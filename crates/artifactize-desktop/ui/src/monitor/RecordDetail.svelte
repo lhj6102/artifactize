@@ -200,24 +200,26 @@
       <div class="sections">
         {#if hasResult}
           <Section name="Result">
-            {#if card.error}<p class="error">{card.error}</p>{/if}
-            {#each card.result ?? [] as entry (entry.key)}
-              {#if entry.kind === "text"}
-                <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
-              {:else}
-                <p class="key">{entry.key}</p>
-                <ol class="items">
-                  {#each entry.items as item, at (at)}
-                    <li>
-                      {#if item.head}<p class="head">{item.head}</p>{/if}
-                      {#each item.fields as field, part (part)}
-                        <p class="line">{#if item.fields.length > 1}<span class="key">{field.key}</span> {/if}{field.value}</p>
-                      {/each}
-                    </li>
-                  {/each}
-                </ol>
-              {/if}
-            {/each}
+            <div class="result">
+              {#if card.error}<p class="error">{card.error}</p>{/if}
+              {#each card.result ?? [] as entry (entry.key)}
+                {#if entry.kind === "text"}
+                  <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
+                {:else}
+                  <p class="key">{entry.items.length} {entry.key}</p>
+                  <ol class="items">
+                    {#each entry.items as item, at (at)}
+                      <li>
+                        {#if item.head}<p class="head">{item.head}</p>{/if}
+                        {#each item.fields as field, part (part)}
+                          <p class="line">{#if item.fields.length > 1}<span class="key">{field.key}</span> {/if}{field.value}</p>
+                        {/each}
+                      </li>
+                    {/each}
+                  </ol>
+                {/if}
+              {/each}
+            </div>
           </Section>
         {/if}
         {#if options.length > 0}

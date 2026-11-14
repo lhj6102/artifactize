@@ -34,18 +34,24 @@
   const WIDE = 166;
   /** The most it is tall, so a tall graph does not cover the canvas. */
   const HIGH = 120;
+  /** The least it is tall, so a flat graph (a long chain) stays a box to point at; the drawing
+   * sits in its middle. */
+  const LOW = 24;
 
   const bounds = $derived(laid.bounds);
   /** Graph pixels per Navigator pixel, the whole graph fitting its box. */
   const scale = $derived(Math.max(bounds.width / WIDE, bounds.height / HIGH, 1e-6));
   const size = $derived({ width: Math.max(1, Math.round(bounds.width / scale)), height: Math.max(1, Math.round(bounds.height / scale)) });
-  /** The part in view, in Navigator pixels, clipped to the box. */
+  /** The box's height, and how far down in it the drawing starts. */
+  const box = $derived(Math.max(size.height, LOW));
+  const offset = $derived((box - size.height) / 2);
+  /** The part in view, in the box's pixels, clipped to the box. */
   const frame = $derived.by(() => {
     const left = (-viewport.x / viewport.zoom - bounds.x) / scale;
-    const top = (-viewport.y / viewport.zoom - bounds.y) / scale;
+    const top = (-viewport.y / viewport.zoom - bounds.y) / scale + offset;
     const [right, bottom] = [left + width / viewport.zoom / scale, top + height / viewport.zoom / scale];
     const [x, y] = [Math.max(0, left), Math.max(0, top)];
-    return { x, y, width: Math.max(0, Math.min(size.width, right) - x), height: Math.max(0, Math.min(size.height, bottom) - y) };
+    return { x, y, width: Math.max(0, Math.min(size.width, right) - x), height: Math.max(0, Math.min(box, bottom) - y) };
   });
 
   /** Paint each Artifact that is no box as a block of its light's colour. */
@@ -74,7 +80,7 @@
   function at(event: PointerEvent, box: HTMLElement): Point {
     const rect = box.getBoundingClientRect();
     const x = Math.min(Math.max(event.clientX - rect.left, 0), size.width);
-    const y = Math.min(Math.max(event.clientY - rect.top, 0), size.height);
+    const y = Math.min(Math.max(event.clientY - rect.top - offset, 0), size.height);
     return { x: bounds.x + x * scale, y: bounds.y + y * scale };
   }
 
@@ -98,8 +104,8 @@
 
 <div class="navigator nodrag nopan nowheel" data-navigator>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="map" style:width="{size.width}px" style:height="{size.height}px" onpointerdown={press}>
-    <canvas style:width="{size.width}px" style:height="{size.height}px" {@attach paint}></canvas>
+  <div class="map" style:width="{size.width}px" style:height="{box}px" onpointerdown={press}>
+    <canvas style:top="{offset}px" style:width="{size.width}px" style:height="{size.height}px" {@attach paint}></canvas>
     <span class="frame" style:left="{frame.x}px" style:top="{frame.y}px" style:width="{frame.width}px" style:height="{frame.height}px"></span>
   </div>
 </div>
@@ -123,6 +129,8 @@
     touch-action: none;
   }
   canvas {
+    position: absolute;
+    left: 0;
     display: block;
   }
   .frame {

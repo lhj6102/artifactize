@@ -426,7 +426,14 @@
       <PaneResizer class="resizer" />
     {/if}
     <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={30}>
-      <div class="stage" style:--detail-cover={m.opened ? "var(--dock-width)" : null} {@attach graphTop}>
+      <!-- The dragged width is the stage's, so the Detail, the Navigator beside it and a review's
+           side column all take it. -->
+      <div
+        class="stage"
+        style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}
+        style:--detail-cover={m.opened ? "var(--dock-width)" : null}
+        {@attach graphTop}
+      >
         <Panel
           {title}
           label="Main area"
@@ -478,7 +485,7 @@
           {/if}
         </Panel>
         {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
-          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+          <aside class="dock" aria-label="Detail">
             <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
                  the resize cursor. -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

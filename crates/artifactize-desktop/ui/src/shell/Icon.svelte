@@ -8,6 +8,7 @@
 
 <svg
   class="icon"
+  data-icon={name}
   viewBox="0 0 12 12"
   role={label === null ? undefined : "img"}
   aria-label={label ?? undefined}

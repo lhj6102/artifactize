@@ -135,9 +135,8 @@ dependencies. It shows the same graph the
   which must be installed, on the project's [Current](../../desktop/index.md#current) view.
   Current reads the worktree's files and shows the current declarations, each Artifact
   marked as reused or would run, rather than Run verdicts; you move around it as in a
-  Run's graph. Expand **Structure and
-  evaluation criteria** for the same complete text tree as the Agent sees;
-  **Refresh** or Ctrl+R/F5 scans again. This works before any Run exists. The tool
+  Run's graph; an eval's tab in an Artifact's Detail shows its instruction, and its other
+  declared facts under **Debug**. **Refresh** or Ctrl+R/F5 scans again. This works before any Run exists. The tool
   returns a launch acknowledgement, not an approval; the app keeps running when the
   calling tool finishes.
 

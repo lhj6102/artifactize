@@ -1,7 +1,6 @@
 // A branch's Current: its worktree as it is now, scanned as `artifactize status` does, its
 // graph marking each Artifact by what verify would do, the Detail of one with its evals' plans
-// and its own Human tools, the structure text, and the scans a Refresh, a choice and the end
-// of a Run start.
+// and its own Human tools, and the scans a Refresh, a choice and the end of a Run start.
 import assert from "node:assert/strict";
 import {
   changeNotes, create, createChecking, createEvals, createGraph, createMixed, ended, fingerprintRuns, requests, savedRuns, signOff, signoff,
@@ -10,10 +9,10 @@ import {
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { command, runtimeProfile, script } from "../native-fixtures.ts";
+import { runtimeProfile } from "../native-fixtures.ts";
 import { makeDirectory, nativePath, primaryModifier, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { camera, detail, graphShown, nodeAt, openArtifact, openArtifactTab, openTab, summary } from "../graph-view.ts";
-import { branch, chooseChip, mainTitle, scanned, scannedAt } from "../pane.ts";
+import { branch, chooseChip, MAIN, mainTitle, scanned, scannedAt } from "../pane.ts";
 import { runOf } from "../tool-log.ts";
 import { currentHasColours, graphAppearance } from "./graph-appearance.ts";
 
@@ -24,9 +23,10 @@ async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolea
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
 }
 
+/** The Main area's Refresh, at the end of a Current's header row. */
+const refresh = (browser: WebdriverIO.Browser) => browser.$(`${MAIN} > header`).$("button=Refresh");
+
 function current(browser: WebdriverIO.Browser) {
-  const structure = () => browser.$(`${CURRENT} pre`).getText();
-  const expanded = () => browser.execute((root) => document.querySelector(`${root} details`)?.hasAttribute("open") ?? false, CURRENT);
   /** Each drawn Artifact as read aloud, and each edge's light. */
   const drawn = () => browser.execute(() => ({
     nodes: Object.fromEntries([...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].filter((node) => !node.closest('aside'))
@@ -64,15 +64,15 @@ function current(browser: WebdriverIO.Browser) {
       .catch((error: Error) => { throw new Error(`${error.message}: ${last}`); });
     await browser.$(selector).click();
   }
-  return { structure, expanded, drawn, clickArtifact };
+  return { drawn, clickArtifact };
 }
 
 /** The reason a Current's eval gives for reusing a result kept on this machine. */
 const CACHED = "The current eval and fingerprints have a completed cached result.";
 
-/** The text of the open Detail's Summary block titled `title`. */
-const block = (browser: WebdriverIO.Browser, title: string) => browser.execute((wanted) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] .block')]
-  .find((shown) => shown.querySelector("h3")?.textContent?.trim() === wanted)?.textContent ?? "", title);
+/** The text of the open Detail's section `name`, below its header row. */
+const block = (browser: WebdriverIO.Browser, name: string) => browser.execute((wanted) => [...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [role="document"] .section')]
+  .find((shown) => shown.querySelector(".head")?.textContent?.trim() === wanted)?.querySelector(".body")?.textContent ?? "", name);
 
 /** Each eval row of the open Detail's Artifact tab: its name and what it says. */
 const evalRows = (browser: WebdriverIO.Browser) => browser.execute((root) => [...document.querySelectorAll<HTMLElement>(`${root} button[data-eval]`)]
@@ -80,16 +80,16 @@ const evalRows = (browser: WebdriverIO.Browser) => browser.execute((root) => [..
 
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-MAIN-CURRENT J-DETAIL J-DETAIL-SUMMARY J-DETAIL-TOOLS J-GRAPH-COLOURS J-GRAPH-CAMERA
-  // UX edges: E-CURRENT-LAUNCH E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-TOOL E-CURRENT-STRUCTURE E-CURRENT-CLOSE E-CURRENT-REFRESH E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
+  // UX edges: E-CURRENT-LAUNCH E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-TOOL E-CURRENT-CLOSE E-CURRENT-REFRESH E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
   scenario<Record<string, never>>(
     "current-launch",
-    "opens graph --repo on the branch's Current without a Run, marks what verify would run, opens an Artifact's evals and tools, expands the criteria, closes, then refreshes changed declarations",
+    "opens graph --repo on the branch's Current without a Run, marks what verify would run, opens an Artifact's evals and tools, closes, then refreshes changed declarations",
     async () => {
       const fixture = createGraph();
       return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
-      const { structure, expanded, drawn, clickArtifact } = current(browser);
+      const { drawn, clickArtifact } = current(browser);
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current of the branch of --repo");
       assert.equal((await branch(browser, "repo  master"))?.selected, true, "its branch selected");
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "its header says when it was scanned");
@@ -101,22 +101,23 @@ export const scenarios: Scenario[] = [
       }), `each Artifact marked by what verify would do: ${JSON.stringify(await drawn())}`);
       await waitFor(browser, async () => JSON.stringify((await drawn()).edges) === JSON.stringify({ "a:release>a:ship": "run" }),
         `the relation carries what its source would do: ${JSON.stringify(await drawn())}`);
-      const appearance = await graphAppearance(browser);
-      assert.equal(appearance.nodes["a:release"].dot, appearance.nodes["a:ship"].dot, "both would run, painted alike");
-      assert.deepEqual(await browser.execute((root) => [...document.querySelectorAll(`${root} [aria-label="Legend"] li`)].map((item) => item.textContent?.trim()), CURRENT),
-        ["reused", "would run", "waiting", "blocked by upstream", "checking"], "its own legend");
+      let look = await graphAppearance(browser);
+      await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:release": "run", "a:ship": "run", "a:docs": "run" }, { "a:release>a:ship": "run" }),
+        { timeout: 15000, timeoutMsg: "every Artifact painted as would run, its relation neutral" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
+      // No legend: Help pairs each mark with its word.
+      assert.equal(await browser.$(`${CURRENT} [aria-label="Legend"]`).isExisting(), false, "no legend on the graph");
       assert.deepEqual(savedRuns(fixture), [], "scanning saved no Run");
 
       // A click on release opens its Detail over the Current: its eval would run, and its tools.
       const opened = await openArtifact(browser, "a:release", "Artifact release");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"]);
-      assert.ok(opened.docked, "the Detail is docked at the right edge of the Current's graph without a gap, below its scan header");
+      assert.ok(opened.docked, "the Detail is docked at the right edge of the Current's graph without a gap, below its tool strip");
       assert.deepEqual(await evalRows(browser), [{ name: "signoff", status: "would run" }]);
       const tools = () => browser.$(`${DETAIL} section[aria-label="Tools of release"]`);
-      await tools().$("button=▶ notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own Human tools listed" });
+      await tools().$("button=notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own Human tools listed" });
       assert.equal(await browser.$(`${CURRENT} .svelte-flow__node button`).isExisting(), false, "the graph's nodes carry no tool buttons");
       // A tool runs at once in the worktree as it is now, with no claim and no review.
-      await tools().$("button=▶ notes").click();
+      await tools().$("button=notes").click();
       await waitFor(browser, async () => (await runOf(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", "the notes run ended in the Artifact's Tool log");
       assert.deepEqual(await runOf(browser, DETAIL, "notes"), [
         { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
@@ -125,57 +126,19 @@ export const scenarios: Scenario[] = [
         { text: "■ exit 0", kind: "end", error: false },
       ]);
       assert.deepEqual(requests(fixture), [], "running a tool asked for no request and recorded no evidence");
-      // The eval's tab says it would run and why.
+      // The eval's tab, its chips a path back to the Artifact, says it would run and why.
       await openTab(browser, "e:release/signoff");
-      await waitFor(browser, async () => (await summary(browser)).status.startsWith("○ would run"), `the eval's plan: ${JSON.stringify(await summary(browser))}`);
-      assert.equal((await summary(browser)).status, "○ would run Record a request awaiting a Human claim and submission.", "with why: a Human eval asks a person");
+      assert.deepEqual((await detail(browser))?.tabs.map((tab) => tab.name), ["release", "signoff"]);
+      await waitFor(browser, async () => (await summary(browser)).status.startsWith("would run"), `the eval's plan: ${JSON.stringify(await summary(browser))}`);
+      assert.equal((await summary(browser)).status, "would run Record a request awaiting a Human claim and submission.", "with why: a Human eval asks a person");
+      assert.equal((await summary(browser)).mark, "run", "led by the would-run mark");
       assert.equal((await summary(browser)).instruction, "Read the release notes and approve them.");
       assert.equal(await browser.$('[aria-label="Human review"]').isExisting(), false, "a Current holds no Human review");
 
-      // Expanding the structure shows every criterion and labeled relation as text.
-      assert.equal(await expanded(), false, "the structure text starts folded");
-      await browser.$(`${CURRENT} details summary`).click();
-      await waitFor(browser, expanded, "structure text expanded");
-      const shown = await structure();
-      const criteria: Record<string, unknown> = {};
-      let evalId = "";
-      for (const line of shown.split("\n")) {
-        const heading = /├─ ([^:]+):/.exec(line);
-        if (heading) evalId = heading[1];
-        const payload = /criteria: (\{.*\})$/.exec(line);
-        if (payload) criteria[evalId] = JSON.parse(payload[1]);
-      }
-      assert.deepEqual(criteria, {
-        "release/signoff": {
-          target: "release", title: "A person approves the release",
-          criteria: { kind: "human" }, payload: { instruction: "Read the release notes and approve them." },
-          passSchema: { type: "object", properties: { approved: { const: true },
-            comment: { type: "string", minLength: 1, description: "What you checked." } },
-            required: ["approved", "comment"], additionalProperties: false },
-          failSchema: { type: "object", properties: { reason: { type: "string", minLength: 3 },
-            findings: { type: "array", items: { type: "object", properties: { problem: { type: "string", minLength: 1 }, severity: { enum: ["low", "high"] } },
-              required: ["problem"], additionalProperties: false } },
-            steps: { type: "array", items: { type: "string" } } },
-            required: ["reason"], additionalProperties: false },
-        },
-        "ship/check": { target: "ship", title: "Ship the release",
-          criteria: { kind: "runtime", command, args: [script, "pass"] },
-          payload: { instruction: "Ship {release}." }, passSchema: null, failSchema: null },
-        "docs/lint": { target: "docs", title: "Docs build",
-          criteria: { kind: "runtime", command, args: [script, "pass"] },
-          payload: { instruction: "Build the docs." }, passSchema: null, failSchema: null },
-      }, "every independently declared criterion and owner schema is exposed");
-      assert.deepEqual(shown.split("\n").filter((line) => line.includes(" → ")), [
-        'release → ship {"kind":"instruction","eval_id":"ship/check","name":"release"}',
-      ], "the concrete input-to-consumer relation carries its instruction label");
-
-      // Esc closes the Detail; Close does too, and a click on the background. The expanded text
-      // left the graph less room without moving its camera: folded again, with Fit View, the
+      // Esc closes the Detail; Close does too, and a click on the background. With Fit, the
       // graph shows whole.
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closed release's Detail");
-      await browser.$(`${CURRENT} details summary`).click();
-      await waitFor(browser, async () => !(await expanded()), "structure text folded");
-      await browser.$(`${CURRENT} .svelte-flow__controls-fitview`).click();
+      await browser.$('[aria-label="Graph tools"]').$("button=Fit").click();
       await camera(browser);
       await clickArtifact("release");
       await waitFor(browser, async () => (await detail(browser)) !== null, "release's Detail open again");
@@ -193,35 +156,40 @@ export const scenarios: Scenario[] = [
       await browser.action("pointer").move(background).down().up().perform();
       await waitFor(browser, async () => (await detail(browser)) === null, "a click on the background closed docs' Detail");
 
-      // Each Refresh, Ctrl+R and F5 scans the changed declarations again, the text staying open.
-      await browser.$(`${CURRENT} details summary`).click();
-      await waitFor(browser, expanded, "structure text expanded again");
+      // Each Refresh, Ctrl+R and F5 scans the changed declarations again; docs' eval, open in
+      // the Detail, shows each new instruction once a scan read it.
+      await clickArtifact("docs");
+      await openTab(browser, "e:docs/lint");
+      await waitFor(browser, async () => (await summary(browser)).instruction === "Build the docs.", "docs' eval open");
       // The person zooms out; no scan or new layout below moves that camera.
-      await browser.$(`${CURRENT} .svelte-flow__controls-zoomout`).click();
+      await browser.$('[aria-label="Graph tools"] button[aria-label="Zoom out"]').click();
       const moved = await camera(browser);
       const declaration = nativePath(fixture.repo, "docs", "index.artf");
-      let previousTitle = "Docs build";
+      let previous = "Build the docs.";
+      const instruction = async () => (await summary(browser)).instruction;
       /** The last scan ended: Refresh is offered again. */
-      const scanEnded = () => browser.$(CURRENT).$("button=Refresh").waitForEnabled({ timeout: 15000 });
+      const scanEnded = () => refresh(browser).waitForEnabled({ timeout: 15000 });
       // Ctrl+R and F5 come at once, the previous scan maybe still running: what they were
       // pressed for shows all the same.
       for (const [index, keys] of [null, [primaryModifier, "r"], ["F5"]].entries()) {
-        const title = `Current docs criterion ${index}`;
+        const wanted = `Build the docs, take ${index}.`;
         if (!keys) await scanEnded();
-        writeText(declaration, readText(declaration).replace(/title = "[^"]*"/, `title = "${title}"`));
-        assert.doesNotMatch(await structure(), new RegExp(title), "the change shows only after a scan");
-        if (keys) await press(browser, keys, async () => (await structure()).includes(title), `scanned again with ${keys.join("+")}`);
+        writeText(declaration, readText(declaration).replace(previous, wanted));
+        assert.equal(await instruction(), previous, "the change shows only after a scan");
+        if (keys) await press(browser, keys, async () => (await instruction()) === wanted, `scanned again with ${keys.join("+")}`);
         else {
-          await browser.$(CURRENT).$("button=Refresh").click();
-          await waitFor(browser, async () => (await structure()).includes(title), "scanned again with Refresh");
+          await refresh(browser).click();
+          await waitFor(browser, async () => (await instruction()) === wanted, "scanned again with Refresh");
         }
-        assert.ok(!(await structure()).includes(previousTitle), "the structure text replaced the previous declaration title");
-        assert.equal(await expanded(), true, "the structure text stays open");
-        previousTitle = title;
+        previous = wanted;
       }
       assert.equal(await camera(browser), moved, "the scans left the person's camera");
-      // A scan also redraws the structure: an Artifact that reads docs adds a node and an edge,
-      // and removing it takes both away.
+      // A click in the Detail gives it the keyboard back from the Refresh button, disabled while
+      // it scanned; Esc then closes it.
+      await browser.$(`${DETAIL} [role="document"]`).click();
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "docs' Detail closed");
+      // A scan also redraws the graph: an Artifact that reads docs adds a node and an edge, and
+      // removing it takes both away.
       await scanEnded();
       const digest = makeDirectory(nativePath(fixture.repo, "digest"));
       writeText(nativePath(digest, "index.artf"), `name = "digest"
@@ -234,20 +202,18 @@ profile = ${runtimeProfile()}
 instruction = """
 Summarize {docs}."""
 `);
-      await browser.$(CURRENT).$("button=Refresh").click();
+      await refresh(browser).click();
       await waitFor(browser, async () => {
         const { nodes, edges } = await drawn();
         return nodes["a:digest"] === "digest: waiting" && edges["a:docs>a:digest"] !== undefined;
       }, "the added digest Artifact and its relation from docs drawn");
       const waiting = await graphAppearance(browser);
-      assert.notEqual(waiting.nodes["a:docs"].dot, waiting.nodes["a:digest"].dot, "would run and waiting are painted apart");
-      assert.ok((await structure()).split("\n").some((line) => line.startsWith("docs → digest ")), "the structure text lists the added relation");
+      assert.notEqual(waiting.nodes["a:docs"].mark, waiting.nodes["a:digest"].mark, "would run and waiting are painted apart");
       assert.equal(await camera(browser), moved, "the new layout left the person's camera");
       await scanEnded();
       removeTree(digest);
-      await browser.$(CURRENT).$("button=Refresh").click();
+      await refresh(browser).click();
       await waitFor(browser, async () => (await drawn()).nodes["a:digest"] === undefined, "the removed digest Artifact dropped");
-      assert.ok(!(await structure()).includes("digest"), "the structure text drops the removed Artifact");
       // Only now a real Run in this same state: the probe that found no Run would have seen one.
       const controlRun = await verifyWaiting(fixture);
       assert.deepEqual(savedRuns(fixture).map((run) => run.id), [controlRun], "the same saved-Run probe sees this fixture's real Run");
@@ -268,15 +234,15 @@ Summarize {docs}."""
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [["current", true], [run, false]]);
       await graphShown(browser, "a:app");
       await waitFor(browser, async () => (await browser.$(nodeAt("a:app")).getAttribute("aria-label")) === "app: reused", "app marked reused");
-      const opened = await openArtifact(browser, "a:app", "Artifact app");
-      assert.deepEqual(opened.tabs.slice(1).map((tab) => [tab.name, tab.glyph]), [["alpha", "↻"], ["beta", "↻"]], "each eval's chip says it would be reused");
+      await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(await evalRows(browser), [{ name: "alpha", status: "reused" }, { name: "beta", status: "reused" }]);
       assert.equal(await browser.$(`${DETAIL} section[aria-label="Tools of app"]`).isExisting(), true, "its Tools section, here without tools");
       await openTab(browser, "e:app/beta", { row: true });
-      await waitFor(browser, async () => (await summary(browser)).status.startsWith("↻ reused"), `beta's plan: ${JSON.stringify(await summary(browser))}`);
+      assert.deepEqual((await detail(browser))?.tabs.slice(1).map((tab) => [tab.name, tab.glyph]), [["alpha", "reused"], ["beta", "reused"]], "each eval's chip says it would be reused");
+      await waitFor(browser, async () => (await summary(browser)).status.startsWith("reused"), `beta's plan: ${JSON.stringify(await summary(browser))}`);
       const shown = await summary(browser);
-      assert.ok(shown.blocks.includes("Result it would reuse"), `the result it would reuse: ${shown.blocks}`);
-      assert.equal(shown.status, `↻ reused ${CACHED}`, "with why");
+      assert.ok(shown.blocks.includes("Result"), `the result it would reuse: ${shown.blocks}`);
+      assert.equal(shown.status, `reused ${CACHED}`, "with why");
       assert.equal(shown.instruction, "Check beta.");
       // app's own chip shows its Artifact tab again, listing what each eval would do.
       await openArtifactTab(browser, "app");
@@ -309,9 +275,9 @@ Summarize {docs}."""
       // The sign-off's tab holds the result it would reuse, its owner fields by name, and why.
       await openArtifact(browser, "a:release", "Artifact release");
       await openTab(browser, "e:release/signoff");
-      await waitFor(browser, async () => (await summary(browser)).status.startsWith("↻ reused"), `the sign-off's plan: ${JSON.stringify(await summary(browser))}`);
-      assert.equal((await summary(browser)).status, `↻ reused ${CACHED}`);
-      const result = await block(browser, "Result it would reuse");
+      await waitFor(browser, async () => (await summary(browser)).status.startsWith("reused"), `the sign-off's plan: ${JSON.stringify(await summary(browser))}`);
+      assert.equal((await summary(browser)).status, `reused ${CACHED}`);
+      const result = await block(browser, "Result");
       assert.match(result, /comment.*Checked notes 7f3a against the tag\./s, `the reused comment: ${result}`);
       assert.match(result, /approved.*true/s, `the reused approval: ${result}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
@@ -340,7 +306,7 @@ Summarize {docs}."""
       // A scan's last step comes as it ends; the header names when once it has.
       await waitFor(browser, async () => (await scannedAt(browser)) !== null, "the scan before the Run ended");
       const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look };
-      assert.notEqual(before.look.nodes["a:release"].dot, reusedLook.nodes["a:release"].dot, "would run is painted unlike reused");
+      assert.notEqual(before.look.nodes["a:release"].mark, reusedLook.nodes["a:release"].mark, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
       const run = await verifyWaiting(fixture);
@@ -358,20 +324,19 @@ Summarize {docs}."""
       await waitFor(browser, async () => ![null, before.at].includes(await scannedAt(browser)), "the header names the new scan once it ended");
       const instant = await scannedAt(browser);
       assert.ok(instant && instant !== before.at, `the header names the new scan, not ${before.at}: ${instant}`);
-      const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString(), instant);
+      const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), instant);
       assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
       const after = await graphAppearance(browser);
       for (const id of ["a:release", "a:ship"]) {
-        assert.notEqual(after.nodes[id].dot, before.look.nodes[id].dot, `${id} recoloured`);
-        assert.equal(after.nodes[id].dot, reusedLook.nodes[id].dot, `${id} painted as reused`);
+        assert.notEqual(after.nodes[id].mark, before.look.nodes[id].mark, `${id} recoloured`);
+        assert.equal(after.nodes[id].mark, reusedLook.nodes[id].mark, `${id} painted as reused`);
       }
       assert.notEqual((await drawn()).edges["a:release>a:ship"], before.drawn.edges["a:release>a:ship"], "the relation relit by its source's new plan");
-      // Its drawn line changes colour with it: from would run back to reused.
+      // Its drawn line stays neutral throughout: only a failure colours an edge.
       const edge = "a:release>a:ship";
       assert.ok(after.edges[edge].painted, "the relation is drawn");
-      assert.notEqual(before.look.edges[edge].stroke, reusedLook.edges[edge].stroke, "would run's relation is stroked unlike reused");
-      assert.notEqual(after.edges[edge].stroke, before.look.edges[edge].stroke, "the relation's stroke changed");
-      assert.equal(after.edges[edge].stroke, reusedLook.edges[edge].stroke, "the relation stroked as reused");
+      assert.equal(after.edges[edge].stroke, after.palette["--edge"], "the relation stroked neutral as reused");
+      assert.equal(before.look.edges[edge].stroke, after.palette["--edge"], "and as would run");
     },
   ),
 
@@ -391,27 +356,27 @@ Summarize {docs}."""
       const scans = async () => (await checkpoint(browser)).activity.commands.currentScan ?? { started: 0, completed: 0 };
       const requested = async () => (await scans()).started;
       const nodes = async () => JSON.stringify((await drawn()).nodes);
-      const failure = () => browser.execute((root) => document.querySelector(`${root} .failure`)?.textContent ?? "", CURRENT);
+      const failure = () => browser.execute((main) => document.querySelector(`${main} > header .failure`)?.textContent ?? "", MAIN);
       /** Every request answered, and the Current shows the same scan still checking, no failure. */
       const stillChecking = async (what: string) => {
         await waitFor(browser, async () => { const { started, completed } = await scans(); return started === completed; }, `${what}: answered`);
         assert.equal(await failure(), "", `${what}: no failure shown`);
-        assert.equal(await scanned(browser), "Checking 2 of 3 Artifacts…", `${what}: the same scan, still checking`);
+        assert.equal(await scanned(browser), "2 left", `${what}: the same scan, still checking`);
       };
       await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
       // other's own fingerprint is in; slow's script waits for its gate, and quick reads slow.
       const waiting = JSON.stringify({ "a:other": "other: would run (1 eval)", "a:quick": "quick: checking", "a:slow": "slow: checking" });
       await waitFor(browser, async () => (await nodes()) === waiting, `slow and quick still being checked: ${await nodes()}`);
-      assert.equal(await scanned(browser), "Checking 2 of 3 Artifacts…", "the header counts what is still being checked");
+      assert.equal(await scanned(browser), "2 left", "the header counts what is still being checked");
       let look = await graphAppearance(browser);
       await browser.waitUntil(async () => currentHasColours(look = await graphAppearance(browser), { "a:other": "run", "a:quick": "checking", "a:slow": "checking" }, {}),
-        { timeout: 15000, timeoutMsg: "checking painted in its legend colour" })
+        { timeout: 15000, timeoutMsg: "checking painted in its own colour" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
       // slow's Detail says it is still being checked, and why.
       await openArtifact(browser, "a:slow", "Artifact slow");
       assert.deepEqual(await evalRows(browser), [{ name: "check", status: "checking" }]);
       await openTab(browser, "e:slow/check", { row: true });
-      await waitFor(browser, async () => (await summary(browser)).status.startsWith("… checking Still being checked"),
+      await waitFor(browser, async () => (await summary(browser)).status.startsWith("checking Still being checked"),
         `slow's plan: ${JSON.stringify(await summary(browser))}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "slow's Detail closed");
       // Choosing the Current again, F5 and the end of a Run of the branch all show the scan
@@ -443,7 +408,7 @@ Summarize {docs}."""
       // Chosen again once it ended, the Current scans again, every Artifact checked again.
       removeTree(gate);
       await chooseChip(browser, "repo  master", "current");
-      await waitFor(browser, async () => (await scanned(browser)) === "Checking 2 of 3 Artifacts…", "scanned again");
+      await waitFor(browser, async () => (await scanned(browser)) === "2 left", "scanned again");
       const rechecked = await drawn();
       assert.deepEqual([rechecked.nodes["a:quick"], rechecked.nodes["a:slow"]], ["quick: checking", "slow: checking"]);
       await waitFor(browser, () => fingerprintRuns(checking) === 3, "the new scan ran the fingerprint script again");
@@ -453,8 +418,8 @@ Summarize {docs}."""
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the scan ended again");
       // A fingerprint that fails ends a running scan; what it showed stays.
       removeTree(gate);
-      await browser.$(CURRENT).$("button=Refresh").click();
-      await waitFor(browser, async () => (await scanned(browser)) === "Checking 2 of 3 Artifacts…", "scanning again");
+      await refresh(browser).click();
+      await waitFor(browser, async () => (await scanned(browser)) === "2 left", "scanning again");
       /** What a person sees of the graph: where each Artifact is and its light, each relation, all painted. */
       const visible = async () => {
         const { nodes, edges } = await graphAppearance(browser);
@@ -491,15 +456,16 @@ Summarize {docs}."""
       await graphShown(browser, "a:app");
       const marked = { "a:app": "app: would run (2 evals)", "a:down": "down: blocked", "a:red": "red: reused" };
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(marked), `each Artifact marked: ${JSON.stringify(await drawn())}`);
-      // Drawn by colour alone, as a Run's Artifacts are: each node shows only its name.
+      // Drawn as a Run's Artifacts are: each node shows its name and how many of its evals would
+      // be reused of how many, its plan by its mark and colour.
       const texts = await browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('section[aria-label="Current"] .svelte-flow__node')]
-        .filter((node) => !node.closest("aside")).map((node) => [node.dataset.id ?? "", node.textContent?.trim() ?? ""])));
-      assert.deepEqual(texts, { "a:app": "app", "a:down": "down", "a:red": "red" });
+        .filter((node) => !node.closest("aside")).map((node) => [node.dataset.id ?? "", `${node.querySelector(".name")?.textContent?.trim()} ${node.querySelector(".tally")?.textContent?.trim()}`])));
+      assert.deepEqual(texts, { "a:app": "app 1/3", "a:down": "down 0/1", "a:red": "red 1/1" });
       const look = await graphAppearance(browser);
-      assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:app"].dot, "blocked is painted unlike would run");
-      assert.notEqual(look.nodes["a:down"].dot, look.nodes["a:red"].dot, "blocked is painted unlike reused");
+      assert.notEqual(look.nodes["a:down"].mark, look.nodes["a:app"].mark, "blocked is painted unlike would run");
+      assert.notEqual(look.nodes["a:down"].mark, look.nodes["a:red"].mark, "blocked is painted unlike reused");
       assert.ok(currentHasColours(look, { "a:app": "run", "a:down": "blocked", "a:red": "reused" }, {}),
-        `each Artifact in its legend colour: ${JSON.stringify(look)}`);
+        `each Artifact in its own colour: ${JSON.stringify(look)}`);
       // Two of app's three evals would run; the third's result is reused.
       await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(await evalRows(browser), [
@@ -518,13 +484,13 @@ Summarize {docs}."""
       assert.ok(lines[0].title > 1, `alpha's long title wraps: ${JSON.stringify(lines)}`);
       assert.ok(lines.every((row) => row.name === 1 && row.status === 1), `names and statuses on one line: ${JSON.stringify(lines)}`);
       await openTab(browser, "e:app/alpha", { row: true });
-      await waitFor(browser, async () => (await summary(browser)).status === `↻ reused ${CACHED}`, `alpha's plan: ${JSON.stringify(await summary(browser))}`);
+      await waitFor(browser, async () => (await summary(browser)).status === `reused ${CACHED}`, `alpha's plan: ${JSON.stringify(await summary(browser))}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "app's Detail closed");
       // down cannot be evaluated while red is RED, and says so.
       await openArtifact(browser, "a:down", "Artifact down");
       assert.deepEqual(await evalRows(browser), [{ name: "check", status: "blocked" }]);
       await openTab(browser, "e:down/check", { row: true });
-      await waitFor(browser, async () => /^\S+ blocked \S.*red\/check/.test((await summary(browser)).status),
+      await waitFor(browser, async () => /^blocked \S.*red\/check/.test((await summary(browser)).status),
         `down's plan is blocked and names the RED eval that blocks it: ${JSON.stringify(await summary(browser))}`);
     },
   ),

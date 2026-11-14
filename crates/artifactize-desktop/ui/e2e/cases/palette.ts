@@ -90,8 +90,8 @@ function palette(browser: WebdriverIO.Browser) {
     await waitFor(browser, async () =>
       !(await browser.$('[aria-label="Request ID"]').isExisting()) && (await mainTitle(browser)) === "Review" && await browser.$('[aria-label="Human review"]').isExisting(),
     `the request ID dialog resolves to the review of ${id}`);
-    await browser.$('[aria-label="Human review"] header').waitForDisplayed({ timeout: 15000 });
-    const technical = browser.$('[aria-label="Human review"]').$("button*=Technical");
+    await browser.$('[aria-label="Human review"] .stage').waitForDisplayed({ timeout: 15000 });
+    const technical = browser.$('[aria-label="Human review"]').$("button.head=Debug");
     const expanded = await technical.getAttribute("aria-expanded") === "true";
     if (!expanded) await technical.click();
     await waitFor(browser, () => browser.execute((expected) => {
@@ -135,11 +135,11 @@ export const scenarios: Scenario[] = [
       const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
         .map((item) => item.querySelector("span")?.textContent?.trim() ?? "").sort());
       await ctrlK("filter");
-      // With no Detail open, the window's, the Pane's and the Main area's commands, not a
-      // Detail's or a Human review's. These are the person's commands, not a registry oracle.
+      // With no Detail open, the window's and the shown graph's commands, not a Detail's or a
+      // Human review's. These are the person's commands, not a registry oracle.
       const expected = [
-        "Command palette", "Keyboard shortcuts", "Show Settings", "Refresh", "Quit",
-        "Search branches and reviews", "Focus the Pane", "Focus the Main area", "Open a request by ID", "Open the Run's Detail",
+        "Keyboard shortcuts", "Show Settings", "Show or hide the Pane", "Refresh", "Quit",
+        "Search the branches", "Open a request by ID", "Open the Run's Detail", "Find", "Fit",
       ].sort();
       await waitFor(browser, async () => isDeepStrictEqual(await listed(), expected), `the enabled commands are rendered: ${JSON.stringify(await listed())}`);
       assert.deepEqual(await listed(), expected, "all and only the enabled commands");
@@ -160,9 +160,9 @@ export const scenarios: Scenario[] = [
       const steps: [string, () => Promise<boolean>][] = [
         // Settings opens over the Run, which stays the Main area's view beneath it.
         ["Show Settings", async () => (await browser.$("#settings-title").isExisting()) && (await mainTitle(browser)) === before],
-        ["Open the Run's Detail", async () => (await detail(browser))?.title === before],
-        ["Focus the Pane", () => entriesFocused(browser)],
-        ["Search branches and reviews", () => searchFocused(browser)],
+        ["Open the Run's Detail", async () => (await detail(browser))?.title === `Run ${before}`],
+        ["Show or hide the Pane", async () => !(await browser.$('section[aria-label="Pane"]').isExisting())],
+        ["Search the branches", async () => (await browser.$('section[aria-label="Pane"]').isExisting()) && await searchFocused(browser)],
       ];
       for (const [label, outcome] of steps) {
         await ctrlK(`before ${label}`);

@@ -1,5 +1,5 @@
 // The Run graph with every kind of verdict, and the Detail of a finished eval: node and edge
-// colours for RED, ERROR and blocked Artifacts, each eval tab's verdict glyph and colour, and the
+// colours for RED, ERROR and blocked Artifacts, each eval's verdict mark and colour, and the
 // status, instruction and result of a completed eval's Summary, with the rest under Debug.
 import assert from "node:assert/strict";
 import { createStates, requests } from "../fixture.ts";
@@ -31,20 +31,20 @@ export const scenarios: Scenario[] = [
         "a:past": "blocked",
         "a:beyond": "waiting",
       } satisfies Record<string, VerdictLight>;
-      // Each edge is painted as what its source passes on: RED, ERROR, work in progress, a
-      // blocked or a waiting source.
+      // Each edge carries what its source passes on: it is drawn in that colour when the source
+      // holds others up (RED, ERROR or blocked), else neutral.
       const expectedEdges = {
         "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active",
         "a:down>a:past": "blocked", "a:later>a:beyond": "waiting",
       } satisfies Record<string, VerdictLight>;
       await browser.waitUntil(async () => graphHasColours(await lights(), expectedNodes, expectedEdges), {
-        timeout: 15000, timeoutMsg: "every node border/dot and relation stroke matches its verdict's distinct visible Legend colour",
+        timeout: 15000, timeoutMsg: "every node's mark and strip in its verdict's own colour, and each relation's stroke neutral or its holding source's colour",
       });
       const { nodes, edges } = await lights();
       assert.deepEqual(Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, node.light])), expectedNodes);
       assert.deepEqual(Object.fromEntries(Object.entries(edges).map(([id, edge]) => [id, edge.light])), expectedEdges);
-      const legend = await browser.$('[aria-label="Legend"]').getText();
-      for (const word of ["GREEN", "RED", "ERROR", "blocked", "waiting"]) assert.match(legend, new RegExp(word));
+      // No legend on the graph: Help pairs each mark with its word.
+      assert.equal(await browser.$('[aria-label="Legend"]').isExisting(), false, "no legend on the graph");
     },
   ),
 
@@ -67,7 +67,8 @@ export const scenarios: Scenario[] = [
       assert.equal(request.result.verdict, "GREEN");
       await browser.waitUntil(async () => (await summary(browser)).instruction === "Pass.", { timeout: 15000, timeoutMsg: "fine/check's Summary rendered" });
       const shown = await summary(browser);
-      assert.match(shown.status, /^\S+ GREEN\b/, `its status first: ${shown.status}`);
+      assert.match(shown.status, /^GREEN\b/, `its status first: ${shown.status}`);
+      assert.equal(shown.mark, "green", "led by its status's mark");
       assert.ok(shown.blocks.includes("Result"), `its result: ${shown.blocks}`);
       assert.ok(shown.blocks.includes("Fingerprint"), `its fingerprint: ${shown.blocks}`);
       // The rest is folded under Debug: the request, its source and its raw result.
@@ -85,7 +86,7 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "states-detail-tabs",
-    "shows each eval's verdict glyph and colour on its tab and in the Artifact tab's list",
+    "shows each eval's verdict mark and colour in the Artifact tab's list and on its chip",
     async () => {
       const fixture = await createStates();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
@@ -95,31 +96,36 @@ export const scenarios: Scenario[] = [
       // Each Artifact's one eval, in the colour of its own verdict. Each Detail closes before the
       // next Artifact's click, so it covers none of it.
       const expected = [
-        ["a:red", "red", /RED/, "✗", "RED"],
-        ["a:crash", "crash", /ERROR/, "!", "ERROR"],
-        ["a:down", "down", /blocked by red/, "⊘", "BLOCKED"],
-        ["a:gate", "gate", /Human/, "?", "DEFERRED"],
-        ["a:fine", "fine", /GREEN/, "✓", "GREEN"],
+        ["a:red", "red", /RED/, "red", "RED", "check"],
+        ["a:crash", "crash", /ERROR/, "error", "ERROR", "check"],
+        ["a:down", "down", /blocked by red/, "blocked", "BLOCKED", "check"],
+        ["a:gate", "gate", /Human/, "human", "DEFERRED", "signoff"],
+        ["a:fine", "fine", /GREEN/, "green", "GREEN", "check"],
       ] as const;
       const painted = new Set<string>();
-      for (const [id, name, status, glyph, shownStatus] of expected) {
+      for (const [id, name, status, glyph, shownStatus, evaluation] of expected) {
         const shown = await openArtifact(browser, id, `Artifact ${name}`);
-        assert.equal(shown.tabs.length, 2, `${name}'s Artifact tab and its one eval's tab`);
-        assert.equal(shown.tabs[1].glyph, glyph, `${name}'s eval tab shows its exact visible verdict glyph`);
+        assert.match(shown.evals[0]?.status ?? "", status, `${name}'s Artifact tab lists its eval's verdict`);
         const row = await browser.execute(() => {
           const glyph = document.querySelector<HTMLElement>('aside[aria-label="Detail"] .evals button .glyph');
-          return glyph && glyph.getClientRects().length > 0 ? { glyph: glyph.textContent?.trim(), colour: getComputedStyle(glyph).color, ink: getComputedStyle(document.body).color } : null;
+          return glyph && glyph.getClientRects().length > 0
+            ? { glyph: glyph.querySelector("svg")?.getAttribute("data-icon"), colour: getComputedStyle(glyph).color, ink: getComputedStyle(document.body).color }
+            : null;
         });
         assert.ok(row, `the visible ${shownStatus} eval row independently identifies its status colour`);
-        assert.equal(row.glyph, glyph);
-        assert.ok(shown.tabs[1].painted, `${name}'s glyph actually paints`);
-        assert.equal(shown.tabs[1].colour, row.colour, `${name}'s chip is painted in the same colour as its visible verdict row`);
-        assert.notEqual(shown.tabs[1].colour, row.ink, `${name}'s glyph is not uncoloured body text`);
-        painted.add(shown.tabs[1].colour);
-        assert.match(shown.evals[0]?.status ?? "", status, `${name}'s Artifact tab lists its eval's verdict`);
+        assert.equal(row.glyph, glyph, `${name}'s eval row shows its exact verdict mark`);
+        // Its tab's chips: the Artifact's, then its one eval's in the row's mark and colour.
+        await openTab(browser, `e:${name}/${evaluation}`, { row: true });
+        const tabbed = (await detail(browser))!;
+        assert.equal(tabbed.tabs.length, 2, `${name}'s Artifact chip and its one eval's chip`);
+        assert.equal(tabbed.tabs[1].glyph, glyph, `${name}'s eval chip shows its exact verdict mark`);
+        assert.ok(tabbed.tabs[1].painted, `${name}'s mark actually paints`);
+        assert.equal(tabbed.tabs[1].colour, row.colour, `${name}'s chip is painted in the same colour as its visible verdict row`);
+        assert.notEqual(tabbed.tabs[1].colour, row.ink, `${name}'s mark is not uncoloured body text`);
+        painted.add(tabbed.tabs[1].colour);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closed`);
       }
-      assert.equal(painted.size, expected.length, "the five status glyphs have distinct actual colours");
+      assert.equal(painted.size, expected.length, "the five status marks have distinct actual colours");
     },
   ),
 ];
