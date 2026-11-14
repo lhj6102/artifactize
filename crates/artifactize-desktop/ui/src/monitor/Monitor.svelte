@@ -359,7 +359,8 @@
   const title = $derived.by(() => {
     if (shown.kind === "run") return shown.run;
     if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
-    if (shown.kind === "review") return "Review";
+    // A completed review is read-only, like any request that waits for nothing (D-REV-6).
+    if (shown.kind === "review") return review?.settled ? "Review · read-only" : "Review";
     if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });

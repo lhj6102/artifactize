@@ -119,7 +119,9 @@
                 >{#if branch.name}<span class="project">{branch.project} /</span> <span class="branch-name">{branch.name}</span
                   >{:else}<span class="branch-name">{branch.project}</span>{/if}</span
               >
-              <!-- Folded, the newest Run's status under the name, or No Runs yet beside a faint dot. -->
+              <!-- Folded, the newest Run's status under the name, or No Runs yet beside a faint dot:
+                   the design's monitor figure draws that line for a branch without Runs, and
+                   J-BRANCH-RUNS names it. -->
               {#if !open}
                 <span class="latest">
                   {#if newest?.kind === "run"}

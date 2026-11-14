@@ -190,6 +190,7 @@ export const scenarios: Scenario[] = [
       const human = browser.$('[aria-label="Human review"]');
       assert.ok(await human.isExisting(), "the completed review stays open after the terminal update");
       assert.match(await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? ""), /completed result/i);
+      assert.equal(await mainTitle(browser), "Review · read-only", "completed, the review is read-only");
     },
   ),
   // UX journey: J-HUMAN-LAYOUT; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN
