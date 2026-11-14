@@ -488,9 +488,13 @@ absolute path when the command runs. In instructions and runtime arguments a ref
 makes the eval depend on that Artifact; in a fingerprint script it only lets the script
 read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
 doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
-never builds a command line from a string. An eval may read its target and the Artifacts it references,
-neither their parts nor folders nested in them. The instructions of the referenced Artifacts' evals are not added to its
-review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
+never builds a command line from a string. An eval may read its target and the Artifacts
+it references. An admitted folder still exposes colocated file-part targets and
+aspect-selected files through its own paths, but not unadmitted nested folder
+Artifacts. Composition does not add a part's own tools: name the part to use those
+tools or include it as a direct fingerprint input. The instructions of referenced
+Artifacts' evals are not added to the review; a
+[`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare

@@ -85,8 +85,9 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
 폴더이지만, 내장 도구로는 대상 파일과 허용 범위에 포함된 파일에만 접근할 수 있습니다. 폴더
-Artifact의 폴더 안에 있으면 그 Artifact의 [부분](#composition)이 되며, 그 폴더 Artifact의 해시에는
-대상 파일이 계속 들어갑니다. 다른 Artifact의 폴더 안에 있는 하위 폴더에 `index.artf`를 두어도 그
+Artifact의 폴더 안에 있으면 그 Artifact의 [부분](#composition)이 됩니다. 폴더는 자체 artifactsum에서
+그 대상 파일을 제외하고, 대신 eval 재사용 키에 부분의 fingerprint를 넣습니다.
+다른 Artifact의 폴더 안에 있는 하위 폴더에 `index.artf`를 두어도 그
 Artifact의 부분이 되고, 그 폴더의 파일은 바깥 Artifact의 파일 범위에서 제외됩니다.
 이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
 [파일 Artifact 레퍼런스](declarations.md#file-artifacts)에 있습니다.

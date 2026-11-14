@@ -414,8 +414,11 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-읽을 수 있지만, 그 부분이나 그 안에 선언된 폴더는 읽을 수 없습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
-전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
+읽을 수 있습니다. 허용된 폴더 안에 있는 파일 부분의 대상이나 aspect가 고른 파일은 폴더의 경로로
+읽을 수 있지만, 허용 범위에 없는 중첩 폴더 Artifact는 읽을 수 없습니다. 부분 관계만으로 부분에
+선언된 도구가 추가되지는 않습니다. 그 도구를 쓰거나 부분을 fingerprint 입력에 직접 포함하려면
+부분을 참조하세요. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로
+적용하지는 않습니다. 프로젝트 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를
 담거나, 4096자를 넘을 수 없습니다. 직접 선언하는 경로(`fingerprint.files`,

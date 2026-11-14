@@ -92,7 +92,8 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 A file Artifact hashes its one target by default. Its working directory is the
 containing folder, but built-in tools see the file and its admitted scope, not
 unrelated siblings. Inside a folder Artifact's folder it is a [part](#composition) of
-that Artifact, which still hashes the target as part of its own files. A folder declared
+that Artifact: the folder excludes the file target from its own artifactsum and
+includes the part's fingerprint in its eval reuse keys instead. A folder declared
 with `index.artf` inside another Artifact's folder is a part of it too, and takes its
 files out of that Artifact's.
 See the [file-Artifact reference](declarations.md#file-artifacts) for naming,
