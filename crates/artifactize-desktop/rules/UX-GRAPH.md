@@ -177,7 +177,8 @@ that makes the transition happen and checks where it leads.
   the Tool log is the large view on the left and the instruction, the Tools and the Result are
   a column at the right, where the Detail docks and of the Detail's width. Release claim and Submit
   sit in one row right under the Result, and between them what running work has to say: its
-  seconds and Cancel, or its failure. States:
+  seconds and Cancel, which cancels it, or its failure. Claim to review, GREEN, RED, Submit
+  and Release claim each do with a click what their key does. States:
   Unclaimed, Taken (another reviewer holds the claim), Claimed (by this reviewer), Editing
   GREEN (the form built from the eval's pass schema), Editing RED (built from its fail schema),
   Submitted (the completed result shown); a tool or a submission may be running, and a
@@ -333,28 +334,28 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-HUMAN-CLAIM | Unclaimed | `c` | Claimed |
-| E-HUMAN-RELEASE | Claimed | `u` | Unclaimed |
+| E-HUMAN-CLAIM | Unclaimed | `c`, or a click on Claim to review | Claimed |
+| E-HUMAN-RELEASE | Claimed, or Editing with nothing running | `u` outside a field typed in (typed in a text field it is text), or a click on Release claim | Unclaimed; a form that was being edited is left, its draft kept |
 | E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Taken, the claimant named beside its stage; claiming here is refused |
 | E-HUMAN-RELEASED-ELSEWHERE | Taken | the other process releases | Unclaimed |
 | E-HUMAN-TOOL | Claimed or Editing | click an output tool's `▶` button | same state, the tool running until it ends, its run in the Tool log: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0` |
 | E-HUMAN-TOOL-LAUNCH | Claimed or Editing | click a launch tool's `▶` button | same state at once, the application opened and said so; its run open in the Tool log |
 | E-HUMAN-LOG-LIVE | a launched application logging | it prints, then exits | same state, its lines (stderr in red) and then its end added under its own run |
 | E-HUMAN-TOOL-FAIL | Claimed or Editing | click a tool that fails | same state, the failure said and its run ended red in the Tool log |
-| E-HUMAN-GREEN | Claimed | `g` | Editing GREEN, the form built from the pass schema |
-| E-HUMAN-RED | Claimed | `r` | Editing RED, the form built from the fail schema |
-| E-HUMAN-SWITCH | Editing | Ctrl+G or Ctrl+R | Editing GREEN for Ctrl+G, Editing RED for Ctrl+R (the current verdict stays selected when its own shortcut is used) |
-| E-HUMAN-SUBMIT | Editing | Ctrl+S with a result its schema accepts | Submitted: the form gone, the completed result open, the Tool log cleared |
+| E-HUMAN-GREEN | Claimed | `g`, or a click on GREEN | Editing GREEN, the form built from the pass schema |
+| E-HUMAN-RED | Claimed | `r`, or a click on RED | Editing RED, the form built from the fail schema |
+| E-HUMAN-SWITCH | Editing | Ctrl+G or Ctrl+R, or a click on the GREEN or the RED button | Editing GREEN for Ctrl+G, Editing RED for Ctrl+R (the current verdict stays selected when its own shortcut is used) |
+| E-HUMAN-SUBMIT | Editing | Ctrl+S, or a click on Submit, with a result its schema accepts | Submitted: the form gone, the completed result open, the Tool log cleared |
 | E-HUMAN-LIST-ADD | Editing a form with a list of text | `+ Add` under the list | Editing, another empty item to type in |
 | E-HUMAN-LIST-REMOVE | Editing a form with a list of text | `✕` on an item | Editing, that item removed; one empty item stays when it was the last |
 | E-HUMAN-GROUP-ADD | Editing a form with a list of groups | `+ Add` | Editing, another empty group of the list's fields |
 | E-HUMAN-GROUP-REMOVE | Editing a form with a list of groups | `✕` on a group | Editing, that group removed; one empty group stays when it was the last |
-| E-HUMAN-INVALID | Editing RED or Editing GREEN | Ctrl+S with a result failing its schema | the same form, its entries kept and correctable, failing path shown |
+| E-HUMAN-INVALID | Editing RED or Editing GREEN | Ctrl+S, or a click on Submit, with a result failing its schema | the same form, its entries kept and correctable, failing path shown |
 | E-HUMAN-TEXT | Editing | type text, including composed Korean | Editing, no shortcut fires |
 | E-HUMAN-LOG-UP | Tool log Following, longer than its box | scroll it up | Tool log Scrolled up; new lines arrive below without moving it, and the rest of the review does not scroll |
 | E-HUMAN-LOG-FOLLOW | Tool log Scrolled up | scroll it back to its bottom | Tool log Following, showing each newest line again |
 | E-HUMAN-LOG-COPY | Editing, the Tool log holding lines | select text in the Tool log, copy it and paste it into a Result field | Editing, the field holding the log's text as shown |
-| E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, the review's Close, or Esc on the graph or a click on its background | same state, the running work cancelled, the review still open |
+| E-HUMAN-ESC-CANCEL | a tool or submission running | Esc in the review or on the Detail's tabs, a click on Cancel beside the running work's seconds, the review's Close, or Esc on the graph or a click on its background | same state, the running work cancelled, the review still open |
 | E-HUMAN-ESC-FORM | Editing, nothing running | Esc, Close or a click as for E-HUMAN-ESC-CANCEL | Claimed, the form left with its draft kept, the review still open |
 | E-HUMAN-ESC-DETAIL | Unclaimed, Taken, Claimed or Submitted, nothing running or being edited | Esc | in a Run's Detail the graph, Detail closed; for a review opened from the Pane, Pane entries focused, a hidden Pane shown first |
 
@@ -467,8 +468,10 @@ E-PANE-SELECT.
   E-GRAPH-CAMERA → E-GRAPH-NAVIGATE
   E-GRAPH-CAMERA → E-GRAPH-MINIMIZE → E-GRAPH-EXPAND
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
+  E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
 - J-HUMAN-LAYOUT: E-MON-DETAIL-TAB | E-REVIEW-OPEN
+  E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-GREEN → E-HUMAN-INVALID → E-HUMAN-SUBMIT
 - J-HUMAN-TOOL: E-HUMAN-CLAIM → E-HUMAN-TOOL | E-HUMAN-TOOL-LAUNCH | E-HUMAN-TOOL-FAIL
 - J-HUMAN-LOG: E-HUMAN-TOOL → E-HUMAN-TOOL-FAIL
   E-HUMAN-TOOL-LAUNCH → E-HUMAN-GREEN → E-HUMAN-LOG-LIVE
