@@ -2,6 +2,7 @@
 // worktree now, a click on a tool that runs it at once with no review, the failure it may
 // answer with, and the Tool log that reaches it by its worktree and name and no other
 // Artifact's, shown from its first run on.
+import { tick } from "svelte";
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
@@ -71,10 +72,18 @@ it("runs a tool on the branch checked out in the worktree now", async () => {
   await waitFor(() => expect(runs).toEqual([{ branch: branchKey("feat/y"), artifact: "notes", tool: "open_notes", job: expect.any(Number) }]));
 });
 
-it("says so when the Artifact declares no Human tools", async () => {
-  mockIPC((command) => (command === "artifact_tools" ? [] : null));
+it("shows no Tools section when the Artifact declares no Human tools", async () => {
+  let asked = false;
+  mockIPC((command) => {
+    if (command !== "artifact_tools") return null;
+    asked = true;
+    return [];
+  });
   renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "core" });
-  await screen.findByText("core declares no Human tools.");
+  await waitFor(() => expect(asked).toBe(true));
+  await tick();
+  expect(screen.queryByRole("region", { name: "Tools of core" })).toBeNull();
+  expect(screen.queryByText("Tools")).toBeNull();
 });
 
 it("routes a Tool log to the Artifact of its worktree only", () => {

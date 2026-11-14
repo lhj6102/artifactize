@@ -3,7 +3,7 @@
 // unsubmitted claim (stay, then release and quit), and the completed result kept open.
 import assert from "node:assert/strict";
 import { addRepository, artifactize, create, type Fixture, orderRuns, requests, signoff } from "../fixture.ts";
-import { claimable, requestState, reviewing } from "../human-review.ts";
+import { claimable, requestState, showDebug, reviewing } from "../human-review.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
@@ -34,6 +34,7 @@ async function openById(browser: WebdriverIO.Browser, id: string) {
   await fill(browser, '[aria-label="Request ID"]', id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
   await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
+  await showDebug(browser);
   await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · `), `${id}'s review`);
 }
 
@@ -189,6 +190,53 @@ export const scenarios: Scenario[] = [
       const human = browser.$('[aria-label="Human review"]');
       assert.ok(await human.isExisting(), "the completed review stays open after the terminal update");
       assert.match(await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? ""), /completed result/i);
+    },
+  ),
+  // UX journey: J-HUMAN-LAYOUT; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN
+  scenario<null>(
+    "review-layout",
+    "lays a review in the Main area out as two panels where it is at least twice the Detail's width, the Tool log the view at the left and the rest a column at the right, and in one column where it is narrower",
+    async () => ({ fixture: await create(), args: ["review"], data: null }),
+    async (browser, { fixture }) => {
+      await browser.setWindowSize(1920, 1080);
+      await claimReview(browser, fixture);
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      /** The review's arrangement: its panels' boxes, its Result's and its row of actions' boxes. */
+      const arranged = () => browser.execute(() => {
+        const review = document.querySelector<HTMLElement>('[aria-label="Human review"]')!;
+        const box = (element: Element | null | undefined) => {
+          const rect = element?.getBoundingClientRect();
+          return rect ? { left: Math.round(rect.left), right: Math.round(rect.right), top: Math.round(rect.top), bottom: Math.round(rect.bottom) } : null;
+        };
+        const result = review.querySelector('section[aria-label="Result"]');
+        const sections = [...review.querySelectorAll(".section")].map((section) => section.getAttribute("aria-label"));
+        return {
+          area: box(review),
+          split: review.classList.contains("split"),
+          viewer: box(review.querySelector(".viewer")),
+          log: box(review.querySelector(".viewer [role='log']")),
+          side: box(review.querySelector(".side")),
+          result: box(result),
+          // The row of actions is the Result's last row.
+          actionsLast: !!result && result.querySelector(".body > .result > :last-child")?.classList.contains("actions") === true,
+          sections,
+        };
+      });
+      // Wide: the Tool log fills the left, from below the header row to the bottom; the column at the right.
+      await browser.waitUntil(async () => (await arranged()).split, { timeout: 15000, timeoutMsg: "two panels in a wide Main area" });
+      const wide = await arranged();
+      assert.ok(wide.viewer && wide.side && wide.log && wide.area, JSON.stringify(wide));
+      assert.ok(wide.viewer.right <= wide.side.left + 1 && wide.side.right >= wide.area.right - 1, `the Tool log at the left, the column at the right: ${JSON.stringify(wide)}`);
+      assert.ok(wide.log.bottom >= wide.area.bottom - 2 && wide.viewer.top <= wide.area.top + 2, `the Tool log fills its panel's height: ${JSON.stringify(wide)}`);
+      assert.deepEqual(wide.sections, ["Tools", "Result", "Debug"], "the column holds the Tools, the Result and Debug");
+      assert.ok(wide.actionsLast, "the row of actions ends the Result");
+      // Narrow: one column, top to bottom, the Tool log a box between the Tools and the Result.
+      await browser.setWindowSize(800, 760);
+      await browser.waitUntil(async () => !(await arranged()).split, { timeout: 15000, timeoutMsg: "one column in a narrow Main area" });
+      const narrow = await arranged();
+      assert.deepEqual(narrow.sections, ["Tools", "Tool log", "Result", "Debug"], "one column, the Tool log between the Tools and the Result");
+      assert.ok(narrow.actionsLast, "the row of actions still ends the Result");
+      assert.equal(await browser.$("#field-comment").isExisting(), true, "the form kept through the change");
     },
   ),
 ];

@@ -808,6 +808,12 @@ export type Providers = {
 	custom: CustomProvider[],
 };
 
+/**  A push that sent records: when, in milliseconds since the Unix epoch, and how many. */
+export type Push = {
+	at: number | null,
+	count: number,
+};
+
 export type Pushed = {
 	dryRun: boolean,
 	pushed: number,
@@ -849,7 +855,9 @@ export type ReleaseView = {
 /**  `remote status`: never the token. */
 export type RemoteStatus = 
 /**  No remote review store is configured. */
-{ state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection };
+{ state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection; 
+/**  What this machine pushed in the last two days, for what was pushed today. */
+pushes: Push[] };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };

@@ -245,8 +245,8 @@
     {/if}
   </div>
   <footer>
-    <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
-    <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
+    <button class="button small" aria-label="Top (Home)" aria-keyshortcuts="Home" onclick={() => void ask({ kind: "top" })}>Top</button>
+    <button class="button small" aria-label="Bottom (End)" aria-keyshortcuts="End" onclick={() => void ask({ kind: "bottom" })}>Bottom</button>
     <span class="indicator">{t.view?.indicator ?? ""}</span>
   </footer>
 </div>

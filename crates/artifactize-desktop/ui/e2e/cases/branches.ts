@@ -8,7 +8,7 @@ import {
   orderRuns, requests, signOff, signoff, verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
-import { requestState, reviewing } from "../human-review.ts";
+import { requestState, showDebug, reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
@@ -317,7 +317,7 @@ export const scenarios: Scenario[] = [
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "--detach", nativePath(fixture.root, "loose"));
       await waitFor(browser, async () => (await names()).length === 5, "the added worktrees listed");
       assert.deepEqual(await names(), ["repo  added", "repo  loose", "repo  master", "repo  scope-one", "repo  scope-two"]);
-      assert.equal((await branch(browser, "repo  added"))?.latest, "No Runs yet", "folded, a branch without Runs says so");
+      assert.equal((await branch(browser, "repo  added"))?.latest, "", "folded, a branch without Runs says nothing under its name");
       await expand(browser, "repo  added");
       assert.deepEqual((await branch(browser, "repo  added"))?.chips.map((chip) => chip.id), ["current"], "a branch without Runs has its Current");
       // A worktree Git removes and one whose folder is deleted both go.
@@ -389,6 +389,7 @@ export const scenarios: Scenario[] = [
       assert.ok((await height()) > empty, "the stack grew upward by its row");
       // A click opens it in the Main area.
       await openWaiting(browser, id);
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · DEFERRED · unclaimed`),
         "the clicked review open");
       // Submitted elsewhere, it stops waiting: its row goes and the bar reads (0) again.
@@ -436,6 +437,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await selected()) === last, "the bottom review selected");
       await waitFor(browser, visible, "the list scrolled the selected review into view");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "its Review shown");
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${last} · DEFERRED`), "the scrolled-to review open");
     },
   ),
@@ -452,6 +454,7 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       await openWaiting(browser, id);
       const review = () => browser.$('[aria-label="Human review"]');
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · DEFERRED · unclaimed`), "the review open");
       // Its eval and title read above it, in the header row.
       assert.equal(await browser.$('section.panel[aria-label="Main area"] > header .headline .title').getText(), "release/signoff · A person approves the release");

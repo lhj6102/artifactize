@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createStates, requests } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { aside, detail, fact, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
+import { MAIN } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type VerdictLight } from "./graph-appearance.ts";
 
@@ -126,6 +127,64 @@ export const scenarios: Scenario[] = [
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closed`);
       }
       assert.equal(painted.size, expected.length, "the five status marks have distinct actual colours");
+    },
+  ),
+
+  // UX journey: J-MAIN-RUN; UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-RUN E-MON-DETAIL-BACK
+  scenario<Record<string, never>>(
+    "states-run-outcome",
+    "names a Run with RED and ERROR evals and a waiting sign-off in its one header row, and opens its outcome from there: its status, the evals that failed, its tally, its time and what it waits for",
+    async () => {
+      const fixture = await createStates();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      await graphShown(browser, "a:crash");
+      /** The header row: the Run's ID, then its headline's verdict and each eval that needs attention, by its mark. */
+      const header = () => browser.execute((main) => {
+        const row = document.querySelector(`${main} > header`)!;
+        const headline = row.querySelector("button.headline");
+        return {
+          title: row.querySelector("h2")?.textContent?.trim() ?? "",
+          verdict: [headline?.querySelector(".status svg")?.getAttribute("data-icon") ?? "", headline?.querySelector(".status")?.textContent?.trim() ?? ""],
+          needs: [...(headline?.querySelectorAll(".need") ?? [])].map((need) => [need.querySelector("svg")?.getAttribute("data-icon") ?? "", need.textContent?.trim() ?? ""]),
+        };
+      }, MAIN);
+      let shown = await header();
+      await browser.waitUntil(async () => (shown = await header()).needs.length === 3, { timeout: 15000, timeoutMsg: "the Run's headline drawn" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });
+      assert.match(shown.title, /^run-/, "the Run's ID first");
+      // Every failure first, then the sign-off that waits, each by its status's mark.
+      assert.deepEqual(shown.needs, [["red", "red/check"], ["error", "crash/check"], ["human", "gate/signoff"]], JSON.stringify(shown));
+      // A click on the headline opens the Run's outcome and what it waits for, both unfolded.
+      await browser.$(`${MAIN} > header button.headline`).click();
+      await browser.waitUntil(async () => (await detail(browser))?.title === `Run ${shown.title}`, { timeout: 15000, timeoutMsg: "the Run's Detail" });
+      const outcome = () => browser.execute(() => {
+        const dock = document.querySelector('aside[aria-label="Detail"]')!;
+        const facts = Object.fromEntries([...dock.querySelectorAll('section[aria-label="Outcome"] dt')]
+          .map((term) => [term.textContent?.trim() ?? "", term.nextElementSibling as HTMLElement]));
+        const marks = (dd: HTMLElement | undefined) => [...(dd?.querySelectorAll(":scope > span") ?? [])]
+          .map((part) => [part.querySelector("svg")?.getAttribute("data-icon") ?? "", part.textContent?.trim() ?? ""]);
+        return {
+          status: facts.Status?.textContent?.trim() ?? "",
+          statusIcon: facts.Status?.querySelector("svg")?.getAttribute("data-icon") ?? "",
+          failed: marks(facts.Failed),
+          tally: marks(facts.Tally),
+          time: (facts["Running for"] ?? facts.Took)?.textContent?.trim() ?? "",
+          waits: dock.querySelector('section[aria-label="Waits for"] .body')?.textContent ?? "",
+        };
+      });
+      let read = await outcome();
+      await browser.waitUntil(async () => (read = await outcome()).status !== "", { timeout: 15000, timeoutMsg: "the Run's outcome" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(read)}`); });
+      assert.equal(read.statusIcon, shown.verdict[0], `its status, said once, by the headline's mark: ${read.status}`);
+      assert.deepEqual(read.failed, [["red", "red/check"], ["error", "crash/check"]], "the evals that failed, by name");
+      for (const [icon, word] of [["green", "GREEN"], ["red", "RED"], ["error", "ERROR"]]) {
+        assert.ok(read.tally.some(([shownIcon, text]) => shownIcon === icon && /^\d+ /.test(text) && text.endsWith(` ${word}`)), `the tally counts ${word}: ${JSON.stringify(read.tally)}`);
+      }
+      assert.match(read.time, /\d/, "what the Run took so far");
+      assert.match(read.waits, /gate\/signoff/, "what it waits for");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Run's Detail closed");
     },
   ),
 ];

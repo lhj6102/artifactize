@@ -810,6 +810,20 @@ export const scenarios: Scenario[] = [
       };
       const first = await settled();
       assert.ok(first.whole, "the graph shows whole when it first appears");
+      /** How wide release is drawn, and how far the graph's middle lies from the canvas's. */
+      const placed = () => browser.execute(() => {
+        const ofGraph = (element: Element) => !element.closest('aside[aria-label="Detail"]');
+        const canvas = [...document.querySelectorAll(".canvas")].find(ofGraph)!.getBoundingClientRect();
+        const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter(ofGraph).map((node) => node.getBoundingClientRect());
+        const [left, right] = [Math.min(...nodes.map((box) => box.left)), Math.max(...nodes.map((box) => box.right))];
+        const [top, bottom] = [Math.min(...nodes.map((box) => box.top)), Math.max(...nodes.map((box) => box.bottom))];
+        const release = [...document.querySelectorAll('.svelte-flow__node[data-id="a:release"]')].find(ofGraph)!.getBoundingClientRect();
+        return { width: release.width, x: (left + right) / 2 - (canvas.left + canvas.right) / 2, y: (top + bottom) / 2 - (canvas.top + canvas.bottom) / 2 };
+      });
+      // A small graph is never enlarged past its nodes' own size: it shows at that size, in the
+      // middle of the canvas.
+      const native = await placed();
+      assert.ok(Math.abs(native.width - 168) <= 1 && Math.abs(native.x) <= 2 && Math.abs(native.y) <= 2, `release at its own size, the graph in the middle: ${JSON.stringify(native)}`);
       const title = await mainTitle(browser);
 
       // Opening a Detail, switching it to a neighbour and closing it leave the camera.
@@ -864,6 +878,8 @@ export const scenarios: Scenario[] = [
       const fitted = await settled();
       assert.notEqual(fitted.transform, zoomed.transform, "Fit View moved the person's camera");
       assert.ok(fitted.whole, `Fit View shows every Artifact inside the canvas: ${JSON.stringify(fitted)}`);
+      const fit = await placed();
+      assert.ok(Math.abs(fit.width - 168) <= 1, `Fit enlarges nothing past its own size: ${JSON.stringify(fit)}`);
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
@@ -1389,6 +1405,29 @@ export const scenarios: Scenario[] = [
       const shown = await navigator();
       assert.ok(shown && shown.frame.width < shown.map.width * 0.3 && shown.map.height >= 16,
         `the Navigator, tall enough to point at, frames the part in view: ${JSON.stringify(shown)}`);
+      // The whole chain in small, every Artifact a block of its status's colour (each GREEN here),
+      // at the graph's bottom right.
+      const drawing = () => browser.execute(() => {
+        const navigator = document.querySelector("[data-navigator]")!.getBoundingClientRect();
+        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect() ?? null;
+        const map = document.querySelector<HTMLCanvasElement>("[data-navigator] canvas")!;
+        const pixels = map.getContext("2d")!.getImageData(0, 0, map.width, map.height).data;
+        const hex = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
+        const want = [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+        let green = 0;
+        let painted = 0;
+        for (let at = 0; at < pixels.length; at += 4) {
+          if (pixels[at + 3] === 0) continue;
+          painted += 1;
+          // An edge pixel only partly covered keeps its colour, give or take its rounding.
+          if ([0, 1, 2].every((channel) => Math.abs(pixels[at + channel] - want[channel]) <= 4)) green += 1;
+        }
+        return { right: canvas.right - navigator.right, bottom: canvas.bottom - navigator.bottom, detail: detail && detail.left - navigator.right, green, painted };
+      });
+      const look = await drawing();
+      assert.ok(look.painted > 0 && look.green === look.painted, `each Artifact a block in GREEN's colour: ${JSON.stringify(look)}`);
+      assert.ok(Math.abs(look.right - 8) <= 2 && Math.abs(look.bottom - 8) <= 2, `at the graph's bottom right: ${JSON.stringify(look)}`);
       const kept = await zoom();
       /** The frame's centre, across the Navigator. */
       const centre = async () => { const at = (await navigator())!; return at.frame.left + at.frame.width / 2; };
@@ -1409,6 +1448,19 @@ export const scenarios: Scenario[] = [
       await dispatchInput(browser, { kind: "pointer", phase: "up", x: further, y: middle });
       await browser.waitUntil(async () => Math.abs((await centre()) - further) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place dragged to" });
       assert.equal(await zoom(), kept, "the drag kept the zoom");
+      // With a Detail open, it sits left of the Detail.
+      const inView = await browser.execute(() => {
+        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        return [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((node) => {
+          const box = node.getBoundingClientRect();
+          return box.left >= canvas.left && box.right <= canvas.left + canvas.width / 2 && box.top >= canvas.top && box.bottom <= canvas.bottom;
+        })?.dataset.id ?? null;
+      });
+      assert.ok(inView, "an Artifact in view to open");
+      await openArtifact(browser, inView, `Artifact ${inView.slice(2)}`);
+      await browser.waitUntil(async () => { const at = (await drawing()).detail; return at !== null && Math.abs(at - 8) <= 2; },
+        { timeout: 15000, timeoutMsg: `the Navigator left of the Detail: ${JSON.stringify(await drawing())}` });
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       // Fit shows the whole graph again: the Navigator goes.
       await fitButton(browser).click();
       await browser.waitUntil(async () => (await navigator()) === null, { timeout: 15000, timeoutMsg: "no Navigator once the whole graph is in view" });

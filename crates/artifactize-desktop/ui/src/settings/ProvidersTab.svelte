@@ -1,8 +1,9 @@
 <script lang="ts">
-  // The Providers tab: the built-in providers, then the custom ones, then "+ Custom provider" on
+  // The Providers tab: the built-in providers, then the custom ones, then "Custom provider", led by the add icon, on
   // the left; the chosen one's setup and Models on the right. Keys are typed, saved and never
   // read back.
   import type { EndpointApi, Provider } from "../ipc/client";
+  import Icon from "../shell/Icon.svelte";
   import ClaudeAgentAccount from "./ClaudeAgentAccount.svelte";
   import CodexAccount from "./CodexAccount.svelte";
   import { getSettingsState, type Choice } from "./settings-state.svelte";
@@ -55,7 +56,9 @@
 
 {#snippet item(choice: Choice, label: string)}
   <li>
-    <button class="choice" aria-current={same(s.choice, choice) ? "true" : undefined} onclick={() => s.choose(choice)}>{label}</button>
+    <button class="choice" aria-current={same(s.choice, choice) ? "true" : undefined} onclick={() => s.choose(choice)}
+      >{#if choice.kind === "new"}<Icon name="add" />{/if}{label}</button
+    >
   </li>
 {/snippet}
 
@@ -68,7 +71,7 @@
       {#each s.providers?.custom ?? [] as one (one.name)}
         {@render item({ kind: "custom", name: one.name }, one.name)}
       {/each}
-      {@render item({ kind: "new" }, "+ Custom provider")}
+      {@render item({ kind: "new" }, "Custom provider")}
     </ul>
   </nav>
 
@@ -203,6 +206,9 @@
     gap: 2px;
   }
   .choice {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     width: 100%;
     text-align: left;
     font: inherit;

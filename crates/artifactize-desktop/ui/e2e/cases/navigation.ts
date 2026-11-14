@@ -3,17 +3,17 @@
 // into the Main area and back, a Detail stepped back out of, unreadable Runs beside a readable
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
-import { requestState } from "../human-review.ts";
-import { addWaiting, create, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
+import { requestState, showDebug } from "../human-review.ts";
+import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
-import { press } from "../keys.ts";
+import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, refreshed } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
-import { branch, branches, chooseChip, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, SEARCH, showRun, waiting } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, scanned, SEARCH, showRun, waiting } from "../pane.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture"> & { review: string };
@@ -21,6 +21,17 @@ type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
 }
+
+/** The marks the open Help dialog pairs with their words: each mark's icon and its word. */
+function helpMarks(browser: WebdriverIO.Browser) {
+  return browser.execute(() => [...document.querySelectorAll('[role="dialog"].help [aria-label="Marks"] li')]
+    .map((item) => [item.querySelector("svg")?.getAttribute("data-icon") ?? "", item.textContent?.trim() ?? ""]));
+}
+
+/** A Run's graph's marks, as Help pairs them: as a Run goes, then what went wrong. */
+const RUN_MARKS = [["green", "GREEN"], ["running", "in progress"], ["waiting", "waiting"], ["red", "RED"], ["error", "ERROR"], ["blocked", "blocked by upstream"]];
+/** A Current's marks: what verify would do with each Artifact now. */
+const CURRENT_MARKS = [["reused", "reused"], ["run", "would run"], ["waiting", "waiting"], ["blocked", "blocked by upstream"], ["checking", "checking"]];
 
 /** The keys the open Help dialog lists, each with what it does. */
 function shortcuts(browser: WebdriverIO.Browser) {
@@ -59,7 +70,7 @@ export const scenarios: Scenario[] = [
       /** The marks the open Help pairs with their words; empty without any. */
       const marks = async () => {
         await press(browser, ["?"], helpOpen, "Help open for its marks");
-        const shown = await browser.execute(() => [...document.querySelectorAll('[role="dialog"].help [aria-label="Marks"] li')].map((item) => item.textContent?.trim() ?? ""));
+        const shown = await helpMarks(browser);
         await press(browser, ["Escape"], async () => !(await helpOpen()), "Help closed");
         return shown;
       };
@@ -81,9 +92,8 @@ export const scenarios: Scenario[] = [
         [/^m$/, /^Minimize or expand a whole$/],
         [/\bF5\b/, /^Refresh$/],
       ], [/^↑ \/ ↓ · j \/ k$/, /^c$/], "the Main area");
-      // On a graph, Help pairs each mark with its word.
-      const words = await marks();
-      for (const word of ["GREEN", "RED", "ERROR", "waiting"]) assert.ok(words.some((shown) => shown.includes(word)), `the graph's Help names ${word}: ${JSON.stringify(words)}`);
+      // On a Run's graph, Help pairs each of its marks with its word.
+      assert.deepEqual(await marks(), RUN_MARKS, "the Run's marks, each with its word");
       const beneath = await mainTitle(browser);
       await press(browser, [primaryModifier, ","], () => browser.$("#settings-title").isExisting(), "Settings open");
       assert.equal(await mainTitle(browser), beneath, "Settings opens over the Main area's view");
@@ -285,6 +295,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["j"], async () => (await selected()) === example.review, "the waiting review selected");
       assert.equal(await mainTitle(browser), newer.id, "selecting a waiting review opens nothing");
       await press(browser, ["Enter"], async () => (await mainTitle(browser)) === "Review", "Enter opened the review");
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${example.review} · DEFERRED`),
         "the selected review opened");
       // Esc in a review opened from the Pane returns to the Pane, the review still selected.
@@ -454,9 +465,10 @@ export const scenarios: Scenario[] = [
   // UX journey: J-PANE-TOGGLE; UX edges: E-PANE-HIDE E-PANE-SHOW E-REVIEW-SEARCH-FOCUS E-MON-RUNS-GRAPH E-MON-GRAPH-TO-RUNS
   scenario<Record<string, never>>(
     "navigation-pane-toggle",
-    "hides the Pane by Ctrl+B, its switch or the palette, the Main area taking the window's width with its view as it was, and shows it again as it was",
+    "hides the Pane by Ctrl+B, its switch or the palette, the Main area taking the window's width with its view as it was, and shows it again as it was: its width, search, selection and expanded branches",
     async () => {
       const fixture = await create();
+      await addRepository(fixture, "other");
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
@@ -472,17 +484,39 @@ export const scenarios: Scenario[] = [
           window: document.documentElement.clientWidth,
         };
       });
+      /** What the Pane holds: its search, and each branch's selection and expansion. */
+      const held = async () => ({
+        query: await browser.$(SEARCH).getValue(),
+        branches: (await branches(browser)).map((entry) => [entry.name, entry.selected, entry.expanded]),
+      });
       await graphShown(browser, "a:release");
-      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused at launch");
+      await listed(browser, "other  master");
+      // A Pane as the person left it: dragged wider, a search of their own, both branches expanded.
+      const divider = () => browser.$(".monitor [data-pane-resizer]");
+      const narrow = (await layout()).pane!;
+      await browser.action("pointer", { id: "divider" }).move({ origin: await divider(), x: 2, y: 0 }).down().perform(true);
+      try {
+        await afterRender(browser);
+        const pointer = browser.action("pointer", { id: "divider" });
+        for (let step = 0; step < 4; step += 1) pointer.move({ origin: "pointer", x: 20, y: 0 });
+        await pointer.perform(true);
+        await browser.waitUntil(async () => ((await layout()).pane ?? 0) > narrow + 40, { timeout: 15000, timeoutMsg: "the dragged Pane" });
+        await browser.action("pointer", { id: "divider" }).up().perform();
+      } finally { await browser.releaseActions(); }
+      await fill(browser, SEARCH, "sort:name");
+      await expand(browser, "other  master");
+      await expand(browser, "repo  master");
       const shown = await layout();
+      const before = await held();
+      assert.equal(before.query, "sort:name");
       assert.ok(shown.pane !== null && shown.pane > 0 && shown.divider, `the Pane and its divider shown: ${JSON.stringify(shown)}`);
       assert.equal(await toggle().getAttribute("aria-pressed"), "true", "the switch reads as on");
       const title = await mainTitle(browser);
       const view = await camera(browser);
-      const before = await branch(browser, "repo  master");
 
       // Ctrl+B with the keyboard in the Pane hides it: the Main area as wide as the window, its
       // view and camera as they were, and the keyboard there.
+      await waitFor(browser, () => browser.execute(() => !!document.activeElement?.closest('section[aria-label="Pane"]')), "the keyboard in the Pane");
       await press(browser, [primaryModifier, "b"], async () => (await layout()).pane === null, "Ctrl+B hid the Pane");
       const hidden = await layout();
       assert.ok(!hidden.divider && Math.abs(hidden.main - hidden.window) <= 1, `the Main area takes the window's width: ${JSON.stringify(hidden)}`);
@@ -490,25 +524,73 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => mainFocused(browser), "the keyboard moved to the Main area");
       assert.equal(await mainTitle(browser), title, "the same view");
       assert.equal(await camera(browser), view, "the graph neither zoomed nor panned");
-      // The graph and its Detail work whole with the Pane hidden.
+      // The graph and its Detail work whole with the Pane hidden; Esc closes the Detail, and Esc
+      // again goes back to the Pane, shown first as it was, with the keyboard on its entries.
       await openArtifact(browser, "a:release", "Artifact release");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      await press(browser, ["Escape"], async () => (await layout()).pane !== null && await entriesFocused(browser), "Esc showed the Pane, the keyboard on its entries");
+      const back = await layout();
+      assert.ok(back.divider && Math.abs(back.pane! - shown.pane!) <= 1, `the Pane at the width it had: ${JSON.stringify({ shown, back })}`);
+      assert.deepEqual(await held(), before, "its search, selection and expanded branches as they were");
 
-      // The switch shows it again, as it was.
+      // The switch hides it and shows it again, as it was.
+      await toggle().click();
+      await waitFor(browser, async () => (await layout()).pane === null, "the switch hid the Pane");
       await toggle().click();
       await waitFor(browser, async () => (await layout()).pane !== null, "the switch showed the Pane");
       const again = await layout();
       assert.ok(again.divider && Math.abs(again.pane! - shown.pane!) <= 1, `the Pane at the width it had: ${JSON.stringify({ shown, again })}`);
       assert.equal(await toggle().getAttribute("aria-pressed"), "true", "the switch reads as on again");
-      const after = await branch(browser, "repo  master");
-      assert.deepEqual([after?.selected, after?.expanded, after?.chips.map((chip) => chip.filled)], [before?.selected, before?.expanded, before?.chips.map((chip) => chip.filled)],
-        "its selection and expanded branch as they were");
+      assert.deepEqual(await held(), before, "its search, selection and expanded branches as they were again");
 
       // The palette's command hides it too; / shows it first and focuses its search.
       await press(browser, [primaryModifier, "k"], () => browser.execute(() => !!document.querySelector('[aria-label="Command palette"][data-state="open"]')), "the palette open");
       await choosePaletteCommand(browser, "Show or hide the Pane");
       await press(browser, ["Enter"], async () => (await layout()).pane === null, "the palette's command hid the Pane");
       await press(browser, ["/"], async () => (await layout()).pane !== null && await browser.$(SEARCH).isFocused(), "/ showed the Pane and focused its search");
+    },
+  ),
+  // UX journey: J-HELP; UX edges: E-HELP-OPEN E-HELP-CLOSE
+  scenario<Record<string, never>>(
+    "navigation-help-review",
+    "lists the keys of a Human review with ? while it has focus, and closes them with Esc",
+    async () => ({ fixture: await create(), args: ["review"], data: {} }),
+    async (browser) => {
+      const helpOpen = () => browser.$('[role="dialog"].help').isExisting();
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "the waiting review open at launch");
+      await browser.$('[aria-label="Human review"]').click();
+      await press(browser, ["?"], helpOpen, "the review's keys");
+      const shown = await shortcuts(browser);
+      for (const [keys, action] of [
+        ["c", /^Claim to review$/], ["u", /^Release the claim$/], ["g / r", /^Open the GREEN or the RED form$/],
+        [shortcutLabel("Ctrl+S"), /^Submit$/], ["t", /^Show or hide Debug$/], [shortcutLabel("Ctrl+K"), /^Command palette$/],
+      ] as const) {
+        assert.ok(shown.some((entry) => entry.keys === keys && action.test(entry.action)), `the review's Help pairs ${keys} with ${action}: ${JSON.stringify(shown)}`);
+      }
+      assert.ok(!shown.some((entry) => entry.keys === "m"), "no graph keys");
+      assert.deepEqual(await helpMarks(browser), [], "no marks for a review");
+      await press(browser, ["Escape"], async () => !(await helpOpen()), "the review's keys closed");
+    },
+  ),
+  // UX journeys: J-HELP J-MAIN-CURRENT; UX edges: E-HELP-OPEN E-HELP-CLOSE
+  scenario<Record<string, never>>(
+    "navigation-help-current",
+    "pairs each of a Current's marks with what verify would do, with ? on its graph",
+    async () => {
+      const fixture = createGraph();
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      const helpOpen = () => browser.$('[role="dialog"].help').isExisting();
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master", "the Current shown");
+      await graphShown(browser, "a:release");
+      await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
+      await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
+      await press(browser, ["?"], helpOpen, "the Current's keys and marks");
+      assert.deepEqual(await helpMarks(browser), CURRENT_MARKS, "what verify would do, each mark with its word");
+      const shown = await shortcuts(browser);
+      assert.ok(shown.some((entry) => entry.keys === "m" && /^Minimize or expand a whole$/.test(entry.action)), `the graph's keys: ${JSON.stringify(shown)}`);
+      await press(browser, ["Escape"], async () => !(await helpOpen()), "the Current's keys closed");
     },
   ),
 ];

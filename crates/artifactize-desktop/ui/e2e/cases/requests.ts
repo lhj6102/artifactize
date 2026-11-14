@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, signoff } from "../fixture.ts";
 import { fill, press } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-import { requestState, reviewing } from "../human-review.ts";
+import { requestState, showDebug, reviewing } from "../human-review.ts";
 import { MAIN, mainTitle } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, primaryModifier } from "../platform.ts";
@@ -53,6 +53,7 @@ export const scenarios: Scenario[] = [
     async () => prepareReview(),
     async (browser, { fixture }) => {
       const { human, exists } = opening(browser, signoff(fixture).id);
+      await showDebug(browser);
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await exists(), "the waiting review open at launch");
       await human().$("button*=Claim").waitForEnabled({ timeout: 15000 });
       await human().click();
@@ -88,6 +89,7 @@ export const scenarios: Scenario[] = [
       const id = signoff(fixture).id;
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review" && await human().isExisting(), "the waiting review open at launch");
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).includes("claimed by bob"), "bob's claim shown");
       // Taken: the review names who holds it beside its stage and offers no Claim button.
       await waitFor(browser, async () => (await human().$(".claimant").isExisting()) && (await human().$(".claimant").getText()) === "bob"

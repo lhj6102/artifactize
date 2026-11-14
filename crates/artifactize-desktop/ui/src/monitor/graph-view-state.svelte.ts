@@ -10,6 +10,8 @@ export class GraphViewState {
   initialized = $state(false);
   /** The first view showed the whole graph; from then on only the person moves the camera. */
   fitted = $state(false);
+  /** The canvas grid's cell at zoom 1, in screen pixels, as the --grid token sets it. */
+  cell = $state(24);
 }
 
 export const [getGraphViewState, setGraphViewState] = createContext<GraphViewState>();

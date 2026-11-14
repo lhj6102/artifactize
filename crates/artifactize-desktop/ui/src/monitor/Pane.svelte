@@ -119,15 +119,12 @@
                 >{#if branch.name}<span class="project">{branch.project} /</span> <span class="branch-name">{branch.name}</span
                   >{:else}<span class="branch-name">{branch.project}</span>{/if}</span
               >
-              {#if !open}
+              <!-- Folded, the newest Run's status under the name; a branch without Runs says nothing. -->
+              {#if !open && newest?.kind === "run"}
                 <span class="latest">
-                  {#if newest?.kind === "run"}
-                    <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
-                    <span class="status {tone(newest.mark.status)}">{newest.status}</span>
-                    <span class="age">{newest.age}</span>
-                  {:else}
-                    <span class="none">No Runs yet</span>
-                  {/if}
+                  <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
+                  <span class="status {tone(newest.mark.status)}">{newest.status}</span>
+                  <span class="age">{newest.age}</span>
                 </span>
               {/if}
             </button>
@@ -291,10 +288,6 @@
     color: var(--ink-2);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
-  }
-  .latest .none {
-    grid-column: 1 / -1;
-    color: var(--ink-2);
   }
   /* A star is quiet until it is on; on, it carries the amber of attention. */
   /* The star icon in faint ink until on, then the filled star in ink. */

@@ -8,7 +8,7 @@ import type { Light, Shape } from "../ipc/client";
 import { ICONS, LIGHTS } from "../shell/icons";
 import { BLOCKING, type Point } from "./graph";
 import { NODE } from "./layout";
-import { BOX } from "./parts";
+import { BOX, partsCount } from "./parts";
 
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
@@ -28,6 +28,10 @@ const RING = 2;
 const NODE_PAD = 12;
 const NODE_PAD_END = 10;
 const NODE_GAP = 8;
+/** How far a minimized whole's second outline sits behind it, down and right. */
+const STACK = 3;
+/** A whole's box face: the panel's colour at this opacity. */
+const WHOLE_FACE = 0.4;
 /** The icon set's own box, in which its shapes are drawn (icons.ts). */
 const ICON_BOX = 12;
 /** The smallest font, in device-independent pixels, at which a name is still painted. */
@@ -128,7 +132,8 @@ export function hit(at: Scene, point: Point): string | null {
 }
 
 /** What to paint: the graph's lights, the camera, the canvas's size and pixel ratio, whether
- * the Artifacts are painted as boxes, and the copies that show the opened Artifact. */
+ * the Artifacts are painted as boxes, the copies that show the opened Artifact, and the
+ * minimized wholes by key with how many parts each holds. */
 export type Paint = {
   graph: Shape;
   viewport: Viewport;
@@ -137,6 +142,7 @@ export type Paint = {
   ratio: number;
   boxes: boolean;
   opened: ReadonlySet<string>;
+  minimized: ReadonlyMap<string, number>;
 };
 
 /** The graph's edges by the numbers of their ends in a scene, with their lights. */
@@ -240,11 +246,17 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const blocks = new Map<Light, Path2D>();
   const outlines = new Map<Light, Path2D>();
   const faces = new Path2D();
+  /** A whole's box: the panel's face at 40%, behind its parts. */
+  const boxFaces = new Path2D();
+  /** A minimized whole's second outline behind it, for the parts it holds. */
+  const stacked = new Path2D();
   const neutral = new Path2D();
+  /** Each whole's Minimize or Expand control at its title row's end. */
+  const toggles: { icon: "minus" | "add"; x: number; y: number }[] = [];
   const strips = new Map<Light, Path2D>();
   const ports = new Path2D();
   const marks: { light: Light; x: number; y: number }[] = [];
-  const names: { x: number; y: number; width: number; text: string; tally: string; whole: boolean }[] = [];
+  const names: { x: number; y: number; width: number; text: string; count: string; tally: string; whole: boolean }[] = [];
   const add = (into: Map<Light, Path2D>, light: Light) => {
     let path = into.get(light);
     if (!path) into.set(light, (path = new Path2D()));
@@ -261,15 +273,25 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       else add(blocks, light).rect(x, y, w, h);
       continue;
     }
-    // A node's face, or a whole's title row, with the strip in its status's colour below it.
+    // A node's face, or a whole's title row, with the strip in its status's colour below it; a
+    // whole, boxed or minimized, ends its title row with its control.
+    const folded = what.minimized.get(at.ids[number]);
     const row = whole ? Math.min(BOX.header * zoom, h) : h;
-    if (!whole) faces.roundRect(x, y, w, h, radius);
+    if (whole) boxFaces.roundRect(x, y, w, h, radius);
+    else faces.roundRect(x, y, w, h, radius);
+    if (folded !== undefined) stacked.roundRect(x + STACK * zoom, y + STACK * zoom, w, h, radius);
     neutral.roundRect(x, y, w, h, radius);
     add(strips, light).rect(x, y + row - strip * zoom, w, strip * zoom);
     marks.push({ light, x: x + NODE_PAD * zoom, y: y + row / 2 - (icon * zoom) / 2 });
     const start = (NODE_PAD + icon + NODE_GAP) * zoom;
+    let end = NODE_PAD_END * zoom;
+    if (whole || folded !== undefined) {
+      toggles.push({ icon: whole ? "minus" : "add", x: x + w - end - icon * zoom, y: y + row / 2 - (icon * zoom) / 2 });
+      end += (icon + NODE_GAP) * zoom;
+    }
     const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
-    if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - NODE_PAD_END * zoom, text: node.name, tally, whole });
+    const count = folded === undefined ? "" : partsCount(folded);
+    if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - end, text: node.name, count, tally, whole });
     if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
       const [middle, half] = [y + h / 2, port / 2];
       if (inward[number]) {
@@ -293,8 +315,15 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   }
   if (!legible) return;
   context.fillStyle = token("--surface-panel");
-  context.fill(faces);
+  context.globalAlpha = WHOLE_FACE;
+  context.fill(boxFaces);
+  context.globalAlpha = 1;
+  context.fillStyle = token("--surface-app");
+  context.fill(stacked);
   context.strokeStyle = token("--line-node");
+  context.stroke(stacked);
+  context.fillStyle = token("--surface-panel");
+  context.fill(faces);
   context.stroke(neutral);
   for (const [light, path] of strips) {
     context.fillStyle = colour(light);
@@ -302,16 +331,16 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   }
   context.fillStyle = token("--edge");
   context.fill(ports);
-  // Each status's icon, drawn from the icon set's own shapes at the icon's box.
+  // Each status's icon, drawn from the icon set's own shapes at the icon's box, and each
+  // whole's control in secondary ink.
   const scale = (icon * zoom) / ICON_BOX;
   context.lineCap = "round";
   context.lineJoin = "round";
-  for (const mark of marks) {
-    const shade = colour(mark.light);
+  const drawIcon = (name: keyof typeof ICONS, shade: string, x: number, y: number) => {
     context.save();
-    context.translate(mark.x, mark.y);
+    context.translate(x, y);
     context.scale(scale, scale);
-    for (const shape of ICONS[LIGHTS[mark.light].icon]) {
+    for (const shape of ICONS[name]) {
       const path = new Path2D(shape.d);
       context.setLineDash(shape.dash ?? []);
       if (shape.fill) {
@@ -325,7 +354,9 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       }
     }
     context.restore();
-  }
+  };
+  for (const mark of marks) drawIcon(LIGHTS[mark.light].icon, colour(mark.light), mark.x, mark.y);
+  for (const toggle of toggles) drawIcon(toggle.icon, token("--ink-2"), toggle.x, toggle.y);
   const face = token("--font");
   context.textBaseline = "middle";
   for (const name of names) {
@@ -344,7 +375,15 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     context.beginPath();
     context.rect(name.x, name.y - font * zoom, room, 2 * font * zoom);
     context.clip();
-    context.fillText(cut(context, name.text, room), name.x, name.y);
+    const text = cut(context, name.text, room);
+    context.fillText(text, name.x, name.y);
+    // A minimized whole says how many parts it holds after its name.
+    if (name.count) {
+      const after = name.x + context.measureText(text).width + NODE_GAP * zoom;
+      context.font = `400 ${label * zoom}px ${face}`;
+      context.fillStyle = token("--ink-2");
+      context.fillText(name.count, after, name.y);
+    }
     context.restore();
   }
 }
@@ -364,7 +403,7 @@ export class Picture {
     const { viewport, ratio, width, height } = what;
     const held = this.#held;
     const same = held && held.at === at && held.what.graph === what.graph && held.what.boxes === what.boxes
-      && held.what.width === width && held.what.height === height && held.what.ratio === ratio;
+      && held.what.width === width && held.what.height === height && held.what.ratio === ratio && held.what.minimized === what.minimized;
     const scale = held ? viewport.zoom / held.viewport.zoom : 1;
     // Where the image's top-left corner lands on the canvas, in canvas pixels.
     const [x, y] = held
@@ -392,18 +431,23 @@ export class Picture {
     return painted;
   }
 
-  /** A ring around every copy that shows the opened Artifact, as its elements draw it. */
+  /** Every copy that shows the opened Artifact: its own outline turned 2px and neutral-bright,
+   * as its elements draw it. */
   #ring(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     if (what.opened.size === 0) return;
     const { viewport, ratio } = what;
+    const style = getComputedStyle(document.documentElement);
+    const corner = Number.parseFloat(style.getPropertyValue("--radius-control")) || 0;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--outline-selected").trim();
+    context.strokeStyle = style.getPropertyValue("--outline-selected").trim();
     context.lineWidth = RING;
     at.ids.forEach((key, number) => {
       if (!what.opened.has(key)) return;
       const place = at.places[number];
       const [x, y] = [place.x * viewport.zoom + viewport.x, place.y * viewport.zoom + viewport.y];
-      context.strokeRect(x - RING, y - RING, place.width * viewport.zoom + 2 * RING, place.height * viewport.zoom + 2 * RING);
+      context.beginPath();
+      context.roundRect(x, y, place.width * viewport.zoom, place.height * viewport.zoom, Math.min(corner * viewport.zoom, corner));
+      context.stroke();
     });
   }
 }

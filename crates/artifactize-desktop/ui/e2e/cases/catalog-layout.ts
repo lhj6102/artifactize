@@ -139,6 +139,20 @@ export const scenarios: Scenario[] = [
         const canvas = document.querySelector(".monitor .graph .canvas")!.getBoundingClientRect();
         return { x: Math.round(canvas.left + camera.e + 84 * camera.a), y: Math.round(canvas.top + camera.f + 22 * camera.d) };
       });
+      // Too far out for names, each Artifact is a block of its status's colour: the first one's
+      // place on the picture is GREEN, as the CLI saved it.
+      const block = await browser.execute((at) => {
+        const paint = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
+        const context = paint?.getContext("2d");
+        if (!paint || !context) return null;
+        const box = paint.getBoundingClientRect();
+        const ratio = paint.width / box.width;
+        const [red, green, blue] = context.getImageData(Math.round((at.x - box.left) * ratio), Math.round((at.y - box.top) * ratio), 1, 1).data;
+        return { painted: [red, green, blue], token: getComputedStyle(document.documentElement).getPropertyValue("--green").trim() };
+      }, corner);
+      assert.ok(block, "the large graph is painted");
+      const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(block.token);
+      assert.deepEqual(block.painted, hex?.slice(1).map((part) => Number.parseInt(part, 16)), `the first Artifact is a block in GREEN's colour: ${JSON.stringify(block)}`);
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
       await aside(browser).$("button*=Close").click();

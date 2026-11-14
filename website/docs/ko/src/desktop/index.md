@@ -52,7 +52,7 @@ Pane의 항목은 세로로 한 줄씩 배치됩니다. 맨 위에 검색 칸, �
 맨 아래에 사람의 승인이 필요한 리뷰가 있습니다. Pane과
 Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무엇이 표시되든 직접 조절한 비율이 그대로 유지됩니다.
 
-헤더의 **Pane** 버튼이나 Ctrl+B, 팔레트의 **Show or hide the Pane**을 쓰면 Pane과 구분선이 숨겨집니다. Main area는 보던 화면 그대로 창 너비 전체를 차지하고, 버튼 아래의 선이 사라집니다. 같은 방법으로 Pane을 다시 보여 주면 원래 너비로 돌아오며, 검색어와 선택, 펼친 브랜치도 그대로입니다. 키보드 초점이 Pane에 있을 때 숨기면 초점은 Main area로 옮겨 갑니다. `/`나 Pane으로 돌아가는 Esc는 Pane을 먼저 보여 줍니다. Pane을 숨겨도 그래프와 Detail, Human 리뷰는 모두 그대로 쓸 수 있습니다.
+Ctrl+B를 누르거나 헤더의 **Pane** 버튼을 누르면 Pane이 숨겨지고 Main area가 창 너비 전체를 씁니다. 다시 누르면 Pane이 원래 너비로 돌아옵니다. Pane이 숨겨져 있으면 키보드 초점은 Main area에 있고, `/`나 Pane으로 돌아가는 Esc를 누르면 Pane이 먼저 나타납니다.
 
 ### 브랜치 {#branches}
 
@@ -74,7 +74,7 @@ Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무
 더 오래된 Run을 가져옵니다. 항목을 클릭하면 회색의 둥근 배지로 표시되며 Main area에 나옵니다. 브랜치는
 몇 개든 펼칠 수 있으며, `monitor`나 `graph`로 시작할 때 지정한 브랜치는 펼친 채로 시작합니다.
 
-브랜치 이름 끝의 별을 클릭하면 별표를 추가하며, 별표를 단 동안에는 별이 채워져 보입니다. 별표가 있는 브랜치가 먼저 나오고,
+브랜치 이름 끝의 별을 클릭하면 즐겨찾기에 추가되어 별이 채워집니다. 별표가 있는 브랜치가 먼저 나오고,
 두 그룹은 각각 검색 순서대로 정렬됩니다. 별표는 앱을 다시 열어도 남아 있습니다.
 별표를 떼려면 채워진 별을 다시 클릭하세요.
 
@@ -141,7 +141,7 @@ Current는 다시 고를 때, 그 브랜치의 Run이 끝날 때, **Refresh**나
 
 ### 그래프 {#graphs}
 
-노드는 상태를 두 곳에 같은 색으로 보여 줍니다. 이름 앞의 표시와 아래쪽의 띠입니다. 노드의 테두리와 바탕은 중립적인 색으로 남고, 연 Artifact는 테두리만 밝아집니다. 이름 뒤에는 eval 중 GREEN인 수와 전체 수(`2/3`)가, Current에서는 재사용될 수가 나옵니다. 각 상태는 Pane, 칩, 행, 그래프 어디서나 같은 색과 고유한 표시를 쓰며, **Help**(`?`)에서 표시마다 그 뜻을 볼 수 있습니다. 간선은 중립적인 색입니다. 다만 RED, ERROR, blocked인 Artifact에서 나가는 간선은 그 Artifact의 색으로 그려지므로, 무엇이 blocked인 Artifact를 막고 있는지 보입니다. 관계는 입력에서 사용처로 이어집니다. 입력 노드 오른쪽의 사각형에서 나와 사용처 노드 왼쪽의 삼각형으로 들어갑니다. 결과가 도착하거나 스캔으로 할 일이 정해지면 표시, 띠, 개수, 간선이 그 자리에서 바뀝니다.
+노드는 상태를 표시와 색 띠로 보여 주고, 이름 뒤에 eval 중 GREEN인 수(`2/3`, Current에서는 재사용될 수)를 보여 줍니다. 각 표시의 뜻은 **Help**(`?`)에서 볼 수 있습니다. 간선은 입력에서 사용처로 이어지며, RED, ERROR, blocked인 Artifact에서 나가는 간선만 색이 있고 나머지는 회색입니다. 결과가 도착하면 노드와 간선이 그 자리에서 바뀝니다.
 
 Run의 그래프와 Current 그래프는 모두 마우스로 조작합니다. Tab으로 이름 붙은
 Artifact에 초점을 옮기고, 그 위에서 Enter를 누르면 클릭과 같은 동작을 합니다. Ctrl+F로
@@ -164,7 +164,7 @@ Artifact의 Detail이 열리고, 부분을 클릭하면 그 부분의 Detail이 
 부분은 각 Artifact 안에 하나씩 그려집니다. 그중 하나를 열면 모든 사본이 함께 강조되고, Detail에
 몇 번 그려졌는지와 어느 Artifact 안에 있는지가 나옵니다.
 
-상자 오른쪽 위에는 **Minimize** 버튼이 있고, Tab으로 상자 다음에 이 버튼으로 갈 수 있으며, 툴팁이 단축키 `m`을 알려 줍니다. 누르면
+상자 오른쪽 위에는 **Minimize** 버튼이 있습니다. Tab을 눌러 상자 다음에 있는 이 버튼으로 초점을 옮길 수 있으며, 툴팁에서 단축키 `m`을 확인할 수 있습니다. 누르면
 부분들을 숨기고 그 Artifact를 보통 노드 크기로 줄여 표시, 이름, 부분 개수, **Expand** 버튼을 보여 줍니다. 숨긴 부분에
 이어진 간선은 이 노드에 이어지고, 숨긴 부분끼리 잇는 간선은 그리지 않습니다. 이 노드도 다른 노드처럼
 Detail을 열 수 있고, 찾기 칸에는 숨긴 Artifact도 그대로 나옵니다. **Expand**를 누르면 상자가 다시
@@ -195,10 +195,8 @@ Run의 그래프나 Current가 보일 때 도구 줄의 **Find**를 누르거나
 
 ### Detail {#detail}
 
-Artifact를 클릭하면 그래프 도구 줄 아래, 그래프 오른쪽 끝에 붙은 패널로 그 **Detail**이 열립니다. Detail 왼쪽으로 그래프가 계속 보이며, Detail은 Pane 옆에 붙지 않습니다. 테두리가 밝아진 노드와 Detail 제목은 같은 Artifact를 가리킵니다.
-다른 Artifact를 클릭하면
-그 Artifact의 Detail이 표시됩니다. 그래프
-배경, **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는
+Artifact를 클릭하면 그래프 오른쪽 끝에 그 **Detail**이 열립니다. 다른 Artifact를 클릭하면 그 Artifact의 Detail로 바뀌고, 그래프
+배경을 클릭하거나 **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는
 것이 없을 때만 Detail을 닫고, 나머지는 [리뷰에서 Esc를 누를 때](#human-reviews)처럼 먼저 한 단계씩 되돌아갑니다. Detail의 왼쪽 가장자리를 드래그해, 내용을 읽기 편하면서도 그래프가 조금 보이는 너비로 조절하세요. 그 폭은 다음 실행에서도 유지됩니다.
 
 Detail은 섹션으로 이루어지며, 각 섹션 위에는 이름만 적힌 머리 행이 있습니다. 머리 행을 클릭하거나 초점을 둔 채 Enter나 Space를 누르면 섹션이 그 행만 남도록 접히거나 다시 펼쳐집니다. 섹션은 이름별로 마지막 상태를 기억해, 나중에 여는 모든 Detail과 다음 실행에서도 그대로입니다. 바꾸기 전까지는 Detail을 여는 목적인 섹션(Artifact의 **Evals**, **Tools**, **Path**, eval의 **Result**, Run의 **Outcome**과 **Waits for**)은 펼쳐져 있고, 가끔 읽는 섹션(**Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**, **Provenance**, **Debug**, Run의 **Technical**)은 접혀 있습니다.
@@ -312,7 +310,7 @@ Settings는 화면 위에 모달 창으로 열립니다. Esc를 누르거나 **C
 **Providers**, **Remote**, **Limits** 세 개이며, 탭 목록에 초점이 있을 때 ←와 →로 차례로 오갈 수 있습니다.
 
 **Providers** 탭 왼쪽에는 기본 provider(Codex, Claude Agent, OpenAI, Anthropic, Gemini)가 차례로 나오고, 그 아래에
-직접 추가한 커스텀 provider의 이름과 **+ Custom provider**가 나옵니다. 하나를 고르면 오른쪽에 그
+직접 추가한 커스텀 provider의 이름과 **Custom provider**가 나옵니다. 하나를 고르면 오른쪽에 그
 provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 수 있습니다.
 
 - **Codex:** 계정 상태를 사실 항목으로 보여 줍니다. 로그인하지 않은 상태, artifactize가 저장한 토큰과 만료 시각, 읽기 전용
@@ -338,13 +336,13 @@ provider의 설정이 나오고, **List models**로 제공하는 모델을 볼 �
   값 자체는 보여 주지 않습니다. 키를 붙여 넣고 **Save key**를 누르면 `artifactize login`처럼
   저장하고, **Remove saved key**로 지웁니다. 환경 변수가 설정되어 있으면 그 키를 먼저 씁니다. 이때
   함께 저장한 키는 보관되지만 쓰이지 않는다고 표시되며, 지울 수도 있습니다.
-- **커스텀 provider:** **+ Custom provider**를 누르면 빈 양식이 열립니다. 이름을 정하고, 종류로 기본 provider의 별칭(그 provider의 로그인이나 키를 씀)과
+- **커스텀 provider:** **Custom provider**를 누르면 빈 양식이 열립니다. 이름을 정하고, 종류로 기본 provider의 별칭(그 provider의 로그인이나 키를 씀)과
   엔드포인트(API, Base URL, 키(선택 사항)) 중 하나를 고른 다음 **Save**를 누르세요. 필요한 만큼 추가할 수 있고, 목록에서 하나를 고르면 양식에서 바꾸거나
   **Remove provider**로 삭제할 수 있습니다. 엔드포인트에 저장한 키는 보여 주지 않습니다. 키 칸을 비워 두면
   저장된 키를 그대로 쓰고, **No key**를 체크하면 키 없이 저장합니다. eval에서는 `backend`에 이 이름을
   씁니다. [커스텀 provider](../features/agent.md#custom-providers)를 보세요.
 
-**Remote** 탭에서는 리뷰 저장소 연결을 관리합니다. 로그인하지 않았을 때는 저장소 URL, 공유 수준, 토큰 칸과 **Sign in to the store**가 나옵니다. 로그인하면 저장소 URL과 공유 수준을 사실 항목으로, 상태를 한 줄(로그인됨과 리뷰어, 또는 푸시나 확인 결과)로 보여 주고, **Check status**, **Push (dry run)**, **Push results**, **Sign out of the store**가 나옵니다. 로그아웃하면 입력 칸이 다시 나옵니다. **Summary**는 호출 세부 사항,
+**Remote** 탭에서는 리뷰 저장소 연결을 관리합니다. 로그인하지 않았을 때는 저장소 URL, 공유 수준, 토큰 칸과 **Sign in to the store**가 나옵니다. 로그인하면 저장소 URL과 공유 수준을 사실 항목으로, 상태를 한 줄(로그인 상태와 리뷰어, 오늘 이 머신에서 푸시한 결과 수, 또는 푸시나 확인 결과)로 보여 주고, **Check status**, **Push (dry run)**, **Push results**, **Sign out of the store**가 나옵니다. 로그아웃하면 입력 칸이 다시 나옵니다. **Summary**는 호출 세부 사항,
 캡처한 출력, 도구 호출 이력을 빼고, **Full**은 저장된 실행 기록도 보냅니다.
 다만 Summary에도 리뷰 메타데이터, 추가 결과 필드, 선언된 Runtime 명령과
 인자, Agent 실행 경로 메타데이터는 포함되어 공유됩니다. 그 선언에는 경로나 민감한 리터럴이 들어 있을 수 있으며, Summary를 골라도 이런 정보가 자동으로 가려지지는 않습니다. 팀에

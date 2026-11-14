@@ -31,6 +31,7 @@ const GRAPH: Section = {
     ["Ctrl+F", "Find an Artifact or an eval"],
     ["m", "Minimize or expand a whole"],
     ["t", "Show or hide Debug"],
+    ["Home / End", "Top or bottom of an Agent log"],
     ["Esc", "Close the Detail, then back to the Pane"],
   ],
 };

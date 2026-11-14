@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, finishTalk, type Fixture, launched, requests, signoff, slowTool, type SignoffDefinition } from "../fixture.ts";
 import { claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { afterRender, fill, press } from "../keys.ts";
+import { afterRender, fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
@@ -197,6 +197,34 @@ export const scenarios: Scenario[] = [
       await press(browser, ["u"], async () => signoff(fixture).claim === null && await claimable(browser), "released");
       await press(browser, ["c"], () => signoff(fixture).claim?.reviewer === "alice", "claimed again");
       await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
+    },
+  ),
+
+  // UX edges: E-HUMAN-RELEASE E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT
+  scenario<null>(
+    "monitor-release-editing",
+    "releases the claim while its form is filled in, by Release claim, leaving the form, and keeps the draft for the next claim; u typed in a field is text",
+    () => atRepo(),
+    async (browser, { fixture }) => {
+      const { human, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      await fill(browser, "#field-comment", "half-checked");
+      // u in the field is a letter of the comment, not a release.
+      await browser.$("#field-comment").click();
+      await typeText(browser, "u");
+      await browser.waitUntil(async () => (await browser.$("#field-comment").getValue()) === "half-checkedu", { timeout: 15000, timeoutMsg: "u typed into the comment" });
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "u in a field releases nothing");
+      // Release claim, from the Result's row of actions, while editing.
+      await human().$("button=Release claim").click();
+      await browser.waitUntil(async () => signoff(fixture).claim === null && !(await browser.$("#field-comment").isExisting()) && await claimable(browser),
+        { timeout: 15000, timeoutMsg: "released, the form left" });
+      // Claimed again, the same verdict opens the draft as it was left.
+      await human().click();
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "claimed again");
+      await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "half-checkedu",
+        "the kept draft");
+      assert.equal(signoff(fixture).status, "DEFERRED", "nothing was submitted");
     },
   ),
 

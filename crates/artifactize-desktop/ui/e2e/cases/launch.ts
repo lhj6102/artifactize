@@ -2,7 +2,7 @@
 // what each way of starting the app opens first: nothing, a branch's newest entry, the newest
 // waiting review or a named one.
 import assert from "node:assert/strict";
-import { requestState } from "../human-review.ts";
+import { requestState, showDebug } from "../human-review.ts";
 import { addRepository, addWorktrees, create, orderRuns, requests, signoff, type Fixture } from "../fixture.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -179,6 +179,7 @@ export const scenarios: Scenario[] = [
     async (browser, { data: { ids } }) => {
       const newest = ids[2];
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${newest} · DEFERRED · unclaimed`),
         "the newest waiting review opened");
       assert.equal(await nativeTitle(browser), "Artifactize");
@@ -200,6 +201,7 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { data: { ids } }) => {
       await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
+      await showDebug(browser);
       await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${ids[1]} · DEFERRED · unclaimed`),
         "the named review opened");
       assert.deepEqual((await waiting(browser)).rows.map((row) => row.id), [...ids].reverse(), "the newest one stays at the top, not opened");

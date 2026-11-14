@@ -1,6 +1,7 @@
 <script lang="ts">
   // An Artifact's own Human tools in its branch's worktree as it is now, whichever Run is shown,
-  // each a small button led by the run icon, then, from the first run on, their Tool log. A click
+  // each a small button led by the run icon, then, from the first run on, their Tool log; no
+  // Tools section for an Artifact that declares none. A click
   // runs the tool at once, with no review and no claim, and unfolds a Tool log that was folded;
   // nothing it does is recorded as a review's evidence. What ended well is said by the log's end
   // line; only a failure is said here.
@@ -37,13 +38,11 @@
   }
 </script>
 
+<!-- A section with nothing to hold is not shown: an Artifact without Human tools has none. -->
+{#if tools.error || declared.length > 0}
 <Section name="Tools" label="Tools of {tools.artifact}">
   {#if tools.error}
     <p class="error">{tools.error}</p>
-  {:else if tools.tools === null}
-    <p class="muted">Loading…</p>
-  {:else if declared.length === 0}
-    <p class="muted">{tools.artifact} declares no Human tools.</p>
   {:else}
     {#each declared as tool (tool.name)}
       <div class="tool">
@@ -59,6 +58,7 @@
     <p class="error" role="status">{tools.notice.text}</p>
   {/if}
 </Section>
+{/if}
 {#if tools.log.length > 0}
   <Section name="Tool log">
     <ToolLog entries={tools.log} />
@@ -87,8 +87,7 @@
     font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
-  .description,
-  .muted {
+  .description {
     color: var(--ink-2);
   }
   .reason,
@@ -108,7 +107,6 @@
     color: var(--running);
   }
   .busy,
-  .muted,
   .error {
     margin: 6px 0 0;
     overflow-wrap: anywhere;

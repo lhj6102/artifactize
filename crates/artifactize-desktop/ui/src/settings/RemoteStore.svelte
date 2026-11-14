@@ -12,6 +12,13 @@
     event.preventDefault();
     void s.remoteLogin();
   }
+  /** What this machine pushed since the local day began, by the pushes the status lists. */
+  const pushedToday = $derived.by(() => {
+    if (s.remote?.state !== "configured") return 0;
+    const today = new Date();
+    const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    return s.remote.pushes.filter((push) => (push.at ?? 0) >= midnight).reduce((sum, push) => sum + push.count, 0);
+  });
   /** Signed in: the store's URL and share level as facts, without the fields that sign in. */
   const signedIn = $derived(s.remote?.state === "configured" && s.remote.connection.state === "signedIn");
 </script>
@@ -32,7 +39,7 @@
       {:else if s.remoteNotice}
         <dd class="notice" role="status">{s.remoteNotice}</dd>
       {:else}
-        <dd class="notice">Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span></dd>
+        <dd class="notice">Signed in · <span data-testid="remote-principal">{connection.principal} (scopes: {connection.scopes.join(", ")})</span> · <span data-testid="remote-pushed">{pushedToday} pushed today</span></dd>
       {/if}
     </dl>
     <div class="row">

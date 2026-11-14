@@ -244,12 +244,11 @@
     const slack = 0.5 / zoom;
     return bounds.x >= left - slack && bounds.y >= top - slack && bounds.x + bounds.width <= right + slack && bounds.y + bounds.height <= bottom + slack;
   });
-  /** The grid's cell on the screen, from the --grid token. */
-  let cell = $state(24);
+  /** Read the grid's cell from the --grid token once the canvas is there. */
   const grid: Attachment<HTMLElement> = (canvas) => {
-    cell = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid")) || cell;
+    v.cell = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid")) || v.cell;
   };
-  const gridSize = $derived(cell * camera.current.zoom);
+  const gridSize = $derived(v.cell * camera.current.zoom);
 
   /** Zoom in or out by one step, as the tool strip's buttons do. */
   function zoomBy(factor: number) {
@@ -263,6 +262,8 @@
     void flow.setViewport({ x: v.area.width / 2 - point.x * zoom, y: v.area.height / 2 - point.y * zoom, zoom }, { duration: 0 });
   }
 
+  /** The minimized wholes by key, with how many parts each holds. */
+  const hidden = $derived(new Map(drawn.filter((copy) => copy.minimized).map((copy) => [copy.key, copy.count])));
   /** The graph the large graph's picture paints: its edges between copies. */
   const picturing = $derived({ nodes: graph.nodes, edges: lines });
   /** The large graph's picture, painted around the view and moved as the camera pans. */
@@ -276,7 +277,16 @@
   const draw: Attachment<HTMLCanvasElement> = (canvas) => {
     const at = v.area;
     if (!at) return;
-    const what = { graph: picturing, viewport: camera.current, width: at.width, height: at.height, ratio: window.devicePixelRatio || 1, boxes: painted, opened: showing };
+    const what = {
+      graph: picturing,
+      viewport: camera.current,
+      width: at.width,
+      height: at.height,
+      ratio: window.devicePixelRatio || 1,
+      boxes: painted,
+      opened: showing,
+      minimized: hidden,
+    };
     const where = laid;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const show = (sharp: boolean) => {
@@ -509,9 +519,9 @@
     color: var(--ink-2);
     cursor: pointer;
   }
+  /* The pointer steps the icon's ink up; the face stays the group's. */
   .zoom button:hover {
     color: var(--ink);
-    background: var(--surface-panel);
   }
   .zoom button:focus-visible {
     outline: 2px solid var(--focus);

@@ -450,6 +450,7 @@ fn settings_command_probe() {
                 "principal": "alice-laptop",
                 "scopes": ["read", "publish"],
             },
+            "pushes": [],
         })
     );
     assert_eq!(call("remote_status", json!({})).unwrap(), status);

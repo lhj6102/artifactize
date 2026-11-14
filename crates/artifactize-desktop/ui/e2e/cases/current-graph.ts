@@ -236,7 +236,7 @@ Summarize {docs}."""
       await waitFor(browser, async () => (await browser.$(nodeAt("a:app")).getAttribute("aria-label")) === "app: reused", "app marked reused");
       await openArtifact(browser, "a:app", "Artifact app");
       assert.deepEqual(await evalRows(browser), [{ name: "alpha", status: "reused" }, { name: "beta", status: "reused" }]);
-      assert.equal(await browser.$(`${DETAIL} section[aria-label="Tools of app"]`).isExisting(), true, "its Tools section, here without tools");
+      assert.equal(await browser.$(`${DETAIL} section[aria-label="Tools of app"]`).isExisting(), false, "no Tools section for an Artifact without tools");
       await openTab(browser, "e:app/beta", { row: true });
       assert.deepEqual((await detail(browser))?.tabs.slice(1).map((tab) => [tab.name, tab.glyph]), [["alpha", "reused"], ["beta", "reused"]], "each eval's chip says it would be reused");
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("reused"), `beta's plan: ${JSON.stringify(await summary(browser))}`);

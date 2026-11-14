@@ -20,6 +20,12 @@ const signedIn: RemoteStatus = {
   share: "summary",
   tokenSource: "file",
   connection: { state: "signedIn", principal: "alice-laptop", scopes: ["read", "publish"] },
+  // Two pushes today, one two days back.
+  pushes: [
+    { at: Date.now() - 2 * 86400000, count: 9 },
+    { at: Date.now(), count: 2 },
+    { at: Date.now(), count: 3 },
+  ],
 };
 
 type Calls = { cmd: string; args: Record<string, unknown> }[];
@@ -145,7 +151,7 @@ describe("Settings", () => {
         "OpenAI",
         "Anthropic",
         "Gemini",
-        "+ Custom provider",
+        "Custom provider",
       ]),
     );
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
@@ -194,7 +200,7 @@ describe("Settings", () => {
   it("adds custom providers by name, keeps a saved endpoint key, lists their models and removes them", async () => {
     const calls = backend({});
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Custom provider" }));
     await fireEvent.input(screen.getByLabelText("Name"), { target: { value: "local" } });
     await fireEvent.input(screen.getByLabelText("Base URL"), { target: { value: "http://localhost:11434/v1" } });
     const key = screen.getByLabelText<HTMLInputElement>("Key");
@@ -216,7 +222,7 @@ describe("Settings", () => {
     expect(calls.filter((call) => call.cmd === "provider_custom_save")[1].args.key).toEqual({ kind: "keep" });
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false));
 
-    await fireEvent.click(screen.getByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Custom provider" }));
     await fireEvent.input(screen.getByLabelText("Name"), { target: { value: "work" } });
     await fireEvent.click(screen.getByLabelText("alias of a built-in provider"));
     await fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
@@ -324,7 +330,7 @@ describe("Settings", () => {
   it("asks the library to save a custom provider without a name, and shows its refusal", async () => {
     const calls = backend({});
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Custom provider" }));
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("A custom provider needs a name.");
     expect(calls.filter((call) => call.cmd === "provider_custom_save").map((call) => call.args.name)).toEqual([""]);
@@ -426,6 +432,7 @@ describe("Settings", () => {
     expect(token.value).toBe("");
     // Signed in: the store's URL and share level as facts, its status, and no fields that sign in.
     expect((await screen.findByTestId("remote-principal")).textContent).toBe("alice-laptop (scopes: read, publish)");
+    expect(screen.getByTestId("remote-pushed").textContent).toBe("5 pushed today");
     expect(screen.getByTestId("remote-status").textContent).toBe(STORE);
     expect(screen.queryByLabelText("Token")).toBeNull();
     expect(calls.filter((call) => call.cmd === "remote_login").at(-1)?.args).toEqual({ url: STORE, share: "full", token: TOKEN });

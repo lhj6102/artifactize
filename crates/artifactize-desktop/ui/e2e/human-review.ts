@@ -19,12 +19,19 @@ export function claimable(browser: WebdriverIO.Browser, selector = '[aria-label=
   }, selector);
 }
 
-/** The request's state as the review's Debug section says it (`Request {id} · {status} · …`),
- * unfolding Debug with a click on its header row when it is folded; "" without a review. */
-export async function requestState(browser: WebdriverIO.Browser, selector = '[aria-label="Human review"]'): Promise<string> {
+/** Unfold the review's Debug section with a click on its header row, once the review shows it;
+ * a Debug already unfolded is left as it is. */
+export async function showDebug(browser: WebdriverIO.Browser, selector = '[aria-label="Human review"]'): Promise<void> {
   const head = browser.$(selector).$("button.head=Debug");
-  if (!(await head.isExisting())) return "";
+  await head.waitForExist({ timeout: 15000, timeoutMsg: "the review's Debug section" });
   if ((await head.getAttribute("aria-expanded")) === "false") await head.click();
+  await browser.waitUntil(async () => (await browser.$(selector).$("button.head=Debug").getAttribute("aria-expanded")) === "true",
+    { timeout: 15000, timeoutMsg: "the review's Debug unfolded" });
+}
+
+/** The request's state as the review's unfolded Debug section says it (`Request {id} · {status}
+ * · …`); "" while Debug is folded or no review is shown. */
+export function requestState(browser: WebdriverIO.Browser, selector = '[aria-label="Human review"]'): Promise<string> {
   return browser.execute((query) => {
     const term = [...document.querySelectorAll(`${query} dt`)].find((dt) => dt.textContent?.trim() === "State");
     return term?.nextElementSibling?.textContent?.trim() ?? "";

@@ -254,7 +254,7 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data: { key, saved, shadowed, seen } }) => {
       const html = () => browser.execute(() => document.documentElement.outerHTML);
       await openSettings(browser);
-      const providers = ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "+ Custom provider"];
+      const providers = ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "Custom provider"];
       await browser.waitUntil(async () => JSON.stringify(await listed(browser)) === JSON.stringify(providers), {
         timeout: 15000,
         timeoutMsg: "the providers are listed",
@@ -386,7 +386,8 @@ export const scenarios: Scenario[] = [
           };
           if (request.method === "GET" && request.url === "/v1/models") {
             writeText(seen, request.headers.authorization ?? "");
-            json(200, { object: "list", data: [{ id: "local-model", object: "model", created: 0, owned_by: "e2e" }] });
+            // Anthropic's API names each model; OpenAI's has only its ID.
+            json(200, { object: "list", data: [{ id: "local-model", display_name: "Local Model", object: "model", created: 0, owned_by: "e2e" }] });
           } else if (request.method === "GET" && request.url === "/oai/v1/models") {
             writeText(alias, request.headers.authorization ?? "");
             json(200, { object: "list", data: [{ id: "alias-model", object: "model", created: 0, owned_by: "e2e" }] });
@@ -412,9 +413,9 @@ export const scenarios: Scenario[] = [
         assert.ok(!listing.stdout.includes(key), "the CLI never prints the endpoint key");
         return JSON.parse(listing.stdout).custom as Record<string, unknown>;
       };
-      /** + Custom provider, named `name`, saved after `fill` sets it up. */
+      /** Custom provider, named `name`, saved after `fill` sets it up. */
       const add = async (name: string, fill: () => Promise<void>) => {
-        await choose(browser, "+ Custom provider");
+        await choose(browser, "Custom provider");
         await browser.$("#custom-name").waitForExist({ timeout: 15000 });
         assert.equal(await browser.$("#custom-name").getValue(), "", "a new custom provider starts empty");
         await browser.$("#custom-name").click();
@@ -473,7 +474,12 @@ Review the agent folder."""
         await browser.$("#custom-url").click();
         await typeText(browser, root);
       });
-      assert.deepEqual(await listed(browser), ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "+ Custom provider"]);
+      assert.deepEqual(await listed(browser), ["Codex", "Claude Agent", "OpenAI", "Anthropic", "Gemini", "claude-local", "local", "work", "Custom provider"]);
+      // Each model by its name, its ID beside it.
+      await listModels(browser, "Local Model");
+      const models = await browser.execute(() => [...document.querySelectorAll('ul[aria-label="Models"] li')]
+        .map((item) => [item.firstChild?.textContent?.trim() ?? "", item.querySelector("code")?.textContent?.trim() ?? ""]));
+      assert.deepEqual(models, [["Local Model", "local-model"]], "the model's name with its ID beside it");
       assert.deepEqual(await custom(), {
         "claude-local": { kind: "endpoint", api: "anthropic", url: root, key: false },
         local: { kind: "endpoint", api: "openai-chat", url, key: true },
@@ -559,6 +565,10 @@ Review the agent folder."""
       await browser.waitUntil(() => browser.execute(() => document.querySelector('[aria-label="Remote store"] .notice [data-testid="remote-principal"]') !== null), { timeout: 15000, timeoutMsg: "the store is reachable" });
       await browser.$("button=Push (dry run)").click();
       await browser.waitUntil(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run reports its result" });
+      // A dry run pushes nothing: the status, read again, says nothing was pushed today.
+      await browser.$("button=Check status").click();
+      await browser.waitUntil(async () => (await browser.$('[data-testid="remote-pushed"]').isExisting()) && (await browser.$('[data-testid="remote-pushed"]').getText()) === "0 pushed today",
+        { timeout: 15000, timeoutMsg: "nothing pushed today" });
       await browser.$("button=Sign out of the store").click();
       await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "the store is signed out, its fields back" });
       assert.equal(await browser.$("#remote-token").getValue(), "", "the token field is empty");

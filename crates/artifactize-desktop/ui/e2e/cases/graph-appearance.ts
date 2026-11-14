@@ -31,7 +31,7 @@ const BLOCKING = new Set(["red", "error", "blocked"]);
 /** The neutral line of edges. */
 const NEUTRAL = ["--edge"];
 
-export function graphAppearance(browser: WebdriverIO.Browser) {
+function readGraph(browser: WebdriverIO.Browser) {
   const tokens = [...new Set([...Object.values(TOKENS), ...Object.values(CURRENT_TOKENS), ...NEUTRAL])];
   return browser.execute((names) => {
     const painted = (element: Element | null) => {
@@ -45,13 +45,9 @@ export function graphAppearance(browser: WebdriverIO.Browser) {
       const inset = shadow.split(/,(?![^(]*\))/).find((part) => part.includes("inset"));
       return inset?.match(/rgba?\([^)]*\)|color\([^)]*\)|oklch\([^)]*\)/)?.[0] ?? "";
     };
-    // Each token resolved as the engine paints it.
-    const probe = document.body.appendChild(document.createElement("span"));
-    const palette = Object.fromEntries(names.map((name) => {
-      probe.style.color = `var(${name})`;
-      return [name, getComputedStyle(probe).color] as const;
-    }));
-    probe.remove();
+    // Each token as the theme declares it, read without touching the page.
+    const root = getComputedStyle(document.documentElement);
+    const palette = Object.fromEntries(names.map((name) => [name, root.getPropertyValue(name).trim()] as const));
     // The Run graph only: an open Detail draws an Artifact's neighbours with the same nodes.
     const ofRun = <E extends Element>(selector: string) =>
       [...document.querySelectorAll<E>(selector)].filter((element) => !element.closest('aside[aria-label="Detail"]'));
@@ -86,6 +82,18 @@ export function graphAppearance(browser: WebdriverIO.Browser) {
       })),
     };
   }, tokens);
+}
+
+/** The theme's colours: each status's own token, as `rgb(r, g, b)` the way the engine reports a
+ * painted colour. The tokens are declared as `#rrggbb`. */
+function rgb(hex: string): string {
+  const value = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  return value ? `rgb(${value.slice(1).map((part) => Number.parseInt(part, 16)).join(", ")})` : hex;
+}
+
+export async function graphAppearance(browser: WebdriverIO.Browser) {
+  const shown = await readGraph(browser);
+  return { ...shown, palette: Object.fromEntries(Object.entries(shown.palette).map(([name, value]) => [name, rgb(value)])) };
 }
 
 export type GraphAppearance = Awaited<ReturnType<typeof graphAppearance>>;

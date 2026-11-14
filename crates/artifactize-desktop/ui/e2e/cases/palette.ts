@@ -3,12 +3,13 @@
 // follower included) and after a search of the Pane.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
-import { verifyWaiting, addRepository, create, requests } from "../fixture.ts";
+import { verifyWaiting, addRepository, create, requests, signoff } from "../fixture.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { primaryModifier } from "../platform.ts";
+import { primaryModifier, shortcutLabel } from "../platform.ts";
+import { reviewing } from "../human-review.ts";
 import { detail, graphShown } from "../graph-view.ts";
 import { clickAt } from "../pointer.ts";
 import { entriesFocused, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
@@ -50,6 +51,20 @@ function watchErrors(browser: WebdriverIO.Browser) {
   });
 }
 const errors = (browser: WebdriverIO.Browser) => browser.execute(() => (window as unknown as { errors: string[] }).errors);
+
+/** The open palette as rendered, top to bottom: each group's heading, then its commands, each
+ * with the key it shows ("" without one). */
+const rendered = (browser: WebdriverIO.Browser) => browser.execute(() =>
+  [...document.querySelectorAll('[aria-label="Command palette"] [data-command-group]')].map((group) => ({
+    group: group.querySelector("[data-command-group-heading]")?.textContent?.trim() ?? "",
+    commands: [...group.querySelectorAll("[data-command-item]")].map((item) => [item.querySelector("span")?.textContent?.trim() ?? "", item.querySelector("kbd")?.textContent?.trim() ?? ""]),
+  })));
+
+/** The app's own commands, first in every palette, with their keys. */
+const APP = () => [
+  ["Keyboard shortcuts", "?"], ["Show Settings", shortcutLabel("Ctrl+,")], ["Show or hide the Pane", shortcutLabel("Ctrl+B")], ["Search the branches", "/"],
+  ["Open a request by ID", shortcutLabel("Ctrl+O")], ["Refresh", shortcutLabel("Ctrl+R")], ["Quit", "q"],
+];
 
 function palette(browser: WebdriverIO.Browser) {
   const shown = () =>
@@ -143,6 +158,11 @@ export const scenarios: Scenario[] = [
       ].sort();
       await waitFor(browser, async () => isDeepStrictEqual(await listed(), expected), `the enabled commands are rendered: ${JSON.stringify(await listed())}`);
       assert.deepEqual(await listed(), expected, "all and only the enabled commands");
+      // Rendered with their keys: the app's commands first, then the graph's.
+      const groups = await rendered(browser);
+      assert.deepEqual(groups.map((group) => group.group), ["App", "Graph"], "the app's group, then the graph's");
+      assert.deepEqual(groups[0].commands, APP(), "the app's commands in order, each with its key");
+      assert.deepEqual([...groups[1].commands].sort(), [["Find", shortcutLabel("Ctrl+F")], ["Fit", ""], ["Open the Run's Detail", ""]].sort(), "the graph's commands, Find with its key");
       await typeText(browser, "Show Set");
       await waitFor(browser, async () => JSON.stringify(await listed()) === JSON.stringify(["Show Settings"]), "only the matching command remains");
       await escape("Esc");
@@ -265,6 +285,42 @@ export const scenarios: Scenario[] = [
       await ctrlK("after the outside click");
       await escape("Esc");
       assert.deepEqual(await errors(browser), []);
+    },
+  ),
+  // UX journey: J-PALETTE; UX edges: E-PALETTE-OPEN E-PALETTE-CLOSE
+  scenario<Record<string, never>>(
+    "palette-review",
+    "lists a Human review's commands with their keys after the app's, as its claim and its form allow",
+    async () => ({ fixture: await create(), args: ["review"], data: {} }),
+    async (browser, { fixture }) => {
+      const { ctrlK, escape } = palette(browser);
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "the waiting review open at launch");
+      const review = () => browser.$('[aria-label="Human review"]');
+      await review().click();
+      /** The review's group of the open palette, after the app's. */
+      const reviewGroup = async (what: string) => {
+        await ctrlK(what);
+        const groups = await rendered(browser);
+        assert.deepEqual(groups.map((group) => group.group), ["App", "Human review"], `${what}: the app's group, then the review's`);
+        assert.deepEqual(groups[0].commands, APP(), `${what}: the app's commands first, each with its key`);
+        const commands = groups[1].commands;
+        await escape(what);
+        return commands;
+      };
+      // Unclaimed: claiming, and Debug.
+      assert.deepEqual(await reviewGroup("unclaimed"), [["Claim to review", "c"], ["Show or hide Debug", "t"]]);
+      await review().click();
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "claimed");
+      // Claimed: a form to open, the claim to release.
+      assert.deepEqual(await reviewGroup("claimed"), [
+        ["Open the GREEN form", "g"], ["Open the RED form", "r"], ["Release the claim", "u"], ["Show or hide Debug", "t"],
+      ]);
+      await review().click();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      // Editing: switch the verdict, submit, release.
+      assert.deepEqual(await reviewGroup("editing"), [
+        ["Choose GREEN", shortcutLabel("Ctrl+G")], ["Choose RED", shortcutLabel("Ctrl+R")], ["Submit", shortcutLabel("Ctrl+S")], ["Release the claim", "u"], ["Show or hide Debug", "t"],
+      ]);
     },
   ),
 ];

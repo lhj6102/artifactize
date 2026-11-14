@@ -63,12 +63,9 @@ The Pane is one column: a search field at the top, the branches below it, and th
 reviews waiting for a person at the bottom. Drag the divider between the Pane and
 the Main area to resize them; the split stays as dragged whatever the Main area shows.
 
-The **Pane** button in the header, Ctrl+B or the palette's **Show or hide the Pane** hides
-the Pane and its divider: the Main area takes the window's whole width, its view as it
-was, and the button reads as off (no line under it). The same shows the Pane again, at the
-width it had, with its search, selection and expanded branches as they were. Hidden while
-the keyboard is in it, the keyboard moves to the Main area; `/` and Esc back to the Pane
-show it first. A graph, its Detail and a Human review work whole with the Pane hidden.
+Ctrl+B or the **Pane** button in the header hides the Pane, giving the Main area the
+window's width, and shows it again at the width it had. With the Pane hidden, the keyboard
+is in the Main area, and `/` or Esc back to the Pane shows it first.
 
 ### Branches
 
@@ -189,16 +186,10 @@ approves nothing.
 
 ### Graphs
 
-A node shows its status in two places, both in that status's colour: its mark before its
-name and a strip along its bottom. Its outline and face stay neutral; the opened Artifact's
-outline turns bright. After its name it says how many of its evals are GREEN of how many
-(`2/3`), on a Current how many would be reused. Each status has one colour wherever the app
-shows it, in the Pane, a chip, a row and a graph, and its own mark; **Help** (`?`) pairs
-each mark with its word. Edges are neutral, except an edge that leaves a RED, ERROR or
-blocked Artifact, drawn in that Artifact's colour, so what holds a blocked Artifact shows.
-A relation runs from an input to its consumer: it leaves the input at the square on its
-right side and reaches the consumer at the triangle on its left. Marks, strips, counts and
-edges change in place as results arrive or a scan learns what would happen.
+Each node shows its status as a mark and a coloured strip, then how many of its evals are
+GREEN (`2/3`; on a Current, how many would be reused). **Help** (`?`) lists what each mark
+means. An edge runs from an input to its consumer and is grey unless it leaves a RED, ERROR
+or blocked Artifact. Nodes and edges update in place as results arrive.
 
 Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
 Artifacts and Enter on one does what a click does, and Ctrl+F
@@ -273,12 +264,9 @@ expand that one to see the part on the graph.
 
 ### Detail
 
-A click on an Artifact opens its **Detail**, a panel docked at the graph's right edge under
-the graph's tool strip, with the graph still visible on its left, never beside the Pane.
-The opened node's outline and the Detail's title name the same Artifact.
-Clicking another Artifact switches
-the Detail to it; clicking the graph's
-background, **Close**, Esc or ← closes it. On a Human review's Detail, ← leaves only
+A click on an Artifact opens its **Detail** at the graph's right edge. Clicking another
+Artifact switches the Detail to it; clicking the graph's background, **Close**, Esc or ←
+closes it. On a Human review's Detail, ← leaves only
 when you are not editing or running something, and the others first step back as
 [Esc does in a review](#human-reviews). Drag the Detail's left edge to resize it, between a readable column
 and leaving some graph visible; it keeps that width, also in the next launch.
@@ -445,7 +433,7 @@ cycle through them.
 
 **Providers** lists the built-in providers on the left (Codex, Claude Agent, OpenAI, Anthropic,
 Gemini),
-then your custom providers by name, then **+ Custom provider**. Choosing one shows its setup
+then your custom providers by name, then **Custom provider**. Choosing one shows its setup
 on the right, with **List models** for the models it offers.
 
 - **Codex:** its account as a fact: not signed in, artifactize's stored token and expiry, a
@@ -476,7 +464,7 @@ on the right, with **List models** for the models it offers.
   it, as `artifactize login` does; **Remove saved key** forgets it. A set environment
   variable is used first: a key saved beside it shows as kept but not used, and can still be
   removed.
-- **Custom providers:** **+ Custom provider** opens an empty form. Give it a name, then
+- **Custom providers:** **Custom provider** opens an empty form. Give it a name, then
   choose its kind: an alias of a built-in provider (used with that provider's sign-in or
   key) or an endpoint (its API, base URL and optional key), and choose **Save**. Add as many as
   you need; choosing one shows its form to change it or **Remove provider**. An endpoint's
@@ -486,7 +474,7 @@ on the right, with **List models** for the models it offers.
 
 **Remote** is the review store. Signed out, it shows the store URL, share level and token
 fields and **Sign in to the store**. Signed in, it shows the store's URL and share level as
-facts and its status in one line (signed in, the reviewer, or what a push or check said),
+facts and its status in one line (signed in, the reviewer and how many results this machine pushed today, or what a push or check said),
 with **Check status**, **Push (dry run)**, **Push results** and **Sign out of the store**; the
 fields come back once you sign out. **Summary** omits invocation details,
 captured output and tool-call history; **Full** also sends the saved execution.
