@@ -138,7 +138,7 @@
 </figure>
 
 <figure class="figure">
-<div class="stage" style="--w: 1280; --h: 380">
+<div class="stage" style="--w: 1280; --h: 280">
 <div class="stage-inner">
 <div class="m-window">
   <header class="m-bar"><span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span><span class="m-spacer"></span><span class="m-reviewer">alice</span><span class="m-button">Settings</span><span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span></header>
@@ -152,13 +152,8 @@
       <div class="m-setup" style="margin-top: 12px; max-width: 640px">
         <section>
           <h3>Shared review store</h3>
-          <div class="m-facts" style="grid-template-columns: max-content minmax(0, 420px); align-items: center"><span class="m-cost">Store URL</span><div class="m-input text"><span>https://reviews.example.com</span></div><span class="m-cost">Share level</span><div class="m-input text"><span>results ▾</span></div><span class="m-cost">Token</span><div class="m-input text"><span class="m-placeholder">&nbsp;</span></div></div>
-          <div class="m-row-line"><span class="m-button primary">Sign in to the store</span><span class="m-button">Check status</span></div>
-        </section>
-        <section>
-          <h3>Status</h3>
-          <p style="margin: 0" class="tone-green">Signed in · alice · 12 pushed today</p>
-          <div class="m-row-line"><span class="m-button">Push (dry run)</span><span class="m-button">Push results</span><span class="m-spacer"></span><span class="m-button">Sign out of the store</span></div>
+          <dl class="m-facts"><dt>Store URL</dt><dd>https://reviews.example.com</dd><dt>Share level</dt><dd>results</dd><dt>Status</dt><dd class="tone-green">Signed in · alice · 12 pushed today</dd></dl>
+          <div class="m-row-line"><span class="m-button">Check status</span><span class="m-button">Push (dry run)</span><span class="m-button">Push results</span><span class="m-spacer"></span><span class="m-button">Sign out of the store</span></div>
         </section>
       </div>
     </div>
@@ -166,7 +161,7 @@
 </div>
 <span class="callout" style="left: 700px; top: 140px">7</span>
 </div>
-<figcaption>Stage 1280 × 380. The Remote tab: the store's URL, share level and token, its status, pushes and sign-out.</figcaption>
+<figcaption>Stage 1280 × 280. The Remote tab, signed in: the store's URL and share level as facts, its status, pushes and sign-out. Signed out, the same section holds the URL, share level and token fields and Sign in to the store.</figcaption>
 </figure>
 
 <figure class="figure">
@@ -203,7 +198,7 @@
   <li><span class="n">4</span><div><b>Setup</b><span>Sections separated by group lines: a title, facts as a key/value grid, then the actions in one row of 24px buttons; a line of description only where the title cannot say it. Models lists what the provider offers, each by its name with its ID beside it. Claude Agent's facts say what Claude Code reports: <code>claude</code> not found, not signed in, signed in with its method and plan, or its error.</span></div></li>
   <li><span class="n">5</span><div><b>Sign-in in progress</b><span>The state fact turns to <i>sign-in in progress</i> in the warning tone, with Cancel sign-in under it. What finishes a sign-in the browser did not return from stays folded under <i>Finish by hand</i>: the URL the sign-in printed as selectable text, a field for Codex's redirect URL or Claude Code's code, and Finish sign-in.</span></div></li>
   <li><span class="n">6</span><div><b>Custom provider</b><span>A labelled form: name, the kind (an alias of a built-in provider, which then shows a choice of that provider, or an endpoint with its API, base URL and optional key), Save as the primary button, Remove provider beside it.</span></div></li>
-  <li><span class="n">7</span><div><b>Remote</b><span>URL, share level and token fields, Sign in to the store; then the status as one short line in its tone (the state, the reviewer, what was pushed today) with Push (dry run), Push results and Sign out of the store.</span></div></li>
+  <li><span class="n">7</span><div><b>Remote</b><span>Signed in: the store's URL and share level as facts, the status as one short line in its tone (the state, the reviewer, what was pushed today), then Check status, Push (dry run), Push results and Sign out of the store. The URL, share level and token fields and Sign in to the store show only while signed out.</span></div></li>
   <li><span class="n">8</span><div><b>Limits</b><span>One line says what the grace is, since its name cannot; a seconds field holds the grace in force, with Save beside it.</span></div></li>
 </ol>
 
@@ -222,7 +217,7 @@
   <dt id="D-SET-6">D-SET-6</dt>
   <dd><code>+ Custom provider</code> opens an empty form in the setup column, and a listed custom provider opens its filled form: Name, Kind (a choice between an alias of a built-in provider and an endpoint), for an alias the built-in provider it uses (a choice of Codex, Claude Agent, OpenAI, Anthropic or Gemini; the alias then runs with that provider's own sign-in or key, set up under that provider), and for an endpoint API (OpenAI Responses, OpenAI Chat Completions, Anthropic Messages or Gemini), Base URL and an optional Key, as a labelled grid of <code>--surface-input</code> fields; Save is the primary button, Remove provider sits beside it; a saved provider is listed by its name under the built-in ones. <span class="avoid">a wizard; the key shown after saving.</span></dd>
   <dt id="D-SET-7">D-SET-7</dt>
-  <dd>Remote is one column of at most 640px: a section with Store URL, Share level (a choice) and Token fields in a labelled grid, Sign in to the store as the primary button and Check status beside it; then a Status section whose line reads in its tone (signed in, with the reviewer and what was pushed today; signed out; or the error) with Push (dry run), Push results and, at the right, Sign out of the store; a push's result, a sign-in's notice or an error joins that one status line in its own tone. The token field empties once signed in. <span class="avoid">the token shown; a status that repeats the fields above it; a push without a dry run.</span></dd>
+  <dd>Remote is one section of at most 640px that shows only what its state can use. Signed out: Store URL, Share level (a choice) and Token fields in a labelled grid, Sign in to the store as the primary button and Check status beside it; an error is one line in <code>--red</code>. Signed in: the store's URL and share level as facts of a key/value grid, with the status as its last fact, one line in its tone (signed in, the reviewer and what was pushed today); then one row of buttons, Check status, Push (dry run), Push results and, at the right, Sign out of the store; a push's result or an error replaces that status line in its own tone. The fields, the token and Sign in to the store come back once signed out. <span class="avoid">the token shown; Sign in or a token field beside a store that is signed in; a status that repeats a fact above it; a push without a dry run.</span></dd>
   <dt id="D-SET-8">D-SET-8</dt>
   <dd>Limits is one section: one <code>--ink-2</code> line that says what the sign-off idle grace is, a seconds field of <code>--control</code> height holding the grace in force (<i>120</i>, the default, unless changed) with Save, the primary button, beside it; once saved, the field holds the new grace and one <code>--green</code> line says that it applies to the Runs started afterwards. <span class="avoid">a slider; a unit other than seconds; the grace in force shown beside the field that holds it.</span></dd>
 </dl>

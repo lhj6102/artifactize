@@ -91,14 +91,11 @@
             </ul>
             </div>
             <div class="m-sec">
-              <div class="m-sec-head"><span class="m-icon i-fold"></span>Neighbours<span class="m-sum">uses 1 · used by 1</span></div>
+              <div class="m-sec-head"><span class="m-icon i-fold"></span>Neighbours</div>
             </div>
             <div class="m-sec">
               <div class="m-sec-head"><span class="m-icon i-unfold"></span>Tools</div>
               <div class="m-sec-body"><div class="m-tool"><span class="m-button small"><span class="m-icon i-play"></span>help</span><span>Print the CLI's help.</span></div></div>
-            </div>
-            <div class="m-sec">
-              <div class="m-sec-head"><span class="m-icon i-fold"></span>Tool log<span class="m-sum">0</span></div>
             </div>
             <div class="m-sec">
               <div class="m-sec-head"><span class="m-icon i-unfold"></span>Path</div>
@@ -119,15 +116,15 @@
 <span class="callout" style="left: 840px; top: 170px">5</span>
 <span class="callout" style="left: 1130px; top: 392px">6</span>
 </div>
-<figcaption>Stage 1280 × 800. The Artifact's tab: Evals, Neighbours, Tools, Tool log, Path and Debug, each a section under its header row, those asked for now and then folded.</figcaption>
+<figcaption>Stage 1280 × 800. The Artifact's tab: Evals, Neighbours, Tools, Path and Debug, each a section under its header row, those asked for now and then folded to their names.</figcaption>
 </figure>
 
 <ol class="notes">
   <li><span class="n">1</span><div><b>Selection</b><span>The opened node keeps its face and its strip; its own outline turns neutral-bright and 2px. It is the Artifact the Detail is titled with.</span></div></li>
   <li><span class="n">2</span><div><b>Dock header</b><span>The title (the whole name, wrapping), the star beside it, Close. The 2px accent line at the top says the Detail has focus. The Detail starts under the graph's tool strip, which stays in reach. The outlined node and this title are the two places that name the Artifact.</span></div></li>
-  <li><span class="n">4</span><div><b>Neighbours</b><span>Folded until asked for, its row counting the Artifacts its evals use and those whose evals use it: the graph beside the Detail already shows them. Unfolded, it draws the Artifact between them with the graph's nodes; a click on a neighbour opens it.</span></div></li>
+  <li><span class="n">4</span><div><b>Neighbours</b><span>Folded until asked for: the graph beside the Detail already shows them. Unfolded, it draws the Artifact between the Artifacts its evals use and those whose evals use it, with the graph's nodes; a click on a neighbour opens it.</span></div></li>
   <li><span class="n">5</span><div><b>Eval rows</b><span>The tab's navigation: a click on a row opens that eval's tab. Dense rows of four columns: the verdict's icon, the name, the status words in the status colour, and time and tokens pinned to the panel's right edge in secondary ink with tabular figures.</span></div></li>
-  <li><span class="n">6</span><div><b>Sections</b><span>Each a header row: the fold icon and the section's name in ink; a click folds it to that row. Only a folded row carries a summary at its right, a value that stands for what it hides: a Tool log without runs is folded and reads 0.</span></div></li>
+  <li><span class="n">6</span><div><b>Sections</b><span>Each a header row: the fold icon and the section's name in ink, nothing else; a click folds it to that row, and what it holds shows once it is unfolded. The Tool log joins them with the first run of a tool.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -152,13 +149,13 @@
           <div class="m-sec-body"><ol style="margin: 0; padding-left: 20px"><li>verify_waits_for_signoff · <span class="m-cost">crates/artifactize/tests/verify.rs:212</span></li><li>status_json_lists_parts · <span class="m-cost">crates/artifactize/tests/status.rs:88</span></li></ol></div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution options<span class="m-sum">runtime · cargo test -p artifactize</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution options</div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution metadata<span class="m-sum">2026-11-13 02:14:09</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution metadata</div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Fingerprint<span class="m-sum">artifactsum c9a1…0f3e</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Fingerprint</div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-fold"></span>Debug</div>
@@ -179,7 +176,7 @@
   <li><span class="n">3</span><div><b>Chip path</b><span>Only on an eval's tab: the Artifact's chip, which leads back to its tab, a <i>/</i>, then one chip per eval: rounded chips of 22px, the chosen one filled; eval chips lead with the verdict's icon in its colour; many chips wrap.</span></div></li>
   <li><span class="n">7</span><div><b>View switch</b><span>Plain text a level below the chips: the chosen view dark and bold, the other light; no chip, no fill.</span></div></li>
   <li><span class="n">8</span><div><b>Status line</b><span>The verdict's icon and word bold in the status colour; what it took and spent and how it ended beside it in neutral secondary ink, said here once.</span></div></li>
-  <li><span class="n">9</span><div><b>Header → label → value</b><span>Three levels: a section's header row, then its facts as a key/value grid, keys right-aligned in secondary ink, values in tabular figures. The Result is unfolded; the sections read now and then are folded to their rows, each with the value that stands for it.</span></div></li>
+  <li><span class="n">9</span><div><b>Header → label → value</b><span>Three levels: a section's header row, then its facts as a key/value grid, keys right-aligned in secondary ink, values in tabular figures. The Result is unfolded; the sections read now and then are folded to their names, and their values show once unfolded.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -192,20 +189,20 @@
       <div class="m-body">
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Outcome</div>
-          <div class="m-sec-body"><dl class="m-kv"><dt>Status</dt><dd><span class="tone-red"><span class="m-icon i-red"></span> RED</span> · NOT SATISFIED at Run end</dd><dt>Failed</dt><dd><span class="m-icon i-red tone-red"></span> cli/tests</dd><dt>Evals</dt><dd><span class="m-counts"><span><span class="m-icon i-red tone-red"></span>1 RED</span><span><span class="m-icon i-blocked tone-blocked"></span>1 blocked</span><span><span class="m-icon i-human tone-human"></span>1 sign-off</span><span><span class="m-icon i-green tone-green"></span>4 GREEN</span></span></dd><dt>Took</dt><dd>12m 04s</dd><dt>Comment</dt><dd>dogfood: desktop design pages and the restyle of the app toward them, before the full verify</dd></dl></div>
+          <div class="m-sec-body"><dl class="m-kv"><dt>Status</dt><dd><span class="tone-red"><span class="m-icon i-red"></span> RED</span></dd><dt>Failed</dt><dd><span class="m-icon i-red tone-red"></span> cli/tests</dd><dt>Evals</dt><dd><span class="m-counts"><span><span class="m-icon i-red tone-red"></span>1 RED</span><span><span class="m-icon i-blocked tone-blocked"></span>1 blocked</span><span><span class="m-icon i-human tone-human"></span>1 sign-off</span><span><span class="m-icon i-green tone-green"></span>4 GREEN</span></span></dd><dt>Took</dt><dd>12m 04s</dd><dt>Comment</dt><dd>dogfood: desktop design pages and the restyle of the app toward them, before the full verify</dd></dl></div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-unfold"></span>Waits for</div>
           <div class="m-sec-body"><ul class="m-rows" style="padding: 0"><li>release/signoff · waiting Human · unclaimed</li><li class="m-cost">docs/matches-cli · blocked by cli/tests</li></ul></div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>What<span class="m-sum">all · speculate</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>What</div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Provenance<span class="m-sum">artifactize / dev · 2026-11-13 02:02:05</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Provenance</div>
         </div>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Technical<span class="m-sum">state dir, worker, supervisor</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Technical</div>
         </div>
       </div>
     </aside>
@@ -218,8 +215,8 @@
 </figure>
 
 <ol class="notes">
-  <li><span class="n">10</span><div><b>Run Detail</b><span>The same dock, titled with the Run's ID; it has no chip path, since a Run has no evals of its own to tab through. It holds what the header row leaves out: the sentence of the outcome, the tally with its words, the duration and the comment in full.</span></div></li>
-  <li><span class="n">11</span><div><b>Sections</b><span>Outcome and Waits for (what the Run waits for, then its pending evals) are unfolded, their facts as key/value grids; What and Provenance are folded to rows that show their values, and Technical is folded last, its row's summary naming its keys.</span></div></li>
+  <li><span class="n">10</span><div><b>Run Detail</b><span>The same dock, titled with the Run's ID; it has no chip path, since a Run has no evals of its own to tab through. It holds what the header row leaves out: the tally with its words, the duration and the comment in full.</span></div></li>
+  <li><span class="n">11</span><div><b>Sections</b><span>Outcome and Waits for (what the Run waits for, then its pending evals) are unfolded, their facts as key/value grids; What, Provenance and, last, Technical are folded to their names.</span></div></li>
 </ol>
 
 <figure class="figure">
@@ -239,7 +236,7 @@
         <p class="m-summary"><span class="m-status tone-running"><span class="m-icon i-run"></span> would run</span><span class="m-cost">the fingerprint of cli changed since run-5K2QXA</span></p>
         <p class="m-instruction">Run the CLI's tests of {engine-cli} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}.</p>
         <div class="m-sec">
-          <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution options<span class="m-sum">runtime · cargo test -p artifactize</span></div>
+          <div class="m-sec-head"><span class="m-icon i-fold"></span>Execution options</div>
         </div>
         <div class="m-sec">
           <div class="m-sec-head"><span class="m-icon i-fold"></span>Debug</div>
@@ -268,15 +265,15 @@
   <dt id="D-INS-3">D-INS-3</dt>
   <dd>The chip row shows only on an eval's tab, under the header, closed below by <code>--line-group</code>; the Artifact's own tab has none, since its Evals rows lead to every eval (D-INS-4). It reads as a path: the Artifact's chip (the Artifact mark and its name, only the name cut), which leads back to the Artifact's tab, a <i>/</i>, then one chip per eval. Chips are of <code>--row-dense</code> height, <code>--radius-chip</code>, <code>--text-small</code>, with a 1px <code>--line-group</code> border and <code>--ink-2</code> text; the chosen chip is filled with <code>--surface-group</code> in <code>--ink</code> semibold; each eval chip leads with its verdict's icon in the status colour (on a Current, with what verify would do, D-INS-8); the <i>/</i> stays with the Artifact's chip and the rest wrap. <span class="avoid">pills in the accent; a chip without its icon; a chip row above the Artifact's own list of evals.</span></dd>
   <dt id="D-INS-4">D-INS-4</dt>
-  <dd>The Artifact's tab is sections, top to bottom, each under its header row (D-INS-9): Evals (the eval rows, each of which opens that eval's tab), Neighbours (folded until asked for, its summary how many Artifacts it uses and how many use it; unfolded, the drawing, at least 72px, with a camera that does not move), Tools, Tool log (folded, its summary <i>0</i>, until its first run unfolds it), Path, then Debug, folded. An eval row is <code>--row-dense</code> in four columns: the verdict's icon in the status colour, the name, the status words in the status colour, and the last column (time, tokens) pinned to the panel's right edge in <code>--ink-2</code> tabular; on a Current the words say would run, would be reused or checking. <span class="avoid">accent-coloured section headings; times trailing the status words instead of aligning at the right; a sentence or an empty box for a Tool log without runs; the Artifact's name or its tally repeated in the tab's body; a tool button on the graph's nodes.</span></dd>
+  <dd>The Artifact's tab is sections, top to bottom, each under its header row (D-INS-9): Evals (the eval rows, each of which opens that eval's tab), Neighbours (folded until asked for; unfolded, the drawing, at least 72px, with a camera that does not move), Tools, Tool log (only once a tool has run: an Artifact without runs has no Tool log section), Path, then Debug, folded. An eval row is <code>--row-dense</code> in four columns: the verdict's icon in the status colour, the name, the status words in the status colour, and the last column (time, tokens) pinned to the panel's right edge in <code>--ink-2</code> tabular; on a Current the words say would run, would be reused or checking. <span class="avoid">accent-coloured section headings; times trailing the status words instead of aligning at the right; a section, a sentence or an empty box for a Tool log without runs; the Artifact's name or its tally repeated in the tab's body; a tool button on the graph's nodes.</span></dd>
   <dt id="D-INS-5">D-INS-5</dt>
-  <dd>An eval's tab: the view switch as plain text (the chosen view <code>--ink</code> bold, the other <code>--ink-2</code>, no radius, no fill), the status line (the verdict's icon and word bold in the status colour; what it took and spent, or saved, and how it ended, in <code>--ink-2</code>), the instruction, then Result, unfolded, a list as numbered items; then Execution options, Execution metadata and Fingerprint, each folded to its header row with the value that stands for it (D-INS-9), their facts, once unfolded, in a key/value grid with keys right-aligned in <code>--ink-2</code> and values in tabular figures; Debug folded last. What the status line says (the duration, the exit) is not said again below it. A log replaces the body below the switch in <code>--mono</code> at <code>--text-small</code>, wrapping and scrolling in its own box. <span class="avoid">a JSON dump as the Summary; costs in the status colour; the exit code or the duration repeated in the Result or the metadata.</span></dd>
+  <dd>An eval's tab: the view switch as plain text (the chosen view <code>--ink</code> bold, the other <code>--ink-2</code>, no radius, no fill), the status line (the verdict's icon and word bold in the status colour; what it took and spent, or saved, and how it ended, in <code>--ink-2</code>), the instruction, then Result, unfolded, a list as numbered items; then Execution options, Execution metadata and Fingerprint, each folded to its name (D-INS-9), their facts, once unfolded, in a key/value grid with keys right-aligned in <code>--ink-2</code> and values in tabular figures; Debug folded last. What the status line says (the duration, the exit) is not said again below it. A log replaces the body below the switch in <code>--mono</code> at <code>--text-small</code>, wrapping and scrolling in its own box. <span class="avoid">a JSON dump as the Summary; costs in the status colour; the exit code or the duration repeated in the Result or the metadata.</span></dd>
   <dt id="D-INS-7">D-INS-7</dt>
-  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row. It holds what the header row leaves out. Outcome, unfolded: the status with the sentence of its outcome, the evals that failed by name, the tally (each status's icon in its colour, its count and its word), what the Run took, and its comment in full. Waits for, unfolded: what the Run waits for, then its pending evals in <code>--ink-2</code>. Then What and Provenance, folded to rows that show their values, and Technical folded last, a section whose header row names its keys as its summary. Facts are key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), and every section folds and unfolds by its header row (D-INS-9). <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it.</span></dd>
+  <dd>A click on the Run's headline opens the Run's Detail in the same dock (D-INS-1, D-INS-2), titled with the Run's ID and without a chip row. It holds what the header row leaves out. Outcome, unfolded: the status, its icon and word said once, the evals that failed by name, the tally (each status's icon in its colour, its count and its word), what the Run took, and its comment in full. Waits for, unfolded: what the Run waits for, then its pending evals in <code>--ink-2</code>. Then What, Provenance and, last, Technical, folded to their names. Facts are key/value grids (keys right-aligned in <code>--ink-2</code>, values in tabular figures), and every section folds and unfolds by its header row (D-INS-9). <span class="avoid">tabs on a Run's Detail; the Run's graph redrawn inside it; a sentence that says the status again (<i>NOT SATISFIED at Run end</i> beside RED).</span></dd>
   <dt id="D-INS-8">D-INS-8</dt>
   <dd>Over a Current the Detail keeps its anatomy and changes what the marks say: each eval chip and each eval row lead with what verify would do with that eval (reused, would run, waiting, blocked, or still being checked) as that plan's icon and the matching words in its one colour, the node's (would run <code>--running</code>, reused <code>--reused</code>, waiting <code>--queued</code>, blocked <code>--blocked</code>, checking <code>--checking</code>); an eval's tab shows, in place of the verdict line, the plan (what would happen, bold in its colour) with its reason beside it in <code>--ink-2</code>, then the instruction, the result it would reuse as a section under its header row when there is one (the plan line already says why an eval would run), then the execution options and Debug, both folded; there is no log and no Human review. A node still being checked recolours its chips and rows in place as the scan learns. <span class="avoid">a Run's verdict words on a Current; a log switch that has nothing to show.</span></dd>
   <dt id="D-INS-9">D-INS-9</dt>
-  <dd>The inspector reads in three levels: a section's header row, a fact's label, its value. A section's header row is <code>--row</code> high, opened above by <code>--line-group</code>: the fold icon in <code>--ink-2</code> (the unfold icon while the section is unfolded), the section's name at <code>--text-small</code> semibold in <code>--ink</code>, in sentence case without letter-spacing, and, only while the section is folded, a short summary at the row's right end in <code>--ink-2</code> with tabular figures, cut with an ellipsis (a count, a state, a value that can stand for the folded content); an unfolded section's row is its name alone, since its content is right below. The whole row takes the click that folds or unfolds its section, and keyboard focus as a control (D-SYS-7); folded, a section is its row alone. A section starts unfolded when it is what its tab is opened for (an Artifact's Evals, Tools and Path, an eval's Result, a Run's Outcome and Waits for) and folded when it is read now and then (Neighbours, a Tool log without runs, Execution options, Execution metadata, Fingerprint, What, Provenance, Debug and a Run's Technical); a section keeps the state a person gave it. A Human review's Tools, Tool log and Result, and the sections of Settings, stand under the same row without the fold icon and without a summary: they do not fold. <span class="avoid">11px uppercase labels as section headings; a section that cannot be told folded from empty; a summary beside content that is unfolded; a box around a section; a fold control apart from the row.</span></dd>
+  <dd>The inspector reads in three levels: a section's header row, a fact's label, its value. A section's header row is <code>--row</code> high, opened above by <code>--line-group</code>: the fold icon in <code>--ink-2</code> (the unfold icon while the section is unfolded), the section's name at <code>--text-small</code> semibold in <code>--ink</code>, in sentence case without letter-spacing, and nothing else: no count, value or list of what it holds stands at the row's end, folded or unfolded; what a section holds shows when it is unfolded. The whole row takes the click that folds or unfolds its section, and keyboard focus as a control (D-SYS-7); folded, a section is its row alone. A section starts unfolded when it is what its tab is opened for (an Artifact's Evals, Tools and Path, an eval's Result, a Run's Outcome and Waits for) and folded when it is read now and then (Neighbours, Execution options, Execution metadata, Fingerprint, What, Provenance, Debug and a Run's Technical); a section keeps the state a person gave it. A section with nothing to hold is not shown (an Artifact's Tool log before its first run). A Human review's Tools, Tool log and Result, and the sections of Settings, stand under the same row without the fold icon: they do not fold. <span class="avoid">11px uppercase labels as section headings; a section that cannot be told folded from empty; a summary, a count or a table of contents at a row's end; a box around a section; a fold control apart from the row.</span></dd>
   <dt id="D-INS-6">D-INS-6</dt>
   <dd>Selection and inspector agree: the node with the <code>--outline-selected</code> outline, every copy of a shared part included, is the Artifact the Detail is titled with, or, when that Artifact is hidden inside a minimized whole, the minimized whole that hides it while the Detail still names the Artifact; opening a neighbour or another node moves both; closing the Detail removes the outline. The Find field's choice opens the Detail and moves only the camera. <span class="avoid">a Detail left open for a node no longer highlighted.</span></dd>
 </dl>

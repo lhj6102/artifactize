@@ -799,9 +799,9 @@
   min-height: 0;
   overflow: hidden;
 }
-/* A section of the inspector: a header row (the fold icon, its name, a short summary at the
-   right), opened above by a group line, then its body; folded, the row alone. In a review and
-   in Settings the same row stands without the fold icon. */
+/* A section of the inspector: a header row (the fold icon and its name, nothing else), opened
+   above by a group line, then its body; folded, the row alone. In a review and in Settings the
+   same row stands without the fold icon. */
 .m-sec {
   border-top: 1px solid var(--line-group);
 }
@@ -821,16 +821,6 @@
 }
 .m-sec-head > .m-icon {
   color: var(--ink-2);
-}
-.m-sec-head .m-sum {
-  margin-left: auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-2);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
 }
 .m-sec-body {
   padding: 2px var(--pad) 10px;

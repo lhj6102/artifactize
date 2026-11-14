@@ -72,7 +72,7 @@ that makes the transition happen and checks where it leads.
   (Codex, Claude Agent, OpenAI, Anthropic, Gemini), the custom providers and **+ Custom provider** on the left, and
   the chosen one's setup on the right: the Codex account, Claude Code's sign-in, an API key, or
   a custom provider's form,
-  each with its Models. **Remote** is the shared review store (URL, share level and token). **Limits** is the
+  each with its Models. **Remote** is the shared review store (URL, share level and token to sign in; signed in, its URL and share level as facts and its status). **Limits** is the
   sign-off idle grace.
 - **Run graph**: the shown Run's Artifacts as nodes and their dependencies as edges. A node
   says its verdict (GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked) with
@@ -151,16 +151,16 @@ that makes the transition happen and checks where it leads.
   fingerprint, folded until unfolded, every other fact under Debug), on a Current whether it would run, would be reused or is still being checked
   and why and the result it would reuse, or, switched below the tabs, its Agent log or Runtime
   log; in a Run a Human eval's tab holds its Human review. A Run's Detail has no tabs: its outcome
-  (its status and the sentence of it, the evals that failed, its tally, how long it took and
+  (its status, the evals that failed, its tally, how long it took and
   its comment in full) and what it waits for. Everything in the Detail,
   transcript and log lines, long words and code included, wraps or scrolls within its width.
-  Below its tabs the Detail shows **sections**, each under a header row with its name and,
-  while it is folded, a short summary at the row's right end (an Artifact's Evals, Neighbours,
-  Tools, Tool log and Path; an eval's Result, Execution options, Execution metadata and
+  Below its tabs the Detail shows **sections**, each under a header row that is its name
+  alone (an Artifact's Evals, Neighbours,
+  Tools, Tool log, once a tool has run, and Path; an eval's Result, Execution options, Execution metadata and
   Fingerprint; a Run's Outcome, Waits for, What and Provenance; Debug, or a Run's Technical,
   last); a section is unfolded or folded to its header row alone, as a person left it by its
   name; until then Evals, Tools, Path, Result, Outcome and Waits for are unfolded and
-  Neighbours, a Tool log without runs, Execution options, Execution metadata, Fingerprint,
+  Neighbours, Execution options, Execution metadata, Fingerprint,
   What, Provenance, Debug and Technical folded. A Human review's Tools, Tool log and Result
   do not fold.
   States: open on a tab (the Artifact's, an eval's Summary, Debug unfolded, or a log), an
@@ -310,19 +310,19 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-MON-DETAIL-ARTIFACT | Run graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab, without chips: its evals listed with their verdicts, its Neighbours folded until unfolded, its Tools and Tool log (folded until its first run), then its path, every other fact (what it waits for included) folded under Debug |
-| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current, on its Artifact tab: its listed evals saying whether each would run, would be reused or is still being checked, its Neighbours folded until unfolded, its Tools and Tool log, its path, the rest under Debug |
+| E-MON-DETAIL-ARTIFACT | Run graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab, without chips: its evals listed with their verdicts, its Neighbours folded until unfolded, its Tools and, once one has run, their Tool log, then its path, every other fact (what it waits for included) folded under Debug |
+| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current, on its Artifact tab: its listed evals saying whether each would run, would be reused or is still being checked, its Neighbours folded until unfolded, its Tools and, once one has run, their Tool log, its path, the rest under Debug |
 | E-MON-DETAIL-TAB | Detail of an Artifact of a Run | click an eval listed on the Artifact tab, or, on an eval's tab, another eval's chip | Detail, that eval's tab shown under the chips that read as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip): its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
 | E-CURRENT-TAB | Detail of an Artifact of a Current | click an eval listed on the Artifact tab, or, on an eval's tab, another eval's chip | Detail, that eval's Summary under the chips, each saying what verify would do: whether it would run, would be reused or is still being checked and why, and the result it would reuse |
 | E-DETAIL-ARTIFACT-TAB | Detail of an Artifact of a Run or a Current, on an eval's tab (its Summary, a log or its Human review) | click the Artifact's own chip | same Detail on its Artifact tab, without chips: its evals listed with their verdicts, its Neighbours, its Tools and its path |
 | E-MON-DETAIL-NEIGHBOUR | Detail of an Artifact, on its Artifact tab, Neighbours unfolded | click a neighbour drawn beside it | Detail of that Artifact, on its Artifact tab, between its own neighbours |
 | E-MON-DETAIL-SWITCH | Detail | click another Artifact of the graph | Detail of that Artifact, on its Artifact tab |
-| E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened: its outcome (its status and the sentence of it, the evals that failed, its tally, how long it took, its comment in full) and what it waits for unfolded, the rest folded |
+| E-MON-DETAIL-RUN | Run graph | click the Run's headline | Detail of the Run opened: its outcome (its status, the evals that failed, its tally, how long it took, its comment in full) and what it waits for unfolded, the rest folded |
 | E-DETAIL-STAR | Detail of an Artifact of a Run or a Current, on any of its tabs | click the ☆ (or ★) beside its title | same Detail, the Artifact starred (★) or its star taken away (☆), for every branch of its project and every later monitor of this machine's user; the Find field lists it with nothing typed (E-GRAPH-FIND-OPEN) or no longer does |
 | E-DETAIL-SECTION | Detail on a tab with sections (an Artifact's tab, an eval's Summary, a Run's Detail) | click a section's header row, or Enter or Space on it focused | same Detail, that section folded to its header row alone, or unfolded again; kept by the section's name for every Detail opened later and for the next launch |
 | E-MON-DETAIL-TECHNICAL | Detail on an eval's Summary or on an Artifact's tab | `t`, or a click on Debug | Detail, its Debug facts (an eval's request, source, raw result and the rest; an Artifact's other facts) shown or hidden |
 | E-MON-DETAIL-LOG | Detail on the tab of an eval with a log | click its Agent log or Runtime log, or Summary | Detail, that eval's log shown, its lines wrapping within the Detail's width and scrolling in its own box, or its Summary again |
-| E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
+| E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, shown from the first run on and unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
 | E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened and said so; its run open in the Artifact's Tool log, unfolded if it was folded, until it exits |
 | E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log, unfolded if it was folded |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
@@ -384,10 +384,10 @@ that makes the transition happen and checks where it leads.
 | E-SET-CLAUDE-AGENT-CANCEL | Claude Code sign-in in progress | Cancel sign-in | Claude Agent, Claude Code stopped, its sign-in shown again |
 | E-SET-CLAUDE-AGENT-LOGOUT | Claude Agent, signed in | Sign out of Claude Code | `claude auth logout` run; Claude Agent, not signed in |
 | E-SET-MODELS | a provider's setup | List models | models of the chosen provider shown, each by its name with its ID beside it |
-| E-SET-REMOTE-LOGIN | Remote | enter the store URL, share level and token, then Sign in to the store | store signed in, its status shown in one line, token cleared from the form |
+| E-SET-REMOTE-LOGIN | Remote, store signed out | enter the store URL, share level and token, then Sign in to the store | store signed in: its URL and share level shown as facts, its status in one line, the fields and the button that sign in gone |
 | E-SET-REMOTE-STATUS | Remote | Check status | status refreshed |
 | E-SET-REMOTE-PUSH | Remote, store signed in | Push (dry run) or Push results | push result shown |
-| E-SET-REMOTE-LOGOUT | Remote, store signed in | Sign out of the store | store signed out |
+| E-SET-REMOTE-LOGOUT | Remote, store signed in | Sign out of the store | store signed out, the fields and the button that sign in shown again |
 | E-SET-GRACE | Limits | open | the sign-off idle grace in force shown in its seconds field, 120 unless changed |
 | E-SET-GRACE-SAVE | Limits | enter a number of seconds, then Save | the field holding the new grace, saved for the Runs started afterwards |
 
