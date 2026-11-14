@@ -820,10 +820,10 @@ export const scenarios: Scenario[] = [
         const release = [...document.querySelectorAll('.svelte-flow__node[data-id="a:release"]')].find(ofGraph)!.getBoundingClientRect();
         return { width: release.width, x: (left + right) / 2 - (canvas.left + canvas.right) / 2, y: (top + bottom) / 2 - (canvas.top + canvas.bottom) / 2 };
       });
-      // A small graph is never enlarged past its nodes' own size: it shows at that size, in the
-      // middle of the canvas.
+      // A small graph is never enlarged past its nodes' own size. (The window was resized after
+      // it first showed, and only the person moves the camera: Fit, below, centres it.)
       const native = await placed();
-      assert.ok(Math.abs(native.width - 168) <= 1 && Math.abs(native.x) <= 2 && Math.abs(native.y) <= 2, `release at its own size, the graph in the middle: ${JSON.stringify(native)}`);
+      assert.ok(Math.abs(native.width - 168) <= 1, `release at its own size: ${JSON.stringify(native)}`);
       const title = await mainTitle(browser);
 
       // Opening a Detail, switching it to a neighbour and closing it leave the camera.
@@ -879,7 +879,8 @@ export const scenarios: Scenario[] = [
       assert.notEqual(fitted.transform, zoomed.transform, "Fit View moved the person's camera");
       assert.ok(fitted.whole, `Fit View shows every Artifact inside the canvas: ${JSON.stringify(fitted)}`);
       const fit = await placed();
-      assert.ok(Math.abs(fit.width - 168) <= 1, `Fit enlarges nothing past its own size: ${JSON.stringify(fit)}`);
+      assert.ok(Math.abs(fit.width - 168) <= 1 && Math.abs(fit.x) <= 2 && Math.abs(fit.y) <= 2,
+        `Fit enlarges nothing past its own size and shows the graph in the middle of the canvas: ${JSON.stringify(fit)}`);
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
@@ -1418,7 +1419,8 @@ export const scenarios: Scenario[] = [
         let green = 0;
         let painted = 0;
         for (let at = 0; at < pixels.length; at += 4) {
-          if (pixels[at + 3] === 0) continue;
+          // Only pixels a block covers whole: a partly covered edge pixel's colour is rounded.
+          if (pixels[at + 3] < 250) continue;
           painted += 1;
           // An edge pixel only partly covered keeps its colour, give or take its rounding.
           if ([0, 1, 2].every((channel) => Math.abs(pixels[at + channel] - want[channel]) <= 4)) green += 1;

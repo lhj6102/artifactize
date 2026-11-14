@@ -403,7 +403,9 @@ export class SettingsState {
     }
   }
 
+  /** Read the store's status again; a push's result gives way to it. */
   async loadRemote() {
+    this.remoteNotice = null;
     await this.#remoteCall(() => call(this.#commands.remoteStatus()));
   }
 
@@ -430,6 +432,8 @@ export class SettingsState {
     try {
       const report: Pushed = await call(this.#commands.remotePush(dryRun));
       this.remoteNotice = `${dryRun ? "Would push" : "Pushed"} ${report.pushed}, already in the store ${report.existing}, skipped ${report.skipped}.`;
+      // What was pushed today counts this push from now on; its result stays the status line.
+      if (!dryRun) await this.#remoteCall(() => call(this.#commands.remoteStatus()));
     } catch (failure) {
       this.remoteError = message(failure);
     } finally {

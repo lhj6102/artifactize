@@ -171,7 +171,8 @@ export const scenarios: Scenario[] = [
           failed: marks(facts.Failed),
           tally: marks(facts.Tally),
           time: (facts["Running for"] ?? facts.Took)?.textContent?.trim() ?? "",
-          waits: dock.querySelector('section[aria-label="Waits for"] .body')?.textContent ?? "",
+          // The sign-off it waits for: in its outcome, or under Waits for when it has one.
+          waits: [...dock.querySelectorAll('section[aria-label="Outcome"] .body, section[aria-label="Waits for"] .body')].map((body) => body.textContent).join(" "),
         };
       });
       let read = await outcome();
