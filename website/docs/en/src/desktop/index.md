@@ -177,12 +177,15 @@ reused of how many. Read aloud, an Artifact says which, with how many of its eva
 While the scan runs, the header row shows the checking mark and how many Artifacts are left
 to check (`3 left`); once it ends, the time it scanned at; if it fails, why. **Refresh** sits
 at that row's end.
-The Current scans again when you choose it again, when a Run of the branch ends, and on
-**Refresh** or Ctrl+R/F5. While a scan is still running, choosing the Current again or a
-Run ending continues that scan, and the Current's **Refresh** button is disabled; the
-palette's **Refresh** or Ctrl+R/F5 scans again once it finishes, for files you changed
-meanwhile. If your search hides the branch, press **Refresh** after the
-Run ends. A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
+When the Current scans:
+
+- Choosing it again, or a Run of the branch ending: it scans again; during a scan, that
+  scan goes on.
+- **Refresh** at the row's end: it scans again; disabled during a scan.
+- The palette's **Refresh** or Ctrl+R/F5: it scans again, after a running scan finishes.
+- A Run ending while your search hides the branch: press **Refresh**.
+
+A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it
 approves nothing.
 
@@ -193,18 +196,19 @@ GREEN (`2/3`; on a Current, how many would be reused). **Help** (`?`) lists what
 means. An edge runs from an input to its consumer and is grey unless it leaves a RED, ERROR
 or blocked Artifact. Nodes and edges update in place as results arrive.
 
-Both graphs, a Run's and the Current, take the pointer: Tab reaches their named
-Artifacts and Enter on one does what a click does, and Ctrl+F
-[finds an Artifact or an eval by name, or lists your favorites](#find-in-the-graph), and `m`
-minimizes or expands a box (below); they have no other keys of their own.
-Above each graph, a tool strip holds **Find** (as Ctrl+F does), **Zoom out**, the zoom in
-percent and **Zoom in** (up to 200%), and **Fit**, which shows the whole graph in the canvas
-whether the Detail covers part of it or not, never larger than 100%. Drag the graph background to pan; wheel, pinch or a
-background double-click zooms. The canvas has a faint grid that moves with the camera. A
-graph shows whole when it first appears, never larger than its nodes' own size; after that
-only you move its camera, also by opening what Find found, through the Navigator or by
-minimizing or expanding a box (below): the Detail, new results, scans and layouts leave it
-where it is.
+Both graphs, a Run's and the Current, work the same way:
+
+| Control | Does |
+|---|---|
+| Click, or Tab to an Artifact and Enter | Opens its Detail |
+| **Find**, Ctrl+F | [Finds an Artifact or an eval, or lists your favorites](#find-in-the-graph) |
+| `m` | Minimizes or expands a box (below) |
+| **Zoom out**, **Zoom in**, wheel, pinch, background double-click | Zoom, up to 200% |
+| **Fit** | Shows the whole graph, never above 100% |
+| Drag the background | Pans |
+
+A graph shows whole when it first appears. After that, only you move the camera: new
+results, scans, layouts and the Detail leave it where it is.
 
 Whenever part of a graph lies outside the view, a **Navigator** at the graph's bottom right,
 left of the Detail when one is open, shows the whole graph in small, each Artifact a block of
