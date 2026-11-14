@@ -303,7 +303,7 @@ async fn fingerprints(
 }
 
 #[tokio::test]
-async fn file_artifactsum_hashes_only_owner_relative_target_bytes_while_folder_still_covers_it() {
+async fn file_artifactsum_hashes_only_its_target_while_its_wholes_hash_excludes_it() {
     let fixture = Fixture::new();
     fixture.declare("index.artf", json!({"name":"folder"}));
     fixture.write("nested/input.txt", "original");
@@ -341,7 +341,7 @@ async fn file_artifactsum_hashes_only_owner_relative_target_bytes_while_folder_s
     fixture.write("nested/input.txt", "changed");
     let target = fingerprints(&fixture.config(), &fixture.state).await;
     assert_ne!(sibling["file"].value, target["file"].value);
-    assert_ne!(sibling["folder"].value, target["folder"].value);
+    assert_eq!(sibling["folder"].value, target["folder"].value);
 }
 
 async fn call(registry: &Registry<'_>, name: &str, args: Value, state: &Path) -> Value {
@@ -956,7 +956,7 @@ fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
 }
 
 #[test]
-fn reuse_key_covers_kinds_of_target_and_reference_but_never_paths_tags_or_nested_folders() {
+fn reuse_key_covers_target_part_and_reference_kinds_but_never_paths_or_tags() {
     let fixture = Fixture::new();
     fixture.declare(
         "owner/index.artf",
@@ -1000,16 +1000,8 @@ fn reuse_key_covers_kinds_of_target_and_reference_but_never_paths_tags_or_nested
     let key = cache::eval_key(&config, &config.evals[0], &fingerprints)
         .unwrap()
         .value;
-    // A nested folder Artifact is not in the key; only the target and what it names are.
-    config.artifacts.get_mut("child").unwrap().kind = ArtifactKind::File;
-    assert_eq!(
-        key,
-        cache::eval_key(&config, &config.evals[0], &fingerprints)
-            .unwrap()
-            .value
-    );
-    config.artifacts.get_mut("child").unwrap().kind = ArtifactKind::Folder;
-    for id in ["owner", "reference"] {
+    // The target, its nested part and its explicit reference all contribute their kinds.
+    for id in ["owner", "child", "reference"] {
         config.artifacts.get_mut(id).unwrap().kind = ArtifactKind::File;
         assert_ne!(
             key,
