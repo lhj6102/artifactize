@@ -2,8 +2,10 @@
 
 The terminal Monitor and Review browse the same saved Runs and Human requests as
 the other interfaces. Install them with the [CLI](../getting-started/install.md);
-no separate terminal package or service is needed. Browsing is read-only until
-you explicitly claim, run a Human tool or submit a verdict.
+no separate terminal package or service is needed. Browsing lists and previews is
+read-only until you explicitly claim, run a Human tool or submit a verdict; opening a
+waiting Human request whose declarations changed ends it as ERROR
+([Tools](#review), below).
 
 ## Review
 
