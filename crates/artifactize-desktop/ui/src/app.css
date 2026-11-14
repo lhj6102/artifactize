@@ -3,34 +3,17 @@
    lines separate panels, groups and fields, and colour means something only where it sits. */
 @import "./tokens.css";
 
-/* A graph node or edge takes its light's colour as --light. */
-.light-green {
-  --light: var(--light-green);
-}
-.light-active {
-  --light: var(--light-active);
-}
-.light-waiting {
-  --light: var(--light-waiting);
-}
-.light-red {
-  --light: var(--light-red);
-}
-.light-error {
-  --light: var(--light-error);
-}
-.light-blocked {
-  --light: var(--light-blocked);
-}
-.light-run {
-  --light: var(--light-run);
-}
-.light-reused {
-  --light: var(--light-reused);
-}
-.light-checking {
-  --light: var(--light-checking);
-}
+/* A graph node or edge takes its light's colour as --light: the colour the same status has in a
+   list, a chip or a row (icons.ts names each light's icon). */
+.light-green { --light: var(--green); }
+.light-active { --light: var(--running); }
+.light-waiting { --light: var(--queued); }
+.light-red { --light: var(--red); }
+.light-error { --light: var(--error); }
+.light-blocked { --light: var(--blocked); }
+.light-run { --light: var(--running); }
+.light-reused { --light: var(--reused); }
+.light-checking { --light: var(--checking); }
 
 * {
   box-sizing: border-box;
@@ -128,6 +111,8 @@ kbd {
 .tone-queued { color: var(--queued); }
 .tone-blocked { color: var(--blocked); }
 .tone-muted { color: var(--ink-2); }
+.tone-reused { color: var(--reused); }
+.tone-checking { color: var(--checking); }
 
 /* Dialogs and menus render in a portal: raised one step, set apart by a panel line. */
 .overlay {
@@ -357,6 +342,14 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+/* A search field draws no mark of the engine's own: Esc and the app's keys clear it. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 /* Every field's placeholder is faint ink, never the browser's own colour. */
 ::placeholder {
   color: var(--ink-3);
@@ -364,8 +357,8 @@ kbd {
 }
 
 /* A graph node's ports: where edges reach it, a triangle pointing in on its left side; where
-   they leave it, a square on its right; each in the node's light, straddling its border.
-   Shape and side tell the direction; a side without an edge shows no port. */
+   they leave it, a square on its right; each in the edges' neutral colour, straddling its
+   outline. Shape and side tell the direction; a side without an edge shows no port. */
 .ported > .svelte-flow__handle {
   opacity: 0;
   pointer-events: none;
@@ -375,7 +368,7 @@ kbd {
   min-height: 0;
   border: 0;
   border-radius: 0;
-  background: var(--light);
+  background: var(--edge);
 }
 .ported.inward > .svelte-flow__handle.target {
   opacity: 1;

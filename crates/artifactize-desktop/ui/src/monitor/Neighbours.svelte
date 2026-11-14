@@ -9,6 +9,7 @@
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
+  import { BLOCKING } from "./graph";
   import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
 
@@ -72,7 +73,7 @@
       position: { x, y },
       width: NODE.width,
       height: NODE.height,
-      data: { name: item.name, light: item.light, open: item.id === node, inward: reached.has(item.id), outward: left.has(item.id) },
+      data: { name: item.name, light: item.light, tally: item.tally, open: item.id === node, inward: reached.has(item.id), outward: left.has(item.id) },
       draggable: false,
       connectable: false,
       ariaLabel: `Artifact ${item.name}`,
@@ -81,7 +82,7 @@
       id: `${edge.source}>${edge.target}`,
       source: edge.source,
       target: edge.target,
-      class: `light-${edge.light}`,
+      class: BLOCKING.has(edge.light) ? `light-${edge.light} blocking` : undefined,
       selectable: false,
       focusable: false,
     }));
@@ -135,7 +136,6 @@
 
 <style>
   .neighbours {
-    margin: 0 var(--pad) 12px;
     min-height: 72px;
   }
   /* Svelte Flow's container hides its overflow, which still lets a focused node scroll it:
@@ -145,14 +145,19 @@
     --xy-background-color: transparent;
     --xy-edge-stroke-width: 1.25;
   }
+  /* Edges as the graph draws them: neutral, but for those that leave a RED, ERROR or blocked
+     Artifact. */
   .neighbours :global(.svelte-flow__edge path) {
-    stroke: var(--light, var(--ink-3));
+    stroke: var(--edge);
+  }
+  .neighbours :global(.svelte-flow__edge.blocking path) {
+    stroke: var(--light);
   }
   .neighbours :global(.svelte-flow__node) {
     cursor: pointer;
   }
   .more {
-    margin: -6px var(--pad) 12px;
+    margin: 4px 0 0;
     color: var(--ink-2);
     font-size: var(--text-small);
   }

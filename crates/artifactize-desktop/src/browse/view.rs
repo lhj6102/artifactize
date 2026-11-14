@@ -219,8 +219,9 @@ pub struct Attention {
     pub text: String,
 }
 
-/// The shown Run: its headline and what needs attention. Its rows come one at a time, as a
-/// Detail asks for them ([`row`]): a Run can hold tens of thousands.
+/// The shown Run: its headline, the verdict and what needs attention; its tally, time and
+/// comment are its Detail's. Its rows come one at a time, as a Detail asks for them ([`row`]):
+/// a Run can hold tens of thousands.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
@@ -228,15 +229,9 @@ pub struct RunPanel {
     /// The Run's own row, whose Detail its headline opens.
     pub node: crate::ids::NodeKey,
     pub mark: Mark,
-    /// Validation at Run end, counts, time and tokens.
-    pub headline: String,
-    /// What its requester said it is working on (`verify --comment`), in full.
-    pub comment: Option<String>,
-    /// Counts alone, for a narrow pane.
-    pub counts: String,
-    pub attention: Vec<Attention>,
-    /// Attention lines beyond the shown ones.
-    pub more: u32,
+    /// Each eval that is RED or ERROR and each sign-off that waits, by its status and ID, the
+    /// failures first.
+    pub needs: Vec<Attention>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -402,23 +397,18 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
     let run = shown.opened.loaded().map(|selected| {
         let (run, requests) = (&selected.run, &selected.requests);
         let progress = monitor::progress(run, requests, now);
-        let strip = monitor::strip(&progress);
         RunPanel {
             id: run.run.id.clone().into(),
             node: NodeId::run(&run.run.id).into(),
-            mark: strip.status.into(),
-            headline: strip.headline.clone(),
-            comment: progress.comment.clone(),
-            counts: monitor::counts(progress.counts.iter().copied()),
-            attention: strip
-                .attention
+            mark: progress.status.into(),
+            needs: progress
+                .needs
                 .iter()
-                .map(|(status, text)| Attention {
+                .map(|(status, eval)| Attention {
                     mark: (*status).into(),
-                    text: text.clone(),
+                    text: eval.clone(),
                 })
                 .collect(),
-            more: u32::try_from(strip.more).unwrap_or(u32::MAX),
         }
     });
     let (branches, waiting_rows) = match &shown.query.parsed {

@@ -78,9 +78,8 @@
       {/each}
     </div>
     <div class="spacer"></div>
-    {#if onclose}<button class="button" onclick={onclose}>Close <kbd>Esc</kbd></button>{/if}
+    {#if onclose}<button class="button" aria-keyshortcuts="Escape" onclick={onclose}>Close</button>{/if}
   </header>
-  <p class="lead">The same settings as the CLI's <code>login</code>, <code>provider</code>, <code>models</code>, <code>remote</code> and <code>limits</code> commands.</p>
   {#if s.tab === "providers"}
     <div id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
@@ -107,6 +106,7 @@
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
+    margin-bottom: 12px;
   }
   .spacer {
     flex: 1;
@@ -140,30 +140,31 @@
     font-weight: 600;
     border-bottom-color: var(--accent);
   }
-  .settings :global(.lead),
   .settings :global(.muted) {
     color: var(--ink-2);
-    margin: 8px 0 10px;
+    margin: 0 0 8px;
   }
+  /* Sections under the inspector's header rows, without the fold icon: opened above by a group
+     line, the name at 12px semibold in ink; a long name wraps inside its column. */
   .settings :global(section) {
     border-top: 1px solid var(--line-group);
-    padding: 10px 0;
+    padding: 0 0 12px;
   }
-  /* A long name wraps inside its column. */
-  .settings :global(h2),
-  .settings :global(h3) {
+  .settings :global(section > h2) {
+    display: flex;
+    align-items: center;
+    min-height: var(--row);
+    margin: 0 0 4px;
+    font-size: var(--text-small);
+    font-weight: 600;
     min-width: 0;
     overflow-wrap: anywhere;
-  }
-  .settings :global(h2) {
-    font-size: var(--text-title);
-    margin: 0 0 4px;
   }
   .settings :global(.facts) {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 4px 16px;
-    margin: 8px 0 12px;
+    margin: 0 0 8px;
   }
   .settings :global(dt) {
     color: var(--ink-2);
@@ -204,16 +205,6 @@
   .settings :global(.login .row) {
     grid-column: 2;
   }
-  .settings :global(.pending) {
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-control);
-    padding: 8px 10px;
-    margin: 8px 0;
-    background: var(--surface-group);
-  }
-  .settings :global(.pending p) {
-    margin: 0 0 6px;
-  }
   /* The URL a sign-in printed: wrapping, selectable text one step below the panel. */
   .settings :global(pre.url) {
     margin: 0 0 6px;
@@ -234,25 +225,5 @@
   }
   .settings :global(.error) {
     color: var(--red);
-  }
-  /* A table stays within its column: its cells share the width and wrap what is long. */
-  .settings :global(table) {
-    border-collapse: collapse;
-    margin-top: 8px;
-    width: 100%;
-    table-layout: fixed;
-  }
-  .settings :global(th),
-  .settings :global(td) {
-    text-align: left;
-    padding: 3px 16px 3px 0;
-    overflow-wrap: anywhere;
-  }
-  .settings :global(th) {
-    color: var(--ink-2);
-    font-weight: 600;
-    font-size: var(--text-label);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
 </style>

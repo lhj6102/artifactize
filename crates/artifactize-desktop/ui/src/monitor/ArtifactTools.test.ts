@@ -1,14 +1,17 @@
 // An Artifact's own Human tools against a mocked command boundary: what it declares in its
-// worktree now, a ▶ click that runs one at once with no review, the notice it answers with,
-// and the Tool log that reaches it by its worktree and name and no other Artifact's.
+// worktree now, a click on a tool that runs it at once with no review, the failure it may
+// answer with, and the Tool log that reaches it by its worktree and name and no other
+// Artifact's, shown from its first run on.
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "vitest";
 import type { ToolView } from "../ipc/client";
 import { AppState } from "../shell/app.svelte";
 import ArtifactTools from "./ArtifactTools.svelte";
 import { branchKey } from "./fixtures";
+
+beforeEach(() => localStorage.clear());
 
 afterEach(() => {
   cleanup();
@@ -25,7 +28,7 @@ const notes: ToolView = {
   error: null,
 };
 
-it("lists the Artifact's tools and runs one at once, showing its notice", async () => {
+it("lists the Artifact's tools and runs one at once, its Tool log shown from the first run on and unfolded", async () => {
   const runs: unknown[] = [];
   mockIPC((command, args) => {
     if (command === "artifact_tools") return [notes];
@@ -35,12 +38,19 @@ it("lists the Artifact's tools and runs one at once, showing its notice", async 
     }
     return null;
   });
-  renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "notes" });
+  const { app } = renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "notes" });
+  // A person folded the Tool log in an earlier Detail.
+  app.sections.set("Tool log", false);
   const tools = await screen.findByRole("region", { name: "Tools of notes" });
-  await fireEvent.click(await within(tools).findByRole("button", { name: "▶ open" }));
-  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("Started open."));
-  expect(runs).toEqual([{ branch: branchKey("main"), artifact: "notes", tool: "open_notes", job: expect.any(Number) }]);
-  expect(screen.getByRole("log", { name: "Tool log" })).toBeTruthy();
+  // Before any run there is no Tool log.
+  expect(screen.queryByRole("button", { name: "Tool log" })).toBeNull();
+  await fireEvent.click(await within(tools).findByRole("button", { name: "open" }));
+  await waitFor(() => expect(runs).toEqual([{ branch: branchKey("main"), artifact: "notes", tool: "open_notes", job: expect.any(Number) }]));
+  // What ended well is the log's to say: no notice beside the tools.
+  expect(within(tools).queryByText("Started open.")).toBeNull();
+  app.logged([{ key: { kind: "artifact", workspace: "/work/main", artifact: "notes" }, entries: [{ run: "1", at: 0, operation: "open", artifact: "notes", lines: [], end: { text: "■ launched", error: false } }] }]);
+  await screen.findByRole("log", { name: "Tool log" });
+  expect(screen.getByRole("button", { name: "Tool log" }).getAttribute("aria-expanded")).toBe("true");
 });
 
 it("runs a tool on the branch checked out in the worktree now", async () => {
@@ -57,7 +67,7 @@ it("runs a tool on the branch checked out in the worktree now", async () => {
   const tools = await screen.findByRole("region", { name: "Tools of notes" });
   // Another branch is checked out in the same worktree: the same tools, a new target.
   await rerender({ branch: branchKey("feat/y") });
-  await fireEvent.click(await within(tools).findByRole("button", { name: "▶ open" }));
+  await fireEvent.click(await within(tools).findByRole("button", { name: "open" }));
   await waitFor(() => expect(runs).toEqual([{ branch: branchKey("feat/y"), artifact: "notes", tool: "open_notes", job: expect.any(Number) }]));
 });
 
@@ -99,20 +109,24 @@ it("shares one read between the Details that open the Artifact while it runs", a
 
 it("reads the tools again after a run only when the run failed", async () => {
   let reads = 0;
+  let ran = 0;
   let notice = { text: "Started open.", error: false };
   mockIPC((command) => {
     if (command === "artifact_tools") {
       reads += 1;
       return [notes];
     }
-    if (command === "artifact_tool_run") return notice;
+    if (command === "artifact_tool_run") return (ran += 1, notice);
     return null;
   });
   renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "notes" });
   const tools = await screen.findByRole("region", { name: "Tools of notes" });
-  const run = await within(tools).findByRole("button", { name: "▶ open" });
+  const run = await within(tools).findByRole("button", { name: "open" });
   await fireEvent.click(run);
-  await waitFor(() => expect(within(tools).getByRole("status").textContent).toBe("Started open."));
+  await waitFor(() => expect(ran).toBe(1));
+  await waitFor(() => expect((run as HTMLButtonElement).disabled).toBe(false));
+  // What ended well is not said.
+  expect(within(tools).queryByRole("status")).toBeNull();
   expect(reads).toBe(1);
   notice = { text: "open_notes did not run.", error: true };
   await fireEvent.click(run);

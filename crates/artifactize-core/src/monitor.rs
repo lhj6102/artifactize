@@ -14,8 +14,8 @@ pub use loader::{Input, Loader, Origin, Page, Snapshot, newer_offset, older_offs
 pub use model::{
     Activity, Busy, Card, Clock, Completion, Detail, EvalView, Graph, GraphEdge, GraphNode, Kind,
     Light, Node, NodeId, NotRun, Progress, Queue, RunRow, Section, Segment, Source, Status, Strip,
-    Target, Tone, Upstream, Waits, Weight, card, counts, detail, duration, glyph, graph, progress,
-    run_node, run_rows, strip, tree, upstream_index,
+    Tally, Target, Tone, Upstream, Waits, Weight, card, counts, detail, duration, glyph, graph,
+    progress, run_node, run_rows, strip, tree, upstream_index,
 };
 
 use crate::workspace::canonical_target;

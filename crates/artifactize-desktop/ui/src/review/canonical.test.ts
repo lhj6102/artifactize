@@ -68,8 +68,8 @@ it("converges when original and follower handles both exist before either read f
   await followerRead;
   answers["run-a-2"]();
   await originalRead;
-  original.technical = true;
-  expect(follower.technical).toBe(true);
+  original.area = "tools";
+  expect(follower.area).toBe("tools");
   expect(app.reviews["run-a-2"]).toBe(original);
   expect(app.reviews["run-follower-2"]).toBe(original);
 });

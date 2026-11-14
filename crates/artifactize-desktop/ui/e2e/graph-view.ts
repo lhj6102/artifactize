@@ -56,7 +56,8 @@ export type Tab = { name: string; label: string; glyph: string; colour: string; 
 export type Detail = {
   /** The Detail's heading: the shown node's title, or "Human review". */
   title: string;
-  /** The Artifact's chip (its icon and name) first, then one per eval; empty for the Run's Detail. */
+  /** On an eval's tab, the Artifact's chip (its icon and name) first, then one per eval; empty
+   * on the Artifact's own tab and on the Run's Detail. */
   tabs: Tab[];
   /** The chip row as it reads, glyphs and icon left out: `{name} / eval eval …`. */
   path: string;
@@ -120,7 +121,7 @@ export async function openArtifact(browser: WebdriverIO.Browser, id: string, tit
   let shown: Detail | null = null;
   await browser.waitUntil(async () => {
     shown = await detail(browser);
-    return shown?.title === title && shown.tabs[0]?.selected === true;
+    return shown?.title === title && shown.tabs.length === 0;
   }, { timeout: 15000, timeoutMsg: `${id}'s Detail opened on its Artifact tab` })
     .catch((error: unknown) => { throw new Error(`${String(error)}; the Detail showed ${JSON.stringify(shown)}`); });
   return shown!;
@@ -141,7 +142,7 @@ export async function openArtifactTab(browser: WebdriverIO.Browser, name: string
   let shown: Detail | null = null;
   await browser.waitUntil(async () => {
     shown = await detail(browser);
-    return shown?.tabs[0]?.selected === true && shown.evals.length > 0;
+    return shown?.tabs.length === 0 && shown.evals.length > 0;
   }, { timeout: 15000, timeoutMsg: `${name}'s Artifact tab shown again` })
     .catch((error: unknown) => { throw new Error(`${String(error)}; the Detail showed ${JSON.stringify(shown)}`); });
   return shown!;

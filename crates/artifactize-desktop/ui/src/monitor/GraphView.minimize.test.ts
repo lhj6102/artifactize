@@ -70,10 +70,10 @@ const BRANCH: BranchKey = { kind: "branch", common: "/work/app/.git", branch: "m
 //   lib ──> app ──> site; suite ⊃ { app, site }
 const SHAPE: Shape = {
   nodes: [
-    { id: "a:lib", name: "lib", light: "green", note: null, parts: [] },
-    { id: "a:suite", name: "suite", light: "red", note: null, parts: ["a:app", "a:site"] },
-    { id: "a:app", name: "app", light: "red", note: null, parts: [] },
-    { id: "a:site", name: "site", light: "green", note: null, parts: [] },
+    { id: "a:lib", name: "lib", light: "green", tally: null, note: null, parts: [] },
+    { id: "a:suite", name: "suite", light: "red", tally: null, note: null, parts: ["a:app", "a:site"] },
+    { id: "a:app", name: "app", light: "red", tally: null, note: null, parts: [] },
+    { id: "a:site", name: "site", light: "green", tally: null, note: null, parts: [] },
   ],
   edges: [
     { source: "a:lib", target: "a:app", light: "green" },
@@ -91,7 +91,8 @@ function serve() {
 }
 
 const node = (id: string) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
-const button = (name: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`);
+/** A whole's Minimize or Expand button, by its name without the key the name carries. */
+const button = (name: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${name} (m)"]`);
 
 async function drawn() {
   serve();
@@ -216,10 +217,11 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   expect(laid.minimized).toEqual([[]]);
 });
 
-it("names m on the graph's bottom and in the button's tooltip", async () => {
+it("names m in the button's name and its tooltip, and nowhere else on the graph", async () => {
   await drawn();
-  expect(document.querySelector(".hint")?.textContent).toContain("m minimizes or expands a whole");
   expect(button("Minimize suite")?.title).toBe("Minimize (m)");
+  expect(button("Minimize suite")?.getAttribute("aria-keyshortcuts")).toBe("m");
+  expect(document.querySelector(".svelte-flow")?.closest(".graph")?.querySelector("kbd")).toBeNull();
 });
 
 it("shows a port only on the side edges reach or leave, on a minimized whole those of the Artifacts it hides", async () => {

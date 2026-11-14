@@ -1,7 +1,8 @@
 <script lang="ts">
-  // A titled, focusable pane. Keys reach `onkeydown` while focus is anywhere inside it. The pane
-  // is never wider than its place: a long notice is cut to the header's room, not widening it,
-  // and a click on it shows it in full.
+  // A titled, focusable pane under one header row: its name, what the name names (a star), its
+  // headline cut at the row's end, a notice and its actions. Keys reach `onkeydown` while focus
+  // is anywhere inside it. The pane is never wider than its place: a long notice is cut to the
+  // header's room, not widening it, and a click on it shows it in full.
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
 
@@ -15,6 +16,7 @@
     noticeOpen = $bindable(),
     actions,
     beside,
+    headline,
     children,
     label,
     attach,
@@ -28,6 +30,8 @@
     actions?: Snippet;
     /** Controls of what the title names, right after it. */
     beside?: Snippet;
+    /** What the view shows, in the same row after the title, cut at the row's end. */
+    headline?: Snippet;
     children: Snippet;
     label?: string;
     /** Follows the pane's element for as long as it exists (an `{@attach}`). */
@@ -60,6 +64,7 @@
   <header>
     <h2 class:whole={wholeTitle}>{title}</h2>
     {#if beside}{@render beside()}{/if}
+    {#if headline}<div class="headline">{@render headline()}</div>{/if}
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
         <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
@@ -111,10 +116,21 @@
   .focused h2 {
     color: var(--ink);
   }
+  /* The view's headline takes the room it needs, cut at the row's end when the row is short. */
+  .headline {
+    display: flex;
+    align-items: center;
+    flex: 0 1000 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--text-small);
+    white-space: nowrap;
+  }
+  /* A few words that say what went wrong, taking the remaining room. */
   .notice {
     position: relative;
     flex: 1 1 0;
-    min-width: 0;
+    min-width: 96px;
     height: 1.5em;
   }
   /* Folded, the notice highlights under the pointer like any borderless control. */

@@ -14,6 +14,13 @@ import type { FormView, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
+// The review measures its own width to choose one column or two; jsdom has no layout.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 /** Answer commands like the backend would for one waiting request, recording every call. */
 function backend(stage: "claim" | "review", submit?: (args: Record<string, unknown>) => unknown) {
   const calls: Call[] = [];
@@ -198,7 +205,7 @@ describe("HumanDetail", () => {
     await user.keyboard("g");
     await screen.findByLabelText(/comment/);
     await user.keyboard("{Control>}s{/Control}");
-    await screen.findByText(/Submitting GREEN/);
+    await screen.findByRole("img", { name: /Submitting GREEN/ });
     const elsewhere = document.createElement("button");
     elsewhere.textContent = "Another screen";
     document.body.append(elsewhere);
@@ -261,7 +268,7 @@ describe("HumanDetail", () => {
     // The constant is the form's own: nothing to enter, so nothing shown.
     expect(screen.queryByText(/approved/)).toBeNull();
     await user.type(first, "Shorter title");
-    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(await screen.findByLabelText("change 2"), "Fix the date");
     await user.click(screen.getByRole("button", { name: "Remove change 1" }));
     await waitFor(() => expect((screen.getByLabelText("change 1") as HTMLTextAreaElement).value).toBe("Fix the date"));
@@ -294,7 +301,7 @@ describe("HumanDetail", () => {
     await screen.findByText("REVIEW (yours)");
     const groups = screen.getAllByRole("group", { name: /^Tools of / });
     expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
-    await user.click(screen.getByRole("button", { name: "▶ preview" }));
+    await user.click(screen.getByRole("button", { name: "preview" }));
     await waitFor(() => expect(ran).toEqual(["preview_brand"]));
     // The launched program keeps printing after its button returned, under its own entry.
     review.logged([
@@ -354,7 +361,7 @@ describe("HumanDetail", () => {
     // The group's constant is filled in, not shown.
     expect(within(first).queryByText(/kind/)).toBeNull();
     await user.type(within(first).getByLabelText(/problem/), "typo");
-    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByRole("button", { name: "Add" }));
     const second = await screen.findByRole("group", { name: "findings 2" });
     await user.type(within(second).getByLabelText(/problem/), "date");
     await user.selectOptions(within(second).getByLabelText(/severity/), '"high"');
@@ -389,7 +396,7 @@ describe("Tools focused", () => {
     const review = new Review("run-a-2", new Jobs());
     review.area = "tools";
     renderHosted(HumanDetail, { review, onback: () => {} });
-    const tools = await screen.findByRole("region", { name: "Tools" });
+    const tools = await screen.findByRole("group", { name: "Tools" });
     await waitFor(() => expect(document.activeElement).toBe(tools));
   });
 });

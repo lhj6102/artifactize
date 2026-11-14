@@ -1,10 +1,14 @@
 <script lang="ts">
-  // The laid-out graph. It takes the pointer: a click on an Artifact asks for its Detail, a
-  // click on the background closes it. The keyboard reaches the nodes with Tab, and Enter on a
-  // focused node does what a click does. Its first view shows the whole graph in its canvas; the
-  // Detail is docked over the canvas and takes no part in it. From then on only the person moves the
-  // camera, by panning, zooming, Fit View or opening what its find field (Ctrl+F) found: that
-  // brings the Artifact to the middle of the graph left of the Detail.
+  // The laid-out graph under its tool strip (Find, the zoom group with the zoom in percent, Fit),
+  // on a canvas with a faint grid that moves with the camera. It takes the pointer: a click on an
+  // Artifact asks for its Detail, a click on the background closes it. The keyboard reaches the
+  // nodes with Tab, and Enter on a focused node does what a click does. Its first view shows the
+  // whole graph in its canvas, never enlarged beyond its nodes' own size; the Detail is docked
+  // over the canvas and takes no part in it. From then on only the person moves the camera, by
+  // panning, zooming, Fit View, the Navigator (shown while part of the graph is out of view) or
+  // opening what its find field (Ctrl+F) found: that brings the Artifact to the middle of the
+  // graph left of the Detail. Edges are neutral, but for those that leave a RED, ERROR or
+  // blocked Artifact, drawn in its colour.
   //
   // A graph of more Artifacts than the window keeps as elements (a Run of tens of thousands)
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
@@ -19,18 +23,21 @@
   // whole focused on the graph or else the whole whose Detail is open.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
   import { tick } from "svelte";
-  import { SvelteFlow, Controls, ControlButton, MiniMap, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
+  import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
-  import { PRECEDENCE, type Found, type Shape, type Source } from "../ipc/client";
+  import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
+  import Icon from "../shell/Icon.svelte";
   import ArtifactNode from "./ArtifactNode.svelte";
   import GraphFind from "./GraphFind.svelte";
+  import Navigator from "./Navigator.svelte";
   import WholeNode from "./WholeNode.svelte";
   import { boxes, copies, copyEdges, drawings, partsCount } from "./parts";
-  import { CURRENT_LEGEND, LEGEND, WORDS, type Point } from "./graph";
+  import { BLOCKING, WORDS, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
   import { Picture, hit, scene, view, within } from "./scene";
   import { plain } from "../shell/keys";
+  import { useCommands } from "../shell/commands.svelte";
 
   let {
     source,
@@ -46,7 +53,7 @@
     /** The Run or Current the graph is of: its find field searches it. */
     source: Source;
     graph: Shape;
-    /** A Current: lit by what verify would do, with its structure text below. */
+    /** A Current: lit by what verify would do. */
     current?: boolean;
     /** The wholes drawn as nodes, by tree id: those `positions` was laid out for. */
     minimized: readonly string[];
@@ -83,8 +90,11 @@
   /** The most Artifacts kept as elements: the window stays quick to pan and zoom with this
    * many, and a camera holding about this many shows their names readably. */
   const DRAWN = 500;
-  /** How the whole graph fits: its first view and Fit View. */
-  const FIT: Fit = { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM, padding: 0.1 };
+  /** How the whole graph fits, its first view and Fit View: never enlarged beyond its nodes'
+   * own size, only the person's own zooming goes further. */
+  const FIT: Fit = { minZoom: MIN_ZOOM, maxZoom: 1, padding: 0.1 };
+  /** The smallest grid cell, in screen pixels, still drawn: further out the grid is left out. */
+  const GRID_SHOWN = 8;
   /** Fit View, the first fit included, fits the whole canvas. */
   const fitViewOptions = { minZoom: FIT.minZoom, maxZoom: FIT.maxZoom, padding: FIT.padding };
 
@@ -152,6 +162,7 @@
           data: {
             name: node.name,
             light: node.light,
+            tally: node.tally,
             open: showing.has(key),
             inward: ported.inward.has(key),
             outward: ported.outward.has(key),
@@ -161,7 +172,7 @@
           },
           draggable: false,
           connectable: false,
-          ariaLabel: `${node.name}: ${node.note ?? WORDS[node.light]}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
+          ariaLabel: `${node.name}: ${node.note ?? `${WORDS[node.light]}${tallyWords(node.tally)}`}${folded ? `, minimized, ${partsCount(count)}` : ""}`,
           domAttributes: { "data-light": node.light, "data-artifact": node.id },
         };
       });
@@ -174,7 +185,7 @@
           id: `${edge.source}>${edge.target}`,
           source: edge.source,
           target: edge.target,
-          class: `light-${edge.light}`,
+          class: BLOCKING.has(edge.light) ? `light-${edge.light} blocking` : undefined,
           selectable: false,
           focusable: false,
           domAttributes: { "data-light": edge.light },
@@ -219,6 +230,37 @@
     const now = v.canvas ? area(v.canvas.clientWidth, v.canvas.clientHeight) : null;
     if (now) v.area = now;
     if (v.area) void flow.setViewport(whole(bounds, v.area, FIT), { duration: 0 });
+  }
+
+  /** Each Artifact's light by its tree id, for the Navigator. */
+  const lights = $derived(new Map<string, Light>(graph.nodes.map((node) => [node.id, node.light])));
+  /** The whole graph is in view: no Navigator. */
+  const allInView = $derived.by(() => {
+    if (!v.area) return true;
+    const { x, y, zoom } = camera.current;
+    const [left, top] = [-x / zoom, -y / zoom];
+    const [right, bottom] = [left + v.area.width / zoom, top + v.area.height / zoom];
+    // Half a pixel of slack: a fit view's rounding never shows the Navigator.
+    const slack = 0.5 / zoom;
+    return bounds.x >= left - slack && bounds.y >= top - slack && bounds.x + bounds.width <= right + slack && bounds.y + bounds.height <= bottom + slack;
+  });
+  /** The grid's cell on the screen, from the --grid token. */
+  let cell = $state(24);
+  const grid: Attachment<HTMLElement> = (canvas) => {
+    cell = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid")) || cell;
+  };
+  const gridSize = $derived(cell * camera.current.zoom);
+
+  /** Zoom in or out by one step, as the tool strip's buttons do. */
+  function zoomBy(factor: number) {
+    void flow.setZoom(Math.min(Math.max(flow.getZoom() * factor, MIN_ZOOM), MAX_ZOOM));
+  }
+
+  /** The Navigator asked for `point` in the middle of the view, the zoom kept. */
+  function navigate(point: Point) {
+    if (!v.area) return;
+    const zoom = flow.getViewport().zoom;
+    void flow.setViewport({ x: v.area.width / 2 - point.x * zoom, y: v.area.height / 2 - point.y * zoom, zoom }, { duration: 0 });
   }
 
   /** The graph the large graph's picture paints: its edges between copies. */
@@ -324,6 +366,31 @@
     (onButton ? again?.querySelector<HTMLElement>("button") : again)?.focus({ preventScroll: true });
   }
 
+  /** The whole `m` would minimize or expand now: the focused one, else the one whose Detail is
+   * open (its first copy). */
+  function wholeAtHand(): string | undefined {
+    const held = document.activeElement?.closest<HTMLElement>(".svelte-flow__node");
+    const focused = held && v.canvas?.contains(held) ? held.dataset.id : undefined;
+    const open = opened === null ? undefined : keys.get(opened)?.find((key) => byKey.get(key)?.node.id === opened);
+    return isWhole(focused) ? focused : isWhole(open) ? open : undefined;
+  }
+
+  useCommands(() => [
+    { id: "graph.find", group: "Graph", label: "Find", keys: "Ctrl+F", run: () => (m.finding = true) },
+    { id: "graph.fit", group: "Graph", label: "Fit View", run: fitAll },
+    {
+      id: "graph.minimize",
+      group: "Graph",
+      label: "Minimize or expand the whole",
+      keys: "m",
+      enabled: () => wholeAtHand() !== undefined,
+      run: () => {
+        const key = wholeAtHand();
+        if (key !== undefined) void minimize(key, !byKey.get(key)!.minimized);
+      },
+    },
+  ]);
+
   /** Enter on a focused Artifact node opens its Detail, as a click does; on a button in it,
    * the button acts. */
   function keydown(event: KeyboardEvent) {
@@ -340,8 +407,28 @@
 <svelte:window onkeydown={(event) => void minimizeKey(event)} />
 
 <div class="graph">
+  <!-- What acts on the graph, in one row above the canvas, and nothing else. -->
+  <div class="tools" role="toolbar" aria-label="Graph tools">
+    <button class="button small" aria-keyshortcuts="Control+F" onclick={() => (m.finding = true)}><Icon name="find" />Find</button>
+    <span class="zoom">
+      <button aria-label="Zoom out" onclick={() => zoomBy(1 / ZOOM_STEP)}><Icon name="minus" /></button>
+      <span class="percent" aria-label="Zoom">{Math.round(camera.current.zoom * 100)}%</span>
+      <button aria-label="Zoom in" onclick={() => zoomBy(ZOOM_STEP)}><Icon name="add" /></button>
+    </span>
+    <button class="button small" onclick={fitAll}><Icon name="fit" />Fit</button>
+  </div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" {@attach measure} onkeydown={keydown} tabindex="-1">
+  <div
+    class="canvas"
+    class:far={gridSize < GRID_SHOWN}
+    data-graph-area
+    style:background-size="{gridSize}px {gridSize}px"
+    style:background-position="{camera.current.x}px {camera.current.y}px"
+    {@attach measure}
+    {@attach grid}
+    onkeydown={keydown}
+    tabindex="-1"
+  >
     {#if large}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
     <SvelteFlow
       bind:nodes
@@ -366,37 +453,11 @@
       proOptions={{ hideAttribution: true }}
       onnodeclick={({ node }) => onopen(byKey.get(node.id)?.node.id ?? node.id)}
       onpaneclick={({ event }) => background(event)}
-    >
-      <!-- The zoom buttons are the graph's own: the built-in ones carry a native tooltip, and
-           hovering opens nothing here. -->
-      <Controls showLock={false} showFitView={false} showZoom={false}>
-        {#snippet before()}
-          <ControlButton class="svelte-flow__controls-zoomin" onclick={() => void flow.setZoom(flow.getZoom() * ZOOM_STEP)} aria-label="Zoom In">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true"><path d="M32 18.133H18.133V32h-4.266V18.133H0v-4.266h13.867V0h4.266v13.867H32z" /></svg>
-          </ControlButton>
-          <ControlButton class="svelte-flow__controls-zoomout" onclick={() => void flow.setZoom(flow.getZoom() / ZOOM_STEP)} aria-label="Zoom Out">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 5" aria-hidden="true"><path d="M0 0h32v4.2H0z" /></svg>
-          </ControlButton>
-        {/snippet}
-        {#snippet after()}
-          <ControlButton class="svelte-flow__controls-fitview" onclick={fitAll} aria-label="Fit View">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 30" aria-hidden="true">
-              <path
-                d="M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z"
-              />
-            </svg>
-          </ControlButton>
-        {/snippet}
-      </Controls>
-      {#if drawn.length > 40 && !large}<MiniMap pannable zoomable ariaLabel="" aria-label="Mini map" />{/if}
-    </SvelteFlow>
+    />
     {#if m.finding}<GraphFind {source} {branch} onchoose={(found) => void choose(found)} onclose={() => (m.finding = false)} />{/if}
-    <p class="hint"><kbd>Ctrl+F</kbd> finds, or lists the favorites · <kbd>m</kbd> minimizes or expands a whole</p>
-    <ul class="legend" aria-label="Legend">
-      {#each current ? CURRENT_LEGEND : LEGEND as light (light)}
-        <li class="light-{light}"><span class="swatch"></span>{WORDS[light]}</li>
-      {/each}
-    </ul>
+    {#if !allInView && v.area}
+      <Navigator {laid} {lights} viewport={camera.current} width={v.area.width} height={v.area.height} onmove={navigate} />
+    {/if}
   </div>
 </div>
 
@@ -405,15 +466,80 @@
     position: relative;
     height: 100%;
     display: grid;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
   }
+  /* The tool strip: one row on the panel, opened above by a group line. */
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+    height: var(--row-head);
+    padding: 0 var(--pad);
+    border-top: 1px solid var(--line-group);
+    background: var(--surface-panel);
+    font-size: var(--text-small);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .tools :global(.button) {
+    flex: none;
+  }
+  /* One bordered group: Zoom out, the zoom in percent, Zoom in. */
+  .zoom {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
+    background: var(--surface-group);
+    overflow: hidden;
+  }
+  .zoom button {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .zoom button:hover {
+    color: var(--ink);
+    background: var(--surface-panel);
+  }
+  .zoom button:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  .percent {
+    width: 44px;
+    height: 20px;
+    line-height: 20px;
+    text-align: center;
+    border-left: 1px solid var(--line-group);
+    border-right: 1px solid var(--line-group);
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The working surface, opened by a group line under the strip, with a faint grid that moves
+     and scales with the camera, left out where its cells grow too small. */
   .canvas {
     position: relative;
     min-height: 0;
     border-top: 1px solid var(--line-group);
-    background: var(--surface-app);
+    background-color: var(--surface-app);
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--line-group) 40%, transparent) 1px, transparent 1px);
+  }
+  .canvas.far {
+    background-image: none;
   }
   /* Under the graph's elements, filling the same box. */
   .paint {
@@ -429,34 +555,13 @@
     overflow: clip;
     --xy-background-color: transparent;
     --xy-edge-stroke-width: 1.25;
-    --xy-controls-button-background-color: var(--surface-panel);
-    --xy-controls-button-background-color-hover: var(--surface-group);
-    --xy-controls-button-color: var(--ink-2);
-    --xy-controls-button-color-hover: var(--ink);
-    --xy-controls-button-border-color: var(--line-group);
-    --xy-controls-box-shadow: none;
-    --xy-minimap-background-color: var(--surface-panel);
-    --xy-minimap-mask-background-color: var(--scrim);
-    --xy-minimap-node-background-color: var(--surface-group);
   }
-  /* The minimap's nodes take a control's corner. */
-  .canvas :global(.svelte-flow__minimap-node) {
-    rx: var(--radius-control);
-    ry: var(--radius-control);
-  }
-  /* The zoom controls: one bordered group of 24px squares at the canvas's bottom left. */
-  .canvas :global(.svelte-flow__controls) {
-    border: 1px solid var(--line-group);
-    border-radius: var(--radius-control);
-    overflow: hidden;
-  }
-  .canvas :global(.svelte-flow__controls-button) {
-    width: 24px;
-    height: 24px;
-    border-bottom-color: var(--line-group);
-  }
+  /* Edges are neutral; one that leaves a RED, ERROR or blocked Artifact takes its colour. */
   .canvas :global(.svelte-flow__edge path) {
-    stroke: var(--light, var(--ink-3));
+    stroke: var(--edge);
+  }
+  .canvas :global(.svelte-flow__edge.blocking path) {
+    stroke: var(--light);
   }
   .canvas :global(.svelte-flow__node) {
     cursor: pointer;
@@ -465,44 +570,5 @@
     outline: 2px solid var(--focus);
     outline-offset: 2px;
     border-radius: var(--radius-control);
-  }
-  .legend {
-    position: absolute;
-    left: 8px;
-    top: 8px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 10px;
-    margin: 0;
-    padding: 3px 8px;
-    list-style: none;
-    font-size: var(--text-label);
-    color: var(--ink-2);
-    background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
-    border-radius: var(--radius-control);
-    pointer-events: none;
-    z-index: 5;
-  }
-  /* At the graph's bottom, right of the zoom controls and clear of the Detail on the right. */
-  .hint {
-    position: absolute;
-    left: 52px;
-    bottom: 15px;
-    margin: 0;
-    padding: 3px 8px;
-    font-size: var(--text-label);
-    color: var(--ink-2);
-    background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
-    border-radius: var(--radius-control);
-    pointer-events: none;
-    z-index: 5;
-  }
-  .swatch {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-right: 4px;
-    border-radius: 50%;
-    background: var(--light);
   }
 </style>

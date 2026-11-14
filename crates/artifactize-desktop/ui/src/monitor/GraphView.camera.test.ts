@@ -115,7 +115,7 @@ const served = (shape: Shape): Graph => ({ source: { kind: "run", run: "run-a" }
 /** The Run's graph drawn and laid out; `find` answers the find field, given the text. */
 async function drawn(find: (text: string) => Finding = () => ({ found: [], more: 0 })) {
   const graph = served({
-    nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const, note: null, parts: [] })),
+    nodes: Object.keys(PLACED).map((name) => ({ id: `a:${name}`, name, light: "green" as const, tally: null, note: null, parts: [] })),
     edges: [{ source: "a:release", target: "a:ship", light: "green" }],
   });
   mockIPC((command, payload) => {
@@ -187,14 +187,14 @@ it("keeps a camera the person moved, and fits the whole graph into the whole can
 
   // Fit View, the person's own, shows every Artifact in the canvas, the same with the Detail
   // open as without: publish lies under the docked Detail again.
-  screen.getByRole("button", { name: "Fit View" }).click();
+  screen.getByRole("button", { name: "Fit" }).click();
   expect(Object.keys(PLACED).filter((name) => !within(name, CANVAS.right))).toEqual([]);
   expect(viewport).toEqual(first);
   expect(onScreen("publish").right).toBeGreaterThan(DETAIL.left);
 });
 
 it("fits a graph drawn in a hidden screen once its canvas first has a size", async () => {
-  const graph = served({ nodes: [{ id: "a:docs", name: "docs", light: "green", note: null, parts: [] }], edges: [] });
+  const graph = served({ nodes: [{ id: "a:docs", name: "docs", light: "green", tally: null, note: null, parts: [] }], edges: [] });
   mockIPC((command) => command === "graph" ? graph : null);
   renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
   await screen.findByLabelText("docs: GREEN");
@@ -223,7 +223,9 @@ it("finds Artifacts and evals by name and brings the opened one to the middle of
   const field = await typeFind(app, "pub");
   const options = await screen.findAllByRole("option");
   expect(asked).toEqual(["pub"]);
-  expect(options.map((option) => option.textContent)).toEqual(["✓publish", "✗publish / reads"]);
+  expect(options.map((option) => option.textContent)).toEqual(["publish", "publish / reads"]);
+  // Each led by its verdict's icon in its colour, not a font's character.
+  expect(options.map((option) => option.querySelector(".glyph svg") !== null)).toEqual([true, true]);
   expect(screen.getByRole("status").textContent?.trim()).toBe("3 more match.");
   // ↓ twice chooses the eval; Enter opens its Artifact's Detail on that eval's tab.
   await fireEvent.keyDown(field, { key: "ArrowDown" });
@@ -265,7 +267,7 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
   const branch = { kind: "folder" as const, path: "/work/app" };
   let starred: Finding = { found: [], more: 0 };
   const asked: unknown[] = [];
-  const graph = served({ nodes: [{ id: "a:publish", name: "publish", light: "green", note: null, parts: [] }], edges: [] });
+  const graph = served({ nodes: [{ id: "a:publish", name: "publish", light: "green", tally: null, note: null, parts: [] }], edges: [] });
   mockIPC((command, payload) => {
     if (command === "graph") return graph;
     if (command === "favorites") return (asked.push(payload), starred);
@@ -275,13 +277,13 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
   const { app } = renderHosted(SourceGraph, { source: { kind: "run", run: "run-a" }, revision: 1, onopen, onclose: vi.fn() });
   app.monitor.shown = { kind: "run", branch, run: "run-a" };
   await screen.findByLabelText("publish: GREEN");
-  // The graph's bottom says what Ctrl+F and m do.
-  expect(document.querySelector(".hint")?.textContent).toBe("Ctrl+F finds, or lists the favorites · m minimizes or expands a whole");
+  // The keys are Help's: nothing on the graph teaches them.
+  expect(document.querySelector(".graph kbd")).toBeNull();
 
   // None starred yet: the field says how to star one.
   app.monitor.finding = true;
   let field = await screen.findByRole("combobox", { name: "Find in the graph" });
-  expect((await screen.findByRole("status")).textContent?.trim()).toBe("No favorites here yet: star an Artifact with the ☆ beside its Detail's title.");
+  expect((await screen.findByRole("status")).textContent?.trim()).toBe("No favorites here yet: star an Artifact with the star beside its Detail's title.");
   expect(asked).toEqual([{ source: { kind: "run", run: "run-a" }, branch }]);
   await fireEvent.keyDown(field, { key: "Escape" });
 
@@ -290,7 +292,7 @@ it("lists the branch's favorites with nothing typed, opens one as found, and say
   app.monitor.finding = true;
   field = await screen.findByRole("combobox", { name: "Find in the graph" });
   const list = await screen.findByRole("listbox", { name: "Favorites" });
-  expect([...list.querySelectorAll("[role=option]")].map((option) => option.textContent)).toEqual(["✓publish"]);
+  expect([...list.querySelectorAll("[role=option]")].map((option) => option.textContent)).toEqual(["publish"]);
   await fireEvent.keyDown(field, { key: "Enter" });
   expect(onopen).toHaveBeenCalledExactlyOnceWith("a:publish", null);
   expect(app.monitor.finding).toBe(false);

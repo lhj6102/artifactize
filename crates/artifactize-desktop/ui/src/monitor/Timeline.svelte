@@ -4,7 +4,7 @@
   // cut short to one line, under its Run ID. The entry shown in the Main area is marked;
   // **Older runs** at the end brings older Runs in below the oldest.
   import type { BranchView, Chip } from "../ipc/client";
-  import { toneColour } from "../shell/tone";
+  import { tone, toneColour } from "../shell/tone";
   import { chipKey, keyOf } from "./monitor-state.svelte";
 
   let {
@@ -48,12 +48,9 @@
           style:--dot={chip.kind === "run" ? toneColour(chip.mark.status) : null}
           aria-hidden="true"
         ></span>
-        <span class="status">{chip.kind === "run" ? chip.status : "Current"}</span>
+        <span class="status {chip.kind === 'run' ? tone(chip.mark.status) : ''}">{chip.kind === "run" ? chip.status : "Current"}</span>
         <span class="age">{chip.kind === "run" ? chip.age : ""}</span>
-        <span class="sub">{chip.kind === "run" ? chip.id : "Working tree"}</span>
-        {#if chip.kind === "run" && chip.comment}
-          <span class="sub note">{chip.comment}</span>
-        {/if}
+        {#if chip.kind === "run"}<span class="sub">{chip.comment ?? chip.id}</span>{/if}
       </button>
     </li>
   {/each}
@@ -127,9 +124,6 @@
     grid-column: 2;
     font-weight: 600;
     font-size: var(--text-small);
-  }
-  .running .status {
-    color: var(--running);
   }
   .age {
     grid-column: 3;

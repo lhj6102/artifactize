@@ -1,5 +1,7 @@
 <script lang="ts">
-  // Quitting with claims this window took and did not submit: keep or release them.
+  // Quitting with claims this window took and did not submit: stay, or release them and quit.
+  // Esc stays; `u` releases and quits, the one key cap the dialog shows, since nothing else
+  // could say it.
   import { LeaveDialogState, setLeaveDialogState } from "./leave-dialog-state.svelte";
   import { AlertDialog } from "bits-ui";
   import { useIpc, call, message } from "../ipc/client";
@@ -31,8 +33,7 @@
 
   function keydown(event: KeyboardEvent) {
     if (l.working || composing(event)) return;
-    if (event.key === "k") onleave();
-    else if (event.key === "u") void release();
+    if (event.key === "u") void release();
     else return;
     event.preventDefault();
   }
@@ -42,18 +43,14 @@
   <AlertDialog.Portal>
     <AlertDialog.Overlay class="overlay" />
     <AlertDialog.Content class="dialog" onkeydown={keydown}>
-      <AlertDialog.Title class="dialog-title">Unsubmitted claims</AlertDialog.Title>
-      <AlertDialog.Description>
-        This review claimed {taken?.length === 1 ? "a request" : `${taken?.length} requests`} without submitting:
+      <AlertDialog.Title class="dialog-title">Leave the review?</AlertDialog.Title>
+      <AlertDialog.Description class="held">
+        This window holds {taken?.length === 1 ? "1 review claim" : `${taken?.length} review claims`}: {(taken ?? []).join(", ")}.
       </AlertDialog.Description>
-      <ul>
-        {#each taken ?? [] as id (id)}<li><code>{id}</code></li>{/each}
-      </ul>
       {#if l.error}<p class="error" role="alert">{l.error}</p>{/if}
       <div class="dialog-actions">
-        <AlertDialog.Cancel class="button">Stay <kbd>Esc</kbd></AlertDialog.Cancel>
-        <button class="button primary" disabled={l.working} onclick={() => void release()}>Release and quit <kbd>u</kbd></button>
-        <AlertDialog.Action class="button" disabled={l.working} onclick={onleave}>Keep and quit <kbd>k</kbd></AlertDialog.Action>
+        <AlertDialog.Cancel class="button" aria-keyshortcuts="Escape">Stay</AlertDialog.Cancel>
+        <button class="button primary" aria-keyshortcuts="u" disabled={l.working} onclick={() => void release()}>Release and quit <kbd>u</kbd></button>
       </div>
     </AlertDialog.Content>
   </AlertDialog.Portal>
@@ -62,5 +59,9 @@
 <style>
   .error {
     color: var(--red);
+  }
+  :global(.held) {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 </style>

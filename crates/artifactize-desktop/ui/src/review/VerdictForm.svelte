@@ -1,13 +1,14 @@
 <script lang="ts">
   // The chosen verdict's owner fields as a person enters them: a text, a choice, a list of items,
   // or repeated groups of fields, each to add and remove. Constants are filled in and not shown.
-  // Enter never submits; the Submit button and Ctrl+S do. Values are checked and coerced by the
-  // backend's form.
+  // Enter never submits; the Submit button of the review's action row and Ctrl+S do. Values are
+  // checked and coerced by the backend's form.
   import type { Attachment } from "svelte/attachments";
   import type { FieldValue, FormField } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
+  import Icon from "../shell/Icon.svelte";
 
-  let { review, form, onsubmit }: { review: Review; form: FormDraft; onsubmit: () => void } = $props();
+  let { review, form }: { review: Review; form: FormDraft } = $props();
   /** What a person enters: constants are the form's own. */
   const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
   const shown = $derived(entered(form.fields));
@@ -107,17 +108,15 @@
         role="radio"
         aria-checked={form.verdict === verdict}
         class="verdict {verdict.toLowerCase()}"
+        aria-keyshortcuts={verdict === "GREEN" ? "Control+G" : "Control+R"}
         onclick={() => void review.choose(verdict)}
       >
-        {verdict} <kbd aria-hidden="true">{verdict === "GREEN" ? "Ctrl+G" : "Ctrl+R"}</kbd>
+        {verdict}
       </button>
     {/each}
   </div>
 
-  {#if shown.length === 0}
-    <p class="muted">This verdict asks for nothing more.</p>
-  {:else}
-    {#each shown as field (field.name)}
+  {#each shown as field (field.name)}
       {@const value = form.values[field.name]}
       <div class="field">
         <label class="name" for="field-{field.name}">
@@ -136,11 +135,11 @@
                   oninput={(event) =>
                     setItems(field.name, list.with(at, (event.currentTarget as HTMLTextAreaElement).value))}
                 ></textarea>
-                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}>✕</button>
+                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}><Icon name="remove" /></button>
               </li>
             {/each}
           </ol>
-          <button class="button small add" onclick={() => void form.add(field.name)}>+ Add</button>
+          <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
         {:else if field.input.kind === "groups"}
           {@const subs = entered(field.input.fields)}
           {@const list = groups(value)}
@@ -149,7 +148,7 @@
               <div class="group" role="group" aria-label="{field.name} {at + 1}">
                 <div class="group-head">
                   <span>{field.name} {at + 1}</span>
-                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}>✕</button>
+                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}><Icon name="remove" /></button>
                 </div>
                 {#each subs as sub (sub.name)}
                   {@const id = `field-${field.name}-${at}-${sub.name}`}
@@ -164,21 +163,17 @@
               </div>
             {/each}
           </div>
-          <button class="button small add" onclick={() => void form.add(field.name)}>+ Add</button>
+          <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
         {:else}
           {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next))}
         {/if}
         {#if field.hint}<span class="hint">{field.hint}</span>{/if}
       </div>
-    {/each}
-  {/if}
+  {/each}
 
   {#if form.error}
     <div class="error" role="alert">{form.error}</div>
   {/if}
-  <div class="submit">
-    <button class="button primary" disabled={review.busy !== null} onclick={onsubmit}>Submit {form.verdict} <kbd aria-hidden="true">Ctrl+S</kbd></button>
-  </div>
 </div>
 
 <style>
@@ -230,8 +225,7 @@
     color: var(--red);
     margin-left: 2px;
   }
-  .hint,
-  .muted {
+  .hint {
     color: var(--ink-2);
     font-size: var(--text-small);
   }
@@ -277,12 +271,16 @@
     gap: 6px;
   }
   .remove {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
     border: 0;
     background: none;
     color: var(--ink-2);
     cursor: pointer;
     font: inherit;
-    padding: 4px;
+    padding: 0;
   }
   .remove:hover {
     background: var(--surface-group);
@@ -309,10 +307,6 @@
     justify-content: space-between;
     color: var(--ink-2);
     font-size: var(--text-small);
-  }
-  .submit {
-    display: flex;
-    justify-content: flex-end;
   }
   input:focus,
   textarea:focus,

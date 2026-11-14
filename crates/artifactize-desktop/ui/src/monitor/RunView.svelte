@@ -1,9 +1,7 @@
 <script lang="ts">
-  // The shown Run: its headline (a click opens the Run's Detail), the comment it was requested
-  // with in full, what needs attention, and the graph of its Artifacts (a click on one opens its
-  // Detail).
+  // The shown Run's graph: a click on an Artifact opens its Detail. Its headline is the Main
+  // area's header row's (RunHeadline).
   import type { BranchKey, RunPanel } from "../ipc/client";
-  import { tone } from "../shell/tone";
 
   let {
     run,
@@ -12,7 +10,6 @@
     opened = null,
     onopen,
     onclose,
-    onrun,
   }: {
     run: RunPanel;
     /** The branch the Run is of. */
@@ -23,97 +20,29 @@
     opened?: string | null;
     onopen: (id: string, tab?: string | null) => void;
     onclose: () => void;
-    /** Open the Detail of the Run. */
-    onrun: () => void;
   } = $props();
 </script>
 
 <div class="run">
-  <button class="headline" onclick={onrun}>
-    <span class="status {tone(run.mark.status)}">{run.mark.glyph} {run.mark.status}</span>
-    <span class="text">{run.headline}</span>
-  </button>
-  {#if run.comment}
-    <p class="comment">{run.comment}</p>
-  {/if}
-  {#if run.attention.length > 0}
-    <ul class="attention">
-      {#each run.attention as line, at (at)}
-        <li><span class={tone(line.mark.status)}>{line.mark.glyph}</span> {line.text}</li>
-      {/each}
-      {#if run.more > 0}
-        <li class="more">+{run.more} more</li>
-      {/if}
-    </ul>
-  {/if}
-  <div class="area" data-graph-area>
-    <!-- Loaded on first use: the graph's libraries stay out of the window's start-up. -->
-    {#await import("./SourceGraph.svelte")}
-      <p class="empty">Loading the graph…</p>
-    {:then { default: SourceGraph }}
-      <SourceGraph source={{ kind: "run", run: run.id }} {branch} {revision} {opened} {onopen} {onclose} />
-    {/await}
-  </div>
+  <!-- Loaded on first use: the graph's libraries stay out of the window's start-up. -->
+  {#await import("./SourceGraph.svelte")}
+    <p class="empty">Loading the Run…</p>
+  {:then { default: SourceGraph }}
+    <SourceGraph source={{ kind: "run", run: run.id }} {branch} {revision} {opened} {onopen} {onclose} />
+  {/await}
 </div>
 
 <style>
   .run {
     height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-  .area {
-    flex: 1;
-    min-height: 240px;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
   }
   .empty {
-    color: var(--ink-2);
-    padding: 0 var(--pad);
-  }
-  .headline {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    align-items: baseline;
     margin: 0;
-    padding: 0 var(--pad) 6px;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .headline:hover {
-    background: var(--surface-group);
-  }
-  .headline:hover .text {
-    color: var(--ink);
-  }
-  .headline .status {
-    font-weight: 700;
-  }
-  .headline .text {
-    color: var(--ink-2);
-    font-variant-numeric: tabular-nums;
-  }
-  .comment {
-    margin: 0;
-    padding: 0 var(--pad) 8px;
-    overflow-wrap: anywhere;
-  }
-  .attention {
-    list-style: none;
-    margin: 0;
-    padding: 0 var(--pad) 8px;
-  }
-  .attention li {
-    font-size: var(--text-small);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .more {
+    padding: 6px var(--pad);
     color: var(--ink-2);
   }
 </style>

@@ -1,8 +1,10 @@
 <script lang="ts">
-  // The window's one screen: the Pane on the left and the Main area on the right, always with
-  // the divider between them. A chip shows its Run or the branch's Current in the Main area, a
-  // waiting review opens there as Review, and Settings take its place until left. A click on an
-  // Artifact (or on the Run's headline) opens its Detail, a panel docked at the graph's right edge;
+  // The window's one screen: the Pane on the left and the Main area on the right, with the
+  // divider between them while the Pane is shown; the bar's Pane switch (Ctrl+B) hides both, the
+  // Main area taking the window's width, and shows them again at the width the Pane had. A chip
+  // shows its Run or the branch's Current in the Main area, under one header row with its
+  // headline; a waiting review opens there as Review. A click on an Artifact (or on the Run's
+  // headline) opens its Detail, a panel docked at the graph's right edge under its tool strip;
   // dragging its left edge sets its width, kept like the split ratio.
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
@@ -16,7 +18,9 @@
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
+  import RunHeadline from "./RunHeadline.svelte";
   import CurrentView from "./CurrentView.svelte";
+  import ScanState from "./ScanState.svelte";
   import DetailPane from "./DetailPane.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
@@ -134,7 +138,7 @@
     try {
       const detail = await call(app.ipc.requestDetail(id));
       if (detail.profile === "human") return openReview(id);
-      m.folds = { technical: false, pending: false, log: false, debug: false };
+      m.folds = { log: false };
       m.shown = { kind: "request", detail };
       m.finding = false;
       m.opened = null;
@@ -184,8 +188,10 @@
     else if (by < 0) m.expanded.delete(key);
   }
 
-  /** Move focus to the Pane's entries, the Main area or the Detail. */
+  /** Move focus to the Pane's entries, the Main area or the Detail; the Pane shows first when
+   * it is hidden. */
   async function focus(to: Focus) {
+    if (to === "pane") m.paneShown = true;
     m.focus = to;
     await tick();
     const pane = panes[to];
@@ -317,14 +323,13 @@
     else void focus("pane");
   }
 
+
   function mainKey(event: KeyboardEvent) {
     // A review takes its own keys; a read-only request has its folds.
     if (shown.kind === "review") return;
     if (shown.kind === "request" && !plain(event, "Escape") && !plain(event, "ArrowLeft")) {
       if (m.folds.log) return;
-      if (plain(event, "t") && shown.detail.card) m.folds.debug = !m.folds.debug;
-      else if (plain(event, "t")) m.folds.technical = !m.folds.technical;
-      else if (plain(event, "w")) m.folds.pending = !m.folds.pending;
+      if (plain(event, "t")) app.sections.toggle(shown.detail.target === "run" ? "Technical" : "Debug");
       else return;
     } else if (plain(event, "Escape") || (shown.kind === "request" && plain(event, "ArrowLeft"))) back();
     else return;
@@ -352,23 +357,19 @@
   }
 
   const title = $derived.by(() => {
-    if (shown.kind === "run") return `Run ${shown.run}`;
+    if (shown.kind === "run") return shown.run;
     if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
-    if (shown.kind === "review") return review?.settled ? "Review · read-only" : "Review";
+    if (shown.kind === "review") return "Review";
     if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });
   const notice = $derived(browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
-    { id: "pane.search", group: "Pane", label: "Search branches and reviews", keys: "/", run: () => panes.search?.focus() },
-    { id: "pane.focus", group: "Pane", label: "Focus the Pane", run: () => void focus("pane") },
-    { id: "main.focus", group: "Main area", label: "Focus the Main area", run: () => void focus("main") },
-    { id: "main.open-id", group: "Main area", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
-    { id: "main.run", group: "Main area", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
+    { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
     {
       id: "main.close",
-      group: "Main area",
+      group: "Graph",
       label: "Close the Detail",
       keys: "Esc",
       enabled: () => m.opened !== null,
@@ -408,22 +409,24 @@
 
 <div class="monitor">
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
-    <Split defaultSize={24} minSize={12}>
-      <Pane
-        bind:query={() => query, setQuery}
-        {filled}
-        onselect={open}
-        ontoggle={toggle}
-        onchoose={choose}
-        onopen={openWaiting}
-        onmove={move}
-        onstep={step}
-        onmain={() => void focus("main")}
-      />
-    </Split>
-    <PaneResizer class="resizer" />
-    <Split defaultSize={76} minSize={30}>
-      <div class="stage" {@attach graphTop}>
+    {#if m.paneShown}
+      <Split id="pane" order={1} defaultSize={24} minSize={12}>
+        <Pane
+          bind:query={() => query, setQuery}
+          {filled}
+          onselect={open}
+          ontoggle={toggle}
+          onchoose={choose}
+          onopen={openWaiting}
+          onmove={move}
+          onstep={step}
+          onmain={() => void focus("main")}
+        />
+      </Split>
+      <PaneResizer class="resizer" />
+    {/if}
+    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={30}>
+      <div class="stage" style:--detail-cover={m.opened ? "var(--dock-width)" : null} {@attach graphTop}>
         <Panel
           {title}
           label="Main area"
@@ -434,14 +437,25 @@
           onfocus={() => m.focus !== "detail" && (m.focus = "main")}
           onkeydown={mainKey}
         >
+          {#snippet headline()}
+            {#if shown.kind === "run" && run}
+              <RunHeadline {run} onrun={openRun} />
+            {:else if shown.kind === "current"}
+              <ScanState branch={shown.branch} />
+            {:else if shown.kind === "review" && review?.view}
+              <span class="title">{review.view.title}</span>
+            {/if}
+          {/snippet}
           {#snippet actions()}
-            {#if (shown.kind === "request" || shown.kind === "review") && !m.settings}
-              <button class="button small" onclick={closeMain}>Close <kbd>Esc</kbd></button>
+            {#if shown.kind === "current"}
+              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" disabled={current.scanning} onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
+            {:else if (shown.kind === "request" || shown.kind === "review") && !m.settings}
+              <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={closeMain}>Close</button>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}
             {#if run}
-              <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
+              <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
             {:else if view?.missing}
               <p class="empty">This Run cannot be read; choose another.</p>
             {:else}
@@ -451,16 +465,13 @@
             <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
           {:else if shown.kind === "review"}
             {#if review}
-              <div class="review">
-                {#if review.view}<p class="crumb">{review.view.title} · Artifact {review.view.artifact}</p>{/if}
-                {#key review}
-                  <HumanDetail {review} active={!m.settings} onback={() => void focus("pane")} />
-                {/key}
-              </div>
+              {#key review}
+                <HumanDetail {review} active={!m.settings} wide onback={() => void focus("pane")} />
+              {/key}
             {/if}
           {:else if shown.kind === "request"}
             {#key shown.detail.request}
-              <RecordDetail detail={shown.detail} bind:technical={m.folds.technical} bind:pending={m.folds.pending} bind:log={m.folds.log} bind:debug={m.folds.debug} />
+              <RecordDetail detail={shown.detail} bind:log={m.folds.log} />
             {/key}
           {:else}
             <p class="empty">Choose a branch or a waiting review in the Pane.</p>
@@ -521,8 +532,8 @@
       >
         <input class="input" placeholder="req-…" bind:value={m.wanted} aria-label="Request ID" />
         <div class="dialog-actions">
-          <Dialog.Close class="button">Cancel <kbd aria-hidden="true">Esc</kbd></Dialog.Close>
-          <button class="button primary" type="submit">Open <kbd aria-hidden="true">Enter</kbd></button>
+          <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
+          <button class="button primary" type="submit" aria-keyshortcuts="Enter">Open</button>
         </div>
       </form>
     </Dialog.Content>
@@ -540,7 +551,9 @@
   }
   /* The graph's own layers (canvas, Detail) stack inside the stage, so none of them covers the
    * divider's grab zone on the graph's side, and the Detail never sits beside the Pane. */
+  /* The Detail's width, as the dock takes it: a drag's, or its default, within its bounds. */
   .stage {
+    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 96px));
     position: relative;
     isolation: isolate;
     height: 100%;
@@ -559,9 +572,7 @@
     top: var(--graph-top, 32px);
     right: 0;
     bottom: 0;
-    width: var(--detail-width, min(46%, 680px));
-    min-width: min(320px, 100%);
-    max-width: calc(100% - 96px);
+    width: var(--dock-width);
     contain: inline-size;
     overflow: hidden;
     border-top: 1px solid var(--line-group);
@@ -577,22 +588,18 @@
     cursor: col-resize;
     touch-action: none;
   }
+  /* What the Main area has to say where its graph would be: one line at the top of its body. */
   .empty {
-    color: var(--ink-2);
-    padding: 0 var(--pad);
-  }
-  .review {
-    height: 100%;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-  }
-  .crumb {
     margin: 0;
-    padding: 0 var(--pad) 6px;
+    padding: 6px var(--pad);
     color: var(--ink-2);
-    font-size: var(--text-small);
-    overflow-wrap: anywhere;
+  }
+  /* A review's eval and title, said once, in the header row. */
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ink-2);
   }
   :global(.dialog.open-id) {
     width: min(480px, 92vw);

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{
     NodeId, Target,
     states::{Activity, Busy, Completion, EvalView, NotRun},
-    tree::{Kind, Node},
+    tree::{Kind, Node, Tally},
 };
 use crate::types::ArtifactName;
 
@@ -86,6 +86,8 @@ pub struct GraphNode {
     pub id: NodeId,
     pub name: ArtifactName,
     pub light: Light,
+    /// How many of its evals are GREEN, of how many; `None` without evals of its own.
+    pub tally: Option<Tally>,
     /// The Artifacts of the graph it is made of directly, by name.
     pub parts: Vec<ArtifactName>,
 }
@@ -189,6 +191,7 @@ pub fn graph(tree: &[Node]) -> Graph {
             .map(|(name, node, _)| GraphNode {
                 id: node.id.clone(),
                 light: lights[&name],
+                tally: node.tally,
                 parts: node
                     .parts
                     .iter()

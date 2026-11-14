@@ -4,7 +4,7 @@
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/svelte";
-import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, beforeAll, expect, it, vi } from "vitest";
 import type { DetailView, Source, TreeNode } from "../ipc/client";
 import DetailPane from "./DetailPane.svelte";
 import { Jobs } from "../ipc/jobs.svelte";
@@ -35,6 +35,9 @@ beforeAll(() => {
   } as unknown as typeof DOMMatrixReadOnly;
 });
 
+// Each test starts with the sections folded as a first launch has them.
+beforeEach(() => localStorage.clear());
+
 afterEach(() => {
   cleanup();
   clearMocks();
@@ -61,7 +64,7 @@ const rowOf = (args: unknown, rows = tree) => rows.find((each) => each.id === (a
 
 const view = (node: string, title: string): DetailView => ({
   source: RUN, plan: null, node, target: node.startsWith("e:") ? "eval" : "artifact", title, summary: `${title} summary`, request: null, profile: node.startsWith("e:") ? "runtime" : null,
-  mark: null, sections: [], evidence: null, running: false, card: null,
+  mark: null, sections: [], evidence: null, running: false, card: null, outcome: null,
 });
 
 function setup(tab: string | null = null, drawn: { wholes: string[]; copies: number } = { wholes: [], copies: 1 }) {
@@ -72,10 +75,10 @@ function setup(tab: string | null = null, drawn: { wholes: string[]; copies: num
       // The backend cut two more Artifacts that use `app`.
       return { moreUses: 0, moreUsedBy: 2, ...drawn, shape: {
         nodes: [
-          { id: "a:core", name: "core", light: "green", note: null, parts: [] },
-          { id: "a:app", name: "app", light: "red", note: null, parts: [] },
-          { id: "a:docs", name: "docs", light: "green", note: null, parts: [] },
-          { id: "a:far", name: "far", light: "green", note: null, parts: [] },
+          { id: "a:core", name: "core", light: "green", tally: null, note: null, parts: [] },
+          { id: "a:app", name: "app", light: "red", tally: null, note: null, parts: [] },
+          { id: "a:docs", name: "docs", light: "green", tally: null, note: null, parts: [] },
+          { id: "a:far", name: "far", light: "green", tally: null, note: null, parts: [] },
         ],
         edges: [
           { source: "a:core", target: "a:app", light: "green" },
@@ -100,39 +103,46 @@ function setup(tab: string | null = null, drawn: { wholes: string[]; copies: num
   return { ...shown, read, ontab, onopen, onback, ongone };
 }
 
-it("shows the Artifact tab first with its evals' verdicts, and switches to an eval's tab from the list or the tabs", async () => {
+it("shows the Artifact tab first, without chips, with its evals' verdicts, and switches to an eval's tab from the list or the chips", async () => {
   const { read, ontab, rerender } = setup();
   await screen.findByRole("heading", { name: "Artifact app" });
-  const tabs = within(screen.getByRole("tablist", { name: "Tabs of app" })).getAllByRole("tab");
-  // It reads as a path: the Artifact's chip, a `/`, then the evals' chips.
-  expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["app", "✓lint", "✗test"]);
-  expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("app / ✓lint✗test");
-  // The Artifact's chip shows the Artifact icon before its name and is read as "Artifact app".
-  expect(tabs[0].getAttribute("aria-label")).toBe("Artifact app");
-  expect(tabs[0].querySelector("img")?.getAttribute("src")).toMatch(/artifactize-icon-mark/);
-  expect(tabs[0].getAttribute("aria-selected")).toBe("true");
-  // Each eval's tab carries its verdict's glyph in its verdict's colour.
-  expect(tabs[2].querySelector(".tone-red")?.textContent).toBe("✗");
-  expect(tabs[1].querySelector(".tone-green")?.textContent).toBe("✓");
+  // The Artifact's own tab has no chips: its Evals rows lead to each eval.
+  expect(screen.queryByRole("tablist", { name: "Tabs of app" })).toBeNull();
   const evals = within(screen.getByRole("list", { name: "Evals of app" })).getAllByRole("button");
   expect(evals.map((item) => item.querySelector(".name")?.textContent)).toEqual(["lint", "test"]);
   expect(evals[1].querySelector(".status .tone-red")?.textContent).toBe("RED");
+  // Each row leads with its verdict's icon in its verdict's colour.
+  expect(evals[1].querySelector(".glyph.tone-red svg")).not.toBeNull();
   expect(read).toEqual(["a:app"]);
+  // Sections under header rows: Evals, Tools and Path unfolded, Neighbours and Debug folded.
+  expect(screen.getByRole("button", { name: "Evals" }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: "Neighbours" }).getAttribute("aria-expanded")).toBe("false");
 
   await fireEvent.click(evals[1]);
   expect(ontab).toHaveBeenLastCalledWith("e:app/test");
-  await fireEvent.click(tabs[1]);
-  expect(ontab).toHaveBeenLastCalledWith("e:app/lint");
 
-  // The shown tab reads that eval's own Detail, and the list belongs to the Artifact tab only.
+  // An eval's tab reads that eval's own Detail under chips that read as a path.
   await rerender({ tab: "e:app/test" });
   await screen.findByRole("heading", { name: "app/test · Check" });
   expect(read).toEqual(["a:app", "e:app/test"]);
   expect(screen.queryByRole("list", { name: "Evals of app" })).toBeNull();
-  expect(within(screen.getByRole("tablist")).getByRole("tab", { selected: true }).textContent?.trim()).toBe("✗test");
+  const tabs = within(screen.getByRole("tablist", { name: "Tabs of app" })).getAllByRole("tab");
+  expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["app", "lint", "test"]);
+  expect(screen.getByRole("tablist").textContent?.replace(/\s+/g, " ").trim()).toBe("app / linttest");
+  // The Artifact's chip shows the Artifact icon before its name and is read as "Artifact app".
+  expect(tabs[0].getAttribute("aria-label")).toBe("Artifact app");
+  expect(tabs[0].querySelector("img")?.getAttribute("src")).toMatch(/artifactize-icon-mark/);
+  // Each eval's chip carries its verdict's icon in its verdict's colour.
+  expect(tabs[2].querySelector(".tone-red svg")).not.toBeNull();
+  expect(tabs[1].querySelector(".tone-green svg")).not.toBeNull();
+  expect(within(screen.getByRole("tablist")).getByRole("tab", { selected: true }).textContent?.trim()).toBe("test");
+  await fireEvent.click(tabs[1]);
+  expect(ontab).toHaveBeenLastCalledWith("e:app/lint");
+  await fireEvent.click(tabs[0]);
+  expect(ontab).toHaveBeenLastCalledWith(null);
 });
 
-it("stars the Artifact with the ☆ beside its title, and takes the star away; a failed star goes back", async () => {
+it("stars the Artifact with the star beside its title, and takes the star away; a failed star goes back", async () => {
   const shown = branch("main", []);
   let kept = ["docs"];
   let refuse = false;
@@ -156,13 +166,13 @@ it("stars the Artifact with the ☆ beside its title, and takes the star away; a
   });
   await screen.findByRole("heading", { name: "Artifact app" });
   const star = await screen.findByRole("button", { name: "Star app" });
-  expect(star.textContent).toBe("☆");
   expect(star.getAttribute("aria-pressed")).toBe("false");
+  expect(star.classList.contains("on")).toBe(false);
   await fireEvent.click(star);
-  await waitFor(() => expect(star.textContent).toBe("★"));
-  expect(star.getAttribute("aria-pressed")).toBe("true");
+  await waitFor(() => expect(star.getAttribute("aria-pressed")).toBe("true"));
+  expect(star.classList.contains("on")).toBe(true);
   await fireEvent.click(star);
-  await waitFor(() => expect(star.textContent).toBe("☆"));
+  await waitFor(() => expect(star.getAttribute("aria-pressed")).toBe("false"));
   expect(asked).toEqual([
     { branch: shown.key, artifact: "app", on: true },
     { branch: shown.key, artifact: "app", on: false },
@@ -171,7 +181,7 @@ it("stars the Artifact with the ☆ beside its title, and takes the star away; a
   refuse = true;
   await fireEvent.click(star);
   await waitFor(() => expect(screen.getByRole("status").textContent).toBe("the state directory is read-only"));
-  expect(star.textContent).toBe("☆");
+  expect(star.getAttribute("aria-pressed")).toBe("false");
 });
 
 it("closes with Close and with Esc", async () => {
@@ -210,14 +220,15 @@ it("shows an Agent eval's Summary first and its Agent log on the switch below th
   });
   const views = within(await screen.findByRole("tablist", { name: "Views" })).getAllByRole("tab");
   expect(views.map((item) => [item.textContent, item.getAttribute("aria-selected")])).toEqual([["Summary", "true"], ["Agent log", "false"]]);
-  await screen.findByText("Outcome");
+  await screen.findByRole("button", { name: "Outcome" });
   expect(screen.queryByRole("log", { name: "Agent transcript" })).toBeNull();
-  // The window-level control is Close alone: the views are a level below the tabs.
+  // The window-level control is Close alone, without a key cap: the views are a level below
+  // the tabs.
   const header = screen.getByRole("heading", { name: "app/test · Review" }).parentElement!;
-  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close Esc"]);
+  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);
   await fireEvent.click(views[1]);
   await screen.findByRole("log", { name: "Agent transcript" });
-  expect(screen.queryByText("Outcome")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Outcome" })).toBeNull();
   await waitFor(() => expect(opened).toEqual(["run-a-7"]));
 });
 
@@ -235,13 +246,13 @@ it("keeps Close alone in the header on a Human review's tab, the review showing 
   });
   await screen.findByText("REVIEW (yours)");
   const header = screen.getByRole("heading", { name: "app/test · Sign-off" }).parentElement!;
-  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close Esc"]);
+  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);
   expect(screen.getAllByRole("button", { name: /Close/ })).toHaveLength(1);
   await fireEvent.click(within(header).getByRole("button", { name: /Close/ }));
   expect(onback).toHaveBeenCalledOnce();
 });
 
-it("shows only the Artifact's chip, without a `/`, for an Artifact without evals", async () => {
+it("shows an Artifact without evals with no chips and no rows", async () => {
   mockIPC((command, args) => {
     if (command === "detail_row") return rowOf(args, [row("a:lone", "artifact", "lone", "✓", "green")]);
     return command === "detail" ? view("a:lone", "Artifact lone") : null;
@@ -251,13 +262,13 @@ it("shows only the Artifact's chip, without a `/`, for an Artifact without evals
     review: () => undefined, openReview: vi.fn(), onfocus: vi.fn(), ontab: vi.fn(), onback: vi.fn(), ongone: vi.fn(),
   });
   await screen.findByRole("heading", { name: "Artifact lone" });
-  const strip = screen.getByRole("tablist", { name: "Tabs of lone" });
-  expect(within(strip).getAllByRole("tab").map((tab) => tab.getAttribute("aria-label"))).toEqual(["Artifact lone"]);
-  expect(strip.textContent?.trim()).toBe("lone");
+  expect(screen.queryByRole("tablist")).toBeNull();
+  expect(within(screen.getByRole("list", { name: "Evals of lone" })).queryAllByRole("button")).toEqual([]);
 });
 
-it("draws the Artifact between the Artifacts its evals use and those that use it, and opens a neighbour on a click", async () => {
+it("draws the Artifact between the Artifacts its evals use and those that use it once Neighbours is unfolded, and opens a neighbour on a click", async () => {
   const { onopen } = setup();
+  await fireEvent.click(await screen.findByRole("button", { name: "Neighbours" }));
   const group = await screen.findByRole("group", { name: "Neighbours" });
   const node = (id: string) => group.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
   await waitFor(() => expect(node("a:app")).not.toBeNull());
@@ -316,5 +327,6 @@ it("lets go of a Detail whose node the Run no longer has", async () => {
 
 it("says that a part of several wholes is drawn in each of them, naming them", async () => {
   setup(null, { wholes: ["kit", "site"], copies: 2 });
+  await fireEvent.click(await screen.findByRole("button", { name: "Neighbours" }));
   expect(await screen.findByText("Drawn 2 times on the graph, inside kit and site.")).toBeTruthy();
 });

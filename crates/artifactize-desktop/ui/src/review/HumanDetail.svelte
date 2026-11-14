@@ -1,46 +1,69 @@
 <script lang="ts">
-  // The one Human review component, shared by the monitor's Detail and the Review screen: its
-  // status and instruction, then the tools to use, their Tool log, and the result to write.
+  // The one Human review component, shared by the Detail and the Review view. It has one order,
+  // the instruction, the Tools, their Tool log and the Result with its row of actions, then
+  // Debug, and two arrangements by the room it has. In one column (a Human eval's tab in the
+  // Detail, or a Main area narrower than twice the Detail's width) it reads top to bottom, no
+  // wider than the measure, the Tool log a box between the Tools and the Result. In two (a Main
+  // area at least twice as wide), the Tool log is the view, a panel filling the left, and the
+  // rest is a column at the right, where the Detail docks and of its width. Its eval's title is
+  // said once, above it; the review opens with its stage alone.
   import { HumanDetailState, setHumanDetailState } from "./human-detail-state.svelte";
   import { onMount, tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";
   import Tools from "./Tools.svelte";
+  import ToolLog from "./ToolLog.svelte";
   import VerdictForm from "./VerdictForm.svelte";
+  import { getAppState } from "../shell/app.svelte";
+  import Icon from "../shell/Icon.svelte";
+  import Section from "../shell/Section.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, composing, editable, plain } from "../shell/keys";
-  import { tone } from "../shell/tone";
+  import { clampWidth } from "../monitor/detail-width";
 
   let {
     review,
     active = true,
+    wide = false,
     onback,
     onsubmitted,
   }: {
     review: Review;
     /** Its screen is shown: only then it offers palette commands. */
     active?: boolean;
+    /** It fills the Main area: with room for two, the Tool log is the view at the left. */
+    wide?: boolean;
     onback: () => void;
     /** A submission settled the request, published or saved locally only. */
     onsubmitted?: (settled: Settled) => void;
   } = $props();
+  const { sections, monitor: m } = getAppState();
   const h = new HumanDetailState();
   setHumanDetailState(h);
 
-  /** Rows the instruction keeps once tools and fields take the body. */
-  const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  
-  
-  
-
   const view = $derived(review.view);
-  const stage = $derived(
-    view?.stage === "completed" ? "completed" : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM",
-  );
+  const stage = $derived(view?.stage === "completed" ? "completed" : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
+  /** The default share of the area the Detail takes, as the dock's width says. */
+  const DOCK_SHARE = 0.46;
+  const DOCK_MOST = 680;
+  /** Two panels: the Main area is at least twice as wide as the Detail would be. */
+  const split = $derived.by(() => {
+    if (!wide || h.width === 0) return false;
+    const dock = clampWidth(m.detailWidth ?? Math.min(h.width * DOCK_SHARE, DOCK_MOST), h.width);
+    return h.width >= 2 * dock;
+  });
+
+  /** The review's width, measured as it changes. */
+  const measure: Attachment<HTMLElement> = (root) => {
+    const sized = new ResizeObserver(() => (h.width = root.clientWidth));
+    sized.observe(root);
+    return () => sized.disconnect();
+  };
 
   onMount(() => {
     void review.load();
-    // Waiting time and the busy spinner redraw without reading the state.
+    // Waiting time and the busy seconds redraw without reading the state.
     const clock = setInterval(() => {
       h.now = Date.now();
       if (!review.busy) void review.load(false);
@@ -66,7 +89,7 @@
   }
 
   /** Esc: cancel the job, then stop editing, then leave. Stopping editing removes the
-   * focused field, so focus returns to the Detail and the next Esc still reaches it. */
+   * focused field, so focus returns to the review and the next Esc still reaches it. */
   async function back() {
     if (review.escape()) {
       onback();
@@ -100,14 +123,13 @@
     if (review.busy) return;
     if (chord(event, "g")) void review.choose("GREEN");
     else if (chord(event, "r")) void review.choose("RED");
-    else if (chord(event, "u")) void review.release();
     else if (chord(event, "s")) void submit();
-    else if (editable(event.target) && review.editing) return;
+    else if (editable(event.target)) return;
     else if (plain(event, "c")) void review.claim();
     else if (plain(event, "g")) void review.choose("GREEN");
     else if (plain(event, "r")) void review.choose("RED");
     else if (plain(event, "u")) void review.release();
-    else if (plain(event, "t")) review.technical = !review.technical;
+    else if (plain(event, "t")) sections.toggle("Debug");
     else if (plain(event, "ArrowLeft") && !review.editing) onback();
     else return;
     handled();
@@ -117,99 +139,117 @@
     if (!active) return [];
     const ready = () => !review.busy && !review.settled;
     return [
-      { id: "human.claim", group: "Human review", label: "Claim", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },
-      { id: "human.green", group: "Human review", label: "GREEN form", keys: "g", enabled: () => ready() && review.owned, run: () => void review.choose("GREEN") },
-      { id: "human.red", group: "Human review", label: "RED form", keys: "r", enabled: () => ready() && review.owned, run: () => void review.choose("RED") },
+      { id: "human.claim", group: "Human review", label: "Claim to review", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },
+      { id: "human.green", group: "Human review", label: "Open the GREEN form", keys: "g", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("GREEN") },
+      { id: "human.red", group: "Human review", label: "Open the RED form", keys: "r", enabled: () => ready() && review.owned && !review.editing, run: () => void review.choose("RED") },
+      { id: "human.to-green", group: "Human review", label: "Choose GREEN", keys: "Ctrl+G", enabled: () => ready() && review.editing, run: () => void review.choose("GREEN") },
+      { id: "human.to-red", group: "Human review", label: "Choose RED", keys: "Ctrl+R", enabled: () => ready() && review.editing, run: () => void review.choose("RED") },
       { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => ready() && review.editing, run: () => void submit() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
-      { id: "human.run", group: "Human review", label: "Run the selected tool", keys: "Enter", enabled: () => ready() && review.owned && (view?.tools.length ?? 0) > 0, run: () => void review.run() },
-      { id: "human.cancel", group: "Human review", label: "Cancel the running job", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
-      { id: "human.technical", group: "Human review", label: "Toggle Technical", keys: "t", run: () => (review.technical = !review.technical) },
+      { id: "human.cancel", group: "Human review", label: "Cancel the running work", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },
+      { id: "human.debug", group: "Human review", label: "Show or hide Debug", keys: "t", run: () => sections.toggle("Debug") },
     ];
   });
 </script>
 
-<!-- The review takes focus so its letter keys work before any control is chosen; keys from
-     its controls and fields bubble up here. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<section class="human" tabindex="0" aria-label="Human review" bind:this={h.root} onkeydown={keydown}>
-  {#if !view}
-    <p class="muted">{review.notice?.text ?? "Loading…"}</p>
-  {:else}
-    <header>
-      <div class="title">
-        <h3>{view.title}</h3>
-        <span class="stage" data-stage={view.stage}>{stage}</span>
-        <button class="link" aria-expanded={review.technical} onclick={() => (review.technical = !review.technical)}>
-          Technical {review.technical ? "▾" : "▸"} <kbd>t</kbd>
-        </button>
-      </div>
-      <p class="meta {tone(view.mark.status)}">{view.meta}</p>
+{#snippet head()}
+  <!-- The stage alone: CLAIM, or REVIEW (yours) once claimed here; the claimant beside it while
+       another reviewer holds the claim. -->
+  <div class="head">
+    <span class="stage" data-stage={view?.stage}>{stage}</span>
+    {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
+  </div>
+{/snippet}
+
+{#snippet column()}
+  {#if view}
+    {@render head()}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="instruction"
+      tabindex="0"
+      role="region"
+      aria-label="Instruction"
+      bind:this={h.instruction}
+      onfocusin={() => {
+        if (!review.editing) review.area = "instruction";
+      }}
+    >
+      <p class="text">{view.instruction}</p>
       {#if view.shared}<p class="shared">{view.shared}</p>{/if}
-    </header>
-
-    <div class="body">
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        class="instruction"
-        tabindex="0"
-        role="region"
-        aria-label="Instruction"
-        bind:this={h.instruction}
-        onfocusin={() => {
-          if (!review.editing) review.area = "instruction";
-        }}
-      >
-        <p class="text">{view.instruction}</p>
-        {#if review.technical}
-          <h4>Technical</h4>
-          <dl>
-            {#each view.technical as field, at (at)}
-              <dt>{field.key}</dt>
-              <dd>{field.value}</dd>
-            {/each}
-          </dl>
-        {/if}
-      </div>
-
+    </div>
+    <Section name="Tools" folds={false}>
       <Tools {review} />
-
-      <section class="result" aria-label="Result" onfocusin={() => (review.area = "fields")}>
-        <h4>{review.settled ? "Completed result" : "Result"}</h4>
+    </Section>
+    {#if !split}
+      <Section name="Tool log" folds={false}>
+        <ToolLog entries={review.log} empty="What the tools print shows here." />
+      </Section>
+    {/if}
+    <Section name={review.settled ? "Completed result" : "Result"} label="Result" folds={false}>
+      <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
         {#if review.settled}
           <pre>{view.result}</pre>
         {:else if review.owned && review.form}
-          <VerdictForm {review} form={review.form} onsubmit={() => void submit()} />
+          <VerdictForm {review} form={review.form} />
         {:else if review.owned}
           <div class="verdicts">
-            <button class="button" onclick={() => void review.choose("GREEN")}>GREEN <kbd aria-hidden="true">g</kbd></button>
-            <button class="button" onclick={() => void review.choose("RED")}>RED <kbd aria-hidden="true">r</kbd></button>
+            <button class="button" aria-keyshortcuts="g" onclick={() => void review.choose("GREEN")}>GREEN</button>
+            <button class="button" aria-keyshortcuts="r" onclick={() => void review.choose("RED")}>RED</button>
           </div>
         {:else if view.claim}
-          <p class="muted">Claimed by {view.claim.reviewer}. Read-only until released.</p>
+          <p class="muted">Read-only until released.</p>
         {:else}
-          <button class="button primary" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review <kbd aria-hidden="true">c</kbd></button>
+          <button class="button primary" aria-keyshortcuts="c" disabled={!review.claimable || review.busy !== null} onclick={() => void review.claim()}>Claim to review</button>
         {/if}
-      </section>
-    </div>
+        <!-- One row of actions, the last of the Result: Release claim at the left, Submit at the
+             right, and between them what running work or a failure has to say. -->
+        {#if !review.settled && (review.owned || review.busy || review.notice?.error)}
+          <div class="actions">
+            {#if review.owned}
+              <button class="button" aria-keyshortcuts="u" disabled={review.busy !== null} onclick={() => void review.release()}>Release claim</button>
+            {/if}
+            <span class="said">
+              {#if review.busy}
+                <span class="busy" role="status"><span class="running"><Icon name="running" label={review.busy.label} /></span><span class="seconds">{Math.floor((h.now - review.busy.since) / 1000)}s</span><button class="button small" aria-keyshortcuts="Escape" onclick={() => review.cancel()}>Cancel</button></span>
+              {:else if review.notice?.error}
+                <span class="error" role="status">{review.notice.text}</span>
+              {/if}
+            </span>
+            {#if review.form}
+              <button class="button primary" aria-keyshortcuts="Control+S" disabled={review.busy !== null} onclick={() => void submit()}>Submit {review.form.verdict}</button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </Section>
+    <Section name="Debug">
+      <dl>
+        <dt>State</dt>
+        <dd>{view.meta}</dd>
+        {#each view.technical as field, at (at)}
+          <dt>{field.key}</dt>
+          <dd>{field.value}</dd>
+        {/each}
+      </dl>
+    </Section>
+  {/if}
+{/snippet}
 
-    <footer>
-      {#if review.busy}
-        <p class="busy" role="status">
-          {SPINNER[Math.floor((h.now - review.busy.since) / 100) % SPINNER.length]}
-          {review.busy.label}… {Math.floor((h.now - review.busy.since) / 1000)}s
-          <button class="button small" onclick={() => review.cancel()}>Cancel <kbd>Esc</kbd></button>
-        </p>
-      {:else if review.notice}
-        <p class="notice" class:error={review.notice.error} role="status">{review.notice.text}</p>
-      {/if}
-      <!-- Close belongs to the pane that shows the review, in its header. -->
-      {#if !review.busy && !review.settled && review.owned}
-        <div class="buttons">
-          <button class="button" onclick={() => void review.release()}>Release <kbd aria-hidden="true">u</kbd></button>
-        </div>
-      {/if}
-    </footer>
+<!-- The review takes focus so its letter keys work before any control is chosen; keys from
+     its controls and fields bubble up here. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+<section class="human" class:split tabindex="0" aria-label="Human review" bind:this={h.root} onkeydown={keydown} {@attach measure}>
+  {#if !view}
+    <p class="loading">{review.notice?.text ?? "Loading…"}</p>
+  {:else if split}
+    <div class="viewer">
+      <div class="head"><span class="name">Tool log</span></div>
+      <ToolLog entries={review.log} view />
+    </div>
+    <div class="side">{@render column()}</div>
+  {:else}
+    <div class="one">{@render column()}</div>
   {/if}
 </section>
 
@@ -217,25 +257,56 @@
   /* Sizes flow from the parent down: every column is at most the width it is given, and long
    * text wraps inside it. */
   .human {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    grid-template-columns: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
-    padding: 0 var(--pad) 8px;
-    gap: var(--gap);
-  }
-  header h3 {
-    margin: 0;
-    font-size: var(--text-title);
     min-width: 0;
-    overflow-wrap: anywhere;
+    outline: none;
   }
-  .title {
+  .human:focus-visible,
+  .instruction:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
+  /* One column, left-aligned and no wider than the measure, scrolling as a whole. */
+  .one {
+    height: 100%;
+    max-width: var(--measure);
+    overflow: auto;
+  }
+  /* Two panels under the header row's panel line: the Tool log's view at the left and the column
+     at the right, of the Detail's width, meeting at a panel line. */
+  .human.split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--dock-width);
+    border-top: 1px solid var(--line-panel);
+  }
+  .viewer {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    min-width: 0;
+    background: var(--surface-input);
+  }
+  .side {
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+    border-left: 1px solid var(--line-panel);
+    background: var(--surface-panel);
+  }
+  /* A panel's head row: the view's name, or the column's stage pill; the two in one band. */
+  .head {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px 10px;
     align-items: center;
+    gap: var(--gap);
+    height: var(--row-head);
+    padding: 0 var(--pad);
+    border-bottom: 1px solid var(--line-group);
+    background: var(--surface-panel);
+  }
+  .name {
+    font-size: var(--text-small);
+    font-weight: 600;
   }
   .stage {
     font-size: var(--text-label);
@@ -249,78 +320,77 @@
     background: var(--accent-soft);
     color: var(--accent);
   }
-  .meta {
-    margin: 4px 0 0;
-    font-weight: 600;
+  .claimant,
+  .muted,
+  .loading {
+    color: var(--ink-2);
+  }
+  .loading {
+    margin: 0;
+    padding: 6px var(--pad);
+  }
+  .instruction {
+    padding: 10px var(--pad);
+    outline: none;
+  }
+  .text {
+    margin: 0;
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-variant-numeric: tabular-nums;
   }
   .shared {
-    margin: 2px 0 0;
-    color: var(--human);
+    margin: 6px 0 0;
+    color: var(--ink-2);
     overflow-wrap: anywhere;
   }
-  .muted {
-    color: var(--ink-2);
-  }
-  .link:hover {
-    background: var(--surface-group);
-    border-radius: var(--radius-control);
-  }
-  .link {
-    border: 0;
-    background: none;
-    padding: 0;
-    color: var(--ink-2);
-    cursor: pointer;
-    font: inherit;
-    margin-left: auto;
-  }
-  /* One column that scrolls as a whole: instruction, tools, their log, the result. */
-  .body {
+  .result {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    align-content: start;
     gap: 12px;
-    min-height: 0;
-    overflow: auto;
   }
-  .human:focus-visible,
-  .instruction:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: -2px;
-  }
-  /* A section label: 11px uppercase in secondary ink. */
-  .result h4,
-  .result :global(h4) {
-    margin: 0 0 4px;
-    font-size: var(--text-label);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-2);
+  .result p {
+    margin: 0;
   }
   .verdicts {
     display: flex;
     gap: 6px;
   }
-  .text {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    margin: 0;
+  /* The last row of the Result: Release claim at the left, Submit at the column's right edge. */
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
   }
-  h4 {
-    margin: 12px 0 4px;
-    font-size: var(--text-label);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  .said {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+  .actions > .primary {
+    margin-left: auto;
+  }
+  .busy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .running {
+    display: inline-flex;
+    color: var(--running);
+  }
+  .seconds {
     color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .error {
+    color: var(--red);
+    overflow-wrap: anywhere;
   }
   dl {
     display: grid;
     grid-template-columns: fit-content(40%) minmax(0, 1fr);
-    gap: 2px 12px;
+    gap: 4px 16px;
     margin: 0;
   }
   dt {
@@ -344,38 +414,5 @@
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
     padding: 6px 8px;
-  }
-  /* One row: the busy state or the last notice at the left, Release at the right. */
-  footer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px 12px;
-  }
-  footer p {
-    margin: 0;
-    min-width: 0;
-  }
-  .busy {
-    color: var(--human);
-    font-variant-numeric: tabular-nums;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  .notice {
-    color: var(--green);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .notice.error {
-    color: var(--red);
-  }
-  .buttons {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-left: auto;
   }
 </style>

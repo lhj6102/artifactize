@@ -1,19 +1,22 @@
 <script lang="ts">
-  // A whole of a graph. Drawn as a box (`whole`), it is a box around its parts' nodes, its name,
-  // how it is lit and its Minimize button at its top. Minimized (`minimized`), it is a node of a
-  // node's size, its parts hidden: its name, how it is lit, how many parts it has and its Expand
-  // button. It is an Artifact of its own: the pointer and the keyboard reach it as they reach a
+  // A whole of a graph, in neutral lines. Drawn as a box (`whole`), it is a box around its parts'
+  // nodes under a title row: its status's icon, its name, its tally and its Minimize button,
+  // closed below by the strip in its status's colour. Minimized (`minimized`), it is a node of a
+  // node's size and anatomy, its parts hidden: its icon, its name with how many parts it has
+  // under it, its tally, its Expand button, and a second outline behind it. It is an Artifact of its own: the pointer and the keyboard reach it as they reach a
   // node, its button after it, and the parts of a box, drawn above it, take the pointer within
   // their own boxes. A click on its button only minimizes or expands it, as `m` does (GraphView).
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
-  import type { Light } from "../ipc/client";
+  import type { Light, Tally } from "../ipc/client";
+  import Icon from "../shell/Icon.svelte";
+  import { LIGHTS } from "../shell/icons";
   import { BOX, partsCount } from "./parts";
 
   let {
     data,
     selected,
     type,
-  }: NodeProps & { data: { name: string; light: Light; open: boolean; inward: boolean; outward: boolean; count: number; onminimize: () => void } } = $props();
+  }: NodeProps & { data: { name: string; light: Light; tally: Tally | null; open: boolean; inward: boolean; outward: boolean; count: number; onminimize: () => void } } = $props();
   const minimized = $derived(type === "minimized");
   const action = $derived(minimized ? "Expand" : "Minimize");
 
@@ -36,19 +39,14 @@
 >
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <div class="title">
-    <span class="dot" aria-hidden="true"></span>
+    <span class="light"><Icon name={LIGHTS[data.light].icon} /></span>
     <span class="text">
       <span class="name">{data.name}</span>
       {#if minimized}<span class="count">{partsCount(data.count)}</span>{/if}
     </span>
-    <button class="toggle nodrag nopan" type="button" title="{action} (m)" aria-label="{action} {data.name}" aria-keyshortcuts="m" onclick={toggle}>
-      <svg viewBox="0 0 12 12" aria-hidden="true">
-        {#if minimized}
-          <path d="M2 6h8M6 2v8" />
-        {:else}
-          <path d="M2 6h8" />
-        {/if}
-      </svg>
+    {#if data.tally}<span class="tally" aria-hidden="true">{data.tally.passed}/{data.tally.of}</span>{/if}
+    <button class="toggle nodrag nopan" type="button" title="{action} (m)" aria-label="{action} {data.name} (m)" aria-keyshortcuts="m" onclick={toggle}>
+      <Icon name={minimized ? "add" : "minus"} />
     </button>
   </div>
   <Handle type="source" position={Position.Right} isConnectable={false} />
@@ -59,46 +57,55 @@
     width: 100%;
     height: 100%;
     box-sizing: border-box;
-    border: 1px solid var(--light);
+    border: 1px solid var(--line-node);
     border-radius: var(--radius-control);
     background: color-mix(in srgb, var(--surface-panel) 40%, transparent);
     color: var(--ink);
   }
-  /* Minimized, it is a node's neutral face, with a second edge behind it for the parts it holds. */
+  /* Minimized, it is a node's neutral face with its strip, and a second outline behind it for
+     the parts it holds. */
   .minimized {
     background: var(--surface-panel);
-    box-shadow: 3px 3px 0 -1px var(--surface-app), 3px 3px 0 0 var(--light);
+    box-shadow:
+      3px 3px 0 -1px var(--surface-app),
+      3px 3px 0 0 var(--line-node),
+      inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
-  /* The pointer only highlights the whole under it: a thin neutral outline. */
+  /* The pointer only steps the outline up. */
   .whole:hover {
-    outline: 1px solid var(--ink-3);
-    outline-offset: 1px;
+    border-color: var(--ink-3);
   }
-  /* The opened whole: a neutral outline outside its border, its face unchanged. */
+  /* The opened whole: its own outline turned neutral-bright and 2px, with no gap. */
   .whole.selected,
   .whole.open {
-    outline: 2px solid var(--outline-selected);
-    outline-offset: 1px;
+    border-color: var(--outline-selected);
+    box-shadow: 0 0 0 1px var(--outline-selected);
   }
+  .minimized.selected,
+  .minimized.open {
+    box-shadow:
+      0 0 0 1px var(--outline-selected),
+      inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
+  /* The title row, closed below by the strip in its status's colour across the box. */
   .title {
     height: var(--header);
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 6px 0 calc(var(--pad) - 2px);
+    padding: 0 6px 0 calc(var(--pad) - 6px);
     font-weight: 600;
+    box-shadow: inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
   .minimized .title {
     height: 100%;
     padding-left: 12px;
     font-weight: 500;
+    box-shadow: none;
   }
-  .dot {
-    flex: none;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--light);
+  .light {
+    display: inline-flex;
+    color: var(--light);
   }
   .text {
     flex: 1;
@@ -112,11 +119,15 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .count {
+  .count,
+  .tally {
     font-size: var(--text-label);
     font-weight: 400;
     color: var(--ink-2);
     font-variant-numeric: tabular-nums;
+  }
+  .tally {
+    flex: none;
   }
   .toggle {
     flex: none;
@@ -138,13 +149,5 @@
   .toggle:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 1px;
-  }
-  .toggle svg {
-    width: 10px;
-    height: 10px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.5;
-    stroke-linecap: round;
   }
 </style>

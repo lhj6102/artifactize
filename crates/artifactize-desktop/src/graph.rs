@@ -102,6 +102,25 @@ impl From<monitor::live::Plan> for Light {
     }
 }
 
+/// How many of an Artifact's evals are GREEN of how many it has, on a Current how many would
+/// be reused: the library's [`monitor::Tally`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Tally {
+    pub passed: u32,
+    pub of: u32,
+}
+
+impl From<monitor::Tally> for Tally {
+    fn from(tally: monitor::Tally) -> Self {
+        let count = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
+        Self {
+            passed: count(tally.passed),
+            of: count(tally.of),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphNode {
@@ -109,6 +128,8 @@ pub struct GraphNode {
     pub id: crate::ids::NodeKey,
     pub name: String,
     pub light: Light,
+    /// Its evals' count; `None` without evals of its own, or on a Current while it is checked.
+    pub tally: Option<Tally>,
     /// Under the name: on a Current what verify would do, `would run (2 evals)`.
     pub note: Option<String>,
     /// The Artifacts of the graph it is made of directly, by tree id: drawn inside it.
@@ -139,9 +160,11 @@ pub struct Shape {
 pub enum Update {
     /// A shape the caller does not hold, all lit.
     Shape(Shape),
-    /// The caller's shape, relit: one light per node and per edge, in its order.
+    /// The caller's shape, relit: one light and one tally per node and one light per edge,
+    /// in its order.
     Lights {
         nodes: Vec<Light>,
+        tallies: Vec<Option<Tally>>,
         edges: Vec<Light>,
     },
 }
@@ -169,6 +192,7 @@ fn shape(graph: &monitor::Graph) -> Shape {
                 id: node.id.clone().into(),
                 name: node.name.to_string(),
                 light: node.light.into(),
+                tally: node.tally.map(Tally::from),
                 note: None,
                 parts: node.parts.iter().map(node_id).collect(),
             })
@@ -201,6 +225,11 @@ pub async fn graph(
             let update = if known == Some(selected.shape) {
                 Update::Lights {
                     nodes: graph.nodes.iter().map(|node| node.light.into()).collect(),
+                    tallies: graph
+                        .nodes
+                        .iter()
+                        .map(|node| node.tally.map(Tally::from))
+                        .collect(),
                     edges: graph.edges.iter().map(|edge| edge.light.into()).collect(),
                 }
             } else {

@@ -8,6 +8,8 @@
   // upward with each one, up to half the Pane, beyond which it scrolls.
   import type { BranchView, Chip, WaitingRow } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
+  import Icon from "../shell/Icon.svelte";
+  import { statusIcon } from "../shell/icons";
   import SearchField from "../shell/SearchField.svelte";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
@@ -86,7 +88,8 @@
     bind:value={query}
     bind:input={m.panes.search}
     label="Search branches and reviews"
-    placeholder="Search: text, repo:, branch:, sort:recent, sort:name"    reset={browse.start}
+    placeholder="Search: text, repo:, branch:, sort:recent, sort:name"
+    reset={browse.start}
     complete={(text) => browse.complete(text)}
     onleave={() => m.panes.pane?.focus()}
   />
@@ -109,7 +112,7 @@
         <li role="treeitem" aria-expanded={open} aria-selected={isSelected(key)} class="branch" class:open data-key={key}>
           <div class="head" class:selected={isSelected(key)}>
             <button class="chevron" tabindex="-1" aria-label="{open ? 'Fold' : 'Expand'} {name(branch)}" onclick={() => ontoggle(branch)}
-              ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg></button
+              ><Icon name={open ? "unfold" : "fold"} /></button
             >
             <button class="name" tabindex="-1" onclick={() => onselect(branch)}>
               <span class="label"
@@ -134,7 +137,7 @@
               tabindex="-1"
               aria-label="Star {name(branch)}"
               aria-pressed={branch.starred}
-              onclick={() => void browse.star(branch.key, !branch.starred)}>{branch.starred ? "★" : "☆"}</button
+              onclick={() => void browse.star(branch.key, !branch.starred)}><Icon name={branch.starred ? "star-on" : "star"} /></button
             >
           </div>
           {#if open}
@@ -166,10 +169,10 @@
               onclick={() => onopen(row)}
               onkeydown={() => {}}
             >
-              <span class="glyph {tone(row.mark.status)}">{row.mark.glyph}</span>
+              <span class="glyph tone-human"><Icon name={statusIcon(row.mark.status)} /></span>
               <span class="eval">{row.eval}</span>
               <span class="where">{row.branch ? `${row.project}  ${row.branch}` : row.project}</span>
-              <span class="meta">{row.age} · {row.claim}</span>
+              <span class="meta">{row.age}{#if row.claim !== "-"} · {row.claim}{/if}</span>
             </li>
           {/each}
         </ul>
@@ -227,29 +230,18 @@
   .chevron:hover {
     background: var(--surface-group);
   }
+  /* The fold icon in a 20px box, the unfold icon while expanded. */
   .chevron {
+    display: grid;
+    place-items: center;
     width: 20px;
     height: 20px;
     margin: 2px 0 0;
-    padding: 2px;
+    padding: 0;
     border: 0;
     background: none;
     color: var(--ink-2);
     cursor: pointer;
-  }
-  .chevron svg {
-    display: block;
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    transition: transform 120ms ease;
-  }
-  .open .chevron svg {
-    transform: rotate(90deg);
   }
   .name {
     display: grid;
@@ -305,14 +297,17 @@
     color: var(--ink-2);
   }
   /* A star is quiet until it is on; on, it carries the amber of attention. */
+  /* The star icon in faint ink until on, then the filled star in ink. */
   .star {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
     margin: 2px 0 0;
-    padding: 0 2px;
+    padding: 0;
     border: 0;
     background: none;
     color: var(--ink-3);
-    font-size: var(--text-body);
-    line-height: 1.4;
     cursor: pointer;
   }
   .star:hover {
@@ -320,7 +315,7 @@
     border-radius: var(--radius-control);
   }
   .star.on {
-    color: var(--light-active);
+    color: var(--ink);
   }
   .branch :global(.timeline) {
     margin-left: 24px;
@@ -366,6 +361,10 @@
     padding: 3px var(--pad);
     font-size: var(--text-small);
     cursor: pointer;
+  }
+  .glyph {
+    display: inline-flex;
+    align-items: center;
   }
   .waiting li:hover {
     background: var(--surface-group);

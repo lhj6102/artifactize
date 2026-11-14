@@ -1,18 +1,22 @@
 <script lang="ts">
-  // The Detail of an Artifact or of the Run, docked over the graph of a Run or a Current. An
-  // Artifact's Detail has tabs, a chip choice that reads as a path: `[Artifact icon] {name} /
-  // [eval] [eval] …`. The Artifact's own draws it between its neighbours, lists its evals with
-  // their verdicts (on a Current whether each would run or be reused), then its own Human tools
-  // and their Tool log; then comes one tab per eval. An eval's tab shows its Summary or its log
-  // (an Agent's transcript, a runtime's saved output), or in a Run the shared Human Detail. Its
-  // width is the Detail's: everything in it wraps or scrolls in its own box.
+  // The Detail of an Artifact or of the Run, docked over the graph of a Run or a Current: the
+  // inspector, in sections under header rows. An Artifact's own tab lists its evals (each opens
+  // its tab), then Neighbours (folded until asked for), its own Human tools and their Tool log,
+  // its Path and Debug. An eval's tab has the chips that read as a path, `[Artifact icon] {name}
+  // / [eval] [eval] …`, and shows its Summary or its log (an Agent's transcript, a runtime's
+  // saved output), or in a Run the shared Human Detail. Its width is the Detail's: everything in
+  // it wraps or scrolls in its own box.
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, message, type BranchView, type Source } from "../ipc/client";
   import type { Review } from "../review/review.svelte";
+  import { getAppState } from "../shell/app.svelte";
   import { DetailPaneState, setDetailPaneState } from "./detail-pane-state.svelte";
   import { keyOf } from "./monitor-state.svelte";
   import Panel from "../shell/Panel.svelte";
+  import Section from "../shell/Section.svelte";
+  import Icon from "../shell/Icon.svelte";
+  import { markIcon } from "../shell/icons";
   import RecordDetail from "./RecordDetail.svelte";
   import Neighbours from "./Neighbours.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
@@ -66,6 +70,7 @@
     ongone: () => void;
   } = $props();
   const commands = useIpc();
+  const { sections } = getAppState();
   const d = new DetailPaneState();
   setDetailPaneState(d);
   const key = $derived(keyOf(source));
@@ -78,17 +83,8 @@
   /** The node whose Detail is read: the shown eval, else the Artifact or the Run. */
   const target = $derived(tab ?? node);
 
-  /** The folds belong to one node: another opened node starts folded, as the terminal's
-   * Detail does. */
-  const technical = $derived(d.folds.node === target && d.folds.technical);
-  const pending = $derived(d.folds.node === target && d.folds.pending);
-  /** The eval's log rather than its Summary. */
-  const log = $derived(d.folds.node === target && d.folds.log);
-  /** The eval's Debug facts unfolded. */
-  const debug = $derived(d.folds.node === target && d.folds.debug);
-  function fold(change: Partial<{ technical: boolean; pending: boolean; log: boolean; debug: boolean }>) {
-    d.folds = { node: target, technical, pending, log, debug, ...change };
-  }
+  /** The eval's log rather than its Summary: one node's, another opened node shows its Summary. */
+  const log = $derived(d.log === target);
 
   /** Read again for every new snapshot or scan; the Detail and the node's row come from the
    * backend's copy. */
@@ -127,9 +123,8 @@
   /** Only this node's Detail: another node's, still held while this one is read, is not. */
   const detail = $derived(d.detail && keyOf(d.detail.source) === key && d.detail.node === target ? d.detail : null);
   const human = $derived(detail?.profile === "human" && detail.request !== null);
-  /** An Artifact's or an eval's Summary keeps its technical facts under Debug; a Run's
-   * sections keep theirs under Technical. */
-  const folded = $derived(detail !== null && (detail.card !== null || detail.target === "artifact"));
+  /** The section `t` folds and unfolds: a Run's Technical, else Debug. */
+  const last = $derived(detail?.target === "run" ? "Technical" : "Debug");
 
   /** The Human review this tab shows, while it runs work or edits its form: ← leaves it alone,
    * and Esc steps through it first (the Monitor's close asks it). */
@@ -152,8 +147,7 @@
     if (plain(event, "ArrowLeft") && holding) return;
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) onback();
     else if (human || log) return;
-    else if (plain(event, "t")) fold(folded ? { debug: !debug } : { technical: !technical });
-    else if (plain(event, "w")) fold({ pending: !pending });
+    else if (plain(event, "t")) sections.toggle(last);
     else return;
     event.preventDefault();
   }
@@ -168,44 +162,50 @@
   {#snippet actions()}
     <!-- The one window-level control, on every tab: on a Human review's it first cancels the
          review's running work, then leaves its form, as Esc does. -->
-    <button class="button small" onclick={onback}>Close <kbd>Esc</kbd></button>
+    <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={onback}>Close</button>
   {/snippet}
-  <div class="detail" class:tabbed>
-    {#if tabbed && row}
+  <div class="detail" class:tabbed={tabbed && tab !== null}>
+    {#if tabbed && row && tab !== null}
       <div class="chips strip" role="tablist" aria-label="Tabs of {row.name}">
         <!-- The `/` stays with the Artifact's chip: only eval chips flow onto further lines. -->
         <span class="head">
-          <button class="chip" role="tab" aria-selected={tab === null} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>
+          <button class="chip" role="tab" aria-selected={false} aria-label="Artifact {row.name}" onclick={() => ontab(null)}>
             <img class="mark" src={brandMark} alt="" /><span class="label">{row.name}</span>
           </button>
-          {#if evals.length > 0}<span class="slash" aria-hidden="true">/</span>{/if}
+          <span class="slash" aria-hidden="true">/</span>
         </span>
         {#each evals as item (item.id)}
+          {@const icon = markIcon(item.glyph, item.tone)}
           <button class="chip" role="tab" aria-selected={tab === item.id} data-tab={item.id} onclick={() => ontab(item.id)}>
-            <span class="glyph {tone(item.tone)}">{item.glyph}</span><span class="label">{item.name}</span>
+            <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span><span class="label">{item.name}</span>
           </button>
         {/each}
       </div>
     {/if}
-    <div class="content" class:listing={tabbed && tab === null} role={tabbed ? "tabpanel" : undefined}>
+    <div class="content" class:listing={tabbed && tab === null} role={tabbed && tab !== null ? "tabpanel" : undefined}>
       {#if tabbed && row && tab === null}
-        <Neighbours {source} {revision} {node} {onopen} />
-        <ul class="evals" aria-label="Evals of {row.name}">
-          {#each evals as item (item.id)}
-            <li>
-              <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => void showEval(item.id)}>
-                <span class="glyph {tone(item.tone)}">{item.glyph}</span>
-                <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
-                <span class="status">
-                  {#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}
-                </span>
-                <span class="muted right">{item.right}</span>
-              </button>
-            </li>
-          {:else}
-            <li class="muted none">No evals.</li>
-          {/each}
-        </ul>
+        <Section name="Evals">
+          <ul class="evals" aria-label="Evals of {row.name}">
+            {#each evals as item (item.id)}
+              {@const icon = markIcon(item.glyph, item.tone)}
+              <li>
+                <button class="eval weight-{item.weight}" data-eval={item.id} onclick={() => void showEval(item.id)}>
+                  <span class="glyph {tone(item.tone)}">{#if icon}<Icon name={icon} />{:else}{item.glyph}{/if}</span>
+                  <span class="name">{item.name}{#if item.marks}<span class="muted"> {item.marks}</span>{/if}</span>
+                  <span class="status">
+                    {#each item.text as segment, part (part)}<span class={tone(segment.tone)}>{segment.text}</span>{/each}
+                  </span>
+                  <span class="muted right">{item.right}</span>
+                </button>
+              </li>
+            {:else}
+              <li class="muted">No evals.</li>
+            {/each}
+          </ul>
+        </Section>
+        <Section name="Neighbours">
+          <Neighbours {source} {revision} {node} {onopen} />
+        </Section>
         {#if branch}
           {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}
@@ -220,13 +220,7 @@
           {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
         {/key}
       {:else}
-        <RecordDetail
-          {detail}
-          bind:technical={() => technical, (value) => fold({ technical: value })}
-          bind:pending={() => pending, (value) => fold({ pending: value })}
-          bind:log={() => log, (value) => fold({ log: value })}
-          bind:debug={() => debug, (value) => fold({ debug: value })}
-        />
+        <RecordDetail {detail} bind:log={() => log, (value) => (d.log = value ? target : null)} />
       {/if}
     </div>
   </div>
@@ -243,16 +237,17 @@
   .detail.tabbed {
     grid-template-rows: auto minmax(0, 1fr);
   }
-  /* Many tabs wrap onto further lines; they never widen the Detail. */
+  /* The chips, a path back to the Artifact: many wrap onto further lines, closed below by a
+     group line; they never widen the Detail. */
   .strip {
-    align-items: baseline;
+    align-items: center;
     padding: 2px var(--pad) 8px;
     border-bottom: 1px solid var(--line-group);
   }
   /* The Artifact's chip and its `/` wrap as one; a long name is cut inside the chip. */
   .head {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
     gap: 6px;
     max-width: 100%;
     min-width: 0;
@@ -261,12 +256,14 @@
   .head .chip {
     flex: 0 1 auto;
     min-width: 0;
+  }
+  .chip {
     align-items: center;
   }
   .mark {
     flex: none;
-    width: 1.1em;
-    height: 1.1em;
+    width: var(--icon);
+    height: var(--icon);
   }
   .label {
     min-width: 0;
@@ -277,35 +274,42 @@
     flex: none;
     color: var(--ink-2);
   }
+  .glyph {
+    display: inline-flex;
+    font-family: var(--mono);
+  }
   .content {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     min-height: 0;
     overflow: auto;
+  }
+  .content:not(.listing) {
     padding-top: 8px;
   }
-  /* The neighbours, the eval list and the Artifact's own detail each keep their full
-     height and the tab scrolls as one, so no part is squeezed under the next. */
+  /* The Artifact's sections each keep their full height and the tab scrolls as one, so no
+     part is squeezed under the next. */
   .content.listing {
     grid-template-rows: none;
     grid-auto-rows: max-content;
   }
   .evals {
     list-style: none;
-    margin: 0 0 10px;
+    margin: 0 calc(-1 * var(--pad));
     padding: 0;
   }
-  /* The name and status take their words first, never cut inside one; the title takes what is
-     left and wraps there. */
+  /* Four columns: the verdict's icon, the name, the status words in the status colour, and
+     time and tokens pinned to the panel's right edge. */
   .eval {
     display: grid;
-    grid-template-columns: 16px minmax(0, auto) auto minmax(0, 1fr);
+    grid-template-columns: var(--icon) minmax(0, auto) minmax(0, 1fr) auto;
+    align-items: center;
     gap: 8px;
     width: 100%;
     min-height: var(--row-dense);
     margin: 0;
-    padding: 2px var(--pad);
+    padding: 1px var(--pad);
     border: 0;
     background: none;
     color: inherit;
@@ -320,9 +324,13 @@
     min-width: 0;
     overflow-wrap: break-word;
   }
-  .eval .right {
+  .eval .status {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .eval .right {
+    justify-self: end;
+    text-align: right;
     font-variant-numeric: tabular-nums;
   }
   .weight-bold .name,
@@ -334,9 +342,6 @@
   }
   .muted {
     color: var(--ink-2);
-  }
-  .none {
-    padding: 0 var(--pad);
   }
   .empty {
     color: var(--ink-2);

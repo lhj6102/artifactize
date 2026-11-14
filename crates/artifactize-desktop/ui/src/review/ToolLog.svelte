@@ -1,12 +1,24 @@
 <script lang="ts">
   // A Tool log: each run as `▶ HH:MM:SS · operation · Artifact`, the lines it printed (stderr
-  // in red) and its end line. It follows its newest line unless the reader scrolled up; its
-  // text selects and copies like any other. A review's and an Artifact's tools both log here.
+  // in red behind a red rule) and its end line. It follows its newest line unless the reader
+  // scrolled up; its text selects and copies like any other. A review's and an Artifact's tools
+  // both log here: in a column, as a box inside its section; as a review's view, filling its
+  // panel without a box.
   import type { Attachment } from "svelte/attachments";
   import type { LogEntry } from "../ipc/client";
   import { ToolsState, setToolsState } from "./tools-state.svelte";
 
-  let { entries, empty }: { entries: LogEntry[]; /** What shows before the first run. */ empty: string } = $props();
+  let {
+    entries,
+    empty = null,
+    view = false,
+  }: {
+    entries: LogEntry[];
+    /** What shows before the first run. */
+    empty?: string | null;
+    /** The review's view: the log fills its panel, without a box. */
+    view?: boolean;
+  } = $props();
   const t = new ToolsState();
   setToolsState(t);
 
@@ -34,38 +46,24 @@
   };
 </script>
 
-<section class="logbox" aria-label="Tool log">
-  <h4>Tool log</h4>
-  <!-- Focusable so the keys scroll it; its text selects and copies like any other. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="log" tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
-    {#each entries as entry (entry.run)}
-      <p class="start">▶ {clock(entry.at)} · {entry.operation} · {entry.artifact}</p>
-      {#each entry.lines as line, at (at)}
-        <p class:error={line.error}>{line.text}</p>
-      {/each}
-      {#if entry.end}<p class="end" class:error={entry.end.error}>{entry.end.text}</p>{/if}
-    {:else}
-      <p class="muted">{empty}</p>
+<!-- Focusable so the keys scroll it; its text selects and copies like any other. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div class="log" class:view tabindex="0" role="log" aria-label="Tool log" {@attach follow}>
+  {#each entries as entry (entry.run)}
+    <p class="start">▶ {clock(entry.at)} · {entry.operation} · {entry.artifact}</p>
+    {#each entry.lines as line, at (at)}
+      <p class:error={line.error}>{line.text}</p>
     {/each}
-  </div>
-</section>
+    {#if entry.end}<p class="end" class:error={entry.end.error}>{entry.end.text}</p>{/if}
+  {:else}
+    {#if empty}<p class="muted">{empty}</p>{/if}
+  {/each}
+</div>
 
 <style>
-  /* A section label: 11px uppercase in secondary ink. */
-  h4 {
-    margin: 0 0 4px;
-    font-size: var(--text-label);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--ink-2);
-  }
-  .logbox {
-    min-width: 0;
-  }
-  /* One step below the panel, outlined by the faintest line. */
+  /* In a column: a box one step below the panel, outlined by the faintest line. */
   .log {
+    min-width: 0;
     max-height: 260px;
     min-height: 56px;
     overflow: auto;
@@ -76,6 +74,14 @@
     font: var(--text-small) / 1.5 var(--mono);
     outline: none;
     user-select: text;
+  }
+  /* As the review's view: the input surface from its head row to the area's bottom. */
+  .log.view {
+    height: 100%;
+    max-height: none;
+    padding: var(--pad);
+    border: 0;
+    border-radius: 0;
   }
   .log:focus-visible {
     box-shadow: inset 0 0 0 2px var(--focus);

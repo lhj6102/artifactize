@@ -13,10 +13,6 @@ export class Current {
   #failed = $state<string | null>(null);
   /** A scan request has not answered yet. */
   #asking = $state(false);
-  /** The structure text is expanded. */
-  structure = $state(false);
-  /** The structure text, read when expanded, and the declarations it describes. */
-  text = $state.raw<{ fingerprint: string; text: string } | null>(null);
   /** Each request; only the newest one shows what it found. */
   #scans = 0;
   /** The branch last asked for: its steps are read even before its request answers. */
@@ -36,11 +32,7 @@ export class Current {
    * dropped at once. */
   async scan(branch: BranchKey, refresh = false): Promise<void> {
     const scan = ++this.#scans;
-    if (this.view && !this.of(branch)) {
-      this.view = null;
-      this.structure = false;
-      this.text = null;
-    }
+    if (this.view && !this.of(branch)) this.view = null;
     this.#branch = branch;
     this.#asking = true;
     try {
@@ -69,28 +61,9 @@ export class Current {
     }
   }
 
-  /** Expand or fold the structure text, reading it when expanded. */
-  async expand(open: boolean): Promise<void> {
-    this.structure = open;
-    if (open) await this.#read();
-  }
-
   #show(view: CurrentView): void {
     if (this.view && this.of(view.branch) && view.revision < this.view.revision) return;
     this.view = view;
-    if (this.structure) void this.#read();
-  }
-
-  /** Read the structure text, unless it already describes the shown declarations. */
-  async #read(): Promise<void> {
-    const view = this.view;
-    if (!view || this.text?.fingerprint === view.fingerprint) return;
-    try {
-      const text = await call(this.ipc.currentStructure(view.branch));
-      if (this.view?.fingerprint === view.fingerprint) this.text = { fingerprint: view.fingerprint, text };
-    } catch (error) {
-      this.#failed = message(error);
-    }
   }
 
   /** Nothing of a branch is shown any more. */
@@ -100,7 +73,5 @@ export class Current {
     this.view = null;
     this.#failed = null;
     this.#asking = false;
-    this.structure = false;
-    this.text = null;
   }
 }

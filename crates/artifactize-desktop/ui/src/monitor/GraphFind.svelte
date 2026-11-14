@@ -11,6 +11,8 @@
   import { GraphFindState, setGraphFindState } from "./graph-find-state.svelte";
   import { composing } from "../shell/keys";
   import { tone } from "../shell/tone";
+  import Icon from "../shell/Icon.svelte";
+  import { markIcon } from "../shell/icons";
 
   let {
     source,
@@ -115,13 +117,13 @@
             onmousedown={(event) => event.preventDefault()}
             onclick={() => onchoose(item)}
           >
-            <span class="glyph {tone(item.tone)}">{item.glyph}</span><span class="name">{named(item)}</span>
+            <span class="glyph {tone(item.tone)}">{#if markIcon(item.glyph, item.tone)}<Icon name={markIcon(item.glyph, item.tone)!} />{:else}{item.glyph}{/if}</span><span class="name">{named(item)}</span>
           </li>
         {/each}
       </ul>
     {/if}
     <p class="note" role="status">
-      {#if favorites && found.length === 0}No favorites here yet: star an Artifact with the ☆ beside its Detail's title.{:else if found.length === 0}No Artifact or eval matches.{:else if finding.more > 0}{finding.more} more match.{/if}
+      {#if favorites && found.length === 0}No favorites here yet: star an Artifact with the star beside its Detail's title.{:else if found.length === 0}No Artifact or eval matches.{:else if finding.more > 0}{finding.more} more match.{/if}
     </p>
   {/if}
 </div>
@@ -177,6 +179,10 @@
   .found .active {
     background: var(--selection);
     box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .glyph {
+    display: inline-flex;
+    flex: none;
   }
   .name {
     min-width: 0;

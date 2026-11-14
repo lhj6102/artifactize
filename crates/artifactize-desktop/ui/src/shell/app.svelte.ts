@@ -12,6 +12,7 @@ import { Jobs } from "../ipc/jobs.svelte";
 import { Review } from "../review/review.svelte";
 import { Leaving } from "./leaving.svelte";
 import { Release } from "./release.svelte";
+import { Sections } from "./sections.svelte";
 
 export class AppState {
   readonly activity = new Activity();
@@ -30,6 +31,8 @@ export class AppState {
   readonly release = new Release(this.ipc);
   /** The numbers of this window's cancellable Human jobs. */
   readonly jobs = new Jobs();
+  /** Which inspector sections are folded, by name, kept across launches. */
+  readonly sections = new Sections();
   /** What the command palette lists: each part of the window registers its commands here. */
   readonly commands = new Registry();
   /** Human reviews by request: leaving and reopening a request keeps its drafts. */

@@ -64,7 +64,6 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             graph::find::star_artifact,
             graph::current::current_scan,
             graph::current::current_view,
-            graph::current::current_structure,
             tools::artifact_tools,
             tools::artifact_tool_run,
             request::request_detail,

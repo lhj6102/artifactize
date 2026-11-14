@@ -1,97 +1,89 @@
-// The keys of what has focus, for the help dialog.
-type Section = { title: string; keys: [string, string][] };
+// The keys of what has focus, for Help: the Pane, a graph with its Detail, a Human review or
+// Settings; a graph's Help adds what its marks mean. Every key a working screen does not show
+// is named here or in the palette.
+import type { Light } from "../ipc/client";
+import { CURRENT_LEGEND, LEGEND } from "../monitor/graph";
 
-const COMMON: Section = {
+export type Section = { title: string; keys: [string, string][] };
+
+/** What has focus, as Help lists its keys. */
+export type Focused = "pane" | "graph" | "current" | "review" | "settings";
+
+const WINDOW: Section = {
   title: "Window",
   keys: [
     ["Ctrl+K", "Command palette"],
+    ["Ctrl+B", "Show or hide the Pane"],
     ["Ctrl+,", "Settings, and back"],
     ["Ctrl+O", "Open a request by ID"],
-    ["/", "Search branches and reviews"],
-    ["Ctrl+R / F5", "Refresh, and scan the branches again"],
+    ["/", "Search the branches"],
+    ["Ctrl+R / F5", "Refresh"],
     ["?", "These shortcuts"],
-    ["q", "Quit (outside fields)"],
-    ["Tab / Shift+Tab", "Next / previous part or control"],
-  ],
-};
-
-const HUMAN: Section = {
-  title: "Human review",
-  keys: [
-    ["c", "Claim"],
-    ["g / r", "GREEN / RED form, after claim"],
-    ["u", "Release the claim"],
-    ["Ctrl+G / Ctrl+R", "Switch verdict while editing"],
-    ["Ctrl+S", "Submit the form"],
-    ["Ctrl+U", "Release while editing"],
-    ["Click · Enter", "Run a tool (its ▶ button)"],
-    ["Tab", "Move between tools and fields"],
-    ["i / t", "Expand instruction / Technical"],
-    ["Esc", "Cancel work, stop editing, then leave"],
+    ["q", "Quit"],
   ],
 };
 
 const GRAPH: Section = {
-  title: "Graph and Detail",
+  title: "Graph",
   keys: [
-    ["Click an Artifact", "Open its Detail; another Artifact switches it"],
-    ["Click the headline", "Open the Run's Detail"],
-    ["Click the background", "Close the Detail"],
-    ["Tab · Enter", "Focus an Artifact · open its Detail"],
-    ["Ctrl+F", "Find an Artifact or an eval by name; ↑ / ↓ choose, Enter opens, Esc closes"],
-    ["m", "Minimize or expand the focused whole, else the one whose Detail is open"],
-    ["Click a tab or an eval", "Show the Artifact or that eval"],
-    ["Click ▶ under Tools", "Run one of the Artifact's tools in its worktree"],
-    ["t / w", "Debug / pending evals"],
-    ["Drag the left edge", "Resize the Detail"],
+    ["Tab", "Next Artifact"],
+    ["Enter", "Open its Detail"],
+    ["Ctrl+F", "Find an Artifact or an eval"],
+    ["m", "Minimize or expand a whole"],
+    ["t", "Show or hide Debug"],
     ["Esc", "Close the Detail, then back to the Pane"],
-    [
-      "Colours",
-      "Run: green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked. Current: teal reused · blue would run · grey waiting · dark red blocked · pale grey checking",
-    ],
   ],
 };
 
-export const HELP: Record<"pane" | "main" | "settings", Section[]> = {
+const REVIEW: Section = {
+  title: "Review",
+  keys: [
+    ["c", "Claim to review"],
+    ["u", "Release the claim"],
+    ["g / r", "Open the GREEN or the RED form"],
+    ["Ctrl+G / Ctrl+R", "Choose GREEN or RED while editing"],
+    ["Ctrl+S", "Submit"],
+    ["t", "Show or hide Debug"],
+    ["Esc", "Cancel running work, then leave the form, then the review"],
+  ],
+};
+
+const KEYS: Record<Focused, Section[]> = {
   pane: [
     {
       title: "Pane",
       keys: [
-        ["/ · Ctrl+F", "Search branches and reviews"],
-        ["↑ / ↓ · j / k", "Select a branch or a timeline entry, then a waiting review"],
-        ["← / →", "Fold / expand the selected branch, or step out of / into its timeline"],
-        ["Enter", "Go to the Main area, or open the selected review"],
-        ["Click a branch · an entry", "Expand it and show its newest entry · show that entry"],
-        ["Older runs", "Bring older Runs in below the oldest"],
+        ["↑ / ↓ · j / k", "Select a branch, a timeline entry or a waiting review"],
+        ["← / →", "Fold or expand the branch, or step out of or into its timeline"],
+        ["Enter", "Go to the Main area, or open the waiting review"],
       ],
     },
     {
       title: "Search",
       keys: [
-        ["text · key:value", "Every term must match; keys repo branch sort"],
-        ["sort:recent · sort:name", "Most recent Run first · by project and branch"],
-        ["↑ / ↓ · Tab / Enter", "Choose / take a suggestion"],
+        ["↑ / ↓", "Choose a suggestion"],
+        ["Tab / Enter", "Take it"],
         ["Esc", "Close suggestions, then put sort:recent back, then back to the entries"],
       ],
     },
-    COMMON,
+    WINDOW,
   ],
-  main: [GRAPH, HUMAN, COMMON],
+  graph: [GRAPH, WINDOW],
+  current: [GRAPH, WINDOW],
+  review: [REVIEW, WINDOW],
   settings: [
     {
       title: "Settings",
       keys: [
-        ["Providers", "Codex, OpenAI, Anthropic, Gemini and the custom providers; choose one to set it up"],
-        ["Codex", "Sign in through the browser as `artifactize login codex`; paste the redirect URL if it cannot return"],
-        ["Keys", "Save or remove an API key, as `artifactize login`; a set environment variable is used first"],
-        ["+ Custom provider", "Name an alias of a built-in provider or an endpoint, as `artifactize provider add`"],
-        ["Models", "List what the chosen provider offers, as `artifactize models`"],
-        ["Remote", "Sign in with a store URL and token, check status, sign out or push, as `artifactize remote`"],
-        ["← / →", "Switch between the Providers and Remote tabs"],
+        ["← / →", "Previous or next tab"],
         ["Esc", "Close Settings"],
-        ["Tab / Shift+Tab", "Next / previous control"],
       ],
     },
-    COMMON,
+    WINDOW,
   ],
 };
+
+/** The keys Help lists for what has focus, and on a graph the marks it explains. */
+export function help(focused: Focused): { sections: Section[]; marks: Light[] } {
+  return { sections: KEYS[focused], marks: focused === "graph" ? LEGEND : focused === "current" ? CURRENT_LEGEND : [] };
+}

@@ -10,7 +10,7 @@
   const s = getSettingsState();
 
   const NAMES: Record<Provider, string> = {
-    codex: "Codex (ChatGPT)",
+    codex: "Codex",
     "claude-agent": "Claude Agent",
     openai: "OpenAI",
     anthropic: "Anthropic",
@@ -80,41 +80,32 @@
     {:else if s.choice.kind === "builtin"}
       {@const provider = s.choice.provider}
       <section aria-labelledby="key-title">
-        <h2 id="key-title">{NAMES[provider]} API key</h2>
-        <p class="muted">
-          A key in <code>{keyStatus?.variable}</code> is used first; otherwise the key saved here, as <code>artifactize login {provider}</code> saves it. The key is never shown.
-        </p>
+        <h2 id="key-title">{NAMES[provider]}</h2>
         <dl class="facts" aria-label="{NAMES[provider]} key">
           <dt>Key</dt>
           <dd data-testid="key-{provider}">
             {#if !keyStatus}
               …
             {:else if keyStatus.source === "environment"}
-              Set from {keyStatus.variable}{keyStatus.saved ? "; a saved key is kept but not used" : ""}
+              set from the environment ({keyStatus.variable}){keyStatus.saved ? "; a saved key is kept but not used" : ""}
             {:else if keyStatus.source === "saved"}
-              Saved
+              saved here
             {:else}
-              Not set
+              not set
             {/if}
           </dd>
         </dl>
-        <form class="fields" onsubmit={(event) => saveKey(event, provider)}>
-          <label for="provider-key">API key</label>
-          <input id="provider-key" class="input" type="password" bind:value={s.key} autocomplete="off" spellcheck="false" />
-          <div class="row">
-            <button class="button primary" type="submit" disabled={s.saving}>Save key</button>
-            {#if keyStatus?.saved}
-              <button class="button" type="button" disabled={s.saving} onclick={() => void s.removeKey(provider)}>Remove saved key</button>
-            {/if}
-          </div>
+        <form class="row" onsubmit={(event) => saveKey(event, provider)}>
+          <input id="provider-key" class="input" type="password" bind:value={s.key} aria-label="API key" placeholder="Paste a key to save" autocomplete="off" spellcheck="false" />
+          <button class="button" type="submit" disabled={s.saving}>Save key</button>
+          {#if keyStatus?.saved}
+            <button class="button" type="button" disabled={s.saving} onclick={() => void s.removeKey(provider)}>Remove saved key</button>
+          {/if}
         </form>
       </section>
     {:else}
       <section aria-labelledby="custom-title">
-        <h2 id="custom-title">{s.choice.kind === "custom" ? s.choice.name : "New custom provider"}</h2>
-        <p class="muted">
-          An eval uses a custom provider by its name in <code>backend</code>. It is set up on this machine only, as <code>artifactize provider add</code> does.
-        </p>
+        <h2 id="custom-title">{s.choice.kind === "custom" ? s.choice.name : "Custom provider"}</h2>
         <form class="fields" onsubmit={saveCustom} aria-label="Custom provider">
           <label for="custom-name">Name</label>
           <input
@@ -126,10 +117,10 @@
             autocomplete="off"
             spellcheck="false"
           />
-          <span class="label">Reaches</span>
-          <div class="row" role="radiogroup" aria-label="Reaches">
-            <label><input type="radio" name="custom-kind" value="alias" bind:group={s.draft.kind} /> a built-in provider</label>
-            <label><input type="radio" name="custom-kind" value="endpoint" bind:group={s.draft.kind} /> an endpoint</label>
+          <span class="label">Kind</span>
+          <div class="row" role="radiogroup" aria-label="Kind">
+            <label><input type="radio" name="custom-kind" value="alias" bind:group={s.draft.kind} /> alias of a built-in provider</label>
+            <label><input type="radio" name="custom-kind" value="endpoint" bind:group={s.draft.kind} /> endpoint</label>
           </div>
           {#if s.draft.kind === "alias"}
             <label for="custom-provider">Provider</label>
@@ -145,7 +136,7 @@
                 <option {value}>{name}</option>
               {/each}
             </select>
-            <label for="custom-url">URL</label>
+            <label for="custom-url">Base URL</label>
             <input id="custom-url" class="input" bind:value={s.draft.url} placeholder={ROOTS[s.draft.api]} autocomplete="off" spellcheck="false" />
             <label for="custom-key">Key</label>
             <input
@@ -171,29 +162,24 @@
         </form>
       </section>
     {/if}
-    {#if s.providersNotice}<p class="notice" role="status">{s.providersNotice}</p>{/if}
     {#if s.providersError}<p class="error" role="alert">{s.providersError}</p>{/if}
 
     {#if s.backend}
       <section aria-labelledby="models-title">
         <h2 id="models-title">Models</h2>
-        <p class="muted">What <code>{s.backend}</code> offers to your key or account, as <code>artifactize models {s.backend}</code> lists them.</p>
         <div class="row">
-          <button class="button" disabled={s.listing} onclick={() => void s.listModels()}>{s.listing ? "Listing…" : "List models"}</button>
+          <button class="button" disabled={s.listing} onclick={() => void s.listModels()}>List models</button>
         </div>
         {#if s.modelsError}<p class="error" role="alert">{s.modelsError}</p>{/if}
         {#if s.models}
           {#if s.models.length === 0}
             <p class="muted">No models listed.</p>
           {:else}
-            <table aria-label="Models">
-              <thead><tr><th>Model</th><th>Name</th></tr></thead>
-              <tbody>
-                {#each s.models as model (model.slug)}
-                  <tr><td><code>{model.slug}</code></td><td>{model.displayName}</td></tr>
-                {/each}
-              </tbody>
-            </table>
+            <ul class="models" aria-label="Models">
+              {#each s.models as model (model.slug)}
+                <li>{model.displayName}<code>{model.slug}</code></li>
+              {/each}
+            </ul>
           {/if}
         {/if}
       </section>
@@ -252,5 +238,25 @@
   }
   .fields .row {
     grid-column: 2;
+  }
+  .label {
+    color: var(--ink-2);
+  }
+  /* One row per model: its name in ink, its ID beside it. */
+  .models {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .models li {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-height: var(--row);
+    overflow-wrap: anywhere;
+  }
+  .models code {
+    color: var(--ink-2);
+    font: var(--text-small) var(--mono);
   }
 </style>

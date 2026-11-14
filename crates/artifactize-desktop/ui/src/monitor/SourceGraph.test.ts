@@ -52,8 +52,8 @@ function runOf(args: unknown): { run: string; known: number | null } {
 function graph(release: Shape["nodes"][number]["light"], ship = "waiting" as const): Shape {
   return {
     nodes: [
-      { id: "a:release", name: "release", light: release, note: null, parts: [] },
-      { id: "a:ship", name: "ship", light: ship, note: null, parts: [] },
+      { id: "a:release", name: "release", light: release, tally: null, note: null, parts: [] },
+      { id: "a:ship", name: "ship", light: ship, tally: null, note: null, parts: [] },
     ],
     edges: [{ source: "a:release", target: "a:ship", light: release }],
   };
@@ -69,7 +69,7 @@ function answer(run: string, shape: Shape, known: number | null): Graph {
     source,
     shape: key,
     update: known === key
-      ? { kind: "lights", nodes: shape.nodes.map((node) => node.light), edges: shape.edges.map((edge) => edge.light) }
+      ? { kind: "lights", nodes: shape.nodes.map((node) => node.light), tallies: shape.nodes.map((node) => node.tally), edges: shape.edges.map((edge) => edge.light) }
       : { kind: "shape", ...shape },
   };
 }
@@ -130,10 +130,10 @@ describe("SourceGraph", () => {
     // kit is a part of app and of site; app uses kit, and lone uses site.
     const parts: Shape = {
       nodes: [
-        { id: "a:app", name: "app", light: "red", note: null, parts: ["a:kit"] },
-        { id: "a:site", name: "site", light: "green", note: null, parts: ["a:kit"] },
-        { id: "a:kit", name: "kit", light: "green", note: null, parts: [] },
-        { id: "a:lone", name: "lone", light: "waiting", note: null, parts: [] },
+        { id: "a:app", name: "app", light: "red", tally: null, note: null, parts: ["a:kit"] },
+        { id: "a:site", name: "site", light: "green", tally: null, note: null, parts: ["a:kit"] },
+        { id: "a:kit", name: "kit", light: "green", tally: null, note: null, parts: [] },
+        { id: "a:lone", name: "lone", light: "waiting", tally: null, note: null, parts: [] },
       ],
       edges: [{ source: "a:site", target: "a:lone", light: "green" }],
     };
@@ -190,14 +190,14 @@ describe("SourceGraph", () => {
     expect(asked[1].known).not.toBeNull();
     expect(layout).toHaveBeenCalledOnce();
 
-    served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", note: null, parts: [] }] };
+    served = { ...graph("green"), nodes: [...graph("green").nodes, { id: "a:docs", name: "docs", light: "waiting", tally: null, note: null, parts: [] }] };
     await rerender({ revision: 3 });
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the graph shown while a new shape lays out, and lays out each shape once whatever snapshots arrive", async () => {
-    const docs = { id: "a:docs", name: "docs", light: "waiting" as const, note: null, parts: [] };
+    const docs = { id: "a:docs", name: "docs", light: "waiting" as const, tally: null, note: null, parts: [] };
     const grown = (release: Shape["nodes"][number]["light"]): Shape => ({ ...graph(release), nodes: [...graph(release).nodes, docs] });
     let served = graph("active");
     const { rerender } = setup(() => served);
@@ -246,7 +246,7 @@ describe("SourceGraph", () => {
       if (run === "run-b") {
         asking();
         await held;
-        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red", note: null, parts: [] }], edges: [] }, known);
+        return answer("run-b", { nodes: [{ id: "a:other", name: "other", light: "red", tally: null, note: null, parts: [] }], edges: [] }, known);
       }
       return answer(run, lightA, known);
     });
@@ -273,12 +273,12 @@ describe("SourceGraph", () => {
     await screen.findByText("This Run has no Artifacts.");
   });
 
-  it("shows ERROR apart from RED, and a legend of all six lights", async () => {
+  it("shows ERROR apart from RED by its icon and strip, and no legend", async () => {
     setup(() => ({
       nodes: [
-        { id: "a:release", name: "release", light: "red", note: null, parts: [] },
-        { id: "a:ship", name: "ship", light: "error", note: null, parts: [] },
-        { id: "a:docs", name: "docs", light: "blocked", note: null, parts: [] },
+        { id: "a:release", name: "release", light: "red", tally: null, note: null, parts: [] },
+        { id: "a:ship", name: "ship", light: "error", tally: null, note: null, parts: [] },
+        { id: "a:docs", name: "docs", light: "blocked", tally: null, note: null, parts: [] },
       ],
       edges: [{ source: "a:ship", target: "a:docs", light: "error" }],
     }));
@@ -287,17 +287,11 @@ describe("SourceGraph", () => {
     expect(node("a:ship")?.getAttribute("aria-label")).toBe("ship: ERROR");
     expect(node("a:ship")?.querySelector(".light-error")).not.toBeNull();
     expect(node("a:docs")?.getAttribute("aria-label")).toBe("docs: blocked by upstream");
-    const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")];
-    expect(legend.map((item) => item.className.split(" ").find((name) => name.startsWith("light-")))).toEqual([
-      "light-green",
-      "light-active",
-      "light-waiting",
-      "light-red",
-      "light-error",
-      "light-blocked",
-    ]);
+    expect(node("a:ship")?.querySelector(".light svg")).not.toBeNull();
+    // What the marks mean is Help's, not the graph's.
+    expect(screen.queryByRole("list", { name: "Legend" })).toBeNull();
   });
-  it("marks a Current's Artifacts by what verify would do, with a legend of its own", async () => {
+  it("marks a Current's Artifacts by what verify would do, with how many of their evals would be reused", async () => {
     const current: Source = { kind: "current", branch: { kind: "branch", common: "/work/app/.git", branch: "main" } };
     mockIPC((cmd, args) =>
       cmd === "graph"
@@ -307,8 +301,8 @@ describe("SourceGraph", () => {
             update: {
               kind: "shape",
               nodes: [
-                { id: "a:app", name: "app", light: "reused", note: "reused", parts: [] },
-                { id: "a:graph", name: "graph", light: "run", note: "would run (2 evals)", parts: [] },
+                { id: "a:app", name: "app", light: "reused", tally: { passed: 1, of: 1 }, note: "reused", parts: [] },
+                { id: "a:graph", name: "graph", light: "run", tally: { passed: 1, of: 3 }, note: "would run (2 evals)", parts: [] },
               ],
               edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
             },
@@ -319,11 +313,10 @@ describe("SourceGraph", () => {
     render(SourceGraph, { source: current, revision: 1, onopen: vi.fn(), onclose: vi.fn() });
     await waitFor(() => expect(node("a:graph")).not.toBeNull());
     expect(node("a:graph")?.getAttribute("aria-label")).toBe("graph: would run (2 evals)");
-    // Drawn by its colour alone, as a Run's Artifacts are: the node shows only its name.
-    expect(node("a:graph")?.textContent?.trim()).toBe("graph");
+    // Drawn as a Run's Artifacts are: its icon, its name and its tally.
+    expect(node("a:graph")?.textContent?.replace(/\s+/g, " ").trim()).toBe("graph 1/3");
+    expect(node("a:graph")?.querySelector(".light svg")).not.toBeNull();
     expect(node("a:app")?.dataset.light).toBe("reused");
-    const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")].map((item) => item.textContent?.trim());
-    expect(legend).toEqual(["reused", "would run", "waiting", "blocked by upstream", "checking"]);
   });
 
   it("lights a Current again by each scan's whole shape, its layout kept", async () => {
@@ -334,7 +327,7 @@ describe("SourceGraph", () => {
         ? {
             source: (args as { source: Source }).source,
             shape: 1,
-            update: { kind: "shape", nodes: [{ id: "a:app", name: "app", light, note: light, parts: [] }], edges: [] },
+            update: { kind: "shape", nodes: [{ id: "a:app", name: "app", light, tally: null, note: light, parts: [] }], edges: [] },
           }
         : null,
     );

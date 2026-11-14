@@ -5,8 +5,10 @@
 // camera's transform. A whole's box is painted as its outline, its parts inside it.
 import type { Rect, Viewport } from "@xyflow/svelte";
 import type { Light, Shape } from "../ipc/client";
-import type { Point } from "./graph";
+import { ICONS, LIGHTS } from "../shell/icons";
+import { BLOCKING, type Point } from "./graph";
 import { NODE } from "./layout";
+import { BOX } from "./parts";
 
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
@@ -20,12 +22,14 @@ const FAR = 1024;
 const SPAN = 2 * FAR + 1;
 /** The width of the ring around the opened Artifact, as its element draws it. */
 const RING = 2;
-/** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its side padding, its
- * dot and the gap before its name. Its corner radius and its name's font size are the theme's
- * tokens, read when painting. */
+/** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its padding on the left
+ * and the right, and the gap after its icon, before its tally. Its corner radius, its icon's
+ * box, its strip, its port and its fonts are the theme's tokens, read when painting. */
 const NODE_PAD = 12;
-const NODE_DOT = 8;
+const NODE_PAD_END = 10;
 const NODE_GAP = 8;
+/** The icon set's own box, in which its shapes are drawn (icons.ts). */
+const ICON_BOX = 12;
 /** The smallest font, in device-independent pixels, at which a name is still painted. */
 const LEGIBLE = 5;
 /** The smallest port, in device-independent pixels, whose shape still reads. */
@@ -177,7 +181,8 @@ function cut(context: CanvasRenderingContext2D, text: string, width: number): st
 
 function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const style = getComputedStyle(document.documentElement);
-  const colour = (light: Light) => style.getPropertyValue(`--light-${light}`).trim();
+  const token = (name: string) => style.getPropertyValue(name).trim();
+  const colour = (light: Light) => token(LIGHTS[light].colour);
   const { viewport, ratio, width, height } = what;
   const { zoom, x: left, y: top } = viewport;
   context.setTransform(1, 0, 0, 1, 0, 0);
@@ -186,7 +191,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   context.lineWidth = Math.max(1 / ratio, EDGE_WIDTH * zoom);
 
   const { sources, targets, lights } = ends(at, what.graph);
-  const paths = new Map<Light, Path2D>();
+  // Edges are neutral; those that leave a RED, ERROR or blocked Artifact take its colour.
+  const paths = new Map<Light | null, Path2D>();
   const drawn = new Set<number>();
   const grain = (value: number) => Math.min(Math.max(Math.floor(value / GRAIN), -FAR), FAR) + FAR;
   // The Artifacts edges reach, and those they leave: each shows its port on that side.
@@ -204,92 +210,141 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const key = ((cells[0] * SPAN + cells[1]) * SPAN + cells[2]) * SPAN + cells[3];
     if (drawn.has(key)) continue;
     drawn.add(key);
-    let path = paths.get(lights[edge]);
-    if (!path) paths.set(lights[edge], (path = new Path2D()));
+    const light = BLOCKING.has(lights[edge]) ? lights[edge] : null;
+    let path = paths.get(light);
+    if (!path) paths.set(light, (path = new Path2D()));
     // Svelte Flow's bezier from the source's right side to the target's left.
     const offset = x2 >= x1 ? 0.5 * (x2 - x1) : 0.25 * 25 * Math.sqrt((x1 - x2) * zoom);
     path.moveTo(x1, y1);
     path.bezierCurveTo(x1 + offset, y1, x2 - offset, y2, x2, y2);
   }
-  for (const [light, path] of paths) {
-    context.strokeStyle = colour(light);
+  // The neutral edges first, so a coloured one shows over them.
+  for (const [light, path] of [...paths].sort(([one], [other]) => Number(one !== null) - Number(other !== null))) {
+    context.strokeStyle = light === null ? token("--edge") : colour(light);
     context.stroke(path);
   }
   if (!what.boxes) return;
 
-  // The Artifacts in view, painted as their elements draw them: a whole as its box's outline, a
-  // node as a neutral face with a border and a dot in its light's colour and its name, cut to
-  // the face, once the zoom makes a name legible; and each one's ports, a triangle pointing in
-  // on its left side and a square on its right, once the zoom makes their shapes read.
-  const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
-  const boxes = new Map<Light, Path2D>();
-  const outlines = new Map<Light, Path2D>();
-  const dots = new Map<Light, Path2D>();
-  const ports = new Map<Light, Path2D>();
-  const names: { x: number; y: number; width: number; text: string }[] = [];
-  const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
-  const pixels = (token: string) => Number.parseFloat(style.getPropertyValue(token)) || 0;
-  const [corner, font, port] = [pixels("--radius-control"), pixels("--text-body"), pixels("--port") * zoom];
-  const radius = Math.min(corner * zoom, corner);
+  // The Artifacts in view. Where a name would be too small to read, a node is one block of its
+  // status's colour and a whole its box's outline in that colour. From the zoom at which names
+  // read, each is painted as its element draws it: a node's neutral face and outline, its icon
+  // and strip in its status's colour, its name, cut to the face, and its tally; a whole's
+  // neutral box with its title row; and their ports, a triangle pointing in on the left side
+  // and a square on the right, in the edges' neutral colour.
+  const pixels = (name: string) => Number.parseFloat(token(name)) || 0;
+  const [corner, font, label, icon, strip, port] = [pixels("--radius-control"), pixels("--text-body"), pixels("--text-label"), pixels("--icon"), pixels("--strip"), pixels("--port") * zoom];
   const legible = font * zoom >= LEGIBLE;
+  const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
+  const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
+  const radius = Math.min(corner * zoom, corner);
+  const blocks = new Map<Light, Path2D>();
+  const outlines = new Map<Light, Path2D>();
+  const faces = new Path2D();
+  const neutral = new Path2D();
+  const strips = new Map<Light, Path2D>();
+  const ports = new Path2D();
+  const marks: { light: Light; x: number; y: number }[] = [];
+  const names: { x: number; y: number; width: number; text: string; tally: string; whole: boolean }[] = [];
+  const add = (into: Map<Light, Path2D>, light: Light) => {
+    let path = into.get(light);
+    if (!path) into.set(light, (path = new Path2D()));
+    return path;
+  };
   for (const number of within(at, shown) ?? []) {
     const node = named.get(at.nodes[number]);
     const light = node?.light ?? "waiting";
     const whole = at.wholes.has(number);
-    const paths = whole ? outlines : boxes;
-    let path = paths.get(light);
-    if (!path) paths.set(light, (path = new Path2D()));
     const place = at.places[number];
     const [x, y, w, h] = [place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1)];
-    path.roundRect(x, y, w, h, radius);
+    if (!legible) {
+      if (whole) add(outlines, light).rect(x, y, w, h);
+      else add(blocks, light).rect(x, y, w, h);
+      continue;
+    }
+    // A node's face, or a whole's title row, with the strip in its status's colour below it.
+    const row = whole ? Math.min(BOX.header * zoom, h) : h;
+    if (!whole) faces.roundRect(x, y, w, h, radius);
+    neutral.roundRect(x, y, w, h, radius);
+    add(strips, light).rect(x, y + row - strip * zoom, w, strip * zoom);
+    marks.push({ light, x: x + NODE_PAD * zoom, y: y + row / 2 - (icon * zoom) / 2 });
+    const start = (NODE_PAD + icon + NODE_GAP) * zoom;
+    const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
+    if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - NODE_PAD_END * zoom, text: node.name, tally, whole });
     if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
-      let shapes = ports.get(light);
-      if (!shapes) ports.set(light, (shapes = new Path2D()));
       const [middle, half] = [y + h / 2, port / 2];
       if (inward[number]) {
-        shapes.moveTo(x - half, middle - half);
-        shapes.lineTo(x + half, middle);
-        shapes.lineTo(x - half, middle + half);
-        shapes.closePath();
+        ports.moveTo(x - half, middle - half);
+        ports.lineTo(x + half, middle);
+        ports.lineTo(x - half, middle + half);
+        ports.closePath();
       }
-      if (outward[number]) shapes.rect(x + w - half, middle - half, port, port);
+      if (outward[number]) ports.rect(x + w - half, middle - half, port, port);
     }
-    if (whole) continue;
-    let dot = dots.get(light);
-    if (!dot) dots.set(light, (dot = new Path2D()));
-    const [cx, cy] = [x + NODE_PAD * zoom + (NODE_DOT / 2) * zoom, y + h / 2];
-    dot.moveTo(cx + (NODE_DOT / 2) * zoom, cy);
-    dot.arc(cx, cy, Math.max((NODE_DOT / 2) * zoom, 0.5), 0, 2 * Math.PI);
-    if (legible && node) names.push({ x: x + (NODE_PAD + NODE_DOT + NODE_GAP) * zoom, y: cy, width: w - (2 * NODE_PAD + NODE_DOT + NODE_GAP) * zoom, text: node.name });
   }
-  // A node's border is its own: one pixel at the node's scale, never an edge's stroke.
-  context.lineWidth = Math.max(1 / ratio, zoom);
+  for (const [light, path] of blocks) {
+    context.fillStyle = colour(light);
+    context.fill(path);
+  }
+  // A whole's or a node's outline is its own: one pixel at the graph's scale.
+  context.lineWidth = Math.max(1 / ratio, Math.min(zoom, 1));
   for (const [light, path] of outlines) {
     context.strokeStyle = colour(light);
     context.stroke(path);
   }
-  context.fillStyle = style.getPropertyValue("--surface-panel").trim();
-  for (const path of boxes.values()) context.fill(path);
-  for (const [light, path] of boxes) {
-    context.strokeStyle = colour(light);
-    context.stroke(path);
+  if (!legible) return;
+  context.fillStyle = token("--surface-panel");
+  context.fill(faces);
+  context.strokeStyle = token("--line-node");
+  context.stroke(neutral);
+  for (const [light, path] of strips) {
+    context.fillStyle = colour(light);
+    context.fill(path);
   }
-  for (const paths of [dots, ports]) {
-    for (const [light, path] of paths) {
-      context.fillStyle = colour(light);
-      context.fill(path);
+  context.fillStyle = token("--edge");
+  context.fill(ports);
+  // Each status's icon, drawn from the icon set's own shapes at the icon's box.
+  const scale = (icon * zoom) / ICON_BOX;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  for (const mark of marks) {
+    const shade = colour(mark.light);
+    context.save();
+    context.translate(mark.x, mark.y);
+    context.scale(scale, scale);
+    for (const shape of ICONS[LIGHTS[mark.light].icon]) {
+      const path = new Path2D(shape.d);
+      context.setLineDash(shape.dash ?? []);
+      if (shape.fill) {
+        context.fillStyle = shade;
+        context.fill(path);
+      }
+      if (!shape.fill || shape.width !== undefined) {
+        context.lineWidth = shape.width ?? 1.5;
+        context.strokeStyle = shade;
+        context.stroke(path);
+      }
     }
+    context.restore();
   }
-  if (names.length === 0) return;
-  context.fillStyle = style.getPropertyValue("--ink").trim();
-  context.font = `500 ${font * zoom}px ${style.getPropertyValue("--font").trim()}`;
+  const face = token("--font");
   context.textBaseline = "middle";
   for (const name of names) {
+    let room = name.width;
+    if (name.tally) {
+      context.font = `400 ${label * zoom}px ${face}`;
+      const wide = context.measureText(name.tally).width;
+      context.fillStyle = token("--ink-2");
+      context.fillText(name.tally, name.x + name.width - wide, name.y);
+      room -= wide + NODE_GAP * zoom;
+    }
+    if (room <= 0) continue;
+    context.font = `${name.whole ? 600 : 500} ${font * zoom}px ${face}`;
+    context.fillStyle = token("--ink");
     context.save();
     context.beginPath();
-    context.rect(name.x, name.y - font * zoom, name.width, 2 * font * zoom);
+    context.rect(name.x, name.y - font * zoom, room, 2 * font * zoom);
     context.clip();
-    context.fillText(cut(context, name.text, name.width), name.x, name.y);
+    context.fillText(cut(context, name.text, room), name.x, name.y);
     context.restore();
   }
 }

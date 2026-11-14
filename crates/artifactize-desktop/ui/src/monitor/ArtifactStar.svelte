@@ -1,9 +1,10 @@
 <script lang="ts">
-  // The star beside an Artifact's Detail title: ☆ stars the Artifact, a favorite of every branch
-  // of its project, and ★ takes the star away. Starred Artifacts are what the graph's find field
+  // The star beside an Artifact's Detail title: the star icon stars the Artifact, a favorite of
+  // every branch of its project, and the filled star takes the star away. Starred Artifacts are what the graph's find field
   // lists with nothing typed.
   import type { Attachment } from "svelte/attachments";
   import { call, message, useIpc, type BranchKey } from "../ipc/client";
+  import Icon from "../shell/Icon.svelte";
   import { ArtifactStarState, setArtifactStarState } from "./artifact-star-state.svelte";
   import { keyOf } from "./monitor-state.svelte";
 
@@ -43,7 +44,8 @@
       if (asked !== s.asked) return;
       s.starred = { branch: keyOf(at), names };
       s.error = null;
-    } catch (failure) {      if (asked !== s.asked) return;
+    } catch (failure) {
+      if (asked !== s.asked) return;
       // Nothing changed in the library: show its stars as last read, not the click's opposite,
       // which overlapping failed clicks would get wrong.
       if (s.starred) s.starred = { ...s.starred };
@@ -53,20 +55,22 @@
   }
 </script>
 
-<button class="star" class:on aria-label="Star {artifact}" aria-pressed={on} {@attach read} onclick={() => void toggle()}>{on ? "★" : "☆"}</button>
+<button class="star" class:on aria-label="Star {artifact}" aria-pressed={on} {@attach read} onclick={() => void toggle()}><Icon name={on ? "star-on" : "star"} /></button>
 {#if s.error}<span class="error" role="status">{s.error}</span>{/if}
 
 <style>
-  /* Quiet until it is on; on, it carries the amber of attention, as a branch's star does. */
+  /* Faint until it is on; on, the filled star in ink, as a branch's star is. */
   .star {
     flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
     margin: 0;
-    padding: 0 2px;
+    padding: 0;
     border: 0;
     background: none;
     color: var(--ink-3);
-    font-size: var(--text-title);
-    line-height: 1.4;
     cursor: pointer;
   }
   .star:hover {
@@ -74,7 +78,7 @@
     border-radius: var(--radius-control);
   }
   .star.on {
-    color: var(--light-active);
+    color: var(--ink);
   }
   .error {
     min-width: 0;

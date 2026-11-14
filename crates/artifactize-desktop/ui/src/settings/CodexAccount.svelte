@@ -1,5 +1,8 @@
 <script lang="ts">
-  // The Codex (ChatGPT) sign-in, as `artifactize login codex` and `logout codex` do it.
+  // The Codex sign-in, as `artifactize login codex` and `logout codex` do it: the account as a
+  // fact, one row of actions, and, while a sign-in is in progress, Cancel sign-in and what
+  // finishes it by hand folded under its own row.
+  import Section from "../shell/Section.svelte";
   import { getSettingsState } from "./settings-state.svelte";
 
   const s = getSettingsState();
@@ -21,12 +24,13 @@
 </script>
 
 <section aria-labelledby="codex-title">
-  <h2 id="codex-title">Codex (ChatGPT) account</h2>
-  <p class="muted">Signs in through the system browser and saves artifactize's own tokens, as <code>artifactize login codex</code> does.</p>
+  <h2 id="codex-title">Codex</h2>
   <dl class="facts" aria-label="Codex sign-in">
-    <dt>Status</dt>
-    <dd data-testid="codex-status">
-      {#if !s.codex}
+    <dt>Account</dt>
+    <dd data-testid="codex-status" class:warn={s.prompt !== null}>
+      {#if s.prompt}
+        sign-in in progress
+      {:else if !s.codex}
         …
       {:else if s.codex.state === "absent"}
         Not signed in
@@ -38,40 +42,33 @@
         Cannot store tokens here: {s.codex.reason}
       {/if}
     </dd>
-    {#if s.prompt}
-      <dt>Sign-in</dt>
-      <dd class="warn">in progress · {s.prompt.callback ? "waiting for the browser" : "the browser cannot return here"}</dd>
-    {/if}
     {#if s.codexError}
       <dt>Sign-in</dt>
       <dd class="error" role="alert">{s.codexError}</dd>
+    {:else if s.codexWarning}
+      <dt>Sign-out</dt>
+      <dd class="warn" role="status">{s.codexWarning}</dd>
     {/if}
   </dl>
   {#if s.prompt}
-    <div class="pending" role="status">
-      <p class="muted">{s.prompt.callback ? "Finish signing in with the browser." : "Finish signing in with the browser, then paste its redirect URL below."} If it did not open, open this URL:</p>
+    <div class="row">
+      <button class="button" type="button" onclick={() => s.cancelSignIn()}>Cancel sign-in</button>
+    </div>
+    <Section name="Finish by hand" unfolded={s.byHand} ontoggle={() => (s.byHand = !s.byHand)}>
       <pre class="url">{s.prompt.url}</pre>
-      {#if !s.prompt.callback}
-        <p class="warn">Port 1455 is in use (another sign-in, such as the Codex CLI or app, may hold it), so the browser cannot return here. Paste the full URL it was sent to below.</p>
-      {/if}
-      <form onsubmit={paste}>
-        <label for="codex-redirect">When the browser cannot return here, paste the URL it was sent to</label>
-        <p id="codex-redirect-help" class="muted">Copy the full URL starting <code>http://localhost:1455/auth/callback?code=</code> from the browser's address bar after the failed load, or from DevTools → Network if the page keeps loading.</p>
-        <div class="row">
-          <input id="codex-redirect" class="input" bind:value={s.redirect} aria-describedby="codex-redirect-help" autocomplete="off" spellcheck="false" />
-          <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
-          <button class="button" type="button" onclick={() => s.cancelSignIn()}>Cancel sign-in</button>
-        </div>
+      {#if !s.prompt.callback}<p class="warn">Port 1455 is in use, so the browser cannot return here.</p>{/if}
+      <form class="row" onsubmit={paste}>
+        <input id="codex-redirect" class="input" bind:value={s.redirect} aria-label="Redirect URL" placeholder="http://localhost:1455/auth/callback?code=…" autocomplete="off" spellcheck="false" />
+        <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
       </form>
+    </Section>
+  {:else}
+    <div class="row">
+      {#if signedIn}
+        <button class="button" disabled={s.busy} onclick={() => void s.signOut()}>Sign out of Codex</button>
+      {:else}
+        <button class="button primary" disabled={s.busy || s.codex?.state === "file" || s.codex?.state === "refused"} onclick={() => void s.signIn()}>Sign in with Codex</button>
+      {/if}
     </div>
   {/if}
-  <div class="row">
-    <button
-      class="button primary"
-      disabled={s.busy || s.codex?.state === "file" || s.codex?.state === "refused"}
-      onclick={() => void s.signIn()}>{signedIn ? "Sign in again" : "Sign in with ChatGPT"}</button
-    >
-    <button class="button" disabled={s.busy || !signedIn} onclick={() => void s.signOut()}>Sign out of Codex</button>
-  </div>
-  {#if s.codexNotice}<p class="notice" role="status">{s.codexNotice}</p>{/if}
 </section>

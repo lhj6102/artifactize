@@ -148,13 +148,13 @@ fn search(app: &App, source: Source, wanted: &Wanted<'_>) -> Result<Finding, Fai
                         id: NodeId::eval(eval.id.clone()),
                         name: &eval.name,
                         glyph: eval.plan.glyph(),
-                        tone: eval.plan.tone().into(),
+                        tone: eval.plan.into(),
                     });
                     let own = Named {
                         id: node_id(&artifact.name).into_inner(),
                         name: artifact.name.as_str(),
                         glyph: artifact.plan.glyph(),
-                        tone: artifact.plan.tone().into(),
+                        tone: artifact.plan.into(),
                     };
                     (own, evals)
                 }),
