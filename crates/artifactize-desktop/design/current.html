@@ -27,8 +27,7 @@
 <h1>Current: a branch's worktree as it is now</h1>
 <p class="lead">
   The Main area when a branch's Current is chosen: the header row with the scan's state, the
-  tool strip, the Current graph lit by what <code>verify</code> would do, and the expandable
-  structure text. The bar and the Pane are
+  tool strip and the Current graph lit by what <code>verify</code> would do. The bar and the Pane are
   as on the Monitor page; the Pane's Current entry sits in its pill.
 </p>
 
@@ -100,22 +99,11 @@
         <div class="m-node in out light-run" style="left: 548px; top: 234px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">1/3</span></div>
         <div class="m-node in light-run" style="left: 808px; top: 234px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
       </div>
-      <div class="m-sec">
-        <div class="m-sec-head"><span class="m-icon i-unfold"></span>Structure and evaluation criteria<span class="m-sum">graph:4f0e…9a21</span></div>
-        <div class="m-sec-body"><div class="m-log" style="height: 150px"><span class="m-quiet">Artifacts (24)</span>
-core
-  tests · The library's tests pass
-  clippy · Clippy passes for every target
-cli  ← core
-  tests · The CLI's tests pass
-  matches-docs · The CLI matches its documentation  ← docs</div></div>
-      </div>
     </section>
   </div>
 </div>
 <span class="callout" style="left: 645px; top: 43px">1</span>
 <span class="callout" style="left: 560px; top: 240px">2</span>
-<span class="callout" style="left: 700px; top: 606px">3</span>
 </div>
 <figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking; would run takes the colour of in progress, waiting and blocked their own.</figcaption>
 </figure>
@@ -123,7 +111,6 @@ cli  ← core
 <ol class="notes">
   <li><span class="n">1</span><div><b>Scan state</b><span>In the Main area's header row, after the view's name: while the scan runs, how many Artifacts are still being checked; once it ends, when it was scanned; a failure says why. Refresh at the row's end.</span></div></li>
   <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the declarations, every node first <i>checking</i>, then lit in place as the scan learns what verify would do.</span></div></li>
-  <li><span class="n">3</span><div><b>Structure text</b><span>Under the graph behind a section header row, folded at first; expanded, every criterion and labeled relation as monospace text in an input-surface box.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -132,8 +119,6 @@ cli  ← core
   <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> (<i>Checking n of m Artifacts…</i>, <i>Scanned at HH:MM:SS</i> in tabular figures, or why it failed in <code>--red</code>) and a small Refresh button at the row's end with its <kbd>Ctrl+R</kbd> key cap (<kbd>F5</kbd> does the same); a refresh asked while a scan runs keeps that scan shown, the header still saying its progress, and one more scan follows once it ends. <span class="avoid">a spinner without the count; the state in a banner; a second row for the scan's state.</span></dd>
   <dt id="D-CUR-2">D-CUR-2</dt>
   <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), whose legend is its own (reused, would run, waiting, blocked, checking, each with its icon); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
-  <dt id="D-CUR-3">D-CUR-3</dt>
-  <dd>The structure text folds under the graph behind a section header row of the inspector's anatomy (D-INS-9): the fold icon (the unfold icon while expanded), <i>Structure and evaluation criteria</i>, and the graph's fingerprint as its summary, opened above by <code>--line-group</code>; it starts folded; expanded, it is a <code>--surface-input</code> box in <code>--mono</code> at <code>--text-small</code> that wraps and scrolls within at most 40% of the window's height. <span class="avoid">the text widening the Main area; the fold hiding the graph.</span></dd>
 </dl>
 </main>
 </div>

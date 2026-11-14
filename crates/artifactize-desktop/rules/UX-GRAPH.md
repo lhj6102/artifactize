@@ -60,9 +60,7 @@ that makes the transition happen and checks where it leads.
   - **Current**: the branch's worktree as it is now, scanned as `artifactize status` does: the
     Main area's header saying, beside the Current's name, how many Artifacts are still being
     checked while the scan runs, when it was scanned once it ends, or why it failed, a Refresh
-    button at that row's end, the graph's **tool strip**, the **Current graph** and, below
-    it, the expandable **Structure and evaluation criteria** text (every criterion and labeled
-    relation). It scans again when chosen again, on Refresh and when a Run of the branch ends;
+    button at that row's end, the graph's **tool strip** and the **Current graph**. It scans again when chosen again, on Refresh and when a Run of the branch ends;
     while a scan of the branch is still running, these show that scan instead of starting over.
   - **Review**: a waiting Human review opened from the Pane, its eval and Artifact named in
     the Main area's header above the **Human review**. Choosing a branch or a timeline entry leaves it without closing it: its claim, draft
@@ -267,8 +265,7 @@ that makes the transition happen and checks where it leads.
 | E-CURRENT-CHECKED | Current, its scan running | the scan learns what verify would do with Artifacts | Current: those Artifacts coloured in place reused, would run, waiting or blocked, each name read aloud with which (would run with its count of evals); the header's count lower, and once none remain, the header saying when it was scanned |
 | E-CURRENT-FAILED | Current, its scan running | the scan fails | Current: the header saying why, the graph staying as it was |
 | E-CURRENT-RUN-END | Current of a branch shown | a Run of that branch ends | the scan of the branch still running shown as it is, else Current scanned again with every Artifact being checked again; the graph recoloured in place |
-| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again; its structure text updated |
-| E-CURRENT-STRUCTURE | Current | expand Structure and evaluation criteria | Current, every criterion and labeled relation shown as text |
+| E-CURRENT-REFRESH | Current | Refresh, Ctrl+R or F5 | the scan of the branch still running shown as it is and, once it ends, Current scanned once more, so what changed meanwhile shows; else Current scanned again; either new scan with every Artifact being checked again |
 | E-GRAPH-RECOLOUR | Run graph or Current graph | a result arrives, or a scan learns what verify would do | the graph, its nodes' icons, strips and counts and its edges changed in place |
 | E-GRAPH-TAB | Run graph or Current graph, the Main area focused | Tab | the graph, the next Artifact focused, or after a whole its Minimize or Expand button (E-GRAPH-TAB-WHOLE), nothing opened |
 | E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button; nothing opened |
@@ -413,7 +410,7 @@ E-PANE-SELECT.
 - J-RESIZE: E-MON-RESIZE
   E-MON-DETAIL-ARTIFACT → E-MON-DETAIL-WIDTH → E-MON-DETAIL-BACK → E-MON-DETAIL-ARTIFACT
 - J-MAIN-RUN: E-PANE-CHIP → E-MON-NOTICE
-- J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-CHECKED → E-CURRENT-STRUCTURE → E-CURRENT-REFRESH → E-CURRENT-CHECKED
+- J-MAIN-CURRENT: E-CURRENT-CHIP → E-CURRENT-CHECKED → E-CURRENT-REFRESH → E-CURRENT-CHECKED
   E-CURRENT-CHIP → E-CURRENT-RUN-END → E-CURRENT-CHECKED
   E-CURRENT-CHIP → E-CURRENT-FAILED
 - J-MAIN-REVIEW: E-REVIEW-OPEN → E-MAIN-REVIEW-LEAVE → E-REVIEW-OPEN
