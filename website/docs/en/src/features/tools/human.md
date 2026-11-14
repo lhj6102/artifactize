@@ -76,9 +76,9 @@ a verdict, and tool runs are not recorded with the result. Before a tool runs, t
 declarations of the Artifacts the eval reviews must still load: if they do not, for
 example because one of them is a file Artifact whose file is missing, the tool refuses
 to run and the request keeps waiting, so you can restore the file and try again. The
-declarations of folders nested inside those Artifacts are read with them, so one of them that
-does not load stops the tool too, even when the eval does not read that folder; a declaration
-elsewhere in the project does not. Then the
+declaration of a nested part can also stop the tool if it does not load, even when
+the eval does not read that part. Configuration errors elsewhere in the project can
+also prevent Human actions: fix the reported declaration and retry. Then the
 reviewed files are checked: if
 their fingerprint changed, or cannot be computed, the request ends ERROR (INPUT_CHANGED or FINGERPRINT_RECHECK_FAILED) without running the tool,
 and the next `verify` asks again.

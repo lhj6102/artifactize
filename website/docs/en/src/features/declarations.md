@@ -491,8 +491,8 @@ doubled braces, `${variables}`, JSON and unmatched braces stay as written, and a
 never builds a command line from a string. An eval may read its target and the Artifacts
 it references. An admitted folder still exposes colocated file-part targets and
 aspect-selected files through its own paths, but not unadmitted nested folder
-Artifacts. Composition does not add a part's own tools: name the part to use those
-tools or include it as a direct fingerprint input. The instructions of referenced
+Artifacts. Composition does not add a part's own tools: to use them, reference the
+part in the consuming eval's instruction or runtime arguments. The instructions of referenced
 Artifacts' evals are not added to the review; a
 [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
