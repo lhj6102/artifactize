@@ -252,6 +252,8 @@ async function capture(output: string, work: string): Promise<void> {
       });
       return drawn && (neighbours?.querySelectorAll(".svelte-flow__edge").length ?? 0) >= 2;
     }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
+    // The scene shows the Detail as read, not the row the click left the keyboard on.
+    await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
     await shot("detail.png");
 
     // C. The release sign-off opened from the Pane's waiting reviews, which list the sign-off
