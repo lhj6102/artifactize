@@ -100,7 +100,7 @@ it("shows the status with what running it cost, the instruction and the result's
   expect(screen.getByText("3m 12s · 48.2k tokens · gpt-6.1-sol")).toBeTruthy();
   expect(screen.getByText("Check that the tests follow the test rules.")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Result" }).getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByText("1 violations")).toBeTruthy();
+  expect(screen.getByText("violations")).toBeTruthy();
   expect(screen.getByText("TEST-SEAMS · ui/src/Panel.test.ts:40")).toBeTruthy();
   expect(screen.getByText("Assert the rendered row.")).toBeTruthy();
 });

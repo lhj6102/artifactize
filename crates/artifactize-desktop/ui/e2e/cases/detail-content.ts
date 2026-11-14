@@ -89,7 +89,8 @@ export const scenarios: Scenario[] = [
       const saved = await record();
       assert.match(saved.result, new RegExp(OWNER));
       assert.match(saved.result, /owner/);
-      assert.match(saved.result, /2 findings/);
+      assert.doesNotMatch(saved.result, /2 findings/, "a list goes without a count of its own items");
+      assert.match(saved.result, /findings/);
       assert.match(saved.result, /R-RECEIPT · receipt.md:12/);
       assert.ok(saved.result.includes(FINDING));
       assert.equal(saved.numbered, 2, "findings render as independently expected numbered items");

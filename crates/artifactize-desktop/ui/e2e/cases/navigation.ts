@@ -4,7 +4,7 @@
 // one; and quitting a window that holds no claim.
 import assert from "node:assert/strict";
 import { requestState, showDebug } from "../human-review.ts";
-import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, verifyWaiting } from "../fixture.ts";
+import { addRepository, addWaiting, create, createGraph, createHistory, createNavigationFixture, createUnreadableRuns, orderRuns, requests, signoff, verifyWaiting } from "../fixture.ts";
 import { git } from "../environment.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, refreshed } from "../commands.ts";
@@ -13,7 +13,7 @@ import { sessionEndedByApp } from "../observation.ts";
 import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
-import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, scanned, SEARCH, showRun, waiting } from "../pane.ts";
+import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, openWaiting, scanned, SEARCH, showRun, waiting } from "../pane.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 
 type NavigationData = Omit<Awaited<ReturnType<typeof createNavigationFixture>>, "fixture"> & { review: string };
@@ -471,7 +471,7 @@ export const scenarios: Scenario[] = [
       await addRepository(fixture, "other");
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
-    async (browser) => {
+    async (browser, { fixture }) => {
       const toggle = () => browser.$('button[aria-label="Pane (Ctrl+B)"]');
       /** The Pane's width (null while hidden), whether the divider is there, and the Main area's and the window's widths. */
       const layout = () => browser.execute(() => {
@@ -548,6 +548,17 @@ export const scenarios: Scenario[] = [
       await choosePaletteCommand(browser, "Show or hide the Pane");
       await press(browser, ["Enter"], async () => (await layout()).pane === null, "the palette's command hid the Pane");
       await press(browser, ["/"], async () => (await layout()).pane !== null && await browser.$(SEARCH).isFocused(), "/ showed the Pane and focused its search");
+
+      // A waiting review used with the Pane hidden: Esc leaves it back to the Pane, shown again
+      // with the review's entry selected and the keyboard on the entries.
+      const id = signoff(fixture).id;
+      await openWaiting(browser, id);
+      await browser.$('[aria-label="Human review"]').click();
+      await press(browser, [primaryModifier, "b"], async () => (await layout()).pane === null, "Ctrl+B hid the Pane over the review");
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed with the Pane hidden");
+      await press(browser, ["Escape"], async () => (await layout()).pane !== null && await entriesFocused(browser), "Esc left the review back to the Pane");
+      assert.ok((await layout()).divider, "its divider back");
+      assert.equal((await waiting(browser)).rows.find((row) => row.selected)?.id, id, "the review's entry stays selected");
     },
   ),
   // UX journey: J-HELP; UX edges: E-HELP-OPEN E-HELP-CLOSE

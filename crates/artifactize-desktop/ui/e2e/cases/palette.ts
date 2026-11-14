@@ -149,6 +149,13 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
       const listed = () => browser.execute(() => [...document.querySelectorAll("[data-command-item]")]
         .map((item) => item.querySelector("span")?.textContent?.trim() ?? "").sort());
+      // Commands is the one control that shows its key; the others keep theirs unshown.
+      const caps = await browser.execute(() => [...document.querySelectorAll<HTMLButtonElement>(".bar button, [aria-label='Graph tools'] button")]
+        .map((button) => [button.textContent?.replace(/\s+/g, " ").trim() ?? "", button.querySelector("kbd")?.textContent?.trim() ?? "", button.getAttribute("aria-keyshortcuts") ?? ""]));
+      assert.deepEqual(caps.filter(([, kbd]) => kbd !== "").map(([text, kbd]) => [text.replace(kbd, "").trim(), kbd]), [["Commands", shortcutLabel("Ctrl+K")]], `only Commands shows its key: ${JSON.stringify(caps)}`);
+      for (const [name, keys] of [["Settings", "Control+,"], ["Pane", "Control+B"], ["Find", "Control+F"]]) {
+        assert.ok(caps.some(([text, kbd, shortcut]) => text === name && kbd === "" && shortcut.includes(keys)), `${name} keeps ${keys} without showing it: ${JSON.stringify(caps)}`);
+      }
       await ctrlK("filter");
       // With no Detail open, the window's and the shown graph's commands, not a Detail's or a
       // Human review's. These are the person's commands, not a registry oracle.

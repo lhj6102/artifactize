@@ -212,9 +212,8 @@ its status's colour, with the part in view framed. A click or a drag in it moves
 there, the zoom kept. It goes when the whole graph is in view.
 
 Every graph is laid out upstream on the left. With **more than 500 nodes** in view, too far
-out for names, each Artifact is a block of its status's colour; a click still opens it, and
-[Find](#find-in-the-graph) reaches every one. Zoom in until fewer are in view to use Tab and
-Enter. An Artifact's Detail draws at most 16 neighbours on each side and counts the rest.
+out for names, each Artifact is a block of its status's colour and a click still opens it.
+Zoom in until fewer are in view to use Tab and Enter. An Artifact's Detail draws at most 16 neighbours on each side and counts the rest.
 
 An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
 its parts, under a title row with its mark, its name and its count, closed by the strip in
@@ -250,8 +249,8 @@ Artifacts is starred, it says how to star one.
 ↑/↓ choose an entry. Enter (on the first entry when none is chosen) or a click opens its
 Detail, on the eval's tab for an eval, and centres the Artifact in the graph left of the
 Detail, zoomed in until its name reads. Esc closes the field and gives the keyboard back; a
-click outside it closes it too and acts as usual. Find reaches every Artifact, also in a
-graph too large to show their names. A part drawn inside several Artifacts is listed once,
+click outside it closes it too and acts as usual. Find reaches every Artifact, however large
+the graph. A part drawn inside several Artifacts is listed once,
 and opening it centres its first copy. A part inside a minimized Artifact stays hidden:
 opening it opens its Detail and centres and highlights the minimized Artifact instead;
 expand that one to see the part on the graph.
@@ -265,14 +264,11 @@ when you are not editing or running something, and the others first step back as
 [Esc does in a review](#human-reviews). Drag the Detail's left edge to resize it, between a readable column
 and leaving some graph visible; it keeps that width, also in the next launch.
 
-The Detail is made of sections, each under a header row that is its name alone. A click on
-a header row, or Enter or Space on it, folds the section to that row or unfolds it again,
-and the section stays as you left it, by its name, in every Detail you open later and the
-next launch. Until you change them, what a Detail is opened for is unfolded (an Artifact's
-**Evals**, **Tools** and **Path**, an eval's **Result**, a Run's **Outcome** and **Waits
-for**), and what you read now and then is folded (**Neighbours**, **Execution options**,
-**Execution metadata**, **Fingerprint**, **What**, **Provenance**, **Debug** and a Run's
-**Technical**).
+A click on a section's header row (or Enter or Space on it) folds or unfolds the section,
+and every Detail remembers that, also in the next launch. Unfolded at first: **Evals**,
+**Tools**, **Path**, **Result**, **Outcome** and **Waits for**. Folded at first:
+**Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**,
+**Provenance**, **Debug** and **Technical**.
 
 An Artifact's Detail opens on its own tab, titled with its name. **Evals** lists its evals,
 each with its verdict's mark, its status in its colour and its time on the right; a click on

@@ -478,7 +478,8 @@
             {/if}
           {:else if shown.kind === "request"}
             {#key shown.detail.request}
-              <RecordDetail detail={shown.detail} bind:log={m.folds.log} />
+              <!-- A read-only request reads as a review does: one column at the left, no wider than the measure. -->
+              <div class="record"><RecordDetail detail={shown.detail} bind:log={m.folds.log} /></div>
             {/key}
           {:else}
             <p class="empty">Choose a branch or a waiting review in the Pane.</p>
@@ -548,6 +549,11 @@
 </Dialog.Root>
 
 <style>
+  .record {
+    height: 100%;
+    min-height: 0;
+    max-width: var(--measure);
+  }
   .monitor {
     height: 100%;
     min-height: 0;

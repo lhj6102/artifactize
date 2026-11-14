@@ -28,8 +28,8 @@ const CURRENT_TOKENS: Record<CurrentLight, string> = {
 /** The lights whose outgoing edges take their colour. */
 const BLOCKING = new Set(["red", "error", "blocked"]);
 
-/** The neutral line of edges. */
-const NEUTRAL = ["--edge"];
+/** The neutral line of edges, and a node's neutral outline and face. */
+const NEUTRAL = ["--edge", "--line-node", "--surface-panel"];
 
 function readGraph(browser: WebdriverIO.Browser) {
   const tokens = [...new Set([...Object.values(TOKENS), ...Object.values(CURRENT_TOKENS), ...NEUTRAL])];
@@ -63,6 +63,7 @@ function readGraph(browser: WebdriverIO.Browser) {
           light: node.dataset.light,
           at: node.style.transform,
           border: style?.borderTopColor ?? "",
+          face: style?.backgroundColor ?? "",
           mark: mark ? getComputedStyle(mark).color : "",
           strip: strip(striped ?? null),
           painted: painted(node) && painted(artifact) && painted(mark?.querySelector("svg") ?? null) &&

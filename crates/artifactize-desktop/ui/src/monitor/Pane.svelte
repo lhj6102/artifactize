@@ -202,6 +202,11 @@
     min-height: 0;
     outline: none;
   }
+  /* The keyboard on the entries: the focus ring, apart from the selected row's bar. */
+  .entries:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
+  }
   ul {
     list-style: none;
     margin: 0;

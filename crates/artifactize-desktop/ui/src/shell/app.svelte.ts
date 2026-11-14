@@ -60,6 +60,12 @@ export class AppState {
   }
 
   /** The tools of Artifact `artifact` in the worktree `workspace` of `branch`. */
+  /** The tools of the Artifact `artifact` in `workspace` if a Detail asked for them; a lookup
+   * that registers nothing. */
+  knownTools(workspace: string, artifact: string): ArtifactTools | undefined {
+    return this.tools[toolsKey(workspace, artifact)];
+  }
+
   artifactTools(workspace: string, artifact: string): ArtifactTools {
     const key = toolsKey(workspace, artifact);
     return this.tools[key] ?? (this.tools[key] = new ArtifactTools(artifact, this.jobs, this.ipc));

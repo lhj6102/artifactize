@@ -13,7 +13,7 @@
   import Settings from "./settings/Settings.svelte";
   import ReleaseDialog from "./shell/ReleaseDialog.svelte";
   import { useCommands } from "./shell/commands.svelte";
-  import { chord, composing, plain } from "./shell/keys";
+  import { chord, composing, label, plain } from "./shell/keys";
   import { help, type Focused } from "./shell/shortcuts";
   import Icon from "./shell/Icon.svelte";
   import { AppState, setAppState } from "./shell/app.svelte";
@@ -179,7 +179,7 @@
     {/if}
     <button class="button" aria-pressed={m.settings} aria-label="Settings (Ctrl+,)" aria-keyshortcuts="Control+," data-settings-toggle onclick={settings}>Settings</button>
     <button class="button" aria-keyshortcuts="Control+K" onclick={() => (app.palette = true)}>
-      Commands <kbd>Ctrl+K</kbd>
+      Commands <kbd>{label("Ctrl+K")}</kbd>
     </button>
   </header>
   {#if app.failure}

@@ -104,6 +104,13 @@ export const scenarios: Scenario[] = [
         ["a:fine", "fine", /GREEN/, "green", "GREEN", "check"],
       ] as const;
       const painted = new Set<string>();
+      const chips = new Map<string, string>();
+      // The graph as drawn: each node's mark in its status's colour, its face and outline neutral.
+      const look = await graphAppearance(browser);
+      for (const [id] of expected) {
+        assert.equal(look.nodes[id].border, look.palette["--line-node"], `${id}'s outline is neutral`);
+        assert.equal(look.nodes[id].face, look.palette["--surface-panel"], `${id}'s face is neutral`);
+      }
       for (const [id, name, status, glyph, shownStatus, evaluation] of expected) {
         const shown = await openArtifact(browser, id, `Artifact ${name}`);
         assert.match(shown.evals[0]?.status ?? "", status, `${name}'s Artifact tab lists its eval's verdict`);
@@ -123,10 +130,19 @@ export const scenarios: Scenario[] = [
         assert.ok(tabbed.tabs[1].painted, `${name}'s mark actually paints`);
         assert.equal(tabbed.tabs[1].colour, row.colour, `${name}'s chip is painted in the same colour as its visible verdict row`);
         assert.notEqual(tabbed.tabs[1].colour, row.ink, `${name}'s mark is not uncoloured body text`);
+        chips.set(name, tabbed.tabs[1].colour);
+        // An Artifact whose one eval ended shows that eval's verdict: its node in the row's colour.
+        if (name !== "gate") assert.equal(look.nodes[id].mark, row.colour, `${name}'s node is painted in its eval row's colour`);
         painted.add(tabbed.tabs[1].colour);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closed`);
       }
       assert.equal(painted.size, expected.length, "the five status marks have distinct actual colours");
+      // The Pane's waiting sign-off shows its mark in the same colour as gate's sign-off chip.
+      const waitingMark = await browser.execute(() => {
+        const glyph = document.querySelector('[aria-label="Waiting reviews"] [role="option"] .glyph');
+        return glyph ? getComputedStyle(glyph).color : "";
+      });
+      assert.equal(waitingMark, chips.get("gate"), "the waiting review's mark in the colour of gate's sign-off chip");
     },
   ),
 

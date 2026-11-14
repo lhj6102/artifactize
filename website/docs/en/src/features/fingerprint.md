@@ -86,11 +86,9 @@ Artifact names and kinds (`folder`, `file`, `aspect` or `graph`) are part of the
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
-Changing a covered Artifact's name changes the key. Differently named targets can
-still share a result when their evaluation criteria and complete covered Artifact
-maps match and both targets either have parts or have none: the key does not
-separately identify which covered Artifact is the target.
-For example, two Artifacts whose identical evals reference each other can share results.
+Changing a covered Artifact's name changes the key. Two differently named Artifacts can
+still share a result: for example, when each declares the same eval that reads the other,
+both evals cover the same Artifacts with the same criteria and reuse one result.
 The **Eval definition hash** changes whenever one of the eval's **evaluation
 criteria** changes:
 

@@ -76,7 +76,7 @@ it("shows no Tools section when the Artifact declares no Human tools", async () 
   mockIPC((command) => (command === "artifact_tools" ? [] : null));
   const { app } = renderHosted(ArtifactTools, { branch: branchKey("main"), workspace: "/work/main", artifact: "core" });
   // The owner has read the Artifact's tools, none, and the component has drawn what it read.
-  await waitFor(() => expect(app.artifactTools("/work/main", "core").tools).toEqual([]));
+  await waitFor(() => expect(app.knownTools("/work/main", "core")?.tools).toEqual([]));
   await tick();
   expect(screen.queryByRole("region", { name: "Tools of core" })).toBeNull();
   expect(screen.queryByText("Tools")).toBeNull();

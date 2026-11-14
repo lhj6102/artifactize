@@ -206,7 +206,7 @@
                 {#if entry.kind === "text"}
                   <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
                 {:else}
-                  <p class="key">{entry.items.length} {entry.key}</p>
+                  <p class="key">{entry.key}</p>
                   <ol class="items">
                     {#each entry.items as item, at (at)}
                       <li>
