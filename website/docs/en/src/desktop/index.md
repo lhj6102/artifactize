@@ -297,9 +297,9 @@ What ended well is said by the log's end line; a failure is said under the tools
 runs, the Artifact's other tool buttons wait and **Cancel** beside the running mark
 stops it; closing the Detail does not stop it, and its output keeps arriving in the
 Artifact's Tool log, shown when the Detail opens again. Its runs stay in that Tool
-log while the app runs. The graph's nodes carry no tool buttons. The Tools show only while
-the Pane's search still lists the branch: if the search hides it, clear or widen the
-search to bring them back.
+log while the app runs. The graph's nodes carry no tool buttons. The Tools and the star show
+only while the Pane's search still lists the branch: if the search hides it, clear or widen
+the search to bring them back.
 
 An eval's tab shows its **Summary**: its status line, its mark and status with what running
 it took and spent (time, tokens in `k` or `M`, model) and how it ended, or what reuse saved;

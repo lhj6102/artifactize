@@ -190,6 +190,8 @@
       <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
         {#if review.settled}
           <pre>{view.result}</pre>
+          <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
+          {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
         {:else if review.owned && review.form}
           <VerdictForm {review} form={review.form} />
         {:else if review.owned}

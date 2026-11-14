@@ -90,6 +90,24 @@ describe("HumanDetail", () => {
     await screen.findByText("REVIEW (yours)");
   });
 
+  it("says why a submission settled here was not published, under its completed result", async () => {
+    const failure = "Saved locally; publishing to the review store failed: connection refused. Push results from Settings.";
+    backend("review", () => ({
+      settled: "savedLocally",
+      notice: { text: failure, error: true },
+      view: humanView("completed", { claim: null, result: '{ "verdict": "GREEN" }', meta: "GREEN · alice" }),
+    }));
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    const region = await screen.findByLabelText("Human review");
+    await screen.findByText("REVIEW (yours)");
+    await fireEvent.keyDown(region, { key: "g" });
+    const comment = await screen.findByLabelText(/comment/);
+    await userEvent.setup().type(comment, "checked");
+    await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
+    const result = await screen.findByRole("region", { name: "Result" });
+    await waitFor(() => expect(within(result).getByRole("status").textContent).toBe(failure));
+  });
+
   it("keeps GREEN and RED drafts apart and shows a schema error without losing the draft", async () => {
     const calls = backend("review", () => {
       throw { kind: "invalid", message: "Result does not match the fail schema: /reason: \"no\" is shorter than 3 characters" };
