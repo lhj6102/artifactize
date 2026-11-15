@@ -113,8 +113,7 @@ eval을 시작하거나 의존성을 더하지 않습니다.
   [Current](../../desktop/index.md#current) 화면으로 엽니다. Current는 워크트리의 파일을 읽어 Run 판정 대신
   현재 선언을 보여 주며, 각 Artifact에 기존 결과를 재사용할지 새로 실행할지 표시합니다. 화면을
   다루는 방법은 Run의 그래프와 같습니다.
-  **Structure and evaluation criteria**를 펼치면 Agent가 보는 것과 같은 전체 텍스트 트리가
-  나옵니다. **Refresh**나 Ctrl+R/F5로 다시 읽습니다. Run이 하나도 없어도 동작합니다. 도구 실행 결과는 승인이 아니라 앱을 시작했다는 확인일 뿐이며, 도구 호출이 끝나도 앱은 계속 실행됩니다.
+  Artifact Detail의 eval 탭에는 그 eval의 지시문이 나오고, 선언된 나머지 정보는 **Debug** 아래에 있습니다. **Refresh**나 Ctrl+R/F5로 다시 읽습니다. Run이 하나도 없어도 동작합니다. 도구 실행 결과는 승인이 아니라 앱을 시작했다는 확인일 뿐이며, 도구 호출이 끝나도 앱은 계속 실행됩니다.
 
 ### `args`의 경로 {#paths-in-args}
 
@@ -147,7 +146,7 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 ## `artifactize-tools` CLI {#artifactize-tools-cli}
 
 Microsoft Store를 포함해 어떤 방법으로 설치하든 `artifactize tools`로 현재 디렉터리에서 같은 도구를
-쓸 수 있습니다. Store 이외의 방법으로 설치하면 `artifactize-tools`도 `artifactize`와 같은 디렉터리에 설치됩니다. 어느 명령을 쓰든 인자, 출력, 종료 코드는 같으며, `artifactize tools --version`도 같은 방식으로 동작합니다. 기존의
+쓸 수 있습니다. Store 이외의 방법으로 설치하면 `artifactize-tools`도 `artifactize`와 같은 디렉터리에 설치됩니다. 어느 명령을 쓰든 도구 하위 명령과 그 인자·옵션, 출력, 종료 코드는 같으며, `artifactize tools --version`도 같은 방식으로 동작합니다. 단, 단독 `artifactize-tools`는 `artifactize`의 `--json`, `--repo`, `--state-dir` 옵션을 받지 않습니다. 기존의
 `artifactize tools check`는 현재 디렉터리 도구를 실행하는 것이 아니라 선언한 리뷰 도구를
 확인합니다.
 

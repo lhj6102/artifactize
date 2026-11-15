@@ -1,9 +1,7 @@
 // The Detail's width, set by dragging its left edge and kept across launches like the split
-// ratio. It stays within the graph's area: never narrower than a readable column, and never
-// so wide that the graph behind it is gone.
+// ratio. It is docked at the graph area's right edge and stays within the area: never narrower
+// than a readable column, and never so wide that the graph on its left is gone.
 
-/** The Detail's gap from the graph area's edges. */
-export const GAP = 12;
 /** The narrowest Detail, when the area has room for it. */
 export const MIN = 320;
 /** What of the graph stays visible left of the widest Detail. */
@@ -13,8 +11,8 @@ const KEY = "monitor-detail-width";
 
 /** `want` pixels, fitted to a graph area `room` pixels wide. */
 export function clampWidth(want: number, room: number): number {
-  const widest = room - GAP - KEEP;
-  const narrowest = Math.min(MIN, room - 2 * GAP);
+  const widest = room - KEEP;
+  const narrowest = Math.min(MIN, room);
   return Math.round(Math.max(narrowest, Math.min(want, widest)));
 }
 

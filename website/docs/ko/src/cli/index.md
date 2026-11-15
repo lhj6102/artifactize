@@ -201,7 +201,7 @@ Runtime/Agent 리뷰가 끝날 때 하는 재확인이 한도 하나를 함께 �
 `--jobs`와는 별개입니다. Human 도구 실행과 제출은 CPU 수만큼 따로 fingerprint를 계산하며 이
 설정을 따르지 않습니다. 결과와 출력은 이 한도나 완료 순서와 상관없이 같습니다.
 
-`verify --max-executions N`은 Run 하나에서 실행기를 시작할 수 있는 횟수를 0–18446744073709551615
+`verify --max-executions N`은 Run 하나에서 실행을 시작할 수 있는 횟수를 0–18446744073709551615
 사이로 정합니다(생략하면 무제한). Artifact 선언 필드가 아닙니다. Run은 직접 지정한 `jobs`
 상한(무제한이면 필드가 없음), `fingerprintJobs`, `maxExecutions`, `executionsStarted`를
 기록합니다. Runtime이나 Agent 리뷰는 실행 준비가 끝나면 시작 횟수를 1 늘리며, 이후
@@ -240,7 +240,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 `verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
 목록에 있는 종류의 eval은 기존 결과만 재사용할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
-기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행기를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키의 리뷰가 진행 중이어도 완료를 기다리지 않습니다.
+기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행 프로세스를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키의 리뷰가 진행 중이어도 거기에 합류하지 않습니다.
 강제로 실행하는 eval은 캐시 결과를 읽지 않으므로, 목록에 있는 종류에 `--force`를 주면 절대 실행되지
 않습니다. 목록에 없는 종류는 평소처럼 실행합니다. CI에서
 `artifactize verify --all --wait --reuse-only agent,human`을 쓰면 테스트는 실행하고 리뷰는
@@ -333,7 +333,7 @@ artifactize request logs REQUEST_ID --search 'failure' --tail 10
 artifactize config graph INPUT_ARTIFACT --impact --json
 ```
 
-로그 조회는 요청 감사 기록 전체 대신, 로그가 보존되었는지 여부와 원래 줄 번호를 담은 조회 결과를 돌려줍니다. tail은 기본으로 스트림마다 조건에 맞는 마지막 50줄을 돌려줍니다. 범위 조회는
+로그 조회 결과에는 전체 감사 기록 대신 로그 보존 여부와 원래 줄 번호가 담깁니다. tail은 기본으로 스트림마다 조건에 맞는 마지막 50줄을 돌려줍니다. 범위 조회는
 스트림마다 최대 200줄과 제한된 바이트만 돌려주고, 이어서 볼 위치를 `next_start`로 알려
 줍니다. tail과 범위 조회는 함께 쓸 수 없습니다. `search`는 1–2048바이트의 문자열을 대소문자를
 구분해 그대로 찾습니다. 원래 2048바이트가 넘는 줄은 `clipped`로 표시하고 앞뒤 일부만
@@ -386,7 +386,7 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 `config graph [ARTIFACT]`는 기본으로 프로젝트 전체를 보여 주고, ARTIFACT를 주면 순환으로
 묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는 하위 Artifact와 각 Artifact가 쓰는 입력도 포함합니다. 이는 구조상 영향이 미칠 수 있는 범위를 넉넉하게
 잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 실제로 무엇을 실행하고 재사용할지는
-`status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 컴포넌트,
+`status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 구성 요소,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
 payload, 스키마, 도구 뷰), 태그, 부분·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
@@ -416,8 +416,7 @@ macOS에서는 `$LOGNAME`, Windows에서는 `%USERNAME%` 값을 사용합니다.
 0으로 종료하며, 별도의 검증 과정을 시작하지 않습니다.
 
 도구를 실행하거나 제출을 저장하기 전에 선언과 리뷰한 파일을 다시 확인합니다. 요청을 기록한 뒤로
-eval의 선언이나 범위가 바뀌었거나, fingerprint가 바뀌었거나 계산할 수 없으면 요청은 판정 없이
-ERROR로 끝나고 명령은 종료 코드 2로 끝납니다. 오류 코드는 `INPUT_CHANGED`이며, fingerprint를
+eval의 선언이나 범위가 바뀌었거나, fingerprint가 바뀌었거나 계산할 수 없으면 요청은 판정 없이 ERROR 처리되고 명령은 종료 코드 2를 반환합니다. 오류 코드는 `INPUT_CHANGED`이며, fingerprint를
 계산할 수 없을 때만 `FINGERPRINT_RECHECK_FAILED`입니다. 새 요청을 받으려면 `verify`를 다시
 실행하세요.
 

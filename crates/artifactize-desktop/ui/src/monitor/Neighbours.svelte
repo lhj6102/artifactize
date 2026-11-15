@@ -9,6 +9,7 @@
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
+  import { BLOCKING } from "./graph";
   import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
 
@@ -64,13 +65,15 @@
       ...column([node], step),
       ...column(usedBy.map((edge) => edge.target), 2 * step),
     ];
+    // The Artifacts the drawing's edges reach, and those they leave: each shows its port.
+    const [reached, left] = [new Set([...uses, ...usedBy].map((edge) => edge.target)), new Set([...uses, ...usedBy].map((edge) => edge.source))];
     const nodes: Node[] = placed.map(({ item, x, y }) => ({
       id: item.id,
       type: "artifact",
       position: { x, y },
       width: NODE.width,
       height: NODE.height,
-      data: { name: item.name, light: item.light, open: item.id === node },
+      data: { name: item.name, light: item.light, tally: item.tally, open: item.id === node, inward: reached.has(item.id), outward: left.has(item.id) },
       draggable: false,
       connectable: false,
       ariaLabel: `Artifact ${item.name}`,
@@ -79,7 +82,7 @@
       id: `${edge.source}>${edge.target}`,
       source: edge.source,
       target: edge.target,
-      class: `light-${edge.light}`,
+      class: BLOCKING.has(edge.light) ? `light-${edge.light} blocking` : undefined,
       selectable: false,
       focusable: false,
     }));
@@ -94,7 +97,8 @@
       height: rows * (NODE.height + GAP.y) + 24,
       key: placed.map(({ item }) => item.id).join(),
       more: more.length > 0 ? `And ${more.join(" and ")}, not shown.` : "",
-      copies: copies > 1 ? `Drawn ${copies.toLocaleString()} times on the graph, inside ${new Intl.ListFormat("en").format(wholes)}.` : "",
+      // A part drawn in several wholes: how many copies, and the wholes, as facts.
+      copies: copies > 1 ? { count: copies.toLocaleString(), inside: wholes.join(", ") } : null,
     };
   });
 </script>
@@ -127,13 +131,17 @@
     {/key}
   </div>
   {#if shown.more}<p class="more">{shown.more}</p>{/if}
-  {#if shown.copies}<p class="more">{shown.copies}</p>{/if}
+  {#if shown.copies}
+    <dl class="more copies" aria-label="Copies">
+      <dt>Copies</dt><dd>{shown.copies.count}</dd>
+      <dt>Inside</dt><dd>{shown.copies.inside}</dd>
+    </dl>
+  {/if}
 {/if}
 </div>
 
 <style>
   .neighbours {
-    margin: 0 var(--pad) 12px;
     min-height: 72px;
   }
   /* Svelte Flow's container hides its overflow, which still lets a focused node scroll it:
@@ -141,17 +149,32 @@
   .neighbours :global(.svelte-flow) {
     overflow: clip;
     --xy-background-color: transparent;
-    --xy-edge-stroke-width: 1.5;
+    --xy-edge-stroke-width: 1.25;
   }
+  /* Edges as the graph draws them: neutral, but for those that leave a RED, ERROR or blocked
+     Artifact. */
   .neighbours :global(.svelte-flow__edge path) {
-    stroke: var(--light, var(--faint));
+    stroke: var(--edge);
+  }
+  .neighbours :global(.svelte-flow__edge.blocking path) {
+    stroke: var(--light);
   }
   .neighbours :global(.svelte-flow__node) {
     cursor: pointer;
   }
   .more {
-    margin: -6px var(--pad) 12px;
-    color: var(--muted);
-    font-size: 12px;
+    margin: 4px 0 0;
+    color: var(--ink-2);
+    font-size: var(--text-small);
+  }
+  .copies {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+  .copies dd {
+    margin: 0;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
   }
 </style>

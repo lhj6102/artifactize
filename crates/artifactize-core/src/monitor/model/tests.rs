@@ -152,6 +152,7 @@ fn graph_keeps_its_shape_across_lights_but_not_across_artifacts_parts_or_edges()
                     id: NodeId::artifact(name(item)),
                     name: name(item),
                     light,
+                    tally: None,
                     parts: if at == 0 {
                         parts.iter().map(|part| name(part)).collect()
                     } else {

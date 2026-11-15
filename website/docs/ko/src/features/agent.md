@@ -96,26 +96,20 @@ Agent 프로필, 백엔드, `reasoning`은 위의 [Agent 리뷰](#agent-reviews)
 있습니다.
 
 Agent 리뷰에서는 모델이 답변을 생성하는 동안 그 내용을 스트리밍으로 받습니다. 리뷰 전체의 제한 시간은
-기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다. 잘렸거나 끝나지 않은 응답은 JSON 판정이 들어 있어도
-유효한 응답으로 처리하지 않습니다. 응답이 긴 공백만으로 이루어지면 몇 초 안에 `DEGENERATE_OUTPUT`으로 중단합니다.
-두 경우 모두 아래 설명대로 다시 보냅니다. 그래도 리뷰가 이 코드와 함께 ERROR로 끝나면 다른 모델이나 `reasoning`을 써 보세요.
+기본 240초이며, 모든 턴, 재시도, 도구 실행에 걸린 시간을 합쳐 셉니다.
 Anthropic 응답은 리뷰의 `max_tokens`와 별개로 턴마다 출력 토큰 16384개로도
 제한됩니다.
 
 ### 재시도와 오류 코드 {#retries-and-error-codes}
 
-출력이나 토큰 사용이 발생하기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면,
-provider가 안내한 대기 시간이 지난 뒤 자동으로 몇 차례 재시도합니다. `claude-agent` 리뷰는 Claude Code가
-요청을 직접 재시도하므로 artifactize가 다시 보내지 않습니다([Claude Agent](#claude-agent)).
-provider의 답변이 나오기 시작한 뒤에 답변 자체가 실패하면, 그 턴을 같은 횟수까지 다시 시도하며
-리뷰가 이미 해 둔 작업은 그대로 유지됩니다. 답변이 공백으로만
-계속된 경우(`DEGENERATE_OUTPUT`), 모델의 출력 한도에서 끊긴 경우(`PROVIDER_ERROR`,
-`Provider response was incomplete: Some(Length)`), 출력이 나오던 중 스트림이 끊긴 경우(`TRANSIENT`)가
-여기에 해당합니다. 실패한 답변도 이미 비용이 들었으므로 그 토큰은 `max_tokens`에 포함되며, 한도에
-이르면 그 턴을 다시 보내지 않습니다. 거부된 요청이나 다른 모델의 응답처럼 출력이나 사용량이 생긴 뒤의
-다른 실패는 재시도하지 않습니다.
-재시도로도 해결되지 않거나 provider가 요구한 대기 시간이 리뷰의 남은 시간보다 길면 리뷰는 마지막
-시도의 코드와 함께 ERROR로 끝납니다. 잠시 뒤 `verify`를 다시 실행하세요. 완료된 리뷰의 결과는 재사용되므로 실패한 리뷰만 다시 실행됩니다. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
+출력이나 토큰 사용이 생기기 전에 사용량 제한이나 일시적인 오류로 턴이 실패하면, provider가 안내한 만큼
+기다렸다가 몇 차례 재시도합니다. `claude-agent` 리뷰는 Claude Code가 요청을 직접 재시도하므로 다시 보내지
+않습니다([Claude Agent](#claude-agent)). 답변이 나오기 시작한 뒤에 실패한 턴(`DEGENERATE_OUTPUT`, 출력이
+끝나지 않은 `PROVIDER_ERROR`, `TRANSIENT`)도 같은 횟수까지 재시도하며, 그 토큰은 `max_tokens`에 포함됩니다.
+출력이나 사용량이 생긴 뒤의 다른 실패는 재시도하지 않습니다. 재시도로도 해결되지 않거나 provider가 요구한
+대기 시간이 리뷰의 남은 시간보다 길면, 리뷰는 마지막 시도의 코드와 함께 ERROR로 끝납니다. 잠시 뒤
+`verify`를 다시 실행하세요(완료된 결과는 재사용됩니다). 같은 식으로 계속 끝나면 다른 모델이나
+`reasoning`을 써 보세요. 시도마다 수치, `error`, `errorCode`가 `usage`에 저장됩니다.
 
 ### 프롬프트 캐싱 {#prompt-caching}
 
@@ -142,8 +136,8 @@ provider는 매 턴 반복되는 대화 부분을 캐시하므로, 리뷰 후반
 | `AGENT_ERROR` | 그 밖의 모든 경우입니다. 예를 들어 잘못된 테스트 엔드포인트나 쓸 수 없는 도구가 해당합니다 | 하지 않습니다 |
 | `BACKEND_STOPPED` | 시작하지 않습니다. 그 Run에서는 그 백엔드로 새 리뷰를 보내지 않습니다 | — |
 
-provider의 오류 메시지에 artifactize가 보낸 자격 증명의 일부가 들어 있으면, 그 메시지는 보여
-주거나 저장하는 모든 곳에서 `[withheld: it contained part of the credential sent]`로 바뀝니다. 추가 결과 필드와
+provider 오류 메시지에 artifactize가 보낸 자격 증명의 일부가 포함되어 있으면, 표시하거나 저장할 때
+그 메시지를 `[withheld: it contained part of the credential sent]`로 대체합니다. 추가 결과 필드와
 명령 출력은 이렇게 가리지 않습니다.
 
 Ctrl-C로 `verify --wait`를 중단해도 진행 상황 표시만 멈추며, Agent 리뷰와 Run은
@@ -178,7 +172,7 @@ eval의 범위에 있는 도구만 제공하며, 도구는 하나씩 차례로 �
 ## 저장된 대화 {#saved-conversations}
 
 artifactize는 Agent 리뷰 대화를 이 머신에 저장합니다. 그래서 저장된 대화에서 리뷰어가
-무엇을 보고 어떤 답변을 했는지 확인하고, 채팅하듯 이어서 질문할 수 있습니다. 기록된 판정은 절대
+무엇을 보고 어떤 답변을 했는지 확인하고, 채팅하듯 follow-up을 보낼 수 있습니다. 기록된 판정은 절대
 바뀌지 않습니다.
 
 **저장되는 내용.** 리뷰 세션은 내 계정만 읽을 수 있는 곳에 저장합니다
@@ -205,7 +199,7 @@ Agent 결과마다 대화가 아니라 이 참조만(`producer.session`으로) �
 그 대화가 어느 팀원의 상태 디렉터리에 저장되어 있는지 알 수 있습니다.
 
 저장된 대화는 `session show`로 읽고, `session show --summary`로 집계하고, `session send`로
-이어서 질문합니다. [Agent 세션](../cli/index.md#agent-sessions)을 보세요.
+follow-up을 보냅니다. [Agent 세션](../cli/index.md#agent-sessions)을 보세요.
 
 ## Codex {#codex}
 
@@ -280,7 +274,7 @@ artifactize verify --all --wait
 - **모델.** `models claude-agent`는 모델을 호출하지 않고, Claude Code가 지금 로그인으로 제공하는
   모델을 `model`에 쓰는 모델 ID로 나열합니다. 프로필에는 목록에 없더라도 Claude Code가 받는 모델을
   지정할 수 있습니다.
-- **follow-up.** 다른 백엔드처럼 `session send`로 [follow-up](#saved-conversations)을
+- **follow-up.** 다른 백엔드와 마찬가지로 `session send`로 [follow-up](#saved-conversations)을
   보낼 수 있습니다. 리뷰어는 리뷰 대화를 바탕으로 일반 텍스트로 답하며, 필요하면 Artifact를 다시
   읽습니다. 기록된 판정은 바뀌지 않습니다.
 

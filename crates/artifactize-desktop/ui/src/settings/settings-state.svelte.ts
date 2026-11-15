@@ -70,7 +70,6 @@ export class SettingsState {
   remotePending = $state(0);
   providers = $state.raw<Providers | null>(null);
   providersError = $state<string | null>(null);
-  providersNotice = $state<string | null>(null);
   choice = $state.raw<Choice>({ kind: "builtin", provider: "codex" });
   /** The name `models` and an eval's `backend` use for the chosen provider. */
   backend = $derived(this.choice.kind === "builtin" ? this.choice.provider : this.choice.kind === "custom" ? this.choice.name : null);
@@ -80,15 +79,17 @@ export class SettingsState {
   saving = $state(false);
   codex = $state.raw<CodexStatus | null>(null);
   codexError = $state<string | null>(null);
-  codexNotice = $state<string | null>(null);
+  /** A sign-out whose revocation the provider did not confirm: said as a warning. */
+  codexWarning = $state<string | null>(null);
   prompt = $state.raw<CodexPrompt | null>(null);
+  /** What finishes a sign-in by hand is unfolded; every sign-in starts with it folded. */
+  byHand = $state(false);
   redirect = $state("");
   busy = $state(false);
   /** Claude Code's sign-in as Claude Code last reported it; asked whenever Claude Agent is
    * chosen. */
   claude = $state.raw<ClaudeAgentStatus | null>(null);
   claudeError = $state<string | null>(null);
-  claudeNotice = $state<string | null>(null);
   claudePrompt = $state.raw<ClaudeAgentPrompt | null>(null);
   /** The code Claude Code's sign-in page gives, while typed. */
   claudeCode = $state("");
@@ -100,6 +101,9 @@ export class SettingsState {
   remote = $state.raw<RemoteStatus | null>(null);
   remoteError = $state<string | null>(null);
   remoteNotice = $state<string | null>(null);
+  /** When the remote status was last read, in milliseconds since 1970: what was pushed today
+   * counts from the local midnight before it. */
+  remoteRead = $state(0);
   url = $state("");
   share = $state<Share>("summary");
   token = $state("");
@@ -109,7 +113,6 @@ export class SettingsState {
   /** The seconds typed for it; filled in with the one in force whenever that is read. */
   graceSeconds = $state<number | null>(null);
   graceError = $state<string | null>(null);
-  graceNotice = $state<string | null>(null);
   graceSaving = $state(false);
 
   readonly #commands: Commands;
@@ -145,10 +148,8 @@ export class SettingsState {
     if (this.graceSeconds === null) return;
     this.graceSaving = true;
     this.graceError = null;
-    this.graceNotice = null;
     try {
       this.#showGrace(await call(this.#commands.signoffGraceSet(this.graceSeconds)));
-      this.graceNotice = "Saved. Runs started from now on wait this long.";
     } catch (failure) {
       this.graceError = message(failure);
     } finally {
@@ -171,7 +172,6 @@ export class SettingsState {
     this.key = "";
     this.models = null;
     this.modelsError = null;
-    this.providersNotice = null;
     this.providersError = null;
     const custom = choice.kind === "custom" ? this.providers?.custom.find((one) => one.name === choice.name) : undefined;
     this.draft = custom ? draftOf(custom) : blank();
@@ -183,11 +183,9 @@ export class SettingsState {
     const typed = this.key;
     this.key = "";
     this.saving = true;
-    this.providersNotice = null;
     this.providersError = null;
     try {
       await call(this.#commands.providerKeySave(provider, typed));
-      this.providersNotice = "Saved the key.";
     } catch (failure) {
       this.providersError = message(failure);
     } finally {
@@ -198,11 +196,9 @@ export class SettingsState {
 
   async removeKey(provider: Provider) {
     this.saving = true;
-    this.providersNotice = null;
     this.providersError = null;
     try {
       await call(this.#commands.providerKeyRemove(provider));
-      this.providersNotice = "Removed the saved key.";
     } catch (failure) {
       this.providersError = message(failure);
     } finally {
@@ -229,13 +225,11 @@ export class SettingsState {
     // The key leaves this state before the library is even asked.
     this.draft.key = "";
     this.saving = true;
-    this.providersNotice = null;
     this.providersError = null;
     try {
       await call(this.#commands.providerCustomSave(name, target, key));
       await this.loadProviders();
       this.choose({ kind: "custom", name });
-      this.providersNotice = `Saved ${name}.`;
     } catch (failure) {
       this.providersError = message(failure);
     } finally {
@@ -245,13 +239,11 @@ export class SettingsState {
 
   async removeCustom(name: string) {
     this.saving = true;
-    this.providersNotice = null;
     this.providersError = null;
     try {
       await call(this.#commands.providerCustomRemove(name));
       await this.loadProviders();
       this.choose({ kind: "builtin", provider: "codex" });
-      this.providersNotice = `Removed ${name}.`;
     } catch (failure) {
       this.providersError = message(failure);
     } finally {
@@ -286,12 +278,12 @@ export class SettingsState {
 
   async signIn() {
     this.codexError = null;
-    this.codexNotice = null;
+    this.codexWarning = null;
+    this.byHand = false;
     this.busy = true;
     try {
       this.prompt = await call(this.#commands.codexLoginStart(true));
       this.codex = await call(this.#commands.codexLoginWait(this.prompt.signIn));
-      this.codexNotice = "Signed in with Codex.";
     } catch (failure) {
       this.codexError = message(failure);
       await this.loadCodex();
@@ -318,11 +310,12 @@ export class SettingsState {
 
   async signOut() {
     this.codexError = null;
+    this.codexWarning = null;
     this.busy = true;
     try {
       const out = await call(this.#commands.codexLogout());
       this.codex = out.status;
-      this.codexNotice = out.revoked ? "Signed out of Codex." : "Local tokens removed; their revocation was not confirmed.";
+      if (!out.revoked) this.codexWarning = "Local tokens removed; their revocation was not confirmed.";
     } catch (failure) {
       this.codexError = message(failure);
     } finally {
@@ -346,12 +339,11 @@ export class SettingsState {
   /** Run Claude Code's own sign-in; its status shows again when it ends. */
   async claudeSignIn() {
     this.claudeError = null;
-    this.claudeNotice = null;
+    this.byHand = false;
     this.claudeBusy = true;
     try {
       this.claudePrompt = await call(this.#commands.claudeAgentLoginStart());
       this.claude = await call(this.#commands.claudeAgentLoginWait(this.claudePrompt.signIn));
-      this.claudeNotice = "Claude Code signed in.";
     } catch (failure) {
       this.claudeError = message(failure);
     } finally {
@@ -387,11 +379,9 @@ export class SettingsState {
 
   async claudeSignOut() {
     this.claudeError = null;
-    this.claudeNotice = null;
     this.claudeBusy = true;
     try {
       this.claude = await call(this.#commands.claudeAgentLogout());
-      this.claudeNotice = "Claude Code signed out.";
     } catch (failure) {
       this.claudeError = message(failure);
     } finally {
@@ -401,15 +391,15 @@ export class SettingsState {
 
   /** Each remote call is numbered; only the newest one may show what it found, so a slow
    * status check never shows a store signed in after a sign-out. */
-  async #remoteCall(run: () => Promise<RemoteStatus>, notice?: (status: RemoteStatus) => string) {
+  async #remoteCall(run: () => Promise<RemoteStatus>) {
     const mine = ++this.remoteCalls;
     this.remotePending += 1;
     this.remoteError = null;
     try {
       const status = await run();
       if (mine !== this.remoteCalls) return;
+      this.remoteRead = Date.now();
       this.remote = status;
-      this.remoteNotice = notice ? notice(status) : this.remoteNotice;
     } catch (failure) {
       if (mine === this.remoteCalls) this.remoteError = message(failure);
     } finally {
@@ -417,7 +407,9 @@ export class SettingsState {
     }
   }
 
+  /** Read the store's status again; a push's result gives way to it. */
   async loadRemote() {
+    this.remoteNotice = null;
     await this.#remoteCall(() => call(this.#commands.remoteStatus()));
   }
 
@@ -427,22 +419,14 @@ export class SettingsState {
     this.token = "";
     this.remoteNotice = null;
     this.working = true;
-    await this.#remoteCall(
-      () => call(this.#commands.remoteLogin(this.url.trim(), this.share, typed)),
-      (status) =>
-        status.state === "configured"
-          ? `Signed in to ${status.url}${principalOf(status) ? ` as ${principalOf(status)}` : ""}.`
-          : "Signed in.",
-    );
+    await this.#remoteCall(() => call(this.#commands.remoteLogin(this.url.trim(), this.share, typed)));
     this.working = false;
   }
 
   async remoteLogout() {
+    this.remoteNotice = null;
     this.working = true;
-    await this.#remoteCall(
-      () => call(this.#commands.remoteLogout()),
-      () => "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`.",
-    );
+    await this.#remoteCall(() => call(this.#commands.remoteLogout()));
     this.working = false;
   }
 
@@ -452,6 +436,8 @@ export class SettingsState {
     try {
       const report: Pushed = await call(this.#commands.remotePush(dryRun));
       this.remoteNotice = `${dryRun ? "Would push" : "Pushed"} ${report.pushed}, already in the store ${report.existing}, skipped ${report.skipped}.`;
+      // What was pushed today counts this push from now on; its result stays the status line.
+      if (!dryRun) await this.#remoteCall(() => call(this.#commands.remoteStatus()));
     } catch (failure) {
       this.remoteError = message(failure);
     } finally {

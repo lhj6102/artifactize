@@ -5,13 +5,16 @@
 import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Settings from "./Settings.svelte";
 import type { ClaudeAgentStatus, CodexStatus, CustomProvider, KeySource, Provider, RemoteStatus } from "../ipc/client";
 
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
 const KEY = "sk-secret-provider-key";
+
+/** The tests' clock: local noon of a fixed day, so a midnight never falls inside a test. */
+const NOON = new Date(2026, 10, 14, 12).getTime();
 
 const none: RemoteStatus = { state: "unconfigured" };
 const signedIn: RemoteStatus = {
@@ -20,6 +23,12 @@ const signedIn: RemoteStatus = {
   share: "summary",
   tokenSource: "file",
   connection: { state: "signedIn", principal: "alice-laptop", scopes: ["read", "publish"] },
+  // Two pushes on the frozen day, one two days before it.
+  pushes: [
+    { at: NOON - 2 * 86400000, count: 9 },
+    { at: NOON - 3600000, count: 2 },
+    { at: NOON, count: 3 },
+  ],
 };
 
 type Calls = { cmd: string; args: Record<string, unknown> }[];
@@ -128,7 +137,13 @@ function backend(options: {
   return calls;
 }
 
+beforeEach(() => {
+  // Only the date is frozen: the timers the tests wait with keep running.
+  vi.useFakeTimers({ toFake: ["Date"], now: NOON });
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   clearMocks();
 });
@@ -140,22 +155,24 @@ describe("Settings", () => {
     const list = await screen.findByRole("navigation", { name: "Providers" });
     await waitFor(() =>
       expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-        "Codex (ChatGPT)",
+        "Codex",
         "Claude Agent",
         "OpenAI",
         "Anthropic",
         "Gemini",
-        "+ Custom provider",
+        "Custom provider",
       ]),
     );
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
     await fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
-    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
+    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("set from the environment (OPENAI_API_KEY)"));
     await fireEvent.click(screen.getByRole("button", { name: "Anthropic" }));
-    expect(screen.getByTestId("key-anthropic").textContent?.trim()).toBe("Not set");
+    expect(screen.getByTestId("key-anthropic").textContent?.trim()).toBe("not set");
     expect(screen.getByLabelText<HTMLInputElement>("API key").type).toBe("password");
+    // No store: the fields that sign in to one, and nothing said about the normal state.
     await fireEvent.click(screen.getByRole("tab", { name: "Remote" }));
-    expect((await screen.findByTestId("remote-status")).textContent).toBe("No remote review store is configured.");
+    await screen.findByRole("button", { name: "Sign in to the store" });
+    expect(screen.queryByTestId("remote-status")).toBeNull();
   });
 
   it("saves a pasted key without keeping or showing it, then removes it", async () => {
@@ -166,41 +183,40 @@ describe("Settings", () => {
     await fireEvent.input(field, { target: { value: KEY } });
     await fireEvent.click(screen.getByRole("button", { name: "Save key" }));
     expect(field.value).toBe("");
-    await screen.findByText("Saved the key.");
+    await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("saved here"));
     expect(calls.find((call) => call.cmd === "provider_key_save")?.args).toEqual({ provider: "gemini", key: KEY });
-    await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("Saved"));
     expect(document.body.innerHTML).not.toContain(KEY);
     await fireEvent.click(screen.getByRole("button", { name: "Remove saved key" }));
-    await screen.findByText("Removed the saved key.");
-    await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("Not set"));
+    await waitFor(() => expect(screen.getByTestId("key-gemini").textContent?.trim()).toBe("not set"));
   });
 
   it("keeps a set variable first, still showing and removing a key saved beside it", async () => {
     backend({});
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
-    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
+    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("set from the environment (OPENAI_API_KEY)"));
     expect(screen.queryByRole("button", { name: "Remove saved key" })).toBeNull();
     await fireEvent.input(screen.getByLabelText<HTMLInputElement>("API key"), { target: { value: KEY } });
     await fireEvent.click(screen.getByRole("button", { name: "Save key" }));
     await waitFor(() =>
-      expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY; a saved key is kept but not used"),
+      expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("set from the environment (OPENAI_API_KEY); a saved key is kept but not used"),
     );
     await fireEvent.click(screen.getByRole("button", { name: "Remove saved key" }));
-    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("Set from OPENAI_API_KEY"));
+    await waitFor(() => expect(screen.getByTestId("key-openai").textContent?.trim()).toBe("set from the environment (OPENAI_API_KEY)"));
     expect(screen.queryByRole("button", { name: "Remove saved key" })).toBeNull();
   });
 
   it("adds custom providers by name, keeps a saved endpoint key, lists their models and removes them", async () => {
     const calls = backend({});
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Custom provider" }));
     await fireEvent.input(screen.getByLabelText("Name"), { target: { value: "local" } });
-    await fireEvent.input(screen.getByLabelText("URL"), { target: { value: "http://localhost:11434/v1" } });
+    await fireEvent.input(screen.getByLabelText("Base URL"), { target: { value: "http://localhost:11434/v1" } });
     const key = screen.getByLabelText<HTMLInputElement>("Key");
     await fireEvent.input(key, { target: { value: KEY } });
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await screen.findByText("Saved local.");
+    // Saved, it is listed by its name and its form shows what was saved.
+    await waitFor(() => expect(screen.getByRole("navigation", { name: "Providers" }).textContent).toContain("local"));
     expect(key.value).toBe("");
     expect(calls.find((call) => call.cmd === "provider_custom_save")?.args).toEqual({
       name: "local",
@@ -209,19 +225,18 @@ describe("Settings", () => {
     });
     expect(document.body.innerHTML).not.toContain(KEY);
     // Saved again with an empty key field, the saved key is kept.
-    expect(screen.getByLabelText<HTMLInputElement>("Key").placeholder).toBe("Saved; type to replace");
+    await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>("Key").placeholder).toBe("Saved; type to replace"));
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    // The notice clears when the save starts and returns once the form shows what was saved.
-    expect(screen.queryByText("Saved local.")).toBeNull();
-    await screen.findByText("Saved local.");
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "provider_custom_save")).toHaveLength(2));
     expect(calls.filter((call) => call.cmd === "provider_custom_save")[1].args.key).toEqual({ kind: "keep" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false));
 
-    await fireEvent.click(screen.getByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Custom provider" }));
     await fireEvent.input(screen.getByLabelText("Name"), { target: { value: "work" } });
-    await fireEvent.click(screen.getByLabelText("a built-in provider"));
+    await fireEvent.click(screen.getByLabelText("alias of a built-in provider"));
     await fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "openai" } });
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await screen.findByText("Saved work.");
+    await waitFor(() => expect(screen.getByRole("navigation", { name: "Providers" }).textContent).toContain("work"));
     expect(calls.filter((call) => call.cmd === "provider_custom_save").at(-1)?.args).toEqual({
       name: "work",
       target: { kind: "alias", provider: "openai" },
@@ -230,102 +245,101 @@ describe("Settings", () => {
     const list = screen.getByRole("navigation", { name: "Providers" });
     expect([...list.querySelectorAll("button")].map((button) => button.textContent)).toContain("work");
 
-    await fireEvent.click(screen.getByRole("button", { name: "List models" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
     expect(calls.filter((call) => call.cmd === "models_list").at(-1)?.args).toEqual({ provider: "work" });
 
     await fireEvent.click(screen.getByRole("button", { name: "local" }));
     await fireEvent.click(screen.getByRole("button", { name: "Remove provider" }));
-    await screen.findByText("Removed local.");
-    expect([...list.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("local");
+    await waitFor(() => expect([...list.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("local"));
   });
 
-  it("signs in to Codex with a pasted redirect, then signs out", async () => {
+  it("signs in to Codex with a pasted redirect under Finish by hand, then signs out", async () => {
     let finish: (status: CodexStatus) => void = () => {};
     const calls = backend({ wait: () => new Promise((done) => (finish = done)) });
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "Sign in with ChatGPT" }));
-    await screen.findByText("http://127.0.0.1:9/oauth/authorize?state=s");
+    await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Codex" }));
+    // In progress, said in the account's fact, with Cancel sign-in; finishing by hand is folded.
+    await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("sign-in in progress"));
+    expect(screen.getByRole("button", { name: "Cancel sign-in" })).toBeTruthy();
+    expect(screen.queryByText("http://127.0.0.1:9/oauth/authorize?state=s")).toBeNull();
     expect(calls.find((call) => call.cmd === "codex_login_start")?.args).toEqual({ browser: true });
     // The wait names the sign-in the start returned.
     expect(calls.find((call) => call.cmd === "codex_login_wait")?.args).toEqual({ signIn: 7 });
+    await fireEvent.click(screen.getByRole("button", { name: "Finish by hand" }));
+    await screen.findByText("http://127.0.0.1:9/oauth/authorize?state=s");
     // The port was taken: only a pasted URL finishes it.
     expect(screen.getByText(/Port 1455 is in use/)).not.toBeNull();
-    const field = screen.getByLabelText(/paste the URL it was sent to/);
-    expect(screen.getByText(/Finish signing in with the browser, then paste/)).not.toBeNull();
-    expect(field.getAttribute("aria-describedby")).toBe("codex-redirect-help");
-    expect(screen.getByText(/from DevTools → Network/).textContent).toContain("http://localhost:1455/auth/callback?code=");
+    const field = screen.getByLabelText("Redirect URL");
     await fireEvent.input(field, { target: { value: " http://localhost:1455/auth/callback?code=c&state=s " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
     expect(calls.find((call) => call.cmd === "codex_login_paste")?.args).toEqual({
       redirect: "http://localhost:1455/auth/callback?code=c&state=s",
     });
     finish({ state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } });
-    await screen.findByText("Signed in with Codex.");
-    expect(screen.getByTestId("codex-status").textContent).toMatch(/Signed in/);
-    expect(screen.queryByText(/Waiting for the browser/)).toBeNull();
+    await waitFor(() => expect(screen.getByTestId("codex-status").textContent).toMatch(/^\s*Signed in/));
+    expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of Codex" }));
-    await screen.findByText("Signed out of Codex.");
-    expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in");
+    await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
   });
 
-  it("reports a cancelled sign-in and offers signing in again when signed in", async () => {
+  it("reports a cancelled sign-in as a fact and offers signing in again", async () => {
     let fail: (error: unknown) => void = () => {};
-    let state: CodexStatus = { state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } };
+    let state: CodexStatus = { state: "absent" };
     const calls = backend({
       codex: () => state,
       wait: () => new Promise((_, reject) => (fail = reject)),
     });
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Sign in with Codex" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     expect(calls.some((call) => call.cmd === "codex_login_cancel")).toBe(true);
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
-    await screen.findByText("Codex sign-in was cancelled.");
-    // The message shows before the status refresh and the busy reset finish: retry only once
-    // the prompt closed and signing in again is offered.
+    expect((await screen.findByText("Codex sign-in was cancelled.")).classList.contains("error")).toBe(true);
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Sign in again" }).hasAttribute("disabled")).toBe(false);
+      expect(screen.getByRole("button", { name: "Sign in with Codex" }).hasAttribute("disabled")).toBe(false);
     });
     state = { state: "file", path: "/home/a/.codex/auth.json", expiry: { state: "usable", expiresAt: null } };
-    await fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with Codex" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
-    // A read-only auth file is never changed here: no sign-in or sign-out.
+    // A read-only auth file is never changed here: no sign-in.
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent).toMatch(/Read-only Codex auth file/));
-    expect(screen.getByRole("button", { name: "Sign in with ChatGPT" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "Sign out of Codex" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Sign in with Codex" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("shows the sign-off idle grace in force and saves a new one for later Runs", async () => {
+  it("shows the sign-off idle grace in force in its seconds field and saves a new one for later Runs", async () => {
     const calls = backend({});
     renderHosted(Settings, { active: true });
     await fireEvent.click(screen.getByRole("tab", { name: "Limits" }));
-    await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("2 minutes"));
-    const seconds = screen.getByLabelText<HTMLInputElement>("Seconds");
+    const seconds = await screen.findByLabelText<HTMLInputElement>("Seconds");
+    await waitFor(() => expect(seconds.value).toBe("120"));
     const save = screen.getByRole("button", { name: "Save" });
-    expect(seconds.value).toBe("120");
     // Unchanged, nothing can be saved; past the library's bound, the field keeps it from Save.
     expect(save.hasAttribute("disabled")).toBe(true);
     await fireEvent.input(seconds, { target: { value: "90000" } });
     await fireEvent.click(save);
     expect(calls.some((call) => call.cmd === "signoff_grace_set")).toBe(false);
-    expect(screen.getByTestId("grace-status").textContent).toBe("2 minutes");
     await fireEvent.input(seconds, { target: { value: "300" } });
     await fireEvent.click(save);
-    await screen.findByText("Saved. Runs started from now on wait this long.");
-    expect(calls.filter((call) => call.cmd === "signoff_grace_set").at(-1)?.args).toEqual({ seconds: 300 });
-    expect(screen.getByTestId("grace-status").textContent).toBe("5 minutes");
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "signoff_grace_set").at(-1)?.args).toEqual({ seconds: 300 }));
+    // Saved: the field holds the new grace, and nothing is said about it.
+    const limits = screen.getByRole("region", { name: "Sign-off idle grace" });
+    await waitFor(() => expect(limits.getAttribute("aria-busy")).toBe("false"));
+    expect(save.hasAttribute("disabled")).toBe(true);
+    expect(seconds.value).toBe("300");
+    expect(screen.queryByRole("status")).toBeNull();
     await fireEvent.input(seconds, { target: { value: "0" } });
+    await waitFor(() => expect(save.hasAttribute("disabled")).toBe(false));
     await fireEvent.click(save);
-    await waitFor(() => expect(screen.getByTestId("grace-status").textContent).toBe("0 seconds"));
+    await waitFor(() => expect(calls.filter((call) => call.cmd === "signoff_grace_set").at(-1)?.args).toEqual({ seconds: 0 }));
   });
 
   it("asks the library to save a custom provider without a name, and shows its refusal", async () => {
     const calls = backend({});
     renderHosted(Settings, { active: true });
-    await fireEvent.click(await screen.findByRole("button", { name: "+ Custom provider" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Custom provider" }));
     await fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText("A custom provider needs a name.");
     expect(calls.filter((call) => call.cmd === "provider_custom_save").map((call) => call.args.name)).toEqual([""]);
@@ -336,16 +350,19 @@ describe("Settings", () => {
     const calls = backend({ claude: () => state });
     renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
-    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/never reads, copies\s+or stores it/);
+    expect(screen.getByTestId("claude-agent-sign-in").textContent).toMatch(/never reads, copies or stores it/);
     expect(screen.queryByLabelText("API key")).toBeNull();
-    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent).toMatch(/not found on PATH/));
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("claude not found"));
     expect(screen.getByRole("button", { name: "Sign in with Claude Code" }).hasAttribute("disabled")).toBe(true);
     state = { state: "failed", error: "Claude Code could not report its sign-in: boom" };
     await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
-    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent).toMatch(/Claude Code failed: Claude Code could not report its sign-in: boom/));
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Claude Code could not report its sign-in: boom"));
+    expect(screen.getByTestId("claude-agent-status").classList.contains("error")).toBe(true);
     state = { state: "signedIn", method: "claude.ai", plan: "max" };
     await fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
+    // Signed in, the facts stand alone.
+    expect(screen.queryByTestId("claude-agent-sign-in")).toBeNull();
     expect(calls.filter((call) => call.cmd === "claude_agent_status")).toHaveLength(3);
     await fireEvent.click(screen.getByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
@@ -359,19 +376,18 @@ describe("Settings", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Claude Agent" }));
     await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in"));
     await fireEvent.click(screen.getByRole("button", { name: "Sign in with Claude Code" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Finish by hand" }));
     await screen.findByText("https://claude.example/oauth/authorize?code=true");
     expect(calls.find((call) => call.cmd === "claude_agent_login_wait")?.args).toEqual({ signIn: 9 });
-    const field = screen.getByLabelText(/When the page gives a code/);
+    const field = screen.getByLabelText("Code");
     await fireEvent.input(field, { target: { value: " abc#def " } });
     await fireEvent.click(screen.getByRole("button", { name: "Finish sign-in" }));
     expect(calls.find((call) => call.cmd === "claude_agent_login_paste")?.args).toEqual({ code: "abc#def" });
     finish({ state: "signedIn", method: "claude.ai", plan: "max" });
-    await screen.findByText("Claude Code signed in.");
-    expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max");
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Signed in · claude.ai · max"));
     expect(screen.queryByRole("button", { name: "Cancel sign-in" })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of Claude Code" }));
-    await screen.findByText("Claude Code signed out.");
-    expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in");
+    await waitFor(() => expect(screen.getByTestId("claude-agent-status").textContent?.trim()).toBe("Not signed in"));
   });
 
   it("cancels a Claude Code sign-in and shows the status Claude Code then reports", async () => {
@@ -416,21 +432,25 @@ describe("Settings", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Sign in to the store" }));
     expect(token.value).toBe("");
     await screen.findByText("Invalid or revoked token.");
-    await waitFor(() => expect(screen.getByRole("region", { name: "Shared remote review store" }).getAttribute("aria-busy")).toBe("false"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "Shared review store" }).getAttribute("aria-busy")).toBe("false"));
     expect(document.body.innerHTML).not.toContain(TOKEN);
 
     await fireEvent.input(token, { target: { value: TOKEN } });
     await fireEvent.click(screen.getByLabelText("full"));
     await fireEvent.click(screen.getByRole("button", { name: "Sign in to the store" }));
     expect(token.value).toBe("");
-    await screen.findByText(`Signed in to ${STORE} as alice-laptop.`);
-    expect(screen.getByTestId("remote-principal").textContent).toBe("alice-laptop (scopes: read, publish)");
+    // Signed in: the store's URL and share level as facts, its status, and no fields that sign in.
+    expect((await screen.findByTestId("remote-principal")).textContent).toBe("alice-laptop (scopes: read, publish)");
+    expect(screen.getByTestId("remote-pushed").textContent).toBe("5 pushed today");
+    expect(screen.getByTestId("remote-status").textContent).toBe(STORE);
+    expect(screen.queryByLabelText("Token")).toBeNull();
     expect(calls.filter((call) => call.cmd === "remote_login").at(-1)?.args).toEqual({ url: STORE, share: "full", token: TOKEN });
     expect(document.body.innerHTML).not.toContain(TOKEN);
 
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of the store" }));
-    await screen.findByText(/Signed out of the remote review store/);
-    expect(screen.getByTestId("remote-status").textContent).toBe("No remote review store is configured.");
+    // Signed out: the fields and the button that sign in come back.
+    await screen.findByRole("button", { name: "Sign in to the store" });
+    expect(screen.queryByTestId("remote-principal")).toBeNull();
   });
 
   it("never lets a slower status check show the store signed in after signing out", async () => {
@@ -454,18 +474,19 @@ describe("Settings", () => {
     await fireEvent.click(await screen.findByRole("tab", { name: "Remote" }));
     await screen.findByTestId("remote-principal");
     slow = true;
-    const store = screen.getByRole("region", { name: "Shared remote review store" });
+    const store = screen.getByRole("region", { name: "Shared review store" });
     await waitFor(() => expect(store.getAttribute("aria-busy")).toBe("false"));
     await fireEvent.click(screen.getByRole("button", { name: "Check status" }));
     await waitFor(() => expect(store.getAttribute("aria-busy")).toBe("true"));
     await fireEvent.click(screen.getByRole("button", { name: "Sign out of the store" }));
-    await screen.findByText(/Signed out of the remote review store/);
+    await screen.findByRole("button", { name: "Sign in to the store" });
     // Signing out finished, but the older check still owns an outstanding UI operation.
     expect(store.getAttribute("aria-busy")).toBe("true");
     answer(signedIn);
     // The normal remoteCall finally clears the rendered busy state only after it has
     // accepted or discarded the answer. Observe that boundary without replacing call().
     await waitFor(() => expect(store.getAttribute("aria-busy")).toBe("false"));
-    expect(screen.getByTestId("remote-status").textContent).toBe("No remote review store is configured.");
+    expect(screen.queryByTestId("remote-principal")).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in to the store" })).toBeTruthy();
   });
 });

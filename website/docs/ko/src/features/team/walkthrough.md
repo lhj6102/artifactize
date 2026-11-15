@@ -1,12 +1,12 @@
 # 워크스루: 두 머신과 CI가 판정을 공유하기 {#walkthrough-two-machines-and-ci-share-verdicts}
 
-이 워크스루는 [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)를 사용합니다.
+이 실습에서는 [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) 예제 프로젝트를 사용합니다.
 Alice와 Bob은 서로 다른 체크아웃과 상태 디렉터리를 씁니다. CI에는 세 번째
 체크아웃이 있습니다. `artifactize server` 하나가 공유 판정을 보관합니다. 모든
 단계를 머신 한 대에서 실행할 수 있습니다. 이 실습에서는 `--state-dir`로 상태 디렉터리를
-달리 지정해 각 "머신"을 구분하고, `USER`로 결과를 만든 사람의 이름을 정합니다. 명령은 `examples/`가 들어 있는 artifactize 체크아웃
+달리 지정해 각 "머신"을 구분하고, `USER`로 결과를 만든 사람의 이름을 정합니다. Linux, macOS, WSL에서 POSIX 셸을 연 다음, `examples/`가 있는 artifactize 저장소
 ([`git clone https://github.com/lhj6102/artifactize`](https://github.com/lhj6102/artifactize))의
-루트에서 연 POSIX 셸(Linux, macOS, WSL)용입니다.
+루트 디렉터리에서 아래 명령을 실행하세요.
 
 ```sh
 export WALK=$(mktemp -d)            # outside any Git checkout
@@ -92,8 +92,7 @@ Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-Bob의 체크아웃은 Artifact 이름, 종류, 내용이 같아 fingerprint와
-eval 정의 해시가 같고, 따라서 재사용 키도 일치합니다. 경로는 상관없습니다. `status`는 Bob의 로컬 상태를 바꾸지 않고
+Bob의 체크아웃에서도 Artifact의 이름·종류·내용이 Alice의 체크아웃과 같으므로 fingerprint와 eval 정의 해시, 재사용 키가 모두 일치합니다. 경로는 상관없습니다. `status`는 Bob의 로컬 상태를 바꾸지 않고
 저장소를 조회했으며, 저장소에서는 이 조회도 기록을 사용한 것으로 집계합니다. `verify`는 세 기록을 Bob의 로컬 캐시에 미러링했습니다.
 `artifactize cache list`가 저장소를 출처로 하는 그 기록을 보여 줍니다. 이후의
 `verify`는 저장소가 없어도 그 기록을 로컬에서 재사용합니다.
@@ -213,7 +212,7 @@ Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0,
 
 Bob이 먼저 `verify --all --wait`를 실행했다면, Bob의 `verify --wait`는
 Run의 진행 상황을 보여 주며 끝날 때까지 대기했을 것이고, Bob의 Run이 아직 열려 있는 동안
-Alice의 승인이 저장소에 도착하면 그 즉시 Bob의 요청도 확정되었을 것입니다. Bob은 승인 요청을 직접 맡지 않으므로
+Alice가 제출한 승인이 저장소에 반영되면 Bob의 요청도 바로 확정됐을 것입니다. Bob은 승인 요청을 직접 맡지 않으므로
 Bob의 Run은 2분 뒤 YELLOW로 끝나고 더는 저장소를 확인하지 않습니다. 그 뒤에 Alice가 승인하면 Bob은
 `verify`를 다시 실행해 그 승인을 재사용합니다. Bob의 토큰에는 `human`이 없으므로, Bob이 제출한 승인은
 경고와 함께 로컬에만 남습니다.

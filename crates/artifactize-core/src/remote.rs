@@ -1,8 +1,10 @@
 //! Shared remote review store records: what leaves this machine and how it is mirrored back.
 
 mod push;
+mod pushed;
 mod session;
 pub use push::{Push, push};
+pub use pushed::{Pushed, recent as recent_pushes};
 pub(crate) use session::REFRESH as REFRESH_INTERVAL;
 pub use session::Session;
 

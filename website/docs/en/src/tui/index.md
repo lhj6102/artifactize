@@ -2,8 +2,10 @@
 
 The terminal Monitor and Review browse the same saved Runs and Human requests as
 the other interfaces. Install them with the [CLI](../getting-started/install.md);
-no separate terminal package or service is needed. Browsing is read-only until
-you explicitly claim, run a Human tool or submit a verdict.
+no separate terminal package or service is needed. Browsing lists and previews is
+read-only until you explicitly claim, run a Human tool or submit a verdict; opening a
+waiting Human request whose declarations changed ends it as ERROR
+([Tools](#review), below).
 
 ## Review
 
@@ -175,20 +177,17 @@ that ends; Ctrl-PgUp/PgDn still scroll the instruction.
   A saved request **without a recorded Human definition** is not an empty-schema
   review: its tools display as unknown and GREEN/RED forms are refused. Browsing
   that old request does not invent missing tool or schema declarations.
-- **Editing.** While you hold the claim, ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and
-  Tab belong to the fields, not navigation. While a form is open or a claim, tool, submission
-  or release is running, a click outside Human Detail does nothing; the wheel still scrolls.
-  When the claim is released or lost, editing stops: Fields shows the claim notice instead of
-  the draft, which is kept, and the open form still holds `q`, `i`, `t` and Monitor's `?`/`!`
-  until Esc closes it. Once the request is unclaimed, `c` claims it again and the kept draft
-  comes back for editing. A bracketed keyboard paste goes into the focused field as
-  one edit, in standalone `review` as in the monitor. A paste that would push the
-  result past the 256000-byte Human result limit is refused as a whole with an
-  error, leaving the draft unchanged. Esc steps back as the key table says; Monitor's
-  Close returns to the tree when idle (in standalone `review` it works like Esc). GREEN
-  and RED each keep their own draft across refreshes. Monitor keeps each request's drafts
-  while you view other requests; standalone `review` keeps them only until you open a
-  different request, which starts fresh. A request settled elsewhere ends editing on refresh.
+- **Editing.** While you hold the claim, letters, ←/→ and Tab go to the fields; a bracketed
+  paste is one edit. Esc steps back as the key table says; Monitor's Close returns to the tree
+when idle (in standalone `review` it works like Esc). While a form is open or work
+  runs, a click outside Human Detail does nothing; the wheel still scrolls.
+
+  | When | Then |
+  |---|---|
+  | The claim is released or lost | Editing stops and Fields shows the claim notice; the draft is kept, and `c` claims again to continue it |
+  | You view another request | GREEN and RED keep their drafts; standalone `review` starts fresh on a different request |
+  | A paste would pass 256000 bytes | It is refused whole; the draft is unchanged |
+  | The request settles elsewhere | Editing ends on refresh |
 
 Outside a form or work, `q` quits from Detail too. Ctrl-C first cancels a busy claim,
 tool, submission or release; once nothing is busy, it quits, also from a form. Esc

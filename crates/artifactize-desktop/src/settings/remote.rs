@@ -56,7 +56,16 @@ pub enum RemoteStatus {
         share: Share,
         token_source: TokenSource,
         connection: Connection,
+        /// What this machine pushed in the last two days, for what was pushed today.
+        pushes: Vec<Push>,
     },
+}
+
+/// A push that sent records: when, in milliseconds since the Unix epoch, and how many.
+#[derive(Debug, Clone, Copy, Serialize, Type)]
+pub struct Push {
+    pub at: f64,
+    pub count: u32,
 }
 
 /// What asking the store answered.
@@ -78,8 +87,9 @@ pub enum Connection {
     Unreachable { error: String },
 }
 
-impl From<Option<remote::Status>> for RemoteStatus {
-    fn from(status: Option<remote::Status>) -> Self {
+impl RemoteStatus {
+    /// The status `remote status` reports, with the pushes made lately.
+    fn of(status: Option<remote::Status>, pushes: &[artifactize_core::remote::Pushed]) -> Self {
         let Some(status) = status else {
             return Self::Unconfigured;
         };
@@ -100,6 +110,17 @@ impl From<Option<remote::Status>> for RemoteStatus {
                 remote::TokenSource::None => TokenSource::None,
             },
             connection,
+            pushes: pushes
+                .iter()
+                .map(|pushed| Push {
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "milliseconds since 1970 fit an f64 exactly"
+                    )]
+                    at: pushed.at as f64,
+                    count: u32::try_from(pushed.count).unwrap_or(u32::MAX),
+                })
+                .collect(),
         }
     }
 }
@@ -107,7 +128,12 @@ impl From<Option<remote::Status>> for RemoteStatus {
 async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
     remote::status(Some(&app.launch.state), app.launch.repo.as_deref())
         .await
-        .map(Into::into)
+        .map(|status| {
+            RemoteStatus::of(
+                status,
+                &artifactize_core::remote::recent_pushes(Some(&app.launch.state)),
+            )
+        })
         .map_err(Failure::Account)
 }
 

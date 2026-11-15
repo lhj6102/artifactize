@@ -14,6 +14,13 @@ import type { FormView, ToolView } from "../ipc/client";
 
 type Call = { cmd: string; args: Record<string, unknown> };
 
+// The review measures its own width to choose one column or two; jsdom has no layout.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 /** Answer commands like the backend would for one waiting request, recording every call. */
 function backend(stage: "claim" | "review", submit?: (args: Record<string, unknown>) => unknown) {
   const calls: Call[] = [];
@@ -72,7 +79,7 @@ describe("HumanDetail", () => {
     const calls = backend("claim");
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     const region = await screen.findByLabelText("Human review");
-    await screen.findByRole("button", { name: "Claim to review" });
+    await screen.findByRole("button", { name: "Claim to review (c)" });
 
     await fireEvent.keyDown(region, { key: "c", isComposing: true });
     await fireEvent.keyDown(region, { key: "c", keyCode: 229 });
@@ -81,6 +88,24 @@ describe("HumanDetail", () => {
     await fireEvent.keyDown(region, { key: "c" });
     await waitFor(() => expect(calls.some((call) => call.cmd === "human_claim")).toBe(true));
     await screen.findByText("REVIEW (yours)");
+  });
+
+  it("says why a submission settled here was not published, under its completed result", async () => {
+    const failure = "Saved locally; publishing to the review store failed: connection refused. Push results from Settings.";
+    backend("review", () => ({
+      settled: "savedLocally",
+      notice: { text: failure, error: true },
+      view: humanView("completed", { claim: null, result: '{ "verdict": "GREEN" }', meta: "GREEN · alice" }),
+    }));
+    renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
+    const region = await screen.findByLabelText("Human review");
+    await screen.findByText("REVIEW (yours)");
+    await fireEvent.keyDown(region, { key: "g" });
+    const comment = await screen.findByLabelText(/comment/);
+    await userEvent.setup().type(comment, "checked");
+    await fireEvent.keyDown(comment, { key: "s", ctrlKey: true });
+    const result = await screen.findByRole("region", { name: "Result" });
+    await waitFor(() => expect(within(result).getByRole("status").textContent).toBe(failure));
   });
 
   it("keeps GREEN and RED drafts apart and shows a schema error without losing the draft", async () => {
@@ -198,7 +223,7 @@ describe("HumanDetail", () => {
     await user.keyboard("g");
     await screen.findByLabelText(/comment/);
     await user.keyboard("{Control>}s{/Control}");
-    await screen.findByText(/Submitting GREEN/);
+    await screen.findByRole("img", { name: /Submitting GREEN/ });
     const elsewhere = document.createElement("button");
     elsewhere.textContent = "Another screen";
     document.body.append(elsewhere);
@@ -256,12 +281,12 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "RED" }));
+    await user.click(screen.getByRole("button", { name: "RED (r)" }));
     const first = await screen.findByLabelText("change 1");
     // The constant is the form's own: nothing to enter, so nothing shown.
     expect(screen.queryByText(/approved/)).toBeNull();
     await user.type(first, "Shorter title");
-    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(await screen.findByLabelText("change 2"), "Fix the date");
     await user.click(screen.getByRole("button", { name: "Remove change 1" }));
     await waitFor(() => expect((screen.getByLabelText("change 1") as HTMLTextAreaElement).value).toBe("Fix the date"));
@@ -271,7 +296,7 @@ describe("HumanDetail", () => {
       ["human_add_item", "change", undefined],
       ["human_remove_item", "change", 0],
     ]);
-    expect(screen.getByRole("button", { name: "Submit RED" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" })).toBeTruthy();
   });
 
   it("groups the tools by their Artifact, the reviewed one first, and logs each run's lines under it", async () => {
@@ -294,7 +319,7 @@ describe("HumanDetail", () => {
     await screen.findByText("REVIEW (yours)");
     const groups = screen.getAllByRole("group", { name: /^Tools of / });
     expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Tools of release", "Tools of brand"]);
-    await user.click(screen.getByRole("button", { name: "▶ preview" }));
+    await user.click(screen.getByRole("button", { name: "preview" }));
     await waitFor(() => expect(ran).toEqual(["preview_brand"]));
     // The launched program keeps printing after its button returned, under its own entry.
     review.logged([
@@ -349,18 +374,18 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "RED" }));
+    await user.click(screen.getByRole("button", { name: "RED (r)" }));
     const first = await screen.findByRole("group", { name: "findings 1" });
     // The group's constant is filled in, not shown.
     expect(within(first).queryByText(/kind/)).toBeNull();
     await user.type(within(first).getByLabelText(/problem/), "typo");
-    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByRole("button", { name: "Add" }));
     const second = await screen.findByRole("group", { name: "findings 2" });
     await user.type(within(second).getByLabelText(/problem/), "date");
     await user.selectOptions(within(second).getByLabelText(/severity/), '"high"');
     await user.click(screen.getByRole("button", { name: "Remove findings 1" }));
     await waitFor(() => expect(screen.queryByRole("group", { name: "findings 2" })).toBeNull());
-    await user.click(screen.getByRole("button", { name: "Submit RED" }));
+    await user.click(screen.getByRole("button", { name: "Submit RED (Ctrl+S)" }));
     await waitFor(() =>
       expect(submitted).toEqual([
         {
@@ -377,7 +402,7 @@ describe("HumanDetail", () => {
     const user = userEvent.setup();
     renderHosted(HumanDetail, { review: new Review("run-a-2", new Jobs()), onback: () => {} });
     await screen.findByText("REVIEW (yours)");
-    await user.click(screen.getByRole("button", { name: "GREEN" }));
+    await user.click(screen.getByRole("button", { name: "GREEN (g)" }));
     const comment = await screen.findByLabelText(/comment/);
     expect(comment.getAttribute("placeholder")).toBe("Optional");
   });
@@ -389,7 +414,7 @@ describe("Tools focused", () => {
     const review = new Review("run-a-2", new Jobs());
     review.area = "tools";
     renderHosted(HumanDetail, { review, onback: () => {} });
-    const tools = await screen.findByRole("region", { name: "Tools" });
+    const tools = await screen.findByRole("group", { name: "Tools" });
     await waitFor(() => expect(document.activeElement).toBe(tools));
   });
 });

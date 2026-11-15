@@ -128,8 +128,6 @@ export const commands = {
 	currentScan: (branch: BranchKey, refresh: boolean) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch, refresh })),
 	/**  The newest step of `branch`'s Current, without scanning. */
 	currentView: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_view", { branch })),
-	/**  Every Artifact, eval criterion and labeled relation of `branch`'s Current as text. */
-	currentStructure: (branch: BranchKey) => typedError<string, Failure>(__TAURI_INVOKE("current_structure", { branch })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.
@@ -408,12 +406,18 @@ export type Connection =
 /**  The store sent no HTTP response. */
 { state: "unreachable"; error: string };
 
+/**  How many of a Run's evals ended in one status. */
+export type Count = {
+	mark: Mark,
+	count: number,
+};
+
 /**  The shown Current of `branch` changed: a scan published a step, or ended. */
 export type CurrentChanged = {
 	branch: BranchKey,
 };
 
-/**  A branch's Current as the Main area shows it; its structure text is read on its own. */
+/**  A branch's Current as the Main area shows it. */
 export type CurrentView = {
 	branch: BranchKey,
 	/**  When this step was scanned, at milliseconds since the Unix epoch. */
@@ -451,6 +455,8 @@ export type DetailView = {
 	mark: Mark | null,
 	/**  On a Current, in place of a status: what verify would do. */
 	plan: PlanLine | null,
+	/**  A Run's outcome, which leads its Detail. */
+	outcome: RunOutcome | null,
 	/**  Outcome → Waits for → What → Provenance → Technical; empty sections are left out. */
 	sections: SectionView[],
 	/**  Saved runtime stdout/stderr, or why there are none. */
@@ -577,6 +583,8 @@ export type GraphNode = {
 	id: string,
 	name: string,
 	light: Light,
+	/**  Its evals' count; `None` without evals of its own, or on a Current while it is checked. */
+	tally: Tally | null,
 	/**  Under the name: on a Current what verify would do, `would run (2 evals)`. */
 	note: string | null,
 	/**  The Artifacts of the graph it is made of directly, by tree id: drawn inside it. */
@@ -800,6 +808,12 @@ export type Providers = {
 	custom: CustomProvider[],
 };
 
+/**  A push that sent records: when, in milliseconds since the Unix epoch, and how many. */
+export type Push = {
+	at: number | null,
+	count: number,
+};
+
 export type Pushed = {
 	dryRun: boolean,
 	pushed: number,
@@ -841,7 +855,9 @@ export type ReleaseView = {
 /**  `remote status`: never the token. */
 export type RemoteStatus = 
 /**  No remote review store is configured. */
-{ state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection };
+{ state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection; 
+/**  What this machine pushed in the last two days, for what was pushed today. */
+pushes: Push[] };
 
 /**  One entry of an eval's result, the verdict left out: a text, or a list of findings. */
 export type ResultEntry = { kind: "text"; key: string; text: string } | { kind: "items"; key: string; items: ResultItem[] };
@@ -860,24 +876,34 @@ export type Row = {
 	thinking: boolean,
 };
 
+/**  A Run's outcome as its Detail leads with it: what its header row leaves out. */
+export type RunOutcome = {
+	/**  The evals that failed, RED then ERROR, each by its status and ID. */
+	failed: Attention[],
+	/**  How many evals are in each status, most urgent first. */
+	tally: Count[],
+	/**  How long it took, or has run so far. */
+	took: string,
+	finished: boolean,
+	/**  What its requester said it is working on (`verify --comment`), in full. */
+	comment: string | null,
+};
+
 /**
- *  The shown Run: its headline and what needs attention. Its rows come one at a time, as a
- *  Detail asks for them ([`row`]): a Run can hold tens of thousands.
+ *  The shown Run: its headline, the verdict and what needs attention; its tally, time and
+ *  comment are its Detail's. Its rows come one at a time, as a Detail asks for them ([`row`]):
+ *  a Run can hold tens of thousands.
  */
 export type RunPanel = {
 	id: string,
 	/**  The Run's own row, whose Detail its headline opens. */
 	node: string,
 	mark: Mark,
-	/**  Validation at Run end, counts, time and tokens. */
-	headline: string,
-	/**  What its requester said it is working on (`verify --comment`), in full. */
-	comment: string | null,
-	/**  Counts alone, for a narrow pane. */
-	counts: string,
-	attention: Attention[],
-	/**  Attention lines beyond the shown ones. */
-	more: number,
+	/**
+	 *  Each eval that is RED or ERROR and each sign-off that waits, by its status and ID, the
+	 *  failures first.
+	 */
+	needs: Attention[],
 };
 
 /**  What a step does to the Run shown in the Main area. */
@@ -989,6 +1015,15 @@ export type Submitted = {
 	view: HumanView | null,
 };
 
+/**
+ *  How many of an Artifact's evals are GREEN of how many it has, on a Current how many would
+ *  be reused: the library's [`monitor::Tally`].
+ */
+export type Tally = {
+	passed: number,
+	of: number,
+};
+
 /**  What a custom provider reaches; an endpoint's key only as whether one is saved. */
 export type Target = { kind: "alias"; provider: Provider } | { kind: "endpoint"; api: EndpointApi; url: string; key?: boolean };
 
@@ -998,7 +1033,11 @@ export type TokenSource =
 /**  Saved by `remote login`. */
 "file" | "none";
 
-export type Tone = "green" | "red" | "error" | "running" | "human" | "queued" | "blocked" | "muted";
+export type Tone = "green" | "red" | "error" | "running" | "human" | "queued" | "blocked" | "muted" | 
+/**  On a Current: a result that would be reused. */
+"reused" | 
+/**  On a Current: still being checked. */
+"checking";
 
 export type ToolKind = 
 /**  Starts a program and returns at once. */
@@ -1074,8 +1113,11 @@ export type Update =
 {
 	kind: "shape",
 } & Shape | 
-/**  The caller's shape, relit: one light per node and per edge, in its order. */
-{ kind: "lights"; nodes: Light[]; edges: Light[] };
+/**
+ *  The caller's shape, relit: one light and one tally per node and one light per edge,
+ *  in its order.
+ */
+{ kind: "lights"; nodes: Light[]; tallies: (Tally | null)[]; edges: Light[] };
 
 /**  The Artifacts a row depends on, with whether each is complete (dim) or unmet (bright). */
 export type UpstreamMark = {

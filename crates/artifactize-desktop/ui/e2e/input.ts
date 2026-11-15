@@ -79,14 +79,19 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       if (!target) throw new Error("the pointer's page position has no hit target");
       const common = { view: window, clientX: input.x, clientY: input.y, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
       const pointer = { ...common, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1 };
+      // A cancelled pointerdown suppresses the gesture's compatibility mouse events until its
+      // pointerup, as the engine does for a real primary pointer; its click still follows.
+      const gesture = window as Window & { e2eMouseSuppressed?: boolean };
       if (input.kind === "pointer") {
         const buttons = input.phase === "up" ? 0 : 1;
-        target.dispatchEvent(new PointerEvent(`pointer${input.phase}`, { ...pointer, buttons, pressure: buttons ? 0.5 : 0 }));
-        target.dispatchEvent(new MouseEvent(`mouse${input.phase}`, { ...common, buttons }));
+        const allowed = target.dispatchEvent(new PointerEvent(`pointer${input.phase}`, { ...pointer, buttons, pressure: buttons ? 0.5 : 0 }));
+        if (input.phase === "down") gesture.e2eMouseSuppressed = !allowed;
+        if (!gesture.e2eMouseSuppressed) target.dispatchEvent(new MouseEvent(`mouse${input.phase}`, { ...common, buttons }));
+        if (input.phase === "up") gesture.e2eMouseSuppressed = false;
         return;
       }
       const pointerDown = target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1, pressure: 0.5 }));
-      const mouseDown = target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
+      const mouseDown = pointerDown && target.dispatchEvent(new MouseEvent("mousedown", { ...common, buttons: 1 }));
       if (input.kind === "text-click" && pointerDown && mouseDown && !(target as HTMLElement).isContentEditable && !target.closest("input, textarea")) {
         let selecting: Element | null = target;
         while (selecting.parentElement && getComputedStyle(selecting).userSelect === "auto") selecting = selecting.parentElement;
@@ -112,7 +117,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
         }
       }
       target.dispatchEvent(new PointerEvent("pointerup", { ...pointer, buttons: 0, pressure: 0 }));
-      target.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0 }));
+      if (pointerDown) target.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0 }));
       target.dispatchEvent(new MouseEvent("click", { ...common, buttons: 0 }));
     }
   }, input);

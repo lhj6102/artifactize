@@ -50,20 +50,24 @@ export const nodeAt = (id: string) => `.svelte-flow__node[data-id="${id}"]`;
 export const tabAt = (id: string) => `aside[aria-label="Detail"] [role="tab"][data-tab="${id}"]`;
 export const evalAt = (id: string) => `aside[aria-label="Detail"] button[data-eval="${id}"]`;
 
-/** A chip as read: its visible text without the glyph, what a screen reader names it, its verdict
- * glyph and colour, whether an icon is drawn in it, and whether it is the chosen one. */
+/** A chip as read: its visible text without the mark, what a screen reader names it, its
+ * verdict's mark (the icon's name, or the character of a mark without one) and colour, whether
+ * the Artifact icon is drawn in it, and whether it is the chosen one. */
 export type Tab = { name: string; label: string; glyph: string; colour: string; painted: boolean; icon: boolean; selected: boolean };
 export type Detail = {
   /** The Detail's heading: the shown node's title, or "Human review". */
   title: string;
-  /** The Artifact's chip (its icon and name) first, then one per eval; empty for the Run's Detail. */
+  /** On an eval's tab, the Artifact's chip (its icon and name) first, then one per eval; empty
+   * on the Artifact's own tab and on the Run's Detail. */
   tabs: Tab[];
   /** The chip row as it reads, glyphs and icon left out: `{name} / eval eval …`. */
   path: string;
   /** The evals the Artifact tab lists, with their verdict text; empty on an eval's tab. */
   evals: { name: string; status: string }[];
-  /** Whether the Detail lies within the Main area, right of the Pane, with a gap from the
-   * area's right edge. */
+  /** Whether the Detail is a panel docked in the Main area, right of the Pane: at the area's
+   * right edge, from the graph's top (below the area's header and the view's own header, a
+   * Run's headline or a Current's scan header) down to the area's bottom, without a gap on any
+   * of the three, some of the area left on its left. */
   docked: boolean;
 };
 
@@ -72,11 +76,15 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
   return browser.execute(() => {
     const aside = document.querySelector<HTMLElement>('.stage aside[aria-label="Detail"]');
     if (!aside) return null;
-    const stage = aside.closest<HTMLElement>(".stage")!.getBoundingClientRect();
+    const area = aside.closest<HTMLElement>(".stage")!;
+    const stage = area.getBoundingClientRect();
+    const header = area.querySelector('section[aria-label="Main area"] > header')!.getBoundingClientRect();
+    // The graph's box, below whatever the view shows above it.
+    const graph = area.querySelector("[data-graph-area]")?.getBoundingClientRect();
     const box = aside.getBoundingClientRect();
     return {
       title: aside.querySelector("h2")?.textContent?.trim() ?? "",
-      tabs: [...aside.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => {
+      tabs: [...aside.querySelectorAll<HTMLElement>('[role="tablist"][aria-label^="Tabs of "] [role="tab"]')].map((tab) => {
         const glyph = tab.querySelector(".glyph");
         const name = [...tab.childNodes].filter((node) => node !== glyph).map((node) => node.textContent ?? "").join("").trim();
         const icon = tab.querySelector("img");
@@ -85,14 +93,14 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
           name,
           label: tab.getAttribute("aria-label") ?? name,
           icon: !!icon && icon.complete && icon.naturalWidth > 0 && !!drawn && drawn.width > 0 && drawn.height > 0,
-          glyph: glyph?.textContent?.trim() ?? "",
+          glyph: glyph?.querySelector("svg")?.getAttribute("data-icon") ?? glyph?.textContent?.trim() ?? "",
           colour: glyph ? getComputedStyle(glyph).color : "",
           painted: !!glyph && glyph.getBoundingClientRect().width > 0 && glyph.getBoundingClientRect().height > 0
             && getComputedStyle(glyph).visibility === "visible" && Number(getComputedStyle(glyph).opacity) > 0,
           selected: tab.getAttribute("aria-selected") === "true",
         };
       }),
-      path: [...(aside.querySelector('[role="tablist"]')?.childNodes ?? [])].flatMap((node) => {
+      path: [...(aside.querySelector('[role="tablist"][aria-label^="Tabs of "]')?.childNodes ?? [])].flatMap((node) => {
         const element = node as HTMLElement;
         const parts = element.matches?.(".head") ? [...element.children] : [element];
         return parts.map((part) => (part as HTMLElement).matches?.('[role="tab"]')
@@ -103,8 +111,7 @@ export function detail(browser: WebdriverIO.Browser): Promise<Detail | null> {
         name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "",
         status: row.querySelector(".status")?.textContent?.trim() ?? "",
       })),
-      docked: box.left > stage.left && box.right < stage.right && box.top >= stage.top && box.bottom <= stage.bottom
-        && stage.right - box.right + 1 < box.left - stage.left,
+      docked: box.left > stage.left && Math.abs(stage.right - box.right) <= 1 && !!graph && graph.top >= header.bottom && Math.abs(box.top - graph.top) <= 1 && Math.abs(stage.bottom - box.bottom) <= 1,
     };
   });
 }
@@ -115,16 +122,18 @@ export async function openArtifact(browser: WebdriverIO.Browser, id: string, tit
   let shown: Detail | null = null;
   await browser.waitUntil(async () => {
     shown = await detail(browser);
-    return shown?.title === title && shown.tabs[0]?.selected === true;
+    return shown?.title === title && shown.tabs.length === 0;
   }, { timeout: 15000, timeoutMsg: `${id}'s Detail opened on its Artifact tab` })
     .catch((error: unknown) => { throw new Error(`${String(error)}; the Detail showed ${JSON.stringify(shown)}`); });
   return shown!;
 }
 
-/** Click the tab of the eval `id` (or its row on the Artifact tab, with `row`) and wait until
- * its tab is the shown one. */
+/** Click the tab of the eval `id`, or its row in the Evals of the Artifact's own tab (with
+ * `row`, or while no chips are shown: the Artifact's own tab has none), and wait until its tab
+ * is the shown one. */
 export async function openTab(browser: WebdriverIO.Browser, id: string, { row = false } = {}): Promise<void> {
-  await browser.$(row ? evalAt(id) : tabAt(id)).click();
+  const chip = browser.$(tabAt(id));
+  await browser.$(!row && await chip.isExisting() ? tabAt(id) : evalAt(id)).click();
   await browser.waitUntil(() => browser.$(tabAt(id)).getAttribute("aria-selected").then((selected) => selected === "true"),
     { timeout: 15000, timeoutMsg: `${id}'s tab shown` });
 }
@@ -136,7 +145,7 @@ export async function openArtifactTab(browser: WebdriverIO.Browser, name: string
   let shown: Detail | null = null;
   await browser.waitUntil(async () => {
     shown = await detail(browser);
-    return shown?.tabs[0]?.selected === true && shown.evals.length > 0;
+    return shown?.tabs.length === 0 && shown.evals.length > 0;
   }, { timeout: 15000, timeoutMsg: `${name}'s Artifact tab shown again` })
     .catch((error: unknown) => { throw new Error(`${String(error)}; the Detail showed ${JSON.stringify(shown)}`); });
   return shown!;
@@ -145,21 +154,34 @@ export async function openArtifactTab(browser: WebdriverIO.Browser, name: string
 /** The open Detail. */
 export const aside = (browser: WebdriverIO.Browser) => browser.$('aside[aria-label="Detail"]');
 
-/** An eval's Summary as read: its status line, instruction, the titles of its blocks (Result,
- * Execution options, Execution metadata, Fingerprint), whether Debug is unfolded (null when it
- * has none), and one Debug fact by its name ("" while folded or absent). */
-export type Summary = { status: string; instruction: string; blocks: string[]; debug: boolean | null };
+/** An eval's Summary as read: its status line, its status's mark (the icon's name), its
+ * instruction, the header rows of its sections other than Debug (Result, Execution options,
+ * Execution metadata, Fingerprint) each with whether it is unfolded, and whether Debug is
+ * unfolded (null when it has none). */
+export type Summary = { status: string; mark: string; instruction: string; blocks: string[]; unfolded: string[]; debug: boolean | null };
 export function summary(browser: WebdriverIO.Browser): Promise<Summary> {
   return browser.execute(() => {
     const shown = document.querySelector('aside[aria-label="Detail"] [role="document"]');
-    const fold = shown?.querySelector("button.fold");
+    const rows = [...(shown?.querySelectorAll<HTMLElement>(".section > .head") ?? [])];
+    const debug = rows.find((row) => row.textContent?.trim() === "Debug");
+    const others = rows.filter((row) => row !== debug);
     return {
       status: shown?.querySelector(".summary")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      mark: shown?.querySelector(".summary svg")?.getAttribute("data-icon") ?? "",
       instruction: shown?.querySelector(".instruction")?.textContent?.trim() ?? "",
-      blocks: [...(shown?.querySelectorAll(".block > h3") ?? [])].map((title) => title.textContent?.trim() ?? ""),
-      debug: fold ? fold.getAttribute("aria-expanded") === "true" : null,
+      blocks: others.map((row) => row.textContent?.trim() ?? ""),
+      unfolded: others.filter((row) => row.getAttribute("aria-expanded") !== "false").map((row) => row.textContent?.trim() ?? ""),
+      debug: debug ? debug.getAttribute("aria-expanded") === "true" : null,
     };
   });
+}
+
+/** Unfold the open Detail's section `name` when it is folded, by a click on its header row. */
+export async function unfold(browser: WebdriverIO.Browser, name: string): Promise<void> {
+  const row = browser.$('aside[aria-label="Detail"]').$(`button.head=${name}`);
+  await row.waitForExist({ timeout: 15000, timeoutMsg: `the Detail shows the ${name} section` });
+  if ((await row.getAttribute("aria-expanded")) === "false") await row.click();
+  await browser.waitUntil(async () => (await row.getAttribute("aria-expanded")) === "true", { timeout: 15000, timeoutMsg: `${name} unfolded` });
 }
 export function fact(browser: WebdriverIO.Browser, name: string): Promise<string> {
   return browser.execute((key) => [...document.querySelectorAll('aside[aria-label="Detail"] [role="document"] dt')]
@@ -169,10 +191,10 @@ export function fact(browser: WebdriverIO.Browser, name: string): Promise<string
 /** The graph's find field. */
 export const FIND = 'input[aria-label="Find in the graph"]';
 /** What the find field says with nothing typed while none of the graph's Artifacts is starred. */
-export const NO_FAVORITES = "No favorites here yet: star an Artifact with the ☆ beside its Detail's title.";
+export const NO_FAVORITES = "No favorites here yet: star an Artifact with the star beside its Detail's title.";
 
-/** An entry the find field lists: its text without the glyph, its verdict glyph and colour, and
- * whether it is the chosen one. */
+/** An entry the find field lists: its text without the mark, its verdict's mark (the icon's
+ * name) and colour, and whether it is the chosen one. */
 export type FoundEntry = { name: string; glyph: string; colour: string; chosen: boolean };
 /** The find field as read, or null while it is closed: whether it has the keyboard, its text,
  * what it lists, and its note (how many more match, or that none does). */
@@ -190,7 +212,7 @@ export function findField(browser: WebdriverIO.Browser): Promise<FindField | nul
         const glyph = option.querySelector(".glyph");
         return {
           name: option.querySelector(".name")?.textContent?.trim() ?? "",
-          glyph: glyph?.textContent?.trim() ?? "",
+          glyph: glyph?.querySelector("svg")?.getAttribute("data-icon") ?? glyph?.textContent?.trim() ?? "",
           colour: glyph ? getComputedStyle(glyph).color : "",
           chosen: option.getAttribute("aria-selected") === "true",
         };
@@ -227,3 +249,8 @@ export function focusedElement(browser: WebdriverIO.Browser): Promise<string> {
     return active ? `${active.tagName} ${active.getAttribute("aria-label") ?? ""} ${active.getAttribute("data-id") ?? ""}` : "";
   });
 }
+
+/** The Main area's graph tool strip's controls: Zoom in, Zoom out and Fit. */
+export const ZOOM_IN = '[aria-label="Graph tools"] button[aria-label="Zoom in"]';
+export const ZOOM_OUT = '[aria-label="Graph tools"] button[aria-label="Zoom out"]';
+export const fitButton = (browser: WebdriverIO.Browser) => browser.$('[aria-label="Graph tools"]').$("button=Fit");

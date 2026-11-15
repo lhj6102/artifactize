@@ -8,6 +8,8 @@
   // upward with each one, up to half the Pane, beyond which it scrolls.
   import type { BranchView, Chip, WaitingRow } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
+  import Icon from "../shell/Icon.svelte";
+  import { statusIcon } from "../shell/icons";
   import SearchField from "../shell/SearchField.svelte";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
@@ -86,7 +88,8 @@
     bind:value={query}
     bind:input={m.panes.search}
     label="Search branches and reviews"
-    placeholder="Search: text, repo:, branch:, sort:recent, sort:name"    reset={browse.start}
+    placeholder="Search: text, repo:, branch:, sort:recent, sort:name"
+    reset={browse.start}
     complete={(text) => browse.complete(text)}
     onleave={() => m.panes.pane?.focus()}
   />
@@ -109,22 +112,20 @@
         <li role="treeitem" aria-expanded={open} aria-selected={isSelected(key)} class="branch" class:open data-key={key}>
           <div class="head" class:selected={isSelected(key)}>
             <button class="chevron" tabindex="-1" aria-label="{open ? 'Fold' : 'Expand'} {name(branch)}" onclick={() => ontoggle(branch)}
-              ><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg></button
+              ><Icon name={open ? "unfold" : "fold"} /></button
             >
             <button class="name" tabindex="-1" onclick={() => onselect(branch)}>
               <span class="label"
                 >{#if branch.name}<span class="project">{branch.project} /</span> <span class="branch-name">{branch.name}</span
                   >{:else}<span class="branch-name">{branch.project}</span>{/if}</span
               >
-              {#if !open}
+              <!-- Folded, the newest Run's status under the name; a branch without Runs says
+                   nothing (D-SYS-11). -->
+              {#if !open && newest?.kind === "run"}
                 <span class="latest">
-                  {#if newest?.kind === "run"}
-                    <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
-                    <span class="status {tone(newest.mark.status)}">{newest.status}</span>
-                    <span class="age">{newest.age}</span>
-                  {:else}
-                    <span class="none">No Runs yet</span>
-                  {/if}
+                  <span class="dot" style:--dot={toneColour(newest.mark.status)} aria-hidden="true"></span>
+                  <span class="status {tone(newest.mark.status)}">{newest.status}</span>
+                  <span class="age">{newest.age}</span>
                 </span>
               {/if}
             </button>
@@ -134,7 +135,7 @@
               tabindex="-1"
               aria-label="Star {name(branch)}"
               aria-pressed={branch.starred}
-              onclick={() => void browse.star(branch.key, !branch.starred)}>{branch.starred ? "★" : "☆"}</button
+              onclick={() => void browse.star(branch.key, !branch.starred)}><Icon name={branch.starred ? "star-on" : "star"} /></button
             >
           </div>
           {#if open}
@@ -166,10 +167,10 @@
               onclick={() => onopen(row)}
               onkeydown={() => {}}
             >
-              <span class="glyph {tone(row.mark.status)}">{row.mark.glyph}</span>
+              <span class="glyph tone-human"><Icon name={statusIcon(row.mark.status)} /></span>
               <span class="eval">{row.eval}</span>
               <span class="where">{row.branch ? `${row.project}  ${row.branch}` : row.project}</span>
-              <span class="meta">{row.age} · {row.claim}</span>
+              <span class="meta">{row.age}{#if row.claim !== "-"}{` · ${row.claim}`}{/if}</span>
             </li>
           {/each}
         </ul>
@@ -184,8 +185,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding-top: 10px;
-    background: var(--surface);
+    background: var(--surface-panel);
     border-top: 2px solid transparent;
   }
   .pane.focused {
@@ -197,6 +197,11 @@
     flex-direction: column;
     min-height: 0;
     outline: none;
+  }
+  /* The keyboard on the entries: the focus ring, apart from the selected row's bar. */
+  .entries:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: -2px;
   }
   ul {
     list-style: none;
@@ -210,41 +215,36 @@
   }
   .branch {
     min-width: 0;
-    padding: 6px var(--pad) 8px 6px;
-    border-bottom: 1px solid var(--border);
+    padding: 4px var(--pad) 6px 6px;
+    border-bottom: 1px solid var(--line-group);
   }
   /* A chevron, then the name over its newest Run's status, then the star. */
   .head {
     display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) auto;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
     align-items: start;
     column-gap: 4px;
     min-width: 0;
-    border-radius: 8px;
+    min-height: 28px;
+    border-radius: var(--radius-control);
   }
+  /* Hover only highlights the branch under the pointer, and the control under it. */
+  .head:not(.selected):hover,
+  .chevron:hover {
+    background: var(--surface-group);
+  }
+  /* The fold icon in a 20px box, the unfold icon while expanded. */
   .chevron {
-    width: 22px;
-    height: 22px;
-    margin: 0;
-    padding: 3px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin: 2px 0 0;
+    padding: 0;
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     cursor: pointer;
-  }
-  .chevron svg {
-    display: block;
-    width: 16px;
-    height: 16px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    transition: transform 120ms ease;
-  }
-  .open .chevron svg {
-    transform: rotate(90deg);
   }
   .name {
     display: grid;
@@ -254,20 +254,20 @@
     padding: 2px 0;
     border: 0;
     background: none;
-    color: var(--text);
+    color: var(--ink);
     font: inherit;
     text-align: left;
     cursor: pointer;
   }
   /* The branch reads first; its project is the quieter half of the name. */
   .label {
-    font-size: 14px;
+    font-size: var(--text-title);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .project {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .branch-name {
     font-weight: 600;
@@ -277,11 +277,11 @@
     grid-template-columns: 10px auto minmax(0, 1fr);
     align-items: center;
     column-gap: 8px;
-    font-size: 12px;
+    font-size: var(--text-small);
   }
   .latest .dot {
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--dot);
   }
@@ -291,44 +291,43 @@
   }
   .latest .age {
     justify-self: end;
-    color: var(--muted);
+    color: var(--ink-2);
     white-space: nowrap;
-  }
-  .latest .none {
-    grid-column: 1 / -1;
-    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
   /* A star is quiet until it is on; on, it carries the amber of attention. */
+  /* The star icon in faint ink until on, then the filled star in ink. */
   .star {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
     margin: 2px 0 0;
-    padding: 0 2px;
+    padding: 0;
     border: 0;
     background: none;
-    color: var(--muted);
-    font-size: 13px;
-    line-height: 1.4;
+    color: var(--ink-3);
     cursor: pointer;
-    opacity: 0.55;
   }
-  .star:hover,
-  .star.on {
-    opacity: 1;
+  .star:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
   }
   .star.on {
-    color: var(--light-active);
+    color: var(--ink);
   }
   .branch :global(.timeline) {
-    margin-left: 26px;
+    margin-left: 24px;
   }
   .branch :global(.older) {
-    margin-left: 54px;
+    margin-left: 50px;
   }
   /* A selected timeline entry is the one shown, already in its grey pill; keys add the bar. */
   .selected {
     background: var(--selection);
   }
-  .entries:focus-visible .selected,
-  .entries:focus-visible .branch :global(li.selected > .entry) {
+  .entries:focus-within .selected,
+  .entries:focus-within .branch :global(li.selected > .entry) {
     box-shadow: inset 2px 0 0 var(--accent);
   }
   /* Grows upward like a stack, up to half the Pane; beyond that it scrolls. */
@@ -338,14 +337,17 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--line-group);
   }
+  /* A section label: 11px uppercase in secondary ink. */
   .bar {
     margin: 0;
     padding: 4px var(--pad);
-    font-size: 12px;
+    font-size: var(--text-label);
     font-weight: 600;
-    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
   }
   .waiting ul {
     min-height: 0;
@@ -355,11 +357,16 @@
     display: grid;
     grid-template-columns: 1em minmax(0, 1fr);
     gap: 0 8px;
-    padding: 4px var(--pad);
+    padding: 3px var(--pad);
+    font-size: var(--text-small);
     cursor: pointer;
   }
+  .glyph {
+    display: inline-flex;
+    align-items: center;
+  }
   .waiting li:hover {
-    background: var(--surface-2);
+    background: var(--surface-group);
   }
   .waiting li.selected {
     background: var(--selection);
@@ -375,12 +382,12 @@
   .where,
   .meta {
     grid-column: 2;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
     white-space: pre;
+    font-variant-numeric: tabular-nums;
   }
   .empty {
-    color: var(--muted);
+    color: var(--ink-2);
     padding: 0 var(--pad);
   }
   .empty.error {

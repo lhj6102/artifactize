@@ -1,14 +1,17 @@
 // A Run's graph in the Main area, in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them and follows a submission made by
 // another process live without moving any node while release's Detail stays open; a click on an
-// Artifact opens its Detail with a tab per eval, floating over the graph, whose camera ignores it,
+// Artifact opens its Detail with a tab per eval, docked at the graph's right edge, whose camera ignores it,
 // and the camera brings a large Run's Artifacts into view.
 import assert from "node:assert/strict";
 import { addWorktrees, artifactize, create, createChain, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput, tab } from "../input.ts";
-import { aside, camera, detail, fact, FIND, findField, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt } from "../graph-view.ts";
+import {
+  aside, camera, detail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
+  unfold, ZOOM_IN, ZOOM_OUT,
+} from "../graph-view.ts";
 import { exists, nativeInput, nativePath, primaryModifier, readText, type NativePath } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
@@ -25,16 +28,18 @@ async function shownRun(browser: WebdriverIO.Browser, run: string) {
   await showRun(browser, "repo  master", run);
 }
 
-/** What the Main area's graph says at its bottom. */
+/** What the Main area's graph says at its bottom, if anything. */
 function hint(browser: WebdriverIO.Browser): Promise<string> {
   return browser.execute(() => document.querySelector(".graph > .canvas > .hint")?.textContent?.trim() ?? "");
 }
 
-/** The star beside the open Detail's title of the Artifact `name`: as drawn, and whether it is on. */
+/** The star beside the open Detail's title of the Artifact `name`: as drawn (`★` filled, `☆`
+ * outlined), and whether it is on. */
 async function star(browser: WebdriverIO.Browser, name: string): Promise<{ glyph: string; on: boolean }> {
   const button = aside(browser).$(`button[aria-label=${JSON.stringify(`Star ${name}`)}]`);
   await button.waitForExist({ timeout: 15000, timeoutMsg: `${name}'s star beside the Detail's title` });
-  return { glyph: (await button.getText()).trim(), on: (await button.getAttribute("aria-pressed")) === "true" };
+  const icon = await button.$("svg").getAttribute("data-icon");
+  return { glyph: icon === "star-on" ? "★" : icon === "star" ? "☆" : String(icon), on: (await button.getAttribute("aria-pressed")) === "true" };
 }
 
 /** Click the star of the open Detail of `name` and wait until it is `on`, or off. */
@@ -98,7 +103,8 @@ async function partsDrawn(browser: WebdriverIO.Browser, root: string, keys: stri
       rect: node.getBoundingClientRect().toJSON() as DOMRect,
       whole: node.classList.contains("svelte-flow__node-whole"),
       minimized: node.classList.contains("svelte-flow__node-minimized"),
-      text: node.textContent?.trim() ?? "",
+      text: node.querySelector(".text, .name")?.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      tally: node.querySelector(".tally")?.textContent?.trim() ?? "",
       artifact: node.dataset.artifact ?? "",
       label: node.getAttribute("aria-label") ?? "",
       open: !!node.querySelector(".open"),
@@ -183,21 +189,24 @@ async function clickButton(browser: WebdriverIO.Browser, root: string, name: str
 const within = (inner: DOMRect, outer: DOMRect) =>
   inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
 
-/** The whole `key` under `root` shows `name` and its light at the top of its box, above every
- * one of its `parts`, its light in the colour its box is drawn in. */
+/** The whole `key` under `root` shows `name` and its mark in a title row at the top of its box,
+ * above every one of its `parts`, the strip closing that row in its mark's colour while its
+ * outline stays neutral. */
 async function titledAtTop(browser: WebdriverIO.Browser, root: string, key: string, name: string, parts: string[]) {
   const drawn = await partsDrawn(browser, root);
   const title = await browser.execute((under, want) => {
     const node = [...document.querySelectorAll(`${under} .svelte-flow__node[data-id="${want}"]`)].find((found) => !found.closest('aside[aria-label="Detail"]'));
     const whole = node?.querySelector<HTMLElement>(".whole");
-    const [text, dot] = [whole?.querySelector<HTMLElement>(".name"), whole?.querySelector<HTMLElement>(".dot")];
-    if (!whole || !text || !dot) return null;
+    const [text, dot, row] = [whole?.querySelector<HTMLElement>(".name"), whole?.querySelector<HTMLElement>(".light"), whole?.querySelector<HTMLElement>(".title")];
+    if (!whole || !text || !dot || !row) return null;
+    const inset = getComputedStyle(row).boxShadow.split(/,(?![^(]*\))/).find((part) => part.includes("inset")) ?? "";
     return {
       box: whole.getBoundingClientRect().toJSON() as DOMRect,
       name: text.getBoundingClientRect().toJSON() as DOMRect,
       dot: dot.getBoundingClientRect().toJSON() as DOMRect,
       text: text.textContent?.trim() ?? "",
-      colour: getComputedStyle(dot).backgroundColor,
+      colour: getComputedStyle(dot).color,
+      strip: inset.match(/rgba?\([^)]*\)|color\([^)]*\)/)?.[0] ?? "",
       border: getComputedStyle(whole).borderTopColor,
     };
   }, root, key);
@@ -207,7 +216,8 @@ async function titledAtTop(browser: WebdriverIO.Browser, root: string, key: stri
     assert.ok(within(rect, title.box) && parts.every((part) => rect.bottom <= drawn[part].rect.top),
       `${key}'s ${what} sits at the top of its box, above its parts: ${JSON.stringify({ rect, box: title.box })}`);
   }
-  assert.ok(visibleColour(title.colour) && title.colour === title.border, `${key}'s light is drawn in its box's colour: ${title.colour} / ${title.border}`);
+  assert.ok(visibleColour(title.colour) && title.colour === title.strip && title.colour !== title.border,
+    `${key}'s mark and strip in one colour, its outline neutral: ${title.colour} / ${title.strip} / ${title.border}`);
 }
 
 /** Two rectangles that do not meet. */
@@ -244,20 +254,31 @@ export const scenarios: Scenario[] = [
         if (!graphHasColours(shown, { "a:release": "active", "a:ship": "waiting", "a:docs": "green" }, { "a:release>a:ship": "active" })) return false;
         drawn = shown;
         return true;
-      }, { timeout: 15000, timeoutMsg: "release, ship, docs and the relation are painted in their verdict's distinct Legend colours" });
+      }, { timeout: 15000, timeoutMsg: "release, ship, docs and the relation are painted in their verdict's own colours" });
       assert.ok(drawn);
       const before = drawn;
+      /** release's node as drawn: its mark's icon and its tally. */
+      const releaseNode = () => browser.execute(() => {
+        const node = [...document.querySelectorAll('.svelte-flow__node[data-id="a:release"]')].find((element) => !element.closest('aside[aria-label="Detail"]'));
+        return [node?.querySelector(".light svg")?.getAttribute("data-icon") ?? "", node?.querySelector(".tally")?.textContent?.trim() ?? ""];
+      });
+      assert.deepEqual(await releaseNode(), ["running", "0/1"], "release in progress, none of its one eval GREEN");
 
       // A click opens release's Detail on its Artifact tab: its one eval, waiting for a Human.
       const opened = await openArtifact(browser, "a:release", "Artifact release");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
-      assert.equal(opened.path, "release / signoff", "the chips read as a path");
-      assert.equal(opened.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
+      assert.deepEqual(opened.tabs, [], "the Artifact's own tab has no chips");
+      assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
+      assert.ok(opened.docked, "the Detail is docked at the graph's right edge without a gap");
+      // On the eval's tab the chips read as a path: release's own chip, then its one eval's.
+      await openTab(browser, "e:release/signoff");
+      const onTab = (await detail(browser))!;
+      assert.deepEqual(onTab.tabs.map((tab) => tab.name), ["release", "signoff"], "release's own chip, then its one eval's");
+      assert.equal(onTab.path, "release / signoff", "the chips read as a path");
+      assert.equal(onTab.tabs[0].label, "Artifact release", "release's chip is read as the Artifact release");
       await browser.waitUntil(async () => (await detail(browser))?.tabs[0]?.icon === true,
         { timeout: 15000, timeoutMsg: "release's chip draws the Artifact icon before its name" });
-      assert.equal(opened.tabs[1].glyph, "?", "the sign-off's tab shows it waiting for a Human");
-      assert.deepEqual(opened.evals.map((row) => row.name), ["signoff"], "the Artifact tab lists release's evals");
-      assert.ok(opened.docked, "the Detail floats over the graph's right side with a gap");
+      assert.equal(onTab.tabs[1].glyph, "human", "the sign-off's chip shows it waiting for a Human");
+      await openArtifactTab(browser, "release");
 
       // Another process signs the release off; the change hint recolours the graph and the tab.
       const id = signoff(fixture).id;
@@ -272,21 +293,24 @@ export const scenarios: Scenario[] = [
         if (!graphHasColours(shown, { "a:release": "green", "a:docs": "green" }, { "a:release>a:ship": "green" })) return false;
         recoloured = shown;
         return true;
-      }, { timeout: 15000, timeoutMsg: "the submitted release's node border/dot and relation stroke are painted GREEN" });
+      }, { timeout: 15000, timeoutMsg: "the submitted release's node mark and strip are painted GREEN, its relation neutral" });
       assert.ok(recoloured);
       const after = recoloured;
-      assert.notEqual(after.nodes["a:release"].border, before.nodes["a:release"].border, "the result changed the actual node border colour");
-      assert.notEqual(after.nodes["a:release"].dot, before.nodes["a:release"].dot, "the result changed the actual node verdict dot colour");
-      assert.notEqual(after.edges["a:release>a:ship"].stroke, before.edges["a:release>a:ship"].stroke, "the result changed the visible relation's actual stroke colour");
+      assert.notEqual(after.nodes["a:release"].mark, before.nodes["a:release"].mark, "the result changed the actual node mark colour");
+      assert.notEqual(after.nodes["a:release"].strip, before.nodes["a:release"].strip, "the result changed the actual node strip colour");
+      assert.equal(after.edges["a:release>a:ship"].stroke, before.edges["a:release>a:ship"].stroke, "the relation stays neutral");
       for (const node of ["a:release", "a:ship", "a:docs"]) {
         assert.equal(after.nodes[node].at, before.nodes[node].at, `${node} kept its place`);
       }
-      await browser.waitUntil(async () => (await detail(browser))?.tabs[1]?.glyph === "✓",
-        { timeout: 15000, timeoutMsg: "the open Detail's sign-off tab turned GREEN" });
+      await browser.waitUntil(async () => JSON.stringify(await releaseNode()) === JSON.stringify(["green", "1/1"]),
+        { timeout: 15000, timeoutMsg: `release's mark and tally updated in place: ${JSON.stringify(await releaseNode())}` });
+      const row = () => browser.execute(() => document.querySelector('aside[aria-label="Detail"] button[data-eval="e:release/signoff"] .glyph svg')?.getAttribute("data-icon") ?? "");
+      await browser.waitUntil(async () => (await row()) === "green", { timeout: 15000, timeoutMsg: "the open Detail's sign-off row turned GREEN" });
       assert.equal((await detail(browser))?.title, "Artifact release", "a live update keeps the open Detail on release");
 
       // The sign-off's tab holds its completed Human review; Esc closes the Detail.
       await openTab(browser, "e:release/signoff");
+      assert.equal((await detail(browser))?.tabs[1]?.glyph, "green", "its chip GREEN");
       const review = () => browser.$('aside[aria-label="Detail"] [aria-label="Human review"][tabindex="0"]');
       await browser.waitUntil(async () => (await review().isExisting()) && /completed result/i.test(await aside(browser).getText()),
         { timeout: 15000, timeoutMsg: "the completed review on the sign-off's tab" });
@@ -334,9 +358,9 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact release", "Enter on release opened its Detail again");
 
-      // The Detail floats over the graph's right side with a gap, docked where another Artifact
-      // was drawn without it, and the graph stays visible on its left.
-      assert.ok((await detail(browser))?.docked, "the Detail docks over the graph's right side with a gap");
+      // The Detail is a panel docked at the graph's right edge without a gap, where another
+      // Artifact was drawn without it, and the graph stays visible on its left.
+      assert.ok((await detail(browser))?.docked, "the Detail is docked at the graph's right edge without a gap");
       const edge = (await placed()).detail!;
       const under = Object.keys(whole).filter((id) => id !== "a:release" && whole[id] > edge);
       assert.ok(under.length > 0, `the Detail docks where an Artifact was drawn: ${JSON.stringify({ whole, edge })}`);
@@ -384,7 +408,7 @@ export const scenarios: Scenario[] = [
       // A whole shows its name at its top, lit as its parts are, and is read aloud as a node is.
       assert.equal(drawn["a:suite"].text, "suite");
       assert.equal(drawn["a:suite"].light, "green");
-      assert.equal(drawn["a:suite"].label, "suite: GREEN");
+      assert.match(drawn["a:suite"].label, /^suite: GREEN(, \d+ of \d+ evals GREEN)?$/);
       await titledAtTop(browser, ".graph", "a:suite", "suite", ["a:suite/a:app", "a:suite/a:site"]);
       await titledAtTop(browser, ".graph", "a:docs", "docs", ["a:docs/a:site"]);
       await browser.waitUntil(async () => graphHasColours(await graphAppearance(browser), { "a:suite": "green", "a:docs": "green" }, {}),
@@ -412,6 +436,10 @@ export const scenarios: Scenario[] = [
       // suite's box staying as it was.
       await clickWhole(browser, ".graph", "a:suite");
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact suite", { timeout: 15000, timeoutMsg: "the click on suite's box opened suite's Detail" });
+      const whole = (await detail(browser))!;
+      assert.deepEqual(whole.tabs, [], `suite's Detail opens on its Artifact tab: ${JSON.stringify(whole.tabs)}`);
+      assert.ok(await aside(browser).$('[aria-label="Evals of suite"]').isExisting() && await aside(browser).$('[aria-label="Neighbours"]').isExisting(),
+        "the tab shows the whole's own Artifact content: its neighbours and its evals");
       const suite = (await partsDrawn(browser, ".graph"))["a:suite"].rect;
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
       assert.deepEqual((await partsDrawn(browser, ".graph"))["a:suite"].rect, suite, "suite's box stays");
@@ -451,10 +479,14 @@ export const scenarios: Scenario[] = [
         assert.ok(PARTS.includes(focused), `Tab reached a copy of the graph: ${focused}`);
         assert.equal(await detail(browser), null, `focusing ${focused} opens nothing`);
         order.push(focused);
-        const opens: Record<string, string | undefined> = { "a:suite/a:app": "app", "a:suite/a:app/a:kit": "kit" };
+        const opens: Record<string, string | undefined> = { "a:suite": "suite", "a:suite/a:app": "app", "a:suite/a:app/a:kit": "kit" };
         const name = opens[focused];
         if (name === undefined) continue;
-        await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter on ${focused} opens ${name}'s Detail`);
+        // Enter on a whole or on a part opens that Artifact's own Detail, on its Artifact tab.
+        await press(browser, ["Enter"], async () => {
+          const shown = await detail(browser);
+          return shown?.title === `Artifact ${name}` && shown.tabs.length === 0 && shown.evals.length > 0;
+        }, `Enter on ${focused} opens ${name}'s Detail on its Artifact tab`);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, `${name}'s Detail closes`);
       }
       assert.deepEqual([...order].sort(), [...PARTS].sort(), "Tab reaches every whole and every part");
@@ -476,13 +508,13 @@ export const scenarios: Scenario[] = [
 
       // A click on docs's copy of site opens site, both copies highlighted.
       await openArtifact(browser, "a:docs/a:site", "Artifact site");
+      await unfold(browser, "Neighbours");
       await browser.waitUntil(async () => {
         const shown = await partsDrawn(browser, current);
         return shown["a:docs/a:site"].open && shown["a:suite/a:site"].open && !shown["a:docs"].open && !shown["a:suite"].open;
       }, { timeout: 15000, timeoutMsg: "both copies of site, and no whole, highlighted" });
-      const note = await aside(browser).$("p=Drawn 2 times on the graph, inside suite and docs.").isExisting()
-        || await aside(browser).$("p=Drawn 2 times on the graph, inside docs and suite.").isExisting();
-      assert.ok(note, "site's Detail says it is drawn in both wholes, naming them");
+      const copies = await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] dl[aria-label="Copies"] dd')].map((fact) => fact.textContent?.trim() ?? ""));
+      assert.ok(copies[0] === "2" && ["suite, docs", "docs, suite"].includes(copies[1]), `site's Detail counts its copies and names both wholes: ${JSON.stringify(copies)}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "Esc closes the Current's Detail");
       assert.ok(!(await partsDrawn(browser, current))["a:suite/a:site"].open, "no copy stays highlighted");
     },
@@ -501,20 +533,20 @@ export const scenarios: Scenario[] = [
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
       await openTab(browser, "e:kit/check");
       const kitDetail = await detail(browser);
-      // The Detail floats over the graph's right side, where suite's Minimize button is: drags on
+      // The Detail is docked over the graph's right side, where suite's Minimize button is: drags on
       // the background, left of the Detail, pan suite out from under it.
-      await panClear(browser, ".graph", "Minimize suite");
+      await panClear(browser, ".graph", "Minimize suite (m)");
       const boxed = await partsDrawn(browser, ".graph");
 
       // With kit's Detail open on its eval's tab, Minimize turns suite into a node of a node's
       // size, its corner where the box's was; site stays drawn inside docs, and the Detail stays
       // as it was, suite highlighted while it hides kit.
-      await clickButton(browser, ".graph", "Minimize suite");
+      await clickButton(browser, ".graph", "Minimize suite (m)");
       const small = await partsDrawn(browser, ".graph", SUITE_MINIMIZED);
       const suite = small["a:suite"];
       assert.deepEqual([suite.minimized, suite.whole], [true, false], "suite is drawn minimized, not as a box");
       assert.ok(suite.text.includes("suite") && suite.text.includes("2 parts"), `suite shows its name and its two parts: ${suite.text}`);
-      assert.equal(suite.label, "suite: GREEN, minimized, 2 parts");
+      assert.match(suite.label, /^suite: GREEN(, \d+ of \d+ evals GREEN)?, minimized, 2 parts$/);
       assert.equal(suite.light, "green");
       assert.ok(Math.abs(suite.rect.width - small["a:lib"].rect.width) <= 1 && Math.abs(suite.rect.height - small["a:lib"].rect.height) <= 1,
         `suite is a node's size: ${JSON.stringify([suite.rect, small["a:lib"].rect])}`);
@@ -540,12 +572,21 @@ export const scenarios: Scenario[] = [
       // Detail open; Esc closes the Detail.
       await openArtifact(browser, "a:suite", "Artifact suite");
       const folded = (await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"];
+      // A press on the Detail's text, as a pointer gives it, puts the keyboard in suite's Detail;
+      // m then leaves it on the very element that had it.
+      await dispatchInput(browser, { kind: "text-click", ...await visibleCenter(browser, await aside(browser).$("h2").getElement()) });
+      await browser.waitUntil(() => browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')),
+        { timeout: 15000, timeoutMsg: "the press moved the keyboard into suite's Detail" });
+      const inDetail = await focusedElement(browser);
+      assert.ok(await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')), `the keyboard is in suite's Detail: ${inDetail}`);
       await press(browser, ["m"], () => drawnNow(browser, ".graph", PARTS), "m expands suite, whose Detail is open");
+      assert.equal(await focusedElement(browser), inDetail, "m with the Detail focused leaves the keyboard where it was");
       const unfolded = await partsDrawn(browser, ".graph");
       assert.ok(unfolded["a:suite"].whole && within(unfolded["a:suite/a:app"].rect, unfolded["a:suite"].rect), "m draws suite as a box around its parts");
       await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph"))["a:suite"].rect, folded.rect),
         { timeout: 15000, timeoutMsg: "m keeps suite's top left corner where it was on the screen" });
       await press(browser, ["m"], () => drawnNow(browser, ".graph", SUITE_MINIMIZED), "m minimizes suite again");
+      assert.equal(await focusedElement(browser), inDetail, "m with the Detail focused leaves the keyboard where it was again");
       await browser.waitUntil(async () => near((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].rect, folded.rect),
         { timeout: 15000, timeoutMsg: "m keeps suite's top left corner where it was on the screen again" });
       assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open");
@@ -564,9 +605,10 @@ export const scenarios: Scenario[] = [
           if (!(target instanceof HTMLInputElement)) throw new Error("the composing find field lost focus");
           target.dispatchEvent(new KeyboardEvent("keydown", { key: "m", code: "KeyM", bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode }));
         }, { composing, keyCode });
+        // Each guarded keystroke on its own: an expand undone by the next one would show here.
+        await afterRender(browser);
+        assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), `m during a composition (isComposing ${composing}, keyCode ${keyCode}) leaves suite minimized`);
       }
-      await afterRender(browser);
-      assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "m during a composition leaves suite minimized");
       await nativeInput(browser, { type: "commit", text: "ㅡ" });
       await press(browser, ["Escape"], async () => (await findField(browser)) === null, "Esc closes the find field");
       assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open after the find field");
@@ -607,8 +649,9 @@ export const scenarios: Scenario[] = [
       };
       await toSuite();
       await tab(browser);
-      assert.equal((await focusedElement(browser)).trim(), "BUTTON Expand suite", "Tab reaches suite's Expand button after suite");
-      await clickButton(browser, current, "Expand suite");
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Expand suite (m)", "Tab reaches suite's Expand button after suite");
+      assert.equal(await browser.$(`${current} button[aria-label="Expand suite (m)"]`).getAttribute("title"), "Expand (m)", "its tooltip names m");
+      await clickButton(browser, current, "Expand suite (m)");
       const open = await partsDrawn(browser, current);
       assert.ok(open["a:suite"].whole && within(open["a:suite/a:app"].rect, open["a:suite"].rect), "suite is a box around its parts again");
       assert.ok(near(open["a:suite"].rect, there.rect), `suite's top left corner stays where it was: ${JSON.stringify([open["a:suite"].rect, there.rect])}`);
@@ -616,23 +659,35 @@ export const scenarios: Scenario[] = [
       // On the box, Tab reaches its Minimize button after suite and before its parts.
       await toSuite();
       await tab(browser);
-      assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite", "Tab reaches suite's Minimize button after suite");
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite (m)", "Tab reaches suite's Minimize button after suite");
+      assert.equal(await browser.$(`${current} button[aria-label="Minimize suite (m)"]`).getAttribute("title"), "Minimize (m)", "its tooltip names m");
       await tab(browser);
       assert.ok((await focusedNode(browser))?.startsWith("a:suite/"), `Tab reaches a part of suite next: ${await focusedNode(browser)}`);
       // With suite focused and no Detail open, m minimizes it and m expands it again, the
       // keyboard staying on suite and no Detail opening.
+      /** The keyboard is on suite's own node, not on a button or a part inside it. */
+      const onSuite = async () => (await focusedNode(browser)) === "a:suite" && (await focusedElement(browser)).startsWith("DIV ");
       await toSuite();
       await press(browser, ["m"], () => drawnNow(browser, current, SUITE_MINIMIZED), "m minimizes the focused suite");
-      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:suite", { timeout: 15000, timeoutMsg: "the keyboard stays on the minimized suite" });
+      await browser.waitUntil(onSuite, { timeout: 15000, timeoutMsg: "the keyboard stays on the minimized suite itself" });
       await press(browser, ["m"], () => drawnNow(browser, current, PARTS), "m expands the focused suite");
-      await browser.waitUntil(async () => (await focusedNode(browser)) === "a:suite", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's box" });
+      await browser.waitUntil(onSuite, { timeout: 15000, timeoutMsg: "the keyboard stays on suite's box itself" });
       assert.equal(await detail(browser), null, "m opens no Detail");
+      // With suite's button focused, m does what the button does and the keyboard stays on the
+      // button, which then reads the other action.
+      await tab(browser);
+      assert.equal((await focusedElement(browser)).trim(), "BUTTON Minimize suite (m)", "Tab reaches suite's Minimize button");
+      await press(browser, ["m"], () => drawnNow(browser, current, SUITE_MINIMIZED), "m minimizes suite from its focused button");
+      await browser.waitUntil(async () => (await focusedElement(browser)).trim() === "BUTTON Expand suite (m)", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's button, now Expand" });
+      await press(browser, ["m"], () => drawnNow(browser, current, PARTS), "m expands suite from its focused button");
+      await browser.waitUntil(async () => (await focusedElement(browser)).trim() === "BUTTON Minimize suite (m)", { timeout: 15000, timeoutMsg: "the keyboard stays on suite's button, Minimize again" });
+      assert.equal(await detail(browser), null, "m on the button opens no Detail");
 
       // Expanded on the Current, suite is a box on the branch's Run too; minimized again there,
       // it stays so until the app quits.
       await showRun(browser, "repo  master", data.run);
       assert.ok((await partsDrawn(browser, ".graph"))["a:suite"].whole, "suite is a box on the Run again");
-      await clickButton(browser, ".graph", "Minimize suite");
+      await clickButton(browser, ".graph", "Minimize suite (m)");
       assert.ok((await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].minimized, "suite minimized on the Run before the app quits");
     },
     async (browser, { data }) => {
@@ -668,7 +723,7 @@ export const scenarios: Scenario[] = [
         assert.equal(await detail(browser), null, "focusing an Artifact opens nothing");
         if (visited.size === 0) await arrowsMoveNothing(browser, id);
         await press(browser, ["Enter"], async () => (await detail(browser))?.title === `Artifact ${name}`, `Enter opens ${name}'s Detail`);
-        assert.equal((await detail(browser))?.tabs[0]?.name, name);
+        assert.deepEqual((await detail(browser))?.tabs, [], "on its own tab");
         visited.add(id);
         await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the keyboard-opened Detail closes");
       }
@@ -722,7 +777,7 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the selected Run's own Detail heading" });
       const shown = (await detail(browser))!;
       assert.deepEqual(shown.tabs, [], "the Run's Detail has no Artifact or eval tabs");
-      assert.ok(shown.docked, "the Run's Detail floats over the graph's right side");
+      assert.ok(shown.docked, "the Run's Detail is docked at the graph's right edge");
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       await graphShown(browser, "a:release");
@@ -732,7 +787,7 @@ export const scenarios: Scenario[] = [
   // UX journey: J-GRAPH-CAMERA; UX edges: E-GRAPH-FIRST E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
   scenario<{ request: string }>(
     "graph-camera-stays",
-    "shows the whole graph first, then leaves its camera to the person: the Detail and a new result never move it, Zoom Out and Fit View do",
+    "shows the whole graph first, then leaves its camera to the person: the Detail and a new result never move it, Zoom out and Fit do",
     async () => {
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: { request: signoff(fixture).id } };
@@ -765,11 +820,26 @@ export const scenarios: Scenario[] = [
       };
       const first = await settled();
       assert.ok(first.whole, "the graph shows whole when it first appears");
+      /** How wide release is drawn, and how far the graph's middle lies from the canvas's. */
+      const placed = () => browser.execute(() => {
+        const ofGraph = (element: Element) => !element.closest('aside[aria-label="Detail"]');
+        const canvas = [...document.querySelectorAll(".canvas")].find(ofGraph)!.getBoundingClientRect();
+        const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter(ofGraph).map((node) => node.getBoundingClientRect());
+        const [left, right] = [Math.min(...nodes.map((box) => box.left)), Math.max(...nodes.map((box) => box.right))];
+        const [top, bottom] = [Math.min(...nodes.map((box) => box.top)), Math.max(...nodes.map((box) => box.bottom))];
+        const release = [...document.querySelectorAll('.svelte-flow__node[data-id="a:release"]')].find(ofGraph)!.getBoundingClientRect();
+        return { width: release.width, x: (left + right) / 2 - (canvas.left + canvas.right) / 2, y: (top + bottom) / 2 - (canvas.top + canvas.bottom) / 2 };
+      });
+      // A small graph is never enlarged past its nodes' own size. (The window was resized after
+      // it first showed, and only the person moves the camera: Fit, below, centres it.)
+      const native = await placed();
+      assert.ok(Math.abs(native.width - 168) <= 1, `release at its own size: ${JSON.stringify(native)}`);
       const title = await mainTitle(browser);
 
       // Opening a Detail, switching it to a neighbour and closing it leave the camera.
       await openArtifact(browser, "a:release", "Artifact release");
       assert.equal((await settled()).transform, first.transform, "opening the Detail moved nothing");
+      await unfold(browser, "Neighbours");
       await aside(browser).$('.svelte-flow__node[data-id="a:ship"]').click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "the Detail switched to ship" });
       assert.equal((await settled()).transform, first.transform, "switching the Detail moved nothing");
@@ -779,7 +849,7 @@ export const scenarios: Scenario[] = [
 
       // The person zooms out (a small graph first fits at the largest zoom); a new result then
       // relights the graph in place, under their camera, not a fit of its own.
-      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      await browser.$(ZOOM_OUT).click();
       const zoomed = await settled();
       assert.notEqual(zoomed.transform, first.transform, "Zoom Out moved the camera");
       signOff(fixture, request);
@@ -787,9 +857,9 @@ export const scenarios: Scenario[] = [
         { timeout: 30000, timeoutMsg: "release relit GREEN" });
       assert.equal(await mainTitle(browser), title, "the same Run's graph stays shown");
       assert.equal((await settled()).transform, zoomed.transform, "a new result kept the person's camera");
-      // The Run ends with nothing left needing attention: the lines above the graph go and the
-      // canvas grows, and the camera still stays. The canvas keeps that size from here on.
-      await browser.waitUntil(() => browser.execute(() => document.querySelector(".run .attention") === null),
+      // The Run ends with nothing left needing attention, its headline in the one header row,
+      // and the camera still stays.
+      await browser.waitUntil(() => browser.execute(() => document.querySelector("button.headline .need") === null),
         { timeout: 30000, timeoutMsg: "the Run ended with nothing needing attention" });
       assert.equal((await settled()).transform, zoomed.transform, "the Run's end kept the person's camera");
 
@@ -812,19 +882,22 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await width()) > narrow + 60, { timeout: 15000, timeoutMsg: "the dragged Detail widened" });
       assert.equal((await settled()).transform, zoomed.transform, "resizing the Detail moved nothing");
 
-      // Fit View, the person's own, shows the whole graph in its whole canvas: the Detail floats
+      // Fit View, the person's own, shows the whole graph in its whole canvas: the Detail is docked
       // over it and takes no part, so the camera is the graph's first one again.
-      await browser.$(".graph .svelte-flow__controls-fitview").click();
+      await fitButton(browser).click();
       const fitted = await settled();
       assert.notEqual(fitted.transform, zoomed.transform, "Fit View moved the person's camera");
       assert.ok(fitted.whole, `Fit View shows every Artifact inside the canvas: ${JSON.stringify(fitted)}`);
+      const fit = await placed();
+      assert.ok(Math.abs(fit.width - 168) <= 1 && Math.abs(fit.x) <= 2 && Math.abs(fit.y) <= 2,
+        `Fit enlarges nothing past its own size and shows the graph in the middle of the canvas: ${JSON.stringify(fit)}`);
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       assert.equal((await settled()).transform, fitted.transform, "closing the Detail keeps what Fit View showed");
       // The person zooms out again, so the next Fit View has a camera to move back.
-      await browser.$(".graph .svelte-flow__controls-zoomout").click();
+      await browser.$(ZOOM_OUT).click();
       assert.notEqual((await settled()).transform, fitted.transform, "Zoom Out moved the fitted camera");
-      await browser.$(".graph .svelte-flow__controls-fitview").click();
+      await fitButton(browser).click();
       assert.equal((await settled()).transform, fitted.transform, "Fit View without the Detail fits as with it open");
 
       // A chip whose graph is not shown yet draws it whole: the Current, then the Run again.
@@ -863,13 +936,13 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await visible()).length > 0,
         { timeout: 30000, timeoutMsg: "a graph node is visible after the initial fit" });
       // Zoom in until the chain extends beyond the canvas and its last Artifact is out of view.
-      const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
+      const zoomIn = await browser.$(ZOOM_IN);
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
       await browser.waitUntil(async () => !(await visible()).includes(name(124)),
         { timeout: 15000, timeoutMsg: "the chain's end lies beyond the canvas" });
       // Fit View moves the camera back over the whole chain: the Artifacts it brings into view
       // are drawn, the chain's end among them.
-      await browser.$(".svelte-flow__controls-fitview").click();
+      await fitButton(browser).click();
       await browser.waitUntil(async () => (await visible()).includes(name(124)), { timeout: 15000, timeoutMsg: "the camera drew the chain's last Artifact in view" });
       // The Artifact brought into view takes the pointer like any other.
       await graphShown(browser, name(124));
@@ -888,12 +961,15 @@ export const scenarios: Scenario[] = [
       await shownRun(browser, run);
       await graphShown(browser, "a:app");
       const opened = await openArtifact(browser, "a:app", "Artifact app");
-      assert.deepEqual(opened.tabs.map((tab) => tab.name), ["app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
-      assert.ok(opened.tabs.slice(1).every((tab) => tab.glyph === "✓"), "each eval's tab shows its GREEN glyph");
+      assert.deepEqual(opened.tabs, [], "app's own tab has no chips");
       assert.deepEqual(opened.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's own evals");
       assert.ok(opened.evals.every((row) => /GREEN/.test(row.status)), "with their verdicts");
-      // A click on an eval of the list shows its tab: its own status, instruction and result.
+      // A click on an eval of the list shows its tab: its chips, app's own then one per eval,
+      // and its own status, instruction and result.
       await openTab(browser, "e:app/beta", { row: true });
+      const tabbed = (await detail(browser))!;
+      assert.deepEqual(tabbed.tabs.map((tab) => tab.name), ["app", "alpha", "beta", "gamma"], "app's own chip, then one per eval");
+      assert.ok(tabbed.tabs.slice(1).every((tab) => tab.glyph === "green"), "each eval's chip shows its GREEN mark");
       const request = requests(fixture).find((saved) => saved.evalId === "app/beta");
       assert.ok(request?.result, "the real CLI saved app/beta's result");
       await browser.waitUntil(async () => (await summary(browser)).instruction.includes("Check beta."), { timeout: 15000, timeoutMsg: "the Detail is app/beta's" });
@@ -911,7 +987,8 @@ export const scenarios: Scenario[] = [
       const views = () => browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] [role="tablist"][aria-label="Views"] [role="tab"]')]
         .map((view) => [view.textContent?.trim() ?? "", view.getAttribute("aria-selected")]));
       assert.deepEqual(await views(), [["Summary", "true"], ["Runtime log", "false"]]);
-      const log = () => browser.execute(() => document.querySelector('aside[aria-label="Detail"] .evidence')?.textContent ?? "");
+      /** The shown Runtime log, as its box is named and what it holds; "" while none is shown. */
+      const log = () => browser.execute(() => { const pre = document.querySelector('aside[aria-label="Detail"] .evidence pre'); return pre ? `${pre.getAttribute("aria-label") ?? ""} ${pre.textContent ?? ""}` : ""; });
       const view = async (at: number) => (await aside(browser).$$('[aria-label="Views"] [role="tab"]'))[at];
       await (await view(1)).click();
       await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()) && (await summary(browser)).instruction === "",
@@ -925,7 +1002,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()), { timeout: 15000, timeoutMsg: "app/beta's Runtime log shown again" });
       const back = await openArtifactTab(browser, "app");
       assert.deepEqual(back.evals.map((row) => row.name), ["alpha", "beta", "gamma"], "the Artifact tab lists app's evals again");
-      assert.equal(back.tabs[2]?.selected, false, "app/beta's tab is no longer the shown one");
+      assert.deepEqual(back.tabs, [], "app's own tab, without chips");
       assert.equal(await log(), "", "app/beta's log is gone");
       // Another eval's tab shows that eval.
       await openTab(browser, "e:app/gamma");
@@ -936,7 +1013,7 @@ export const scenarios: Scenario[] = [
       await (await view(1)).click();
       await browser.waitUntil(async () => /Saved runtime stdout \/ stderr/.test(await log()), { timeout: 15000, timeoutMsg: "app/gamma's Runtime log shown" });
       const other = await openArtifact(browser, "a:lib", "Artifact lib");
-      assert.deepEqual(other.tabs.map((tab) => tab.name), ["lib", "ready"], "lib's own chip and eval, none of app's");
+      assert.deepEqual(other.evals.map((row) => row.name), ["ready"], "lib's own eval, none of app's");
       assert.equal(await log(), "", "app/gamma's log is gone");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
     },
@@ -978,8 +1055,11 @@ export const scenarios: Scenario[] = [
         .map((node) => ({ id: node.getAttribute("data-id") ?? "", x: node.getBoundingClientRect().left }))
         .sort((a, b) => a.x - b.x).map((node) => node.id));
       await openArtifact(browser, "a:release", "Artifact release");
+      // Neighbours is folded until unfolded; unfolded, it stays so for the Details opened later.
+      assert.equal(await aside(browser).$('[role="group"][aria-label="Neighbours"]').isExisting(), false, "Neighbours starts folded");
+      await unfold(browser, "Neighbours");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "release drawn before ship, which uses it" });
-      const drawing = '[aria-label="Detail"] [aria-label="Neighbours"]';
+      const drawing = '[aria-label="Detail"] [role="group"][aria-label="Neighbours"]';
       let edges: (string | null)[] = [];
       await browser.waitUntil(async () => {
         edges = await browser.execute((selector) => [...document.querySelectorAll(`${selector} .svelte-flow__edge`)].map((edge) => edge.getAttribute("data-id")), drawing);
@@ -995,11 +1075,11 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await geometry(drawing), fixed, "the neighbour drawing does not zoom");
       await move(await visibleCenter(browser, await aside(browser).$('[aria-label="Neighbours"] .svelte-flow__node[data-id="a:release"]').getElement()));
       assert.deepEqual(await geometry(drawing), fixed, "its nodes do not drag");
-      // Below the drawing: its evals with their verdicts, then its path; every other fact folds
-      // under Debug, unfolded with t.
+      // Its evals with their verdicts, the drawing, then its path; every other fact folds under
+      // Debug, unfolded with t.
       const path = () => browser.execute(() =>
-        document.querySelector('aside[aria-label="Detail"] [role="document"] .card > p.line')?.textContent?.trim() ?? "");
-      await browser.waitUntil(async () => (await path()) === "release", { timeout: 15000, timeoutMsg: "release's path below its evals" });
+        document.querySelector('aside[aria-label="Detail"] section[aria-label="Path"] p.line')?.textContent?.trim() ?? "");
+      await browser.waitUntil(async () => (await path()) === "release", { timeout: 15000, timeoutMsg: "release's path below its neighbours" });
       assert.deepEqual((await detail(browser))?.evals.map((row) => row.name), ["signoff"], "release's one eval listed");
       assert.equal((await summary(browser)).debug, false, "the Artifact's Debug starts folded");
       await aside(browser).$('[role="document"]').click();
@@ -1007,11 +1087,11 @@ export const scenarios: Scenario[] = [
       const neighbour = (id: string) => aside(browser).$(`[aria-label="Neighbours"] .svelte-flow__node[data-id="${id}"]`);
       await neighbour("a:ship").click();
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact ship", { timeout: 15000, timeoutMsg: "ship's Detail opened from its neighbour" });
-      assert.equal((await detail(browser))?.tabs[0]?.selected, true, "on its Artifact tab");
+      assert.deepEqual((await detail(browser))?.tabs, [], "on its Artifact tab");
       await browser.waitUntil(async () => (await neighbours()).join() === "a:release,a:ship", { timeout: 15000, timeoutMsg: "ship drawn after release, which it uses" });
       // What ship waits for is a Debug fact, not shown above it.
-      assert.equal(await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .block h3')]
-        .some((heading) => heading.textContent === "Waits for")), false, "ship's waits are not shown outside Debug");
+      assert.equal(await browser.execute(() => [...document.querySelectorAll('aside[aria-label="Detail"] .section > .head')]
+        .some((heading) => heading.textContent?.trim() === "Waits for")), false, "ship's waits are not shown outside Debug");
       if (!(await summary(browser)).debug) {
         await aside(browser).$('[role="document"]').click();
         await press(browser, ["t"], async () => (await summary(browser)).debug === true, "ship's Debug unfolded by t");
@@ -1079,7 +1159,7 @@ export const scenarios: Scenario[] = [
       await browser.$('[aria-label="Found"] [role="option"]').click();
       await browser.waitUntil(async () => {
         const shown = await detail(browser);
-        return (await field()) === null && shown?.title === "Artifact ship" && shown.tabs[0]?.selected === true;
+        return (await field()) === null && shown?.title === "Artifact ship" && shown.tabs.length === 0 && shown.evals.length > 0;
       }, { timeout: 15000, timeoutMsg: "ship's Detail on its Artifact tab, the field closed" });
       await browser.waitUntil(() => centred("a:ship", shipBefore), { timeout: 15000, timeoutMsg: "ship in the middle of the graph left of the Detail" });
       assert.ok(await inDetail(), "the keyboard is in the Detail");
@@ -1133,12 +1213,25 @@ export const scenarios: Scenario[] = [
       const names = async () => (await field())?.entries.map((entry) => entry.name) ?? null;
       const ctrlF = (what: string) => press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, what);
       await graphShown(browser, "a:release");
-      // The graph's bottom says what Ctrl+F does.
-      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites · m minimizes or expands a whole");
+      // No hint at the graph's bottom: the tool strip's Find, the palette and Help name its keys.
+      assert.equal(await hint(browser), "");
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
 
-      // None starred: with nothing typed the field says how to star one.
+      // None starred: the tool strip's Find opens the field, empty and with the keyboard, over the
+      // graph's top left, saying how to star one; so does Ctrl+F.
+      await browser.$('[aria-label="Graph tools"]').$("button=Find").click();
+      await browser.waitUntil(async () => (await field())?.focused === true && (await field())?.note === NO_FAVORITES,
+        { timeout: 15000, timeoutMsg: "Find opened the field, saying how to star one" });
+      assert.deepEqual(await names(), []);
+      assert.equal((await field())?.value, "", "it opens empty");
+      const placedAt = await browser.execute((find) => {
+        const input = document.querySelector(find)!.getBoundingClientRect();
+        const canvas = document.querySelector(".graph .canvas")!.getBoundingClientRect();
+        return { left: input.left - canvas.left, top: input.top - canvas.top, width: canvas.width };
+      }, FIND);
+      assert.ok(placedAt.left >= 0 && placedAt.top >= 0 && placedAt.left < placedAt.width / 2 && placedAt.top < 80, `over the graph's top left: ${JSON.stringify(placedAt)}`);
+      await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
       await ctrlF("the find field open with nothing starred");
       await browser.waitUntil(async () => (await field())?.note === NO_FAVORITES, { timeout: 15000, timeoutMsg: "how to star one said" });
       assert.deepEqual(await names(), []);
@@ -1175,7 +1268,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["ArrowDown"], async () => (await field())?.entries[1]?.chosen === true, "↓ chooses the second");
       await press(browser, ["Enter"], async () => {
         const shown = await detail(browser);
-        return (await field()) === null && shown?.title === `Artifact ${favorites[1]}` && shown.tabs[0]?.selected === true;
+        return (await field()) === null && shown?.title === `Artifact ${favorites[1]}` && shown.tabs.length === 0 && shown.evals.length > 0;
       }, `Enter opens ${favorites[1]}'s Detail on its Artifact tab`);
       assert.deepEqual(await star(browser, favorites[1]), { glyph: "★", on: true }, "its star on");
       assert.ok(await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')), "the keyboard is in the Detail");
@@ -1186,7 +1279,7 @@ export const scenarios: Scenario[] = [
       await chooseChip(browser, "repo  master", "current");
       await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "the Current shown" });
       await graphShown(browser, "a:release");
-      assert.equal(await hint(browser), "Ctrl+F finds, or lists the favorites · m minimizes or expands a whole");
+      assert.equal(await hint(browser), "");
       await openArtifact(browser, "a:ship", "Artifact ship");
       assert.deepEqual(await star(browser, "ship"), { glyph: "★", on: true }, "ship starred on the Current");
       await ctrlF("the find field open over the Current");
@@ -1255,10 +1348,13 @@ export const scenarios: Scenario[] = [
         const at = await offCentre(browser, "a:n000");
         return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && Math.abs(at.width - READABLE) <= 1;
       }, { timeout: 15000, timeoutMsg: "n000 in the middle of the graph left of the Detail, zoomed in just to read" });
-      // Each listed Artifact showed what verify would do with it, reused, as its eval's chip in
+      // Each listed Artifact showed what verify would do with it, reused, as its eval's row in
       // the Detail of the Current shows it.
-      const reused = (await detail(browser))!.tabs.find((each) => each.name === "check")!;
-      assert.equal(reused.glyph, "↻", "the Detail's eval chip says reused");
+      const reused = await browser.execute(() => {
+        const glyph = document.querySelector('aside[aria-label="Detail"] button[data-eval] .glyph');
+        return { glyph: glyph?.querySelector("svg")?.getAttribute("data-icon") ?? "", colour: glyph ? getComputedStyle(glyph).color : "" };
+      });
+      assert.equal(reused.glyph, "reused", "the Detail's eval row says reused");
       assert.deepEqual(shown.entries.filter((entry) => entry.glyph !== reused.glyph || entry.colour !== reused.colour), [],
         "every found Artifact showed reused, in its glyph and colour");
 
@@ -1292,7 +1388,7 @@ export const scenarios: Scenario[] = [
         "a:pack/a:bad>a:user": "red",
       }), { timeout: 15000, timeoutMsg: "good's and bad's edges to user drawn in their lights" });
       // Minimized, pack sends user one edge, RED before GREEN.
-      await clickButton(browser, ".graph", "Minimize pack");
+      await clickButton(browser, ".graph", "Minimize pack (m)");
       let edges: string[] = [];
       await browser.waitUntil(async () => {
         const shown = await graphAppearance(browser);
@@ -1300,6 +1396,169 @@ export const scenarios: Scenario[] = [
         return graphHasColours(shown, {}, { "a:pack>a:user": "red" });
       }, { timeout: 15000, timeoutMsg: "pack's one edge to user drawn RED" });
       assert.deepEqual(edges, ["a:pack>a:user"], "the two edges drawn as one");
+    },
+  ),
+  // UX journey: J-GRAPH-NAVIGATOR; UX edges: E-GRAPH-CAMERA E-GRAPH-NAVIGATE
+  scenario<{ run: string }>(
+    "graph-navigator",
+    "shows the Navigator once part of the graph lies outside the view, and moves the camera to the place clicked or dragged to in it, the zoom kept",
+    async () => ended(createChain(30)),
+    async (browser, { data: { run } }) => {
+      await shownRun(browser, run);
+      await graphShown(browser, "a:n000");
+      /** The Navigator's box and the frame of the part in view, on the screen; null while it is not shown. */
+      const navigator = () => browser.execute(() => {
+        const map = document.querySelector("[data-navigator] .map")?.getBoundingClientRect();
+        const frame = document.querySelector("[data-navigator] .frame")?.getBoundingClientRect();
+        return map && frame ? { map: map.toJSON() as DOMRect, frame: frame.toJSON() as DOMRect } : null;
+      });
+      const zoom = () => browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText();
+      // First shown whole: no Navigator.
+      await camera(browser);
+      assert.equal(await navigator(), null, "no Navigator while the whole graph is in view");
+      // Zoomed in until part of the chain lies outside the view, the Navigator shows.
+      for (let step = 0; step < 12 && (await navigator()) === null; step += 1) {
+        await browser.$(ZOOM_IN).click();
+        await camera(browser);
+      }
+      // Zoomed in further until the part in view is a small part of the whole.
+      for (let step = 0; step < 12 && ((await navigator())?.frame.width ?? 0) >= ((await navigator())?.map.width ?? 0) * 0.3; step += 1) {
+        await browser.$(ZOOM_IN).click();
+        await camera(browser);
+      }
+      const shown = await navigator();
+      assert.ok(shown && shown.frame.width < shown.map.width * 0.3 && shown.map.height >= 16,
+        `the Navigator, tall enough to point at, frames the part in view: ${JSON.stringify(shown)}`);
+      // The whole chain in small, every Artifact a block of its status's colour (each GREEN here),
+      // at the graph's bottom right.
+      const drawing = () => browser.execute(() => {
+        const navigator = document.querySelector("[data-navigator]")!.getBoundingClientRect();
+        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect() ?? null;
+        const map = document.querySelector<HTMLCanvasElement>("[data-navigator] canvas")!;
+        const pixels = map.getContext("2d")!.getImageData(0, 0, map.width, map.height).data;
+        const hex = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
+        const want = [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+        let green = 0;
+        let painted = 0;
+        for (let at = 0; at < pixels.length; at += 4) {
+          // Only pixels a block covers whole: a partly covered edge pixel's colour is rounded.
+          if (pixels[at + 3] < 250) continue;
+          painted += 1;
+          // An edge pixel only partly covered keeps its colour, give or take its rounding.
+          if ([0, 1, 2].every((channel) => Math.abs(pixels[at + channel] - want[channel]) <= 4)) green += 1;
+        }
+        return { right: canvas.right - navigator.right, bottom: canvas.bottom - navigator.bottom, detail: detail && detail.left - navigator.right, green, painted };
+      });
+      const look = await drawing();
+      assert.ok(look.painted > 0 && look.green === look.painted, `each Artifact a block in GREEN's colour: ${JSON.stringify(look)}`);
+      assert.ok(Math.abs(look.right - 8) <= 2 && Math.abs(look.bottom - 8) <= 2, `at the graph's bottom right: ${JSON.stringify(look)}`);
+      const kept = await zoom();
+      /** The frame's centre, across the Navigator. */
+      const centre = async () => { const at = (await navigator())!; return at.frame.left + at.frame.width / 2; };
+      const middle = Math.round(shown.map.top + shown.map.height / 2);
+      // A click in it moves the camera there, the zoom kept.
+      const before = await camera(browser);
+      const there = Math.round(shown.map.left + shown.map.width * 0.35);
+      await dispatchInput(browser, { kind: "pointer", phase: "down", x: there, y: middle });
+      await dispatchInput(browser, { kind: "pointer", phase: "up", x: there, y: middle });
+      await browser.waitUntil(async () => Math.abs((await centre()) - there) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place clicked" });
+      /** Where the place `at` of the Navigator lies on the screen, from the canvas's middle,
+       * across the chain: the Navigator spans the chain's drawn nodes end to end. */
+      const offset = (at: number) => browser.execute((fraction) => {
+        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter((node) => !node.closest('aside[aria-label="Detail"]')).map((node) => node.getBoundingClientRect());
+        const [left, right] = [Math.min(...nodes.map((box) => box.left)), Math.max(...nodes.map((box) => box.right))];
+        return left + fraction * (right - left) - (canvas.left + canvas.right) / 2;
+      }, (at - shown.map.left) / shown.map.width);
+      assert.ok(Math.abs(await offset(there)) <= 12, `the place clicked is in the middle of the view: ${await offset(there)}`);
+      assert.notEqual(await camera(browser), before, "the click moved the camera");
+      assert.equal(await zoom(), kept, "the click kept the zoom");
+      // A drag in it moves the camera along.
+      const further = Math.round(shown.map.left + shown.map.width * 0.65);
+      await dispatchInput(browser, { kind: "pointer", phase: "down", x: there, y: middle });
+      await afterRender(browser);
+      await dispatchInput(browser, { kind: "pointer", phase: "move", x: further, y: middle });
+      await dispatchInput(browser, { kind: "pointer", phase: "up", x: further, y: middle });
+      await browser.waitUntil(async () => Math.abs((await centre()) - further) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place dragged to" });
+      assert.ok(Math.abs(await offset(further)) <= 12, `the place dragged to is in the middle of the view: ${await offset(further)}`);
+      assert.equal(await zoom(), kept, "the drag kept the zoom");
+      // With a Detail open, it sits left of the Detail.
+      const inView = await browser.execute(() => {
+        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        return [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].find((node) => {
+          const box = node.getBoundingClientRect();
+          return box.left >= canvas.left && box.right <= canvas.left + canvas.width / 2 && box.top >= canvas.top && box.bottom <= canvas.bottom;
+        })?.dataset.id ?? null;
+      });
+      assert.ok(inView, "an Artifact in view to open");
+      await openArtifact(browser, inView, `Artifact ${inView.slice(2)}`);
+      await browser.waitUntil(async () => { const at = (await drawing()).detail; return at !== null && Math.abs(at - 8) <= 2; },
+        { timeout: 15000, timeoutMsg: `the Navigator left of the Detail: ${JSON.stringify(await drawing())}` });
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+      // Fit shows the whole graph again: the Navigator goes.
+      await fitButton(browser).click();
+      await browser.waitUntil(async () => (await navigator()) === null, { timeout: 15000, timeoutMsg: "no Navigator once the whole graph is in view" });
+    },
+  ),
+
+  // UX journey: J-DETAIL-SECTIONS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-SECTION E-MON-DETAIL-TAB E-MON-DETAIL-RUN
+  scenario<Record<string, never>>(
+    "graph-detail-sections",
+    "folds and unfolds a Detail's sections by their header rows, on an Artifact's tab, an eval's Summary and a Run's Detail, kept by name for the Details opened later and the next launch",
+    async () => {
+      const fixture = await create();
+      return { fixture, args: ["--repo", fixture.repo], data: {} };
+    },
+    async (browser) => {
+      /** Each section of the open Detail by its header row, and whether it is unfolded. */
+      const sections = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] .section')]
+        .map((section) => [section.querySelector(".head")?.textContent?.trim() ?? "", !!section.querySelector(":scope > .body")])));
+      const toggle = async (name: string, unfolded: boolean) => {
+        await aside(browser).$(`button.head=${name}`).click();
+        await browser.waitUntil(async () => (await sections())[name] === unfolded, { timeout: 15000, timeoutMsg: `${name} ${unfolded ? "unfolded" : "folded"}` });
+      };
+      await graphShown(browser, "a:release");
+      // An Artifact's tab: what it is opened for unfolded, what is read now and then folded.
+      await openArtifact(browser, "a:release", "Artifact release");
+      await browser.waitUntil(async () => (await sections()).Path === true, { timeout: 15000, timeoutMsg: "release's sections drawn" });
+      const first = await sections();
+      assert.deepEqual([first.Evals, first.Neighbours, first.Tools, first.Path, first.Debug], [true, false, true, true, false], JSON.stringify(first));
+      await toggle("Path", false);
+      await toggle("Neighbours", true);
+      // Folded to its header row alone.
+      assert.equal(await aside(browser).$('section[aria-label="Path"] p.line').isExisting(), false, "a folded section shows its row alone");
+      // Another Artifact's Detail keeps each section as it was left, by its name.
+      await aside(browser).$("button*=Close").click();
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      await browser.waitUntil(async () => (await sections()).Neighbours === true && (await sections()).Path === false,
+        { timeout: 15000, timeoutMsg: `ship's Detail keeps the folds: ${JSON.stringify(await sections())}` });
+      // An eval's Summary.
+      await openTab(browser, "e:ship/check", { row: true });
+      await browser.waitUntil(async () => (await sections()).Result === true, { timeout: 15000, timeoutMsg: "ship/check's Result unfolded" });
+      await toggle("Result", false);
+      await toggle("Result", true);
+      await toggle("Fingerprint", true);
+      // A Run's Detail.
+      await aside(browser).$("button*=Close").click();
+      await browser.$(`${MAIN} > header button.headline`).click();
+      await browser.waitUntil(async () => (await sections()).Outcome === true, { timeout: 15000, timeoutMsg: "the Run's Outcome unfolded" });
+      await toggle("Outcome", false);
+    },
+    async (browser) => {
+      // The next launch keeps them.
+      const sections = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] .section')]
+        .map((section) => [section.querySelector(".head")?.textContent?.trim() ?? "", !!section.querySelector(":scope > .body")])));
+      await graphShown(browser, "a:release");
+      await openArtifact(browser, "a:release", "Artifact release");
+      await browser.waitUntil(async () => {
+        const shown = await sections();
+        return shown.Evals === true && shown.Neighbours === true && shown.Path === false;
+      }, { timeout: 15000, timeoutMsg: `release's folds kept after the app quit: ${JSON.stringify(await sections())}` });
+      await openTab(browser, "e:release/signoff");
+      await aside(browser).$("button*=Close").click();
+      await browser.$(`${MAIN} > header button.headline`).click();
+      await browser.waitUntil(async () => (await sections()).Outcome === false, { timeout: 15000, timeoutMsg: "the Run's Outcome kept folded" });
     },
   ),
 ];

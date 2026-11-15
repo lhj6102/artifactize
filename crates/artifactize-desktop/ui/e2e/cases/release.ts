@@ -71,14 +71,15 @@ async function lookedUp(browser: WebdriverIO.Browser): Promise<void> {
 const notice = (browser: WebdriverIO.Browser) => browser.$(`button=${LATEST} available`);
 const dialog = (browser: WebdriverIO.Browser) => browser.$('[role="dialog"]');
 const shown = (browser: WebdriverIO.Browser) => async () =>
-  (await dialog(browser).isExisting()) && (await dialog(browser).getText()).includes(`artifactize ${LATEST} is available`);
+  (await dialog(browser).isExisting()) && (await dialog(browser).getText()).includes("Update artifactize");
 const closed = (browser: WebdriverIO.Browser) => async () => !(await dialog(browser).isExisting());
 
 async function openDialog(browser: WebdriverIO.Browser): Promise<string> {
   await notice(browser).click();
   await browser.waitUntil(shown(browser), { timeout: 15000, timeoutMsg: "the notice opens its dialog" });
   const text = await dialog(browser).getText();
-  assert.ok(text.includes(`This app is ${running()}.`), `the dialog names the running version: ${text}`);
+  // The two versions as numbers: the running one, then the newer one.
+  assert.equal(await dialog(browser).$(".versions").getText(), `${running()} → ${LATEST}`, `the dialog names both versions: ${text}`);
   return text;
 }
 
@@ -93,7 +94,7 @@ async function follow(browser: WebdriverIO.Browser, data: Site, path: string): P
 }
 
 async function closeByButton(browser: WebdriverIO.Browser): Promise<void> {
-  await dialog(browser).$("button=Close").click();
+  await dialog(browser).$("button*=Close").click();
   await browser.waitUntil(closed(browser), { timeout: 15000, timeoutMsg: "the dialog closes by Close" });
   assert.equal(await notice(browser).isExisting(), true, "the notice stays in the header after Close");
 }
@@ -163,8 +164,10 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(release?.details.update, { kind: "page", url: `${data.url}${PAGE}` });
       assert.equal(lookups(), 2, "doctor reused the app's answer of the day");
 
-      const text = await openDialog(browser);
-      assert.ok(text.includes("See the release page"), text);
+      await openDialog(browser);
+      // How to update, as the link to the release page alone.
+      assert.equal(await dialog(browser).$(`button=${data.url}${PAGE}`).isExisting(), true, "the release page linked");
+      assert.equal(await dialog(browser).$("pre.command").isExisting(), false, "nothing to run");
       onlyLookups(data);
       await follow(browser, data, PAGE);
       await press(browser, ["Escape"], closed(browser), "the dialog closes by Esc");
@@ -186,8 +189,7 @@ export const scenarios: Scenario[] = [
     }),
     async (browser, { data }) => {
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
-      const text = await openDialog(browser);
-      assert.ok(text.includes("To update, run:"), text);
+      await openDialog(browser);
       const command = dialog(browser).$("pre.command");
       assert.equal(await command.getText(), "cargo install artifactize artifactize-tools --locked");
       // Select All is real keyboard input after a click in the command; the selection is
@@ -210,8 +212,7 @@ export const scenarios: Scenario[] = [
     }),
     async (browser, { data }) => {
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
-      const text = await openDialog(browser);
-      assert.ok(text.includes("download and install it"), text);
+      await openDialog(browser);
       assert.equal(await dialog(browser).$("pre.command").isExisting(), false, "a disk image has no command to run");
       onlyLookups(data);
       await follow(browser, data, DISK_IMAGE);

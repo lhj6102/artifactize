@@ -4,7 +4,7 @@
   // cut short to one line, under its Run ID. The entry shown in the Main area is marked;
   // **Older runs** at the end brings older Runs in below the oldest.
   import type { BranchView, Chip } from "../ipc/client";
-  import { toneColour } from "../shell/tone";
+  import { tone, toneColour } from "../shell/tone";
   import { chipKey, keyOf } from "./monitor-state.svelte";
 
   let {
@@ -48,12 +48,9 @@
           style:--dot={chip.kind === "run" ? toneColour(chip.mark.status) : null}
           aria-hidden="true"
         ></span>
-        <span class="status">{chip.kind === "run" ? chip.status : "Current"}</span>
+        <span class="status {chip.kind === 'run' ? tone(chip.mark.status) : ''}">{chip.kind === "run" ? chip.status : "Current"}</span>
         <span class="age">{chip.kind === "run" ? chip.age : ""}</span>
-        <span class="sub">{chip.kind === "run" ? chip.id : "Working tree"}</span>
-        {#if chip.kind === "run" && chip.comment}
-          <span class="sub note">{chip.comment}</span>
-        {/if}
+        {#if chip.kind === "run"}<span class="sub">{chip.comment ?? chip.id}</span>{/if}
       </button>
     </li>
   {/each}
@@ -76,82 +73,86 @@
     content: "";
     position: absolute;
     left: 8.5px;
-    top: 20px;
-    bottom: -12px;
+    top: 16px;
+    bottom: -8px;
     width: 1px;
-    background: var(--border);
+    background: var(--line-group);
   }
   .entry {
     position: relative;
     width: 100%;
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
-    column-gap: 10px;
+    column-gap: 8px;
     align-items: baseline;
     margin: 0;
-    padding: 5px 10px 5px 0;
+    padding: 3px 8px 3px 0;
     border: 0;
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     background: none;
-    color: var(--text);
+    color: var(--ink);
     font: inherit;
     text-align: left;
     cursor: pointer;
   }
   .entry:hover {
-    background: color-mix(in srgb, var(--surface-2) 60%, var(--surface));
+    background: var(--surface-group);
   }
-  /* What the Main area shows: a soft grey pill around the entry. */
+  /* What the Main area shows: a soft grey pill around the entry; the selected entry takes the
+   * selection background over it. */
   .entry.filled {
-    background: var(--surface-2);
+    background: var(--surface-group);
+  }
+  li.selected .entry {
+    background: var(--selection);
   }
   .dot {
     grid-row: 1;
     align-self: center;
     justify-self: center;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--dot);
   }
   /* The Current is no Run: a ring, not a light. */
   .dot.hollow {
-    background: var(--surface);
-    box-shadow: inset 0 0 0 1.5px var(--muted);
+    background: var(--surface-panel);
+    box-shadow: inset 0 0 0 1.5px var(--ink-2);
   }
   .status {
     grid-column: 2;
     font-weight: 600;
-    font-size: 13px;
-  }
-  .running .status {
-    color: var(--running);
+    font-size: var(--text-small);
   }
   .age {
     grid-column: 3;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .sub {
     grid-column: 2 / 4;
-    color: var(--muted);
-    font-size: 12px;
+    color: var(--ink-2);
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .older {
-    margin: 4px 0 0 28px;
+    margin: 2px 0 0 26px;
     padding: 2px 0;
     border: 0;
     background: none;
     color: var(--accent);
     font: inherit;
-    font-size: 13px;
+    font-size: var(--text-small);
     cursor: pointer;
   }
   .older:hover {
-    text-decoration: underline;
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
   }
 </style>

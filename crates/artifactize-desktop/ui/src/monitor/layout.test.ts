@@ -50,7 +50,7 @@ async function byElk(graph: Shape): Promise<Map<string, Point>> {
 }
 
 const shape = (names: string[], pairs: [string, string][]): Shape => ({
-  nodes: names.map((name) => ({ id: `a:${name}`, name, light: "waiting", note: null, parts: [] })),
+  nodes: names.map((name) => ({ id: `a:${name}`, name, light: "waiting", tally: null, note: null, parts: [] })),
   edges: pairs.map(([source, target]) => ({ source: `a:${source}`, target: `a:${target}`, light: "waiting" })),
 });
 

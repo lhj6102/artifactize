@@ -260,7 +260,7 @@ pub fn forward<R: tauri::Runtime>(
     });
 }
 
-/// A branch's Current as the Main area shows it; its structure text is read on its own.
+/// A branch's Current as the Main area shows it.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentView {
@@ -287,7 +287,7 @@ fn segment(text: String, tone: Tone) -> Vec<Segment> {
 }
 
 fn eval_row(eval: &CurrentEval) -> TreeNode {
-    let tone: Tone = eval.plan.tone().into();
+    let tone = Tone::from(eval.plan);
     TreeNode {
         id: NodeId::eval(eval.id.clone()).into(),
         kind: NodeKind::Eval,
@@ -308,7 +308,7 @@ fn eval_row(eval: &CurrentEval) -> TreeNode {
 }
 
 fn artifact_row(artifact: &CurrentArtifact) -> TreeNode {
-    let tone: Tone = artifact.plan.tone().into();
+    let tone = Tone::from(artifact.plan);
     TreeNode {
         id: node_id(&artifact.name),
         kind: NodeKind::Artifact,
@@ -402,6 +402,7 @@ pub(crate) fn shape(current: &Current) -> Shape {
                 id: node_id(&artifact.name),
                 name: artifact.name.to_string(),
                 light: artifact.plan.into(),
+                tally: artifact.tally().map(super::Tally::from),
                 note: Some(artifact.text()),
                 parts: artifact
                     .parts
@@ -427,7 +428,7 @@ fn plan_line(plan: live::Plan, text: String, reason: &str) -> PlanLine {
     PlanLine {
         glyph: plan.glyph().into(),
         text,
-        tone: plan.tone().into(),
+        tone: plan.into(),
         reason: reason.to_owned(),
     }
 }
@@ -511,6 +512,7 @@ pub(crate) fn detail(
         profile,
         mark: None,
         plan: Some(plan),
+        outcome: None,
         sections: sections.into_iter().collect(),
         evidence: None,
         card,
@@ -582,21 +584,6 @@ pub async fn current_view(
     branch: BranchKey,
 ) -> Result<CurrentView, Failure> {
     view(&app.currents, branch)
-}
-
-/// Every Artifact, eval criterion and labeled relation of `branch`'s Current as text.
-#[tauri::command]
-#[specta::specta]
-pub async fn current_structure(
-    app: tauri::State<'_, App>,
-    branch: BranchKey,
-) -> Result<String, Failure> {
-    Ok(app
-        .currents
-        .shown(&branch.to_place())?
-        .current
-        .structure
-        .to_string())
 }
 
 #[cfg(test)]

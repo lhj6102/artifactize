@@ -82,15 +82,19 @@ export const scenarios: Scenario[] = [
       await browser.$("button=Settings").click();
       async function signedOut() {
         await browser.waitUntil(async () => /Not signed in/.test(await status()) &&
-          await browser.$("button=Sign in with ChatGPT").isEnabled(), { timeout: 15000, timeoutMsg: "Codex is signed out and ready for a new sign-in" });
+          await browser.$("button=Sign in with Codex").isEnabled(), { timeout: 15000, timeoutMsg: "Codex is signed out and ready for a new sign-in" });
       }
       async function begin() {
         const baseline = visited().length;
-        await browser.$("button=Sign in with ChatGPT").click();
+        await browser.$("button=Sign in with Codex").click();
+        // In progress, said in the account's fact; what finishes it by hand stays folded until
+        // asked for.
+        await browser.waitUntil(async () => (await status()).trim() === "sign-in in progress", { timeout: 15000, timeoutMsg: "the sign-in is in progress" });
+        assert.equal(await browser.$("#codex-redirect").isExisting(), false, "Finish by hand starts folded");
+        await browser.$("button=Finish by hand").click();
         await browser.$("#codex-redirect").waitForExist({ timeout: 15000 });
-        assert.match(await text(), /Waiting for the browser/);
         assert.doesNotMatch(await text(), /Port 1455 is in use/, "the product must own its loopback callback port");
-        const address = await browser.$(".pending .url code").getText();
+        const address = await browser.$("pre.url").getText();
         assert.equal(new URL(address).pathname, "/oauth/authorize");
         const state = new URL(address).searchParams.get("state");
         assert.ok(state, "the displayed sign-in address names a state");
@@ -104,13 +108,14 @@ export const scenarios: Scenario[] = [
         await browser.waitUntil(async () => (await status()).startsWith("Signed in") &&
           !(await browser.$("#codex-redirect").isExisting()) &&
           await browser.$("button=Sign out of Codex").isEnabled(), { timeout: 15000, timeoutMsg: "Codex sign-in completes" });
-        assert.match(await text(), /Signed in with Codex\./);
+        // The account's fact says it; no sentence repeats it.
+        assert.doesNotMatch(await text(), /Signed in with Codex\./);
       }
       async function signOut() {
         await browser.$("button=Sign out of Codex").click();
         await signedOut();
         assert.equal(await browser.$("#codex-redirect").isExisting(), false, "logout leaves no pending sign-in");
-        assert.equal(await browser.$("button=Sign out of Codex").isEnabled(), false);
+        assert.equal(await browser.$("button=Sign out of Codex").isExisting(), false, "signed out, only signing in is offered");
       }
 
       await signedOut();
@@ -133,7 +138,7 @@ export const scenarios: Scenario[] = [
 
       await browser.$('nav[aria-label="Providers"]').$("button=OpenAI").click();
       await browser.$("button=List models").click();
-      await browser.waitUntil(async () => (await browser.$('table[aria-label="Models"]').getText()).includes("gpt-e2e"), { timeout: 15000, timeoutMsg: "the backend model list appears" });
+      await browser.waitUntil(async () => (await browser.$('ul[aria-label="Models"]').getText()).includes("gpt-e2e"), { timeout: 15000, timeoutMsg: "the backend model list appears" });
     },
   ),
 ];

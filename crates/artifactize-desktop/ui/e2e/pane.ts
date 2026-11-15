@@ -3,17 +3,16 @@
 // real clicks on what the window shows.
 
 /** A timeline entry as read: the Run it shows (`current` for the Current), its status word and
- * age as `text` (`GREEN 5m ago`, `Running 2m`, `Current`), the line under it (a Run's ID,
- * `Working tree`), the Run's comment below that (empty without one) with whether it is drawn on
- * one line and cut short, whether it is the one shown in the Main area, and its dot's colour as
- * red, green and blue channels on any one scale. */
+ * age as `text` (`GREEN 5m ago`, `Running 2m`, `Current`), the line under it (a Run's comment,
+ * else its ID; none for the Current) with whether it is drawn on one line and cut short, whether
+ * it is the one shown in the Main area, and its dot's colour as red, green and blue channels on
+ * any one scale. */
 export type Chip = {
   id: string;
   text: string;
   sub: string;
-  note: string;
-  noteOneLine: boolean;
-  noteCut: boolean;
+  subOneLine: boolean;
+  subCut: boolean;
   filled: boolean;
   dot: number[];
 };
@@ -24,7 +23,7 @@ export const leans = (colour: number[], channel: number) =>
 /** A branch's entry as read: `project  branch` as the Main area's title names it, its label as
  * drawn (`project / branch`), whether the selection is on it or in its timeline, whether it is
  * expanded, the newest Run's status
- * under its name while collapsed (`RED 25m ago`), its star as drawn (`★` on, `☆` off) and
+ * under its name while collapsed (`RED 25m ago`), its star as drawn (`★` filled, `☆` outlined) and
  * whether it is pressed, and its timeline, empty while collapsed. */
 export type Branch = {
   name: string;
@@ -59,17 +58,16 @@ export function branches(browser: WebdriverIO.Browser): Promise<Branch[]> {
         selected: row.getAttribute("aria-selected") === "true" || row.querySelector('[role="treeitem"][aria-selected="true"]') !== null,
         expanded: row.getAttribute("aria-expanded") === "true",
         latest: words(row.querySelector(".latest")),
-        star: row.querySelector(".star")?.textContent?.trim() ?? "",
+        star: ({ "star-on": "★", star: "☆" } as Record<string, string>)[row.querySelector(".star svg")?.getAttribute("data-icon") ?? ""] ?? "",
         starred: row.querySelector(".star")?.getAttribute("aria-pressed") === "true",
         chips: [...row.querySelectorAll<HTMLElement>("button[data-chip]")].map((chip) => ({
           id: chip.dataset.chip ?? "",
           text: `${words(chip.querySelector(".status"))} ${words(chip.querySelector(".age"))}`.trim(),
           sub: words(chip.querySelector(".sub")),
-          note: words(chip.querySelector(".note")),
-          // One line: no taller than the Run ID's line above it.
-          noteOneLine: ((note, id) => !note || !!id && note.getBoundingClientRect().height <= id.getBoundingClientRect().height + 1)(
-            chip.querySelector<HTMLElement>(".note"), chip.querySelector<HTMLElement>(".sub")),
-          noteCut: ((note) => !!note && note.scrollWidth > note.clientWidth)(chip.querySelector<HTMLElement>(".note")),
+          // One line: no taller than the status's line above it.
+          subOneLine: ((sub, status) => !sub || !!status && sub.getBoundingClientRect().height <= status.getBoundingClientRect().height + 1)(
+            chip.querySelector<HTMLElement>(".sub"), chip.querySelector<HTMLElement>(".status")),
+          subCut: ((sub) => !!sub && sub.scrollWidth > sub.clientWidth)(chip.querySelector<HTMLElement>(".sub")),
           filled: chip.getAttribute("aria-pressed") === "true",
           dot: channels(getComputedStyle(chip.querySelector(".dot")!).backgroundColor),
         })),
@@ -97,26 +95,32 @@ export function waiting(browser: WebdriverIO.Browser): Promise<{ bar: string; ro
   }));
 }
 
-/** The Main area's title: `Run {id}`, `Current · {branch}`, `Review`, `Settings`, a
- * read-only request's title, or `Nothing chosen`. */
+/** The Main area's title: the Run's ID, `Current · {branch}`, `Review`, a read-only request's
+ * title with `· read-only`, or `Nothing chosen`. */
 export function mainTitle(browser: WebdriverIO.Browser): Promise<string> {
   return browser.execute((main) => document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? "", MAIN);
 }
 
-/** The shown Run's comment under its headline as read, and whether all of it is drawn, not
- * cut short; null without one. */
+/** The open Run Detail's comment in its Outcome, and whether all of it is drawn, not cut
+ * short; null without one. */
 export function runComment(browser: WebdriverIO.Browser): Promise<{ text: string; whole: boolean } | null> {
-  return browser.execute((main) => {
-    const comment = document.querySelector<HTMLElement>(`${main} .run > .comment`);
-    if (!comment) return null;
+  return browser.execute(() => {
+    const dock = document.querySelector('aside[aria-label="Detail"]');
+    const term = [...(dock?.querySelectorAll("dt") ?? [])].find((dt) => dt.textContent?.trim() === "Comment");
+    const comment = term?.nextElementSibling as HTMLElement | null | undefined;
+    if (!dock || !comment) return null;
     const box = comment.getBoundingClientRect();
-    const area = document.querySelector<HTMLElement>(main)!.getBoundingClientRect();
+    const area = dock.getBoundingClientRect();
     return {
       text: comment.textContent?.trim() ?? "",
-      whole: comment.scrollWidth <= comment.clientWidth && comment.scrollHeight <= comment.clientHeight + 1 &&
-        box.left >= area.left && box.right <= area.right + 1,
+      whole: comment.scrollWidth <= comment.clientWidth + 1 && box.left >= area.left && box.right <= area.right + 1,
     };
-  }, MAIN);
+  });
+}
+
+/** The shown Run's headline in the Main area's header row, as its button reads aloud. */
+export function runHeadline(browser: WebdriverIO.Browser): Promise<string> {
+  return browser.execute((main) => document.querySelector(`${main} > header button.headline`)?.getAttribute("aria-label") ?? "", MAIN);
 }
 
 /** Whether the Pane's entries, the Search or the Main area has the keyboard. */
@@ -169,17 +173,26 @@ export async function chooseChip(browser: WebdriverIO.Browser, name: string, chi
 /** Show the Run `run` of the branch `name` in the Main area. */
 export async function showRun(browser: WebdriverIO.Browser, name: string, run: string): Promise<void> {
   await chooseChip(browser, name, run);
-  await browser.waitUntil(async () => (await mainTitle(browser)) === `Run ${run}`, { timeout: 15000, timeoutMsg: `Run ${run} shown` });
+  await browser.waitUntil(async () => (await mainTitle(browser)) === run, { timeout: 15000, timeoutMsg: `Run ${run} shown` });
 }
 
-/** The Main area's Current header: `Scanned at …` once a scan showed, else what it says. */
+/** A Current's scan state in the Main area's header row: `Scanned at HH:MM:SS` once a scan
+ * ended (as its time reads aloud), `N left` while one runs, then a failure's words if any. */
 export function scanned(browser: WebdriverIO.Browser): Promise<string> {
-  return browser.execute(() => document.querySelector('section[aria-label="Current"] .when')?.textContent?.trim() ?? "");
+  return browser.execute((main) => {
+    const scan = document.querySelector(`${main} > header .scan`);
+    if (!scan) return "";
+    const time = scan.querySelector("time");
+    const checking = scan.querySelector(".checking");
+    const said = time ? time.getAttribute("aria-label") ?? "" : checking?.textContent?.trim() ?? "";
+    const failure = scan.querySelector(".failure")?.textContent?.trim();
+    return failure ? `${said} ${failure}`.trim() : said;
+  }, MAIN);
 }
 
 /** The instant the Current's header says it was scanned, as the app rendered it; null without one. */
 export function scannedAt(browser: WebdriverIO.Browser): Promise<string | null> {
-  return browser.execute(() => document.querySelector('section[aria-label="Current"] .when time')?.getAttribute("datetime") ?? null);
+  return browser.execute((main) => document.querySelector(`${main} > header .scan time`)?.getAttribute("datetime") ?? null, MAIN);
 }
 
 /** Open the waiting review `id` with a click on its row, and wait for its Review. */

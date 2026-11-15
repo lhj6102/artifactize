@@ -861,6 +861,11 @@ const [group, command] = process.argv.slice(2);
 const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
 const say = (text) => process.stdout.write(text);
 if (group !== "auth") process.exit(2);
+// An older Claude Code, which has no auth command: it reports nothing and says why.
+if (existsSync(process.env.DESKTOP_TEST_CLAUDE_BROKEN)) {
+  process.stderr.write("error: unknown command 'auth'\\n");
+  process.exit(1);
+}
 if (command === "status") {
   const signed = existsSync(signedIn);
   say(JSON.stringify(signed
@@ -906,14 +911,39 @@ process.stdin.on("end", () => process.exit(1));
   } else {
     writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_CLAUDE_PROGRAM" "$@"\n', { mode: 0o755 });
   }
+  // The fixture's Claude Code is the only one the app can find: a folder of PATH holding
+  // another one, such as the developer's own, is left out, so hiding the fixture's leaves none.
+  const others = (env.PATH ?? "").split(delimiter).filter((folder) => folder !== "" && !holdsClaudeCode(folder));
   return {
     ...env,
-    PATH: `${bin}${delimiter}${env.PATH ?? ""}`,
+    PATH: [bin, ...others].join(delimiter),
     DESKTOP_TEST_NODE: process.execPath,
     DESKTOP_TEST_CLAUDE_PROGRAM: program,
     DESKTOP_TEST_CLAUDE_SIGNED_IN: nativePath(root, "signed-in"),
+    DESKTOP_TEST_CLAUDE_BROKEN: nativePath(root, "claude-broken"),
     CLAUDE_CONFIG_DIR: makeDirectory(nativePath(root, "claude-config"), { private: true }),
   };
+}
+
+/** The file name the fixture's Claude Code is found by on PATH. */
+const CLAUDE_CODE = WINDOWS ? "claude.cmd" : "claude";
+
+/** Whether `folder` holds a program a shell would run as `claude`. A folder that cannot be
+ * read holds none the app could run either. */
+function holdsClaudeCode(folder: string): boolean {
+  try {
+    return readdirSync(folder).some((name) => name.toLowerCase().replace(/\.(cmd|exe|bat|ps1)$/, "") === "claude");
+  } catch {
+    return false;
+  }
+}
+
+/** Take the fixture's Claude Code off PATH, or put it back: `claudeCodeEnvironment(root, …)`
+ * left no other one there, so the app then finds none. */
+export function claudeCodeInstalled(root: NativePath, installed: boolean): void {
+  const bin = nativePath(root, "claude-bin");
+  const [from, to] = installed ? [`${CLAUDE_CODE}.off`, CLAUDE_CODE] : [CLAUDE_CODE, `${CLAUDE_CODE}.off`];
+  renameSync(join(bin, from), join(bin, to));
 }
 
 /** The evaluated test-build device reaches only the engine's text-input API. This

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Current screen</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="mock.css" />
+<link rel="stylesheet" href="design.css" />
+</head>
+<body>
+<div class="doc">
+<header class="doc-head">
+  <span>Artifactize desktop / design / current</span>
+  <nav aria-label="Design pages">
+    <a href="index.html">Overview</a>
+    <a href="monitor.html">Monitor</a>
+    <a href="current.html" aria-current="page">Current</a>
+    <a href="detail.html">Detail</a>
+    <a href="review.html">Review</a>
+    <a href="settings.html">Settings</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="ux-graph-doc.html">UX graph</a>
+  </nav>
+</header>
+<main data-screen="current">
+<h1>Current: a branch's worktree as it is now</h1>
+<p class="lead">
+  The Main area when a branch's Current is chosen: the header row with the scan's state, the
+  tool strip and the Current graph lit by what <code>verify</code> would do. The bar and the Pane are
+  as on the Monitor page; the Pane's Current entry sits in its pill.
+</p>
+
+<figure class="figure">
+<div class="stage" style="--w: 1280; --h: 800">
+<div class="stage-inner">
+<div class="m-window">
+  <header class="m-bar">
+    <span class="m-brand"><span class="m-mark"></span>Artifactize</span><span class="m-button m-switch on"><span class="m-icon i-pane"></span>Pane</span>
+    <span class="m-spacer"></span>
+    <span class="m-reviewer">alice</span>
+    <span class="m-button">Settings</span>
+    <span class="m-button">Commands <span class="m-kbd">Ctrl+K</span></span>
+  </header>
+  <div class="m-screen">
+    <section class="m-pane">
+      <div class="m-search"><div class="m-input"><span>sort:recent</span></div></div>
+      <div class="m-branches">
+        <div class="m-branch open">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">artifactize /</span> <b>dev</b></span>
+            <span class="m-star on m-icon i-star-on"></span>
+          </div>
+          <div class="m-timeline">
+            <div class="m-entry filled">
+              <span class="m-dot hollow"></span><span class="m-status">Current</span><span class="m-age"></span>
+              
+            </div>
+            <div class="m-entry">
+              <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
+              <span class="m-sub">run-7SR0YW</span>
+            </div>
+          </div>
+        </div>
+        <div class="m-branch">
+          <div class="m-branch-head">
+            <span class="m-chevron"></span>
+            <span class="m-branch-name"><span class="m-project">shop /</span> <b>main</b></span>
+            <span class="m-star m-icon i-star"></span>
+          </div>
+          <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
+        </div>
+      </div>
+      <section class="m-waiting"><h2>Waiting (0)</h2></section>
+    </section>
+    <div class="m-divider"></div>
+    <section class="m-main focused">
+      <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 1 left</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+      <div class="m-strip">
+        <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
+        <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
+        <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+      </div>
+      <div class="m-canvas">
+        <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(-22deg)"></div>
+        <div class="m-edge light-reused" style="left: 388px; top: 190px; width: 170px; transform: rotate(22deg)"></div>
+        <div class="m-edge light-run" style="left: 716px; top: 254px; width: 92px"></div>
+        <div class="m-node out light-reused" style="left: 220px; top: 170px"><span class="m-light"></span><span class="m-name">core</span><span class="m-tally">2/2</span></div>
+        <div class="m-node in light-checking" style="left: 548px; top: 106px"><span class="m-light"></span><span class="m-name">release</span></div>
+        <div class="m-node in out light-run" style="left: 548px; top: 234px"><span class="m-light"></span><span class="m-name">cli</span><span class="m-tally">1/3</span></div>
+        <div class="m-node in light-run" style="left: 808px; top: 234px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+<span class="callout" style="left: 645px; top: 43px">1</span>
+<span class="callout" style="left: 560px; top: 240px">2</span>
+</div>
+<figcaption>Stage 1280 × 800. A Current's lights say what verify would do: reused, would run, waiting, blocked, checking.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">1</span><div><b>Scan state</b><span>In the Main area's header row, after the view's name: while the scan runs, the checking icon and how many Artifacts are still being checked, as a count that falls (<i>1 left</i>: here release, the one node still checking); once it ends, the time it was scanned at; only a failure is said in words. Refresh at the row's end.</span></div></li>
+  <li><span class="n">2</span><div><b>Current graph</b><span>Drawn at once from the declarations, every node first <i>checking</i>, then lit in place as the scan learns what verify would do.</span></div></li>
+</ol>
+
+<h2>Rules</h2>
+<dl class="rules">
+  <dt id="D-CUR-1">D-CUR-1</dt>
+  <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n left</i>, how many Artifacts are still being checked, a count that falls to none and is read aloud as <i>Checking, n Artifacts left</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. A small Refresh button sits at the row's end (<kbd>Ctrl+R</kbd> and <kbd>F5</kbd> do the same); a refresh asked while a scan runs keeps that scan shown, the header still counting, and one more scan follows once it ends. <span class="avoid">a sentence for a scan that runs or ended well; a ratio that reads like a node's tally (<i>3/24</i>); a spinner without the count; the state in a banner; a second row for the scan's state; a key cap on Refresh.</span></dd>
+  <dt id="D-CUR-2">D-CUR-2</dt>
+  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
+</dl>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

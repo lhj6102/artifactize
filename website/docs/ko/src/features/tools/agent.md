@@ -22,7 +22,7 @@
 
 | 내장 도구 | 인자 | 결과 |
 |---|---|---|
-| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름 기준의 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
+| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름순으로 정리한 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
 | `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄이며(기본 1, 최대 9007199254740991), limit은 기본 80, 범위 1–500입니다 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
 | `list` | `{path?, offset?, limit?}`. offset은 0부터 세며(기본 0, 최대 9007199254740991), limit은 기본 200, 범위 1–200입니다 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
 | `glob` | `{pattern, path?}`. `path`는 디렉터리여야 합니다 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |
@@ -232,8 +232,7 @@ protocol = "json"
 호출을 취소합니다. 이후의 세션 호출은 ``The tool session `app` ended.``를 돌려주며, 다시
 시작하지 않습니다. 이 오류는 다른 도구 오류와 마찬가지로 저장된 대화에 기록됩니다.
 
-리뷰가 어떻게 끝나든(판정, 오류, 시간 초과, 취소) Agent 리뷰가 끝나면 artifactize는 결과를
-확인하고 저장하기 전에 시작된 세션을 모두 종료합니다. 먼저 실행 중인 세션 호출을 취소하고, 그다음 stop을 실행하며,
+Agent 리뷰는 판정·오류·시간 초과·취소 중 어떤 경우로 끝나든, 결과를 확인하고 저장하기 전에 시작한 세션을 모두 종료합니다. 먼저 실행 중인 세션 호출을 취소하고, 그다음 stop을 실행하며,
 최대 30초 뒤에는 artifactize가 세션의 프로그램을 직접 끝냅니다. 프로그램이 끝나면 stop이
 실패하거나 멈춰 있더라도 세션 폴더를 지웁니다. artifactize 자체가 강제로 종료되면 stop을 실행할
 수 없습니다. 정리에 실패하면 성공 결과 대신 그 실패를 알리며, 이전 세션이 정리되지 않으면 새 세션을 시작할 수 없습니다. 결과를 재사용하거나 실행 중인 리뷰에 합류할 때는 아무것도 시작하지 않습니다.

@@ -75,6 +75,19 @@ impl Plan {
 }
 
 impl CurrentArtifact {
+    /// How many of its evals would be reused, of how many it has, as its graph node counts
+    /// them; `None` without evals of its own or while it is still being checked.
+    pub fn tally(&self) -> Option<model::Tally> {
+        (!self.evals.is_empty() && self.plan != Plan::Check).then(|| model::Tally {
+            passed: self
+                .evals
+                .iter()
+                .filter(|eval| eval.plan == Plan::Reuse)
+                .count(),
+            of: self.evals.len(),
+        })
+    }
+
     /// Its plan as its node and row read: `would run (2 evals)`, `reused`, ….
     pub fn text(&self) -> String {
         match (self.plan, self.runs) {

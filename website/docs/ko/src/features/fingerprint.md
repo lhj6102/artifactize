@@ -76,10 +76,9 @@ Human 승인도 해당하며, 스크립트 출력이 그대로이거나 eval이 
 키에는 대상 Artifact와 포함된 모든 의존성의 이름과 종류(`folder`, `file`, `aspect`, `graph`)가
 들어갑니다. 폴더가 파일로 바뀌면 스크립트가 같은 fingerprint를 내더라도 이전 결과를 재사용하지
 않습니다. 실제 경로는 키에 들어가지 않으므로, 복사본의 이름, 종류, fingerprint가 원본과 같으면
-기존 리뷰 결과를 재사용합니다. 포함한 Artifact의 이름을 바꾸면 키가 바뀝니다. 대상 이름이 달라도 평가 기준과
-포함한 Artifact 전체가 같고, 두 대상 모두 부분이 있거나 둘 다 없으면 결과를 함께 쓸 수 있습니다.
-키는 포함한 Artifact 중 어느 것이 대상인지 따로 구분하지 않기 때문입니다. 예를 들어 두 Artifact에 같은 eval을 선언하고 각 eval에서
-상대 Artifact를 참조하면 두 eval은 결과를 공유합니다. **eval 정의 해시**는 eval의 **평가 기준** 중 하나가 바뀔 때마다
+기존 리뷰 결과를 재사용합니다. 포함한 Artifact의 이름을 바꾸면 키가 바뀝니다. 이름이 다른 두 Artifact도 결과를 함께 쓸 수 있습니다.
+예를 들어 두 Artifact에 상대를 읽는 같은 eval을 선언하면, 두 eval은 같은 평가 기준으로 같은 Artifact들을
+포함하므로 결과 하나를 재사용합니다. **eval 정의 해시**는 eval의 **평가 기준** 중 하나가 바뀔 때마다
 바뀝니다.
 
 - eval 종류(Runtime, Agent, Human)
@@ -144,8 +143,7 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
   eval 작성자가 제공한 추가 정보를 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
 
 평가 실행 옵션은 빠집니다. 여기에는 백엔드, 모델, reasoning과 fingerprint 스크립트 시간 제한을 비롯한 모든 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그가 포함됩니다. 모든 도구 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용도 빠집니다. 선언한 범위 경로와, 범위가 정해진
-인자의 Artifact 참조 뒤에 붙인 하위 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 소유 관계를 유지한 채 위치만 옮기면 그래프
-fingerprint는 바뀌지 않습니다. 실행 옵션은 그래프 fingerprint에서 빠질 뿐, 일반 상태 기록에는 그대로 저장됩니다.
+인자의 Artifact 참조 뒤에 붙인 하위 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 Artifact 간의 포함 관계를 유지한 채 경로만 바꾸면 그래프 fingerprint는 달라지지 않습니다. 실행 옵션은 그래프 fingerprint에서 빠질 뿐, 일반 상태 기록에는 그대로 저장됩니다.
 
 그래프 리뷰는 항상 이전 구조와의 차이가 아니라 현재 구조를 봅니다. 그래프 eval의 제목을 바꾸면
 그래프를 다시 리뷰합니다. 다른 eval은 제목을 바꿔도 다시 리뷰하지 않습니다.

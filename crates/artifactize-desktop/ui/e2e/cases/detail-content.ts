@@ -2,7 +2,7 @@
 // actual Agent conversation/runtime output, and the different tab and view treatments.
 import assert from "node:assert/strict";
 import { createRich, FINDING, LONG_NAME, LONG_WORD, MODEL, OWNER } from "../rich-fixture.ts";
-import { aside, detail, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
+import { aside, detail, graphShown, openArtifact, openTab, summary, unfold } from "../graph-view.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { subdued } from "../rendering.ts";
@@ -25,7 +25,10 @@ export const scenarios: Scenario[] = [
       await selectRun(runs[1]);
       await graphShown(browser, `a:${LONG_NAME}`);
       const opened = await openArtifact(browser, `a:${LONG_NAME}`, `Artifact ${LONG_NAME}`);
-      assert.equal(opened.tabs.length, 17, "the Artifact and every one of its sixteen criteria");
+      assert.equal(opened.evals.length, 16, "every one of its sixteen criteria listed");
+      // An eval's tab: its chips, the Artifact's then all sixteen evals', wrap within the Detail.
+      await openTab(browser, `e:${LONG_NAME}/agent`, { row: true });
+      assert.equal((await detail(browser))?.tabs.length, 17, "the Artifact and every one of its sixteen criteria");
       const chips = () => browser.execute(() => {
         const dock = document.querySelector('aside[aria-label="Detail"]')!;
         const box = dock.getBoundingClientRect();
@@ -62,12 +65,16 @@ export const scenarios: Scenario[] = [
         `the Detail title shows the long name whole: ${JSON.stringify(heading)}`);
       const initial = await chips();
       assert.ok(initial.clipped && initial.icon && initial.slash && initial.rows > 1 && initial.contained && initial.rounded, JSON.stringify(initial));
-      assert.notEqual(initial.fills[0], initial.fills[1], "the chosen Artifact chip is filled, unlike the eval chips");
-      await openTab(browser, `e:${LONG_NAME}/agent`);
+      assert.ok(initial.selected > 0 && initial.fills[initial.selected] !== initial.fills[0], `the chosen eval chip is filled, unlike the Artifact's: ${JSON.stringify(initial.fills)}`);
       await browser.waitUntil(async () => (await summary(browser)).status.includes("REUSED"), { timeout: 15000, timeoutMsg: "the reused Agent Summary" });
+      // Read now and then, they start folded to their rows.
+      for (const section of ["Execution options", "Execution metadata", "Fingerprint"]) {
+        assert.equal(await aside(browser).$(`button.head=${section}`).getAttribute("aria-expanded"), "false", `${section} starts folded`);
+        await unfold(browser, section);
+      }
       const record = () => browser.execute(() => {
         const shown = document.querySelector('aside[aria-label="Detail"] [role="document"]')!;
-        const block = (title: string) => [...shown.querySelectorAll(".block")].find((block) => block.querySelector("h3")?.textContent === title)?.textContent ?? "";
+        const block = (title: string) => [...shown.querySelectorAll(".section")].find((section) => section.querySelector(".head")?.textContent?.trim() === title)?.querySelector(".body")?.textContent ?? "";
         const cost = shown.querySelector<HTMLElement>(".cost")!;
         const status = shown.querySelector<HTMLElement>(".status")!;
         return {
@@ -82,14 +89,18 @@ export const scenarios: Scenario[] = [
       const saved = await record();
       assert.match(saved.result, new RegExp(OWNER));
       assert.match(saved.result, /owner/);
-      assert.match(saved.result, /2 findings/);
+      assert.doesNotMatch(saved.result, /2 findings/, "a list goes without a count of its own items");
+      assert.match(saved.result, /findings/);
       assert.match(saved.result, /R-RECEIPT · receipt.md:12/);
       assert.ok(saved.result.includes(FINDING));
       assert.equal(saved.numbered, 2, "findings render as independently expected numbered items");
       assert.match(saved.options, /openai/);
       assert.match(saved.options, new RegExp(MODEL));
       assert.match(saved.options, /60000/);
-      assert.match(saved.metadata, /saved.*48\.2k tokens/);
+      // Its times and usage as facts; what the status line says is not said again.
+      assert.match(saved.metadata, /Timing/);
+      assert.match(saved.metadata, /totalTokens 48200/);
+      assert.doesNotMatch(saved.metadata, /48\.2k tokens/);
       assert.match(saved.fingerprint, /artifactsum:/);
       assert.match(saved.cost, /saved.*48\.2k tokens/);
       assert.match(saved.cost, new RegExp(MODEL));
@@ -158,13 +169,12 @@ export const scenarios: Scenario[] = [
       });
       assert.ok(["auto", "scroll"].includes(log.own) && log.long, "the runtime log scrolls in its own box");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the runtime log's Detail closed back to the graph");
-      // An eval-free Artifact's Detail holds only its own Artifact chip: no eval chip, no "/",
-      // and no Summary or log left from the Artifact shown before.
+      // An eval-free Artifact's Detail holds its own tab alone: no chips, no evals, and no
+      // Summary or log left from the Artifact shown before.
       await graphShown(browser, "a:basis");
       const basis = await openArtifact(browser, "a:basis", "Artifact basis [basis]");
-      assert.deepEqual(basis.tabs.map((tab) => tab.name), ["basis"]);
-      assert.equal(basis.path, "basis", "an eval-free Artifact has no trailing slash");
-      assert.ok(basis.tabs[0].selected && basis.evals.length === 0);
+      assert.deepEqual(basis.tabs, []);
+      assert.equal(basis.evals.length, 0);
       assert.ok(!(await aside(browser).getText()).includes("fixture stdout"), "the previous Artifact's log is gone");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the basis Detail closed back to the graph");
       // The other saved Run actually executed the Agent, rather than reusing its result.

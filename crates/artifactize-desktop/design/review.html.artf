@@ -1,0 +1,15 @@
+name = "desktop-design-review"
+# Review: a Human review in the Main area
+
+[views.agent_tools]
+read = { builtin = "read", args = ["review.html"] }
+
+[evals.well-formed]
+title = "The review page links the design's sheets, numbers its callouts and states its rules"
+profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "page", "review.html"], timeout_ms = 30000 }
+
+[evals.well-formed.payload]
+instruction = """
+Check {desktop-design-review} with {desktop-design-check}: it links tokens.css, mock.css and design.css, declares its \
+screen, every callout has its note and every note its callout, its D- rule ids are unique and each has its text, \
+and no colour literal appears in it."""

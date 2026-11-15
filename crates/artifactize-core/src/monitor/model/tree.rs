@@ -78,6 +78,8 @@ pub struct Node {
     pub text: Vec<Segment>,
     /// Right column: elapsed time for evals, `passed/total` for Artifacts.
     pub right: String,
+    /// Artifact rows with evals: how many of them pass, of how many (the `right` column).
+    pub tally: Option<Tally>,
     /// Right column of the compact tree: elapsed time, `←X`/`←N`, or `passed/total`.
     pub compact: String,
     /// The state changed after the Run ended (rendered as a dim `*`).
@@ -91,6 +93,20 @@ pub struct Node {
     /// Timed eval rows, so a cached tree can redraw its elapsed times.
     pub clock: Option<Clock>,
     pub children: Vec<Node>,
+}
+
+/// How many of an Artifact's evals are GREEN, of how many it has: its row's right column and
+/// its graph node's count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tally {
+    pub passed: usize,
+    pub of: usize,
+}
+
+impl std::fmt::Display for Tally {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}/{}", self.passed, self.of)
+    }
 }
 
 /// When a timed eval started and, once settled, ended.
@@ -401,6 +417,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a EvalId, now: OffsetDateTime) -> 
         text: text(states, &view, request),
         compact: compact(&view, &right),
         right,
+        tally: None,
         changed: false,
         upstream: states.upstream_states(eval),
         held: states.held_for_run(eval),
@@ -547,11 +564,11 @@ fn artifact_node<'a>(
         .iter()
         .filter(|eval| states.effective(eval) == crate::graph::EvalStatus::Green)
         .count();
-    let right = if children.is_empty() {
-        String::new()
-    } else {
-        format!("{passed}/{}", children.len())
-    };
+    let tally = (!children.is_empty()).then_some(Tally {
+        passed,
+        of: children.len(),
+    });
+    let right = tally.map_or_else(String::new, |tally| tally.to_string());
     let parts = states.index.parts.get(id).map_or(&[][..], Vec::as_slice);
     // Parts that keep the Artifact from passing, most urgent first.
     let mut pending: Vec<_> = parts
@@ -636,6 +653,7 @@ fn artifact_node<'a>(
         text,
         compact: right.clone(),
         right,
+        tally,
         changed: false,
         upstream: Vec::new(),
         held: false,

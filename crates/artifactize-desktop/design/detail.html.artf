@@ -1,0 +1,15 @@
+name = "desktop-design-detail"
+# Detail: the inspector of the selected Artifact
+
+[views.agent_tools]
+read = { builtin = "read", args = ["detail.html"] }
+
+[evals.well-formed]
+title = "The detail page links the design's sheets, numbers its callouts and states its rules"
+profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "page", "detail.html"], timeout_ms = 30000 }
+
+[evals.well-formed.payload]
+instruction = """
+Check {desktop-design-detail} with {desktop-design-check}: it links tokens.css, mock.css and design.css, declares its \
+screen, every callout has its note and every note its callout, its D- rule ids are unique and each has its text, \
+and no colour literal appears in it."""

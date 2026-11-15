@@ -70,10 +70,10 @@ const BRANCH: BranchKey = { kind: "branch", common: "/work/app/.git", branch: "m
 //   lib ──> app ──> site; suite ⊃ { app, site }
 const SHAPE: Shape = {
   nodes: [
-    { id: "a:lib", name: "lib", light: "green", note: null, parts: [] },
-    { id: "a:suite", name: "suite", light: "red", note: null, parts: ["a:app", "a:site"] },
-    { id: "a:app", name: "app", light: "red", note: null, parts: [] },
-    { id: "a:site", name: "site", light: "green", note: null, parts: [] },
+    { id: "a:lib", name: "lib", light: "green", tally: null, note: null, parts: [] },
+    { id: "a:suite", name: "suite", light: "red", tally: null, note: null, parts: ["a:app", "a:site"] },
+    { id: "a:app", name: "app", light: "red", tally: null, note: null, parts: [] },
+    { id: "a:site", name: "site", light: "green", tally: null, note: null, parts: [] },
   ],
   edges: [
     { source: "a:lib", target: "a:app", light: "green" },
@@ -91,7 +91,8 @@ function serve() {
 }
 
 const node = (id: string) => document.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${id}"]`);
-const button = (name: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`);
+/** A whole's Minimize or Expand button, by its name without the key the name carries. */
+const button = (name: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${name} (m)"]`);
 
 async function drawn() {
   serve();
@@ -150,8 +151,11 @@ it("keeps a whole minimized on every graph of its branch, and only there", async
   expect(app.monitor.minimizedOn(BRANCH)).toEqual(["a:suite"]);
 
   // Another Run of the branch, and its Current, draw suite minimized.
+  const before = laid.minimized.length;
   await rerender({ source: { kind: "run", run: "run-b" }, revision: 2 });
-  await waitFor(() => expect(laid.minimized.at(-1)).toEqual(["a:suite"]));
+  // The new Run's own layout, not the one already drawn.
+  await waitFor(() => expect(laid.minimized.length).toBe(before + 1));
+  expect(laid.minimized.at(-1)).toEqual(["a:suite"]);
   await waitFor(() => expect(node("a:suite")?.classList.contains("svelte-flow__node-minimized")).toBe(true));
   await rerender({ source: { kind: "current", branch: BRANCH }, revision: 3 });
   await waitFor(() => expect(laid.minimized.length).toBe(3));
@@ -213,8 +217,28 @@ it("ignores m typed in a field, during a composition, with a modifier or with fo
   expect(laid.minimized).toEqual([[]]);
 });
 
-it("names m on the graph's bottom and in the button's tooltip", async () => {
+it("names m in the button's name and its tooltip, and nowhere else on the graph", async () => {
   await drawn();
-  expect(document.querySelector(".hint")?.textContent).toContain("m minimizes or expands a whole");
   expect(button("Minimize suite")?.title).toBe("Minimize (m)");
+  expect(button("Minimize suite")?.getAttribute("aria-keyshortcuts")).toBe("m");
+  expect(document.querySelector(".svelte-flow")?.closest(".graph")?.querySelector("kbd")).toBeNull();
+});
+
+it("shows a port only on the side edges reach or leave, on a minimized whole those of the Artifacts it hides", async () => {
+  await drawn();
+  const ports = (id: string) => {
+    const face = node(id)?.querySelector(".ported");
+    return face ? { inward: face.classList.contains("inward"), outward: face.classList.contains("outward") } : null;
+  };
+  expect(ports("a:lib")).toEqual({ inward: false, outward: true });
+  expect(ports("a:suite/a:app")).toEqual({ inward: true, outward: true });
+  expect(ports("a:suite/a:site")).toEqual({ inward: true, outward: false });
+  // No edge meets the box itself while its parts are drawn.
+  expect(ports("a:suite")).toEqual({ inward: false, outward: false });
+
+  await fireEvent.click(button("Minimize suite")!);
+  await waitFor(() => expect(node("a:suite/a:app")).toBeNull());
+  // lib's edge meets the minimized whole; the edge between the parts it hides is not drawn.
+  await waitFor(() => expect(ports("a:suite")).toEqual({ inward: true, outward: false }));
+  expect(ports("a:lib")).toEqual({ inward: false, outward: true });
 });
