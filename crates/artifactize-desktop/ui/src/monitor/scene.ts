@@ -40,7 +40,7 @@ const STACK = 3;
 const WHOLE_FACE = 0.4;
 /** The icon set's own box, in which its shapes are drawn (icons.ts). */
 const ICON_BOX = 12;
-/** The smallest font, in device-independent pixels, at which a name is still painted. */
+/** The smallest font, in device-independent pixels, at which a name still reads. */
 const LEGIBLE = 5;
 /** The smallest port, in device-independent pixels, whose shape still reads. */
 const PORT_SHOWN = 3;
@@ -52,6 +52,12 @@ const AROUND = 0.5;
 /** How far beyond the canvas an Artifact still counts as in view, as a share of the canvas:
  * panning a little never finds one missing. */
 const MARGIN = 0.25;
+
+/** Whether names in a font of `font` graph pixels read at `zoom`: further out, an Artifact is a
+ * block of its status's colour and a whole its box's outline. */
+export function legible(font: number, zoom: number): boolean {
+  return font * zoom >= LEGIBLE;
+}
 
 /** The laid-out Artifacts: where each is, and an index of them by area. */
 export type Scene = {
@@ -245,7 +251,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   // and a square on the right, in the edges' neutral colour.
   const pixels = (name: string) => Number.parseFloat(token(name)) || 0;
   const [corner, font, label, icon, strip, port] = [pixels("--radius-control"), pixels("--text-body"), pixels("--text-label"), pixels("--icon"), pixels("--strip"), pixels("--port") * zoom];
-  const legible = font * zoom >= LEGIBLE;
+  const readable = legible(font, zoom);
   const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
   const radius = Math.min(corner * zoom, corner);
@@ -274,7 +280,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const whole = at.wholes.has(number);
     const place = at.places[number];
     const [x, y, w, h] = [place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1)];
-    if (!legible) {
+    if (!readable) {
       if (whole) add(outlines, light).rect(x, y, w, h);
       else add(blocks, light).rect(x, y, w, h);
       continue;
@@ -321,7 +327,7 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     context.strokeStyle = colour(light);
     context.stroke(path);
   }
-  if (!legible) return;
+  if (!readable) return;
   context.fillStyle = token("--surface-panel");
   context.globalAlpha = WHOLE_FACE;
   context.fill(boxFaces);

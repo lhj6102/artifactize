@@ -12,8 +12,8 @@
   //
   // A graph of more Artifacts than the window keeps as elements (a Run of tens of thousands)
   // draws its edges on a canvas below them, and keeps as elements only the Artifacts in view
-  // while at most that many are; with more in view, they are boxes on the canvas, which a click
-  // opens as it opens an element.
+  // while at most that many are and their names read; with more in view, or zoomed out too far
+  // for names, they are boxes on the canvas, which a click opens as it opens an element.
   //
   // A whole is a box around its parts (parts.ts), a parent node in Svelte Flow, and a part of
   // several wholes is drawn in each: every copy opens its Artifact, and the opened Artifact's
@@ -35,7 +35,7 @@
   import { boxes, copies, copyEdges, drawings, partsCount } from "./parts";
   import { BLOCKING, WORDS, tallyWords, type Point } from "./graph";
   import { area, centred, whole, type Area, type Fit } from "./camera";
-  import { Picture, hit, scene, view, within } from "./scene";
+  import { Picture, hit, legible, scene, view, within } from "./scene";
   import { label, plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
 
@@ -88,7 +88,7 @@
    * it, never out. */
   const READABLE = 0.75;
   /** The most Artifacts kept as elements: the window stays quick to pan and zoom with this
-   * many, and a camera holding about this many shows their names readably. */
+   * many. */
   const DRAWN = 500;
   /** How the whole graph fits, its first view and Fit View: never enlarged beyond its nodes'
    * own size, only the person's own zooming goes further. */
@@ -127,12 +127,13 @@
   /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
    * none before the canvas has a size. */
   const inView = $derived(large && v.area ? within(laid, view(camera.current, v.area.width, v.area.height), DRAWN) : []);
+  /** The Artifacts in view are painted as boxes, while too many are in view to keep as elements
+   * or the zoom makes their names too small to read: a smaller canvas holds fewer at a zoom. */
+  const painted = $derived(inView === null || (large && !legible(v.font, camera.current.zoom)));
   /** The copies kept as elements: every one of a small graph (`null`); of a large one, those
-   * in view while at most `DRAWN` are. A text key, so that panning over the same ones keeps
+   * in view while they are not painted. A text key, so that panning over the same ones keeps
    * the same elements. */
-  const kept = $derived(large ? (inView?.join() ?? "") : null);
-  /** The Artifacts in view are painted as boxes, while too many are in view to keep as elements. */
-  const painted = $derived(inView === null);
+  const kept = $derived(large ? (painted ? "" : (inView?.join() ?? "")) : null);
 
   // Lights change in place; positions only come with a new layout.
   let nodes = $derived.by<Node[]>(() => {
@@ -244,9 +245,12 @@
     const slack = 0.5 / zoom;
     return bounds.x >= left - slack && bounds.y >= top - slack && bounds.x + bounds.width <= right + slack && bounds.y + bounds.height <= bottom + slack;
   });
-  /** Read the grid's cell from the --grid token once the canvas is there. */
+  /** Read the grid's cell and the names' font from the --grid and --text-body tokens once the
+   * canvas is there. */
   const grid: Attachment<HTMLElement> = (canvas) => {
-    v.cell = Number.parseFloat(getComputedStyle(canvas).getPropertyValue("--grid")) || v.cell;
+    const style = getComputedStyle(canvas);
+    v.cell = Number.parseFloat(style.getPropertyValue("--grid")) || v.cell;
+    v.font = Number.parseFloat(style.getPropertyValue("--text-body")) || v.font;
   };
   const gridSize = $derived(v.cell * camera.current.zoom);
 
