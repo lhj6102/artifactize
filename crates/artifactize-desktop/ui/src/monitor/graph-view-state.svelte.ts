@@ -12,6 +12,8 @@ export class GraphViewState {
   fitted = $state(false);
   /** The canvas grid's cell at zoom 1, in screen pixels, as the --grid token sets it. */
   cell = $state(24);
+  /** An Artifact's name's font at zoom 1, in screen pixels, as the --text-body token sets it. */
+  font = $state(13);
 }
 
 export const [getGraphViewState, setGraphViewState] = createContext<GraphViewState>();
