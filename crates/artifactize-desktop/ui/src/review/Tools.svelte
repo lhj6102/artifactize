@@ -1,13 +1,13 @@
 <script lang="ts">
   // The request's Human tools, grouped by the Artifact that declares them (the reviewed eval's
-  // own first), and the Tool log of every run in this review. A click runs a tool at once; what
-  // it prints arrives in the log line by line while it runs, a launched program's until it
-  // exits. The log is plain selectable text: the reviewer copies from it into the result.
+  // own first, a group led by its Artifact only when more than one declares tools), each a small
+  // button led by the run icon with its description. A click runs a tool at once; what it
+  // prints arrives in the review's Tool log line by line while it runs.
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { ToolView } from "../ipc/client";
   import type { Review } from "./review.svelte";
-  import ToolLog from "./ToolLog.svelte";
+  import Icon from "../shell/Icon.svelte";
   import brandMark from "../../../../../assets/brand/artifactize-icon-mark.svg";
 
   let { review }: { review: Review } = $props();
@@ -34,8 +34,7 @@
   };
 </script>
 
-<section class="tools" aria-label="Tools" tabindex="-1" onfocusin={() => (review.area = "tools")} {@attach focusTools}>
-  <h4>Tools</h4>
+<div class="tools" role="group" aria-label="Tools" tabindex="-1" onfocusin={() => (review.area = "tools")} {@attach focusTools}>
   {#if tools.length === 0}
     <p class="muted">
       {review.view?.recorded
@@ -46,10 +45,10 @@
     {#if !review.owned && !review.settled}<p class="muted">Claim the review to use its tools.</p>{/if}
     {#each groups as group (group.artifact)}
       <div class="group" role="group" aria-label="Tools of {group.artifact}">
-        <p class="artifact"><img class="mark" src={brandMark} alt="" />{group.artifact}</p>
+        {#if groups.length > 1}<p class="artifact"><img class="mark" src={brandMark} alt="" />{group.artifact}</p>{/if}
         {#each group.tools as tool (tool.name)}
-          <div class="tool">
-            <button class="button small" disabled={!usable} onclick={() => run(tool)}>▶ {tool.operation}</button>
+          <div class="tool" class:nested={groups.length > 1}>
+            <button class="button small" disabled={!usable} onclick={() => run(tool)}><Icon name="play" />{tool.operation}</button>
             <span class="description">{tool.description}</span>
             {#if tool.error}<span class="reason">{tool.error}</span>{/if}
           </div>
@@ -57,19 +56,12 @@
       </div>
     {/each}
   {/if}
-</section>
-
-<ToolLog entries={review.log} empty="What the tools print shows here while this review is open." />
+</div>
 
 <style>
-  h4 {
-    margin: 0 0 6px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--accent);
-  }
   .tools {
     min-width: 0;
+    outline: none;
   }
   .group {
     margin-bottom: 8px;
@@ -84,30 +76,42 @@
   }
   .mark {
     flex: none;
-    width: 1.1em;
-    height: 1.1em;
+    width: var(--icon);
+    height: var(--icon);
   }
   .tool {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
     align-items: baseline;
     gap: 2px 10px;
-    padding: 2px 0 2px 18px;
+    padding: 2px 0;
+  }
+  .tool.nested {
+    padding-left: 18px;
+  }
+  /* A long operation name wraps inside its button rather than widening the Detail. */
+  .tool .button {
+    height: auto;
+    min-height: 22px;
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+    overflow-wrap: anywhere;
   }
   .description,
   .reason {
-    font-size: 12px;
+    font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
   .description {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .reason {
     grid-column: 2;
     color: var(--red);
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
     margin: 0 0 6px;
   }
 </style>

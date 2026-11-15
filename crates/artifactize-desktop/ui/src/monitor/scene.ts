@@ -5,8 +5,10 @@
 // camera's transform. A whole's box is painted as its outline, its parts inside it.
 import type { Rect, Viewport } from "@xyflow/svelte";
 import type { Light, Shape } from "../ipc/client";
-import type { Point } from "./graph";
+import { ICONS, LIGHTS } from "../shell/icons";
+import { BLOCKING, type Point } from "./graph";
 import { NODE } from "./layout";
+import { BOX, partsCount } from "./parts";
 
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
@@ -19,13 +21,43 @@ const GRAIN = 8;
 const FAR = 1024;
 const SPAN = 2 * FAR + 1;
 /** The width of the ring around the opened Artifact, as its element draws it. */
-const RING = 3;
+const RING = 2;
+/** A node's anatomy in graph pixels, as ArtifactNode.svelte draws it: its padding on the left
+ * and the right, and the gap after its icon, before its tally. Its corner radius, its icon's
+ * box, its strip, its port and its fonts are the theme's tokens, read when painting. */
+const NODE_PAD = 12;
+const NODE_PAD_END = 10;
+const NODE_GAP = 8;
+/** A whole's Minimize or Expand button: its side, and its gap to the title row's end, as its
+ * element draws it. */
+const TOGGLE = 20;
+const TOGGLE_END = 6;
+/** The line height of a minimized whole's name and its parts count, as its element sets it. */
+const LINE = 1.2;
+/** How far a minimized whole's second outline sits behind it, down and right. */
+const STACK = 3;
+/** A whole's box face: the panel's colour at this opacity. */
+const WHOLE_FACE = 0.4;
+/** The icon set's own box, in which its shapes are drawn (icons.ts). */
+const ICON_BOX = 12;
+/** The smallest font, in device-independent pixels, at which a name still reads. */
+const LEGIBLE = 5;
+/** The smallest port, in device-independent pixels, whose shape still reads. */
+const PORT_SHOWN = 3;
+/** An edge's stroke in graph pixels, as the graph's elements draw it. */
+const EDGE_WIDTH = 1.25;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the
  * camera pans this far before the picture is painted again. */
 const AROUND = 0.5;
 /** How far beyond the canvas an Artifact still counts as in view, as a share of the canvas:
  * panning a little never finds one missing. */
 const MARGIN = 0.25;
+
+/** Whether names in a font of `font` graph pixels read at `zoom`: further out, an Artifact is a
+ * block of its status's colour and a whole its box's outline. */
+export function legible(font: number, zoom: number): boolean {
+  return font * zoom >= LEGIBLE;
+}
 
 /** The laid-out Artifacts: where each is, and an index of them by area. */
 export type Scene = {
@@ -112,7 +144,8 @@ export function hit(at: Scene, point: Point): string | null {
 }
 
 /** What to paint: the graph's lights, the camera, the canvas's size and pixel ratio, whether
- * the Artifacts are painted as boxes, and the copies that show the opened Artifact. */
+ * the Artifacts are painted as boxes, the copies that show the opened Artifact, and the
+ * minimized wholes by key with how many parts each holds. */
 export type Paint = {
   graph: Shape;
   viewport: Viewport;
@@ -121,6 +154,7 @@ export type Paint = {
   ratio: number;
   boxes: boolean;
   opened: ReadonlySet<string>;
+  minimized: ReadonlyMap<string, number>;
 };
 
 /** The graph's edges by the numbers of their ends in a scene, with their lights. */
@@ -144,26 +178,46 @@ function ends(at: Scene, graph: Shape): Ends {
 }
 
 /** Paint `what` onto `context`, which is `what.width` × `what.height` at `what.ratio`: the
- * edges in view, then the Artifacts in view as boxes if asked, in the theme's lights. Edges are
- * one device pixel wide, which the canvas draws many times faster than wider ones. Of edges
+ * edges in view, then the Artifacts in view as nodes if asked, in the theme's lights. Edges are
+ * at least one device pixel wide, the regular stroke once the zoom asks for more; one pixel is
+ * what the canvas draws many times faster than wider ones. Of edges
  * whose ends fall into the same `GRAIN` cells of the screen only the first is drawn, and one
  * shorter than a cell not at all: at a whole catalog's scale, thousands of edges from one
  * shared input end in the same few pixels. */
+/** `text` as it fits in `width` with `context`'s font: whole, or cut with an ellipsis, as a
+ * node's element cuts its name. */
+function cut(context: CanvasRenderingContext2D, text: string, width: number): string {
+  if (context.measureText(text).width <= width) return text;
+  let [fits, over] = [0, text.length];
+  while (over - fits > 1) {
+    const middle = (fits + over) >> 1;
+    if (context.measureText(`${text.slice(0, middle)}…`).width <= width) fits = middle;
+    else over = middle;
+  }
+  return `${text.slice(0, fits)}…`;
+}
+
 function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const style = getComputedStyle(document.documentElement);
-  const colour = (light: Light) => style.getPropertyValue(`--light-${light}`).trim();
+  const token = (name: string) => style.getPropertyValue(name).trim();
+  const colour = (light: Light) => token(LIGHTS[light].colour);
   const { viewport, ratio, width, height } = what;
   const { zoom, x: left, y: top } = viewport;
   context.setTransform(1, 0, 0, 1, 0, 0);
   context.clearRect(0, 0, width * ratio, height * ratio);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  context.lineWidth = 1 / ratio;
+  context.lineWidth = Math.max(1 / ratio, EDGE_WIDTH * zoom);
 
   const { sources, targets, lights } = ends(at, what.graph);
-  const paths = new Map<Light, Path2D>();
+  // Edges are neutral; those that leave a RED, ERROR or blocked Artifact take its colour.
+  const paths = new Map<Light | null, Path2D>();
   const drawn = new Set<number>();
   const grain = (value: number) => Math.min(Math.max(Math.floor(value / GRAIN), -FAR), FAR) + FAR;
+  // The Artifacts edges reach, and those they leave: each shows its port on that side.
+  const [inward, outward] = [new Uint8Array(at.places.length), new Uint8Array(at.places.length)];
   for (let edge = 0; edge < sources.length; edge += 1) {
+    inward[targets[edge]] = 1;
+    outward[sources[edge]] = 1;
     const [source, target] = [at.places[sources[edge]], at.places[targets[edge]]];
     const [x1, y1] = [(source.x + source.width) * zoom + left, (source.y + source.height / 2) * zoom + top];
     const [x2, y2] = [target.x * zoom + left, (target.y + target.height / 2) * zoom + top];
@@ -174,38 +228,186 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const key = ((cells[0] * SPAN + cells[1]) * SPAN + cells[2]) * SPAN + cells[3];
     if (drawn.has(key)) continue;
     drawn.add(key);
-    let path = paths.get(lights[edge]);
-    if (!path) paths.set(lights[edge], (path = new Path2D()));
+    const light = BLOCKING.has(lights[edge]) ? lights[edge] : null;
+    let path = paths.get(light);
+    if (!path) paths.set(light, (path = new Path2D()));
     // Svelte Flow's bezier from the source's right side to the target's left.
     const offset = x2 >= x1 ? 0.5 * (x2 - x1) : 0.25 * 25 * Math.sqrt((x1 - x2) * zoom);
     path.moveTo(x1, y1);
     path.bezierCurveTo(x1 + offset, y1, x2 - offset, y2, x2, y2);
   }
-  for (const [light, path] of paths) {
-    context.strokeStyle = colour(light);
+  // The neutral edges first, so a coloured one shows over them.
+  for (const [light, path] of [...paths].sort(([one], [other]) => Number(one !== null) - Number(other !== null))) {
+    context.strokeStyle = light === null ? token("--edge") : colour(light);
     context.stroke(path);
   }
   if (!what.boxes) return;
 
-  const lit = new Map(what.graph.nodes.map((node) => [node.id, node.light]));
-  const boxes = new Map<Light, Path2D>();
-  const outlines = new Map<Light, Path2D>();
+  // The Artifacts in view. Where a name would be too small to read, a node is one block of its
+  // status's colour and a whole its box's outline in that colour. From the zoom at which names
+  // read, each is painted as its element draws it: a node's neutral face and outline, its icon
+  // and strip in its status's colour, its name, cut to the face, and its tally; a whole's
+  // neutral box with its title row; and their ports, a triangle pointing in on the left side
+  // and a square on the right, in the edges' neutral colour.
+  const pixels = (name: string) => Number.parseFloat(token(name)) || 0;
+  const [corner, font, label, icon, strip, port] = [pixels("--radius-control"), pixels("--text-body"), pixels("--text-label"), pixels("--icon"), pixels("--strip"), pixels("--port") * zoom];
+  const readable = legible(font, zoom);
+  const named = new Map(what.graph.nodes.map((node) => [node.id, node]));
   const shown = { x: -left / zoom, y: -top / zoom, width: width / zoom, height: height / zoom };
+  const radius = Math.min(corner * zoom, corner);
+  const blocks = new Map<Light, Path2D>();
+  const outlines = new Map<Light, Path2D>();
+  const faces = new Path2D();
+  /** A whole's box: the panel's face at 40%, behind its parts. */
+  const boxFaces = new Path2D();
+  /** A minimized whole's second outline behind it, for the parts it holds. */
+  const stacked = new Path2D();
+  const neutral = new Path2D();
+  /** Each whole's Minimize or Expand control at its title row's end, by its button's corner. */
+  const toggles: { icon: "minus" | "add"; x: number; y: number }[] = [];
+  const strips = new Map<Light, Path2D>();
+  const ports = new Path2D();
+  const marks: { light: Light; x: number; y: number }[] = [];
+  const names: { x: number; y: number; width: number; text: string; count: string; tally: string; whole: boolean }[] = [];
+  const add = (into: Map<Light, Path2D>, light: Light) => {
+    let path = into.get(light);
+    if (!path) into.set(light, (path = new Path2D()));
+    return path;
+  };
   for (const number of within(at, shown) ?? []) {
-    const light = lit.get(at.nodes[number]) ?? "waiting";
-    const paths = at.wholes.has(number) ? outlines : boxes;
-    let path = paths.get(light);
-    if (!path) paths.set(light, (path = new Path2D()));
+    const node = named.get(at.nodes[number]);
+    const light = node?.light ?? "waiting";
+    const whole = at.wholes.has(number);
     const place = at.places[number];
-    path.rect(place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1));
+    const [x, y, w, h] = [place.x * zoom + left, place.y * zoom + top, Math.max(place.width * zoom, 1), Math.max(place.height * zoom, 1)];
+    if (!readable) {
+      if (whole) add(outlines, light).rect(x, y, w, h);
+      else add(blocks, light).rect(x, y, w, h);
+      continue;
+    }
+    // A node's face, or a whole's title row, with the strip in its status's colour below it; a
+    // whole, boxed or minimized, ends its title row with its control.
+    const folded = what.minimized.get(at.ids[number]);
+    const row = whole ? Math.min(BOX.header * zoom, h) : h;
+    if (whole) boxFaces.roundRect(x, y, w, h, radius);
+    else faces.roundRect(x, y, w, h, radius);
+    if (folded !== undefined) stacked.roundRect(x + STACK * zoom, y + STACK * zoom, w, h, radius);
+    neutral.roundRect(x, y, w, h, radius);
+    add(strips, light).rect(x, y + row - strip * zoom, w, strip * zoom);
+    marks.push({ light, x: x + NODE_PAD * zoom, y: y + row / 2 - (icon * zoom) / 2 });
+    const start = (NODE_PAD + icon + NODE_GAP) * zoom;
+    let end = NODE_PAD_END * zoom;
+    if (whole || folded !== undefined) {
+      // The control as its element draws it: a button of TOGGLE pixels with its own outline.
+      const side = TOGGLE * zoom;
+      toggles.push({ icon: whole ? "minus" : "add", x: x + w - TOGGLE_END * zoom - side, y: y + row / 2 - side / 2 });
+      end = (TOGGLE_END + TOGGLE + NODE_GAP) * zoom;
+    }
+    const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
+    const count = folded === undefined ? "" : partsCount(folded);
+    if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - end, text: node.name, count, tally, whole });
+    if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
+      const [middle, half] = [y + h / 2, port / 2];
+      if (inward[number]) {
+        ports.moveTo(x - half, middle - half);
+        ports.lineTo(x + half, middle);
+        ports.lineTo(x - half, middle + half);
+        ports.closePath();
+      }
+      if (outward[number]) ports.rect(x + w - half, middle - half, port, port);
+    }
   }
+  for (const [light, path] of blocks) {
+    context.fillStyle = colour(light);
+    context.fill(path);
+  }
+  // A whole's or a node's outline is its own: one pixel at the graph's scale.
+  context.lineWidth = Math.max(1 / ratio, Math.min(zoom, 1));
   for (const [light, path] of outlines) {
     context.strokeStyle = colour(light);
     context.stroke(path);
   }
-  for (const [light, path] of boxes) {
+  if (!readable) return;
+  context.fillStyle = token("--surface-panel");
+  context.globalAlpha = WHOLE_FACE;
+  context.fill(boxFaces);
+  context.globalAlpha = 1;
+  context.fillStyle = token("--surface-app");
+  context.fill(stacked);
+  context.strokeStyle = token("--line-node");
+  context.stroke(stacked);
+  context.fillStyle = token("--surface-panel");
+  context.fill(faces);
+  context.stroke(neutral);
+  for (const [light, path] of strips) {
     context.fillStyle = colour(light);
     context.fill(path);
+  }
+  context.fillStyle = token("--edge");
+  context.fill(ports);
+  // Each status's icon, drawn from the icon set's own shapes at the icon's box, and each
+  // whole's control in secondary ink.
+  const scale = (icon * zoom) / ICON_BOX;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  const drawIcon = (name: keyof typeof ICONS, shade: string, x: number, y: number) => {
+    context.save();
+    context.translate(x, y);
+    context.scale(scale, scale);
+    for (const shape of ICONS[name]) {
+      const path = new Path2D(shape.d);
+      context.setLineDash(shape.dash ?? []);
+      if (shape.fill) {
+        context.fillStyle = shade;
+        context.fill(path);
+      }
+      if (!shape.fill || shape.width !== undefined) {
+        context.lineWidth = shape.width ?? 1.5;
+        context.strokeStyle = shade;
+        context.stroke(path);
+      }
+    }
+    context.restore();
+  };
+  for (const mark of marks) drawIcon(LIGHTS[mark.light].icon, colour(mark.light), mark.x, mark.y);
+  const side = TOGGLE * zoom;
+  context.lineWidth = Math.max(1 / ratio, Math.min(zoom, 1));
+  context.strokeStyle = token("--line-group");
+  context.fillStyle = token("--surface-group");
+  for (const toggle of toggles) {
+    context.beginPath();
+    context.roundRect(toggle.x, toggle.y, side, side, radius);
+    context.fill();
+    context.stroke();
+    drawIcon(toggle.icon, token("--ink-2"), toggle.x + (side - icon * zoom) / 2, toggle.y + (side - icon * zoom) / 2);
+  }
+  const face = token("--font");
+  context.textBaseline = "middle";
+  for (const name of names) {
+    let room = name.width;
+    if (name.tally) {
+      context.font = `400 ${label * zoom}px ${face}`;
+      const wide = context.measureText(name.tally).width;
+      context.fillStyle = token("--ink-2");
+      context.fillText(name.tally, name.x + name.width - wide, name.y);
+      room -= wide + NODE_GAP * zoom;
+    }
+    if (room <= 0) continue;
+    context.font = `${name.whole ? 600 : 500} ${font * zoom}px ${face}`;
+    context.fillStyle = token("--ink");
+    context.save();
+    context.beginPath();
+    context.rect(name.x, name.y - font * zoom, room, 2 * font * zoom);
+    context.clip();
+    // A minimized whole says how many parts it holds below its name, the two lines centred.
+    const lines = name.count ? [name.y - (label * zoom * LINE) / 2, name.y + (font * zoom * LINE) / 2] : [name.y];
+    context.fillText(cut(context, name.text, room), name.x, lines[0]);
+    if (name.count) {
+      context.font = `400 ${label * zoom}px ${face}`;
+      context.fillStyle = token("--ink-2");
+      context.fillText(cut(context, name.count, room), name.x, lines[1]);
+    }
+    context.restore();
   }
 }
 
@@ -224,7 +426,7 @@ export class Picture {
     const { viewport, ratio, width, height } = what;
     const held = this.#held;
     const same = held && held.at === at && held.what.graph === what.graph && held.what.boxes === what.boxes
-      && held.what.width === width && held.what.height === height && held.what.ratio === ratio;
+      && held.what.width === width && held.what.height === height && held.what.ratio === ratio && held.what.minimized === what.minimized;
     const scale = held ? viewport.zoom / held.viewport.zoom : 1;
     // Where the image's top-left corner lands on the canvas, in canvas pixels.
     const [x, y] = held
@@ -252,18 +454,23 @@ export class Picture {
     return painted;
   }
 
-  /** A ring around every copy that shows the opened Artifact, as its elements draw it. */
+  /** Every copy that shows the opened Artifact: its own outline turned 2px and neutral-bright,
+   * as its elements draw it. */
   #ring(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     if (what.opened.size === 0) return;
     const { viewport, ratio } = what;
+    const style = getComputedStyle(document.documentElement);
+    const corner = Number.parseFloat(style.getPropertyValue("--radius-control")) || 0;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    context.strokeStyle = style.getPropertyValue("--outline-selected").trim();
     context.lineWidth = RING;
     at.ids.forEach((key, number) => {
       if (!what.opened.has(key)) return;
       const place = at.places[number];
       const [x, y] = [place.x * viewport.zoom + viewport.x, place.y * viewport.zoom + viewport.y];
-      context.strokeRect(x - RING, y - RING, place.width * viewport.zoom + 2 * RING, place.height * viewport.zoom + 2 * RING);
+      context.beginPath();
+      context.roundRect(x, y, place.width * viewport.zoom, place.height * viewport.zoom, Math.min(corner * viewport.zoom, corner));
+      context.stroke();
     });
   }
 }

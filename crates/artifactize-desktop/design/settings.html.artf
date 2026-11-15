@@ -1,0 +1,15 @@
+name = "desktop-design-settings"
+# Settings: a modal over the screen
+
+[views.agent_tools]
+read = { builtin = "read", args = ["settings.html"] }
+
+[evals.well-formed]
+title = "The settings page links the design's sheets, numbers its callouts and states its rules"
+profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "page", "settings.html"], timeout_ms = 30000 }
+
+[evals.well-formed.payload]
+instruction = """
+Check {desktop-design-settings} with {desktop-design-check}: it links tokens.css, mock.css and design.css, declares its \
+screen, every callout has its note and every note its callout, its D- rule ids are unique and each has its text, \
+and no colour literal appears in it."""

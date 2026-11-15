@@ -1,4 +1,4 @@
-// The graph's camera over its whole canvas. A panel floating over the canvas, such as the
+// The graph's camera over its whole canvas. A panel docked over the canvas, such as the
 // Detail, takes no part: a graph's first view and Fit View show the whole graph in the canvas.
 // Only bringing a found Artifact into view minds the Detail, centring it in the graph left of it.
 // Pure geometry over Svelte Flow's public viewport calculation.
@@ -25,7 +25,7 @@ export function whole(bounds: Rect, at: Area, fit: Fit): Viewport {
 export type Box = { left: number; top: number; width: number; height: number };
 
 /** The viewport that puts `point` (in the graph's coordinates) in the middle of the canvas
- * `room` left of the panel `cover` floating over it, if any: the zoom stays unless names are
+ * `room` left of the panel `cover` docked over it, if any: the zoom stays unless names are
  * too small to read at it, when it rises to `readable`, never beyond `maxZoom`. */
 export function centred(point: XYPosition, room: Box, cover: Box | null, zoom: number, readable: number, maxZoom: number): Viewport {
   const scale = Math.min(Math.max(zoom, readable), maxZoom);

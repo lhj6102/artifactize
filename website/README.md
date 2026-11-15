@@ -115,7 +115,8 @@ regenerate and commit the outputs if the byte check reports drift.
 
 The `media-brand-icon/approved` Human eval owns artwork approval; `media-brand/generated`
 waits for it and checks every output in memory without modifying files. The folder
-uses its default artifactsum, including the source artwork and all outputs.
+uses its default artifactsum for its own files; its eval keys also include the source
+artwork part's fingerprint, so artwork and generated outputs both affect reuse.
 This is the brand drift check; there is no separate brand CI. The Website workflow
 still builds and deploys committed assets. The logos in `demo/`, including
 `demo/brand/logo/logo.svg`, are recording fixtures and intentionally unchanged.

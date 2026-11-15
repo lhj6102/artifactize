@@ -245,8 +245,8 @@
     {/if}
   </div>
   <footer>
-    <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
-    <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
+    <button class="button small" aria-label="Top (Home)" aria-keyshortcuts="Home" onclick={() => void ask({ kind: "top" })}>Top</button>
+    <button class="button small" aria-label="Bottom (End)" aria-keyshortcuts="End" onclick={() => void ask({ kind: "bottom" })}>Bottom</button>
     <span class="indicator">{t.view?.indicator ?? ""}</span>
   </footer>
 </div>
@@ -261,9 +261,10 @@
   }
   .window {
     position: relative;
+    background: var(--surface-input);
     overflow: hidden;
     padding: 0 var(--pad);
-    font: 12px/18px var(--mono);
+    font: var(--text-small) / 18px var(--mono);
     outline: none;
     min-height: 0;
   }
@@ -273,7 +274,7 @@
   .probe {
     position: absolute;
     visibility: hidden;
-    font: 12px/18px var(--mono);
+    font: var(--text-small) / 18px var(--mono);
     white-space: pre;
   }
   /* Rows come laid out to the pane's columns; a row that still does not fit wraps inside the
@@ -289,27 +290,28 @@
     text-align: left;
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     font: inherit;
     padding: 0;
     cursor: pointer;
   }
   .group:hover {
-    color: var(--text);
+    background: var(--surface-group);
+    color: var(--ink);
   }
   .thinking {
-    color: var(--muted);
+    color: var(--ink-2);
     font-style: italic;
   }
   .status {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   footer {
     display: flex;
     gap: 8px;
     align-items: center;
     padding: 6px var(--pad);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--line-group);
   }
   /* Thin like the other panes' scrollbars; the thumb darkens under the pointer. */
   .track {
@@ -324,15 +326,15 @@
     position: absolute;
     left: 2px;
     right: 2px;
-    border-radius: 4px;
-    background: var(--border);
+    border-radius: var(--radius-control);
+    background: var(--line-input);
   }
   .track:hover .thumb {
-    background: var(--muted);
+    background: var(--ink-2);
   }
   .indicator {
     margin-left: auto;
-    color: var(--muted);
-    font: 11px var(--mono);
+    color: var(--ink-2);
+    font: var(--text-label) var(--mono);
   }
 </style>

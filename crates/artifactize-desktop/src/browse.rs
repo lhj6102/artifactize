@@ -3,7 +3,7 @@
 //! Clocks redraw from it without a read; a rescan asks Git which worktrees exist now.
 mod view;
 
-pub use view::{BranchKey, BrowseView, Completion, PathKey};
+pub use view::{Attention, BranchKey, BrowseView, Completion, PathKey};
 pub(crate) use view::{NodeKind, Segment, TreeNode, row};
 
 use crate::{App, Failure};

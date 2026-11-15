@@ -147,15 +147,15 @@ type Segment = { frames: Frame[]; speed: number; caption: string; hold: number }
 /** A demo's segments, and where its captions go: the graph's top-left corner, in window pixels. */
 type Recording = { segments: Segment[]; at: { x: number; y: number } };
 
-/** Inside the top-left corner of the element `selector` names, as drawn now, below the graph's
- * legend and clear of the lines above it: a caption box reaches 18 px past its text. */
+/** Inside the top-left corner of the element `selector` names, as drawn now, clear of the
+ * graph's edges: a caption box reaches 18 px past its text. */
 async function corner(browser: WebdriverIO.Browser, selector: string): Promise<{ x: number; y: number }> {
   const box = await browser.execute((query) => {
     const rect = document.querySelector(query)?.getBoundingClientRect();
     return rect ? { x: rect.left, y: rect.top } : null;
   }, selector);
   if (!box) throw new Error(`${selector} is not drawn`);
-  return { x: Math.round(box.x + 28), y: Math.round(box.y + 72) };
+  return { x: Math.round(box.x + 28), y: Math.round(box.y + 28) };
 }
 
 /** Take frames until `done` resolves and the app shows the final state `final` waits for,
@@ -310,7 +310,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
   // Started on the example's branch: the Pane expands it, and each new Run arrives in its timeline.
   const browser = await launch(service, candidate.app, ["--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], env);
   const segments: Segment[] = [];
-  // The graph's top-left corner, below however many attention lines a Run's headline has.
+  // The graph's top-left corner, below the Main area's header row and the graph's tool strip.
   let at = { x: 0, y: 0 };
   /** The Main area while it shows the Run `id`. */
   const MAIN = 'section.panel[aria-label="Main area"]';
@@ -320,11 +320,11 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
      * graph of another Run is replaced by a new canvas, while the Run already shown keeps its. */
     const opened = (id: string) => browser.execute((id, main, edges) => {
       const panel = document.querySelector(main);
-      const canvas = panel?.querySelector(":scope > header h2")?.textContent?.trim() === `Run ${id}` ? panel?.querySelector(".run .svelte-flow") : null;
+      const canvas = panel?.querySelector(":scope > header h2")?.textContent?.trim() === id ? panel?.querySelector(".run .svelte-flow") : null;
       const node = canvas?.querySelector('.svelte-flow__node[data-id="a:release"]');
       const box = node?.getBoundingClientRect();
       const before = (window as unknown as { before?: { canvas: Element | null; run: string | null } }).before;
-      return !!canvas && (canvas !== before?.canvas || before.run === `Run ${id}`) && !!box && box.width > 0
+      return !!canvas && (canvas !== before?.canvas || before.run === id) && !!box && box.width > 0
         && canvas.querySelectorAll(".svelte-flow__edge").length === edges
         && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".svelte-flow__node") === node;
     }, id, MAIN, EDGES());
@@ -332,7 +332,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
      * exactly `fails` red, and every edge drawn. */
     const ended = (id: string, fails: string[]) => browser.execute((id, main, fails, count, edges) => {
       const shown = document.querySelector(main);
-      const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === `Run ${id}` ? shown?.querySelector(".run") : null;
+      const panel = shown?.querySelector(":scope > header h2")?.textContent?.trim() === id ? shown?.querySelector(".run") : null;
       // Every edge drawn as a visible line, not only present in the page.
       const lines = [...(panel?.querySelectorAll<SVGPathElement>(".svelte-flow__edge path.svelte-flow__edge-path") ?? [])].filter((line) => {
         const box = line.getBoundingClientRect();
@@ -340,7 +340,9 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
       });
       if (lines.length !== edges) return false;
       const lights = [...(panel?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])].map((node) => [node.dataset.id ?? "", node.dataset.light ?? ""]);
-      return (panel?.querySelector(".headline")?.textContent ?? "").includes("at Run end") && lights.length === count
+      // The header row's headline names the Run's verdict once it ended.
+      const verdict = shown?.querySelector(":scope > header button.headline .status")?.textContent?.trim() ?? "";
+      return /^(GREEN|RED|YELLOW|ERROR|BLOCKED|INCOMPLETE)$/.test(verdict) && lights.length === count
         && lights.every(([, light]) => light !== "waiting" && light !== "active")
         && lights.filter(([, light]) => light === "red").map(([node]) => node.slice(2)).sort().join() === [...fails].sort().join();
     }, id, MAIN, fails, LOOP.length, EDGES());
@@ -368,7 +370,7 @@ async function reviewLoop(service: any, e2e: Record<string, any>, candidate: any
         watcher.once("close", (code) => done({ code, text }));
       });
       segments.push({ frames: await record(browser, frames, settled, () => ended(id, fails)), speed: SPEED, caption: `try ${index + 1}/${FAILS.length} · ×${SPEED}`, hold: GIF.hold });
-      const area = await corner(browser, `${MAIN} .run .area`);
+      const area = await corner(browser, `${MAIN} .run .canvas`);
       at = { x: Math.max(at.x, area.x), y: Math.max(at.y, area.y) };
       const { code, text } = await settled;
       const view = JSON.parse(text) as { status: string; validation: { satisfied: boolean } | null; requests: { evalId: string; status: string }[] };
@@ -527,9 +529,10 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
         const ends = (id: string) => id.split(">").map((key) => key.split("/").pop()).join(">");
         const artifacts = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__node[data-artifact]")].map((node) => node.dataset.artifact ?? ""));
         const edges = set([...document.querySelectorAll<HTMLElement>(".current .svelte-flow__edge")].map((edge) => ends(edge.dataset.id ?? "")));
-        return !document.querySelector<HTMLButtonElement>(".current header button")?.disabled && `${artifacts}\n${edges}` === expected;
+        const refresh = document.querySelector<HTMLButtonElement>('section.panel[aria-label="Main area"] > header .actions button');
+        return !!refresh && !refresh.disabled && `${artifacts}\n${edges}` === expected;
       }, expected), { timeout: WAIT, timeoutMsg: `${step.caption}'s own graph is drawn` });
-      const failure = await browser.execute(() => document.querySelector(".current .failure")?.textContent ?? "");
+      const failure = await browser.execute(() => document.querySelector('section.panel[aria-label="Main area"] > header .failure')?.textContent ?? "");
       if (failure) throw new Error(`${step.caption} could not be read: ${failure}`);
       // Complete and still: exactly this release's Artifact nodes and edges, every node drawn
       // inside the canvas, every edge drawn as a visible line, and nothing (nodes, edges, camera) changing
@@ -560,7 +563,7 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
       // Refresh keeps the camera: once the grown graph is drawn, fit it into view the way a
       // person would.
       await drawn(false);
-      await browser.$(".current .svelte-flow__controls-fitview").click();
+      await browser.$('[aria-label="Graph tools"]').$("button=Fit").click();
       await drawn(true);
       at = await corner(browser, ".current .canvas");
       const file = join(frames, `${step.caption}.png`);

@@ -10,7 +10,7 @@ mod tests;
 pub(crate) mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
 pub use status::Status;
-pub use tree::{Clock, Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
+pub use tree::{Clock, Kind, Node, Segment, Tally, Tone, Weight, completion, tree, upstream_index};
 
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -130,6 +130,9 @@ pub struct Progress {
     pub waiting: Vec<(String, String)>,
     /// Eval ID (or "Run") and message.
     pub errors: Vec<(String, String)>,
+    /// The evals that need a person's attention, each by its status and ID: RED, then ERROR,
+    /// then the sign-offs and Human reviews that wait.
+    pub needs: Vec<(Status, String)>,
 }
 
 /// The Run headline: one status line, then what needs attention.
@@ -449,6 +452,20 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                     .map(|record| (record.id.clone(), record.to_string())),
             )
             .collect(),
+        needs: with(crate::types::RequestStatus::Red)
+            .chain(with(crate::types::RequestStatus::Error))
+            .chain(
+                requests
+                    .iter()
+                    .filter(|view| view.request.status().is_human_wait()),
+            )
+            .map(|view| {
+                (
+                    Status::from(view.request.status()),
+                    view.request.eval_id.to_string(),
+                )
+            })
+            .collect(),
     }
 }
 
@@ -530,6 +547,7 @@ pub fn run_node(run: &RunView) -> Node {
         }],
         right: String::new(),
         compact: String::new(),
+        tally: None,
         changed: false,
         upstream: Vec::new(),
         held: false,

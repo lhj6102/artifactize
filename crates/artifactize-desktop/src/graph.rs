@@ -16,8 +16,8 @@ pub enum Source {
     Current { branch: BranchKey },
 }
 
-/// How a node or edge is lit, in precedence order; the frontend maps each to one colour.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Type)]
+/// How a node or edge is lit; each source's library type determines precedence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Light {
     /// An eval's verdict is RED.
@@ -102,6 +102,25 @@ impl From<monitor::live::Plan> for Light {
     }
 }
 
+/// How many of an Artifact's evals are GREEN of how many it has, on a Current how many would
+/// be reused: the library's [`monitor::Tally`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Tally {
+    pub passed: u32,
+    pub of: u32,
+}
+
+impl From<monitor::Tally> for Tally {
+    fn from(tally: monitor::Tally) -> Self {
+        let count = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
+        Self {
+            passed: count(tally.passed),
+            of: count(tally.of),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphNode {
@@ -109,6 +128,8 @@ pub struct GraphNode {
     pub id: crate::ids::NodeKey,
     pub name: String,
     pub light: Light,
+    /// Its evals' count; `None` without evals of its own, or on a Current while it is checked.
+    pub tally: Option<Tally>,
     /// Under the name: on a Current what verify would do, `would run (2 evals)`.
     pub note: Option<String>,
     /// The Artifacts of the graph it is made of directly, by tree id: drawn inside it.
@@ -139,9 +160,11 @@ pub struct Shape {
 pub enum Update {
     /// A shape the caller does not hold, all lit.
     Shape(Shape),
-    /// The caller's shape, relit: one light per node and per edge, in its order.
+    /// The caller's shape, relit: one light and one tally per node and one light per edge,
+    /// in its order.
     Lights {
         nodes: Vec<Light>,
+        tallies: Vec<Option<Tally>>,
         edges: Vec<Light>,
     },
 }
@@ -169,6 +192,7 @@ fn shape(graph: &monitor::Graph) -> Shape {
                 id: node.id.clone().into(),
                 name: node.name.to_string(),
                 light: node.light.into(),
+                tally: node.tally.map(Tally::from),
                 note: None,
                 parts: node.parts.iter().map(node_id).collect(),
             })
@@ -201,6 +225,11 @@ pub async fn graph(
             let update = if known == Some(selected.shape) {
                 Update::Lights {
                     nodes: graph.nodes.iter().map(|node| node.light.into()).collect(),
+                    tallies: graph
+                        .nodes
+                        .iter()
+                        .map(|node| node.tally.map(Tally::from))
+                        .collect(),
                     edges: graph.edges.iter().map(|edge| edge.light.into()).collect(),
                 }
             } else {
@@ -225,7 +254,7 @@ pub async fn graph(
 }
 
 /// An Artifact between its neighbours, at most [`NEAR`] on each side: those shown first are the
-/// ones lit first in [`Light`]'s precedence (failing before passing), then in the tree's order.
+/// ones lit first in the library's Run or Current precedence, then in the tree's order.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Neighbours {
@@ -254,16 +283,45 @@ pub async fn neighbours(
     source: Source,
     node: crate::ids::NodeKey,
 ) -> Result<Neighbours, Failure> {
-    let graph = match source {
-        Source::Run { run } => shape(&app.browse.selected(&run.into_inner())?.graph),
-        Source::Current { branch } => {
-            current::shape(&app.currents.shown(&branch.to_place())?.current)
+    let node = node.into_inner();
+    Ok(match source {
+        Source::Run { run } => {
+            run_neighbours(&app.browse.selected(&run.into_inner())?.graph, &node)
         }
-    };
-    Ok(self::neighbours_in(&graph, &node.into_inner()))
+        Source::Current { branch } => {
+            current_neighbours(&app.currents.shown(&branch.to_place())?.current, &node)
+        }
+    })
 }
 
-fn neighbours_in(graph: &Shape, node: &monitor::NodeId) -> Neighbours {
+fn run_neighbours(graph: &monitor::Graph, node: &monitor::NodeId) -> Neighbours {
+    let priorities = graph
+        .nodes
+        .iter()
+        .map(|item| (item.id.clone(), item.light))
+        .collect();
+    neighbours_in(&shape(graph), node, &priorities)
+}
+
+fn current_neighbours(current: &monitor::live::Current, node: &monitor::NodeId) -> Neighbours {
+    let priorities = current
+        .artifacts
+        .iter()
+        .map(|artifact| {
+            (
+                monitor::NodeId::artifact(artifact.name.clone()),
+                artifact.plan,
+            )
+        })
+        .collect();
+    neighbours_in(&current::shape(current), node, &priorities)
+}
+
+fn neighbours_in<P: Ord>(
+    graph: &Shape,
+    node: &monitor::NodeId,
+    priorities: &std::collections::BTreeMap<monitor::NodeId, P>,
+) -> Neighbours {
     let Some(own) = graph.nodes.iter().find(|item| item.id.inner() == node) else {
         return Neighbours {
             shape: Shape {
@@ -276,11 +334,6 @@ fn neighbours_in(graph: &Shape, node: &monitor::NodeId) -> Neighbours {
             copies: 0,
         };
     };
-    let lights: std::collections::BTreeMap<_, Light> = graph
-        .nodes
-        .iter()
-        .map(|item| (item.id.inner(), item.light))
-        .collect();
     // One side's edges, those shown first, cut to `NEAR`; and how many were cut.
     let side = |far: fn(&GraphEdge) -> &crate::ids::NodeKey,
                 near: fn(&GraphEdge) -> &crate::ids::NodeKey| {
@@ -289,7 +342,7 @@ fn neighbours_in(graph: &Shape, node: &monitor::NodeId) -> Neighbours {
             .iter()
             .filter(|edge| near(edge) == &own.id)
             .collect();
-        edges.sort_by_key(|edge| lights.get(far(edge).inner()));
+        edges.sort_by_key(|edge| priorities.get(far(edge).inner()));
         let more = edges.len().saturating_sub(NEAR);
         edges.truncate(NEAR);
         (edges, u32::try_from(more).unwrap_or(u32::MAX))

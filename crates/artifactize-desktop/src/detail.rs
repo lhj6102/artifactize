@@ -210,6 +210,33 @@ pub struct PlanLine {
     pub reason: String,
 }
 
+/// How many of a Run's evals ended in one status.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Count {
+    pub mark: Mark,
+    pub count: u32,
+}
+
+/// A Run's outcome as its Detail leads with it: what its header row leaves out.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RunOutcome {
+    /// The evals that failed, RED then ERROR, each by its status and ID.
+    pub failed: Vec<crate::browse::Attention>,
+    /// How many evals are in each status, most urgent first.
+    pub tally: Vec<Count>,
+    /// How long it took, or has run so far.
+    pub took: String,
+    pub finished: bool,
+    /// What its requester said it is working on (`verify --comment`), in full.
+    pub comment: Option<String>,
+}
+
+/// The facts a Run's [`RunOutcome`] says, left out of its sections so each is said once: its
+/// status, its comment, the verdict at its end and its counts.
+const OUTCOME: [&str; 4] = ["Status", "Comment", "Validation", "Counts"];
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DetailView {
@@ -225,6 +252,8 @@ pub struct DetailView {
     pub mark: Option<Mark>,
     /// On a Current, in place of a status: what verify would do.
     pub plan: Option<PlanLine>,
+    /// A Run's outcome, which leads its Detail.
+    pub outcome: Option<RunOutcome>,
     /// Outcome → Waits for → What → Provenance → Technical; empty sections are left out.
     pub sections: Vec<SectionView>,
     /// Saved runtime stdout/stderr, or why there are none.
@@ -249,6 +278,34 @@ pub fn view(
         Target::Eval(eval) => requests.iter().find(|view| &view.request.eval_id == eval),
         _ => None,
     };
+    let progress = (target == Target::Run).then(|| monitor::progress(run, requests, now));
+    let outcome = progress.as_ref().map(|progress| {
+        let count = |value: u64| u32::try_from(value).unwrap_or(u32::MAX);
+        RunOutcome {
+            failed: progress
+                .needs
+                .iter()
+                .filter(|(status, _)| {
+                    matches!(status, monitor::Status::Red | monitor::Status::Error)
+                })
+                .map(|(status, eval)| crate::browse::Attention {
+                    mark: (*status).into(),
+                    text: eval.clone(),
+                })
+                .collect(),
+            tally: progress
+                .counts
+                .iter()
+                .map(|(status, value)| Count {
+                    mark: (*status).into(),
+                    count: count(*value),
+                })
+                .collect(),
+            took: progress.elapsed.clone(),
+            finished: progress.finished,
+            comment: progress.comment.clone(),
+        }
+    });
     let sections = Section::ALL
         .into_iter()
         .filter_map(|section| {
@@ -256,6 +313,7 @@ pub fn view(
                 .fields
                 .iter()
                 .filter(|(key, _)| Section::of(key) == section)
+                .filter(|(key, _)| outcome.is_none() || !OUTCOME.contains(key))
                 .collect();
             if fields.is_empty() {
                 return None;
@@ -306,7 +364,10 @@ pub fn view(
         summary: detail.summary.clone(),
         request: request.map(|view| view.request.id.clone().into()),
         profile: request.map(|view| view.request.profile.kind().into()),
-        mark: request.map(|view| monitor::Status::from(view.request.status()).into()),
+        mark: request
+            .map(|view| monitor::Status::from(view.request.status()).into())
+            .or_else(|| progress.as_ref().map(|progress| progress.status.into())),
+        outcome,
         running: request.is_some_and(|view| {
             view.request.status() == artifactize_core::types::RequestStatus::Running
         }),

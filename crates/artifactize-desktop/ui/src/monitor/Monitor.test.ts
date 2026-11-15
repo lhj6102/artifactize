@@ -55,8 +55,8 @@ const current = (revision: number, checking = 0): CurrentView => ({
   failure: null,
 });
 
-/** The structure text of the scan with this revision. */
-const structure = (revision: number) => `app → graph; criteria revision ${revision}`;
+/** The time a Current's header shows for a scan, as the app writes it. */
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
 
 /** The backend: `snapshot` answers every browse; the calls are recorded. */
 function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: (scan: number) => CurrentView } = { view: current }) {
@@ -79,8 +79,6 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
           return shown;
         case "current_view":
           return shown;
-        case "current_structure":
-          return structure(scans);
         case "graph":
           return {
             source: (args as { source: unknown }).source,
@@ -88,8 +86,8 @@ function backend(launch: LaunchView, snapshot: () => BrowseView, steps: { view: 
             update: {
               kind: "shape",
               nodes: [
-                { id: "a:app", name: "app", light: "reused", note: "reused", parts: [] },
-                { id: "a:graph", name: "graph", light: "run", note: "would run (1 eval)", parts: [] },
+                { id: "a:app", name: "app", light: "reused", tally: { passed: 1, of: 1 }, note: "reused", parts: [] },
+                { id: "a:graph", name: "graph", light: "run", tally: { passed: 0, of: 1 }, note: "would run (1 eval)", parts: [] },
               ],
               edges: [{ source: "a:app", target: "a:graph", light: "reused" }],
             },
@@ -125,11 +123,13 @@ it("opens on the Current of the branch it was started for, and scans it again on
   const main = branch("main", [{ kind: "current" }]);
   const { calls, scanned, navigations } = backend({ ...monitor(), mode: "graph" }, () => browseView(1, { branches: [main], launch: main.key }));
   render(App);
-  /** The header names the time of the scan with this revision. */
+  /** The header row shows the time of the scan with this revision, read aloud as when it was
+   * scanned, without a sentence. */
   const header = async (revision: number) => {
-    const status = await screen.findByText("Scanned at", { exact: false });
-    await waitFor(() => expect(status.textContent?.trim()).toBe(`Scanned at ${new Date(scannedAt(revision)).toLocaleTimeString()}`));
-    expect(status.querySelector("time")?.getAttribute("datetime")).toBe(new Date(scannedAt(revision)).toISOString());
+    const time = await screen.findByLabelText(/^Scanned at /);
+    await waitFor(() => expect(time.textContent?.trim()).toBe(clock(scannedAt(revision))));
+    expect(time.getAttribute("aria-label")).toBe(`Scanned at ${clock(scannedAt(revision))}`);
+    expect(time.getAttribute("datetime")).toBe(new Date(scannedAt(revision)).toISOString());
   };
   await header(1);
   expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Current · app  main");
@@ -137,16 +137,17 @@ it("opens on the Current of the branch it was started for, and scans it again on
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
   // The launched branch opens expanded; its Current is the entry shown.
   expect(screen.getByRole("button", { name: /^Current\b/ }).getAttribute("aria-pressed")).toBe("true");
-  await fireEvent.click(screen.getByText(/Structure and evaluation criteria/));
-  await waitFor(() => expect(screen.getByText(structure(1))).toBeTruthy());
-  await fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(screen.getByText(structure(2))).toBeTruthy());
+  // No structure text: the graph is the Current's whole.
+  expect(screen.queryByText(/Structure and evaluation criteria/)).toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: /^Refresh/ }));
+  await waitFor(() => expect(scanned()).toBe(2));
   await header(2);
   await fireEvent.keyDown(window, { key: "r", ctrlKey: true });
-  await waitFor(() => expect(screen.getByText(structure(3))).toBeTruthy());
+  await waitFor(() => expect(scanned()).toBe(3));
+  await header(3);
   await fireEvent.keyDown(window, { key: "F5" });
-  await waitFor(() => expect(screen.getByText(structure(4))).toBeTruthy());
-  expect(scanned()).toBe(4);
+  await waitFor(() => expect(scanned()).toBe(4));
+  await header(4);
   // Only a person's refresh asks for the files as they are now, even past a scan still running.
   expect(calls.filter((call) => call.command === "current_scan").map((call) => (call.args as { refresh: boolean }).refresh))
     .toEqual([false, true, true, true]);
@@ -160,16 +161,17 @@ it("draws a Current's graph at once, counting the Artifacts still being checked 
     view: (scan) => current(scan, 2),
   });
   render(App);
-  await waitFor(() => expect(screen.getByText("Checking 2 of 2 Artifacts…")).toBeTruthy());
+  // A count that falls, read aloud as how many Artifacts are left: no sentence, no ratio.
+  await waitFor(() => expect(screen.getByLabelText("Checking, 2 Artifacts left").textContent?.trim()).toBe("2 left"));
   await waitFor(() => expect(screen.getByLabelText("graph: would run (1 eval)")).toBeTruthy());
-  expect(screen.getByRole("button", { name: "Refresh" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: /^Refresh/ }).hasAttribute("disabled")).toBe(true);
   await publish(current(2, 1));
-  await waitFor(() => expect(screen.getByText("Checking 1 of 2 Artifacts…")).toBeTruthy());
+  await waitFor(() => expect(screen.getByLabelText("Checking, 1 Artifacts left").textContent?.trim()).toBe("1 left"));
   await publish({ ...current(3), failure: "Fingerprint script for Artifact app failed." });
   await waitFor(() => expect(screen.getByText("Fingerprint script for Artifact app failed.")).toBeTruthy());
   // The graph stays.
   expect(screen.getByLabelText("app: reused")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Refresh" }).hasAttribute("disabled")).toBe(false);
+  expect(screen.getByRole("button", { name: /^Refresh/ }).hasAttribute("disabled")).toBe(false);
 });
 
 it("expands a clicked branch to its timeline, moves through timelines and the Waiting stack with the keys, and opens a review", async () => {
@@ -188,10 +190,11 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   // A click on a branch expands it and shows its newest entry: the Run in progress.
   await fireEvent.click(name(/^app \/ feat\/x/));
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-2" } }));
-  expect(header()).toBe("Run run-2");
+  expect(header()).toBe("run-2");
   const timeline = screen.getByRole("group", { name: "Runs of app feat/x" });
+  // Each entry: its status and age, then its comment, or else its ID.
   expect(within(timeline).getAllByRole("button").map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-    "Running 5m run-2 Fixing the login form",
+    "Running 5m Fixing the login form",
     "GREEN 5m ago run-1",
   ]);
   // ↓ enters the timeline, then steps to the older Run; ← goes back to the branch, ← again folds it.
@@ -202,7 +205,7 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await fireEvent.keyDown(entries, { key: "ArrowLeft" });
   await waitFor(() => expect(screen.queryByRole("group", { name: "Runs of app feat/x" })).toBeNull());
-  expect(header()).toBe("Run run-1");
+  expect(header()).toBe("run-1");
   // ↓ to the next branch shows its newest entry, its Current; → expands it, → enters it, ↓ shows its Run.
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(scanned()).toBe(1));
@@ -216,31 +219,36 @@ it("expands a clicked branch to its timeline, moves through timelines and the Wa
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   const waiting = within(screen.getByRole("listbox", { name: "Waiting reviews" })).getByRole("option");
   expect(waiting.getAttribute("aria-selected")).toBe("true");
-  expect(header()).toBe("Run run-0");
+  expect(header()).toBe("run-0");
   await fireEvent.keyDown(entries, { key: "Enter" });
   await waitFor(() => expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Review"));
   expect(screen.getByRole("heading", { name: "Waiting (1)" })).toBeTruthy();
 });
 
-it("shows the comment a Run was requested with in full under its headline", async () => {
-  const comment = "Fixing the login form so a wrong password says which field is wrong";
+it("says a Run's verdict and what needs attention in the header row, which opens the Run's Detail", async () => {
   const run: RunPanel = {
     id: "run-2",
     node: "run:run-2",
-    mark: { status: "RUNNING", glyph: "◐" },
-    headline: "validation pending · 5m",
-    comment,
-    counts: "◐1",
-    attention: [],
-    more: 0,
+    mark: { status: "RED", glyph: "✗" },
+    needs: [
+      { mark: { status: "RED", glyph: "✗" }, text: "cli/tests" },
+      { mark: { status: "DEFERRED", glyph: "?" }, text: "release/signoff" },
+    ],
   };
-  const feature = branch("feat/x", [runChip("run-2", "RUNNING", true, comment)]);
+  const feature = branch("feat/x", [runChip("run-2", "RED", false, "Fixing the login form")]);
   backend(monitor(), () => browseView(1, { branches: [feature], run }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await fireEvent.click(await within(entries).findByRole("button", { name: /^app \/ feat\/x/ }));
   const main = screen.getByLabelText("Main area");
-  await waitFor(() => expect(within(main).getByText(comment).tagName).toBe("P"));
+  const header = main.querySelector("header")!;
+  const headline = await within(header).findByRole("button", { name: /open the Run's Detail/ });
+  // One row: the Run's ID, then its verdict's icon and word, then each eval that needs attention.
+  expect(within(header).getByRole("heading").textContent).toBe("run-2");
+  expect([...headline.children].map((part) => part.textContent?.trim())).toEqual(["RED", "cli/tests", "release/signoff"]);
+  expect(headline.querySelectorAll("svg")).toHaveLength(3);
+  // Its comment is the Run's Detail's and the timeline's, not the Main area's.
+  expect(within(main).queryByText("Fixing the login form")).toBeNull();
 });
 
 it("stars a branch from its entry, and takes a star away", async () => {
@@ -275,7 +283,7 @@ it("asks for older Runs from Older runs, and from ↓ past a timeline's oldest e
   await waitFor(() => expect(navigations().at(-1)).toMatchObject({ run: { kind: "open", id: "run-1" } }));
   await fireEvent.keyDown(entries, { key: "ArrowDown" });
   await waitFor(() => expect(navigations().filter((step) => step.older)).toHaveLength(asked + 1));
-  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("Run run-1");
+  expect(screen.getByLabelText("Main area").querySelector("h2")?.textContent).toBe("run-1");
 });
 
 it("scans the shown Current again when a Run of its branch ends", async () => {
@@ -337,10 +345,10 @@ it("closes a review in the Main area with the one Close in its header, after lea
   const main = await screen.findByLabelText("Main area");
   await waitFor(() => expect(main.querySelector("h2")?.textContent).toBe("Review"));
   const region = await within(main).findByLabelText("Human review");
-  await within(main).findByRole("button", { name: "Claim to review" });
+  await within(main).findByRole("button", { name: "Claim to review (c)" });
   // Close is the header's one control, and the review keeps none of its own.
   const header = main.querySelector("h2")!.parentElement!;
-  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close Esc"]);
+  expect(within(header).getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Close"]);
   expect(within(main).getAllByRole("button", { name: /Close/ })).toHaveLength(1);
 
   await fireEvent.keyDown(region, { key: "c" });

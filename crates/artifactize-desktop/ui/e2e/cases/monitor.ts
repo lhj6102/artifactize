@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { artifactize, create, finishTalk, type Fixture, launched, requests, signoff, slowTool, type SignoffDefinition } from "../fixture.ts";
 import { claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { afterRender, fill, press } from "../keys.ts";
+import { afterRender, fill, press, typeText } from "../keys.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { nativeInput, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
@@ -32,10 +32,11 @@ type LogRow = { text: string; kind: "start" | "line" | "end"; error: boolean };
 async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruction = "Read the release notes and approve them.") {
   const text = () => browser.execute(() => document.body.innerText);
   const human = () => browser.$('[aria-label="Human review"][tabindex="0"]');
-  /** The Tool log's rows and the review's notice. */
+  /** The Tool log's rows and what the review said: only a failure is said, in red, in the
+   * Result's row of actions. */
   const toolLog = () => browser.execute(() => {
     const detail = document.querySelector('[aria-label="Human review"]');
-    const notice = detail?.querySelector(".notice");
+    const notice = detail?.querySelector('[role="status"].error');
     const log = detail?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",
@@ -60,30 +61,38 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
     assert.ok(probe, "the wrapped humanRun observation is available before any tool action");
     return probe.started;
   };
-  /** Release's tool `operation`, its `▶` button usable after the claim. The returned check
+  /** Release's tool `operation`, its button usable after the claim. The returned check
    * proves this same probe observes the run the button starts. */
   async function tool(operation: string) {
     const runsBefore = await toolRuns();
-    const button = await human().$(`button=▶ ${operation}`);
+    const button = await human().$(`button=${operation}`);
     await button.waitForEnabled({ timeout: 15000, timeoutMsg: `release's ${operation} tool usable` });
     assert.equal(await toolRuns(), runsBefore, "finding a tool starts no tool command");
     return { button, observed: async () => assert.ok(await toolRuns() > runsBefore, "the same probe observes the explicitly run tool, not a missing-as-zero counter") };
   }
 
+  /** The request's state, as its Debug section says it once unfolded. */
+  const meta = () => browser.execute(() => {
+    const term = [...document.querySelectorAll('[aria-label="Human review"] dt')].find((dt) => dt.textContent?.trim() === "State");
+    return term?.nextElementSibling?.textContent?.trim() ?? "";
+  });
   async function openReview(claim = true) {
     await openArtifact(browser, "a:release", "Artifact release");
     await openTab(browser, "e:release/signoff");
     await human().waitForExist({ timeout: 15000, timeoutMsg: "this case's Human Detail" });
     const id = signoff(fixture).id;
-    await browser.waitUntil(async () => (await human().$(".meta").getText()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `), {
-      timeout: 15000, timeoutMsg: "the default Human Detail identifies this case's exact waiting request without Technical",
-    });
+    // It opens with its stage alone, the request's facts folded under Debug.
+    await browser.waitUntil(async () => (await human().$(".stage").getText()) === "CLAIM", { timeout: 15000, timeoutMsg: "the review opens at its claim stage" });
     assert.equal(await human().$(".instruction .text").getText(), instruction, "the selected Human eval's default instruction");
-    assert.equal(await human().$("button*=Technical").getAttribute("aria-expanded"), "false", "request and instruction are visible before Technical");
-    // It reads top to bottom as the instruction, the Tools, their Tool log and the Result.
-    const order = await browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] .body > *')]
+    assert.equal(await human().$("button.head=Debug").getAttribute("aria-expanded"), "false", "the request's facts start folded under Debug");
+    // It reads top to bottom as the instruction, the Tools, their Tool log, the Result and Debug.
+    const order = await browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] .one > *')]
       .map((part) => part.getAttribute("aria-label") ?? "").filter((label) => label !== ""));
-    assert.deepEqual(order, ["Instruction", "Tools", "Tool log", "Result"]);
+    assert.deepEqual(order, ["Instruction", "Tools", "Tool log", "Result", "Debug"]);
+    await human().$("button.head=Debug").click();
+    await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `), {
+      timeout: 15000, timeoutMsg: "Debug identifies this case's exact waiting request",
+    });
     if (claim) {
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "this case's claim");
       assert.equal(await toolRuns(), 0, "this fresh session has dispatched no tool");
@@ -93,7 +102,9 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
     }
   }
   await graphShown(browser, "a:release");
-  return { text, human, toolLog, runOf, tool, openReview };
+  /** The review's running work: its running icon, named by what runs. */
+  const running = (label: string) => human().$(`.busy [aria-label="${label}"]`).isExisting();
+  return { text, human, meta, toolLog, runOf, tool, openReview, running };
 }
 
 /** The nonblank lines of `text`, as typed or pasted on any platform. */
@@ -131,11 +142,11 @@ export const scenarios: Scenario[] = [
         return mark.complete && mark.naturalWidth > 0;
       }), true, "the approved brand mark actually loaded");
       const run = signoff(fixture).runId;
-      assert.equal(await mainTitle(browser), `Run ${run}`);
+      assert.equal(await mainTitle(browser), run);
       assert.deepEqual((await branch(browser, "repo  master"))?.chips.map((chip) => [chip.id, chip.filled]), [[run, true]]);
-      const headline = await browser.$(`${MAIN} button.headline`).getText();
-      assert.match(headline, /WAITING_HUMAN/);
-      assert.match(headline, /validation pending/);
+      // One header row: the Run's ID, then its verdict and what needs attention.
+      const headline = (await browser.$(`${MAIN} button.headline`).getText()).trim();
+      assert.match(headline, /^WAITING_HUMAN\s+release\/signoff$/);
       // What needs attention is the Run's own, in its Main area above its graph: the Waiting
       // stack in the Pane names the same sign-off.
       const attention = () => browser.execute((main) => {
@@ -164,13 +175,13 @@ export const scenarios: Scenario[] = [
     "follows a claim another process makes, then claims and releases explicitly",
     () => atRepo(),
     async (browser, { fixture }) => {
-      const { text, human, openReview } = await monitorUI(browser, fixture);
+      const { text, human, meta, openReview } = await monitorUI(browser, fixture);
       await openReview(false);
       const id = signoff(fixture).id;
-      const meta = () => human().$(".meta").getText();
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
       await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · DEFERRED · claimed by bob · read-only · waiting `) &&
-        (await human().getText()).includes("Claimed by bob. Read-only until released.") && !(await human().$("button*=Claim").isExisting()),
+        (await human().$(".claimant").isExisting()) && (await human().$(".claimant").getText()) === "bob" &&
+        (await human().getText()).includes("Read-only until released.") && !(await human().$("button*=Claim").isExisting()),
       { timeout: 12000, timeoutMsg: "the opened Human Detail displays bob's exact claim and is read-only" });
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
       await browser.waitUntil(async () => (await meta()).startsWith(`Request ${id} · DEFERRED · unclaimed · waiting `) &&
@@ -183,10 +194,37 @@ export const scenarios: Scenario[] = [
       const claimed = (await checkpoint(browser)).activity.commands.humanClaim;
       assert.ok(claimed && claimed.completed > (claimBefore?.completed ?? 0), "the same read-only probe observes this successful claim");
       assert.equal(claimed.pending, 0);
-      await press(browser, ["u"], async () => (await text()).includes("Claim released."), "released");
-      assert.equal(signoff(fixture).claim, null);
+      await press(browser, ["u"], async () => signoff(fixture).claim === null && await claimable(browser), "released");
       await press(browser, ["c"], () => signoff(fixture).claim?.reviewer === "alice", "claimed again");
       await browser.waitUntil(() => reviewing(browser), { timeout: 15000, timeoutMsg: "the review stage" });
+    },
+  ),
+
+  // UX edges: E-HUMAN-RELEASE E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT
+  scenario<null>(
+    "monitor-release-editing",
+    "releases the claim while its form is filled in, by Release claim, leaving the form, and keeps the draft for the next claim; u typed in a field is text",
+    () => atRepo(),
+    async (browser, { fixture }) => {
+      const { human, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      await fill(browser, "#field-comment", "half-checked");
+      // u in the field is a letter of the comment, not a release.
+      await browser.$("#field-comment").click();
+      await typeText(browser, "u");
+      await browser.waitUntil(async () => (await browser.$("#field-comment").getValue()) === "half-checkedu", { timeout: 15000, timeoutMsg: "u typed into the comment" });
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "u in a field releases nothing");
+      // Release claim, from the Result's row of actions, while editing.
+      await human().$("button=Release claim").click();
+      await browser.waitUntil(async () => signoff(fixture).claim === null && !(await browser.$("#field-comment").isExisting()) && await claimable(browser),
+        { timeout: 15000, timeoutMsg: "released, the form left" });
+      // Claimed again, the same verdict opens the draft as it was left.
+      await human().click();
+      await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "claimed again");
+      await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "half-checkedu",
+        "the kept draft");
+      assert.equal(signoff(fixture).status, "DEFERRED", "nothing was submitted");
     },
   ),
 
@@ -200,7 +238,7 @@ export const scenarios: Scenario[] = [
       await openReview();
       const notes = await tool("notes");
       await notes.button.click();
-      await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end" && (await toolLog()).notice === "notes_release finished.",
+      await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end" && await reviewing(browser),
         { timeout: 15000, timeoutMsg: "the notes tool's run ended in the Tool log" });
       await notes.observed();
       assert.deepEqual(await runOf("notes"), [
@@ -228,7 +266,9 @@ export const scenarios: Scenario[] = [
       const open = await tool("open");
       assert.equal(launched(fixture), false, "finding the tool did not launch this case's application");
       await open.button.click();
-      await browser.waitUntil(async () => (await toolLog()).notice === "open_release launched.", { timeout: 15000, timeoutMsg: "the launch notice" });
+      // It returns at once; what ended well is said by the log, never a sentence.
+      await browser.waitUntil(async () => (await runOf("open")) !== null && await reviewing(browser), { timeout: 15000, timeoutMsg: "the launch returned" });
+      assert.equal((await toolLog()).notice, "", "nothing more is said");
       // The application stand-in really ran, and its exit ends its run in the log.
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application" });
       await browser.waitUntil(async () => (await runOf("open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the launched application's exit logged" });
@@ -242,13 +282,12 @@ export const scenarios: Scenario[] = [
     "keeps logging a launched application under its own run after its button returned, its stderr in red, while the reviewer writes the result",
     () => atRepo(),
     async (browser, { fixture }) => {
-      const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
+      const { human, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
       const talk = await tool("talk");
       await talk.button.click();
       // The button returns at once; the application is still running and has said one line.
-      await browser.waitUntil(async () => (await toolLog()).notice === "talk_release launched." &&
-        (await runOf("talk"))?.some((row) => row.text === "opened the stand-in") === true && await reviewing(browser),
+      await browser.waitUntil(async () => (await runOf("talk"))?.some((row) => row.text === "opened the stand-in") === true && await reviewing(browser),
       { timeout: 15000, timeoutMsg: "the launched stand-in's first line, with the review idle" });
       assert.ok(!(await runOf("talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
       await talk.observed();
@@ -323,7 +362,7 @@ export const scenarios: Scenario[] = [
           top: log.scrollTop,
           below: log.scrollHeight - log.scrollTop - log.clientHeight,
           overflows: log.scrollHeight > log.clientHeight + 24,
-          review: log.closest<HTMLElement>(".body")!.scrollTop,
+          review: log.closest<HTMLElement>(".one")!.scrollTop,
         };
       }, LOG);
       // Runs until the log is longer than its box: it shows its newest line.
@@ -384,6 +423,26 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journey: J-HUMAN-LOG; UX edges: E-HUMAN-TOOL-FAIL
+  scenario<null>(
+    "monitor-tool-missing",
+    "ends the run of a tool that could not run with its error, in red",
+    () => atRepo({ title: "A person approves the release", instruction: "Read the release notes and approve them.", missing: true }),
+    async (browser, { fixture }) => {
+      const { toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
+      await openReview();
+      const gone = await tool("gone");
+      await gone.button.click();
+      await browser.waitUntil(async () => (await runOf("gone"))?.at(-1)?.kind === "end" && (await toolLog()).noticeError,
+        { timeout: 15000, timeoutMsg: "the tool's error ends its run" });
+      const rows = (await runOf("gone"))!;
+      assert.equal(rows[0].text, "▶ HH:MM:SS · gone · release");
+      const end = rows.at(-1)!;
+      assert.match(end.text, /^■ error: \S/, `its end line says the error: ${end.text}`);
+      assert.ok(end.error, "in red");
+      assert.equal(signoff(fixture).status, "DEFERRED", "a tool error is not a verdict");
+    },
+  ),
   // UX edges: E-HUMAN-TOOL-FAIL
   scenario<null>(
     "monitor-tool-failure",
@@ -416,14 +475,14 @@ export const scenarios: Scenario[] = [
     "steps back one thing per Esc from the Detail's tabs: cancels a running tool, then leaves the form, then closes the Detail",
     () => atRepo(),
     async (browser, { fixture }) => {
-      const { text, human, runOf, tool, openReview } = await monitorUI(browser, fixture);
+      const { human, runOf, tool, openReview, running } = await monitorUI(browser, fixture);
       await openReview();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       await fill(browser, "#field-comment", "kept while stepping back");
       const slow = await tool("slow");
       assert.equal(slowTool(fixture), null, "finding the tool did not start this case's cancellable tool");
       await slow.button.click();
-      await browser.waitUntil(async () => /Running slow/.test(await text()), { timeout: 15000, timeoutMsg: "the tool running" });
+      await browser.waitUntil(() => running("Running slow"), { timeout: 15000, timeoutMsg: "the tool running" });
       await browser.waitUntil(() => slowTool(fixture) !== null, { timeout: 15000, timeoutMsg: "the owned tool process started" });
       const alive = slowTool(fixture);
       assert.ok(alive && await alive(), "the cancellation target is an actual running process");
@@ -432,7 +491,7 @@ export const scenarios: Scenario[] = [
       const chip = browser.$(tabAt("e:release/signoff"));
       await chip.click();
       await browser.waitUntil(() => chip.isFocused(), { timeout: 15000, timeoutMsg: "the eval's chip focused" });
-      await press(browser, ["Escape"], async () => !/Running slow/.test(await text()), "the tool cancelled by Esc on the tabs");
+      await press(browser, ["Escape"], async () => !(await running("Running slow")), "the tool cancelled by Esc on the tabs");
       await browser.waitUntil(async () => !(await alive()), { timeout: 15000, timeoutMsg: "Esc terminated the owned tool process" });
       await browser.waitUntil(async () => (await runOf("slow"))?.at(-1)?.text === "■ cancelled", { timeout: 15000, timeoutMsg: "the run ended as cancelled" });
       await slow.observed();
@@ -606,9 +665,9 @@ export const scenarios: Scenario[] = [
       await openReview();
       const groups = await browser.execute(() => [...document.querySelectorAll('[aria-label="Tools"] .group')].map((group) => group.getAttribute("aria-label")));
       assert.deepEqual(groups, ["Tools of release", "Tools of docs"], "own tools precede the alphabetically earlier dependency");
-      await human().$('[aria-label="Tools of release"]').$('button=▶ notes').click();
+      await human().$('[aria-label="Tools of release"]').$('button=notes').click();
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "release's notes completed" });
-      await human().$('[aria-label="Tools of docs"]').$('button=▶ reference').click();
+      await human().$('[aria-label="Tools of docs"]').$('button=reference').click();
       await browser.waitUntil(async () => (await human().getText()).includes("Documentation checked."), { timeout: 15000, timeoutMsg: "the dependency's own notes were printed" });
       // The printed text is not its end: wait for docs's reference run to end, and end well.
       await browser.waitUntil(async () => (await runIn(browser, '[aria-label="Human review"]', "reference", "docs"))?.at(-1)?.kind === "end",
@@ -681,7 +740,7 @@ export const scenarios: Scenario[] = [
       assert.ok(await human().isExisting(), "the completed Detail stays open after the terminal subscription update");
       const completed = await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
       assert.match(completed, /completed result/i);
-      assert.match(completed, /Submitted GREEN for release\/signoff/);
+      assert.ok(completed.includes(korean), "the completed result shows what was submitted");
     },
   ),
 
@@ -768,7 +827,7 @@ export const scenarios: Scenario[] = [
         return !!widened && widened.width > shown.width + 60;
       }, { timeout: 15000, timeoutMsg: "the dragged Detail widened" })
         .catch((error: unknown) => { throw new Error(`${String(error)}: ${JSON.stringify({ shown, widened })}`); });
-      assert.ok(widened!.left > 0 && widened!.right > 0, `the Detail stays within the Main area: ${JSON.stringify(widened)}`);
+      assert.ok(widened!.left > 0 && widened!.right === 0, `the Detail stays within the Main area, at its right edge: ${JSON.stringify(widened)}`);
       await press(browser, ["Escape"], async () => (await placed()) === null, "the Detail closed");
       await openArtifact(browser, "a:docs", "Artifact docs");
       assert.equal((await placed())?.width, widened!.width, "the Detail opens again at its dragged width");
@@ -788,16 +847,15 @@ export const scenarios: Scenario[] = [
       const readable = await browser.execute(() => {
         const dock = document.querySelector<HTMLElement>('aside[aria-label="Detail"]')!;
         const heading = dock.querySelector<HTMLElement>("h2")!;
-        const tab = dock.querySelector<HTMLElement>('[role="tab"] .label')!;
-        return dock.scrollWidth <= dock.clientWidth && heading.scrollWidth <= heading.clientWidth && tab.scrollWidth <= tab.clientWidth;
+        return dock.scrollWidth <= dock.clientWidth && heading.scrollWidth <= heading.clientWidth;
       });
-      assert.ok(readable && minimum.width <= shown.width && minimum.left > 0 && minimum.right > 0, "the minimum is a readable, contained column, not collapsed text");
+      assert.ok(readable && minimum.width <= shown.width && minimum.left > 0 && minimum.right === 0, "the minimum is a readable, contained column at the right edge, not collapsed text");
       await dragEdge(Math.round(room.right - 1));
       assert.equal((await placed())?.width, minimum.width, "dragging past the minimum cannot shrink the column further");
       // Dragged as far left as the pointer goes, over the Pane: it stops short of the Pane.
       await dragEdge(Math.round(room.left - 40));
       const maximum = (await placed())!;
-      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right > 0, "the widest Detail stays in the Main area, never over the Pane");
+      assert.ok(maximum.width > minimum.width && maximum.width < room.width && maximum.left > 0 && maximum.right === 0, "the widest Detail stays in the Main area, never over the Pane");
       const graphVisible = await browser.execute(() => {
         const stage = document.querySelector(".stage")!.getBoundingClientRect();
         const dock = document.querySelector('aside[aria-label="Detail"]')!.getBoundingClientRect();
@@ -854,20 +912,21 @@ export const scenarios: Scenario[] = [
       await monitorUI(browser, fixture);
       await openArtifact(browser, "a:release", "Artifact release");
       const tools = () => browser.$(DETAIL).$('section[aria-label="Tools of release"]');
-      await tools().$("button=▶ notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own tools listed" });
-      // Below its evals and above its path: the Tools, then their Tool log.
-      const order = await browser.execute((root) => {
-        const dock = document.querySelector(root)!;
-        const parts = [dock.querySelector('[aria-label^="Evals of "]'), dock.querySelector('section[aria-label="Tools of release"]'),
-          dock.querySelector('[role="log"][aria-label="Tool log"]'), dock.querySelector('[role="document"] .card > p.line')];
-        return parts.every(Boolean) && parts.every((part, at) => at === 0 || (parts[at - 1]!.compareDocumentPosition(part!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
-      }, DETAIL);
-      assert.ok(order, "its evals, then its Tools and their Tool log, then its path");
+      await tools().$("button=notes").waitForEnabled({ timeout: 15000, timeoutMsg: "release's own tools listed" });
+      assert.equal(await browser.$(DETAIL).$('[role="log"][aria-label="Tool log"]').isExisting(), false, "no Tool log before a first run");
       assert.equal(await browser.$(".graph .svelte-flow__node button").isExisting(), false, "the graph's nodes carry no tool buttons");
       const toolRunsBefore = (await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0;
       // An output tool runs at once, unclaimed: its start, each line it printed and its exit.
-      await tools().$("button=▶ notes").click();
+      await tools().$("button=notes").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the notes run ended" });
+      // Below its evals: the Tools, then their Tool log from its first run, then its path.
+      const order = await browser.execute((root) => {
+        const dock = document.querySelector(root)!;
+        const parts = [dock.querySelector('[aria-label^="Evals of "]'), dock.querySelector('section[aria-label="Tools of release"]'),
+          dock.querySelector('[role="log"][aria-label="Tool log"]'), dock.querySelector('section[aria-label="Path"] p.line')];
+        return parts.every(Boolean) && parts.every((part, at) => at === 0 || (parts[at - 1]!.compareDocumentPosition(part!) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+      }, DETAIL);
+      assert.ok(order, "its evals, then its Tools and their Tool log, then its path");
       assert.deepEqual(await runIn(browser, DETAIL, "notes"), [
         { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
         { text: "# Release notes", kind: "line", error: false },
@@ -877,25 +936,29 @@ export const scenarios: Scenario[] = [
       assert.equal((await logIn(browser, DETAIL)).noticeError, false);
       assert.ok(((await checkpoint(browser)).activity.commands.artifactToolRun?.completed ?? 0) > toolRunsBefore, "the same probe observes this tool's run");
       assert.equal(signoff(fixture).claim, null, "running a tool claimed nothing");
+      // The Tool log folded after a run unfolds again for the next one.
+      await browser.$(DETAIL).$("button.head=Tool log").click();
+      await browser.waitUntil(async () => !(await browser.$(DETAIL).$('[role="log"][aria-label="Tool log"]').isExisting()), { timeout: 15000, timeoutMsg: "the Tool log folded" });
       // A launch tool answers at once and says so; its application runs and its exit ends the run.
       assert.equal(launched(fixture), false);
-      await tools().$("button=▶ open").click();
-      await browser.waitUntil(async () => (await logIn(browser, DETAIL)).notice === "open_release launched.", { timeout: 15000, timeoutMsg: "the launch said" });
+      await tools().$("button=open").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "open")) !== null && await tools().$("button=notes").isEnabled(), { timeout: 15000, timeoutMsg: "the launch returned" });
+      assert.equal(await browser.$(DETAIL).$("button.head=Tool log").getAttribute("aria-expanded"), "true", "the run unfolded the Tool log again");
+      assert.equal((await logIn(browser, DETAIL)).notice, "", "what ended well is said by the log alone");
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application ran" });
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "its exit logged" });
       // A launch tool whose application keeps running still returns at once: the launch is said,
       // the Detail's tools are usable again and its run stays open in the Tool log.
-      await tools().$("button=▶ talk").click();
-      await browser.waitUntil(async () => (await logIn(browser, DETAIL)).notice === "talk_release launched." &&
-        (await runIn(browser, DETAIL, "talk"))?.some((row) => row.text === "opened the stand-in") === true &&
-        await tools().$("button=▶ notes").isEnabled(), { timeout: 15000, timeoutMsg: "the launch returned while its application runs" });
+      await tools().$("button=talk").click();
+      await browser.waitUntil(async () => (await runIn(browser, DETAIL, "talk"))?.some((row) => row.text === "opened the stand-in") === true &&
+        await tools().$("button=notes").isEnabled(), { timeout: 15000, timeoutMsg: "the launch returned while its application runs" });
       assert.ok(!(await runIn(browser, DETAIL, "talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
       // Let it go on: what it prints next joins its run, and its exit ends it.
       finishTalk(fixture);
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "talk"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the stand-in's exit logged" });
       assert.ok((await runIn(browser, DETAIL, "talk"))!.some((row) => row.text === "chose: B"), "its later lines joined its own run");
       // A failing tool says so, its run ended red.
-      await tools().$("button=▶ fail").click();
+      await tools().$("button=fail").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "fail"))?.at(-1)?.kind === "end" && (await logIn(browser, DETAIL)).noticeError,
         { timeout: 15000, timeoutMsg: "the failing tool's end and error" });
       assert.deepEqual(await runIn(browser, DETAIL, "fail"), [
@@ -941,13 +1004,13 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { data: { run } }) => {
       const DETAIL = 'aside[aria-label="Detail"]';
-      await browser.waitUntil(async () => (await mainTitle(browser)) === `Run ${run}`, { timeout: 15000, timeoutMsg: "the Run saved before the change shown" });
+      await browser.waitUntil(async () => (await mainTitle(browser)) === run, { timeout: 15000, timeoutMsg: "the Run saved before the change shown" });
       await graphShown(browser, "a:release");
       await openArtifact(browser, "a:release", "Artifact release");
       const tools = () => browser.$(DETAIL).$('section[aria-label="Tools of release"]');
       // The tool declared only after the Run was saved is listed and runs.
-      await tools().$("button=▶ latest").waitForEnabled({ timeout: 15000, timeoutMsg: "the tool declared now listed" });
-      await tools().$("button=▶ latest").click();
+      await tools().$("button=latest").waitForEnabled({ timeout: 15000, timeoutMsg: "the tool declared now listed" });
+      await tools().$("button=latest").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "latest"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the latest run ended" });
       const latest = (await runIn(browser, DETAIL, "latest"))!;
       assert.deepEqual([latest[0], latest.at(-1)], [
@@ -956,7 +1019,7 @@ export const scenarios: Scenario[] = [
       ]);
       assert.ok(latest.some((row) => row.kind === "line" && row.text.includes("- Changed after the Run.")), `it read today's notes: ${JSON.stringify(latest)}`);
       // A command tool runs in the worktree as it is now: it prints the changed notes.
-      await tools().$("button=▶ notes").click();
+      await tools().$("button=notes").click();
       await browser.waitUntil(async () => (await runIn(browser, DETAIL, "notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "the notes run ended" });
       assert.deepEqual(await runIn(browser, DETAIL, "notes"), [
         { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },

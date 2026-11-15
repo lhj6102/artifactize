@@ -1,13 +1,15 @@
 <script lang="ts">
   // The chosen verdict's owner fields as a person enters them: a text, a choice, a list of items,
   // or repeated groups of fields, each to add and remove. Constants are filled in and not shown.
-  // Enter never submits; the Submit button and Ctrl+S do. Values are checked and coerced by the
-  // backend's form.
+  // Enter never submits; the Submit button of the review's action row and Ctrl+S do. Values are
+  // checked and coerced by the backend's form.
   import type { Attachment } from "svelte/attachments";
   import type { FieldValue, FormField } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
+  import Icon from "../shell/Icon.svelte";
+  import { label } from "../shell/keys";
 
-  let { review, form, onsubmit }: { review: Review; form: FormDraft; onsubmit: () => void } = $props();
+  let { review, form }: { review: Review; form: FormDraft } = $props();
   /** What a person enters: constants are the form's own. */
   const entered = (fields: FormField[]) => fields.filter((field) => field.input.kind !== "fixed");
   const shown = $derived(entered(form.fields));
@@ -68,13 +70,14 @@
     {@const chosen = value?.kind === "choice" ? value.value : null}
     <select
       {id}
+      class:empty={chosen === null}
       value={chosen === null ? "" : String(chosen)}
       onchange={(event) => {
         const raw = (event.currentTarget as HTMLSelectElement).value;
         onset({ kind: "choice", value: raw === "" ? null : Number(raw) });
       }}
     >
-      <option value="">–</option>
+      <option value="">{field.required ? "–" : "Optional"}</option>
       {#each field.input.options as option, at (at)}
         <option value={String(at)}>{option}</option>
       {/each}
@@ -106,6 +109,8 @@
         role="radio"
         aria-checked={form.verdict === verdict}
         class="verdict {verdict.toLowerCase()}"
+        aria-label="{verdict} ({label(verdict === 'GREEN' ? 'Ctrl+G' : 'Ctrl+R')})"
+        aria-keyshortcuts={verdict === "GREEN" ? "Control+G" : "Control+R"}
         onclick={() => void review.choose(verdict)}
       >
         {verdict}
@@ -113,10 +118,7 @@
     {/each}
   </div>
 
-  {#if shown.length === 0}
-    <p class="muted">This verdict asks for nothing more.</p>
-  {:else}
-    {#each shown as field (field.name)}
+  {#each shown as field (field.name)}
       {@const value = form.values[field.name]}
       <div class="field">
         <label class="name" for="field-{field.name}">
@@ -135,11 +137,11 @@
                   oninput={(event) =>
                     setItems(field.name, list.with(at, (event.currentTarget as HTMLTextAreaElement).value))}
                 ></textarea>
-                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}>✕</button>
+                <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}><Icon name="remove" /></button>
               </li>
             {/each}
           </ol>
-          <button class="button small add" onclick={() => void form.add(field.name)}>+ Add</button>
+          <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
         {:else if field.input.kind === "groups"}
           {@const subs = entered(field.input.fields)}
           {@const list = groups(value)}
@@ -148,7 +150,7 @@
               <div class="group" role="group" aria-label="{field.name} {at + 1}">
                 <div class="group-head">
                   <span>{field.name} {at + 1}</span>
-                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}>✕</button>
+                  <button class="remove" aria-label="Remove {field.name} {at + 1}" onclick={() => void form.remove(field.name, at)}><Icon name="remove" /></button>
                 </div>
                 {#each subs as sub (sub.name)}
                   {@const id = `field-${field.name}-${at}-${sub.name}`}
@@ -163,21 +165,17 @@
               </div>
             {/each}
           </div>
-          <button class="button small add" onclick={() => void form.add(field.name)}>+ Add</button>
+          <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
         {:else}
           {@render scalar(field, value, `field-${field.name}`, (next) => set(field.name, next))}
         {/if}
         {#if field.hint}<span class="hint">{field.hint}</span>{/if}
       </div>
-    {/each}
-  {/if}
+  {/each}
 
   {#if form.error}
     <div class="error" role="alert">{form.error}</div>
   {/if}
-  <div class="submit">
-    <button class="button primary" disabled={review.busy !== null} onclick={onsubmit}>Submit {form.verdict}</button>
-  </div>
 </div>
 
 <style>
@@ -192,14 +190,20 @@
     flex-wrap: wrap;
     gap: 6px;
   }
+  /* The chosen verdict takes its colour as text and border; the face stays. */
   .verdict {
     font: inherit;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--muted);
-    border-radius: 6px;
-    padding: 3px 12px;
+    height: var(--control);
+    border: 1px solid var(--line-group);
+    background: var(--surface-group);
+    color: var(--ink-2);
+    border-radius: var(--radius-control);
+    padding: 0 12px;
     cursor: pointer;
+  }
+  /* Hover only highlights: the face stays and the edge steps up to a field's line. */
+  .verdict:hover {
+    border-color: var(--line-input);
   }
   .verdict.green[aria-checked="true"] {
     color: var(--green);
@@ -223,27 +227,38 @@
     color: var(--red);
     margin-left: 2px;
   }
-  .hint,
-  .muted {
-    color: var(--muted);
-    font-size: 12px;
+  .hint {
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
+  /* Fields sit one step below the panel, outlined by the faintest line. */
   input,
   textarea,
   select {
     font: inherit;
-    color: var(--text);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 8px;
+    color: var(--ink);
+    background: var(--surface-input);
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    height: var(--control);
+    padding: 0 8px;
     width: 100%;
   }
   textarea {
+    height: auto;
+    min-height: 44px;
+    padding: 4px 8px;
     resize: vertical;
   }
+  /* An empty choice reads as a placeholder does. */
+  select.empty {
+    color: var(--ink-3);
+  }
+  select.empty option {
+    color: var(--ink);
+  }
   ::placeholder {
-    color: var(--faint);
+    color: var(--ink-3);
   }
   .items {
     display: grid;
@@ -258,15 +273,21 @@
     gap: 6px;
   }
   .remove {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
     border: 0;
     background: none;
-    color: var(--muted);
+    color: var(--ink-2);
     cursor: pointer;
     font: inherit;
-    padding: 4px;
+    padding: 0;
   }
   .remove:hover {
-    color: var(--text);
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
+    color: var(--ink);
   }
   .add {
     justify-self: start;
@@ -279,19 +300,15 @@
     display: grid;
     gap: 8px;
     padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border: 1px solid var(--line-group);
+    border-radius: var(--radius-control);
   }
   .group-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .submit {
-    display: flex;
-    justify-content: flex-end;
+    color: var(--ink-2);
+    font-size: var(--text-small);
   }
   input:focus,
   textarea:focus,
@@ -310,9 +327,6 @@
   .error {
     color: var(--red);
     white-space: pre-wrap;
-    border: 1px solid var(--red);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 12px;
+    font-size: var(--text-small);
   }
 </style>

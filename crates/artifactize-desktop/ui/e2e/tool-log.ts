@@ -3,11 +3,12 @@
 
 export type LogRow = { text: string; kind: "start" | "line" | "end"; error: boolean };
 
-/** The rows of the Tool log inside `scope`, and the notice of the tools beside it. */
+/** The rows of the Tool log inside `scope`, and what its tools said: only a failure is said,
+ * in red, beside them (`role="status"` with the class `error`). */
 export function toolLog(browser: WebdriverIO.Browser, scope: string): Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }> {
   return browser.execute((within) => {
     const root = document.querySelector(within);
-    const notice = root?.querySelector(".notice");
+    const notice = root?.querySelector('[role="status"].error');
     const log = root?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",

@@ -1,6 +1,7 @@
 <script lang="ts">
-  // A newer release: the version and how to update the way this app was installed. The app
-  // never updates itself.
+  // A newer release: the running and the new version as two numbers, then how to update the way
+  // this app was installed: the command as selectable text, the file to download, or the
+  // release page. The app never updates itself.
   import { Dialog } from "bits-ui";
   import type { Release } from "./release.svelte";
 
@@ -13,26 +14,20 @@
     <Dialog.Content class="dialog">
       {#if release.notice}
         {@const { running, latest, update } = release.notice}
-        <Dialog.Title class="dialog-title">artifactize {latest} is available</Dialog.Title>
-        <p>This app is {running}.</p>
+        <Dialog.Title class="dialog-title">Update artifactize</Dialog.Title>
+        <p class="versions" aria-label="Running {running}, available {latest}">{running} → {latest}</p>
         {#if update.kind === "command"}
-          <p>To update, run:</p>
           <pre class="command">{update.command}</pre>
         {:else if update.kind === "download"}
-          <p>To update, download and install it the way you installed this one:</p>
           <button class="link" onclick={() => void release.follow()}>{update.url}</button>
-          {#if update.command}
-            <p>then run, in the folder you downloaded it to:</p>
-            <pre class="command">{update.command}</pre>
-          {/if}
+          {#if update.command}<pre class="command">{update.command}</pre>{/if}
         {:else}
-          <p>See the release page for how to update:</p>
           <button class="link" onclick={() => void release.follow()}>{update.url}</button>
         {/if}
         {#if release.failure}<p class="failure">{release.failure}</p>{/if}
       {/if}
       <div class="dialog-actions">
-        <Dialog.Close class="button">Close</Dialog.Close>
+        <Dialog.Close class="button" aria-keyshortcuts="Escape">Close</Dialog.Close>
       </div>
     </Dialog.Content>
   </Dialog.Portal>
@@ -42,13 +37,16 @@
   p {
     margin: 0 0 8px;
   }
+  .versions {
+    font-variant-numeric: tabular-nums;
+  }
   .command {
     margin: 0 0 8px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface-2);
-    font-family: var(--mono);
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    font: var(--text-small) / 1.5 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     user-select: text;
@@ -65,6 +63,10 @@
     text-decoration: underline;
     overflow-wrap: anywhere;
     cursor: pointer;
+  }
+  .link:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
   }
   .failure {
     color: var(--red);

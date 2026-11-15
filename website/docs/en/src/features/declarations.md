@@ -275,12 +275,11 @@ and directories such as `bundle.artf` fail discovery. A file named `index` canno
 
 A file Artifact is a [part](artifact.md#composition) of the nearest folder Artifact
 around it: selecting that folder Artifact selects the file Artifact too, and the folder
-Artifact passes only while it does. Being a part makes it no input: the folder
-Artifact's evals neither read it nor carry its fingerprint in their reuse keys unless they
-name it. A subfolder with its own `index.artf` still takes its files out of the folder
-Artifact around it.
-A folder's artifactsum includes neighboring file Artifact targets and excludes every
-`*.artf` declaration.
+Artifact passes only while it does. The folder Artifact's eval keys include the
+file part's fingerprint even without a reference; reading the part through its own
+tools still requires naming it. A folder's artifactsum excludes every part's files,
+including neighboring file targets and subfolders with their own `index.artf`,
+and every `*.artf` declaration. Each part fingerprints its own files instead.
 
 The containing folder is the working directory of runtime commands, tools and
 fingerprint scripts, so a relative executable may be a sibling file. It grants no
@@ -489,9 +488,13 @@ absolute path when the command runs. In instructions and runtime arguments a ref
 makes the eval depend on that Artifact; in a fingerprint script it only lets the script
 read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
 doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
-never builds a command line from a string. An eval may read its target and the Artifacts it references,
-neither their parts nor folders nested in them. The instructions of the referenced Artifacts' evals are not added to its
-review; a [`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
+never builds a command line from a string. An eval may read its target and the Artifacts
+it references. An admitted folder still exposes colocated file-part targets and
+aspect-selected files through its own paths, but not unadmitted nested folder
+Artifacts. Composition does not add a part's own tools: to use them, reference the
+part in the consuming eval's instruction or runtime arguments. The instructions of referenced
+Artifacts' evals are not added to the review; a
+[`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
 
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare

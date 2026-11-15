@@ -2,14 +2,15 @@
 // one by its ID, leaving its form and then the review back to the Pane, quitting with an
 // unsubmitted claim (stay, then release and quit), and the completed result kept open.
 import assert from "node:assert/strict";
-import { addRepository, artifactize, create, type Fixture, orderRuns, requests, signoff } from "../fixture.ts";
-import { claimable, reviewing } from "../human-review.ts";
+import { addRepository, artifactize, create, type Fixture, orderRuns, requests, savedRuns, signoff } from "../fixture.ts";
+import { claimable, requestState, showDebug, reviewing } from "../human-review.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, requestWindowClose } from "../platform.ts";
-import { branch, entriesFocused, expand, mainTitle, waiting } from "../pane.ts";
+import { branch, entriesFocused, expand, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
+import { detail, openArtifact } from "../graph-view.ts";
 
 /** How many Human reviews this case's state holds waiting, read through the public CLI. */
 function waitingReviews(fixture: Fixture): number {
@@ -34,7 +35,8 @@ async function openById(browser: WebdriverIO.Browser, id: string) {
   await fill(browser, '[aria-label="Request ID"]', id);
   await browser.$('[role="dialog"] button[type="submit"]').click();
   await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "a Review in the Main area");
-  await waitFor(browser, async () => (await browser.$('[aria-label="Human review"] .meta').getText()).startsWith(`Request ${id} · `), `${id}'s review`);
+  await showDebug(browser);
+  await waitFor(browser, async () => (await requestState(browser)).startsWith(`Request ${id} · `), `${id}'s review`);
 }
 
 export const scenarios: Scenario[] = [
@@ -49,12 +51,12 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await row()) !== undefined, "the waiting row");
       const shown = (await row())!;
       assert.deepEqual([shown.eval, shown.where], ["release/signoff", "repo  master"]);
-      assert.match(shown.meta, / · -$/, "nobody claimed it");
+      assert.doesNotMatch(shown.meta, / · /, "nobody claimed it: only how long it waits");
       assert.equal(signoff(fixture).claim, null, "listing claims nothing");
       assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
       await waitFor(browser, async () => / · bob$/.test((await row())?.meta ?? ""), "bob's claim in the row");
       assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
-      await waitFor(browser, async () => / · -$/.test((await row())?.meta ?? ""), "bob's release in the row");
+      await waitFor(browser, async () => { const meta = (await row())?.meta; return meta !== undefined && !/ · /.test(meta); }, "bob's release in the row");
       assert.equal(await mainTitle(browser), "Nothing chosen", "nothing opened by itself");
     },
   ),
@@ -79,8 +81,10 @@ export const scenarios: Scenario[] = [
       // The older one by its ID, not the newest at the top of the stack.
       assert.equal((await waiting(browser)).rows[0].id, added.id);
       await openById(browser, original);
-      const technical = () => browser.$('[aria-label="Human review"]').$("button*=Technical").getAttribute("aria-expanded");
+      // Debug, unfolded to read the request's state above, folds and unfolds by t.
+      const technical = () => browser.$('[aria-label="Human review"]').$("button.head=Debug").getAttribute("aria-expanded");
       await browser.$('[aria-label="Human review"]').click();
+      await press(browser, ["t"], async () => (await technical()) === "false", "Debug folded by t");
       await press(browser, ["t"], async () => (await technical()) === "true", "the opened review's identity");
       const openedId = () => browser.execute(() => [...document.querySelectorAll('[aria-label="Human review"] dt')]
         .find((field) => field.textContent === "Request")?.nextElementSibling?.textContent ?? "");
@@ -187,6 +191,96 @@ export const scenarios: Scenario[] = [
       const human = browser.$('[aria-label="Human review"]');
       assert.ok(await human.isExisting(), "the completed review stays open after the terminal update");
       assert.match(await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? ""), /completed result/i);
+      assert.equal(await mainTitle(browser), "Review · read-only", "completed, the review is read-only");
+    },
+  ),
+  // UX journey: J-HUMAN-LAYOUT; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN
+  scenario<null>(
+    "review-layout",
+    "lays a review in the Main area out as two panels where it is at least twice the Detail's width, the Tool log the view at the left and the rest a column at the right, and in one column where it is narrower",
+    async () => ({ fixture: await create(), args: ["review"], data: null }),
+    async (browser, { fixture }) => {
+      // The Detail's width as a Run's graph opens it, and the Main area's, at a window size.
+      const run = savedRuns(fixture)[0].id;
+      const measured = async (width: number, height: number) => {
+        await browser.setWindowSize(width, height);
+        await showRun(browser, "repo  master", run);
+        await openArtifact(browser, "a:release", "Artifact release");
+        const sizes = await browser.execute(() => ({
+          detail: Math.round(document.querySelector('.stage aside[aria-label="Detail"]')!.getBoundingClientRect().width),
+          main: Math.round(document.querySelector(".stage")!.getBoundingClientRect().width),
+        }));
+        await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
+        return sizes;
+      };
+      const narrowSizes = await measured(800, 760);
+      const wideSizes = await measured(1920, 1080);
+      assert.ok(wideSizes.main >= 2 * wideSizes.detail && narrowSizes.main < 2 * narrowSizes.detail,
+        `the window sizes fall on both sides of twice the Detail's width: ${JSON.stringify({ wideSizes, narrowSizes })}`);
+      await openWaiting(browser, signoff(fixture).id);
+      await claimReview(browser, fixture);
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      /** The review's arrangement: its panels' boxes, its Result's and its row of actions' boxes. */
+      const arranged = () => browser.execute(() => {
+        const review = document.querySelector<HTMLElement>('[aria-label="Human review"]')!;
+        const box = (element: Element | null | undefined) => {
+          const rect = element?.getBoundingClientRect();
+          return rect ? { left: Math.round(rect.left), right: Math.round(rect.right), top: Math.round(rect.top), bottom: Math.round(rect.bottom) } : null;
+        };
+        const result = review.querySelector('section[aria-label="Result"]');
+        const sections = [...review.querySelectorAll(".section")].map((section) => section.getAttribute("aria-label"));
+        return {
+          area: box(review),
+          split: review.classList.contains("split"),
+          viewer: box(review.querySelector(".viewer")),
+          log: box(review.querySelector(".viewer [role='log']")),
+          side: box(review.querySelector(".side")),
+          result: box(result),
+          // The row of actions is the Result's last row.
+          actionsLast: !!result && result.querySelector(".body > .result > :last-child")?.classList.contains("actions") === true,
+          sections,
+        };
+      });
+      // Wide: the Tool log fills the left, from below the header row to the bottom; the column at the right.
+      await browser.waitUntil(async () => (await arranged()).split, { timeout: 15000, timeoutMsg: "two panels in a wide Main area" });
+      const wide = await arranged();
+      assert.ok(wide.viewer && wide.side && wide.log && wide.area, JSON.stringify(wide));
+      assert.ok(wide.viewer.right <= wide.side.left + 1 && wide.side.right >= wide.area.right - 1, `the Tool log at the left, the column at the right: ${JSON.stringify(wide)}`);
+      assert.ok(wide.log.bottom >= wide.area.bottom - 2 && wide.viewer.top <= wide.area.top + 2, `the Tool log fills its panel's height: ${JSON.stringify(wide)}`);
+      assert.deepEqual(wide.sections, ["Tools", "Result", "Debug"], "the column holds the Tools, the Result and Debug");
+      assert.ok(Math.abs(wide.side.right - wide.side.left - wideSizes.detail) <= 2,
+        `the column at the right is as wide as the Detail: ${JSON.stringify({ side: wide.side, detail: wideSizes.detail })}`);
+      assert.ok(wide.actionsLast, "the row of actions ends the Result");
+      // While a tool runs, its time and Cancel stand between Release claim and Submit; Cancel
+      // stops it, the review and its draft staying.
+      await fill(browser, "#field-comment", "draft kept through the tool");
+      await browser.$('[aria-label="Human review"]').$("button=slow").click();
+      const row = () => browser.execute(() => {
+        const actions = document.querySelector('[aria-label="Human review"] .actions');
+        const at = (selector: string) => actions?.querySelector(selector)?.getBoundingClientRect().left ?? null;
+        return {
+          release: at('button[aria-label="Release claim (u)"]'),
+          seconds: actions?.querySelector(".busy .seconds")?.textContent?.trim() ?? "",
+          cancel: at('button[aria-label="Cancel (Esc)"]'),
+          submit: at("button.primary"),
+        };
+      });
+      let running = await row();
+      await browser.waitUntil(async () => /^\d+s$/.test((running = await row()).seconds), { timeout: 15000, timeoutMsg: "the running tool's time in the row" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(running)}`); });
+      assert.ok(running.release !== null && running.cancel !== null && running.submit !== null && running.release < running.cancel && running.cancel < running.submit,
+        `Release claim, then the running tool's time and Cancel, then Submit: ${JSON.stringify(running)}`);
+      await browser.$('[aria-label="Human review"] button[aria-label="Cancel (Esc)"]').click();
+      await browser.waitUntil(async () => (await row()).seconds === "", { timeout: 15000, timeoutMsg: "Cancel stopped the tool" });
+      assert.equal(await browser.$("#field-comment").getValue(), "draft kept through the tool", "the draft stays");
+      // Narrow, a Main area under twice the Detail's width: one column, top to bottom, the Tool
+      // log a box between the Tools and the Result.
+      await browser.setWindowSize(800, 760);
+      await browser.waitUntil(async () => !(await arranged()).split, { timeout: 15000, timeoutMsg: "one column in a narrow Main area" });
+      const narrow = await arranged();
+      assert.deepEqual(narrow.sections, ["Tools", "Tool log", "Result", "Debug"], "one column, the Tool log between the Tools and the Result");
+      assert.ok(narrow.actionsLast, "the row of actions still ends the Result");
+      assert.equal(await browser.$("#field-comment").isExisting(), true, "the form kept through the change");
     },
   ),
 ];

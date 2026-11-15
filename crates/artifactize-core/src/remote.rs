@@ -1,8 +1,10 @@
 //! Shared remote review store records: what leaves this machine and how it is mirrored back.
 
 mod push;
+mod pushed;
 mod session;
 pub use push::{Push, push};
+pub use pushed::{Pushed, recent as recent_pushes};
 pub(crate) use session::REFRESH as REFRESH_INTERVAL;
 pub use session::Session;
 
@@ -115,6 +117,15 @@ impl Record {
     /// Check shape, the key against its fingerprints, and size limits; never trusts the
     /// record's verdict.
     pub fn validate(&self) -> Result<(), String> {
+        let keyed = crate::cache::key_with_kinds(
+            &self.eval_def_hash,
+            &self.fingerprints,
+            &self.artifact_kinds,
+        );
+        // Leaf and composition formats both prove the exact input map. Their distinct
+        // keys prevent pre-composition results from answering a whole's new requests.
+        let valid_key = keyed == self.key
+            || (!self.artifact_kinds.is_empty() && crate::cache::parts_key(&keyed) == self.key);
         let valid = self.schema == SCHEMA
             && valid_hash(&self.key)
             && valid_hash(&self.eval_def_hash)
@@ -125,11 +136,7 @@ impl Record {
             })
             && (self.artifact_kinds.is_empty()
                 || self.artifact_kinds.keys().eq(self.fingerprints.keys()))
-            && crate::cache::key_with_kinds(
-                &self.eval_def_hash,
-                &self.fingerprints,
-                &self.artifact_kinds,
-            ) == self.key
+            && valid_key
             && matches!(
                 self.verdict,
                 crate::types::ExecutionStatus::Green | crate::types::ExecutionStatus::Red

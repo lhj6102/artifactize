@@ -325,6 +325,38 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
         ["Run", "release", "signoff", "ship", "check"]
     );
     let shown = view["run"]["id"].as_str().unwrap();
+    // The header row names what needs attention: the sign-off that waits.
+    assert_eq!(
+        view["run"]["needs"],
+        json!([{"mark": {"status": "DEFERRED", "glyph": "?"}, "text": "release/signoff"}])
+    );
+    // The Run's Detail leads with what the header row leaves out: its status, its tally, its
+    // time and its comment, each said once rather than again among its sections.
+    let outcome = invoke(
+        &window,
+        "detail",
+        json!({"source": {"kind": "run", "run": run}, "node": view["run"]["node"]}),
+    )
+    .unwrap();
+    assert_eq!(outcome["target"], "run");
+    assert_eq!(outcome["mark"], view["run"]["mark"]);
+    assert_eq!(outcome["outcome"]["failed"], json!([]));
+    assert!(
+        outcome["outcome"]["tally"]
+            .as_array()
+            .is_some_and(|tally| !tally.is_empty()),
+        "{outcome}"
+    );
+    assert!(
+        outcome["sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|section| section["fields"].as_array().unwrap())
+            .all(|field| !["Status", "Counts", "Validation", "Comment"]
+                .contains(&field["key"].as_str().unwrap())),
+        "{outcome}"
+    );
     let signoff = &row(&window, shown, "a:release")["children"][0];
     assert_eq!(signoff["urgent"], json!(true));
     assert_eq!(signoff["text"][0]["text"], "Human sign-off · unclaimed");
@@ -958,8 +990,8 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     assert_eq!(
         before["nodes"],
         json!([
-            {"id": "a:release", "name": "release", "light": "active", "note": null, "parts": []},
-            {"id": "a:ship", "name": "ship", "light": "waiting", "note": null, "parts": []},
+            {"id": "a:release", "name": "release", "light": "active", "tally": {"passed": 0, "of": 1}, "note": null, "parts": []},
+            {"id": "a:ship", "name": "ship", "light": "waiting", "tally": {"passed": 0, "of": 1}, "note": null, "parts": []},
         ])
     );
     assert_eq!(
@@ -1047,7 +1079,12 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     assert_eq!(after["shape"], read["shape"]);
     assert_eq!(
         after["update"],
-        json!({"kind": "lights", "nodes": ["green", "green"], "edges": ["green"]}),
+        json!({
+            "kind": "lights",
+            "nodes": ["green", "green"],
+            "tallies": [{"passed": 1, "of": 1}, {"passed": 1, "of": 1}],
+            "edges": ["green"],
+        }),
         "the downstream runtime Eval completes"
     );
     // A caller holding another shape gets this one whole.
@@ -1189,10 +1226,6 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert!(scanned["revision"].as_u64() >= first["revision"].as_u64());
     assert_eq!(scanned["checking"], 0);
     assert_eq!(scanned["failure"], Value::Null);
-    assert_eq!(
-        invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
-        structure.tree()
-    );
     // Never verified: the Human eval would run; the Artifacts without evals are reused, app
     // since its part lib is. lib is drawn inside app, by no edge.
     let source = json!({"kind": "current", "branch": branch});
@@ -1204,9 +1237,9 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_eq!(
         graph["nodes"],
         json!([
-            {"id": "a:app", "name": "app", "light": "reused", "note": "reused", "parts": ["a:lib"]},
-            {"id": "a:graph", "name": "graph", "light": "run", "note": "would run (1 eval)", "parts": []},
-            {"id": "a:lib", "name": "lib", "light": "reused", "note": "reused", "parts": []},
+            {"id": "a:app", "name": "app", "light": "reused", "tally": null, "note": "reused", "parts": ["a:lib"]},
+            {"id": "a:graph", "name": "graph", "light": "run", "tally": {"passed": 0, "of": 1}, "note": "would run (1 eval)", "parts": []},
+            {"id": "a:lib", "name": "lib", "light": "reused", "tally": null, "note": "reused", "parts": []},
         ])
     );
     assert_eq!(
@@ -1274,10 +1307,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     assert_ne!(again["fingerprint"], scanned["fingerprint"]);
     assert!(again["revision"].as_u64() > scanned["revision"].as_u64());
     assert_eq!(
-        invoke(&viewer, "current_structure", json!({"branch": branch})).unwrap(),
+        again["fingerprint"],
         artifactize_core::graph_structure::read(&fixture.repo)
             .unwrap()
-            .tree()
+            .fingerprint()
+            .as_str()
     );
     // A branch the Pane does not list has no Current.
     let elsewhere = json!({"kind": "folder", "path": "/nowhere"});

@@ -34,6 +34,9 @@ This state was written by an earlier artifactize. Start a new state (set ARTIFAC
 더 새로운 artifactize가 쓴 상태는 `Unsupported state schema version: N; a newer artifactize
 wrote it.`로 거부됩니다. 열려면 artifactize를 업데이트하세요.
 
+부분을 반영하는 재사용 키로 바뀌어도 상태 형식은 그대로입니다. 다만 업그레이드 후 첫 `verify`에서는
+부분이 있는 대상의 eval을 Human 승인까지 한 번 다시 리뷰합니다.
+[재사용 키](../fingerprint.md#the-reuse-key)를 보세요.
 0.9로 업그레이드하면 모든 eval을 한 번 리뷰합니다.
 [0.9로 업그레이드](../../getting-started/update.md#upgrading-to-09)를 보세요.
 
@@ -58,7 +61,7 @@ Codex sign-in storage /work/project/.state/auth is inside the git work tree /wor
 끝나면 그 결과를 쓰므로, 실행 시작 횟수에 포함되지 않고 백엔드 자리도 차지하지 않습니다. 이런 요청도 GREEN이나 RED 판정을
 받거나 ERROR로 끝납니다. ERROR 결과는 이후 Run에서 재사용하지 않습니다. 첫 Runtime이나 Agent 리뷰가
 취소되거나 끝나지 못하면, 대기 중인 Run 가운데 하나가 이어서 리뷰를 실행하고 나머지는 그 실행이 끝난 뒤 결과를 사용합니다. Human
-승인은 다시 시작하지 않습니다. 승인을 요청한 Run이 취소되거나 그 프로세스가 죽으면(`OWNER_DIED`), 해당 승인 요청과 그 결과가 나올 때까지 대기 중이던 다른 요청이 모두 ERROR로 끝나며, `verify`를 새로 실행하면 승인을 다시 요청합니다. Run이 YELLOW로 끝나면 대기 중인 승인과 그 결과가 나올 때까지 대기 중인 요청은 그대로 남아 있어 나중에도 제출할 수 있습니다. 대기 중이던 Run을 취소해도 첫 번째
+승인 요청은 다시 생성하지 않습니다. 승인을 요청한 Run이 취소되거나 그 프로세스가 죽으면(`OWNER_DIED`), 해당 승인 요청과 그 결과가 나올 때까지 대기 중이던 다른 요청이 모두 ERROR로 끝나며, `verify`를 새로 실행하면 승인을 다시 요청합니다. Run이 YELLOW로 끝나면 대기 중인 승인과 그 결과가 나올 때까지 대기 중인 요청은 그대로 남아 있어 나중에도 제출할 수 있습니다. 대기 중이던 Run을 취소해도 첫 번째
 Run은 취소되지 않습니다. `--force`를 쓰면 항상 따로 실행합니다. 진행 중인 리뷰는 원격
 저장소를 통해 공유하지 않으며, 이를 지원하는 설정도 없습니다.
 
@@ -68,6 +71,8 @@ Run은 취소되지 않습니다. `--force`를 쓰면 항상 따로 실행합니
 정하지 않고 그 기록을 증거에서 뺍니다. 그 요청은 Run 요약에서 빠지고, Run 자체를 읽지 못하면
 그 사실을 표시합니다. `status`와 `run show`는 그런 기록을 `unreadable` 아래에 `kind`, `id`,
 `reason`과 함께 알리고, 증거를 읽는 명령은 stderr에 `Unreadable ...` 줄을 출력합니다.
+다만 `run show`로 요청한 Run 자체나 그 Run에 저장된 정의를 읽지 못하면 `run show`가 실패합니다. 종료 코드는 2이고,
+이유는 stderr에 나오며 `--json`에서는 `{"error": "..."}`로 나옵니다.
 `run list`는 그런 기록을 확인하지 않습니다. 개수가
 모자란다고 그 리뷰가 통과했다는 뜻은 아닙니다. 진단할 수 있도록 상태를 그대로 두고, 새 증거가
 필요하면 다시 verify하세요. `doctor`는 상태 데이터를 열 수 있는지와 해당 스키마를 지원하는지만 확인하며,
@@ -137,7 +142,7 @@ artifactize limits [--signoff-idle-grace SECONDS] [--state-dir PATH] [--json]
 ## Agent 세션 {#agent-sessions}
 
 Agent 리뷰의 대화는 상태 디렉터리에 저장되며,
-[`session show`와 `session send`](../agent.md#saved-conversations)로 읽거나 이어서 질문할 수 있습니다.
+[`session show`와 `session send`](../agent.md#saved-conversations)로 읽거나 follow-up을 보낼 수 있습니다.
 `limits.json`으로 대화 저장 여부와 저장 공간의 크기를 정합니다.
 
 ```json

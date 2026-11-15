@@ -233,10 +233,10 @@ Artifact를 선언한 내용도 그래프 fingerprint에 들어갑니다.
 
 파일 Artifact는 가장 가까운 상위 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 그 폴더 Artifact를 선택하면 파일 Artifact도 함께 선택되고, 파일 Artifact가 통과해야 폴더 Artifact도
-통과합니다. 다만 부분이라고 입력이 되지는 않습니다. 폴더 Artifact의 eval이 이름을 적지 않으면 그
-파일 Artifact를 읽지 않으며, 재사용 키에도 그 fingerprint가 들어가지 않습니다. 하위 폴더에
-`index.artf`를 두면 그 폴더의 파일은 여전히 바깥 폴더 Artifact에서 빠집니다. 폴더의
-artifactsum은 옆에 있는 파일 Artifact의 대상을 포함하고, `*.artf` 선언은 모두 뺍니다.
+통과합니다. 폴더 Artifact의 eval 키에는 참조가 없어도 파일 부분의 fingerprint가 들어갑니다.
+부분에 선언된 도구로 읽으려면 여전히 그 부분을 참조해야 합니다. 폴더의 artifactsum에서는
+옆에 있는 파일 Artifact의 대상, 자체 `index.artf`가 있는 하위 폴더를 비롯해 모든 부분의 파일과
+모든 `*.artf` 선언을 제외합니다. 각 부분의 파일은 그 부분의 fingerprint로 반영합니다.
 
 파일 Artifact가 있는 폴더에서 Runtime 명령, 도구, fingerprint 스크립트를 실행하므로, 같은 폴더의
 실행 파일을 상대 경로로 지정할 수 있습니다. 그렇다고 같은 폴더의 다른 파일에 접근할 수 있는 것은 아닙니다.
@@ -275,8 +275,8 @@ JSON 명령 도구의 `context.artifactPath`는 파일을 가리키고, 프로�
 
 ## Aspect {#aspects}
 
-aspect는 게임 트리 안에 흩어진 스킬 하나의 코드, 테스트, 스프라이트처럼, 자기 폴더 없이 더 큰 파일
-묶음의 일부를 이루는 부분입니다. 같은 이름의 파일이 없는 `<label>.artf`에 선언하고, `select`에
+aspect는 별도 폴더 없이 더 큰 파일 묶음 안에서 한 부분을 이루는 파일들입니다. 게임 트리 곳곳에 흩어진
+스킬 하나의 코드, 테스트, 스프라이트가 그런 예입니다. 같은 이름의 파일이 없는 `<label>.artf`에 선언하고, `select`에
 선언 파일이 있는 폴더를 기준으로 한 경로를 적습니다.
 
 ```toml
@@ -304,7 +304,7 @@ payload.instruction = "Review {fireball} against {skill-spec}."
   실행됩니다.
 - scope 항목과 저장된 정의에는 `kind = "aspect"`가 들어갑니다.
 
-겹쳐도 됩니다. 오히려 그것이 aspect를 쓰는 이유입니다. `game`의 다른 파일이 바뀌어도
+범위가 겹쳐도 괜찮습니다. 여러 aspect가 겹치는 파일을 다룰 수 있다는 점이 aspect의 장점입니다. `game`의 다른 파일이 바뀌어도
 `fireball`의 결과는 재사용되고, `src/`를 담은 폴더 Artifact는 여전히 그 안을 모두
 리뷰합니다. aspect는 선언이 있는 폴더를 둘러싼 폴더 Artifact의 [부분](artifact.md#composition)입니다.
 
@@ -358,7 +358,7 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 
 artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일에 ignore되지 않은 심볼릭 링크나 특수 파일이 있으면 오류가 발생해 검증을 중단합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
 심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 해당 Artifact에 속하지 않은 파일은 해시하지
-않습니다. 다만 무엇을 제외할지 알기 위해 저장소 루트까지 그 위 폴더들의 `.gitignore`도 읽습니다. 항목 10,000개나 1 GiB를 넘으면 오류와 함께 멈춥니다. 해시는 준비 단계와 리뷰가
+않습니다. 다만 무엇을 제외할지 알기 위해 저장소 루트까지 그 위 폴더들의 `.gitignore`도 읽습니다. 탐색 항목이 10,000개를 넘거나 전체 용량이 1 GiB를 초과하면 오류를 내고 중단합니다. 해시는 준비 단계와 리뷰가
 끝날 때의 재확인에서 계산합니다. 그래서 리뷰 중에 Python의 `__pycache__`처럼 ignore된 경로에
 파일이 생겨도 `INPUT_CHANGED`가 일어나지 않습니다. 결과마다 포함한 파일 목록을 저장하므로,
 `status`가 그 뒤로 바뀐 파일(`path`, `+path`, `-path`)과 바뀐 의존성을 알려 줄 수 있습니다.
@@ -391,7 +391,7 @@ Artifact 참조만 빼고 적은 그대로 전달합니다. `{name}`은 전역 A
 확인하며, 내용은 해시하지 않습니다. 실행 환경, 취소 처리, 스트림마다 128 KiB인 원본 출력 크기 제한은 Runtime 명령과 같으며, 기본 시간 제한은 30,000ms입니다(`timeout_ms`는 1–2,147,483,647). 별도의 출력·임시
 디렉터리는 실행이 끝나면 지웁니다. stdout은 `[A-Za-z0-9._:-]`로 이뤄진 1–128자의 ASCII여야
 하며, 그 뒤에 LF 하나(Windows에서는 CRLF 하나)만 올 수 있습니다. 그 밖의 공백은 허용하지 않고
-앞뒤 공백을 지워 주지도 않습니다. 종료 코드가 0이 아니거나, 출력 형식이 잘못됐거나, stdout이나 stderr가 128 KiB를 넘었거나(올바른 fingerprint를 출력했더라도), 시간이 초과됐거나, 취소됐거나, 파일이 없거나, 정리에 실패하면 동작 오류로 준비를 멈춥니다. eval을 시작하지 않으며, 캐시 없이 리뷰하는 방식으로 전환하지도 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
+앞뒤 공백을 지워 주지도 않습니다. 다음 중 하나라도 해당하면 동작 오류로 처리하고 준비 단계를 중단합니다. 종료 코드가 0이 아닐 때, 출력 형식이 잘못됐을 때, stdout이나 stderr가 128 KiB를 넘을 때(올바른 fingerprint를 출력했더라도), 시간이 초과됐을 때, 취소됐을 때, 파일이 없을 때, 정리에 실패했을 때입니다. eval을 시작하지 않으며, 캐시 없이 리뷰하는 방식으로 전환하지도 않습니다. stderr는 fingerprint 진단으로 전달하지 않습니다.
 
 Runtime이나 Agent 리뷰가 끝나면 GREEN이나 RED 판정을 확정하기 전에 포함한 fingerprint를 다시
 계산합니다. 값이 바뀌었으면 판정 없이 ERROR/INPUT_CHANGED를 기록하고, 재확인에 실패하면
@@ -414,8 +414,11 @@ fingerprint 스크립트에서 참조하면 스크립트가 그 Artifact를 읽�
 인자에는 그 eval이 이미 참조한 Artifact만 쓸 수 있습니다. 나머지는 적은 그대로 전달합니다.
 이스케이프한 중괄호, 두 겹 중괄호, `${variables}`, JSON, 짝이 맞지 않는 중괄호는 쓴 대로
 남으며, artifactize는 문자열로 명령줄을 만들지 않습니다. eval은 그 대상과 참조한 Artifact를
-읽을 수 있지만, 그 부분이나 그 안에 선언된 폴더는 읽을 수 없습니다. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로 적용하지는 않습니다. 프로젝트
-전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
+읽을 수 있습니다. 허용된 폴더 안에 있는 파일 부분의 대상이나 aspect가 고른 파일은 폴더의 경로로
+읽을 수 있지만, 허용 범위에 없는 중첩 폴더 Artifact는 읽을 수 없습니다. 부분 관계만으로 부분에
+선언된 도구가 추가되지는 않습니다. 그 도구를 쓰려면 사용하는 eval의 지시문이나 Runtime 인자에서
+부분을 참조하세요. 다른 Artifact를 참조하더라도 그 Artifact의 eval 지시문까지 현재 리뷰의 기준으로
+적용하지는 않습니다. 프로젝트 전체의 기준은 [`graph`](tools/builtin.md#current-project-graph) 도구로 볼 수 있습니다.
 
 참조의 경로는 절대 경로일 수 없고, `..`로 올라가거나, 빈 부분, 백슬래시, 콜론, 제어 문자를
 담거나, 4096자를 넘을 수 없습니다. 직접 선언하는 경로(`fingerprint.files`,

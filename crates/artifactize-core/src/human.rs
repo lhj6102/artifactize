@@ -67,7 +67,7 @@ pub async fn run_human_tool(
 ) -> Result<ToolResult, String> {
     let ready = async {
         let (mut request, _) = receipts.human_request(request, reviewer).await?;
-        let config = reconnect(&request)?;
+        let config = reconnect(receipts, &request).await?;
         let registry = Registry::new(&config, &request.eval_id)?;
         if !registry.list().any(|entry| &entry.name == tool) {
             return Err::<_, String>("Unknown registered Human tool.".into());
@@ -95,14 +95,15 @@ pub async fn run_human_tool(
 }
 
 /// What every registered Human tool of a waiting request would run, by tool name; needs no
-/// claim and runs nothing. A tool that cannot be resolved carries its error.
+/// claim and runs nothing. A tool that cannot be resolved carries its error. A request whose
+/// declarations changed ends here as it does before a tool run or a submission.
 pub async fn tool_commands(
     receipts: &Receipts,
     request: &crate::types::RequestId,
 ) -> Result<std::collections::BTreeMap<crate::config::ToolName, Result<CommandLine, String>>, String>
 {
     let request = receipts.waiting_human(request).await?;
-    let config = reconnect(&request)?;
+    let config = reconnect(receipts, &request).await?;
     let registry = Registry::new(&config, &request.eval_id)?;
     Ok(registry
         .list()
@@ -121,7 +122,7 @@ pub async fn submit(
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
-    let config = reconnect(&request)?;
+    let config = reconnect(receipts, &request).await?;
     let eval = config
         .evals
         .iter()
@@ -171,14 +172,38 @@ pub(crate) fn definition(
     serde_json::from_value(json!({"repo":crate::platform::path_text(&config.root),"eval":eval,"artifacts":scope.artifacts})).map_err(|e| e.to_string())
 }
 
+/// Why the live declarations cannot serve a waiting request.
+enum Mismatch {
+    /// They could not be read: the request keeps waiting until they load again.
+    Unreadable(String),
+    /// They differ from those the request recorded, so it can no longer be answered as recorded.
+    Changed(&'static str),
+}
+
+/// The live declarations of the request's eval. When they no longer match those it recorded,
+/// the request ends ERROR (INPUT_CHANGED) with the requests joined to it, whoever holds it, as
+/// a changed fingerprint ends it: the next verify asks again with the new declarations.
+async fn reconnect(receipts: &Receipts, request: &Request) -> Result<RepoConfig, String> {
+    match declarations(request) {
+        Ok(config) => Ok(config),
+        Err(Mismatch::Unreadable(error)) => Err(error),
+        Err(Mismatch::Changed(error)) => {
+            receipts
+                .retire_human(&request.id, crate::types::FailureCode::InputChanged, error)
+                .await?;
+            Err(error.into())
+        }
+    }
+}
+
 /// The live declarations of the request's eval, compared with those it was recorded with. Only
 /// the declarations of the eval's scope are read, however large the workspace is; the whole
 /// workspace only when the scope alone cannot answer, as when an Artifact of it moved.
-fn reconnect(request: &Request) -> Result<RepoConfig, String> {
+fn declarations(request: &Request) -> Result<RepoConfig, Mismatch> {
     let repo = &request
         .provenance
         .as_ref()
-        .ok_or("Human request has no provenance.")?
+        .ok_or_else(|| Mismatch::Unreadable("Human request has no provenance.".into()))?
         .repo_path;
     let sites = request
         .human_definition
@@ -205,18 +230,17 @@ fn reconnect(request: &Request) -> Result<RepoConfig, String> {
     });
     let config = match scoped {
         Some(config) => config,
-        None => read_workspace_config(repo).map_err(|e| e.to_string())?,
+        None => read_workspace_config(repo).map_err(|e| Mismatch::Unreadable(e.to_string()))?,
     };
     let eval = config
         .evals
         .iter()
         .find(|eval| eval.id == request.eval_id)
-        .ok_or("Recorded Human eval no longer exists.")?;
-    if Some(definition(&config, eval)?) != request.human_definition {
-        return Err(
-            "Human Artifact scope or eval declarations changed since the request was recorded."
-                .into(),
-        );
+        .ok_or(Mismatch::Changed("Recorded Human eval no longer exists."))?;
+    if Some(definition(&config, eval).map_err(Mismatch::Unreadable)?) != request.human_definition {
+        return Err(Mismatch::Changed(
+            "Human Artifact scope or eval declarations changed since the request was recorded.",
+        ));
     }
     Ok(config)
 }

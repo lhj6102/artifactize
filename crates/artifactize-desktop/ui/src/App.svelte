@@ -13,8 +13,9 @@
   import Settings from "./settings/Settings.svelte";
   import ReleaseDialog from "./shell/ReleaseDialog.svelte";
   import { useCommands } from "./shell/commands.svelte";
-  import { chord, composing, plain } from "./shell/keys";
-  import { HELP } from "./shell/shortcuts";
+  import { chord, composing, label, plain } from "./shell/keys";
+  import { help, type Focused } from "./shell/shortcuts";
+  import Icon from "./shell/Icon.svelte";
   import { AppState, setAppState } from "./shell/app.svelte";
   import { sourceOf } from "./monitor/monitor-state.svelte";
 
@@ -87,15 +88,29 @@
 
   async function search() {
     m.settings = false;
+    m.paneShown = true;
     await tick();
     m.panes.search?.focus();
     m.panes.search?.select();
   }
 
+  /** Hide the Pane and its divider, or show them again as they were; focus in a Pane that
+   * hides moves to the Main area. */
+  async function togglePane() {
+    const inside = m.panes.pane?.contains(document.activeElement) || m.panes.search === document.activeElement || m.focus === "pane";
+    m.paneShown = !m.paneShown;
+    if (m.paneShown || !inside) return;
+    m.focus = "main";
+    await tick();
+    m.panes.main?.focus();
+  }
+
   useCommands(() => [
-    { id: "app.palette", group: "App", label: "Command palette", keys: "Ctrl+K", run: () => (app.palette = true) },
     { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (app.help = true) },
     { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (m.settings = true) },
+    { id: "app.pane", group: "App", label: "Show or hide the Pane", keys: "Ctrl+B", run: () => void togglePane() },
+    { id: "app.search", group: "App", label: "Search the branches", keys: "/", run: () => void search() },
+    { id: "app.open-id", group: "App", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
     { id: "app.refresh", group: "App", label: "Refresh", keys: "Ctrl+R", run: () => void refresh() },
     { id: "app.quit", group: "App", label: "Quit", keys: "q", run: () => void quit() },
   ]);
@@ -114,6 +129,9 @@
     } else if (chord(event, "o")) {
       event.preventDefault();
       app.asking = true;
+    } else if (chord(event, "b") && free()) {
+      event.preventDefault();
+      void togglePane();
     } else if (chord(event, "f") && sourceOf(m.shown) !== null && m.focus !== "pane" && free()) {
       // Over a graph, Ctrl+F finds in it; in the Pane, or with no graph, it searches the Pane.
       event.preventDefault();
@@ -134,24 +152,34 @@
     }
   }
 
-  /** The keys Help lists: of Settings, the Pane or the Main area, whichever has focus. */
-  const help = $derived(m.settings ? HELP.settings : m.focus === "pane" ? HELP.pane : HELP.main);
+  /** What has focus, as Help lists its keys: Settings, the Pane, a Human review (in the Main
+   * area, or on the Detail's tab), or a graph with its Detail. */
+  const focused = $derived.by((): Focused => {
+    if (m.settings) return "settings";
+    if (m.focus === "pane") return "pane";
+    if (m.shown.kind === "review" || (m.focus === "detail" && m.opened?.request !== undefined)) return "review";
+    return m.shown.kind === "current" ? "current" : "graph";
+  });
+  const keys = $derived(help(focused));
 </script>
 
 <svelte:window onkeydown={keydown} />
 
 <div class="app">
   <header class="bar" class:raised={m.settings}>
-    <div class="brand"><img src={brandMark} alt="" width="24" height="24" />Artifactize</div>
+    <div class="brand"><img src={brandMark} alt="" width="16" height="16" />Artifactize</div>
+    <!-- The Pane switch: on (a line under it) while the Pane is shown. -->
+    <button class="switch" class:on={m.paneShown} aria-pressed={m.paneShown} aria-label="Pane (Ctrl+B)" aria-keyshortcuts="Control+B" onclick={() => void togglePane()}>
+      <Icon name="pane" />Pane
+    </button>
     <div class="spacer"></div>
-    {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
-    {#if app.launch}<span class="muted" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
+    {#if app.launch}<span class="muted reviewer" aria-label="Reviewer {app.launch.reviewer}">{app.launch.reviewer}</span>{/if}
     {#if release.notice}
       <button class="button" onclick={() => (release.open = true)}>{release.notice.latest} available</button>
     {/if}
-    <button class="button" aria-pressed={m.settings} data-settings-toggle onclick={settings}>Settings</button>
-    <button class="button" onclick={() => (app.palette = true)}>
-      Commands <kbd>Ctrl+K</kbd>
+    <button class="button" aria-pressed={m.settings} aria-label="Settings (Ctrl+,)" aria-keyshortcuts="Control+," data-settings-toggle onclick={settings}>Settings</button>
+    <button class="button" aria-keyshortcuts="Control+K" onclick={() => (app.palette = true)}>
+      Commands <kbd>{label("Ctrl+K")}</kbd>
     </button>
   </header>
   {#if app.failure}
@@ -174,7 +202,7 @@
   </Dialog.Portal>
 </Dialog.Root>
 <Palette bind:open={app.palette} />
-<Help bind:open={app.help} sections={help} />
+<Help bind:open={app.help} sections={keys.sections} marks={keys.marks} />
 <ReleaseDialog {release} />
 <LeaveDialog
   taken={leaving.taken}
@@ -190,13 +218,15 @@
     grid-template-columns: minmax(0, 1fr);
     height: 100%;
   }
+  /* The global bar: the darkest surface, closed below by a panel line. */
   .bar {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 8px var(--pad);
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    gap: var(--gap);
+    height: var(--bar-height);
+    padding: 0 var(--pad);
+    border-bottom: 1px solid var(--line-panel);
+    background: var(--surface-bar);
   }
   /* Above the Settings overlay and dialog. */
   .raised {
@@ -211,11 +241,46 @@
     font-weight: 600;
     letter-spacing: 0.01em;
   }
+  /* Borderless: ink over a 2px accent line while the Pane is shown, secondary ink without it. */
+  .switch {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--control);
+    margin: 0 0 0 4px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    cursor: pointer;
+    box-shadow: inset 0 -2px 0 transparent;
+  }
+  .switch.on {
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .switch:hover {
+    background: var(--surface-group);
+  }
   .spacer {
     flex: 1;
   }
   .muted {
-    color: var(--muted);
+    color: var(--ink-2);
+  }
+  /* A long reviewer name is cut inside the bar; the buttons after it keep their place. */
+  .reviewer {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bar :global(.button),
+  .brand {
+    flex: none;
   }
   main {
     min-height: 0;

@@ -301,6 +301,30 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
+    /// End a waiting request that can no longer be answered as recorded, with every request
+    /// joined to it. No reviewer settles it, so it needs no claim, and a claim on it ends with
+    /// it.
+    pub(crate) async fn retire_human(
+        &self,
+        id: &crate::types::RequestId,
+        code: crate::types::FailureCode,
+        error: &'static str,
+    ) -> Result<(), String> {
+        let id = id.to_owned();
+        self.connection
+            .call(move |db| -> Result<(), Error> {
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                let (request, execution) = waiting(&transaction, &id)?;
+                unclaim(&transaction, &request.id)?;
+                super::run_control::retire_execution(&transaction, &execution.id, code, error)?;
+                transaction.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     pub(crate) async fn settle_human(
         &self,
         request: &Request,

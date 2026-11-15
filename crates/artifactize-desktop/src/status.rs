@@ -80,6 +80,25 @@ pub enum Tone {
     Queued,
     Blocked,
     Muted,
+    /// On a Current: a result that would be reused.
+    Reused,
+    /// On a Current: still being checked.
+    Checking,
+}
+
+impl From<monitor::live::Plan> for Tone {
+    /// What verify would do, in the colour its node, chip and row share: would run as in
+    /// progress, waiting and blocked as on a Run, reused and checking in their own.
+    fn from(plan: monitor::live::Plan) -> Self {
+        use monitor::live::Plan;
+        match plan {
+            Plan::Run => Self::Running,
+            Plan::Check => Self::Checking,
+            Plan::Blocked => Self::Blocked,
+            Plan::Wait => Self::Queued,
+            Plan::Reuse => Self::Reused,
+        }
+    }
 }
 
 impl From<monitor::Tone> for Tone {

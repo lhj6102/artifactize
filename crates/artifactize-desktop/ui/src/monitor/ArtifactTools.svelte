@@ -1,10 +1,15 @@
 <script lang="ts">
   // An Artifact's own Human tools in its branch's worktree as it is now, whichever Run is shown,
-  // each a ▶ button, and their Tool log. A click runs the tool at once, with no review and no
-  // claim; nothing it does is recorded as a review's evidence.
+  // each a small button led by the run icon, then, from the first run on, their Tool log; no
+  // Tools section for an Artifact that declares none. A click
+  // runs the tool at once, with no review and no claim, and unfolds a Tool log that was folded;
+  // nothing it does is recorded as a review's evidence. What ended well is said by the log's end
+  // line; only a failure is said here.
   import { onMount } from "svelte";
-  import type { BranchKey } from "../ipc/client";
+  import type { BranchKey, ToolView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
+  import Icon from "../shell/Icon.svelte";
+  import Section from "../shell/Section.svelte";
   import ToolLog from "../review/ToolLog.svelte";
 
   let {
@@ -17,71 +22,73 @@
     workspace: string;
     artifact: string;
   } = $props();
+  const app = getAppState();
   // The Detail keys this component by worktree and Artifact: its tools stay one owner's. Each
   // call names the branch checked out in that worktree now.
   // svelte-ignore state_referenced_locally
-  const tools = getAppState().artifactTools(workspace, artifact);
+  const tools = app.artifactTools(workspace, artifact);
 
   onMount(() => void tools.load(branch));
 
   const declared = $derived(tools.tools ?? []);
+
+  function run(tool: ToolView) {
+    app.sections.set("Tool log", true);
+    void tools.run(branch, tool);
+  }
 </script>
 
-<section class="tools" aria-label="Tools of {tools.artifact}">
-  <h4>Tools</h4>
+<!-- A section with nothing to hold is not shown: an Artifact without Human tools has none. -->
+{#if tools.error || declared.length > 0}
+<Section name="Tools" label="Tools of {tools.artifact}">
   {#if tools.error}
     <p class="error">{tools.error}</p>
-  {:else if tools.tools === null}
-    <p class="muted">Loading…</p>
-  {:else if declared.length === 0}
-    <p class="muted">{tools.artifact} declares no Human tools.</p>
   {:else}
     {#each declared as tool (tool.name)}
       <div class="tool">
-        <button class="button small" disabled={tools.busy !== null} onclick={() => void tools.run(branch, tool)}>▶ {tool.operation}</button>
+        <button class="button small" disabled={tools.busy !== null} onclick={() => run(tool)}><Icon name="play" />{tool.operation}</button>
         <span class="description">{tool.description}</span>
         {#if tool.error}<span class="reason">{tool.error}</span>{/if}
       </div>
     {/each}
   {/if}
   {#if tools.busy}
-    <p class="muted" role="status">{tools.busy.label}… <button class="button small" onclick={() => tools.cancel()}>Cancel</button></p>
-  {:else if tools.notice}
-    <p class="notice" class:error={tools.notice.error} role="status">{tools.notice.text}</p>
+    <p class="busy" role="status"><span class="running"><Icon name="running" label={tools.busy.label} /></span><button class="button small" onclick={() => tools.cancel()}>Cancel</button></p>
+  {:else if tools.notice?.error}
+    <p class="error" role="status">{tools.notice.text}</p>
   {/if}
-</section>
-
-<div class="log">
-  <ToolLog entries={tools.log} empty="What its tools print shows here while the app runs." />
-</div>
+</Section>
+{/if}
+{#if tools.log.length > 0}
+  <Section name="Tool log">
+    <ToolLog entries={tools.log} />
+  </Section>
+{/if}
 
 <style>
-  .tools,
-  .log {
-    min-width: 0;
-    padding: 0 var(--pad) 10px;
-  }
-  h4 {
-    margin: 0 0 6px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--accent);
-  }
   .tool {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
     align-items: baseline;
     gap: 2px 10px;
     padding: 2px 0;
   }
-  .description,
-  .reason {
-    font-size: 12px;
+  /* A long operation name wraps inside its button rather than widening the Detail. */
+  .tool .button {
+    height: auto;
+    min-height: 22px;
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
     overflow-wrap: anywhere;
   }
   .description,
-  .muted {
-    color: var(--muted);
+  .reason {
+    font-size: var(--text-small);
+    overflow-wrap: anywhere;
+  }
+  .description {
+    color: var(--ink-2);
   }
   .reason,
   .error {
@@ -90,8 +97,16 @@
   .reason {
     grid-column: 2;
   }
-  .notice,
-  .muted,
+  .busy {
+    display: flex;
+    align-items: center;
+    gap: var(--gap);
+  }
+  .running {
+    display: inline-flex;
+    color: var(--running);
+  }
+  .busy,
   .error {
     margin: 6px 0 0;
     overflow-wrap: anywhere;

@@ -10,8 +10,8 @@
 //   A. monitor.png — the app's one screen: the Pane with the example's branch expanded to its Runs
 //      and the waiting sign-off, and the Run's graph in the Main area with mixed verdicts
 //      (GREEN, RED, blocked, waiting for a person).
-//   B. detail.png  — an Artifact's Detail over the graph on its Artifact tab: the Artifact
-//      between its neighbours, and its evals with their verdicts.
+//   B. detail.png  — an Artifact's Detail docked over the graph on its Artifact tab: its evals
+//      with their verdicts, and the Artifact between its neighbours, unfolded.
 //   C. review.png  — a claimed Human review opened from the Pane's waiting reviews: its
 //      instruction, Tools, a Tool log run and the GREEN form.
 //
@@ -218,7 +218,7 @@ async function capture(output: string, work: string): Promise<void> {
     const runChip = '[aria-label="Branches"] [role="treeitem"] button[data-chip]:not([data-chip="current"])';
     await app.$(runChip).waitForExist({ timeout: WAIT });
     await app.$(runChip).click();
-    await app.waitUntil(() => app.execute((main) => /^Run /.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
+    await app.waitUntil(() => app.execute((main) => /^run-/.test(document.querySelector(`${main} > header h2`)?.textContent?.trim() ?? ""), MAIN),
       { timeout: WAIT, timeoutMsg: "the Main area shows the Run" });
     await graphShown(app, "a:release", WAIT);
     await app.$('[aria-label="Waiting reviews"] [role="option"]').waitForExist({ timeout: WAIT, timeoutMsg: "the sign-off waits in the Pane" });
@@ -226,8 +226,9 @@ async function capture(output: string, work: string): Promise<void> {
     await app.waitUntil(() => app.execute(() => document.querySelectorAll(".svelte-flow__edge").length === 3),
       { timeout: WAIT, timeoutMsg: "the Run graph draws its three edges" });
     // The first fit can happen while the graph area is still taking its size, and the Run view
-    // keeps its camera after that; Fit View frames the drawn graph the same way on every capture.
-    await app.$(".svelte-flow__controls-fitview").click();
+    // keeps its camera after that; the tool strip's Fit frames the drawn graph the same way on
+    // every capture.
+    await app.$('[aria-label="Graph tools"]').$("button=Fit").click();
     let viewport = "";
     await app.waitUntil(async () => {
       const now = await app.execute(() => document.querySelector<HTMLElement>(".svelte-flow__viewport")?.style.transform ?? "");
@@ -237,9 +238,12 @@ async function capture(output: string, work: string): Promise<void> {
     }, { timeout: WAIT, interval: 250, timeoutMsg: "the fitted camera holds still" });
     await shot("monitor.png");
 
-    // B. cli's Detail on its Artifact tab: cli between the core it uses and the docs that use
-    // it, its evals with their verdicts below.
+    // B. cli's Detail on its Artifact tab: its evals with their verdicts, and, unfolded, cli
+    // between the core it uses and the docs that use it.
     await openArtifact(app, "a:cli", "Artifact cli");
+    const neighboursRow = app.$('[aria-label="Detail"]').$("button=Neighbours");
+    await neighboursRow.waitForExist({ timeout: WAIT });
+    if ((await neighboursRow.getAttribute("aria-expanded")) !== "true") await neighboursRow.click();
     await app.waitUntil(() => app.execute(() => {
       const neighbours = document.querySelector('[aria-label="Neighbours"]');
       const drawn = ["a:core", "a:cli", "a:docs"].every((id) => {
@@ -248,6 +252,8 @@ async function capture(output: string, work: string): Promise<void> {
       });
       return drawn && (neighbours?.querySelectorAll(".svelte-flow__edge").length ?? 0) >= 2;
     }), { timeout: WAIT, timeoutMsg: "cli's Neighbours show core, cli and docs and their edges" });
+    // The scene shows the Detail as read, not the row the click left the keyboard on.
+    await app.execute(() => (document.activeElement as HTMLElement | null)?.blur());
     await shot("detail.png");
 
     // C. The release sign-off opened from the Pane's waiting reviews, which list the sign-off
@@ -258,7 +264,7 @@ async function capture(output: string, work: string): Promise<void> {
     await app.waitUntil(() => claimable(app), { timeout: WAIT, timeoutMsg: "the sign-off can be claimed" });
     await app.$("button=Claim to review").click();
     await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the sign-off is claimed" });
-    await app.$('[aria-label="Human review"]').$("button=▶ notes").click();
+    await app.$('[aria-label="Human review"]').$("button=notes").click();
     await app.waitUntil(() => app.execute(() => document.body.innerText.includes("■ exit 0")),
       { timeout: WAIT, timeoutMsg: "the notes tool finished" });
     await app.waitUntil(() => reviewing(app), { timeout: WAIT, timeoutMsg: "the notes run settled" });

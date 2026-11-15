@@ -1,7 +1,8 @@
 <script lang="ts">
-  // A titled, focusable pane. Keys reach `onkeydown` while focus is anywhere inside it. The pane
-  // is never wider than its place: a long notice is cut to the header's room, not widening it,
-  // and a click on it shows it in full.
+  // A titled, focusable pane under one header row: its name, what the name names (a star), its
+  // headline cut at the row's end, a notice and its actions. Keys reach `onkeydown` while focus
+  // is anywhere inside it. The pane is never wider than its place: a long notice is cut to the
+  // header's room, not widening it, and a click on it shows it in full.
   import type { Snippet } from "svelte";
   import type { Attachment } from "svelte/attachments";
 
@@ -15,6 +16,7 @@
     noticeOpen = $bindable(),
     actions,
     beside,
+    headline,
     children,
     label,
     attach,
@@ -28,6 +30,8 @@
     actions?: Snippet;
     /** Controls of what the title names, right after it. */
     beside?: Snippet;
+    /** What the view shows, in the same row after the title, cut at the row's end. */
+    headline?: Snippet;
     children: Snippet;
     label?: string;
     /** Follows the pane's element for as long as it exists (an `{@attach}`). */
@@ -60,6 +64,7 @@
   <header>
     <h2 class:whole={wholeTitle}>{title}</h2>
     {#if beside}{@render beside()}{/if}
+    {#if headline}<div class="headline">{@render headline()}</div>{/if}
     {#if notice}
       <div class="notice" class:open={noticeOpen} role="status">
         <button type="button" aria-expanded={noticeOpen} onclick={() => (noticeOpen = !noticeOpen)}>{notice}</button>
@@ -77,14 +82,16 @@
     grid-template-rows: auto 1fr;
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
-    background: var(--surface);
+    background: var(--surface-panel);
     outline: none;
   }
+  /* A 32px header row; a focused panel shows a 2px accent line at its top. */
   header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px var(--pad) 6px;
+    gap: var(--gap);
+    min-height: 32px;
+    padding: 0 var(--pad);
     border-top: 2px solid transparent;
   }
   .focused header {
@@ -92,9 +99,9 @@
   }
   h2 {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--text-small);
     font-weight: 600;
-    color: var(--muted);
+    color: var(--ink-2);
     flex: 0 1 auto;
     white-space: nowrap;
     overflow: hidden;
@@ -107,13 +114,29 @@
     overflow-wrap: anywhere;
   }
   .focused h2 {
-    color: var(--text);
+    color: var(--ink);
   }
+  /* The view's headline takes the room it needs, cut at the row's end when the row is short. */
+  .headline {
+    display: flex;
+    align-items: center;
+    flex: 0 1000 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--text-small);
+    white-space: nowrap;
+  }
+  /* A few words that say what went wrong, taking the remaining room. */
   .notice {
     position: relative;
     flex: 1 1 0;
-    min-width: 0;
+    min-width: 96px;
     height: 1.5em;
+  }
+  /* Folded, the notice highlights under the pointer like any borderless control. */
+  .notice:not(.open) button:hover {
+    background: var(--surface-group);
+    border-radius: var(--radius-control);
   }
   .notice button {
     display: block;
@@ -124,6 +147,7 @@
     background: none;
     font: inherit;
     color: var(--red);
+    font-size: var(--text-small);
     text-align: end;
     cursor: pointer;
     white-space: nowrap;
@@ -137,10 +161,10 @@
     inset: 0 0 auto;
     z-index: 30;
     padding: 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
-    box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+    border: 1px solid var(--line-panel);
+    border-radius: var(--radius-control);
+    background: var(--surface-raised);
+    box-shadow: 0 2px 8px var(--scrim);
     max-height: 40vh;
     overflow: auto;
     text-align: start;

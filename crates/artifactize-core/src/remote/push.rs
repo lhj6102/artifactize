@@ -92,5 +92,8 @@ pub async fn push(
             }
         }
     }
+    if !dry_run && report.pushed > 0 {
+        super::pushed::record(&state, report.pushed)?;
+    }
     Ok(report)
 }

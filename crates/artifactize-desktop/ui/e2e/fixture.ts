@@ -34,7 +34,7 @@ export function finishTalk(fixture: Fixture): void {
 }
 
 /** Declared Human content, captured in the request before the app starts. */
-export type SignoffDefinition = { title: string; instruction: string; scalars?: boolean; report?: boolean };
+export type SignoffDefinition = { title: string; instruction: string; scalars?: boolean; report?: boolean; missing?: boolean };
 const DEFAULT_SIGNOFF: SignoffDefinition = {
   title: "A person approves the release",
   instruction: "Read the release notes and approve them.",
@@ -46,6 +46,7 @@ fingerprint = { files = ["."] }
 
 [views.human_tools]
 ${signoff.report ? `report = { description = "Print long lines on both output streams.", kind = "output", ${commandFields("report")} }` : ""}
+${signoff.missing ? `gone = { description = "Run a program that is not installed.", kind = "output", command = "artifactize-e2e-not-installed", args = [] }` : ""}
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", textPath("{artifactPath}", "notes.md"))} }
 open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }

@@ -49,6 +49,8 @@ export function sourceOf(shown: Shown): Source | null {
 
 export class MonitorState {
   focus = $state<Focus>("pane");
+  /** The Pane is shown; the bar's Pane switch and Ctrl+B hide it and show it again. */
+  paneShown = $state(true);
   selected = $state.raw<Entry | null>(null);
   /** The branches expanded to their timelines, by key; any number, for this window. */
   readonly expanded = new SvelteSet<string>();
@@ -57,14 +59,14 @@ export class MonitorState {
   settings = $state(false);
   /** The graph's find field is open over the shown Run's or Current's graph. */
   finding = $state(false);
-  /** The Detail floating over the graph. */
+  /** The Detail docked over the graph. */
   opened = $state.raw<Opened | null>(null);
   /** The Detail's dragged width in pixels, or `null` for its default. */
   detailWidth = $state<number | null>(loadWidth());
   /** The notice shows in full rather than cut to one line. */
   noticeOpen = $state(false);
-  /** The read-only request's folds. */
-  folds = $state({ technical: false, pending: false, log: false, debug: false });
+  /** The read-only request shows its log rather than its Summary. */
+  folds = $state({ log: false });
   /** The ID typed into the Open by ID dialog. */
   wanted = $state("");
   /** The snapshot revision a request shown by ID was last read for; never drawn. */

@@ -39,8 +39,10 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
   not silently skipped. A directory whose name ends in `.artf` is an invalid
   declaration and fails discovery.
-  A neighboring file Artifact's target remains in the folder's hash, though the file
-  Artifact is a [part](artifact.md#composition) of the folder Artifact.
+  Every [part](artifact.md#composition)'s files are excluded from the whole's hash:
+  neighboring file targets, nested folder contents and aspect selections alike, even
+  when named in `files`. Each part hashes its own files once; its fingerprint enters
+  the whole's eval keys instead.
 - `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
   negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
@@ -61,24 +63,32 @@ Artifact. Walk limits are in the [reference](declarations.md#artifactsum); the s
 
 ## The reuse key
 
-An eval depends on its target Artifact and on the Artifacts the eval names in its
-instruction or runtime args. The target's [parts](artifact.md#composition), a folder Artifact
-nested in its folder included, are not in the key unless the eval names them.
+An eval's key combines the fingerprints of its target Artifact, all of the target's
+[parts](artifact.md#composition) (their parts included), and the Artifacts the eval
+names in its instruction or runtime args. Each covered Artifact contributes its
+name, kind and own fingerprint once. Changing a file part or a nested folder part
+reviews the whole's evals again, just as changing the whole's own files does. `status` can name the changed part separately from the whole's own
+changed files. An eval that needs only a part should target that part.
 
-artifactize does not follow connections further than that. Whether a change two
-connections away matters is up to how you define fingerprints: a fingerprint
-script can read a file of any Artifact it names in its args. So a result is reviewed
-again when the eval's criteria change, or the name, kind or fingerprint of its target or of
-an Artifact it covers changes.
+References still stop at one hop: naming another Artifact does not add its parts
+or the Artifacts its evals name to this key. A fingerprint script can read a file
+of any Artifact it names in its args. A result is reviewed again when the eval's
+criteria change, or the name, kind or fingerprint of any covered Artifact changes.
+Composition adds key inputs, not tool access. To use a part's tools or refer to
+its files as `{part}`, name it in the eval.
+
+After upgrading to composition-aware keys, the first `verify` reviews evals whose
+target has parts once, including Human sign-offs, even if their scripts return
+unchanged values or the eval already names those parts. Later Runs reuse normally.
+Saved Runs and results remain readable; no state reset is needed.
 
 Artifact names and kinds (`folder`, `file`, `aspect` or `graph`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
-Changing a covered Artifact's name changes the key. Differently named targets can
-still share a result when their evaluation criteria and complete covered Artifact
-maps match: the key does not separately identify which covered Artifact is the target.
-For example, two Artifacts whose identical evals reference each other can share results.
+Changing a covered Artifact's name changes the key. Two differently named Artifacts can
+still share a result: for example, when each declares the same eval that reads the other,
+both evals cover the same Artifacts with the same criteria and reuse one result.
 The **Eval definition hash** changes whenever one of the eval's **evaluation
 criteria** changes:
 

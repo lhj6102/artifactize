@@ -20,12 +20,20 @@ export function createEmptyAudit(): { fixture: Fixture; restore: () => void } {
 
 /** Enough independent basis nodes to make a real worker layout observable after consent,
  * without launching hundreds of irrelevant fixture runtime processes. */
-export function createLayout(): Fixture {
+export function createLayout(wholes = 0): Fixture {
   return prepareFixture((root) => {
     const fixture = { root, repo: makeDirectory(nativePath(root, "repo")), state: nativePath(root, "state") };
     for (let index = 0; index < 1200; index += 1) {
       const name = `n${String(index).padStart(4, "0")}`;
       writeText(nativePath(makeDirectory(nativePath(fixture.repo, name)), "index.artf"), `name = "${name}"\nbasis = true\n`);
+    }
+    // A few wholes among them, each a box around two parts, when asked for.
+    for (let index = 0; index < wholes; index += 1) {
+      const whole = `w${String(index).padStart(2, "0")}`;
+      writeText(nativePath(makeDirectory(nativePath(fixture.repo, whole)), "index.artf"), `name = "${whole}"\nbasis = true\n`);
+      for (const part of ["a", "b"]) {
+        writeText(nativePath(makeDirectory(nativePath(fixture.repo, whole, part)), "index.artf"), `name = "${whole}${part}"\nbasis = true\n`);
+      }
     }
     git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
     if (artifactize(fixture, "verify", "--all", "--wait", "--json") !== 0) throw new Error("the basis layout fixture did not verify");

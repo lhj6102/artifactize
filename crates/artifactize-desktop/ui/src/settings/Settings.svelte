@@ -78,9 +78,8 @@
       {/each}
     </div>
     <div class="spacer"></div>
-    {#if onclose}<button class="button" onclick={onclose}>Close <kbd>Esc</kbd></button>{/if}
+    {#if onclose}<button class="button" aria-keyshortcuts="Escape" onclick={onclose}>Close</button>{/if}
   </header>
-  <p class="lead">The same settings as the CLI's <code>login</code>, <code>provider</code>, <code>models</code>, <code>remote</code> and <code>limits</code> commands.</p>
   {#if s.tab === "providers"}
     <div id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers">
       <ProvidersTab />
@@ -107,53 +106,68 @@
     align-items: center;
     gap: 16px;
     flex-wrap: wrap;
+    margin-bottom: 12px;
   }
   .spacer {
     flex: 1;
   }
   h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--text-title);
+    font-weight: 600;
   }
   .tabs {
     display: flex;
-    gap: 4px;
+    gap: 2px;
   }
+  /* Text tabs: the active one in ink with an accent line under it. */
   .tab {
     font: inherit;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 3px 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 4px 10px;
     background: none;
-    color: var(--text);
+    color: var(--ink-2);
     cursor: pointer;
   }
+  .tab:hover {
+    background: var(--surface-group);
+    color: var(--ink);
+  }
   .tab[aria-selected="true"] {
-    background: var(--text);
-    color: var(--bg);
-    border-color: var(--text);
+    color: var(--ink);
+    font-weight: 600;
+    border-bottom-color: var(--accent);
   }
-  .settings :global(.lead),
   .settings :global(.muted) {
-    color: var(--muted);
-    margin: 8px 0 10px;
+    color: var(--ink-2);
+    margin: 0 0 8px;
   }
+  /* Sections under the inspector's header rows, without the fold icon: opened above by a group
+     line, the name at 12px semibold in ink; a long name wraps inside its column. */
   .settings :global(section) {
-    border-top: 1px solid var(--border);
-    padding: 14px 0;
+    border-top: 1px solid var(--line-group);
+    padding: 0 0 12px;
   }
-  .settings :global(h2) {
-    font-size: 14px;
+  .settings :global(section > h2) {
+    display: flex;
+    align-items: center;
+    min-height: var(--row);
     margin: 0 0 4px;
+    font-size: var(--text-small);
+    font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .settings :global(.facts) {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 4px 16px;
-    margin: 8px 0 12px;
+    margin: 0 0 8px;
   }
   .settings :global(dt) {
-    color: var(--muted);
+    color: var(--ink-2);
   }
   .settings :global(dd) {
     margin: 0;
@@ -166,13 +180,15 @@
     flex-wrap: wrap;
     margin: 6px 0;
   }
+  /* Fields sit one step below the panel, outlined by the faintest line. */
   .settings :global(.input) {
     font: inherit;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
+    height: var(--control);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
     min-width: 0;
     flex: 1;
   }
@@ -189,19 +205,17 @@
   .settings :global(.login .row) {
     grid-column: 2;
   }
-  .settings :global(.pending) {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 12px;
-    margin: 8px 0;
-    background: var(--surface-2);
-  }
-  .settings :global(.pending p) {
+  /* The URL a sign-in printed: wrapping, selectable text one step below the panel. */
+  .settings :global(pre.url) {
     margin: 0 0 6px;
-  }
-  .settings :global(.url code) {
+    padding: 6px 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    font: var(--text-small) / 1.5 var(--mono);
+    white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 11px;
+    user-select: text;
   }
   .settings :global(.warn) {
     color: var(--yellow);
@@ -211,19 +225,5 @@
   }
   .settings :global(.error) {
     color: var(--red);
-  }
-  .settings :global(table) {
-    border-collapse: collapse;
-    margin-top: 8px;
-  }
-  .settings :global(th),
-  .settings :global(td) {
-    text-align: left;
-    padding: 3px 16px 3px 0;
-  }
-  .settings :global(th) {
-    color: var(--muted);
-    font-weight: 600;
-    font-size: 12px;
   }
 </style>

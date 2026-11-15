@@ -35,8 +35,8 @@ What it demonstrates:
   `PATH` and `LANG` inherited.
 - **Content fingerprint and reuse.** Each Artifact omits `fingerprint`, so it uses the
   built-in content fingerprint, artifactsum, which hashes the Artifact's own files (nested
-  Artifact folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
-  fingerprints of the Artifacts it names: `guide/terms` depends on `intro`,
+  Artifact folders, file parts, aspect selections, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded). An eval's reuse key adds the
+  fingerprints of its target's parts (recursively) and the Artifacts it names: `guide/terms` depends on `intro`,
   `usage` and `glossary`. That is
   why the `glossary` basis participates in reuse too. The default fingerprint is
   artifactsum; setting `fingerprint = false` on a dependency would leave `guide/terms`

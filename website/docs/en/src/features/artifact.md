@@ -21,7 +21,8 @@ dependency graph.
 
 The **Artifact Graph** connects inputs to the evals that consume them. Writing a
 reference such as `{spec}` in an eval lets that eval read `spec`; when `spec` changes,
-only the evals that name it are reviewed again, and every other result is reused. Sharing
+the evals that name it and the evals of its wholes are reviewed again; unrelated
+results are reused. Sharing
 a repository or a folder alone does not make an Artifact an input of another one's check.
 
 Parts add a second, separate relation: [composition](#composition). When `combat` is a
@@ -91,7 +92,8 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 A file Artifact hashes its one target by default. Its working directory is the
 containing folder, but built-in tools see the file and its admitted scope, not
 unrelated siblings. Inside a folder Artifact's folder it is a [part](#composition) of
-that Artifact, which still hashes the target as part of its own files. A folder declared
+that Artifact: the folder excludes the file target from its own artifactsum and
+includes the part's fingerprint in its eval reuse keys instead. A folder declared
 with `index.artf` inside another Artifact's folder is a part of it too, and takes its
 files out of that Artifact's.
 See the [file-Artifact reference](declarations.md#file-artifacts) for naming,
@@ -212,7 +214,7 @@ their checks:
 | `combat` | Combat components work with each other |
 | `fireball` | Damage, cooldown and effects |
 
-Parts decide verdicts, not reviews:
+Parts affect verdicts, selection and reuse:
 
 - **A failing part fails what it is a part of.** `game` shows RED while `fireball` is
   RED, and passes only when every part, its parts' parts included, and its own evals
@@ -223,13 +225,13 @@ Parts decide verdicts, not reviews:
 - **Needing an Artifact needs its parts.** An eval that names `{game}` needs
   `game` to pass to finish GREEN, so the Run needs its parts' results too. Its
   execution gates are still only `game`'s own evals.
-- **Nothing else follows.** Parts do not divide files: each Artifact keeps the files its
-  declaration covers, and a folder Artifact's files never include those of a folder
-  Artifact nested in it. A change to the fireball reviews again only the evals that name
-  it, and a change to `game`'s own files does not review the fireball again. A file
-  Artifact or an aspect shares files with the folder Artifact around it, and a change to
-  a shared file reviews both again. An eval of `game` that uses the fireball names
-  `{fireball}`.
+- **A part change reviews the whole again.** Each Artifact's artifactsum excludes
+  its parts' files, whether they are files, folders or aspect selections. The reuse
+  key of a whole's eval combines its own fingerprint with those of all its parts,
+  their parts included. Changing the fireball reviews the evals of `fireball`,
+  `combat` and `game` again, and those that name `{fireball}`, not unrelated evals.
+  Changing only `game`'s own files does not review the fireball again. Reuse does
+  not grant access: an eval of `game` that reads the fireball still names `{fireball}`.
 
 A part need not be a folder of its own. A [file Artifact](declarations.md#file-artifacts)
 is one file, and an [aspect](declarations.md#aspects) selects the files of one part from a larger folder, such as the fireball's code, test

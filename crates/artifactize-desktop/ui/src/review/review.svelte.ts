@@ -90,8 +90,6 @@ class ReviewState {
   id = $state("");
   view = $state.raw<HumanView | null>(null);
   area = $state<Area>("fields");
-  expanded = $state(false);
-  technical = $state(false);
   tool = $state(0);
   /** Every tool run of this review, oldest first: kept while the review is open. */
   log = $state.raw<LogEntry[]>([]);
@@ -112,10 +110,6 @@ export class Review {
   set view(value: HumanView | null) { this.#state.view = value; }
   get area(): Area { return this.#state.area; }
   set area(value: Area) { this.#state.area = value; }
-  get expanded(): boolean { return this.#state.expanded; }
-  set expanded(value: boolean) { this.#state.expanded = value; }
-  get technical(): boolean { return this.#state.technical; }
-  set technical(value: boolean) { this.#state.technical = value; }
   get tool(): number { return this.#state.tool; }
   set tool(value: number) { this.#state.tool = value; }
   get log(): LogEntry[] { return this.#state.log; }
@@ -190,8 +184,10 @@ export class Review {
     }
   }
 
+  /** Release the claim, also while the form is edited: the form is left, its draft kept. */
   async release(): Promise<void> {
     if (this.busy || this.settled) return;
+    if (this.editing) this.stopEditing();
     try {
       const acted = await this.#job("Releasing the claim", (job) =>
         call(this.ipc.humanRelease([this.id], job)),

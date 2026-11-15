@@ -1,21 +1,26 @@
 <script lang="ts">
-  // The window's one screen: the Pane on the left and the Main area on the right, always with
-  // the divider between them. A chip shows its Run or the branch's Current in the Main area, a
-  // waiting review opens there as Review, and Settings take its place until left. A click on an
-  // Artifact (or on the Run's headline) opens its Detail, floating over the graph's right side;
+  // The window's one screen: the Pane on the left and the Main area on the right, with the
+  // divider between them while the Pane is shown; the bar's Pane switch (Ctrl+B) hides both, the
+  // Main area taking the window's width, and shows them again at the width the Pane had. A chip
+  // shows its Run or the branch's Current in the Main area, under one header row with its
+  // headline; a waiting review opens there as Review. A click on an Artifact (or on the Run's
+  // headline) opens its Detail, a panel docked at the graph's right edge under its tool strip;
   // dragging its left edge sets its width, kept like the split ratio.
   import { Dialog } from "bits-ui";
   import { PaneGroup, Pane as Split, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { BranchKey, BranchView, BrowseView, Chip, WaitingRow } from "../ipc/client";
   import { call, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { chipKey, entryKey, keyOf, sourceOf, type Entry, type Focus } from "./monitor-state.svelte";
-  import { GAP, clampWidth, saveWidth } from "./detail-width";
+  import { clampWidth, saveWidth } from "./detail-width";
   import Pane from "./Pane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RunView from "./RunView.svelte";
+  import RunHeadline from "./RunHeadline.svelte";
   import CurrentView from "./CurrentView.svelte";
+  import ScanState from "./ScanState.svelte";
   import DetailPane from "./DetailPane.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
@@ -133,7 +138,7 @@
     try {
       const detail = await call(app.ipc.requestDetail(id));
       if (detail.profile === "human") return openReview(id);
-      m.folds = { technical: false, pending: false, log: false, debug: false };
+      m.folds = { log: false };
       m.shown = { kind: "request", detail };
       m.finding = false;
       m.opened = null;
@@ -183,8 +188,10 @@
     else if (by < 0) m.expanded.delete(key);
   }
 
-  /** Move focus to the Pane's entries, the Main area or the Detail. */
+  /** Move focus to the Pane's entries, the Main area or the Detail; the Pane shows first when
+   * it is hidden. */
   async function focus(to: Focus) {
+    if (to === "pane") m.paneShown = true;
     m.focus = to;
     await tick();
     const pane = panes[to];
@@ -316,14 +323,13 @@
     else void focus("pane");
   }
 
+
   function mainKey(event: KeyboardEvent) {
     // A review takes its own keys; a read-only request has its folds.
     if (shown.kind === "review") return;
     if (shown.kind === "request" && !plain(event, "Escape") && !plain(event, "ArrowLeft")) {
       if (m.folds.log) return;
-      if (plain(event, "t") && shown.detail.card) m.folds.debug = !m.folds.debug;
-      else if (plain(event, "t")) m.folds.technical = !m.folds.technical;
-      else if (plain(event, "w")) m.folds.pending = !m.folds.pending;
+      if (plain(event, "t")) app.sections.toggle(shown.detail.target === "run" ? "Technical" : "Debug");
       else return;
     } else if (plain(event, "Escape") || (shown.kind === "request" && plain(event, "ArrowLeft"))) back();
     else return;
@@ -339,7 +345,7 @@
     event.preventDefault();
     const drag = (moved: MouseEvent) => {
       const room = stage.getBoundingClientRect();
-      m.detailWidth = clampWidth(room.right - GAP - moved.clientX, room.width);
+      m.detailWidth = clampWidth(room.right - moved.clientX, room.width);
     };
     const drop = () => {
       window.removeEventListener("mousemove", drag);
@@ -351,49 +357,84 @@
   }
 
   const title = $derived.by(() => {
-    if (shown.kind === "run") return `Run ${shown.run}`;
+    if (shown.kind === "run") return shown.run;
     if (shown.kind === "current") return branch ? `Current · ${branch.project}${branch.name ? `  ${branch.name}` : ""}` : "Current";
-    if (shown.kind === "review") return "Review";
+    // A completed review is read-only, like any request that waits for nothing (D-REV-6).
+    if (shown.kind === "review") return review?.settled ? "Review · read-only" : "Review";
     if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });
   const notice = $derived(browse.error ?? view?.notice ?? null);
 
   useCommands(() => [
-    { id: "pane.search", group: "Pane", label: "Search branches and reviews", keys: "/", run: () => panes.search?.focus() },
-    { id: "pane.focus", group: "Pane", label: "Focus the Pane", run: () => void focus("pane") },
-    { id: "main.focus", group: "Main area", label: "Focus the Main area", run: () => void focus("main") },
-    { id: "main.open-id", group: "Main area", label: "Open a request by ID", keys: "Ctrl+O", run: () => (app.asking = true) },
-    { id: "main.run", group: "Main area", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
+    { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
     {
       id: "main.close",
-      group: "Main area",
+      group: "Graph",
       label: "Close the Detail",
       keys: "Esc",
       enabled: () => m.opened !== null,
       run: closeDetail,
     },
   ]);
+
+  /** The graph's top within the stage, kept as `--graph-top`: the Detail docks from there, below
+   * the Main area's header and below what the view shows above its graph (a Run's headline, a
+   * Current's scan header). The graph's box fills the rest of the area, so a header that grows
+   * resizes it and the top is read again; a mutation only looks for a new graph box. */
+  const graphTop: Attachment<HTMLElement> = (stage) => {
+    let watched: Element | null = null;
+    const read = () => {
+      if (!watched) return;
+      const top = watched.getBoundingClientRect().top - stage.getBoundingClientRect().top;
+      stage.style.setProperty("--graph-top", `${Math.round(top)}px`);
+    };
+    const sized = new ResizeObserver(read);
+    const find = () => {
+      const area = stage.querySelector("[data-graph-area]");
+      if (area === watched) return;
+      if (watched) sized.unobserve(watched);
+      watched = area;
+      if (area) sized.observe(area);
+    };
+    sized.observe(stage);
+    const changed = new MutationObserver(find);
+    changed.observe(stage, { childList: true, subtree: true });
+    find();
+    return () => {
+      sized.disconnect();
+      changed.disconnect();
+    };
+  };
 </script>
 
 <div class="monitor">
   <PaneGroup direction="horizontal" autoSaveId="monitor-layout" class="columns">
-    <Split defaultSize={24} minSize={12}>
-      <Pane
-        bind:query={() => query, setQuery}
-        {filled}
-        onselect={open}
-        ontoggle={toggle}
-        onchoose={choose}
-        onopen={openWaiting}
-        onmove={move}
-        onstep={step}
-        onmain={() => void focus("main")}
-      />
-    </Split>
-    <PaneResizer class="resizer" />
-    <Split defaultSize={76} minSize={30}>
-      <div class="stage">
+    {#if m.paneShown}
+      <Split id="pane" order={1} defaultSize={24} minSize={12}>
+        <Pane
+          bind:query={() => query, setQuery}
+          {filled}
+          onselect={open}
+          ontoggle={toggle}
+          onchoose={choose}
+          onopen={openWaiting}
+          onmove={move}
+          onstep={step}
+          onmain={() => void focus("main")}
+        />
+      </Split>
+      <PaneResizer class="resizer" />
+    {/if}
+    <Split id="main" order={2} defaultSize={m.paneShown ? 76 : 100} minSize={30}>
+      <!-- The dragged width is the stage's, so the Detail, the Navigator beside it and a review's
+           side column all take it. -->
+      <div
+        class="stage"
+        style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}
+        style:--detail-cover={m.opened ? "var(--dock-width)" : null}
+        {@attach graphTop}
+      >
         <Panel
           {title}
           label="Main area"
@@ -404,14 +445,25 @@
           onfocus={() => m.focus !== "detail" && (m.focus = "main")}
           onkeydown={mainKey}
         >
+          {#snippet headline()}
+            {#if shown.kind === "run" && run}
+              <RunHeadline {run} onrun={openRun} />
+            {:else if shown.kind === "current"}
+              <ScanState branch={shown.branch} />
+            {:else if shown.kind === "review" && review?.view}
+              <span class="title">{review.view.title}</span>
+            {/if}
+          {/snippet}
           {#snippet actions()}
-            {#if (shown.kind === "request" || shown.kind === "review") && !m.settings}
-              <button class="button small" onclick={closeMain}>Close <kbd>Esc</kbd></button>
+            {#if shown.kind === "current"}
+              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" disabled={current.scanning} onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
+            {:else if (shown.kind === "request" || shown.kind === "review") && !m.settings}
+              <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={closeMain}>Close</button>
             {/if}
           {/snippet}
           {#if shown.kind === "run"}
             {#if run}
-              <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} onrun={openRun} />
+              <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
             {:else if view?.missing}
               <p class="empty">This Run cannot be read; choose another.</p>
             {:else}
@@ -421,23 +473,21 @@
             <CurrentView branch={shown.branch} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
           {:else if shown.kind === "review"}
             {#if review}
-              <div class="review">
-                {#if review.view}<p class="crumb">{review.view.title} · Artifact {review.view.artifact}</p>{/if}
-                {#key review}
-                  <HumanDetail {review} active={!m.settings} onback={() => void focus("pane")} />
-                {/key}
-              </div>
+              {#key review}
+                <HumanDetail {review} active={!m.settings} wide onback={() => void focus("pane")} />
+              {/key}
             {/if}
           {:else if shown.kind === "request"}
             {#key shown.detail.request}
-              <RecordDetail detail={shown.detail} bind:technical={m.folds.technical} bind:pending={m.folds.pending} bind:log={m.folds.log} bind:debug={m.folds.debug} />
+              <!-- A read-only request reads as a review does: one column at the left, no wider than the measure. -->
+              <div class="record"><RecordDetail detail={shown.detail} bind:log={m.folds.log} /></div>
             {/key}
           {:else}
             <p class="empty">Choose a branch or a waiting review in the Pane.</p>
           {/if}
         </Panel>
         {#if m.opened && source && keyOf(m.opened.source) === keyOf(source)}
-          <aside class="dock" aria-label="Detail" style:--detail-width={m.detailWidth === null ? null : `${m.detailWidth}px`}>
+          <aside class="dock" aria-label="Detail">
             <!-- The left edge takes a mouse drag, as the pane dividers do; hovering it shows only
                  the resize cursor. -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -470,7 +520,7 @@
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
     <Dialog.Content
-      class="dialog"
+      class="dialog open-id"
       onCloseAutoFocus={(event) => {
         // An opened request takes focus, not what had it before the dialog.
         if (m.focus !== "main") return;
@@ -491,8 +541,8 @@
       >
         <input class="input" placeholder="req-…" bind:value={m.wanted} aria-label="Request ID" />
         <div class="dialog-actions">
-          <Dialog.Close class="button">Cancel</Dialog.Close>
-          <button class="button primary" type="submit">Open</button>
+          <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
+          <button class="button primary" type="submit" aria-keyshortcuts="Enter">Open</button>
         </div>
       </form>
     </Dialog.Content>
@@ -500,6 +550,11 @@
 </Dialog.Root>
 
 <style>
+  .record {
+    height: 100%;
+    min-height: 0;
+    max-width: var(--measure);
+  }
   .monitor {
     height: 100%;
     min-height: 0;
@@ -510,31 +565,32 @@
   }
   /* The graph's own layers (canvas, Detail) stack inside the stage, so none of them covers the
    * divider's grab zone on the graph's side, and the Detail never sits beside the Pane. */
+  /* The Detail's width, as the dock takes it: a drag's, or its default, within its bounds. */
   .stage {
+    --dock-width: clamp(min(320px, 100%), var(--detail-width, min(46%, 680px)), calc(100% - 96px));
     position: relative;
     isolation: isolate;
     height: 100%;
     min-height: 0;
     min-width: 0;
   }
-  /* Docked toward the graph's right edge with a gap; the graph stays visible behind it. The
-   * Detail sets its own width, by default or by a drag, within the graph's area (as
-   * detail-width.ts fits a drag); its content never sizes it, and wraps or scrolls in its own
-   * boxes. */
+  /* The inspector: a panel docked at the graph's right edge, panel meeting panel at a line,
+   * with the graph visible on its left. It sets its own width, by default or by a drag, within
+   * the graph's area (as detail-width.ts fits a drag); its content never sizes it, and wraps or
+   * scrolls in its own boxes. */
+  /* From the graph's top (--graph-top, below the Main area's header and the view's own header
+   * above its graph) to the area's bottom; under the header row alone until a graph is drawn. */
   .dock {
     position: absolute;
     z-index: 20;
-    top: 12px;
-    right: 12px;
-    bottom: 12px;
-    width: var(--detail-width, min(46%, 680px));
-    min-width: min(320px, calc(100% - 24px));
-    max-width: calc(100% - 108px);
+    top: var(--graph-top, 32px);
+    right: 0;
+    bottom: 0;
+    width: var(--dock-width);
     contain: inline-size;
     overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
+    border-top: 1px solid var(--line-group);
+    border-left: 1px solid var(--line-panel);
   }
   .edge {
     position: absolute;
@@ -546,29 +602,33 @@
     cursor: col-resize;
     touch-action: none;
   }
+  /* What the Main area has to say where its graph would be: one line at the top of its body. */
   .empty {
-    color: var(--muted);
-    padding: 0 var(--pad);
-  }
-  .review {
-    height: 100%;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-height: 0;
-  }
-  .crumb {
     margin: 0;
-    padding: 0 var(--pad) 6px;
-    color: var(--muted);
-    overflow-wrap: anywhere;
+    padding: 6px var(--pad);
+    color: var(--ink-2);
+  }
+  /* A review's eval and title, said once, in the header row. */
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ink-2);
+  }
+  :global(.dialog.open-id) {
+    width: min(480px, 92vw);
+  }
+  .input::placeholder {
+    color: var(--ink-3);
   }
   .input {
     width: 100%;
+    height: var(--control);
     font: inherit;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--text);
+    padding: 0 8px;
+    border: 1px solid var(--line-input);
+    border-radius: var(--radius-control);
+    background: var(--surface-input);
+    color: var(--ink);
   }
 </style>

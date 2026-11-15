@@ -113,3 +113,24 @@ test("a text click places the engine's visible caret and native focus, unless mo
     } finally { page.window.close(); }
   }
 });
+
+test("a cancelled pointerdown keeps its gesture's compatibility mouse events from the page, its click kept", async () => {
+  for (const cancelled of [false, true]) {
+    const { page, browser } = focusPage('<div id="box">box</div>');
+    try {
+      const box = page.window.document.getElementById("box")!;
+      page.window.document.elementFromPoint = () => box;
+      if (cancelled) box.addEventListener("pointerdown", (event) => event.preventDefault());
+      const events: string[] = [];
+      for (const kind of ["pointerdown", "pointermove", "pointerup", "mousedown", "mousemove", "mouseup", "click"]) {
+        box.addEventListener(kind, () => events.push(kind));
+      }
+      for (const phase of ["down", "move", "up"] as const) await dispatchInput(browser, { kind: "pointer", phase, x: 5, y: 5 });
+      await dispatchInput(browser, { kind: "click", x: 5, y: 5 });
+      const pointers = ["pointerdown", "pointermove", "pointerup"];
+      const gesture = cancelled ? pointers : ["pointerdown", "mousedown", "pointermove", "mousemove", "pointerup", "mouseup"];
+      const click = cancelled ? ["pointerdown", "pointerup", "click"] : ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+      assert.deepEqual(events, [...gesture, ...click]);
+    } finally { page.window.close(); }
+  }
+});
