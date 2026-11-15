@@ -217,9 +217,11 @@ left of the Detail when one is open, shows the whole graph in small, each Artifa
 its status's colour, with the part in view framed. A click or a drag in it moves the camera
 there, the zoom kept. It goes when the whole graph is in view.
 
-Every graph is laid out upstream on the left. With **more than 500 nodes** in view, too far
-out for names, each Artifact is a block of its status's colour and a click still opens it.
-Zoom in until fewer are in view to use Tab and Enter. An Artifact's Detail draws at most 16 neighbours on each side and counts the rest.
+Every graph is laid out upstream on the left. In a graph of **more than 500 nodes**, zoomed
+out so far that names are too small to read, each Artifact is a block of its status's colour
+and an Artifact with parts its box's outline in that colour; a click still opens it. With
+more than 500 in view, they are painted even where names read. Tab and Enter reach them again
+once you zoom in until names read and at most 500 are in view. An Artifact's Detail draws at most 16 neighbours on each side and counts the rest.
 
 An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
 its parts, under a title row with its mark, its name and its count, closed by the strip in
@@ -478,7 +480,11 @@ on the right, with **List models** for the models it offers.
 fields and **Sign in to the store**. Signed in, it shows the store's URL and share level as
 facts and its status in one line (signed in, the reviewer and how many results this machine pushed today, or what a push or check said),
 with **Check status**, **Push (dry run)**, **Push results** and **Sign out of the store**; the
-fields come back once you sign out. **Summary** omits invocation details,
+fields come back once you sign out. When the store refuses the saved token or cannot be
+reached, the sign-in fields come back with the store's URL and what went wrong, and only
+**Check status** besides **Sign in to the store**: there is no **Push results** until you
+sign in again with a valid token, or restore the connection and choose **Check status**.
+**Summary** omits invocation details,
 captured output and tool-call history; **Full** also sends the saved execution.
 Summary still shares review metadata, owner results, declared Runtime commands
 and arguments, and Agent execution-path metadata. Those declarations can contain
