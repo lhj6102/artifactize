@@ -278,6 +278,9 @@
     padding: 2px 8px;
     min-height: var(--row-dense);
     cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .suggested li:not([aria-selected="true"]):hover {
     background: var(--surface-group);

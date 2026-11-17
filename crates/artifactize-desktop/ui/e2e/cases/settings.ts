@@ -135,7 +135,8 @@ export const scenarios: Scenario[] = [
     "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, refused, with a pasted code and by the browser returning",
     async () => {
       const fixture = createOutside();
-      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null };
+      // Claude Code opens the system browser itself: the case's fixture browser, at its loopback.
+      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null, browser: "http://127.0.0.1:" };
     },
     async (browser, { fixture }) => {
       const status = () => browser.$('[data-testid="claude-agent-status"]').getText();
@@ -145,7 +146,10 @@ export const scenarios: Scenario[] = [
       const signedIn = "Signed in · claude.ai · max";
       const marker = nativePath(fixture.root, "signed-in");
       /** Sign in with Claude Code; returns the loopback origin of the running `claude auth login`. */
+      const visits = nativePath(fixture.root, "claude-visits");
+      const visited = () => (exists(visits) ? readText(visits).split("\n").filter(Boolean) : []);
       async function begin(): Promise<string> {
+        const before = visited().length;
         await browser.$("button=Sign in with Claude Code").click();
         // In progress, said in the sign-in's fact, with Cancel sign-in; what finishes it by hand
         // stays folded until asked for.
@@ -159,8 +163,11 @@ export const scenarios: Scenario[] = [
         assert.equal((await status()).trim(), "sign-in in progress", "unfolding Finish by hand leaves the sign-in in progress");
         const address = new URL(await browser.$("pre.url").getText());
         assert.equal(address.pathname, "/oauth/authorize", "the URL Claude Code printed is shown");
-        // The shown origin is the running Claude Code's own.
+        // The shown origin is the running Claude Code's own, and the browser it opened visited
+        // that URL.
         assert.equal(await httpGet(`${address.origin}/alive`), 200);
+        await browser.waitUntil(async () => visited().length > before && visited().at(-1) === `${address.pathname}${address.search}`,
+          { timeout: 15000, timeoutMsg: `the browser Claude Code opened visited ${address.pathname}${address.search}: ${JSON.stringify(visited())}` });
         return address.origin;
       }
       async function signOut() {

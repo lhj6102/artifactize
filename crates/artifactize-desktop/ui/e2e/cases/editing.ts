@@ -196,7 +196,7 @@ async function drag(
   browser: WebdriverIO.Browser,
   from: { x: number; y: number },
   to: { x: number; y: number },
-  { held, escape = false }: { held?: () => Promise<void>; escape?: boolean } = {},
+  { held, escape = false, escaped }: { held?: () => Promise<void>; escape?: boolean; escaped?: () => Promise<void> } = {},
 ) {
   const at = (point: { x: number; y: number }) => ({ x: Math.round(point.x), y: Math.round(point.y) });
   await dispatchInput(browser, { kind: "pointer", phase: "down", ...at(from) });
@@ -207,6 +207,7 @@ async function drag(
   if (held) await held();
   // A key the provider drops is sent again; the page logs what arrives.
   if (escape) await press(browser, ["Escape"], () => true, "Esc during the drag");
+  if (escaped) await escaped();
   await dispatchInput(browser, { kind: "pointer", phase: "up", ...at(to) });
 }
 
@@ -684,7 +685,10 @@ export const scenarios: Scenario[] = [
       // Esc during a drag puts the node back, writing nothing.
       const files = () => ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
       const untouched = files();
-      await drag(browser, { x: core.x, y: core.y }, { x: core.x + 80, y: core.y + 80 }, { escape: true });
+      await drag(browser, { x: core.x, y: core.y }, { x: core.x + 80, y: core.y + 80 }, {
+        escape: true,
+        escaped: () => waitFor(browser, async () => JSON.stringify(await box(browser, "a:core")) === JSON.stringify(core), "Esc put core back before the button is let go"),
+      });
       await afterRender(browser);
       assert.deepEqual(await box(browser, "a:core"), core, "core back where it was");
       assert.deepEqual(files(), untouched, "nothing written");
@@ -1027,9 +1031,20 @@ export const scenarios: Scenario[] = [
       await drag(browser, await docsComment(), { x: appBox.left + 60, y: appBox.top + 14 }, { held: async () => assert.equal(await targeted(browser, "a:app"), false, "app has a comment: no target") });
       await afterRender(browser);
       assert.equal(commentIn(fixture, "docs"), KIT_NOTE, "the comment stays with docs");
-      await drag(browser, await docsComment(), { x: docs.x + 200, y: docs.y }, { escape: true });
+      // Held over core, which would take it, Esc puts it back before the button is let go; the
+      // release then writes nothing.
+      const coreNow = (await box(browser, "a:core"))!;
+      const unmoved = ["docs", "core"].map((name) => file(fixture, name));
+      await drag(browser, await docsComment(), { x: coreNow.x, y: coreNow.y }, {
+        held: async () => waitFor(browser, () => targeted(browser, "a:core"), "core highlighted as the drop target"),
+        escape: true,
+        escaped: async () => {
+          await waitFor(browser, async () => (await comments(browser))["a:docs"] === KIT_NOTE && !(await browser.$(".lifted").isExisting()) && !(await targeted(browser, "a:core")),
+            "Esc put the comment back under docs, nothing lifted or highlighted, the button still down");
+        },
+      });
       await afterRender(browser);
-      assert.equal((await comments(browser))["a:docs"], KIT_NOTE, "Esc put the comment back");
+      assert.deepEqual(["docs", "core"].map((name) => file(fixture, name)), unmoved, "the release after Esc wrote nothing");
 
       // On the branch's Run the comments are drawn alike, and are no handle: a drag pans the
       // camera, a click opens the Artifact's Detail.

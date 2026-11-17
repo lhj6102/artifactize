@@ -836,7 +836,8 @@ try {
 }
 `);
     runProgramOk("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-Mode", "check", "-Entry", entry]);
-    return env;
+    // The system browser is the fixture's: a program that opens one itself may.
+    return { ...env, DESKTOP_TEST_BROWSER_WINDOWS: "1" };
   }
   const bin = makeDirectory(nativePath(root, "browser-bin"));
   const program = nativePath(bin, "open-url.mjs");
@@ -855,8 +856,9 @@ try {
 export function claudeCodeEnvironment(root: NativePath, env: Environment): Environment {
   const bin = makeDirectory(nativePath(root, "claude-bin"));
   const program = nativePath(bin, "claude.mjs");
-  writeText(program, `import { existsSync, rmSync, writeFileSync } from "node:fs";
+  writeText(program, `import { appendFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { spawn } from "node:child_process";
 const [group, command] = process.argv.slice(2);
 const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
 const say = (text) => process.stdout.write(text);
@@ -887,12 +889,20 @@ const finish = () => {
   process.exit(0);
 };
 const server = createServer((request, response) => {
+  // What the browser visits is recorded, for the case to see that it opened.
+  if (request.url.startsWith("/oauth/authorize")) appendFileSync(process.env.DESKTOP_TEST_CLAUDE_VISITS, request.url + "\\n");
   response.end("signed in");
   if (request.url.startsWith("/callback")) finish();
 });
 server.listen(0, "127.0.0.1", () => {
   const address = \`http://127.0.0.1:\${server.address().port}\`;
-  say(\`Opening browser to sign in\\nIf the browser didn't open, visit: \${address}/oauth/authorize?code=true\\nPaste code here if prompted > \`);
+  const url = \`\${address}/oauth/authorize?code=true\`;
+  say(\`Opening browser to sign in\\nIf the browser didn't open, visit: \${url}\\nPaste code here if prompted > \`);
+  // As Claude Code does, it opens the system browser itself: only the case's fixture browser,
+  // never the person's own.
+  if (process.env.DESKTOP_TEST_BROWSER_PROGRAM || process.env.DESKTOP_TEST_BROWSER_WINDOWS) {
+    spawn(${JSON.stringify(WINDOWS ? "cmd" : MACOS ? "open" : "xdg-open")}, ${WINDOWS ? '["/c", "start", "", url]' : "[url]"}, { stdio: "ignore" }).on("error", () => {});
+  }
 });
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -921,6 +931,7 @@ process.stdin.on("end", () => process.exit(1));
     DESKTOP_TEST_CLAUDE_PROGRAM: program,
     DESKTOP_TEST_CLAUDE_SIGNED_IN: nativePath(root, "signed-in"),
     DESKTOP_TEST_CLAUDE_BROKEN: nativePath(root, "claude-broken"),
+    DESKTOP_TEST_CLAUDE_VISITS: nativePath(root, "claude-visits"),
     CLAUDE_CONFIG_DIR: makeDirectory(nativePath(root, "claude-config"), { private: true }),
   };
 }
