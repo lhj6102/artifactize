@@ -10,6 +10,8 @@
 //! missing-target mark, raw-content SHA-256 identity and annotations, plus the file contents
 //! used as [`BasedOn`]. Merge a successful delta into those bases before the next edit.
 //! Creation is always `.artifactize/<name>.artf`; rename stays in its original subfolder.
+//! [`footprint`] previews the exact files an operation changes, with their snapshot bases
+//! (including `None` for new destinations), using the same candidate edit as [`apply`].
 //!
 //! [`Operation`] creates a node, changes PATH or source, adds/removes/moves parts, renames
 //! and deletes, and saves/resets places or sets/moves a comment. A move changes both wholes
@@ -31,6 +33,7 @@
 use super::*;
 mod annotations;
 mod placement;
+mod proposal;
 pub use annotations::Annotations;
 pub use placement::PlacementKey;
 use serde::{Deserialize, Serialize};
@@ -299,264 +302,8 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
     lock.lock().map_err(io)?;
     let sources = discovery::sources(&root)?;
     compare_named_bases(&root, based_on, &operation)?;
-    let mut proposed = sources.clone();
-    // Source can repair a broken definition after its current text has been reloaded.
-    // Every operation still validates the complete prospective project before writing.
-    let config = if let Operation::SaveSource { name, source } = &operation {
-        let file = sources
-            .keys()
-            .find(|file| file.file_stem().and_then(|stem| stem.to_str()) == Some(name.as_str()))
-            .ok_or_else(|| forbidden(format!("Unknown Artifact {name}.")))?;
-        proposed.insert(file.clone(), source.clone());
-        discovery::read_sources(root.clone(), &proposed)?
-    } else {
-        discovery::read_sources(root.clone(), &sources)?
-    };
-    match operation {
-        Operation::Create { name, path } => {
-            discovery::definition_name(&name).map_err(forbidden)?;
-            if config
-                .artifacts
-                .keys()
-                .any(|existing| existing.eq_ignore_ascii_case(&name))
-            {
-                return Err(forbidden(format!("Artifact {name} already exists.")));
-            }
-            let mut doc = toml_edit::DocumentMut::new();
-            doc["path"] = toml_edit::value(path);
-            proposed.insert(
-                root.join(format!(".artifactize/{name}.artf")),
-                doc.to_string(),
-            );
-        }
-        Operation::SetPath { name, path } => update(&config, &mut proposed, &name, |doc, _| {
-            if doc["path"].as_str() != Some(path.as_str()) {
-                let decor = doc["path"]
-                    .as_value()
-                    .expect("validated PATH")
-                    .decor()
-                    .clone();
-                let mut value = toml_edit::Value::from(path);
-                *value.decor_mut() = decor;
-                doc["path"] = toml_edit::Item::Value(value);
-            }
-            Ok(())
-        })?,
-        Operation::SaveSource { .. } => {}
-        Operation::AddPart { whole, part, at } => {
-            let at = at.or_else(|| placement(&config, &proposed, &part, None));
-            check_style(&config, &mut proposed, &whole)?;
-            check_style(&config, &mut proposed, &part)?;
-            update(&config, &mut proposed, &whole, |doc, _| {
-                change_part(doc, &part, true)
-            })?;
-            let next = discovery::read_sources(root.clone(), &proposed)?;
-            update(&config, &mut proposed, &whole, |doc, file| {
-                annotations::set_parts(
-                    doc,
-                    file,
-                    &next,
-                    &whole,
-                    &at.map(|at| [(part.clone(), at)].into()).unwrap_or_default(),
-                    false,
-                )
-            })?;
-            update(&config, &mut proposed, &part, |doc, file| {
-                annotations::set_at(doc, file, &next, &part, None)
-            })?;
-        }
-        Operation::RemovePart { whole, part } => {
-            check_style(&config, &mut proposed, &whole)?;
-            update(&config, &mut proposed, &whole, |doc, _| {
-                change_part(doc, &part, false)
-            })?;
-            let next = discovery::read_sources(root.clone(), &proposed)?;
-            update(&config, &mut proposed, &whole, |doc, file| {
-                annotations::set_parts(doc, file, &next, &whole, &BTreeMap::new(), false)
-            })?;
-        }
-        Operation::MovePart { part, from, to, at } => {
-            let at = at.or_else(|| placement(&config, &proposed, &part, from.as_ref()));
-            check_style(&config, &mut proposed, &part)?;
-            for whole in from.iter().chain(to.iter()) {
-                check_style(&config, &mut proposed, whole)?;
-            }
-            if from == to {
-                return Err(forbidden("The source and destination whole are the same."));
-            }
-            if let Some(from) = &from {
-                update(&config, &mut proposed, from, |doc, _| {
-                    change_part(doc, &part, false)
-                })?;
-            }
-            if let Some(to) = &to {
-                update(&config, &mut proposed, to, |doc, _| {
-                    change_part(doc, &part, true)
-                })?;
-            }
-            let next = discovery::read_sources(root.clone(), &proposed)?;
-            if let Some(from) = from {
-                update(&config, &mut proposed, &from, |doc, file| {
-                    annotations::set_parts(doc, file, &next, &from, &BTreeMap::new(), false)
-                })?;
-            }
-            if let Some(to) = &to {
-                update(&config, &mut proposed, to, |doc, file| {
-                    annotations::set_parts(
-                        doc,
-                        file,
-                        &next,
-                        to,
-                        &at.map(|at| [(part.clone(), at)].into()).unwrap_or_default(),
-                        false,
-                    )
-                })?;
-            }
-            update(&config, &mut proposed, &part, |doc, file| {
-                annotations::set_at(
-                    doc,
-                    file,
-                    &next,
-                    &part,
-                    if to.is_none() { at } else { None },
-                )
-            })?;
-        }
-        Operation::Rename { old, new } => {
-            discovery::definition_name(&new).map_err(forbidden)?;
-            if config
-                .artifacts
-                .keys()
-                .any(|existing| existing.eq_ignore_ascii_case(&new))
-            {
-                return Err(forbidden(format!("Artifact {new} already exists.")));
-            }
-            let old_file = node_file(&config, &old)?;
-            for (owner, artifact) in &config.artifacts {
-                let file = root.join(artifact.declaration_path());
-                let mut doc = proposed[&file]
-                    .parse::<toml_edit::DocumentMut>()
-                    .expect("validated source");
-                rename_item(doc.as_item_mut(), &old, &new, artifact, &mut Vec::new());
-                if artifact.parts.contains(&old) {
-                    annotations::rename_part(&mut doc, &file, &config, owner, &old, &new)?;
-                }
-                proposed.insert(file, doc.to_string());
-            }
-            let source = proposed.remove(&old_file).expect("known node");
-            proposed.insert(old_file.with_file_name(format!("{new}.artf")), source);
-        }
-        Operation::Delete { name } => {
-            let file = node_file(&config, &name)?;
-            let users = config
-                .artifacts
-                .iter()
-                .filter_map(|(other, artifact)| {
-                    if other == &name {
-                        return None;
-                    }
-                    let mut doc = sources[&root.join(artifact.declaration_path())]
-                        .parse::<toml_edit::DocumentMut>()
-                        .expect("validated source");
-                    let original = doc.to_string();
-                    rename_item(
-                        doc.as_item_mut(),
-                        &name,
-                        "renamed-node",
-                        artifact,
-                        &mut Vec::new(),
-                    );
-                    (doc.to_string() != original).then(|| other.to_string())
-                })
-                .collect::<Vec<_>>();
-            if !users.is_empty() {
-                return Err(forbidden(format!(
-                    "{name} is still named by: {}.",
-                    users.join(", ")
-                )));
-            }
-            proposed.remove(&file);
-        }
-        Operation::SavePlaces { places } => {
-            let mut boxes = BTreeMap::<ArtifactName, BTreeMap<ArtifactName, [f64; 2]>>::new();
-            for (key, at) in places {
-                match key {
-                    PlacementKey::Part { whole, part } => {
-                        if config.artifacts.contains_key(&whole) {
-                            boxes.entry(whole).or_default().insert(part, at);
-                        }
-                    }
-                    PlacementKey::Node(name) => {
-                        if config.artifacts.contains_key(&name) {
-                            update(&config, &mut proposed, &name, |doc, file| {
-                                annotations::set_at(doc, file, &config, &name, Some(at))
-                            })?;
-                        }
-                    }
-                }
-            }
-            for (whole, places) in boxes {
-                update(&config, &mut proposed, &whole, |doc, file| {
-                    annotations::set_parts(doc, file, &config, &whole, &places, false)
-                })?;
-            }
-        }
-        Operation::ResetPlaces { whole } => {
-            if let Some(whole) = whole {
-                update(&config, &mut proposed, &whole, |doc, file| {
-                    annotations::set_parts(doc, file, &config, &whole, &BTreeMap::new(), true)
-                })?;
-            } else {
-                for name in config.artifacts.keys().filter(|name| {
-                    !config
-                        .artifacts
-                        .values()
-                        .any(|artifact| artifact.parts.contains(*name))
-                }) {
-                    update(&config, &mut proposed, name, |doc, file| {
-                        annotations::set_at(doc, file, &config, name, None)
-                    })?;
-                }
-            }
-        }
-        Operation::SetComment { name, text } => {
-            update(&config, &mut proposed, &name, |doc, file| {
-                annotations::set_comment(doc, file, &text)
-            })?
-        }
-        Operation::MoveComment { from, to } => {
-            if from == to {
-                return Err(forbidden("A comment already belongs to this node."));
-            }
-            let from_file = node_file(&config, &from)?;
-            let to_file = node_file(&config, &to)?;
-            let source = proposed[&from_file]
-                .parse::<toml_edit::DocumentMut>()
-                .expect("validated source");
-            let target = proposed[&to_file]
-                .parse::<toml_edit::DocumentMut>()
-                .expect("validated source");
-            let text = annotations::take_comment(&source, &from_file)?
-                .ok_or_else(|| forbidden(format!("{from} has no comment to move.")))?;
-            if annotations::take_comment(&target, &to_file)?.is_some() {
-                return Err(forbidden(format!("{to} already has a comment.")));
-            }
-            update(&config, &mut proposed, &from, |doc, file| {
-                annotations::set_comment(doc, file, "")
-            })?;
-            update(&config, &mut proposed, &to, |doc, file| {
-                annotations::set_comment(doc, file, &text)
-            })?;
-        }
-    }
-    let changes = sources
-        .keys()
-        .chain(proposed.keys())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter(|&file| sources.get(file) != proposed.get(file))
-        .map(|file| (file.clone(), proposed.get(file).cloned()))
-        .collect::<BTreeMap<_, _>>();
+    let proposed = proposal::propose(&root, &sources, operation)?;
+    let changes = proposal::changes(&sources, &proposed);
     compare_changes(&root, based_on, &changes)?;
     discovery::read_sources(root.clone(), &proposed)?;
     let originals = changes
@@ -806,9 +553,51 @@ pub struct Node {
 }
 #[derive(Debug, Serialize)]
 pub struct Project {
+    #[serde(skip)]
+    root: PathBuf,
     pub files: BasedOn,
     pub nodes: BTreeMap<ArtifactName, Node>,
 }
+/// Definition files a proposed operation changes, with their snapshot bases. A new
+/// destination has no current text. Paths are project-relative, exactly as in `BasedOn`.
+#[derive(Debug, Clone, Serialize)]
+pub struct Footprint {
+    #[serde(with = "crate::platform::path_serde::map")]
+    pub files: BTreeMap<PathBuf, Option<String>>,
+}
+
+/// Compute the exact write set from a `read_project` snapshot without writing files,
+/// acquiring edit locks or creating state. This is the same candidate edit as `apply`.
+/// Use its files as `BasedOn` and to guard unsaved Source drafts; destinations and
+/// reference rewrites belong to the library. Disk edits after the snapshot are still
+/// detected by `apply`'s compare-and-swap, never silently adopted as fresh bases.
+pub fn footprint(project: &Project, operation: &Operation) -> Result<Footprint, Refusal> {
+    let sources = project
+        .files
+        .iter()
+        .filter_map(|(file, source)| {
+            source
+                .as_ref()
+                .map(|source| (project.root.join(file), source.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let proposed = proposal::propose(&project.root, &sources, operation.clone())?;
+    discovery::read_sources(project.root.clone(), &proposed)?;
+    let files = proposal::changes(&sources, &proposed)
+        .into_keys()
+        .map(|file| {
+            let base = sources.get(&file).cloned();
+            (
+                file.strip_prefix(&project.root)
+                    .expect("project definition")
+                    .to_owned(),
+                base,
+            )
+        })
+        .collect();
+    Ok(Footprint { files })
+}
+
 /// A file's exact content is its optimistic base; `identity` is SHA-256 for view clients.
 /// Invalid annotation values are ignored for display and described in their error fields.
 pub fn read_project(project: &Path) -> Result<Project, Refusal> {
@@ -852,7 +641,7 @@ pub fn read_project(project: &Path) -> Result<Project, Refusal> {
             )
         })
         .collect();
-    Ok(Project { files, nodes })
+    Ok(Project { root, files, nodes })
 }
 fn node_file(config: &RepoConfig, name: &ArtifactName) -> Result<PathBuf, Refusal> {
     config

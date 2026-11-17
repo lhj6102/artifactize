@@ -607,3 +607,147 @@ fn placement_wire_keys_are_validated_before_becoming_edit_operations() {
         serde_json::json!({"whole/part":[1.0,2.0]})
     );
 }
+
+fn apply_with_footprint(project: &Project, operation: Operation, expected: &[&str]) {
+    use std::collections::BTreeSet;
+    let snapshot = edit::read_project(&project.repo).unwrap();
+    let before = edit::read(&project.repo).unwrap();
+    let footprint = edit::footprint(&snapshot, &operation).unwrap();
+    assert_eq!(
+        edit::read(&project.repo).unwrap(),
+        before,
+        "preview writes nothing"
+    );
+    let expected = expected.iter().map(PathBuf::from).collect::<BTreeSet<_>>();
+    assert_eq!(
+        footprint.files.keys().cloned().collect::<BTreeSet<_>>(),
+        expected
+    );
+    for (file, base) in &footprint.files {
+        assert_eq!(
+            *base,
+            before.get(file).cloned().flatten(),
+            "snapshot base for {file:?}"
+        );
+    }
+    let bases = footprint.files.into_iter().collect();
+    edit::apply(&project.repo, &bases, operation).unwrap();
+    let after = edit::read(&project.repo).unwrap();
+    let changed = before
+        .keys()
+        .chain(after.keys())
+        .filter(|file| before.get(*file) != after.get(*file))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        changed, expected,
+        "the published footprint is the actual disk write set"
+    );
+}
+
+#[test]
+fn operation_footprints_own_destinations_and_exact_multifile_write_sets() {
+    let project = Project::new();
+    project.node(
+        "group/leaf",
+        "path = 'leaf/'\nbasis = true\n[annotations.style]\nat = [1,2]\n",
+    );
+    project.node("whole", "path = './'\nbasis = true\nparts = ['leaf']\n[annotations.style.parts]\nleaf = [3,4]\n[annotations.comment]\ntext = 'A note'\n");
+    project.node("other", "path = 'other/'\nbasis = true\n");
+    project.node(
+        "reader",
+        &format!(
+            "path = 'reader/'{}",
+            runtime().replace("Check.", "Read {leaf}.")
+        ),
+    );
+    project.node(
+        "note",
+        "path = 'note/'\nbasis = true\n[annotations.future]\ntext = '{leaf} is just a note'\n",
+    );
+    apply_with_footprint(
+        &project,
+        Operation::Create {
+            name: name("fresh"),
+            path: "future/".into(),
+        },
+        &[".artifactize/fresh.artf"],
+    );
+    apply_with_footprint(
+        &project,
+        Operation::Rename {
+            old: name("leaf"),
+            new: name("renamed"),
+        },
+        &[
+            ".artifactize/group/leaf.artf",
+            ".artifactize/group/renamed.artf",
+            ".artifactize/whole.artf",
+            ".artifactize/reader.artf",
+        ],
+    );
+    apply_with_footprint(
+        &project,
+        Operation::MovePart {
+            part: name("renamed"),
+            from: Some(name("whole")),
+            to: Some(name("other")),
+            at: Some([9., 10.]),
+        },
+        &[
+            ".artifactize/group/renamed.artf",
+            ".artifactize/whole.artf",
+            ".artifactize/other.artf",
+        ],
+    );
+    apply_with_footprint(
+        &project,
+        Operation::MoveComment {
+            from: name("whole"),
+            to: name("other"),
+        },
+        &[".artifactize/whole.artf", ".artifactize/other.artf"],
+    );
+    apply_with_footprint(
+        &project,
+        Operation::SetPath {
+            name: name("fresh"),
+            path: "future/".into(),
+        },
+        &[],
+    );
+    apply_with_footprint(
+        &project,
+        Operation::Delete {
+            name: name("fresh"),
+        },
+        &[".artifactize/fresh.artf"],
+    );
+}
+
+#[test]
+fn a_snapshot_footprint_never_adopts_a_later_disk_edit_as_its_base() {
+    let project = Project::new();
+    let original = "path = './'\nbasis = true\n";
+    project.node("page", original);
+    let snapshot = edit::read_project(&project.repo).unwrap();
+    let changed = "path = 'changed/'\nbasis = true\n";
+    project.node("page", changed);
+    let operation = Operation::SetComment {
+        name: name("page"),
+        text: "Draft-safe note".into(),
+    };
+    let footprint = edit::footprint(&snapshot, &operation).unwrap();
+    assert_eq!(
+        footprint.files[Path::new(".artifactize/page.artf")].as_deref(),
+        Some(original)
+    );
+    let bases = footprint.files.into_iter().collect();
+    assert!(
+        matches!(edit::apply(&project.repo, &bases, operation), Err(Refusal::Changed { current: Some(text), .. }) if text == changed)
+    );
+    assert_eq!(
+        fs::read_to_string(project.repo.join(".artifactize/page.artf")).unwrap(),
+        changed
+    );
+}
