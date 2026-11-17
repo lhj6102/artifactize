@@ -32,11 +32,15 @@ impl Fixture {
         let log = root.path().join("log");
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir(&log).unwrap();
-        fs::write(repo.join("harness.py"), harness::script()).unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("harness.py")),
+            harness::script(),
+        )
+        .unwrap();
         let mut views = harness::views(&log, start, stop, action);
         views["agent_sessions"]["app"]["start"]["execution_paths"] = json!(["harness.py"]);
         views["agent_sessions"]["app"]["stop"]["execution_paths"] = json!(["harness.py"]);
-        support::declaration::write(repo.join("index.artf"), json!({
+        support::declaration::write(&(repo), repo.join("index.artf"), json!({
             "name":"app", "fingerprint":{}, "views":views,
             "evals":[{"id":"review", "title":"Review", "profile":{"kind":"agent", "backend":"openai", "model":"fake-model"}, "payload":{"instruction":"Review."}}]
         }).to_string()).unwrap();
@@ -104,11 +108,17 @@ impl Fixture {
         records
     }
     fn rewrite(&self, edit: impl FnOnce(&mut Value)) {
-        let mut definition =
-            support::declaration::read(fs::read(self.repo().join("index.artf")).unwrap()).unwrap();
+        let mut definition = support::declaration::read(
+            support::declaration::read_file(self.repo().join("index.artf")).unwrap(),
+        )
+        .unwrap();
         edit(&mut definition);
-        support::declaration::write(self.repo().join("index.artf"), definition.to_string())
-            .unwrap();
+        support::declaration::write(
+            self.repo(),
+            self.repo().join("index.artf"),
+            definition.to_string(),
+        )
+        .unwrap();
     }
 
     fn own_processes(&mut self) {
@@ -117,7 +127,9 @@ impl Fixture {
         if let Ok(entries) = fs::read_dir(self.log()) {
             for entry in entries.flatten() {
                 if entry.file_name().to_string_lossy().starts_with("child-")
-                    && let Ok(pid) = fs::read_to_string(entry.path()).unwrap_or_default().parse()
+                    && let Ok(pid) = support::declaration::read_text(entry.path())
+                        .unwrap_or_default()
+                        .parse()
                 {
                     self.processes.get_mut().own(pid);
                 }
@@ -133,7 +145,10 @@ impl Drop for Fixture {
         self.own_processes();
         // Wake provider callbacks and blocked tools even when an assertion unwinds.
         for marker in ["release", "continue", "admit", "verdict"] {
-            let _ = fs::write(self.log().join(marker), "ready");
+            let _ = fs::write(
+                support::declaration::source_path(self.log().join(marker)),
+                "ready",
+            );
         }
         let released = self.root.release(&self.state(), &self.repo());
         // Cancellation may start stop or finish a pending invocation. Adopt those
@@ -229,10 +244,12 @@ fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() 
                 .all(|value| value.to_string().contains("started first"))
         );
         let pins = &run["requests"][0]["provenance"]["executionPaths"];
-        let expected: String = Sha256::digest(fs::read(fixture.repo().join("harness.py")).unwrap())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let expected: String = Sha256::digest(
+            support::declaration::read_file(fixture.repo().join("harness.py")).unwrap(),
+        )
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
         for key in ["app_app.start", "app_app.stop"] {
             assert_eq!(pins[key]["harness.py"], expected);
         }
@@ -406,7 +423,11 @@ fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
     support::os::wait_until(Duration::from_secs(10), || {
         !support::os::running(started["child"].as_u64().unwrap() as u32)
     });
-    fs::write(fixture.log().join("continue"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.log().join("continue")),
+        "",
+    )
+    .unwrap();
     assert!(child.wait().unwrap().success());
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
     let requests = fixture.provider.requests();
@@ -455,7 +476,7 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
             assert!(!support::os::running(owner.id()));
             // Also exercise pre-lease journal compatibility. Zombie identity must
             // not keep this abandoned directory alive merely because it exists.
-            fs::remove_file(directory.join("lease")).unwrap();
+            support::declaration::remove_file(directory.join("lease")).unwrap();
         } else {
             owner.wait().unwrap();
         }
@@ -466,10 +487,11 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
         }
         if variant == "mismatch" {
             let path = directory.join("owner.json");
-            let mut record: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            let mut record: Value =
+                serde_json::from_slice(&support::declaration::read_file(&path).unwrap()).unwrap();
             record["leader"]["start_time"] =
                 json!(record["leader"]["start_time"].as_u64().unwrap() + 1);
-            fs::write(path, record.to_string()).unwrap();
+            fs::write(support::declaration::source_path(path), record.to_string()).unwrap();
         }
         fixture.rewrite(|definition| {
             definition["views"]["agent_tools"]["act"]["args"][1] = json!("act")
@@ -616,7 +638,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
             );
         }
         support::os::wait_until(Duration::from_secs(10), || {
-            fs::read_to_string(log.join("verdict")).unwrap_or_default() == "ready"
+            support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
         });
         openai::completed(
             request,
@@ -633,7 +655,11 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
     let name = directory.file_name().unwrap().to_str().unwrap();
     support::os::assert_delete_blocked(&directory.join(format!("held-{name}")));
-    fs::write(fixture.log().join("verdict"), "ready").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.log().join("verdict")),
+        "ready",
+    )
+    .unwrap();
     let output = owner.wait_with_output().unwrap();
     assert!(
         output.status.success(),
@@ -654,9 +680,13 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
         let content = if requests.fetch_add(1, Ordering::SeqCst) == 0 {
             openai::function_call("call", "act_app", &json!({}))
         } else {
-            fs::write(log.join("awaiting-verdict"), "ready").unwrap();
+            fs::write(
+                support::declaration::source_path(log.join("awaiting-verdict")),
+                "ready",
+            )
+            .unwrap();
             support::os::wait_until(Duration::from_secs(15), || {
-                fs::read_to_string(log.join("verdict")).unwrap_or_default() == "ready"
+                support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
             });
             openai::message(&json!({"verdict":"GREEN"}).to_string())
         };
@@ -665,14 +695,21 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
     let owner = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
     let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
-        fs::read_to_string(fixture.log().join("awaiting-verdict")).unwrap_or_default() == "ready"
+        support::declaration::read_text(fixture.log().join("awaiting-verdict")).unwrap_or_default()
+            == "ready"
     });
     let start = fixture.records("start").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
-    fs::write(directory.join("exit"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(directory.join("exit")),
+        "",
+    )
+    .unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
-        let record: Value =
-            serde_json::from_slice(&fs::read(directory.join("owner.json")).unwrap()).unwrap();
+        let record: Value = serde_json::from_slice(
+            &support::declaration::read_file(directory.join("owner.json")).unwrap(),
+        )
+        .unwrap();
         record["leader"].is_null()
     });
     support::os::wait_until(Duration::from_secs(10), || {
@@ -681,7 +718,11 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
     });
     // The verdict is still pending: retirement is not deferred to review cleanup.
     assert!(fixture.records("stop").is_empty());
-    fs::write(fixture.log().join("verdict"), "ready").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.log().join("verdict")),
+        "ready",
+    )
+    .unwrap();
     let output = owner.wait_with_output().unwrap();
     assert!(
         output.status.success(),
@@ -719,7 +760,11 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
     // A directory at this filename fails the atomic retirement write on every OS,
     // including privileged CI, without denying admission of stop or bound calls.
     fs::create_dir(directory.join("owner.next")).unwrap();
-    fs::write(directory.join("exit"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(directory.join("exit")),
+        "",
+    )
+    .unwrap();
     let output = owner.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
@@ -759,7 +804,11 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
         .stderr(Stdio::piped())
         .launch();
     let mut owner = Watcher::new(owner);
-    fs::write(fixture.log().join("owner"), owner.id().to_string()).unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.log().join("owner")),
+        owner.id().to_string(),
+    )
+    .unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
         !fixture.records("call").is_empty()
     });
@@ -767,9 +816,13 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
     let call = fixture.records("call").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
     fs::create_dir(directory.join("owner.next")).unwrap();
-    fs::write(directory.join("exit"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(directory.join("exit")),
+        "",
+    )
+    .unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
-        fs::read_to_string(fixture.log().join("interrupted")).unwrap_or_default()
+        support::declaration::read_text(fixture.log().join("interrupted")).unwrap_or_default()
             == call["pid"].as_u64().unwrap().to_string()
     });
     let bound = call["pid"].as_u64().unwrap() as u32;
@@ -833,15 +886,23 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
             assert!(probe["output"].to_string().contains("ready"), "{probe}");
             // The leader's start record precedes readiness and the first call's
             // admission. Deny creates only once that probe has fully completed.
-            fs::write(log.join("probe-done"), "ready").unwrap();
+            fs::write(
+                support::declaration::source_path(log.join("probe-done")),
+                "ready",
+            )
+            .unwrap();
             support::os::wait_until(Duration::from_secs(10), || {
-                fs::read_to_string(log.join("admit")).unwrap_or_default() == "ready"
+                support::declaration::read_text(log.join("admit")).unwrap_or_default() == "ready"
             });
             openai::function_call("failed_call", "act_app", &json!({}))
         } else {
-            fs::write(log.join("rejected"), "rejected").unwrap();
+            fs::write(
+                support::declaration::source_path(log.join("rejected")),
+                "rejected",
+            )
+            .unwrap();
             support::os::wait_until(Duration::from_secs(10), || {
-                fs::read_to_string(log.join("verdict")).unwrap_or_default() == "ready"
+                support::declaration::read_text(log.join("verdict")).unwrap_or_default() == "ready"
             });
             openai::message(&json!({"verdict":"GREEN"}).to_string())
         };
@@ -850,18 +911,28 @@ fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_clea
     let owner = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
     let owner = RunChild::new(owner, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
-        fs::read_to_string(fixture.log().join("probe-done")).unwrap_or_default() == "ready"
+        support::declaration::read_text(fixture.log().join("probe-done")).unwrap_or_default()
+            == "ready"
     });
     let start = fixture.records("start").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
     let denied = support::os::deny_creates(&directory);
-    fs::write(fixture.log().join("admit"), "ready").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.log().join("admit")),
+        "ready",
+    )
+    .unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
-        fs::read_to_string(fixture.log().join("rejected")).unwrap_or_default() == "rejected"
+        support::declaration::read_text(fixture.log().join("rejected")).unwrap_or_default()
+            == "rejected"
     });
     assert!(fixture.records("call").is_empty());
     drop(denied);
-    fs::write(fixture.log().join("verdict"), "ready").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.log().join("verdict")),
+        "ready",
+    )
+    .unwrap();
     let output = owner.wait_with_output().unwrap();
     assert!(
         output.status.success(),

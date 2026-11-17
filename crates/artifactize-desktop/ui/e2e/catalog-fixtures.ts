@@ -1,9 +1,10 @@
+import { writeDeclaration } from "./declaration-fixtures.ts";
 // Persisted catalog inputs and large declarations. Changes happen before any app is
 // launched; the source audit is restored after it ends, before domain fixture teardown.
 import { prepareFixture } from "./build-fixtures.ts";
 import { artifactize, cancelRuns, createChain, type Fixture } from "./fixture.ts";
 import { git } from "./environment.ts";
-import { makeDirectory, nativePath, updateDatabase, writeText } from "./platform.ts";
+import { makeDirectory, nativePath, updateDatabase } from "./platform.ts";
 
 /** A readable legacy audit with no saved definitions or requests to draw. */
 export function createEmptyAudit(): { fixture: Fixture; restore: () => void } {
@@ -25,14 +26,14 @@ export function createLayout(wholes = 0): Fixture {
     const fixture = { root, repo: makeDirectory(nativePath(root, "repo")), state: nativePath(root, "state") };
     for (let index = 0; index < 1200; index += 1) {
       const name = `n${String(index).padStart(4, "0")}`;
-      writeText(nativePath(makeDirectory(nativePath(fixture.repo, name)), "index.artf"), `name = "${name}"\nbasis = true\n`);
+      writeDeclaration(fixture.repo, nativePath(makeDirectory(nativePath(fixture.repo, name)), "index.artf"), `name = "${name}"\nbasis = true\n`);
     }
     // A few wholes among them, each a box around two parts, when asked for.
     for (let index = 0; index < wholes; index += 1) {
       const whole = `w${String(index).padStart(2, "0")}`;
-      writeText(nativePath(makeDirectory(nativePath(fixture.repo, whole)), "index.artf"), `name = "${whole}"\nbasis = true\n`);
+      writeDeclaration(fixture.repo, nativePath(makeDirectory(nativePath(fixture.repo, whole)), "index.artf"), `name = "${whole}"\nbasis = true\n`);
       for (const part of ["a", "b"]) {
-        writeText(nativePath(makeDirectory(nativePath(fixture.repo, whole, part)), "index.artf"), `name = "${whole}${part}"\nbasis = true\n`);
+        writeDeclaration(fixture.repo, nativePath(makeDirectory(nativePath(fixture.repo, whole, part)), "index.artf"), `name = "${whole}${part}"\nbasis = true\n`);
       }
     }
     git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
@@ -44,7 +45,7 @@ export function createLayout(wholes = 0): Fixture {
 /** The launch scope has no saved Run; ALL still has the fixture's reviewed repository. */
 export function emptyRepository(fixture: Fixture): string {
   const repo = makeDirectory(nativePath(fixture.root, "empty-repo"));
-  writeText(nativePath(repo, ".artf"), 'name = "empty"\nbasis = true\n');
+  writeDeclaration(repo, nativePath(repo, "index.artf"), 'name = "empty"\nbasis = true\n');
   git(repo, "init", "-q", "--initial-branch=master", repo);
   return repo;
 }

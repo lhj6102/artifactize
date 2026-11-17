@@ -1,5 +1,6 @@
 //! Portable read-only tools, scoped paths, and pinned no-follow file access.
 
+pub mod artf;
 pub mod builtin;
 pub mod cli;
 pub mod image;

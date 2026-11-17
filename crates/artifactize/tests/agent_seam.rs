@@ -29,8 +29,13 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
-        fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("spec/spec.md")),
+            "R1: the spec covers R1.\n",
+        )
+        .unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("spec/index.artf"),
             json!({
                 "name":"spec",
@@ -429,16 +434,17 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
         json!({"kind":"agent","backend":"openai","model":"fake-model","max_tool_calls":6}),
     );
     fs::write(
-        project.repo.join("spec/spec.md"),
+        support::declaration::source_path(project.repo.join("spec/spec.md")),
         "# First\nbody\n## Child\nchild\n# Next\nlast\n",
     )
     .unwrap();
     let stub = project.repo.join("spec/help-stub");
     support::os::write_script(&stub, "printf 'stub documentation: %s\\n' \"$*\"\n");
     support::os::make_executable(&stub);
-    let mut declaration =
-        support::declaration::read(fs::read(project.repo.join("spec/index.artf")).unwrap())
-            .unwrap();
+    let mut declaration = support::declaration::read(
+        support::declaration::read_file(project.repo.join("spec/index.artf")).unwrap(),
+    )
+    .unwrap();
     declaration["views"]["agent_tools"] = json!({
         "fixed":{"builtin":"read","args":["spec.md"]},
         "section":{"builtin":"section","args":["spec.md"]},
@@ -446,6 +452,7 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
         "help":{"builtin":"help","args":["./help-stub","sub"]}
     });
     support::declaration::write(
+        &(project.repo),
         project.repo.join("spec/index.artf"),
         declaration.to_string(),
     )

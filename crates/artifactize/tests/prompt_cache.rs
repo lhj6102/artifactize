@@ -27,10 +27,15 @@ impl Project {
         for (name, backend) in evals {
             let folder = repo.join(name);
             fs::create_dir_all(&folder).unwrap();
-            fs::write(folder.join("notes.md"), format!("{name}: R1 holds.\n")).unwrap();
+            fs::write(
+                support::declaration::source_path(folder.join("notes.md")),
+                format!("{name}: R1 holds.\n"),
+            )
+            .unwrap();
             let profile = json!({"kind":"agent","backend":backend,
                 "model":format!("{backend}-model"),"timeout_ms":20000});
             support::declaration::write(
+                &(repo),
                 folder.join("index.artf"),
                 json!({"name":name,"views":{"agent_tools":{"read":{"builtin":"read"}}},
                     "evals":[{"id":"review","title":"Review","profile":profile,

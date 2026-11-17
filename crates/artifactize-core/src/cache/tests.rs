@@ -27,7 +27,7 @@ impl Repo {
     fn write(&self, path: &str, contents: &str) {
         let path = self.root.path().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        crate::test_declaration::write(path, contents).unwrap();
+        crate::test_declaration::write(self.root.path(), path, contents).unwrap();
     }
 
     fn artifact(&self, folder: &str, value: Value) {
@@ -64,8 +64,8 @@ impl Repo {
 #[tokio::test]
 async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_identity() {
     let repo = Repo::new();
-    repo.artifact("", json!({"name":"root"}));
-    repo.write("a.txt", "abc");
+    repo.artifact("content", json!({"name":"root"}));
+    repo.write("content/a.txt", "abc");
     let fingerprint = repo.fingerprint("root").await.unwrap();
     let manifest = fingerprint.manifest.unwrap();
     assert_eq!(manifest.files.unwrap()["a.txt"], "ba7816bf8f01cfea");
@@ -84,7 +84,7 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
     let repo = Repo::new();
     repo.artifact(
         "",
-        json!({"name":"root","fingerprint":{"ignore":["*.log","/data/raw"]}}),
+        json!({"name":"root","parts":["child","image","nested"],"fingerprint":{"ignore":["*.log","/data/raw",".artifactize/"]}}),
     );
     for path in [
         "a.txt",
@@ -153,18 +153,16 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
 }
 
 #[tokio::test]
-async fn explicit_declaration_inputs_are_rejected() {
+async fn explicit_definition_inputs_are_ordinary_bytes() {
     let repo = Repo::new();
-    for input in ["index.artf", "file.png.artf", "missing.artf"] {
-        repo.artifact("", json!({"name":"root","fingerprint":{"files":[input]}}));
-        let error = read_workspace_config(repo.root.path())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains("cannot be explicit artifactsum inputs"),
-            "{error}"
-        );
-    }
+    repo.artifact(
+        "",
+        json!({"name":"root","fingerprint":{"files":[".artifactize/root.artf"]}}),
+    );
+    let before = repo.fingerprint("root").await.unwrap().value;
+    assert_eq!(repo.files("root").await, [".artifactize/root.artf"]);
+    repo.artifact("", json!({"name":"root","tags":["changed"],"fingerprint":{"files":[".artifactize/root.artf"]}}));
+    assert_ne!(repo.fingerprint("root").await.unwrap().value, before);
 }
 
 #[tokio::test]
@@ -220,7 +218,7 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     };
     if symlink_file("a.txt", &link).is_some() {
         check(repo.fingerprint("owner").await.unwrap_err());
-        fs::remove_file(&link).unwrap();
+        crate::test_declaration::remove_file(&link).unwrap();
     }
     repo.write("elsewhere/b.txt", "b");
     crate::test_os::link_dir(&repo.root.path().join("elsewhere"), &link);
@@ -242,7 +240,7 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     ] {
         repo.artifact(
             "owner",
-            json!({"name":"owner","fingerprint":{"files":inputs}}),
+            json!({"name":"owner","parts":["nested"],"fingerprint":{"files":inputs}}),
         );
         assert!(read_workspace_config(repo.root.path()).is_err(), "{inputs}");
     }
@@ -266,6 +264,7 @@ fn an_eval_keys_its_target_composition_and_one_hop_references() {
         "a",
         json!({
             "name":"a",
+            "parts":["child"],
             "evals":[
                 {
                     "id":"plain",

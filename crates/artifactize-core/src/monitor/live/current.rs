@@ -135,6 +135,8 @@ pub struct CurrentEval {
 /// One Artifact of the scan.
 #[derive(Debug, Clone)]
 pub struct CurrentArtifact {
+    pub definition: PathBuf,
+    pub target_missing: bool,
     pub name: ArtifactName,
     pub kind: ArtifactKind,
     pub plan: Plan,
@@ -364,6 +366,8 @@ fn project(
                     })
                     .collect();
             CurrentArtifact {
+                definition: artifact.definition.clone(),
+                target_missing: artifact.target_missing,
                 name: artifact.id.clone(),
                 kind: artifact.kind,
                 plan: evals

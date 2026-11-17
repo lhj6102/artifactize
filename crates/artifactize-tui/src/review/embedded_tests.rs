@@ -14,6 +14,7 @@ fn fixture() -> (crate::test_runs::RepoLease, PathBuf, PathBuf) {
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
     crate::test_declaration::write(
+        &(repo),
         repo.join("index.artf"),
         json!({
             "name":"signoff",
@@ -541,7 +542,7 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
 async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let (_root, repo, state) = fixture();
     let declaration = repo.join("index.artf");
-    let mut contents = std::fs::read_to_string(&declaration).unwrap();
+    let mut contents = crate::test_declaration::read_text(&declaration).unwrap();
     contents.push_str(
         r#"
 [evals.held]
@@ -551,7 +552,7 @@ profile = { kind = "human" }
 instruction = "Keep this independent review claimed."
 "#,
     );
-    std::fs::write(declaration, contents).unwrap();
+    std::fs::write(crate::test_declaration::source_path(declaration), contents).unwrap();
     let run = crate::test_runs::record(
         &repo,
         Some(&state),
@@ -838,7 +839,8 @@ required = ["change"]
 additionalProperties = false
 "#
     );
-    std::fs::write(brand.join("artifactize-icon.svg.artf"), declaration).unwrap();
+    crate::test_declaration::write(&repo, brand.join("artifactize-icon.svg.artf"), declaration)
+        .unwrap();
     let lease = crate::test_runs::RepoLease::new(root, &state, &repo);
     (lease, repo, state)
 }

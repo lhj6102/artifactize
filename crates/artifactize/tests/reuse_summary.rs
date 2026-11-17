@@ -67,7 +67,7 @@ impl Fixture {
                 "Sign off {docs} and {style}.",
             ),
         ];
-        write(&repo, json!({"name":"root","basis":true}));
+        write(&(repo), &repo, json!({"name":"root","basis":true}));
         for ((artifact, eval, profile, instruction), version) in artifacts.into_iter().zip(versions)
         {
             let folder = repo.join(artifact);
@@ -85,11 +85,16 @@ impl Fixture {
                 });
             }
             write(
+                &(repo),
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
                     "fingerprint":{"script":{"command":support::os::cat_program(),"args":["version"]}}}),
             );
-            fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
+            fs::write(
+                support::declaration::source_path(folder.join("version")),
+                format!("{artifact}-{version}\n"),
+            )
+            .unwrap();
         }
         repo
     }
@@ -137,9 +142,9 @@ impl Fixture {
     }
 }
 
-fn write(folder: &Path, declaration: Value) {
+fn write(root: &Path, folder: &Path, declaration: Value) {
     fs::create_dir_all(folder).unwrap();
-    support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, folder.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn request<'a>(run: &'a Value, eval: &str) -> &'a Value {
@@ -384,10 +389,11 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
 
     // Another backend setting is an execution option, not part of the reuse key.
     let path = repo.join("docs/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai",
         "model":"fake-other-model","reasoning":"low","timeout_ms":60000,"max_tokens":4000});
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(repo), &path, declaration.to_string()).unwrap();
     let status = fixture.json(&repo, &["status"], 1);
     let docs = status["evals"]
         .as_array()

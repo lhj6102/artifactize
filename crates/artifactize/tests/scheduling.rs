@@ -90,6 +90,7 @@ impl Fixture {
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("index.artf"),
             json!({"name":"test","fingerprint":false,"evals":evals}).to_string(),
         )
@@ -110,6 +111,7 @@ impl Fixture {
         let evals = evals(events.address);
         fixture.events = Some(events);
         support::declaration::write(
+            &(fixture.repo),
             fixture.repo.join("index.artf"),
             json!({"name":"test","fingerprint":false,"evals":evals}).to_string(),
         )
@@ -144,7 +146,7 @@ impl Fixture {
     }
 
     fn starts(&self) -> Vec<String> {
-        fs::read_to_string(self.repo.join("events"))
+        support::declaration::read_text(self.repo.join("events"))
             .unwrap_or_default()
             .split_inclusive('\n')
             .filter_map(|line| {
@@ -177,7 +179,7 @@ fn process_tree_eval(id: &str, record: &str) -> Value {
 
 // PID records are ready only after their complete newline-terminated pair is saved.
 fn recorded_pids(path: &std::path::Path) -> Option<[u32; 2]> {
-    let text = fs::read_to_string(path).ok()?;
+    let text = support::declaration::read_text(path).ok()?;
     if !text.ends_with('\n') {
         return None;
     }
@@ -257,6 +259,7 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
             let other = fixture._root.path().join("other");
             fs::create_dir(&other).unwrap();
             support::declaration::write(
+                &(other),
                 other.join("index.artf"),
                 json!({
                     "name":"other", "evals":[{"id":"check","title":"Check","profile":{
@@ -290,7 +293,11 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
             // RUNNING is saved before Python publishes its start event; wait for that event itself.
             wait_until(|| fixture.starts().iter().any(|id| id == "slow"));
             assert_eq!(fixture.starts(), ["slow"]);
-            fs::write(fixture.repo.join("release"), "finish").unwrap();
+            fs::write(
+                support::declaration::source_path(fixture.repo.join("release")),
+                "finish",
+            )
+            .unwrap();
             let run = finish(child, 4);
             assert_eq!(run["executionsStarted"], 1);
             assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
@@ -345,7 +352,11 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
         })
         .await;
         assert_eq!(view.run.executions_started, jobs as u64);
-        fs::write(fixture.repo.join("release"), "").unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("release")),
+            "",
+        )
+        .unwrap();
         let run = finish(child, 0);
         match cap {
             Some(limit) => assert_eq!(run["jobs"], limit),
@@ -357,7 +368,7 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
         assert_eq!(run["executionsStarted"], 6);
         let mut active = 0;
         let mut peak = 0;
-        for event in fs::read_to_string(fixture.repo.join("events"))
+        for event in support::declaration::read_text(fixture.repo.join("events"))
             .unwrap()
             .lines()
         {
@@ -381,6 +392,7 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
 async fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() {
     let fixture = Fixture::new(vec![]);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
@@ -407,6 +419,7 @@ async fn completion_releases_a_dependent_while_an_independent_eval_is_still_runn
         let mut check = eval("check", script);
         check["payload"]["instruction"] = json!(instruction);
         support::declaration::write(
+            &(fixture.repo),
             folder.join("index.artf"),
             json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )
@@ -423,7 +436,11 @@ async fn completion_releases_a_dependent_while_an_independent_eval_is_still_runn
     .await;
     assert!(child.try_wait().unwrap().is_none());
     assert!(fixture.repo.join("c-slow/started").exists());
-    fs::write(fixture.repo.join("c-slow/release"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("c-slow/release")),
+        "",
+    )
+    .unwrap();
     let run = finish(child, 0);
     let requests = run["requests"].as_array().unwrap();
     assert_eq!(requests[0]["status"], "GREEN");
@@ -435,6 +452,7 @@ async fn completion_releases_a_dependent_while_an_independent_eval_is_still_runn
 async fn a_settled_block_names_every_red_that_blocks_it_and_nothing_else() {
     let fixture = Fixture::new(vec![]);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
@@ -453,6 +471,7 @@ async fn a_settled_block_names_every_red_that_blocks_it_and_nothing_else() {
         let mut check = eval("check", script);
         check["payload"]["instruction"] = json!(instruction);
         support::declaration::write(
+            &(fixture.repo),
             folder.join("index.artf"),
             json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )
@@ -477,7 +496,11 @@ async fn a_settled_block_names_every_red_that_blocks_it_and_nothing_else() {
         status(&blocked, "consumer/check").1.as_deref(),
         Some("Dependency verdict RED: early/check")
     );
-    fs::write(fixture.repo.join("late/release"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("late/release")),
+        "",
+    )
+    .unwrap();
     let run = finish(child, 1);
     let consumer = run["requests"]
         .as_array()
@@ -502,7 +525,11 @@ fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
     });
     // Let admitted executions finish immediately; their acknowledged events still share
     // one writer, so concurrent starts cannot overwrite each other's records on Windows.
-    fs::write(fixture.repo.join("release"), "finish").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("release")),
+        "finish",
+    )
+    .unwrap();
     let run = fixture.run(&["--jobs", "4", "--max-executions", "2"], 4);
     assert_eq!(run["status"], "INCOMPLETE");
     assert_eq!(run["maxExecutions"], 2);
@@ -687,6 +714,7 @@ fn invalid_limits_fail_without_creating_state() {
 fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
     let fixture = Fixture::new(vec![]);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
@@ -699,6 +727,7 @@ fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
             check["payload"]["instruction"] = json!("Check {dependency}.");
         }
         support::declaration::write(
+            &(fixture.repo),
             folder.join("index.artf"),
             json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )

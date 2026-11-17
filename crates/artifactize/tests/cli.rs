@@ -56,6 +56,7 @@ impl Fixture {
             }
             fs::create_dir_all(repo.join(name)).unwrap();
             support::declaration::write(
+                &(repo),
                 repo.join(name).join("index.artf"),
                 declaration.to_string(),
             )
@@ -332,7 +333,7 @@ fn redirected_or_no_console_help_never_waits_for_input() {
 fn tools_facade_matches_the_standalone_cli() {
     let root = support::os::tempdir();
     fs::write(
-        root.path().join("notes.md"),
+        support::declaration::source_path(root.path().join("notes.md")),
         "# First\nalpha\n# Next\nomega\n",
     )
     .unwrap();

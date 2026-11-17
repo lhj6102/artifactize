@@ -117,7 +117,7 @@ impl RemoteStatus {
                         clippy::cast_precision_loss,
                         reason = "milliseconds since 1970 fit an f64 exactly"
                     )]
-                    at: pushed.at as f64,
+                    at: pushed.unix_millis() as f64,
                     count: u32::try_from(pushed.count).unwrap_or(u32::MAX),
                 })
                 .collect(),

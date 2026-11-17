@@ -1,0 +1,393 @@
+//! Deterministic marker discovery through the no-follow platform file interface.
+
+use super::*;
+use std::io::Read;
+
+struct DiscoveryEntry {
+    path: PathBuf,
+    name: std::ffi::OsString,
+    kind: crate::platform::FileKind,
+}
+impl DiscoveryEntry {
+    fn path(&self) -> PathBuf {
+        self.path.clone()
+    }
+    fn file_name(&self) -> std::ffi::OsString {
+        self.name.clone()
+    }
+}
+
+/// Discover regular markers in deterministic path order, without following directory links.
+pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
+    read(repo, FileTargets::Required)
+}
+#[derive(Clone, Copy)]
+pub(super) enum FileTargets {
+    Required,
+}
+
+fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
+    let root =
+        crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
+    let ignored = discovery_ignore(&root)?;
+    let mut config = RepoConfig {
+        root: root.clone(),
+        artifacts: BTreeMap::new(),
+        evals: Vec::new(),
+        relations: Vec::new(),
+    };
+    let mut schemas = super::schemas::Schemas::default();
+    walk(&root, &ignored, targets, &mut |found: Found<'_>| {
+        let declaration = declaration(&found, &mut schemas)?;
+        declare(&mut config, found, declaration)
+    })?;
+    if config.artifacts.is_empty() {
+        return Err(ConfigError::new(
+            &config.root,
+            "Workspace must contain at least one .artf Artifact.",
+        ));
+    }
+    for artifact in config.artifacts.values_mut() {
+        artifact.definition = declaration_of(artifact.kind, &artifact.path);
+        if artifact.kind == ArtifactKind::Aspect {
+            artifact.path = artifact.path.parent().unwrap_or(Path::new("")).to_owned();
+        }
+    }
+    crate::scope::resolve_config(&mut config)?;
+    if matches!(targets, FileTargets::Required) {
+        crate::scope::validate_selections(&config)?;
+    }
+    Ok(config)
+}
+
+/// A declaration a walk found.
+pub(super) struct Found<'a> {
+    pub(super) kind: ArtifactKind,
+    /// The Artifact's logical path.
+    pub(super) path: PathBuf,
+    pub(super) file: &'a Path,
+    pub(super) source: String,
+    /// The folder Artifact it is nested in, and its path there.
+    pub(super) folder: Option<(&'a ArtifactName, ChildPrefix)>,
+    /// The nearest folder Artifact around it, which it is a part of.
+    pub(super) owner: Option<&'a ArtifactName>,
+}
+
+/// Walk `reach` below `root` in deterministic path order, handing each declaration to
+/// `visit`, which names the Artifact it declares.
+pub(super) fn walk<E: From<ConfigError>>(
+    root: &Path,
+    ignored: &ignore::gitignore::Gitignore,
+    targets: FileTargets,
+    visit: &mut dyn FnMut(Found<'_>) -> Result<ArtifactName, E>,
+) -> Result<(), E> {
+    // Each folder with the folder Artifact it is nested in, and that Artifact's path.
+    let mut pending = vec![(PathBuf::new(), None::<(ArtifactName, PathBuf)>)];
+    while let Some((relative, mut owner)) = pending.pop() {
+        let directory = root.join(&relative);
+        let opened = crate::platform::open_directory(&directory)
+            .map_err(|error| ConfigError::new(&directory, error))?;
+        let entries = crate::platform::read_dir(&opened)
+            .and_then(|entries| {
+                entries
+                    .map(|entry| {
+                        let entry = entry?;
+                        let name = entry.file_name();
+                        let kind = entry.file_type()?;
+                        Ok(DiscoveryEntry {
+                            path: directory.join(&name),
+                            name,
+                            kind,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, std::io::Error>>()
+            })
+            .map_err(|error| ConfigError::new(&directory, error))?;
+        let mut entries = entries;
+        entries.sort_by_key(|entry| entry.file_name());
+        if let Some(legacy) = entries
+            .iter()
+            .find(|entry| entry.file_name() == "artifactize.json")
+        {
+            let file = legacy.path();
+            let kind = legacy.kind;
+            if !ignored
+                .matched(&file, kind == crate::platform::FileKind::Directory)
+                .is_ignore()
+                && kind != crate::platform::FileKind::Directory
+            {
+                return Err(ConfigError::new(
+                    file,
+                    "artifactize.json is no longer read; declare this Artifact in index.artf (TOML).",
+                )
+                .into());
+            }
+        }
+        if let Some(marker) = entries
+            .iter()
+            .find(|entry| entry.file_name() == CONFIG_FILE)
+        {
+            let file = marker.path();
+            let kind = marker.kind;
+            if kind != crate::platform::FileKind::File {
+                return Err(ConfigError::new(file, "index.artf must be a regular file.").into());
+            }
+            let source =
+                read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+            let folder = match &owner {
+                Some((folder, path)) => {
+                    let child = relative.strip_prefix(path).unwrap();
+                    let child = child
+                        .to_str()
+                        .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
+                    let child = child
+                        .parse()
+                        .map_err(|error: String| ConfigError::new(&file, error))?;
+                    Some((folder, child))
+                }
+                None => None,
+            };
+            let name = visit(Found {
+                kind: ArtifactKind::Folder,
+                path: relative.clone(),
+                file: &file,
+                source,
+                owner: folder.as_ref().map(|(folder, _)| *folder),
+                folder,
+            })?;
+            owner = Some((name, relative.clone()));
+        }
+        for marker in &entries {
+            if !ignored.matched(marker.path(), false).is_ignore()
+                && marker
+                    .file_name()
+                    .as_encoded_bytes()
+                    .ends_with(b".artf.artf")
+            {
+                return Err(ConfigError::new(
+                    marker.path(),
+                    "File Artifact target must not be a declaration (.artf).",
+                )
+                .into());
+            }
+        }
+        for marker in &entries {
+            if marker.file_name() != ".artf" && ignored.matched(marker.path(), false).is_ignore() {
+                continue;
+            }
+            let filename = marker.file_name();
+            if !filename.as_encoded_bytes().ends_with(b".artf") {
+                continue;
+            }
+            let Some(filename) = filename.to_str() else {
+                return Err(
+                    ConfigError::new(marker.path(), "Artifact paths must be UTF-8.").into(),
+                );
+            };
+            let Some(target) = filename.strip_suffix(".artf") else {
+                continue;
+            };
+            if filename == CONFIG_FILE {
+                continue;
+            }
+            let file = marker.path();
+            if marker.kind != crate::platform::FileKind::File {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact declaration must be a regular file.",
+                )
+                .into());
+            }
+            if target.is_empty() {
+                if !relative.as_os_str().is_empty() {
+                    return Err(ConfigError::new(
+                        &file,
+                        "The graph Artifact .artf belongs only at the repository root.",
+                    )
+                    .into());
+                }
+                let source =
+                    read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+                visit(Found {
+                    kind: ArtifactKind::Graph,
+                    path: PathBuf::new(),
+                    file: &file,
+                    source,
+                    folder: None,
+                    owner: None,
+                })?;
+                continue;
+            }
+            if target.ends_with(".artf") {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact target must not be a declaration (.artf).",
+                )
+                .into());
+            }
+            path(target).map_err(|error| ConfigError::new(&file, error))?;
+            let source =
+                read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+            if super::definition::selects(&source) {
+                // Its label names no file: the declaration selects paths of its folder.
+                match crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target)) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    _ => {
+                        return Err(ConfigError::declaration(
+                            &file,
+                            &["select"],
+                            format!(
+                                "select declares an aspect, but {target}.artf declares the file {target}; give the aspect a label that names no file."
+                            ),
+                        )
+                        .into());
+                    }
+                }
+                visit(Found {
+                    kind: ArtifactKind::Aspect,
+                    path: logical_join(&relative, std::ffi::OsStr::new(target)),
+                    file: &file,
+                    source,
+                    folder: None,
+                    owner: owner.as_ref().map(|(owner, _)| owner),
+                })?;
+                continue;
+            }
+            if target.contains(':') {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
+                )
+                .into());
+            }
+            if matches!(targets, FileTargets::Required) {
+                let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target))
+                    .map_err(|error| {
+                        ConfigError::new(
+                            &file,
+                            if error.kind() == std::io::ErrorKind::NotFound {
+                                format!("File Artifact target {target} is missing.")
+                            } else {
+                                format!("Cannot inspect File Artifact target {target}: {error}.")
+                            },
+                        )
+                    })?;
+                if kind != crate::platform::FileKind::File {
+                    return Err(ConfigError::new(
+                        &file,
+                        format!(
+                            "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
+                        ),
+                    )
+                    .into());
+                }
+            }
+            visit(Found {
+                kind: ArtifactKind::File,
+                path: logical_join(&relative, std::ffi::OsStr::new(target)),
+                file: &file,
+                source,
+                folder: None,
+                owner: owner.as_ref().map(|(owner, _)| owner),
+            })?;
+        }
+        for entry in entries.into_iter().rev() {
+            let kind = entry.kind;
+            if kind == crate::platform::FileKind::Directory
+                && entry.file_name() != ".git"
+                && entry.file_name() != "node_modules"
+                && !ignored.matched(entry.path(), true).is_ignore()
+            {
+                pending.push((logical_join(&relative, &entry.file_name()), owner.clone()));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn declaration(
+    found: &Found<'_>,
+    schemas: &mut super::schemas::Schemas,
+) -> Result<ArtifactDeclaration, ConfigError> {
+    super::definition::parse(
+        &super::definition::Input {
+            kind: found.kind,
+            path: &found.path,
+            file: found.file,
+            source: &found.source,
+            name: None,
+        },
+        schemas,
+    )
+}
+
+/// Add a found declaration to `config`, nested in the folder Artifact around it and a part
+/// of it.
+pub(super) fn declare(
+    config: &mut RepoConfig,
+    found: Found<'_>,
+    declaration: ArtifactDeclaration,
+) -> Result<ArtifactName, ConfigError> {
+    let name = declaration.name.clone();
+    if let Some((folder, path)) = found.folder {
+        let folder = config.artifacts.get_mut(folder).unwrap();
+        folder.nested.insert(path, name.clone());
+    }
+    super::discovery::insert_artifact(config, found.path, found.kind, declaration, found.file)?;
+    if let Some(owner) = found.owner {
+        config
+            .artifacts
+            .get_mut(owner)
+            .unwrap()
+            .parts
+            .insert(name.clone());
+    }
+    Ok(name)
+}
+
+/// The folders the workspace root's `.artfignore` (gitignore syntax) keeps out of
+/// discovery, such as test fixtures or example projects with their own `index.artf`.
+pub(super) fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
+    let legacy = root.join(".artifactizeignore");
+    if crate::platform::marker_metadata(&legacy).is_ok() {
+        return Err(ConfigError::new(
+            legacy,
+            ".artifactizeignore was renamed to .artfignore.",
+        ));
+    }
+    let file = root.join(IGNORE_FILE);
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
+    builder
+        .case_insensitive(false)
+        .expect("case-sensitive discovery");
+    // A regular file only: discovery never follows links.
+    if crate::platform::path_kind(&file).is_ok_and(|kind| kind == crate::platform::FileKind::File) {
+        let source = read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+        for line in source.lines() {
+            builder
+                .add_line(Some(file.clone()), line)
+                .map_err(|error| ConfigError::new(&file, error))?;
+        }
+    }
+    builder
+        .build()
+        .map_err(|error| ConfigError::new(&file, error))
+}
+
+/// A logical path below the workspace root: components joined with `/` on every platform,
+/// the form Artifact paths take in scopes, references and output.
+pub(super) fn logical_join(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    if parent.as_os_str().is_empty() {
+        return PathBuf::from(name);
+    }
+    let mut path = parent.as_os_str().to_owned();
+    path.push("/");
+    path.push(name);
+    PathBuf::from(path)
+}
+
+pub(super) fn read_regular_text(path: &Path) -> std::io::Result<String> {
+    let mut source = String::new();
+    crate::platform::open_regular(path)?.read_to_string(&mut source)?;
+    Ok(source)
+}

@@ -182,6 +182,9 @@ pub(super) async fn check(context: Context) -> Result<u8, String> {
     if context.json {
         print_json(&report)?;
     } else {
+        for note in &report.notes {
+            writeln!(io::stdout().lock(), "Note: {note}").map_err(|error| error.to_string())?;
+        }
         writeln!(io::stdout().lock(), "Folder configuration is valid.")
             .map_err(|error| error.to_string())?;
     }

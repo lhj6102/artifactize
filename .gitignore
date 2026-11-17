@@ -1,6 +1,5 @@
 /target/
 /website/dist/
-.artifactize/
 *.log
 .DS_Store
 .claude/worktrees/

@@ -129,6 +129,8 @@ fn current_neighbours_keep_would_run_and_checking_ahead_of_blocked_and_waiting()
         project::ArtifactCondition,
     };
     let artifact = |text: &str, plan| CurrentArtifact {
+        definition: Default::default(),
+        target_missing: false,
         name: name(text),
         kind: ArtifactKind::Folder,
         plan,

@@ -37,7 +37,7 @@ impl Fixture {
     fn write(&self, path: &str, value: Value) {
         let path = self.repo.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        support::declaration::write(path, value.to_string()).unwrap();
+        support::declaration::write(&(self.repo), path, value.to_string()).unwrap();
     }
 
     fn command(&self) -> Command {
@@ -115,7 +115,11 @@ fn fingerprint(run: &[&str]) -> Value {
 fn exact_output_is_validated_before_any_review_can_start() {
     let fixture = Fixture::new();
     for bytes in support::os::invalid_fingerprints() {
-        fs::write(fixture.repo.join("key"), &bytes).unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("key")),
+            &bytes,
+        )
+        .unwrap();
         fixture.write(
             "index.artf",
             json!({
@@ -136,7 +140,11 @@ fn exact_output_is_validated_before_any_review_can_start() {
         fixture.no_execution(&error);
     }
     for bytes in support::os::valid_fingerprints() {
-        fs::write(fixture.repo.join("key"), &bytes).unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("key")),
+            &bytes,
+        )
+        .unwrap();
         let run = fixture.verify(&["--all"], 0);
         assert_eq!(
             run["requests"][0]["fingerprint"],
@@ -151,7 +159,11 @@ fn exact_output_is_validated_before_any_review_can_start() {
 #[test]
 fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     let fixture = Fixture::new();
-    fs::write(fixture.repo.join("key"), "valid").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("key")),
+        "valid",
+    )
+    .unwrap();
     let mut links = Vec::new();
     if symlink_file("key", fixture.repo.join("link")).is_some() {
         links.extend([
@@ -252,13 +264,17 @@ print('protocol:v1')
             "evals":[eval("one", &["exit", "0"]),eval("two", &["exit", "3"])],
         }),
     );
-    fs::write(fixture.repo.join("owner/key"), "material").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("owner/key")),
+        "material",
+    )
+    .unwrap();
     let run = fixture.verify(&["--all", "--force"], 1);
     assert_eq!(run["requests"][0]["fingerprint"], "protocol:v1");
     assert_eq!(run["requests"][1]["fingerprint"], "protocol:v1");
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert_eq!(run["requests"][1]["status"], "RED");
-    let paths = fs::read_to_string(&probe).unwrap();
+    let paths = support::declaration::read_text(&probe).unwrap();
     // Only the observable protocol matters, not how often preparation/rechecks invoke it.
     assert!(!paths.is_empty(), "the declared probe must run");
     assert!(
@@ -285,7 +301,7 @@ print('protocol:v1')
         serde_json::from_slice::<Value>(&output.stdout).unwrap(),
         run
     );
-    assert_eq!(fs::read_to_string(probe).unwrap(), paths);
+    assert_eq!(support::declaration::read_text(probe).unwrap(), paths);
 }
 
 #[test]
@@ -306,7 +322,13 @@ fn a_fingerprint_scripts_background_descendant_ends_with_it() {
         .args(["status", "--all", "--json"])
         .record_output()
         .unwrap();
-    let descendant = Descendant(fs::read_to_string(&marker).unwrap().trim().parse().unwrap());
+    let descendant = Descendant(
+        support::declaration::read_text(&marker)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap(),
+    );
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(status["evals"][0]["fingerprint"], "stable", "{status}");
     support::os::wait_until(Duration::from_secs(5), || support::os::gone(descendant.0));
@@ -342,7 +364,11 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
         ),
         (&["remove", "key"][..], "FINGERPRINT_RECHECK_FAILED"),
     ] {
-        fs::write(fixture.repo.join("key"), "before").unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("key")),
+            "before",
+        )
+        .unwrap();
         let mut declared = fingerprint(&["cat", "key"]);
         declared["script"]["files"] = json!(["key"]);
         fixture.write(
@@ -460,7 +486,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
         // Creation and even a partial second line are not a saved PID/path record.
         let marker = loop {
-            if let Ok(text) = fs::read_to_string(&marker)
+            if let Ok(text) = support::declaration::read_text(&marker)
                 && text.ends_with('\n')
                 && text.lines().count() == 2
                 && text.lines().next().unwrap().parse::<u32>().is_ok()
@@ -498,8 +524,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
 #[test]
 fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     let fixture = Fixture::new();
-    fs::write(
-        fixture.repo.join("fingerprint.py"),
+    fs::write(support::declaration::source_path(fixture.repo.join("fingerprint.py")),
         "import hashlib, json, pathlib, sys\njson.load(sys.stdin)\ndigest = hashlib.sha256()\nfor root in sys.argv[1:]:\n    for path in sorted(pathlib.Path(root).rglob('*')):\n        if path.is_file():\n            digest.update(path.read_bytes())\nprint(digest.hexdigest())\n",
     )
     .unwrap();
@@ -508,7 +533,11 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
         "core/index.artf",
         json!({"name":"core","basis":true,"fingerprint":{}}),
     );
-    fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("core/lib.txt")),
+        "v1",
+    )
+    .unwrap();
     // The JSON from issue #48: a global Artifact name in both fingerprint and runtime argv.
     let api = |reference: &str| {
         json!({
@@ -532,7 +561,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     };
     fixture.write("api/index.artf", api("{core}"));
     fs::write(
-        fixture.repo.join("api/test_api.py"),
+        support::declaration::source_path(fixture.repo.join("api/test_api.py")),
         "import pathlib, sys\nassert (pathlib.Path(sys.argv[1]) / 'lib.txt').is_file()\n",
     )
     .unwrap();
@@ -555,7 +584,11 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
         .unwrap()
         .to_owned();
     assert_eq!(run(&["status"]).0, Some(0));
-    fs::write(fixture.repo.join("core/lib.txt"), "v2").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("core/lib.txt")),
+        "v2",
+    )
+    .unwrap();
     let second = fixture.verify(&["--all"], 0);
     assert_ne!(second["requests"][0]["fingerprint"], fingerprint.as_str());
     assert_eq!(second["executionsStarted"], 1);
@@ -598,7 +631,7 @@ impl Drop for FingerprintCaller {
     fn drop(&mut self) {
         if let Some(child) = self.child.take() {
             // This is fixture cleanup, not the observation that establishes parallelism.
-            let _ = fs::write(&self.release, "");
+            let _ = fs::write(support::declaration::source_path(&self.release), "");
             let _ = child.wait_with_output();
         }
     }
@@ -642,7 +675,7 @@ fn most_at_once(markers: &Path) -> usize {
         if path.file_name().unwrap() == "release" {
             continue;
         }
-        let counts = fs::read_to_string(&path).unwrap();
+        let counts = support::declaration::read_text(&path).unwrap();
         most = counts
             .lines()
             .map(|count| count.trim().parse::<usize>().unwrap())
@@ -664,7 +697,7 @@ fn reset_counts(markers: &Path) {
             .unwrap()
             .starts_with("counts.")
         {
-            fs::remove_file(path).unwrap();
+            support::declaration::remove_file(path).unwrap();
         }
     }
 }
@@ -695,7 +728,7 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
                 .to_str()
                 .unwrap()
                 .starts_with("counts.")
-                && fs::read_to_string(path).is_ok_and(|text| {
+                && support::declaration::read_text(path).is_ok_and(|text| {
                     text.ends_with('\n')
                         && text.lines().any(|line| line.parse::<usize>() == Ok(bound))
                 })
@@ -714,7 +747,11 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
             );
             thread::yield_now();
         }
-        fs::write(markers.join("release"), "").unwrap();
+        fs::write(
+            support::declaration::source_path(markers.join("release")),
+            "",
+        )
+        .unwrap();
         let output = child.wait_with_output().unwrap();
         assert_eq!(output.status.code(), Some(1));
         let status: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -723,7 +760,7 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     let (one, most) = status("1");
     assert_eq!(most, 1);
     reset_counts(&markers);
-    fs::remove_file(markers.join("release")).unwrap();
+    support::declaration::remove_file(markers.join("release")).unwrap();
     let (three, most) = status("3");
     assert_eq!(most, 3);
     assert_eq!(three, one);
@@ -801,7 +838,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         stderr.contains("Fingerprint script for Artifact alpha failed"),
         "{stderr}"
     );
-    let pid: u32 = fs::read_to_string(fixture.repo.join("beta/pid"))
+    let pid: u32 = support::declaration::read_text(fixture.repo.join("beta/pid"))
         .unwrap()
         .trim()
         .parse()
@@ -815,8 +852,8 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         assert!(started.join(name).exists());
     }
     // Repeat the same handshake for verify instead of inheriting status's markers.
-    fs::remove_file(fixture.repo.join("beta/ready")).unwrap();
-    fs::remove_file(fixture.repo.join("gamma/finished")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("beta/ready")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("gamma/finished")).unwrap();
     let run = fixture
         .command()
         .args(["verify", "--wait", "--all"])

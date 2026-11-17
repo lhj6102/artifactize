@@ -27,7 +27,7 @@ use super::{
     verdict::{self, Structured, ValidatedResult},
 };
 use crate::{
-    config::{Eval, Profile, RepoConfig},
+    config::{Eval, ModelId, Profile, RepoConfig},
     llm::{
         self, Api, Attempt, Client,
         claude_agent::{
@@ -146,7 +146,7 @@ async fn run_review(
         server: &server,
         registry: &registry,
         output,
-        model: model.as_str(),
+        model,
         limits,
         cancellation,
         recorder,
@@ -305,7 +305,7 @@ pub(super) async fn follow_up(
         server: &server,
         registry: &registry,
         output: continuation.output,
-        model: model.as_str(),
+        model,
         limits: Limits {
             deadline: Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
             max_tokens: budgets.max_tokens,
@@ -335,7 +335,7 @@ struct Session<'a, 'r> {
     server: &'a Server,
     registry: &'a Registry<'r>,
     output: &'a Path,
-    model: &'a str,
+    model: &'a ModelId,
     limits: Limits,
     cancellation: &'a CancellationToken,
     recorder: &'a mut Recorder,

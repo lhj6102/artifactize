@@ -36,9 +36,9 @@ struct Fixture {
     finding: String,
 }
 
-fn declare(path: &Path, declaration: Value) {
+fn declare(root: &Path, path: &Path, declaration: Value) {
     fs::create_dir_all(path).unwrap();
-    support::declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, path.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn eval(id: &str, profile: Value, instruction: &str) -> Value {
@@ -64,28 +64,33 @@ impl Fixture {
         let release = root.path().join("release");
         let finding = support::os::exiting_program(root.path(), 7, "finding\n");
         declare(
+            &(alpha),
             &alpha.join("input"),
             json!({"name":"input","basis":true,"fingerprint":{}}),
         );
         for name in ["checkout", "search"] {
             declare(
+                &(alpha),
                 &alpha.join("scenarios").join(name),
                 json!({"name":name,
                     "evals":[eval("review", runtime(&support::os::true_program(), &[]), "Inspect {input}.")]}),
             );
         }
         declare(
+            &(alpha),
             &alpha.join("cycle-a"),
             json!({"name":"cycle-a","fingerprint":{"script":{"command":support::os::echo_program(),"args":["a-v1"]}},
                 "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-b}.")]}),
         );
         declare(
+            &(alpha),
             &alpha.join("cycle-b"),
             json!({"name":"cycle-b",
                 "fingerprint":{"script":{"command":support::os::echo_program(),"args":["b-v1"]}},
                 "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-a} against {input}.")]}),
         );
         declare(
+            &(alpha),
             &alpha.join("red"),
             json!({
                 "name":"red",
@@ -96,15 +101,18 @@ impl Fixture {
             }),
         );
         declare(
+            &(alpha),
             &alpha.join("red/part"),
             json!({"name":"part","basis":true,"fingerprint":{}}),
         );
         let waiting = support::os::waiting_program(root.path());
         declare(
+            &(beta),
             &beta.join("slow"),
             json!({"name":"slow","evals":[eval("wait", runtime(&waiting, &[&support::os::path_text(&release)]), "Wait.")]}),
         );
         declare(
+            &(beta),
             &beta.join("human"),
             json!({"name":"human","evals":[eval("review", json!({"kind":"human"}), "Approve.")]}),
         );
@@ -293,7 +301,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{progress}"
     );
 
-    fs::write(&fixture.release, "").unwrap();
+    fs::write(support::declaration::source_path(&fixture.release), "").unwrap();
     owned_run::subscribed(&fixture.state, async |changes| {
         tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
             loop {
@@ -634,16 +642,19 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     let check = support::os::fails_while_present_program(root.path());
     let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});
     declare(
+        &(repo),
         &repo.join("a"),
         json!({"name":"a","fingerprint":fingerprint("a"),
             "evals":[eval("x", runtime(&check, &[&support::os::path_text(&flag)]), "Check.")]}),
     );
     declare(
+        &(repo),
         &repo.join("b"),
         json!({"name":"b","fingerprint":fingerprint("b"),
             "evals":[eval("x", runtime(&support::os::true_program(), &[]), "Check {a}.")]}),
     );
     declare(
+        &(repo),
         &repo.join("c"),
         json!({"name":"c","fingerprint":fingerprint("c"),"evals":[
             eval("x", runtime(&support::os::true_program(), &[]), "Check {b}."),
@@ -711,7 +722,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     assert!(all.iter().all(|node| !node.changed));
 
     // a turns RED; b's reused GREEN is masked BLOCKED, and c is blocked by b.
-    fs::write(&flag, "").unwrap();
+    fs::write(support::declaration::source_path(&flag), "").unwrap();
     let (view, requests) = load(verify(
         &["--evals", "a/x,c/x,c/y", "--recursive", "--force"],
         1,

@@ -45,10 +45,15 @@ impl Project {
         let repo = root.path().join("repo");
         let folder = repo.join("notes");
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("notes.md"), "notes: R1 holds.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("notes.md")),
+            "notes: R1 holds.\n",
+        )
+        .unwrap();
         let profile = json!({"kind":"agent","backend":backend,
             "model":format!("{backend}-model"),"timeout_ms":20000});
         support::declaration::write(
+            &(repo),
             folder.join("index.artf"),
             json!({
                 "name":"notes",
@@ -82,7 +87,11 @@ impl Project {
     }
 
     fn limits(&self, limits: Value) {
-        fs::write(self.state.join("limits.json"), limits.to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(self.state.join("limits.json")),
+            limits.to_string(),
+        )
+        .unwrap();
     }
 
     fn command(&self, provider: &FakeProvider, state: &Path, args: &[&str]) -> Command {
@@ -141,7 +150,7 @@ impl Project {
     }
 
     fn events(&self, session: &str) -> Vec<Value> {
-        fs::read_to_string(self.sessions().join(format!("{session}.jsonl")))
+        support::declaration::read_text(self.sessions().join(format!("{session}.jsonl")))
             .unwrap()
             .lines()
             .map(|line| serde_json::from_str(line).unwrap())
@@ -531,7 +540,11 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert!(shown.contains(&format!("Request {reused} reused this review's result.")));
 
         // Once the reviewed files change, the answer says so.
-        fs::write(project.repo.join("notes/notes.md"), "notes: R1 fails.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(project.repo.join("notes/notes.md")),
+            "notes: R1 fails.\n",
+        )
+        .unwrap();
         let text = project.text(&provider, &["session", "send", &id, "And now?"], 0);
         assert!(
             text.starts_with(&format!(
@@ -753,14 +766,13 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
                     {
                         // Creating a JSONL filename is not the saved review header. The exact
                         // RUNNING request and the complete header must both be observable.
-                        let header =
-                            fs::read_to_string(file(session.as_str()))
-                                .ok()
-                                .and_then(|text| {
-                                    text.lines()
-                                        .next()
-                                        .and_then(|line| serde_json::from_str::<Value>(line).ok())
-                                });
+                        let header = support::declaration::read_text(file(session.as_str()))
+                            .ok()
+                            .and_then(|text| {
+                                text.lines()
+                                    .next()
+                                    .and_then(|line| serde_json::from_str::<Value>(line).ok())
+                            });
                         if header.is_some_and(|header| {
                             header["kind"] == "review"
                                 && header["sessionId"] == session.as_str()

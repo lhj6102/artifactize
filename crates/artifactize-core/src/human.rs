@@ -218,6 +218,11 @@ fn declarations(request: &Request) -> Result<RepoConfig, Mismatch> {
                         crate::config::Site {
                             kind: *artifact.kind.value()?,
                             path: artifact.path.value()?.clone(),
+                            definition: artifact
+                                .extra
+                                .get("definition")
+                                .and_then(serde_json::Value::as_str)
+                                .map(std::path::PathBuf::from)?,
                         },
                     ))
                 })

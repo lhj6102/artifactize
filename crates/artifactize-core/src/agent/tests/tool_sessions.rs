@@ -25,7 +25,8 @@ fn fixture(stop: &str) -> OwnedFixture {
     let log = fixture.directory.path().join("log");
     fs::create_dir(&log).unwrap();
     let path = fixture.config.root.join("index.artf");
-    let mut definition = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut definition =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     let mut views = harness::views(&log, "start", stop, "hold");
     let mut probe = views["agent_tools"]["act"].clone();
     probe["args"][1] = json!("probe");
@@ -33,8 +34,12 @@ fn fixture(stop: &str) -> OwnedFixture {
     views["agent_tools"]["probe"] = probe;
     views["agent_tools"]["act"]["input_schema"] = json!({"type":"object"});
     definition["views"] = views;
-    crate::test_declaration::write(&path, definition.to_string()).unwrap();
-    fs::write(fixture.config.root.join("harness.py"), harness::script()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, definition.to_string()).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.config.root.join("harness.py")),
+        harness::script(),
+    )
+    .unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     OwnedFixture::new(fixture)
 }
@@ -90,9 +95,12 @@ async fn cancellation_and_dropped_review_run_stop_even_before_readiness() {
         for cancel in [true, false] {
             let mut fixture = fixture("stop");
             let path = fixture.config.root.join("index.artf");
-            let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+            let mut declaration =
+                crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap())
+                    .unwrap();
             declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!(mode);
-            crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+            crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string())
+                .unwrap();
             fixture.config = read_workspace_config(&fixture.config.root).unwrap();
             let log = fixture.directory.path().join("log");
             let cancellation = CancellationToken::new();
@@ -123,10 +131,11 @@ async fn waiting_for_session_readiness_consumes_the_review_timeout() {
     let _clock = CLOCK.lock().await;
     let mut fixture = fixture("stop");
     let path = fixture.config.root.join("index.artf");
-    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!("unready");
     declaration["evals"][0]["profile"]["timeout_ms"] = json!(60_000);
-    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let log = fixture.directory.path().join("log");
     let mut future = Box::pin(owned_review(&fixture, CancellationToken::new()));
@@ -191,9 +200,10 @@ async fn an_unready_bound_call_waits_without_a_fixed_bound_until_cancelled() {
     let mut fixture = fixture("stop");
     let log = fixture.directory.path().join("log");
     let path = fixture.config.root.join("index.artf");
-    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["agent_sessions"]["app"]["start"]["args"][1] = json!("unready");
-    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let state = fixture.state();
     let cancellation = CancellationToken::new();
@@ -280,9 +290,10 @@ async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_
     // The caller process remains alive, but the failed supervisor's lease is gone.
     os::restore_directory_writes(&directory);
     let path = fixture.config.root.join("index.artf");
-    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration =
+        crate::test_declaration::read(crate::test_declaration::read_file(&path).unwrap()).unwrap();
     declaration["views"]["agent_sessions"]["app"]["stop"]["args"][1] = json!("stop");
-    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    crate::test_declaration::write(&fixture.config.root, &path, declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&fixture.config.root).unwrap();
     let next = fixture
         .ready_sessions(CancellationToken::new())

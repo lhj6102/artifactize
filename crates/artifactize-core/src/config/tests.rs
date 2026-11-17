@@ -878,9 +878,19 @@ pass_schema = {{ type = "object", properties.note = {{ type = "string" }}, addit
     };
     let write = |name: &str, kind: &str, limit: u32| {
         std::fs::create_dir_all(workspace.path().join(name)).unwrap();
+        std::fs::create_dir_all(workspace.path().join(".artifactize")).unwrap();
         std::fs::write(
-            workspace.path().join(name).join(CONFIG_FILE),
-            chain(name, kind, limit),
+            crate::test_declaration::source_path(
+                workspace
+                    .path()
+                    .join(".artifactize")
+                    .join(format!("{name}.artf")),
+            ),
+            chain(name, kind, limit).replacen(
+                &format!("name = \"{name}\""),
+                &format!("path = \"{name}/\""),
+                1,
+            ),
         )
         .unwrap();
     };
@@ -906,7 +916,7 @@ pass_schema = {{ type = "object", properties.note = {{ type = "string" }}, addit
     write("b", "whole", 3);
     write("c", "whole", 3);
     let error = read_workspace_config(workspace.path()).unwrap_err();
-    assert!(error.path.ends_with("b/index.artf"), "{error}");
+    assert!(error.path.ends_with(".artifactize/b.artf"), "{error}");
     assert!(
         error.message.contains("Invalid tool inputSchema"),
         "{error}"

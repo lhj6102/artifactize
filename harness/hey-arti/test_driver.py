@@ -44,6 +44,14 @@ def fake_builder(repo, case_id):
     """A predictable test double, intentionally not the golden Artifact partition."""
     def write(relative, text):
         path = repo / relative
+        if relative.endswith(".artf"):
+            data = driver.tomllib.loads(text)
+            name = data["name"]
+            target = (relative.removesuffix("index.artf") or "./") if relative.endswith("index.artf") or "select" in data else relative.removesuffix(".artf")
+            text = re.sub(r'^name\s*=.*$', "path = " + json.dumps(target), text, count=1, flags=re.MULTILINE)
+            if target.endswith("/"):
+                (repo / target).mkdir(parents=True, exist_ok=True)
+            path = repo / ".artifactize" / f"{name}.artf"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
@@ -109,8 +117,12 @@ def tool_request(args):
 def skill_examples(body):
     """Select declarations by their documented obligations, not Markdown order."""
     roles = {}
-    for text in re.findall(r"```toml\n(.*?)```", body, re.DOTALL):
+    for match in re.finditer(r"```toml\n(.*?)```", body, re.DOTALL):
+        text = match.group(1)
         declaration = driver.tomllib.loads(text)
+        labels = re.findall(r"`\.artifactize/([^`]+)\.artf`", body[:match.start()])
+        if "path" in declaration:
+            declaration["name"] = Path(labels[-1]).stem if labels else Path(declaration["path"].rstrip("/")).stem
         kinds = {evaluation["profile"]["kind"] for evaluation in declaration.get("evals", {}).values()}
         if declaration.get("basis"):
             role = "basis"
@@ -169,9 +181,9 @@ class HarnessTests(OwnedTestCase):
         if CANDIDATE is None:
             self.skipTest("explicit candidate validates example references")
         repo = self.root / "examples"
-        products = {f"{basis}/index.artf": roles["basis"][0],
-                    f"{application}/index.artf": roles["application"][0] + roles["preview"][0],
-                    f"{human}.svg.artf": roles["human"][0],
+        products = {f".artifactize/{basis}.artf": roles["basis"][0],
+                    f".artifactize/{application}.artf": roles["application"][0] + roles["preview"][0],
+                    f".artifactize/{human}.artf": roles["human"][0],
                     f"{basis}/requirements.md": "Fixture requirements.\n", f"{human}.svg": "<svg/>\n",
                     f"{application}/src/lib.rs": "// Source fixture.\n",
                     f"{application}/tools/preview.py": "# Static example only.\n"}
@@ -371,8 +383,8 @@ sys.stdin.read()
                         "docs-assets": {"content/check", "site/check"},
                         "monorepo": {"api/check", "ui/check", "ui/review", "integration/signoff"}}
             self.assertEqual(changed, expected[case_id], "real consumers, not independent inputs, must invalidate")
-            declaration = {"library-consumer": "independent/index.artf", "docs-assets": "site/theme/index.artf",
-                           "monorepo": "contract/index.artf"}[case_id]
+            declaration = {"library-consumer": ".artifactize/label.artf", "docs-assets": ".artifactize/theme.artf",
+                           "monorepo": ".artifactize/contract.artf"}[case_id]
             path = repo / declaration
             definition = path.read_text(encoding="utf-8")
             path.write_text(definition.replace('payload.instruction = "', 'payload.instruction = "Extra judgment. ', 1),
@@ -566,7 +578,7 @@ class HostLifecycleTests(OwnedTestCase):
         with mock.patch.object(driver, "run_command", side_effect=driver.ProcessExitError("host still owns inputs")):
             with self.assertRaises(driver.ProcessExitError):
                 host_smoke.smoke("claude", self.candidate, smoke_output, "test-model")
-        self.assertTrue((smoke_output / "repo/index.artf").exists())
+        self.assertTrue((smoke_output / "repo/.artifactize/smoke.artf").exists())
         self.assertTrue((smoke_output / "bin/artifactize").exists())
 
     def test_failed_cancellation_or_nonterminal_observation_never_deletes_run_inputs(self):
@@ -691,7 +703,8 @@ class HostLifecycleTests(OwnedTestCase):
         repo.mkdir()
         state.mkdir()
         (area / "evidence").mkdir()
-        (repo / "index.artf").write_text('''name = "owned-harness-run"
+        (repo / ".artifactize").mkdir()
+        (repo / ".artifactize/owned-harness-run.artf").write_text('''path = "./"
 fingerprint = false
 [evals.handoff]
 title = "Owned fixture waits at its Human boundary"

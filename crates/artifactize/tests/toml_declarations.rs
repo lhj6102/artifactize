@@ -210,7 +210,7 @@ fn datetimes_are_rejected_anywhere_with_the_full_owner_key_path() {
 fn write(root: &Path, path: &str, source: &str) {
     let file = root.join(path);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(file, source).unwrap();
+    support::declaration::write(root, file, source).unwrap();
 }
 
 #[test]
@@ -233,40 +233,13 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
         write(root.path(), "index.artf", source);
         let error = read_workspace_config(root.path()).unwrap_err().to_string();
         assert!(
-            error.contains("index.artf") && error.contains(detail) && error.contains(position),
+            error.contains(".artf") && error.contains(detail) && error.contains(position),
             "{error}"
         );
         if !position.is_empty() {
             assert!(error.contains("column"), "{error}");
         }
     }
-}
-
-#[test]
-fn legacy_files_fail_but_ignored_files_and_non_declarations_are_not_read() {
-    let root = support::os::tempdir();
-    write(root.path(), "index.artf", "name = 'a'");
-    write(root.path(), "nested/artifactize.json", "not JSON");
-    let error = read_workspace_config(root.path()).unwrap_err().to_string();
-    assert!(
-        error.contains("nested")
-            && error.ends_with(
-                "artifactize.json is no longer read; declare this Artifact in index.artf (TOML)."
-            ),
-        "{error}"
-    );
-    write(root.path(), ".artfignore", "nested/\n");
-    write(root.path(), "other/index.artf.backup", "not TOML");
-    assert_eq!(
-        read_workspace_config(root.path()).unwrap().artifacts.len(),
-        1
-    );
-    write(root.path(), ".artifactizeignore", "nested/\n");
-    let error = read_workspace_config(root.path()).unwrap_err().to_string();
-    assert!(
-        error.ends_with(".artifactizeignore was renamed to .artfignore."),
-        "{error}"
-    );
 }
 
 #[test]
@@ -352,52 +325,6 @@ fn non_finite_numbers_are_not_silently_converted_to_json_null() {
 }
 
 #[test]
-fn individually_ignored_legacy_markers_do_not_fail_discovery() {
-    let root = support::os::tempdir();
-    write(root.path(), "index.artf", "name = 'a'");
-    write(root.path(), "nested/index.artf", "name = 'b'");
-    write(root.path(), "nested/artifactize.json", "not JSON");
-    write(root.path(), ".artfignore", "artifactize.json\n");
-    assert_eq!(
-        read_workspace_config(root.path()).unwrap().artifacts.len(),
-        2
-    );
-}
-
-#[test]
-fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
-    let root = support::os::tempdir();
-    write(root.path(), "index.artf", "name = 'root'");
-    write(
-        root.path(),
-        "artifactize.json/index.artf",
-        "name = 'nested'",
-    );
-    write(root.path(), ".artfignore", "artifactize.json/\n");
-    let run_graph = || {
-        std::process::Command::new(support::os::cli())
-            .arg("--repo")
-            .arg(root.path())
-            .args(["config", "graph", "--json"])
-            .record_output()
-            .unwrap()
-    };
-    let ignored = run_graph();
-    assert!(ignored.status.success(), "{ignored:?}");
-    let ignored: Value = serde_json::from_slice(&ignored.stdout).unwrap();
-    assert_eq!(ignored["artifacts"].as_object().unwrap().len(), 1);
-    write(root.path(), ".artfignore", "");
-    let walked = run_graph();
-    assert!(walked.status.success(), "{walked:?}");
-    let walked: Value = serde_json::from_slice(&walked.stdout).unwrap();
-    assert_eq!(walked["artifacts"].as_object().unwrap().len(), 2);
-    assert_eq!(
-        walked["artifacts"]["root"]["nested"]["artifactize.json"],
-        "nested"
-    );
-}
-
-#[test]
 fn unsupported_toml_values_report_the_value_position_and_full_key_path() {
     let root = support::os::tempdir();
     for (source, path, line, column) in [
@@ -431,9 +358,7 @@ fn unsupported_toml_values_report_the_value_position_and_full_key_path() {
         write(root.path(), "index.artf", source);
         let error = read_workspace_config(root.path()).unwrap_err().to_string();
         assert!(
-            error.contains("index.artf")
-                && error.contains(path)
-                && error.contains("no JSON equivalent"),
+            error.contains(".artf") && error.contains(path) && error.contains("no JSON equivalent"),
             "{error}"
         );
         assert!(
@@ -510,7 +435,7 @@ fn semantic_errors_include_the_typed_key_path_and_source_position() {
         write(root.path(), "index.artf", source);
         let error = read_workspace_config(root.path()).unwrap_err().to_string();
         assert!(
-            error.contains("index.artf")
+            error.contains(".artf")
                 && error.contains(path)
                 && error.contains(&format!("line {line}, column")),
             "{error}"
@@ -596,7 +521,7 @@ fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
         write(root.path(), "index.artf", source);
         let error = read_workspace_config(root.path()).unwrap_err().to_string();
         assert!(
-            error.contains("index.artf")
+            error.contains(".artf")
                 && error.contains(path)
                 && error.contains(&format!("line {line}, column")),
             "{error}"
@@ -613,10 +538,16 @@ fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
         error.contains("line 2, column") && error.contains("review_policy"),
         "{error}"
     );
-    write(root.path(), "child/index.artf", "name = 'a'");
+    write(root.path(), "child/index.artf", "name = 'child'");
+    fs::create_dir_all(root.path().join(".artifactize/collision")).unwrap();
+    fs::write(
+        root.path().join(".artifactize/collision/a.artf"),
+        "path = \"child/\"\n",
+    )
+    .unwrap();
     let error = read_workspace_config(root.path()).unwrap_err().to_string();
     assert!(
-        error.contains("line 1, column 8: name") && error.contains("Duplicate Artifact name"),
+        error.contains("line 1, column 1") && error.contains("Duplicate Artifact name"),
         "{error}"
     );
 }
@@ -648,27 +579,6 @@ fn json_backed_tool_and_fingerprint_fields_report_the_offending_field_span() {
         let error = parse_declaration(source).unwrap_err();
         assert!(
             error.contains(&format!("line {line}, column {column}")),
-            "{error}"
-        );
-    }
-}
-
-#[test]
-fn explicitly_listed_artf_files_are_rejected_before_opening_for_artifactsum() {
-    let root = support::os::tempdir();
-    for input in ["index.artf", "missing.png.artf", "existing.png.artf"] {
-        write(root.path(), "existing.png", "pixels");
-        write(root.path(), "existing.png.artf", "name = 'image'");
-        write(
-            root.path(),
-            "index.artf",
-            &format!("name = 'a'\nfingerprint = {{ files = ['{input}'] }}"),
-        );
-        let error = read_workspace_config(root.path()).unwrap_err().to_string();
-        assert!(
-            error.contains("line 2, column")
-                && error.contains("fingerprint.files")
-                && error.contains("cannot be explicit artifactsum inputs"),
             "{error}"
         );
     }

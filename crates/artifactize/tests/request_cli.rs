@@ -34,6 +34,7 @@ impl Fixture {
         // Beside the child rather than around it, so that the child is no part of it.
         fs::create_dir_all(repo.join("parent")).unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("parent/index.artf"),
             json!({
                 "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
@@ -83,8 +84,13 @@ impl Fixture {
         } else {
             declaration["fingerprint"] = json!(false);
         }
-        fs::write(child.join("fingerprint"), "review-v1\n").unwrap();
-        support::declaration::write(child.join("index.artf"), declaration.to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(child.join("fingerprint")),
+            "review-v1\n",
+        )
+        .unwrap();
+        support::declaration::write(&(repo), child.join("index.artf"), declaration.to_string())
+            .unwrap();
         let state = root.path().join("state");
         root.track(&state, &repo);
         Self { repo, state, root }
@@ -319,7 +325,11 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         );
     }
     let fields = fixture.root.path().join("fields.json");
-    fs::write(&fields, " ".repeat(FIELDS_BYTES + 1)).unwrap();
+    fs::write(
+        support::declaration::source_path(&fields),
+        " ".repeat(FIELDS_BYTES + 1),
+    )
+    .unwrap();
     fixture.json(
         &[
             "request",
@@ -332,7 +342,11 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         ],
         2,
     );
-    fs::write(&fields, r#"{"approved":true}"#).unwrap();
+    fs::write(
+        support::declaration::source_path(&fields),
+        r#"{"approved":true}"#,
+    )
+    .unwrap();
     let submitted = fixture.json(
         &[
             "request",
@@ -444,6 +458,7 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let sibling = fixture.repo.join("sibling");
     fs::create_dir(&sibling).unwrap();
     support::declaration::write(
+        &fixture.repo,
         sibling.join("index.artf"),
         json!({
             "name":"sibling","fingerprint":false,"evals":[{"id":"check","title":"Once",
@@ -612,7 +627,11 @@ fn wait_observes_red_and_fingerprint_errors_and_explicit_cancellation_stops_clea
         "PROVISIONAL",
     );
     fixture.json(&["request", "claim", id], 0);
-    fs::write(fixture.repo.join("child/fingerprint"), "changed\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("child/fingerprint")),
+        "changed\n",
+    )
+    .unwrap();
     fixture.json(
         &[
             "request",

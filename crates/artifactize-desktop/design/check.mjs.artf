@@ -1,3 +1,0 @@
-name = "desktop-design-check"
-# The design's mechanical checker: an input of the design's evals and of desktop-ui/tokens-match-design.
-basis = true

@@ -13,10 +13,21 @@ pub struct ConfigCheck {
     pub ok: bool,
     pub artifacts: usize,
     pub evals: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 pub fn config_check(repo: &Path) -> Result<ConfigCheck, String> {
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     Ok(ConfigCheck {
+        notes: config
+            .artifacts
+            .values()
+            .filter_map(|artifact| {
+                crate::scope::validate_file_target(&config.root, artifact)
+                    .err()
+                    .map(|error| error.to_string())
+            })
+            .collect(),
         ok: true,
         artifacts: config.artifacts.len(),
         evals: config.evals.len(),

@@ -274,9 +274,9 @@ impl Parallelism {
 
 /// Every file visible to a review must still be its declared regular target.
 pub(crate) fn validate_file_inputs(config: &RepoConfig, eval: &Eval) -> Result<(), String> {
-    let scope = scope::eval_scope(config, eval).map_err(|error| error.to_string())?;
-    for artifact in scope.artifacts.values() {
-        scope::validate_file_target(&config.root, artifact).map_err(|error| error.to_string())?;
+    for id in dependencies(config, eval) {
+        scope::validate_file_target(&config.root, &config.artifacts[id])
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -292,6 +292,11 @@ pub async fn prepare<'a>(
     parallelism: &Parallelism,
     cancellation: CancellationToken,
 ) -> Result<BTreeMap<&'a ArtifactName, PreparedFingerprint>, String> {
+    let artifacts = artifacts.into_iter().collect::<Vec<_>>();
+    for id in &artifacts {
+        scope::validate_file_target(&config.root, &config.artifacts[*id])
+            .map_err(|error| error.to_string())?;
+    }
     let mut prepared = BTreeMap::new();
     prepare_each(
         config,
@@ -316,11 +321,12 @@ pub(crate) async fn prepare_each<'a>(
     cancellation: CancellationToken,
     mut ready: impl FnMut(&'a ArtifactName, PreparedFingerprint),
 ) -> Result<(), String> {
-    let artifacts: Vec<_> = artifacts.into_iter().collect();
-    for id in &artifacts {
-        scope::validate_file_target(&config.root, &config.artifacts[*id])
-            .map_err(|error| error.to_string())?;
-    }
+    // Missing or wrong-kind targets are per-eval preparation failures, not a global
+    // admission failure. They have no key; the broker reports the precise path.
+    let artifacts: Vec<_> = artifacts
+        .into_iter()
+        .filter(|id| scope::validate_file_target(&config.root, &config.artifacts[*id]).is_ok())
+        .collect();
     let mut seen = BTreeSet::new();
     let ids: Vec<&'a ArtifactName> = artifacts
         .into_iter()

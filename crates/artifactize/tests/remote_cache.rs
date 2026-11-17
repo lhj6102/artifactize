@@ -259,10 +259,11 @@ fn checked(output: Output, code: i32, token: &str) -> (String, String) {
 /// Artifacts `app` and `docs`, each with a runtime eval and a script fingerprint from `version`.
 fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
     let repo = root.join(name);
-    write(&repo, json!({"name":"root","basis":true}));
+    write(&(repo), &repo, json!({"name":"root","basis":true}));
     for (artifact, version) in [("app", "v1"), ("docs", docs)] {
         let folder = repo.join(artifact);
         write(
+            &(repo),
             &folder,
             json!({
                 "name":artifact,
@@ -277,7 +278,11 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
                 ],
             }),
         );
-        fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("version")),
+            format!("{artifact}-{version}\n"),
+        )
+        .unwrap();
     }
     repo
 }
@@ -285,6 +290,7 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
 fn human_repo(root: &Path, name: &str) -> PathBuf {
     let repo = root.join(name);
     write(
+        &(repo),
         &repo,
         json!({
             "name":"brand",
@@ -299,13 +305,17 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
             ],
         }),
     );
-    fs::write(repo.join("version"), "brand-v1\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("version")),
+        "brand-v1\n",
+    )
+    .unwrap();
     repo
 }
 
-fn write(folder: &Path, declaration: Value) {
+fn write(root: &Path, folder: &Path, declaration: Value) {
     fs::create_dir_all(folder).unwrap();
-    support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, folder.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
@@ -402,7 +412,11 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     );
 
     // Bob changes docs: it executes locally, and his read-only token publishes nothing.
-    fs::write(repo_b.join("docs/version"), "docs-v2\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo_b.join("docs/version")),
+        "docs-v2\n",
+    )
+    .unwrap();
     let (text, stderr) = bob.run(&repo_b, &["verify", "--wait", "--all"], 0);
     assert_eq!(
         line(&text, "Summary:"),
@@ -426,8 +440,16 @@ fn composition_keys_publish_and_reuse_across_machines() {
     let repos: Vec<_> = ["a", "b"]
         .map(|name| {
             let repo = runtime_repo(root.path(), name, "v1");
-            write(&repo.join("app/part"), json!({"name":"part","basis":true}));
-            fs::write(repo.join("app/part/input"), "part-v1").unwrap();
+            write(
+                &(repo),
+                &repo.join("app/part"),
+                json!({"name":"part","basis":true}),
+            );
+            fs::write(
+                support::declaration::source_path(repo.join("app/part/input")),
+                "part-v1",
+            )
+            .unwrap();
             repo
         })
         .into_iter()
@@ -449,7 +471,11 @@ fn composition_keys_publish_and_reuse_across_machines() {
             .iter()
             .all(|request| request["origin"].is_object())
     );
-    fs::write(repos[1].join("app/part/input"), "part-v2").unwrap();
+    fs::write(
+        support::declaration::source_path(repos[1].join("app/part/input")),
+        "part-v2",
+    )
+    .unwrap();
     let third = bob.json(&repos[1], &["verify", "--all", "--wait"], 0);
     assert_eq!(third["executionsStarted"], 1);
     let whole = third["requests"]
@@ -678,6 +704,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     let repo = |name: &str| {
         let repo = root.path().join(name);
         write(
+            &(repo),
             &repo,
             json!({
                 "name":"app",
@@ -696,7 +723,11 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
                 ],
             }),
         );
-        fs::write(repo.join("version"), "app-v1\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("version")),
+            "app-v1\n",
+        )
+        .unwrap();
         repo
     };
     let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
@@ -710,7 +741,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
 
     // Bob reviews again by force: it reads nothing from the store, so no record's last use
     // changes, and its RED is published as a newer record without `remote push`.
-    fs::write(repo_b.join("broken"), "").unwrap();
+    fs::write(support::declaration::source_path(repo_b.join("broken")), "").unwrap();
     let forced = bob.json(&repo_b, &["verify", "--wait", "--all", "--force"], 1);
     let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
     bob.completed_at(&repo_b, &forced, SECOND);
@@ -821,11 +852,16 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
         views["agent_sessions"]["app"][command]["execution_paths"] = json!(["harness.py"]);
     }
     write(
+        &(repo),
         &repo,
         json!({"name":"app", "fingerprint":{}, "views":views,
         "evals":[{"id":"check","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-model"},"payload":{"instruction":"Review."}}]}),
     );
-    fs::write(repo.join("harness.py"), support::tool_sessions::script()).unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("harness.py")),
+        support::tool_sessions::script(),
+    )
+    .unwrap();
     let server = Server::start(root.path());
     let token = server.token("alice", "read,publish");
     let consumer = Machine::new(&root, "bob", &server.url, &token);
@@ -899,10 +935,11 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
         assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
         serde_json::to_value(pins).unwrap()
     });
-    let expected: String = Sha256::digest(fs::read(repo.join("harness.py")).unwrap())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let expected: String =
+        Sha256::digest(support::declaration::read_file(repo.join("harness.py")).unwrap())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
     for key in ["app_app.start", "app_app.stop"] {
         assert_eq!(pins[key]["harness.py"], expected);
     }

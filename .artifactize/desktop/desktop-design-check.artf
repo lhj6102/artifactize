@@ -1,0 +1,3 @@
+# The design's mechanical checker: an input of the design's evals and of desktop-ui/tokens-match-design.
+basis = true
+path = "crates/artifactize-desktop/design/check.mjs"

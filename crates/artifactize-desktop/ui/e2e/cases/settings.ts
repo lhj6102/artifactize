@@ -1,3 +1,4 @@
+import { writeDeclaration } from "../declaration-fixtures.ts";
 // Settings through the real app and CLI: the modal over the screen, where each provider key
 // comes from (never its value), saved keys and custom providers as the CLI sees them, a
 // remote store's HTTP identity, persisted sign-in, status, dry run and logout, and the
@@ -444,7 +445,7 @@ export const scenarios: Scenario[] = [
 
       // An eval names it in backend and is reviewed through it.
       const folder = makeDirectory(nativePath(fixture.repo, "agent"));
-      writeText(nativePath(folder, "index.artf"), `name = "agent"
+      writeDeclaration(fixture.repo, nativePath(folder, "index.artf"), `name = "agent"
 
 [evals.review]
 title = "Review"
@@ -513,7 +514,7 @@ Review the agent folder."""
       const fixture = createOutside();
       const env = settingsEnvironment(fixture);
       // One saved GREEN result to push.
-      writeText(nativePath(fixture.repo, ".artf"), `name = "repo"\n[evals.check]\ntitle = "Check"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check."\n`);
+      writeDeclaration(fixture.repo, nativePath(fixture.repo, "index.artf"), `name = "repo"\n[evals.check]\ntitle = "Check"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check."\n`);
       git(fixture.repo, "init", "-q", "--initial-branch=master", fixture.repo);
       const verified = await verifyAll(fixture);
       assert.equal(verified.code, 0, verified.stdout);

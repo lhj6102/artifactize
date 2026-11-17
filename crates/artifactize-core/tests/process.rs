@@ -225,7 +225,8 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         let repo = root.path().join("repo");
         let state = root.path().join("state");
         std::fs::create_dir(&repo).unwrap();
-        std::fs::write(
+        support::declaration::write(
+            &repo,
             repo.join("index.artf"),
             "name = \"app\"\nfingerprint = {}\n[evals.review]\ntitle = \"Review\"\n\
              profile = { kind = \"human\" }\n[evals.review.payload]\ninstruction = \"Inspect.\"\n",
@@ -255,7 +256,7 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
             owner.start_time
         ));
         assert!(
-            repo.join("index.artf").is_file(),
+            repo.join(".artifactize/app.artf").is_file(),
             "explicit release retains inputs"
         );
         assert!(fixture.path().is_dir());

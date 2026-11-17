@@ -416,7 +416,7 @@ async function serve(): Promise<void> {
                 });
               }
             } else if (request.op === "change-declaration") {
-              const path = join(fixture.repo, "docs", "index.artf");
+              const path = join(fixture.repo, ".artifactize", "docs.artf");
               const title = `Docs criterion revision ${++edits}`;
               writeFileSync(path, readFileSync(path, "utf8").replace(/title = "[^"]*"/, `title = "${title}"`));
               return { text: `Changed docs/lint title to ${title}. The app has not been refreshed.` };

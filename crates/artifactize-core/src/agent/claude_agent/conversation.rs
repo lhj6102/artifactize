@@ -333,11 +333,11 @@ impl<'a, 'r, R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Conversation<'a, 'r, R
 
     fn check_model(&self, actual: Option<&str>) -> Result<(), Failure> {
         match actual {
-            Some(actual) if actual != self.session.model => Err(Failure::new(
+            Some(actual) if actual != self.session.model.as_str() => Err(Failure::new(
                 Code::ProviderError,
                 format!(
                     "Provider model mismatch: requested {:?}, received {actual:?}.",
-                    self.session.model
+                    self.session.model.as_str()
                 ),
             )),
             _ => Ok(()),

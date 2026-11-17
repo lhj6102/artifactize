@@ -25,9 +25,10 @@ fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
 
 use support::os::python;
 
-fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
+fn write_artifact(root: &Path, path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
     support::declaration::write(
+        root,
         path.join("index.artf"),
         json!({
             "name":name,
@@ -103,6 +104,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
     let repo = support::os::tempdir();
     write_artifact(
         repo.path(),
+        repo.path(),
         "a",
         json!({"inspect":tool("launch", "missing-program", &["{unknown}"])}),
         "Review.",
@@ -113,7 +115,13 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
             .to_string()
             .contains("Unknown Artifact reference")
     );
-    write_artifact(repo.path(), "a", json!({"inspect":valid}), "Review.");
+    write_artifact(
+        repo.path(),
+        repo.path(),
+        "a",
+        json!({"inspect":valid}),
+        "Review.",
+    );
     let output = Command::new(support::os::cli())
         .args([
             "--repo",
@@ -131,26 +139,30 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
 async fn catalog_is_human_only_scoped_and_collision_checked() {
     let repo = support::os::tempdir();
     let command = tool("output", &support::os::printf_program(), &["ok"]);
-    write_artifact(repo.path(), "root", json!({}), "Review.");
+    write_artifact(repo.path(), repo.path(), "root", json!({}), "Review.");
     write_artifact(
+        repo.path(),
         &repo.path().join("a"),
         "a",
         json!({"inspect":command}),
         "Inspect {b}.",
     );
     write_artifact(
+        repo.path(),
         &repo.path().join("b"),
         "b",
         json!({"inspect":command}),
         "Inspect {c}.",
     );
     write_artifact(
+        repo.path(),
         &repo.path().join("b/child"),
         "child",
         json!({"inspect":command}),
         "Review.",
     );
     write_artifact(
+        repo.path(),
         &repo.path().join("c"),
         "c",
         json!({"inspect":command}),
@@ -182,18 +194,26 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
         );
     }
     write_artifact(
+        repo.path(),
         &repo.path().join("a"),
         "a",
         json!({"inspect_b":command}),
         "Review.",
     );
     write_artifact(
+        repo.path(),
         &repo.path().join("b"),
         "b_a",
         json!({"inspect":command}),
         "Review.",
     );
-    write_artifact(repo.path(), "root", json!({}), "Review {a} and {b_a}.");
+    write_artifact(
+        repo.path(),
+        repo.path(),
+        "root",
+        json!({}),
+        "Review {a} and {b_a}.",
+    );
     let config = read_workspace_config(repo.path()).unwrap();
     assert!(
         Registry::new(&config, "root/review")
@@ -208,9 +228,13 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     let directory = support::os::tempdir();
     let repo = canonical(directory.path());
     let repo = repo.as_path();
-    write_artifact(repo, "root", json!({}), "Review.");
-    write_artifact(&repo.join("b"), "b", json!({}), "Review.");
-    fs::write(repo.join("b/input"), "input").unwrap();
+    write_artifact(repo, repo, "root", json!({}), "Review.");
+    write_artifact(repo, &repo.join("b"), "b", json!({}), "Review.");
+    fs::write(
+        support::declaration::source_path(repo.join("b/input")),
+        "input",
+    )
+    .unwrap();
     let owner = repo.join("a");
     let command = tool(
         "output",
@@ -224,9 +248,21 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
         ],
     );
     // An operand outside the eval's scope fails: the eval must reference what it uses.
-    write_artifact(&owner, "a", json!({"inspect":command.clone()}), "Review.");
+    write_artifact(
+        repo,
+        &owner,
+        "a",
+        json!({"inspect":command.clone()}),
+        "Review.",
+    );
     assert!(call(repo).await.is_error());
-    write_artifact(&owner, "a", json!({"inspect":command}), "Review with {b}.");
+    write_artifact(
+        repo,
+        &owner,
+        "a",
+        json!({"inspect":command}),
+        "Review with {b}.",
+    );
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
     let input = repo.join("b").join("input");
@@ -242,7 +278,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     assert!(!owner.join("injected").exists());
     let config = read_workspace_config(repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
-    fs::remove_file(&input).unwrap();
+    support::declaration::remove_file(&input).unwrap();
     // A link to a folder outside the repository redirects the operand.
     support::os::link_dir(&support::os::temp_root(), &input);
     assert!(
@@ -257,9 +293,9 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
 async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
     let directory = support::os::tempdir();
     let repo = canonical(directory.path());
-    write_artifact(&repo, "root", json!({}), "Review.");
+    write_artifact(&(repo), &repo, "root", json!({}), "Review.");
     let owner = repo.join("a");
-    write_artifact(&owner, "a", json!({}), "Review.");
+    write_artifact(&(repo), &owner, "a", json!({}), "Review.");
     let executable =
         support::os::working_directory_program(&owner, "unique-human-tool-not-on-path");
     let executable = support::os::path_text(&executable);
@@ -270,6 +306,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
         (executable.as_str(), true),
     ] {
         write_artifact(
+            &(repo),
             &owner,
             "a",
             json!({"inspect":tool("output", command, &[])}),
@@ -287,6 +324,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
 async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
     let repo = support::os::tempdir();
     write_artifact(
+        repo.path(),
         repo.path(),
         "a",
         json!({
@@ -312,6 +350,7 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         }
     );
     write_artifact(
+        repo.path(),
         repo.path(),
         "a",
         json!({
@@ -352,6 +391,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     use artifactize_core::review::log::{End, Kind, Stream, channel};
     let repo = support::os::tempdir();
     write_artifact(
+        repo.path(),
         repo.path(),
         "a",
         json!({
@@ -407,6 +447,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     );
     write_artifact(
         launched.path(),
+        launched.path(),
         "a",
         json!({"inspect":tool("launch", support::os::python_program(), &python(&waits))}),
         "Review.",
@@ -431,7 +472,11 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     );
     // Adopted while it runs, so its exit is confirmed before its repository is removed.
     support::os::wait_until(Duration::from_secs(30), || launched.own().is_some());
-    fs::write(launched.path().join("release"), "").unwrap();
+    fs::write(
+        support::declaration::source_path(launched.path().join("release")),
+        "",
+    )
+    .unwrap();
     assert_eq!(
         next(&mut events).await,
         Kind::Line {
@@ -456,9 +501,16 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         &args.iter().map(String::as_str).collect::<Vec<_>>(),
     );
     command["timeout_ms"] = json!(40);
-    write_artifact(repo.path(), "a", json!({"inspect":command}), "Review.");
+    write_artifact(
+        repo.path(),
+        repo.path(),
+        "a",
+        json!({"inspect":command}),
+        "Review.",
+    );
     assert_eq!(text(&call(repo.path()).await), "Human tool timed out.");
     write_artifact(
+        repo.path(),
         repo.path(),
         "a",
         json!({"inspect":tool("launch", &support::os::touch_program(), &["spawned"])}),
@@ -477,6 +529,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     assert!(!repo.path().join("spawned").exists());
     write_artifact(
         repo.path(),
+        repo.path(),
         "a",
         json!({"inspect":tool("launch", "missing-artifactize-human-program", &[])}),
         "Review.",
@@ -484,6 +537,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     assert!(call(repo.path()).await.is_error());
     let mut launched = Launched::new(repo);
     write_artifact(
+        launched.path(),
         launched.path(),
         "a",
         json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
@@ -499,7 +553,8 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| "launched".into());
     support::os::wait_until(Duration::from_secs(5), || {
-        fs::read_to_string(launched.path().join("marker")).unwrap_or_default() == expected
+        support::declaration::read_text(launched.path().join("marker")).unwrap_or_default()
+            == expected
             && launched.own().is_some()
     });
 }
@@ -508,8 +563,13 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
 async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
     for unwind in [false, true] {
         let repo = support::os::tempdir();
-        fs::write(repo.path().join("hold-handoff"), "").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.path().join("hold-handoff")),
+            "",
+        )
+        .unwrap();
         write_artifact(
+            repo.path(),
             repo.path(),
             "a",
             json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
@@ -532,7 +592,7 @@ async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
             assert!(!unwind, "pending detached launch unwind probe");
         }));
         assert_eq!(result.is_err(), unwind);
-        let pid = fs::read_to_string(root.join("pid"))
+        let pid = support::declaration::read_text(root.join("pid"))
             .unwrap()
             .parse()
             .unwrap();
@@ -571,7 +631,7 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
         support::os::assert_detached(pid);
         assert!(support::os::running(pid), "detached child is still running");
         assert_eq!(
-            fs::read_to_string(launched.path().join("marker")).unwrap(),
+            support::declaration::read_text(launched.path().join("marker")).unwrap(),
             "reviewer-marker"
         );
         let start = support::os::start_time(pid);
@@ -597,6 +657,7 @@ async fn human_environment_and_launch_probe() {
     let repo = Path::new(&repo);
     let output = support::os::tempdir();
     write_artifact(
+        repo,
         repo,
         "a",
         json!({
@@ -628,8 +689,10 @@ async fn human_environment_and_launch_probe() {
             support::os::path_text(&repo.join("real-config"))
         )
     );
-    let mut declaration: Value =
-        support::declaration::read(fs::read(repo.join("index.artf")).unwrap()).unwrap();
+    let mut declaration: Value = support::declaration::read(
+        support::declaration::read_file(repo.join("index.artf")).unwrap(),
+    )
+    .unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({
         "id":"agent",
         "title":"Agent",
@@ -649,7 +712,7 @@ async fn human_environment_and_launch_probe() {
     });
     declaration["views"]["human_tools"]["inspect"] =
         tool("launch", support::os::python_program(), &python(LAUNCH));
-    support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(repo, repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());
     let result = tools::Registry::new(&config, "a/agent")
@@ -672,8 +735,9 @@ async fn human_environment_and_launch_probe() {
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(result.content(), [Content::Launch { launched: true }]);
     tokio::time::timeout(support::os::patience(Duration::from_secs(2)), async {
-        while fs::read_to_string(repo.join("marker")).unwrap_or_default() != "reviewer-marker"
-            || fs::read_to_string(repo.join("pid"))
+        while support::declaration::read_text(repo.join("marker")).unwrap_or_default()
+            != "reviewer-marker"
+            || support::declaration::read_text(repo.join("pid"))
                 .ok()
                 .and_then(|text| text.parse::<u32>().ok())
                 .is_none()

@@ -78,6 +78,7 @@ impl Fixture {
         let repo = self.root.path().join(name);
         fs::create_dir_all(&repo).unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("index.artf"),
             json!({"name":name,"fingerprint":false,"evals":evals}).to_string(),
         )

@@ -45,7 +45,7 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     let _lease = support::runs::RepoLease::new(root, &state, &repo);
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     verify_at(&repo, &state, "2026-01-01T00:00:00Z").await;

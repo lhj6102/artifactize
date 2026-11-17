@@ -23,7 +23,7 @@ needs, in their terms, and link the page for the rest.
 
 | Concept, for the user | Page |
 |---|---|
-| An **Artifact** is a part of the project that gets reviewed: a folder, one file, or the project's graph itself (declared by the repository-root `.artf`). | [Artifact](https://artifactize.dev/docs/features/artifact.html), [Declarations](https://artifactize.dev/docs/features/declarations.html) |
+| An **Artifact** is a part of the project that gets reviewed: a folder, one file, or selected paths, declared in `.artifactize/<name>.artf` with an explicit `path`. | [Artifact](https://artifactize.dev/docs/features/artifact.html), [Declarations](https://artifactize.dev/docs/features/declarations.html) |
 | An **eval** is one check on an Artifact that ends in a verdict: a command (runtime), a model (Agent) or a person (Human). | [Eval](https://artifactize.dev/docs/features/eval.html), [Runtime](https://artifactize.dev/docs/features/runtime.html), [Agent](https://artifactize.dev/docs/features/agent.html), [Human](https://artifactize.dev/docs/features/human.html) |
 | An eval names each input it uses as `{name}`; when an input changes, the evals that use it run again, and so do the evals of every Artifact it is a part of; the rest is reused. | [Eval dependencies](https://artifactize.dev/docs/features/artifact.html#eval-dependencies), [Fingerprint](https://artifactize.dev/docs/features/fingerprint.html) |
 | The user only asks for **verify**; artifactize decides the order, what to reuse and what to run. | [Evaluation Run](https://artifactize.dev/docs/features/run.html) |
@@ -188,8 +188,7 @@ verify again: the new Run reuses that sign-off. No keep-alive turns or polling l
   grows. Use `basis = true` only for an input the team agrees nobody reviews. Keep
   the default fingerprint.
 - **Composition.** Make an Artifact a part of a whole when the whole cannot pass while
-  the part fails: nest its folder in the whole's folder, or list it in the whole's
-  `parts` when it lives elsewhere or several wholes share it; `verify whole` then
+  the part fails: list it in the whole's `parts`, wherever its target or definition lives; `verify whole` then
   covers the part. Each part checks what it owns and the
   whole checks only how its parts work together, naming the parts its evals use. A
   part that is one file is a file Artifact; one whose files lie spread in a larger folder
@@ -230,20 +229,20 @@ specification, and a logo a person signs off. Adapt names and commands; the
 [Declarations](https://artifactize.dev/docs/features/declarations.html) page has
 the full rules.
 
-`spec/index.artf`, only if the team agrees nobody reviews it:
+`.artifactize/spec.artf`, only if the team agrees nobody reviews it:
 
 ```toml
-name = "spec"
+path = "spec/"
 basis = true
 
 [views.agent_tools]
 read = { builtin = "read" }
 ```
 
-`app/index.artf`:
+`.artifactize/app.artf`:
 
 ```toml
-name = "app"
+path = "app/"
 tags = ["type:code"]
 
 [views.agent_tools]
@@ -264,10 +263,10 @@ pass_schema = { type = "object", properties = { summary = { type = "string", min
 fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string" }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
 ```
 
-`logo.svg.artf`:
+`.artifactize/logo.artf`:
 
 ```toml
-name = "logo"
+path = "logo.svg"
 
 [evals.signoff]
 title = "The logo is approved for publication"

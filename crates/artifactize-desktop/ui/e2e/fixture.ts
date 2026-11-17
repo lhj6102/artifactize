@@ -1,3 +1,4 @@
+import { writeDeclaration } from "./declaration-fixtures.ts";
 // Fixture state for the end-to-end tests, built only through the real `artifactize` CLI:
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
@@ -183,7 +184,7 @@ function declare(repo: NativePath, notes = "# Release notes\n- Ready to ship.\n"
     ["ship", SHIP],
     ["docs", DOCS],
   ]) {
-    writeText(nativePath(makeDirectory(nativePath(repo, name)), "index.artf"), text);
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, name)), "index.artf"), text);
   }
   writeText(nativePath(repo, "release", "notes.md"), notes);
   writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked.\n");
@@ -211,7 +212,7 @@ export function createHeld(): Fixture & { gate: NativePath } {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const gate = nativePath(root, "held.gate");
-    writeText(nativePath(makeDirectory(nativePath(repo, "held")), "index.artf"), `name = "held"
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "held")), "index.artf"), `name = "held"
 
 [evals.check]
 title = "Check held"
@@ -234,7 +235,7 @@ export type Checking = Fixture & { gate: NativePath; runs: NativePath };
 function slowDeclaration(fixture: { gate: NativePath; runs: NativePath }): string {
   const script = commandFields("fingerprint", portablePath(fixture.gate), portablePath(fixture.runs));
   return `name = "slow"
-fingerprint = { script = { ${script}, files = ["index.artf"], timeout_ms = 600000 } }
+fingerprint = { script = { ${script}, files = [], timeout_ms = 600000 } }
 
 [evals.check]
 title = "Check slow"
@@ -250,8 +251,8 @@ export function createChecking(): Checking {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const fixture = { root, repo, state: nativePath(root, "state"), gate: nativePath(root, "fingerprint.gate"), runs: nativePath(root, "fingerprint.runs") };
-    writeText(nativePath(makeDirectory(nativePath(repo, "slow")), "index.artf"), slowDeclaration(fixture));
-    writeText(nativePath(makeDirectory(nativePath(repo, "quick")), "index.artf"), `name = "quick"
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "slow")), "index.artf"), slowDeclaration(fixture));
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "quick")), "index.artf"), `name = "quick"
 fingerprint = { files = ["."] }
 
 [evals.check]
@@ -259,7 +260,7 @@ title = "Check quick"
 profile = ${runtimeProfile()}
 payload.instruction = "Check quick with {slow}."
 `);
-    writeText(nativePath(makeDirectory(nativePath(repo, "other")), "index.artf"), `name = "other"
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "other")), "index.artf"), `name = "other"
 fingerprint = { files = ["."] }
 
 [evals.signoff]
@@ -328,7 +329,7 @@ export async function addRepository(fixture: Fixture, name: string, signoff: Sig
 
 function humanExample(repo: NativePath, name: string, criterion: string, title: string, tags: string[] = []): void {
   const directory = makeDirectory(nativePath(repo, name));
-  writeText(nativePath(directory, "index.artf"), `name = ${JSON.stringify(name)}
+  writeDeclaration(repo, nativePath(directory, "index.artf"), `name = ${JSON.stringify(name)}
 tags = ${JSON.stringify(tags)}
 
 [evals.${criterion}]
@@ -432,7 +433,7 @@ export function createParts(): Fixture {
       [["docs"], `parts = ["site"]\n${check("docs", " Read {lib}.")}`],
       [["guide"], check("guide", " Read {suite}.")],
     ] as const) {
-      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+      writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
     }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
@@ -458,7 +459,7 @@ export function createJoined(): Fixture {
       [["pack", "bad"], check("bad", "fail")],
       [["user"], check("user", "pass", " Read {good} and {bad}.")],
     ] as const) {
-      writeText(nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
+      writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, ...folder)), "index.artf"), text);
     }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
@@ -490,7 +491,7 @@ export function createChain(count: number): Fixture {
   instruction = """
   Check ${reference}."""
   `;
-      writeText(nativePath(makeDirectory(nativePath(repo, name(index))), "index.artf"), text);
+      writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, name(index))), "index.artf"), text);
     }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
@@ -581,7 +582,7 @@ export function createSharedBranch(): { fixture: Fixture; master: string; shared
  * an Artifact `plain` verified GREEN; returns its path and its Run. */
 export function addFolder(fixture: Fixture, name: string): { folder: NativePath; run: string } {
   const folder = nativePath(fixture.root, name);
-  writeText(nativePath(makeDirectory(folder), "index.artf"), `name = "plain"
+  writeDeclaration(folder, nativePath(makeDirectory(folder), "index.artf"), `name = "plain"
 
 [evals.check]
 title = "Check plain"
@@ -703,7 +704,7 @@ export async function createStates(): Promise<Fixture> {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
     const artifact = (name: string, operation: Operation, instruction: string, timeoutMs?: number) => {
-      writeText(
+      writeDeclaration(repo,
         nativePath(makeDirectory(nativePath(repo, name)), "index.artf"),
         `name = "${name}"
 
@@ -726,7 +727,7 @@ export async function createStates(): Promise<Fixture> {
     artifact("fine", "pass", "Pass.");
     artifact("after", "pass", "Run after {crash}.");
     // A sign-off nobody has given yet, and what waits for it.
-    writeText(
+    writeDeclaration(repo,
       nativePath(makeDirectory(nativePath(repo, "gate")), "index.artf"),
       `name = "gate"
 
@@ -774,9 +775,9 @@ export function createEvals(names: string[], input?: string): Fixture {
   `,
       )
       .join("");
-    writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), `name = "app"\n${evals}`);
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), `name = "app"\n${evals}`);
     if (input) {
-      writeText(nativePath(makeDirectory(nativePath(repo, input)), "index.artf"),
+      writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, input)), "index.artf"),
         `name = "${input}"\n[evals.ready]\ntitle = "Check ready"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check ready."\n`);
     }
     git(repo, "init", "-q", "--initial-branch=master", repo);
@@ -805,19 +806,19 @@ profile = ${runtimeProfile(operation)}
 instruction = """
 ${instruction}"""
 `;
-    writeText(nativePath(makeDirectory(nativePath(repo, "red")), "index.artf"), `name = "red"\n${check("check", "fail", "Fail.")}`);
-    writeText(nativePath(makeDirectory(nativePath(repo, "down")), "index.artf"), `name = "down"\n${check("check", "pass", "Run after {red}.")}`);
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "red")), "index.artf"), `name = "red"\n${check("check", "fail", "Fail.")}`);
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "down")), "index.artf"), `name = "down"\n${check("check", "pass", "Run after {red}.")}`);
     // alpha's title is wider than the Detail: its row wraps the title, never its status.
     const title = "Alpha follows every rule of the frontend checklist the desktop UI keeps, from its state owners to its effects";
     const app = (changed: boolean) => `name = "app"\n${check("alpha", "pass", "Check alpha.", title)}${
       check("beta", "pass", changed ? "Check beta again." : "Check beta.")}${check("gamma", "pass", changed ? "Check gamma again." : "Check gamma.")}`;
-    writeText(nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), app(false));
+    writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "app")), "index.artf"), app(false));
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
     if (status !== 1) throw new Error(`verify exited ${status}, expected 1 (RED)`);
     settleRuns(cli(), repo, state);
-    writeText(nativePath(repo, "app", "index.artf"), app(true));
+    writeDeclaration(repo, nativePath(repo, "app", "index.artf"), app(true));
     return fixture;
   });
 }

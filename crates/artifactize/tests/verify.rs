@@ -91,6 +91,7 @@ impl Fixture {
 
     fn runtime(&self, program: &str, args: &[&str]) {
         support::declaration::write(
+            &(self.repo),
             self.repo.join("index.artf"),
             json!({
                 "name":"test",
@@ -179,7 +180,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     let output_dir = Path::new(green["runDir"].as_str().unwrap());
     assert!(output_dir.starts_with(&fixture.state));
     assert_eq!(
-        fs::read_to_string(output_dir.join("output/result.txt")).unwrap(),
+        support::declaration::read_text(output_dir.join("output/result.txt")).unwrap(),
         "runtime output\n"
     );
     assert_eq!(request("red/check")["result"]["exitCode"], 7);
@@ -283,9 +284,18 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
             Some(2)
         );
     }
-    fs::write(fixture.repo.join("unreviewed.json"), "irrelevant").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("unreviewed.json")),
+        "irrelevant",
+    )
+    .unwrap();
     let empty = Fixture::new();
-    support::declaration::write(empty.repo.join("index.artf"), r#"{"name":"unreviewed"}"#).unwrap();
+    support::declaration::write(
+        &(empty.repo),
+        empty.repo.join("index.artf"),
+        r#"{"name":"unreviewed"}"#,
+    )
+    .unwrap();
     assert_eq!(
         empty
             .command()
@@ -371,14 +381,15 @@ fn human_waiting_does_not_prevent_runtime_execution() {
     let fixture = Fixture::new();
     fixture.runtime(&support::os::true_program(), &[]);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({
         "id":"review",
         "title":"Human review",
         "profile":{"kind":"human"},
         "payload":{"instruction":"Review."},
     }));
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     // Observe the Human admission barrier after the runtime eval executed.
     let run = fixture.observed(&["--all"], 0, false);
     assert_eq!(run["requests"][0]["status"], "GREEN");
@@ -397,6 +408,7 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
         "args":["append",support::os::path_text(&marker),"run"]});
     let report = json!({"kind":"runtime","command":support::os::true_program(),"args":[]});
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
@@ -407,10 +419,19 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     ] {
         let folder = fixture.repo.join(artifact);
         fs::create_dir(&folder).unwrap();
-        fs::write(folder.join("version"), "v1\n").unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("version")),
+            "v1\n",
+        )
+        .unwrap();
         let declaration = json!({"name":artifact,"fingerprint":fingerprint,"evals":[{"id":eval,
             "title":eval,"profile":profile,"payload":{"instruction":instruction}}]});
-        support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
+        support::declaration::write(
+            &(fixture.repo),
+            folder.join("index.artf"),
+            declaration.to_string(),
+        )
+        .unwrap();
     }
     let reuse_only = ["--all", "--reuse-only", "runtime"];
 
@@ -438,7 +459,7 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     let reused = fixture.verify(&reuse_only, 0);
     assert_eq!(reused["status"], "GREEN");
     assert_eq!(reused["executionsStarted"], 0);
-    assert_eq!(fs::read_to_string(&marker).unwrap(), "run\n");
+    assert_eq!(support::declaration::read_text(&marker).unwrap(), "run\n");
 }
 
 fn wait_for(mut child: RunChild) -> Output {
@@ -470,7 +491,7 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
     )
     .unwrap();
     support::os::wait_until(Duration::from_secs(5), || {
-        let marker_ready = fs::read_to_string(&marker)
+        let marker_ready = support::declaration::read_text(&marker)
             .ok()
             .is_some_and(|contents| contents.trim().parse::<u32>().is_ok_and(|pid| pid > 0));
         let child_saved = database
@@ -502,7 +523,7 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
         .unwrap();
     assert!(show.status.success());
     assert!(json_output(&show)["requests"][0]["result"].is_null());
-    let grandchild = fs::read_to_string(marker).unwrap();
+    let grandchild = support::declaration::read_text(marker).unwrap();
     assert!(
         !support::os::running(grandchild.trim().parse().unwrap()),
         "descendant still running"
@@ -550,7 +571,8 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     let fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
     let source = fixture.repo.join("review/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&source).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&source).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({
         "brief": {
             "kind":"runtime",
@@ -559,8 +581,8 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
             "timeout_ms":support::os::slow(1000),
         },
     });
-    support::declaration::write(&source, declaration.to_string()).unwrap();
-    let original = fs::read(&source).unwrap();
+    support::declaration::write(&(fixture.repo), &source, declaration.to_string()).unwrap();
+    let original = support::declaration::read_file(&source).unwrap();
     let selected = fixture
         .command()
         .args([
@@ -591,7 +613,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
             support::os::path_text(&fixture.repo.join("input").join("data.txt"))
         )
     );
-    assert_eq!(fs::read(&source).unwrap(), original);
+    assert_eq!(support::declaration::read_file(&source).unwrap(), original);
 
     let path = fixture._root.path().join("ids");
     for (flag, json, lines) in [
@@ -607,7 +629,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         ),
     ] {
         for content in [json.to_owned(), format!("\u{feff}{lines}")] {
-            support::declaration::write(&path, content).unwrap();
+            support::declaration::write(&fixture.repo, &path, content).unwrap();
             let output = fixture
                 .command()
                 .args(["verify", "--wait", flag])
@@ -807,6 +829,7 @@ fn removed_gate_bypass_is_rejected_in_declarations_verify_and_status() {
     }
     for policy in ["green", "ignore"] {
         support::declaration::write(
+            &(fixture.repo),
             fixture.repo.join("index.artf"),
             json!({"name":"root","basis":true,"review_policy":{"dependency_gates":policy}})
                 .to_string(),
@@ -824,8 +847,12 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     fixture.runtime(&support::os::true_program(), &[]);
     // An unreviewed part is an obligation of the Artifact it is part of.
     fs::create_dir(fixture.repo.join("input")).unwrap();
-    support::declaration::write(fixture.repo.join("input/index.artf"), r#"{"name":"input"}"#)
-        .unwrap();
+    support::declaration::write(
+        &(fixture.repo),
+        fixture.repo.join("input/index.artf"),
+        r#"{"name":"input"}"#,
+    )
+    .unwrap();
     let individual = fixture.verify(&["test"], 4);
     assert_eq!(individual["validation"]["obligations"], json!(["input"]));
     assert_eq!(individual["requests"][0]["status"], "GREEN");
@@ -840,6 +867,7 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     assert!(String::from_utf8_lossy(&text.stdout).contains("Unmet obligation: input"));
 
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"test","basis":true}"#,
     )
@@ -848,6 +876,7 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     assert!(basis["requests"].as_array().unwrap().is_empty());
     assert_eq!(basis["validation"]["obligations"], json!(["input"]));
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,
     )
@@ -860,9 +889,10 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
     let fixture = Fixture::runtime_fixture();
     for folder in ["blocked", "red"] {
         let path = fixture.repo.join(folder).join("index.artf");
-        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+        let mut declaration: Value =
+            support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
         declaration["evals"][0]["profile_variants"] = json!({"pass":{"kind":"runtime","command":support::os::echo_program(),"args":["{input}"]}});
-        support::declaration::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     }
     let recursive = fixture.verify(&["blocked", "--recursive", "--profile", "pass"], 0);
     assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
@@ -897,11 +927,12 @@ fn recursive_eval_selection_includes_sibling_evals_on_the_same_artifact() {
     let fixture = Fixture::new();
     fixture.runtime(&support::os::true_program(), &[]);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     let mut sibling = declaration["evals"][0].clone();
     sibling["id"] = json!("sibling");
     declaration["evals"].as_array_mut().unwrap().push(sibling);
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     let individual = fixture.verify(&["--eval", "test/check"], 4);
     assert_eq!(individual["validation"]["obligations"], json!(["test"]));
     let recursive = fixture.verify(&["--eval", "test/check", "--recursive", "--force"], 0);
@@ -919,14 +950,15 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         let fixture = Fixture::new();
         fixture.runtime(&support::os::true_program(), &[]);
         let path = fixture.repo.join("index.artf");
-        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+        let mut declaration: Value =
+            support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
         declaration["evals"].as_array_mut().unwrap().push(json!({
             "id":"agent",
             "title":"Agent",
             "profile":{"kind":"agent","backend":backend,"model":"exact-model"},
             "payload":{"instruction":"Review."},
         }));
-        support::declaration::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
             .args(["verify", "--wait", "--all", "--json"])
@@ -967,14 +999,15 @@ fn runtime_and_agent_starts_share_the_run_budget() {
     let fixture = Fixture::new();
     fixture.runtime(&support::os::true_program(), &[]);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({
         "id":"zz-agent",
         "title":"Agent",
         "profile":{"kind":"agent","backend":"openai","model":"not-called"},
         "payload":{"instruction":"Review."},
     }));
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     let run = fixture.verify(&["--all", "--jobs", "1", "--max-executions", "1"], 4);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][0]["status"], "GREEN");
@@ -1028,7 +1061,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         assert_eq!(saved.id.as_str(), id);
         assert_eq!(saved.status(), artifactize_core::types::RunStatus::Running);
         drop(database);
-        fs::write(&release, "").unwrap();
+        fs::write(support::declaration::source_path(&release), "").unwrap();
         let announcement = line.to_owned();
         let output = wait_for(child);
         assert_eq!(String::from_utf8_lossy(&output.stderr), announcement);
@@ -1039,7 +1072,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         } else {
             assert!(stdout.starts_with(&format!("Run: {id}\n")), "{stdout}");
         }
-        fs::remove_file(&release).unwrap();
+        support::declaration::remove_file(&release).unwrap();
     }
 }
 

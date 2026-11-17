@@ -23,8 +23,12 @@ impl Fixture {
         fs::create_dir_all(&output).unwrap();
         // The paths tools see, which on Windows are long and without `\\?\`.
         let repo = crate::platform::canonicalize(&repo).unwrap();
-        fs::write(output.join("retained"), "caller-owned").unwrap();
-        write_artifact(&repo, "a", json!({"inspect":tool}), "Review a.");
+        fs::write(
+            crate::test_declaration::source_path(output.join("retained")),
+            "caller-owned",
+        )
+        .unwrap();
+        write_artifact(&(repo), &repo, "a", json!({"inspect":tool}), "Review a.");
         Self {
             directory,
             repo,
@@ -54,9 +58,10 @@ impl Fixture {
     }
 }
 
-fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
+fn write_artifact(root: &Path, path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
     crate::test_declaration::write(
+        root,
         path.join("index.artf"),
         json!({
             "name":name,
@@ -215,7 +220,11 @@ async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
     let mut tool = command();
     tool["execution_paths"] = json!(["shared.txt"]);
     let fixture = Fixture::new(tool);
-    fs::write(fixture.repo.join("shared.txt"), "material").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("shared.txt")),
+        "material",
+    )
+    .unwrap();
     fixture.script(
         &r#"import json, os, sys
 request = json.load(sys.stdin)
@@ -364,7 +373,11 @@ print(json.dumps({{'content':[
             ]
         );
     }
-    fs::write(fixture.repo.join("source"), &image::tests::fixtures()[0].1).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("source")),
+        &image::tests::fixtures()[0].1,
+    )
+    .unwrap();
     let (file_link, directory_link) = crate::test_os::python_output_links();
     for setup in [
         "path = request['context']['artifactPath'] + '/source'",
@@ -468,6 +481,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     assert!(fixture.call(json!({})).await.is_error());
     tool["command"] = json!("./unique-artifactize-tool-not-on-path");
     write_artifact(
+        &(fixture.repo),
         &fixture.repo,
         "a",
         json!({"inspect":tool.clone()}),
@@ -478,6 +492,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     tool["command"] = json!(program);
     tool["args"] = json!(args);
     write_artifact(
+        &(fixture.repo),
         &fixture.repo,
         "a",
         json!({"inspect":tool.clone()}),
@@ -486,7 +501,13 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
     tool["command"] = json!(printf_program());
     tool["args"] = json!(["%s", "from PATH"]);
-    write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
+    write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "a",
+        json!({"inspect":tool}),
+        "Review.",
+    );
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
 }
 
@@ -506,7 +527,13 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
     ] {
         let mut tool = command();
         tool[key] = value;
-        write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
+        write_artifact(
+            &(fixture.repo),
+            &fixture.repo,
+            "a",
+            json!({"inspect":tool}),
+            "Review.",
+        );
         if let Ok(config) = read_workspace_config(&fixture.repo) {
             let registry = Registry::new(&config, "a/review").unwrap();
             assert!(
@@ -523,7 +550,13 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
         }
         assert!(!fixture.repo.join("spawned").exists());
     }
-    write_artifact(&fixture.repo, "a", json!({"inspect":command()}), "Review.");
+    write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "a",
+        json!({"inspect":command()}),
+        "Review.",
+    );
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     let result = registry
@@ -541,31 +574,46 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
 #[tokio::test]
 async fn registry_admits_only_eval_scope_and_agent_audience() {
     let fixture = Fixture::new(command());
-    write_artifact(&fixture.repo, "root", json!({}), "Review root.");
     write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "root",
+        json!({}),
+        "Review root.",
+    );
+    write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("a"),
         "a",
         json!({"inspect":command()}),
         "Inspect {b}.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("b"),
         "b",
         json!({"read":{"builtin":"read"}}),
         "Depends on {c}.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("b/child"),
         "child",
         json!({"list":{"builtin":"list"}}),
         "Review child.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("c"),
         "c",
         json!({"grep":{"builtin":"grep"}}),
         "Review c.",
     );
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("b/notes.md")),
+        "notes",
+    )
+    .unwrap();
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     assert_eq!(
@@ -581,7 +629,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         !registry
             .call(
                 "read_b",
-                json!({"path":"index.artf"}),
+                json!({"path":"notes.md"}),
                 &fixture.output,
                 CancellationToken::new()
             )
@@ -607,14 +655,22 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
 #[test]
 fn concatenated_tool_name_collisions_are_rejected() {
     let fixture = Fixture::new(command());
-    write_artifact(&fixture.repo, "root", json!({}), "Review {a} and {b_a}.");
     write_artifact(
+        &(fixture.repo),
+        &fixture.repo,
+        "root",
+        json!({}),
+        "Review {a} and {b_a}.",
+    );
+    write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("a"),
         "a",
         json!({"inspect_b":{"builtin":"read"}}),
         "Review.",
     );
     write_artifact(
+        &(fixture.repo),
         &fixture.repo.join("b"),
         "b_a",
         json!({"inspect":{"builtin":"read"}}),
@@ -689,27 +745,45 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 #[tokio::test]
 async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
     let fixture = Fixture::new(command());
-    let mut root: Value =
-        crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
+    let mut root: Value = crate::test_declaration::read(
+        crate::test_declaration::read_file(fixture.repo.join("index.artf")).unwrap(),
+    )
+    .unwrap();
     root["views"]["human_tools"] = json!({
         "humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]},
     });
+    root["parts"] = json!(["leaf"]);
     root["evals"][0]["payload"]["instruction"] = json!("Review {leaf} and {part}.");
-    crate::test_declaration::write(fixture.repo.join("index.artf"), root.to_string()).unwrap();
+    crate::test_declaration::write(
+        &(fixture.repo),
+        fixture.repo.join("index.artf"),
+        root.to_string(),
+    )
+    .unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
     fs::create_dir_all(fixture.repo.join("parts")).unwrap();
-    fs::write(fixture.repo.join("parts/one.txt"), "one").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("parts/one.txt")),
+        "one",
+    )
+    .unwrap();
     crate::test_declaration::write(
+        &(fixture.repo),
         fixture.repo.join("part.artf"),
         json!({"name":"part","select":["parts/one.txt"]}).to_string(),
     )
     .unwrap();
     crate::test_declaration::write(
+        &(fixture.repo),
         fixture.repo.join("cases/index.artf"),
         json!({"name":"leaf"}).to_string(),
     )
     .unwrap();
-    fs::write(fixture.repo.join("cases/input.txt"), "material").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(fixture.repo.join("cases/input.txt")),
+        "material",
+    )
+    .unwrap();
     fixture.script(
         "import json,sys\nrequest=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':request['context']['scope']}]}))",
     );

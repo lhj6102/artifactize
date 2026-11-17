@@ -76,8 +76,12 @@ impl Fixture {
     fn declare_at(&self, path: &str, name: &str, evals: Vec<Value>) {
         let folder = self.repo.join(path);
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("fingerprint"), name).unwrap();
-        support::declaration::write(folder.join("index.artf"), json!({"name":name,"fingerprint":{"script":{"command":support::os::cat_program(),"args":["fingerprint"]}},"evals":evals}).to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(folder.join("fingerprint")),
+            name,
+        )
+        .unwrap();
+        support::declaration::write(&(self.repo), folder.join("index.artf"), json!({"name":name,"fingerprint":{"script":{"command":support::os::cat_program(),"args":["fingerprint"]}},"evals":evals}).to_string()).unwrap();
     }
     fn command(&self) -> Command {
         let mut command = Command::new(support::os::cli());
@@ -132,7 +136,7 @@ impl Fixture {
                 panic!(
                     "observable state not reached: {}\n{}",
                     serde_json::to_string_pretty(&view).unwrap(),
-                    fs::read_to_string(
+                    support::declaration::read_text(
                         self.state
                             .join("runs")
                             .join(id.as_str())
@@ -157,7 +161,7 @@ impl Fixture {
         );
     }
     fn ready(&self, artifact: &str, eval: &str) -> bool {
-        fs::read_to_string(self.repo.join(artifact).join(format!("{eval}-ready")))
+        support::declaration::read_text(self.repo.join(artifact).join(format!("{eval}-ready")))
             .is_ok_and(|contents| contents == "ready")
     }
     async fn claim(&self, view: &RunView, eval: &str) {
@@ -750,9 +754,13 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
                 .unwrap();
         }
 
-        fs::write(fixture.repo.join("up/fingerprint"), "changed").unwrap();
-        fs::remove_file(fixture.repo.join("up/check-ready")).unwrap();
-        fs::remove_file(fixture.repo.join("up/check-release")).unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+            "changed",
+        )
+        .unwrap();
+        support::declaration::remove_file(fixture.repo.join("up/check-ready")).unwrap();
+        support::declaration::remove_file(fixture.repo.join("up/check-release")).unwrap();
         let newer = fixture.submit(&[], None);
         fixture
             .until(&newer, |view| {
@@ -822,7 +830,7 @@ async fn c2_a_superseded_signoff_ends_its_run_yellow_and_joined_ones_are_listed_
         .await;
 
     fs::write(
-        fixture.repo.join("docs/changed/fingerprint"),
+        support::declaration::source_path(fixture.repo.join("docs/changed/fingerprint")),
         "changed-again",
     )
     .unwrap();
@@ -890,7 +898,11 @@ async fn c2_a_superseded_signoff_ends_its_run_yellow_and_joined_ones_are_listed_
 async fn c2_superseding_a_signoff_leaves_other_worktrees() {
     let fixture = Fixture::new();
     fixture.declare("up", vec![human_eval(&[])]);
-    fs::write(fixture.repo.join("up/fingerprint"), "deferred").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+        "deferred",
+    )
+    .unwrap();
     let deferred = fixture.submit(&[], None);
     let deferred = fixture.settled(&deferred).await;
 
@@ -898,11 +910,19 @@ async fn c2_superseding_a_signoff_leaves_other_worktrees() {
     other.state = fixture.state.clone();
     other._root.track(&other.state, &other.repo);
     other.declare("up", vec![human_eval(&[])]);
-    fs::write(other.repo.join("up/fingerprint"), "other-tree").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("up/fingerprint")),
+        "other-tree",
+    )
+    .unwrap();
     let other_run = other.submit(&[], None);
     let other_run = other.settled(&other_run).await;
 
-    fs::write(fixture.repo.join("up/fingerprint"), "newest").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+        "newest",
+    )
+    .unwrap();
     let newest = fixture.submit(&[], None);
     fixture.settled(&newest).await;
     assert_eq!(
@@ -937,14 +957,22 @@ async fn c2_joining_a_new_key_also_supersedes_earlier_deferred_signoffs() {
     other.state = fixture.state.clone();
     other._root.track(&other.state, &other.repo);
     other.declare("up", vec![human_eval(&[])]);
-    fs::write(other.repo.join("up/fingerprint"), "new-key").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("up/fingerprint")),
+        "new-key",
+    )
+    .unwrap();
     let active = other.submit(&[], None);
     let active = other.settled(&active).await;
     assert_ne!(
         first.requests[0].key, active.requests[0].key,
         "first={first:#?}, active={active:#?}"
     );
-    fs::write(fixture.repo.join("up/fingerprint"), "new-key").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("up/fingerprint")),
+        "new-key",
+    )
+    .unwrap();
     let joined = fixture.submit(&[], None);
     let joined = fixture.settled(&joined).await;
     assert_eq!(
@@ -991,7 +1019,11 @@ async fn c2_retiring_a_deferred_follower_preserves_its_original_in_another_tree(
         issued.requests[0].execution_id
     );
 
-    fs::write(follower.repo.join("up/fingerprint"), "changed").unwrap();
+    fs::write(
+        support::declaration::source_path(follower.repo.join("up/fingerprint")),
+        "changed",
+    )
+    .unwrap();
     let newer = follower.submit(&[], None);
     follower.settled(&newer).await;
     let retired = store::read_request(&follower.state, joined.requests[0].id.as_str())
@@ -1077,7 +1109,7 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
     let fixture = Fixture::new();
     fs::create_dir_all(&fixture.state).unwrap();
     fs::write(
-        fixture.state.join("limits.json"),
+        support::declaration::source_path(fixture.state.join("limits.json")),
         r#"{"backends":{"openai":1},"signoffIdleGraceSeconds":0}"#,
     )
     .unwrap();

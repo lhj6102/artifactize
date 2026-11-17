@@ -176,7 +176,8 @@ fn a_folder_outside_git_lives_while_it_exists_and_holds_declarations() {
     let root = crate::test_os::tempdir();
     let folder = root.path().join("plain");
     std::fs::create_dir(&folder).unwrap();
-    std::fs::write(folder.join("index.artf"), "name = \"plain\"\n").unwrap();
+    crate::test_declaration::write(&folder, folder.join("index.artf"), "name = \"plain\"\n")
+        .unwrap();
     let empty = root.path().join("empty");
     std::fs::create_dir(&empty).unwrap();
     let removed = root.path().join("removed");
@@ -211,7 +212,11 @@ fn the_launch_folder_outside_git_is_listed_with_its_artifacts_only_in_subfolders
     let root = crate::test_os::tempdir();
     let plain = root.path().join("plain");
     std::fs::create_dir_all(plain.join("docs")).unwrap();
-    std::fs::write(plain.join("docs").join("index.artf"), "name = \"docs\"\n").unwrap();
+    std::fs::write(
+        crate::test_declaration::source_path(plain.join("docs").join("index.artf")),
+        "name = \"docs\"\n",
+    )
+    .unwrap();
     let plain = crate::test_os::canonical(&plain);
     let listing = branches(&[], Some(&plain), &mut Discovery::default());
     assert_eq!(names(&listing), [("plain".into(), String::new())]);
@@ -405,7 +410,7 @@ fn starred_artifacts_are_kept_per_project_for_every_branch_of_it() {
     );
     // A stored star whose Artifact is no Artifact name is refused when read back.
     std::fs::write(
-        state.path().join("starred-artifacts.json"),
+        crate::test_declaration::source_path(state.path().join("starred-artifacts.json")),
         r#"[{"project":{"folder":"/notes"},"artifacts":["no name"]}]"#,
     )
     .unwrap();
@@ -469,7 +474,7 @@ fn a_branch_name_is_a_valid_ref_and_a_stored_star_with_another_is_refused() {
     let state = crate::test_os::tempdir();
     for bad in ["", "topic.lock/child"] {
         std::fs::write(
-            state.path().join("starred-branches.json"),
+            crate::test_declaration::source_path(state.path().join("starred-branches.json")),
             format!(r#"[{{"git":{{"common":"/repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
         )
         .unwrap();

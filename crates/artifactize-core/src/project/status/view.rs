@@ -50,6 +50,14 @@ pub(super) fn assemble(
             );
         }
     }
+    for eval in &config.evals {
+        if cache::dependencies(config, eval)
+            .iter()
+            .any(|name| config.artifacts[*name].target_error.is_some())
+        {
+            evidence.insert(eval.id.clone(), Evidence::OperationalError);
+        }
+    }
     let evaluation = graph.evaluate(&evidence);
     // verify defers every sign-off it asks for, so what relies on one is predicted to run
     // provisionally; a sign-off outside the selection is not asked for and still gates, and a
@@ -120,6 +128,8 @@ pub(super) fn assemble(
         };
         *counts.artifacts.entry(status).or_default() += 1;
         artifacts.push(ArtifactState {
+            definition: config.artifacts[*id].declaration_path(),
+            target_missing: config.artifacts[*id].target_error.is_some(),
             kind: config.artifacts[*id].kind,
             path: config.artifacts[*id].path.clone(),
             id: (*id).clone(),
@@ -252,6 +262,11 @@ pub(super) fn assemble(
                 ),
             },
         };
+        let reason = cache::dependencies(config, eval)
+            .into_iter()
+            .find_map(|name| config.artifacts[name].target_error.as_ref())
+            .map(|error| format!("PREPARATION_FAILED: {error}"))
+            .unwrap_or(reason);
         let status = if !force && matches!(claim(&eval.id), Some(Claim::WaitHuman(_))) {
             if deferred.contains(&eval.id) {
                 EvalCondition::Deferred

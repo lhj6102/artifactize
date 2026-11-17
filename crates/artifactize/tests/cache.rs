@@ -254,17 +254,22 @@ impl Fixture {
             }),
         );
         let lines: Vec<_> = steps.iter().map(marker).collect();
-        fs::write(repo.join("review.txt"), lines.join("\n")).unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("review.txt")),
+            lines.join("\n"),
+        )
+        .unwrap();
         repo
     }
 
     fn release(&self) {
-        support::declaration::write(self.root.path().join("release"), "").unwrap();
+        support::declaration::write(self.root.path(), self.root.path().join("release"), "")
+            .unwrap();
     }
 
     /// Count completed marker records, not file creation or a partially written PID.
     fn starts(&self) -> usize {
-        fs::read_to_string(self.root.path().join("starts")).map_or(0, |starts| {
+        support::declaration::read_text(self.root.path().join("starts")).map_or(0, |starts| {
             starts.bytes().filter(|byte| *byte == b'\n').count()
         })
     }
@@ -483,7 +488,7 @@ impl Drop for Suspended {
 /// A deliberately killed worker cannot clean its runtime process group on unwind.
 /// Keep its birth identity and observe exit before the fixture's inputs are removed.
 fn orphan_group(fixture: &Fixture) -> owned_run::Processes {
-    let pid = fs::read_to_string(fixture.root.path().join("starts"))
+    let pid = support::declaration::read_text(fixture.root.path().join("starts"))
         .unwrap()
         .lines()
         .next()
@@ -498,7 +503,7 @@ fn orphan_group(fixture: &Fixture) -> owned_run::Processes {
 fn write(repo: &Path, path: &str, value: Value) {
     let path = repo.join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    support::declaration::write(path, value.to_string()).unwrap();
+    support::declaration::write(repo, path, value.to_string()).unwrap();
 }
 
 fn eval(id: &str, steps: &[&str]) -> Value {
@@ -728,7 +733,7 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
         assert!(run["requests"][0]["child"]["pid"].is_number());
     }
     assert_eq!(
-        fs::read_to_string(repo.join("starts")).unwrap(),
+        support::declaration::read_text(repo.join("starts")).unwrap(),
         "run\nrun\n"
     );
     assert_eq!(fixture.entries(), before);
@@ -788,10 +793,18 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse() {
             "evals":[check],
         }),
     );
-    fs::write(repo.join("review.txt"), "exit\n7\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("review.txt")),
+        "exit\n7\n",
+    )
+    .unwrap();
     let original = fixture.command(&repo, &["verify", "--wait", "--all"], 1);
     assert_eq!(fixture.entries().len(), 1);
-    fs::write(repo.join("review.txt"), "append\nstarts\nforce\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("review.txt")),
+        "append\nstarts\nforce\n",
+    )
+    .unwrap();
     let forced = fixture.command(&repo, &["verify", "--wait", "--all", "--force"], 0);
     assert_ne!(
         forced["requests"][0]["executionId"],
@@ -818,7 +831,10 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse() {
         next["requests"][0]["executionId"],
         forced["requests"][0]["executionId"]
     );
-    assert_eq!(fs::read_to_string(repo.join("starts")).unwrap(), "force\n");
+    assert_eq!(
+        support::declaration::read_text(repo.join("starts")).unwrap(),
+        "force\n"
+    );
     let history = fixture.command(
         &repo,
         &["cache", "show", &key(&original, 0), "--history"],
@@ -917,19 +933,27 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
             "evals":[eval("check", &["touch", "executed"])],
         }),
     );
-    fs::write(repo.join("key"), "first").unwrap();
+    fs::write(support::declaration::source_path(repo.join("key")), "first").unwrap();
     fixture.command(&repo, &["verify", "--wait", "--all"], 0);
-    fs::remove_file(repo.join("executed")).unwrap();
+    support::declaration::remove_file(repo.join("executed")).unwrap();
     assert_eq!(
         fixture.command(&repo, &["status"], 0)["evals"][0]["action"],
         "reuse"
     );
-    fs::write(repo.join("key"), "changed").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("key")),
+        "changed",
+    )
+    .unwrap();
     assert_eq!(
         fixture.command(&repo, &["status"], 1)["evals"][0]["action"],
         "execute"
     );
-    fs::write(repo.join("key"), "invalid key").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("key")),
+        "invalid key",
+    )
+    .unwrap();
     assert!(
         fixture.command(&repo, &["status"], 2)["error"]
             .as_str()
@@ -1309,11 +1333,11 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     );
     let child = fixture.spawn(&repo, &["--jobs", "3", "--max-executions", "1"]);
     wait_until(|| {
-        fs::read_to_string(repo.join("starts"))
+        support::declaration::read_text(repo.join("starts"))
             .is_ok_and(|contents| contents.replace("\r\n", "\n") == "first\n")
     });
     wait_until(|| fixture.count("requests WHERE execution_id IS NOT NULL") == 3);
-    fs::write(repo.join("release"), "").unwrap();
+    fs::write(support::declaration::source_path(repo.join("release")), "").unwrap();
     let run = finish(child, 0);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(fixture.count("executions"), 1);
@@ -1341,7 +1365,7 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     assert_eq!(forced["executionsStarted"], 0);
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(
-        fs::read_to_string(repo.join("starts"))
+        support::declaration::read_text(repo.join("starts"))
             .unwrap()
             .replace("\r\n", "\n"),
         "first\n"
@@ -1362,7 +1386,7 @@ fn source_names_the_execution_a_result_came_from_and_how() {
     let child = fixture.spawn(&repo, &["--jobs", "2"]);
     wait_until(|| repo.join("started").exists());
     fixture.waiting_request();
-    fs::write(repo.join("release"), "").unwrap();
+    fs::write(support::declaration::source_path(repo.join("release")), "").unwrap();
     let run = finish(child, 0);
     let (owner, joined) = (&run["requests"][0], &run["requests"][1]);
     assert!(owner["source"].is_null(), "{run}");
@@ -1466,6 +1490,13 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
     // The shared Artifact and an unrelated sibling, without a parent that would own both.
     let target = fixture.root.path().join("a-target");
     let shared = fixture.shared_repo("a-target/a-shared", &["touch", "must-not-run"]);
+    let mut declaration = support::declaration::read(
+        support::declaration::read_file(shared.join("index.artf")).unwrap(),
+    )
+    .unwrap();
+    declaration["name"] = json!("shared");
+    write(&target, "a-shared/index.artf", declaration);
+    fs::remove_dir_all(shared.join(".artifactize")).unwrap();
     write(
         &target,
         "independent/index.artf",
@@ -1493,7 +1524,11 @@ fn cache_commands_are_inert_for_missing_and_empty_state() {
     for empty in [false, true] {
         if empty {
             fs::create_dir(&fixture.state).unwrap();
-            fs::write(fixture.state.join("state.sqlite"), []).unwrap();
+            fs::write(
+                support::declaration::source_path(fixture.state.join("state.sqlite")),
+                [],
+            )
+            .unwrap();
         }
         assert_eq!(
             fixture.command(&missing_repo, &["cache", "list"], 0),
@@ -2245,12 +2280,13 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
     ] {
         let repo = fixture.shared_repo(name, &script);
         let path = repo.join("index.artf");
-        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+        let mut declaration: Value =
+            support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
         declaration["evals"][0]["profile"]["args"]
             .as_array_mut()
             .unwrap()
             .push(json!(verdict));
-        support::declaration::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(&(repo), path, declaration.to_string()).unwrap();
         repos.push(repo);
     }
     let children: Vec<_> = repos.iter().map(|repo| fixture.spawn(repo, &[])).collect();

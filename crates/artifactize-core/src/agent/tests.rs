@@ -43,6 +43,7 @@ impl Fixture {
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir_all(&output).unwrap();
         crate::test_declaration::write(
+            &(repo),
             repo.join("index.artf"),
             json!({
                 "name":"a",
@@ -83,8 +84,7 @@ impl Fixture {
             .to_string(),
         )
         .unwrap();
-        fs::write(
-            repo.join("tool.py"),
+        fs::write(crate::test_declaration::source_path(repo.join("tool.py")),
             "import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'text','text':'tool evidence'},{'type':'json','data':{'ok':True}}]}))\n",
         )
         .unwrap();
@@ -749,8 +749,7 @@ async fn registry_image_blocks_reach_both_provider_wires() {
     let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=";
     for backend in ["openai", "anthropic"] {
         let fixture = Fixture::new(backend);
-        fs::write(
-            fixture.config.root.join("tool.py"),
+        fs::write(crate::test_declaration::source_path(fixture.config.root.join("tool.py")),
             format!(
                 "import json\nprint(json.dumps({{'content':[{{'type':'image','mimeType':'image/png','data':'{png}'}}]}}))\n"
             ),
@@ -807,18 +806,31 @@ fn session_ids_are_distinct_version_4_uuids() {
 async fn instruction_names_artifacts_and_lists_each_once_without_paths() {
     let mut fixture = Fixture::new("openai");
     let repo = fixture.config.root.clone();
-    let declaration =
-        crate::test_declaration::read(fs::read(repo.join("index.artf")).unwrap()).unwrap();
+    let declaration = crate::test_declaration::read(
+        crate::test_declaration::read_file(repo.join("index.artf")).unwrap(),
+    )
+    .unwrap();
+    let mut declaration = declaration;
+    declaration["name"] = json!("a");
     let declaration = declaration.to_string().replace(
         "Check {a}",
         "Check {a} against {b}, then {a} again; {b} decides",
     );
-    fs::remove_file(repo.join("index.artf")).unwrap();
-    fs::write(repo.join("input.txt"), "evidence").unwrap();
-    crate::test_declaration::write(repo.join("input.txt.artf"), declaration).unwrap();
+    crate::test_declaration::remove_file(repo.join("index.artf")).unwrap();
+    fs::write(
+        crate::test_declaration::source_path(repo.join("input.txt")),
+        "evidence",
+    )
+    .unwrap();
+    crate::test_declaration::write(&(repo), repo.join("input.txt.artf"), declaration).unwrap();
     fs::create_dir_all(repo.join("b")).unwrap();
-    fs::write(repo.join("b/rules.md"), "rules").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(repo.join("b/rules.md")),
+        "rules",
+    )
+    .unwrap();
     crate::test_declaration::write(
+        &(repo),
         repo.join("b/index.artf"),
         json!({
             "name":"b",

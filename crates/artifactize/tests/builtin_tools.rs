@@ -20,12 +20,16 @@ const TEXT_BYTES: usize = 64 * 1024;
 fn declaration(repo: &Path, agent: Value, human: Value) {
     fs::create_dir_all(repo.join("a")).unwrap();
     fs::write(
-        repo.join("a/notes.md"),
+        support::declaration::source_path(repo.join("a/notes.md")),
         "# First\nbody\n## Nested\nchild\n# Next\nlast\n",
     )
     .unwrap();
-    fs::write(repo.join("a/other.md"), "other content\n").unwrap();
-    support::declaration::write(repo.join("a/index.artf"), json!({
+    fs::write(
+        support::declaration::source_path(repo.join("a/other.md")),
+        "other content\n",
+    )
+    .unwrap();
+    support::declaration::write(repo, repo.join("a/index.artf"), json!({
         "name":"a", "fingerprint":false,
         "views":{"agent_tools":agent,"human_tools":human},
         "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}]
@@ -115,14 +119,14 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
     ] {
         let mut value = json!({"name":"a","views":{}});
         value["views"][audience] = json!({"bad":invalid});
-        support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
+        support::declaration::write(&(repo), repo.join("a/index.artf"), value.to_string()).unwrap();
         let output = command(&repo, &state)
             .args(["config", "check", "--json"])
             .record_output()
             .unwrap();
         let report = parsed(output, 2);
         let error = report["error"].as_str().unwrap();
-        assert!(error.contains("a/index.artf"), "{error}");
+        assert!(error.contains(".artifactize/a.artf"), "{error}");
         assert!(error.contains(&format!("views.{audience}.bad")), "{error}");
         assert!(error.contains(" --> ") || error.contains("line"), "{error}");
     }
@@ -190,14 +194,21 @@ async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
             .contains("First\\nNested\\nNext")
     );
     // A path into a nested folder Artifact reaches another Artifact, even for fixed args.
-    let mut value =
-        support::declaration::read(fs::read(repo.join("a/index.artf")).unwrap()).unwrap();
+    let mut value = support::declaration::read(
+        support::declaration::read_file(repo.join("a/index.artf")).unwrap(),
+    )
+    .unwrap();
     value["views"]["agent_tools"]["nested"] =
         json!({"builtin":"read","args":["reference/reference.md"]});
-    support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
+    support::declaration::write(&(repo), repo.join("a/index.artf"), value.to_string()).unwrap();
     fs::create_dir_all(repo.join("a/reference")).unwrap();
-    fs::write(repo.join("a/reference/reference.md"), "child text\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("a/reference/reference.md")),
+        "child text\n",
+    )
+    .unwrap();
     support::declaration::write(
+        &(repo),
         repo.join("a/reference/index.artf"),
         json!({"name":"b","basis":true}).to_string(),
     )
@@ -219,7 +230,7 @@ fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
     for audience in ["agent_tools", "human_tools"] {
         let mut value = json!({"name":"a","views":{}});
         value["views"][audience] = json!({"linked":{"builtin":"read","args":["link.md"]}});
-        support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
+        support::declaration::write(&(repo), repo.join("a/index.artf"), value.to_string()).unwrap();
         let report = parsed(
             command(&repo, &state)
                 .args(["config", "check", "--json"])
@@ -249,16 +260,23 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
         json!({"reference":{"builtin":"read","args":["{b}/reference.md"]}}),
     );
     fs::create_dir_all(repo.join("b")).unwrap();
-    fs::write(repo.join("b/reference.md"), "reference text\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("b/reference.md")),
+        "reference text\n",
+    )
+    .unwrap();
     support::declaration::write(
+        &(repo),
         repo.join("b/index.artf"),
         json!({"name":"b","basis":true}).to_string(),
     )
     .unwrap();
-    let mut value =
-        support::declaration::read(fs::read(repo.join("a/index.artf")).unwrap()).unwrap();
+    let mut value = support::declaration::read(
+        support::declaration::read_file(repo.join("a/index.artf")).unwrap(),
+    )
+    .unwrap();
     value["evals"][0]["payload"]["instruction"] = json!("Review {b}.");
-    support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
+    support::declaration::write(&(repo), repo.join("a/index.artf"), value.to_string()).unwrap();
     let config = read_workspace_config(&repo).unwrap();
     let registry = tools::human::Registry::new(&config, "a/review").unwrap();
     registry.preflight(&"reference_a".parse().unwrap()).unwrap();
@@ -338,7 +356,11 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
             "help":{"builtin":"help","args":help_args}
         }),
     );
-    fs::write(repo.join("a/large.txt"), "x".repeat(80_000)).unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("a/large.txt")),
+        "x".repeat(80_000),
+    )
+    .unwrap();
     let run = parsed(
         command(&repo, &state)
             .args(["verify", "--all", "--json"])
@@ -416,7 +438,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     let result = parsed(output, 0);
     assert_eq!(result["content"][0]["launched"], true);
     assert_eq!(
-        fs::read_to_string(record).unwrap(),
+        support::declaration::read_text(record).unwrap(),
         format!(
             "1\n{}\n",
             support::os::path_text(&support::os::canonical(&repo.join("a/notes.md")))
@@ -428,11 +450,11 @@ fn request_open_hands_one_target_to_the_shared_opener() {
 async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let root = support::os::tempdir();
     fs::write(
-        root.path().join("notes.md"),
+        support::declaration::source_path(root.path().join("notes.md")),
         "# First\nfile body\n# Next\nlast\n",
     )
     .unwrap();
-    support::declaration::write(root.path().join("notes.md.artf"),json!({
+    support::declaration::write(root.path(), root.path().join("notes.md.artf"),json!({
         "name":"notes", "views": {
             "human_tools": {
                 "read":{"builtin":"read","args":["{artifactPath}"]},

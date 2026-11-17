@@ -89,6 +89,7 @@ impl Fixture {
             let folder = repo.join(&name);
             fs::create_dir_all(&folder).unwrap();
             support::declaration::write(
+                &(repo),
                 folder.join("index.artf"),
                 json!({"name":name,"fingerprint":false,"evals":[{"id":"review","title":"Review",
                     "profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
@@ -102,7 +103,11 @@ impl Fixture {
     }
 
     fn limits(&self, limits: Value) {
-        fs::write(self.state().join("limits.json"), limits.to_string()).unwrap();
+        fs::write(
+            support::declaration::source_path(self.state().join("limits.json")),
+            limits.to_string(),
+        )
+        .unwrap();
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
@@ -225,7 +230,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     assert_eq!(fixture.slots(), 0, "every slot is released");
 
     // Without a limit the same Runs review in parallel.
-    fs::remove_file(fixture.state().join("limits.json")).unwrap();
+    support::declaration::remove_file(fixture.state().join("limits.json")).unwrap();
     fixture.most.store(0, Ordering::SeqCst);
     fixture.gate.close();
     let runs = [fixture.spawn(&first, &[]), fixture.spawn(&second, &[])];
@@ -310,7 +315,7 @@ async fn a_slot_waiter_finishes_by_reusing_a_forced_producers_completed_result()
     barrier.set_nonblocking(true).unwrap();
     let address = barrier.local_addr().unwrap();
     // A stable key lets the waiting Run reuse the forced producer's eventual result.
-    support::declaration::write(
+    support::declaration::write(&(repo),
         repo.join("solo0/index.artf"),
         json!({"name":"solo0","evals":[
             {"id":"review","title":"Review",
@@ -441,6 +446,7 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
     let check = repo.join("check");
     fs::create_dir_all(&check).unwrap();
     support::declaration::write(
+        &(repo),
         check.join("index.artf"),
         json!({
             "name":"check",

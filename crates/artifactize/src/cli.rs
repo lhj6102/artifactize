@@ -325,6 +325,13 @@ impl PolicyArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
+    /// Convert in-tree declarations to .artifactize/<name>.artf.
+    Migrate,
+    /// Rename a node, its references and saved layout together.
+    Rename {
+        old: artifactize_core::types::ArtifactName,
+        new: artifactize_core::types::ArtifactName,
+    },
     /// Validate declarations and unique Artifact/Eval ids.
     Check,
     /// Inspect full static definitions, relations, and cycles.

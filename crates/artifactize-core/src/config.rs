@@ -14,8 +14,12 @@ pub use identities::{
 use serde_json::{Map, Value};
 use thiserror::Error;
 
+mod definition;
 mod discovery;
+pub mod edit;
+mod legacy;
 mod location;
+pub mod migrate;
 mod mutex;
 pub use discovery::read_workspace_config;
 pub(crate) use discovery::read_workspace_declarations;
@@ -55,6 +59,7 @@ pub const IGNORE_FILE: &str = ".artfignore";
 pub struct ConfigError {
     pub path: PathBuf,
     pub message: String,
+    declaration: Option<(Vec<String>, String)>,
 }
 
 impl ConfigError {
@@ -62,6 +67,7 @@ impl ConfigError {
         Self {
             path: path.into(),
             message: message.to_string(),
+            declaration: None,
         }
     }
 
@@ -73,10 +79,18 @@ impl ConfigError {
     ) -> Self {
         let path = path.into();
         let message = message.to_string();
+        let declaration = Some((
+            keys.iter().map(|key| (*key).to_owned()).collect(),
+            message.clone(),
+        ));
         let message = read_regular_text(&path).map_or(message.clone(), |source| {
             location::error_at(&source, keys, &message)
         });
-        Self { path, message }
+        Self {
+            path,
+            message,
+            declaration,
+        }
     }
 }
 
@@ -887,11 +901,6 @@ impl ArtifactDeclaration {
             for selected in select {
                 select_location
                     .check(path(selected).map_err(|message| format!("select: {message}")))?;
-                if selected.ends_with(".artf") {
-                    return Err(select_location.error(
-                        "select: Artifact declarations (*.artf) are never part of an aspect.",
-                    ));
-                }
             }
         }
         Ok(())
@@ -922,7 +931,26 @@ fn parse_declaration_in(
     source: &str,
     schemas: &mut schemas::Schemas,
 ) -> Result<ArtifactDeclaration, String> {
-    let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
+    parse_declaration_named(source, schemas, None)
+}
+
+fn parse_declaration_named(
+    source: &str,
+    schemas: &mut schemas::Schemas,
+    name: Option<&ArtifactName>,
+) -> Result<ArtifactDeclaration, String> {
+    let mut table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
+    if let Some(name) = name {
+        table.get_mut().remove("path");
+        table.get_mut().remove("annotations");
+        table.get_mut().insert(
+            toml::Spanned::new(0..0, std::borrow::Cow::Borrowed("name")),
+            toml::Spanned::new(
+                0..0,
+                toml::de::DeValue::String(std::borrow::Cow::Owned(name.to_string())),
+            ),
+        );
+    }
     let span = table.span();
     let document = toml::Spanned::new(span, toml::de::DeValue::Table(table.into_inner()));
     let location = Location::root(source, &document);
@@ -1156,6 +1184,11 @@ fn tool_nested(
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     #[serde(with = "crate::platform::path_serde")]
+    pub definition: PathBuf,
+    /// Current target availability is not part of the saved declaration or its identity.
+    #[serde(skip)]
+    pub target_error: Option<String>,
+    #[serde(with = "crate::platform::path_serde")]
     pub path: PathBuf,
     pub kind: ArtifactKind,
     /// Folder Artifacts declared in subfolders, by their path here. Their files are theirs,
@@ -1207,7 +1240,11 @@ impl Artifact {
     }
 
     pub fn declaration_path(&self) -> PathBuf {
-        declaration_of(self.kind, &self.path)
+        if self.definition.as_os_str().is_empty() {
+            declaration_of(self.kind, &self.path)
+        } else {
+            self.definition.clone()
+        }
     }
 
     /// Where it is declared.
@@ -1215,6 +1252,7 @@ impl Artifact {
         Site {
             kind: self.kind,
             path: self.path.clone(),
+            definition: self.declaration_path(),
         }
     }
 }

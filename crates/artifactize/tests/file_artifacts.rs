@@ -46,7 +46,7 @@ impl Fixture {
     fn write(&self, path: &str, contents: &str) {
         let path = self.repo.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents).unwrap();
+        support::declaration::write(&self.repo, path, contents).unwrap();
     }
 
     fn declare(&self, path: &str, declaration: Value) {
@@ -59,7 +59,10 @@ impl Fixture {
 
     fn error(&self, path: &str, message: &str) {
         let error = read_workspace_config(&self.repo).unwrap_err();
-        assert_eq!(error.path, self.repo.join(path));
+        assert_eq!(
+            error.path,
+            support::declaration::source_path(self.repo.join(path))
+        );
         assert!(error.message.contains(message), "{error}");
     }
 
@@ -104,7 +107,10 @@ fn runtime(name: &str, args: &[&str]) -> Value {
 #[test]
 fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     let fixture = Fixture::new();
-    fixture.declare("index.artf", json!({"name":"folder"}));
+    fixture.declare(
+        "index.artf",
+        json!({"name":"folder","fingerprint":{"ignore":[".artifactize/"]}}),
+    );
     fixture.write("hero.png", "pixels");
     fixture.declare("hero.png.artf", json!({"name":"hero"}));
     fixture.write("nested/Makefile", "all:");
@@ -117,7 +123,7 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     assert_eq!(config.artifacts["build"].folder(), Path::new("nested"));
     assert_eq!(
         config.artifacts["build"].declaration_path(),
-        Path::new("nested/Makefile.artf")
+        Path::new(".artifactize/build.artf")
     );
     assert_eq!(
         config.artifacts["folder"].nested,
@@ -171,35 +177,6 @@ fn a_workspace_may_contain_only_a_file_artifact_and_index_is_always_a_folder_mar
 }
 
 #[test]
-fn missing_directory_declaration_and_declaration_targets_are_rejected_at_the_sidecar() {
-    for (target, setup, message) in [
-        ("missing.txt", 0, "is missing"),
-        ("directory", 1, "must be a regular file"),
-        ("input.artf", 2, "must not be a declaration"),
-        ("input", 3, "declaration must be a regular file"),
-    ] {
-        let fixture = Fixture::new();
-        let sidecar = format!("{target}.artf");
-        if setup == 1 {
-            fs::create_dir(fixture.repo.join(target)).unwrap();
-        }
-        if setup == 2 {
-            fixture.write(target, "name = 'declaration'");
-        }
-        if setup == 3 {
-            fixture.write(target, "input");
-            fs::create_dir(fixture.repo.join(&sidecar)).unwrap();
-        } else {
-            fixture.declare(&sidecar, json!({"name":"file"}));
-        }
-        fixture.error(&sidecar, message);
-    }
-    let fixture = Fixture::new();
-    fixture.declare("nested/.artf", json!({"name":"file"}));
-    fixture.error("nested/.artf", "only at the repository root");
-}
-
-#[test]
 fn symlink_targets_and_declarations_are_rejected() {
     let fixture = Fixture::new();
     fixture.write("actual", "input");
@@ -208,18 +185,34 @@ fn symlink_targets_and_declarations_are_rejected() {
         return;
     }
     fixture.declare("linked.artf", json!({"name":"file"}));
-    fixture.error("linked.artf", "not a symlink");
-    fs::remove_file(fixture.repo.join("linked.artf")).unwrap();
+    let config = fixture.config();
+    assert!(
+        config.artifacts["file"]
+            .target_error
+            .as_ref()
+            .unwrap()
+            .contains("symlink")
+    );
+    let scope = artifact_scope(&config, &[&"file".parse().unwrap()]).unwrap();
+    assert!(
+        scope
+            .resolve_input(&fixture.repo, &"file".parse().unwrap(), "")
+            .is_err()
+    );
+    support::declaration::remove_file(fixture.repo.join("linked.artf")).unwrap();
     fixture.write("actual-declaration", "name = 'file'");
     if support::os::symlink_file(
         fixture.repo.join("actual-declaration"),
-        fixture.repo.join("actual.artf"),
+        fixture.repo.join(".artifactize/actual.artf"),
     )
     .is_none()
     {
         return;
     }
-    fixture.error("actual.artf", "declaration must be a regular file");
+    fixture.error(
+        ".artifactize/actual.artf",
+        "definition must be a regular file",
+    );
 }
 
 // Sockets and FIFOs are Unix entries; Windows has no special files to declare.
@@ -229,31 +222,21 @@ fn special_targets_and_declarations_are_rejected() {
     let fixture = Fixture::new();
     let _socket = support::os::socket(&fixture.repo.join("socket"));
     fixture.declare("socket.artf", json!({"name":"file"}));
-    fixture.error("socket.artf", "special file");
-    fs::remove_file(fixture.repo.join("socket.artf")).unwrap();
-    fixture.write("input", "input");
-    let _declaration = support::os::socket(&fixture.repo.join("input.artf"));
-    fixture.error("input.artf", "declaration must be a regular file");
-}
-
-#[test]
-fn names_are_required_and_globally_unique_and_policy_is_root_folder_only() {
-    let fixture = Fixture::new();
-    fixture.write("input", "input");
-    fixture.write("input.artf", "basis = true");
-    fixture.error("input.artf", "missing field `name`");
-    fixture.declare("index.artf", json!({"name":"folder"}));
-    fixture.declare("input.artf", json!({"name":"folder"}));
-    fixture.error("input.artf", "Duplicate Artifact name");
-    fixture.declare(
-        "input.artf",
-        json!({"name":"file","review_policy":{"dependency_gates":"ignore"}}),
+    let config = fixture.config();
+    assert!(config.artifacts["file"].target_error.is_some());
+    let scope = artifact_scope(&config, &[&"file".parse().unwrap()]).unwrap();
+    assert!(
+        scope
+            .resolve_input(&fixture.repo, &"file".parse().unwrap(), "")
+            .is_err()
     );
-    fixture.error("input.artf", "unknown field `review_policy`");
-    fixture.declare("input.artf", json!({"name":"file"}));
-    fixture.write("nested/input", "input");
-    fixture.declare("nested/input.artf", json!({"name":"file"}));
-    fixture.error("nested/input.artf", "Duplicate Artifact name");
+    support::declaration::remove_file(fixture.repo.join("socket.artf")).unwrap();
+    fixture.write("input", "input");
+    let _declaration = support::os::socket(&fixture.repo.join(".artifactize/input.artf"));
+    fixture.error(
+        ".artifactize/input.artf",
+        "definition must be a regular file",
+    );
 }
 
 #[test]
@@ -305,7 +288,10 @@ async fn fingerprints(
 #[tokio::test]
 async fn file_artifactsum_hashes_only_its_target_while_its_wholes_hash_excludes_it() {
     let fixture = Fixture::new();
-    fixture.declare("index.artf", json!({"name":"folder"}));
+    fixture.declare(
+        "index.artf",
+        json!({"name":"folder","fingerprint":{"ignore":[".artifactize/"]}}),
+    );
     fixture.write("nested/input.txt", "original");
     fixture.declare("nested/input.txt.artf", json!({"name":"file"}));
     fixture.write("nested/sibling", "sibling");
@@ -768,7 +754,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
     );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
-    fs::remove_file(fixture.repo.join("input.txt")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("input.txt")).unwrap();
     fs::create_dir(fixture.repo.join("input.txt")).unwrap();
     fixture.write("input.txt/secret", "secret");
     assert!(
@@ -839,15 +825,6 @@ fn json_tool_file_references_reject_suffixes_at_the_declaration() {
         }),
     );
     fixture.error("input.artf", "cannot have a /path suffix");
-}
-
-#[test]
-fn artfignore_skips_sidecars_in_excluded_folders() {
-    let fixture = Fixture::new();
-    fixture.declare("index.artf", json!({"name":"folder"}));
-    fixture.write("excluded/missing.artf", "invalid TOML");
-    fixture.write(".artfignore", "excluded/\n");
-    assert_eq!(fixture.config().artifacts.len(), 1);
 }
 
 #[tokio::test]
@@ -938,10 +915,11 @@ fn sidecar_checks_keep_s2_source_locations_and_literal_owner_data() {
 fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
     let fixture = Fixture::new();
     fixture.write("input.txt", "same");
-    let declaration = runtime("file", &["-c", "pass"]);
+    let mut declaration = runtime("file", &["-c", "pass"]);
+    declaration["fingerprint"] = json!({"files":["input.txt"]});
     fixture.declare("index.artf", declaration.clone());
     let folder = fixture.json(&["verify", "--wait", "--all"], 0);
-    fs::remove_file(fixture.repo.join("index.artf")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("index.artf")).unwrap();
     fixture.declare("input.txt.artf", declaration);
     let file = fixture.json(&["verify", "--wait", "--all"], 0);
     assert_eq!(
@@ -1054,7 +1032,7 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
             json!({"script":{"command":support::os::echo_program(),"args":["constant"]}});
         fixture.declare("input.txt.artf", declaration);
         let config = fixture.config();
-        fs::remove_file(fixture.repo.join("input.txt")).unwrap();
+        support::declaration::remove_file(fixture.repo.join("input.txt")).unwrap();
         if kind == "directory" {
             fs::create_dir(fixture.repo.join("input.txt")).unwrap();
         }
@@ -1158,7 +1136,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         let agent = Registry::for_artifact(&config, "file").unwrap();
         let human =
             artifactize_core::tools::human::Registry::for_artifact(&config, "file").unwrap();
-        fs::remove_file(fixture.repo.join("input.txt")).unwrap();
+        support::declaration::remove_file(fixture.repo.join("input.txt")).unwrap();
         if kind == "directory" {
             fs::create_dir(fixture.repo.join("input.txt")).unwrap();
         }
@@ -1192,18 +1170,6 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         );
         assert!(!fixture.repo.join("started").exists());
     }
-}
-
-#[test]
-fn artfignore_applies_to_individual_sidecars_and_declaration_target_prechecks() {
-    let fixture = Fixture::new();
-    fixture.declare("index.artf", json!({"name":"folder"}));
-    fixture.write("scratch.txt.artf", "invalid TOML without a target");
-    fixture.write("nested/draft.artf.artf", "invalid declaration target");
-    fixture.write(".artfignore", "scratch.txt.artf\nnested/*.artf\n");
-    assert_eq!(fixture.config().artifacts.len(), 1);
-    fixture.write(".artfignore", "scratch.txt.artf\n");
-    fixture.error("nested/draft.artf.artf", "must not be a declaration");
 }
 
 // Windows file names cannot contain ':' at all.
@@ -1244,7 +1210,11 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
     assert!(output.status.success(), "{output:?}");
     // Release the valid state's worker before installing a deliberately invalid ancestor.
     fixture._root.release(&state, &fixture.repo).unwrap();
-    fs::write(ancestor.join("artifactize.json"), "legacy marker").unwrap();
+    fs::write(
+        support::declaration::source_path(ancestor.join("artifactize.json")),
+        "legacy marker",
+    )
+    .unwrap();
     permissions.restrict();
     let output = Command::new(support::os::cli())
         .arg("--repo")

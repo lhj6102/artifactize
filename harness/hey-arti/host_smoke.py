@@ -59,7 +59,8 @@ def smoke(host, candidate, output, model):
 def inventory(host, candidate, output, model):
     repo = output / "repo"
     repo.mkdir(mode=0o700)
-    (repo / "index.artf").write_text('name = "smoke"\nbasis = true\n')
+    (repo / ".artifactize").mkdir()
+    (repo / ".artifactize/smoke.artf").write_text('path = "./"\nbasis = true\n')
     config = output / "config"
     config.mkdir(mode=0o700)
     binary = output / "bin"

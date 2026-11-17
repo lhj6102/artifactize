@@ -44,6 +44,7 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
 tokio-rusqlite = "0.8.0"
 toml = "1.1.8"
+toml_edit = "0.25.17"
 tokio-util = { version = "0.7", features = ["rt"] }
 url = { version = "2", features = ["serde"] }
 # Session layout cuts at grapheme boundaries.
@@ -81,3 +82,8 @@ tokio = { version = "1", features = ["test-util"] }
 # Tests make junctions through FSCTL_SET_REPARSE_POINT rather than a shell's mklink, and
 # ask whether a probe's console window is visible.
 windows-sys = { version = "0.61", features = ["Win32_System_Ioctl", "Win32_UI_WindowsAndMessaging"] }
+
+# Library fixtures launch the shared worker without depending on the CLI or TUI.
+[[example]]
+name = "artifactize-test-worker"
+path = "tests/support/run-worker.rs"

@@ -77,9 +77,13 @@ fn fixture_with(extra: &[(&str, &str)]) -> Fixture {
             "\"fixture-runtime\"",
             &serde_json::to_string(&os::true_program()).unwrap(),
         );
-        fs::write(repo.join(name).join("index.artf"), text).unwrap();
+        support::declaration::write(&repo, repo.join(name).join("index.artf"), text).unwrap();
     }
-    fs::write(repo.join("release/notes.md"), "# Release notes\n- Ready.\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("release/notes.md")),
+        "# Release notes\n- Ready.\n",
+    )
+    .unwrap();
     // Its own repository, not a worktree of the one the tests build in.
     os::git(&repo, &["init", "-q"]);
     let fixture = Fixture {
@@ -625,7 +629,7 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
     let server = FakeProvider::start(|_| Reply::Json(403, json!({"error": "forbidden"})));
     let url = format!("{}/", server.url);
     fs::write(
-        fixture.state.join("remote.json"),
+        support::declaration::source_path(fixture.state.join("remote.json")),
         json!({"url": url, "share": "summary"}).to_string(),
     )
     .unwrap();
@@ -678,7 +682,7 @@ fn back_up(state: &Path, backup: &Path) {
 fn restore(backup: &Path, state: &Path) {
     let database = artifactize_core::store::DATABASE;
     for suffix in ["-shm", "-wal"] {
-        let _ = fs::remove_file(state.join(format!("{database}{suffix}")));
+        let _ = support::declaration::remove_file(state.join(format!("{database}{suffix}")));
     }
     for suffix in ["", "-wal"] {
         let name = format!("{database}{suffix}");
@@ -1188,11 +1192,11 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    fs::write(repo.join(".artf"), "name = 'graph'\n[evals.review]\ntitle = 'Review the graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review {app}.' }\n").unwrap();
-    fs::write(repo.join("index.artf"), "name = 'app'\n").unwrap();
+    support::declaration::write(&repo, repo.join(".artf"), "name = 'graph'\n[evals.review]\ntitle = 'Review the graph'\nprofile = { kind = 'human' }\npayload = { instruction = 'Review {app}.' }\n").unwrap();
+    support::declaration::write(&repo, repo.join("index.artf"), "name = 'app'\n").unwrap();
     // A part of app: its folder holds it.
     fs::create_dir(repo.join("lib")).unwrap();
-    fs::write(repo.join("lib/index.artf"), "name = 'lib'\n").unwrap();
+    support::declaration::write(&repo, repo.join("lib/index.artf"), "name = 'lib'\n").unwrap();
     let launch = Launch::parse([
         "artifactize-desktop".into(),
         "graph".into(),
@@ -1298,7 +1302,8 @@ fn a_current_scans_the_worktree_as_it_is_now_with_what_verify_would_do() {
     );
 
     // Scanning again reads the changed declaration.
-    fs::write(
+    support::declaration::write(
+        &fixture.repo,
         fixture.repo.join("index.artf"),
         "name = 'app'\nbasis = true\n",
     )
@@ -1402,17 +1407,22 @@ fn an_artifacts_tools_follow_its_declaration_when_it_moves_or_is_renamed() {
         fixture.repo.join("archive/release"),
     )
     .unwrap();
+    let file = fixture.repo.join(".artifactize/release.artf");
+    let moved = fs::read_to_string(&file)
+        .unwrap()
+        .replace("path = \"release/\"", "path = \"archive/release/\"");
+    fs::write(&file, moved).unwrap();
     assert_eq!(
         list("release").unwrap()[0]["action"],
         "prints archive/release/notes.md"
     );
     // Renamed, it declares another Artifact. Only its own declarations are read: ship's
     // reference to the old name, which a whole-workspace read refuses, is not.
-    let file = fixture.repo.join("archive/release/index.artf");
-    let renamed = fs::read_to_string(&file)
-        .unwrap()
-        .replace(r#"name = "release""#, r#"name = "notes""#);
-    fs::write(&file, renamed).unwrap();
+    fs::rename(
+        fixture.repo.join(".artifactize/release.artf"),
+        fixture.repo.join(".artifactize/notes.artf"),
+    )
+    .unwrap();
     assert_eq!(list("release").unwrap_err()["kind"], "missing");
     assert_eq!(list("notes").unwrap()[0]["name"], "notes_notes");
 }

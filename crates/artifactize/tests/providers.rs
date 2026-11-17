@@ -36,7 +36,11 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
-        fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("spec/spec.md")),
+            "R1: the spec covers R1.\n",
+        )
+        .unwrap();
         let state = root.path().join("state");
         root.track(&state, &repo);
         let project = Self {
@@ -50,6 +54,7 @@ impl Project {
 
     fn declare(&self, profile: Value) {
         support::declaration::write(
+            &(self.repo),
             self.repo.join("spec/index.artf"),
             json!({
                 "name":"spec",

@@ -61,8 +61,13 @@ impl Fixture {
             )))
             .collect();
         fs::create_dir_all(&release).unwrap();
-        fs::write(release.join("notes.md"), "# Release notes\n- Ready.\n").unwrap();
+        fs::write(
+            support::declaration::source_path(release.join("notes.md")),
+            "# Release notes\n- Ready.\n",
+        )
+        .unwrap();
         support::declaration::write(
+            &(repo),
             release.join("index.artf"),
             json!({
                 "name":"release",
@@ -118,7 +123,7 @@ impl Fixture {
         )
         .unwrap();
         fs::create_dir_all(repo.join("ship")).unwrap();
-        support::declaration::write(
+        support::declaration::write(&(repo),
             repo.join("ship/index.artf"),
             json!({
                 "name":"ship",

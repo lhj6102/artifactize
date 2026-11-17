@@ -49,6 +49,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(root.join("home")).unwrap();
     support::declaration::write(
+        &(repo),
         repo.join("index.artf"),
         json!({
             "name":"app",
@@ -72,7 +73,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             .unwrap()
             .execute_batch(&format!("{EARLIER} PRAGMA user_version={version};"))
             .unwrap();
-        let before = fs::read(&database).unwrap();
+        let before = support::declaration::read_file(&database).unwrap();
         for args in [
             &["verify", "--wait", "--all"][..],
             &["status", "--all"],
@@ -116,7 +117,11 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             schema["details"],
             json!({"schema":version,"supported":STATE_SCHEMA_VERSION})
         );
-        assert_eq!(fs::read(&database).unwrap(), before, "version {version}");
+        assert_eq!(
+            support::declaration::read_file(&database).unwrap(),
+            before,
+            "version {version}"
+        );
         assert!(!state.join("state.sqlite-wal").exists());
         fs::remove_dir_all(&state).unwrap();
     }

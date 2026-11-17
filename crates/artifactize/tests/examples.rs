@@ -110,9 +110,10 @@ fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 
 fn append(path: &Path, text: &str) {
-    let mut contents = fs::read_to_string(path).unwrap();
+    let actual = support::declaration::source_path(path);
+    let mut contents = fs::read_to_string(&actual).unwrap();
     contents.push_str(text);
-    fs::write(path, contents).unwrap();
+    fs::write(actual, contents).unwrap();
 }
 
 fn requests(run: &Value) -> BTreeMap<String, Value> {

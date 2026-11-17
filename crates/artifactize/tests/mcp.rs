@@ -33,8 +33,13 @@ impl Project {
         let root = support::os::tempdir();
         let repo = support::os::canonical(root.path()).join("repo");
         fs::create_dir(&repo).unwrap();
-        fs::write(repo.join("content.txt"), "review input").unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("content.txt")),
+            "review input",
+        )
+        .unwrap();
         support::declaration::write(
+            &(repo),
             repo.join("index.artf"),
             json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
         )
@@ -93,7 +98,7 @@ impl Project {
 }
 async fn marker(path: &std::path::Path, expected: &str) {
     tokio::time::timeout(support::os::patience(FIXTURE_BOUND), async {
-        while fs::read_to_string(path).ok().as_deref() != Some(expected) {
+        while support::declaration::read_text(path).ok().as_deref() != Some(expected) {
             // Poll contents rather than file existence: creation can precede the write.
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -334,6 +339,7 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         json!(["-I", support::os::path_text(&script)]),
     ));
     support::declaration::write(
+        &(project.repo),
         project.repo.join("index.artf"),
         json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
     )
@@ -452,7 +458,11 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
     assert_eq!(
         legacy
             .wait_for_settlement(&run, async {
-                fs::write(project.repo.join("release"), "release").unwrap();
+                fs::write(
+                    support::declaration::source_path(project.repo.join("release")),
+                    "release",
+                )
+                .unwrap();
             })
             .await["state"],
         "green"
@@ -468,10 +478,11 @@ async fn b1_stdio_lifecycle_paging_legacy_and_client_exit() {
         .await;
     assert_eq!(second["findings"].as_array().unwrap().len(), 2);
     assert!(second["next_cursor"].is_null());
-    fs::remove_file(project.repo.join("release")).unwrap();
-    fs::remove_file(project.repo.join("ready")).unwrap();
+    support::declaration::remove_file(project.repo.join("release")).unwrap();
+    support::declaration::remove_file(project.repo.join("ready")).unwrap();
     evals.last_mut().unwrap()["payload"]["instruction"] = json!("A new controlled judgment.");
     support::declaration::write(
+        &(project.repo),
         project.repo.join("index.artf"),
         json!({"name":"app","fingerprint":{"files":["content.txt"]},"evals":evals}).to_string(),
     )
@@ -599,7 +610,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
     // No idle grace: the Run ends as soon as only its unclaimed sign-off is left.
     std::fs::create_dir_all(&project.state).unwrap();
     std::fs::write(
-        project.state.join("limits.json"),
+        support::declaration::source_path(project.state.join("limits.json")),
         r#"{"signoffIdleGraceSeconds":0}"#,
     )
     .unwrap();
@@ -832,7 +843,7 @@ async fn runtime_log_queries_retain_tail_and_report_pruned_evidence() {
         &script,
         "import sys\nfor n in range(6000): print(f'line-{n:04d} ' + 'x' * 40)\nprint('final diagnostic', file=sys.stderr)\nsys.exit(7)\n",
     );
-    support::declaration::write(
+    support::declaration::write(&(project.repo),
         project.repo.join("index.artf"),
         json!({
             "name":"app", "evals":[runtime("logs", support::os::python_program(), json!(["-I",support::os::path_text(&script)]))]
@@ -942,7 +953,7 @@ async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
         &script,
         "import pathlib,time\npathlib.Path('ready').write_text('ready')\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\n",
     );
-    support::declaration::write(
+    support::declaration::write(&(project.repo),
         project.repo.join("index.artf"),
         json!({
             "name":"app", "fingerprint":{"files":["content.txt"]},
@@ -995,7 +1006,11 @@ async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
         }
         if event["kind"] == "eval_result" && event["data"]["eval"] == "app/fast" {
             assert!(!events.iter().any(|e: &Value| e["kind"] == "outcome"));
-            fs::write(project.repo.join("release"), "release").unwrap();
+            fs::write(
+                support::declaration::source_path(project.repo.join("release")),
+                "release",
+            )
+            .unwrap();
         }
         events.push(event);
     }
@@ -1027,7 +1042,7 @@ async fn watch_stream_separates_live_eval_and_final_outcome_without_polling() {
 #[tokio::test]
 async fn graph_discovery_and_conservative_impact_match_cli() {
     let project = Project::new(json!([]));
-    fs::remove_file(project.repo.join("index.artf")).unwrap();
+    support::declaration::remove_file(project.repo.join("index.artf")).unwrap();
     for (name, declaration) in [
         ("input", json!({"name":"input","basis":true})),
         (
@@ -1039,6 +1054,7 @@ async fn graph_discovery_and_conservative_impact_match_cli() {
     ] {
         fs::create_dir(project.repo.join(name)).unwrap();
         support::declaration::write(
+            &(project.repo),
             project.repo.join(name).join("index.artf"),
             declaration.to_string(),
         )
@@ -1070,6 +1086,7 @@ async fn without_repo_the_clients_roots_name_the_project_and_a_change_asks_again
     let first = Project::new(json!([]));
     let second = Project::new(json!([]));
     support::declaration::write(
+        &(second.repo),
         second.repo.join("index.artf"),
         json!({"name":"other","fingerprint":{"files":["content.txt"]},"evals":[]}).to_string(),
     )
@@ -1110,8 +1127,16 @@ async fn in_its_plugins_folder_without_roots_the_server_serves_each_calls_projec
     // A host without roots starts the plugin's server in the plugin's folder.
     let project = Project::new(json!([]));
     let plugin = support::os::tempdir();
-    fs::write(plugin.path().join("plugin.json"), "{}").unwrap();
-    fs::write(plugin.path().join("mcp.json"), "{}").unwrap();
+    fs::write(
+        support::declaration::source_path(plugin.path().join("plugin.json")),
+        "{}",
+    )
+    .unwrap();
+    fs::write(
+        support::declaration::source_path(plugin.path().join("mcp.json")),
+        "{}",
+    )
+    .unwrap();
     let mut command = std::process::Command::new(support::os::cli());
     command
         .arg("--state-dir")

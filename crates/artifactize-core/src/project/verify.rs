@@ -271,7 +271,11 @@ pub(crate) async fn execute(
     }
     let fingerprints = cache::prepare(
         &config,
-        cache::fingerprint_targets(&config, &required),
+        cache::fingerprint_targets(&config, &required)
+            .into_iter()
+            .filter(|name| {
+                crate::scope::validate_file_target(&config.root, &config.artifacts[*name]).is_ok()
+            }),
         &runs,
         &parallelism,
         cancellation.clone(),

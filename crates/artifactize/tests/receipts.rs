@@ -212,6 +212,7 @@ async fn repositories_share_one_state_database() {
     fs::create_dir(&second).unwrap();
     for (repo, name) in [(&first, "first"), (&second, "second")] {
         support::declaration::write(
+            repo,
             repo.join("index.artf"),
             format!(r#"{{"name":"{name}","basis":true}}"#),
         )
@@ -318,8 +319,12 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), r#"{"name":"basis","basis":true}"#)
-        .unwrap();
+    support::declaration::write(
+        &(repo),
+        repo.join("index.artf"),
+        r#"{"name":"basis","basis":true}"#,
+    )
+    .unwrap();
     link_dir(&repo, &root.path().join("alias"));
     let inner = repo.join("inner");
     fs::create_dir(&inner).unwrap();
@@ -387,7 +392,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
     fs::create_dir(&repo).unwrap();
     fs::create_dir(&state).unwrap();
     let protected = repo.join("must-not-write");
-    fs::write(&protected, "unchanged").unwrap();
+    fs::write(support::declaration::source_path(&protected), "unchanged").unwrap();
     for suffix in ["", "-wal", "-shm"] {
         let file = state.join(format!("{DATABASE}{suffix}"));
         if support::os::symlink_file(&protected, &file).is_none() {
@@ -406,8 +411,11 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
                 .unwrap_err()
                 .contains("regular files")
         );
-        assert_eq!(fs::read_to_string(&protected).unwrap(), "unchanged");
-        fs::remove_file(file).unwrap();
+        assert_eq!(
+            support::declaration::read_text(&protected).unwrap(),
+            "unchanged"
+        );
+        support::declaration::remove_file(file).unwrap();
     }
 }
 

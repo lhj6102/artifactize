@@ -59,7 +59,7 @@ async fn owned_root_releases_every_repository_before_removal_on_return_and_unwin
         for name in ["first", "second"] {
             let repo = root.path().join(name);
             fs::create_dir(&repo).unwrap();
-            fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+            support::declaration::write(&repo, repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
             root.track(&state, &repo);
             let saved = support::runs::record(
                 &repo,
@@ -113,9 +113,17 @@ async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_
         let repo = root.path().join("repo");
         fs::create_dir(&broken).unwrap();
         fs::create_dir(&repo).unwrap();
-        fs::write(broken.join(DATABASE), "not SQLite").unwrap();
-        fs::write(repo.join("input"), "owned input").unwrap();
-        fs::write(repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
+        fs::write(
+            support::declaration::source_path(broken.join(DATABASE)),
+            "not SQLite",
+        )
+        .unwrap();
+        fs::write(
+            support::declaration::source_path(repo.join("input")),
+            "owned input",
+        )
+        .unwrap();
+        support::declaration::write(&repo, repo.join("index.artf"), "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Review.'\n").unwrap();
         root.track(&broken, &repo);
         root.track(&state, &repo);
         let saved = support::runs::record(
@@ -156,7 +164,10 @@ async fn failed_root_cleanup_retains_inputs_preserves_panics_and_releases_other_
                 owner.start_time
             ));
         }
-        assert_eq!(fs::read(repo.join("input")).unwrap(), b"owned input");
+        assert_eq!(
+            support::declaration::read_file(repo.join("input")).unwrap(),
+            b"owned input"
+        );
         assert!(directory.exists(), "failed cleanup retains inputs");
         // Explicit removal is safe only after every saved worker/supervisor has exited.
         fs::remove_dir_all(&directory).unwrap();
@@ -169,7 +180,7 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app",
         "evals":[
             {"id":"bad","title":"Bad","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["bad"]}},
@@ -278,7 +289,7 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let run = verify(&repo, &state).await;
@@ -419,7 +430,7 @@ async fn run_list_reads_no_records_so_damaged_definitions_and_requests_still_lis
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app", "evals":[
             {"id":"one","title":"One","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["one"]}},
             {"id":"two","title":"Two","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["two"]}}
@@ -472,7 +483,7 @@ async fn contradictory_runs_are_reported_without_aborting_list_status_or_prune()
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
+    support::declaration::write(&(repo), repo.join("index.artf"), json!({
         "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
     }).to_string()).unwrap();
     let healthy = verify(&repo, &state).await;

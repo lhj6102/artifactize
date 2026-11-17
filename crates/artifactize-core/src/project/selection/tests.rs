@@ -29,6 +29,7 @@ fn fixture() -> (tempfile::TempDir, RepoConfig) {
         let path = directory.path().join(name);
         fs::create_dir(&path).unwrap();
         crate::test_declaration::write(
+            directory.path(),
             path.join("index.artf"),
             json!({"name":name,"evals":[{"id":"check","title":"Check",
                 "profile":{"kind":"human"},"payload":{"instruction":instruction}}]})
@@ -38,6 +39,7 @@ fn fixture() -> (tempfile::TempDir, RepoConfig) {
     }
     fs::create_dir(directory.path().join("input")).unwrap();
     crate::test_declaration::write(
+        directory.path(),
         directory.path().join("input/index.artf"),
         json!({"name":"input","basis":true}).to_string(),
     )
@@ -154,12 +156,12 @@ fn json_and_line_files_select_the_same_ordered_evals() {
     let json_path = directory.path().join("selection.json");
     let line_path = directory.path().join("selection.txt");
     fs::write(
-        &json_path,
+        crate::test_declaration::source_path(&json_path),
         "\u{feff}[\"green\",\"cycle-b\",\"green\",\"cycle-a\"]",
     )
     .unwrap();
     fs::write(
-        &line_path,
+        crate::test_declaration::source_path(&line_path),
         "\u{feff} green \r\n\r\n cycle-b\r\ngreen\ncycle-a \n",
     )
     .unwrap();
@@ -280,6 +282,7 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
 fn profile_fixture() -> tempfile::TempDir {
     let directory = crate::test_os::tempdir();
     crate::test_declaration::write(
+        directory.path(),
         directory.path().join("index.artf"),
         json!({
             "name":"target",
@@ -311,6 +314,7 @@ fn profile_fixture() -> tempfile::TempDir {
     .unwrap();
     fs::create_dir(directory.path().join("external")).unwrap();
     crate::test_declaration::write(
+        directory.path(),
         directory.path().join("external/index.artf"),
         r#"{"name":"input","basis":true}"#,
     )
@@ -322,7 +326,7 @@ fn profile_fixture() -> tempfile::TempDir {
 fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies() {
     let directory = profile_fixture();
     let source = directory.path().join("index.artf");
-    let before = fs::read(&source).unwrap();
+    let before = crate::test_declaration::read_file(&source).unwrap();
     let load = || read_workspace_config(directory.path()).unwrap();
     let selection = Selection::Eval {
         eval_id: "target/z".parse().unwrap(),
@@ -356,7 +360,7 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
         ),
         ["target/a", "target/z"]
     );
-    assert_eq!(fs::read(source).unwrap(), before);
+    assert_eq!(crate::test_declaration::read_file(source).unwrap(), before);
     assert!(load().evals[0].deps.is_empty());
     assert!(
         select_profiles(

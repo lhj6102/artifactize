@@ -1,3 +1,4 @@
+import { writeDeclaration } from "../declaration-fixtures.ts";
 // A branch's Current: its worktree as it is now, scanned as `artifactize status` does, its
 // graph marking each Artifact by what verify would do, the Detail of one with its evals' plans
 // and its own Human tools, and the scans a Refresh, a choice and the end of a Run start.
@@ -164,7 +165,7 @@ export const scenarios: Scenario[] = [
       // The person zooms out; no scan or new layout below moves that camera.
       await browser.$('[aria-label="Graph tools"] button[aria-label="Zoom out"]').click();
       const moved = await camera(browser);
-      const declaration = nativePath(fixture.repo, "docs", "index.artf");
+      const declaration = nativePath(fixture.repo, ".artifactize", "docs.artf");
       let previous = "Build the docs.";
       const instruction = async () => (await summary(browser)).instruction;
       /** The last scan ended: Refresh is offered again. */
@@ -192,7 +193,7 @@ export const scenarios: Scenario[] = [
       // removing it takes both away.
       await scanEnded();
       const digest = makeDirectory(nativePath(fixture.repo, "digest"));
-      writeText(nativePath(digest, "index.artf"), `name = "digest"
+      writeDeclaration(fixture.repo, nativePath(digest, "index.artf"), `name = "digest"
 
 [evals.summary]
 title = "Summarize the docs"
@@ -211,6 +212,7 @@ Summarize {docs}."""
       assert.notEqual(waiting.nodes["a:docs"].mark, waiting.nodes["a:digest"].mark, "would run and waiting are painted apart");
       assert.equal(await camera(browser), moved, "the new layout left the person's camera");
       await scanEnded();
+      removeTree(nativePath(fixture.repo, ".artifactize", "digest.artf"));
       removeTree(digest);
       await refresh(browser).click();
       await waitFor(browser, async () => (await drawn()).nodes["a:digest"] === undefined, "the removed digest Artifact dropped");

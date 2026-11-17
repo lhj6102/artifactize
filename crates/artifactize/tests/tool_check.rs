@@ -25,7 +25,7 @@ fn fixture(repo: &Path) {
         ),
     );
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
-    support::declaration::write(
+    support::declaration::write(repo,
         repo.join("a/index.artf"),
         json!({
             "name":"a",
@@ -80,13 +80,22 @@ fn fixture(repo: &Path) {
     )
     .unwrap();
     support::declaration::write(
+        repo,
         repo.join("b/index.artf"),
         json!({"name":"b","views":{"agent_tools":{"read":{"builtin":"read"}}},"basis":true})
             .to_string(),
     )
     .unwrap();
-    fs::write(repo.join("a/text.txt"), "scoped text\n").unwrap();
-    fs::write(repo.join("b/notes.md"), "b notes\n").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("a/text.txt")),
+        "scoped text\n",
+    )
+    .unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("b/notes.md")),
+        "b notes\n",
+    )
+    .unwrap();
 }
 
 fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
@@ -139,13 +148,13 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     assert!(!repo.join("a/touched").exists());
     assert!(!state.exists());
     let declaration_path = repo.join("a/index.artf");
-    let original = fs::read(&declaration_path).unwrap();
+    let original = support::declaration::read_file(&declaration_path).unwrap();
     let mut declaration: Value = support::declaration::read(&original).unwrap();
     declaration["views"]["agent_tools"]["env"]["execution_paths"] = json!(["missing-input"]);
-    support::declaration::write(&declaration_path, declaration.to_string()).unwrap();
+    support::declaration::write(&(repo), &declaration_path, declaration.to_string()).unwrap();
     assert_eq!(parsed(&check(&repo, &state, &["a/review"]), 1)["ok"], false);
     assert!(!repo.join("a/touched").exists());
-    support::declaration::write(&declaration_path, original).unwrap();
+    support::declaration::write(&(repo), &declaration_path, original).unwrap();
     let scoped = parsed(&check(&repo, &state, &["a/review"]), 0);
     assert_eq!(scoped["scopes"].as_array().unwrap().len(), 1);
     // The eval's scope: its own Artifact's tools plus those of the b it references.
@@ -202,10 +211,10 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     );
     assert_eq!(text, expected);
     assert_eq!(
-        fs::read_to_string(repo.join("a/touched")).unwrap(),
+        support::declaration::read_text(repo.join("a/touched")).unwrap(),
         "invoked"
     );
-    fs::remove_file(repo.join("a/touched")).unwrap();
+    support::declaration::remove_file(repo.join("a/touched")).unwrap();
     let human = parsed(
         &check(
             &repo,
@@ -224,7 +233,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     );
     assert_eq!(human["result"]["content"][0]["text"], expected);
     assert_eq!(
-        fs::read_to_string(repo.join("a/touched")).unwrap(),
+        support::declaration::read_text(repo.join("a/touched")).unwrap(),
         "invoked"
     );
     let error = parsed(
@@ -315,7 +324,11 @@ fn declaration_failure_keeps_the_public_stage_label() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fixture(&repo);
-    fs::write(repo.join("a/index.artf"), "invalid declaration").unwrap();
+    fs::write(
+        support::declaration::source_path(repo.join("a/index.artf")),
+        "invalid declaration",
+    )
+    .unwrap();
     let report = parsed(&check(&repo, &state, &[]), 1);
     assert_eq!(report["ok"], false);
     assert_eq!(report["checks"][0]["stage"], "declarations");

@@ -71,17 +71,20 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     root.track(&state, &first);
     root.track(&state, &second);
     support::declaration::write(
+        &(first),
         first.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,
     )
     .unwrap();
     support::declaration::write(
+        &(first),
         first.join("unselected/index.artf"),
         r#"{"name":"unselected","basis":true}"#,
     )
     .unwrap();
     for (name, title) in [("checkout", "Checkout"), ("search", "Search")] {
         support::declaration::write(
+            &(first),
             first.join(format!("scenarios/{name}/index.artf")),
             json!({
                 "name":name,
@@ -107,6 +110,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         .unwrap();
     }
     support::declaration::write(
+        &(second),
         second.join("index.artf"),
         json!({
             "name":"other",
@@ -129,8 +133,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     )
     .unwrap();
     // A sign-off on its own file Artifact, so the RED machine eval above does not block it.
-    fs::write(second.join("notes.md"), "notes").unwrap();
+    fs::write(
+        support::declaration::source_path(second.join("notes.md")),
+        "notes",
+    )
+    .unwrap();
     support::declaration::write(
+        &(second),
         second.join("notes.md.artf"),
         json!({
             "name":"notes",
@@ -251,8 +260,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
 
     fs::remove_dir_all(&first).unwrap();
     // A historical query must not discover even the surviving repository's declarations.
-    support::declaration::write(second.join("index.artf"), "not JSON").unwrap();
-    let before = fs::read(state.join("state.sqlite")).unwrap();
+    support::declaration::write(&(second), second.join("index.artf"), "not JSON").unwrap();
+    let before = support::declaration::read_file(state.join("state.sqlite")).unwrap();
     let all = query(&first, &state, &["run", "list", "--all"], 0);
     assert_eq!(all.as_array().unwrap().len(), 3);
     for (summary, saved) in all
@@ -374,7 +383,10 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert!(text.contains("DEFERRED=1"));
     assert!(text.contains("\tChecking out — étape 2\n"), "{text}");
     assert!(text.contains(selected["id"].as_str().unwrap()));
-    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+    assert_eq!(
+        support::declaration::read_file(state.join("state.sqlite")).unwrap(),
+        before
+    );
 }
 
 #[test]

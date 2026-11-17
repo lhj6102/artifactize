@@ -22,7 +22,7 @@ use crate::{
         error::{Code, Failure},
         session::{Conversation, Recorder},
     },
-    config::{ArtifactName, Eval, Profile, RepoConfig},
+    config::{ArtifactName, Eval, ModelId, Profile, RepoConfig},
     llm::{self, Attempt, Client},
     scope::{self, InstructionPart},
     tools::{Content, Registry, ToolResult},
@@ -163,7 +163,7 @@ async fn review(
 struct Turns<'a> {
     client: &'a Client,
     registry: &'a Registry<'a>,
-    model: &'a str,
+    model: &'a ModelId,
     output: &'a Path,
     deadline: Instant,
     cancellation: &'a CancellationToken,

@@ -996,7 +996,7 @@ export const scenarios: Scenario[] = [
       const fixture = await create();
       const run = signoff(fixture).runId;
       // After the Run was saved: release declares one more tool, and its notes change.
-      const declaration = nativePath(fixture.repo, "release", "index.artf");
+      const declaration = nativePath(fixture.repo, ".artifactize", "release.artf");
       writeText(declaration, readText(declaration).replace("[views.human_tools]\n",
         '[views.human_tools]\nlatest = { description = "Print the notes as they are now.", builtin = "read", args = ["{artifactPath}/notes.md"] }\n'));
       writeText(nativePath(fixture.repo, "release", "notes.md"), "# Release notes\n- Changed after the Run.\n");

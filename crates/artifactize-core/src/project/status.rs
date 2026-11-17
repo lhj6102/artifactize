@@ -43,6 +43,9 @@ pub struct StatusView {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactState {
+    #[serde(with = "crate::platform::path_serde")]
+    pub definition: std::path::PathBuf,
+    pub target_missing: bool,
     pub id: crate::config::ArtifactName,
     pub kind: crate::config::ArtifactKind,
     #[serde(with = "crate::platform::path_serde")]
@@ -436,7 +439,8 @@ impl<'a> Scope<'a> {
                         cache::dependencies(self.config, evals[id])
                             .into_iter()
                             .all(|input| {
-                                self.config.artifacts[input].fingerprint.is_none()
+                                self.config.artifacts[input].target_error.is_some()
+                                    || self.config.artifacts[input].fingerprint.is_none()
                                     || fingerprints.contains_key(input)
                             });
                     let decided = keyed

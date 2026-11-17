@@ -1005,7 +1005,8 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    fs::write(
+    crate::test_declaration::write(
+        &repo,
         repo.join("index.artf"),
         "name = \"app\"\n[evals.review]\ntitle = \"Review\"\nprofile = { kind = \"human\" }\n\
          [evals.review.payload]\ninstruction = \"Review\"\n\

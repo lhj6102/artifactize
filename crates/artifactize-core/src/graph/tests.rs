@@ -53,6 +53,8 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
         config.artifacts.insert(
             name.parse().unwrap(),
             Artifact {
+                definition: std::path::PathBuf::new(),
+                target_error: None,
                 kind: crate::config::ArtifactKind::Folder,
                 name: name.parse().unwrap(),
                 tags: declaration.tags,
@@ -348,6 +350,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
             "owner",
             json!({
                 "name":"owner",
+                "parts":["child"],
                 "evals":[
                     {
                         "id":"check",
@@ -368,7 +371,12 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
     ] {
         let path = fixture.path().join(path);
         std::fs::create_dir_all(&path).unwrap();
-        crate::test_declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
+        crate::test_declaration::write(
+            fixture.path(),
+            path.join("index.artf"),
+            declaration.to_string(),
+        )
+        .unwrap();
     }
     let config = read_workspace_config(fixture.path()).unwrap();
     assert_eq!(config.relations.len(), 3);

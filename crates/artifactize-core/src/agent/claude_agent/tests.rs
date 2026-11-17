@@ -34,6 +34,7 @@ impl Fixture {
         std::fs::create_dir_all(&repo).unwrap();
         std::fs::create_dir_all(&output).unwrap();
         crate::test_declaration::write(
+            &repo,
             repo.join("index.artf"),
             json!({
                 "name": "a",
@@ -53,7 +54,11 @@ impl Fixture {
             .to_string(),
         )
         .unwrap();
-        std::fs::write(repo.join("notes.txt"), "the evidence line\n").unwrap();
+        std::fs::write(
+            crate::test_declaration::source_path(repo.join("notes.txt")),
+            "the evidence line\n",
+        )
+        .unwrap();
         let config = read_workspace_config(&repo).unwrap();
         Self {
             state: directory.path().join("state"),
@@ -266,12 +271,13 @@ where
     let mut attempts = Vec::new();
     let cancellation = CancellationToken::new();
     let (ours, theirs) = channel();
+    let model: ModelId = MODEL.parse().unwrap();
     let mut conversation = Conversation::new(
         Session {
             server: &server,
             registry: &registry,
             output: &fixture.output,
-            model: MODEL,
+            model: &model,
             limits,
             cancellation: &cancellation,
             recorder: &mut recorder,

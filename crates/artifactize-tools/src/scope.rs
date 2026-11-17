@@ -161,10 +161,8 @@ pub struct Artifact {
 impl Artifact {
     pub fn folder(&self) -> &Path {
         match self.kind {
-            ArtifactKind::Folder | ArtifactKind::Graph => &self.path,
-            ArtifactKind::File | ArtifactKind::Aspect => {
-                self.path.parent().unwrap_or(Path::new(""))
-            }
+            ArtifactKind::Folder | ArtifactKind::Aspect | ArtifactKind::Graph => &self.path,
+            ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
         }
     }
 

@@ -44,6 +44,7 @@ impl Fixture {
         let folder = self.repo.join(path);
         fs::create_dir_all(&folder).unwrap();
         support::declaration::write(
+            &(self.repo),
             folder.join("index.artf"),
             json!({"name":name,"evals":evals}).to_string(),
         )

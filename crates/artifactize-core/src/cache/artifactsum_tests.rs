@@ -123,7 +123,10 @@ async fn a_wholes_manifest_excludes_file_and_aspect_parts_even_as_explicit_input
     for files in [json!(["."]), json!(["own.txt", "part.txt", "selected"])] {
         repo.write("app/part.txt", "file part");
         repo.write("app/selected/input.txt", "aspect part");
-        repo.artifact("app", json!({"name":"app","fingerprint":{"files":files}}));
+        repo.artifact(
+            "app",
+            json!({"name":"app","parts":["file-part","aspect"],"fingerprint":{"files":files}}),
+        );
         assert_eq!(repo.files("app").await, ["own.txt"]);
         let own = repo.fingerprint("app").await.unwrap().value;
         repo.write("app/part.txt", "changed file part");

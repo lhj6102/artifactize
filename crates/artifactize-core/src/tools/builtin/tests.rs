@@ -69,7 +69,7 @@ impl Fixture {
     fn write(&self, path: &str, data: impl AsRef<[u8]>) {
         let path = self.root.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        crate::test_declaration::write(path, data).unwrap();
+        crate::test_declaration::write(&self.root, path, data).unwrap();
     }
 
     async fn call(&self, tool: &str, args: Value) -> ToolResult {
@@ -326,7 +326,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             .is_error()
     );
     let data = fixture.data("glob_a", json!({"pattern":"**/*"})).await;
-    assert_eq!(data["files"], json!(["data/file", "index.artf"]));
+    assert_eq!(data["files"], json!(["data/file"]));
     let config = read_workspace_config(&fixture.root).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     fs::rename(fixture.root.join("a"), fixture.root.join("old-a")).unwrap();
@@ -524,12 +524,23 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
         json!({"name":"cases"}).to_string(),
     );
     fixture.write("a/nested/cases/input.txt", "child\n");
+    let compose = || {
+        let file = fixture.root.join("a/index.artf");
+        let mut declaration =
+            crate::test_declaration::read(crate::test_declaration::read_file(&file).unwrap())
+                .unwrap();
+        declaration["parts"] = json!(["b", "cases"]);
+        crate::test_declaration::write(&fixture.root, &file, declaration.to_string()).unwrap();
+    };
+    compose();
     // A nested folder Artifact is another Artifact: only a reference brings it in.
     let refused = fixture
         .call("read_a", json!({"path":"nested/cases/input.txt"}))
         .await;
     assert!(refused.is_error(), "{refused:?}");
     fixture.artifact("a", "a", "Review {b} and {cases}.");
+    compose();
+    fixture.write("a/nested/cases/notes.md", "notes");
     let data = fixture.data("list_a", json!({})).await;
     assert_eq!(
         data["entries"]
@@ -538,9 +549,9 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
             .iter()
             .map(|entry| entry["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["index.artf", "nested", "source"]
+        ["nested", "source"]
     );
-    assert_eq!(data["entries"][2]["kind"], "directory");
+    assert_eq!(data["entries"][1]["kind"], "directory");
     let data = fixture.data("list_a", json!({"path":"nested"})).await;
     assert_eq!(
         data["entries"][0],
@@ -550,12 +561,12 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
         .data("list_a", json!({"path":"nested/cases","limit":1}))
         .await;
     assert_eq!(data["totalEntries"], 2);
-    assert_eq!(data["entries"][0]["path"], "nested/cases/index.artf");
+    assert_eq!(data["entries"][0]["path"], "nested/cases/input.txt");
     assert_eq!(data["nextOffset"], 1);
     let data = fixture
         .data("list_a", json!({"path":"nested/cases","offset":1}))
         .await;
-    assert_eq!(data["entries"][0]["name"], "input.txt");
+    assert_eq!(data["entries"][0]["name"], "notes.md");
     assert_eq!(data["nextOffset"], Value::Null);
     let data = fixture
         .data("read_a", json!({"path":"nested/cases/input.txt"}))

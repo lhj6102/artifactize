@@ -156,6 +156,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
 fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
     let root = crate::test_os::tempdir();
     crate::test_declaration::write(
+        root.path(),
         root.path().join("index.artf"),
         json!({
             "name":"app",
@@ -183,6 +184,7 @@ fn current_graph_capture_preserves_the_independently_pinned_saved_wire() {
         "selection":{"kind":"all"},
         "artifacts":{
             "app":{
+                "definition":".artifactize/app.artf",
                 "path":"",
                 "kind":"folder",
                 "name":"app",

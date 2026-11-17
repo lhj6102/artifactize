@@ -33,7 +33,7 @@ impl Fixture {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        write_human(&repo, fingerprint);
+        write_human(&(repo), &repo, fingerprint);
         let state = root.path().join("state");
         root.track(&state, &repo);
         Self {
@@ -48,14 +48,19 @@ impl Fixture {
     fn referencing() -> Self {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
-        write_human(&repo.join("review"), false);
+        write_human(&(repo), &repo.join("review"), false);
         let review = repo.join("review/index.artf");
-        let declaration = fs::read_to_string(&review).unwrap();
+        let declaration = support::declaration::read_text(&review).unwrap();
         assert!(declaration.contains("Review."));
-        fs::write(&review, declaration.replace("Review.", "Review {spec}.")).unwrap();
+        fs::write(
+            support::declaration::source_path(&review),
+            declaration.replace("Review.", "Review {spec}."),
+        )
+        .unwrap();
         for name in ["spec", "other"] {
             fs::create_dir(repo.join(name)).unwrap();
             support::declaration::write(
+                &(repo),
                 repo.join(name).join("index.artf"),
                 json!({"name":name,"basis":true}).to_string(),
             )
@@ -161,9 +166,13 @@ async fn outcome(state: &Path, id: &str) -> (String, Option<FailureCode>) {
     )
 }
 
-fn write_human(path: &Path, fingerprint: bool) {
+fn write_human(root: &Path, path: &Path, fingerprint: bool) {
     fs::create_dir_all(path).unwrap();
-    support::declaration::write(path.join("fingerprint"), "human-v1\n").unwrap();
+    std::fs::write(
+        support::declaration::source_path(path.join("fingerprint")),
+        "human-v1\n",
+    )
+    .unwrap();
     let mut declaration = json!({
         "name":"review",
         "views":{
@@ -205,7 +214,7 @@ fn write_human(path: &Path, fingerprint: bool) {
     } else {
         declaration["fingerprint"] = json!(false);
     }
-    support::declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
+    support::declaration::write(root, path.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 /// Options that record Human requests and return at once instead of waiting for them.
@@ -227,15 +236,25 @@ fn rid(id: &str) -> artifactize_core::types::RequestId {
 #[tokio::test]
 async fn a_folder_whole_with_parts_can_be_claimed_inspected_submitted_and_reused() {
     let fixture = Fixture::new(true);
-    fs::write(fixture.repo.join("part.txt"), "file part").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("part.txt")),
+        "file part",
+    )
+    .unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("part.txt.artf"),
         json!({"name":"file-part","basis":true}).to_string(),
     )
     .unwrap();
     fs::create_dir(fixture.repo.join("nested")).unwrap();
-    fs::write(fixture.repo.join("nested/input.txt"), "folder part").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("nested/input.txt")),
+        "folder part",
+    )
+    .unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("nested/index.artf"),
         json!({"name":"folder-part","basis":true}).to_string(),
     )
@@ -489,7 +508,11 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
         human::claim(&receipts, &rid(id), &"alice".parse().unwrap())
             .await
             .unwrap();
-        fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
+        fs::write(
+            support::declaration::source_path(fixture.repo.join("fingerprint")),
+            "human-v2\n",
+        )
+        .unwrap();
         let error = if tool {
             human::run_human_tool(
                 &receipts,
@@ -584,26 +607,29 @@ async fn changed_declarations_end_the_request_error_and_the_next_verify_asks_aga
             Change::Child => {
                 fs::create_dir(review.join("child")).unwrap();
                 support::declaration::write(
+                    &(fixture.repo),
                     review.join("child/index.artf"),
                     r#"{"name":"child","basis":true}"#,
                 )
                 .unwrap();
             }
             Change::Referenced => support::declaration::write(
+                &(fixture.repo),
                 fixture.repo.join("spec/index.artf"),
                 r#"{"name":"spec","basis":true,"tags":["changed"]}"#,
             )
             .unwrap(),
             Change::Title => {
-                let recorded = fs::read_to_string(review.join("index.artf")).unwrap();
+                let recorded = support::declaration::read_text(review.join("index.artf")).unwrap();
                 assert!(recorded.contains("Human check"));
                 fs::write(
-                    review.join("index.artf"),
+                    support::declaration::source_path(review.join("index.artf")),
                     recorded.replace("Human check", "Another check"),
                 )
                 .unwrap();
             }
             Change::Removed => support::declaration::write(
+                &(fixture.repo),
                 review.join("index.artf"),
                 r#"{"name":"review","basis":true}"#,
             )
@@ -660,13 +686,13 @@ async fn unreadable_declarations_refuse_the_action_and_the_request_keeps_waiting
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &id, &alice).await.unwrap();
     let declaration = fixture.repo.join("index.artf");
-    let recorded = fs::read(&declaration).unwrap();
-    fs::write(&declaration, "name = ").unwrap();
+    let recorded = support::declaration::read_file(&declaration).unwrap();
+    fs::write(support::declaration::source_path(&declaration), "name = ").unwrap();
     human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
         .await
         .unwrap_err();
     assert_eq!(listed(&fixture.state).await, [id.as_str()]);
-    fs::write(&declaration, recorded).unwrap();
+    fs::write(support::declaration::source_path(&declaration), recorded).unwrap();
     let submitted = human::submit(&receipts, &id, &alice, &green(), CancellationToken::new())
         .await
         .unwrap();
@@ -693,7 +719,11 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
         [&run.run.id],
     )
     .unwrap();
-    fs::write(fixture.repo.join("other/index.artf"), "name = ").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("other/index.artf")),
+        "name = ",
+    )
+    .unwrap();
     assert!(store::read_request(&fixture.state, &id).await.is_err());
     assert!(artifactize_core::config::read_workspace_config(&fixture.repo).is_err());
     let alice = "alice".parse().unwrap();
@@ -733,8 +763,8 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
 #[tokio::test]
 async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run() {
     let fixture = Fixture::new(false);
-    write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         json!({
             "name":"parent",
@@ -750,6 +780,7 @@ async fn a_submitted_signoff_settles_its_provisional_dependents_in_the_owned_run
         .to_string(),
     )
     .unwrap();
+    write_human(&(fixture.repo), &fixture.repo.join("child"), true);
     let run = fixture.verify(returning()).await;
     assert_eq!(run.run.status().as_str(), "WAITING_HUMAN");
     let waiting = run
@@ -809,8 +840,8 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
     let fixture = Fixture::new(true);
     let release = fixture._root.path().join("release");
     // The sign-off holds up nothing: the root's machine eval runs on PROVISIONAL meanwhile.
-    write_human(&fixture.repo.join("child"), true);
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         json!({
             "name":"work",
@@ -830,6 +861,7 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
         .to_string(),
     )
     .unwrap();
+    write_human(&(fixture.repo), &fixture.repo.join("child"), true);
     // Started without a barrier: the machine eval runs until the test releases it.
     let context = artifactize_core::runs::Context::new(
         &fixture.repo,
@@ -907,7 +939,7 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
     let catalog = store::read_catalog(&fixture.state).await.unwrap();
     assert_eq!(catalog[0].status.as_str(), "RUNNING");
 
-    fs::write(&release, "").unwrap();
+    fs::write(support::declaration::source_path(&release), "").unwrap();
     let ended = owned_run::terminal(&fixture.state, &id).await;
     assert_eq!(shown(&ended), "GREEN");
 }
@@ -946,7 +978,11 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
             .await
             .is_err()
     );
-    fs::write(other.repo.join("fingerprint"), "different-repo-input\n").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("fingerprint")),
+        "different-repo-input\n",
+    )
+    .unwrap();
     let result = human::run_human_tool(
         &receipts,
         follower,
@@ -994,7 +1030,11 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
             .as_str(),
         "RED"
     );
-    fs::write(other.repo.join("fingerprint"), "human-v1\n").unwrap();
+    fs::write(
+        support::declaration::source_path(other.repo.join("fingerprint")),
+        "human-v1\n",
+    )
+    .unwrap();
     let completed = support::runs::record(
         &other.repo,
         Some(&fixture.state),
@@ -1185,7 +1225,11 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
     human::claim(&receipts, &forced.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
-    fs::write(fixture.repo.join("fingerprint"), "changed\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("fingerprint")),
+        "changed\n",
+    )
+    .unwrap();
     assert!(
         human::submit(
             &receipts,
@@ -1214,9 +1258,10 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
 async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() {
     let fixture = Fixture::new(false);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration.as_object_mut().unwrap().remove("fingerprint");
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert!(
         run.requests[0]
@@ -1241,7 +1286,11 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     let next = fixture.verify(returning()).await;
     assert_eq!(next.requests[0].status().as_str(), "GREEN");
     assert_eq!(next.requests[0].execution_id, run.requests[0].execution_id);
-    fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("fingerprint")),
+        "human-v2\n",
+    )
+    .unwrap();
     let changed = fixture.verify(returning()).await;
     assert_eq!(changed.requests[0].status().as_str(), "DEFERRED");
     assert_ne!(changed.requests[0].key, run.requests[0].key);
@@ -1252,7 +1301,11 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     )
     .await
     .unwrap();
-    fs::write(fixture.repo.join("fingerprint"), "human-v3\n").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("fingerprint")),
+        "human-v3\n",
+    )
+    .unwrap();
     let error = human::submit(
         &receipts,
         &changed.requests[0].id,
@@ -1294,7 +1347,8 @@ async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
 async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     let fixture = Fixture::new(true);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     let mut same = declaration["evals"][0].clone();
     same["id"] = json!("same");
     same["title"] = json!("Same criteria");
@@ -1305,7 +1359,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         .as_array_mut()
         .unwrap()
         .extend([same, different]);
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert_eq!(run.requests[0].execution_id, run.requests[1].execution_id);
     assert_eq!(run.requests[0].eval_def_hash, run.requests[1].eval_def_hash);
@@ -1394,9 +1448,10 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
 async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     let fixture = Fixture::new(true);
     let path = fixture.repo.join("index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({"lead":{"kind":"human"}});
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
     let run = fixture
         .verify(VerifyOptions {
             profile: Some(project::selection::ProfileSelection::Named(

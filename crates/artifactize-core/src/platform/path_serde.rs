@@ -35,3 +35,36 @@ pub(crate) mod option {
         Option::<PathBuf>::deserialize(deserializer)
     }
 }
+
+/// Portable keys for maps whose paths identify files, such as workbench optimistic bases.
+pub(crate) mod map {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::{collections::BTreeMap, path::PathBuf};
+    pub(crate) fn serialize<S: Serializer, T: Serialize>(
+        paths: &BTreeMap<PathBuf, T>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        paths
+            .iter()
+            .map(|(path, value)| (super::super::path_text(path), value))
+            .collect::<BTreeMap<_, _>>()
+            .serialize(serializer)
+    }
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<PathBuf, T>, D::Error> {
+        BTreeMap::deserialize(deserializer)
+    }
+}
+/// Migration source/destination pairs, rendered identically on every OS.
+pub(crate) fn pairs<S: Serializer>(
+    paths: &[(PathBuf, PathBuf)],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    paths
+        .iter()
+        .map(|(from, to)| (super::path_text(from), super::path_text(to)))
+        .collect::<Vec<_>>()
+        .serialize(serializer)
+}

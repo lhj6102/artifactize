@@ -2,10 +2,13 @@
 
 use super::{
     Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, cache, interactive,
-    maintenance, provider, remote, request, run, server, session, workflow,
+    maintenance, print_json, provider, remote, request, run, server, session, workflow,
 };
 use clap::CommandFactory;
-use std::{io, path::PathBuf};
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 
 pub(super) struct Context {
     pub repo: Option<PathBuf>,
@@ -133,6 +136,75 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Config {
             command: ConfigCommand::Graph { artifact, impact },
         }) => workflow::graph(context, artifact, impact).await,
+        Some(Command::Config {
+            command: ConfigCommand::Rename { old, new },
+        }) => {
+            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+            let config = artifactize_core::config::read_workspace_config(&repo)
+                .map_err(|error| error.to_string())?;
+            let artifact = config
+                .artifacts
+                .get(&old)
+                .ok_or_else(|| format!("Unknown Artifact {old}."))?;
+            let destination = artifact
+                .declaration_path()
+                .with_file_name(format!("{new}.artf"));
+            let mut based =
+                artifactize_core::config::edit::read(&repo).map_err(|error| error.to_string())?;
+            based.entry(destination).or_insert(None);
+            let result = artifactize_core::config::edit::apply(
+                &repo,
+                &based,
+                artifactize_core::config::edit::Operation::Rename { old, new },
+            )
+            .map_err(|error| error.to_string())?;
+            if context.json {
+                print_json(&result)?;
+            }
+            Ok(0)
+        }
+        Some(Command::Config {
+            command: ConfigCommand::Migrate,
+        }) => {
+            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
+            let report = artifactize_core::config::migrate::migrate(&repo)
+                .map_err(|error| error.to_string())?;
+            if context.json {
+                print_json(&report)?;
+            } else {
+                let mut output = io::stdout().lock();
+                for (old, new) in report.files {
+                    writeln!(
+                        output,
+                        "{} -> {}",
+                        artifactize_tools::files::path_text(&old),
+                        artifactize_tools::files::path_text(&new)
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                for (whole, parts) in report.explicit_parts {
+                    writeln!(
+                        output,
+                        "{whole}: parts = {}",
+                        serde_json::to_string(&parts).map_err(|error| error.to_string())?
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                for name in report.ignored {
+                    writeln!(output, "{name}: ignore added: .artifactize/")
+                        .map_err(|error| error.to_string())?;
+                }
+                for path in report.separate_projects {
+                    writeln!(
+                        output,
+                        "Separate project (run config migrate --repo there): {}",
+                        artifactize_tools::files::path_text(&path)
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+            }
+            Ok(0)
+        }
         Some(Command::Config {
             command: ConfigCommand::Check,
         }) => workflow::check(context).await,

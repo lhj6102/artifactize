@@ -38,8 +38,13 @@ impl Project {
         for (name, profile) in evals {
             let folder = repo.join(name);
             fs::create_dir_all(&folder).unwrap();
-            fs::write(folder.join("notes.md"), format!("{name}: R1 holds.\n")).unwrap();
+            fs::write(
+                support::declaration::source_path(folder.join("notes.md")),
+                format!("{name}: R1 holds.\n"),
+            )
+            .unwrap();
             support::declaration::write(
+                &(repo),
                 folder.join("index.artf"),
                 json!({"name":name,"fingerprint":{},
                     "views":{"agent_tools":{"read":{"builtin":"read"}}},
@@ -491,7 +496,7 @@ fn capped(request: &Request, deltas: &[String], output: u64) -> Reply {
 /// The saved session's `attempt` events of `review`.
 fn attempt_events(project: &Project, review: &Value) -> Vec<Value> {
     let session = review["sessionId"].as_str().unwrap();
-    fs::read_to_string(
+    support::declaration::read_text(
         project
             .state
             .join("agent-sessions")
@@ -757,8 +762,12 @@ fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
         admitted
             .recv_timeout(support::os::patience(Duration::from_secs(20)))
             .expect("the candidate's durable worker reached the provider");
-        fs::remove_file(&source).unwrap();
-        fs::write(&source, "replacement is deliberately not the declared CLI").unwrap();
+        support::declaration::remove_file(&source).unwrap();
+        fs::write(
+            support::declaration::source_path(&source),
+            "replacement is deliberately not the declared CLI",
+        )
+        .unwrap();
         release.open();
         drop(release_on_exit);
         let output = running.join().unwrap();
@@ -816,7 +825,7 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        let directory = PathBuf::from(fs::read_to_string(record).unwrap());
+        let directory = PathBuf::from(support::declaration::read_text(record).unwrap());
         assert!(!directory.exists(), "the process-owned CLI was cleaned up");
     }
 }
@@ -832,7 +841,9 @@ fn owned_cli_exit_probe() {
         "the published private CLI is executable"
     );
     fs::write(
-        support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
+        support::declaration::source_path(
+            support::os::environment_variable("ARTIFACTIZE_TEST_CLI_DIRECTORY_RECORD").unwrap(),
+        ),
         support::os::path_text(executable.parent().unwrap()),
     )
     .unwrap();
@@ -886,7 +897,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     ]);
     // One openai review at a time on this machine (limits.json).
     fs::write(
-        project.state.join("limits.json"),
+        support::declaration::source_path(project.state.join("limits.json")),
         json!({"backends":{"openai":1}}).to_string(),
     )
     .unwrap();
@@ -1009,7 +1020,7 @@ async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() 
                 &CompletionRequest::new(Message::user("literal replay")),
                 Turn {
                     number: 1,
-                    model: "fixture-model",
+                    model: &"fixture-model".parse().unwrap(),
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
                     max_tokens: None,
@@ -1068,7 +1079,7 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
                 &CompletionRequest::new(Message::user("fixture")),
                 Turn {
                     number: 1,
-                    model: "fixture-model",
+                    model: &"fixture-model".parse().unwrap(),
                     deadline: tokio::time::Instant::now() + Duration::from_secs(5),
                     cancellation: &cancellation,
                     max_tokens: None,
@@ -1174,7 +1185,10 @@ fn an_agent_error_echoing_the_credential_withholds_it_everywhere() {
         );
         let saved: String = files(&project.state.join("agent-sessions"))
             .iter()
-            .map(|path| String::from_utf8_lossy(&fs::read(path).unwrap()).into_owned())
+            .map(|path| {
+                String::from_utf8_lossy(&support::declaration::read_file(path).unwrap())
+                    .into_owned()
+            })
             .collect();
         assert!(!saved.is_empty(), "the Agent sessions were saved");
         for (backend, credential) in &credentials {

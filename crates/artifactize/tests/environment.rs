@@ -39,7 +39,11 @@ impl Project {
         let root = owned_run::Root::from(support::os::tempdir());
         let home = root.path().join("home");
         fs::create_dir_all(home.join(".toolchains/stable")).unwrap();
-        fs::write(home.join(".toolchains/stable/version"), "cargo 9.9\n").unwrap();
+        fs::write(
+            support::declaration::source_path(home.join(".toolchains/stable/version")),
+            "cargo 9.9\n",
+        )
+        .unwrap();
         let repo = root.path().join("repo");
         root.track(&root.path().join("state"), &repo);
         fs::create_dir(&repo).unwrap();
@@ -49,6 +53,7 @@ impl Project {
         );
         let home = support::os::path_text(&home);
         support::declaration::write(
+            &(repo),
             repo.join("index.artf"),
             declare(support::os::python_program(), &home).to_string(),
         )
@@ -76,7 +81,7 @@ impl Project {
     }
 
     fn seen_tmp(&self, kind: &str) -> std::path::PathBuf {
-        fs::read_to_string(self.home().join(format!("seen-tmp-{kind}")))
+        support::declaration::read_text(self.home().join(format!("seen-tmp-{kind}")))
             .unwrap()
             .into()
     }

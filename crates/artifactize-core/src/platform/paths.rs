@@ -75,3 +75,20 @@ pub(crate) fn drive_rooted(value: &str) -> bool {
         && value.as_bytes().get(1) == Some(&b':')
         && value.as_bytes().get(2) == Some(&b'/')
 }
+
+/// Definition names are portable filenames even when authored on a permissive volume.
+pub(crate) fn portable_filename(name: &str) -> Result<(), String> {
+    let lower = name.to_ascii_lowercase();
+    if matches!(lower.as_str(), "con" | "prn" | "aux" | "nul" | "clock$")
+        || lower
+            .strip_prefix("com")
+            .or_else(|| lower.strip_prefix("lpt"))
+            .is_some_and(|number| {
+                matches!(number, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            })
+    {
+        Err(format!("Artifact name {name:?} is a reserved device name."))
+    } else {
+        Ok(())
+    }
+}

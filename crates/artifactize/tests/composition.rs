@@ -34,14 +34,14 @@ impl Fixture {
     fn write(&self, path: &str, contents: &str) {
         let path = self.repo.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents).unwrap();
+        support::declaration::write(&self.repo, path, contents).unwrap();
     }
 
     /// Declare `name` in `file`, a folder's `index.artf` or a `<label>.artf`.
     fn declare(&self, file: &str, declaration: Value) {
         let path = self.repo.join(file);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        support::declaration::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(&(self.repo), path, declaration.to_string()).unwrap();
     }
 
     fn cli(&self, args: &[&str]) -> Output {
@@ -219,7 +219,7 @@ fn folders_and_parts_compose_artifacts_and_a_failing_part_fails_each_whole_only(
 }
 
 #[test]
-fn parts_reject_cycles_unknown_names_the_graph_and_spaced_names() {
+fn parts_reject_cycles_unknown_names_and_invalid_names() {
     let fixture = Fixture::new();
     fixture.declare("a/index.artf", json!({"name":"a","parts":["b"]}));
     fixture.declare("b/index.artf", json!({"name":"b","parts":["a"]}));
@@ -241,28 +241,14 @@ fn parts_reject_cycles_unknown_names_the_graph_and_spaced_names() {
             .contains("b cannot be a part of itself")
     );
     fixture.declare("b/index.artf", json!({"name":"b"}));
-    fixture.write(".artf", "name = \"graph\"\n");
+    fixture.declare(".artf", json!({"name":"graph","parts":["b"]}));
     fixture.declare("a/index.artf", json!({"name":"a","parts":["graph"]}));
-    assert!(
-        fixture
-            .error(&["config", "check"])
-            .contains("parts: The graph Artifact graph is a part of nothing")
-    );
-    fixture.write(".artf", "name = \"graph\"\nparts = [\"b\"]\n");
+    assert!(fixture.cli(&["config", "check"]).status.success());
     fixture.declare("a/index.artf", json!({"name":"a"}));
-    assert!(
-        fixture
-            .error(&["config", "check"])
-            .contains("cannot declare parts")
-    );
-    fixture.write(".artf", "name = \"graph\"\n");
-    // A name with a space says how to make it a part instead.
-    fixture.declare("b/index.artf", json!({"name":"a::b"}));
+    // Spaces are legal in a physical filename on every supported OS, but not in a name.
+    fixture.declare("b/index.artf", json!({"name":"a b"}));
     let error = fixture.error(&["config", "check"]);
-    assert!(
-        error.contains("Rename a::b, for example to a-b") && error.contains("parts"),
-        "{error}"
-    );
+    assert!(error.contains("Artifact name must match"), "{error}");
 }
 
 #[test]
@@ -436,53 +422,4 @@ fn an_aspect_selects_part_of_a_folder_and_reuses_while_the_rest_changes() {
     let mut ran = executed(&run);
     ran.sort();
     assert_eq!(ran, ["fireball/check", "game/check"]);
-}
-
-#[test]
-fn an_aspect_is_declared_only_by_a_label_that_names_no_file_and_reads_only_its_selection() {
-    let fixture = Fixture::new();
-    fixture.write("game/src/skills/fireball.rs", "fireball\n");
-    fixture.write("game/src/other.rs", "other\n");
-    fixture.declare("game/index.artf", json!({"name":"game"}));
-    let aspect = |args: &str| {
-        json!({"name":"fireball","select":["src/skills"],
-            "evals":reads(args)})
-    };
-    fixture.declare("game/fireball.artf", aspect("{fireball}/src/other.rs"));
-    assert!(
-        fixture
-            .error(&["config", "check"])
-            .contains("exposes only its selected paths: src/skills")
-    );
-
-    fixture.declare(
-        "game/fireball.artf",
-        aspect("{fireball}/src/skills/fireball.rs"),
-    );
-    fixture.json(&["config", "check", "--json"], 0);
-    fixture.write("game/fireball", "a file named like the label");
-    assert!(
-        fixture
-            .error(&["config", "check"])
-            .contains("declares the file fireball")
-    );
-    fs::remove_file(fixture.repo.join("game/fireball")).unwrap();
-
-    fixture.declare("game/index.artf", json!({"name":"game","select":["src"]}));
-    assert!(
-        fixture
-            .error(&["config", "check"])
-            .contains("select declares an aspect")
-    );
-    fixture.declare("game/index.artf", json!({"name":"game"}));
-
-    fixture.declare(
-        "game/fireball.artf",
-        json!({"name":"fireball","select":["src/missing.rs"]}),
-    );
-    assert!(
-        fixture
-            .error(&["config", "check"])
-            .contains("select: src/missing.rs")
-    );
 }

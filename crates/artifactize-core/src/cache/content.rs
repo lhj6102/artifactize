@@ -232,7 +232,7 @@ impl Walk {
             if file.metadata().map_err(|e| e.to_string())?.is_dir() {
                 let mut gitignores = self.ancestors(input)?;
                 self.directory(&file, input, &mut gitignores, &mut state, cancellation)?;
-            } else if !input.ends_with(".artf") {
+            } else {
                 hash_file(file, input, &mut state)?;
             }
         }
@@ -288,10 +288,7 @@ impl Walk {
                 return Err(process::Error::Cancelled.to_string());
             }
             let child = join(path, &name)?;
-            if (!is_dir && name.ends_with(".artf"))
-                || self.excluded(&child)
-                || self.ignored(&child, is_dir, gitignores)?
-            {
+            if self.excluded(&child) || self.ignored(&child, is_dir, gitignores)? {
                 continue;
             }
             state.entries += 1;
@@ -395,6 +392,26 @@ fn hash_file(mut file: File, path: &LogicalTarget, state: &mut State) -> Result<
         return Err(format!("{path}: Content input must be a regular file."));
     }
     let mut digest = Sha256::new();
+    if path.ends_with(".artf") {
+        let remaining = MAX_BYTES.saturating_sub(state.bytes);
+        let mut bytes = Vec::new();
+        file.take(remaining + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("{path}: {error}"))?;
+        state.bytes += bytes.len() as u64;
+        if state.bytes > MAX_BYTES {
+            return Err(
+                "Content inputs exceed 1 GiB; narrow fingerprint.files or add fingerprint.ignore."
+                    .into(),
+            );
+        }
+        digest.update(artifactize_tools::artf::definition(&bytes));
+        state.files.insert(
+            path.clone(),
+            crate::types::Sha256Bytes::from_digest(digest.finalize().into()),
+        );
+        return Ok(());
+    }
     let mut buffer = vec![0; HASH_BUFFER_BYTES];
     loop {
         let read = file.read(&mut buffer).map_err(|e| format!("{path}: {e}"))?;

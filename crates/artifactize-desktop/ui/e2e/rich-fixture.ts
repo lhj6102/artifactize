@@ -1,10 +1,11 @@
+import { writeDeclaration } from "./declaration-fixtures.ts";
 // Actual saved Agent and runtime evidence, supplied by declared external fixture programs
 // and a loopback provider. Neither the application IPC nor its state is mocked.
 import { prepareFixture } from "./build-fixtures.ts";
 import { cli, type Fixture } from "./fixture.ts";
 import { environment, git } from "./environment.ts";
 import { runtimeProfile } from "./native-fixtures.ts";
-import { makeDirectory, nativePath, runProgramAsync, serveLoopbackHttp, writeText } from "./platform.ts";
+import { makeDirectory, nativePath, runProgramAsync, serveLoopbackHttp } from "./platform.ts";
 
 export const LONG_NAME = `published-${"W".repeat(54)}`;
 export const LONG_WORD = `code_${"unbroken".repeat(240)}`;
@@ -42,7 +43,7 @@ title = "Additional criterion ${index}"
 profile = ${runtimeProfile()}
 payload.instruction = "Check ${index}."
 `).join("");
-      writeText(nativePath(directory, "index.artf"), `name = ${JSON.stringify(LONG_NAME)}
+      writeDeclaration(repo, nativePath(directory, "index.artf"), `name = ${JSON.stringify(LONG_NAME)}
 [evals.agent]
 title = "Review the published receipt"
 profile = { kind = "agent", backend = "openai", model = "${MODEL}", timeout_ms = 60000 }
@@ -54,7 +55,7 @@ title = "Print the receipt report"
 profile = ${runtimeProfile("report")}
 payload.instruction = "Record the actual report output."
 ${other}`);
-      writeText(nativePath(makeDirectory(nativePath(repo, "basis")), "index.artf"), 'name = "basis"\nbasis = true\n');
+      writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, "basis")), "index.artf"), 'name = "basis"\nbasis = true\n');
       git(repo, "init", "-q", "--initial-branch=master", repo);
       const env = { ...environment(fixture), OPENAI_API_KEY: "fixture-not-a-secret", ARTIFACTIZE_OPENAI_BASE_URL: provider.url };
       // The second actual Run demonstrates reuse, preserving the original Agent transcript.

@@ -151,7 +151,7 @@ export const scenarios: Scenario[] = [
       await openTab(browser, "e:docs/lint");
       const instruction = async () => (await summary(browser)).instruction;
       await waitFor(browser, async () => (await instruction()) === "Build the docs.", "docs' eval open");
-      const declaration = nativePath(data.worktree, "docs", "index.artf");
+      const declaration = nativePath(data.worktree, ".artifactize", "docs.artf");
       let previous = "Build the docs.";
       for (const [index, keys] of [["F5"], [primaryModifier, "r"]].entries()) {
         const wanted = `Build the docs, refreshed ${index}.`;

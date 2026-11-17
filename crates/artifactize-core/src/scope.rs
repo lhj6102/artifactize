@@ -16,6 +16,7 @@ pub(crate) use human::{
     builtin_args, human_arguments, resolve_human_argv, validate_human_argument,
 };
 pub use instruction::instruction_references;
+pub(crate) use instruction::references as reference_spans;
 
 pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
 pub(crate) use artifactize_tools::scope::{logical_path, open_child, open_scoped};
@@ -95,6 +96,19 @@ pub(crate) fn tool_id(name: &ArtifactName) -> ArtifactId {
 
 /// Revalidate file targets at every preparation/read boundary, without following links.
 pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(), ScopeError> {
+    if matches!(
+        artifact.kind,
+        crate::config::ArtifactKind::Folder | crate::config::ArtifactKind::Aspect
+    ) {
+        let directory = scoped_path(root, &artifact.path)?;
+        crate::platform::open_directory(&directory).map_err(|error| {
+            ScopeError(format!(
+                "Artifact {} target {} must be a folder: {error}",
+                artifact.name,
+                crate::platform::path_text(&artifact.path)
+            ))
+        })?;
+    }
     if artifact.file_name().is_some() {
         artifact
             .path
@@ -455,15 +469,6 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         };
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
         for input in inputs.iter().filter(|input| *input != ".") {
-            if input.ends_with(".artf")
-                && !crate::platform::path_kind(&config.root.join(artifact.folder()).join(input))
-                    .is_ok_and(|kind| kind == crate::platform::FileKind::Directory)
-            {
-                return Err(error(
-                    "Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum."
-                        .into(),
-                ));
-            }
             let location = scope
                 .resolve_path(id, input)
                 .map_err(|failure| error(failure.0))?;
@@ -528,22 +533,6 @@ fn everything(config: &RepoConfig) -> artifactize_tools::scope::Scope {
             .collect(),
     }
     .tool_scope()
-}
-
-/// Resolve the evals' references against the Artifacts `config` holds, and nothing else: a
-/// read of part of the workspace, whose checks across the workspace stay with a full read.
-pub(crate) fn resolve_evals(config: &mut RepoConfig) -> Result<(), ConfigError> {
-    let everything = everything(config);
-    let resolved = config
-        .evals
-        .iter()
-        .map(|eval| eval_references(config, &everything, eval))
-        .collect::<Result<Vec<_>, _>>()?;
-    for (eval, found) in config.evals.iter_mut().zip(resolved) {
-        eval.references = found.references;
-        eval.deps = found.deps;
-    }
-    Ok(())
 }
 
 /// What an eval's instruction and runtime arguments reference.

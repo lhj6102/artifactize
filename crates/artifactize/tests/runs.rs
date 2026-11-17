@@ -34,7 +34,7 @@ impl Fixture {
             &script,
             "import pathlib, time\npathlib.Path('ready').write_text('ready')\nwhile not pathlib.Path('release').exists(): time.sleep(0.01)\n",
         );
-        support::declaration::write(repo.join("index.artf"), json!({"name":"app", "fingerprint":false, "evals":[
+        support::declaration::write(&(repo), repo.join("index.artf"), json!({"name":"app", "fingerprint":false, "evals":[
             {"id":"a-fast","title":"Committed", "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check."}},
             {"id":"z-controlled","title":"Controlled", "profile":{"kind":"runtime","command":support::os::python_program(),"args":[support::os::path_text(&script)]},"payload":{"instruction":"Check."}}
         ]}).to_string()).unwrap();
@@ -80,7 +80,7 @@ impl Fixture {
             tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
                 loop {
                     let view = store::read_run(&self.state, id).await.unwrap();
-                    if fs::read_to_string(self.repo.join("ready"))
+                    if support::declaration::read_text(self.repo.join("ready"))
                         .is_ok_and(|contents| contents == "ready")
                         && view.requests[0].status() == RequestStatus::Green
                         && view.requests[1].status() == RequestStatus::Running
@@ -139,6 +139,7 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         })
         .collect();
     support::declaration::write(
+        &(detached.repo),
         detached.repo.join("index.artf"),
         json!({
             "name":"app","fingerprint":false,"evals":evals,
@@ -208,7 +209,11 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
             .status()
             .is_open()
     );
-    fs::write(fixture.repo.join("release"), "release").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("release")),
+        "release",
+    )
+    .unwrap();
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Green);
     let output = support::os::run(fixture.command().args([
         "verify",
@@ -218,8 +223,8 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         "watch-attempt",
     ]));
     assert_eq!(output.status.code(), Some(0));
-    fs::remove_file(fixture.repo.join("release")).unwrap();
-    fs::remove_file(fixture.repo.join("ready")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("release")).unwrap();
+    support::declaration::remove_file(fixture.repo.join("ready")).unwrap();
     let cancelled = fixture.submit(None);
     let active = fixture.controlled(&cancelled).await;
     let child = active.requests[1].child.as_ref().unwrap().pid.get();
@@ -255,14 +260,26 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
 #[tokio::test]
 async fn a2_request_keys_deduplicate_sequential_and_concurrent_attempts_only() {
     let fixture = Fixture::new();
-    fs::write(fixture.repo.join("release"), "release").unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("release")),
+        "release",
+    )
+    .unwrap();
     let first = fixture.submit(Some("attempt:one"));
     assert_eq!(fixture.settled(&first).await.run.status(), RunStatus::Green);
     // Existing keys are looked up before today's now-invalid declarations.
-    let declaration = fs::read(fixture.repo.join("index.artf")).unwrap();
-    fs::write(fixture.repo.join("index.artf"), "invalid declaration").unwrap();
+    let declaration = support::declaration::read_file(fixture.repo.join("index.artf")).unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("index.artf")),
+        "invalid declaration",
+    )
+    .unwrap();
     assert_eq!(fixture.submit(Some("attempt:one")), first);
-    fs::write(fixture.repo.join("index.artf"), declaration).unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("index.artf")),
+        declaration,
+    )
+    .unwrap();
     let left = fixture.watcher(&["verify", "--all", "--request-key", "attempt:two", "--json"]);
     let right = fixture.watcher(&["verify", "--all", "--request-key", "attempt:two", "--json"]);
     let ids = [left, right].map(|child| {
@@ -316,8 +333,17 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         {"id":"check","title":"Check","profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},"payload":{"instruction":"Check."}},
         {"id":"approve","title":"Approve","profile":{"kind":"human"},"payload":{"instruction":"Review."}}
     ]});
-    support::declaration::write(fixture.repo.join("index.artf"), definition.to_string()).unwrap();
-    fs::write(fixture.repo.join("version"), "v1").unwrap();
+    support::declaration::write(
+        &(fixture.repo),
+        fixture.repo.join("index.artf"),
+        definition.to_string(),
+    )
+    .unwrap();
+    fs::write(
+        support::declaration::source_path(fixture.repo.join("version")),
+        "v1",
+    )
+    .unwrap();
     let context = fixture.context();
     let started = runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
         .await

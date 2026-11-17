@@ -8,12 +8,14 @@ async fn reservation_retry_cancel_and_failed_launch_release_their_writer_before_
     let state = root.path().join("state");
     std::fs::create_dir(&repo).unwrap();
     crate::test_declaration::write(
+        &repo,
         repo.join("index.artf"),
         json!({"name":"app", "fingerprint":false, "evals":[{
             "id":"check", "title":"Check", "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
             "payload":{"instruction":"Check."}
         }]}).to_string(),
-    ).unwrap();
+    )
+    .unwrap();
     let options = VerifyOptions::default();
     let key = "retry".parse().unwrap();
     let (id, accepted) =

@@ -8,11 +8,15 @@ const APP: &str = "name = 'app'\ntags = ['code']\n[evals.review]\ntitle = 'Revie
 
 fn fixture() -> tempfile::TempDir {
     let repo = crate::test_os::tempdir();
-    fs::write(repo.path().join(".artf"), GRAPH).unwrap();
-    fs::write(repo.path().join("index.artf"), APP).unwrap();
+    crate::test_declaration::write(repo.path(), repo.path().join(".artf"), GRAPH).unwrap();
+    crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), APP).unwrap();
     fs::create_dir(repo.path().join("child")).unwrap();
-    fs::write(repo.path().join("child/index.artf"), "name = 'leaf'\nbasis = true\nfingerprint = { script = { command = 'fingerprint-program', args = ['version'], files = ['input.txt'], timeout_ms = 1000 } }\n").unwrap();
-    fs::write(repo.path().join("child/input.txt"), "data").unwrap();
+    crate::test_declaration::write(repo.path(), repo.path().join("child/index.artf"), "name = 'leaf'\nbasis = true\nfingerprint = { script = { command = 'fingerprint-program', args = ['version'], files = ['input.txt'], timeout_ms = 1000 } }\n").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(repo.path().join("child/input.txt")),
+        "data",
+    )
+    .unwrap();
     repo
 }
 
@@ -31,10 +35,10 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         APP.replace("pass_schema = { type = 'object' }", "pass_schema = { type = 'object', required = ['summary'] }"),
         APP.replace("kind = 'agent', backend = 'openai', model = 'model-one', reasoning = 'high', timeout_ms = 10000, max_tool_calls = 10, max_tokens = 1000", "kind = 'human'"),
     ] {
-        fs::write(repo.path().join("index.artf"), changed).unwrap();
+        crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), changed).unwrap();
         assert_ne!(fingerprint(), baseline);
     }
-    fs::write(repo.path().join("index.artf"), APP).unwrap();
+    crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), APP).unwrap();
     // Options, variants and views never enter extraction, including runtime variants.
     let excluded = APP
         .replace("['code']", "['changed-tag']")
@@ -50,33 +54,44 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
         .replace("max_tool_calls = 10", "max_tool_calls = 20")
         .replace("max_tokens = 1000", "max_tokens = 2000")
         + "\n[evals.review.profile_variants]\nalternate = { kind = 'agent', backend = 'openai', model = 'alternate' }\n[views.agent_tools.graph]\nbuiltin = 'graph'\nargs = []\n";
-    fs::write(repo.path().join("index.artf"), excluded).unwrap();
+    crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), excluded).unwrap();
     assert_eq!(fingerprint(), baseline);
-    let leaf = fs::read_to_string(repo.path().join("child/index.artf")).unwrap();
-    fs::write(
+    let leaf = crate::test_declaration::read_text(repo.path().join("child/index.artf")).unwrap();
+    crate::test_declaration::write(
+        repo.path(),
         repo.path().join("child/index.artf"),
         leaf.replace("timeout_ms = 1000", "timeout_ms = 9000"),
     )
     .unwrap();
-    fs::write(repo.path().join("child/input.txt"), "changed contents").unwrap();
+    fs::write(
+        crate::test_declaration::source_path(repo.path().join("child/input.txt")),
+        "changed contents",
+    )
+    .unwrap();
     assert_eq!(fingerprint(), baseline);
     fs::rename(repo.path().join("child"), repo.path().join("elsewhere")).unwrap();
     assert_eq!(fingerprint(), baseline);
     fs::write(
-        repo.path().join("elsewhere/index.artf"),
-        leaf.replace("['version']", "['new-version']"),
+        crate::test_declaration::source_path(repo.path().join(".artifactize/leaf.artf")),
+        leaf.replace("version", "new-version"),
     )
     .unwrap();
     assert_ne!(fingerprint(), baseline);
     // Its own criteria belong to the graph too; no recursive fingerprint dependency.
-    fs::write(repo.path().join("elsewhere/index.artf"), leaf).unwrap();
     fs::write(
+        crate::test_declaration::source_path(repo.path().join(".artifactize/leaf.artf")),
+        leaf,
+    )
+    .unwrap();
+    crate::test_declaration::write(
+        repo.path(),
         repo.path().join(".artf"),
         GRAPH.replace("Review graph", "New graph title"),
     )
     .unwrap();
     assert_ne!(fingerprint(), baseline);
-    fs::write(
+    crate::test_declaration::write(
+        repo.path(),
         repo.path().join(".artf"),
         GRAPH.replace("Review the project structure.", "Review the new structure."),
     )
@@ -85,77 +100,34 @@ fn graph_fingerprint_tracks_relations_and_criteria_not_execution_or_location() {
 }
 
 #[test]
-fn graph_declaration_is_root_only_and_rejects_fingerprint_overrides() {
+fn definition_targets_are_ordinary_folder_nodes() {
     let repo = fixture();
-    for field in ["fingerprint = false", "fingerprint = {}"] {
-        fs::write(
+    for fingerprint in ["false", "{}"] {
+        crate::test_declaration::write(
+            repo.path(),
             repo.path().join(".artf"),
-            format!("name = 'graph'\n{field}\n"),
-        )
-        .unwrap();
-        let error = read(repo.path()).unwrap_err();
-        assert!(
-            error.contains("The graph Artifact cannot declare"),
-            "{error}"
-        );
-    }
-    fs::write(
-        repo.path().join(".artf"),
-        "name = 'graph'\nreview_policy = {}\n",
-    )
-    .unwrap();
-    assert!(
-        read(repo.path())
-            .unwrap_err()
-            .contains("unknown field `review_policy`")
-    );
-    fs::write(repo.path().join(".artf"), "name = 'graph'\n").unwrap();
-    let config = crate::config::read_workspace_config(repo.path()).unwrap();
-    let graph = &config.artifacts["graph"];
-    assert_eq!(graph.kind, ArtifactKind::Graph);
-    assert!(graph.nested.is_empty());
-    assert!(!config.evals.iter().any(|eval| eval.target == "graph"));
-    for basis in [false, true] {
-        fs::write(
-            repo.path().join(".artf"),
-            format!("name = 'graph'\nbasis = {basis}\n"),
+            format!("name = 'graph'\nfingerprint = {fingerprint}\nparts = ['leaf']\n"),
         )
         .unwrap();
         let config = crate::config::read_workspace_config(repo.path()).unwrap();
-        assert_eq!(config.artifacts["graph"].basis, Some(basis));
-        assert_eq!(config.artifacts["graph"].kind, ArtifactKind::Graph);
-        assert!(matches!(
-            config.artifacts["graph"].fingerprint,
-            Some(Fingerprint::Graph)
-        ));
+        assert_eq!(config.artifacts["graph"].kind, ArtifactKind::Folder);
+        assert_eq!(
+            config.artifacts["graph"].path,
+            std::path::Path::new(".artifactize")
+        );
+        assert!(config.artifacts["graph"].parts.contains("leaf"));
     }
-    fs::write(
-        repo.path().join(".artf"),
-        GRAPH.replace("name = 'graph'", "name = 'graph'\nbasis = true"),
-    )
-    .unwrap();
-    assert!(
-        read(repo.path())
-            .unwrap_err()
-            .contains("Basis Artifact graph cannot own Evals.")
-    );
-    fs::write(repo.path().join(".artf"), "name = 'graph'\nbasis = true\n").unwrap();
-    fs::write(repo.path().join("child/.artf"), "name = 'other-graph'\n").unwrap();
-    assert!(
-        read(repo.path())
-            .unwrap_err()
-            .contains("only at the repository root")
-    );
 }
 
 #[tokio::test]
 async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact() {
     let repo = fixture();
-    fs::write(repo.path().join("index.artf"), format!("{APP}\n[views.agent_tools.structure]\nbuiltin = 'graph'\nargs = []\n[views.human_tools.viewer]\nbuiltin = 'graph'\nkind = 'launch'\nargs = []\n")).unwrap();
+    crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), format!("{APP}\n[views.agent_tools.structure]\nbuiltin = 'graph'\nargs = []\n[views.human_tools.viewer]\nbuiltin = 'graph'\nkind = 'launch'\nargs = []\n")).unwrap();
     let config = crate::config::read_workspace_config(repo.path()).unwrap();
     let registry = crate::tools::Registry::for_artifact(&config, "app").unwrap();
     // Change an unrelated definition after creating the registry: current, not saved state.
-    fs::write(
+    crate::test_declaration::write(
+        repo.path(),
         repo.path().join(".artf"),
         GRAPH.replace("Review graph", "Changed graph title"),
     )

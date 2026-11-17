@@ -193,6 +193,7 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     // In a folder of its own, beside the fixture's Artifacts rather than around them.
     fs::create_dir_all(fixture.repo.join("project")).unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("project/index.artf"),
         r#"{"name":"project","basis":true}"#,
     )
@@ -208,6 +209,7 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     );
     fs::create_dir_all(fixture.repo.join("project/part")).unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("project/part/index.artf"),
         json!({"name":"part","fingerprint":false,"evals":[{"id":"check",
             "title":"Check","payload":{"instruction":"Check the part."},
@@ -226,7 +228,11 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     );
 
     let selector = fixture.root.path().join("selection.json");
-    fs::write(&selector, r#"["red/check","green/check","red/check"]"#).unwrap();
+    fs::write(
+        support::declaration::source_path(&selector),
+        r#"["red/check","green/check","red/check"]"#,
+    )
+    .unwrap();
     let file = fixture.json(&["status", "--evals-file", selector.to_str().unwrap()], 1);
     let csv = fixture.json(&["status", "--evals", "red/check,green/check"], 1);
     assert_eq!(file, csv);
@@ -248,11 +254,12 @@ fn status_selection_policy_and_final_obligations_match_verify() {
 fn profiles_rebuild_static_gates_without_running_commands() {
     let fixture = Fixture::new("runtime");
     let path = fixture.repo.join("red/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({"dependent":{
         "kind":"runtime","command":"missing-command","args":["{green}/missing.txt"]
     }});
-    support::declaration::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), &path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status", "red", "--profile", "dependent"], 1);
     assert_eq!(row(&view, "evals", "red/check")["state"], "WAIT_DEPENDENCY");
     assert_eq!(
@@ -271,12 +278,14 @@ fn profiles_rebuild_static_gates_without_running_commands() {
 fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let fixture = Fixture::new("runtime");
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("index.artf"),
         r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
     fs::create_dir_all(fixture.repo.join("part")).unwrap();
     support::declaration::write(
+        &(fixture.repo),
         fixture.repo.join("part/index.artf"),
         r#"{"name":"part","basis":true}"#,
     )
@@ -359,10 +368,11 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     assert!(!marker.exists());
     assert!(!fixture.state.exists());
     let path = fixture.repo.join("review/index.artf");
-    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
     declaration["fingerprint"]["script"] =
         json!({"command":echo_program(),"args":["current-fingerprint"]});
-    support::declaration::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(&(fixture.repo), path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "execute");
@@ -425,7 +435,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
             .is_dir()
     );
     assert_eq!(
-        fs::read_to_string(
+        support::declaration::read_text(
             Path::new(first["requests"][0]["runDir"].as_str().unwrap()).join("output/result.txt")
         )
         .unwrap(),

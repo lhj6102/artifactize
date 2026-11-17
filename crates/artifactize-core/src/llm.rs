@@ -39,7 +39,7 @@ pub use api::{Api, EndpointApi};
 use crate::{
     agent::error::{Code, Failure},
     auth::providers::{self, ApiKey, Custom},
-    config::{Backend, Provider},
+    config::{Backend, ModelId, Provider},
 };
 
 /// Attempts per turn: the first and up to two retries.
@@ -671,7 +671,7 @@ impl Client {
 pub struct Turn<'a> {
     pub number: usize,
     /// The model the request asked for; a response from another model fails its attempt.
-    pub model: &'a str,
+    pub model: &'a ModelId,
     pub deadline: Instant,
     pub cancellation: &'a CancellationToken,
     /// The review's `maxTokens`, if any.
@@ -701,16 +701,17 @@ fn add_cache_usage(
 
 /// A delivered response is usable only from the requested model and when it finished. One
 /// stopped at the output cap (`Length`) is a failure of the provider's output.
-fn validate_response(response: &CompletionResponse, model: &str) -> Result<(), Failure> {
+fn validate_response(response: &CompletionResponse, model: &ModelId) -> Result<(), Failure> {
     if response
         .model
         .as_deref()
-        .is_some_and(|actual| actual != model)
+        .is_some_and(|actual| actual != model.as_str())
     {
         return Err(Failure::new(
             Code::ProviderError,
             format!(
-                "Provider model mismatch: requested {model:?}, received {:?}.",
+                "Provider model mismatch: requested {:?}, received {:?}.",
+                model.as_str(),
                 response.model
             ),
         ));

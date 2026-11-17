@@ -1,90 +1,106 @@
-//! What this machine pushed to the remote review store lately: each push that sent records,
-//! when and how many, kept two days so a reader can say what was pushed on its own local day.
-
-use std::{
-    fs,
-    io::Write,
-    path::Path,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
+//! Recent pushes to the remote review store, retained for two days.
+use crate::types::Timestamp;
 use serde::{Deserialize, Serialize};
+use std::{fs, io::Write, path::Path, time::Duration};
 
-/// The file in the state directory that keeps the recent pushes.
 const FILE: &str = "remote-pushed.json";
-/// How long a push is kept: any local day still holds its own pushes.
+/// Retain every push that could still belong to the reader's local day.
 const KEPT: Duration = Duration::from_secs(48 * 60 * 60);
+/// The existing JSON wire uses epoch milliseconds; Timestamp keeps nanoseconds internally.
+const NANOS_PER_MILLISECOND: i128 = 1_000_000;
 
-/// One push that sent records: when, in milliseconds since the Unix epoch, and how many.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pushed {
-    pub at: u64,
+    #[serde(with = "milliseconds")]
+    pub at: Timestamp,
     pub count: usize,
 }
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        })
+impl Pushed {
+    /// Numeric timestamp for a JSON presentation boundary, not for time arithmetic.
+    pub fn unix_millis(self) -> i128 {
+        self.at.time().unix_timestamp_nanos() / NANOS_PER_MILLISECOND
+    }
 }
-
-/// The pushes this machine made in the last two days, oldest first, from the state directory
-/// `state` names (the shared one by default); none when nothing was kept or it cannot be read.
+mod milliseconds {
+    use super::*;
+    use serde::{Deserializer, Serializer};
+    pub(super) fn serialize<S: Serializer>(
+        at: &Timestamp,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let value = u64::try_from(at.time().unix_timestamp_nanos() / NANOS_PER_MILLISECOND)
+            .map_err(serde::ser::Error::custom)?;
+        serializer.serialize_u64(value)
+    }
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Timestamp, D::Error> {
+        let millis = u64::deserialize(deserializer)?;
+        time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(millis) * NANOS_PER_MILLISECOND)
+            .ok()
+            .and_then(Timestamp::new)
+            .ok_or_else(|| serde::de::Error::custom("Push timestamp is out of range."))
+    }
+}
+/// Recent pushes, oldest first; absent or unreadable state has no history to show.
 pub fn recent(state: Option<&Path>) -> Vec<Pushed> {
-    crate::store::state_dir(state).map_or_else(|_| Vec::new(), |dir| kept(&dir))
+    crate::store::state_dir(state)
+        .map_or_else(|_| Vec::new(), |dir| kept_at(&dir, Timestamp::now()))
 }
-
-/// The pushes kept in the state directory `state` from the last two days, oldest first.
-fn kept(state: &Path) -> Vec<Pushed> {
+fn kept_at(state: &Path, now: Timestamp) -> Vec<Pushed> {
     let Ok(text) = fs::read_to_string(state.join(FILE)) else {
         return Vec::new();
     };
-    let since = now().saturating_sub(u64::try_from(KEPT.as_millis()).unwrap_or(u64::MAX));
     serde_json::from_str::<Vec<Pushed>>(&text)
         .unwrap_or_default()
         .into_iter()
-        .filter(|pushed| pushed.at >= since)
+        .filter(|pushed| now.since(pushed.at) <= KEPT)
         .collect()
 }
-
-/// Keep a push of `count` records made now, with the others of the last two days.
 pub(crate) fn record(state: &Path, count: usize) -> Result<(), String> {
-    let mut pushes = kept(state);
-    pushes.push(Pushed { at: now(), count });
-    let mut file = tempfile::NamedTempFile::new_in(state).map_err(|e| e.to_string())?;
-    serde_json::to_writer(&mut file, &pushes).map_err(|e| e.to_string())?;
-    file.flush().map_err(|e| e.to_string())?;
+    record_at(state, count, Timestamp::now())
+}
+fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(), String> {
+    let mut pushes = kept_at(state, at);
+    pushes.push(Pushed { at, count });
+    let mut file = tempfile::NamedTempFile::new_in(state).map_err(|error| error.to_string())?;
+    serde_json::to_writer(&mut file, &pushes).map_err(|error| error.to_string())?;
+    file.flush().map_err(|error| error.to_string())?;
     file.persist(state.join(FILE))
-        .map_err(|e| e.error.to_string())?;
+        .map_err(|error| error.error.to_string())?;
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn keeps_each_push_with_its_count_and_drops_old_ones() {
-        let state = tempfile::tempdir().expect("state");
-        assert!(kept(state.path()).is_empty());
-        record(state.path(), 3).expect("first push");
-        record(state.path(), 2).expect("second push");
+        let state = crate::test_os::tempdir();
+        let at =
+            Timestamp::new(time::OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(10)).unwrap();
+        let after = |duration| Timestamp::new(at.time() + duration).unwrap();
+        assert!(kept_at(state.path(), at).is_empty());
+        record_at(state.path(), 3, at).unwrap();
+        record_at(state.path(), 2, after(time::Duration::seconds(1))).unwrap();
+        let wire: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(state.path().join(FILE)).unwrap()).unwrap();
         assert_eq!(
-            kept(state.path())
-                .iter()
-                .map(|pushed| pushed.count)
-                .collect::<Vec<_>>(),
-            [3, 2]
+            wire,
+            serde_json::json!([{"at":10000,"count":3},{"at":11000,"count":2}])
         );
-        // A push older than two days is no longer kept.
-        let old = [Pushed { at: 1, count: 9 }];
-        fs::write(
-            state.path().join(FILE),
-            serde_json::to_string(&old).unwrap(),
-        )
-        .unwrap();
-        assert!(kept(state.path()).is_empty());
+        let counts = |now| {
+            kept_at(state.path(), now)
+                .into_iter()
+                .map(|push| push.count)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(counts(after(time::Duration::hours(48))), [3, 2]);
+        assert_eq!(
+            counts(after(
+                time::Duration::hours(48) + time::Duration::milliseconds(1)
+            )),
+            [2]
+        );
+        assert!(counts(after(time::Duration::hours(49))).is_empty());
     }
 }

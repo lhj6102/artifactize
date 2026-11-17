@@ -219,6 +219,10 @@ impl Reader<'_> {
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
             return Err("Reading requires a regular file; list the directory first.".into());
         }
+        let viewed_path = self.scope.artifacts[&location.artifact_id]
+            .file_name()
+            .unwrap_or(&location.path);
+        let file = crate::artf::reader(file, viewed_path).map_err(|error| error.to_string())?;
         let mut reader = BufReader::new(file);
         let mut scan = scan::Read::new(offset, limit);
         let end = loop {
@@ -423,6 +427,11 @@ impl Reader<'_> {
                 scan::Received::Full => break,
                 scan::Received::Text => {}
             }
+            let contents = if file.ends_with(".artf") {
+                crate::artf::definition(&contents)
+            } else {
+                std::borrow::Cow::Borrowed(contents.as_slice())
+            };
             let Some(text) = scan::text(&contents) else {
                 continue;
             };
