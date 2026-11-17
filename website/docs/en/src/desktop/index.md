@@ -216,6 +216,9 @@ Source error. There is no app undo; these are worktree files, and Git keeps thei
 Drag a node, a minimized whole or a whole's title row to place it. A whole carries its
 parts and comments. A click without movement still opens Detail, background dragging
 pans, and Esc during a drag puts it back without saving. On a Run, dragging only pans.
+Placement and part-membership dragging require at most 500 drawn nodes, counting each
+copy of a shared part. Above that limit, zooming in does not enable these gestures;
+use Definition or Source to change membership instead.
 
 A box and the top level are automatic until something in them is moved. The first
 top-level move saves every top-level node's shown position in one edit. A whole keeps
@@ -248,8 +251,9 @@ its node's Detail and never edits it.
 #### Conflicts with file edits
 
 If a terminal or agent changed a file since the Current read it, an edit writes nothing,
-names that file and rescans. Typed Source text stays until you Save or Revert; the scan
-does not overwrite it. A graph move, drop, Reset layout or comment that would write a
+names that file and rescans. Rescanning the same branch keeps typed Source text until
+you Save or Revert. Save before switching branches or renaming that Artifact: those
+actions discard its unsaved Source. A graph move, drop, Reset layout or comment that would write a
 file with unsaved Source is also refused until you save or revert that Source. Untouched
 text and unknown annotation values are retained. See [positions and comments](../features/declarations.md#positions-and-comments)
 for their file form.
@@ -280,12 +284,16 @@ left of the Detail when one is open, shows the whole graph in small, each Artifa
 its status's colour, with the part in view framed. A click or a drag in it moves the camera
 there, the zoom kept. It goes when the whole graph is in view.
 
-Every graph places inputs on the left. In a graph of **more than 500 nodes**, zooming
-out until names are too small to read replaces nodes with blocks in their status's
-colour and whole boxes with outlines. Blocks also appear whenever more than 500 nodes
-are in view, even at a readable zoom. Clicking a block still opens Detail. Tab and
-Enter work again when names are readable and at most 500 nodes are in view. Detail
-shows at most 16 neighbours on each side and counts the rest.
+Every graph places inputs on the left. In a graph of **more than 500 drawn nodes**
+(shared copies each count), zooming out until names are too small to read replaces
+nodes with blocks in their status's colour and whole boxes with outlines. At a readable
+zoom, nodes keep their names, icons, tallies and comments even when more than 500 are in
+view, but individual node controls are unavailable: Tab and Enter, mouse Minimize/Expand,
+and in-graph comment editors. Clicking a node or block, including a pictured Minimize/Expand
+control, opens Detail instead. Zoom or pan until names are readable and at most 500 nodes
+are in view to restore these controls. Alternatively, open a whole's Detail and press `m`
+to minimize or expand it, or edit a comment in Source. Detail shows at most 16 neighbours
+on each side and counts the rest.
 
 An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
 its parts, under a title row with its mark, its name and its count, closed by the strip in
@@ -371,14 +379,19 @@ What ended well is said by the log's end line; a failure is said under the tools
 runs, the Artifact's other tool buttons wait and **Cancel** beside the running mark
 stops it; closing the Detail does not stop it, and its output keeps arriving in the
 Artifact's Tool log, shown when the Detail opens again. Its runs stay in that Tool
-log while the app runs. The graph's nodes carry no tool buttons. The Tools and the star show
-only while the Pane's search still lists the branch: if the search hides it, clear or widen
-the search to bring them back.
+log while the app runs. The graph's nodes carry no tool buttons. Tools, the star, and a
+Current's Definition and Source editors show only while the Pane's search still lists the
+branch. If the search hides it, clear or widen the search to bring them back.
 
 An eval's tab opens on **Summary**: read its status, instruction and result, or on a
-Current, what verify would do and the result it would reuse. Below its chips choose
-**Agent log** for the live conversation or **Runtime log** for saved stdout/stderr.
-An unavailable conversation says why it cannot be read on this machine. Return to
+Current, what verify would do and the result it would reuse. The status line includes
+duration, tokens abbreviated as `k`/`M`, model and the Runtime exit code. Reused duration
+and tokens prefixed with `saved` are work avoided, not work spent by this Run.
+
+Logs are available only for evals with recorded requests in Runs or requests opened by
+ID. Below the chips choose **Agent log** for the conversation or **Runtime log** for
+saved stdout/stderr. Current eval tabs have no logs, even when they show a reusable
+result. An unavailable conversation says why it cannot be read on this machine. Return to
 Summary to use `t` for **Debug**, also on Artifact tabs and in Human reviews.
 
 A Run's Human eval opens its review and sign-off, described below. An eval outside that
@@ -531,10 +544,12 @@ on the right, with **List models** for the models it offers.
 fields and **Sign in to the store**. Signed in, it shows the store's URL and share level as
 facts and its status in one line (signed in, the reviewer and how many results this machine pushed today, or what a push or check said),
 with **Check status**, **Push (dry run)**, **Push results** and **Sign out of the store**; the
-fields come back once you sign out. When the store refuses the saved token or cannot be
-reached, the sign-in fields come back with the store's URL and what went wrong, and only
+fields come back once you sign out. When a status check finds that the store refuses
+the saved token or cannot be reached, the sign-in fields come back with the store's URL and what went wrong, and only
 **Check status** besides **Sign in to the store**: there is no **Push results** until you
 sign in again with a valid token, or restore the connection and choose **Check status**.
+A failed push may leave the previous signed-in controls visible with an error. Choose
+**Check status** or reopen Settings to refresh the connection-dependent controls.
 **Summary** omits invocation details,
 captured output and tool-call history; **Full** also sends the saved execution.
 Summary still shares review metadata, owner results, declared Runtime commands

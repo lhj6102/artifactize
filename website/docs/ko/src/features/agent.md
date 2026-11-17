@@ -21,7 +21,7 @@ profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", r
 `artifactize login openai|anthropic|gemini`나 데스크톱 앱의 Settings에서 저장한 키를 씁니다.
 그 밖의 자격 증명은 찾지 않습니다. 키는 공백 없는 출력 가능한 ASCII 문자 1–4096개이며, 앞뒤 공백은
 지웁니다. 변수가 설정되어 있으면 그 키를 씁니다. 값이 잘못되었으면 저장한 키로 넘어가지 않고 오류가
-납니다. 유효한 유니코드가 아닌 값은 설정되지 않은 것으로 보아 저장한 키를 씁니다. `codex`는 ChatGPT 로그인을, `claude-agent`는 내 Claude Code와 그 로그인을 씁니다([Codex](#codex), [Claude Agent](#claude-agent) 참고).
+납니다. 유효한 유니코드가 아닌 값은 설정되지 않은 것으로 보아 저장한 키를 씁니다. `codex`는 ChatGPT 계정을, `claude-agent`는 현재 로그인한 Claude Code 계정을 사용합니다([Codex](#codex), [Claude Agent](#claude-agent) 참고).
 `provider`와 `effort`는 설정에서 쓸 수 있는 별칭이 아닙니다. 0.5.0에서 `chatgpt`(Sign in with ChatGPT)와 `claude`(Claude CLI) 백엔드가
 없어졌으며, 아직 이를 선언한 프로필이 있으면 `config check`가 대신 쓸 백엔드를 알려 줍니다.
 
@@ -46,7 +46,7 @@ artifactize models claude-agent
 커스텀 provider에서는 해당 API가 지원하는 값을 쓸 수 있으며, 지원 여부는 리뷰를 시작할 때 확인합니다. 요청한 설정을 모델이 지원하지 않으면 provider에서 오류가 납니다. artifactize가 다른 모델로 바꾸거나 강도를 낮추지는 않습니다. 응답에 모델 ID가 나오면
 정확히 일치해야 합니다.
 
-Agent eval도 Runtime eval처럼 입력 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
+Agent eval도 Runtime eval처럼 입력 Artifact를 검사하는 eval이 끝날 때까지 실행을 미루고, 결과를 재사용하며, 리뷰가 끝난 뒤 입력을 다시 확인합니다. 백엔드, 모델, reasoning, 제한은 실행 옵션일 뿐 재사용 키에
 들어가지 않습니다. eval, Artifact 종류, fingerprint가 같으면 모델이나 프로필이 달라도 결과를 재사용하며, 결과를 만들 때 쓴 모델과 프로필은 기록에 표시됩니다.
 
 `payload.instruction`에는 무엇을 확인하고 무엇을 GREEN으로 볼지 쓰세요. 대상이 지켜야 할 기준을

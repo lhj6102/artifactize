@@ -37,8 +37,8 @@ rejects it.
 
 `read.artifactId` identifies the Artifact that **declared the tool**;
 `resolvedArtifactId` identifies the Artifact reached through a nested folder.
-For example, if the folder `rules` in app's folder is declared as `spec` and the eval
-also references `{spec}`, app's read tool
+For example, if the folder `rules` in app's folder is declared as `spec`, app declares
+`parts = ["spec"]`, and the eval also references `{spec}`, app's read tool
 called with `{"path":"rules/requirements.md"}` returns ownership metadata
 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`
 alongside the line data. `path` remains the logical request path, not a physical

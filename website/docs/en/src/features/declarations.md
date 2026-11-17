@@ -104,9 +104,11 @@ required = ["summary"]
 additionalProperties = false
 ```
 
-An Agent returns `{"verdict":"GREEN","summary":"All requirements are covered."}`.
-A Human supplies just `{"summary":"All requirements are covered."}` as their form
-fields, with GREEN selected separately.
+The saved result is `{"verdict":"GREEN","summary":"All requirements are covered."}`.
+The [Agent response](../cli/index.md#agent-sessions) instead wraps the owner's fields:
+`{"verdict":"GREEN","verdictFields":{"summary":"All requirements are covered."}}`.
+A Human supplies just `{"summary":"All requirements are covered."}` as form fields,
+with GREEN selected separately.
 
 These schemas are JSON Schema: rules for which fields a result may have and which
 values they take. The schema of the whole result object, the **result envelope**, allows
@@ -178,7 +180,7 @@ Artifact.
 # .artifactize/graph.artf
 path = ".artifactize/"
 
-[views.agent_tools.structure]
+[views.human_tools.structure]
 builtin = "graph"
 args = []
 
@@ -377,9 +379,9 @@ accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no GREE
 RED verdict; a failed recheck records ERROR. Force skips neither preparation
 nor recheck. An Artifact with `fingerprint = false` has no fingerprint to prepare.
 An unkeyed eval covering Live state still rechecks every available snapshot; other
-evals without a complete reuse key skip the fingerprint-value recheck. File targets are
-still checked at preparation, Runtime/Agent start and end, and tool calls. An unkeyed
-Human submission without Live inputs does not recheck their availability. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
+evals without a complete reuse key skip the fingerprint-value recheck. Target availability
+and the unkeyed Human exception are covered in [File Artifacts](#file-artifacts).
+Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
 ## Artifact references in commands

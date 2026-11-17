@@ -32,8 +32,8 @@
 실패합니다.
 
 `read.artifactId`는 **도구를 선언한** Artifact를 가리키고, `resolvedArtifactId`는 안에 선언된 폴더를
-거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 폴더 안의 `rules` 폴더가 `spec`으로 선언되어 있고
-eval이 `{spec}`도 참조할 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 실제로 읽은
+거쳐 찾은 Artifact를 가리킵니다. 예를 들어 app 폴더 안의 `rules` 폴더가 `spec`으로 선언되어 있고,
+app이 `parts = ["spec"]`을 선언하며 eval도 `{spec}`을 참조할 때 app의 read 도구를 `{"path":"rules/requirements.md"}`로 호출하면, 줄 데이터와 함께 실제로 읽은
 Artifact를 나타내는 정보 `{"artifactId":"app","resolvedArtifactId":"spec","path":"rules/requirements.md"}`를
 돌려줍니다. `path`는 실제 머신 경로가 아니라 요청한 논리적 경로 그대로입니다. list의 최상위
 `artifactId`도 마찬가지로 선언한 Artifact를 가리킵니다. 항목 종류는 `file`, `directory`,

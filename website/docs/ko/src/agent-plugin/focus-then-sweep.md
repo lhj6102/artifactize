@@ -24,8 +24,7 @@
     그다음 RED eval로 넘어갑니다. 서로 겹치지 않는 수정을 한다면, 관련된 RED eval 여러 개를 한
     Run에서 함께 실행 대상으로 선택할 수 있습니다(`--evals app/review,docs/matches-app`, 또는 scope
     `{"kind": "evals", "evalIds": [...]}`). 수정 때문에 다시 리뷰해야 하는 eval은 반복할
-    때마다 실행하지 않습니다. 고칠 대상은 그 eval이 평가하는 Artifact이며, GREEN을 받으려고
-    eval을 느슨하게 바꾸지 않습니다.
+    때마다 실행하지 않습니다. 고칠 대상은 그 eval이 평가하는 Artifact이며, GREEN 판정을 받으려고 평가 기준을 완화하지 않습니다.
     집중 실행한 Run의 결과는 `verify_start` 다음에 `verify_wait`와 `verify_result`로 확인합니다.
     `verify_result`는 실패한 eval과 그 요청 ID를 알려 주고, 리뷰어가 보고한 결과는
     `request_show`로, Runtime eval의 출력은 `request_logs`로 봅니다(CLI에서는

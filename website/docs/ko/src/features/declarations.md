@@ -1,4 +1,4 @@
-# 선언 (.artf)
+# 선언 (.artf) {#declarations-artf}
 
 프로젝트는 `.artifactize/`가 있는 폴더입니다. 그 안의 일반 `*.artf` 파일 하나가 Artifact
 하나를 정의합니다. 파일 이름이 곧 이름입니다. `.artifactize/engine/app.artf`의 이름은
@@ -50,13 +50,13 @@ Eval 순서는 파일에 쓴 순서가 아니라 ID 순서입니다.
 |---|---|
 | `path` | 위 표의 대상. 필수입니다. |
 | `parts` | 부분으로 삼을 Artifact 이름 1~64개. 중복, 자기 참조, 구성 순환은 허용하지 않습니다. |
-| `select` | 폴더 아래에서 고른 경로 1~64개. 이때 aspect가 됩니다. |
+| `select` | 폴더 아래에서 고른 중복 없는 경로 1~64개. 이때 aspect가 됩니다. |
 | `basis` | `true`이면 해당 Artifact에 대한 리뷰만 면제하며 eval은 선언할 수 없습니다. |
 | `tags` | 중복 없는 문자열 최대 64개. 공백뿐인 값이나 제어 문자는 쓸 수 없습니다. |
 | `fingerprint` | 로컬 대상의 기본값은 artifactsum. `false`는 재사용을 끄고, 테이블로 artifactsum이나 스크립트를 지정합니다. |
-| `evals.<id>.title` | 필수 제목 |
+| `evals.<id>.title` | 공백뿐인 값은 허용하지 않는 필수 제목 |
 | `evals.<id>.profile` | 필수 `runtime`, `agent`, `human` 프로필 |
-| `evals.<id>.payload.instruction` | 필수 평가 지시문 |
+| `evals.<id>.payload.instruction` | 공백뿐인 값은 허용하지 않는 필수 지시문 |
 | `evals.<id>.pass_schema`, `fail_schema` | 아래에서 설명하는 선택 결과 스키마 |
 | `evals.<id>.profile_variants` | 같은 종류의 완전한 프로필 최대 64개 |
 | `evals.<id>.mutex` | Runtime과 Agent eval의 선택 mutex 태그 |
@@ -104,7 +104,9 @@ required = ["summary"]
 additionalProperties = false
 ```
 
-Agent는 `{"verdict":"GREEN","summary":"All requirements are covered."}`를 돌려줍니다.
+저장된 결과는 `{"verdict":"GREEN","summary":"All requirements are covered."}`입니다.
+[Agent 응답](../cli/index.md#agent-sessions)은 작성자가 정한 필드를 다음처럼 감쌉니다.
+`{"verdict":"GREEN","verdictFields":{"summary":"All requirements are covered."}}`.
 Human은 GREEN을 따로 고르고, 양식 필드로 `{"summary":"All requirements are covered."}`만
 입력합니다.
 
@@ -166,7 +168,7 @@ fingerprint는 필요 없습니다. 정의 파일 자체를 대상으로 지정�
 # .artifactize/graph.artf
 path = ".artifactize/"
 
-[views.agent_tools.structure]
+[views.human_tools.structure]
 builtin = "graph"
 args = []
 
@@ -302,7 +304,8 @@ Artifact 참조는 `payload.instruction`과 Runtime `profile.args`에 `{input}`�
 `fingerprint`를 생략하면 artifactsum을 씁니다. 폴더라면 `fingerprint = {}`도 같습니다.
 `fingerprint = false`는 재사용을 끄고, `fingerprint = true`는 거부합니다. 무엇을 포함하는지,
 `files`, `ignore`, 파일 Artifact 형식은 [Fingerprint와 재사용](fingerprint.md#artifactsum)에
-있습니다. 태그는 해시하지 않습니다.
+있습니다. 태그는 일반 대상의 재사용 키에는 들어가지 않습니다. 정의를 리뷰할 때는 `.artf`의 내용이므로
+그대로 포함됩니다.
 
 artifactsum은 범위가 정해진 경로 규칙에 따라 Artifact 아래의 파일을 읽습니다. 읽을 파일에 ignore되지 않은 심볼릭 링크나 특수 파일이 있으면 오류가 발생해 검증을 중단합니다. 적용되는 `.gitignore`는 해시 대상에서 빠지더라도 규칙을 적용하려고 모두 읽으므로,
 심볼릭 링크가 아닌 1 MiB 이하의 일반 파일이어야 합니다. 해당 Artifact에 속하지 않은 파일은 해시하지
@@ -344,10 +347,8 @@ ERROR를 기록합니다. force를 줘도 준비와 재확인은 건너뛰지 �
 Artifact는 준비할 fingerprint가 없습니다. 재사용 키가 없어도 Live 상태를 다루는 eval은
 준비된 스냅샷을 모두 재확인합니다. 그 밖에 온전한 재사용 키가 없는 eval은 fingerprint 값
 재확인을 건너뜁니다.
-그래도 준비 단계, Runtime·Agent eval 실행 전후, 도구 호출 때 파일 Artifact의 대상 파일을
-확인합니다. 재사용 키가 없고 Live 입력도 없는 Human 제출에서는 대상의 존재 여부를 다시
-확인하지 않습니다. 필요한 다른
-Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간의 변경을 계속 감시하지는 않습니다.
+대상의 존재 여부와 재사용 키가 없는 Human 제출의 예외는 [파일 Artifact](#file-artifacts)를
+보세요. 필요한 다른 Artifact의 fingerprint는 그래도 준비할 수 있습니다. 작업 공간의 변경을 계속 감시하지는 않습니다.
 artifactsum은 준비와 재확인 때만 해시합니다.
 
 ## 명령 안의 Artifact 참조 {#artifact-references-in-commands}

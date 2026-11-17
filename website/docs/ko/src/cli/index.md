@@ -395,7 +395,8 @@ MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
 payload, 스키마, 도구 뷰), 태그, 부분·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
-`kind`(`file`, `folder`, `aspect`, `live`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
+`kind`(`file`, `folder`, `aspect`, `live`), 프로젝트 기준 대상 `path`, 프로젝트 기준 정의 파일
+`definition`이 있습니다. status도 파일 종류와
 경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 강한 연결
 요소의 ID는 전체 Artifact Graph를 기준으로 매기므로, 일부만 보여 주면 번호가 띄엄띄엄 나올 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 형식은
 텍스트와 전체 JSON 두 가지이며, `plan`, `--compact`, `--full`은 지원하지 않습니다. 예전의 최상위

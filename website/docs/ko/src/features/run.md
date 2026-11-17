@@ -6,8 +6,7 @@ fingerprint 스크립트는 실행할 수 있습니다.
 
 ## eval 실행 게이트 {#eval-execution-gates}
 
-`verify`는 eval마다 그 eval의 [실행 게이트](artifact.md#eval-dependencies)에 따라 실행 시점을
-정하며, 여기에는 [Human 승인의 자동 eval 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
+`verify`는 각 eval의 [실행 게이트](artifact.md#eval-dependencies)에 따라 실행 시점을 정하며, 여기에는 [Human 승인의 자동 eval 선행 조건](artifact.md#human-sign-offs)도 포함됩니다.
 `status`는 eval을 실행하지 않고 이 게이트를 보여 줍니다.
 
 ## Verify와 Run {#verify-and-runs}
@@ -271,10 +270,5 @@ SATISFIED**를 유지하며, 흐린 `*`는 그 뒤로 상태가 바뀐 행을 �
 
 ### 현재 Artifact Graph 리뷰 도구 {#current-graph-review-tools}
 
-`config graph`는 설정을 확인하는 도구입니다. 리뷰에 쓰려면 아무 Artifact에나
-[내장 `graph` 도구](tools/builtin.md#current-project-graph)를 선언하세요. Agent는 추출한 현재
-Artifact Graph를 트리로 보고, Human은 저장된 Run 없이도 데스크톱 앱에서 그 브랜치의
-[Current](../desktop/index.md#current)를 엽니다. 정의 자체를 리뷰하려면
-`path = ".artifactize/"`나 그 하위 폴더, 정의 파일 하나를 대상으로 하는 일반 노드를 만드세요.
-일반 eval과 기본 artifactsum을 쓰며, Artifact Graph 전용 검증 절차나 다른 노드와의 자동 관계는 없습니다.
-입력에 든 `.artf`에는 [정의 보기](fingerprint.md#graph-fingerprint)를 적용합니다.
+Artifact Graph를 보여 주는 도구는 [내장 graph 도구](tools/builtin.md#current-project-graph)를,
+정의 자체를 리뷰하는 방법은 [정의 리뷰하기](declarations.md#graph-artifact)를 보세요.

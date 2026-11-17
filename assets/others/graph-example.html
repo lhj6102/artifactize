@@ -67,10 +67,10 @@
     padding: 0;
     list-style: none;
   }
-  .tree > ul { margin-top: 44px; padding-left: 26px; }
+  .tree > ul { margin-top: 28px; padding-left: 26px; }
   .tree ul ul {
-    margin-left: 22px;
-    padding-left: 22px;
+    margin-left: 12px;
+    padding-left: 16px;
     border-left: 1.5px solid var(--line);
   }
   .tree li {
@@ -82,17 +82,17 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    height: 58px;
+    height: 48px;
     font: 500 21px/1 var(--mono);
   }
   .tree li > ul { flex-basis: 100%; }
   .tree .chevron { width: 22px; margin-left: -34px; margin-right: -2px; color: var(--dim); }
   .tree .folder { color: var(--folder); }
   .tree .file { color: var(--dim); }
-  .tree .artf { color: var(--text); height: 32px; font-size: 18px; }
+  .tree .artf { color: var(--text); height: 27px; font-size: 17px; }
   .tree .artf .file { color: var(--dim); }
-  .tree .definition { margin-bottom: 10px; }
-  .tree .definition code { flex-basis: 100%; margin-left: 44px; color: var(--dim); font: 500 18px/28px var(--mono); }
+  .tree .definition { margin-bottom: 6px; }
+  .tree .definition code { flex-basis: 100%; margin-left: 44px; color: var(--dim); font: 500 16px/24px var(--mono); }
   .tree svg { width: 30px; height: 30px; flex: none; }
 
   /* ---------- The graph ---------- */
@@ -138,6 +138,20 @@
   .node svg { width: 34px; height: 34px; flex: none; color: var(--dim); }
   .node b { display: block; font: 700 22px/1.2 var(--sans); }
   .node small { display: block; margin-top: 6px; color: var(--dim); font: 500 17px/1 var(--mono); }
+
+  .whole {
+    position: absolute;
+    left: 400px;
+    top: 430px;
+    width: 770px;
+    height: 350px;
+    border: 2px solid var(--line);
+    border-radius: 18px;
+    background: var(--panel);
+  }
+  .whole header { display: flex; gap: 16px; align-items: baseline; padding: 14px 20px; }
+  .whole b { font: 700 22px var(--sans); }
+  .whole small { color: var(--dim); font: 500 17px var(--mono); }
 
   .person {
     position: absolute;
@@ -198,6 +212,7 @@
         <ul>
           <li><span><svg class="folder"><use href="#i-folder"/></svg>.artifactize/</span>
             <ul>
+              <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>app.artf</span><code>path="./"</code><code>parts=["code","docs"]</code></li>
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>problem.artf</span><code>path="PROBLEM.md"</code></li>
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>design.artf</span><code>path="SPEC.md"</code></li>
               <li class="definition"><span class="artf"><svg class="file"><use href="#i-file"/></svg>code.artf</span><code>path="code/"</code></li>
@@ -219,6 +234,7 @@
     <!-- Each check sits on a line from the Artifact it reads to the Artifact it belongs to,
          and the arrow points at the latter; a check that reads only its own Artifact loops
          back to it. -->
+    <div class="whole"><header><b>app</b><small>./</small></header></div>
     <svg class="edges" viewBox="0 0 1190 800" aria-hidden="true">
       <defs>
         <marker id="arrow-human" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="16" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto"><path d="M1 1.5 11 6 1 10.5Z" fill="var(--human)"/></marker>
@@ -238,36 +254,36 @@
         <use href="#check" x="546" y="238"/>
         <text x="546" y="206" text-anchor="middle" data-t="solvesProblem"></text>
 
-        <path class="line" d="M716 324 C 690 410 652 500 650 596"/>
+        <path class="line" d="M716 324 C 690 410 652 480 650 570"/>
         <use href="#check" x="674" y="455"/>
         <text x="702" y="447" data-t="testsRequirements"></text>
 
-        <path class="line" d="M730 612 C 860 590 1000 480 1060 356"/>
-        <use href="#check" x="922" y="518"/>
-        <text x="950" y="526" data-t="explainsUsage"></text>
+        <path class="line" d="M730 600 C 780 520 850 520 900 600"/>
+        <use href="#check" x="815" y="538"/>
+        <text x="815" y="492" text-anchor="middle" data-t="explainsUsage"></text>
 
-        <path class="line" d="M987 268 C 965 214 995 186 1025 186 C 1055 186 1085 214 1063 268"/>
-        <use href="#check" x="1025" y="186"/>
-        <text x="1025" y="154" text-anchor="middle" data-t="readable"></text>
+        <path class="line" d="M987 570 C 965 516 995 488 1025 488 C 1055 488 1085 516 1063 570"/>
+        <use href="#check" x="1025" y="488"/>
+        <text x="1025" y="456" text-anchor="middle" data-t="readable"></text>
 
-        <path class="line" d="M570 614 C 530 610 506 640 506 676 C 506 716 560 730 596 682"/>
-        <use href="#check" x="508" y="682"/>
-        <text x="520" y="746" text-anchor="middle" data-t="codingRules"></text>
+        <path class="line" d="M570 590 C 530 586 506 616 506 652 C 506 692 560 706 596 658"/>
+        <use href="#check" x="508" y="658"/>
+        <text x="520" y="734" text-anchor="middle" data-t="codingRules"></text>
       </g>
 
       <g class="runtime">
-        <path class="line" d="M730 640 C 770 642 790 662 790 684 C 790 716 740 730 704 682"/>
-        <use href="#check" x="790" y="684"/>
-        <svg x="812" y="694" width="34" height="34" style="color:var(--runtime)"><use href="#i-terminal"/></svg>
-        <text x="830" y="756" text-anchor="middle" data-t="runsTests"></text>
+        <path class="line" d="M730 614 C 770 616 790 636 790 658 C 790 690 740 704 704 658"/>
+        <use href="#check" x="790" y="658"/>
+        <svg x="812" y="668" width="34" height="34" style="color:var(--runtime)"><use href="#i-terminal"/></svg>
+        <text x="830" y="734" text-anchor="middle" data-t="runsTests"></text>
       </g>
     </svg>
 
     <div class="person" style="left:36px;top:250px"><div class="face"><svg><use href="#i-person"/></svg></div><span data-t="person"></span></div>
     <div class="node" style="left:262px;top:236px;width:180px"><svg><use href="#i-idea"/></svg><div><b data-t="problem"></b><small>PROBLEM.md</small></div></div>
     <div class="node" style="left:650px;top:236px;width:172px"><svg><use href="#i-file"/></svg><div><b data-t="spec"></b><small>SPEC.md</small></div></div>
-    <div class="node" style="left:900px;top:268px;width:250px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
-    <div class="node" style="left:570px;top:596px;width:160px"><svg><use href="#i-code"/></svg><div><b data-t="code"></b><small>code/</small></div></div>
+    <div class="node" style="left:900px;top:570px;width:250px"><svg><use href="#i-file"/></svg><div><b data-t="docs"></b><small>docs/</small></div></div>
+    <div class="node" style="left:570px;top:570px;width:160px"><svg><use href="#i-code"/></svg><div><b data-t="code"></b><small>code/</small></div></div>
   </section>
 
   <footer class="legend">

@@ -321,7 +321,7 @@ Detail에서 `!`는 다음 주의 항목의 Detail을 엽니다. Human 리뷰 �
 
 ### Detail {#detail}
 
-트리에 초점이 있으면 Detail은 `j`/`k`로 고른 행에 따라 바뀌는 **peek**(간략 보기)입니다. Outcome과
+트리에 초점이 있을 때 `j`/`k`로 행을 고르면 해당 항목의 요약이 Detail에 **peek**(간략 보기)로 표시됩니다. Outcome과
 그 eval을 실행하기 전에 결과가 나와야 하는 Artifact를 보여 줍니다. 실행 중인 Agent의 peek는 대화 기록의 마지막
 줄도 보여 줍니다. Enter나 →를 누르거나 peek를 클릭하면 모달 대신 **Full** Detail이 열립니다.
 Detail에서 나가면 Full 보기가 닫히고 다시 peek가 나옵니다.
@@ -362,7 +362,7 @@ Detail에는 다시 제출하라는 안내 대신 완료된 로컬 결과와 게
 설정은 종료할 때 복원됩니다. Monitor와 Review는 Run이 바뀌면 늦어도 5초 안에 자동으로 갱신됩니다.
 
 
-새로 고침에 실패하면 시각이 찍힌 **read failed at …** 알림이 기록됩니다. Monitor와 Review 목록에는 마지막으로 읽어 온 데이터가 남으므로, 보이는 요청, 결과, 담당 정보가 현재 상태와 다를 수 있습니다. 단독 Review에서 Human이 아닌 요청의 Detail을 보고 있으면
+새로 고침에 실패하면 실패 시각을 포함한 **read failed at …** 알림이 표시됩니다. Monitor와 Review 목록에는 마지막으로 읽어 온 데이터가 남으므로, 보이는 요청, 결과, 담당 정보가 현재 상태와 다를 수 있습니다. 단독 Review에서 Human이 아닌 요청의 Detail을 보고 있으면
 목록으로 돌아갈 때까지 알림이 나타나지 않을 수 있고, 그 Detail을 다시 읽지 못하면 이전에 보이던 내용이
 지워질 수 있습니다. Review에서는 요청 목록으로 돌아가
 `r`을 누르고, Monitor에서는 Scope, Runs, 트리에서 새로 고침을 요청하세요.

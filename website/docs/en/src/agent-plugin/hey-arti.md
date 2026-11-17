@@ -69,65 +69,42 @@ When shaping a new project, it:
 
 ## The practices it recommends
 
-- Cut Artifacts where work is edited and judged independently, each with a concrete
-  obligation. Avoid one review over the whole repository.
-- An eval names each input it really uses as `{name}`; sharing a repository is not a
-  dependency, and a command does not add the files it reads. A part such as
-  `ui` listed in `app`'s `parts` makes up `app`, yet is no input of `app`'s evals unless they name it.
-- Make an Artifact a part of a whole when the whole cannot pass while the part fails
-  ([composition](../features/artifact.md#composition)): list every part in the whole's
-  `parts`, wherever its target or definition lives, including parts shared by several
-  wholes. The part's failure fails the
-  whole, and `verify whole` covers the part too. Each part checks what it owns, and the
-  whole checks only how its parts work together, naming the parts its evals use. A part
-  that is one file is a [file Artifact](../features/declarations.md#file-artifacts); one
-  whose files lie spread in a larger folder is an
-  [aspect](../features/declarations.md#aspects) that selects them.
-- One obligation per eval. Use a runtime eval when a command can check it, an
-  [Agent eval](../features/agent.md) when it needs judgment, and a
-  [Human eval](../features/human.md) only where a person must add judgment or
-  authority. A person is asked only after the Artifact's runtime and Agent evals are
-  GREEN.
-- Criteria for one Artifact go inside its eval; rules many Artifacts share go in a
-  rule document their evals read.
-- Keep result schemas small: a summary on GREEN, concrete findings on RED (syntax
-  in [Declarations](../features/declarations.md)).
-- Keep the default fingerprint (artifactsum); give reviewers only the read-only
-  tools they need.
+Arti draws boundaries around independently edited and reviewed work, not the whole
+repository, with one obligation per eval. It [defines nodes](../features/declarations.md)
+first with an explicit `path`, even before targets exist; definition folders only organize
+files. It helps with `config migrate` and `config rename OLD NEW`.
 
-Combinations it recommends, with who owns each check and what it references:
+Each eval names the inputs it uses as `{name}`. Only explicit `parts` creates
+[composition](../features/artifact.md#composition), including shared, file and aspect
+parts: each part checks its own work, the whole checks integration, and its evals still
+name the parts they use. Location alone creates neither composition nor dependencies.
 
-- **Library and consumer**: the library owns its tests; the consumer's review
-  references `{library}`.
-- **Spec and app**: the app owns its tests (runtime) and a review against `{spec}`
-  (Agent).
-- **App and E2E tests**: running the suite is the app's eval, with `{e2e-tests}` in
-  its arguments; the test code's own evals review its style and coverage.
-- **Docs and assets**: the docs are reviewed against the code they describe; each
-  asset is its own file Artifact, with a person's sign-off when it needs one.
-- **Monorepo contract**: UI and API each own their checks; an integration eval
-  references both and the contract between them.
-- **Generated files**: either review the generator and its inputs, or review the
-  output with the generator referenced.
-- **Rule documents**: the rules are an Artifact, often with a Human sign-off, read
-  by the evals of the Artifacts they govern.
+Arti recommends Runtime for commands, [Agent](../features/agent.md) for judgment and
+[Human](../features/human.md) for a person's authority, after the machine evals pass.
+It keeps Artifact-specific criteria inline, shared rules in referenced rule Artifacts,
+and [result schemas](../features/declarations.md#owner-result-schemas) small. Local
+targets keep [artifactsum](../features/fingerprint.md); reviewers get only needed read-only tools.
+[Live checks](../features/declarations.md#live-artifacts) observe rather than deploy:
+commands receive URIs at the project root with the author's environment, Runtime evals
+run on every verify, and reusable Agent/Human reviews need script snapshots, not file tools.
 
-It steers away from implicit dependencies, whole-repository reviews, evals added only
-to catch a builder cheating (such as hashing the tests to prove nobody edited them),
-unrequested execution options, and weakening an eval to reach GREEN.
+Its patterns pair libraries with consumers, apps with specs and E2E test code, docs
+with the code they describe, assets with sign-offs, UI and API with a shared contract,
+and generators and inputs with their outputs. The app owns E2E execution; test-code
+evals judge style and coverage. Shared rules are reviewed Artifacts read by the checks they govern.
 
-To show you a pattern, it points at the example that matches your situation: the
-[examples](../getting-started/examples.md) (runtime relations, Agent tools with a
-sign-off, posts as file Artifacts), the demo projects `website/demo/shop` (a page
-checked against the style tokens it uses) and `website/demo/brand` (a signed-off
-logo embedded by a page), and artifactize's own repository (rule documents with a
-sign-off read by the evals of the code they govern, and an app whose eval runs its
-E2E suite). The skill ends with a small starter set of declarations to adapt.
+Arti avoids implicit dependencies, whole-repository reviews, checks added only to catch
+builder cheating, unrequested execution options, and weakening criteria to reach GREEN.
+It points you to [examples](../getting-started/examples.md), including
+[Live observations](https://github.com/lhj6102/artifactize/tree/main/examples/live),
+`website/demo/shop` (a page checked against style tokens), `website/demo/brand` (a signed-off
+logo used by a page), or artifactize's rule documents and app-owned E2E suite. The skill
+ends with starter declarations to adapt.
 
-Changing an eval's instruction, result schema or runtime command changes its
-judgment; tags, titles, execution options and tool declarations do not. After an
-edit, `status` should show the edited input and its real consumers needing review
-and independent parts still reused. See [Fingerprints and reuse](../features/fingerprint.md).
+After an edit, Arti checks `status` for the changed input and its actual consumers,
+leaving independent parts reused. Instructions, result schemas and runtime commands
+change judgment; tags, titles, execution options and tool declarations do not. See
+[Fingerprints and reuse](../features/fingerprint.md).
 
 ## Use MCP first
 

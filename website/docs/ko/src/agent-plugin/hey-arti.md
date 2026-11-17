@@ -1,8 +1,8 @@
 # Hey Arti: 프로젝트 리뷰 설계하기 {#hey-arti-shape-a-projects-reviews}
 
 코딩 어시스턴트에게 "Hey Arti, 이 프로젝트는 어떻게 리뷰하면 좋을까요?"라고 물어보세요. Arti는
-프로젝트를 파악하고 무엇이 중요한지 물은 뒤, 리뷰가 제대로 이뤄지고 결과를 재사용할 수 있도록 Artifact와
-eval 구성을 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
+프로젝트를 파악한 뒤 중요한 점을 물어보고, 리뷰를 제대로 수행하고 결과를 재사용할 수 있도록
+Artifact와 eval 구성을 제안합니다. 선언은 동의를 받은 뒤에만 바꿉니다. 애플리케이션을 빌드하거나 실행하지 않으며, 사람을
 대신해 승인하지도 않습니다.
 
 Arti의 안내서인 **스킬**은
@@ -61,61 +61,41 @@ eval을 제안하세요."라고 요청하세요. 수정한 사본을 따로 두�
 
 ## Arti가 추천하는 모범 사례 {#the-practices-it-recommends}
 
-- 독립적으로 고치고 리뷰할 수 있는 단위로 Artifact를 나누고, 각각의
-  검증 요건을 구체적으로 정하세요. 저장소 전체에 대한 리뷰 하나는 피하세요.
-- eval은 실제로 쓰는 각 입력을 `{name}`으로 가리킵니다. 같은 저장소에 있다고 해서
-  의존 관계가 생기지는 않으며, 명령이 읽는 파일도 eval의 입력에 자동으로 추가되지는 않습니다.
-  `app`의 `parts`에 적힌 `ui` 같은 부분은 `app`을 이루지만, `app`의 eval이 이름을 적지
-  않으면 그 입력이 아닙니다.
-- 부분이 실패했을 때 전체도 통과하지 않아야 한다면 그 Artifact를 전체의 부분으로 선언하세요
-  ([구성](../features/artifact.md#composition) 참고). 대상이나 정의가 어디에 있든 모든 부분을
-  전체의 `parts`에 적으세요. 여러 전체가 공유하는 부분도 마찬가지입니다. 부분이 실패하면 전체도 실패하고, `verify whole`은
-  부분까지 함께 다룹니다. 각 부분은 자기 몫을 검사하고, 전체는 부분들이 함께 동작하는지만 검사하며
-  그 eval이 쓰는 부분의 이름을 적습니다. 파일 하나인 부분은
-  [파일 Artifact](../features/declarations.md#file-artifacts)로, 큰 폴더 곳곳에 파일이 흩어진 부분은
-  그 파일을 골라 담는 [aspect](../features/declarations.md#aspects)로 선언합니다.
-- eval 하나에는 확인할 것을 하나만 두세요. 명령으로 확인할 수 있으면 Runtime eval을, 판단이
-  필요하면 [Agent eval](../features/agent.md)을, 사람이 직접 판단하거나 승인해야 하는 경우에만
-  [Human eval](../features/human.md)을 쓰세요. Artifact의 Runtime eval과 Agent eval이 모두 GREEN이 된 뒤에만 사람에게 Human eval을 요청합니다.
-- Artifact 하나에 대한 기준은 그 eval 안에 두고, 여러 Artifact가 공유하는 규칙은
-  그 eval들이 읽는 규칙 문서에 두세요.
-- 결과 스키마는 작게 유지하세요. GREEN에는 요약을, RED에는 구체적인 지적 사항을 담습니다(문법은
-  [선언](../features/declarations.md)에 있습니다).
-- 기본 fingerprint(artifactsum)를 유지하고, 리뷰어에게는 필요한 읽기 전용
-  도구만 주세요.
+Arti는 저장소 전체가 아니라 독립적으로 편집하고 리뷰하는 단위로 경계를 나누고,
+eval 하나에 검증 요건 하나를 둡니다. 대상이 아직 없어도 명시적인 `path`로
+[노드를 먼저 정의](../features/declarations.md)합니다. 정의 폴더는 파일을 정리하는 용도일
+뿐입니다. `config migrate`와 `config rename OLD NEW`도 안내합니다.
 
-아래 표에서 Arti가 추천하는 조합별로 Artifact에 선언할 eval과 각 eval의 참조 대상을 확인할 수 있습니다.
+eval은 실제로 쓰는 입력을 `{name}`으로 가리킵니다. 공유 부분, 파일 부분, aspect 부분을
+포함한 [구성](../features/artifact.md#composition)은 명시적인 `parts`로만 만듭니다.
+각 부분은 자기 몫을, 전체는 통합 동작을 검사하며, 전체의 eval도 사용하는 부분의 이름을
+적습니다. 파일 위치만으로 구성이나 의존 관계가 생기지는 않습니다.
 
-- **라이브러리와 그 사용처**: 라이브러리에 테스트를 두고, 라이브러리를 쓰는 코드의 리뷰에서는
-  `{library}`를 참조합니다.
-- **명세와 앱**: 앱에는 앱의 테스트를 실행하는 Runtime eval과 `{spec}`을 기준으로 리뷰하는 Agent eval을 둡니다.
-- **앱과 E2E 테스트**: 테스트 모음을 실행하는 eval은 앱에 선언하며, 그 인자에 `{e2e-tests}`가 들어갑니다. 테스트 코드의 eval에서는 코드 스타일을 리뷰하고, 테스트가 각 기능을 충분히 검증하는지 확인합니다.
-- **문서와 에셋**: 문서가 설명하는 코드와 문서 내용이 맞는지 리뷰합니다. 각
-  에셋은 각각 별도의 파일 Artifact이며, 필요하면 사람의 승인을 받습니다.
-- **모노레포의 연동 규약**: UI와 API에 각각 eval을 두고, 통합 eval에서
-  두 구성 요소와 그 사이의 인터페이스 규약을 참조합니다.
-- **생성된 파일**: 생성기와 그 입력을 리뷰하거나, 생성기를
-  참조해 출력을 리뷰합니다.
-- **규칙 문서**: 규칙 문서는 대개 Human 승인을 받는 Artifact로 선언하며,
-  그 규칙이 적용되는 Artifact의 eval이 읽습니다.
+명령으로 확인할 때는 Runtime, 판단이 필요하면 [Agent](../features/agent.md), 사람의
+승인 권한이 필요하면 자동 eval을 통과한 뒤 [Human](../features/human.md)을 권합니다.
+Artifact별 기준은 eval 안에, 공통 규칙은 참조하는 규칙 Artifact에 두고,
+[결과 스키마](../features/declarations.md#owner-result-schemas)는 작게 유지합니다.
+로컬 대상은 [artifactsum](../features/fingerprint.md)을 쓰고, 리뷰어에게는 필요한 읽기 전용 도구만 줍니다.
+[Live 검사](../features/declarations.md#live-artifacts)는 배포가 아니라 관측입니다.
+명령은 프로젝트 루트에서 작성자의 환경으로 URI를 받아 실행하며, Runtime eval은 verify마다
+실행합니다. Agent·Human 리뷰를 재사용하려면 파일 도구가 아니라 스크립트 스냅샷이 필요합니다.
 
-Arti는 다음 방식을 피하도록 안내합니다.
+Arti가 추천하는 조합은 라이브러리와 사용처, 앱과 명세·E2E 테스트 코드, 문서와 그 문서가
+설명하는 코드, 에셋과 승인, 공통 규약을 쓰는 UI와 API, 생성기·입력과 출력입니다.
+E2E 실행은 앱의 eval에 두고, 테스트 코드의 eval은 스타일과 기능 검증 범위를 판단합니다.
+공통 규칙은 리뷰를 받는 Artifact이며 그 규칙을 따르는 검사가 읽습니다.
 
-- 암묵적인 의존성
-- 저장소 전체를 한 번에 리뷰하는 eval
-- 구현 담당자가 규칙을 어기는지 감시하는 데만 쓰는 eval(예: 아무도 테스트를 고치지 않았는지 해시로 확인하는 eval)
-- 요청하지 않은 실행 옵션
-- GREEN을 얻으려고 판단 기준을 완화하는 일
+Arti는 암묵적인 의존성, 저장소 전체 리뷰, 구현 담당자의 규칙 위반을 감시하기만 하는 검사,
+요청하지 않은 실행 옵션, GREEN을 얻으려고 기준을 완화하는 일을 피합니다.
+[예제](../getting-started/examples.md)와
+[Live 관측](https://github.com/lhj6102/artifactize/tree/main/examples/live),
+스타일 토큰으로 페이지를 검사하는 `website/demo/shop`, 승인받은 로고를 페이지에 쓰는
+`website/demo/brand`, artifactize의 규칙 문서와 앱이 소유한 E2E 테스트 모음을 안내합니다.
+스킬 끝에는 프로젝트에 맞게 고쳐 쓸 시작용 선언이 있습니다.
 
-Arti는 사용자 상황에 맞는 예제로 리뷰 구성 방법을 보여 줍니다.
-[예제](../getting-started/examples.md)에서는 Runtime 관계, 승인이 있는 Agent 도구,
-파일 Artifact로 선언한 글을 볼 수 있습니다. 데모 프로젝트 `website/demo/shop`에서는 페이지가
-사용하는 스타일 토큰을 기준으로 검사하고, `website/demo/brand`에서는 페이지에 들어간
-로고의 승인을 받습니다. artifactize 자체 저장소에서는 승인받은 규칙 문서를
-그 규칙이 적용되는 코드의 eval이 읽고, 앱의 eval이
-E2E 테스트 모음을 실행합니다. 스킬 안내서 끝에는 프로젝트에 맞게 고쳐 쓸 수 있는 간단한 시작용 선언 예제가 있습니다.
-
-eval의 지시문, 결과 스키마, Runtime 명령을 바꾸면 eval의 평가 기준도 달라집니다. 태그, 제목, 실행 옵션, 도구 선언은 그렇지 않습니다. 수정한 뒤 `status`를 실행해, 바뀐 입력과 그에 의존하는 대상만 다시 리뷰하고 나머지는 재사용한다고 표시되는지 확인하세요. [Fingerprint와 재사용](../features/fingerprint.md)을 보세요.
+수정 뒤에는 `status`로 바뀐 입력과 실제 사용처만 다시 리뷰하고, 독립적인 부분은 재사용하는지
+확인합니다. 지시문, 결과 스키마, Runtime 명령을 바꾸면 판단 기준이 달라지지만, 태그, 제목,
+실행 옵션, 도구 선언은 그렇지 않습니다. [Fingerprint와 재사용](../features/fingerprint.md)을 보세요.
 
 ## MCP를 먼저 쓰기 {#use-mcp-first}
 

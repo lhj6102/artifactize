@@ -1,11 +1,9 @@
 # Artifact {#artifact}
 
-리뷰할 대상이라면 무엇이든 Artifact로 선언할 수 있습니다. 코드, 문서, 디자인, 이미지,
-외부의 실행 중인 상태도 대상이 됩니다. `.artifactize/`에 이름을 붙인 정의 파일을 만들고
-`path`로 대상을 지정하세요.
+Artifact는 코드, 문서, 디자인, 이미지처럼 리뷰하는 대상입니다. `.artifactize/`에 이름을
+붙인 정의 파일을 만들고 대상의 `path`를 적어 선언합니다.
 
 ```toml
-# .artifactize/docs.artf
 path = "docs/"
 
 [evals.links]
@@ -14,9 +12,10 @@ profile = { kind = "runtime", command = "python3", args = ["check_links.py"] }
 payload.instruction = "Check that every link in the docs resolves."
 ```
 
-`artifactize config check`로 검사하세요. 정의가 잘못되면 파일, 줄, 열을 알려 주고,
-대상이 없거나 종류가 다르면 안내합니다. 없는 대상 때문에 정의 검사가 실패하지는 않습니다.
-검증할 때는 그 대상을 다루는 eval만 준비 오류가 되며, 관련 없는 eval은 계속 실행합니다.
+그다음 `artifactize config check`를 실행하세요. 성공하면 `Folder configuration is valid.`를
+출력합니다. 정의가 잘못되면 파일, 줄, 열과 함께 오류를 출력하고, 대상이 없거나 종류가 다르면
+그 경로를 안내합니다. 없는 대상은 정의 오류가 아니라 verify의 개별 eval 준비 오류가 됩니다.
+artifactize는 이 선언을 읽어 하나의 Artifact Graph로 구성합니다.
 
 ## Artifact Graph {#artifact-graph}
 
@@ -35,7 +34,8 @@ payload.instruction = "Check that every link in the docs resolves."
 정의도 리뷰할 수 있습니다. `.artifactize/`나 그 하위 폴더를 대상으로 하는 일반
 Artifact를 선언하세요. Artifactsum은 annotations와 TOML 서식을 뺀 정의 내용을 다룹니다.
 특별한 종류를 따로 만들 필요는 없습니다. [선언](declarations.md#graph-artifact)에서 문법을,
-[graph 도구](tools/builtin.md#current-project-graph)에서 현재 기준과 관계를 보는 방법을 설명합니다.
+[graph 도구](tools/builtin.md#current-project-graph)는 Agent에게 현재 구조 전체를 보여 주고,
+사람에게는 Desktop에서 그 구조를 엽니다.
 
 ## 폴더 설정 {#folder-configuration}
 
@@ -72,13 +72,13 @@ payload.instruction = "Check that every bold term in {intro} and {usage} is defi
 
 ## 파일 Artifact {#file-artifacts}
 
-`.artifactize/hero-art.artf`에 `path = "hero.png"`를 쓰면 `hero.png` 하나를 대상으로 하는
-`hero-art`입니다. 명령은 파일이 있는 폴더에서 실행하지만 파일 내장 도구는 그 파일과
-허용한 입력만 보여 주며 관련 없는 옆 파일은 보여 주지 않습니다.
+정의 파일 `.artifactize/hero-art.artf`에 `path = "hero.png"`를 쓰면 그 일반 파일을 대상으로
+삼습니다. 같은 스키마를 사용하며, 정의 파일 이름에서 프로젝트 전체에 유일한 이름을 얻습니다.
 
 ```toml
 # .artifactize/hero-art.artf
 path = "hero.png"
+tags = ["type:image", "scope:player"]
 
 [evals.approved]
 title = "The hero sprite matches the style guide"
@@ -86,11 +86,13 @@ profile = { kind = "human" }
 payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
-전체의 `parts`에 적어야 그 전체의 부분이 됩니다. 그때 전체의 artifactsum에서는 파일을
-빼고 eval 재사용 키에 부분의 fingerprint를 넣습니다. 폴더와 aspect도 같은 규칙을 따릅니다.
-단지 다른 대상 아래에 있다는 이유로 부분이 되지는 않습니다.
-[파일 Artifact 레퍼런스](declarations.md#file-artifacts)에서 경로, fingerprint, 없는 대상과
-재검사 규칙을 설명합니다.
+파일 Artifact는 기본으로 그 대상 파일 하나를 해시합니다. 작업 디렉터리는 파일이 있는 폴더지만,
+내장 도구는 그 파일과 허용된 범위만 보여 주며 관련 없는 옆 파일은 보여 주지 않습니다.
+파일은 전체의 `parts`에 이름을 적었을 때만 [부분](#composition)이 됩니다. 그러면 전체의
+artifactsum에서 그 대상을 제외하고, 전체의 eval 재사용 키에는 부분의 fingerprint를 넣습니다.
+폴더·aspect 부분도 같은 규칙을 따릅니다. 대상이 다른 대상 안에 있다는 이유만으로 관계가
+생기지는 않습니다. 이름, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
+[파일 Artifact 레퍼런스](declarations.md#file-artifacts)를 보세요.
 
 ## eval 의존성 {#eval-dependencies}
 

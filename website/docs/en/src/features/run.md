@@ -319,13 +319,5 @@ changed since that end, not files changed. See [Monitor](../tui/index.md#monitor
 
 ### Current graph review tools
 
-`config graph` remains the configuration inspector. For review, declare the
-[built-in `graph` tools](tools/builtin.md#current-project-graph) on
-any Artifact: the Agent sees the extracted current graph as a tree; the Human
-opens the desktop app on the branch's [Current](../desktop/index.md#current),
-without requiring a saved Run.
-To review the definitions themselves, create an ordinary node with
-`path = ".artifactize/"`, a definition subfolder, or one definition file.
-It has ordinary evals and the default artifactsum; there is no graph-specific
-verification flow or automatic relation to any other node. Its `.artf` inputs use
-the [definition view](fingerprint.md#graph-fingerprint).
+For graph viewers, see [Built-in graph tools](tools/builtin.md#current-project-graph).
+To review the definitions themselves, see [Reviewing definitions](declarations.md#graph-artifact).
