@@ -29,8 +29,9 @@ current, detail, review, settings, overlays) and terminals (start, any, quit) at
 between screens with data-from and data-to. Check every row: the screens it leaves are where the edge's From \
 state is shown, the screens it reaches are where its To state is shown (a Run's and a Current's graphs are the \
 monitor and current screens; the Detail docked over either is detail; a Human review is review in the Main area \
-and detail on a Human eval's tab; the palette, Help, Open by ID, the Leave and Update dialogs and the Find field \
-are overlays; Settings is settings; an edge from or to whatever view is shown uses any). Check also that the map \
+and detail on a Human eval's tab; the palette, Help, Open by ID, the Leave and Update dialogs, the Find field and \
+a Current's New Artifact, Rename and Delete dialogs are overlays; a dragged Artifact or comment, a drop target, a \
+comment and its field are on the graph they are drawn on; Settings is settings; an edge from or to whatever view is shown uses any). Check also that the map \
 and the prose do not contradict the rows. Submit GREEN when every row is placed right. Otherwise submit RED with \
 up to 20 misplaced edges, each with the edge id (item), the row (where) and the screens it should name (change)."""
 

@@ -38,8 +38,9 @@ Read the journeys {desktop-ux-features} and the screens, states and transitions 
 design {desktop-design}: index.html (the system's rules D-SYS-*), each screen page (monitor.html, current.html, \
 detail.html, review.html, settings.html, overlays.html: a figure, numbered notes and D- rules) and \
 ux-graph-doc.html. Check that: every screen, state and overlay the UX graph names (the Pane and its parts, the \
-Main area's views, the Detail, the Human review, Settings and its tabs, the Find field, the overlays) has a \
-place on one of the screen pages; no D- rule or figure contradicts a journey or an edge (what a control does, \
+Main area's views, the Detail, the Human review, Settings and its tabs, the Find field, the overlays, and on a \
+Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop target, Reset layout, \
+comments and the comment field) has a place on one of the screen pages; no D- rule or figure contradicts a journey or an edge (what a control does, \
 where it sits, what a state shows, what hovering does, which keys do what); the D- rules describe appearance and \
 arrangement without inventing behaviour the journeys do not have; and ux-graph-doc.html's placement of each edge \
 between screens matches the edge's From and To. The pages are design, not the app: judge agreement, not whether \
