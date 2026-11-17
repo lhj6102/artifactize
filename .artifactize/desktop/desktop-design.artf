@@ -19,10 +19,11 @@ profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}"
 
 [evals.well-formed.payload]
 instruction = """
-Check {desktop-design} with {desktop-design-check}: tokens.css declares the one dark scheme (color-scheme: dark, no second scheme); \
-every page links tokens.css, mock.css and design.css and declares its screen; D- rule ids are unique across the pages \
-and each has its text; every callout has its note; every screen page is linked from index.html and listed in \
-ux-graph-doc.html; index.html names every token and every icon of mock.css; no colour literal appears outside tokens.css."""
+Check {desktop-design} as a whole with {desktop-design-check}: tokens.css declares the one dark scheme (color-scheme: dark, \
+no second scheme); D- rule ids are unique across the pages; every screen page is linked from index.html and listed in \
+ux-graph-doc.html; index.html names every token and every icon of mock.css; mock.css and design.css hold no colour literal; \
+and index.html and ux-graph-doc.html, which no page eval covers, are well formed as a page is. Each screen page's own form \
+is judged by that page's well-formed eval."""
 
 [evals.agrees-with-journeys]
 title = "The screens and their rules agree with the journeys and the UX graph"
@@ -42,8 +43,8 @@ Main area's views, the Detail, the Human review, Settings and its tabs, the Find
 Current the Definition and Source, the edit dialogs, a dragged Artifact or comment, the drop target, Reset layout, \
 comments and the comment field) has a place on one of the screen pages; no D- rule or figure contradicts a journey or an edge (what a control does, \
 where it sits, what a state shows, what hovering does, which keys do what); the D- rules describe appearance and \
-arrangement without inventing behaviour the journeys do not have; and ux-graph-doc.html's placement of each edge \
-between screens matches the edge's From and To. The pages are design, not the app: judge agreement, not whether \
+arrangement without inventing behaviour the journeys do not have. Where ux-graph-doc.html places each edge is \
+judged by desktop-design-graph-doc. The pages are design, not the app: judge agreement, not whether \
 the app already looks like them. Submit GREEN when nothing clearly disagrees. Otherwise submit RED with up to 20 \
 findings, the most important first, each with the rule or journey or edge id (item), the page and element \
 (where) and one sentence on what to change in the design."""

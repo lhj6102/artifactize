@@ -2,8 +2,9 @@
 //   node check.mjs page PAGE.html          one screen page: links the three sheets, has its
 //                                          data-screen main, numbered callouts with notes,
 //                                          unique D- rules each with a dd, no colour literal
-//   node check.mjs whole [DIR]             the whole design: dark only, every page
-//                                          well formed, D- ids unique across pages, every screen
+//   node check.mjs whole [DIR]             the whole design: dark only, index.html and
+//                                          ux-graph-doc.html well formed (each screen page has
+//                                          its own page check), D- ids unique across pages, every screen
 //                                          page listed on index.html and in ux-graph-doc.html,
 //                                          every token and every icon named on index.html,
 //                                          no colour literal outside tokens.css
@@ -74,7 +75,9 @@ function whole(dir) {
   const seen = new Map();
   const screens = new Map();
   for (const file of pages) {
-    const { screen, ids } = page(join(dir, file));
+    // A screen page's own form is its page check's; the whole reads it for its ids only.
+    const own = SCREENS.includes(basename(file, ".html"));
+    const { screen, ids } = page(join(dir, file), own ? { report: () => {} } : {});
     if (screen) screens.set(screen, file);
     for (const id of ids) {
       if (seen.has(id)) report(`${file}: rule ${id} is also in ${seen.get(id)}`);

@@ -1,0 +1,6 @@
+path = "crates/artifactize-desktop/src/"
+select = ["e2e_input.rs", "e2e_input"]
+# The test-only native text-input device the end-to-end suite drives the WebView engines
+# through (E2E-INPUT). Compiled into the backend only for the E2E test build; a part of
+# desktop-e2e, whose evals judge it.
+basis = true

@@ -1,0 +1,4 @@
+path = "crates/artifactize-desktop/ui/lint/e2e-integrity.ts"
+# The source-integrity checker of the end-to-end suite, run by its lint; a part of
+# desktop-e2e, whose evals judge it.
+basis = true

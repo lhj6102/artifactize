@@ -22,7 +22,7 @@ step the journey describes is an edge, and no edge contradicts what a journey sa
 every edge id is unique and that each edge belongs to at least one journey. Submit GREEN when no \
 journey is missing a step. Otherwise submit RED with up to 20 gaps, the most important first, each \
 with the journey id (item), the step or edge involved (where) and one sentence on what to change \
-in the graph or the journeys."""
+in the graph."""
 
 [evals.covers-features.pass_schema]
 type = "object"
