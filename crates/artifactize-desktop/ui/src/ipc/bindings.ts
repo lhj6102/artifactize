@@ -458,7 +458,7 @@ export type DefinitionNode = {
 	target: string,
 	kind: DefinitionKind,
 	targetMissing: boolean,
-	/**  Its parts, in its file's order. */
+	/**  Its parts, by name; none while the project does not read. */
 	parts: string[],
 	/**
 	 *  The Artifacts it may become a part of: every other one it is not made of, directly or
