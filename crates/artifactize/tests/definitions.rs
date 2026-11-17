@@ -142,7 +142,13 @@ fn missing_targets_are_notes_not_definition_errors() {
     project.node("future", &format!("path = \"future/\"\n{}", runtime()));
     let check = project.json(&["config", "check", "--json"], 0);
     assert_eq!(check["notes"].as_array().unwrap().len(), 1);
+    project.node("wrong", "path = 'wrong/'\nbasis = true\n");
+    project.write("wrong", "not a directory");
+    let check = project.json(&["config", "check", "--json"], 0);
+    assert_eq!(check["notes"].as_array().unwrap().len(), 2);
     project.write("future/source", "implementation");
+    fs::remove_file(project.repo.join("wrong")).unwrap();
+    fs::create_dir(project.repo.join("wrong")).unwrap();
     let check = project.json(&["config", "check", "--json"], 0);
     assert!(check.get("notes").is_none());
 }
@@ -749,5 +755,39 @@ fn a_snapshot_footprint_never_adopts_a_later_disk_edit_as_its_base() {
     assert_eq!(
         fs::read_to_string(project.repo.join(".artifactize/page.artf")).unwrap(),
         changed
+    );
+}
+
+#[test]
+fn status_reports_unavailable_targets_per_eval_without_losing_other_forecasts() {
+    let project = Project::new();
+    project.node("missing", &format!("path = 'missing/'\n{}", runtime()));
+    project.node("wrong", &format!("path = 'wrong/'\n{}", runtime()));
+    project.write("wrong", "not a directory");
+    project.node("ready", &format!("path = 'ready/'\n{}", runtime()));
+    project.write("ready/input", "ready");
+    let status = project.json(&["status", "--json"], 1);
+    let eval = |id: &str| {
+        status["evals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|eval| eval["id"] == id)
+            .unwrap()
+    };
+    for id in ["missing/check", "wrong/check"] {
+        assert_eq!(eval(id)["state"], "ERROR");
+        assert!(
+            eval(id)["reason"]
+                .as_str()
+                .unwrap()
+                .starts_with("PREPARATION_FAILED:")
+        );
+    }
+    assert_eq!(eval("ready/check")["action"], "execute");
+    assert_ne!(eval("ready/check")["state"], "ERROR");
+    assert!(
+        !project.root.path().join("state").exists(),
+        "status remains read-only"
     );
 }

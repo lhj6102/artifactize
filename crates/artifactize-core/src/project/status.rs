@@ -198,7 +198,12 @@ pub(crate) async fn scan(
         state: &state,
         remote: remote.as_deref(),
     };
-    let targets = cache::fingerprint_targets(&config, &required);
+    // Availability is already projected onto the affected evals as PREPARATION_FAILED.
+    // Do not let preparing that target discard the other evals' read-only forecasts.
+    let targets = cache::fingerprint_targets(&config, &required)
+        .into_iter()
+        .filter(|name| config.artifacts[*name].target_error.is_none())
+        .collect();
     let fingerprints = match publish {
         None => {
             cache::prepare(&config, targets, &state, &parallelism, cancellation.clone()).await?

@@ -101,12 +101,22 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
         crate::config::ArtifactKind::Folder | crate::config::ArtifactKind::Aspect
     ) {
         let directory = scoped_path(root, artifact.folder())?;
-        crate::platform::open_directory(&directory).map_err(|error| {
+        let opened = crate::platform::open_directory(&directory).map_err(|error| {
             ScopeError(format!(
                 "Artifact {} target {} must be a folder: {error}",
                 artifact.name, artifact.path
             ))
         })?;
+        if !opened
+            .metadata()
+            .map_err(|error| ScopeError(error.to_string()))?
+            .is_dir()
+        {
+            return Err(ScopeError(format!(
+                "Artifact {} target {} must be a folder.",
+                artifact.name, artifact.path
+            )));
+        }
         for selected in artifact.select() {
             let file = open_scoped(&directory, selected).map_err(|error| {
                 ScopeError(format!(
