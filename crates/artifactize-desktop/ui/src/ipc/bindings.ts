@@ -131,10 +131,18 @@ export const commands = {
 	/**  The definitions of `branch`'s worktree as they are now. */
 	definitions: (branch: BranchKey) => typedError<DefinitionsView, Failure>(__TAURI_INVOKE("definitions", { branch })),
 	/**
-	 *  Apply `operation` to `branch`'s definitions, `based_on` naming the text of each file it was
-	 *  shown (`None` for a file that was not there). Nothing is written when it is refused.
+	 *  Apply `operation` to `branch`'s definitions, `shown` holding the text of each file as it was
+	 *  shown, by its path relative to the project. The library says which files the edit writes;
+	 *  each is based on the text shown, a new one on nothing, so a file that changed on disk since,
+	 *  or that was never shown, refuses the edit. Nothing is written when it is refused.
 	 */
-	definitionEdit: (branch: BranchKey, basedOn: { [key in string]: string | null }, operation: EditOperation) => typedError<EditOutcome, Failure>(__TAURI_INVOKE("definition_edit", { branch, basedOn, operation })),
+	definitionEdit: (branch: BranchKey, shown: { [key in string]: string }, operation: EditOperation) => typedError<EditOutcome, Failure>(__TAURI_INVOKE("definition_edit", { branch, shown, operation })),
+	/**
+	 *  The definition files `operation` would write, as the library reads `branch`'s definitions
+	 *  now, by their paths relative to the project; none when the library would refuse it, which the
+	 *  edit itself then says.
+	 */
+	definitionFootprint: (branch: BranchKey, operation: EditOperation) => typedError<string[], Failure>(__TAURI_INVOKE("definition_footprint", { branch, operation })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.

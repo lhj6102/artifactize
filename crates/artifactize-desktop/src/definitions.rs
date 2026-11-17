@@ -340,24 +340,66 @@ pub async fn definitions(
     .map_err(|refusal: edit::Refusal| Failure::Read(refusal.to_string()))
 }
 
-/// Apply `operation` to `branch`'s definitions, `based_on` naming the text of each file it was
-/// shown (`None` for a file that was not there). Nothing is written when it is refused.
+/// The definition files `operation` would write, as the library reads `branch`'s definitions
+/// now, by their paths relative to the project; none when the library would refuse it, which the
+/// edit itself then says.
+#[tauri::command]
+#[specta::specta]
+pub async fn definition_footprint(
+    app: tauri::State<'_, App>,
+    branch: BranchKey,
+    operation: EditOperation,
+) -> Result<Vec<String>, Failure> {
+    let workspace = workspace(&app, &branch).await?;
+    let operation = edit::Operation::try_from(operation)?;
+    crate::failure::joined(
+        tokio::task::spawn_blocking(move || {
+            let project = edit::read_project(&workspace).ok()?;
+            let footprint = edit::footprint(&project, &operation).ok()?;
+            Some(footprint.files.keys().map(|file| text(file)).collect())
+        })
+        .await,
+    )
+    .map(Option::unwrap_or_default)
+}
+
+/// Apply `operation` to `branch`'s definitions, `shown` holding the text of each file as it was
+/// shown, by its path relative to the project. The library says which files the edit writes;
+/// each is based on the text shown, a new one on nothing, so a file that changed on disk since,
+/// or that was never shown, refuses the edit. Nothing is written when it is refused.
 #[tauri::command]
 #[specta::specta]
 pub async fn definition_edit(
     app: tauri::State<'_, App>,
     branch: BranchKey,
-    based_on: BTreeMap<String, Option<String>>,
+    shown: BTreeMap<String, String>,
     operation: EditOperation,
 ) -> Result<EditOutcome, Failure> {
     let workspace = workspace(&app, &branch).await?;
     let operation = edit::Operation::try_from(operation)?;
-    let based_on = based_on
-        .into_iter()
-        .map(|(file, source)| (PathBuf::from(file), source))
-        .collect::<edit::BasedOn>();
     let applied = crate::failure::joined(
-        tokio::task::spawn_blocking(move || edit::apply(&workspace, &based_on, operation)).await,
+        tokio::task::spawn_blocking(move || {
+            let project = edit::read_project(&workspace)?;
+            let footprint = edit::footprint(&project, &operation)?;
+            let mut based_on = edit::BasedOn::default();
+            for (file, current) in footprint.files {
+                let base = match current {
+                    None => None,
+                    Some(current) => match shown.get(&text(&file)) {
+                        Some(text) => Some(text.clone()),
+                        None => {
+                            return Err(edit::Refusal::Changed {
+                                file,
+                                current: Some(current),
+                            });
+                        }
+                    },
+                };
+                based_on.insert(file, base);
+            }
+            edit::apply(&workspace, &based_on, operation)
+        })
+        .await,
     )?;
     Ok(match applied {
         Ok(_) => EditOutcome::Written,

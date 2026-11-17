@@ -33,37 +33,6 @@ export function refusalText(refusal: EditRefusal): string {
   }
 }
 
-/** The Artifacts an edit writes the files of: a gesture on the graph is refused while one of
- * them holds typed text in its Source. */
-export function writes(operation: EditOperation, view: DefinitionsView | null): string[] {
-  switch (operation.kind) {
-    case "create":
-      return [];
-    case "setPath":
-    case "saveSource":
-    case "delete":
-    case "setComment":
-      return [operation.name];
-    case "addPart":
-      // A part gives up its own place at the top level.
-      return [operation.whole, operation.part];
-    case "removePart":
-      return [operation.whole];
-    case "movePart":
-      return [operation.part, operation.from, operation.to].filter((name): name is string => name !== null);
-    case "rename":
-      return [operation.old];
-    case "moveComment":
-      return [operation.from, operation.to];
-    case "savePlaces":
-      return Object.keys(operation.places)
-        .map((key) => key.split("/")[0])
-        .filter((name, at, names) => names.indexOf(name) === at);
-    case "resetPlaces":
-      return operation.whole !== null ? [operation.whole] : (view?.nodes.filter((node) => node.at !== null).map((node) => node.name) ?? []);
-  }
-}
-
 /** Where in a Definition an edit was refused. */
 export type Place = "path" | "parts" | "source";
 
@@ -199,16 +168,10 @@ export class Definitions {
     }
   }
 
-  /** The text each file was shown with: the definitions' files, and `None` for one an edit
-   * creates; `source` names a Source's own base for the file it saves. */
-  basedOn(operation: EditOperation): Record<string, string | null> {
-    const files: Record<string, string | null> = { ...(this.view?.files ?? {}) };
-    const folder = (name: string) => {
-      const definition = this.node(name)?.definition;
-      return definition ? definition.slice(0, definition.lastIndexOf("/") + 1) : ".artifactize/";
-    };
-    if (operation.kind === "create") files[`.artifactize/${operation.name}.artf`] = null;
-    if (operation.kind === "rename") files[`${folder(operation.old)}${operation.new}.artf`] = null;
+  /** The text each file was shown with: the definitions' files, a Source's saved text being
+   * the text it was typed over. The library says which of them an edit writes. */
+  shown(operation: EditOperation): Record<string, string> {
+    const files: Record<string, string> = { ...(this.view?.files ?? {}) };
     if (operation.kind === "saveSource") {
       const draft = this.drafts.get(operation.name);
       const file = this.node(operation.name)?.definition;
@@ -221,18 +184,20 @@ export class Definitions {
    * or `null` once written; either way the definitions are read again and, once written, the
    * Current scanned again. */
   async edit(branch: BranchKey, operation: EditOperation, where: Where): Promise<string | null> {
-    if (where === "graph") {
-      const typed = writes(operation, this.view).find((name) => this.drafts.has(name));
-      if (typed !== undefined) {
-        const why = `${this.node(typed)?.definition ?? typed} has typed text in its Source; save or revert it first.`;
-        this.notice = why;
-        return why;
-      }
-    }
     if (this.busy) return "Another edit is being written.";
     this.busy = true;
     try {
-      const outcome = await call(this.ipc.definitionEdit(branch, this.basedOn(operation), operation));
+      if (where === "graph") {
+        // The files the library says the edit writes: one with typed text in its Source refuses it.
+        const writes = await call(this.ipc.definitionFootprint(branch, operation));
+        const typed = [...this.drafts.keys()].map((name) => this.node(name)?.definition).find((file) => file !== undefined && writes.includes(file));
+        if (typed !== undefined) {
+          const why = `${typed} has typed text in its Source; save or revert it first.`;
+          this.notice = why;
+          return why;
+        }
+      }
+      const outcome = await call(this.ipc.definitionEdit(branch, this.shown(operation), operation));
       if (outcome.kind === "written") {
         if (operation.kind === "saveSource") this.drafts.delete(operation.name);
         if (operation.kind === "rename" && this.drafts.has(operation.old)) this.drafts.delete(operation.old);

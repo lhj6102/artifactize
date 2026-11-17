@@ -970,7 +970,7 @@ fn the_definitions_are_read_and_edited_on_what_was_shown() {
     let written = invoke(
         &monitor,
         "definition_edit",
-        json!({"branch": branch, "basedOn": read["files"], "operation": comment}),
+        json!({"branch": branch, "shown": read["files"], "operation": comment}),
     )
     .unwrap();
     assert_eq!(written, json!({"kind": "written"}));
@@ -988,7 +988,7 @@ fn the_definitions_are_read_and_edited_on_what_was_shown() {
     let stale = invoke(
         &monitor,
         "definition_edit",
-        json!({"branch": branch, "basedOn": read["files"], "operation": {"kind": "setComment", "name": "ship", "text": "Other."}}),
+        json!({"branch": branch, "shown": read["files"], "operation": {"kind": "setComment", "name": "ship", "text": "Other."}}),
     )
     .unwrap();
     assert_eq!(
@@ -1000,7 +1000,7 @@ fn the_definitions_are_read_and_edited_on_what_was_shown() {
     let named = invoke(
         &monitor,
         "definition_edit",
-        json!({"branch": branch, "basedOn": again["files"], "operation": {"kind": "delete", "name": "release"}}),
+        json!({"branch": branch, "shown": again["files"], "operation": {"kind": "delete", "name": "release"}}),
     )
     .unwrap();
     assert_eq!(named["refusal"]["kind"], json!("notAllowed"), "{named}");
