@@ -46,8 +46,6 @@ const WHOLE_FACE = 0.4;
 const ICON_BOX = 12;
 /** The smallest font, in device-independent pixels, at which a name still reads. */
 const LEGIBLE = 5;
-/** The smallest port, in device-independent pixels, whose shape still reads. */
-const PORT_SHOWN = 3;
 /** An edge's stroke in graph pixels, as the graph's elements draw it. */
 const EDGE_WIDTH = 1.25;
 /** How far a picture reaches beyond each side of the canvas, as a share of the canvas: the
@@ -350,7 +348,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
         ? { x: x + COMMENT_INSET * zoom, y: y + row + COMMENT_GAP * zoom, width: w - 2 * COMMENT_INSET * zoom, text: comment }
         : { x, y: y + h + COMMENT_GAP * zoom, width: w, text: comment });
     }
-    if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
+    // Wherever names are painted, so are the ports, however small.
+    if (inward[number] || outward[number]) {
       const [middle, half] = [y + h / 2, port / 2];
       if (inward[number]) {
         ports.moveTo(x - half, middle - half);

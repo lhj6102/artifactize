@@ -29,7 +29,7 @@
     } else if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
-      onclose(defs.fieldText.trim() === "" ? "" : defs.fieldText);
+      onclose(defs.fieldText);
     } else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();

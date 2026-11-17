@@ -25,12 +25,6 @@ pub struct DefinitionNode {
     pub target_missing: bool,
     /// Its parts, by name; none while the project does not read.
     pub parts: Vec<String>,
-    /// The Artifacts it is made of, directly or through its parts, as the library reads the
-    /// project: it may become a part of any other Artifact but these. Empty while the project
-    /// does not read.
-    pub within: Vec<String>,
-    /// Whether a comment dragged onto it is taken: it has none, as the library reads its file.
-    pub takes_comment: bool,
     /// Its own place at the top level, when the top level is placed by hand.
     pub at: Option<Place>,
     /// Its parts' places inside its box, by part, when the box is placed by hand.
@@ -276,19 +270,6 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
             .map(|artifact| artifact.parts.iter().map(ToString::to_string).collect())
             .unwrap_or_default()
     };
-    // Nothing is a part of itself, however many parts lie between: the library's own reading.
-    let within = |name: &ArtifactName| -> Vec<String> {
-        config
-            .as_ref()
-            .map(|config| {
-                config
-                    .descendants(name)
-                    .into_iter()
-                    .map(ToString::to_string)
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
     let nodes = project
         .nodes
         .iter()
@@ -299,9 +280,6 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
             kind: node.kind.into(),
             target_missing: node.target_missing,
             parts: parts(name),
-            within: within(name),
-            takes_comment: node.annotations.comment.is_none()
-                && node.annotations.comment_error.is_none(),
             at: node.annotations.at,
             places: node
                 .annotations
@@ -340,27 +318,42 @@ pub async fn definitions(
     .map_err(|refusal: edit::Refusal| Failure::Read(refusal.to_string()))
 }
 
-/// The definition files `operation` would write, as the library reads `branch`'s definitions
-/// now, by their paths relative to the project; none when the library would refuse it, which the
-/// edit itself then says.
+/// What the library says of an edit before it is made: the definition files it would write, by
+/// their paths relative to the project, or why it would refuse it.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EditCheck {
+    pub files: Vec<String>,
+    pub refusal: Option<EditRefusal>,
+}
+
+/// Check `operation` on `branch`'s definitions as they are now, writing nothing.
 #[tauri::command]
 #[specta::specta]
-pub async fn definition_footprint(
+pub async fn definition_check(
     app: tauri::State<'_, App>,
     branch: BranchKey,
     operation: EditOperation,
-) -> Result<Vec<String>, Failure> {
+) -> Result<EditCheck, Failure> {
     let workspace = workspace(&app, &branch).await?;
     let operation = edit::Operation::try_from(operation)?;
     crate::failure::joined(
         tokio::task::spawn_blocking(move || {
-            let project = edit::read_project(&workspace).ok()?;
-            let footprint = edit::footprint(&project, &operation).ok()?;
-            Some(footprint.files.keys().map(|file| text(file)).collect())
+            match edit::read_project(&workspace)
+                .and_then(|project| edit::footprint(&project, &operation))
+            {
+                Ok(footprint) => EditCheck {
+                    files: footprint.files.keys().map(|file| text(file)).collect(),
+                    refusal: None,
+                },
+                Err(refusal) => EditCheck {
+                    files: Vec::new(),
+                    refusal: Some(refusal.into()),
+                },
+            }
         })
         .await,
     )
-    .map(Option::unwrap_or_default)
 }
 
 /// Apply `operation` to `branch`'s definitions, `shown` holding the text of each file as it was

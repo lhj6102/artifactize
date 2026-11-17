@@ -83,13 +83,24 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       const pointer = { ...common, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1 };
       // A cancelled pointerdown suppresses the gesture's compatibility mouse events until its
       // pointerup, as the engine does for a real primary pointer; its click still follows.
-      const gesture = window as Window & { e2eMouseSuppressed?: boolean };
+      const gesture = window as Window & { e2eMouseSuppressed?: boolean; e2ePressed?: Element | null };
       if (input.kind === "pointer") {
         const buttons = input.phase === "up" ? 0 : 1;
         const allowed = target.dispatchEvent(new PointerEvent(`pointer${input.phase}`, { ...pointer, buttons, pressure: buttons ? 0.5 : 0 }));
-        if (input.phase === "down") gesture.e2eMouseSuppressed = !allowed;
+        if (input.phase === "down") {
+          gesture.e2eMouseSuppressed = !allowed;
+          gesture.e2ePressed = target;
+        }
         if (!gesture.e2eMouseSuppressed) target.dispatchEvent(new MouseEvent(`mouse${input.phase}`, { ...common, buttons }));
-        if (input.phase === "up") gesture.e2eMouseSuppressed = false;
+        if (input.phase === "up") {
+          gesture.e2eMouseSuppressed = false;
+          // As the engine does, the release clicks the nearest element holding both where the
+          // button went down and where it came up, still in the page, however far it moved.
+          let shared: Element | null = gesture.e2ePressed?.isConnected ? gesture.e2ePressed : null;
+          while (shared && !shared.contains(target)) shared = shared.parentElement;
+          gesture.e2ePressed = null;
+          shared?.dispatchEvent(new MouseEvent("click", { ...common, buttons: 0 }));
+        }
         return;
       }
       const pointerDown = target.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1, pressure: 0.5 }));

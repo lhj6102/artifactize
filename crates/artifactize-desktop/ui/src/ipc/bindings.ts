@@ -137,12 +137,8 @@ export const commands = {
 	 *  or that was never shown, refuses the edit. Nothing is written when it is refused.
 	 */
 	definitionEdit: (branch: BranchKey, shown: { [key in string]: string }, operation: EditOperation) => typedError<EditOutcome, Failure>(__TAURI_INVOKE("definition_edit", { branch, shown, operation })),
-	/**
-	 *  The definition files `operation` would write, as the library reads `branch`'s definitions
-	 *  now, by their paths relative to the project; none when the library would refuse it, which the
-	 *  edit itself then says.
-	 */
-	definitionFootprint: (branch: BranchKey, operation: EditOperation) => typedError<string[], Failure>(__TAURI_INVOKE("definition_footprint", { branch, operation })),
+	/**  Check `operation` on `branch`'s definitions as they are now, writing nothing. */
+	definitionCheck: (branch: BranchKey, operation: EditOperation) => typedError<EditCheck, Failure>(__TAURI_INVOKE("definition_check", { branch, operation })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.
@@ -470,14 +466,6 @@ export type DefinitionNode = {
 	targetMissing: boolean,
 	/**  Its parts, by name; none while the project does not read. */
 	parts: string[],
-	/**
-	 *  The Artifacts it is made of, directly or through its parts, as the library reads the
-	 *  project: it may become a part of any other Artifact but these. Empty while the project
-	 *  does not read.
-	 */
-	within: string[],
-	/**  Whether a comment dragged onto it is taken: it has none, as the library reads its file. */
-	takesComment: boolean,
 	/**  Its own place at the top level, when the top level is placed by hand. */
 	at: [(number | null), (number | null)] | null,
 	/**  Its parts' places inside its box, by part, when the box is placed by hand. */
@@ -530,6 +518,15 @@ export type DetailView = {
 export type Draft = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
+};
+
+/**
+ *  What the library says of an edit before it is made: the definition files it would write, by
+ *  their paths relative to the project, or why it would refuse it.
+ */
+export type EditCheck = {
+	files: string[],
+	refusal: EditRefusal | null,
 };
 
 /**  An edit of a branch's definitions, the library's [`edit::Operation`] by name. */

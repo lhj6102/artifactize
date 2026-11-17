@@ -1004,6 +1004,29 @@ fn the_definitions_are_read_and_edited_on_what_was_shown() {
     )
     .unwrap();
     assert_eq!(named["refusal"]["kind"], json!("notAllowed"), "{named}");
+    // Asked first, the library says the same and which files an edit would write, writing none.
+    let check = |operation: Value| {
+        invoke(
+            &monitor,
+            "definition_check",
+            json!({"branch": branch, "operation": operation}),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        check(json!({"kind": "delete", "name": "release"}))["refusal"]["kind"],
+        json!("notAllowed")
+    );
+    let rename = check(json!({"kind": "rename", "old": "ship", "new": "deliver"}));
+    assert_eq!(rename["refusal"], Value::Null, "{rename}");
+    assert!(
+        rename["files"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(".artifactize/ship.artf")),
+        "{rename}"
+    );
+    assert!(fixture.repo.join(".artifactize").join("ship.artf").exists());
     assert!(
         fixture
             .repo

@@ -186,6 +186,21 @@ const below = (browser: WebdriverIO.Browser, x: number) => browser.execute((root
   return { x, y: Math.round((bottom + canvas.bottom) / 2) };
 }, CURRENT, x);
 
+/** The box of the drawn copy `id` once the graph holds still: the same over two frames. */
+async function settled(browser: WebdriverIO.Browser, id: string) {
+  let last = "";
+  let shown: Awaited<ReturnType<typeof box>> = null;
+  await waitFor(browser, async () => {
+    shown = await box(browser, id);
+    await afterRender(browser);
+    const now = JSON.stringify(shown);
+    const still = now === last && shown !== null;
+    last = now;
+    return still;
+  }, `${id} holds still`);
+  return shown!;
+}
+
 /** Whether the drawn copy `id` is outlined as the drop target. */
 const targeted = (browser: WebdriverIO.Browser, id: string) => browser.execute((selector) => !!document.querySelector(`${selector} .artifact.target, ${selector} .whole.target`), `${CURRENT} ${nodeAt(id)}`);
 
@@ -453,6 +468,10 @@ export const scenarios: Scenario[] = [
       await typeIn(browser, text, "\n# ours");
       await browser.$(DETAIL).$("button=Save").click();
       await waitFor(browser, () => file(fixture, "core")?.endsWith("# ours") ?? false, "the Source saved on what is on disk");
+      await waitFor(browser, async () => {
+        const shown = await source(browser);
+        return shown !== null && !shown.save && shown.refused === "" && shown.text === file(fixture, "core");
+      }, "the Source shows the saved file, nothing left to save");
     },
   ),
 
@@ -1007,8 +1026,8 @@ export const scenarios: Scenario[] = [
       assert.equal(file(fixture, "core"), coreText, "nothing written by a click outside");
       await clickAt(browser, await visibleCenter(browser, await comment().getElement()));
       await waitFor(browser, async () => (await field(browser))?.of === "core", "core's field open once more");
-      // Only a space left: an empty comment.
-      await fill(browser, 'textarea[aria-label="Comment on core"]', " ");
+      // Emptied, the comment is removed.
+      await fill(browser, 'textarea[aria-label="Comment on core"]', "");
       await browser.keys("Enter");
       await waitFor(browser, () => !/annotations/.test(file(fixture, "core") ?? ""), "the empty comment removed from core's file");
       await waitFor(browser, async () => !(await comments(browser))["a:core"], "nothing drawn under core");
@@ -1024,13 +1043,15 @@ export const scenarios: Scenario[] = [
         },
       });
       await waitFor(browser, () => commentIn(fixture, "docs") === KIT_NOTE && !/annotations/.test(file(fixture, "kit") ?? ""), "the comment moved from kit's file to docs's");
-      // Onto app, which has one, it is no drop target and returns; Esc puts one back too.
+      // Onto app, which has one, it is no drop target and returns; Esc puts one back too. The
+      // graph is first drawn again for the moved comment.
       const docsComment = async () => visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:docs")} .comment`).getElement());
-      const appBox = (await box(browser, "a:app"))!;
+      await waitFor(browser, async () => (await comments(browser))["a:docs"] === KIT_NOTE && !("a:bundle/a:kit" in (await comments(browser))), "the moved comment drawn under docs");
+      const appBox = await settled(browser, "a:app");
       // Onto app's title row: app itself, not a part in its box.
       await drag(browser, await docsComment(), { x: appBox.left + 60, y: appBox.top + 14 }, { held: async () => assert.equal(await targeted(browser, "a:app"), false, "app has a comment: no target") });
       await afterRender(browser);
-      assert.equal(commentIn(fixture, "docs"), KIT_NOTE, "the comment stays with docs");
+      assert.equal(commentIn(fixture, "docs"), KIT_NOTE, `the comment stays with docs: ${["app", "kit", "core", "bundle"].map((name) => `${name}=${JSON.stringify(commentIn(fixture, name))}`).join(" ")}`);
       // Held over core, which would take it, Esc puts it back before the button is let go; the
       // release then writes nothing.
       const coreNow = (await box(browser, "a:core"))!;

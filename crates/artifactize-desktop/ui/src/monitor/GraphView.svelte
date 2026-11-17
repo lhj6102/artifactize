@@ -47,7 +47,7 @@
   import { label, plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
   import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
-  import { accepted, anchor, boxPlaces, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
+  import { anchor, boxPlaces, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
   import type { BranchKey, EditOperation } from "../ipc/client";
 
   let {
@@ -480,7 +480,23 @@
     if (!v.dragging || v.dragging.cancelled) return;
     v.lifted = { key, position: { ...position } };
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
-    v.target = copy && drop && accepted(drop, copy.node.name, defs.node(copy.node.name)?.within ?? []) ? drop.key : null;
+    if (!copy || drop?.kind !== "join") {
+      v.target = null;
+      return;
+    }
+    const whole = copy.parent === null ? null : byKey.get(copy.parent)!.node.name;
+    light(drop.key, { kind: "movePart", part: copy.node.name, from: whole, to: drop.to, at: null });
+  }
+
+  /** Highlight `key` as the drop target once the library says it would accept `operation`, while
+   * the pointer is still over it. */
+  function light(key: string, operation: EditOperation) {
+    v.aim = key;
+    if (v.target !== key) v.target = null;
+    if (!owner) return;
+    void defs.accepts(owner, operation).then((accepted) => {
+      if (v.aim === key && (v.dragging !== null || v.comment !== null)) v.target = accepted ? key : null;
+    });
   }
 
   /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
@@ -563,8 +579,9 @@
       if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top };
       const at = pointOf(next);
       const target = at ? under(drawn, rects, at) : null;
-      // The library says which Artifacts take a comment: those without one.
-      v.target = target && target.node.name !== copy.node.name && defs.node(target.node.name)?.takesComment ? target.key : null;
+      // The library says which Artifacts take the comment.
+      if (target && target.node.name !== copy.node.name) light(target.key, { kind: "moveComment", from: copy.node.name, to: target.node.name });
+      else [v.aim, v.target] = [null, null];
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);

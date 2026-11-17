@@ -67,7 +67,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             graph::current::current_view,
             definitions::definitions,
             definitions::definition_edit,
-            definitions::definition_footprint,
+            definitions::definition_check,
             tools::artifact_tools,
             tools::artifact_tool_run,
             request::request_detail,

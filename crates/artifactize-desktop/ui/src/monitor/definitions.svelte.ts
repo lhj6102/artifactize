@@ -5,7 +5,7 @@
 // is never overwritten: an edit on the graph that would write its file is refused until it is
 // saved or reverted.
 import { SvelteMap } from "svelte/reactivity";
-import { call, commands, message, type BranchKey, type Commands, type DefinitionNode, type DefinitionsView, type EditOperation, type EditRefusal } from "../ipc/client";
+import { call, commands, message, type BranchKey, type Commands, type DefinitionNode, type DefinitionsView, type EditCheck, type EditOperation, type EditRefusal } from "../ipc/client";
 import { keyOf } from "./monitor-state.svelte";
 import { annotationsOf, fieldLines, withField, type Annotations } from "./annotations";
 import { NODE } from "./graph";
@@ -158,6 +158,7 @@ export class Definitions {
     try {
       const view = await call(this.ipc.definitions(branch));
       if (read !== this.#reads) return;
+      this.#checks = {};
       this.view = view;
       this.error = null;
     } catch (failure) {
@@ -166,6 +167,21 @@ export class Definitions {
         this.error = message(failure);
       }
     }
+  }
+
+  /** What the library says of each edit asked about since the definitions were last read. */
+  #checks: Record<string, Promise<EditCheck>> = {};
+
+  /** What the library says of `operation` on `branch`'s definitions now, writing nothing. */
+  check(branch: BranchKey, operation: EditOperation): Promise<EditCheck> {
+    const key = JSON.stringify(operation);
+    this.#checks[key] ??= call(this.ipc.definitionCheck(branch, operation)).catch(() => ({ files: [], refusal: null }));
+    return this.#checks[key];
+  }
+
+  /** Whether the library would accept `operation`, for a drop target's highlight. */
+  async accepts(branch: BranchKey, operation: EditOperation): Promise<boolean> {
+    return (await this.check(branch, operation)).refusal === null;
   }
 
   /** The text each file was shown with: the definitions' files, a Source's saved text being
@@ -189,7 +205,7 @@ export class Definitions {
     try {
       if (where === "graph") {
         // The files the library says the edit writes: one with typed text in its Source refuses it.
-        const writes = await call(this.ipc.definitionFootprint(branch, operation));
+        const { files: writes } = await this.check(branch, operation);
         const typed = [...this.drafts.keys()].map((name) => this.node(name)?.definition).find((file) => file !== undefined && writes.includes(file));
         if (typed !== undefined) {
           const why = `${typed} has typed text in its Source; save or revert it first.`;
