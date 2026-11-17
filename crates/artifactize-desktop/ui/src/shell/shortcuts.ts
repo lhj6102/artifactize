@@ -40,11 +40,10 @@ const GRAPH: Section = {
 const EDITING: Section = {
   title: "Editing",
   keys: [
-    ["Esc", "Put back what is being dragged"],
     ["Enter", "Write a Path, a part or a comment"],
     ["Shift+Enter", "Break a comment's line"],
     ["Ctrl+S", "Save the Source"],
-    ["Esc", "Put back a Path, a part or a comment being typed"],
+    ["Esc", "Put back what is being dragged, or a Path, a part or a comment being typed"],
   ],
 };
 

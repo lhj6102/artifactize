@@ -104,12 +104,14 @@ function fresh(): void {
 }
 
 /** The example project: core feeds cli and release; cli feeds docs. cli's tests fail, so docs
- * is blocked; release's sign-off waits for a person after its own check passed. */
+ * is blocked; release's sign-off waits for a person after its own check passed. Each Artifact
+ * is defined in `.artifactize/{name}.artf` and targets its own folder; cli carries a comment. */
 function project(repo: string, fixtures: typeof import("../../crates/artifactize-desktop/ui/e2e/native-fixtures.ts")) {
   const { runtimeProfile, commandFields } = fixtures;
+  mkdirSync(join(repo, ".artifactize"), { recursive: true });
   const artifact = (name: string, text: string) => {
     mkdirSync(join(repo, name), { recursive: true });
-    writeFileSync(join(repo, name, "index.artf"), `name = "${name}"\n${text}`);
+    writeFileSync(join(repo, ".artifactize", `${name}.artf`), `path = "${name}/"\n${text}`);
   };
   artifact("core", `
 [evals.tests]
@@ -123,6 +125,9 @@ profile = ${runtimeProfile("pass")}
 payload.instruction = "Lint the core code."
 `);
   artifact("cli", `
+[annotations.comment]
+text = "The parser rewrite lands next."
+
 [evals.tests]
 title = "The command line tests pass against core"
 profile = ${runtimeProfile("fail")}

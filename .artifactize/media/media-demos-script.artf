@@ -25,7 +25,8 @@ B. The graph's growth: this repository's own Artifact graph in the app opened on
 branch's Current by `graph --repo` (J-LAUNCH, J-MAIN-CURRENT), one step per \
 release on main from 0.7.0 to the current main, with the release in the graph's top-left corner; one \
 step says 0.1.0–0.6.0 had no Artifacts; examples/ is left out; 0.7–0.8 declarations are \
-converted once to the current format so the lineage shows.
+converted once to the current format, and a release that declares its Artifacts where they live \
+is moved into `.artifactize/` by the built CLI's own `config migrate`, so the lineage shows.
 
 Both GIFs carry a thin progress bar along the bottom edge, in the introduction video's light \
 green (#3EE08F) on a light track: it advances smoothly on every GIF frame, in proportion to \

@@ -21,7 +21,8 @@
 //      step says 0.1.0–0.6.0 had no Artifacts yet; the graph starts at 0.7.0 and ends at the
 //      current main. examples/ is left out. Declarations the current app no longer reads
 //      are converted once to the current format: 0.7–0.8's artifactize.json, and dependency
-//      evals, whose relations become references.
+//      evals, whose relations become references; then the built CLI's own `config migrate`
+//      moves a release declared in its tree into `.artifactize/`, one file per Artifact.
 //
 // Modes:
 //   (none)        record into assets/demos/.
@@ -295,7 +296,8 @@ title = "${artifact.name} ${id} pass"
 profile = { kind = "runtime", command = ${JSON.stringify(process.execPath)}, args = [${JSON.stringify(checker)}, "{${artifact.name}}", "${seconds}"] }
 payload.instruction = "Run the ${id} of {${artifact.name}}${uses ? ` with ${uses}` : ""}."
 `).join("");
-    writeFileSync(join(folder, "index.artf"), `name = "${artifact.name}"\n${evals}`);
+    mkdirSync(join(repo, ".artifactize"), { recursive: true });
+    writeFileSync(join(repo, ".artifactize", `${artifact.name}.artf`), `path = "${artifact.name}/"\n${evals}`);
   }
 }
 
@@ -426,8 +428,10 @@ function files(directory: string, match: (name: string) => boolean): string[] {
     .map((entry) => join(entry.parentPath, entry.name));
 }
 
-/** Put `ref`'s tree, without examples/, in `tree`, in the format the current app reads. */
-function checkout(ref: string, tree: string): void {
+/** Put `ref`'s tree, without examples/, in `tree`, in the format the current app reads: older
+ * forms converted here, then a tree that declares its Artifacts where they live migrated by
+ * the built CLI `cli`. */
+function checkout(ref: string, tree: string, cli: string): void {
   rmSync(tree, { recursive: true, force: true });
   mkdirSync(tree, { recursive: true });
   run("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3" --exclude=examples`, "sh", repository, ref, tree]);
@@ -482,6 +486,9 @@ function checkout(ref: string, tree: string): void {
     });
     if (converted !== text) writeFileSync(file, converted);
   }
+  // A release from before definitions lived in .artifactize/: its own CLI's successor moves them.
+  const defined = existsSync(join(tree, ".artifactize")) && files(join(tree, ".artifactize"), (name) => name.endsWith(".artf")).length > 0;
+  if (!defined) run(cli, ["--repo", tree, "config", "migrate"]);
 }
 
 async function graphGrowth(service: any, e2e: Record<string, any>, candidate: any, work: string): Promise<Recording> {
@@ -501,13 +508,13 @@ async function graphGrowth(service: any, e2e: Record<string, any>, candidate: an
   const blank = join(frames, "before.png");
   run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", `color=c=0xFAFAFA:s=${WIDTH}x${HEIGHT}`, "-frames:v", "1", blank]);
   segments.push({ frames: [{ file: blank, at: 0 }], speed: 1, caption: `${tags[0].slice(1)}–${tags[first - 1].slice(1)} · no Artifacts yet`, hold: GIF.step });
-  checkout(steps[0].ref, fixture.repo);
+  checkout(steps[0].ref, fixture.repo, candidate.cli);
   const browser = await launch(service, candidate.app, ["graph", "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"], e2e.environment(fixture));
   let at = { x: 0, y: 0 };
   try {
     for (const [index, step] of steps.entries()) {
       if (index > 0) {
-        checkout(step.ref, fixture.repo);
+        checkout(step.ref, fixture.repo, candidate.cli);
         await browser.$("button=Refresh").click();
       }
       // This release's own topology, as the CLI reads its declarations: its Artifacts, and an
