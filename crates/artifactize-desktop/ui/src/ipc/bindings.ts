@@ -128,6 +128,13 @@ export const commands = {
 	currentScan: (branch: BranchKey, refresh: boolean) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_scan", { branch, refresh })),
 	/**  The newest step of `branch`'s Current, without scanning. */
 	currentView: (branch: BranchKey) => typedError<CurrentView, Failure>(__TAURI_INVOKE("current_view", { branch })),
+	/**  The definitions of `branch`'s worktree as they are now. */
+	definitions: (branch: BranchKey) => typedError<DefinitionsView, Failure>(__TAURI_INVOKE("definitions", { branch })),
+	/**
+	 *  Apply `operation` to `branch`'s definitions, `based_on` naming the text of each file it was
+	 *  shown (`None` for a file that was not there). Nothing is written when it is refused.
+	 */
+	definitionEdit: (branch: BranchKey, basedOn: { [key in string]: string | null }, operation: EditOperation) => typedError<EditOutcome, Failure>(__TAURI_INVOKE("definition_edit", { branch, basedOn, operation })),
 	/**
 	 *  The Human tools Artifact `artifact` declares in `branch`'s worktree as it is now, with
 	 *  what running each does.
@@ -439,6 +446,37 @@ export type CustomProvider = {
 	target: Target,
 };
 
+/**  One Artifact's definition as its file says now. */
+export type DefinitionNode = {
+	name: string,
+	/**  Its file, relative to the project, with `/`. */
+	definition: string,
+	/**  Its PATH as written: a folder ends in `/`, a Live Artifact is an address. */
+	target: string,
+	kind: string,
+	targetMissing: boolean,
+	/**  Its parts, in its file's order. */
+	parts: string[],
+	/**  Its own place at the top level, when the top level is placed by hand. */
+	at: [(number | null), (number | null)] | null,
+	/**  Its parts' places inside its box, by part, when the box is placed by hand. */
+	places: { [key in string]: [(number | null), (number | null)] },
+	comment: string | null,
+	/**  Why its place or its comment cannot be read; drawing ignores them. */
+	styleError: string | null,
+	commentError: string | null,
+};
+
+/**
+ *  A branch's definitions, and the exact text of every definition file, which the next edit
+ *  names as what it was based on.
+ */
+export type DefinitionsView = {
+	nodes: DefinitionNode[],
+	/**  Each definition file's text, by its path relative to the project, with `/`. */
+	files: { [key in string]: string },
+};
+
 /**  What a Detail describes, from the library's [`Target`]. */
 export type DetailTarget = "run" | "artifact" | "eval";
 
@@ -472,6 +510,26 @@ export type Draft = {
 	verdict: Verdict,
 	fields: ([string, FieldValue])[],
 };
+
+/**  An edit of a branch's definitions, the library's [`edit::Operation`] by name. */
+export type EditOperation = { kind: "create"; name: string; path: string } | { kind: "setPath"; name: string; path: string } | { kind: "addPart"; whole: string; part: string; at: [(number | null), (number | null)] | null } | { kind: "removePart"; whole: string; part: string } | { kind: "movePart"; part: string; from: string | null; to: string | null; at: [(number | null), (number | null)] | null } | { kind: "saveSource"; name: string; source: string } | { kind: "rename"; old: string; new: string } | { kind: "delete"; name: string } | { kind: "savePlaces"; places: { [key in string]: [(number | null), (number | null)] } } | { kind: "resetPlaces"; whole: string | null } | { kind: "setComment"; name: string; text: string } | { kind: "moveComment"; from: string; to: string };
+
+/**
+ *  What an edit did: written, or refused with why. Either way the caller reads the
+ *  definitions again before the next edit.
+ */
+export type EditOutcome = { kind: "written" } | { kind: "refused"; refusal: EditRefusal };
+
+/**  Why an edit wrote nothing. */
+export type EditRefusal = 
+/**  The result would not be a valid project. */
+{ kind: "invalid"; file: string; message: string; line: number | null; column: number | null } | 
+/**  A file the edit writes changed on disk since it was read. */
+{ kind: "changed"; file: string } | 
+/**  The edit is not allowed: a cycle, a name still in use, a comment already there. */
+{ kind: "notAllowed"; reason: string } | 
+/**  Reading or writing failed. */
+{ kind: "io"; message: string };
 
 /**  The API a custom endpoint speaks. */
 export type EndpointApi = "openaiResponses" | "openaiChat" | "anthropic" | "gemini";

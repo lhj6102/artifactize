@@ -5,6 +5,7 @@ import type { Point } from "./graph";
 import { layout } from "./layout";
 import { keyOf } from "./monitor-state.svelte";
 import { folded } from "./parts";
+import { annotationsKey, type Annotations } from "./annotations";
 
 /** How many graphs' layouts are kept. */
 const KEPT = 8;
@@ -12,7 +13,7 @@ const KEPT = 8;
 /** The graph shown: its source, the shape the backend named, its lit Artifacts and edges, the
  * wholes minimized on it, and where its layout put them. A new snapshot of the same shape only
  * relights it. */
-export type Shown = { source: Source; shape: ShapeKey; graph: Shape; minimized: readonly string[]; positions: Map<string, Point> };
+export type Shown = { source: Source; shape: ShapeKey; graph: Shape; minimized: readonly string[]; positions: Map<string, Point>; annotations: Annotations };
 
 export class SourceGraphState {
   shown = $state.raw<Shown | null>(null);
@@ -24,11 +25,11 @@ export class SourceGraphState {
    * wholes as they were minimized reuses its own. */
   readonly #layouts = new SvelteMap<string, Promise<Map<string, Point>>>();
 
-  positions(source: Source, shape: ShapeKey, graph: Shape, minimized: readonly string[]): Promise<Map<string, Point>> {
-    const id = `${keyOf(source)}\n${shape}\n${folded(graph, minimized).join("\n")}`;
+  positions(source: Source, shape: ShapeKey, graph: Shape, minimized: readonly string[], annotations: Annotations): Promise<Map<string, Point>> {
+    const id = `${keyOf(source)}\n${shape}\n${folded(graph, minimized).join("\n")}\n${annotationsKey(annotations)}`;
     let laid = this.#layouts.get(id);
     if (!laid) {
-      laid = layout(graph, minimized);
+      laid = layout(graph, minimized, annotations);
       laid.catch(() => this.#layouts.delete(id));
       this.#layouts.set(id, laid);
       // Forget the oldest beyond a few graphs.

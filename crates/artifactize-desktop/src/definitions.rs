@@ -1,0 +1,317 @@
+//! A branch's definitions as the workbench edits them: one file per Artifact in
+//! `.artifactize/`, read and written only through the library's [`edit`] operations. The
+//! frontend holds what it was shown and names it with every edit, so an edit made on text that
+//! changed on disk meanwhile (an agent in a terminal) is refused rather than overwriting it.
+//! Places and comments are sections of the same files; nothing here keeps a file of its own.
+use crate::{App, Failure, browse::BranchKey};
+use artifactize_core::{config::edit, types::ArtifactName};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::{collections::BTreeMap, path::PathBuf};
+
+/// A place on a graph, `[x, y]`.
+pub type Place = [f64; 2];
+
+/// One Artifact's definition as its file says now.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionNode {
+    pub name: String,
+    /// Its file, relative to the project, with `/`.
+    pub definition: String,
+    /// Its PATH as written: a folder ends in `/`, a Live Artifact is an address.
+    pub target: String,
+    pub kind: String,
+    pub target_missing: bool,
+    /// Its parts, in its file's order.
+    pub parts: Vec<String>,
+    /// Its own place at the top level, when the top level is placed by hand.
+    pub at: Option<Place>,
+    /// Its parts' places inside its box, by part, when the box is placed by hand.
+    pub places: BTreeMap<String, Place>,
+    pub comment: Option<String>,
+    /// Why its place or its comment cannot be read; drawing ignores them.
+    pub style_error: Option<String>,
+    pub comment_error: Option<String>,
+}
+
+/// A branch's definitions, and the exact text of every definition file, which the next edit
+/// names as what it was based on.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionsView {
+    pub nodes: Vec<DefinitionNode>,
+    /// Each definition file's text, by its path relative to the project, with `/`.
+    pub files: BTreeMap<String, String>,
+}
+
+/// An edit of a branch's definitions, the library's [`edit::Operation`] by name.
+#[derive(Debug, Clone, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum EditOperation {
+    Create {
+        name: String,
+        path: String,
+    },
+    SetPath {
+        name: String,
+        path: String,
+    },
+    AddPart {
+        whole: String,
+        part: String,
+        at: Option<Place>,
+    },
+    RemovePart {
+        whole: String,
+        part: String,
+    },
+    MovePart {
+        part: String,
+        from: Option<String>,
+        to: Option<String>,
+        at: Option<Place>,
+    },
+    SaveSource {
+        name: String,
+        source: String,
+    },
+    Rename {
+        old: String,
+        new: String,
+    },
+    Delete {
+        name: String,
+    },
+    SavePlaces {
+        places: BTreeMap<String, Place>,
+    },
+    ResetPlaces {
+        whole: Option<String>,
+    },
+    SetComment {
+        name: String,
+        text: String,
+    },
+    MoveComment {
+        from: String,
+        to: String,
+    },
+}
+
+/// Why an edit wrote nothing.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum EditRefusal {
+    /// The result would not be a valid project.
+    Invalid {
+        file: String,
+        message: String,
+        line: Option<u32>,
+        column: Option<u32>,
+    },
+    /// A file the edit writes changed on disk since it was read.
+    Changed { file: String },
+    /// The edit is not allowed: a cycle, a name still in use, a comment already there.
+    NotAllowed { reason: String },
+    /// Reading or writing failed.
+    Io { message: String },
+}
+
+/// What an edit did: written, or refused with why. Either way the caller reads the
+/// definitions again before the next edit.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum EditOutcome {
+    Written,
+    Refused { refusal: EditRefusal },
+}
+
+fn name(text: &str) -> Result<ArtifactName, Failure> {
+    text.parse().map_err(Failure::Invalid)
+}
+
+fn optional(text: Option<String>) -> Result<Option<ArtifactName>, Failure> {
+    text.as_deref().map(name).transpose()
+}
+
+impl TryFrom<EditOperation> for edit::Operation {
+    type Error = Failure;
+    fn try_from(operation: EditOperation) -> Result<Self, Failure> {
+        use EditOperation as E;
+        Ok(match operation {
+            E::Create { name: new, path } => Self::Create {
+                name: name(&new)?,
+                path,
+            },
+            E::SetPath { name: of, path } => Self::SetPath {
+                name: name(&of)?,
+                path,
+            },
+            E::AddPart { whole, part, at } => Self::AddPart {
+                whole: name(&whole)?,
+                part: name(&part)?,
+                at,
+            },
+            E::RemovePart { whole, part } => Self::RemovePart {
+                whole: name(&whole)?,
+                part: name(&part)?,
+            },
+            E::MovePart { part, from, to, at } => Self::MovePart {
+                part: name(&part)?,
+                from: optional(from)?,
+                to: optional(to)?,
+                at,
+            },
+            E::SaveSource { name: of, source } => Self::SaveSource {
+                name: name(&of)?,
+                source,
+            },
+            E::Rename { old, new } => Self::Rename {
+                old: name(&old)?,
+                new: name(&new)?,
+            },
+            E::Delete { name: of } => Self::Delete { name: name(&of)? },
+            E::SavePlaces { places } => Self::SavePlaces { places },
+            E::ResetPlaces { whole } => Self::ResetPlaces {
+                whole: optional(whole)?,
+            },
+            E::SetComment { name: of, text } => Self::SetComment {
+                name: name(&of)?,
+                text,
+            },
+            E::MoveComment { from, to } => Self::MoveComment {
+                from: name(&from)?,
+                to: name(&to)?,
+            },
+        })
+    }
+}
+
+fn text(path: &std::path::Path) -> String {
+    artifactize_tools::files::path_text(path).replace('\\', "/")
+}
+
+fn count(number: Option<usize>) -> Option<u32> {
+    number.and_then(|number| u32::try_from(number).ok())
+}
+
+impl From<edit::Refusal> for EditRefusal {
+    fn from(refusal: edit::Refusal) -> Self {
+        match refusal {
+            edit::Refusal::Invalid {
+                file,
+                message,
+                line,
+                column,
+            } => Self::Invalid {
+                file: file.replace('\\', "/"),
+                message,
+                line: count(line),
+                column: count(column),
+            },
+            edit::Refusal::Changed { file, .. } => Self::Changed { file: text(&file) },
+            edit::Refusal::NotAllowed { reason } => Self::NotAllowed { reason },
+            edit::Refusal::Io { message } => Self::Io { message },
+        }
+    }
+}
+
+fn view(project: edit::Project) -> DefinitionsView {
+    let files = project
+        .files
+        .iter()
+        .filter_map(|(file, source)| Some((text(file), source.clone()?)))
+        .collect();
+    // A read project's sources are valid definitions: `parts`, when present, is names.
+    let parts = |file: &std::path::Path| -> Vec<String> {
+        project.files[file]
+            .as_deref()
+            .and_then(|source| source.parse::<toml::Table>().ok())
+            .and_then(|doc| {
+                doc.get("parts")?.as_array().map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(|part| part.as_str().map(str::to_owned))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    };
+    let nodes = project
+        .nodes
+        .iter()
+        .map(|(name, node)| (name.clone(), parts(&node.definition), node))
+        .collect::<Vec<_>>();
+    let nodes = nodes
+        .into_iter()
+        .map(|(name, parts, node)| DefinitionNode {
+            name: name.to_string(),
+            definition: text(&node.definition),
+            target: node.target.clone(),
+            kind: serde_json::to_value(node.kind)
+                .ok()
+                .and_then(|kind| kind.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            target_missing: node.target_missing,
+            parts,
+            at: node.annotations.at,
+            places: node
+                .annotations
+                .parts
+                .iter()
+                .map(|(part, at)| (part.to_string(), *at))
+                .collect(),
+            comment: node.annotations.comment.clone(),
+            style_error: node.annotations.style_error.clone(),
+            comment_error: node.annotations.comment_error.clone(),
+        })
+        .collect();
+    DefinitionsView { nodes, files }
+}
+
+async fn workspace(app: &App, branch: &BranchKey) -> Result<PathBuf, Failure> {
+    Ok(app.browse.branch(&branch.to_place())?.workspace)
+}
+
+/// The definitions of `branch`'s worktree as they are now.
+#[tauri::command]
+#[specta::specta]
+pub async fn definitions(
+    app: tauri::State<'_, App>,
+    branch: BranchKey,
+) -> Result<DefinitionsView, Failure> {
+    let workspace = workspace(&app, &branch).await?;
+    crate::failure::joined(
+        tokio::task::spawn_blocking(move || edit::read_project(&workspace)).await,
+    )?
+    .map(view)
+    .map_err(|refusal| Failure::Read(refusal.to_string()))
+}
+
+/// Apply `operation` to `branch`'s definitions, `based_on` naming the text of each file it was
+/// shown (`None` for a file that was not there). Nothing is written when it is refused.
+#[tauri::command]
+#[specta::specta]
+pub async fn definition_edit(
+    app: tauri::State<'_, App>,
+    branch: BranchKey,
+    based_on: BTreeMap<String, Option<String>>,
+    operation: EditOperation,
+) -> Result<EditOutcome, Failure> {
+    let workspace = workspace(&app, &branch).await?;
+    let operation = edit::Operation::try_from(operation)?;
+    let based_on = based_on
+        .into_iter()
+        .map(|(file, source)| (PathBuf::from(file), source))
+        .collect::<edit::BasedOn>();
+    let applied = crate::failure::joined(
+        tokio::task::spawn_blocking(move || edit::apply(&workspace, &based_on, operation)).await,
+    )?;
+    Ok(match applied {
+        Ok(_) => EditOutcome::Written,
+        Err(refusal) => EditOutcome::Refused {
+            refusal: refusal.into(),
+        },
+    })
+}

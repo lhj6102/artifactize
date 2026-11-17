@@ -129,7 +129,7 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX journey: J-SET-CLAUDE-AGENT; UX edges: E-SET-CLAUDE-AGENT E-SET-CLAUDE-AGENT-CHECK E-SET-CLAUDE-AGENT-LOGOUT
-  // E-SET-CLAUDE-AGENT-LOGIN E-SET-CLAUDE-AGENT-CANCEL E-SET-CLAUDE-AGENT-END E-SET-CLAUDE-AGENT-PASTE E-SET-CLAUDE-AGENT-RETURN
+  // E-SET-CLAUDE-AGENT-LOGIN E-SET-CLAUDE-AGENT-CANCEL E-SET-CLAUDE-AGENT-END E-SET-CLAUDE-AGENT-BY-HAND E-SET-CLAUDE-AGENT-PASTE E-SET-CLAUDE-AGENT-RETURN
   scenario(
     "settings-claude-agent",
     "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, refused, with a pasted code and by the browser returning",
@@ -152,8 +152,11 @@ export const scenarios: Scenario[] = [
         await browser.waitUntil(async () => (await status()).trim() === "sign-in in progress" && (await browser.$("button=Cancel sign-in").isExisting()),
           { timeout: 15000, timeoutMsg: "the sign-in is in progress" });
         assert.equal(await browser.$("#claude-agent-code").isExisting(), false, "Finish by hand starts folded");
+        // E-SET-CLAUDE-AGENT-BY-HAND: unfolding shows the URL and the code field, the sign-in
+        // still in progress.
         await browser.$("button=Finish by hand").click();
         await browser.$("#claude-agent-code").waitForExist({ timeout: 15000, timeoutMsg: "the sign-in waits for the browser or a code" });
+        assert.equal((await status()).trim(), "sign-in in progress", "unfolding Finish by hand leaves the sign-in in progress");
         const address = new URL(await browser.$("pre.url").getText());
         assert.equal(address.pathname, "/oauth/authorize", "the URL Claude Code printed is shown");
         // The shown origin is the running Claude Code's own.

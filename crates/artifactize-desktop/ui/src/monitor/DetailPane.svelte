@@ -21,6 +21,7 @@
   import Neighbours from "./Neighbours.svelte";
   import ArtifactTools from "./ArtifactTools.svelte";
   import ArtifactStar from "./ArtifactStar.svelte";
+  import Definition from "./Definition.svelte";
   import HumanDetail from "../review/HumanDetail.svelte";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
@@ -218,6 +219,11 @@
         {#if branch}
           {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}
+        <!-- On a Current the Artifact's definition, which its graph and its Detail edit, stands
+             where a Run's Path does. -->
+        {#if branch && source.kind === "current"}
+          {#key row.name}<Definition branch={branch.key} name={row.name} />{/key}
+        {/if}
       {/if}
       {#if d.error}
         <p class="error">{d.error}</p>
@@ -229,7 +235,7 @@
           {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
         {/key}
       {:else}
-        <RecordDetail {detail} bind:log={() => log, (value) => (d.log = value ? target : null)} />
+        <RecordDetail {detail} path={source.kind !== "current"} bind:log={() => log, (value) => (d.log = value ? target : null)} />
       {/if}
     </div>
   </div>

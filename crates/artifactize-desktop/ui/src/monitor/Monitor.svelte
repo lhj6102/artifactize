@@ -27,9 +27,10 @@
   import { Review } from "../review/review.svelte";
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
+  import EditDialogs from "./EditDialogs.svelte";
 
   const app = getAppState();
-  const { browse, current, monitor: m } = app;
+  const { browse, current, definitions, monitor: m } = app;
   const { panes } = m;
 
   const view = $derived(browse.view);
@@ -364,7 +365,8 @@
     if (shown.kind === "request") return `${shown.detail.title} · read-only`;
     return "Nothing chosen";
   });
-  const notice = $derived(browse.error ?? view?.notice ?? null);
+  // A refused edit on a Current's graph says why here too.
+  const notice = $derived(browse.error ?? view?.notice ?? (shown.kind === "current" ? definitions.notice : null) ?? null);
 
   useCommands(() => [
     { id: "main.run", group: "Graph", label: "Open the Run's Detail", enabled: () => run !== null, run: openRun },
@@ -515,6 +517,13 @@
     </Split>
   </PaneGroup>
 </div>
+
+<EditDialogs
+  branch={shown.kind === "current" ? shown.branch : null}
+  ondeleted={(name) => {
+    if (m.opened?.node === `a:${name}`) closeDetail();
+  }}
+/>
 
 <Dialog.Root bind:open={app.asking}>
   <Dialog.Portal>

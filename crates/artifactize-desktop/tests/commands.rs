@@ -941,6 +941,80 @@ fn an_agent_request_opened_by_id_opens_read_only_with_its_session() {
 
 #[test]
 #[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
+fn the_definitions_are_read_and_edited_on_what_was_shown() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Monitor);
+    let branch = branch(&monitor);
+    let read = invoke(&monitor, "definitions", json!({"branch": branch})).unwrap();
+    let ship = read["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["name"] == "ship")
+        .unwrap();
+    assert_eq!(
+        ship["definition"],
+        json!(".artifactize/ship.artf"),
+        "{read}"
+    );
+    assert_eq!(ship["target"], json!("ship/"));
+    assert_eq!(ship["comment"], Value::Null);
+    let file = fixture.repo.join(".artifactize").join("ship.artf");
+    assert_eq!(
+        read["files"][".artifactize/ship.artf"],
+        json!(fs::read_to_string(&file).unwrap())
+    );
+    // Written on the text that was shown: a comment, nothing else in the file changed.
+    let before = fs::read_to_string(&file).unwrap();
+    let comment = json!({"kind": "setComment", "name": "ship", "text": "Ship after the review."});
+    let written = invoke(
+        &monitor,
+        "definition_edit",
+        json!({"branch": branch, "basedOn": read["files"], "operation": comment}),
+    )
+    .unwrap();
+    assert_eq!(written, json!({"kind": "written"}));
+    let after = fs::read_to_string(&file).unwrap();
+    assert!(after.starts_with(&before), "{after}");
+    assert!(after.contains("Ship after the review."), "{after}");
+    let again = invoke(&monitor, "definitions", json!({"branch": branch})).unwrap();
+    assert!(
+        again["nodes"].as_array().unwrap().iter().any(
+            |node| node["name"] == "ship" && node["comment"] == json!("Ship after the review.")
+        ),
+        "{again}"
+    );
+    // The same edit on the text shown before is refused, naming the file, and writes nothing.
+    let stale = invoke(
+        &monitor,
+        "definition_edit",
+        json!({"branch": branch, "basedOn": read["files"], "operation": {"kind": "setComment", "name": "ship", "text": "Other."}}),
+    )
+    .unwrap();
+    assert_eq!(
+        stale,
+        json!({"kind": "refused", "refusal": {"kind": "changed", "file": ".artifactize/ship.artf"}})
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), after);
+    // An edit that is not allowed says why: release is named by ship.
+    let named = invoke(
+        &monitor,
+        "definition_edit",
+        json!({"branch": branch, "basedOn": again["files"], "operation": {"kind": "delete", "name": "release"}}),
+    )
+    .unwrap();
+    assert_eq!(named["refusal"]["kind"], json!("notAllowed"), "{named}");
+    assert!(
+        fixture
+            .repo
+            .join(".artifactize")
+            .join("release.artf")
+            .exists()
+    );
+}
+
+#[test]
+#[ignore = "run by command_tests_run_without_an_inherited_remote_store"]
 fn a_star_marks_a_branch_and_is_kept_for_the_next_monitor() {
     let fixture = fixture();
     let monitor = window(&fixture, Mode::Monitor);

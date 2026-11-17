@@ -7,6 +7,7 @@
 //! tauri-specta; [`bindings`] is the single list of what the frontend may call.
 
 mod browse;
+mod definitions;
 mod detail;
 #[cfg(feature = "e2e")]
 mod e2e_input;
@@ -64,6 +65,8 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             graph::find::star_artifact,
             graph::current::current_scan,
             graph::current::current_view,
+            definitions::definitions,
+            definitions::definition_edit,
             tools::artifact_tools,
             tools::artifact_tool_run,
             request::request_detail,

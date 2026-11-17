@@ -1,0 +1,214 @@
+// The shown branch's definitions: one file per Artifact in `.artifactize/`, with each
+// Artifact's place and comment, as the backend read them. Every edit names the text it was
+// shown, so a file that changed on disk meanwhile refuses it, and after every edit, written or
+// not, the definitions are read again and the Current is scanned again. Typed text in a Source
+// is never overwritten: an edit on the graph that would write its file is refused until it is
+// saved or reverted.
+import { SvelteMap } from "svelte/reactivity";
+import { call, commands, message, type BranchKey, type Commands, type DefinitionNode, type DefinitionsView, type EditOperation, type EditRefusal } from "../ipc/client";
+import { keyOf } from "./monitor-state.svelte";
+import { annotationsOf, type Annotations } from "./annotations";
+
+/** Typed text in an Artifact's Source: the file's text it was typed over, and what it holds. */
+export type Draft = { base: string; text: string };
+
+/** Where an edit was made: in the Detail, its refusal is said there; on the graph, as the Main
+ * area's notice. */
+export type Where = "detail" | "graph" | "dialog";
+
+/** A refusal in words, a sentence a person can read. */
+export function refusalText(refusal: EditRefusal): string {
+  switch (refusal.kind) {
+    case "invalid":
+      return refusal.line !== null && !refusal.message.includes(`line ${refusal.line}`)
+        ? `line ${refusal.line}${refusal.column !== null ? `, column ${refusal.column}` : ""}: ${refusal.message}`
+        : refusal.message;
+    case "changed":
+      return `${refusal.file} changed on disk.`;
+    case "notAllowed":
+      return refusal.reason;
+    case "io":
+      return refusal.message;
+  }
+}
+
+/** The Artifacts an edit writes the files of: a gesture on the graph is refused while one of
+ * them holds typed text in its Source. */
+export function writes(operation: EditOperation, view: DefinitionsView | null): string[] {
+  switch (operation.kind) {
+    case "create":
+      return [];
+    case "setPath":
+    case "saveSource":
+    case "delete":
+    case "setComment":
+      return [operation.name];
+    case "addPart":
+    case "removePart":
+      return [operation.whole];
+    case "movePart":
+      return [operation.from, operation.to].filter((name): name is string => name !== null);
+    case "rename":
+      return [operation.old];
+    case "moveComment":
+      return [operation.from, operation.to];
+    case "savePlaces":
+      return Object.keys(operation.places)
+        .map((key) => key.split("/")[0])
+        .filter((name, at, names) => names.indexOf(name) === at);
+    case "resetPlaces":
+      return operation.whole !== null ? [operation.whole] : (view?.nodes.filter((node) => node.at !== null).map((node) => node.name) ?? []);
+  }
+}
+
+export class Definitions {
+  constructor(
+    readonly ipc: Commands = commands,
+    /** Scan the branch's Current again once an edit wrote its files. */
+    readonly rescan: (branch: BranchKey) => void = () => {},
+  ) {}
+
+  /** The definitions of the branch last read. */
+  view = $state.raw<DefinitionsView | null>(null);
+  /** Why the definitions cannot be read now; the graph is drawn without places or comments. */
+  error = $state<string | null>(null);
+  /** Why the last edit made on the graph wrote nothing, for the Main area's notice. */
+  notice = $state<string | null>(null);
+  /** An edit is being written: no other starts meanwhile. */
+  busy = $state(false);
+  /** The comment field open under an Artifact's node, and where it was opened from: the
+   * Definition's Comment button, or a click on the comment. */
+  field = $state.raw<{ name: string; from: "button" | "graph" } | null>(null);
+  /** The edit dialog open: New Artifact, or Rename or Delete of an Artifact. */
+  dialog = $state.raw<{ kind: "new" } | { kind: "rename"; name: string } | { kind: "delete"; name: string } | null>(null);
+  /** An Artifact just created or renamed, whose Detail opens once the graph draws it; a new
+   * one is also brought into view, as a found Artifact is. */
+  created = $state.raw<{ name: string; centre: boolean } | null>(null);
+  /** Typed text in each Artifact's Source, by name, while the app runs. */
+  readonly drafts = new SvelteMap<string, Draft>();
+  /** The branch whose definitions are shown. */
+  #branch: BranchKey | null = null;
+  #reads = 0;
+
+  readonly annotations: Annotations = $derived(annotationsOf(this.view));
+
+  /** The definitions are of `branch`. */
+  of(branch: BranchKey): boolean {
+    return this.#branch !== null && keyOf(this.#branch) === keyOf(branch) && this.view !== null;
+  }
+
+  node(name: string): DefinitionNode | undefined {
+    return this.view?.nodes.find((node) => node.name === name);
+  }
+
+  /** The read of the branch last asked for, while it has not answered. */
+  #loading: { key: string; read: Promise<void> } | null = null;
+
+  /** `branch`'s definitions are read, or cannot be: a graph is first laid out with them. */
+  ready(branch: BranchKey): Promise<void> {
+    if (this.#loading?.key === keyOf(branch)) return this.#loading.read;
+    if (this.of(branch)) return Promise.resolve();
+    return this.load(branch);
+  }
+
+  /** Read `branch`'s definitions as they are now; another branch's are dropped at once. */
+  load(branch: BranchKey): Promise<void> {
+    const read = this.#read(branch);
+    const loading = { key: keyOf(branch), read };
+    this.#loading = loading;
+    return read.finally(() => {
+      if (this.#loading === loading) this.#loading = null;
+    });
+  }
+
+  async #read(branch: BranchKey): Promise<void> {
+    const read = ++this.#reads;
+    if (this.#branch && keyOf(this.#branch) !== keyOf(branch)) {
+      this.view = null;
+      this.drafts.clear();
+      this.notice = null;
+    }
+    this.#branch = branch;
+    try {
+      const view = await call(this.ipc.definitions(branch));
+      if (read !== this.#reads) return;
+      this.view = view;
+      this.error = null;
+    } catch (failure) {
+      if (read === this.#reads) {
+        this.view = null;
+        this.error = message(failure);
+      }
+    }
+  }
+
+  /** The text each file was shown with: the definitions' files, and `None` for one an edit
+   * creates; `source` names a Source's own base for the file it saves. */
+  basedOn(operation: EditOperation): Record<string, string | null> {
+    const files: Record<string, string | null> = { ...(this.view?.files ?? {}) };
+    const folder = (name: string) => {
+      const definition = this.node(name)?.definition;
+      return definition ? definition.slice(0, definition.lastIndexOf("/") + 1) : ".artifactize/";
+    };
+    if (operation.kind === "create") files[`.artifactize/${operation.name}.artf`] = null;
+    if (operation.kind === "rename") files[`${folder(operation.old)}${operation.new}.artf`] = null;
+    if (operation.kind === "saveSource") {
+      const draft = this.drafts.get(operation.name);
+      const file = this.node(operation.name)?.definition;
+      if (draft && file) files[file] = draft.base;
+    }
+    return files;
+  }
+
+  /** Apply `operation` to `branch`'s definitions, made `where`. Answers why it wrote nothing,
+   * or `null` once written; either way the definitions are read again and, once written, the
+   * Current scanned again. */
+  async edit(branch: BranchKey, operation: EditOperation, where: Where): Promise<string | null> {
+    if (where === "graph") {
+      const typed = writes(operation, this.view).find((name) => this.drafts.has(name));
+      if (typed !== undefined) {
+        const why = `${this.node(typed)?.definition ?? typed} has typed text in its Source; save or revert it first.`;
+        this.notice = why;
+        return why;
+      }
+    }
+    if (this.busy) return "Another edit is being written.";
+    this.busy = true;
+    try {
+      const outcome = await call(this.ipc.definitionEdit(branch, this.basedOn(operation), operation));
+      if (outcome.kind === "written") {
+        if (operation.kind === "saveSource") this.drafts.delete(operation.name);
+        if (operation.kind === "rename" && this.drafts.has(operation.old)) this.drafts.delete(operation.old);
+        if (where === "graph") this.notice = null;
+        await this.load(branch);
+        this.rescan(branch);
+        return null;
+      }
+      const why = refusalText(outcome.refusal);
+      if (where === "graph") this.notice = why;
+      await this.load(branch);
+      // A file changed on disk: the Current shows what is there now.
+      if (outcome.refusal.kind === "changed") this.rescan(branch);
+      return why;
+    } catch (failure) {
+      const why = message(failure);
+      if (where === "graph") this.notice = why;
+      return why;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Nothing of a branch is shown any more. */
+  clear(): void {
+    this.#reads += 1;
+    this.#branch = null;
+    this.view = null;
+    this.error = null;
+    this.notice = null;
+    this.field = null;
+    this.dialog = null;
+    this.created = null;
+    this.drafts.clear();
+  }
+}

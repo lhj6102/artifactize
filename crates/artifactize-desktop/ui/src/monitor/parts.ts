@@ -13,6 +13,7 @@
 // around them and above them for its name.
 import type { GraphNode, Light, Shape } from "../ipc/client";
 import { NODE } from "./graph";
+import { commentHeight } from "./annotations";
 
 /** A box's room around its parts, and above them for its name. */
 export const BOX = { pad: 16, header: 32 };
@@ -83,22 +84,36 @@ export function folded(graph: Shape, minimized: readonly string[]): string[] {
   return graph.nodes.filter((node) => node.parts.length > 0 && folding.has(node.id)).map((node) => node.id);
 }
 
+/** A whole's room above its parts for its name and, under that, its comment, at `width`. */
+export function header(comments: ReadonlyMap<string, string>, name: string, width: number): number {
+  return BOX.header + commentHeight(comments.get(name), width - 2 * BOX.pad);
+}
+
 /** The box of every copy of `drawn` the layout placed, in its order: a node's own at its
- * position, a whole's around its parts. */
-export function boxes(drawn: Copy[], positions: Map<string, { x: number; y: number }>): Map<string, Rect> {
+ * position, a whole's around its parts and their comments (`comments`, by Artifact name),
+ * with room above them for its name and its own comment. */
+export function boxes(drawn: Copy[], positions: Map<string, { x: number; y: number }>, comments: ReadonlyMap<string, string> = new Map()): Map<string, Rect> {
   const found = new Map<string, Rect>();
+  /** What each copy takes up: its box, and a node's comment under it. */
+  const taken = new Map<string, Rect>();
   // Parts come after their wholes: going backwards finds each whole's parts first.
   for (let at = drawn.length - 1; at >= 0; at -= 1) {
     const copy = drawn[at];
     if (copy.parts.length === 0) {
       const place = positions.get(copy.key);
-      if (place) found.set(copy.key, { x: place.x, y: place.y, ...NODE });
+      if (place) {
+        found.set(copy.key, { x: place.x, y: place.y, ...NODE });
+        taken.set(copy.key, { x: place.x, y: place.y, width: NODE.width, height: NODE.height + commentHeight(comments.get(copy.node.name), NODE.width) });
+      }
       continue;
     }
-    const inner = copy.parts.flatMap((key) => found.get(key) ?? []);
+    const inner = copy.parts.flatMap((key) => taken.get(key) ?? []);
     if (inner.length === 0) continue;
     const { x, y, width, height } = around(inner);
-    found.set(copy.key, { x: x - BOX.pad, y: y - BOX.header, width: width + 2 * BOX.pad, height: height + BOX.header + BOX.pad });
+    const top = header(comments, copy.node.name, width + 2 * BOX.pad);
+    const box = { x: x - BOX.pad, y: y - top, width: width + 2 * BOX.pad, height: height + top + BOX.pad };
+    found.set(copy.key, box);
+    taken.set(copy.key, box);
   }
   return new Map(drawn.flatMap((copy): [string, Rect][] => (found.has(copy.key) ? [[copy.key, found.get(copy.key)!]] : [])));
 }

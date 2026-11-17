@@ -14,6 +14,15 @@ export class GraphViewState {
   cell = $state(24);
   /** An Artifact's name's font at zoom 1, in screen pixels, as the --text-body token sets it. */
   font = $state(13);
+  /** Grows when what was dragged goes back where it was: the nodes are drawn from the layout
+   * again. */
+  epoch = $state(0);
+  /** The copy a release would drop on, highlighted while the drop would be accepted. */
+  target = $state<string | null>(null);
+  /** A comment being dragged: whose copy, and where the pointer is in the canvas. */
+  comment = $state.raw<{ key: string; x: number; y: number } | null>(null);
+  /** A whole's face was just dragged to pan: the click that ends it opens nothing. */
+  panned = false;
 }
 
 export const [getGraphViewState, setGraphViewState] = createContext<GraphViewState>();

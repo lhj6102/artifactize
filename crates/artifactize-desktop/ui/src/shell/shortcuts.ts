@@ -36,6 +36,18 @@ const GRAPH: Section = {
   ],
 };
 
+/** A Current's definitions, edited on its graph and in its Detail. */
+const EDITING: Section = {
+  title: "Editing",
+  keys: [
+    ["Esc", "Put back what is being dragged"],
+    ["Enter", "Write a Path, a part or a comment"],
+    ["Shift+Enter", "Break a comment's line"],
+    ["Ctrl+S", "Save the Source"],
+    ["Esc", "Put back a Path, a part or a comment being typed"],
+  ],
+};
+
 const REVIEW: Section = {
   title: "Review",
   keys: [
@@ -70,7 +82,7 @@ const KEYS: Record<Focused, Section[]> = {
     WINDOW,
   ],
   graph: [GRAPH, WINDOW],
-  current: [GRAPH, WINDOW],
+  current: [GRAPH, EDITING, WINDOW],
   review: [REVIEW, WINDOW],
   settings: [
     {

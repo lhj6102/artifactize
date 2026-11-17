@@ -6,7 +6,11 @@
   // under it, its tally, its Expand button, and a second outline behind it. It is an Artifact of its own: the pointer and the keyboard reach it as they reach a
   // node, its button after it, and the parts of a box, drawn above it, take the pointer within
   // their own boxes. A click on its button only minimizes or expands it, as `m` does (GraphView).
+  // Its comment is text under its title row inside the box, or under it minimized. On a Current
+  // a box placed by hand has Reset layout before Minimize, a drag on its face pans, and a drop
+  // that would make it the dragged Artifact's whole outlines it.
   import { Handle, Position, type NodeProps } from "@xyflow/svelte";
+  import Comment from "./Comment.svelte";
   import type { Light, Tally } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import { LIGHTS } from "../shell/icons";
@@ -16,7 +20,26 @@
     data,
     selected,
     type,
-  }: NodeProps & { data: { name: string; light: Light; tally: Tally | null; open: boolean; inward: boolean; outward: boolean; count: number; onminimize: () => void } } = $props();
+  }: NodeProps & {
+    data: {
+      name: string;
+      light: Light;
+      tally: Tally | null;
+      open: boolean;
+      inward: boolean;
+      outward: boolean;
+      count: number;
+      onminimize: () => void;
+      comment?: string | null;
+      editing?: boolean;
+      target?: boolean;
+      reset?: boolean;
+      onreset?: () => void;
+      oncomment?: (event: PointerEvent) => void;
+      onfield?: (written: string | null) => void;
+      onpan?: (event: PointerEvent) => void;
+    };
+  } = $props();
   const minimized = $derived(type === "minimized");
   const action = $derived(minimized ? "Expand" : "Minimize");
 
@@ -24,6 +47,18 @@
     // The click is the button's, not the node's: it opens no Detail.
     event.stopPropagation();
     data.onminimize();
+  }
+
+  function reset(event: MouseEvent) {
+    event.stopPropagation();
+    data.onreset?.();
+  }
+
+  /** A press on the box's face, outside its title row and its comment, pans on a Current. */
+  function press(event: PointerEvent) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (minimized || !data.onpan || target?.closest(".title, .comment, textarea, button")) return;
+    data.onpan(event);
   }
 </script>
 
@@ -34,6 +69,9 @@
   class:minimized
   class:selected
   class:open={data.open}
+  class:target={data.target}
+  onpointerdown={press}
+  role="presentation"
   style:--header="{BOX.header}px"
   style:--pad="{BOX.pad}px"
 >
@@ -45,15 +83,25 @@
       {#if minimized}<span class="count">{partsCount(data.count)}</span>{/if}
     </span>
     {#if data.tally}<span class="tally" aria-hidden="true">{data.tally.passed}/{data.tally.of}</span>{/if}
+    {#if data.reset && !minimized}
+      <button class="toggle nodrag nopan" type="button" aria-label="Reset layout of {data.name}" onclick={reset}><Icon name="reset" /></button>
+    {/if}
     <button class="toggle nodrag nopan" type="button" title="{action} (m)" aria-label="{action} {data.name} (m)" aria-keyshortcuts="m" onclick={toggle}>
       <Icon name={minimized ? "add" : "minus"} />
     </button>
   </div>
+  {#if !minimized}
+    <Comment name={data.name} text={data.comment ?? null} editing={data.editing ?? false} inset oncomment={data.oncomment} onfield={data.onfield} />
+  {/if}
   <Handle type="source" position={Position.Right} isConnectable={false} />
+  {#if minimized}
+    <Comment name={data.name} text={data.comment ?? null} editing={data.editing ?? false} oncomment={data.oncomment} onfield={data.onfield} />
+  {/if}
 </div>
 
 <style>
   .whole {
+    position: relative;
     width: 100%;
     height: 100%;
     box-sizing: border-box;
@@ -89,6 +137,11 @@
       3px 3px 0 -1px var(--surface-app),
       3px 3px 0 0 var(--line-node),
       inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
+  /* The Artifact a release would make the dragged one's whole. */
+  .whole.target {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
   /* The title row, closed below by the strip in its status's colour across the box. */
   .title {

@@ -10,7 +10,7 @@ import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
 import { PRECEDENCE } from "../ipc/bindings";
-import { boxes, copies, copyEdges, drawings, type Rect } from "./parts";
+import { BOX, boxes, copies, copyEdges, drawings, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
 const elk = vi.hoisted(() => ({ loads: 0, starts: 0, layouts: 0 }));
@@ -291,5 +291,46 @@ describe("layout of wholes", () => {
     // A Current's lights, in a Current's precedence.
     const current = { ...lit, edges: lit.edges.map((edge, at) => ({ ...edge, light: (["reused", "run", "waiting"] as const)[at] })) };
     expect(copyEdges(current, copies(current, ["a:app"]), PRECEDENCE.current).map(({ edge }) => edge.light)).toEqual(["run", "waiting"]);
+  });
+});
+
+describe("layout with places and comments", () => {
+  //   suite ⊃ { app, kit }; core ──> app; lone
+  const graph = made(shape(["suite", "app", "kit", "core", "lone"], [["core", "app"]]), { suite: ["app", "kit"] });
+  const annotations = (at: Record<string, Point>, places: Record<string, Record<string, Point>> = {}, comments: Record<string, string> = {}) => ({
+    at: new Map(Object.entries(at)),
+    places: new Map(Object.entries(places).map(([whole, inside]) => [whole, new Map(Object.entries(inside))])),
+    comments: new Map(Object.entries(comments)),
+  });
+
+  it("puts each top-level Artifact at its place and one without a place in free space beside them", async () => {
+    const placed = await layout(graph, [], annotations({ core: { x: 500, y: 40 }, suite: { x: 40, y: 0 } }));
+    expect(placed.get("a:core")).toEqual({ x: 500, y: 40 });
+    // suite's parts are laid out inside its box, its corner where it was put.
+    const rects = boxes(copies(graph), placed);
+    expect(rects.get("a:suite")).toMatchObject({ x: 40, y: 0 });
+    // lone has no place: it stands right of everything placed, covering nothing.
+    expect(placed.get("a:lone")!.x).toBeGreaterThanOrEqual(Math.max(500 + NODE.width, rects.get("a:suite")!.x + rects.get("a:suite")!.width));
+  });
+
+  it("places a box's parts from its inner corner, under its name, and the box fits around them", async () => {
+    const placed = await layout(graph, [], annotations({}, { suite: { app: { x: 0, y: 0 }, kit: { x: 200, y: 80 } } }));
+    const [app, kit] = [placed.get("a:suite/a:app")!, placed.get("a:suite/a:kit")!];
+    expect({ x: kit.x - app.x, y: kit.y - app.y }).toEqual({ x: 200, y: 80 });
+    const rects = boxes(copies(graph), placed);
+    const suite = rects.get("a:suite")!;
+    expect({ x: app.x - suite.x, y: app.y - suite.y }).toEqual({ x: BOX.pad, y: BOX.header });
+    expect(suite.x + suite.width).toBe(kit.x + NODE.width + BOX.pad);
+    expect(suite.y + suite.height).toBe(kit.y + NODE.height + BOX.pad);
+  });
+
+  it("gives a comment room under its node and under a whole's name, so nothing it is drawn beside covers it", async () => {
+    const plain = await layout(graph, [], annotations({}, { suite: { app: { x: 0, y: 0 }, kit: { x: 0, y: 60 } } }));
+    const noted = await layout(graph, [], annotations({}, { suite: { app: { x: 0, y: 0 }, kit: { x: 0, y: 60 } } }, { suite: "Split it.", app: "A long note that wraps onto a second line under the node." }));
+    // suite's parts start lower by its comment's room.
+    expect(noted.get("a:suite/a:app")!.y - plain.get("a:suite/a:app")!.y).toBeGreaterThan(0);
+    // The box holds app's comment: it reaches below the last part by its own room.
+    const rects = boxes(copies(graph), noted, new Map([["suite", "Split it."], ["app", "A long note that wraps onto a second line under the node."]]));
+    expect(rects.get("a:suite")!.y + rects.get("a:suite")!.height).toBeGreaterThanOrEqual(noted.get("a:suite/a:kit")!.y + NODE.height + BOX.pad);
   });
 });

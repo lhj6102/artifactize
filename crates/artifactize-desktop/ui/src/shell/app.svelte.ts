@@ -5,6 +5,7 @@ import { commands as bindings, type KeyedLog, type LaunchView } from "../ipc/cli
 import { Activity, observeCommands } from "../ipc/activity.svelte";
 import { Browse } from "../monitor/browse.svelte";
 import { Current } from "../monitor/current.svelte";
+import { Definitions } from "../monitor/definitions.svelte";
 import { MonitorState } from "../monitor/monitor-state.svelte";
 import { ArtifactTools, toolsKey } from "../monitor/artifact-tools.svelte";
 import { Registry } from "./commands.svelte";
@@ -23,7 +24,9 @@ export class AppState {
   /** The live branches, the waiting reviews and the shown Run. */
   readonly browse = new Browse(this.ipc);
   /** The shown branch's Current. */
-  readonly current = new Current(this.ipc);
+  readonly current: Current = new Current(this.ipc, (branch) => void this.definitions.load(branch));
+  /** The shown branch's definitions, which its Current edits. */
+  readonly definitions: Definitions = new Definitions(this.ipc, (branch) => void this.current.scan(branch, true));
   /** The Pane's selection, what the Main area shows and its open Detail. */
   readonly monitor = new MonitorState();
   readonly leaving = new Leaving(this.ipc);

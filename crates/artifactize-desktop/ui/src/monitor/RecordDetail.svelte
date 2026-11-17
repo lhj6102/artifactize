@@ -17,9 +17,12 @@
 
   let {
     detail,
+    path = true,
     log = $bindable(),
   }: {
     detail: DetailView;
+    /** An Artifact's Path is shown: a Current shows its Definition instead. */
+    path?: boolean;
     /** The log rather than the Summary; the caller owns it. */
     log: boolean;
   } = $props();
@@ -175,7 +178,7 @@
     </div>
   {:else if detail.target === "artifact"}
     <div class="shown sections">
-      {#each pick(["Path"]) as field (field.key)}
+      {#each path ? pick(["Path"]) : [] as field (field.key)}
         <Section name="Path">
           <p class="line muted">{field.value}</p>
         </Section>

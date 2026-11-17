@@ -137,6 +137,23 @@ kbd {
   padding: 16px;
   z-index: 51;
 }
+/* A field of an edit: one step below its panel, outlined by the faintest line; a path or a
+   name in the monospace face, a name typed as text in the UI's. */
+.field-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control);
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink);
+  font: var(--text-small) var(--mono);
+}
+.field-input.text {
+  font: var(--text-body) var(--font);
+}
 .dialog-title {
   margin: 0 0 10px;
   font-size: var(--text-title);

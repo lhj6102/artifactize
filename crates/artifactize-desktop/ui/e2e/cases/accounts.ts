@@ -22,7 +22,7 @@ function requireCallbackPort(): Promise<void> {
 }
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-CANCEL E-SET-CODEX-PASTE
+  // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-CANCEL E-SET-CODEX-BY-HAND E-SET-CODEX-PASTE
   // E-SET-CODEX-LOGOUT E-SET-CODEX-RETURN E-SET-MODELS
   scenario(
     "accounts",
@@ -91,8 +91,11 @@ export const scenarios: Scenario[] = [
         // asked for.
         await browser.waitUntil(async () => (await status()).trim() === "sign-in in progress", { timeout: 15000, timeoutMsg: "the sign-in is in progress" });
         assert.equal(await browser.$("#codex-redirect").isExisting(), false, "Finish by hand starts folded");
+        // E-SET-CODEX-BY-HAND: unfolding shows the address and the redirect field, the sign-in
+        // still in progress.
         await browser.$("button=Finish by hand").click();
         await browser.$("#codex-redirect").waitForExist({ timeout: 15000 });
+        assert.equal((await status()).trim(), "sign-in in progress", "unfolding Finish by hand leaves the sign-in in progress");
         assert.doesNotMatch(await text(), /Port 1455 is in use/, "the product must own its loopback callback port");
         const address = await browser.$("pre.url").getText();
         assert.equal(new URL(address).pathname, "/oauth/authorize");
