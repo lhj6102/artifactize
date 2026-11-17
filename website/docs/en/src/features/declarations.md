@@ -1,158 +1,110 @@
 # Declarations (.artf)
 
-Write an `index.artf` inside the folder you want to review (or a `NAME.artf` beside the
-file), then check it:
+A project is a folder with `.artifactize/`. Each regular `*.artf` file below it defines
+one Artifact. The file's stem is its name: `.artifactize/engine/app.artf` defines `app`.
+Subfolders organize definitions for people; they create no namespace or relationship.
 
-```sh
-artifactize config check
+```toml
+# .artifactize/app.artf
+path = "crates/app/"
+parts = ["app-tests"]
+
+[evals.tests]
+title = "The application tests pass"
+profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"] }
+payload.instruction = "Test {app} with {app-tests}."
 ```
 
-It prints `Folder configuration is valid.`, or the error and exits 2: a mistake inside
-a declaration names its file, line and column, while a problem found on disk, such as a
-missing target file, names only the path. This page has the exact rules for declarations, folder
-and file Artifacts, fingerprints, references and how commands run;
-[Artifacts and evals](artifact.md) introduces them.
-
-## Migrating removed dependency declarations
-
-`kind = "dependency"` and `depends_on` are removed. Delete the dependency eval;
-put the needed Artifacts as `{name}` references in the consuming eval's
-`payload.instruction` (or runtime `args`). For example, instead of a derived
-`ready` eval listing `spec` and `assets`, write the actual review instruction as
-`"Review {app} against {spec} and {assets}."` Each consuming eval waits for those
-inputs' required evals; independent sibling evals keep running.
-
-To require any other Artifact's reviews before an eval, reference that Artifact
-explicitly in the eval's instruction or argv. Neither a nested folder nor any other
-[part](artifact.md#composition) is a reference.
-
-An old profile fails configuration parsing with
-`unknown variant `dependency`, expected one of `agent`, `human`, `runtime``.
-A `depends_on` field on a supported profile is an unknown-field error. These are
-configuration errors, not review verdicts; migrate the declaration before verifying.
+Check the definitions with `artifactize config check`. A mistake names the definition
+file, line and column and exits 2. A missing or wrong-kind target is different: the
+check exits 0 with a note. `status` and `verify` report `ERROR/PREPARATION_FAILED` only
+on evals covering that target, naming the path; unrelated evals retain their forecasts
+or can still run.
 
 ## Declaration validation
 
-`index.artf` declares its containing folder. `<filename>.artf` declares the
-neighboring file whose complete name is `<filename>`, including its extension, or,
-with `select`, an [aspect](#aspects) when no such file exists. All use standard TOML
-and require `name`. The repository root's nameless `.artf`
-declares the [graph Artifact](#graph-artifact), with no source file.
+`path` is required and is relative to the project root, not to the definition file.
+Its spelling decides what the Artifact is, even before the target exists:
 
-Discovery walks from the repository root and skips `.git`, `node_modules`, and
-subdirectories and sidecar paths listed in an optional root `.artfignore`
-(gitignore syntax). In every visited directory, `index.artf` is read regardless of
-an ignore pattern matching that filename alone. To suppress a subproject's folder
-declaration, exclude its containing directory from the walk instead. An ignored
-sidecar is not parsed or target-checked; its
-target remains an ordinary file unless another declaration includes it. List folders
-that hold separate projects, fixtures or examples:
+| PATH | Target |
+|---|---|
+| `"src/"` | A folder; the trailing `/` matters |
+| `"./"` | The project root |
+| `"README.md"` | One regular file |
+| `"src/"` with `select = ["api", "model.rs"]` | Selected paths below that folder, an aspect |
+| `"https://example.com"` | Live external state; a URI scheme has at least two letters |
 
-```gitignore
-crates/app/tests/
-examples/
-```
+Local paths use `/`, no absolute root, `..`, empty component or backslash. Several
+Artifacts may target the same or overlapping paths. Commands and relative declarations
+use the target folder as their base: the containing folder for a file, the selected
+folder for an aspect, and the project root for a Live Artifact. `execution_paths`
+remain project-relative.
 
-Names, eval IDs, tool/session names and profile variant names start with a letter or
-digit and have at most 64 letters, digits, underscores or hyphens
-(`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`). A name says nothing about what the Artifact is a
-part of: folders and `parts` do (see [composition](artifact.md#composition)). Artifact
-names are globally unique. Evals are
-ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
-An explicit eval `id` field is rejected. Evals within each declaration are ordered
-by ID, not by their position in the TOML source.
+A `name` key is refused: the file name is the Artifact's name. Names match
+`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, are unique ignoring case across all definition
+subfolders, and cannot be device names such as `con`, `nul` or `com1`.
+Eval, tool, session and profile-variant IDs use the same identifier grammar. An eval
+`[evals.check]` in `app.artf` is `app/check`; an eval cannot declare its own `id` field.
+Eval order is by ID, not source order.
 
 | Field | Rule |
 |---|---|
-| `name` | Required Artifact name |
-| `select` | An [aspect](#aspects)'s selected paths; only in an aspect's declaration |
-| `parts` | Optional list of 1–64 unique Artifact names that are [parts](artifact.md#composition) of this one besides those its folder holds; not itself, not in the root `.artf` |
-| `tags` | Optional list of at most 64 unique nonblank strings, without ASCII controls |
-| `basis` | Optional boolean; `true` declares a no-eval input, waiving its own review obligations but not its dependencies |
-| `fingerprint` | Omission uses artifactsum; `false` disables reuse; otherwise an artifactsum or script table |
-| `views.agent_tools`, `views.human_tools` | Optional maps of declared tools |
-| `views.agent_sessions.<name>.start`, `.stop` | Tool-session commands: required `command` and `args`, optional `execution_paths`; no other fields |
-| `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
+| `path` | Required target, as above |
+| `parts` | Optional 1–64 unique Artifact names; no self-reference or composition cycle |
+| `select` | Optional 1–64 unique paths below a folder target, making an aspect |
+| `basis` | `true` waives only this Artifact's own reviews; it cannot own evals |
+| `tags` | At most 64 unique nonblank strings, without control characters |
+| `fingerprint` | Default artifactsum for local targets; `false` disables reuse; a table selects artifactsum or a script |
 | `evals.<id>.title` | Required nonblank title |
-| `evals.<id>.mutex` | Optional list of at most 64 unique hierarchical mutex tags; runtime and Agent evals only; no default |
 | `evals.<id>.profile` | Required `runtime`, `agent` or `human` profile |
-| `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
-| `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals; a Human eval's take only [form shapes](#human-result-schemas) |
-| `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind |
+| `evals.<id>.payload.instruction` | Required nonblank instruction |
+| `evals.<id>.pass_schema`, `fail_schema` | Optional owner-result schemas; see below |
+| `evals.<id>.profile_variants` | Up to 64 named complete profiles of the same kind |
+| `evals.<id>.mutex` | Optional hierarchical mutex tags for runtime and Agent evals |
+| `views.agent_tools`, `views.human_tools` | Tools published by this Artifact |
+| `views.agent_sessions` | Tool sessions; see [Agent tools](tools/agent.md#tool-sessions) |
+| `annotations` | Presentation and notes, never structure; see below |
 
-[Tool sessions](tools/agent.md#tool-sessions) keep a harness running for one review.
-Artifactize starts, stops and cleans them up; there are no lifecycle or timing options
-to declare.
+Declaration keys use snake_case (`timeout_ms`, `input_schema`, `execution_paths`,
+`pass_schema`); JSON Schema keywords and owner-defined payload fields retain their
+names. Unknown declaration keys are errors. Everything inside `annotations` is
+accepted without validation. TOML null values are not supported. Outside annotations,
+quote dates and use finite numbers so the values have JSON equivalents. JSON output
+and tool protocols keep their camelCase names; they are not declaration syntax.
 
-All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
-`input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,
-`profile_variants` and `mutex`.
-Other keys, and camelCase spellings such as `timeoutMs` for `timeout_ms`, are rejected.
-JSON Schema keywords such as `additionalProperties`, `minLength` and `maxItems`
-keep their standard names. Owner-defined payload fields keep their chosen names. They are kept with the eval
-and change its reuse key, but an Agent sees only `payload.instruction`, so write
-everything the reviewer needs there.
-`--json`, tool protocols and stored state keep their existing camelCase fields,
-such as `timeoutMs`, `passSchema`, `agentTools` and `blockedBy`; they are not
-declaration syntax.
+## Upgrading an in-tree project
 
-Inline tables, dotted keys and multiline strings are standard TOML:
+Run `artifactize config migrate`, or select another project with `--repo`. This is the
+only command that reads the old `index.artf`, file sidecars, root `.artf` and
+`.artfignore`. Normal commands read only `.artifactize/`; files elsewhere are ordinary
+content, not definitions, and `.artfignore` no longer controls discovery.
 
-```toml
-name = "app"
-tags = ["type:code"]
+Migration makes the former folder composition explicit in `parts`, adds `path`, removes
+`name`, preserves comments and the remaining declarations, then removes the old files.
+A root-folder Artifact using artifactsum gains an ignore for `.artifactize/`. The former
+root graph becomes an ordinary folder Artifact on `.artifactize/`. Separate projects
+kept out by the old ignore file are left alone and reported; migrate each with `--repo`.
 
-[evals.review]
-title = "The implementation matches the spec"
-profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID", reasoning = "high", timeout_ms = 240000 }
-
-[evals.review.payload]
-instruction = """
-Read {spec}, then review {app}.
-Return GREEN when the implementation matches the spec.
-"""
-
-[evals.review.pass_schema]
-type = "object"
-required = ["summary"]
-additionalProperties = false
-properties.summary = { type = "string", minLength = 1 }
-```
-
-TOML has no null value. Omit optional fields; do not use `null`. A schema may say
-`type = "null"`, but literal null values such as a null `const` cannot be written.
-Unquoted TOML dates/times and non-finite numbers (`inf`, `nan`) are rejected
-anywhere, including payloads and schemas, because they have no JSON equivalent.
-Quote dates to use them as strings. A declaration error names the `.artf` file, line and column, whether the TOML does not
-parse, a value has the wrong type, or a field or reference is invalid. A wrong value also
-names its key, such as `evals.check.profile.args`.
-
-`config check` validates without executing fingerprint scripts or hashing files.
-Use it after rewriting declarations. Legacy declaration and ignore files are not
-read. A non-ignored legacy declaration file fails discovery. A directory with the
-legacy declaration filename is walked normally, unless a directory ignore pattern
-excludes it. `.artfignore` can ignore a legacy file individually or skip its whole
-folder. The old ignore file at the repository root always fails. The diagnostics
-are:
-
-```text
-artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
-.artifactizeignore was renamed to .artfignore.
-```
-
-To migrate, follow [Upgrading to 0.9](../getting-started/update.md#upgrading-to-09).
-Older fields such as
-`staleKey`, `stale`, `critics`, `envRequirements`, `resultCheck`,
-`reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` are rejected;
-they are not aliases for the new fields. The artifactsum form's old `dependencies`
-option is also rejected.
+Migration writes nothing if definitions already exist, names collide ignoring case,
+a name is reserved, or the old or converted project is invalid. Local fingerprints
+and eval criteria are preserved except for the former graph and folders whose content
+now includes a nested project's `.artf` files. Check the printed changes before verifying.
 
 ## Owner-result schemas
 
 Agent and Human results contain a `verdict` plus the owner's fields. Declare only
 those owner fields in `pass_schema` (GREEN) and `fail_schema` (RED); artifactize
-supplies `verdict`. For example, the `summary` schema above accepts
-`{"verdict":"GREEN","summary":"All requirements are covered."}` from an Agent.
+supplies `verdict`. For example:
+
+```toml
+[evals.review.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+```
+
+An Agent returns `{"verdict":"GREEN","summary":"All requirements are covered."}`.
 A Human supplies just `{"summary":"All requirements are covered."}` as their form
 fields, with GREEN selected separately.
 
@@ -213,152 +165,110 @@ responses get one bounded repair attempt, not silent field removal. The
 [Human submission interface](../cli/index.md#command-reference) separately bounds
 its input and reports validation errors without settling the request.
 
-## Graph Artifact
+## Reviewing definitions {#graph-artifact}
 
-An optional nameless `.artf` at the repository root declares the whole project's
-Artifact graph. `index.artf` still declares the root folder; `<filename>.artf`
-still declares a neighboring file. A nameless `.artf` in another visited directory
-is a declaration error. The root `.artf`, like `index.artf`, is read even when an
-`.artfignore` pattern matches its filename. There can be only one graph Artifact.
+Definitions are ordinary files. To review all of them, declare an Artifact with
+`path = ".artifactize/"`; to review one family, use a subfolder, and to review one
+definition use its complete file path. None needs a special kind or a special
+fingerprint. A definition may cover itself without a recursive fingerprint.
+The `graph` builtin still shows the whole project's criteria and relations from any
+Artifact.
 
 ```toml
-# .artf at the repository root
-name = "project-graph"
+# .artifactize/graph.artf
+path = ".artifactize/"
 
 [views.agent_tools.structure]
 builtin = "graph"
 args = []
 
-[views.human_tools.viewer]
-builtin = "graph"
-kind = "launch"
-args = []
-
 [evals.review]
-title = "The Artifact boundaries and evaluation criteria fit the project"
+title = "The definitions describe the intended project"
 profile = { kind = "human" }
-payload = { instruction = "Use the graph viewer to review the current structure." }
+payload.instruction = "Review the definitions and their relationships."
 ```
 
-It is an ordinary named Artifact: declare any runtime, Agent or Human
-evals and tools, and select it by name in `verify`, `status`, CI or `--reuse-only`.
-It has no default evals, parts or relations to other Artifacts unless names
-or references make them. Explicit
-instruction/argv references work normally. Commands run from the
-repository root; declaring the graph does not make it the owner of that folder.
-Its scope uses `kind = "graph"` and its declaration path is `.artf`.
+Every `.artf` file uses the default **artf view** in artifactsum and file builtins.
+Definition values count toward its fingerprint; `annotations`, formatting and `#`
+comments do not. A field inside a user-defined schema, such as
+`pass_schema.properties.comment`, is definition content, not an annotation. If the file
+is not valid TOML or UTF-8, changes to any of its bytes count instead.
 
-Do not declare `fingerprint`, even `false` or an empty table: its fingerprint is
-always the current extracted graph. Otherwise ordinary Artifact rules apply:
-`basis = true` explicitly declares no own review obligations and cannot own evals;
-it does not satisfy unmet dependencies. A graph without evals and
-without `basis = true` remains UNREVIEWED, as any such Artifact does; it has no
-[parts](artifact.md#composition) and is a part of nothing. No source file is
-created or required. Ordinary Artifact cycles are allowed, and the graph fingerprint also covers the graph
-Artifact's own declaration.
+File builtins show the definition without annotations, formatting or `#` comments.
+Runtime commands and fingerprint scripts read the actual file. This behavior needs no
+declaration option.
 
-The [graph fingerprint](fingerprint.md#graph-fingerprint)
-changes with structural definitions, not source file bytes or evaluation
-execution options. There is no diff, history or automatic review policy: results
-are reviewed or reused against the current state only.
+A review of definitions reruns for a changed model, timeout, tool or criterion, but not
+for an annotation or formatting edit. A root-folder Artifact also covers `.artifactize/`
+unless its `fingerprint.ignore` excludes it or it is a part's target.
+
+## Positions and comments
+
+A node may keep positions and a plain-text note in its own definition:
+
+```toml
+[annotations.style]
+at = [120, 40]
+parts = { app-tests = [40, 80] }
+
+[annotations.comment]
+text = "An accessibility review will go here next."
+```
+
+`at` is the top-level position. A whole's `parts` positions belong to that whole's box;
+a shared part can have a position in each whole. A comment belongs to one node, appears
+with every copy of it, and moves with it. There is no separate layout file or free
+canvas comment. Positions and notes never change verification or reuse.
+
+The reader ignores malformed or future annotation values. The workbench draws that
+box automatically or hides that comment. An edit of an unreadable section is refused,
+with its file, line and column. Edits retain unknown annotation keys and untouched text.
+Stale positions are dropped when that style is next written; empty sections are removed.
+See [the desktop](../desktop/index.md) for placing nodes, editing notes and conflicts
+with an agent's file edits.
 
 ## File Artifacts
 
-`hero.png.artf` declares the regular file `hero.png` in the same folder. Its
-`name` is required and independent of any surrounding folder Artifact. Missing
-targets, directories, symlinks and special files are not valid targets.
-Target filenames containing `:` are rejected at discovery because scoped tool
-paths cannot represent them.
-The `.artf` declaration itself must also be a regular file: symlinks, special files
-and directories such as `bundle.artf` fail discovery. A file named `index` cannot have a sidecar because `index.artf` always declares the folder;
-`.artf` files are declarations and are never targets.
+A PATH without a trailing `/` names exactly one file. Commands run in its containing
+folder, and `{name}` is the file itself; `{name}/suffix` is an error. Its default
+artifactsum covers only that file. An explicit `fingerprint.files` may name only the
+file's name, and `fingerprint.ignore` is not supported for a file Artifact.
 
-A file Artifact is a [part](artifact.md#composition) of the nearest folder Artifact
-around it: selecting that folder Artifact selects the file Artifact too, and the folder
-Artifact passes only while it does. The folder Artifact's eval keys include the
-file part's fingerprint even without a reference; reading the part through its own
-tools still requires naming it. A folder's artifactsum excludes every part's files,
-including neighboring file targets and subfolders with their own `index.artf`,
-and every `*.artf` declaration. Each part fingerprints its own files instead.
-
-The containing folder is the working directory of runtime commands, tools and
-fingerprint scripts, so a relative executable may be a sibling file. It grants no
-access to other siblings: built-in tools and scoped argv references see only the
-target file and referenced Artifacts. `{name}` resolves to the target file path,
-not the folder, and file references cannot have a `/path` suffix. `list .` names
-the virtual file Artifact root and lists the target filename; paths within that
-root stay relative to the containing folder. Default artifactsum covers only the
-target file. A workspace can have only file Artifacts; it does not need a folder
-declaration.
-
-Omit `fingerprint` to hash the file; the [file-Artifact form](fingerprint.md#artifactsum)
-of artifactsum names only the target, and scripts and `fingerprint = false` work too.
-
-JSON command-tool `context.artifactPath` names the file, while the process cwd is
-its containing folder. Scope entries carry `kind = "file"`, `"folder"`, `"aspect"` or `"graph"`; an aspect's
-path is its declaration's folder, of which it reaches only what `select` names.
-`execution_paths`, the project-relative paths of tool files whose hashes are recorded
-to show which version ran, work the same for every kind.
-
-The target must stay a regular file, not a symbolic link, for as long as it is
-reviewed, also with `fingerprint = false`:
-
-- missing or invalid before its eval starts: the eval is ERROR/PREPARATION_FAILED;
-- missing or invalid when a Runtime or Agent review ends: ERROR/INPUT_CHANGED instead
-  of a verdict;
-- missing or invalid during a Human review: tools and submission fail, the request keeps
-  waiting, and you restore the file and try again;
-- changed contents: noticed only when the eval has a complete reuse key and the edit
-  changes a fingerprint it covers. With `fingerprint = false` on the file or on any other
-  Artifact the eval covers, it has no reuse key and an edit is not noticed, and a script
-  fingerprint whose value an edit leaves unchanged does not notice it either; otherwise a
-  Runtime or Agent review, or a sign-off, ends ERROR/INPUT_CHANGED. The regular-file and
-  no-symlink checks above apply either way;
-- a tool call on a missing or invalid target returns an error without running the tool.
-
-Verify again once the file is back.
-
-For removed legacy policy fields and their replacements, see the
-[upgrade reference](../getting-started/update.md#upgrading-from-011).
+Symlinks, directories and special files are not regular file targets. A missing or
+wrong-kind target is a note at `config check` and an eval preparation error at verify,
+not an invalid definition. Runtime and Agent evals check targets again at start and end,
+and tool calls check them too, even when fingerprinting is disabled or a script is constant.
+An unkeyed Human submission without Live inputs does not recheck target availability.
 
 ## Aspects
 
-An aspect is a part of a larger body of files that is not a folder of its own, such as
-one skill's code, tests and sprite in a game's tree. Declare it in a `<label>.artf`
-whose `<label>` names no file, with `select` listing its paths relative to the
-declaration's folder:
+A folder PATH with `select` defines an aspect. Its own files are the selected paths
+below that folder, minus its parts' targets. The default artifactsum covers its
+selection; explicit `fingerprint.files` must stay within it. Aspects may overlap and
+may select `.artf` files. Their commands run from the selected folder, and `{name}`
+refers to that folder. A file or Live target cannot have `select`.
 
-```toml
-# game/fireball.artf
-name = "fireball"
-select = ["src/skills/fireball.rs", "tests/fireball.rs", "assets/fireball"]
+Composition comes only from `parts`. Merely placing a target below another target, or
+placing a definition in a subfolder, creates no relationship. A folder part is hidden
+from the whole's tools until the eval names it; file and aspect parts remain readable
+through the whole. [Artifacts and evals](artifact.md#composition) explains verdicts.
 
-[evals.behaves]
-title = "Damage, cooldown and effects match the skill spec"
-profile = { kind = "agent", backend = "codex", model = "YOUR_EXACT_MODEL_ID" }
-payload.instruction = "Review {fireball} against {skill-spec}."
-```
+## Live Artifacts
 
-- `select` holds 1–64 unique paths, files or directories, of up to 1024 characters
-  each (an emoji or another character outside the Basic Multilingual Plane counts as
-  two). Each must exist without symlink traversal and stay below the declaration's
-  folder; it may lie in other Artifacts' files, including nested folder Artifacts, since
-  an aspect describes a part of them. `*.artf` declarations are never selected.
-- The label is free: it only names the declaration. `select` in a declaration whose
-  label names an existing file is an error, and `select` is an error in `index.artf`
-  and the root `.artf`.
-- Omitting `fingerprint` hashes the selected paths with artifactsum, so a change
-  elsewhere in the folder reuses the aspect's results. An explicit artifactsum form may
-  narrow `files` within the selection and add `ignore`; a script or
-  `fingerprint = false` works as for any Artifact.
-- Tools see the declaration's folder with only the selected paths and the folders
-  leading to them. A reference to the aspect, `{name}`, is that folder, and
-  `{name}/path` must lie in the selection. Commands run in that folder.
-- Scope entries and saved definitions carry `kind = "aspect"`.
+A URI PATH names external state. Artifactize never opens it: `{name}` supplies the URI
+to runtime, tool and fingerprint-script arguments, and `{name}/x` appends `/x`.
+Commands use the project root and the author's environment. File builtins and artifactsum
+fingerprints are invalid on a Live Artifact.
 
-Overlap is the point: `fireball` stays reusable while other files of `game` change,
-and the folder Artifact that holds `src/` still reviews all of it. An aspect is a
-[part](artifact.md#composition) of the folder Artifact around its declaration.
+Omitting `fingerprint` means there is no observed-state snapshot. To reuse Agent or
+Human reviews, declare a fingerprint script that reports a stable snapshot, such as a
+deployed commit, using the script contract below. Runtime evals that cover a Live
+Artifact always run, even when its snapshot is unchanged; Agent and Human reviews reuse
+while the snapshot stands. A snapshot that changes during a review gives `INPUT_CHANGED`.
+
+Evals observe; they do not deploy or repair the target. Compare production with the
+remote release or `origin/main`, not a feature worktree's HEAD, so ordinary branch work
+does not make a healthy deployment fail.
 
 ## Eval mutex tags
 
@@ -375,7 +285,8 @@ payload.instruction = "Run the end-to-end suite."
 A tag is `use-computer` or a colon-separated descendant such as
 `use-computer:display`. Each descendant segment matches
 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Other roots, empty segments, invalid segments,
-duplicate tags and declarations on Human evals are errors.
+duplicate tags and declarations on Human evals are errors. An eval accepts at most
+64 unique tags; exceeding that limit is a declaration error.
 Omitting `mutex` (or declaring `mutex = []`) adds no constraint.
 
 Two evals conflict if any of their tags are equal or one is an ancestor of the
@@ -413,7 +324,7 @@ parts.
 Omitting `fingerprint` uses artifactsum; for a folder, `fingerprint = {}` does the same.
 `fingerprint = false` disables reuse and `fingerprint = true` is rejected. What it covers,
 `files`, `ignore` and the file-Artifact form are in
-[Fingerprints and reuse](fingerprint.md#artifactsum). Tags are not hashed.
+[Fingerprints and reuse](fingerprint.md#artifactsum). Tags do not enter an ordinary target's reuse key. A definition review still sees them in its `.artf` content.
 
 Artifactsum reads the files below the Artifact by the scoped path rules. A symlink or
 special file it would read stops verification with an error unless it is ignored. Every
@@ -442,17 +353,12 @@ criteria and dependencies is in [the reuse key](fingerprint.md#the-reuse-key). A
 failures abort preparation in the same way.
 
 The command runs from its owner's working directory with JSON on stdin:
-`{"version":1,"artifactId":"example"}`. Bare commands resolve through PATH;
-absolute executables run as given. Relative executables containing `/` (such as
-`./fingerprint.sh`) resolve inside a folder Artifact's admitted scope. For file
-Artifacts, relative executables instead resolve beneath the containing folder and
-may name unrelated siblings. Traversal and symlinks are rejected in both cases.
-Arguments stay literal except explicit scoped Artifact references: `{name}` is a
-global Artifact name. Each referenced Artifact enters the script's scope without
-becoming a graph relation.
-`config check` rejects unknown and malformed references; existence and symlinks
-are checked when the command is prepared. There are no interpreter-specific
-flags, wrappers or entry-file rules.
+`{"version":1,"artifactId":"example"}`. Its executable follows
+[Program lookup](others/platforms.md#program-lookup). Arguments stay literal except
+[Artifact references](#artifact-references-in-commands); each referenced Artifact enters
+the script's scope without becoming a graph relation. `config check` rejects unknown
+and malformed references; file existence and symlinks are checked at preparation.
+There are no interpreter-specific flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
 file/directory paths of up to 1024 characters each (an emoji or another character outside the Basic Multilingual Plane counts as two). They must exist without symlink traversal on every call;
@@ -469,32 +375,40 @@ Stderr is not forwarded as a fingerprint diagnostic.
 After runtime or Agent review, covered fingerprints are recomputed before
 accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no GREEN or
 RED verdict; a failed recheck records ERROR. Force skips neither preparation
-nor recheck. An Artifact with `fingerprint = false` has no fingerprint to prepare;
+nor recheck. An Artifact with `fingerprint = false` has no fingerprint to prepare.
+An unkeyed eval covering Live state still rechecks every available snapshot; other
 evals without a complete reuse key skip the fingerprint-value recheck. File targets are
-still checked at preparation, eval start and end, and tool calls, for every eval. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
+still checked at preparation, Runtime/Agent start and end, and tool calls. An unkeyed
+Human submission without Live inputs does not recheck their availability. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
 ## Artifact references in commands
 
-Runtime arguments, fingerprint scripts and tool arguments name other Artifacts with
-`{name}`, `{name}/path` or `--flag={name}/path`. A path starts at the folder of a folder
-Artifact or aspect. In runtime arguments, a folder Artifact's path may not enter a folder
-Artifact nested there: `config check` names it, and you reference that Artifact instead.
-In fingerprint scripts and tool arguments such a path fails when the command is prepared
-or called, unless the nested Artifact is in scope too. An aspect's path must lie in its
-selection, which may reach into nested folder Artifacts. A file reference is the file itself
-and takes no path. Each one becomes an
-absolute path when the command runs. In instructions and runtime arguments a reference
-makes the eval depend on that Artifact; in a fingerprint script it only lets the script
-read it; a tool argument may name only an Artifact its eval already references. Everything else is passed literally: escaped braces,
-doubled braces, `${variables}`, JSON and unmatched braces stay as written, and artifactize
-never builds a command line from a string. An eval may read its target and the Artifacts
-it references. An admitted folder still exposes colocated file-part targets and
-aspect-selected files through its own paths, but not unadmitted nested folder
-Artifacts. Composition does not add a part's own tools: to use them, reference the
-part in the consuming eval's instruction or runtime arguments. The instructions of referenced
-Artifacts' evals are not added to the review; a
-[`graph`](tools/builtin.md#current-project-graph) tool shows the whole project's criteria.
+A reference is `{name}`, `{name}/path` or `--flag={name}/path`. An eval's **scope** is
+the Artifacts it may read: its target and the Artifacts named in its instruction or
+runtime arguments.
+
+| Context | Rule | Example |
+|---|---|---|
+| Instruction | Makes the eval depend on the named Artifact | `Review {spec}.` |
+| Runtime arguments | Substitutes the reference and adds an eval dependency; reference a folder part directly rather than through its whole | `args = ["{spec}/api.md"]` |
+| Fingerprint-script arguments | Lets the script read the named Artifact, without adding an eval dependency | `args = ["{rules}/STYLE.md"]` |
+| Tool and tool-session arguments | May name only Artifacts already in the eval's scope; the tool does not add dependencies | Instruction `Review {spec}.`, tool `args = ["{spec}"]` |
+| Local folder or aspect | Starts at its folder and becomes an absolute path; an aspect stays within its selection | `{code}/src/lib.rs` |
+| File | Names the file itself, with no `/path` suffix | `{logo}` |
+| Live | Supplies an opaque URI and appends any suffix literally, without filesystem access | `{service}/health` |
+
+A fingerprint-script or tool path through a folder part needs that part in scope too;
+otherwise preparation or the call fails. An aspect's selection may reach into a folder
+part. An admitted folder still exposes file-part targets and aspect-selected files
+through its paths, but not unadmitted folder parts. Composition does not add a part's
+own tools: name the part in the consuming eval's instruction or runtime arguments.
+
+Other arguments stay literal: escaped or doubled braces, `${variables}`, JSON and
+unmatched braces are not interpolated, and artifactize never builds a shell command
+from a string. Referencing an Artifact does not add its evals' instructions to the
+review. The [`graph`](tools/builtin.md#current-project-graph) tool shows the whole
+project's criteria.
 
 Paths in references may not be absolute, go up with `..`, have empty parts, backslashes,
 colons or control characters, or be longer than 4096 characters; paths you declare

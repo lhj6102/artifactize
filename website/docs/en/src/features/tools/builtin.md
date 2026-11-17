@@ -65,7 +65,9 @@ block; fixed `read`, `section` and `help` return text blocks:
 - **`read`** prints a UTF-8 file, at most 64 KiB; a longer file ends with
   `[output truncated]`. It validates only the bounded prefix it inspects: NUL or
   invalid UTF-8 there is refused, but such bytes later in a truncated file may go
-  undetected. The CLI fixed read has the same limit.
+  undetected. The CLI fixed read has the same limit. A `.artf` file is read through its
+  [definition view](../declarations.md#graph-artifact); an input over 8 MiB fails instead
+  of returning a truncated prefix. This applies to fixed Agent, Human and CLI reads.
 - **`list`** prints the first page of the folder's sorted entries as JSON, like the
   model's `list`, but takes no offset or limit, so it cannot fetch later pages; declare the
   model-input `list` or a custom command when a folder has more entries.
@@ -124,8 +126,9 @@ in their private output directory.
 Declare `builtin = "graph", args = []` on any Artifact; no graph Artifact is
 required. It always reads the entire current project's declarations, not the
 selected review's historical Run or only its scope, and starts no eval and adds no
-dependencies. It shows the same graph the
-[graph fingerprint](../fingerprint.md#graph-fingerprint) covers:
+dependencies. Its fingerprint identifies the extracted graph view, not an Artifact's
+file fingerprint or a separate verification mode. To review definition files, use an
+[ordinary definition target](../fingerprint.md#graph-fingerprint). The tool shows:
 
 - **Agent:** no model input (`{}` only). Reads declarations only, no source files.
   Prints a name-based, cycle-safe tree of
@@ -145,8 +148,10 @@ dependencies. It shows the same graph the
 Filesystem targets must stay inside the scope admitted to the actual review:
 
 - **Fixed Agent tools** use logical paths relative to the declaring Artifact, such as
-  `reqs/requirements.md`; a path into a folder Artifact nested there is out of scope.
-  Discovery and `config check` validate these targets against that Artifact,
+  `reqs/requirements.md`; a path into an unadmitted folder part is out of scope.
+  An independently declared nested Artifact that is not a part remains accessible
+  through the enclosing folder. Discovery and `config check` validate fixed targets
+  against the declaring Artifact alone,
   rejecting missing or out-of-scope targets. Calls check them again.
 - **Human tools** accept the same logical paths, and also `{artifactPath}` or
   `{artifactPath}/path` and `{name}` or `{name}/path`, where `name` is an Artifact,

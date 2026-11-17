@@ -1,10 +1,10 @@
 # Artifact
 
 An Artifact is anything you review: code, docs, designs, images. Declare one by adding
-an `index.artf` to a folder (or `notes.md.artf` beside a file):
+a named definition in `.artifactize/` with the target's `path`:
 
 ```toml
-name = "docs"
+path = "docs/"
 
 [evals.links]
 title = "Links resolve"
@@ -14,7 +14,7 @@ payload.instruction = "Check that every link in the docs resolves."
 
 Then run `artifactize config check`; it prints `Folder configuration is valid.` or the
 error: with its file, line and column for a mistake inside a declaration, or with the
-path for a problem such as a missing target file. artifactize reads these declarations into one
+path in a note when a target is missing or has the wrong kind. Missing targets become per-eval preparation errors at verify, not invalid definitions. artifactize reads these declarations into one
 dependency graph.
 
 ## Artifact Graph
@@ -26,26 +26,27 @@ results are reused. Sharing
 a repository or a folder alone does not make an Artifact an input of another one's check.
 
 Parts add a second, separate relation: [composition](#composition). When `combat` is a
-part of `game`, `game` cannot pass while `combat` fails, yet no eval of `game` reads
-`combat` unless it names it.
+part of `game`, `game` cannot pass while `combat` fails. Folder parts must be named to
+read them; file and aspect parts remain readable through the whole. Naming a part also
+admits its own tools and dependency gates.
 
 Each eval also waits for the evals that judge the inputs it names; see
 [Eval dependencies](#eval-dependencies).
 
-The graph itself can be reviewed: a nameless root `.artf` declares the Graph
-Artifact. Its fingerprint covers extracted criteria and labeled relations, not
-source bytes or execution tuning. Use it for a person's review of the project's
-review structure. [Declarations](declarations.md#graph-artifact) gives the syntax;
+The definitions themselves can be reviewed: an ordinary Artifact targets `.artifactize/`
+or one of its subfolders. Its artifactsum covers those definition files, without their
+annotations or TOML formatting. No special graph kind is needed. [Declarations](declarations.md#graph-artifact) gives the syntax;
 the [graph tool](tools/builtin.md#current-project-graph) shows the full current
 structure to an agent or opens it in Desktop for a person.
 
 ## Folder configuration
 
-A folder with an `index.artf` is an Artifact. `name` is required (see
-[names](declarations.md#declaration-validation)); `basis`, `views`, `fingerprint`,
-`tags` and `parts` are optional. An Artifact declared inside another one's folder is a
-[part](#composition) of it. For older declarations,
-see the [legacy policy upgrade reference](../getting-started/update.md#upgrading-from-011).
+Define a folder with a trailing slash in its PATH. For example,
+`.artifactize/usage.artf` with `path = "docs/usage/"` defines `usage`.
+The file name is required as its identity; a `name` key is an error. `basis`, `views`,
+`fingerprint`, `tags` and `parts` are optional. The definition's folder and the
+nesting of target paths create no composition: list every part in `parts`.
+Existing projects move with [`config migrate`](../getting-started/update.md).
 
 Evals are tables keyed by their local ID: `[evals.heading]` becomes the qualified ID
 `usage/heading` on the `usage` Artifact. Do not declare an `id` field. Each eval
@@ -60,7 +61,8 @@ This is the `guide` Artifact of the [runtime-relations example](https://github.c
 `{artifact}` references and basis Artifacts:
 
 ```toml
-name = "guide"
+path = "guide/"
+parts = ["intro", "usage"]
 
 [evals.terms]
 title = "Every bold term is defined in the glossary"
@@ -75,12 +77,12 @@ names. `--json` output and stored state still use fields such as `passSchema`,
 
 ## File Artifacts
 
-A sidecar `hero.png.artf` next to a regular file `hero.png` declares that file as an
-Artifact. It uses the same schema and requires its own globally unique `name`:
+A definition `.artifactize/hero-art.artf` with `path = "hero.png"` targets that
+regular file. It uses the same schema and has its globally unique name from the file:
 
 ```toml
-# hero.png.artf
-name = "hero-art"
+# .artifactize/hero-art.artf
+path = "hero.png"
 tags = ["type:image", "scope:player"]
 
 [evals.approved]
@@ -91,11 +93,10 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 A file Artifact hashes its one target by default. Its working directory is the
 containing folder, but built-in tools see the file and its admitted scope, not
-unrelated siblings. Inside a folder Artifact's folder it is a [part](#composition) of
-that Artifact: the folder excludes the file target from its own artifactsum and
-includes the part's fingerprint in its eval reuse keys instead. A folder declared
-with `index.artf` inside another Artifact's folder is a part of it too, and takes its
-files out of that Artifact's.
+unrelated siblings. A file becomes a [part](#composition) only when a whole names it
+in `parts`. The whole then excludes that target from its own artifactsum and combines
+the part's fingerprint in its eval reuse keys. The same rule applies to folder and
+aspect parts; target nesting alone does nothing.
 See the [file-Artifact reference](declarations.md#file-artifacts) for naming,
 fingerprint forms, virtual paths and invalid-target/revalidation rules.
 
@@ -113,7 +114,8 @@ whole game and so uses `combat` names `{combat}` like any other input.
 For example, application E2E execution belongs to the application:
 
 ```toml
-name = "app"
+# .artifactize/app.artf
+path = "app/"
 
 [evals.e2e]
 title = "The application passes its end-to-end suite"
@@ -184,24 +186,19 @@ does not ask a person before those machine Evals are GREEN.
 
 ## Composition
 
-An Artifact can be made of others, its **parts**. An Artifact declared inside the folder
-of a folder Artifact is a part of the nearest one around it: a nested folder with its own
-`index.artf`, a file declared beside it, an aspect. `parts` names more, wherever they
-are:
+An Artifact can be made of others, its **parts**. Only `parts` creates composition;
+neither nested target paths nor definition subfolders do.
 
 ```toml
-# game/index.artf
-name = "game"
-parts = ["physics"]
+# .artifactize/game.artf
+path = "game/"
+parts = ["combat", "physics"]
 ```
 
-Here `game/combat/index.artf` makes `combat` a part of `game` with nothing to write,
-and `game/combat/skills/fireball/index.artf` makes `fireball` a part of `combat`.
-`physics`, declared in its own folder elsewhere, is a part of `game` because `parts`
-names it. One Artifact can be a part of several: a module shared by two applications is
-named in the `parts` of both, and its folder may sit inside one of them. An Artifact
-cannot be a part of itself, also not through other parts. The Graph Artifact has no
-parts and is a part of nothing.
+Give `combat` its own definition and `parts = ["fireball"]` to compose the next level.
+Their targets can live anywhere in the project. A module shared by two applications is
+named in both applications' `parts`. An Artifact cannot be a part of itself, directly
+or through other parts. A node that reviews definitions follows these same rules.
 
 Each part is an Artifact in its own right. An Artifact may hold no evals and only
 gather its parts, or have content and evals of its own, such as checks that its parts
@@ -231,7 +228,9 @@ Parts affect verdicts, selection and reuse:
   their parts included. Changing the fireball reviews the evals of `fireball`,
   `combat` and `game` again, and those that name `{fireball}`, not unrelated evals.
   Changing only `game`'s own files does not review the fireball again. Reuse does
-  not grant access: an eval of `game` that reads the fireball still names `{fireball}`.
+  not grant access to a folder part: an eval of `game` that reads a folder-based fireball
+  still names `{fireball}`. File and aspect parts remain readable through the whole;
+  name the part to admit its own tools and dependency gates.
 
 A part need not be a folder of its own. A [file Artifact](declarations.md#file-artifacts)
 is one file, and an [aspect](declarations.md#aspects) selects the files of one part from a larger folder, such as the fireball's code, test

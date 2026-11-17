@@ -22,7 +22,7 @@ artifactize cache rm KEY
 
 `show`는 그 키의 가장 최근 기록을 JSON으로 출력합니다. 결과, 실제로 쓴 `profile`,
 `options`(백엔드, 모델, reasoning, 제한, 변형), 키가 포함하는 각 Artifact의 `fingerprints`,
-`artifactKinds`(포함한 이름마다 `folder`, `file`, `aspect`, `graph` 중 하나), 사용량, `producer`
+`artifactKinds`(포함한 이름마다 `folder`, `file`, `aspect`, `live` 중 하나이며 이전 기록에는 `graph`가 있을 수 있음), 사용량, `producer`
 (`user@host`와 artifactize 버전)가 나오고, Human 결과에는 그 결과를 제출한 사람인 `reviewer`도 따로 나옵니다.
 [팀 리뷰 저장소](review-store.md)에서 온 기록에는 `origin`(저장소, 게시자, 게시 시각)이
 붙어 있습니다. 키가 없으면 `null`을 출력하고 4로 종료합니다. `--history`는 모든 기록을 배열로
@@ -36,7 +36,10 @@ artifactize cache rm KEY
 
 ## 로컬 진단과 유지보수 {#local-diagnostics-and-maintenance}
 
-```sh
+다음은 셸 스크립트가 아니라 명령 문법입니다. `|`는 하나를 고르는 선택지, 대괄호는
+선택 인자이며, 소괄호는 선택지를 묶습니다.
+
+```text
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
 artifactize models PROVIDER [--json]
 artifactize login openai|anthropic|gemini|codex|claude-agent [--json]
@@ -45,6 +48,12 @@ artifactize provider list [--json]
 artifactize provider add NAME (--alias PROVIDER | --api API --url URL [--key]) [--json]
 artifactize provider remove NAME [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
+```
+
+예를 들어 provider 하나에 로그인하려면 다음과 같이 실행합니다.
+
+```sh
+artifactize login openai
 ```
 
 `prune`은 현재 저장소뿐 아니라 선택한 상태 디렉터리에 저장된 모든 저장소의 Run을 다룹니다.

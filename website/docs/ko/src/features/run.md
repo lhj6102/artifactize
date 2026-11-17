@@ -1,7 +1,7 @@
 # Run {#evaluation-run}
 
 `verify`는 선택한 eval을 리뷰하고 Run을 기록합니다. `status`는 eval을 실행하지 않고, 다음
-`verify`에서 각 eval이 실행될지, 결과를 재사용할지, 대기하거나 차단될지를 예측합니다. `status`도 선언된
+`verify`에서 각 eval을 실행할지, 결과를 재사용할지, 실행을 보류하거나 차단할지를 예측합니다. `status`도 선언된
 fingerprint 스크립트는 실행할 수 있습니다.
 
 ## eval 실행 게이트 {#eval-execution-gates}
@@ -71,7 +71,7 @@ Run이 끝나면 지켜보는 명령도 그 Run의 결과에 맞는 종료 코�
 있습니다.
 
 Run이 최종 검증을 통과하려면, 필요한 범위의 모든 대상에 실제 GREEN 증거가 있거나 그 Artifact를 직접 `basis = true`로 선언해야 합니다.
-basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 하위 작업이 대기합니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
+basis로 선언해도 그 Artifact가 의존하는 Artifact의 리뷰 요건은 면제되지 않습니다. RED이면 하위 작업이 막히고, 필요한 증거가 없거나 실행 오류가 나면 하위 작업은 아직 실행하지 않습니다. 선택한 리뷰가 GREEN이어도 충족되지 않은 최종 검증 요건이 있으면 INCOMPLETE이며, 남은 요건을 텍스트와
 JSON으로 보여 줍니다. 없어진 예전 게이트 우회 설정은
 [업그레이드 안내](../getting-started/update.md#upgrading-from-011)에 있습니다.
 `--reuse-only KINDS`(CI에서는 예를 들어 `agent,human`)는 그 종류의 결과를 재사용만 합니다.
@@ -113,7 +113,7 @@ RUNNING으로 표시됩니다. 승인만 남으면 리뷰어가 그중 하나를
   **승인만 남았다**는 뜻이며 승인된 것은 아닙니다. 더 새로운 Run이 대신한 승인(아래)은 여기서
   ERROR 결과가 아니라 제출되지 않은 승인으로 칩니다.
 
-`verify --wait`, `run show --wait`, [MCP](../agent-plugin/mcp.md)의 대기 도구는 Run이 끝날 때까지 반환하지 않습니다. 승인 요청을 맡은 리뷰어가 있거나 승인 유예 시간이 남아 있으면 계속 대기합니다. YELLOW는 최종 상태입니다. 나중에 제출하면 요청이
+`verify --wait`, `run show --wait`, [MCP](../agent-plugin/mcp.md)의 대기 도구는 Run이 끝날 때까지 반환하지 않습니다. 승인 요청을 맡은 리뷰어가 있거나 승인 유예 시간이 남아 있으면 결과 확인을 계속합니다. YELLOW는 최종 상태입니다. 나중에 제출하면 요청이
 바뀔 뿐, Run의 판정은 바뀌지 않습니다. Run의 최종 판정에 승인 결과를 반영하려면 승인 유예 시간이 지나기 전에 승인 요청을 맡으세요. 새 verify에서는 자동 eval의 잠정 결과가 바뀌지 않았으면 이를 재사용합니다. 승인이 GREEN이면
 SATISFIED가 될 수 있고, RED면 그에 의존하는 eval을 막습니다. `--reuse-only agent,human`은 승인을 요청하지
 않고 대기 중인 승인을 GREEN으로 간주하지 않으므로 CI에 그대로 쓸 수 있습니다.
@@ -194,7 +194,7 @@ JSON에서는 요청마다 `source`가 결과의 출처를 알려 줍니다. 그
 [레퍼런스](../cli/index.md#runtime-cli)에 있으며, [명령 표](../cli/index.md#command-reference)와
 [상태 구성](others/state.md#state)도 함께 보세요.
 
-## Status와 정적 그래프 {#status-and-static-graph}
+## Status와 정적 Artifact Graph {#status-and-static-graph}
 
 ```sh
 artifactize --repo PROJECT status
@@ -221,7 +221,7 @@ fingerprint로 대신하지 않습니다. 도구나 eval 명령을 실행하거�
 생길 수 있습니다. `config graph`와 `config check`는 완전히 정적이며 프로젝트 코드를 실행하지
 않습니다.
 
-eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결과를 재사용하는지, 대기하는지, 막히는지를 나타냅니다.
+eval마다 나오는 동작은 `verify`에서 그 eval을 실행하는지, 결과를 재사용하는지, 실행이 보류되는지, 막히는지를 나타냅니다.
 
 | 동작 | 언제 | 사유 예 |
 |---|---|---|
@@ -232,15 +232,19 @@ eval마다 나오는 동작은 `verify`에서 그 eval이 실행되는지, 결�
 | `wait` | 의존성이 준비됐고 같은 리뷰가 이미 실행 중입니다. 새 리뷰를 시작하지 않고 기존 리뷰가 끝날 때까지 대기합니다 | `The current eval and fingerprints have a live execution.` |
 
 status는 `wait`인 eval이 실행될지는 알려 주지 못합니다. 텍스트 출력은 예를 들어
-`Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝나므로, 병합한
-체크아웃에서 status를 실행하면 verify를 돌리지 않고도 무엇을 다시 리뷰할지 알 수 있습니다.
-`--force`도 verify와 마찬가지로 직접 선택한 실행 가능한 eval에만 적용됩니다. Human eval의 `execute` 동작은 대기 요청을
-기록한다는 뜻입니다. 같은 키의 Human 실행이 진행 중이면 원래 verify가 종료한 뒤에도 DEFERRED와
-`wait` 동작으로 보입니다. 저장된 실행 기록 중에서는 정규화한 현재 저장소 경로에 해당하는 기록만 읽습니다. eval마다 있을 수
-있는 `last: {runId, verdict, fingerprint?}`는 지난 기록이지 현재 증거가 아닙니다. 누가 만든
-결과인지 전부 보려면 `run show RUN_ID`를 쓰세요. 재사용 키가 없는 GREEN이나 RED는 그 결과를 만든 Run의
-요건만 충족하므로, 이후 status에서는 재사용이 아니라 STALE로 나옵니다. basis Artifact만으로 이루어진 범위도 검증 요건을
-충족할 수 있지만, basis Artifact가 의존하는 Artifact의 요건이 충족되지 않으면 INCOMPLETE입니다.
+`Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`으로 끝납니다. 병합한
+체크아웃에서 보면 verify를 돌리지 않고도 무엇을 다시 리뷰할지 알 수 있습니다. Force는
+직접 선택한 실행 가능한 eval에만 적용됩니다.
+
+Human eval을 시작하면 대기 요청을 기록합니다. 같은 키의 Human 리뷰가 이미 진행 중이면
+원래 verify가 종료한 뒤에도 status는 DEFERRED와 `wait` 동작을 보여 줍니다.
+
+선택 필드인 `last: {runId, verdict, fingerprint?}`는 이 체크아웃에 마지막으로 저장된 실행
+기록입니다. 현재 증거나 다른 체크아웃의 이력이 아닙니다. 누가 만든 결과인지 전부 보려면
+`run show RUN_ID`를 쓰세요. 재사용 키가 없는 GREEN이나 RED는 그 결과를 만든 Run의 요건만
+충족하므로, 이후 status에서는 재사용이 아니라 STALE로 나옵니다. basis Artifact만으로
+이루어진 범위도 요건을 충족할 수 있지만, basis Artifact의 의존성이 요건을 충족하지 못하면
+INCOMPLETE입니다.
 
 재사용 키가 있는 eval에 현재 캐시 결과가 없으면, `status`는 같은 기준으로 낸 마지막 GREEN이나
 RED 결과 이후 무엇이 바뀌었는지 설명하고 `changes: {sinceRunId, files?, dependencies?,
@@ -263,14 +267,14 @@ fingerprint가 바뀐, 이름으로 참조한 Artifact의 변경을 `name`, `+na
 SATISFIED**를 유지하며, 흐린 `*`는 그 뒤로 상태가 바뀐 행을 표시합니다. 파일이 바뀌었다는 뜻은
 아닙니다. [Monitor](../tui/index.md#monitor)를 보세요.
 
-`config graph`는 정적 그래프를 출력합니다. [Config graph](../cli/index.md#config-graph)를 보세요.
+`config graph`는 정적 Artifact Graph를 출력합니다. [Config graph](../cli/index.md#config-graph)를 보세요.
 
-### 현재 그래프 리뷰 도구 {#current-graph-review-tools}
+### 현재 Artifact Graph 리뷰 도구 {#current-graph-review-tools}
 
 `config graph`는 설정을 확인하는 도구입니다. 리뷰에 쓰려면 아무 Artifact에나
 [내장 `graph` 도구](tools/builtin.md#current-project-graph)를 선언하세요. Agent는 추출한 현재
-그래프를 트리로 보고, Human은 저장된 Run 없이도 데스크톱 앱에서 그 브랜치의
-[Current](../desktop/index.md#current)를 엽니다. 루트에 선택적으로 두는
-[`.artf` 그래프 Artifact](declarations.md#graph-artifact)에도 일반 eval을 선언할 수 있으며, 다른 Artifact처럼
-Run과 status에 나옵니다. 다른 점은 fingerprint 계산 방식뿐이며, 그래프 전용 검증 절차나 루트
-폴더 Artifact와의 자동 관계는 없습니다.
+Artifact Graph를 트리로 보고, Human은 저장된 Run 없이도 데스크톱 앱에서 그 브랜치의
+[Current](../desktop/index.md#current)를 엽니다. 정의 자체를 리뷰하려면
+`path = ".artifactize/"`나 그 하위 폴더, 정의 파일 하나를 대상으로 하는 일반 노드를 만드세요.
+일반 eval과 기본 artifactsum을 쓰며, Artifact Graph 전용 검증 절차나 다른 노드와의 자동 관계는 없습니다.
+입력에 든 `.artf`에는 [정의 보기](fingerprint.md#graph-fingerprint)를 적용합니다.

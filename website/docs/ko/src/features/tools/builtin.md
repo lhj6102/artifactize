@@ -57,6 +57,9 @@ point를 심볼릭 링크처럼 거부한다는 점뿐입니다. 내장 도구�
 
 - **`read`**는 UTF-8 파일을 최대 64 KiB까지 출력하며, 더 긴 파일은 `[output truncated]`로
   끝납니다. 파일 앞부분에서 실제로 읽은 범위만 검사하므로, 그 안에 NUL이나 잘못된 UTF-8이 있으면 거부하지만 출력에서 잘린 뒷부분에 있으면 감지하지 못할 수 있습니다. CLI의 고정 read도 한도가 같습니다.
+  `.artf` 파일은 [정의 보기](../declarations.md#graph-artifact)로 읽습니다. 입력이 8 MiB를 넘으면
+  앞부분만 돌려주는 대신 실패합니다. 인자를 고정한 Agent read, Human read, CLI read에 모두
+  적용됩니다.
 - **`list`**는 모델 입력을 받는 `list`처럼 폴더 항목을 정렬한 목록의 첫 페이지를 JSON으로 출력하지만, offset이나
   limit을 받지 않아 다음 페이지를 가져올 수 없습니다. 항목이 더 많은 폴더라면 모델 입력을 받는
   `list`나 직접 만든 명령을 선언하세요.
@@ -98,21 +101,22 @@ PNG와 그 밖의 형식은 거부합니다. 파일은 최대 **4 MiB**입니다
 명령 도구와 똑같이 적용되는 이미지 정리 방식과 MIME 유형·크기 검사는
 [이미지 결과 규약](agent.md#image-results)에서 설명합니다. 호출별 출력 디렉터리의 파일을 이미지 결과로 돌려줄 수 있는 것은 명령 도구뿐입니다.
 
-### 현재 프로젝트 그래프 {#current-project-graph}
+### 현재 프로젝트 Artifact Graph {#current-project-graph}
 
-어느 Artifact에든 `builtin = "graph", args = []`를 선언하세요. 그래프 Artifact는 필요 없습니다.
+어느 Artifact에든 `builtin = "graph", args = []`를 선언하세요. Artifact Graph 전용 Artifact는 필요 없습니다.
 이 도구는 고른 리뷰의 Run 기록이나 범위와 관계없이 항상 현재 프로젝트의 선언 전체를 읽으며,
 eval을 시작하거나 의존성을 더하지 않습니다.
-[그래프 fingerprint](../fingerprint.md#graph-fingerprint)가 포함하는 것과 같은 그래프를
-보여 줍니다.
+도구가 출력하는 fingerprint는 추출한 Artifact Graph 보기를 구분하는 값이지, Artifact의 파일
+fingerprint나 별도의 검증 방식이 아닙니다. 정의 파일을 리뷰하려면
+[일반 정의 대상](../fingerprint.md#graph-fingerprint)을 쓰세요. 도구는 다음을 보여 줍니다.
 
 - **Agent:** 모델 입력이 없습니다(`{}`만). 소스 파일은 읽지 않고 선언만 읽습니다. Artifact와
   그 eval을 이름 기준으로 정리한 트리를 출력하며, 순환 참조가 있어도 같은 항목을 끝없이 반복하지 않습니다. 추출한
-  정의와 평가 기준 전체, 그래프 fingerprint, 입력에서 사용처로 향하는 화살표와 각 화살표의 이름도 함께 출력합니다.
+  정의와 평가 기준 전체, Artifact Graph fingerprint, 입력에서 사용처로 향하는 화살표와 각 화살표의 이름도 함께 출력합니다.
 - **Human:** `kind = "launch"`. 설치된 [데스크톱 앱](../../desktop/index.md#open-the-app)을 프로젝트의
   [Current](../../desktop/index.md#current) 화면으로 엽니다. Current는 워크트리의 파일을 읽어 Run 판정 대신
   현재 선언을 보여 주며, 각 Artifact에 기존 결과를 재사용할지 새로 실행할지 표시합니다. 화면을
-  다루는 방법은 Run의 그래프와 같습니다.
+  다루는 방법은 Run의 Artifact Graph와 같습니다.
   Artifact Detail의 eval 탭에는 그 eval의 지시문이 나오고, 선언된 나머지 정보는 **Debug** 아래에 있습니다. **Refresh**나 Ctrl+R/F5로 다시 읽습니다. Run이 하나도 없어도 동작합니다. 도구 실행 결과는 승인이 아니라 앱을 시작했다는 확인일 뿐이며, 도구 호출이 끝나도 앱은 계속 실행됩니다.
 
 ### `args`의 경로 {#paths-in-args}
@@ -120,7 +124,8 @@ eval을 시작하거나 의존성을 더하지 않습니다.
 파일 시스템 대상은 실제 리뷰에 허용된 범위 안에 있어야 합니다.
 
 - **고정 Agent 도구**는 `reqs/requirements.md`처럼 선언한 Artifact 기준의 논리적 경로를 씁니다.
-  그 안에 선언된 폴더 Artifact로 들어가는 경로는 범위 밖입니다. 선언을 찾거나 `config check`를
+  허용되지 않은 폴더 부분으로 들어가는 경로는 범위 밖입니다. 부분이 아닌 독립적인 Artifact가
+  그 안에 선언되어 있어도 둘러싼 폴더를 통해 읽을 수 있습니다. 선언을 찾거나 `config check`를
   실행할 때 대상이 존재하고 그 Artifact 안에 있는지 확인하며, 조건에 맞지 않으면 거부합니다. 호출할
   때도 다시 확인합니다.
 - **Human 도구**는 같은 논리적 경로와 함께 `{artifactPath}`나 `{artifactPath}/path`,

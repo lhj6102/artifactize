@@ -73,11 +73,11 @@ When shaping a new project, it:
   obligation. Avoid one review over the whole repository.
 - An eval names each input it really uses as `{name}`; sharing a repository is not a
   dependency, and a command does not add the files it reads. A part such as
-  `ui` in `app`'s folder makes up `app`, yet is no input of `app`'s evals unless they name it.
+  `ui` listed in `app`'s `parts` makes up `app`, yet is no input of `app`'s evals unless they name it.
 - Make an Artifact a part of a whole when the whole cannot pass while the part fails
-  ([composition](../features/artifact.md#composition)): nest its folder in the whole's
-  folder, or list it in the whole's `parts` when it lives elsewhere or is shared by
-  several wholes. The part's failure fails the
+  ([composition](../features/artifact.md#composition)): list every part in the whole's
+  `parts`, wherever its target or definition lives, including parts shared by several
+  wholes. The part's failure fails the
   whole, and `verify whole` covers the part too. Each part checks what it owns, and the
   whole checks only how its parts work together, naming the parts its evals use. A part
   that is one file is a [file Artifact](../features/declarations.md#file-artifacts); one

@@ -28,7 +28,7 @@ artifactize-desktop graph --repo PATH
 마찬가지로 stderr에 도움말을 출력하고 2로 종료합니다. 앱을 정상적으로 닫으면 종료 코드는 0이고, 시작하지 못하면
 1입니다.
 
-Ctrl+K나 F1을 누르거나 **Commands** 버튼을 클릭하면 지금 실행할 수 있는 모든 명령을 키와 함께 검색할 수 있는 팔레트가 열립니다. Enter를 누르면 명령이 실행되고, Esc를 누르면 닫힙니다. `?`를 누르면 Help가 열려 지금 초점이 있는 곳의 키와, 그래프에서는 각 표시의 뜻을 보여 줍니다. 창 전체에서 쓰는 키는 다음과 같습니다(macOS에서는 Ctrl 대신 Command).
+Ctrl+K나 F1을 누르거나 **Commands** 버튼을 클릭하면 지금 실행할 수 있는 명령과 단축키를 검색할 수 있는 명령 팔레트가 열립니다. Enter를 누르면 명령이 실행되고, Esc를 누르면 닫힙니다. `?`를 누르면 Help가 열려 지금 초점이 있는 곳의 키와, Artifact Graph에서는 각 표시의 뜻을 보여 줍니다. 창 전체에서 쓰는 키는 다음과 같습니다(macOS에서는 Ctrl 대신 Command).
 
 | 키 | 동작 |
 |---|---|
@@ -60,7 +60,7 @@ Pane의 항목은 세로로 한 줄씩 배치됩니다. 맨 위에 검색 칸, �
 맨 아래에 사람의 승인이 필요한 리뷰가 있습니다. Pane과
 Main area 사이의 구분선을 끌어 크기를 바꾸세요. Main area에 무엇이 표시되든 직접 조절한 비율이 그대로 유지됩니다.
 
-Ctrl+B를 누르거나 헤더의 **Pane** 버튼을 누르면 Pane이 숨겨지고 Main area가 창 너비 전체를 씁니다. 다시 누르면 Pane이 원래 너비로 돌아옵니다. Pane이 숨겨져 있으면 키보드 초점은 Main area에 있고, `/`나 Pane으로 돌아가는 Esc를 누르면 Pane이 먼저 나타납니다.
+Ctrl+B를 누르거나 헤더의 **Pane** 버튼을 누르면 Pane이 숨겨지고 Main area가 창 너비 전체를 씁니다. 다시 누르면 Pane이 원래 너비로 돌아옵니다. Pane이 숨겨져 있으면 키보드 초점은 Main area에 있습니다. `/` 또는 Esc를 누르면 Pane으로 돌아가며, 숨겨진 Pane이 먼저 표시됩니다.
 
 ### 브랜치 {#branches}
 
@@ -73,9 +73,9 @@ Ctrl+B를 누르거나 헤더의 **Pane** 버튼을 누르면 Pane이 숨겨지�
 
 접힌 브랜치의 이름 아래에는 가장 최근 Run의 상태를 나타내는 색 점과 상태 이름, 실행 후 경과 시간(실행 중이면 지금까지 걸린 시간)이 표시됩니다. 브랜치를 클릭하면
 펼치고 가장 최근 항목을 보여 줍니다. 이름 앞의 꺾쇠를 클릭하면 Main area는 바뀌지 않고
-그 항목만 펼쳐지거나 접힙니다. 펼치면 타임라인이 Run을 최신순으로 나열하며, 각 Run에는
-상태와 경과 시간이 나오고, 그 아래 한 줄에 verify를 요청할 때 남긴 [코멘트](../cli/index.md#submission-and-watching)를
-한 줄로 줄여 보여 줍니다. 코멘트가 없으면 Run ID를 보여 줍니다. 맨 앞 항목은 워크트리의 지금 상태인 **Current**입니다. Run이
+그 항목만 펼쳐지거나 접힙니다. 브랜치를 펼치면 타임라인에 Run이 최신순으로 나옵니다.
+각 Run의 상태와 경과 시간 아래에는 verify를 요청할 때 남긴
+[코멘트](../cli/index.md#submission-and-watching)를 한 줄로 요약해 보여 줍니다. 코멘트가 없으면 Run ID를 보여 줍니다. 맨 앞 항목은 워크트리의 지금 상태인 **Current**입니다. Run이
 진행 중이면 그 Run이 Current 자리에 오고, Run이 끝나면 Current가 다시 표시됩니다. 끝의 **Older runs**는
 더 오래된 Run을 가져옵니다. 항목을 클릭하면 회색의 둥근 배지로 표시되며 Main area에 나옵니다. 브랜치는
 몇 개든 펼칠 수 있습니다. `monitor`나 `graph` 명령에 브랜치를 지정하면 해당 브랜치가 처음부터 펼쳐져 있습니다.
@@ -89,8 +89,8 @@ Ctrl+B를 누르거나 헤더의 **Pane** 버튼을 누르면 Pane이 숨겨지�
 
 ### 검색 {#search}
 
-`/`를 누르면 검색 칸으로 이동하며, Pane이 숨겨져 있으면 먼저 보여 줍니다. Pane에 있거나 그래프가 보이지 않을 때는 Ctrl+F도 같습니다.
-그래프가 보일 때 Ctrl+F를 누르면 [그래프에서 찾기](#find-in-the-graph)가 열립니다. 처음 검색어는 `sort:recent`입니다. 일반 검색어와
+`/`를 누르면 검색 칸으로 이동하며, Pane이 숨겨져 있으면 먼저 보여 줍니다. Pane에 있거나 Artifact Graph가 보이지 않을 때는 Ctrl+F도 같습니다.
+Artifact Graph가 보일 때 Ctrl+F를 누르면 [Artifact Graph에서 찾기](#find-in-the-graph)가 열립니다. 처음 검색어는 `sort:recent`입니다. 일반 검색어와
 `key:value` 조건을 모두 만족하는 브랜치와 대기 중인 리뷰만
 표시합니다. 일반 검색어는 대소문자를 구분하지 않으며, 프로젝트, 브랜치, 대기 중인 리뷰의 eval 이름에 그 검색어가 들어 있는 항목을 찾습니다. `repo:`와 `branch:`는 각각 저장소와 브랜치 필드에 그 검색어가 들어 있는 항목을 찾습니다. 값에 공백이 있으면 `repo:"my project"`처럼 따옴표로 묶으세요. 따옴표 안의 공백은 새 검색어를 시작하지 않고 그 값에 포함됩니다.
 `sort:recent`는 가장 최근 Run이 있는 브랜치를 맨 앞에, Run이 없는 브랜치를
@@ -111,18 +111,18 @@ eval, 프로젝트와 브랜치, 대기 시간이 나오고, 누군가 맡았으
 원래 리뷰가 열립니다. 제거된 브랜치의 리뷰는 그 저장소 폴더가 남아 있는 동안만 목록에 나옵니다. 폴더를
 삭제하면 해당 행은 사라집니다. 다만 다른 워크트리에 같은 리뷰의 대기 중인 요청이 있으면 그 워크트리 아래에 계속 표시됩니다.
 
-다른 곳에서 만든 새 Run, 결과, 담당 지정, 제출, 그리고 추가되거나
-제거된 워크트리는 직접 다시 읽지 않아도 화면에 반영됩니다.
+다른 곳에서 생긴 Run, 결과, 담당 지정, 제출과 워크트리 변경 사항은 직접 새로 고치지
+않아도 화면에 반영됩니다.
 
 ## Main area {#main-area}
 
 Main area에는 Pane에서 선택한 Run, 브랜치의 Current, 리뷰 또는
 ID로 연 요청이 표시되며, 맨 위 헤더 행 하나가 무엇을 보여 주는지와 그 요약을 알려 줍니다. 아무것도 고르지 않았거나, 불러오는 중이거나,
-오류가 났거나, 그래프가 비어 있으면 맨 위에 그 상태를 알리는 한 줄이 나오고 그래프 자리는 비어 있습니다. 다른 Run을 읽을 수 없는 등
-이 머신의 기록을 읽는 데 문제가 있으면, 그래프를 옮기거나 가리지 않고 헤더 행 끝에
+오류가 났거나, Artifact Graph가 비어 있으면 맨 위에 그 상태를 알리는 한 줄이 나오고 Artifact Graph 자리는 비어 있습니다. 다른 Run을 읽을 수 없는 등
+이 머신의 기록을 읽는 데 문제가 있으면, Artifact Graph를 옮기거나 가리지 않고 헤더 행 끝에
 문제를 몇 단어로 빨갛게 표시합니다. 클릭하면 전체 내용을 볼 수 있고, 다시 클릭하면 접힙니다. 읽기에 실패하면 마지막으로 불러온 내용이 그대로 남아 실제 상태와
 다를 수 있으니, 원인을 해결한 뒤 새로 고치세요(Ctrl+R). 선택한 Run 자체를
-읽을 수 없게 되거나 그 그래프를 불러오지 못하는 경우는 다릅니다. 메시지가 그래프
+읽을 수 없게 되거나 그 Artifact Graph를 불러오지 못하는 경우는 다릅니다. 메시지가 Artifact Graph
 자리를 대신하며, 다른 것을 고르면 됩니다. 손상된 기록은
 검증을 통과했다는 근거로 삼지 않고 [읽을 수 없는 기록으로 표시합니다](../features/others/state.md#unreadable-records).
 
@@ -135,7 +135,7 @@ Pane에서 Run을 고르면 Main area에 그 Run의 Artifact Graph가 표시됩�
 
 브랜치의 **Current**는
 [`artifactize status`](../features/run.md#status-and-static-graph)처럼 워크트리의 지금 상태를 스캔하고,
-Run 없이 현재 선언의 그래프를 그립니다. 각 Artifact는 처음에 확인 중(checking)으로 표시되다가,
+Run 없이 현재 선언의 Artifact Graph를 그립니다. 각 Artifact는 처음에 확인 중(checking)으로 표시되다가,
 지금 verify를 실행하면 어떻게 될지를 보여 줍니다. reused(모든 eval에서 기존 결과를 재사용), would run,
 waiting, blocked 중 하나이며, eval 중 몇 개를 재사용할지도 함께 나옵니다. 스크린 리더는 Artifact마다 이 상태와 실행될 eval 수를 읽어 줍니다.
 스캔하는 동안 헤더 행에는 확인 중 표시와 아직 확인할 Artifact 수(`3 left`)가 나옵니다. 스캔이 끝나면 스캔한 시각을, 실패하면 원인을 표시합니다. **Refresh**는 그 행 끝에 있습니다.
@@ -150,11 +150,76 @@ Human [`graph` 도구](../features/tools/builtin.md#current-project-graph)와
 `artifactize-desktop graph --repo PATH`는 이 보기로 앱을 엽니다. 이 보기를 열기만
 해서는 어떤 리뷰도 승인되지 않습니다.
 
-### 그래프 {#graphs}
+### Current 편집 {#editing-the-current}
+
+브랜치의 Current에서만 편집할 수 있습니다. Run Artifact Graph는 기록입니다. Artifact Graph 도구 줄의
+**New Artifact**에서 Name과 Path를 입력하면 `.artifactize/<name>.artf`를 만들고
+Detail을 엽니다. 대상이 아직 없어도 정의할 수 있습니다. 이름이나 경로가 잘못되면
+이유를 보여 주고 아무것도 쓰지 않습니다.
+
+Run 탭에는 **Path**가 표시되고, Current의 Artifact 탭에는 그 자리에 **Definition**이 표시됩니다. 정의 파일, 편집할 수
+있는 Path, Parts, Comment, Rename, Delete를 보여 줍니다. 바꾼 Path는 Enter로 저장하고
+Esc로 되돌립니다. Parts의 **+ Add**는 이름으로 Artifact를 제안합니다. Enter로 추가하고
+Esc로 닫으며 **✕**로 part를 제거합니다. 순환이 생기는 추가는 거부합니다. 처음에는 접혀
+있는 **Source**에서 파일 전체를 편집합니다. eval, 도구, fingerprint도 여기서 바꿉니다.
+입력하면 **Save**와 **Revert**가 나타납니다. Save나 Ctrl+S로 저장하고, Revert로 파일을
+다시 읽습니다.
+
+Rename은 같은 폴더에서 파일 이름을 바꾸고 구조적 참조와 저장된 part 위치를 함께
+고칩니다. Delete는 지울 파일을 보여 줍니다. 다른 Artifact가 이름을 참조하면 그 목록을
+보여 주고 거부합니다. 모든 편집은 프로젝트를 검증한 뒤에만 씁니다. 잘못된 편집은
+아무것도 쓰지 않고 입력을 남깁니다. Source 오류에는 파일, 행, 열이 표시됩니다. 앱의
+실행 취소는 없습니다. 변경은 워크트리 파일이며 Git이 이력을 보관합니다.
+
+#### 노드와 part 배치 {#placing-nodes-and-parts}
+
+노드, 최소화한 whole, whole의 제목 줄을 끌어 배치합니다. whole은 part와 코멘트를 함께
+옮깁니다. 움직이지 않고 클릭하면 Detail이 열리고, 배경을 끌면 화면이 이동합니다.
+끌다가 Esc를 누르면 저장하지 않고 원래 자리로 돌아갑니다. Run에서는 끌어도 화면만
+이동합니다.
+
+상자와 최상위는 안의 노드를 처음 옮기기 전까지 자동 배치됩니다. 최상위에서 처음
+옮길 때는 모든 최상위 노드의 현재 배치를 한 번에 저장합니다. whole은 part의 위치를
+그 whole의 정의에 저장하고, 최상위 노드는 각자의 위치를 자기 정의에 저장합니다. 다시 열어도 유지되며
+이 브랜치의 Run에도 적용됩니다. 새 노드는 빈 곳에 놓입니다. whole 제목 줄이나 Current
+도구 줄의 **Reset layout**은 그 상자나 최상위를 자동 배치로 되돌립니다. 안쪽 상자의
+위치는 그대로입니다.
+
+노드 위나 whole 상자 안에 놓으면 part가 됩니다. 놓을 수 있는 대상이 강조됩니다.
+상자 사이로 옮기면 이전 whole에서 빼고 새 whole에 넣는 작업을 한 번에 저장합니다.
+모든 상자 밖에 놓으면 그 whole에서 빠집니다. 공유 part를 옮기면 끌어 옮긴 사본이 속한 whole만
+바뀝니다. whole을 하나 더 추가하려면 Detail의 Parts를 쓰세요. 순환이 생기는 배치는 거부하고
+노드를 원래 위치로 되돌립니다. 참조는 eval 안의 문구이므로 간선을 끌어 바꾸지 않고 Source에서
+고칩니다.
+
+#### 노드 코멘트 {#node-comments}
+
+노드의 일반 텍스트 코멘트는 노드 아래, whole 상자의 제목 아래, 공유 part의 각 사본
+아래에 표시됩니다. 처음 세 줄 뒤에는 말줄임표가 붙습니다. 최소화로 숨긴 part나 블록으로
+그린 노드에는 표시되지 않습니다. Run을 요청할 때 쓰는 코멘트와 별개이며 검증과 재사용에
+영향을 주지 않습니다.
+
+Current의 Definition에서 **Comment**를 누르거나 코멘트를 클릭하면 그 자리에서 전체
+텍스트를 편집합니다. Enter로 저장하고 Shift+Enter로 줄을 나눕니다. 빈 텍스트를 저장하면
+삭제됩니다. Esc나 바깥 클릭은 저장하지 않고 닫습니다. 코멘트를 다른 Artifact로 끌면
+두 파일 사이에서 한 번에 옮깁니다. 배경, 자기 노드, 이미 코멘트가 있는 대상에 놓으면
+그대로이며 Esc로 취소할 수 있습니다. Run에서 코멘트를 클릭하면 노드의 Detail만 엽니다.
+
+#### 파일 편집과 충돌 {#conflicts-with-file-edits}
+
+Current를 스캔한 뒤 터미널이나 에이전트가 파일을 바꾸면, 앱은 아무 파일도 쓰지 않고
+해당 파일 이름을 알린 뒤 다시 스캔합니다. 입력 중인 Source는 Save나 Revert 전까지 남으며
+스캔으로 덮어쓰지 않습니다. 노드를 옮기거나 part 변경, Reset layout, 코멘트 저장을 하려면
+그 작업으로 바뀔 파일의 Source를 먼저 저장하거나 되돌리세요. 그 파일에 저장하지 않은
+Source가 남아 있으면 작업을 거부합니다.
+손대지 않은 텍스트와 알 수 없는 annotation 값은 보존합니다. 파일 형식은
+[위치와 코멘트](../features/declarations.md#positions-and-comments)를 보세요.
+
+### Artifact Graph {#graphs}
 
 노드에는 상태 기호와 색 띠가 표시되고, 이름 뒤에는 GREEN인 eval 수가 `2/3`처럼 표시됩니다(Current에서는 재사용될 eval 수). 각 표시의 뜻은 **Help**(`?`)에서 볼 수 있습니다. 간선은 입력에서 사용처로 이어지며, RED, ERROR, blocked인 Artifact에서 나가는 간선만 색이 있고 나머지는 회색입니다. 결과가 나오면 노드와 간선이 바로 갱신됩니다.
 
-Run의 그래프와 Current 그래프는 똑같이 조작합니다.
+Run의 Artifact Graph와 Current Artifact Graph는 똑같이 조작합니다.
 
 | 조작 | 동작 |
 |---|---|
@@ -162,14 +227,19 @@ Run의 그래프와 Current 그래프는 똑같이 조작합니다.
 | **Find**, Ctrl+F | [Artifact나 eval 찾기, 즐겨찾기 보기](#find-in-the-graph) |
 | `m` | 상자 최소화·펼치기(아래 설명) |
 | **Zoom out**, **Zoom in**, 휠, 핀치, 배경 더블 클릭 | 확대·축소(최대 200%) |
-| **Fit** | 그래프 전체 보기(100%를 넘지 않음) |
+| **Fit** | Artifact Graph 전체 보기(100%를 넘지 않음) |
 | 배경 드래그 | 이동 |
 
-그래프는 처음 나타날 때 전체를 보여 줍니다. 이후 보기 영역은 사용자가 직접 옮기지 않는 한 그대로 유지되며, 새 결과나 스캔·재배치·Detail 열기로는 바뀌지 않습니다.
+Artifact Graph는 처음 나타날 때 전체를 보여 줍니다. 이후 보기 영역은 사용자가 직접 옮기지 않는 한 그대로 유지되며, 새 결과나 스캔·재배치·Detail 열기로는 바뀌지 않습니다.
 
-그래프 일부가 화면 밖에 있으면 그래프 오른쪽 아래(Detail이 열려 있으면 그 왼쪽)에 **Navigator**가 나옵니다. 그래프 전체를 작게 보여 주며, 각 Artifact는 그 상태 색의 사각형으로, 지금 보이는 부분은 테두리로 표시합니다. 그 안을 클릭하거나 드래그하면 확대 비율은 그대로 두고 그곳으로 보기 영역을 옮깁니다. 그래프 전체가 화면에 들어오면 사라집니다.
+Artifact Graph 일부가 화면 밖에 있으면 Artifact Graph 오른쪽 아래(Detail이 열려 있으면 그 왼쪽)에 **Navigator**가 나옵니다. Artifact Graph 전체를 작게 보여 주며, 각 Artifact는 그 상태 색의 사각형으로, 지금 보이는 부분은 테두리로 표시합니다. 그 안을 클릭하거나 드래그하면 확대 비율은 그대로 두고 그곳으로 보기 영역을 옮깁니다. Artifact Graph 전체가 화면에 들어오면 사라집니다.
 
-모든 그래프는 상위가 왼쪽에 오도록 배치됩니다. **노드가 500개를 넘는** 그래프를 이름을 읽을 수 없을 만큼 축소하면 각 Artifact는 상태 색의 사각형으로, 부분이 있는 Artifact는 그 색의 상자 테두리로 보입니다. 그래도 클릭하면 열립니다. 화면에 노드가 500개 넘게 표시되면 이름을 읽을 수 있어도 같은 방식으로 그립니다. Tab과 Enter는 이름을 읽을 수 있고 화면에 500개 이하가 남을 때까지 확대하면 다시 쓸 수 있습니다. Artifact의 Detail에는 양쪽에 이웃이 각각 최대 16개까지 그려지고, 나머지는 개수만 표시됩니다.
+모든 Artifact Graph는 입력이 왼쪽에 오도록 배치됩니다. **노드가 500개를 넘는** Artifact Graph를 이름을
+읽을 수 없을 만큼 축소하면 노드는 상태 색의 블록으로, whole 상자는 테두리로 보입니다.
+이름을 읽을 수 있는 배율이어도 화면에 노드가 500개 넘게 보이면 블록으로 표시합니다.
+블록을 클릭하면 Detail이 열립니다. 이름을 읽을 수 있고 화면에 노드가 500개 이하일 때는
+Tab과 Enter를 다시 쓸 수 있습니다. Detail에는 양쪽 이웃을 각각 최대 16개까지 보여 주고
+나머지는 개수만 표시합니다.
 
 [부분](../features/artifact.md#composition)으로 이루어진 Artifact는 부분들을 감싸는 상자로
 그려집니다. 상자 위쪽의 제목 행에는 표시, 이름, 개수가 나오고, 그 아래를 상태 색의 띠가 닫습니다. 부분에 다시 부분이 있으면 그 안에 상자가 하나 더
@@ -184,38 +254,38 @@ Artifact의 Detail이 열리고, 부분을 클릭하면 그 부분의 Detail이 
 Detail을 열 수 있고, 찾기 칸에는 숨긴 Artifact도 그대로 나옵니다. **Expand**를 누르면 상자가 다시
 펼쳐집니다. `m`을 누르면 Tab으로 초점을 옮긴 상자를 최소화하거나 펼칩니다. 초점이 상자에 없으면 Detail이
 열린 상자에서 같은 동작을 합니다. 입력하는 중이거나 키보드 초점이 Pane에 있으면 동작하지 않습니다. 최소화는 그 브랜치의
-모든 그래프에 적용되고, 다시 펼치거나 앱을 끌 때까지 유지됩니다.
+모든 Artifact Graph에 적용되고, 다시 펼치거나 앱을 끌 때까지 유지됩니다.
 
-### 그래프에서 찾기 {#find-in-the-graph}
+### Artifact Graph에서 찾기 {#find-in-the-graph}
 
-Run의 그래프나 Current가 보일 때 도구 줄의 **Find**를 누르거나, 키보드 초점이 Pane 밖(그래프나 Detail)에 있을 때 Ctrl+F를 누르면
-그래프 왼쪽 위에 찾기 칸이 열립니다. 입력한 글자가 이름에 들어 있는 Artifact와 eval을 대소문자 구분 없이
-그래프 순서대로 보여 줍니다. Artifact는 전체 이름으로, eval은 `Artifact / eval` 형태로 나오고, 각각
+Run의 Artifact Graph나 Current가 보일 때 도구 줄의 **Find**를 누르거나, 키보드 초점이 Pane 밖(Artifact Graph나 Detail)에 있을 때 Ctrl+F를 누르면
+Artifact Graph 왼쪽 위에 찾기 칸이 열립니다. 입력한 글자가 이름에 들어 있는 Artifact와 eval을 대소문자 구분 없이
+Artifact Graph 순서대로 보여 줍니다. Artifact는 전체 이름으로, eval은 `Artifact / eval` 형태로 나오고, 각각
 판정 기호와 색이 붙습니다(Current에서는 verify가 할 일). 처음 50개까지 보여 주고, 나머지는 몇 개가 더
 있는지만 알려 줍니다. 찾은 항목이 없으면 없다고 표시합니다.
 
-아무것도 입력하지 않으면 이 그래프에서 [별표를 단 Artifact](#detail)를 즐겨찾기로 보여 줍니다.
-찾은 항목과 같은 모양으로, 그래프 순서대로 나옵니다. 이 그래프에 별표를 단 Artifact가 없으면 별표를 다는
+아무것도 입력하지 않으면 이 Artifact Graph에서 [별표를 단 Artifact](#detail)를 즐겨찾기로 보여 줍니다.
+찾은 항목과 같은 모양으로, Artifact Graph 순서대로 나옵니다. 이 Artifact Graph에 별표를 단 Artifact가 없으면 별표를 다는
 방법을 알려 줍니다.
 
 ↑/↓로 항목을 고릅니다. Enter를 누르거나(고른 항목이 없으면 첫 항목) 항목을 클릭하면 그 Detail이
-열리며, eval이면 그 eval의 탭으로 열립니다. 그 Artifact는 Detail 왼쪽 그래프의 한가운데로 오고,
+열리며, eval이면 그 eval의 탭으로 열립니다. 그 Artifact는 Detail 왼쪽 Artifact Graph의 한가운데로 오고,
 이름을 읽을 수 있을 만큼 확대됩니다. Esc를 누르면 찾기 칸이 닫히고 키보드 초점이 돌아갑니다. 찾기 칸
-바깥을 클릭해도 닫히며, 그 클릭은 평소처럼 동작합니다. 그래프가 아무리 커도
-찾기로 모든 Artifact에 닿을 수 있습니다. 여러 Artifact 안에 그려진 부분은 한 번만 나오고, 열면 첫
+바깥을 클릭해도 닫히며, 그 클릭은 평소처럼 동작합니다. Artifact Graph가 아무리 커도
+검색하면 모든 Artifact를 찾을 수 있습니다. 여러 Artifact 안에 그려진 부분은 한 번만 나오고, 열면 첫
 번째 사본이 가운데로 옵니다. 최소화된 Artifact 안의 부분은 계속 숨겨져 있습니다. 열면 그 부분의 Detail이
-열리고, 대신 최소화된 Artifact가 가운데로 오며 강조됩니다. 그래프에서 그 부분을 보려면 최소화된 Artifact를
+열리고, 대신 최소화된 Artifact가 가운데로 오며 강조됩니다. Artifact Graph에서 그 부분을 보려면 최소화된 Artifact를
 펼치세요.
 
 ### Detail {#detail}
 
-Artifact를 클릭하면 그래프 오른쪽에 해당 Artifact의 **Detail** 패널이 열립니다. 다른 Artifact를 클릭하면 그 Artifact의 Detail로 바뀌고, 그래프
+Artifact를 클릭하면 Artifact Graph 오른쪽에 해당 Artifact의 **Detail** 패널이 열립니다. 다른 Artifact를 클릭하면 그 Artifact의 Detail로 바뀌고, Artifact Graph
 배경을 클릭하거나 **Close**, Esc, ←를 누르면 닫힙니다. Human 리뷰의 Detail에서 ←는 편집하거나 실행하는
-것이 없을 때만 Detail을 닫고, 나머지는 [리뷰에서 Esc를 누를 때](#human-reviews)처럼 먼저 한 단계씩 되돌아갑니다. Detail의 왼쪽 가장자리를 드래그해, 내용을 읽기 편하면서도 그래프가 조금 보이는 너비로 조절하세요. 그 폭은 다음 실행에서도 유지됩니다.
+것이 없을 때만 Detail을 닫고, 나머지는 [리뷰에서 Esc를 누를 때](#human-reviews)처럼 먼저 한 단계씩 되돌아갑니다. Detail의 왼쪽 가장자리를 드래그해, 내용을 읽기 편하면서도 Artifact Graph가 조금 보이는 너비로 조절하세요. 그 폭은 다음 실행에서도 유지됩니다.
 
 섹션의 머리 행을 클릭하거나 그 위에서 Enter나 Space를 누르면 섹션을 접거나 펼칩니다. 섹션마다 마지막으로 선택한 접기·펼치기 상태를 저장해 두므로, 이후 열리는 Detail과 다음 실행에도 그 상태가 유지됩니다. 단, Human 리뷰의 Tools, Tool log, Result는 항상 펼쳐져 있습니다. 처음에 펼쳐진 섹션은 **Evals**, **Tools**, **Path**, **Result**, **Outcome**, **Waits for**이고, 처음에 접힌 섹션은 **Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**, **Provenance**, **Debug**, **Technical**입니다.
 
-Artifact Detail은 해당 Artifact 탭에서 열리고, 제목에는 Artifact 이름이 나옵니다. **Evals**에는 eval마다 판정 표시, 그 색으로 쓴 상태가 나오고, 오른쪽 끝에는 Run에서는 걸린 시간이, Current에서는 선언된 제목이 나옵니다. 클릭하면 그 eval의 탭이 열립니다. **Neighbours**를 펼치면 그 Artifact를 중심으로 이웃 Artifact와의 관계를 그래프와 같은 노드와 간선으로 보여 줍니다. 왼쪽에는 이 Artifact의 eval이 사용하는 Artifact가, 오른쪽에는 이 Artifact를 사용하는 eval이 속한 Artifact가 있습니다. 이 그림은 이동하거나 확대할 수 없으며, 이웃을 클릭하면 그 이웃의 Detail이 열립니다. 그다음 **Tools**와 **Path**가 나오고, 도구를 한 번 실행하면 **Tool log**도 표시됩니다. **Debug**에는 대기 중인 의존성을 비롯한 나머지 정보가 접힌 상태로 표시됩니다.
+Artifact Detail은 해당 Artifact 탭에서 열리고, 제목에는 Artifact 이름이 나옵니다. **Evals**에는 eval마다 판정 표시, 그 색으로 쓴 상태가 나오고, 오른쪽 끝에는 Run에서는 걸린 시간이, Current에서는 선언된 제목이 나옵니다. 클릭하면 그 eval의 탭이 열립니다. **Neighbours**를 펼치면 그 Artifact를 중심으로 이웃 Artifact와의 관계를 Artifact Graph와 같은 노드와 간선으로 보여 줍니다. 왼쪽에는 이 Artifact의 eval이 사용하는 Artifact가, 오른쪽에는 이 Artifact를 사용하는 eval이 속한 Artifact가 있습니다. 이 그림은 이동하거나 확대할 수 없으며, 이웃을 클릭하면 그 이웃의 Detail이 열립니다. 그다음 **Tools**와 **Path**(Current에서는 **Definition**과 **Source**)가 나오고, 도구를 한 번 실행하면 **Tool log**도 표시됩니다. **Debug**에는 대기 중인 의존성을 비롯한 나머지 정보가 접힌 상태로 표시됩니다.
 
 eval의 탭에서는 제목 아래의 칩이 경로처럼(`[icon] {name} / [eval] …`) 읽힙니다. Artifact의 탭으로 돌아가는 Artifact 칩 하나와 eval마다 판정의 표시와 색을 보여 주는 칩이 하나씩 있으며, Current에서는 실행될지, 재사용될지, 아직 확인 중인지를 보여 줍니다.
 
@@ -229,20 +299,18 @@ eval의 탭에서는 제목 아래의 칩이 경로처럼(`[icon] {name} / [eval
 실행되는 동안 같은 Artifact의 다른 도구 버튼은 비활성화되며, 실행 중 표시 옆의 **Cancel** 버튼으로
 실행을 멈출 수 있습니다. Detail을 닫아도 멈추지 않으며, 출력은 계속
 Artifact의 Tool log에 쌓여 Detail을 다시 열면 보입니다. 실행 기록은 앱이 실행되는 동안
-그 Tool log에 남습니다. 그래프의 노드에는 도구 버튼이 없습니다. Tools와 별 표시는 Pane의 검색 결과에
+그 Tool log에 남습니다. Artifact Graph의 노드에는 도구 버튼이 없습니다. Tools와 별 표시는 Pane의 검색 결과에
 그 브랜치가 남아 있을 때만 보이므로, 검색 때문에 브랜치가 숨겨지면 검색어를 지우거나 넓혀야 다시 나타납니다.
 
-eval의 탭은 **Summary**를 보여 줍니다. 상태 줄에는 표시와 상태, 실행에 든 시간과 토큰(`k`나 `M` 단위), 사용한 모델, 끝난 방식이 나오고, 재사용했다면 절약한 시간과 토큰이 나옵니다. 그다음 지시문,
-**Result**(지적 사항은 `item`과 `where`를 제목으로 붙인 번호 목록)가 나옵니다. 관련 정보가 있으면
-**Execution options**, **Execution metadata**(시간과 사용량), **Fingerprint**, 그리고 나머지 정보를 담은 **Debug**가 이어집니다. 상태 줄에 나온 내용은 그 아래에서 다시 말하지 않습니다.
-Current에서는 eval이 실행될지, 재사용될지, 아직 확인 중인지와 그 이유, 그리고 재사용할 결과를
-보여 줍니다. Artifact나 eval의 탭(Current의 Human eval 포함)의 Summary와 Human 리뷰에서 `t`를 누르면 **Debug**가 표시되거나 숨겨집니다. 로그를 보고 있을 때는 Summary로 돌아간 뒤 누르세요. 로그가 있는 eval에서는 칩 아래의 Summary와 로그를 전환해 볼 수 있습니다. 전환 버튼에는 텍스트만 표시되며, 선택한
-항목은 굵고 진한 글씨로 강조됩니다. 로그는 Agent eval의 **Agent log**(대화. 별도의 스크롤 막대가 있음) 또는 Runtime eval의 **Runtime log**(저장된 stdout/stderr. 실시간
-로그 스트림이 아님)입니다. 대화가 없거나 원격에만 있으면
-이 머신에서 볼 수 없는 이유를 보여 줍니다. Run 안의 Human eval 탭에는 리뷰와 승인이 들어 있으며,
-아래에 설명한 컨트롤이 있습니다. 일부 eval만 골라 `verify`를 실행했을 때처럼, Run에서 선택하지
-않은 eval에는 그 Run의 요청이 없습니다. 그 탭은 결과의 Summary, Human 컨트롤, Tool log 없이
-섹션을 읽기 전용으로 보여 줍니다.
+eval 탭은 **Summary**로 열립니다. 상태, 지시문, 결과를 읽거나, Current에서는 verify가
+할 일과 재사용할 결과를 확인하세요. 칩 아래에서 **Agent log**를 고르면 실시간 대화를,
+**Runtime log**를 고르면 저장된 stdout/stderr를 볼 수 있습니다. 대화를 볼 수 없으면 이
+머신에서 읽을 수 없는 이유를 알려 줍니다. **Debug**를 보려면 Summary로 돌아와 `t`를
+누르세요. Artifact 탭과 Human 리뷰에서도 같습니다.
+
+Run의 Human eval은 아래에서 설명하는 리뷰와 승인을 엽니다. 그 Run에서 선택하지 않은
+eval에는 요청이 없으므로, 결과의 Summary, Human 컨트롤, Tool log 없이 섹션을 읽기 전용으로
+보여 줍니다.
 
 Agent log는 실시간으로 갱신됩니다. 초점이 있는 Agent log에서 ↑/↓ 또는 `j`/`k`는 행 단위로,
 PgUp/PgDn은 페이지 단위로 이동하고, Home/End나 **Top/Bottom**은 양 끝으로 가며, 마우스 휠은
@@ -266,7 +334,12 @@ Pane에서 대기 중인 리뷰를 고르거나 ID로 열면 Main area에 Human
 Esc는 한 번에 한 단계씩 되돌아갑니다. 실행 중인 작업을 취소하고, 다음에는 양식에서 나가고, 그다음에는
 리뷰에서 나가 Pane으로 돌아갑니다(Pane이 숨겨져 있으면 먼저 보여 줍니다). Detail에서는 Detail을 닫습니다.
 
-Human 리뷰는 지시문, 사용할 **Tools**, 도구의 **Tool log**, 작성할 **Result** 순서로 이어지고, 마지막에 요청 ID, 모드, 맡은 사람, 대기 시간이 담긴 **Debug**가 접혀 있습니다(`t`를 누르거나 클릭하면 보입니다). 리뷰 화면에는 현재 단계를 나타내는 표시가 하나 있습니다. 맡기 전이면 **CLAIM**이고 다른 리뷰어가 맡았으면 그 옆에 맡은 사람 이름이 나오며, 내가 맡으면 **REVIEW (yours)**가 됩니다. Main area의 너비가 Detail의 두 배 이상이면 Tool log는 헤더 아래 왼쪽에 표시하고, 나머지 내용은 오른쪽에 Detail과 같은 너비로 표시합니다. 그보다 좁거나 Detail의 Human eval 탭에서는 한 열로 위에서 아래로 읽으며, Tool log는 Tools와 Result 사이의 상자로 나옵니다. 지시문은 전체가 표시되므로, 기준이 길면 열을 스크롤해 읽으세요.
+Human 리뷰는 **CLAIM** 단계로 열리며, 다른 사람이 맡았으면 그 이름을 보여 줍니다.
+내가 맡으면 **REVIEW (yours)**로 바뀝니다. 지시문을 읽고 **Tools**를 사용한 뒤
+**Tool log**를 확인하고 **Result**를 작성하세요. 기준이 길면 스크롤해 읽습니다. 넓은
+창에서는 로그가 양식 옆에, 좁은 창이나 Detail 탭에서는 Result 위에 나옵니다.
+**Debug**는 처음에 접혀 있습니다. `t`나 제목 줄을 누르면 요청 ID, 모드, 맡은 사람,
+대기 시간을 보여 줍니다.
 
 리뷰를 열기만 해서는 아무것도 맡지 않습니다. `c`나 **Claim to review**로 요청을 맡습니다. 텍스트 필드 밖에서 `u`를 누르거나 **Release claim**을 누르면 담당을 해제하며, 양식을 편집하는 중에도 초안을 남긴 채 해제할 수 있습니다. 다른 사람이 맡은 리뷰는 해제될 때까지 읽기 전용입니다. 담당 지정은 계정을 인증하는 기능이 아니라 리뷰어끼리 작업이 겹치지 않게 하는 잠금이며, 요청을 맡은 사람만 도구를 실행하거나 결과를 제출할 수 있습니다. Human 요청을 처리하는 공통 절차와 DEFERRED 상태의 승인 요청에 관한 설명은
 [Human](../features/human.md)을 보세요.

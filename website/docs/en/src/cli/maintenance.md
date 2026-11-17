@@ -24,7 +24,7 @@ fingerprint and the profile variant. `--history` lists every record, latest firs
 
 `show` prints the key's latest record as JSON: result, the actual `profile`, `options`
 (backend, model, reasoning, limits and variant), `fingerprints` of each Artifact the key
-covers, `artifactKinds` (each covered name with `folder`, `file`, `aspect` or `graph`), usage and
+covers, `artifactKinds` (each covered name with `folder`, `file`, `aspect` or `live`; older records may have `graph`), usage and
 `producer` (`user@host` and artifactize version), and for a Human result `reviewer`, the
 person who submitted it.
 Records from a [shared remote review store](review-store.md) carry an `origin`
@@ -39,7 +39,10 @@ and `run show`. How keys are built and what a hit returns is in
 
 ## Local diagnostics and maintenance
 
-```sh
+The following is command syntax, not a shell script: `|` means choose one alternative,
+brackets mark optional arguments, and parentheses group alternatives.
+
+```text
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
 artifactize models PROVIDER [--json]
 artifactize login openai|anthropic|gemini|codex|claude-agent [--json]
@@ -48,6 +51,12 @@ artifactize provider list [--json]
 artifactize provider add NAME (--alias PROVIDER | --api API --url URL [--key]) [--json]
 artifactize provider remove NAME [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
+```
+
+For example, sign in to one provider:
+
+```sh
+artifactize login openai
 ```
 
 `prune` works on the selected state's Runs across repositories, not only the current one.

@@ -40,7 +40,8 @@ fingerprint scripts and command tools:
 - A relative name containing `/`, such as `./tools/check`, is resolved inside a
   folder Artifact's admitted scope. For a file Artifact, a relative executable
   resolves beneath its containing folder and may name an unrelated sibling (for
-  example `./inspect`). `..` and symlinks are refused in both cases. This executable lookup does
+  example `./inspect`). For a Live Artifact it resolves beneath the project root.
+  `..` and symlinks are refused in all cases. This executable lookup does
   not make sibling files visible to built-in tools or scoped argv references.
 - An absolute path runs as given.
 
@@ -62,7 +63,7 @@ and the limits of trusted commands.
 
 Logical paths use `/` on every OS, in declarations, tool arguments, results and
 records. Artifactize matches them case-sensitively on every OS: Artifact
-references, tool paths, `.artfignore` and artifactsum `files` patterns match the
+references, tool paths, definition targets and artifactsum `files` patterns match the
 exact spelling.
 
 How the spelling on disk is checked differs by OS:

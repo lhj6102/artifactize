@@ -44,42 +44,38 @@ def fake_builder(repo, case_id):
     """A predictable test double, intentionally not the golden Artifact partition."""
     def write(relative, text):
         path = repo / relative
-        if relative.endswith(".artf"):
-            data = driver.tomllib.loads(text)
-            name = data["name"]
-            target = (relative.removesuffix("index.artf") or "./") if relative.endswith("index.artf") or "select" in data else relative.removesuffix(".artf")
-            text = re.sub(r'^name\s*=.*$', "path = " + json.dumps(target), text, count=1, flags=re.MULTILINE)
-            if target.endswith("/"):
-                (repo / target).mkdir(parents=True, exist_ok=True)
-            path = repo / ".artifactize" / f"{name}.artf"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
 
+    def node(name, target, body):
+        if target.endswith("/"):
+            (repo / target).mkdir(parents=True, exist_ok=True)
+        write(f".artifactize/{name}.artf", f"path = {json.dumps(target)}\n{body}")
+
     def runtime(name, instruction="Check the local fixture behavior."):
-        return f'''name = "{name}"
-[evals.check]
+        return f'''[evals.check]
 title = "{name} behavior"
 profile = {{ kind = "runtime", command = {json.dumps(sys.executable)}, args = ["-I", "{{checks}}", "{name}"] }}
 payload.instruction = {json.dumps(instruction)}
 '''
 
-    write("check.py.artf", 'name = "checks"\nbasis = true\n')
+    node("checks", "check.py", "basis = true\n")
     if case_id == "library-consumer":
-        write("library/index.artf", runtime("pricing"))
-        write("app/index.artf", runtime("receipt", "Check the receipt using {pricing}."))
-        write("independent/index.artf", runtime("label"))
+        node("pricing", "library/", runtime("pricing"))
+        node("receipt", "app/", runtime("receipt", "Check the receipt using {pricing}."))
+        node("label", "independent/", runtime("label"))
     elif case_id == "docs-assets":
-        write("site/content/index.artf", runtime("content"))
-        write("site/theme/index.artf", runtime("theme"))
-        write("assets/LICENSE.txt.artf", 'name = "license"\nbasis = true\n')
-        write("assets/banner.svg.artf", runtime("banner", "Check {banner} against {license}."))
-        write("site/index.artf", runtime("site", "Check {content}, {theme} and {banner}.").replace('"site"]', '"all"]'))
+        node("content", "site/content/", runtime("content"))
+        node("theme", "site/theme/", runtime("theme"))
+        node("license", "assets/LICENSE.txt", "basis = true\n")
+        node("banner", "assets/banner.svg", runtime("banner", "Check {banner} against {license}."))
+        node("site", "site/", runtime("site", "Check {content}, {theme} and {banner}.").replace('"site"]', '"all"]'))
     else:
-        write("api/index.artf", runtime("api", "Check API against {contract}."))
-        write("contract/index.artf", runtime("contract"))
-        write("preview/probe.py.artf", 'name = "preview-driver"\nbasis = true\n')
+        node("api", "api/", runtime("api", "Check API against {contract}."))
+        node("contract", "contract/", runtime("contract"))
+        node("preview-driver", "preview/probe.py", "basis = true\n")
         ui = runtime("ui", "Check UI consumes {api} and {contract}.")
-        write("ui/index.artf", ui + f'''
+        node("ui", "ui/", ui + f'''
 [views.agent_sessions.preview]
 start = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "start"] }}
 stop = {{ command = {json.dumps(sys.executable)}, args = ["-I", "{{preview-driver}}", "stop"] }}
@@ -94,12 +90,12 @@ title = "UI and API contract review"
 profile = {{ kind = "agent", backend = "codex", model = "fake-host-model" }}
 payload.instruction = "Inspect {{ui}} against {{api}}, {{contract}} and {{preview-driver}}."
 ''')
-        write("integration/index.artf", '''name = "integration"
-[evals.signoff]
+        node("integration", "integration/", '''[evals.signoff]
 title = "The person approves integrated publication"
 profile = { kind = "human" }
 payload.instruction = "A person judges {ui} with {api}; the builder must yield."
 ''')
+
     write(".github/workflows/review.yml", '''jobs:
   review:
     steps:

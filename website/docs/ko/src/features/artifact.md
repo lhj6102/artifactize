@@ -1,11 +1,12 @@
 # Artifact {#artifact}
 
-리뷰할 대상이라면 무엇이든 Artifact로 선언할 수 있습니다. 코드, 문서, 디자인, 이미지 모두
-Artifact입니다. 폴더에 `index.artf`를 추가하면(파일이라면 옆에 `notes.md.artf`를 두면)
-Artifact를 선언할 수 있습니다.
+리뷰할 대상이라면 무엇이든 Artifact로 선언할 수 있습니다. 코드, 문서, 디자인, 이미지,
+외부의 실행 중인 상태도 대상이 됩니다. `.artifactize/`에 이름을 붙인 정의 파일을 만들고
+`path`로 대상을 지정하세요.
 
 ```toml
-name = "docs"
+# .artifactize/docs.artf
+path = "docs/"
 
 [evals.links]
 title = "Links resolve"
@@ -13,9 +14,9 @@ profile = { kind = "runtime", command = "python3", args = ["check_links.py"] }
 payload.instruction = "Check that every link in the docs resolves."
 ```
 
-그다음 `artifactize config check`를 실행하면 `Folder configuration is valid.`가 나오거나,
-오류가 나옵니다. 선언 내용이 잘못되었으면 파일 이름과 줄·열 번호가 나오고, 대상 파일이 없는 등의 문제라면 해당 경로가 나옵니다. artifactize는 이 선언들을 읽어 의존성 그래프 하나로
-만듭니다.
+`artifactize config check`로 검사하세요. 정의가 잘못되면 파일, 줄, 열을 알려 주고,
+대상이 없거나 종류가 다르면 안내합니다. 없는 대상 때문에 정의 검사가 실패하지는 않습니다.
+검증할 때는 그 대상을 다루는 eval만 준비 오류가 되며, 관련 없는 eval은 계속 실행합니다.
 
 ## Artifact Graph {#artifact-graph}
 
@@ -25,23 +26,24 @@ payload.instruction = "Check that every link in the docs resolves."
 다른 Artifact의 eval 입력이 되지는 않습니다.
 
 부분 관계는 입력 관계와 별개이며, 이를 [구성](#composition)이라고 합니다. `combat`이
-`game`의 부분이면 `combat`이 실패하는 동안 `game`은 통과하지 못합니다. 그렇다고 `game`의
-eval이 `combat`을 읽지는 않으며, 읽으려면 참조해야 합니다.
+`game`의 부분이면 `combat`이 실패하는 동안 `game`은 통과하지 못합니다. 폴더 부분을 읽으려면
+그 이름을 참조해야 하지만, 파일·aspect 부분은 전체를 통해서도 읽을 수 있습니다. 부분의
+이름을 참조하면 그 부분의 도구와 의존성 게이트도 사용할 수 있습니다.
 
 각 eval은 참조한 입력 Artifact를 평가하는 eval이 끝난 뒤 실행됩니다. [eval 의존성](#eval-dependencies)을 보세요.
 
-Artifact Graph 자체도 리뷰할 수 있습니다. 저장소 루트의 이름 없는 `.artf`가 그래프 Artifact를
-선언합니다. 그 fingerprint는 소스 내용이나 실행 설정이 아니라, 추출한 기준과 이름이 붙은
-관계를 포함합니다. 프로젝트의 리뷰 구조를 사람이 리뷰할 때 쓰세요. 문법은
-[선언](declarations.md#graph-artifact)에 있고, [graph 도구](tools/builtin.md#current-project-graph)는
-Agent에게는 현재 프로젝트 구조를 텍스트로 보여 주고, 사람에게는 데스크톱 그래프 뷰어를 엽니다.
+정의도 리뷰할 수 있습니다. `.artifactize/`나 그 하위 폴더를 대상으로 하는 일반
+Artifact를 선언하세요. Artifactsum은 annotations와 TOML 서식을 뺀 정의 내용을 다룹니다.
+특별한 종류를 따로 만들 필요는 없습니다. [선언](declarations.md#graph-artifact)에서 문법을,
+[graph 도구](tools/builtin.md#current-project-graph)에서 현재 기준과 관계를 보는 방법을 설명합니다.
 
 ## 폴더 설정 {#folder-configuration}
 
-`index.artf`가 있는 폴더는 Artifact입니다. `name`은 필수이고([이름](declarations.md#declaration-validation)
-참고), `basis`, `views`, `fingerprint`, `tags`, `parts`는 선택입니다. 다른 Artifact의 폴더 안에
-선언한 Artifact는 그 Artifact의 [부분](#composition)입니다. 예전 선언은
-[예전 정책 업그레이드 안내](../getting-started/update.md#upgrading-from-011)를 보세요.
+끝에 `/`가 있는 PATH로 폴더를 정의합니다. `.artifactize/usage.artf`에
+`path = "docs/usage/"`를 쓰면 `usage`입니다. 파일 이름이 Artifact 이름이므로 `name` 키는 오류입니다.
+`basis`, `views`, `fingerprint`, `tags`, `parts`는 선택 필드입니다. 정의나 대상 경로의
+배치는 구성을 만들지 않습니다. 부분은 `parts`에 모두 적으세요. 기존 프로젝트는
+[`config migrate`](../getting-started/update.md)로 옮깁니다.
 
 eval은 로컬 ID를 키로 쓰는 테이블입니다. `usage` Artifact의 `[evals.heading]`은 eval ID
 `usage/heading`이 됩니다. `id` 필드는 선언하지 마세요. eval마다 `title`과, `kind`가 `runtime`,
@@ -54,7 +56,8 @@ Runtime eval은 프로그램의 종료 코드로 통과 여부를 판정하며, 
 `guide` Artifact이며, 그 README에서 부분, `{artifact}` 참조, basis Artifact를 설명합니다.
 
 ```toml
-name = "guide"
+path = "guide/"
+parts = ["intro", "usage"]
 
 [evals.terms]
 title = "Every bold term is defined in the glossary"
@@ -69,13 +72,13 @@ payload.instruction = "Check that every bold term in {intro} and {usage} is defi
 
 ## 파일 Artifact {#file-artifacts}
 
-일반 파일 `hero.png` 옆에 사이드카 `hero.png.artf`를 두면 그 파일을 Artifact로 선언합니다.
-폴더 Artifact와 같은 스키마를 쓰며, 프로젝트 전체에서 겹치지 않는 `name`을 지정해야 합니다.
+`.artifactize/hero-art.artf`에 `path = "hero.png"`를 쓰면 `hero.png` 하나를 대상으로 하는
+`hero-art`입니다. 명령은 파일이 있는 폴더에서 실행하지만 파일 내장 도구는 그 파일과
+허용한 입력만 보여 주며 관련 없는 옆 파일은 보여 주지 않습니다.
 
 ```toml
-# hero.png.artf
-name = "hero-art"
-tags = ["type:image", "scope:player"]
+# .artifactize/hero-art.artf
+path = "hero.png"
 
 [evals.approved]
 title = "The hero sprite matches the style guide"
@@ -83,14 +86,11 @@ profile = { kind = "human" }
 payload.instruction = "Check {hero-art} against {style-guide}."
 ```
 
-파일 Artifact는 기본으로 대상 파일 하나만 해시합니다. 작업 디렉터리는 그 파일이 들어 있는
-폴더이지만, 내장 도구로는 대상 파일과 허용 범위에 포함된 파일에만 접근할 수 있습니다. 폴더
-Artifact의 폴더 안에 있으면 그 Artifact의 [부분](#composition)이 됩니다. 폴더는 자체 artifactsum에서
-그 대상 파일을 제외하고, 대신 eval 재사용 키에 부분의 fingerprint를 넣습니다.
-다른 Artifact의 폴더 안에 있는 하위 폴더에 `index.artf`를 두어도 그
-Artifact의 부분이 되고, 그 폴더의 파일은 바깥 Artifact의 파일 범위에서 제외됩니다.
-이름 짓기, fingerprint 형식, 가상 경로, 잘못된 대상과 재확인 규칙은
-[파일 Artifact 레퍼런스](declarations.md#file-artifacts)에 있습니다.
+전체의 `parts`에 적어야 그 전체의 부분이 됩니다. 그때 전체의 artifactsum에서는 파일을
+빼고 eval 재사용 키에 부분의 fingerprint를 넣습니다. 폴더와 aspect도 같은 규칙을 따릅니다.
+단지 다른 대상 아래에 있다는 이유로 부분이 되지는 않습니다.
+[파일 Artifact 레퍼런스](declarations.md#file-artifacts)에서 경로, fingerprint, 없는 대상과
+재검사 규칙을 설명합니다.
 
 ## eval 의존성 {#eval-dependencies}
 
@@ -105,7 +105,8 @@ eval에 의존합니다. 한 Artifact가 다른 Artifact를 쓴다면, 그 부�
 예를 들어 애플리케이션의 E2E 테스트를 실행하는 eval은 애플리케이션 Artifact에 선언합니다.
 
 ```toml
-name = "app"
+# .artifactize/app.artf
+path = "app/"
 
 [evals.e2e]
 title = "The application passes its end-to-end suite"
@@ -169,23 +170,19 @@ GREEN이 되기 전에는 사람에게 요청하지 않습니다.
 
 ## 구성 {#composition}
 
-Artifact는 다른 Artifact, 곧 **부분**(part)으로 이루어질 수 있습니다. 폴더 Artifact의 폴더 안에
-선언한 Artifact는 가장 가까운 상위 폴더 Artifact의 부분입니다. 자기 `index.artf`가 있는
-하위 폴더, 그 옆에 선언한 파일, aspect가 모두 그렇습니다. 다른 곳에 있는 Artifact는 `parts`에
-적어 부분으로 더할 수 있습니다.
+Artifact는 다른 Artifact, 곧 **부분**(part)으로 이루어질 수 있습니다. 구성은 `parts`만
+정합니다. 대상 경로가 중첩되거나 정의가 하위 폴더에 있어도 부분 관계는 생기지 않습니다.
 
 ```toml
-# game/index.artf
-name = "game"
-parts = ["physics"]
+# .artifactize/game.artf
+path = "game/"
+parts = ["combat", "physics"]
 ```
 
-`game/combat/index.artf`가 있으면 따로 적지 않아도 `combat`은 `game`의 부분이고,
-`game/combat/skills/fireball/index.artf`가 있으면 `fireball`은 `combat`의 부분입니다. 다른 폴더에
-선언한 `physics`는 `parts`에 적혀 있으므로 `game`의 부분입니다. 한 Artifact가 여러 Artifact의
-부분일 수도 있습니다. 두 애플리케이션이 함께 쓰는 모듈은 두 애플리케이션의 `parts`에 모두 적으며,
-그 모듈의 폴더는 둘 중 한쪽 안에 있어도 됩니다. 부분 관계가 이어져도 Artifact는 자기 자신을
-부분으로 삼을 수 없습니다. 그래프 Artifact는 부분을 갖지 않으며 어떤 Artifact의 부분도 아닙니다.
+`combat`에도 정의를 만들고 `parts = ["fireball"]`을 쓰면 다음 단계가 이어집니다.
+대상은 프로젝트 어디에 있어도 됩니다. 두 애플리케이션이 함께 쓰는 모듈은 두 애플리케이션의
+`parts`에 모두 적습니다. 직접이든 다른 부분을 거치든 자신을 부분으로 삼을 수 없습니다.
+정의를 리뷰하는 노드도 같은 규칙을 따릅니다.
 
 각 부분도 독립된 Artifact입니다. Artifact는 eval 없이 부분을 모으기만 할 수도 있고,
 부분들이 함께 동작하는지 보는 검사처럼 자기 내용과 eval을 가질 수도 있습니다. 부분이 자기 몫을
@@ -213,7 +210,9 @@ parts = ["physics"]
   모든 부분의 fingerprint를 넣으며, 부분의 부분까지 포함합니다. fireball이 바뀌면 `fireball`,
   `combat`, `game`의 eval과 `{fireball}`을 참조하는 eval을 다시 리뷰하고, 관계없는 eval은 재사용합니다.
   `game`의 파일만 바뀌면 fireball은 다시 리뷰하지 않습니다. 재사용 키에 포함된다고 접근 권한이
-  생기지는 않습니다. fireball을 읽는 `game`의 eval은 여전히 `{fireball}`을 참조해야 합니다.
+  생기지는 않습니다. 폴더인 fireball을 읽는 `game`의 eval은 여전히 `{fireball}`을 참조해야
+  합니다. 파일·aspect 부분은 전체를 통해서도 읽을 수 있습니다. 부분의 도구와 의존성 게이트를
+  사용하려면 그 이름을 참조하세요.
 
 부분에 자기 폴더가 꼭 있어야 하지는 않습니다. [파일 Artifact](declarations.md#file-artifacts)는 파일
 하나이고, [aspect](declarations.md#aspects)는 fireball의

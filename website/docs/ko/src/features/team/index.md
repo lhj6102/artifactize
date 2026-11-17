@@ -92,8 +92,8 @@ artifactize remote status
 - 스키마로 검증한 추가 결과 필드(Runtime eval에서는 종료 코드,
   소요 시간, 잘림 표시만)
 - 재사용 키, eval 정의 해시, 그리고 키가 포함하는 각 Artifact의
-  fingerprint와 그 종류(`folder`/`file`/`aspect`/`graph`)
-  (기록의 `artifactKinds`)
+  fingerprint와 그 종류(`folder`/`file`/`aspect`/`live`)
+  (기록의 `artifactKinds`이며 이전 기록에는 `graph`가 있을 수 있음)
 - 프로필과 실행 옵션(백엔드, 모델, reasoning, 제한, 변형), 사용량 카운터. Agent 결과의 `executionPaths`에는 작업 공간 기준 상대 경로와 경로별 해시도 기록합니다.
 - 만든 사람(`user@host`), Human 리뷰어, 타임스탬프
 - Agent 결과라면 저장된 대화에 대한 [참조](../agent.md#saved-conversations)

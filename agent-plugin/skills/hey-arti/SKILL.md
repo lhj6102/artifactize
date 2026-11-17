@@ -23,7 +23,7 @@ needs, in their terms, and link the page for the rest.
 
 | Concept, for the user | Page |
 |---|---|
-| An **Artifact** is a part of the project that gets reviewed: a folder, one file, or selected paths, declared in `.artifactize/<name>.artf` with an explicit `path`. | [Artifact](https://artifactize.dev/docs/features/artifact.html), [Declarations](https://artifactize.dev/docs/features/declarations.html) |
+| An **Artifact** is a part of the project that gets reviewed: a folder, one file, selected paths, or observed external state (a Live URI), declared in `.artifactize/<name>.artf` with an explicit `path`. | [Artifact](https://artifactize.dev/docs/features/artifact.html), [Declarations](https://artifactize.dev/docs/features/declarations.html) |
 | An **eval** is one check on an Artifact that ends in a verdict: a command (runtime), a model (Agent) or a person (Human). | [Eval](https://artifactize.dev/docs/features/eval.html), [Runtime](https://artifactize.dev/docs/features/runtime.html), [Agent](https://artifactize.dev/docs/features/agent.html), [Human](https://artifactize.dev/docs/features/human.html) |
 | An eval names each input it uses as `{name}`; when an input changes, the evals that use it run again, and so do the evals of every Artifact it is a part of; the rest is reused. | [Eval dependencies](https://artifactize.dev/docs/features/artifact.html#eval-dependencies), [Fingerprint](https://artifactize.dev/docs/features/fingerprint.html) |
 | The user only asks for **verify**; artifactize decides the order, what to reuse and what to run. | [Evaluation Run](https://artifactize.dev/docs/features/run.html) |
@@ -187,6 +187,19 @@ verify again: the new Run reuses that sign-off. No keep-alive turns or polling l
   dependency, and a command does not add the files it reads. Split an Artifact that
   grows. Use `basis = true` only for an input the team agrees nobody reviews. Keep
   the default fingerprint.
+- **Definition first.** Create `.artifactize/<name>.artf` with `path` before or after
+  the target exists; the filename is its name, not a `name` key. Definition subfolders
+  organize files only: they create no namespace, composition or inherited rules.
+  Missing local targets do not invalidate definitions; evals that use them cannot run
+  until the target exists. `config migrate` converts an old in-tree setup; `config rename
+  OLD NEW` updates its filename and structural references together.
+- **Live observations.** Use a URI target for external state you need to observe, not
+  for deployment. artifactize passes the URI to a declared command; it never opens it
+  itself. Runtime evals that cover it always run. For an Agent or Human judgment that
+  should be reused while the observation stands, use a fingerprint script that prints
+  a stable snapshot; without it those reviews cannot be reused. Do not declare file
+  fingerprints or file builtins on a Live node. The command runs at the project root
+  with the author's terminal environment and should be read-only.
 - **Composition.** Make an Artifact a part of a whole when the whole cannot pass while
   the part fails: list it in the whole's `parts`, wherever its target or definition lives; `verify whole` then
   covers the part. Each part checks what it owns and the
@@ -212,6 +225,7 @@ Point the user at the example that matches their situation:
 |---|---|
 | Content made of part sections, a basis input, references in instructions and arguments | [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) |
 | An Agent review with built-in and declared tools, result schemas, and a person's sign-off | [examples/agent-tools](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools) |
+| A read-only availability check on a URI target that runs every verify | [examples/live](https://github.com/lhj6102/artifactize/tree/main/examples/live) |
 | Many files reviewed one by one, with a shared checker | [examples/posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts) |
 | A consumer checked against what it uses (a web page against the style tokens it uses) and independent parts that reuse | [website/demo/shop](https://github.com/lhj6102/artifactize/tree/main/website/demo/shop) |
 | An asset with a person's sign-off, embedded by a page that references it | [website/demo/brand](https://github.com/lhj6102/artifactize/tree/main/website/demo/brand) |

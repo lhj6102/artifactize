@@ -18,7 +18,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 `SELECTOR` 자리에는 위치 인자 `ARTIFACT`나 `ARTIFACT/EVAL`, `--eval ID`, `--evals CSV`,
 `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`, `--all` 중 하나만
 씁니다. `CSV`는 `verify --evals app/lint,app/tests`나 `verify --artifacts app,docs`처럼
-이름이나 eval ID를 쉼표로 이은 목록입니다. `--evals`와 `--artifacts`는 여러 번 줄 수 있으며,
+이름이나 eval ID를 쉼표로 구분한 목록입니다. `--evals`와 `--artifacts`는 여러 번 줄 수 있으며,
 값은 순서대로 합쳐지고 중복은 빠집니다.
 `help [COMMAND]`와 `-h`/`--help`는 도움말을 출력합니다. 명령 없이 `artifactize`만
 실행해도 도움말이 나옵니다(종료 코드 0, `--json`을 줘도 텍스트). `-V`/`--version`은 루트
@@ -30,6 +30,8 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N`(CPU 수). 기본값은 `--all`입니다 | 텍스트 또는 JSON | 충족하면 0, 아니면 1 |
 | `mcp` | | [MCP stdio 프로토콜](../agent-plugin/mcp.md)입니다. 진단은 stderr로 출력합니다 | 정상적으로 연결이 끊기면 0 |
 | `config check` | | 텍스트 또는 JSON | 0 |
+| `config migrate` | `--repo`로 프로젝트 선택 | 텍스트 또는 JSON 변경 보고 | 0 |
+| `config rename OLD NEW` | | 성공 시 출력 없음, `--json`이면 변경 내용 | 0 |
 | `config graph [ARTIFACT]` | `--impact` | 텍스트 또는 JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N`(50), `--offset N`(0) | 텍스트 또는 JSON | 0 |
 | `run watch RUN_ID` | | JSON 줄로 상태 변화, eval 결과, 최종 검증 | Run 결과 |
@@ -75,7 +77,7 @@ artifactize가 아니라 그 프로그램에 전달됩니다.
 | `monitor [PATH]` | ALL에서 시작합니다. PATH나 `--repo PATH`는 처음 고를 저장소만 정합니다. `--all`은 경로와 함께 쓸 수 없습니다 | 터미널 UI | 0 |
 | `review [REQUEST_ID]` | `--repo PATH`(`repo:` 검색어), `--all`(기본값이며 `--repo`와 함께 쓸 수 없습니다), `--reviewer NAME`(`$USER`) | 터미널 UI | 0 |
 | `server run` | `--listen ADDR`(`127.0.0.1:8417`): 숫자로 쓴 `IP:PORT`(IPv6은 `[::1]:8417`) 형식이며, 호스트 이름은 사용할 수 없습니다. 포트가 0이면 사용 가능한 포트를 골라 그 번호를 출력합니다 | `Listening on http://ADDR/`라고 출력합니다. JSON은 `{"listen":ADDR}`입니다 | 0 |
-| `server token add NAME --scopes SCOPES` | `--scopes`(필수이며 기본값은 없습니다. `read`, `publish`, `human`을 쉼표로 이은 목록입니다) | 토큰을 한 번 출력하고 저장해 두라고 안내합니다. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}`입니다 | 0 |
+| `server token add NAME --scopes SCOPES` | `--scopes`(필수이며 기본값은 없습니다. `read`, `publish`, `human`을 쉼표로 구분한 목록입니다) | 토큰을 한 번 출력하고 저장해 두라고 안내합니다. JSON은 `{"name":NAME,"scopes":[...],"token":TOKEN}`입니다 | 0 |
 | `server token list` | | 텍스트 또는 JSON | 0 |
 | `server token revoke NAME` | `--purge` | JSON(`--json`이 없어도) | 0 |
 | `server rm KEY` | | JSON | 0 |
@@ -237,7 +239,7 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 
 ## 재사용만 하기 {#reuse-only}
 
-`verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 이은 목록을 받습니다.
+`verify --reuse-only KINDS`는 `runtime`, `agent`, `human`을 쉼표로 구분한 목록을 받습니다.
 목록에 있는 종류의 eval은 기존 결과만 재사용할 수 있습니다. 재사용할 수 있는 것은 로컬 캐시에
 있는 그 재사용 키의 완료된 기록이나, 설정되어 있다면 [리뷰 저장소](review-store.md)에 있는
 기록입니다. 그런 기록이 없으면 eval을 실행하지 않습니다. 실행 프로세스를 시작하거나 provider를 호출하거나 Human 요청을 만들지 않으며, 같은 재사용 키의 리뷰가 진행 중이어도 거기에 합류하지 않습니다.
@@ -264,8 +266,8 @@ eval마다 이름 규칙에 맞는 프로필 변형을 최대 64개 선언할 �
 합니다. Artifact를 선택하면 그 [부분](../features/artifact.md#composition)의 eval과, 같은 순환에 속해 그
 Artifact를 리뷰하는 다른 Artifact의 eval도 함께 실행됩니다. `--force`는 선택한 Artifact와 그 부분의
 eval만 새로 리뷰하도록 표시하며, 순환에 속한 다른 Artifact나 의존성에는 적용되지 않습니다. 파일
-Artifact는 선언된 이름으로 선택하며, 파일 Artifact를 둘러싼 폴더 Artifact를 선택하면 부분인 파일
-Artifact도 함께 선택됩니다.
+Artifact는 선언된 이름으로 선택합니다. 파일 Artifact를 둘러싼 폴더 Artifact를 선택하면,
+그 파일이 부분으로 명시되어 있을 때만 함께 선택됩니다.
 
 의존성 순환을 포함해 어떤 eval이 대기 상태가 되거나 실행이 차단되는지는
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요.
@@ -283,6 +285,7 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 |---|---|---|
 | `PASS` | 현재 재사용 키에 맞는 GREEN 결과가 있고 게이트도 충족합니다 | eval이 모두 `PASS`이고, 부분과 의존하는 Artifact도 모두 검증 요건을 충족합니다 |
 | `RED` | 현재 재사용 키에 맞는 RED 결과가 있습니다 | eval이나 부분 중 하나가 `RED`입니다 |
+| `ERROR` | 지금 필요한 대상이 없거나 종류가 다르며, 이유는 `PREPARATION_FAILED:`로 시작합니다 | eval이나 부분 중 하나가 `ERROR`입니다 |
 | `BLOCKED` | 게이트가 RED입니다 | eval이나 부분 중 하나가 `BLOCKED`입니다 |
 | `WAIT_DEPENDENCY` | 게이트에 아직 현재 결과가 없습니다 | eval이나 부분 중 하나가 대기 중입니다 |
 | `WAITING_HUMAN` | 이전 버전의 artifactize가 요청했고 아직 사람이 처리하지 않은 승인이 있습니다 | — |
@@ -293,10 +296,11 @@ status 출력의 동작 값은 `execute`, `reuse`, `wait`, `blocked`입니다. �
 | `INCOMPLETE` | — | 그 Artifact의 eval은 `PASS`이지만 의존하는 Artifact의 검증 요건이 충족되지 않습니다 |
 | `BASIS` | — | 의존하는 Artifact가 모두 검증 요건을 충족한 basis Artifact입니다 |
 
-Artifact의 eval과 [부분](../features/artifact.md#composition)의 상태 중 `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
+Artifact의 eval과 [부분](../features/artifact.md#composition)의 상태 중 `ERROR`, `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`, `PROVISIONAL`,
 `STALE`, `UNREVIEWED`에 해당하는 것이 여러 개라면, 이 목록에서 가장 앞에 있는 상태를 Artifact에 표시합니다.
-그래서 자기 eval이 없는 Artifact는 부분의 상태를 그대로 보여 줍니다. `ERROR`는 Run 출력에만 나오며,
-`status`는 마지막 시도가 실패한 eval을 `STALE`로 보여 줍니다.
+그래서 자기 eval이 없는 Artifact는 부분의 상태를 그대로 보여 줍니다. 현재 대상의 준비
+오류는 해당 eval의 `ERROR`로 표시하며, 관련 없는 eval의 예측은 그대로 보여 줍니다.
+현재 준비 오류 없이 과거 시도만 실패한 경우에는 `STALE`로 표시합니다.
 
 ## 저장된 Run 증거와 터미널 화면 {#saved-run-evidence-and-terminal-views}
 
@@ -384,18 +388,33 @@ artifactize tools check --execute --eval app/review --tool coverage_app --args '
 ## Config graph {#config-graph}
 
 `config graph [ARTIFACT]`는 기본으로 프로젝트 전체를 보여 주고, ARTIFACT를 주면 순환으로
-묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 그 결과를 쓰는 하위 Artifact와 각 Artifact가 쓰는 입력도 포함합니다. 이는 구조상 영향이 미칠 수 있는 범위를 넉넉하게
-잡은 것이지, 재사용 키를 정확히 예측한 것은 아닙니다. MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 실제로 무엇을 실행하고 재사용할지는
-`status`로 확인하세요. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 구성 요소,
+묶인 Artifact까지 포함해 그 Artifact에 필요한 범위를 보여 줍니다. `--impact`는 영향이
+미칠 수 있는 사용처와 그 사용처에 필요한 입력을 포함합니다. 결과를 재사용할 수 있는 검사도
+포함될 수 있습니다. 실제로 어떤 검사를 다시 리뷰해야 하는지는 `status`로 확인하세요.
+MCP `config_graph`에서도 Artifact나 eval을 하나 또는 여러 개 골라 같은 정의를 볼 수 있습니다. 텍스트 출력에는 태그와 파일 종류 표시가 붙은 Artifact, eval, 구성 요소,
 입력에서 사용처로 가는 관계가 나옵니다. 전체 JSON에는 정해진 정적 Artifact/eval 정의(프로필,
 payload, 스키마, 도구 뷰), 태그, 부분·지시문·argv 관계 정보, 순환 표시, 그리고 서로 의존하는
 Artifact 묶음인 강한 연결 요소(SCC)가 의존성 순서대로 들어 있습니다. Artifact 항목에는
-`kind`(`file`, `folder`, `aspect`, `graph`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
+`kind`(`file`, `folder`, `aspect`, `live`)와 작업 공간 기준 대상 `path`가 있습니다. status도 파일 종류와
 경로를 보여 주며, [Monitor](../tui/index.md#monitor)는 이를 화면에 보여 줍니다. 강한 연결
-요소의 ID는 전체 그래프를 기준으로 매기므로, 일부만 보여 주면 번호가 띄엄띄엄 나올 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 형식은
+요소의 ID는 전체 Artifact Graph를 기준으로 매기므로, 일부만 보여 주면 번호가 띄엄띄엄 나올 수 있습니다. `config check`는 프로젝트 코드를 실행하지 않고 선언이 유효한지 확인하며, JSON 출력에는 Artifact와 eval 개수를 담습니다. 출력 형식은
 텍스트와 전체 JSON 두 가지이며, `plan`, `--compact`, `--full`은 지원하지 않습니다. 예전의 최상위
 `graph` 명령은 도움말에 나오지 않으며, 실행하면 `graph moved to "artifactize config graph"`를
 출력하고 2로 종료합니다.
+
+## 정의 바꾸기 {#definition-changes}
+
+`config migrate`는 프로젝트에 흩어진 예전 선언을 `.artifactize/<name>.artf`로 옮깁니다.
+프로젝트는 `--repo`로 고르며 별도 변환 옵션은 없습니다. 파일 이동, 명시적으로 적은 부분,
+추가한 ignore, 제외된 별도 프로젝트를 알려 줍니다. 거부하면 파일을 바꾸지 않고 2로 끝납니다.
+[변환 규칙](../features/declarations.md#upgrading-an-in-tree-project)을 보세요.
+
+`config rename OLD NEW`는 정의 파일을 제자리에서 이름 바꾸고 `parts`, Artifact 참조,
+전체가 보관한 그 이름의 위치를 한 번에 고칩니다. 손대지 않은 텍스트와 주석은 보존합니다.
+OLD가 없거나 NEW가 잘못됐거나 이미 있거나, 결과 정의가 잘못되거나 파일 내용이 달라졌으면
+전체 작업을 거부합니다. 정의를 만들거나 지우는 것은 파일 편집이며,
+[데스크톱](../desktop/index.md) Current에서도 검사하며 편집할 수 있습니다. MCP와 터미널 UI는
+정의를 편집하지 않습니다.
 
 ## Human 요청 {#human-requests}
 

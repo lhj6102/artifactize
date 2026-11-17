@@ -274,15 +274,20 @@ Each eval's action says what `verify` would do with it:
 | `wait` | no result, and a dependency's result exists only after verify runs it | `Waiting for current GREEN dependency evidence: core/tests` |
 | `wait` | its dependencies are ready and the same review is already running; verify joins that execution instead of starting another | `The current eval and fingerprints have a live execution.` |
 
-Status cannot say whether a `wait` eval will execute. Text ends with, for example, `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on a merged
-checkout answers what verify will re-review there without running it. Force still
-applies only to selected executable evals. Human execution actions record a waiting
-request; an active Human execution of the same key projects DEFERRED and a
-`wait` action, even after the original verifier exits. Saved attempts are read
-for this canonical repository only: each eval's optional `last: {runId, verdict, fingerprint?}` is historical,
-not current evidence. Use `run show RUN_ID` for full attribution. A GREEN or RED without a reuse key
-satisfies only its own Run, so its later status is STALE rather than reuse.
-Basis-only scopes can be satisfied; a basis with unmet dependencies is INCOMPLETE.
+Status cannot say whether a `wait` eval will execute. Text ends with, for example,
+`Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`: on a merged checkout,
+this tells you what verify would re-review without running it. Force applies only to
+selected executable evals.
+
+Starting a Human eval records a waiting request. If a Human review with the same key
+is already active, status shows DEFERRED with a `wait` action, even after the original
+verifier exits.
+
+The optional `last: {runId, verdict, fingerprint?}` shows the last saved attempt in
+this checkout, not current evidence or another checkout's history. Use
+`run show RUN_ID` for its full attribution. A GREEN or RED without a reuse key satisfies
+only its own Run, so later status shows STALE rather than reuse. A basis-only scope
+can be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
 When an eval with a reuse key has no current cached result, `status` explains what
 changed since its last GREEN or RED result with the same criteria, and reports
@@ -319,7 +324,8 @@ changed since that end, not files changed. See [Monitor](../tui/index.md#monitor
 any Artifact: the Agent sees the extracted current graph as a tree; the Human
 opens the desktop app on the branch's [Current](../desktop/index.md#current),
 without requiring a saved Run.
-The optional root [`.artf` graph Artifact](declarations.md#graph-artifact)
-has ordinary evals and appears in Runs and status like any other Artifact. Only
-its fingerprint algorithm is different; there is no graph-specific verification
-flow or automatic relation to the root folder Artifact.
+To review the definitions themselves, create an ordinary node with
+`path = ".artifactize/"`, a definition subfolder, or one definition file.
+It has ordinary evals and the default artifactsum; there is no graph-specific
+verification flow or automatic relation to any other node. Its `.artf` inputs use
+the [definition view](fingerprint.md#graph-fingerprint).

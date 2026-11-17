@@ -22,7 +22,7 @@
 
 | 내장 도구 | 인자 | 결과 |
 |---|---|---|
-| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름순으로 정리한 전체 Artifact/eval 트리, 추출한 기준, 그래프 fingerprint, 입력 → 사용처 관계 |
+| `graph` | 고정 선언은 `args = []`, 호출은 `{}`입니다 | 이름순으로 정리한 전체 Artifact/eval 트리, 추출한 기준, Artifact Graph fingerprint, 입력 → 사용처 관계 |
 | `read` | `{path, offset?, limit?}`. offset은 1부터 세는 줄이며(기본 1, 최대 9007199254740991), limit은 기본 80, 범위 1–500입니다 | `artifactId`, `resolvedArtifactId`, `path`, `lines: [{number, text}]`, `startLine`, null일 수 있는 `endLine`, `lineCount`, EOF를 알 때만 `totalLines`, `truncated`, null일 수 있는 `nextOffset` |
 | `list` | `{path?, offset?, limit?}`. offset은 0부터 세며(기본 0, 최대 9007199254740991), limit은 기본 200, 범위 1–200입니다 | `artifactId`, `path`, 정렬된 `entries: [{name, path, kind}]`, `totalEntries`, `truncated`, null일 수 있는 `nextOffset` |
 | `glob` | `{pattern, path?}`. `path`는 디렉터리여야 합니다 | 검색한 `path`, 정렬된 논리적 `files` 최대 200개, `truncated` |
@@ -40,9 +40,10 @@ Artifact를 나타내는 정보 `{"artifactId":"app","resolvedArtifactId":"spec"
 `symlink`, `other`입니다. glob/grep은 검색한 논리적 `path`를 돌려주며, grep이 찾은 줄 번호는
 1부터 셉니다.
 
-경로는 도구를 선언한 Artifact를 기준으로 한 상대 논리 경로입니다. 그 안에 선언된 폴더 Artifact로
-들어가는 경로는 eval이 그 Artifact도 참조할 때만 닿습니다. 참조하지 않으면 `list`, `glob`, `grep`은 그
-폴더가 없는 것처럼 건너뜁니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
+경로는 도구를 선언한 Artifact를 기준으로 한 상대 논리 경로입니다. 폴더 부분은 eval이
+그 부분도 참조할 때만 접근할 수 있습니다. 참조하지 않으면 `list`, `glob`, `grep`은 그
+폴더가 없는 것처럼 건너뜁니다. 디스크에서 폴더 안에 있다는 이유만으로 부분이 되지는 않으며,
+부분으로 선언하지 않은 폴더의 내용에는 평소처럼 접근할 수 있습니다. 경로를 생략하면 해당 Artifact의 루트를 가리킵니다. 다른 Artifact의 파일은 그 Artifact의 도구로 읽으며, eval이 그 Artifact를 참조하면
 그 도구를 쓸 수 있습니다. 절대 경로, 경로를 거슬러 올라가는 구성 요소, 심볼릭 링크는 받지
 않습니다. 논리적 경로는 4096자까지이고(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다), 경로 전체가 `.` 하나이면 list/glob/grep에서
 파일 Artifact나 aspect의 가상 루트로 해석합니다. 그 밖에는 ASCII 제어 문자, 백슬래시, 콜론, 빈 구간, `.`이나 `..` 구간이 있으면
@@ -53,15 +54,25 @@ Artifact를 나타내는 정보 `{"artifactId":"app","resolvedArtifactId":"spec"
 없으며, `list`는 junction을 `symlink`로, 그 밖의 reparse point를 `other`로 보여 줍니다. 파일 Artifact는 대상 파일만 보여 주고, 작업 디렉터리에 함께 있는 다른 파일은 보여 주지 않습니다. 경로 없이 또는 `path: "."`로 `list`를 호출하면 그 가상 루트의 대상
 파일을 보여 줍니다. 대상 파일을 읽을 때는 파일 이름을 지정하며, 경로는 그 파일이 있는 폴더를 기준으로 씁니다.
 
+폴더 부분의 대상이 도구를 선언한 Artifact의 폴더나 그 상위 폴더이면, 루트 목록을 보거나
+대상 파일을 읽을 때도 그 부분의 이름을 참조해야 합니다. 오류 메시지가 참조할 부분을
+알려 줍니다. 참조해도 원래 파일 Artifact나 aspect의 경로 제한이 사라지지는 않습니다.
+
 재사용을 끈 경우에도 내장 도구나 명령 도구를 호출하기 전에 허용 범위에 포함된 대상 파일을 매번 확인합니다. 대상이 없거나, 일반 파일이 아니거나, 심볼릭 링크로 바뀌었으면 명령을 실행하지 않고
 오류를 돌려줍니다.
 
-read는 원래 줄을 중간에서 자르지 않고 **줄 전체**를 최대 64 KiB까지 돌려주며, 각 줄의 `text`에 줄 끝(`\n`이나 Windows의
+일반 파일에서 read는 원래 줄을 중간에서 자르지 않고 **줄 전체**를 최대 64 KiB까지 돌려주며, 각 줄의 `text`에 줄 끝(`\n`이나 Windows의
 `\r\n`)과 UTF-8 바이트 순서 표시(일부 편집기가 파일 맨 앞에 넣는 보이지 않는 표시)를 그대로
 둡니다. 요청한 줄만 디코딩합니다. 잘못된 UTF-8이나 NUL은 오류이고, 요청한 첫 줄이 너무
 커도 오류입니다. 빈 파일은 줄 0개와 `totalLines: 0`을 돌려주고, 파일 끝을 넘는 페이지는 줄 0개와 0이
 아닌 실제 전체 줄 수를 돌려줍니다. 돌려받은 `text` 값을 이어 붙이면 줄 번호가 붙지 않은 그 범위의 원문을
 그대로 복원할 수 있습니다.
+
+TOML이 올바른 `.artf` 파일은 read와 grep에서 [정의 보기](../declarations.md#graph-artifact)를
+사용합니다. 텍스트와 줄 번호는 이 보기를 기준으로 하므로 디스크의 파일과 다를 수 있습니다.
+`.artf` 입력이 8 MiB를 넘으면 한 페이지만 요청해도 일부 정의를 돌려주는 대신 실패합니다.
+인자를 고정한 read와 CLI read도 같습니다. 일반 read의 64 KiB 한도는 출력 크기를 제한하는
+것이지 정의 입력 크기를 제한하는 것은 아닙니다.
 
 `glob` 내장 도구는 디렉터리 `path`가 필요하며, 내용을 보지 않고 일치하는 파일 이름을
 고릅니다(바이너리 파일 이름 포함). 파일이나 폴더 이름이 올바른 UTF-8이 아니면, 일치하지 않는
@@ -104,9 +115,10 @@ glob 패턴은 `path` 기준입니다. `*`는 폴더 이름 하나 안에서, `*
 }
 ```
 
-scope 항목에는 정규화된 실제 경로, `kind`(`file`, `folder`, `aspect`, `graph`), 폴더 안에 선언된
-폴더 Artifact의 논리적 경로인 `nested`, aspect의 `select`가 들어 있습니다. aspect의 `path`는 그 선언이
-있는 폴더입니다. 파일 Artifact라면 `context.artifactPath`와 그 scope 항목의 `path`는 프로세스 작업
+로컬 scope 항목에는 정규화된 실제 경로, `kind`(`file`, `folder`, `aspect`), 폴더 부분의
+논리적 경로인 `nested`, aspect의 `select`가 들어 있습니다. `live` 항목의 `path`는 파일
+시스템 경로가 아니라 URI 그대로입니다. 이전에 저장된 메타데이터에는 `graph`가 있을 수
+있습니다. aspect의 `path`는 선택한 폴더입니다. 파일 Artifact라면 `context.artifactPath`와 그 scope 항목의 `path`는 프로세스 작업
 디렉터리가 아니라 그 파일을 가리키며, 작업 디렉터리는 파일이 들어 있는 폴더입니다. 파일
 Artifact 참조 뒤에는 `/path`처럼 하위 경로를 붙일 수 없습니다. 이 프로토콜 키는 camelCase를 유지하며,
 선언에서는 `execution_paths`와 `input_schema`를 씁니다. `executionPaths`는 비어 있으면

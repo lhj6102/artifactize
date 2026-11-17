@@ -1,16 +1,17 @@
 # Fingerprint와 재사용 {#fingerprints-and-reuse}
 
-`artifactize verify --all --wait`를 두 번 실행해 보세요. 두 번째에는 모든 eval이
-`GREEN (reused …)`으로 나오고 아무것도 다시 실행되지 않습니다. 파일 하나를 바꾸고 다시
+파일을 대상으로 하고 재사용할 수 있는 검사로 이루어진 프로젝트에서
+`artifactize verify --all --wait`를 두 번 실행해 보세요. 두 번째에는 GREEN 결과를
+재사용해 아무것도 다시 실행되지 않습니다. 아래에서 설명하는 Live Runtime 관측은 매번
+실행합니다. 파일 하나를 바꾸고 다시
 verify하면 그 파일에 의존하는 eval만 실행됩니다. fingerprint는 Artifact의 리뷰 결과에 영향을
 주는 입력을 나타내는 값입니다. eval과 그 eval이 의존하는 Artifact의 fingerprint가 바뀌지 않았으면 이전 결과를 재사용하므로, 바뀐 부분의 리뷰만 다시 실행합니다.
 
 ## Fingerprint {#fingerprints}
 
 폴더, 파일, aspect Artifact는 기본으로 **artifactsum**을 씁니다. `fingerprint`를 생략하면 그 Artifact의 파일을
-해시하고, 스크립트를 고를 수도 있습니다. 루트 그래프 Artifact는 항상
-[구조 기반 그래프 fingerprint](#graph-fingerprint)를 쓰며, `fingerprint`를 선언해 그 값을
-바꾸거나 끌 수 없습니다. 아래 방식으로 계산한 폴더·파일 Artifact의 fingerprint에는 도구 선언이나 다른 Artifact의
+해시하고, 스크립트를 고를 수도 있습니다. [정의 파일](#graph-fingerprint)을 대상으로
+하는 노드도 같습니다. 특별한 종류를 따로 만들 필요는 없습니다. 아래 방식으로 계산한 fingerprint에는 도구 선언이나 다른 Artifact의
 값이 들어가지 않습니다. 의존하는 Artifact의 fingerprint는 [재사용 키](#the-reuse-key)에 반영됩니다.
 
 - 생략하면 artifactsum을 씁니다. 그 Artifact의 입력 경로와 내용을 SHA-256으로 해시한 값에
@@ -29,22 +30,17 @@ Artifact의 파일이 바뀌거나, eval이 의존하는 Artifact의 fingerprint
 fingerprint = { files = ["src"], ignore = ["*.log"] }
 ```
 
-- `files`: 그 Artifact의 폴더를 기준으로 한 중복 없는 경로 1–64개이며, 각 경로는 1024자까지입니다(이모지처럼 기본 다국어 평면 밖의 문자는 2자로 셉니다).
-  기본값은 `["."]`이며, 그 Artifact에 속한 파일을 가리킵니다. 경로는 존재해야 하고 Artifact 안에 있어야 하며,
-  안에 선언된 폴더 Artifact를 가리키는 경로는 거부합니다. 디렉터리를 훑을 때 안에 선언된 폴더 Artifact와
-  `*.artf` 선언은 모두 건너뜁니다. `.artf` 파일을 직접 입력으로 적으면 알림 없이 건너뛰지 않고
-  `config check`가 실패합니다. 이름이 `.artf`로 끝나는 디렉터리가 있으면
-  잘못된 선언으로 처리하며 선언 찾기가 실패합니다. 전체의 해시에서는 모든
-  [부분](artifact.md#composition)의 파일을 제외합니다. 옆에 있는 파일 Artifact의 대상,
-  안에 선언된 폴더의 내용, aspect가 고른 경로 모두 해당하며, `files`에 직접 적어도 제외합니다.
-  각 부분의 파일은 그 부분에서 한 번만 해시하고, 전체의 eval 키에는 부분의 fingerprint를 넣습니다.
+- `files`: 대상 폴더 기준의 중복 없는 경로 1~64개이며 각 경로는 1024자까지입니다.
+  기본 다국어 평면 밖의 문자는 두 자로 셉니다. 기본값은 `["."]`입니다.
+  폴더, 파일, aspect 선택 모두 부분과 그 부분의 부분이 가진 대상은 해시에서 뺍니다.
+  폴더 부분의 파일을 전체의 입력으로 직접 적을 수 없습니다. 부분 관계가 아닌 겹치는
+  Artifact는 공유 파일을 각각 해시합니다. `.artf`도 아래의 정의 보기를 적용하는 일반 입력입니다.
 - `ignore`: 그 Artifact의 폴더를 기준으로 한 `.gitignore` 형식의 glob 패턴을 최대 64개 지정할 수 있으며, 패턴은
   중복될 수 없고 부정 패턴은 쓸 수 없습니다. 비어 있거나, `#`로 시작하거나, 제어 문자가 든 패턴은 안 됩니다. 이 패턴에 맞는 파일은
   `.git`, `__pycache__/`, `*.pyc`, `target/`, `node_modules/` 같은 내장 ignore처럼 항상 제외합니다. `.gitignore`에
   적힌 패턴과 일치하는 파일도 git과 같은 규칙에 따라 제외합니다. 저장소 루트(`--repo`)에서 Artifact까지의 경로와
   탐색 중인 하위 디렉터리에 있는 `.gitignore`를 모두 적용합니다. 패턴은 그 파일이 있는 폴더를 기준으로 하고, 부정 패턴도 쓸 수
-  있으며, 하위 디렉터리의 `.gitignore` 규칙이 상위 디렉터리의 규칙보다 우선합니다. `files`에 직접 적은 파일은
-  선언 파일이 아니라면 어떤 패턴으로도 제외되지 않습니다.
+  있으며, 하위 디렉터리의 `.gitignore` 규칙이 상위 디렉터리의 규칙보다 우선합니다. `files`에 직접 적은 파일은 어떤 패턴으로도 제외되지 않습니다.
 
 파일 Artifact는 대상 파일만 해시합니다. artifactsum 형식을 직접 쓸 때는
 `fingerprint = { files = ["hero.png"] }`처럼 그 파일만 적어야 합니다. 파일 Artifact에서는
@@ -73,7 +69,7 @@ eval의 키에는 대상 Artifact, 대상의 모든 [부분](artifact.md#composi
 Human 승인도 해당하며, 스크립트 출력이 그대로이거나 eval이 이미 그 부분을 참조했어도 다시 리뷰합니다.
 그다음 Run부터는 평소처럼 재사용합니다. 저장된 Run과 결과는 계속 읽을 수 있으며 상태를 초기화할 필요는 없습니다.
 
-키에는 대상 Artifact와 포함된 모든 의존성의 이름과 종류(`folder`, `file`, `aspect`, `graph`)가
+키에는 대상 Artifact와 포함된 모든 의존성의 이름과 종류(`folder`, `file`, `aspect`, `live`)가
 들어갑니다. 폴더가 파일로 바뀌면 스크립트가 같은 fingerprint를 내더라도 이전 결과를 재사용하지
 않습니다. 실제 경로는 키에 들어가지 않으므로, 복사본의 이름, 종류, fingerprint가 원본과 같으면
 기존 리뷰 결과를 재사용합니다. 포함한 Artifact의 이름을 바꾸면 키가 바뀝니다. 이름이 다른 두 Artifact도 결과를 함께 쓸 수 있습니다.
@@ -93,9 +89,10 @@ ID와 제목, 태그, 저장소 경로, 쓰지 않은 프로필 변형, 도구 �
 않습니다. 도구 변경도 반영하려면 관련 파일을 fingerprint에 포함하세요.
 
 실행 가능한 eval은 대상과 의존하는 모든 Artifact에 fingerprint가 있을 때만 재사용 키가 만들어집니다.
-생략하면 폴더와 파일 Artifact(그 종류의 basis Artifact 포함)는 artifactsum을 쓰고, 그래프
-Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 파일 Artifact가
-`fingerprint = false`를 선언하면 그 eval은 재사용하지 않아서, `verify`할 때마다 다시
+생략하면 폴더·파일·aspect Artifact(그 종류의 basis Artifact 포함)는 artifactsum을 씁니다.
+Live Artifact는 스크립트가 없으면 스냅샷이 없으며, Live를 다루는 Runtime eval은 스냅샷이
+있어도 재사용하지 않습니다. 포함된 Artifact가 `fingerprint = false`를 선언해도 그 eval은
+재사용하지 않아서, `verify`할 때마다 다시
 리뷰합니다. `status`는 eval마다 상태와 동작의 이유를 알려 줍니다.
 [status 상태](../cli/index.md#status-states)를 보세요.
 
@@ -113,8 +110,9 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 
 결과를 재사용하기 전에 artifactize는 리뷰 범위에 포함된 대상 파일을 다시 확인합니다. 대상은 심볼릭 링크를 거치지
 않는 일반 파일로 존재해야 합니다. `fingerprint = false`로 재사용을 꺼도 대상 파일이 안전한지
-확인하는 절차는 그대로 진행됩니다. 대상은 fingerprint 준비와 재확인, eval 시작과 끝, 도구 호출 때마다
-확인합니다.
+확인하는 절차는 그대로 진행됩니다. 대상은 fingerprint 준비와 재확인, Runtime·Agent eval의
+시작과 끝, 도구 호출 때 확인합니다. 재사용 키가 없고 Live 입력도 없는 Human 제출에서는
+대상의 존재 여부를 다시 확인하지 않습니다.
 
 캐시가 적중하면 eval을 실행하지 않고, 요청한 프로필이나 스키마로 다시 검사하지도 않고 원래
 결과를 돌려줍니다. 결과를 만든 프로필과 요청한 프로필을 따로 기록하며, 결과를 재사용한 요청에서는
@@ -129,21 +127,17 @@ Artifact는 항상 구조 기반 그래프 fingerprint를 씁니다. 폴더나 �
 새 기록으로 추가하고, 리뷰 저장소가 설정되어 있으면 그곳에도 게시하며, 이후 Run에서 재사용합니다. 강제로
 실행했거나 재사용 키 없이 실행한 결과도 그 Run의 검증에 반영되고 실행 기록으로 남습니다.
 
-## 그래프 fingerprint {#graph-fingerprint}
+## 정의 파일의 fingerprint {#graph-fingerprint}
 
-루트 [`.artf` 그래프 Artifact](declarations.md#graph-artifact)는 `graph:<sha256>`을 씁니다. 이
-값은 파일이 옮겨지거나 내용이 바뀔 때가 아니라, 프로젝트의 구조나 기준이 바뀔 때 바뀝니다. 다음을
-포함합니다.
+정의 파일은 중첩 프로젝트 안에 있어도 일반 artifactsum으로 다룹니다.
+기본 [artf 보기](declarations.md#graph-artifact)는 위치, 메모, 서식을 재사용 판단에서
+제외합니다. 어떤 편집이 반영되는지, 파일 도구가 무엇을 보여 주는지, 정의 리뷰 범위를
+줄이려면 어떻게 하는지는 그 페이지를 보세요.
 
-- Artifact 이름과 종류, `basis`, aspect의 `select`, fingerprint 범위: artifactsum의 `files`와 `ignore`, 스크립트의
-  `command`, `args`, `files`, 또는 `fingerprint = false`.
-- 관계: 폴더와 `parts`에 따른 구성(부분 → 그 부분으로 이루어진 Artifact), 지시문 참조,
-  Runtime argv 참조(eval ID, argv 위치, 인자의 Artifact 참조 뒤에 붙인 하위 경로 포함)와 그 입력 대상.
-- eval ID, eval을 선언한 Artifact, 제목, 평가 기준: 기본 프로필 종류, 지시문과
-  eval 작성자가 제공한 추가 정보를 포함한 `payload` 전체, `pass_schema`, `fail_schema`, Runtime `command`/`args`.
+## Live 스냅샷과 관측 {#live-snapshots-and-observations}
 
-평가 실행 옵션은 빠집니다. 여기에는 백엔드, 모델, reasoning과 fingerprint 스크립트 시간 제한을 비롯한 모든 `timeout_ms`, `max_tool_calls`, `max_tokens`, `profile_variants`, eval `mutex` 태그가 포함됩니다. 모든 도구 뷰와 세션, Artifact 태그, 저장소 경로, 소스 파일 내용도 빠집니다. 선언한 범위 경로와, 범위가 정해진
-인자의 Artifact 참조 뒤에 붙인 하위 경로는 fingerprint에 들어갑니다. 이런 논리적 선언과 Artifact 간의 포함 관계를 유지한 채 경로만 바꾸면 그래프 fingerprint는 달라지지 않습니다. 실행 옵션은 그래프 fingerprint에서 빠질 뿐, 일반 상태 기록에는 그대로 저장됩니다.
-
-그래프 리뷰는 항상 이전 구조와의 차이가 아니라 현재 구조를 봅니다. 그래프 eval의 제목을 바꾸면
-그래프를 다시 리뷰합니다. 다른 eval은 제목을 바꿔도 다시 리뷰하지 않습니다.
+[Live Artifact](declarations.md#live-artifacts)는 스크립트로 관측한 상태의 스냅샷을 받습니다.
+생략하면 스냅샷과 재사용할 키가 없습니다. Agent·Human 리뷰는 다루는 스냅샷이 유지되는 동안
+재사용하며, 리뷰 도중 바뀌면 `INPUT_CHANGED`가 됩니다. Live Artifact를 다루는 Runtime eval은
+스냅샷이 같아도 verify마다 실행합니다. 스냅샷이 같다는 것만으로 서비스가 여전히 동작한다고
+볼 수는 없습니다.

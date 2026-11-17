@@ -30,6 +30,16 @@ To learn of a release, artifactize asks GitHub for the latest release; the reque
 nothing but artifactize's version. Set `ARTIFACTIZE_NO_UPDATE_CHECK=1` to turn the lookup
 off.
 
+### Moving declarations into `.artifactize/`
+
+The new reader uses only `.artifactize/**/<name>.artf`. Before normal verification,
+run `artifactize config migrate` in each old-format project, or choose it with `--repo`.
+The command preserves criteria and comments, adds explicit target paths and parts,
+and removes the converted marker files and `.artfignore`. It reports excluded nested
+projects; migrate those separately. Check the printed changes, then run `config check`
+and verify. [Declarations](../features/declarations.md) covers refusals and reuse.
+The saved-state schema remains 10; this is a project-definition change, not a state upgrade.
+
 ### Upgrading to 0.16
 
 The state's format of saved review data (its schema) is upgraded automatically on first use,
@@ -69,10 +79,12 @@ selects that repository initially.
 
 ### Upgrading to 0.9
 
-Rewrite declarations as TOML `index.artf` for folders and `<file>.artf` for files. Keys
-are snake_case and evals are `[evals.<id>]` tables; `.artfignore` replaces the old ignore
-file. There is no converter. Have an agent rewrite and commit the files, remove the
-legacy markers and run `artifactize config check`. Families are removed; use your own generator if
+For a pre-0.9 project, rewrite the old declarations as today's
+`.artifactize/<name>.artf` files with explicit `path` and `parts`.
+Keys are snake_case and evals are `[evals.<id>]` tables. `config migrate` converts the
+TOML marker-file format introduced in 0.9, not formats from earlier releases.
+Have an agent rewrite and commit those earlier files, remove their legacy markers
+and run `artifactize config check`. Families are removed; use your own generator if
 you want templates and commit its `.artf` output. See [Declarations (.artf)](../features/declarations.md).
 
 A state from before 0.9 (schemas 1–5) is refused: set `ARTIFACTIZE_STATE_HOME` or

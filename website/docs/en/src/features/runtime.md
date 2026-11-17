@@ -5,7 +5,8 @@ whose exit status already decides the answer. No model or API key is needed. In 
 `library` folder:
 
 ```toml
-name = "library"
+# .artifactize/library.artf
+path = "library/"
 
 [evals.tests]
 title = "The library tests pass"
@@ -40,7 +41,9 @@ read the same saved evidence.
 References such as `{spec}/requirements.json` in the declared operands admit those
 inputs. If a file its fingerprint covers changes while the command runs, the result is
 ERROR (`INPUT_CHANGED`) instead of a verdict; files outside the fingerprint are not
-checked, and an eval without reuse (`fingerprint = false`) is not rechecked. A later Run reuses
+checked. An eval without reuse (`fingerprint = false`) normally skips that recheck,
+but a Runtime eval covering Live inputs still compares every available snapshot and
+can end with `INPUT_CHANGED`. A later Run reuses
 an unchanged result, including a RED result, rather than rerunning the command.
 See [Fingerprint](fingerprint.md) and the [runtime execution reference](declarations.md#runtime-execution)
 for exact limits, environment, substitution and process cleanup.

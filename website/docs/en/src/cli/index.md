@@ -35,6 +35,8 @@ on the root command and on `artifactize tools`.
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `mcp` | | [MCP stdio protocol](../agent-plugin/mcp.md); diagnostics on stderr | 0 on clean disconnect |
 | `config check` | | text or JSON | 0 |
+| `config migrate` | project chosen by `--repo` | text or JSON change report | 0 |
+| `config rename OLD NEW` | | silent success; changed contents with `--json` | 0 |
 | `config graph [ARTIFACT]` | `--impact` | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
 | `run watch RUN_ID` | | JSON-line updates, eval results, final validation | Run outcome |
@@ -289,7 +291,8 @@ it, input evidence must already be available. An Artifact selector also executes
 the Evals of its [parts](../features/artifact.md#composition) and of its cycle peers,
 which review it; `--force` marks the selected Artifact's and its parts' Evals, never its
 cycle peers' or dependencies'. File Artifacts are selected by their declared names, and
-selecting the folder Artifact around a file Artifact selects it as a part.
+selecting a surrounding folder Artifact selects that file only when it is explicitly
+listed as a part.
 
 For which evals wait or block, including dependency cycles, see
 [Eval dependencies](../features/artifact.md#eval-dependencies).
@@ -308,6 +311,7 @@ shows as `PASS`, and the action says what `verify` would do next.
 |---|---|---|
 | `PASS` | a GREEN result matches its current reuse key and its gates are met | its evals are `PASS`, and its parts and the Artifacts it depends on are satisfied |
 | `RED` | a RED result matches its current reuse key | one of its evals or parts is `RED` |
+| `ERROR` | a required target is unavailable now; its reason starts with `PREPARATION_FAILED:` | one of its evals or parts is `ERROR` |
 | `BLOCKED` | a gate is RED | one of its evals or parts is `BLOCKED` |
 | `WAIT_DEPENDENCY` | a gate has no current result yet | one of its evals or parts is waiting |
 | `WAITING_HUMAN` | a sign-off an earlier artifactize asked for waits for a person | — |
@@ -318,11 +322,12 @@ shows as `PASS`, and the action says what `verify` would do next.
 | `INCOMPLETE` | — | its own evals are `PASS`, but an Artifact it depends on is not satisfied |
 | `BASIS` | — | a basis Artifact whose dependencies are satisfied |
 
-An Artifact shows the first of `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`,
+An Artifact shows the first of `ERROR`, `RED`, `BLOCKED`, `WAIT_DEPENDENCY`, `DEFERRED`,
 `PROVISIONAL`, `STALE` and `UNREVIEWED` that one of its evals or one of its
 [parts](../features/artifact.md#composition) has. An Artifact without evals of its own
-therefore takes its state from its parts. `ERROR` belongs to Run
-output; `status` reports an eval whose last attempt failed as `STALE`.
+therefore takes its state from its parts. Current target preparation failures appear
+as per-eval `ERROR` states; unrelated forecasts remain available. A failed historical
+attempt without a current preparation error appears as `STALE`.
 
 ## Saved Run evidence and terminal views
 
@@ -423,22 +428,36 @@ separate `history` command.
 ## Config graph
 
 `config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
-including cycle peers. `--impact` includes downstream consumers and their required
-inputs: conservative structural reachability, not an exact reuse-key prediction.
-MCP `config_graph` exposes the same definitions with single/multiple Artifact or
-eval scope; use `status` for actual execution/reuse decisions. Text lists Artifacts with tags and file-kind markers, evals, components and
+including cycle peers. `--impact` includes potentially affected consumers and the
+inputs they need; it may include checks whose results can still be reused. Use
+`status` to see which checks actually need another review. MCP `config_graph` exposes
+the same definitions with single/multiple Artifact or eval scope. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
 part/instruction/argv relation metadata, cycle markers and
 dependency-first strongly connected components (SCCs): groups of Artifacts that
-mutually depend on one another. Artifact entries carry `kind` (`file`, `folder`, `aspect` or `graph`) and
-workspace-relative target `path`. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)
+mutually depend on one another. Artifact entries carry `kind` (`file`, `folder`, `aspect` or `live`),
+target `path` and the project-relative `definition` file. Status also shows file kinds and paths; [Monitor](../tui/index.md#monitor)
 shows them on screen.
 Component IDs are numbered across the whole project graph, so output filtered to some
 Artifacts can skip numbers. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output
 level, with no `plan`, `--compact` or `--full`. The former top-level `graph`
 command is hidden from help; it prints `graph moved to "artifactize config graph"` and exits 2.
+
+## Definition changes
+
+`config migrate` converts the old in-tree declarations to `.artifactize/<name>.artf`.
+Choose the project with `--repo`; there are no migration options. It prints each file
+move, inferred part made explicit, added ignore and excluded separate project.
+A refusal exits 2 without changing files. See [the migration rules](../features/declarations.md#upgrading-an-in-tree-project).
+
+`config rename OLD NEW` renames the definition file in place and updates `parts`,
+Artifact references and the positions wholes keep for that name, in one change.
+It preserves untouched text and comments. Unknown OLD, an invalid or existing NEW,
+invalid resulting definitions or changed file contents refuse the whole operation.
+Creating and deleting a definition is otherwise a file edit; the [desktop](../desktop/index.md)
+also offers validated editing on the Current. MCP and the terminal UI do not edit definitions.
 
 ## Human requests
 

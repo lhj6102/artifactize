@@ -25,8 +25,8 @@ found, install that tool or add its directory to `PATH` before continuing. Proje
 run their declared commands as given on every OS; see
 [Operating systems](../features/others/platforms.md).
 
-Each reviewed piece is an **Artifact**. Its `index.artf` is a text configuration
-file listing its checks, called **evals**. It uses **TOML**, a readable `key = value`
+Each reviewed piece is an **Artifact**. A named `.artf` in `.artifactize/` gives its
+`path` and its checks, called **evals**. The file name is its name. It uses **TOML**, a readable `key = value`
 format. A **fingerprint** identifies the reviewed inputs; the built-in
 **artifactsum** makes that value from files so artifactize can detect changes.
 
@@ -83,20 +83,20 @@ Nothing executes this time: all three results are reused. Both commands exit 0,
 and status identifies the reusable results. Keep this terminal open so later
 steps use the same temporary state directory.
 
-The [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) also shows how to make a check RED. Each folder declares itself in
-its `index.artf` file. Leaving out `fingerprint` uses the built-in file-change
+The [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) also shows how to make a check RED. Each target is declared by a named file in `.artifactize/`, with its project-relative
+`path` and explicit `parts`. Leaving out `fingerprint` uses the built-in file-change
 check, artifactsum. To disable reuse, set `fingerprint = false`. See [Declarations (.artf)](../features/declarations.md) for snake_case keys and the JSON/output naming
 distinction.
 
 ## Files and Eval dependencies
 
-A sidecar such as `hero.png.artf` declares the neighboring file as an independent
-Artifact. It requires a `name`, uses the same TOML schema as a folder and hashes
+A definition such as `.artifactize/hero.artf` with `path = "hero.png"` declares that file as an independent
+Artifact named `hero`. It uses the same TOML schema as a folder and hashes
 only that file by default. Built-in tools see that file and the inputs explicitly
 made available to its evals, not unrelated sibling files. An eval that uses another
 Artifact, such as a shared checker, names it as `{house-style}`; see
 [Eval dependencies](../features/artifact.md#eval-dependencies). The [posts example](https://github.com/lhj6102/artifactize/tree/main/examples/posts)
-uses three Markdown sidecars and one shared style checker. From the previous
+uses three definitions targeting Markdown files and one shared style checker. From the previous
 example's directory:
 
 ```sh
@@ -124,7 +124,7 @@ See [Eval dependencies](../features/artifact.md#eval-dependencies).
 ## Optional: Agent tools and the Human flow
 
 The tour above needs no model. This optional part does: first put an exact model ID
-in the profile you use in `examples/agent-tools/spec/index.artf` and set up its
+in the profile you use in `examples/agent-tools/.artifactize/spec.artf` and set up its
 credentials, as the
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)
 describes. Add `--profile anthropic` or `--profile codex` to `verify` for the other

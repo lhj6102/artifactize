@@ -166,8 +166,9 @@ Human 승인이 필요한 파일 하나짜리 프로젝트를 만들고, Bob이 
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
 echo 'logo v1' > logo.txt
-cat > index.artf <<'TOML'
-name = "brand"
+mkdir .artifactize
+cat > .artifactize/brand.artf <<'TOML'
+path = "./"
 
 [evals.signoff]
 title = "Sign off"

@@ -83,7 +83,7 @@ checks validate built-in tools without launching a desktop application. Actually
 fallback or model catalog. The default profile uses `backend = "openai"` with
 the placeholder `YOUR_OPENAI_MODEL_ID`. The `anthropic` and `codex` entries in
 `profile_variants` are complete alternative profiles. Replace the `model`
-placeholder of the profile you use in `spec/index.artf`:
+placeholder of the profile you use in `.artifactize/spec.artf`:
 
 | Backend | Credentials | Models | Review command |
 |---|---|---|---|

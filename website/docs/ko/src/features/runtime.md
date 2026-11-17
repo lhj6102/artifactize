@@ -4,7 +4,8 @@
 선언하세요. 모델이나 API 키는 필요 없습니다. `library` 폴더라면 다음과 같습니다.
 
 ```toml
-name = "library"
+# .artifactize/library.artf
+path = "library/"
 
 [evals.tests]
 title = "The library tests pass"
@@ -34,7 +35,8 @@ Human의 추가 결과 필드를 돌려주지 않습니다. 실행이 끝나면 
 
 선언한 인자에 `{spec}/requirements.json` 같은 참조를 쓰면 그 Artifact가 입력이 됩니다. 명령이 실행되는
 동안 fingerprint가 포함하는 파일이 바뀌면 판정 대신 ERROR(`INPUT_CHANGED`)가 됩니다.
-fingerprint 밖의 파일은 확인하지 않으며, 재사용하지 않는 eval(`fingerprint = false`)은 다시
-확인하지 않습니다. 이후 Run은 입력이 바뀌지 않았으면 RED 결과도 그대로 재사용하며, 명령을 다시
+fingerprint 밖의 파일은 확인하지 않습니다. 재사용하지 않는 eval(`fingerprint = false`)은
+보통 이 재확인을 건너뜁니다. 다만 Live 입력을 다루는 Runtime eval은 준비된 스냅샷을 모두
+비교하며, `INPUT_CHANGED`로 끝날 수 있습니다. 이후 Run은 입력이 바뀌지 않았으면 RED 결과도 그대로 재사용하며, 명령을 다시
 실행하지 않습니다. 정확한 한도, 환경, 치환, 프로세스 정리는 [Fingerprint](fingerprint.md)와
 [Runtime 실행 레퍼런스](declarations.md#runtime-execution)를 보세요.

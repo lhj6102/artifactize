@@ -28,6 +28,15 @@ Microsoft Store로 설치했다면 Store가 업데이트하므로 아무것도 �
 GitHub에서 최신 릴리스를 조회합니다. 요청에는 artifactize 버전 말고는
 아무것도 담기지 않습니다. 확인을 끄려면 `ARTIFACTIZE_NO_UPDATE_CHECK=1`을 설정하세요.
 
+### 선언을 `.artifactize/`로 옮기기 {#moving-declarations-into-artifactize}
+
+새 버전은 `.artifactize/**/<name>.artf` 형식의 선언만 읽습니다. 검증하기 전에 예전 형식의 프로젝트마다
+`artifactize config migrate`를 실행하거나 `--repo`로 프로젝트를 고르세요. 기준과 주석을
+보존하면서 대상 경로와 부분을 명시적으로 적고, 변환한 예전 파일과 `.artfignore`를 지웁니다.
+제외한 중첩 프로젝트는 알려 주므로 따로 옮기세요. 출력된 변경을 확인하고 `config check`를
+한 뒤 검증하세요. 거부 조건과 재사용은 [선언](../features/declarations.md)에서 설명합니다.
+저장 상태의 스키마는 10 그대로입니다. 상태가 아니라 프로젝트 정의를 바꾸는 작업입니다.
+
 ### 0.16으로 업그레이드 {#upgrading-to-016}
 
 처음 열면 스키마 6~9의 상태 데이터가 현재 스키마 10으로 자동 업그레이드됩니다. 기존 Run, 캐시 기록,
@@ -62,10 +71,11 @@ eval을 막지 않습니다([0.16으로 업그레이드](#upgrading-to-016) 참�
 
 ### 0.9로 업그레이드 {#upgrading-to-09}
 
-선언을 폴더에는 TOML `index.artf`로, 파일에는 `<file>.artf`로 다시 작성하세요. 키는
-snake_case이고 eval은 `[evals.<id>]` 테이블입니다. `.artfignore`가 예전 무시 파일을
-대신합니다. 변환기는 없습니다. 에이전트에게 파일을 다시 작성해 커밋하게 하고,
-기존 선언 형식의 흔적을 제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
+0.9 이전 프로젝트는 예전 선언을 지금의 `.artifactize/<name>.artf` 파일로 다시 작성하고
+`path`와 `parts`를 명시하세요. 키는 snake_case이고 eval은 `[evals.<id>]` 테이블입니다.
+`config migrate`는 0.9에서 도입한 TOML 표식 파일 형식을 변환하며, 그보다 오래된 형식은
+변환하지 않습니다. 에이전트에게 그 이전 파일을 다시 작성해 커밋하게 하고, 예전 선언 파일을
+제거한 뒤 `artifactize config check`를 실행하세요. Family는 제거되었습니다. 템플릿이
 필요하다면 직접 만든 생성기를 쓰고 그 `.artf` 출력을 커밋하세요. [선언 (.artf)](../features/declarations.md)을 보세요.
 
 0.9 이전의 상태(스키마 1~5)는 거부합니다. `ARTIFACTIZE_STATE_HOME`이나 `--state-dir`을 새

@@ -191,6 +191,69 @@ A Human [`graph` tool](../features/tools/builtin.md#current-project-graph)
 and `artifactize-desktop graph --repo PATH` open the app on this view; opening it
 approves nothing.
 
+### Editing the Current
+
+Only a branch's Current can be edited; a Run's graph is a record. **New Artifact** in the
+graph's tool strip asks for Name and Path, writes `.artifactize/<name>.artf`, and opens
+its Detail. Targets may be defined before they exist. Invalid names or paths say why
+without writing anything.
+
+On an Artifact's tab, **Definition** replaces a Run's **Path**. It shows the definition
+file, an editable Path, Parts, Comment, Rename and Delete. Enter saves a changed Path;
+Esc puts it back. **+ Add** under Parts suggests Artifacts by name; Enter adds one,
+Esc closes it, and **✕** removes a part. Cycles are refused. **Source**, folded at first,
+contains the complete file: edit evals, tools and fingerprints there. Typing shows
+**Save** and **Revert**; Save or Ctrl+S writes it, and Revert reloads the file.
+
+Rename changes the filename in place and updates structural references and saved part
+positions together. Delete names the file it would remove; while other Artifacts name
+it, it refuses and lists them. Every edit validates the project first. An invalid edit
+writes nothing and leaves the text for correction, with a file, line and column for a
+Source error. There is no app undo; these are worktree files, and Git keeps their history.
+
+#### Placing nodes and parts
+
+Drag a node, a minimized whole or a whole's title row to place it. A whole carries its
+parts and comments. A click without movement still opens Detail, background dragging
+pans, and Esc during a drag puts it back without saving. On a Run, dragging only pans.
+
+A box and the top level are automatic until something in them is moved. The first
+top-level move saves every top-level node's shown position in one edit. A whole keeps
+its parts' positions in its own definition; each top-level node keeps its own. Saved
+places survive reopening and also draw this branch's Runs. New nodes appear in free
+space. **Reset layout** in a whole's title row or the Current's tool strip returns that
+box or the top level to automatic; inner boxes keep their own positions.
+
+Drop onto a node or into a whole's box to make it a part; a valid target highlights.
+Moving between boxes removes it from the old whole and adds it to the new one in one
+edit. Dropping outside every box removes that membership. For a shared part, only the
+dragged copy's whole changes; add another whole through Parts in Detail. A cycle is
+refused and the node returns. References are words in evals, not draggable edges:
+change them in Source.
+
+#### Node comments
+
+A node's plain-text comment appears below it, or below a whole's title inside its box,
+and below every copy of a shared part. The graph shows its first three lines, then an
+ellipsis; minimized parts and nodes drawn as blocks do not show comments. This note is
+separate from a Run's submission comment and never changes verification or reuse.
+
+On a Current, **Comment** in Definition or a click on the note opens its full text in
+place. Enter saves; Shift+Enter adds a line; saving empty text removes it. Esc or a
+click outside closes without saving. Drag the note onto another Artifact without a
+comment to move it between their files in one edit. A background, its own node or an
+occupied target leaves it where it was; Esc cancels. On a Run, clicking a comment opens
+its node's Detail and never edits it.
+
+#### Conflicts with file edits
+
+If a terminal or agent changed a file since the Current read it, an edit writes nothing,
+names that file and rescans. Typed Source text stays until you Save or Revert; the scan
+does not overwrite it. A graph move, drop, Reset layout or comment that would write a
+file with unsaved Source is also refused until you save or revert that Source. Untouched
+text and unknown annotation values are retained. See [positions and comments](../features/declarations.md#positions-and-comments)
+for their file form.
+
 ### Graphs
 
 Each node shows its status as a mark and a coloured strip, then how many of its evals are
@@ -217,11 +280,12 @@ left of the Detail when one is open, shows the whole graph in small, each Artifa
 its status's colour, with the part in view framed. A click or a drag in it moves the camera
 there, the zoom kept. It goes when the whole graph is in view.
 
-Every graph is laid out upstream on the left. In a graph of **more than 500 nodes**, zoomed
-out so far that names are too small to read, each Artifact is a block of its status's colour
-and an Artifact with parts its box's outline in that colour; a click still opens it. With
-more than 500 in view, they are painted even where names read. Tab and Enter reach them again
-once you zoom in until names read and at most 500 are in view. An Artifact's Detail draws at most 16 neighbours on each side and counts the rest.
+Every graph places inputs on the left. In a graph of **more than 500 nodes**, zooming
+out until names are too small to read replaces nodes with blocks in their status's
+colour and whole boxes with outlines. Blocks also appear whenever more than 500 nodes
+are in view, even at a readable zoom. Clicking a block still opens Detail. Tab and
+Enter work again when names are readable and at most 500 nodes are in view. Detail
+shows at most 16 neighbours on each side and counts the rest.
 
 An Artifact made of [parts](../features/artifact.md#composition) is drawn as a box around
 its parts, under a title row with its mark, its name and its count, closed by the strip in
@@ -275,8 +339,8 @@ and leaving some graph visible; it keeps that width, also in the next launch.
 A click on a section's header row (or Enter or Space on it) folds or unfolds the section,
 and every Detail remembers that, also in the next launch; a Human review's Tools, Tool log
 and Result always stay open. Unfolded at first: **Evals**,
-**Tools**, **Path**, **Result**, **Outcome** and **Waits for**. Folded at first:
-**Neighbours**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**,
+**Tools**, **Path**, **Definition**, **Result**, **Outcome** and **Waits for**. Folded at first:
+**Neighbours**, **Source**, **Execution options**, **Execution metadata**, **Fingerprint**, **What**,
 **Provenance**, **Debug** and **Technical**.
 
 An Artifact's Detail opens on its own tab, titled with its name. **Evals** lists its evals,
@@ -286,7 +350,7 @@ one opens that eval's tab. **Neighbours**, once unfolded, draws the Artifact bet
 neighbours with the graph's nodes and edges: the Artifacts its evals use on the left, the
 Artifacts whose evals use it on the right. The drawing holds still; a click on a neighbour
 opens that neighbour's Detail. Then come its **Tools**, their **Tool log** once one has run,
-its **Path**, and **Debug**, where every other fact, what it waits for included, folds.
+its **Path** (or **Definition** and **Source** on a Current), and **Debug**, where every other fact, what it waits for included, folds.
 
 On an eval's tab, chips under the title read as a path, `[icon] {name} / [eval] …`: the
 Artifact's own chip, which leads back to the Artifact's tab, then one chip per eval with its
@@ -311,24 +375,15 @@ log while the app runs. The graph's nodes carry no tool buttons. The Tools and t
 only while the Pane's search still lists the branch: if the search hides it, clear or widen
 the search to bring them back.
 
-An eval's tab shows its **Summary**: its status line, its mark and status with what running
-it took and spent (time, tokens in `k` or `M`, model) and how it ended, or what reuse saved;
-its instruction; its **Result**, with findings as numbered items headed by their `item` and
-`where`; then **Execution options**, **Execution metadata** (its times and usage) and
-**Fingerprint** when it has them, and **Debug** with every other fact. What the status line
-says is not repeated below it.
-On a Current it shows whether the eval would run, would be reused or is still being checked
-and why, and the result it would reuse. `t` shows or hides **Debug** on an Artifact's or an
-eval's tab, a Current's Human eval included, and in a Human review; with a log shown, go back
-to its Summary first. An eval with a log switches
-below the chips between its Summary, shown first, and its log, a plain-text choice whose chosen view
-is bold and higher-contrast: an Agent eval's **Agent log** (its conversation, with
-its own scrollbar) or a runtime eval's **Runtime log** (saved stdout/stderr, not a
-live log stream). Missing or remote conversations explain why they are unavailable on
-this machine. A Human eval's tab in a Run holds its review and sign-off, with the
-controls described below. An eval outside the Run's selection, such as one a partial
-`verify` left out, has no request in that Run: its tab shows its sections read-only,
-with no Summary of a result, no Human controls and no Tool log.
+An eval's tab opens on **Summary**: read its status, instruction and result, or on a
+Current, what verify would do and the result it would reuse. Below its chips choose
+**Agent log** for the live conversation or **Runtime log** for saved stdout/stderr.
+An unavailable conversation says why it cannot be read on this machine. Return to
+Summary to use `t` for **Debug**, also on Artifact tabs and in Human reviews.
+
+A Run's Human eval opens its review and sign-off, described below. An eval outside that
+Run's selection has no request: its sections are read-only, without a result Summary,
+Human controls or Tool log.
 
 Agent logs update live. In a focused Agent log, ↑/↓ or `j`/`k` moves by row,
 PgUp/PgDn by page, Home/End or **Top/Bottom** goes to either end, and the mouse wheel
@@ -355,16 +410,12 @@ Esc steps back one stage at a time: it cancels running work, then leaves the for
 leaves the review, back to the Pane (showing it first when it is hidden) or, on a Detail,
 closing the Detail.
 
-A Human review has one order: its instruction, the **Tools** to use, their **Tool log**, and
-the **Result** to write, then **Debug**, folded, with the request's ID, its mode, its
-claimant and how long it has waited (`t` or a click shows it). It opens with its stage
-alone: **CLAIM**, with the claimant's name beside it while another reviewer holds the claim,
-or **REVIEW (yours)** once you claimed it. When the Main area is at least twice as wide as the
-Detail, the Tool log is the view on the left, filling the area under the header row, and the
-rest is a column at the right, where the Detail docks and as wide as it. Narrower, and on a
-Human eval's tab in the Detail, the review reads top to bottom in one column, the Tool log a
-box between the Tools and the Result. The instruction is shown in full; scroll the column to
-read long criteria.
+A Human review opens at **CLAIM**, showing another claimant's name when there is one,
+or **REVIEW (yours)** after you claim it. Read the instruction, use **Tools**, inspect
+**Tool log**, then enter **Result**. Scroll to read long criteria. In wide windows the
+log sits beside the form; in narrow windows and Detail tabs it sits above Result.
+**Debug** starts folded; `t` or its header shows the request ID, mode, claimant and
+waiting time.
 
 Opening a review claims nothing. `c` or **Claim to review** claims it; `u` outside a text
 field, or **Release claim**, releases it, also while you edit its form, whose draft is kept.

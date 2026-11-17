@@ -46,9 +46,10 @@ machine path. List's top-level `artifactId` likewise names the declaring Artifac
 Entry kinds are `file`, `directory`, `symlink` or `other`. Glob/grep return the
 searched logical `path`, and grep's matching line numbers start at 1.
 
-Paths are relative logical paths from the tool's declaring Artifact; a path into a
-folder Artifact nested there reaches it only when the eval references that Artifact too.
-Otherwise `list`, `glob` and `grep` pass over that folder as if it were absent.
+Paths are relative logical paths from the tool's declaring Artifact. A folder part is
+accessible only when the eval references that part too; otherwise `list`, `glob` and
+`grep` pass over its folder as if it were absent. A folder merely nested on disk, but
+not declared as a part, remains ordinary accessible content.
 Omitted paths mean its root. Another Artifact's files are read with
 that Artifact's own tools, which an eval admits when it references the Artifact. They never accept
 absolute paths, traversal components or symlinks. Logical paths are at most
@@ -66,17 +67,28 @@ working directory. `list` with no path or `path: "."` lists that virtual root's
 target file. Read the target by its filename; file paths remain relative to the
 containing folder.
 
+If a folder part targets the declaring Artifact's folder or one of its ancestors,
+even listing the root or reading the target file needs a reference to that named part.
+The error tells you which part to name. Admitting it does not remove the original
+file or aspect's own path restrictions.
+
 Every call validates admitted file targets before invoking a built-in or command
 tool, even when reuse is disabled. A missing, non-regular or symlink-replaced
 target returns an error without running the command.
 
-Read returns at most 64 KiB of **complete original lines**, keeping each line's ending
+For ordinary files, read returns at most 64 KiB of **complete original lines**, keeping each line's ending
 in its `text`, whether `\n` or Windows `\r\n`, and a UTF-8 byte-order mark (an
 invisible marker some editors put at the start of a file). Only requested lines are decoded;
 invalid UTF-8/NUL is an error, as is an oversized first requested line. An empty
 file returns zero lines and `totalLines: 0`; a page past the end of the file
 returns zero lines with the actual nonzero total. Concatenating returned `text` values reproduces
 the source range without added line-number prefixes.
+
+For valid TOML `.artf` files, read and grep use the [definition view](../declarations.md#graph-artifact).
+Their text and line numbers describe that view, not necessarily the file on disk.
+A `.artf` read input over 8 MiB fails, even for one requested page, rather than returning
+a partial definition. This also applies to fixed and CLI reads; the ordinary 64 KiB
+read limit bounds output, not the size of the definition input.
 
 The `glob` built-in requires a directory `path`; it selects matching filenames
 without inspecting contents, including the names of binary files. A file or folder name
@@ -127,9 +139,10 @@ The `json` protocol receives exactly one request on stdin:
 }
 ```
 
-Scope entries contain canonical physical paths, `kind` (`file`, `folder`, `aspect` or
-`graph`), `nested`, the logical paths of folder Artifacts nested in a folder, and an
-aspect's `select`. An aspect's `path` is its declaration's folder. For a file Artifact, `context.artifactPath` and its
+Local scope entries contain canonical physical paths, `kind` (`file`, `folder` or
+`aspect`), `nested` (the logical paths of folder parts) and an aspect's `select`.
+A `live` entry carries its opaque URI as `path`, not a filesystem path. Older saved
+metadata may contain `graph`. An aspect's `path` is its selected folder. For a file Artifact, `context.artifactPath` and its
 scope entry's `path` name the file, not the process cwd; the cwd is its containing
 folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and

@@ -23,7 +23,7 @@ Python 버전과 grep 도움말이 출력되어야 합니다. 둘 중 하나라�
 artifactize는 모든 OS에서 프로젝트에 선언된 명령을 적힌 그대로 실행합니다.
 [운영체제](../features/others/platforms.md)를 보세요.
 
-리뷰할 작업 단위마다 **Artifact**를 선언합니다. Artifact의 `index.artf`는 텍스트 설정 파일이며, 여기에 **eval**이라는 리뷰 항목을 나열합니다. 이 파일은 읽기 쉬운 `key = value` 형식의 **TOML**로 작성합니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장 **artifactsum**은 파일 내용을 해시해 변경 여부를 감지합니다.
+리뷰할 작업 단위마다 **Artifact**를 선언합니다. `.artifactize/` 안의 이름을 붙인 `.artf`에 대상 `path`와 **eval**이라는 리뷰 항목을 적습니다. 파일 이름이 Artifact의 이름입니다. 이 파일은 읽기 쉬운 `key = value` 형식의 **TOML**로 작성합니다. **fingerprint**는 리뷰된 입력을 식별합니다. 내장 **artifactsum**은 파일 내용을 해시해 변경 여부를 감지합니다.
 
 Run과 결과는 상태 디렉터리에 저장되며, 이 데이터를 통틀어 **상태**(state)라고 합니다.
 이 실습의 리뷰 기록은 평소 쓰는 상태 디렉터리와 분리된 임시 디렉터리에 저장하세요. POSIX 셸(예를 들어
@@ -78,18 +78,18 @@ status는 재사용할 수 있는 결과를 알려 줍니다. 이후 단계에�
 디렉터리를 쓰도록 이 터미널을 열어 두세요.
 
 [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations)는 eval이 RED가 되는 상황을 만드는 방법도 보여 줍니다. 각 폴더는
-그 안의 `index.artf` 파일에서 Artifact로 선언됩니다. `fingerprint`를 생략하면 파일 변경 여부를 확인하는 내장 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
+`.artifactize/`의 이름을 붙인 파일에서 `path`로 대상을, `parts`로 부분을 명시해 선언됩니다. `fingerprint`를 생략하면 파일 변경 여부를 확인하는 내장 artifactsum이 쓰입니다. 재사용을 끄려면 `fingerprint = false`로 설정하세요. snake_case 키와 JSON/출력 이름의
 구분은 [선언 (.artf)](../features/declarations.md)을 보세요.
 
 ## 파일과 eval 의존성 {#files-and-eval-dependencies}
 
-`hero.png.artf` 같은 사이드카는 옆에 있는 파일을 독립된
-Artifact로 선언합니다. 사이드카에는 `name`이 필요하고, 폴더와 같은 TOML 스키마를 쓰며, 기본적으로
+`.artifactize/hero.artf`에 `path = "hero.png"`를 적으면 그 파일을 독립된
+`hero` Artifact로 선언합니다. 폴더와 같은 TOML 스키마를 쓰며, 기본적으로
 그 파일만 해시합니다. 내장 도구는 대상 파일과 eval에 명시적으로 제공한 입력에만
 접근할 수 있으며, 같은 폴더의 다른 파일에는 접근할 수 없습니다. 공용 검사기처럼 다른 Artifact를 쓰는 eval은
 그 Artifact를 `{house-style}`처럼 이름으로 가리킵니다.
 [eval 의존성](../features/artifact.md#eval-dependencies)을 보세요. [posts 예제](https://github.com/lhj6102/artifactize/tree/main/examples/posts)는
-Markdown 사이드카 세 개와 공용 스타일 검사기 하나를 씁니다. 이전
+Markdown 파일을 대상으로 하는 정의 세 개와 공용 스타일 검사기 하나를 씁니다. 이전
 예제의 디렉터리에서 다음을 실행하세요.
 
 ```sh
@@ -117,7 +117,7 @@ Artifact의 eval은 코드 스타일을 리뷰하고, 테스트가 각 기능을
 
 앞선 실습에는 모델이 필요 없지만, 이 선택 실습을 진행하려면 모델이 필요합니다. 먼저
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools)에 설명된 대로
-`examples/agent-tools/spec/index.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
+`examples/agent-tools/.artifactize/spec.artf`에서 쓰는 프로필에 정확한 모델 ID를 넣고 자격 증명을 설정하세요.
 다른 백엔드를 쓰려면 `verify`에 `--profile anthropic` 또는 `--profile codex`를 덧붙입니다.
 자격 증명이 없으면 리뷰는 ERROR로 기록되고 대기 명령은 2로 종료합니다.
 같은 Artifact에 선언된 나머지 자동 eval이 모두 GREEN이 된 뒤에야
@@ -162,7 +162,7 @@ artifactize monitor        # Initially select ALL repositories in this state
 ```
 
 Run이 실행되는 동안 두 번째 터미널에서 시작하세요. Enter나 →로
-Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`로 항목을 고르고, `?`로 도움말을 확인하고, `q`로 종료하세요. Detail은 Agent 대화, Runtime
+Scope에서 Run과 트리를 거쳐 eval의 Detail까지 이동하고, Esc로 한 단계 돌아갑니다. `j`/`k`로 항목을 고르고, `?`로 Help를 확인하고, `q`로 종료하세요. Detail은 Agent 대화, Runtime
 로그, 또는 eval을 실행하기 전에 충족해야 할 조건을 보여 줍니다. 화면을 살펴보기만 해서는 프로젝트에 선언된 명령이 실행되지 않습니다.
 
 Human 요청 담당 지정, 도구, 판정 양식은

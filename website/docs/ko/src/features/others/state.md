@@ -10,7 +10,7 @@
 `--state-dir PATH`를 주면 각 Run의 출력(`PATH/runs` 아래)을 포함해 상태 전체를 다른 폴더에
 둡니다. 저장된 Run은 저장소를 지운 뒤에도 계속 읽을 수 있습니다.
 
-상태는 리뷰하는 저장소나 다른 artifactize 작업 공간 안에 둘 수 없습니다. 상태 디렉터리나 그 위의 어느 폴더에든 `.artf` 선언, 예전 `artifactize.json`이나 `.artifactizeignore`가 있으면 명령은 아무것도 쓰지 않고 실패합니다. 프로젝트 폴더들을 담고만 있는 상위 폴더에는 둘 수 있습니다. 예를 들어 `/work/app/index.artf` 옆의 `/work/.state`는 괜찮습니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
+상태는 리뷰하는 저장소나 다른 artifactize 작업 공간 안에 둘 수 없습니다. 상태 디렉터리나 그 위의 어느 폴더에든 `.artifactize/`, 예전 `.artf` 선언, `artifactize.json`이나 `.artifactizeignore`가 있으면 명령은 아무것도 쓰지 않고 실패합니다. 프로젝트 폴더들을 담고만 있는 상위 폴더에는 둘 수 있습니다. 예를 들어 `/work/app/.artifactize/` 옆의 `/work/.state`는 괜찮습니다. 상위 폴더를 탐색할 수는 있지만 목록을 볼 수 없으면 artifactize가
 그 안의 선언을 모두 확인할 수 없으므로, 상태는 프로젝트 바깥에 두세요.
 
 **Microsoft Store 패키지**는 zip이나 Cargo로 설치한 버전과 별도로 Run, 로그인 정보, 캐시를 저장하며, 패키지를 제거하면 Windows가 이를 지웁니다. 그렇다고 격리된 환경은 아닙니다. eval이 실행하는
@@ -115,7 +115,7 @@ Agent 리뷰는 실행 중일 때만 그 백엔드의 동시 실행 수에 포�
 그 리뷰는 ERROR(`OWNER_DIED`)로 끝납니다. 자리가 모두 차 있으면 요청은 `Waiting for a free codex
 slot: all 4 are in use on this machine (limits.json).` 같은 사유와 함께 QUEUED로
 표시되고, 자리가 비면 Run의 [스케줄링 순서](../run.md#verify-and-runs)대로 대기 중인 요청을
-실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 Runtime eval과 Human 요청, 다른 백엔드의 Agent 리뷰는 계속 진행됩니다. [eval mutex 태그](../declarations.md#eval-mutex-tags)가 겹치는 eval은 백엔드 자리를 차지하지 않은 채 별도로 대기합니다. `run cancel RUN_ID`는 그 Run에서 대기 중이던
+실행합니다. 대기 중인 요청은 `--jobs`나 `--max-executions`에 포함되지 않으므로 Runtime eval과 Human 요청, 다른 백엔드의 Agent 리뷰는 계속 진행됩니다. [eval mutex 태그](../declarations.md#eval-mutex-tags)가 겹치는 eval은 백엔드 자리를 차지하지 않은 채 실행이 보류됩니다. `run cancel RUN_ID`는 그 Run에서 대기 중이던
 요청을 ERROR(`CANCELLED`)로 끝내고 그 자리를 비웁니다. `verify --wait`를 중단해도 지켜보기만 멈추며 Run은 계속 실행됩니다.
 
 오류로 [백엔드 사용이 중단되면](../agent.md#stopping-a-backend), 그 Run에서 대기 중이던 요청은 해당

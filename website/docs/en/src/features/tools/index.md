@@ -33,11 +33,12 @@ An eval sees the tools of the Artifacts it actually references. Tool names becom
 ## Build your own tool Artifact
 
 Put a reusable tool beside its implementation and give it an Artifact declaration.
-For example, `tools/checker/index.artf` can declare the `checker` Artifact with a
+For example, `.artifactize/checker.artf` can declare the `checker` Artifact with a
 Python program `inspect.py` and its `tests/` folder next to it:
 
 ```toml
-name = "checker"
+# .artifactize/checker.artf
+path = "tools/checker/"
 
 [evals.tests]
 title = "The inspection tool handles the requirements and JSON protocol"
@@ -58,7 +59,8 @@ source = { builtin = "read", args = ["{artifactPath}/inspect.py"] }
 Attach it to the consumer by referencing the tool Artifact in the eval's criteria:
 
 ```toml
-name = "app"
+# .artifactize/app.artf
+path = "app/"
 
 [evals.review]
 title = "The app satisfies the specification"

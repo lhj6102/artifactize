@@ -173,8 +173,9 @@ terminal, where `WALK` still names the shared directory:
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
 echo 'logo v1' > logo.txt
-cat > index.artf <<'TOML'
-name = "brand"
+mkdir .artifactize
+cat > .artifactize/brand.artf <<'TOML'
+path = "./"
 
 [evals.signoff]
 title = "Sign off"

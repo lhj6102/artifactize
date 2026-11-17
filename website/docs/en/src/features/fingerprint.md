@@ -1,7 +1,8 @@
 # Fingerprints and reuse
 
-Run `artifactize verify --all --wait` twice: the second time every eval reports
-`GREEN (reused …)` and nothing runs again. Change one file and verify again: only the evals
+In a project with reusable, file-backed checks, run `artifactize verify --all --wait`
+twice: the second time its GREEN results are reused and nothing runs again. Live
+runtime observations run each time, as explained below. Change one file and verify again: only the evals
 that depend on that file run. A fingerprint says what an Artifact's reviews depend on. An
 eval's earlier result is reused when the eval is unchanged and the fingerprints of the
 Artifacts it depends on are unchanged, so review cost follows the size of a change.
@@ -9,10 +10,9 @@ Artifacts it depends on are unchanged, so review cost follows the size of a chan
 ## Fingerprints
 
 Folder, file and aspect Artifacts use **artifactsum** by default. Omit `fingerprint` to
-hash their own files, or choose a script. The root graph Artifact always uses the
-[structural graph fingerprint](#graph-fingerprint); it cannot declare `fingerprint`
-to override or disable that value. For folder and file Artifacts, the configurable
-forms below add no tool declarations or other Artifact's value; dependencies enter
+hash their own files, or choose a script. This includes nodes targeting
+[definition files](#graph-fingerprint); there is no separate graph kind. The
+configurable forms below add no tool declarations or other Artifact's value; dependencies enter
 through the [reuse key](#the-reuse-key).
 
 - Omission uses artifactsum: `artifactsum:` plus SHA-256 over the Artifact's
@@ -32,24 +32,19 @@ eval depends on changes its fingerprint. To narrow a folder's inputs:
 fingerprint = { files = ["src"], ignore = ["*.log"] }
 ```
 
-- `files`: 1–64 unique owner-relative paths of up to 1024 characters each (an emoji or another
-  character outside the Basic Multilingual Plane counts as two),
-  default `["."]` (the owner's own files). Each must exist and stay inside the Artifact: paths into nested folder Artifacts
-  are rejected. Directory walks skip nested folder Artifacts and every
-  `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
-  not silently skipped. A directory whose name ends in `.artf` is an invalid
-  declaration and fails discovery.
-  Every [part](artifact.md#composition)'s files are excluded from the whole's hash:
-  neighboring file targets, nested folder contents and aspect selections alike, even
-  when named in `files`. Each part hashes its own files once; its fingerprint enters
-  the whole's eval keys instead.
+- `files`: 1–64 unique target-relative paths, up to 1024 characters each (a character
+  outside the Basic Multilingual Plane counts as two). The default is `["."]`.
+  Every part's target is excluded, including its parts, whether it is a folder, file or
+  aspect selection. A folder part's files cannot be used as the whole's explicit inputs.
+  Overlapping Artifacts that are not parts hash the shared files independently.
+  `.artf` files are ordinary inputs, with the definition view described below.
 - `ignore`: up to 64 unique `.gitignore`-style globs relative to the owner, without
   negation; a pattern may not be blank, start with `#` or contain control characters. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
   exclude more, with git semantics: every one from the repository root (`--repo`)
   down through the Artifact and walked directories applies. A pattern is relative
   to its own file's folder; negation works, and deeper files override shallower
-  ones. Explicitly named non-declaration `files` are never ignored.
+  ones. Explicitly named `files` are never ignored.
 
 File Artifacts hash only their target filename. An explicit artifactsum form
 must name just that file, for example `fingerprint = { files = ["hero.png"] }`.
@@ -82,7 +77,7 @@ target has parts once, including Human sign-offs, even if their scripts return
 unchanged values or the eval already names those parts. Later Runs reuse normally.
 Saved Runs and results remain readable; no state reset is needed.
 
-Artifact names and kinds (`folder`, `file`, `aspect` or `graph`) are part of the key, for the
+Artifact names and kinds (`folder`, `file`, `aspect` or `live`) are part of the key, for the
 target and every covered dependency. A change from folder to file never reuses
 the former result, even if a script emits the same fingerprint. Physical paths
 are never key inputs, so copies with matching names, kinds and fingerprints reuse.
@@ -105,10 +100,11 @@ Artifact, so changing only a tool's description or schema does not review again.
 make a tool change matter, include the relevant files in the fingerprint.
 
 An executable eval has a key only when its target and every Artifact it depends on
-have a fingerprint. Omission supplies artifactsum for folder and file Artifacts,
-including basis Artifacts of those kinds; graph Artifacts always supply their
-structural graph fingerprint. If a folder or file Artifact declares
-`fingerprint = false`, the eval has no reuse: every `verify` reviews it
+have a fingerprint. Omission supplies artifactsum for folder, file and aspect
+Artifacts, including basis Artifacts of those kinds. Live Artifacts have no
+snapshot unless they declare a script, and runtime evals covering Live never
+reuse even with one. If a covered Artifact declares `fingerprint = false`,
+the eval has no reuse: every `verify` reviews it
 again. `status` explains each eval's state and action; see
 [Status states](../cli/index.md#status-states).
 
@@ -129,7 +125,8 @@ from; [Verify and Runs](run.md#verify-and-runs) shows where `run show` lists bot
 Before accepting reuse, artifactize validates admitted file targets again:
 they must exist as regular files without symlink traversal. `fingerprint = false`
 disables reuse, not these file-target safety checks. Targets are checked during
-fingerprint preparation/recheck, at eval start/end and on every tool call too.
+fingerprint preparation/recheck, at Runtime/Agent start/end and on every tool call.
+An unkeyed Human submission without Live inputs does not recheck target availability.
 
 A hit returns the original result without running the eval or re-validating it
 against the requested profile or schema. The producing profile remains distinct
@@ -150,30 +147,17 @@ the store, and its completed GREEN or RED is appended as a newer record (and
 published to a configured store), which later runs then reuse. Forced and unkeyed
 results still satisfy their own Run and keep their execution.
 
-## Graph fingerprint
+## Definition-file fingerprints {#graph-fingerprint}
 
-The root [`.artf` graph Artifact](declarations.md#graph-artifact)
-uses `graph:<sha256>`, which changes when the project's structure or criteria change,
-not when files move or their content changes. It covers:
+Definition files use ordinary artifactsum, including those inside nested projects.
+Their default [artf view](declarations.md#graph-artifact) leaves positions, notes and
+formatting out of reuse decisions. See that page for which edits count, what file tools
+show and how to limit a definition review's scope.
 
-- Artifact names and kinds, `basis`, an aspect's `select`, and fingerprint coverage: artifactsum `files`
-  and `ignore`; script `command`, `args` and `files`; or `fingerprint = false`.
-  
-- Relations: composition (part → the Artifact it is a part of, from folders and `parts`),
-  instruction references, runtime argv references
-  (including eval ID, argv index and logical suffix), and their input targets.
-- Qualified eval IDs, owning Artifact, titles and evaluation criteria: default
-  profile kind, the full `payload` including instruction and owner context,
-  `pass_schema`, `fail_schema`, and runtime `command`/`args`.
+## Live snapshots and observations
 
-Excluded are evaluation execution options (backend, model, reasoning, all
-`timeout_ms` values including fingerprint-script timeouts, `max_tool_calls`,
-`max_tokens`, `profile_variants`, eval `mutex` tags), all tool views and sessions, Artifact tags, repository
-paths and source file contents. Declared coverage paths and scoped argument
-suffixes remain meaningful; a relocation that preserves those logical declarations
-and ownership does not change the graph fingerprint. Execution options are still
-saved in ordinary state records.
-
-A graph review always looks at the current structure, never a diff against an earlier
-one. Changing a graph eval's title reviews the graph again, although a title change does
-not do that for other evals.
+For a [Live Artifact](declarations.md#live-artifacts), a script supplies the observed-state
+snapshot. Omitting it means there is no snapshot and no reusable key. Agent and Human
+reviews reuse while their covered snapshots stand; a snapshot changing during review
+produces `INPUT_CHANGED`. Every runtime eval that covers a Live Artifact runs on every
+verify, unchanged snapshot or not. A snapshot does not prove the service still works.

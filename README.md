@@ -12,13 +12,14 @@ Homepage: [artifactize.dev](https://artifactize.dev)
 # Artifactize: Evaluation-driven development for people and AI agents.
 
 Artifactize checks your project piece by piece, from code and documents to images and the
-running app, with tests, AI reviews and people's sign-offs. It remembers every result, so
-work that hasn't changed is never checked twice, and you can trust what you and your AI
-agents changed without watching every step.
+running app, with tests, AI reviews and people's sign-offs. It remembers results and
+reuses reviews whose inputs still match, so you can trust what you and your AI agents
+changed without watching every step.
 
 Test runners check code and review bots check pull requests. Artifactize puts both, and the
 people who sign off, on one Artifact Graph of your whole project: every check knows what it
-reads, runs again only when that changes, and keeps going while you step away.
+reads, reuses reviews that still apply, and keeps going while you step away. Checks on
+live services observe them again every time you verify.
 
 <p align="center">
   <img src="assets/others/roles.en.gif" width="800"
@@ -103,6 +104,11 @@ example project.
 3. Each evaluated result becomes part of the next evaluation, all the way to the final result.
 
 ## Highlights
+
+Describe each piece of your project in `.artifactize/<name>.artf` before you build it.
+Its filename gives its name, `path` points to files or a live service, and `parts` lists
+what it is made of. Then build the code, documents or services those definitions call
+for. Moving a definition between subfolders changes no relationship.
 
 <p align="center">
   <img src="assets/others/graph-example.en.png" width="800"

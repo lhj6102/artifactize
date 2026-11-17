@@ -16,9 +16,9 @@ output under `PATH/runs`. Saved Runs stay readable after their repository is rem
 
 The state may not live inside the reviewed repository or another artifactize
 workspace: a command refuses it before writing when the state folder or any folder
-above it holds a `.artf` declaration, a legacy `artifactize.json` or
+above it holds `.artifactize/`, an old `.artf` marker, a legacy `artifactize.json` or
 `.artifactizeignore`. A parent folder that only contains project folders is fine,
-for example `/work/.state` beside `/work/app/index.artf`. If you can
+for example `/work/.state` beside `/work/app/.artifactize/`. If you can
 search a parent folder but not list it, artifactize cannot see every declaration in it,
 so keep the state outside your projects.
 

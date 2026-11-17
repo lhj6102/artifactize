@@ -74,8 +74,10 @@ waiting request in Review or the desktop app, checks the same and ends it the sa
 A tool error is something to fix and retry, not
 a verdict, and tool runs are not recorded with the result. Before a tool runs, the
 declarations of the Artifacts the eval reviews must still load: if they do not, for
-example because one of them is a file Artifact whose file is missing, the tool refuses
-to run and the request keeps waiting, so you can restore the file and try again. The
+example because a definition file cannot be read, the tool refuses to run and the
+request keeps waiting, so you can restore the declaration and try again. A target file
+disappearing during a keyed review is different: fingerprint recheck normally ends the
+request ERROR/FINGERPRINT_RECHECK_FAILED, and a new verify is needed. The
 declaration of a nested part can also stop the tool if it does not load, even when
 the eval does not read that part. Configuration errors elsewhere in the project can
 also prevent Human actions: fix the reported declaration and retry. Then the

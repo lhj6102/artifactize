@@ -3,6 +3,7 @@
 Install the binary as described in [Install](install.md), then try the
 example projects. Each README lists the exact commands:
 
+- [Live observations](https://github.com/lhj6102/artifactize/tree/main/examples/live): a URI target with a read-only HTTP runtime check, observed again on every verify.
 - [Runtime relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations): checks that run commands over a parent
   Artifact and its parts, `{artifact}` references in instructions and command arguments, an
   Artifact that only supplies input, a check you can make fail, and reuse of results
@@ -12,7 +13,7 @@ example projects. Each README lists the exact commands:
   pass/fail schemas, backend and model selection, and a Human sign-off with the
   built-in `open` and `read` tools.
 - [Posts](https://github.com/lhj6102/artifactize/tree/main/examples/posts): three
-  Markdown file Artifacts, one sidecar per post, a shared style checker in a
+  Markdown file Artifacts, one named definition per post, a shared style checker in a
   referenced basis Artifact, per-post word limits and independent artifactsum reuse.
   A post change reviews one eval; a shared checker or rule change reviews all three.
 - [Eval dependencies](../features/artifact.md#eval-dependencies):

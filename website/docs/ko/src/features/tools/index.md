@@ -33,10 +33,11 @@ eval은 실제로 참조하는 Artifact에 선언된 도구를 쓸 수 있습니
 ## 직접 도구 Artifact 만들기 {#build-your-own-tool-artifact}
 
 도구를 재사용하려면 구현 파일이 있는 폴더에 Artifact 선언을 추가하세요.
-예를 들어 `tools/checker/index.artf`에서 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더를 포함하는 `checker` Artifact를 선언할 수 있습니다.
+예를 들어 `.artifactize/checker.artf`에서 Python 프로그램 `inspect.py`와 그 옆의 `tests/` 폴더를 포함하는 `checker` Artifact를 선언할 수 있습니다.
 
 ```toml
-name = "checker"
+# .artifactize/checker.artf
+path = "tools/checker/"
 
 [evals.tests]
 title = "The inspection tool handles the requirements and JSON protocol"
@@ -57,7 +58,8 @@ source = { builtin = "read", args = ["{artifactPath}/inspect.py"] }
 도구를 쓸 eval의 기준에서 그 도구 Artifact를 참조하세요.
 
 ```toml
-name = "app"
+# .artifactize/app.artf
+path = "app/"
 
 [evals.review]
 title = "The app satisfies the specification"
