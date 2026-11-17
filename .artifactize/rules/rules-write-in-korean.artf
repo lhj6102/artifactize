@@ -12,7 +12,7 @@ open = { description = "Open WRITE-IN-KOREAN.md of {artifactName} in the desktop
 
 [evals.follows-itself]
 title = "The Korean writing rules follow themselves"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-itself.payload]
 instruction = """

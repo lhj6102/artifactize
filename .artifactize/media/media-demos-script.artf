@@ -6,7 +6,7 @@ read = { builtin = "read" }
 
 [evals.records-demos]
 title = "The script records demos A and B from the real app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high" }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
 
 [evals.records-demos.payload]
 instruction = """

@@ -25,7 +25,7 @@ payload.instruction = "Render every HTML figure of {media-others} again with its
 
 [evals.explains-graph]
 title = "The example graph shows how Artifactize works, the same in every language"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 
 [evals.explains-graph.payload]
 instruction = """
@@ -63,7 +63,7 @@ additionalProperties = false
 
 [evals.shows-roles]
 title = "The role figure shows people and agents collaborating in three roles, cleanly"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 
 [evals.shows-roles.payload]
 instruction = """

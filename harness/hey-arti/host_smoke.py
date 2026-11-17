@@ -149,6 +149,6 @@ if __name__ == "__main__":
     parser.add_argument("--host", choices=["claude", "codex"], required=True)
     parser.add_argument("--artifactize", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--model", default="ocx-claude-native--gpt-6.1-sol")
+    parser.add_argument("--model", default="ocx-claude-native--gpt-6.2-sol")
     args = parser.parse_args()
     smoke(args.host, args.artifactize.resolve(strict=True), args.output, args.model)

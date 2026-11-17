@@ -6,7 +6,7 @@ read = { builtin = "read" }
 
 [evals.records-scenes]
 title = "The script captures scenes A, B and C from the real app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high" }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high" }
 
 [evals.records-scenes.payload]
 instruction = """

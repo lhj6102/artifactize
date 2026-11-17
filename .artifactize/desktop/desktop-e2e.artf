@@ -9,11 +9,11 @@ read = { builtin = "read" }
 
 [evals.covers-journeys]
 title = "The tests cover every journey and every edge of the UX"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.covers-journeys.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.covers-journeys.payload]
@@ -53,7 +53,7 @@ additionalProperties = false
 
 [evals.follows-style]
 title = "The E2E code follows the shared test-writing rules"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-style.payload]
 instruction = """
@@ -79,7 +79,7 @@ additionalProperties = false
 
 [evals.follows-e2e-rules]
 title = "The real-app E2E tests follow Tauri's WebDriver approach and are isolated, causal and complete"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-e2e-rules.payload]
 instruction = """

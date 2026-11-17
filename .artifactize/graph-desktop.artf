@@ -9,7 +9,7 @@ graph = { builtin = "graph", args = [] }
 
 [evals.derives]
 title = "The desktop definitions judge each Artifact against what specifies it"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 payload.instruction = """
 Read every definition in {graph-desktop}; use the graph tool for relations that leave the
 folder. The desktop app is specified by the journeys (desktop-ux-features), the screens

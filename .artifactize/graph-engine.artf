@@ -9,7 +9,7 @@ graph = { builtin = "graph", args = [] }
 
 [evals.connects]
 title = "The engine definitions give every crate the same checks and name inputs in one direction"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 payload.instruction = """
 Read every definition in {graph-engine}; use the graph tool for relations that leave the
 folder. The folder defines the workspace crates (engine-core, engine-tools, engine-cli,
