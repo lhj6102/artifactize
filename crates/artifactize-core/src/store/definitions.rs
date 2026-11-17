@@ -57,7 +57,11 @@ pub struct Graph {
     pub repo_path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
     pub selection: Field<SavedSelection>,
-    #[serde(default, skip_serializing_if = "Field::missing")]
+    #[serde(
+        default,
+        skip_serializing_if = "Field::missing",
+        deserialize_with = "artifact_targets"
+    )]
     pub artifacts: Field<BTreeMap<crate::types::ArtifactName, Artifact>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub evals: Field<Vec<Eval>>,
@@ -108,10 +112,16 @@ impl Graph {
 pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
     pub definition: Field<PathBuf>,
-    #[serde(default, skip_serializing_if = "missing")]
+    #[serde(
+        default,
+        skip_serializing_if = "missing",
+        serialize_with = "saved_kind"
+    )]
     pub kind: Field<config::ArtifactKind>,
-    #[serde(default, skip_serializing_if = "missing", with = "path_field")]
-    pub path: Field<PathBuf>,
+    #[serde(default, skip_serializing_if = "missing")]
+    pub path: Field<config::Target>,
+    #[serde(default, skip_serializing_if = "missing")]
+    pub select: Field<Vec<config::LogicalPath>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub nested: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -126,6 +136,55 @@ pub struct Artifact {
     pub fingerprint: Field<Fingerprint>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+// Schema 10's older readers accept a null kind and preserve the URI path. The new reader
+// recovers Live from that typed path, whose spelling is the source of truth for its kind.
+fn saved_kind<S: Serializer>(
+    kind: &Field<config::ArtifactKind>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    if matches!(kind, Field::Value(config::ArtifactKind::Live)) {
+        serializer.serialize_none()
+    } else {
+        kind.serialize(serializer)
+    }
+}
+pub(super) fn artifact_targets<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Field<BTreeMap<crate::types::ArtifactName, Artifact>>, D::Error> {
+    let mut field =
+        Field::<BTreeMap<crate::types::ArtifactName, Artifact>>::deserialize(deserializer)?;
+    if let Field::Value(artifacts) = &mut field {
+        for artifact in artifacts.values_mut() {
+            if let Field::Value(path) = &artifact.path {
+                let kind = if path.uri().is_some() {
+                    if !matches!(
+                        artifact.kind,
+                        Field::Missing | Field::Null | Field::Value(config::ArtifactKind::Live)
+                    ) {
+                        return Err(serde::de::Error::custom(
+                            "Saved Live URI has a filesystem kind",
+                        ));
+                    }
+                    artifact.kind = Field::Value(config::ArtifactKind::Live);
+                    config::ArtifactKind::Live
+                } else {
+                    artifact
+                        .kind
+                        .value()
+                        .copied()
+                        .unwrap_or(config::ArtifactKind::Folder)
+                };
+                let select = artifact.select.value().cloned().unwrap_or_default();
+                artifact.path = Field::Value(
+                    path.clone()
+                        .with_kind(kind, select)
+                        .map_err(serde::de::Error::custom)?,
+                );
+            }
+        }
+    }
+    Ok(field)
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

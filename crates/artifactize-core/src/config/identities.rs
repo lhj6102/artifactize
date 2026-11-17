@@ -137,20 +137,7 @@ identity!(ChildPrefix, |value: &str| crate::config::validation::path(
     value
 )
 .is_ok());
-identity!(LogicalPath, |value: &str| value == "."
-    || crate::config::validation::path(value).is_ok());
-
-impl AsRef<std::path::Path> for LogicalPath {
-    fn as_ref(&self) -> &std::path::Path {
-        std::path::Path::new(self.as_str())
-    }
-}
-
-impl AsRef<std::ffi::OsStr> for LogicalPath {
-    fn as_ref(&self) -> &std::ffi::OsStr {
-        std::ffi::OsStr::new(self.as_str())
-    }
-}
+pub use artifactize_tools::scope::LogicalPath;
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,5 @@
 path = ".github/"
+parts = ["release-observer"]
 
 [views.agent_tools]
 list = { builtin = "list" }

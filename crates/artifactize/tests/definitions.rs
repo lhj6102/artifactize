@@ -258,9 +258,9 @@ fn create_move_source_delete_and_layout_share_the_file_contract() {
         &based,
         Operation::SavePlaces {
             places: [
-                ("a".into(), [10., 20.]),
-                ("b/part".into(), [3., 4.]),
-                ("unknown".into(), [1., 1.]),
+                ("a".parse().unwrap(), [10., 20.]),
+                ("b/part".parse().unwrap(), [3., 4.]),
+                ("unknown".parse().unwrap(), [1., 1.]),
             ]
             .into(),
         },
@@ -322,7 +322,7 @@ fn rename_updates_references_parts_and_layout_without_touching_escaped_braces() 
         edit::read_layout(&project.repo)
             .unwrap()
             .nodes
-            .contains_key("consumer/new")
+            .contains_key(&"consumer/new".parse::<edit::PlacementKey>().unwrap())
     );
 }
 
@@ -350,7 +350,10 @@ fn migration_keeps_comments_makes_parts_explicit_and_leaves_nested_project() {
     let config = read_workspace_config(&project.repo).unwrap();
     assert!(config.artifacts["root"].parts.contains("lib"));
     assert!(config.artifacts["lib"].parts.contains("main"));
-    assert_eq!(config.artifacts["graph"].path, Path::new(".artifactize"));
+    assert_eq!(
+        config.artifacts["graph"].path.local(),
+        Some(Path::new(".artifactize"))
+    );
     let before = edit::read(&project.repo).unwrap();
     project.json(&["config", "migrate", "--json"], 2);
     assert_eq!(before, edit::read(&project.repo).unwrap());
@@ -422,7 +425,11 @@ fn annotation_edits_keep_future_data_and_move_comments_and_places_together() {
         &project.repo,
         &based,
         Operation::SavePlaces {
-            places: [("whole".into(), [10., 20.]), ("part".into(), [30., 40.])].into(),
+            places: [
+                ("whole".parse().unwrap(), [10., 20.]),
+                ("part".parse().unwrap(), [30., 40.]),
+            ]
+            .into(),
         },
     )
     .unwrap();
@@ -511,7 +518,11 @@ fn unreadable_annotation_edits_and_multifile_conflicts_write_nothing() {
         &project.repo,
         &before,
         Operation::SavePlaces {
-            places: [("a".into(), [1., 2.]), ("b".into(), [3., 4.])].into(),
+            places: [
+                ("a".parse().unwrap(), [1., 2.]),
+                ("b".parse().unwrap(), [3., 4.]),
+            ]
+            .into(),
         },
     )
     .unwrap_err();
@@ -551,4 +562,48 @@ fn unreadable_annotation_edits_and_multifile_conflicts_write_nothing() {
         Err(Refusal::NotAllowed { .. }) | Err(Refusal::Changed { .. })
     ));
     assert_eq!(before, edit::read(&project.repo).unwrap());
+}
+
+#[test]
+fn site_reads_keep_the_target_kind_and_its_aspect_selection_together() {
+    let repo = support::os::tempdir();
+    fs::create_dir(repo.path().join(".artifactize")).unwrap();
+    fs::write(
+        repo.path().join(".artifactize/slice.artf"),
+        "path = 'src/'\nselect = ['chosen.txt']\nbasis = true\n",
+    )
+    .unwrap();
+    let sites = artifactize_core::config::read_sites(repo.path()).unwrap();
+    let site = &sites["slice"];
+    assert_eq!(
+        site.path.kind(),
+        artifactize_core::config::ArtifactKind::Aspect
+    );
+    assert_eq!(site.path.local(), Some(Path::new("src")));
+    assert_eq!(site.path.select()[0].as_str(), "chosen.txt");
+}
+
+#[test]
+fn placement_wire_keys_are_validated_before_becoming_edit_operations() {
+    for key in ["", "whole/part/extra", "whole/", "../part", "whole/CON"] {
+        assert!(
+            serde_json::from_value::<Operation>(
+                serde_json::json!({"kind":"savePlaces", "places":{key:[1,2]}})
+            )
+            .is_err(),
+            "{key:?}"
+        );
+    }
+    let operation: Operation = serde_json::from_value(
+        serde_json::json!({"kind":"savePlaces","places":{"whole/part":[1,2]}}),
+    )
+    .unwrap();
+    let Operation::SavePlaces { places } = operation else {
+        panic!("save places")
+    };
+    assert_eq!(places.keys().next().unwrap().owner().as_str(), "whole");
+    assert_eq!(
+        serde_json::to_value(places).unwrap(),
+        serde_json::json!({"whole/part":[1.0,2.0]})
+    );
 }

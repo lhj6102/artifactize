@@ -100,6 +100,9 @@ pub(crate) struct ExecutionWire {
     /// Kinds of exactly the Artifacts covered by a new-format reuse key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
+    /// Partition Live names out of the old strict enum map for schema-10 readers.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    pub live_artifacts: std::collections::BTreeSet<crate::types::ArtifactName>,
     pub eval_def_hash: crate::types::DefinitionHash,
     pub owner_pid: u32,
     pub owner_start_time: u64,
@@ -130,6 +133,15 @@ pub(crate) struct ExecutionWire {
 impl TryFrom<ExecutionWire> for Execution {
     type Error = String;
     fn try_from(wire: ExecutionWire) -> Result<Self, Self::Error> {
+        if wire
+            .live_artifacts
+            .iter()
+            .any(|name| wire.artifact_kinds.contains_key(name))
+        {
+            return Err(
+                "A saved execution gives one Artifact both a filesystem and Live kind.".into(),
+            );
+        }
         let state = super::ExecutionState::from_parts(
             wire.status,
             wire.result,
@@ -143,7 +155,15 @@ impl TryFrom<ExecutionWire> for Execution {
             key: wire.key,
             fingerprint: wire.fingerprint,
             fingerprints: wire.fingerprints,
-            artifact_kinds: wire.artifact_kinds,
+            artifact_kinds: wire
+                .artifact_kinds
+                .into_iter()
+                .chain(
+                    wire.live_artifacts
+                        .into_iter()
+                        .map(|name| (name, crate::config::ArtifactKind::Live)),
+                )
+                .collect(),
             eval_def_hash: wire.eval_def_hash,
             owner: std::num::NonZeroU32::new(wire.owner_pid).map(|pid| process::ChildIdentity {
                 pid: process::ProcessId::from(pid),
@@ -175,7 +195,17 @@ impl From<Execution> for ExecutionWire {
             key: record.key,
             fingerprint: record.fingerprint,
             fingerprints: record.fingerprints,
-            artifact_kinds: record.artifact_kinds,
+            live_artifacts: record
+                .artifact_kinds
+                .iter()
+                .filter(|(_, kind)| **kind == crate::config::ArtifactKind::Live)
+                .map(|(name, _)| name.clone())
+                .collect(),
+            artifact_kinds: record
+                .artifact_kinds
+                .into_iter()
+                .filter(|(_, kind)| *kind != crate::config::ArtifactKind::Live)
+                .collect(),
             eval_def_hash: record.eval_def_hash,
             owner_pid,
             owner_start_time,

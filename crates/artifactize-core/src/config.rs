@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub use crate::types::{ArtifactName, EvalId};
+pub use artifactize_tools::scope::{Target, Uri};
 mod identities;
 pub use identities::{
     ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, ProfileVariantName,
@@ -1180,28 +1181,18 @@ fn tool_nested(
         .collect()
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct Artifact {
-    #[serde(with = "crate::platform::path_serde")]
     pub definition: PathBuf,
     /// Current target availability is not part of the saved declaration or its identity.
-    #[serde(skip)]
     pub target_error: Option<String>,
-    #[serde(with = "crate::platform::path_serde")]
-    pub path: PathBuf,
-    pub kind: ArtifactKind,
+    pub path: Target,
     /// Folder Artifacts declared in subfolders, by their path here. Their files are theirs,
     /// not this Artifact's; discovery also records them as parts.
     pub nested: BTreeMap<ChildPrefix, ArtifactName>,
     /// A folder part at the same target or an ancestor, owning every file here.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub covering_part: Option<ArtifactName>,
-    /// An aspect's selected paths below its folder; empty for other kinds.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub select: Vec<LogicalPath>,
     /// What it is made of: the Artifacts its folder holds and those its `parts` names.
-    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
     pub parts: BTreeSet<ArtifactName>,
     pub name: ArtifactName,
     pub tags: Vec<String>,
@@ -1210,42 +1201,77 @@ pub struct Artifact {
     pub fingerprint: Option<Fingerprint>,
 }
 
+impl serde::Serialize for Artifact {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("definition", &crate::platform::path_text(&self.definition))?;
+        map.serialize_entry("path", &self.path)?;
+        map.serialize_entry("kind", &self.kind())?;
+        map.serialize_entry("nested", &self.nested)?;
+        if let Some(part) = &self.covering_part {
+            map.serialize_entry("coveringPart", part)?;
+        }
+        if !self.select().is_empty() {
+            map.serialize_entry("select", self.select())?;
+        }
+        if !self.parts.is_empty() {
+            map.serialize_entry("parts", &self.parts)?;
+        }
+        map.serialize_entry("name", &self.name)?;
+        map.serialize_entry("tags", &self.tags)?;
+        map.serialize_entry("views", &self.views)?;
+        map.serialize_entry("basis", &self.basis)?;
+        map.serialize_entry("fingerprint", &self.fingerprint)?;
+        map.end()
+    }
+}
+
 impl Artifact {
+    pub fn kind(&self) -> ArtifactKind {
+        self.path.kind()
+    }
+    pub fn select(&self) -> &[LogicalPath] {
+        self.path.select()
+    }
     pub(crate) fn tool_scope(&self) -> artifactize_tools::scope::Artifact {
         artifactize_tools::scope::Artifact {
             path: self.path.clone(),
-            kind: self.kind,
             name: self.name.to_string(),
             nested: tool_nested(&self.nested),
             covering_part: self.covering_part.as_ref().map(crate::scope::tool_id),
-            select: self.select.iter().map(|path| path.to_string()).collect(),
         }
     }
 
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
-        folder_of(self.kind, &self.path)
+        folder_of(self.kind(), &self.path)
     }
 
     /// What `{name}` stands for: the folder or file, or an aspect's folder, since an
     /// aspect's path is only its declaration's label.
     pub fn referenced_path(&self) -> &Path {
-        if self.kind == ArtifactKind::Aspect {
+        if self.kind() == ArtifactKind::Aspect {
             self.folder()
         } else {
-            &self.path
+            self.path.local().expect("filesystem reference")
         }
     }
 
     pub fn file_name(&self) -> Option<&str> {
-        (self.kind == ArtifactKind::File)
-            .then(|| self.path.file_name().and_then(|name| name.to_str()))
+        (self.kind() == ArtifactKind::File)
+            .then(|| {
+                self.path
+                    .local()
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+            })
             .flatten()
     }
 
     pub fn declaration_path(&self) -> PathBuf {
         if self.definition.as_os_str().is_empty() {
-            declaration_of(self.kind, &self.path)
+            declaration_of(self.kind(), &self.path)
         } else {
             self.definition.clone()
         }
@@ -1254,7 +1280,7 @@ impl Artifact {
     /// Where it is declared.
     pub fn site(&self) -> Site {
         Site {
-            kind: self.kind,
+            kind: self.kind(),
             path: self.path.clone(),
             definition: self.declaration_path(),
         }

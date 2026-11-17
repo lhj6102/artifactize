@@ -142,7 +142,7 @@ pub struct CurrentArtifact {
     pub plan: Plan,
     /// How many of its evals would run.
     pub runs: usize,
-    pub path: PathBuf,
+    pub path: crate::config::Target,
     pub state: ArtifactCondition,
     pub reason: String,
     pub evals: Vec<CurrentEval>,

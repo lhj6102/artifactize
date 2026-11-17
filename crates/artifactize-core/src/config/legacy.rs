@@ -48,9 +48,18 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         ));
     }
     for artifact in config.artifacts.values_mut() {
-        artifact.definition = declaration_of(artifact.kind, &artifact.path);
-        if artifact.kind == ArtifactKind::Aspect {
-            artifact.path = artifact.path.parent().unwrap_or(Path::new("")).to_owned();
+        artifact.definition = declaration_of(artifact.kind(), &artifact.path);
+        if artifact.kind() == ArtifactKind::Aspect {
+            artifact.path = Target::Aspect {
+                path: artifact
+                    .path
+                    .local()
+                    .expect("legacy filesystem target")
+                    .parent()
+                    .unwrap_or(Path::new(""))
+                    .to_owned(),
+                select: artifact.select().to_vec(),
+            };
         }
     }
     crate::scope::resolve_config(&mut config)?;

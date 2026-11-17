@@ -118,8 +118,11 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     fixture.declare("nested/deep/index.artf", json!({"name":"deep"}));
     let config = fixture.config();
     assert_eq!(config.artifacts.len(), 4);
-    assert_eq!(config.artifacts["hero"].kind, ArtifactKind::File);
-    assert_eq!(config.artifacts["hero"].path, Path::new("hero.png"));
+    assert_eq!(config.artifacts["hero"].kind(), ArtifactKind::File);
+    assert_eq!(
+        config.artifacts["hero"].path.local(),
+        Some(Path::new("hero.png"))
+    );
     assert_eq!(config.artifacts["build"].folder(), Path::new("nested"));
     assert_eq!(
         config.artifacts["build"].declaration_path(),
@@ -166,13 +169,19 @@ fn a_workspace_may_contain_only_a_file_artifact_and_index_is_always_a_folder_mar
     let fixture = Fixture::new();
     fixture.write("Makefile", "all:");
     fixture.declare("Makefile.artf", json!({"name":"build"}));
-    assert_eq!(fixture.config().artifacts["build"].kind, ArtifactKind::File);
+    assert_eq!(
+        fixture.config().artifacts["build"].kind(),
+        ArtifactKind::File
+    );
     fixture.write("index", "ordinary file");
     // There is no sidecar spelling for the file `index`: index.artf always owns the folder.
     fixture.declare("index.artf", json!({"name":"index-file"}));
     let config = fixture.config();
-    assert_eq!(config.artifacts["index-file"].kind, ArtifactKind::Folder);
-    assert_eq!(config.artifacts["index-file"].path, Path::new(""));
+    assert_eq!(config.artifacts["index-file"].kind(), ArtifactKind::Folder);
+    assert_eq!(
+        config.artifacts["index-file"].path.local(),
+        Some(Path::new(""))
+    );
     assert!(config.artifacts["index-file"].nested.is_empty());
 }
 
@@ -980,7 +989,11 @@ fn reuse_key_covers_target_part_and_reference_kinds_but_never_paths_or_tags() {
         .value;
     // The target, its nested part and its explicit reference all contribute their kinds.
     for id in ["owner", "child", "reference"] {
-        config.artifacts.get_mut(id).unwrap().kind = ArtifactKind::File;
+        config.artifacts.get_mut(id).unwrap().path = config.artifacts[id]
+            .path
+            .clone()
+            .with_kind(ArtifactKind::File, Vec::new())
+            .unwrap();
         assert_ne!(
             key,
             cache::eval_key(&config, &config.evals[0], &fingerprints)
@@ -988,8 +1001,12 @@ fn reuse_key_covers_target_part_and_reference_kinds_but_never_paths_or_tags() {
                 .value,
             "{id}"
         );
-        config.artifacts.get_mut(id).unwrap().kind = ArtifactKind::Folder;
-        config.artifacts.get_mut(id).unwrap().path = PathBuf::from(format!("moved/{id}"));
+        config.artifacts.get_mut(id).unwrap().path = config.artifacts[id]
+            .path
+            .clone()
+            .with_kind(ArtifactKind::Folder, Vec::new())
+            .unwrap();
+        config.artifacts.get_mut(id).unwrap().path = PathBuf::from(format!("moved/{id}")).into();
         config.artifacts.get_mut(id).unwrap().tags = vec!["changed".into()];
         assert_eq!(
             key,

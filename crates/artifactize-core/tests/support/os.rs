@@ -941,6 +941,18 @@ impl TestChild {
         .expect("the self-test probe did not exit")
     }
 
+    /// Drain a probe's diagnostic pipe concurrently with its owned, bounded exit wait.
+    pub async fn stderr_output(&mut self) -> (std::process::ExitStatus, Vec<u8>) {
+        let mut stderr = self.0.stderr.take().expect("probe has a diagnostic pipe");
+        let reader = tokio::task::spawn_blocking(move || {
+            let mut text = Vec::new();
+            std::io::Read::read_to_end(&mut stderr, &mut text).expect("read probe diagnostics");
+            text
+        });
+        let status = self.wait().await;
+        (status, reader.await.expect("join the diagnostic reader"))
+    }
+
     /// Explicitly stop an owned probe; exit observation remains a separate action.
     pub fn kill(&mut self) -> std::io::Result<()> {
         self.0.kill()

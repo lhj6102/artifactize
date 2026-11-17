@@ -130,7 +130,7 @@ pub(super) fn assemble(
         artifacts.push(ArtifactState {
             definition: config.artifacts[*id].declaration_path(),
             target_missing: config.artifacts[*id].target_error.is_some(),
-            kind: config.artifacts[*id].kind,
+            kind: config.artifacts[*id].kind(),
             path: config.artifacts[*id].path.clone(),
             id: (*id).clone(),
             tags: config.artifacts[*id].tags.clone(),
@@ -250,6 +250,8 @@ pub(super) fn assemble(
                                 "The current eval and fingerprints have no completed cached result."
                                     .into()
                             }
+                            Err(cache::Unkeyed::LiveObservation(id)) => format!("This runtime eval observes Live Artifact {id} on every verify; its result is not reused."),
+                            Err(cache::Unkeyed::LiveUnobserved(id)) => format!("Live Artifact {id} has no snapshot, so this eval has no reusable key."),
                             Err(cache::Unkeyed::Target) => {
                                 "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run."
                                     .into()

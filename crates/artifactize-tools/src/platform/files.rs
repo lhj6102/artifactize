@@ -74,8 +74,21 @@ pub fn current_directory() -> std::io::Result<std::path::PathBuf> {
     canonicalize(&std::env::current_dir()?)
 }
 
-/// Render a native path for people and JSON clients with portable `/` separators.
-pub fn path_text(path: &std::path::Path) -> String {
+/// Text shown for a native path or a logical external target, never an I/O conversion.
+pub trait PathText {
+    fn path_text(&self) -> String;
+}
+impl<P: AsRef<std::path::Path> + ?Sized> PathText for P {
+    fn path_text(&self) -> String {
+        native_path_text(self.as_ref())
+    }
+}
+/// Render a path for people and JSON clients; logical external targets stay opaque.
+pub fn path_text<P: PathText + ?Sized>(path: &P) -> String {
+    path.path_text()
+}
+
+fn native_path_text(path: &std::path::Path) -> String {
     let text = path.to_string_lossy();
     #[cfg(windows)]
     {
@@ -136,6 +149,31 @@ pub fn scoped_relative(path: &std::path::Path) -> std::io::Result<String> {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("/"))
+}
+
+/// Keep declaration inputs bounded at the existing 1024 UTF-16-unit wire limit.
+const MAX_DECLARATION_PATH_UNITS: usize = 1024;
+
+/// The declaration-path grammar is portable even on a host that permits these names.
+pub fn declaration_path(value: &str) -> Result<(), String> {
+    let drive_rooted = value
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        && value.as_bytes().get(1) == Some(&b':')
+        && value.as_bytes().get(2) == Some(&b'/');
+    if value.encode_utf16().count() > MAX_DECLARATION_PATH_UNITS
+        || drive_rooted
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == b'\\')
+        || value
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err("Execution input must be a safe project-relative path.".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

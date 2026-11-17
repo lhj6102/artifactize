@@ -112,11 +112,7 @@ pub(crate) fn resolve_human_argv(
             };
             let id = reference_target_or_owner(config, owner, name)?;
             super::reference_path(config, id, path)?;
-            let resolved = scope.resolve_input(&config.root, id, path)?;
-            resolved
-                .to_str()
-                .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-            let resolved = crate::platform::path_text(&resolved);
+            let resolved = super::argument_value(config, scope, id, path)?;
             Ok(format!("{prefix}{resolved}"))
         })
         .collect()
@@ -145,6 +141,17 @@ pub(crate) fn builtin_args(
         }
         let target = reference_target_or_owner(config, owner, name)?;
         super::reference_path(config, target, path)?;
+        if tool.builtin == crate::config::Builtin::Open
+            && config.artifacts[target].path.uri().is_some()
+        {
+            args[0] = super::argument_value(config, scope, target, path)?;
+            if !artifactize_tools::builtin::is_url(&args[0]) {
+                return Err(ScopeError(
+                    "The open builtin accepts only HTTP(S) Live addresses.".into(),
+                ));
+            }
+            return Ok((owner.clone(), args));
+        }
         args[0] = path.to_string();
         target
     } else {

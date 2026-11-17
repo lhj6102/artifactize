@@ -4,7 +4,7 @@ use super::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Site {
     pub kind: ArtifactKind,
-    pub path: PathBuf,
+    pub path: Target,
     pub definition: PathBuf,
 }
 impl Site {
@@ -16,15 +16,24 @@ impl Site {
         self.definition.clone()
     }
 }
-pub(super) fn folder_of(kind: ArtifactKind, path: &Path) -> &Path {
+pub(super) fn folder_of(kind: ArtifactKind, path: &Target) -> &Path {
     match kind {
-        ArtifactKind::Folder | ArtifactKind::Aspect | ArtifactKind::Graph => path,
-        ArtifactKind::File => path.parent().unwrap_or(Path::new("")),
+        ArtifactKind::Folder | ArtifactKind::Aspect | ArtifactKind::Graph => {
+            path.local().expect("filesystem kind")
+        }
+        ArtifactKind::File => path
+            .local()
+            .expect("filesystem kind")
+            .parent()
+            .unwrap_or(Path::new("")),
+        ArtifactKind::Live => Path::new(""),
     }
 }
 /// Old locations are used only while migrating and when reading pre-migration saved Runs.
-pub(super) fn declaration_of(kind: ArtifactKind, path: &Path) -> PathBuf {
+pub(super) fn declaration_of(kind: ArtifactKind, target: &Target) -> PathBuf {
+    let path = target.local().unwrap_or(Path::new(""));
     match kind {
+        ArtifactKind::Live => PathBuf::new(),
         ArtifactKind::Graph => PathBuf::from(".artf"),
         ArtifactKind::Folder => logical_join(path, std::ffi::OsStr::new(CONFIG_FILE)),
         ArtifactKind::File | ArtifactKind::Aspect => {
@@ -46,8 +55,12 @@ pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigErr
                     .unwrap_or_default(),
             )
             .map_err(|error| ConfigError::new(&file, error))?;
-            let (path, kind) =
-                discovery::target(&source).map_err(|error| ConfigError::new(&file, error))?;
+            let (path, kind, declaration) =
+                discovery::parse_definition(&name, &source, &mut schemas::Schemas::default())
+                    .map_err(|error| ConfigError::new(&file, error))?;
+            let path = path
+                .with_kind(kind, declaration.select.unwrap_or_default())
+                .map_err(|error| ConfigError::new(&file, error))?;
             Ok((
                 name,
                 Site {

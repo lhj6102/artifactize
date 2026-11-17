@@ -314,10 +314,19 @@ pub(crate) async fn execute(
             .get(&request.target)
             .map(|fingerprint| fingerprint.value.clone());
         request.key = keys.get(&request.eval_id).map(|key| key.value.clone());
-        request.fingerprints = keys
-            .get(&request.eval_id)
-            .map(|key| key.fingerprints.clone())
-            .unwrap_or_default();
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id == request.eval_id)
+            .expect("request eval");
+        request.fingerprints = cache::dependencies(&config, eval)
+            .into_iter()
+            .filter_map(|name| {
+                fingerprints
+                    .get(name)
+                    .map(|fingerprint| (name.clone(), fingerprint.value.clone()))
+            })
+            .collect();
         receipts.save_request(request).await?;
     }
     run.control.as_mut().expect("owned Run").activity = crate::runs::Activity::Executing;

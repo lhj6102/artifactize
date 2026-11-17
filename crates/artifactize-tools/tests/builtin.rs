@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fs};
 use artifactize_tools::{
     Builtin, Content,
     builtin::{self, Input},
-    scope::{Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope},
+    scope::{Artifact, ArtifactId, ChildPrefix, Scope},
 };
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -23,11 +23,10 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
     let owner = id("owner");
     let folder = |path| Artifact {
         path,
-        kind: ArtifactKind::Folder,
+
         name: "fixture".into(),
         covering_part: None,
         nested: BTreeMap::new(),
-        select: Vec::new(),
     };
     let scope = Scope {
         artifacts: BTreeMap::from([
@@ -114,11 +113,10 @@ fn folder_scope(owner: &ArtifactId) -> Scope {
             owner.clone(),
             Artifact {
                 path: "".into(),
-                kind: ArtifactKind::Folder,
+
                 name: "fixture".into(),
                 covering_part: None,
                 nested: BTreeMap::new(),
-                select: Vec::new(),
             },
         )]),
     }
@@ -318,11 +316,10 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
     let owner = id("app");
     let folder = |path: &str, nested| Artifact {
         path: path.into(),
-        kind: ArtifactKind::Folder,
+
         name: "fixture".into(),
         nested,
         covering_part: None,
-        select: Vec::new(),
     };
     let app = folder(
         "",

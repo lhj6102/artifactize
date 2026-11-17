@@ -211,10 +211,7 @@ pub(super) fn status(view: &artifactize_core::project::StatusView) -> io::Result
             artifact.id,
             tags(&artifact.tags),
             if artifact.kind == artifactize_core::config::ArtifactKind::File {
-                format!(
-                    " [file: {}]",
-                    artifactize_core::platform::path_text(&artifact.path)
-                )
+                format!(" [file: {}]", artifact.path)
             } else {
                 String::new()
             },
@@ -296,8 +293,10 @@ pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result
                 out,
                 "    Artifact {id}{}{}{} ({})",
                 tags(&artifact.tags),
-                if artifact.kind == artifactize_core::config::ArtifactKind::File {
+                if artifact.kind() == artifactize_core::config::ArtifactKind::File {
                     " [file]"
+                } else if artifact.kind() == artifactize_core::config::ArtifactKind::Live {
+                    " [live]"
                 } else {
                     ""
                 },
@@ -306,10 +305,14 @@ pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result
                 } else {
                     ""
                 },
-                if artifact.path.as_os_str().is_empty() {
+                if artifact
+                    .path
+                    .local()
+                    .is_some_and(|path| path.as_os_str().is_empty())
+                {
                     ".".into()
                 } else {
-                    artifactize_core::platform::path_text(&artifact.path)
+                    artifact.path.to_string()
                 }
             )?;
             for eval in view.evals.iter().filter(|eval| eval.target == **id) {

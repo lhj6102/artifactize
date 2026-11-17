@@ -56,8 +56,7 @@ struct RegisteredTool<'a> {
 #[serde(rename_all = "camelCase")]
 struct ToolContext {
     artifact_id: crate::config::ArtifactName,
-    #[serde(with = "crate::platform::path_serde")]
-    artifact_path: PathBuf,
+    artifact_path: crate::config::Target,
     scope: BTreeMap<crate::config::ArtifactName, ContextArtifact>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     execution_paths: BTreeMap<crate::config::LogicalPath, ContextPath>,
@@ -76,8 +75,7 @@ struct ToolContext {
 }
 #[derive(Serialize)]
 struct ContextArtifact {
-    #[serde(with = "crate::platform::path_serde")]
-    path: PathBuf,
+    path: crate::config::Target,
     kind: crate::config::ArtifactKind,
     nested: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -212,9 +210,11 @@ impl<'a> Registry<'a> {
             .get(name)
             .ok_or("Unknown registered Agent tool.")?;
         let owner = &tool.definition.artifact_id;
-        self.scope
-            .resolve_input(&self.config.root, owner, "")
-            .map_err(|e| e.to_string())?;
+        if self.scope.artifacts[owner].path.local().is_some() {
+            self.scope
+                .resolve_input(&self.config.root, owner, "")
+                .map_err(|e| e.to_string())?;
+        }
         if let AgentTool::Command(command) = tool.declaration {
             preflight_executable(&self.config.root, &self.scope, owner, &command.command)?;
             if let Some(name) = &command.session {
@@ -430,16 +430,20 @@ impl<'a> Registry<'a> {
             .artifacts
             .values()
             .map(|artifact| {
-                let path = scope::scoped_path(&self.config.root, artifact.referenced_path())
-                    .map_err(|_| ())?;
+                let path = match &artifact.path {
+                    crate::config::Target::Live(uri) => crate::config::Target::Live(uri.clone()),
+                    _ => scope::scoped_path(&self.config.root, artifact.referenced_path())
+                        .map_err(|_| ())?
+                        .into(),
+                };
                 Ok((
                     artifact.name.clone(),
                     ContextArtifact {
                         path,
-                        kind: artifact.kind,
+                        kind: artifact.kind(),
                         nested: artifact.nested.clone(),
                         covering_part: artifact.covering_part.clone(),
-                        select: artifact.select.clone(),
+                        select: artifact.select().to_vec(),
                     },
                 ))
             })

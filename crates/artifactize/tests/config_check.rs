@@ -287,7 +287,10 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
             .collect::<Vec<_>>(),
         ["review/agent", "review/human", "review/runtime"]
     );
-    assert_eq!(config.artifacts["review"].path, Path::new("review"));
+    assert_eq!(
+        config.artifacts["review"].path.local(),
+        Some(Path::new("review"))
+    );
     assert_eq!(
         config.evals[2]
             .declaration

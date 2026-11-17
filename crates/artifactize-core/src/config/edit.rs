@@ -30,7 +30,9 @@
 //! removes that whole's local places. Empty comment text removes it. No layout file exists.
 use super::*;
 mod annotations;
+mod placement;
 pub use annotations::Annotations;
+pub use placement::PlacementKey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,7 +108,7 @@ pub enum Operation {
         name: ArtifactName,
     },
     SavePlaces {
-        places: BTreeMap<String, [f64; 2]>,
+        places: BTreeMap<PlacementKey, [f64; 2]>,
     },
     SetComment {
         name: ArtifactName,
@@ -215,10 +217,7 @@ fn compare_named_bases(
         Operation::MovePart { from, to, .. } => from.iter().chain(to.iter()).cloned().collect(),
         Operation::Rename { old, new } => vec![old.clone(), new.clone()],
         Operation::MoveComment { from, to } => vec![from.clone(), to.clone()],
-        Operation::SavePlaces { places } => places
-            .keys()
-            .filter_map(|key| key.split('/').next()?.parse::<ArtifactName>().ok())
-            .collect(),
+        Operation::SavePlaces { places } => places.keys().map(|key| key.owner().clone()).collect(),
         Operation::ResetPlaces { whole } => whole.iter().cloned().collect(),
     };
     for name in &names {
@@ -481,18 +480,18 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
         Operation::SavePlaces { places } => {
             let mut boxes = BTreeMap::<ArtifactName, BTreeMap<ArtifactName, [f64; 2]>>::new();
             for (key, at) in places {
-                if let Some((whole, part)) = key.split_once('/') {
-                    let whole = discovery::definition_name(whole).map_err(forbidden)?;
-                    let part = discovery::definition_name(part).map_err(forbidden)?;
-                    if config.artifacts.contains_key(&whole) {
-                        boxes.entry(whole).or_default().insert(part, at);
+                match key {
+                    PlacementKey::Part { whole, part } => {
+                        if config.artifacts.contains_key(&whole) {
+                            boxes.entry(whole).or_default().insert(part, at);
+                        }
                     }
-                } else {
-                    let name = discovery::definition_name(&key).map_err(forbidden)?;
-                    if config.artifacts.contains_key(&name) {
-                        update(&config, &mut proposed, &name, |doc, file| {
-                            annotations::set_at(doc, file, &config, &name, Some(at))
-                        })?;
+                    PlacementKey::Node(name) => {
+                        if config.artifacts.contains_key(&name) {
+                            update(&config, &mut proposed, &name, |doc, file| {
+                                annotations::set_at(doc, file, &config, &name, Some(at))
+                            })?;
+                        }
                     }
                 }
             }
@@ -768,7 +767,7 @@ fn rename_references(text: &str, old: &str, new: &str) -> String {
 }
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Layout {
-    pub nodes: BTreeMap<String, [f64; 2]>,
+    pub nodes: BTreeMap<PlacementKey, [f64; 2]>,
 }
 /// Branch-current places. The top level is hand-placed when a plain node key exists;
 /// a box is hand-placed when a `whole/part` key exists. No layout file is read.
@@ -777,10 +776,16 @@ pub fn read_layout(project: &Path) -> Result<Layout, Refusal> {
     let mut layout = Layout::default();
     for (name, node) in read.nodes {
         if let Some(at) = node.annotations.at {
-            layout.nodes.insert(name.to_string(), at);
+            layout.nodes.insert(PlacementKey::Node(name.clone()), at);
         }
         for (part, at) in node.annotations.parts {
-            layout.nodes.insert(format!("{name}/{part}"), at);
+            layout.nodes.insert(
+                PlacementKey::Part {
+                    whole: name.clone(),
+                    part,
+                },
+                at,
+            );
         }
     }
     Ok(layout)
@@ -839,8 +844,8 @@ pub fn read_project(project: &Path) -> Result<Project, Refusal> {
                         .as_str()
                         .expect("validated PATH")
                         .to_owned(),
-                    path: artifact.path.clone(),
-                    kind: artifact.kind,
+                    path: artifact.path.local().unwrap_or(Path::new("")).to_owned(),
+                    kind: artifact.kind(),
                     target_missing: artifact.target_error.is_some(),
                     annotations: annotations::read(source, &config, name),
                 },

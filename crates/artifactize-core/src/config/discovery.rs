@@ -97,10 +97,10 @@ pub(super) fn populate_nested(config: &mut RepoConfig) {
                 .into_iter()
                 .filter_map(|part| {
                     let part = config.artifacts.get(part)?;
-                    if part.kind != ArtifactKind::Folder {
+                    if part.kind() != ArtifactKind::Folder {
                         return None;
                     }
-                    let relative = part.path.strip_prefix(artifact.folder()).ok()?;
+                    let relative = part.path.local()?.strip_prefix(artifact.folder()).ok()?;
                     let prefix = crate::platform::path_text(relative)
                         .parse::<ChildPrefix>()
                         .ok()?;
@@ -112,9 +112,10 @@ pub(super) fn populate_nested(config: &mut RepoConfig) {
                 .into_iter()
                 .filter_map(|part| config.artifacts.get(part))
                 .filter(|part| {
-                    part.kind == ArtifactKind::Folder && artifact.folder().starts_with(&part.path)
+                    part.kind() == ArtifactKind::Folder
+                        && artifact.folder().starts_with(part.folder())
                 })
-                .max_by_key(|part| part.path.components().count())
+                .max_by_key(|part| part.folder().components().count())
                 .map(|part| part.name.clone());
             (name.clone(), entries, covering_part)
         })
@@ -152,7 +153,7 @@ pub(super) fn parse_definition(
     name: &ArtifactName,
     source: &str,
     schemas: &mut schemas::Schemas,
-) -> Result<(PathBuf, ArtifactKind, ArtifactDeclaration), String> {
+) -> Result<(Target, ArtifactKind, ArtifactDeclaration), String> {
     if toml::de::DeTable::parse(source).is_ok_and(|table| table.get_ref().contains_key("name")) {
         return Err(location::error_at(
             source,
@@ -167,7 +168,7 @@ pub(super) fn parse_definition(
         &super::definition::Input {
             kind,
             name: Some(name),
-            path: &logical,
+            path: logical.local().unwrap_or(Path::new("")),
             file: Path::new(""),
             source,
         },
@@ -240,7 +241,7 @@ pub(super) fn read_regular_text(path: &Path) -> std::io::Result<String> {
 
 pub(super) fn insert_artifact(
     config: &mut RepoConfig,
-    path: PathBuf,
+    path: impl Into<Target>,
     kind: ArtifactKind,
     declaration: ArtifactDeclaration,
     file: &Path,
@@ -279,11 +280,12 @@ pub(super) fn insert_artifact(
         Artifact {
             definition: PathBuf::new(),
             target_error: None,
-            path,
-            kind,
+            path: path
+                .into()
+                .with_kind(kind, select.unwrap_or_default())
+                .map_err(|error| ConfigError::new(file, error))?,
             covering_part: None,
             nested: BTreeMap::new(),
-            select: select.unwrap_or_default(),
             parts: parts.into_iter().flatten().collect(),
             name,
             tags,
@@ -295,7 +297,7 @@ pub(super) fn insert_artifact(
     Ok(())
 }
 
-pub(super) fn target(source: &str) -> Result<(PathBuf, ArtifactKind), String> {
+pub(super) fn target(source: &str) -> Result<(Target, ArtifactKind), String> {
     let doc = source
         .parse::<toml_edit::DocumentMut>()
         .map_err(|error| error.to_string())?;
@@ -306,6 +308,19 @@ pub(super) fn target(source: &str) -> Result<(PathBuf, ArtifactKind), String> {
             location::error_at(source, &["path"], "path is required and must be a string")
         })?
         .to_owned();
+    if Uri::has_scheme(&target) {
+        let uri = target
+            .parse::<Uri>()
+            .map_err(|error| location::error_at(source, &["path"], &error.to_string()))?;
+        if doc.contains_key("select") {
+            return Err(location::error_at(
+                source,
+                &["select"],
+                "select is not supported on a Live target",
+            ));
+        }
+        return Ok((Target::Live(uri), ArtifactKind::Live));
+    }
     let kind = if target.ends_with('/') {
         if doc.contains_key("select") {
             ArtifactKind::Aspect
@@ -340,5 +355,10 @@ pub(super) fn target(source: &str) -> Result<(PathBuf, ArtifactKind), String> {
             "select requires a folder path ending in /",
         ));
     }
-    Ok((PathBuf::from(logical), kind))
+    Ok((
+        Target::Folder(PathBuf::from(logical))
+            .with_kind(kind, Vec::new())
+            .map_err(|error| error.to_string())?,
+        kind,
+    ))
 }

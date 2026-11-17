@@ -54,7 +54,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             .map(|value| value.decor().clone());
         let key_decor = doc.key("name").map(|key| key.leaf_decor().clone());
         doc.remove("name");
-        let target = match artifact.kind {
+        let target = match artifact.kind() {
             ArtifactKind::Graph => ".artifactize/".to_owned(),
             ArtifactKind::Folder | ArtifactKind::Aspect => {
                 if artifact.folder().as_os_str().is_empty() {
@@ -63,7 +63,8 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
                     format!("{}/", crate::platform::path_text(artifact.folder()))
                 }
             }
-            ArtifactKind::File => crate::platform::path_text(&artifact.path),
+            ArtifactKind::File => artifact.path.to_string(),
+            ArtifactKind::Live => unreachable!("legacy reader has no Live targets"),
         };
         doc.insert("path", toml_edit::value(target));
         if let Some(decor) = key_decor {
@@ -94,8 +95,8 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
                 .explicit_parts
                 .insert(name.clone(), artifact.parts.iter().cloned().collect());
         }
-        if artifact.kind == ArtifactKind::Folder
-            && artifact.path.as_os_str().is_empty()
+        if artifact.kind() == ArtifactKind::Folder
+            && artifact.folder().as_os_str().is_empty()
             && matches!(artifact.fingerprint, Some(Fingerprint::Artifactsum { .. }))
         {
             if doc.get("fingerprint").is_none() {

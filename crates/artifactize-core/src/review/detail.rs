@@ -111,7 +111,7 @@ pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, Strin
             "Repository",
             definition
                 .and_then(|definition| definition.repo.value())
-                .map(|repo| crate::platform::path_text(repo))
+                .map(crate::platform::path_text)
                 .unwrap_or_else(|| "-".into()),
         ),
         ("Status", status),

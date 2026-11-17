@@ -1140,10 +1140,10 @@ pub fn detail(
                     .map_or_else(
                         || "-".into(),
                         |path| {
-                            if path.as_os_str().is_empty() {
+                            if path.local().is_some_and(|path| path.as_os_str().is_empty()) {
                                 ".".into()
                             } else {
-                                crate::platform::path_text(path)
+                                path.to_string()
                             }
                         },
                     ),

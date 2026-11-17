@@ -169,6 +169,42 @@ pub(super) async fn execute(
     } else {
         outcome
     };
+    let outcome = if outcome.is_ok() && request.key.is_none() {
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id == request.eval_id)
+            .expect("included eval");
+        if cache::live_input(&config, eval).is_some() {
+            match cache::recheck_observations(
+                &config,
+                &request.fingerprints,
+                &run_dir,
+                parallelism,
+                cancellation.clone(),
+            )
+            .await
+            {
+                Ok(true) => outcome,
+                Ok(false) => Err((
+                    "Snapshot changed during review.".into(),
+                    crate::types::FailureCode::InputChanged,
+                )),
+                Err(error) => Err((
+                    error,
+                    if cancellation.is_cancelled() {
+                        crate::types::FailureCode::Cancelled
+                    } else {
+                        crate::types::FailureCode::FingerprintRecheckFailed
+                    },
+                )),
+            }
+        } else {
+            outcome
+        }
+    } else {
+        outcome
+    };
     let outcome = if cancellation.is_cancelled() {
         Err((
             process::Error::Cancelled.to_string(),

@@ -321,3 +321,30 @@ fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
         );
     }
 }
+
+#[test]
+fn saved_uri_targets_keep_old_null_kind_wires_and_restore_typed_live_and_aspect_targets() {
+    let graph: Graph = serde_json::from_value(json!({"artifacts":{
+        "service":{"path":"service:opaque","kind":null,"future":{"keep":true}},
+        "page":{"path":"pages","kind":"aspect","select":["index.md"]}
+    }}))
+    .unwrap();
+    let service = graph.artifact("service").unwrap();
+    assert_eq!(service.kind.value(), Some(&config::ArtifactKind::Live));
+    assert_eq!(
+        service.path.value().unwrap().uri().unwrap().as_str(),
+        "service:opaque"
+    );
+    let page = graph.artifact("page").unwrap().path.value().unwrap();
+    assert_eq!(page.kind(), config::ArtifactKind::Aspect);
+    assert_eq!(page.select()[0].as_str(), "index.md");
+    let wire = serde_json::to_value(&graph).unwrap();
+    assert!(wire["artifacts"]["service"]["kind"].is_null());
+    assert_eq!(wire["artifacts"]["service"]["future"]["keep"], true);
+    assert!(
+        serde_json::from_value::<Graph>(
+            json!({"artifacts":{"bad":{"path":"service:opaque","kind":"folder"}}})
+        )
+        .is_err()
+    );
+}

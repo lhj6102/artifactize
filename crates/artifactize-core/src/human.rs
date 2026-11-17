@@ -256,29 +256,41 @@ async fn recheck(
     if cancellation.is_cancelled() {
         return Err("Human action was cancelled.".into());
     }
-    let Some(expected) = &request.key else {
-        return Ok(());
-    };
-    let output = request
-        .run_dir
-        .as_deref()
-        .ok_or("Human request has no output directory.")?;
     let eval = config
         .evals
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .ok_or("Recorded Human eval no longer exists.")?;
+    if request.key.is_none() && cache::live_input(config, eval).is_none() {
+        return Ok(());
+    }
+    let output = request
+        .run_dir
+        .as_deref()
+        .ok_or("Human request has no output directory.")?;
     let parallelism = cache::Parallelism::new(cache::Parallelism::available());
-    let (code, error) =
-        match cache::recheck(config, eval, output, &parallelism, cancellation.clone()).await {
-            Ok(Some(actual)) if &actual == expected => return Ok(()),
-            Ok(_) => (
-                crate::types::FailureCode::InputChanged,
-                "Fingerprint changed during review.".into(),
-            ),
-            Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => (crate::types::FailureCode::FingerprintRecheckFailed, error),
-        };
+    let (code, error) = match if let Some(expected) = &request.key {
+        cache::recheck(config, eval, output, &parallelism, cancellation.clone())
+            .await
+            .map(|actual| actual.as_ref() == Some(expected))
+    } else {
+        cache::recheck_observations(
+            config,
+            &request.fingerprints,
+            output,
+            &parallelism,
+            cancellation.clone(),
+        )
+        .await
+    } {
+        Ok(true) => return Ok(()),
+        Ok(false) => (
+            crate::types::FailureCode::InputChanged,
+            "Fingerprint changed during review.".into(),
+        ),
+        Err(error) if cancellation.is_cancelled() => return Err(error),
+        Err(error) => (crate::types::FailureCode::FingerprintRecheckFailed, error),
+    };
     request.state =
         crate::store::RequestState::failed(error.clone(), Some(code), crate::broker::now());
     receipts.settle_human(request, reviewer).await?;

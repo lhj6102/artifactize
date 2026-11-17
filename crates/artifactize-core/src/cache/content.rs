@@ -170,8 +170,11 @@ impl Walk {
             .into_iter()
             .flat_map(|name| {
                 let part = &config.artifacts[name];
-                if part.kind == crate::config::ArtifactKind::Aspect {
-                    part.select
+                if part.kind() == crate::config::ArtifactKind::Live {
+                    return Vec::new();
+                }
+                if part.kind() == crate::config::ArtifactKind::Aspect {
+                    part.select()
                         .iter()
                         .map(|path| part.folder().join(path))
                         .collect()

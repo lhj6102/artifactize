@@ -259,7 +259,7 @@ pub(crate) fn serialize_paths<S: serde::Serializer>(
     use serde::Serialize;
     paths
         .iter()
-        .map(|path| path_text(path))
+        .map(path_text)
         .collect::<Vec<_>>()
         .serialize(serializer)
 }

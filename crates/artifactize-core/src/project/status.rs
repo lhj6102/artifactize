@@ -48,8 +48,7 @@ pub struct ArtifactState {
     pub target_missing: bool,
     pub id: crate::config::ArtifactName,
     pub kind: crate::config::ArtifactKind,
-    #[serde(with = "crate::platform::path_serde")]
-    pub path: std::path::PathBuf,
+    pub path: crate::config::Target,
     pub tags: Vec<String>,
     pub state: ArtifactCondition,
     pub reason: String,

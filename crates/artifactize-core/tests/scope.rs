@@ -81,7 +81,7 @@ async fn resolved_nested_and_global_inputs_reach_the_runtime_executor() {
         panic!()
     };
     let args = resolve_argv(&config, &scope, &eval.target, args).unwrap();
-    let cwd = scoped_path(root, &config.artifacts[&eval.target].path).unwrap();
+    let cwd = scoped_path(root, config.artifacts[&eval.target].folder()).unwrap();
     let output = Fixture(scratch.path().join("output"));
     let mut command = Command::prepare(
         command.into(),

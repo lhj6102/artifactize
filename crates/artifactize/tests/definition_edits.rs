@@ -318,7 +318,7 @@ fn malformed_style_places_only_reset_the_affected_box_but_refuse_writes_to_that_
             &project.repo,
             &read.files,
             Operation::SavePlaces {
-                places: [("whole".into(), [3.0, 4.0])].into(),
+                places: [("whole".parse().unwrap(), [3.0, 4.0])].into(),
             },
         )
         .unwrap_err();

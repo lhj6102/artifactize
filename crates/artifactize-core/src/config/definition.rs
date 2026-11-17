@@ -26,6 +26,41 @@ pub(super) fn parse(
     }
     match found.kind {
         ArtifactKind::Folder => parse(schemas).map_err(|error| ConfigError::new(file, error)),
+        ArtifactKind::Live => {
+            let mut declaration = parse(schemas).map_err(|error| ConfigError::new(file, error))?;
+            if !declares(source, "fingerprint") {
+                declaration.fingerprint = None;
+            }
+            if matches!(
+                declaration.fingerprint,
+                Some(Fingerprint::Artifactsum { .. } | Fingerprint::Graph)
+            ) {
+                return Err(found_error(
+                    found,
+                    &["fingerprint"],
+                    "A Live Artifact uses a fingerprint script or no snapshot, never artifactsum.",
+                ));
+            }
+            let file_builtin = |builtin: Builtin| {
+                !matches!(builtin, Builtin::Graph | Builtin::Help | Builtin::Open)
+            };
+            if declaration
+                .views
+                .agent_tools
+                .values()
+                .any(|tool| matches!(tool, AgentTool::Builtin(tool) if file_builtin(tool.builtin)))
+                || declaration.views.human_tools.values().any(
+                    |tool| matches!(tool, HumanTool::Builtin(tool) if file_builtin(tool.builtin)),
+                )
+            {
+                return Err(found_error(
+                    found,
+                    &["views"],
+                    "File builtins cannot read a Live Artifact; use read-only observation commands.",
+                ));
+            }
+            Ok(declaration)
+        }
         ArtifactKind::Aspect => {
             let mut declaration = parse(schemas).map_err(|error| ConfigError::new(file, error))?;
             let select = declaration.select.clone().unwrap_or_default();

@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, io::Write, path::PathBuf};
 
 use crate::{
     Builtin, Content, builtin,
-    scope::{Artifact, ArtifactId, ArtifactKind, Scope},
+    scope::{Artifact, ArtifactId, Scope},
 };
 use clap::{Parser, Subcommand};
 use serde_json::json;
@@ -81,12 +81,11 @@ async fn execute(tool: Tool) -> Result<(), String> {
         artifacts: BTreeMap::from([(
             owner.clone(),
             Artifact {
-                path: PathBuf::new(),
-                kind: ArtifactKind::Folder,
+                path: PathBuf::new().into(),
+
                 name: "cwd".into(),
                 covering_part: None,
                 nested: BTreeMap::new(),
-                select: Vec::new(),
             },
         )]),
     };

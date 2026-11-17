@@ -56,7 +56,7 @@ impl Runs {
                 },
                 // An aspect's path is its declaration's label in its folder.
                 Some(crate::config::ArtifactKind::Aspect) => Place {
-                    path: path.parent().unwrap_or(std::path::Path::new("")).to_owned(),
+                    path: path.clone(),
                     file: false,
                 },
                 _ => Place {
@@ -84,8 +84,8 @@ impl Runs {
         let place = |id: &str| {
             let artifact = artifacts.get(id)?;
             Some(Place {
-                path: artifact.referenced_path().to_owned(),
-                file: artifact.kind == crate::config::ArtifactKind::File,
+                path: artifact.path.clone(),
+                file: artifact.kind() == crate::config::ArtifactKind::File,
             })
         };
         Self::of(builtin, command, &args, &place, owner)
@@ -107,7 +107,14 @@ impl Runs {
             (Some(Builtin::Open), [url]) if artifactize_tools::builtin::is_url(url) => {
                 Self::OpenUrl((*url).to_owned())
             }
-            (Some(Builtin::Open), [_]) => Self::Open(target()),
+            (Some(Builtin::Open), [_]) => {
+                let target = target();
+                if artifactize_tools::builtin::is_url(&target) {
+                    Self::OpenUrl(target)
+                } else {
+                    Self::Open(target)
+                }
+            }
             (Some(Builtin::Read), [_]) => Self::Read(target()),
             (Some(Builtin::List), [_]) => Self::List(target()),
             (Some(Builtin::Section), [_, heading]) => Self::Section {
@@ -155,7 +162,7 @@ impl Runs {
 
 /// Where a target's Artifact is, as a definition knows it.
 struct Place {
-    path: std::path::PathBuf,
+    path: crate::config::Target,
     /// A file Artifact: a path below it is in its folder.
     file: bool,
 }
@@ -182,7 +189,7 @@ fn logical(place: &dyn Fn(&str) -> Option<Place>, owner: &ArtifactName, arg: &st
     let Some(artifact) = place(id) else {
         return arg.to_owned();
     };
-    let path = crate::platform::path_text(&artifact.path);
+    let path = artifact.path.to_string();
     let base = if rest.is_empty() || !artifact.file {
         path.as_str()
     } else {

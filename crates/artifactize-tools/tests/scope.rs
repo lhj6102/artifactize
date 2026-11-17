@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use artifactize_tools::scope::{
-    Artifact, ArtifactId, ArtifactKind, ChildPrefix, Scope, ScopedPath,
-};
+use artifactize_tools::scope::{Artifact, ArtifactId, ChildPrefix, Scope, ScopedPath};
 
 fn id(value: &str) -> ArtifactId {
     ArtifactId::new(value).unwrap()
@@ -32,15 +30,14 @@ fn artifact_ids_accept_only_short_names_without_path_syntax() {
 #[test]
 fn nested_folders_resolve_to_their_target_ids() {
     let folder = |path: &str, nested: &[(&str, &str)]| Artifact {
-        path: PathBuf::from(path),
-        kind: ArtifactKind::Folder,
+        path: PathBuf::from(path).into(),
+
         name: path.into(),
         covering_part: None,
         nested: nested
             .iter()
             .map(|(prefix, target)| (ChildPrefix::new(*prefix).unwrap(), id(target)))
             .collect(),
-        select: Vec::new(),
     };
     let scope = Scope {
         artifacts: BTreeMap::from([

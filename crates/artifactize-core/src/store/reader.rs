@@ -294,12 +294,7 @@ impl Cache {
         offset: u32,
         pinned: Option<&RunId>,
     ) -> Result<Vec<RunSummary>, Error> {
-        let paths = paths.map(|paths| {
-            paths
-                .iter()
-                .map(|path| platform::path_text(path))
-                .collect::<Vec<_>>()
-        });
+        let paths = paths.map(|paths| paths.iter().map(platform::path_text).collect::<Vec<_>>());
         let repos = paths
             .map(|paths| serde_json::to_string(&paths))
             .transpose()?;

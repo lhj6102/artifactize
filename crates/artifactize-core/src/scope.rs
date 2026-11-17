@@ -97,18 +97,17 @@ pub(crate) fn tool_id(name: &ArtifactName) -> ArtifactId {
 /// Revalidate file targets at every preparation/read boundary, without following links.
 pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(), ScopeError> {
     if matches!(
-        artifact.kind,
+        artifact.kind(),
         crate::config::ArtifactKind::Folder | crate::config::ArtifactKind::Aspect
     ) {
-        let directory = scoped_path(root, &artifact.path)?;
+        let directory = scoped_path(root, artifact.folder())?;
         crate::platform::open_directory(&directory).map_err(|error| {
             ScopeError(format!(
                 "Artifact {} target {} must be a folder: {error}",
-                artifact.name,
-                crate::platform::path_text(&artifact.path)
+                artifact.name, artifact.path
             ))
         })?;
-        for selected in &artifact.select {
+        for selected in artifact.select() {
             let file = open_scoped(&directory, selected).map_err(|error| {
                 ScopeError(format!(
                     "Artifact {} selection {selected} is unavailable: {error}",
@@ -129,14 +128,15 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
     if artifact.file_name().is_some() {
         artifact
             .path
+            .local()
+            .expect("file target")
             .to_str()
             .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-        let target = crate::platform::path_text(&artifact.path);
+        let target = artifact.path.to_string();
         let file = open_scoped(root, &target).map_err(|error| {
             ScopeError(format!(
                 "File Artifact {} target {} is unavailable: {error}",
-                artifact.name,
-                crate::platform::path_text(&artifact.path)
+                artifact.name, artifact.path
             ))
         })?;
         if !file
@@ -146,8 +146,7 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
         {
             return Err(ScopeError(format!(
                 "File Artifact {} target {} must remain a regular file.",
-                artifact.name,
-                crate::platform::path_text(&artifact.path)
+                artifact.name, artifact.path
             )));
         }
     }
@@ -170,6 +169,9 @@ fn nested_path(
     source: &ArtifactName,
     path: &str,
 ) -> Result<(), ScopeError> {
+    if everything.artifacts[&tool_id(source)].kind() == crate::config::ArtifactKind::Live {
+        return Ok(());
+    }
     let resolved = everything.resolve_path(&tool_id(source), path)?;
     if resolved.artifact_id.as_str() != source.as_str() {
         return Err(ScopeError(format!(
@@ -212,7 +214,9 @@ pub(crate) fn executable(
     let artifact = scope.artifacts[owner];
     let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
     let program = if let Some(relative) = crate::platform::program::folder_relative(command) {
-        let physical = if artifact.file_name().is_some() {
+        let physical = if artifact.file_name().is_some()
+            || artifact.kind() == crate::config::ArtifactKind::Live
+        {
             artifactize_tools::scope::logical_path(relative).map_err(|error| error.to_string())?;
             cwd.join(relative)
         } else {
@@ -234,7 +238,9 @@ pub(crate) fn executable(
                 } else {
                     candidate
                 };
-                let resolved = if artifact.file_name().is_some() {
+                let resolved = if artifact.file_name().is_some()
+                    || artifact.kind() == crate::config::ArtifactKind::Live
+                {
                     scoped_path(&cwd, &candidate)
                 } else {
                     scope.resolve_input(
@@ -271,7 +277,9 @@ fn executable_spelling(
     candidate: &Path,
 ) -> Option<PathBuf> {
     let parent = candidate.parent().unwrap_or(Path::new(""));
-    let directory = if scope.artifacts[owner].file_name().is_some() {
+    let directory = if scope.artifacts[owner].file_name().is_some()
+        || scope.artifacts[owner].path.uri().is_some()
+    {
         scoped_path(cwd, parent).ok()?
     } else {
         scope.resolve_input(root, owner, parent.to_str()?).ok()?
@@ -368,21 +376,43 @@ pub fn resolve_argv(
             };
             let id = reference_target(config, owner, name)?;
             reference_path(config, id, path)?;
-            let resolved = scope.resolve_input(&config.root, id, path)?;
-            resolved
-                .to_str()
-                .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-            let resolved = crate::platform::path_text(&resolved);
+            let resolved = argument_value(config, scope, id, path)?;
             Ok(format!("{prefix}{resolved}"))
         })
         .collect()
+}
+
+/// A reference is rendered once for runtime, tool and fingerprint argv. Live addresses
+/// stay opaque strings and are never opened or normalized as filesystem paths.
+pub(crate) fn argument_value(
+    config: &RepoConfig,
+    scope: &Scope<'_>,
+    id: &ArtifactName,
+    path: &str,
+) -> Result<String, ScopeError> {
+    let artifact = scope
+        .artifacts
+        .get(id)
+        .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {id}")))?;
+    if let Some(uri) = artifact.path.uri() {
+        return Ok(if path.is_empty() {
+            uri.to_string()
+        } else {
+            format!("{uri}/{path}")
+        });
+    }
+    let resolved = scope.resolve_input(&config.root, id, path)?;
+    resolved
+        .to_str()
+        .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
+    Ok(crate::platform::path_text(&resolved))
 }
 
 /// Every path an aspect selects exists below its folder, without symlink traversal.
 pub(crate) fn validate_selections(config: &RepoConfig) -> Result<(), ConfigError> {
     for (id, artifact) in &config.artifacts {
         let scope = artifact_scope(config, &[id]).expect("a configured Artifact");
-        for selected in &artifact.select {
+        for selected in artifact.select() {
             scope
                 .resolve_input(&config.root, id, selected)
                 .map_err(|failure| {
@@ -523,7 +553,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             };
             match config.artifacts.get(part) {
                 None => return Err(error(format!("Unknown Artifact {part}."))),
-                Some(part) if part.kind == crate::config::ArtifactKind::Graph => {
+                Some(part) if part.kind() == crate::config::ArtifactKind::Graph => {
                     return Err(error(format!(
                         "The graph Artifact {} is a part of nothing.",
                         part.name

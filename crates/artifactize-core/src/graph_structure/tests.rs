@@ -110,10 +110,10 @@ fn definition_targets_are_ordinary_folder_nodes() {
         )
         .unwrap();
         let config = crate::config::read_workspace_config(repo.path()).unwrap();
-        assert_eq!(config.artifacts["graph"].kind, ArtifactKind::Folder);
+        assert_eq!(config.artifacts["graph"].kind(), ArtifactKind::Folder);
         assert_eq!(
-            config.artifacts["graph"].path,
-            std::path::Path::new(".artifactize")
+            config.artifacts["graph"].path.local(),
+            Some(std::path::Path::new(".artifactize"))
         );
         assert!(config.artifacts["graph"].parts.contains("leaf"));
     }

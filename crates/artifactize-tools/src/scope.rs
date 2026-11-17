@@ -13,6 +13,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::files as platform;
+mod logical;
+pub use logical::LogicalPath;
+mod target;
+pub use target::{Target, Uri};
 
 /// Bound logical tool paths in UTF-16 units, matching JSON Schema string limits
 /// across supported clients without tying scoped paths to an OS-specific PATH_MAX.
@@ -144,34 +148,35 @@ pub enum ArtifactKind {
     /// Selected paths below the folder of its declaration.
     Aspect,
     Graph,
+    Live,
 }
 
 /// Access data computed by the caller, without declarations, evals, or owner commands.
 #[derive(Debug, Clone)]
 pub struct Artifact {
-    pub path: PathBuf,
-    pub kind: ArtifactKind,
+    pub path: Target,
     pub name: String,
     /// Logical path prefix to the nested folder Artifact that owns it.
     pub nested: BTreeMap<ChildPrefix, ArtifactId>,
     /// A folder part whose target contains this entire target's containing folder.
     pub covering_part: Option<ArtifactId>,
-    /// An aspect's selected paths, relative to its folder; empty for other kinds.
-    pub select: Vec<String>,
 }
 
 impl Artifact {
+    pub fn kind(&self) -> ArtifactKind {
+        self.path.kind()
+    }
+    pub fn select(&self) -> &[LogicalPath] {
+        self.path.select()
+    }
     pub fn folder(&self) -> &Path {
-        match self.kind {
-            ArtifactKind::Folder | ArtifactKind::Aspect | ArtifactKind::Graph => &self.path,
-            ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
-        }
+        self.path.folder()
     }
 
     /// Whether only some paths below its folder are the Artifact's: a file Artifact's
     /// target or an aspect's selection, under a virtual root.
     pub fn selective(&self) -> bool {
-        matches!(self.kind, ArtifactKind::File | ArtifactKind::Aspect)
+        matches!(self.kind(), ArtifactKind::File | ArtifactKind::Aspect)
     }
 
     /// Whether the logical `path` below its folder is the Artifact's: always for a folder,
@@ -180,10 +185,11 @@ impl Artifact {
         if path.is_empty() {
             return true;
         }
-        match self.kind {
+        match self.kind() {
             ArtifactKind::Folder | ArtifactKind::Graph => true,
+            ArtifactKind::Live => false,
             ArtifactKind::File => self.file_name() == Some(path),
-            ArtifactKind::Aspect => self.select.iter().any(|selected| {
+            ArtifactKind::Aspect => self.select().iter().any(|selected| {
                 let within = |outer: &str, inner: &str| {
                     inner
                         .strip_prefix(outer)
@@ -195,8 +201,13 @@ impl Artifact {
     }
 
     pub fn file_name(&self) -> Option<&str> {
-        (self.kind == ArtifactKind::File)
-            .then(|| self.path.file_name().and_then(|name| name.to_str()))
+        (self.kind() == ArtifactKind::File)
+            .then(|| {
+                self.path
+                    .local()
+                    .and_then(Path::file_name)
+                    .and_then(|name| name.to_str())
+            })
             .flatten()
     }
 }
@@ -227,6 +238,11 @@ impl Scope {
                 .artifacts
                 .get(current)
                 .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {current}")))?;
+            if artifact.kind() == ArtifactKind::Live {
+                return Err(ScopeError(
+                    "Live Artifacts have no filesystem inputs.".into(),
+                ));
+            }
             if let Some(part) = &artifact.covering_part
                 && !self.artifacts.contains_key(part)
             {
@@ -304,7 +320,11 @@ pub enum OpenError {
 /// Open each component relative to its pinned parent, so replacement cannot redirect a read
 /// through a link.
 pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
-    if !platform::is_absolute(root) || platform::is_absolute(&artifact.path) {
+    let local = artifact
+        .path
+        .local()
+        .ok_or_else(|| ScopeError("Live Artifacts have no filesystem inputs.".into()))?;
+    if !platform::is_absolute(root) || platform::is_absolute(local) {
         return Err(
             ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
         );
@@ -359,7 +379,7 @@ fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
         None => format!(
             "Aspect {} exposes only its selected paths: {}.",
             artifact.name,
-            artifact.select.join(", ")
+            artifact.select().join(", ")
         ),
     }))
 }

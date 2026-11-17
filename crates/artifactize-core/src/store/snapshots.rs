@@ -65,7 +65,11 @@ pub struct HumanDefinition {
     )]
     pub repo: Field<PathBuf>,
     pub eval: HumanEval,
-    #[serde(default, skip_serializing_if = "Field::missing")]
+    #[serde(
+        default,
+        skip_serializing_if = "Field::missing",
+        deserialize_with = "super::definitions::artifact_targets"
+    )]
     pub artifacts: Field<BTreeMap<ArtifactName, super::definitions::Artifact>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,

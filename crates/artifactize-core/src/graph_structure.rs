@@ -123,10 +123,10 @@ pub fn extract(config: &RepoConfig) -> Structure {
             (
                 name.clone(),
                 Artifact {
-                    kind: artifact.kind,
+                    kind: artifact.kind(),
                     basis: artifact.basis,
                     fingerprint,
-                    select: artifact.select.clone(),
+                    select: artifact.select().to_vec(),
                 },
             )
         })

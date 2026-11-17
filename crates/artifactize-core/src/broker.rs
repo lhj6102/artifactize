@@ -597,11 +597,11 @@ impl Scheduler<'_, '_> {
                         key: request.key.clone(),
                         fingerprint: request.fingerprint.clone(),
                         fingerprints: request.fingerprints.clone(),
-                        artifact_kinds: self
-                            .keys
-                            .get(&request.eval_id)
-                            .map(|key| key.artifact_kinds.clone())
-                            .unwrap_or_default(),
+                        artifact_kinds: request
+                            .fingerprints
+                            .keys()
+                            .map(|name| (name.clone(), self.config.artifacts[name].kind()))
+                            .collect(),
                         eval_def_hash: request.eval_def_hash.clone(),
                         owner: Some(owner),
                         profile: request.profile.clone(),

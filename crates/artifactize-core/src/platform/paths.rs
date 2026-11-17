@@ -66,16 +66,6 @@ pub(crate) fn absolute_without_links(path: &Path) -> Result<PathBuf, LinkedPath>
     Ok(current)
 }
 
-/// Reject drive-rooted logical paths even when declarations are read on another OS.
-pub(crate) fn drive_rooted(value: &str) -> bool {
-    value
-        .as_bytes()
-        .first()
-        .is_some_and(u8::is_ascii_alphabetic)
-        && value.as_bytes().get(1) == Some(&b':')
-        && value.as_bytes().get(2) == Some(&b'/')
-}
-
 /// Definition names are portable filenames even when authored on a permissive volume.
 pub(crate) fn portable_filename(name: &str) -> Result<(), String> {
     let lower = name.to_ascii_lowercase();
