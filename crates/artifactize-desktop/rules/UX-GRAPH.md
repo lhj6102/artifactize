@@ -25,7 +25,7 @@ that makes the transition happen and checks where it leads.
   - **Branches**: one entry per live branch of every project with Runs on this machine, read
     as `project / branch`, the branch in bold and the project quieter: a Git worktree that
     exists now with the branch it has checked out (a detached one by its folder's name), or a
-    folder outside Git that exists now and holds its declarations. A removed worktree or
+    folder outside Git that exists now and holds its definitions (`.artifactize/`). A removed worktree or
     folder, or one Git no longer lists, has no entry. Who ran a Run makes no entry: a branch's
     Runs are its project's Runs on that branch, from whichever folder they ran in. Each entry
     has a **chevron** before its name and its **star** at its line's end. Folded, the name
@@ -82,15 +82,23 @@ that makes the transition happen and checks where it leads.
   one that leaves a RED, ERROR or blocked Artifact, drawn in that Artifact's colour. In a graph
   too large to draw at once, zoomed out so far that names would be too small to read, a node is
   a block of its verdict's colour and a whole its box's outline in its colour.
-- **Current graph**: the current declarations' Artifacts and relations, drawn as soon as the
-  declarations are read, each Artifact first still being checked and then coloured, as soon as
+- **Current graph**: the Artifacts and relations of the definitions as they are now, drawn as
+  soon as the definitions are read, each Artifact first still being checked and then coloured, as soon as
   the scan knows, by what verify would do now: reused (every eval's result would be reused
   without evaluation), would run, waiting, blocked. A node is drawn as on a Run graph: the icon
   and the strip say what would happen, and after its name it says how many of its evals would
   be reused of how many, or nothing while it is still being checked; read aloud it says which,
   would run with how many of its evals would run, or that it is still being checked.
-- On both graphs an Artifact made of **parts** (those its folder holds and those its `parts`
-  names) is a **whole**, drawn as a **box** that encloses its parts' nodes, its name, its
+  It is also where the branch's Artifacts are edited (the Editing edges): a node, a minimized
+  whole or a whole's title row can be **dragged**, drawn lifted and followed by its edges, a
+  whole carrying its parts, while the box or node a drop would make its whole is a highlighted
+  **drop target**; a box, and the top level, is **laid out automatically** until something in
+  it is moved and then **placed by hand**, its places kept in `.artifactize/layout.toml`, which
+  draws the branch's Runs too; a box placed by hand has **Reset layout** in its title row, and
+  the tool strip has it while the top level is placed by hand. A refused edit says why as the
+  Main area's notice. States: nothing dragged, an Artifact dragged with a drop target
+  highlighted or none; each box and the top level laid out automatically or placed by hand.
+- On both graphs an Artifact made of **parts** (those its `parts` names) is a **whole**, drawn as a **box** that encloses its parts' nodes, its name, its
   verdict's icon and a strip in its verdict's colour at the box's top; a part that is a whole too is a box inside it, as deep as
   the parts go. The box is the whole's Artifact: Tab reaches it before its parts, Enter on it
   or a click on it outside its parts does what a click on a node does, and it is read aloud as
@@ -111,7 +119,8 @@ that makes the transition happen and checks where it leads.
   other keys of their own. Hovering only highlights; the one thing it shows is the native
   tooltip of a whole's Minimize or Expand button, which names `m`. Above each graph sits its **tool strip**,
   one row of what acts on the graph and nothing else: a Find button, Zoom out, the zoom in
-  percent and Zoom in, and Fit View; the graph's keys and what its marks mean are in Help.
+  percent and Zoom in, and Fit View, and on a Current **New Artifact** and, while the top level
+  is placed by hand, Reset layout; the graph's keys and what its marks mean are in Help.
   Whenever part of a graph lies outside the view, a **Navigator**
   shows at the graph's bottom right, left of the Detail when one is open: the whole graph in
   small, each Artifact a block of its verdict's colour, the part in view framed; a click or a
@@ -142,8 +151,11 @@ that makes the transition happen and checks where it leads.
   verdicts, each leading to that eval's tab; then, under Neighbours, folded until unfolded, it
   draws the Artifact between its neighbours with its graph's nodes and edges (the Artifacts
   its evals use on its left, those whose evals use it on its right), a drawing that does not
-  pan, zoom or drag; then its **Tools** and their **Tool log**, then its path, every
-  other fact (what it waits for included) under Debug (unfolded with `t` or a click). Its
+  pan, zoom or drag; then its **Tools** and their **Tool log**, then, of a Run, its **Path**
+  (the target and, for a Live Artifact, its address) or, of a Current, its **Definition**
+  (the file that defines it, its Path as a field with a missing target said in red, its Parts
+  each with `✕` and `+ Add`, Rename and Delete) and its **Source** (the file's text, with Save
+  and Revert while it holds typed text), every other fact (what it waits for included) under Debug (unfolded with `t` or a click). Its
   Tools are the Human tools the Artifact declares in the branch's worktree as it is now,
   whichever Run is shown, each a `▶` button; the graph's nodes carry no tool buttons. An
   eval's tab shows its Summary (its status, beside it in grey what running it took and spent:
@@ -157,15 +169,17 @@ that makes the transition happen and checks where it leads.
   transcript and log lines, long words and code included, wraps or scrolls within its width.
   Below its tabs the Detail shows **sections**, each under a header row that is its name
   alone (an Artifact's Evals, Neighbours,
-  Tools, Tool log, once a tool has run, and Path; an eval's Result, Execution options, Execution metadata and
+  Tools, Tool log, once a tool has run, and Path, or on a Current Definition and Source; an eval's Result, Execution options, Execution metadata and
   Fingerprint; a Run's Outcome, Waits for, What and Provenance; Debug, or a Run's Technical,
   last); a section is unfolded or folded to its header row alone, as a person left it by its
-  name; until then Evals, Tools, Path, Result, Outcome and Waits for are unfolded and
-  Neighbours, Execution options, Execution metadata, Fingerprint,
+  name; until then Evals, Tools, Path, Definition, Result, Outcome and Waits for are unfolded
+  and Neighbours, Source, Execution options, Execution metadata, Fingerprint,
   What, Provenance, Debug and Technical folded. A Human review's Tools, Tool log and Result
   do not fold.
   States: open on a tab (the Artifact's, an eval's Summary, Debug unfolded, or a log), an
-  eval's chips on one line or wrapped; a section folded or unfolded; an Artifact's tool running.
+  eval's chips on one line or wrapped; a section folded or unfolded; an Artifact's tool running;
+  on a Current, its Path or a new part being typed, its Source holding typed text, a refusal
+  said under a field or the Source.
 - **Human review** (on a Human eval's tab of a Run's Detail, or the Review view): its stage
   (CLAIM, with the claimant while another reviewer holds it, or REVIEW (yours)), its
   instruction, the Tools (a `▶` button each, grouped by the Artifact that declares them, the
@@ -205,7 +219,9 @@ that makes the transition happen and checks where it leads.
   Open by ID (a field for a request ID), Leave dialog (quit while this window holds claims),
   Update (the running and the new version and how to update the way the app was installed: a
   command as selectable text, a file to download and install by hand, or the release page
-  when the way is unknown).
+  when the way is unknown), and the edit dialogs of a Current: **New Artifact** (Name and
+  Path), **Rename** (the name) and **Delete** (the file it removes), each saying under a field,
+  or in itself for Delete, why an edit was refused.
 
 ## Window
 
@@ -289,7 +305,7 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-TAB-WHOLE | Run graph or Current graph, a whole focused | Tab | the graph, the whole's Minimize button focused before its parts, or a minimized whole's Expand button, the button's name, read aloud and shown as its native tooltip, naming its key `m`; nothing opened |
 | E-GRAPH-BEYOND | Run graph or Current graph too large to draw at once | pan or zoom the camera past the drawn nodes | the graph, the Artifacts brought into view drawn: as nodes where their names read, as blocks of their verdict's colour where the zoom makes names too small to read |
 | E-GRAPH-FIRST | Pane | choose an entry whose graph is not shown yet | its Run graph or Current graph drawn whole, never enlarged beyond its nodes' own size |
-| E-GRAPH-CAMERA | Run graph or Current graph | pan, zoom (the wheel, or the tool strip's Zoom out or Zoom in), or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size; the Navigator shown at the graph's bottom right while part of the graph lies outside the view, gone while all of it is in view |
+| E-GRAPH-CAMERA | Run graph or Current graph | pan (a drag on the background, an edge, a whole's face outside its title row, or an Artifact drawn as a block), zoom (the wheel, or the tool strip's Zoom out or Zoom in), or Fit View | the graph, its camera where the person put it, or whole again after Fit View, never enlarged beyond its nodes' own size; the Navigator shown at the graph's bottom right while part of the graph lies outside the view, gone while all of it is in view |
 | E-GRAPH-NAVIGATE | Run graph or Current graph, part of it outside the view and the Navigator shown | click a place in the Navigator, or drag in it | the graph, its camera moved so that place is in the middle of the view, its zoom kept; the Navigator's frame on the part now in view |
 | E-GRAPH-PARTS | Pane | choose an entry whose graph has wholes | its Run graph or Current graph, each whole minimized on its branch drawn minimized (E-GRAPH-MINIMIZE), every other whole a box enclosing its parts, nested as deep as the parts go, each box with its name, its verdict's icon and a strip in its verdict's colour at its top; a shared part drawn as a copy in each of its wholes, each copy with the part's edges; edges between boxes drawn and coloured like any other |
 | E-GRAPH-WHOLE | Run graph or Current graph with a whole | click the whole's box outside its parts, or Enter on it focused | Detail of the whole on its Artifact tab, as for a node (E-MON-DETAIL-ARTIFACT, E-CURRENT-EVALS) |
@@ -313,7 +329,7 @@ that makes the transition happen and checks where it leads.
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-MON-DETAIL-ARTIFACT | Run graph | click an Artifact, or Enter on a focused one | Detail of that Artifact opened on its Artifact tab, without chips: its evals listed with their verdicts, its Neighbours folded until unfolded, its Tools and, once one has run, their Tool log, then its path, every other fact (what it waits for included) folded under Debug |
-| E-CURRENT-EVALS | Current graph | click an Artifact, or Enter on a focused one | Detail of that Artifact over the Current, on its Artifact tab: its listed evals saying whether each would run, would be reused or is still being checked, its Neighbours folded until unfolded, its Tools and, once one has run, their Tool log, its path, the rest under Debug |
+| E-CURRENT-EVALS | Current graph | click an Artifact (pressed and released without moving it), or Enter on a focused one | Detail of that Artifact over the Current, on its Artifact tab: its listed evals saying whether each would run, would be reused or is still being checked, its Neighbours folded until unfolded, its Tools and, once one has run, their Tool log, its Definition, its Source folded until unfolded, the rest under Debug |
 | E-MON-DETAIL-TAB | Detail of an Artifact of a Run | click an eval listed on the Artifact tab, or, on an eval's tab, another eval's chip | Detail, that eval's tab shown under the chips that read as a path (eval chips wrapping onto further lines with the `/` kept with the Artifact's chip): its Summary (status, instruction, result), or its Human review, long words and code wrapping within the Detail's width |
 | E-CURRENT-TAB | Detail of an Artifact of a Current | click an eval listed on the Artifact tab, or, on an eval's tab, another eval's chip | Detail, that eval's Summary under the chips, each saying what verify would do: whether it would run, would be reused or is still being checked and why, and the result it would reuse |
 | E-DETAIL-ARTIFACT-TAB | Detail of an Artifact of a Run or a Current, on an eval's tab (its Summary, a log or its Human review) | click the Artifact's own chip | same Detail on its Artifact tab, without chips: its evals listed with their verdicts, its Neighbours, its Tools and its path |
@@ -328,8 +344,45 @@ that makes the transition happen and checks where it leads.
 | E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened, its run started in the Artifact's Tool log (unfolded if it was folded) and open there until it exits |
 | E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log, unfolded if it was folded |
 | E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
-| E-CURRENT-CLOSE | Detail over a Current | Esc, Close, or a click on the graph's background | the Current graph, Detail closed |
+| E-CURRENT-CLOSE | Detail over a Current, nothing being typed in its Definition | Esc, Close, or a click on the graph's background | the Current graph, Detail closed |
 | E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no graph shows on its left, never over the Pane; the width kept for the next opening and launch |
+
+## Editing
+
+Each edit of a Current writes `.artifactize/` only after the whole project accepts the result;
+a refused edit writes nothing. After every edit that writes, the Current is scanned again, as by
+E-CURRENT-REFRESH, and the Detail stays on the same Artifact.
+
+| Edge | From | Action | To |
+| --- | --- | --- | --- |
+| E-DEFINITION-PATH | Detail of an Artifact of a Current, its Definition unfolded | change its Path, then Enter | the file's `path` written; the graph and the Definition following, a missing target said in red beside the Path |
+| E-DEFINITION-PATH-ESC | Definition, its Path being changed | Esc | the Path as in the file, nothing written |
+| E-DEFINITION-INVALID | Definition with its Path being changed, or Source holding typed text | Enter, or Save or Ctrl+S in the Source, with an edit the project would not accept | the same Detail, nothing written: the error in red under the field or the Source, the Source's with its line and column; the text kept to be corrected |
+| E-SOURCE-TYPE | Detail of an Artifact of a Current, its Source unfolded | type in the Source | the Source holding typed text, Save and Revert under it |
+| E-SOURCE-SAVE | Source holding typed text | Save, or Ctrl+S in the Source | the file holding the text; Save and Revert gone; the graph and the Definition following |
+| E-SOURCE-REVERT | Source holding typed text | Revert | the Source holding the file's text as it is on disk; Save and Revert gone |
+| E-PARTS-ADD | Definition | `+ Add` under Parts, choose an Artifact the field suggests, then Enter | that Artifact added to the file's `parts`; the graph drawing it inside this whole's box |
+| E-PARTS-REMOVE | Definition with a part listed | `✕` on it | that part gone from the file's `parts`; the graph drawing it outside this whole's box |
+| E-PARTS-REFUSED | Definition, a part being added | Enter on an Artifact that would make a cycle | the reason under Parts, nothing written |
+| E-EDIT-CONFLICT | Detail of a Current, an edit dialog or the Current graph, a file the edit writes changed on disk since the Current read it | Enter on the Path, Save, a part added or removed, Rename, Delete, a drop or a placing release | nothing written; the refusal naming the file, under the field, the Source or in the dialog for an edit made there and as the Main area's notice for one on the graph; the Current scanned again, the graph and the Definition showing what is on disk; a Source holding typed text keeping it until Revert |
+| E-NODE-NEW-OPEN | Current graph | the tool strip's New Artifact | New Artifact dialog, its Name field focused, its Path field under it |
+| E-NODE-NEW | New Artifact dialog | Create, or Enter, with a new name and a valid path | `.artifactize/{name}.artf` written with that path; the dialog closed; the new node drawn, in free space when the top level is placed by hand; its Detail open on its Artifact tab; the camera moved to it as by E-GRAPH-FIND-GO |
+| E-NODE-RENAME-OPEN | Definition | Rename | Rename dialog, the Artifact's name in its field |
+| E-NODE-RENAME | Rename dialog | Rename, or Enter, with a new name | in one edit, the file renamed where it is and every `parts` entry, `{name}` reference and layout place naming it changed; the dialog closed; the Detail titled with the new name; the graph showing it |
+| E-EDIT-DIALOG-INVALID | New Artifact or Rename dialog | Create or Rename, or Enter, with a name already used (ignoring case) or a name or path that is not valid | the same dialog, why under the field, nothing written |
+| E-NODE-DELETE-OPEN | Definition | Delete | Delete dialog naming the file it removes |
+| E-NODE-DELETE | Delete dialog, no other Artifact naming it | Delete | the file removed; the dialog and the Detail closed; the node gone from the graph |
+| E-NODE-DELETE-REFUSED | Delete dialog, another Artifact naming it in its `parts` or a reference | Delete | the same dialog, saying which Artifacts name it; nothing written |
+| E-EDIT-DIALOG-CANCEL | New Artifact, Rename or Delete dialog | Esc or Cancel | the dialog closed, the view below as it was, nothing written |
+| E-NODE-DRAG | Current graph, an Artifact drawn as a node, a minimized whole or a whole's title row | press it and move | the Artifact dragged: drawn lifted, following the pointer with its edges, a whole carrying its parts; the box or node a drop would make its whole highlighted as the drop target, none while the pointer is over its own box, over nothing it could join, or over an Artifact that would make a cycle |
+| E-NODE-DRAG-CANCEL | an Artifact dragged | Esc | the Artifact back where it was, nothing written |
+| E-NODE-PLACE | an Artifact dragged, no drop target, the pointer in the box it was dragged in (or outside every box when it was in none) | release | the Artifact placed there; the places of every Artifact in that box (or the top level), as shown, saved in the layout file, that box placed by hand and showing its Reset layout; a box fitting around its parts; the Detail, the selection and the camera as they were |
+| E-PARTS-DROP | an Artifact dragged, a drop target highlighted | release | in one edit, the Artifact added to the drop target's `parts` and gone from those of the whole whose box it was dragged out of (for a copy of a shared part, that whole only); drawn where it was dropped inside the drop target's box, the places saved |
+| E-PARTS-DROP-OUT | a part dragged out of its whole's box, outside every box | release | the part gone from that whole's `parts`; drawn where it was dropped at the top level, the places saved |
+| E-PARTS-DROP-REFUSED | an Artifact dragged over an Artifact a drop would make a cycle with, nothing highlighted | release | the Artifact back where it was; the Main area's notice saying why; nothing written |
+| E-LAYOUT-RESET | Current graph with a box, or the top level, placed by hand | Reset layout in that box's title row, or the tool strip's Reset layout for the top level | that box laid out automatically again, boxes inside it keeping their own places; its places gone from the layout file and its Reset layout gone; the camera as it was |
+| E-LAYOUT-SAVED | Pane, or Launch | choose a Run or the Current of a branch whose layout file places Artifacts, also after a restart | its Run graph or Current graph drawn with those places, an Artifact the file does not place put in free space of its box |
+| E-RUN-NO-EDIT | Run graph | press a node and move | the camera panned as by a drag on the background; nothing moves and no drop target shows; no New Artifact, Reset layout, Definition or Source anywhere on a Run |
 
 ## Human review
 
@@ -468,6 +521,32 @@ E-PANE-SELECT.
 - J-GRAPH-CAMERA: E-GRAPH-FIRST → E-GRAPH-CAMERA-KEPT → E-GRAPH-CAMERA → E-GRAPH-CAMERA-KEPT
   E-GRAPH-CAMERA → E-GRAPH-NAVIGATE
   E-GRAPH-CAMERA → E-GRAPH-MINIMIZE → E-GRAPH-EXPAND
+- J-DEFINITION: E-CURRENT-CHIP → E-CURRENT-EVALS → E-DETAIL-SECTION
+  E-PANE-CHIP → E-MON-DETAIL-ARTIFACT
+- J-DEFINITION-EDIT: E-CURRENT-EVALS → E-DEFINITION-PATH | E-CURRENT-EVALS → E-DEFINITION-PATH-ESC
+  E-CURRENT-EVALS → E-DETAIL-SECTION → E-SOURCE-TYPE → E-SOURCE-SAVE
+  E-SOURCE-TYPE → E-DEFINITION-INVALID → E-SOURCE-REVERT
+- J-DEFINITION-CONFLICT: E-SOURCE-TYPE → E-EDIT-CONFLICT → E-SOURCE-REVERT
+  E-NODE-DRAG → E-EDIT-CONFLICT
+  E-CURRENT-EVALS → E-EDIT-CONFLICT
+- J-PARTS-EDIT: E-CURRENT-EVALS → E-PARTS-ADD → E-PARTS-REMOVE
+  E-CURRENT-EVALS → E-PARTS-REFUSED
+- J-NODE-NEW: E-NODE-NEW-OPEN → E-NODE-NEW
+  E-NODE-NEW-OPEN → E-EDIT-DIALOG-INVALID → E-EDIT-DIALOG-CANCEL
+- J-NODE-RENAME: E-CURRENT-EVALS → E-NODE-RENAME-OPEN → E-NODE-RENAME
+  E-NODE-RENAME-OPEN → E-EDIT-DIALOG-INVALID → E-EDIT-DIALOG-CANCEL
+- J-NODE-DELETE: E-CURRENT-EVALS → E-NODE-DELETE-OPEN → E-NODE-DELETE-REFUSED → E-EDIT-DIALOG-CANCEL
+  E-CURRENT-EVALS → E-NODE-DELETE-OPEN → E-NODE-DELETE
+- J-NODE-MOVE: E-CURRENT-CHIP → E-NODE-DRAG → E-NODE-PLACE → E-CURRENT-EVALS
+  E-NODE-DRAG → E-NODE-DRAG-CANCEL
+  E-NODE-PLACE → E-LAYOUT-SAVED
+  E-GRAPH-CAMERA
+  E-RUN-NO-EDIT
+- J-LAYOUT-RESET: E-NODE-PLACE → E-LAYOUT-RESET
+  E-NODE-PLACE → E-LAYOUT-RESET → E-LAYOUT-SAVED
+- J-PARTS-DRAG: E-NODE-DRAG → E-PARTS-DROP
+  E-NODE-DRAG → E-PARTS-DROP-OUT
+  E-NODE-DRAG → E-PARTS-DROP-REFUSED
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
