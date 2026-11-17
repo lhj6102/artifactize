@@ -40,10 +40,10 @@ export function dropAt(graph: Shape, drawn: Copy[], rects: Map<string, Rect>, dr
   return { kind: "join", to: target.node.name, key: target.key };
 }
 
-/** The drop target highlights only while the library would accept the drop: `wholes` is what
- * the library says the dragged Artifact may become a part of, so not one inside it. */
-export function accepted(drop: Drop, wholes: readonly string[]): drop is Extract<Drop, { kind: "join" }> {
-  return drop.kind === "join" && wholes.includes(drop.to);
+/** The drop target highlights only while the library would accept the drop: not the dragged
+ * Artifact `name` itself, nor one the library says it is made of (`within`), a cycle. */
+export function accepted(drop: Drop, name: string, within: readonly string[]): drop is Extract<Drop, { kind: "join" }> {
+  return drop.kind === "join" && drop.to !== name && !within.includes(drop.to);
 }
 
 /** The least place `annotations` stores for the parts of the whole `name`: its box starts there,

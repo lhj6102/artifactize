@@ -25,10 +25,10 @@ pub struct DefinitionNode {
     pub target_missing: bool,
     /// Its parts, by name; none while the project does not read.
     pub parts: Vec<String>,
-    /// The Artifacts it may become a part of: every other one it is not made of, directly or
-    /// through its parts, as the library reads the project. Empty while the project does not
-    /// read.
-    pub wholes: Vec<String>,
+    /// The Artifacts it is made of, directly or through its parts, as the library reads the
+    /// project: it may become a part of any other Artifact but these. Empty while the project
+    /// does not read.
+    pub within: Vec<String>,
     /// Whether a comment dragged onto it is taken: it has none, as the library reads its file.
     pub takes_comment: bool,
     /// Its own place at the top level, when the top level is placed by hand.
@@ -277,17 +277,17 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
             .unwrap_or_default()
     };
     // Nothing is a part of itself, however many parts lie between: the library's own reading.
-    let wholes = |name: &ArtifactName| -> Vec<String> {
-        let Some(config) = config else {
-            return Vec::new();
-        };
-        let within = config.descendants(name);
-        project
-            .nodes
-            .keys()
-            .filter(|other| *other != name && !within.contains(other))
-            .map(ToString::to_string)
-            .collect()
+    let within = |name: &ArtifactName| -> Vec<String> {
+        config
+            .as_ref()
+            .map(|config| {
+                config
+                    .descendants(name)
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
     };
     let nodes = project
         .nodes
@@ -299,7 +299,7 @@ fn view(project: edit::Project, config: &Config) -> DefinitionsView {
             kind: node.kind.into(),
             target_missing: node.target_missing,
             parts: parts(name),
-            wholes: wholes(name),
+            within: within(name),
             takes_comment: node.annotations.comment.is_none()
                 && node.annotations.comment_error.is_none(),
             at: node.annotations.at,

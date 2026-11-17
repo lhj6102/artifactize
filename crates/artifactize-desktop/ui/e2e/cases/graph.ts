@@ -15,7 +15,7 @@ import {
 import { exists, nativeInput, nativePath, primaryModifier, readText, type NativePath } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
-import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
+import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, openWaiting, scanned, searchFocused, showRun } from "../pane.ts";
 
 /** A fixture whose one Run ended: the branch's newest entry is its Current, so its Run is chosen. */
 function ended(fixture: ReturnType<typeof createChain>) {
@@ -1510,7 +1510,7 @@ export const scenarios: Scenario[] = [
       const fixture = await create();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
-    async (browser) => {
+    async (browser, { fixture }) => {
       /** Each section of the open Detail by its header row, and whether it is unfolded. */
       const sections = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] .section')]
         .map((section) => [section.querySelector(".head")?.textContent?.trim() ?? "", !!section.querySelector(":scope > .body")])));
@@ -1544,6 +1544,20 @@ export const scenarios: Scenario[] = [
       await browser.$(`${MAIN} > header button.headline`).click();
       await browser.waitUntil(async () => (await sections()).Outcome === true, { timeout: 15000, timeoutMsg: "the Run's Outcome unfolded" });
       await toggle("Outcome", false);
+      // A Human review's Tools, Tool log and Result never fold, even with an eval's Result left
+      // folded: they have no header button and show what they hold.
+      await aside(browser).$("button*=Close").click();
+      await openArtifact(browser, "a:ship", "Artifact ship");
+      await openTab(browser, "e:ship/check", { row: true });
+      await toggle("Result", false);
+      await openWaiting(browser, requests(fixture).find((saved) => saved.evalId === "release/signoff")!.id);
+      const review = () => browser.execute((main) => Object.fromEntries([...document.querySelectorAll<HTMLElement>(`${main} .section`)]
+        .filter((section) => ["Tools", "Tool log", "Result"].includes(section.getAttribute("aria-label") ?? ""))
+        .map((section) => [section.getAttribute("aria-label"), { folds: !!section.querySelector(":scope > button.head"), shown: !!section.querySelector(":scope > .body") }])), MAIN);
+      await browser.waitUntil(async () => "Tools" in (await review()) && "Result" in (await review()), { timeout: 15000, timeoutMsg: `the review's Tools and Result: ${JSON.stringify(await review())}` });
+      for (const [name, section] of Object.entries(await review())) {
+        assert.deepEqual(section, { folds: false, shown: true }, `the review's ${name} does not fold`);
+      }
     },
     async (browser) => {
       // The next launch keeps them.

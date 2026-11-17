@@ -3,7 +3,7 @@
 // beside the divider and says so. Each starting condition owns a separate app and fixture.
 import assert from "node:assert/strict";
 import { createOutside, createUnreadableRuns, savedRuns, spoilRun } from "../fixture.ts";
-import { createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
+import { CATALOG_NOTE, createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
@@ -52,7 +52,9 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the empty saved graph has its own explanation" });
       const shown = (await slot(browser))!;
       assert.ok(shown.divider && shown.bounds[2] > 0 && shown.bounds[3] > 0);
-      assert.equal(await browser.$(".monitor .graph").isExisting(), false);
+      // The graph's tool strip stays above the sentence; there is no canvas.
+      assert.equal(await browser.$('.monitor .graph [aria-label="Graph tools"]').isExisting(), true, "the tool strip above the sentence");
+      assert.equal(await browser.$(".monitor .graph .canvas").isExisting(), false, "no canvas");
     },
   ),
   // UX journey: J-MAIN-RUN
@@ -101,7 +103,7 @@ export const scenarios: Scenario[] = [
     "main-loading",
     "keeps the graph's place and divider while a large Run loads and says so, then lays it out whole, opens an Artifact clicked in it and those a zoom brings into view",
     async () => {
-      const fixture = createLayout();
+      const fixture = createLayout(0, true);
       return { fixture, data: { run: savedRuns(fixture)[0].id } };
     },
     async (browser, { data: { run } }) => {
@@ -153,6 +155,24 @@ export const scenarios: Scenario[] = [
       assert.ok(block, "the large graph is painted");
       const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(block.token);
       assert.deepEqual(block.painted, hex?.slice(1).map((part) => Number.parseInt(part, 16)), `the first Artifact is a block in GREEN's colour: ${JSON.stringify(block)}`);
+      // Drawn as blocks, no comment is painted: under the first block, where its comment's
+      // lines would be, the picture is empty.
+      const under = await browser.execute(() => {
+        const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
+        const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+        const paint = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint")!;
+        const box = paint.getBoundingClientRect();
+        const ratio = paint.width / box.width;
+        const canvas = document.querySelector(".monitor .graph .canvas")!.getBoundingClientRect();
+        // A comment's first line: 4 under the node's 44, 17 high; a pixel's row clear of the
+        // block's own edge.
+        const [left, top] = [canvas.left - box.left + camera.e, canvas.top - box.top + camera.f + 48 * camera.d + 1];
+        const pixels = paint.getContext("2d")!.getImageData(Math.round(left * ratio), Math.ceil(top * ratio), Math.max(1, Math.round(150 * camera.a * ratio)), Math.max(1, Math.round(16 * camera.d * ratio))).data;
+        let inked = 0;
+        for (let at = 3; at < pixels.length; at += 4) if (pixels[at] !== 0) inked += 1;
+        return { inked, zoom: camera.a };
+      });
+      assert.equal(under.inked, 0, `no comment painted under a block: ${JSON.stringify(under)}`);
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
       await aside(browser).$("button*=Close").click();
@@ -179,6 +199,9 @@ export const scenarios: Scenario[] = [
       const [id] = await brought();
       assert.match(id, /^a:n\d{4}$/);
       await graphShown(browser, id);
+      // Drawn as an element, it shows its comment under it.
+      await browser.waitUntil(async () => (await browser.$(`${nodeAt(id)} .comment`).isExisting()) && (await browser.$(`${nodeAt(id)} .comment`).getText()) === CATALOG_NOTE,
+        { timeout: 30000, timeoutMsg: `${id}'s comment under it: ${await browser.execute(() => document.querySelectorAll(".monitor .comment").length)} comments drawn` });
       const named = `${id.slice(2)}: GREEN`;
       const label = (await browser.$(nodeAt(id)).getAttribute("aria-label")) ?? "";
       assert.ok(label.startsWith(named) && /^(, \d+ of \d+ evals GREEN)?$/.test(label.slice(named.length)), `the drawn Artifact is named with its verdict: ${label}`);

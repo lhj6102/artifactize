@@ -87,6 +87,14 @@ function commentIn(fixture: Fixture, name: string): string | null {
   return JSON.parse(value.slice(0, value.indexOf("\n") < 0 ? undefined : value.indexOf("\n"))) as string;
 }
 
+/** A place written as `key = [x, y]` in `name`'s file: `at` for its own, or a part's name. */
+function placeOf(fixture: Fixture, name: string, key: string): [number, number] | null {
+  const line = (file(fixture, name) ?? "").split("\n").find((each) => each.startsWith(`${key} = [`));
+  if (!line) return null;
+  const [x, y] = line.slice(line.indexOf("[") + 1, line.indexOf("]")).split(",").map(Number);
+  return [x, y];
+}
+
 /** `name`'s definition file on disk, in `.artifactize/` or its `lib/`. */
 const pathOf = (fixture: Fixture, name: string) =>
   [nativePath(fixture.repo, ".artifactize", `${name}.artf`), nativePath(fixture.repo, ".artifactize", "lib", `${name}.artf`)].find(exists)!;
@@ -400,7 +408,15 @@ export const scenarios: Scenario[] = [
       await browser.$(DETAIL).$("button=Close").click();
       await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed");
       const all = () => ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
-      const unsaved = all();
+      let unsaved = all();
+      // Before each refused edit a move of docs, which has no typed text, is written and clears
+      // the notice: each refusal is the answer to its own edit.
+      const fresh = async () => {
+        const [docs, at] = [(await box(browser, "a:docs"))!, ownAt(fixture, "docs")];
+        await drag(browser, docs, { x: docs.x + 30, y: docs.y });
+        await waitFor(browser, async () => ownAt(fixture, "docs") !== at && (await notice(browser)) === "", "a move of docs written, the notice cleared");
+        unsaved = all();
+      };
       const typed = async (what: string) => {
         await waitFor(browser, async () => (await notice(browser)) === ".artifactize/core.artf has typed text in its Source; save or revert it first.", what);
         assert.deepEqual(all(), unsaved, `${what}: nothing written`);
@@ -409,13 +425,16 @@ export const scenarios: Scenario[] = [
       await drag(browser, { x: core.x, y: core.y }, { x: core.x + 60, y: core.y + 40 });
       await typed("a move over typed text refused");
       assert.deepEqual(await box(browser, "a:core"), core, "core back where it was");
+      await fresh();
       const app = (await box(browser, "a:app"))!;
       await drag(browser, core, { x: app.left + 60, y: app.top + 14 });
       await typed("a drop into app's box refused");
       assert.equal(await browser.$(`${CURRENT} ${nodeAt("a:app/a:core")}`).isExisting(), false, "core not drawn in app's box");
       assert.deepEqual(await box(browser, "a:core"), core, "core back again");
+      await fresh();
       await browser.$(TOOLS).$("button=Reset layout").click();
       await typed("Reset layout refused");
+      await fresh();
       await openArtifact(browser, "a:core", "Artifact core");
       await browser.$(DETAIL).$("button=Comment").click();
       await waitFor(browser, async () => (await field(browser))?.of === "core", "core's comment field open");
@@ -743,6 +762,15 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => /\bcore = \[/.test(file(fixture, "app") ?? "") && /\bkit = \[/.test(file(fixture, "app") ?? ""), "core's place in app's box written, and kit's as shown");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app/a:core")}`).isExisting(), "core drawn in app's box");
       assert.equal(await camera(browser), cameraJoin, "the camera stays as core joins app");
+      // Dropped over app's title row it would cover kit: it goes under app's parts, and is drawn
+      // where its place says.
+      const [corePlace, kitPlace] = [placeOf(fixture, "app", "core")!, placeOf(fixture, "app", "kit")!];
+      assert.ok(corePlace[1] >= kitPlace[1] + 44, `core placed under kit: ${JSON.stringify([corePlace, kitPlace])}`);
+      await waitFor(browser, async () => {
+        const shown = await places(browser);
+        const [inBox, kitAt] = [shown["a:app/a:core"], shown["a:app/a:kit"]];
+        return !!inBox && !!kitAt && Math.abs(inBox[0] - kitAt[0] - (corePlace[0] - kitPlace[0])) <= 1 && Math.abs(inBox[1] - kitAt[1] - (corePlace[1] - kitPlace[1])) <= 1;
+      }, "core drawn in app's box where its place says");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label="Reset layout of app"]`).isExisting(), "the hand-placed box offers Reset layout");
 
       // A part added from the Detail to the hand-placed box goes where it covers none of its
@@ -785,11 +813,21 @@ export const scenarios: Scenario[] = [
       // Dropped out of every box, it leaves app; its own place is written.
       const part = (await box(browser, "a:app/a:core"))!;
       const app = (await box(browser, "a:app"))!;
-      await drag(browser, part, await below(browser, app.left + app.width + 60));
+      const released = await below(browser, app.left + app.width + 60);
+      await drag(browser, part, released);
       await waitFor(browser, () => !holds(fixture, "app", "core"), "core gone from app's parts");
       assert.equal(placesPart(fixture, "app", "core"), false, "and from app's places");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:core")}`).isExisting(), "core drawn at the top level");
       assert.notEqual(ownAt(fixture, "core"), null, "core's own place written");
+      // Drawn where it was let go, and where its written place says against docs's.
+      // Against bundle's, which keeps its own place.
+      const [coreOwn, bundleOwn] = [placeOf(fixture, "core", "at")!, placeOf(fixture, "bundle", "at")!];
+      await waitFor(browser, async () => {
+        const [shown, left] = [await places(browser), (await box(browser, "a:core"))!];
+        const [core, bundle] = [shown["a:core"], shown["a:bundle"]];
+        return !!core && !!bundle && Math.abs(core[0] - bundle[0] - (coreOwn[0] - bundleOwn[0])) <= 1 && Math.abs(core[1] - bundle[1] - (coreOwn[1] - bundleOwn[1])) <= 1
+          && Math.hypot(left.x - released.x, left.y - released.y) < 40;
+      }, "core drawn where it was let go and where its place says");
       // A drop that would make a cycle: app onto the copy of its own part kit in bundle.
       const kitInBundle = (await box(browser, "a:bundle/a:kit"))!;
       const appBefore = file(fixture, "app");
@@ -900,6 +938,17 @@ export const scenarios: Scenario[] = [
       };
       await quiet("a:app", true);
       assert.equal((await quiet("a:core", false)).cut, true, "core's longer comment cut to its three lines");
+      // Read aloud right after its node's name or its whole's title row: the last text its node
+      // holds, not hidden.
+      const readAfter = (id: string) => browser.execute((selector) => {
+        const node = document.querySelector(selector);
+        const name = node?.querySelector(".name");
+        const comment = node?.querySelector(".comment");
+        if (!node || !name || !comment || comment.closest('[aria-hidden="true"]')) return false;
+        const texts = [...node.querySelectorAll("*")].filter((each) => each.children.length === 0 && each.textContent?.trim() && !each.closest('[aria-hidden="true"]'));
+        return (name.compareDocumentPosition(comment) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 && texts.at(-1) === comment;
+      }, `${CURRENT} ${nodeAt(id)}`);
+      for (const id of ["a:app", "a:core"]) assert.equal(await readAfter(id), true, `${id}'s comment read right after it`);
       // Minimized, a whole keeps its comment under it, and its parts' are not drawn.
       await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label^="Minimize app"]`).click();
       await waitFor(browser, async () => (await comments(browser))["a:app"] === APP_NOTE, "the minimized whole's comment under it");
@@ -925,6 +974,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => commentIn(fixture, "kit") === KIT_NOTE, "kit's comment written in its file, its line break kept");
       assert.equal(file(fixture, "kit")?.startsWith(kitText!), true, "nothing else in kit's file changed");
       await waitFor(browser, async () => (await comments(browser))["a:app/a:kit"] === KIT_NOTE && (await comments(browser))["a:bundle/a:kit"] === KIT_NOTE, "drawn under every copy of kit");
+      for (const id of ["a:app/a:kit", "a:bundle/a:kit"]) assert.equal(await readAfter(id), true, `${id}'s comment read right after it`);
       await waitFor(browser, async () => await browser.$(`${DETAIL} button[data-comment-button]`).isFocused(), "focus back on Comment");
       await browser.$(DETAIL).$("button=Close").click();
       await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed, the whole graph in reach");

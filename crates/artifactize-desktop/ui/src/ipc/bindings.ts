@@ -463,11 +463,11 @@ export type DefinitionNode = {
 	/**  Its parts, by name; none while the project does not read. */
 	parts: string[],
 	/**
-	 *  The Artifacts it may become a part of: every other one it is not made of, directly or
-	 *  through its parts, as the library reads the project. Empty while the project does not
-	 *  read.
+	 *  The Artifacts it is made of, directly or through its parts, as the library reads the
+	 *  project: it may become a part of any other Artifact but these. Empty while the project
+	 *  does not read.
 	 */
-	wholes: string[],
+	within: string[],
 	/**  Whether a comment dragged onto it is taken: it has none, as the library reads its file. */
 	takesComment: boolean,
 	/**  Its own place at the top level, when the top level is placed by hand. */

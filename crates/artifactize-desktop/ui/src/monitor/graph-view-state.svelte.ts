@@ -1,5 +1,6 @@
 import { createContext } from "svelte";
 import type { Area } from "./camera";
+import type { Point } from "./graph";
 
 export class GraphViewState {
   /** The canvas element, while it is mounted. */
@@ -21,6 +22,17 @@ export class GraphViewState {
   target = $state<string | null>(null);
   /** A comment being dragged: whose copy, and where the pointer is in the canvas. */
   comment = $state.raw<{ key: string; x: number; y: number } | null>(null);
+  /** The node being dragged, and whether Esc put it back. */
+  dragging = $state.raw<{ key: string; cancelled: boolean } | null>(null);
+  /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
+   * did from there, whatever frames its drawing skipped. */
+  pressed = $state.raw<Point | null>(null);
+  /** Where the node being dragged is now, as its drag last moved it: the nodes are drawn with it
+   * there whenever they are drawn again, a drop target's highlight included. Read untracked, so
+   * a move alone redraws nothing. */
+  lifted = $state.raw<{ key: string; position: Point } | null>(null);
+  /** The drawn copy focus is on, by key. */
+  focused = $state<string | null>(null);
   /** A whole's face was just dragged to pan: the click that ends it opens nothing. */
   panned = false;
 }

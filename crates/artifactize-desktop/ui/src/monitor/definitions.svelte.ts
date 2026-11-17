@@ -120,8 +120,9 @@ export class Definitions {
   created = $state.raw<{ name: string; centre: boolean } | null>(null);
   /** Typed text in each Artifact's Source, by name, while the app runs. */
   readonly drafts = new SvelteMap<string, Draft>();
-  /** The branch whose definitions are shown. */
-  #branch: BranchKey | null = null;
+  /** The branch whose definitions are shown: state, so that what asked whether they are of a
+   * branch before any were read asks again once they are. */
+  #branch = $state.raw<BranchKey | null>(null);
   #reads = 0;
 
   /** The lines the open comment field holds, under a node's width: its room grows with them. */

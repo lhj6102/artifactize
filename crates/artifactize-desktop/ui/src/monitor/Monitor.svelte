@@ -520,8 +520,9 @@
 
 <EditDialogs
   branch={shown.kind === "current" ? shown.branch : null}
-  ondeleted={(name) => {
-    if (m.opened?.node === `a:${name}`) closeDetail();
+  ondeleted={() => {
+    // Delete is offered only in the open Detail's Definition: that Artifact is gone.
+    closeDetail();
   }}
 />
 

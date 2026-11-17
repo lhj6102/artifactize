@@ -8,7 +8,7 @@
   import { getAppState } from "../shell/app.svelte";
   import { composing } from "../shell/keys";
 
-  let { branch, ondeleted }: { branch: BranchKey | null; ondeleted: (name: string) => void } = $props();
+  let { branch, ondeleted }: { branch: BranchKey | null; ondeleted: () => void } = $props();
   const { definitions: defs } = getAppState();
 
   /** What the dialog holds: its name and Path typed, and why the last try wrote nothing. */
@@ -64,7 +64,7 @@
     if (why !== null) form.refused = { field: "delete", text: why };
     else {
       defs.dialog = null;
-      ondeleted(dialog.name);
+      ondeleted();
     }
   }
 </script>

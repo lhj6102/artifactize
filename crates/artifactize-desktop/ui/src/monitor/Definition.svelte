@@ -253,12 +253,14 @@
     height: 18px;
     padding: 0;
     border: 0;
+    border-radius: var(--radius-control);
     background: none;
     color: var(--ink-2);
     cursor: pointer;
   }
   .remove:hover {
     color: var(--ink);
+    background: var(--surface-group);
   }
   .add {
     margin-top: 2px;

@@ -19,14 +19,19 @@ export function createEmptyAudit(): { fixture: Fixture; restore: () => void } {
   }) };
 }
 
+/** The comment of every Artifact of a commented layout fixture. */
+export const CATALOG_NOTE = "Kept by the catalog's owner.";
+
 /** Enough independent basis nodes to make a real worker layout observable after consent,
- * without launching hundreds of irrelevant fixture runtime processes. */
-export function createLayout(wholes = 0): Fixture {
+ * without launching hundreds of irrelevant fixture runtime processes; `commented`, each with a
+ * comment. */
+export function createLayout(wholes = 0, commented = false): Fixture {
   return prepareFixture((root) => {
     const fixture = { root, repo: makeDirectory(nativePath(root, "repo")), state: nativePath(root, "state") };
     for (let index = 0; index < 1200; index += 1) {
       const name = `n${String(index).padStart(4, "0")}`;
-      writeDeclaration(fixture.repo, nativePath(makeDirectory(nativePath(fixture.repo, name)), "index.artf"), `name = "${name}"\nbasis = true\n`);
+      const comment = commented ? `\n[annotations.comment]\ntext = ${JSON.stringify(CATALOG_NOTE)}\n` : "";
+      writeDeclaration(fixture.repo, nativePath(makeDirectory(nativePath(fixture.repo, name)), "index.artf"), `name = "${name}"\nbasis = true\n${comment}`);
     }
     // A few wholes among them, each a box around two parts, when asked for.
     for (let index = 0; index < wholes; index += 1) {

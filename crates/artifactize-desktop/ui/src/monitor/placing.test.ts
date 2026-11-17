@@ -32,18 +32,18 @@ describe("a drop", () => {
   it("over a whole's box, outside its parts, makes the dragged Artifact its part, highlighted", () => {
     const drop = dropAt(graph, drawn, rects, copy("a:core"), { x: 10, y: 10 });
     expect(drop).toEqual({ kind: "join", to: "app", key: "a:app" });
-    expect(accepted(drop, ["app", "bundle", "docs", "kit"])).toBe(true);
+    expect(accepted(drop, "core", [])).toBe(true);
   });
 
   it("onto a node makes that node its whole", () => {
     expect(dropAt(graph, drawn, rects, copy("a:core"), { x: 410, y: 310 })).toEqual({ kind: "join", to: "docs", key: "a:docs" });
   });
 
-  it("onto an Artifact the library does not name among the dragged one's wholes is no highlighted target", () => {
+  it("onto an Artifact the library says the dragged one is made of is no highlighted target", () => {
     const drop = dropAt(graph, drawn, rects, copy("a:app"), { x: 400 + BOX.pad + 10, y: BOX.header + 10 });
     expect(drop).toEqual({ kind: "join", to: "kit", key: "a:bundle/a:kit" });
-    // kit is inside app: the library leaves it out of app's wholes.
-    expect(accepted(drop, ["bundle", "core", "docs"])).toBe(false);
+    // kit is inside app, as the library reads the project.
+    expect(accepted(drop, "app", ["kit"])).toBe(false);
   });
 
   it("outside every box takes a part out of its whole, and leaves a top-level Artifact placed", () => {

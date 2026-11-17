@@ -158,12 +158,15 @@ export const scenarios: Scenario[] = [
       // E2E-INPUT: these fields are the app's own shortcut guard, not an OS input test.
       // Exercise each guard independently while the real native composition remains active.
       for (const [composing, keyCode] of [[true, 0], [false, 229]] as const) {
-        for (const [key, primary] of [["g", false], ["r", false], ["q", false], ["u", false], ["c", false], ["Escape", false], ["g", true], ["r", true], ["s", true]] as const) {
+        // The review's own keys, then the window's: the palette, Open by ID, Settings, the Pane
+        // and Refresh.
+        for (const [key, primary] of [["g", false], ["r", false], ["q", false], ["u", false], ["c", false], ["Escape", false], ["g", true], ["r", true], ["s", true],
+          ["k", true], ["o", true], [",", true], ["b", true], ["F5", false], ["?", false]] as const) {
           const received = await browser.execute((input) => {
             const target = document.activeElement;
             if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
             const event = new KeyboardEvent("keydown", {
-              key: input.key, code: input.key === "Escape" ? "Escape" : `Key${input.key.toUpperCase()}`,
+              key: input.key, code: ({ "Escape": "Escape", ",": "Comma", "F5": "F5", "?": "Slash" } as Record<string, string>)[input.key] ?? `Key${input.key.toUpperCase()}`,
               bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode,
               ctrlKey: input.primary && input.modifier === "Control", metaKey: input.primary && input.modifier === "Meta",
             });
@@ -182,6 +185,9 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.$('[role="alertdialog"]').isExisting()), "composition did not leave or quit");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "composition did not release the claim");
       assert.equal(signoff(fixture).status, "DEFERRED", "composition submitted nothing");
+      assert.equal(await browser.$('[role="dialog"]').isExisting(), false, "composition opened no palette, Open by ID, Settings or Help");
+      assert.equal(await browser.$('input[aria-label="Search branches and reviews"]').isDisplayed(), true, "composition did not hide the Pane");
+      assert.deepEqual(after.refresh, before.refresh, "composition dispatched no Refresh");
       await nativeInput(browser, { type: "commit", text: "안녕" });
       try {
         // The engine's commit API can mark compositionend untrusted. Native

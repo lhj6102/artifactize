@@ -30,7 +30,7 @@
   // Artifact without one; a click on it opens its field. A drag on a whole's face pans, as one on
   // the background does. A Run's graph is a record: nothing on it moves.
   import { GraphViewState, setGraphViewState } from "./graph-view-state.svelte";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { SvelteFlow, useSvelteFlow, useViewport, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { PRECEDENCE, type Found, type Light, type Shape, type Source } from "../ipc/client";
@@ -174,6 +174,7 @@
         const [at, around] = [rects.get(key)!, parent === null ? null : rects.get(parent)!];
         const box = parts.length > 0 && !folded;
         // The node being dragged stays where the pointer has it, however the others are redrawn.
+        const lifted = untrack(() => v.lifted);
         const held = lifted?.key === key ? lifted : null;
         return {
           ...(held ? { dragging: true } : {}),
@@ -427,10 +428,18 @@
   /** The whole `m` would minimize or expand now: the focused one, else the one whose Detail is
    * open (its first copy). */
   function wholeAtHand(): string | undefined {
-    const held = document.activeElement?.closest<HTMLElement>(".svelte-flow__node");
-    const focused = held && v.canvas?.contains(held) ? held.dataset.id : undefined;
+    const focused = v.focused ?? undefined;
     const open = opened === null ? undefined : keys.get(opened)?.find((key) => byKey.get(key)?.node.id === opened);
     return isWhole(focused) ? focused : isWhole(open) ? open : undefined;
+  }
+
+  /** The tree id the graph gives the Artifact `name`. */
+  const idOf = (name: string) => graph.nodes.find((node) => node.name === name)?.id;
+
+  /** The drawn copy focus is on, kept as focus moves in and out of the canvas. */
+  function focusIn(event: FocusEvent) {
+    const held = event.target instanceof Element ? event.target.closest<HTMLElement>(".svelte-flow__node") : null;
+    v.focused = held?.dataset.id ?? null;
   }
 
 
@@ -441,7 +450,7 @@
     const refused = await defs.edit(owner, operation, "graph");
     if (refused !== null) {
       // What was dragged goes back where it was drawn.
-      lifted = null;
+      v.lifted = null;
       v.epoch += 1;
     }
     return refused === null;
@@ -453,33 +462,25 @@
     return at ? flow.screenToFlowPosition({ x: at.clientX, y: at.clientY }) : null;
   }
 
-  /** The node being dragged, and whether Esc put it back. */
-  let dragging: { key: string; cancelled: boolean } | null = null;
-  /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
-   * did from there, whatever frames its drawing skipped. */
-  let pressed: Point | null = null;
+
 
   function dropOf(key: string, event: MouseEvent | TouchEvent): Drop | null {
     const [copy, at] = [byKey.get(key), pointOf(event)];
     return copy && at ? dropAt(graph, drawn, rects, copy, at) : null;
   }
 
-  /** Where the node being dragged is now, as its drag last moved it: no state, read by the next
-   * drawing of the nodes, which a drop target's highlight starts. */
-  let lifted: { key: string; position: Point } | null = null;
-
   function dragStart(key: string) {
-    dragging = { key, cancelled: false };
+    v.dragging = { key, cancelled: false };
     v.target = null;
   }
 
   /** While a node is dragged, the Artifact a release would make its whole is highlighted, but
    * only while the library would accept it. */
   function dragMove(key: string, event: MouseEvent | TouchEvent, position: Point) {
-    if (!dragging || dragging.cancelled) return;
-    lifted = { key, position: { ...position } };
+    if (!v.dragging || v.dragging.cancelled) return;
+    v.lifted = { key, position: { ...position } };
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
-    v.target = copy && drop && accepted(drop, defs.node(copy.node.name)?.wholes ?? []) ? drop.key : null;
+    v.target = copy && drop && accepted(drop, copy.node.name, defs.node(copy.node.name)?.within ?? []) ? drop.key : null;
   }
 
   /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
@@ -488,22 +489,22 @@
     try {
       await release(node, event);
     } finally {
-      lifted = null;
+      v.lifted = null;
     }
   }
 
   async function release(node: Node, event: MouseEvent | TouchEvent) {
-    const held = dragging;
-    dragging = null;
+    const held = v.dragging;
+    v.dragging = null;
     v.target = null;
     const copy = byKey.get(node.id);
     const drop = held && !held.cancelled ? dropOf(node.id, event) : null;
     if (!copy || !drop) {
-      lifted = null;
+      v.lifted = null;
       v.epoch += 1;
       return;
     }
-    const [from, now] = [pressed, pointOf(event)];
+    const [from, now] = [v.pressed, pointOf(event)];
     const was = rects.get(copy.key)!;
     const around = copy.parent === null ? null : rects.get(copy.parent)!;
     const rect = from && now
@@ -620,11 +621,11 @@
 
   /** Esc during a node's drag puts it back: the drag ends where it is, writing nothing. */
   function cancelDrag(event: KeyboardEvent) {
-    if (!dragging || !plain(event, "Escape")) return;
+    if (!v.dragging || !plain(event, "Escape")) return;
     event.preventDefault();
     event.stopPropagation();
-    dragging.cancelled = true;
-    lifted = null;
+    v.dragging = { ...v.dragging, cancelled: true };
+    v.lifted = null;
     v.target = null;
     v.epoch += 1;
     // Svelte Flow's drag ends on the button's release; this release ends it now.
@@ -643,7 +644,7 @@
     await tick();
     if (field.from === "button") m.panes.detail?.querySelector<HTMLElement>("[data-comment-button]")?.focus();
     else {
-      const first = keys.get(`a:${field.name}`)?.[0];
+      const first = keys.get(idOf(field.name) ?? "")?.[0];
       v.canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(first ?? "")}"]`)?.focus({ preventScroll: true });
     }
   }
@@ -652,10 +653,11 @@
    * one is brought to the middle of the graph left of the Detail, as a found Artifact is. */
   const created: Attachment<HTMLElement> = () => {
     const made = defs.created;
-    if (made === null || !keys.has(`a:${made.name}`)) return;
+    const id = made === null ? undefined : idOf(made.name);
+    if (made === null || id === undefined || !keys.has(id)) return;
     defs.created = null;
-    if (made.centre) void choose({ node: `a:${made.name}`, tab: null } as Found);
-    else onopen(`a:${made.name}`);
+    if (made.centre) void choose({ node: id, tab: null } as Found);
+    else onopen(id);
   };
 
   useCommands(() => [
@@ -721,7 +723,9 @@
     {@attach created}
     {@attach escaping}
     onkeydown={keydown}
-    onpointerdowncapture={(event) => (pressed = pointOf(event))}
+    onpointerdowncapture={(event) => (v.pressed = pointOf(event))}
+    onfocusin={focusIn}
+    onfocusout={() => (v.focused = null)}
     tabindex="-1"
   >
     {#if large}<canvas class="paint" aria-hidden="true" {@attach draw}></canvas>{/if}
