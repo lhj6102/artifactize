@@ -7,9 +7,9 @@ import { prepareFixture } from "../build-fixtures.ts";
 import { verifyAll, type Fixture } from "../fixture.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { exists, makeDirectory, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
-import { detail, graphShown, nodeAt, openArtifact } from "../graph-view.ts";
-import { MAIN, mainTitle, scanned, showRun } from "../pane.ts";
+import { exists, makeDirectory, nativeInput, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
+import { detail, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
+import { MAIN, chooseChip, mainTitle, scanned, showRun } from "../pane.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { dispatchInput } from "../input.ts";
@@ -18,38 +18,114 @@ const CURRENT = 'section[aria-label="Current"]';
 const DETAIL = 'aside[aria-label="Detail"]';
 const TOOLS = '[aria-label="Graph tools"]';
 
-/** The definitions of the editing fixture: app and bundle each hold kit, docs reads core.
- * `comments` adds a comment to app and one to core. */
-function definitions(comments: boolean): Record<string, string> {
-  const comment = (text: string) => (comments ? `\n[annotations.comment]\ntext = ${JSON.stringify(text)}\n` : "");
+/** The comments of the editing fixture: app's, under its title row, and core's, longer than
+ * the three lines a comment shows. */
+const APP_NOTE = "The app is split next, once the kit settles.\nThe bundle follows.";
+const CORE_NOTE = "Core needs a review before the parser lands.\nThe tests cover the happy path only.\nThe errors are untested.\nNor is the cache.";
+
+/** What the editing fixture holds besides its Artifacts: `comments` adds app's and core's;
+ * `nested` keeps kit's file in `.artifactize/lib/` with a comment, placed in app's box by hand;
+ * `placed` places the top level by hand. */
+type Options = { comments?: boolean; nested?: boolean; placed?: boolean };
+
+/** The definitions of the editing fixture: app and bundle each hold kit, docs reads core. */
+function definitions({ comments = false, nested = false, placed = false }: Options): Record<string, string> {
+  const comment = (text: string, shown = comments) => (shown ? `\n[annotations.comment]\ntext = ${JSON.stringify(text)}\n` : "");
+  const at = (x: number, y: number) => (placed ? `\n[annotations.style]\nat = [${x.toFixed(1)}, ${y.toFixed(1)}]\n` : "");
   return {
-    app: `path = "app/"\nparts = ["kit"]\nbasis = true\n${comment("The app is split next.")}`,
-    bundle: `path = "bundle/"\nparts = ["kit"]\nbasis = true\n`,
-    kit: `path = "kit/"\nbasis = true\n`,
-    core: `path = "core/"\nbasis = true\n${comment("Core needs a review.")}`,
-    docs: `path = "docs/"\n\n[evals.check]\ntitle = "The docs read the core"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check {docs} against {core}."\n`,
+    app: `path = "app/"\nparts = ["kit"]\nbasis = true\n${at(0, 0)}${nested ? "\n[annotations.style.parts]\nkit = [0.0, 0.0]\n" : ""}${comment(APP_NOTE)}`,
+    bundle: `path = "bundle/"\nparts = ["kit"]\nbasis = true\n${at(420, 0)}`,
+    kit: `path = "kit/"\nbasis = true\n${comment("Kit is shared.", nested)}`,
+    core: `path = "core/"\nbasis = true\n${at(0, 320)}${comment(CORE_NOTE)}`,
+    docs: `path = "docs/"\n${at(420, 320)}\n[evals.check]\ntitle = "The docs read the core"\nprofile = ${runtimeProfile()}\npayload.instruction = "Check {docs} against {core}."\n`,
   };
 }
 
 /** A branch whose definitions are in `.artifactize/`, one file each, without a Run. */
-function createEditing(comments = false): Fixture {
+function createEditing(options: Options = {}): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const folder = makeDirectory(nativePath(repo, ".artifactize"));
-    for (const [name, text] of Object.entries(definitions(comments))) {
+    for (const [name, text] of Object.entries(definitions(options))) {
       writeText(nativePath(makeDirectory(nativePath(repo, name)), "readme.md"), `${name}\n`);
-      writeText(nativePath(folder, `${name}.artf`), text);
+      const into = options.nested && name === "kit" ? makeDirectory(nativePath(folder, "lib")) : folder;
+      writeText(nativePath(into, `${name}.artf`), text);
     }
     git(repo, "init", "-q", "--initial-branch=master", repo);
     return { root, repo, state: nativePath(root, "state") };
   });
 }
 
-/** The definition file of `name` as it is on disk now, or `null` once it is gone. */
+/** The definition file of `name` as it is on disk now, in `.artifactize/` or its `lib/`, or
+ * `null` once it is gone. */
 const file = (fixture: Fixture, name: string) => {
-  const path = nativePath(fixture.repo, ".artifactize", `${name}.artf`);
-  return exists(path) ? readText(path) : null;
+  const path = [nativePath(fixture.repo, ".artifactize", `${name}.artf`), nativePath(fixture.repo, ".artifactize", "lib", `${name}.artf`)].find(exists);
+  return path ? readText(path) : null;
 };
+
+/** Whether `name`'s file lists `part` among its parts. */
+const holds = (fixture: Fixture, name: string, part: string) => (file(fixture, name) ?? "").split("\n").some((line) => line.startsWith("parts = [") && line.includes(`"${part}"`));
+
+/** Whether `name`'s file places `part` in its box. */
+const placesPart = (fixture: Fixture, name: string, part: string) => (file(fixture, name) ?? "").split("\n").some((line) => line.startsWith(`${part} = [`));
+
+/** The comment `name`'s file holds, as its `[annotations.comment]` text: a basic string or a
+ * multi-line one; `null` without one. */
+function commentIn(fixture: Fixture, name: string): string | null {
+  const text = file(fixture, name) ?? "";
+  const section = text.indexOf("[annotations.comment]");
+  if (section < 0) return null;
+  const rest = text.slice(section).split("\n").slice(1).join("\n");
+  const start = rest.indexOf("text = ");
+  if (start < 0) return null;
+  const value = rest.slice(start + "text = ".length);
+  const DELIMITER = '"""';
+  if (value.startsWith(DELIMITER)) {
+    const body = value.slice(DELIMITER.length, value.indexOf(DELIMITER, DELIMITER.length));
+    return body.startsWith("\n") ? body.slice(1) : body;
+  }
+  return JSON.parse(value.slice(0, value.indexOf("\n") < 0 ? undefined : value.indexOf("\n"))) as string;
+}
+
+/** `name`'s own place as its file says, or `null`. */
+const ownAt = (fixture: Fixture, name: string) => /^at = \[[^\]]*\]/m.exec(file(fixture, name) ?? "")?.[0] ?? null;
+
+/** The graph's zoom as the tool strip says it. */
+const zoom = (browser: WebdriverIO.Browser) => browser.$(`${TOOLS} [aria-label="Zoom"]`).getText();
+
+/** The drawn path of the first edge whose id names `id`. */
+const edgeOf = (browser: WebdriverIO.Browser, id: string) => browser.execute((root, want) =>
+  [...document.querySelectorAll(`${root} .svelte-flow__edge`)].find((edge) => edge.getAttribute("data-id")?.includes(want))?.querySelector("path")?.getAttribute("d") ?? "", CURRENT, id);
+
+/** Whether the drawn copy `id` is being dragged, raised. */
+const lifted = (browser: WebdriverIO.Browser, id: string) => browser.execute((selector) => {
+  const node = document.querySelector(selector);
+  const face = node?.querySelector(".artifact, .whole");
+  return !!node?.classList.contains("dragging") && !!face && getComputedStyle(face).boxShadow !== "none";
+}, `${CURRENT} ${nodeAt(id)}`);
+
+/** The comment drawn under or inside the copy `id`: its box, its node's box, its colours, and
+ * whether its text is cut to the lines it shows. */
+const commentOf = (browser: WebdriverIO.Browser, id: string) => browser.execute((selector) => {
+  const node = document.querySelector<HTMLElement>(selector);
+  const text = node?.querySelector<HTMLElement>(".comment");
+  if (!node || !text) return null;
+  const [at, around, style] = [text.getBoundingClientRect(), node.getBoundingClientRect(), getComputedStyle(text)];
+  const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim();
+  const probe = document.createElement("span");
+  probe.style.color = ink;
+  document.body.append(probe);
+  const quiet = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    box: { left: at.left, top: at.top, right: at.right, bottom: at.bottom, height: at.height - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom) },
+    node: { left: around.left, top: around.top, right: around.right, bottom: around.bottom },
+    quiet: style.color === quiet,
+    bare: style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderTopStyle === "none",
+    cut: text.scrollHeight > text.clientHeight + 1,
+    lineHeight: Number.parseFloat(style.lineHeight),
+  };
+}, `${CURRENT} ${nodeAt(id)}, .run ${nodeAt(id)}`);
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` }).catch(async (error: Error) => {
@@ -185,6 +261,7 @@ export const scenarios: Scenario[] = [
   // UX journeys: J-DEFINITION J-DEFINITION-EDIT J-PARTS-EDIT J-DEFINITION-CONFLICT
   // UX edges: E-CURRENT-EVALS E-DETAIL-SECTION E-DEFINITION-PATH E-DEFINITION-ESC E-SOURCE-TYPE E-SOURCE-SAVE
   // E-DEFINITION-INVALID E-SOURCE-REVERT E-PARTS-PICK E-PARTS-ADD E-PARTS-REMOVE E-PARTS-REFUSED E-EDIT-CONFLICT E-EDIT-UNSAVED
+  // E-LAYOUT-RESET E-COMMENT-OPEN
   scenario<Record<string, never>>(
     "editing-definition",
     "shows and edits an Artifact's Definition and Source on the Current, refusing what the project would not accept, a changed file and a drag over typed text",
@@ -216,6 +293,24 @@ export const scenarios: Scenario[] = [
       await fill(browser, path, "core/");
       await browser.keys("Enter");
       await waitFor(browser, () => file(fixture, "core")?.includes('path = "core/"') ?? false, "core's Path back");
+      // A Path the project would not accept is refused in red under it, writing nothing; it stays
+      // typed to be corrected, and Esc puts it back.
+      const kept = file(fixture, "core");
+      await fill(browser, path, "../outside/");
+      await browser.keys("Enter");
+      await waitFor(browser, async () => ((await definition(browser))?.refused.length ?? 0) > 0, "the outside Path refused under it");
+      assert.equal(file(fixture, "core"), kept, "a refused Path writes nothing");
+      assert.equal((await definition(browser))?.path, "../outside/", "the Path stays typed");
+      assert.equal(await browser.execute((field) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--red)";
+        document.body.append(probe);
+        const red = getComputedStyle(probe).color;
+        probe.remove();
+        return getComputedStyle(document.querySelector(field)!.closest("dd")!.querySelector('[role="alert"]')!).color === red;
+      }, path), true, "the refusal in red");
+      await browser.keys("Escape");
+      await waitFor(browser, async () => (await definition(browser))?.path === "core/" && (await definition(browser))?.refused.length === 0, "Esc puts the Path back, its refusal gone");
 
       // Typing in the Source offers Save and Revert; Ctrl+S writes it.
       const text = `${DETAIL} textarea[aria-label="Source of core"]`;
@@ -224,6 +319,25 @@ export const scenarios: Scenario[] = [
       assert.equal(file(fixture, "core")?.includes("# reviewed"), false, "nothing written before Save");
       await press(browser, [primaryModifier, "s"], () => file(fixture, "core")?.endsWith("# reviewed") ?? false, "Ctrl+S wrote the Source");
       await waitFor(browser, async () => (await source(browser))?.save === false, "Save gone once written");
+      // A change of what core is, saved from the Source, reaches its Definition and the graph.
+      await typeIn(browser, text, '\nparts = ["kit"]');
+      await browser.$(DETAIL).$("button=Save").click();
+      await waitFor(browser, () => holds(fixture, "core", "kit"), "core's file names kit as its part");
+      await waitFor(browser, async () => JSON.stringify((await definition(browser))?.parts) === '["kit"]', "core's Definition lists kit");
+      await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:core/a:kit")}`).isExisting(), "the graph draws kit in core's box");
+      await browser.$(`${DETAIL} button[aria-label="Remove kit from the parts of core"]`).click();
+      await waitFor(browser, () => !holds(fixture, "core", "kit"), "kit gone from core's parts");
+      await waitFor(browser, async () => !(await browser.$(`${CURRENT} ${nodeAt("a:core/a:kit")}`).isExisting()), "core drawn as a node again");
+      // Text that does not read is refused at its line and column, the line marked.
+      const readable = file(fixture, "core");
+      await typeIn(browser, text, "\npath = ");
+      await browser.$(DETAIL).$("button=Save").click();
+      await waitFor(browser, async () => /line \d+, column \d+/.test((await source(browser))?.refused ?? ""), "the refusal names its line and column");
+      const line = /line (\d+)/.exec((await source(browser))!.refused)![1];
+      assert.deepEqual((await source(browser))?.marked, [line], "that line marked in the margin");
+      assert.equal(file(fixture, "core"), readable, "nothing written");
+      await browser.$(DETAIL).$("button=Revert").click();
+      await waitFor(browser, async () => (await source(browser))?.save === false, "Revert puts back the file");
       // What the project would not accept is refused with its line, and stays typed.
       const before = file(fixture, "core");
       await typeIn(browser, text, '\nparts = ["nobody"]');
@@ -262,6 +376,13 @@ export const scenarios: Scenario[] = [
       await browser.keys("Escape");
       await waitFor(browser, async () => !(await browser.$(`${DETAIL} input[aria-label="Add a part to kit"]`).isExisting()), "Esc closes the Parts field");
 
+      // The top level placed by hand: Reset layout is offered.
+      await browser.$(DETAIL).$("button=Close").click();
+      await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed");
+      const docs = (await box(browser, "a:docs"))!;
+      await drag(browser, docs, await below(browser, docs.x));
+      await waitFor(browser, () => ownAt(fixture, "core") !== null && ownAt(fixture, "docs") !== null, "the top level placed in each file");
+
       // A file changed on disk refuses a save: the refusal names it, the typed text stays until
       // Revert shows what is on disk.
       await openArtifact(browser, "a:core", "Artifact core");
@@ -273,16 +394,38 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await source(browser))?.refused === ".artifactize/core.artf changed on disk.", "the changed file refused");
       assert.equal(file(fixture, "core"), theirs, "the other writer's text stays");
       assert.ok((await source(browser))?.text.endsWith("# mine"), "the typed text stays");
-      // A drag over typed text is refused before anything is written; the typed text stays
-      // with core while its Detail is closed.
+      // Every edit on the graph that would write core's file is refused before anything is
+      // written, naming the file; what was dragged goes back and the typed text stays with core
+      // while its Detail is closed.
       await browser.$(DETAIL).$("button=Close").click();
       await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed");
+      const all = () => ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
+      const unsaved = all();
+      const typed = async (what: string) => {
+        await waitFor(browser, async () => (await notice(browser)) === ".artifactize/core.artf has typed text in its Source; save or revert it first.", what);
+        assert.deepEqual(all(), unsaved, `${what}: nothing written`);
+      };
       const core = (await box(browser, "a:core"))!;
       await drag(browser, { x: core.x, y: core.y }, { x: core.x + 60, y: core.y + 40 });
-      await waitFor(browser, async () => (await notice(browser)).startsWith(".artifactize/core.artf has typed text"), "a move over typed text refused");
-      assert.equal(file(fixture, "core"), theirs, "nothing written");
+      await typed("a move over typed text refused");
       assert.deepEqual(await box(browser, "a:core"), core, "core back where it was");
+      const app = (await box(browser, "a:app"))!;
+      await drag(browser, core, { x: app.left + 60, y: app.top + 14 });
+      await typed("a drop into app's box refused");
+      assert.equal(await browser.$(`${CURRENT} ${nodeAt("a:app/a:core")}`).isExisting(), false, "core not drawn in app's box");
+      assert.deepEqual(await box(browser, "a:core"), core, "core back again");
+      await browser.$(TOOLS).$("button=Reset layout").click();
+      await typed("Reset layout refused");
       await openArtifact(browser, "a:core", "Artifact core");
+      await browser.$(DETAIL).$("button=Comment").click();
+      await waitFor(browser, async () => (await field(browser))?.of === "core", "core's comment field open");
+      await browser.keys("Later");
+      await browser.keys("Enter");
+      await typed("a comment on core refused");
+      assert.equal((await field(browser))?.text, "Later", "the comment field stays with its text");
+      await browser.keys("Escape");
+      await waitFor(browser, async () => (await field(browser)) === null, "Esc closes the comment field");
+      await unfold(browser, "Source");
       await waitFor(browser, async () => (await source(browser))?.text.endsWith("# mine") ?? false, "the typed text still in core's Source");
       await browser.$(DETAIL).$("button=Revert").click();
       await waitFor(browser, async () => (await source(browser))?.text === theirs, "Revert shows what is on disk");
@@ -293,14 +436,14 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-NODE-NEW J-NODE-RENAME J-NODE-DELETE
+  // UX journeys: J-NODE-NEW J-NODE-RENAME J-NODE-DELETE J-DEFINITION-CONFLICT
   // UX edges: E-NODE-NEW-OPEN E-EDIT-DIALOG-INVALID E-EDIT-DIALOG-CANCEL E-NODE-NEW E-NODE-RENAME-OPEN E-NODE-RENAME
-  // E-NODE-DELETE-OPEN E-NODE-DELETE-REFUSED E-NODE-DELETE
+  // E-NODE-DELETE-OPEN E-NODE-DELETE-REFUSED E-NODE-DELETE E-EDIT-CONFLICT
   scenario<Record<string, never>>(
     "editing-nodes",
     "creates an Artifact from the tool strip, renames one with its references, and deletes one only while nothing names it",
     async () => {
-      const fixture = createEditing();
+      const fixture = createEditing({ nested: true, placed: true });
       return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
@@ -318,7 +461,9 @@ export const scenarios: Scenario[] = [
       assert.equal(file(fixture, "Core"), null, "nothing written");
       await browser.keys("Escape");
       await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "Esc closes the dialog" });
-      // Created: the file is written, the node drawn and its Detail opened.
+      // Created: the file is written, the dialog closes, the node is drawn in free space beside
+      // the hand-placed top level, and its Detail opens with it in the middle of the graph left
+      // of the Detail, at a zoom that reads.
       await browser.$(TOOLS).$("button=New Artifact").click();
       await dialog().waitForExist({ timeout: 15000 });
       await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "extra");
@@ -326,8 +471,39 @@ export const scenarios: Scenario[] = [
       await browser.keys("Enter");
       await waitFor(browser, () => file(fixture, "extra") !== null, "extra's file written");
       assert.ok(file(fixture, "extra")?.includes('path = "extra/"'), "with its Path");
+      await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the dialog closed" });
       await graphShown(browser, "a:extra");
       await waitFor(browser, async () => (await detail(browser))?.title === "Artifact extra", "the new Artifact's Detail open");
+      await waitFor(browser, async () => {
+        const at = await offCentre(browser, "a:extra");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && at.width >= 168 * 0.75 - 1;
+      }, "extra in the middle of the graph left of the Detail, at a zoom that reads");
+      const overlaps = await browser.execute((root) => {
+        const rects = [...document.querySelectorAll<HTMLElement>(`${root} .svelte-flow__node`)].map((node) => [node.dataset.id ?? "", node.getBoundingClientRect()] as const);
+        const extra = rects.find(([id]) => id === "a:extra")![1];
+        return rects.filter(([id, at]) => id !== "a:extra" && at.left < extra.right && extra.left < at.right && at.top < extra.bottom && extra.top < at.bottom).map(([id]) => id);
+      }, CURRENT);
+      assert.deepEqual(overlaps, [], "extra covers no Artifact");
+      assert.equal(ownAt(fixture, "extra"), null, "extra has no place of its own until it is moved");
+
+      // A rename whose files changed on disk meanwhile is refused, writing none of them; the
+      // graph and the Definition show what is on disk now.
+      const docsTheirs = (file(fixture, "docs") ?? "").replace('path = "docs/"\n', 'path = "docs/"\nparts = ["kit"]\n');
+      writeText(nativePath(fixture.repo, ".artifactize", "docs.artf"), docsTheirs);
+      await openArtifact(browser, "a:core", "Artifact core");
+      await browser.$(DETAIL).$("button=Rename").click();
+      await dialog().waitForExist({ timeout: 15000 });
+      await fill(browser, '[role="dialog"] input', "base");
+      await dialog().$("button=Rename").click();
+      await waitFor(browser, async () => (await refusal().isExisting()) && (await refusal().getText()) === ".artifactize/docs.artf changed on disk.", "the rename refused, naming docs's file");
+      assert.equal(file(fixture, "base"), null, "no file renamed");
+      assert.notEqual(file(fixture, "core"), null, "core's file stays");
+      assert.equal(file(fixture, "docs"), docsTheirs, "docs's file as the other writer left it");
+      await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:docs/a:kit")}`).isExisting(), "the graph scanned again: kit in docs's box");
+      await browser.keys("Escape");
+      await dialog().waitForExist({ reverse: true, timeout: 15000 });
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      await waitFor(browser, async () => JSON.stringify((await definition(browser))?.parts) === '["kit"]', "docs's Definition lists kit");
 
       // Rename: the file and every reference follow in one edit.
       await openArtifact(browser, "a:core", "Artifact core");
@@ -340,7 +516,26 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => file(fixture, "base") !== null && file(fixture, "core") === null, "core.artf renamed base.artf");
       assert.ok(file(fixture, "docs")?.includes("{base}"), "docs's reference follows");
       await waitFor(browser, async () => (await detail(browser))?.title === "Artifact base", "the Detail names base");
-      await graphShown(browser, "a:base");
+      await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:base")}`).isExisting(), "the graph draws base");
+      // A part held by several wholes, placed in one of them and with a comment: every parts
+      // entry and the place follow, its file stays in its folder with its comment.
+      const kitText = file(fixture, "kit");
+      await openArtifact(browser, "a:app/a:kit", "Artifact kit");
+      await browser.$(DETAIL).$("button=Rename").click();
+      await dialog().waitForExist({ timeout: 15000 });
+      await fill(browser, '[role="dialog"] input', "piece");
+      await browser.keys("Enter");
+      await waitFor(browser, () => file(fixture, "kit") === null && exists(nativePath(fixture.repo, ".artifactize", "lib", "piece.artf")), "lib/kit.artf renamed lib/piece.artf");
+      assert.equal(file(fixture, "piece"), kitText, "its text, comment included, as it was");
+      for (const whole of ["app", "bundle", "docs"]) {
+        assert.ok(holds(fixture, whole, "piece") && !holds(fixture, whole, "kit"), `${whole}'s parts name piece`);
+      }
+      assert.ok(placesPart(fixture, "app", "piece") && !placesPart(fixture, "app", "kit"), "app's place for it follows");
+      assert.equal(ownAt(fixture, "app"), "at = [0.0, 0.0]", "app keeps its own place");
+      await waitFor(browser, async () => (await detail(browser))?.title === "Artifact piece", "the Detail names piece");
+      await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app/a:piece")}`).isExisting(), "the graph draws piece in app's box");
+      await waitFor(browser, async () => (await comments(browser))["a:app/a:piece"] === "Kit is shared.", "its comment drawn under it");
+      await openArtifact(browser, "a:base", "Artifact base");
 
       // Delete: refused while docs names base, saying which; done for extra.
       await browser.$(DETAIL).$("button=Delete").click();
@@ -362,14 +557,14 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-NODE-MOVE J-LAYOUT-RESET J-PARTS-DRAG J-DEFINITION
+  // UX journeys: J-NODE-MOVE J-LAYOUT-RESET J-PARTS-DRAG J-PARTS-EDIT J-DEFINITION
   // UX edges: E-NODE-DRAG E-NODE-PLACE E-NODE-DRAG-CANCEL E-PARTS-DROP E-PARTS-DROP-OUT E-PARTS-DROP-REFUSED E-LAYOUT-RESET
-  // E-LAYOUT-SAVED E-RUN-NO-EDIT E-GRAPH-CAMERA E-PANE-CHIP E-MON-DETAIL-ARTIFACT
+  // E-LAYOUT-SAVED E-RUN-NO-EDIT E-GRAPH-CAMERA E-PANE-CHIP E-MON-DETAIL-ARTIFACT E-PARTS-ADD E-PARTS-REMOVE E-GRAPH-MINIMIZE
   scenario<{ run: string }>(
     "editing-layout",
     "places Artifacts by hand and makes parts by dropping them, saving places in the definitions, which draw the branch's Run too and hold after a restart",
     async () => {
-      const fixture = createEditing();
+      const fixture = createEditing({ comments: true });
       const verified = await verifyAll(fixture);
       if (verified.code !== 0) throw new Error(`the editing fixture did not verify: ${verified.stdout}`);
       const { id: run } = JSON.parse(verified.stdout) as { id: string };
@@ -378,6 +573,8 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data: { run } }) => {
       await currentShown(browser, "a:core");
       assert.equal(await browser.$(TOOLS).$("button=Reset layout").isExisting(), false, "the top level is laid out automatically");
+      await afterRender(browser);
+      const initial = await places(browser);
       // A press and release without moving opens the Detail.
       const core = (await box(browser, "a:core"))!;
       await clickAt(browser, { x: Math.round(core.x), y: Math.round(core.y) });
@@ -391,9 +588,23 @@ export const scenarios: Scenario[] = [
       await afterRender(browser);
       assert.deepEqual(await box(browser, "a:core"), core, "core back where it was");
       assert.deepEqual(files(), untouched, "nothing written");
-      // A drag places it: the first move writes every top-level node's place, in its own file.
+      // While dragged, core is raised and follows the pointer; its edge and its comment come along.
+      // Released, it is placed: the first move writes every top-level node's place, each in its
+      // own file.
       const moved = await below(browser, core.x + 40);
-      await drag(browser, { x: core.x, y: core.y }, moved);
+      const [edgeBefore, commentBefore] = [await edgeOf(browser, "a:core"), (await commentOf(browser, "a:core"))!];
+      await drag(browser, { x: core.x, y: core.y }, moved, {
+        held: async () => {
+          assert.equal(await lifted(browser, "a:core"), true, "core raised while dragged");
+          const now = (await box(browser, "a:core"))!;
+          // Within a frame's lag of the pointer, far from where it was.
+          assert.ok(Math.hypot(now.x - moved.x, now.y - moved.y) < 40 && Math.hypot(now.x - core.x, now.y - core.y) > Math.hypot(moved.x - core.x, moved.y - core.y) - 40, `core follows the pointer: ${JSON.stringify(now)} for ${JSON.stringify(moved)}`);
+          assert.notEqual(await edgeOf(browser, "a:core"), edgeBefore, "its edge follows");
+          const note = (await commentOf(browser, "a:core"))!;
+          assert.ok(Math.abs(note.box.top - note.node.bottom - (commentBefore.box.top - commentBefore.node.bottom)) < 1 && note.box.top !== commentBefore.box.top, "its comment comes along under it");
+          assert.deepEqual(files(), untouched, "nothing written before the release");
+        },
+      });
       await waitFor(browser, () => ["core", "docs", "app", "bundle"].every((name) => /\bat = \[/.test(file(fixture, name) ?? "")), "every top-level node's place written");
       assert.equal(/annotations/.test(file(fixture, "kit") ?? ""), false, "a part has no top-level place");
       await waitFor(browser, async () => (await browser.$(TOOLS).$("button=Reset layout").isExisting()), "Reset layout offered for the hand-placed top level");
@@ -402,9 +613,39 @@ export const scenarios: Scenario[] = [
       assert.ok(placed && Math.abs(placed.x - moved.x) < 12 && Math.abs(placed.y - moved.y) < 12, `core stays where it was dropped: ${JSON.stringify(placed)} for ${JSON.stringify(moved)}`);
       // A later move writes the moved node's file only.
       const docsBefore = file(fixture, "docs");
+      const coreAt = ownAt(fixture, "core");
       await drag(browser, placed!, { x: placed!.x + 40, y: placed!.y });
+      await waitFor(browser, () => ownAt(fixture, "core") !== coreAt, "core's new place written");
       await waitFor(browser, async () => Math.abs(((await box(browser, "a:core"))?.x ?? 0) - (placed!.x + 40)) < 12, "core moved again");
       assert.equal(file(fixture, "docs"), docsBefore, "docs's file untouched");
+
+      // A whole is dragged by its title row, carrying its parts; minimized, it is dragged as a node.
+      const bundleTitle = await titleOf(browser, "a:bundle");
+      const kitHeld = (await box(browser, "a:bundle/a:kit"))!;
+      const bundleHeld = (await box(browser, "a:bundle"))!;
+      const bundleAt = ownAt(fixture, "bundle");
+      const bundleTo = await below(browser, bundleTitle.x);
+      await drag(browser, bundleTitle, bundleTo, {
+        held: async () => {
+          assert.equal(await lifted(browser, "a:bundle"), true, "bundle raised while dragged");
+          const [kitNow, bundleNow] = [(await box(browser, "a:bundle/a:kit"))!, (await box(browser, "a:bundle"))!];
+          assert.ok(Math.hypot(bundleNow.x - bundleHeld.x, bundleNow.y - bundleHeld.y) > 40, "bundle follows the pointer");
+          const [dx, dy] = [kitNow.x - kitHeld.x - (bundleNow.x - bundleHeld.x), kitNow.y - kitHeld.y - (bundleNow.y - bundleHeld.y)];
+          assert.ok(Math.hypot(dx, dy) < 2, `its part kit carried along with it: off by ${dx}, ${dy}`);
+        },
+      });
+      await waitFor(browser, () => ownAt(fixture, "bundle") !== bundleAt, "bundle's new place written");
+      await browser.$(`${CURRENT} ${nodeAt("a:bundle")} button[aria-label^="Minimize bundle"]`).click();
+      await waitFor(browser, async () => !(await browser.$(`${CURRENT} ${nodeAt("a:bundle/a:kit")}`).isExisting()), "bundle minimized");
+      const folded = (await box(browser, "a:bundle"))!;
+      const foldedAt = ownAt(fixture, "bundle");
+      await drag(browser, folded, await below(browser, folded.x + 30));
+      await waitFor(browser, () => ownAt(fixture, "bundle") !== foldedAt, "the minimized bundle's place written");
+      await browser.$(`${CURRENT} ${nodeAt("a:bundle")} button[aria-label^="Expand bundle"]`).click();
+      await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:bundle/a:kit")}`).isExisting(), "bundle expanded");
+      // Fit brings the moved bundle back into view.
+      await browser.$(TOOLS).$("button=Fit").click();
+      await graphShown(browser, "a:bundle/a:kit");
 
       // Dropped into app's box, core becomes app's part; app's places are written as shown. The
       // box is highlighted while the drop would be accepted.
@@ -419,12 +660,52 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => /\bcore = \[/.test(file(fixture, "app") ?? "") && /\bkit = \[/.test(file(fixture, "app") ?? ""), "core's place in app's box written, and kit's as shown");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app/a:core")}`).isExisting(), "core drawn in app's box");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label="Reset layout of app"]`).isExisting(), "the hand-placed box offers Reset layout");
+
+      // A part added from the Detail to the hand-placed box goes where it covers none of its
+      // parts.
+      await openArtifact(browser, "a:app", "Artifact app");
+      await browser.$(DETAIL).$("button=Add").click();
+      await browser.$(`${DETAIL} input[aria-label="Add a part to app"]`).waitForExist({ timeout: 15000 });
+      await browser.keys("docs");
+      await browser.keys("Enter");
+      await waitFor(browser, () => holds(fixture, "app", "docs"), "app's file names docs as a part");
+      await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app/a:docs")}`).isExisting(), "the graph draws docs in app's box");
+      const covered = await browser.execute((root) => {
+        const rects = ["a:app/a:docs", "a:app/a:kit", "a:app/a:core"].map((id) => document.querySelector(`${root} .svelte-flow__node[data-id="${id}"]`)!.getBoundingClientRect());
+        const [added, ...others] = rects;
+        return others.some((at) => at.left < added.right && added.left < at.right && at.top < added.bottom && added.top < at.bottom);
+      }, CURRENT);
+      assert.equal(covered, false, "docs covers none of app's parts");
+      await browser.$(DETAIL).$("button=Close").click();
+      await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed");
+      // Moved inside app's box, docs's place is written in app's file alone, nothing before the
+      // release; the camera stays.
+      const inBox = (await box(browser, "a:app/a:docs"))!;
+      const appBox = (await box(browser, "a:app"))!;
+      const others = () => ["core", "docs", "kit", "bundle"].map((name) => file(fixture, name));
+      const [othersBefore, appBefore0, zoomBefore] = [others(), file(fixture, "app"), await zoom(browser)];
+      await drag(browser, inBox, { x: appBox.left + 120, y: appBox.top + 14 }, {
+        held: async () => assert.equal(file(fixture, "app"), appBefore0, "nothing written while held"),
+      });
+      await waitFor(browser, () => file(fixture, "app") !== appBefore0 && placesPart(fixture, "app", "docs"), "docs's place written in app's file");
+      assert.deepEqual(others(), othersBefore, "no other file written");
+      assert.equal(await zoom(browser), zoomBefore, "the camera stays");
+      // Removed from the Detail, docs leaves app's parts and its place there.
+      await openArtifact(browser, "a:app", "Artifact app");
+      await browser.$(`${DETAIL} button[aria-label="Remove docs from the parts of app"]`).click();
+      await waitFor(browser, () => !holds(fixture, "app", "docs") && !placesPart(fixture, "app", "docs"), "docs gone from app's parts and places");
+      await browser.$(DETAIL).$("button=Close").click();
+      await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed");
+      await graphShown(browser, "a:docs");
+
       // Dropped out of every box, it leaves app; its own place is written.
       const part = (await box(browser, "a:app/a:core"))!;
       const app = (await box(browser, "a:app"))!;
       await drag(browser, part, await below(browser, app.left + app.width + 60));
-      await waitFor(browser, () => !/"core"/.test(file(fixture, "app") ?? ""), "core gone from app's parts");
+      await waitFor(browser, () => !holds(fixture, "app", "core"), "core gone from app's parts");
+      assert.equal(placesPart(fixture, "app", "core"), false, "and from app's places");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:core")}`).isExisting(), "core drawn at the top level");
+      assert.notEqual(ownAt(fixture, "core"), null, "core's own place written");
       // A drop that would make a cycle: app onto the copy of its own part kit in bundle.
       const kitInBundle = (await box(browser, "a:bundle/a:kit"))!;
       const appBefore = file(fixture, "app");
@@ -438,12 +719,34 @@ export const scenarios: Scenario[] = [
       assert.equal(file(fixture, "kit"), kitBefore, "kit's file untouched");
       assert.ok(appTitle, "app's title row is where a whole is dragged from");
 
-      // Reset layout: app's box first, then the top level.
+      // A shared part dragged from app onto docs leaves app alone: bundle's copy stays where it is.
+      const kitInApp = (await box(browser, "a:app/a:kit"))!;
+      const docsNode = (await box(browser, "a:docs"))!;
+      const bundleKit = (await places(browser))["a:bundle/a:kit"];
+      await drag(browser, kitInApp, { x: docsNode.x, y: docsNode.y }, { held: async () => waitFor(browser, () => targeted(browser, "a:docs"), "docs highlighted as the drop target") });
+      await waitFor(browser, () => holds(fixture, "docs", "kit") && !holds(fixture, "app", "kit"), "kit moved from app's parts to docs's");
+      assert.equal(placesPart(fixture, "app", "kit"), false, "kit's place gone from app's file");
+      assert.ok(holds(fixture, "bundle", "kit"), "bundle still holds kit");
+      await graphShown(browser, "a:docs/a:kit");
+      assert.deepEqual((await places(browser))["a:bundle/a:kit"], bundleKit, "bundle's copy of kit stays where it was");
+      // Back into app, for the layout to come back as it was.
+      const kitInDocs = (await box(browser, "a:docs/a:kit"))!;
+      const appNode = (await box(browser, "a:app"))!;
+      await drag(browser, kitInDocs, { x: appNode.x, y: appNode.y });
+      await waitFor(browser, () => holds(fixture, "app", "kit") && !holds(fixture, "docs", "kit"), "kit back in app");
+      await graphShown(browser, "a:app/a:kit");
+
+      // Reset layout of the top level keeps the boxes placed by hand and the camera; Reset layout
+      // of app's box then; the graph is laid out as it first was.
+      const zoomed = await zoom(browser);
+      await browser.$(TOOLS).$("button=Reset layout").click();
+      await waitFor(browser, () => ["core", "docs", "app", "bundle"].every((name) => ownAt(fixture, name) === null), "every top-level place gone");
+      await waitFor(browser, async () => !(await browser.$(TOOLS).$("button=Reset layout").isExisting()), "Reset layout gone with the places");
+      assert.ok(/annotations\.style\.parts/.test(file(fixture, "app") ?? ""), "app's places kept");
+      assert.equal(await zoom(browser), zoomed, "the camera stays");
       await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label="Reset layout of app"]`).click();
       await waitFor(browser, () => !/annotations\.style\.parts/.test(file(fixture, "app") ?? ""), "app's places gone");
-      await browser.$(TOOLS).$("button=Reset layout").click();
-      await waitFor(browser, () => ["core", "docs", "app", "bundle"].every((name) => !/\bat = \[/.test(file(fixture, name) ?? "")), "every top-level place gone");
-      await waitFor(browser, async () => !(await browser.$(TOOLS).$("button=Reset layout").isExisting()), "Reset layout gone with the places");
+      await waitFor(browser, async () => JSON.stringify(await places(browser)) === JSON.stringify(initial), "laid out as it first was");
 
       // Placed again, the places draw the branch's Run as they draw its Current.
       const again = (await box(browser, "a:docs"))!;
@@ -451,6 +754,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => /\bat = \[/.test(file(fixture, "docs") ?? ""), "docs placed");
       await afterRender(browser);
       const onCurrent = await places(browser);
+      writeText(nativePath(fixture.root, "places.json"), JSON.stringify(onCurrent));
       await showRun(browser, "repo  master", run);
       await graphShown(browser, "a:docs");
       let onRunPlaces = {};
@@ -469,78 +773,150 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => await browser.$(`${DETAIL} section[aria-label="Path"]`).isExisting(), "a Run's Detail shows its Path");
       assert.equal(await browser.$(`${DETAIL} section[aria-label="Definition"]`).isExisting(), false, "and no Definition");
     },
-    async (browser) => {
-      // After a restart the places still hold.
+    async (browser, { fixture }) => {
+      // After a restart the places still hold: the graph is drawn where it was left.
       await currentShown(browser, "a:docs");
       await waitFor(browser, async () => await browser.$(TOOLS).$("button=Reset layout").isExisting(), "the top level still placed by hand");
+      const saved = readText(nativePath(fixture.root, "places.json"));
+      let shown = {};
+      await waitFor(browser, async () => JSON.stringify(shown = await places(browser)) === saved, "every Artifact where it was left")
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}, saved ${saved}`); });
     },
   ),
 
   // UX journeys: J-COMMENT J-COMMENT-EDIT J-COMMENT-MOVE
   // UX edges: E-COMMENT-DRAWN E-COMMENT-OPEN E-COMMENT-WRITE E-COMMENT-CLICK E-COMMENT-ESC E-COMMENT-REMOVE E-COMMENT-DRAG
-  // E-COMMENT-DROP E-COMMENT-DROP-NONE E-COMMENT-DRAG-CANCEL E-GRAPH-MINIMIZE E-GRAPH-EXPAND E-EDIT-CONFLICT
-  scenario<Record<string, never>>(
+  // E-COMMENT-DROP E-COMMENT-DROP-NONE E-COMMENT-DRAG-CANCEL E-GRAPH-MINIMIZE E-GRAPH-EXPAND E-EDIT-CONFLICT E-RUN-NO-EDIT
+  scenario<{ run: string }>(
     "editing-comments",
     "draws each comment under its node, writes one from the Definition's Comment or a click on it, and moves one by dragging",
     async () => {
-      const fixture = createEditing(true);
-      return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
+      const fixture = createEditing({ comments: true });
+      const verified = await verifyAll(fixture);
+      if (verified.code !== 0) throw new Error(`the editing fixture did not verify: ${verified.stdout}`);
+      const { id: run } = JSON.parse(verified.stdout) as { id: string };
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: { run } };
     },
-    async (browser, { fixture }) => {
+    async (browser, { fixture, data: { run } }) => {
       await currentShown(browser, "a:core");
-      await waitFor(browser, async () => JSON.stringify(await comments(browser)) === JSON.stringify({ "a:app": "The app is split next.", "a:core": "Core needs a review." }),
+      await waitFor(browser, async () => JSON.stringify(await comments(browser)) === JSON.stringify({ "a:app": APP_NOTE, "a:core": CORE_NOTE }),
         `each comment under its node or its whole's title row: ${JSON.stringify(await comments(browser))}`);
-      // Minimized, a whole keeps its comment under it.
+      // Text alone in the quieter ink, within its node's width or its box, three lines at most.
+      const quiet = async (id: string, inset: boolean) => {
+        const note = (await commentOf(browser, id))!;
+        assert.ok(note.quiet && note.bare, `${id}'s comment is text alone in the quieter ink`);
+        assert.ok(note.box.left >= note.node.left - 1 && note.box.right <= note.node.right + 1, `${id}'s comment within its width`);
+        if (inset) assert.ok(note.box.top >= note.node.top && note.box.bottom <= note.node.bottom, `${id}'s comment inside its box`);
+        else assert.ok(note.box.top >= note.node.bottom, `${id}'s comment under its node`);
+        assert.ok(note.box.height <= 3 * note.lineHeight + 1, `${id}'s comment shows three lines at most`);
+        return note;
+      };
+      await quiet("a:app", true);
+      assert.equal((await quiet("a:core", false)).cut, true, "core's longer comment cut to its three lines");
+      // Minimized, a whole keeps its comment under it, and its parts' are not drawn.
       await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label^="Minimize app"]`).click();
-      await waitFor(browser, async () => (await comments(browser))["a:app"] === "The app is split next.", "the minimized whole's comment under it");
+      await waitFor(browser, async () => (await comments(browser))["a:app"] === APP_NOTE, "the minimized whole's comment under it");
       await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label^="Expand app"]`).click();
       await graphShown(browser, "a:app/a:kit");
 
-      // The Definition's Comment opens the field under kit; Enter writes it, focus goes back.
+      // The Definition's Comment opens the field under kit; Shift+Enter breaks the line, Enter
+      // writes it, focus goes back to Comment.
+      const KIT_NOTE = "Check the kit\nthen the bundle";
+      const kitText = file(fixture, "kit");
       await openArtifact(browser, "a:bundle/a:kit", "Artifact kit");
       await browser.$(DETAIL).$("button=Comment").click();
       await waitFor(browser, async () => (await field(browser))?.of === "kit" && (await field(browser))?.focused === true, "kit's field open and focused");
       await browser.keys("Check the kit");
+      // Shift+Enter is the field's own: it neither writes nor closes, and the engine breaks the
+      // line as its text input.
+      await press(browser, ["Shift", "Enter"], async () => (await field(browser))?.of === "kit", "Shift+Enter leaves the field open");
+      assert.equal(file(fixture, "kit"), kitText, "Shift+Enter writes nothing");
+      await nativeInput(browser, { type: "set", text: "then the bundle" });
+      await nativeInput(browser, { type: "commit", text: "\nthen the bundle" });
+      let typedNote = "";
+      await waitFor(browser, async () => (typedNote = (await field(browser))?.text ?? "") === KIT_NOTE, "the field holds two lines")
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(typedNote)}`); });
       await browser.keys("Enter");
-      await waitFor(browser, () => /\[annotations\.comment\]\s*text = "Check the kit"/.test(file(fixture, "kit") ?? ""), "kit's comment written in its file");
-      assert.equal(file(fixture, "kit")?.startsWith('path = "kit/"\nbasis = true\n'), true, "nothing else in kit's file changed");
-      await waitFor(browser, async () => (await comments(browser))["a:app/a:kit"] === "Check the kit" && (await comments(browser))["a:bundle/a:kit"] === "Check the kit", "drawn under every copy of kit");
+      await waitFor(browser, () => commentIn(fixture, "kit") === KIT_NOTE, "kit's comment written in its file, its line break kept");
+      assert.equal(file(fixture, "kit")?.startsWith(kitText!), true, "nothing else in kit's file changed");
+      await waitFor(browser, async () => (await comments(browser))["a:app/a:kit"] === KIT_NOTE && (await comments(browser))["a:bundle/a:kit"] === KIT_NOTE, "drawn under every copy of kit");
       await waitFor(browser, async () => await browser.$(`${DETAIL} button[data-comment-button]`).isFocused(), "focus back on Comment");
+      await browser.$(DETAIL).$("button=Close").click();
+      await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed, the whole graph in reach");
+      // Minimized, app draws no comment of its parts.
+      await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label^="Minimize app"]`).click();
+      await waitFor(browser, async () => !("a:app/a:kit" in (await comments(browser))) && (await comments(browser))["a:bundle/a:kit"] === KIT_NOTE, "a minimized whole's parts' comments not drawn");
+      await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label^="Expand app"]`).click();
+      await graphShown(browser, "a:app/a:kit");
 
-      // A click on core's comment opens it; Esc puts it back; an empty field removes it.
+      // A click on core's comment opens it with its whole text; Esc puts it back, and so does a
+      // click outside; an empty field removes it, focus back on core's node.
       const comment = () => browser.$(`${CURRENT} ${nodeAt("a:core")} .comment`);
+      const coreText = file(fixture, "core");
       await clickAt(browser, await visibleCenter(browser, await comment().getElement()));
-      await waitFor(browser, async () => (await field(browser))?.text === "Core needs a review.", "core's field holds its comment");
+      await waitFor(browser, async () => (await field(browser))?.text === CORE_NOTE, "core's field holds its whole comment");
       await browser.keys(" now");
       await browser.keys("Escape");
       await waitFor(browser, async () => (await field(browser)) === null, "Esc closes the field");
-      assert.ok(file(fixture, "core")?.includes('text = "Core needs a review."'), "nothing written");
+      assert.equal(file(fixture, "core"), coreText, "nothing written");
       await clickAt(browser, await visibleCenter(browser, await comment().getElement()));
       await waitFor(browser, async () => (await field(browser))?.of === "core", "core's field open again");
+      await browser.keys(" now");
+      // A click on the tool strip's Fit, outside the field.
+      await browser.$(TOOLS).$("button=Fit").click();
+      await waitFor(browser, async () => (await field(browser)) === null, "a click outside closes the field");
+      assert.equal(file(fixture, "core"), coreText, "nothing written by a click outside");
+      await clickAt(browser, await visibleCenter(browser, await comment().getElement()));
+      await waitFor(browser, async () => (await field(browser))?.of === "core", "core's field open once more");
       // Only a space left: an empty comment.
       await fill(browser, 'textarea[aria-label="Comment on core"]', " ");
       await browser.keys("Enter");
       await waitFor(browser, () => !/annotations/.test(file(fixture, "core") ?? ""), "the empty comment removed from core's file");
       await waitFor(browser, async () => !(await comments(browser))["a:core"], "nothing drawn under core");
+      await waitFor(browser, () => browser.execute(() => (document.activeElement?.closest(".svelte-flow__node") as HTMLElement | null)?.dataset.id === "a:core"), "focus back on core's node");
 
       // Dragged onto docs, which has none, kit's comment moves there.
-      if (await browser.$(DETAIL).isExisting()) await browser.$(DETAIL).$("button=Close").click();
-      await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed, the whole graph in reach");
       const kitComment = await visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:bundle/a:kit")} .comment`).getElement());
       const docs = (await box(browser, "a:docs"))!;
-      await drag(browser, kitComment, { x: docs.x, y: docs.y }, { held: async () => waitFor(browser, () => targeted(browser, "a:docs"), "docs highlighted as the drop target") });
-      await waitFor(browser, () => /text = "Check the kit"/.test(file(fixture, "docs") ?? "") && !/annotations/.test(file(fixture, "kit") ?? ""), "the comment moved from kit's file to docs's");
+      await drag(browser, kitComment, { x: docs.x, y: docs.y }, {
+        held: async () => {
+          await waitFor(browser, () => targeted(browser, "a:docs"), "docs highlighted as the drop target");
+          assert.equal((await comments(browser))["a:bundle/a:kit"], undefined, "the comment's place left empty while it is lifted");
+        },
+      });
+      await waitFor(browser, () => commentIn(fixture, "docs") === KIT_NOTE && !/annotations/.test(file(fixture, "kit") ?? ""), "the comment moved from kit's file to docs's");
       // Onto app, which has one, it is no drop target and returns; Esc puts one back too.
       const docsComment = async () => visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:docs")} .comment`).getElement());
       const appBox = (await box(browser, "a:app"))!;
       await drag(browser, await docsComment(), { x: appBox.x, y: appBox.top + 10 }, { held: async () => assert.equal(await targeted(browser, "a:app"), false, "app has a comment: no target") });
       await afterRender(browser);
-      assert.ok(/text = "Check the kit"/.test(file(fixture, "docs") ?? ""), "the comment stays with docs");
+      assert.equal(commentIn(fixture, "docs"), KIT_NOTE, "the comment stays with docs");
       await drag(browser, await docsComment(), { x: docs.x + 200, y: docs.y }, { escape: true });
       await afterRender(browser);
-      assert.equal((await comments(browser))["a:docs"], "Check the kit", "Esc put the comment back");
+      assert.equal((await comments(browser))["a:docs"], KIT_NOTE, "Esc put the comment back");
 
-      // A file changed on disk refuses a comment, saying which.
+      // On the branch's Run the comments are drawn alike, and are no handle: a drag pans the
+      // camera, a click opens the Artifact's Detail.
+      const before = ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
+      await showRun(browser, "repo  master", run);
+      await graphShown(browser, "a:docs");
+      await waitFor(browser, async () => JSON.stringify(await comments(browser)) === JSON.stringify({ "a:app": APP_NOTE, "a:docs": KIT_NOTE }), "the Run drawn with the definitions' comments");
+      const onRun = await places(browser);
+      const runComment = await visibleCenter(browser, await browser.$(`.run ${nodeAt("a:docs")} .comment`).getElement());
+      await drag(browser, runComment, { x: runComment.x + 120, y: runComment.y + 60 }, {
+        held: async () => assert.equal(await browser.execute(() => document.querySelector(".artifact.target, .whole.target") !== null), false, "no drop target on a Run"),
+      });
+      await afterRender(browser);
+      assert.deepEqual(await places(browser), onRun, "the drag panned the camera, moving nothing against another");
+      assert.deepEqual(["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name)), before, "nothing written");
+      await clickAt(browser, await visibleCenter(browser, await browser.$(`.run ${nodeAt("a:docs")} .comment`).getElement()));
+      await waitFor(browser, async () => (await detail(browser))?.title === "Artifact docs", "a click on a Run's comment opens its Artifact's Detail");
+      assert.equal(await field(browser), null, "and no comment field");
+      await browser.$(DETAIL).$("button=Close").click();
+
+      // A file changed on disk refuses a comment, saying which; the field stays with its text.
+      await chooseChip(browser, "repo  master", "current");
+      await currentShown(browser, "a:docs");
       await clickAt(browser, await docsComment());
       await waitFor(browser, async () => (await field(browser))?.of === "docs", "docs's field open");
       writeText(nativePath(fixture.repo, ".artifactize", "docs.artf"), `${file(fixture, "docs")}\n# changed`);
@@ -548,6 +924,13 @@ export const scenarios: Scenario[] = [
       await browser.keys("Enter");
       await waitFor(browser, async () => (await notice(browser)) === ".artifactize/docs.artf changed on disk.", "the changed file refused");
       assert.ok(file(fixture, "docs")?.endsWith("# changed"), "the other writer's text stays");
+      assert.equal((await field(browser))?.text, `${KIT_NOTE} again`, "the field stays with its text");
+    },
+    async (browser) => {
+      // After a restart the comments are drawn as the definitions hold them.
+      await currentShown(browser, "a:docs");
+      await waitFor(browser, async () => (await comments(browser))["a:app"] === APP_NOTE && (await comments(browser))["a:docs"] === "Check the kit\nthen the bundle", "the comments drawn after a restart");
+      assert.equal((await commentOf(browser, "a:app"))?.quiet, true, "in the quieter ink");
     },
   ),
 ];

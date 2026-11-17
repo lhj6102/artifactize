@@ -56,6 +56,8 @@ export function page(browser: WebdriverIO.Browser): Page {
       const key = keys.length === 1 ? keys[0] : undefined;
       if (key === "PageUp" || key === "PageDown") {
         await dispatchInput(browser, { kind: "key", key });
+      } else if (keys.length === 2 && keys.includes("Shift") && keys.includes("Enter")) {
+        await dispatchInput(browser, { kind: "key", key: "Enter", shift: true });
       } else await browser.keys(keys);
     },
     until: async (check, timeout) => {

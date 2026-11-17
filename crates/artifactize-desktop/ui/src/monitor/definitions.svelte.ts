@@ -45,10 +45,12 @@ export function writes(operation: EditOperation, view: DefinitionsView | null): 
     case "setComment":
       return [operation.name];
     case "addPart":
+      // A part gives up its own place at the top level.
+      return [operation.whole, operation.part];
     case "removePart":
       return [operation.whole];
     case "movePart":
-      return [operation.from, operation.to].filter((name): name is string => name !== null);
+      return [operation.part, operation.from, operation.to].filter((name): name is string => name !== null);
     case "rename":
       return [operation.old];
     case "moveComment":

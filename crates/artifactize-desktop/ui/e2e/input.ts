@@ -1,6 +1,7 @@
 // One WebDriver page-input adapter for standard events omitted by the pristine provider.
 // This delivers only input to actual UI targets: no app handlers, commands or state access.
-type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "click" | "text-click"; x: number; y: number }
+// The provider's special keys carry no modifier: Shift+Enter arrives as a plain Enter.
+type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number }
   | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number };
 
 /** Click the actual option through WebDriver, then supply only its missing HTML default
@@ -70,9 +71,10 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
   await browser.execute((input) => {
     if (input.kind === "key") {
       const target = document.activeElement ?? document.body;
-      const keyCode = input.key === "PageUp" ? 33 : 34;
+      const keyCode = input.key === "PageUp" ? 33 : input.key === "PageDown" ? 34 : 13;
+      const shiftKey = "shift" in input && input.shift;
       for (const type of ["keydown", "keyup"]) target.dispatchEvent(new KeyboardEvent(type, {
-        key: input.key, code: input.key, keyCode, which: keyCode, bubbles: true, cancelable: true,
+        key: input.key, code: input.key, keyCode, which: keyCode, shiftKey, bubbles: true, cancelable: true,
       }));
     } else {
       const target = document.elementFromPoint(input.x, input.y);

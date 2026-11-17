@@ -173,13 +173,16 @@
       .map(({ key, node, parent, parts, minimized: folded, count }) => {
         const [at, around] = [rects.get(key)!, parent === null ? null : rects.get(parent)!];
         const box = parts.length > 0 && !folded;
+        // The node being dragged stays where the pointer has it, however the others are redrawn.
+        const held = lifted?.key === key ? lifted : null;
         return {
+          ...(held ? { dragging: true } : {}),
           id: key,
           type: folded ? "minimized" : box ? "whole" : "artifact",
           // A whole's box is dragged by its title row; its face pans.
           dragHandle: box ? ".title" : undefined,
           // A part's place is from its whole's corner.
-          position: around ? { x: at.x - around.x, y: at.y - around.y } : { x: at.x, y: at.y },
+          position: held ? held.position : around ? { x: at.x - around.x, y: at.y - around.y } : { x: at.x, y: at.y },
           parentId: parent ?? undefined,
           // A fixed size: recoloured nodes keep their dimensions and never re-measure. A node
           // object without `measured` makes Svelte Flow drop its handle positions, which hides
@@ -436,7 +439,11 @@
   async function edit(operation: EditOperation): Promise<boolean> {
     if (!owner) return false;
     const refused = await defs.edit(owner, operation, "graph");
-    if (refused !== null) v.epoch += 1;
+    if (refused !== null) {
+      // What was dragged goes back where it was drawn.
+      lifted = null;
+      v.epoch += 1;
+    }
     return refused === null;
   }
 
@@ -457,6 +464,10 @@
     return copy && at ? dropAt(graph, drawn, rects, copy, at) : null;
   }
 
+  /** Where the node being dragged is now, as its drag last moved it: no state, read by the next
+   * drawing of the nodes, which a drop target's highlight starts. */
+  let lifted: { key: string; position: Point } | null = null;
+
   function dragStart(key: string) {
     dragging = { key, cancelled: false };
     v.target = null;
@@ -464,20 +475,31 @@
 
   /** While a node is dragged, the Artifact a release would make its whole is highlighted, but
    * only while the library would accept it. */
-  function dragMove(key: string, event: MouseEvent | TouchEvent) {
+  function dragMove(key: string, event: MouseEvent | TouchEvent, position: Point) {
     if (!dragging || dragging.cancelled) return;
+    lifted = { key, position: { ...position } };
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
     v.target = copy && drop && accepted(drop, defs.node(copy.node.name)?.wholes ?? []) ? drop.key : null;
   }
 
-  /** A released node: placed, made a part of the Artifact under it, or out of its whole. */
+  /** A released node: placed, made a part of the Artifact under it, or out of its whole. It is
+   * drawn where it was let go until what was written is laid out. */
   async function dragStop(node: Node, event: MouseEvent | TouchEvent) {
+    try {
+      await release(node, event);
+    } finally {
+      lifted = null;
+    }
+  }
+
+  async function release(node: Node, event: MouseEvent | TouchEvent) {
     const held = dragging;
     dragging = null;
     v.target = null;
     const copy = byKey.get(node.id);
     const drop = held && !held.cancelled ? dropOf(node.id, event) : null;
     if (!copy || !drop) {
+      lifted = null;
       v.epoch += 1;
       return;
     }
@@ -602,6 +624,7 @@
     event.preventDefault();
     event.stopPropagation();
     dragging.cancelled = true;
+    lifted = null;
     v.target = null;
     v.epoch += 1;
     // Svelte Flow's drag ends on the button's release; this release ends it now.
@@ -713,7 +736,7 @@
       nodesDraggable={editable && !large}
       nodeDragThreshold={DRAG}
       onnodedragstart={({ targetNode }) => targetNode && dragStart(targetNode.id)}
-      onnodedrag={({ targetNode, event }) => targetNode && dragMove(targetNode.id, event)}
+      onnodedrag={({ targetNode, event }) => targetNode && dragMove(targetNode.id, event, targetNode.position)}
       onnodedragstop={({ targetNode, event }) => targetNode && void dragStop(targetNode, event)}
       nodesConnectable={false}
       elementsSelectable={false}
