@@ -108,6 +108,23 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
                 crate::platform::path_text(&artifact.path)
             ))
         })?;
+        for selected in &artifact.select {
+            let file = open_scoped(&directory, selected).map_err(|error| {
+                ScopeError(format!(
+                    "Artifact {} selection {selected} is unavailable: {error}",
+                    artifact.name
+                ))
+            })?;
+            let metadata = file
+                .metadata()
+                .map_err(|error| ScopeError(error.to_string()))?;
+            if !metadata.is_file() && !metadata.is_dir() {
+                return Err(ScopeError(format!(
+                    "Artifact {} selection {selected} must be a file or folder.",
+                    artifact.name
+                )));
+            }
+        }
     }
     if artifact.file_name().is_some() {
         artifact
@@ -467,6 +484,10 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 format!("fingerprint.files: {message}"),
             )
         };
+        // A covering folder part subtracts every input, including a file/aspect's defaults.
+        if artifact.covering_part.is_some() {
+            continue;
+        }
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
         for input in inputs.iter().filter(|input| *input != ".") {
             let location = scope

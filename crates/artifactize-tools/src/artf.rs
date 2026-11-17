@@ -16,10 +16,29 @@ pub fn definition(bytes: &[u8]) -> Cow<'_, [u8]> {
     };
     document.remove("annotations");
     Cow::Owned(
-        toml::to_string(&document)
+        toml::to_string(&canonical(toml::Value::Table(document)))
             .expect("a parsed TOML table serializes")
             .into_bytes(),
     )
+}
+
+// Cargo feature unification may enable TOML's insertion-ordered maps. Sort every table
+// explicitly so the view does not depend on that feature or on authored key order.
+fn canonical(value: toml::Value) -> toml::Value {
+    match value {
+        toml::Value::Table(table) => toml::Value::Table(
+            table
+                .into_iter()
+                .map(|(key, value)| (key, canonical(value)))
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into_iter()
+                .collect(),
+        ),
+        toml::Value::Array(values) => {
+            toml::Value::Array(values.into_iter().map(canonical).collect())
+        }
+        value => value,
+    }
 }
 
 /// File tools normalize a whole declaration before paging its lines. The existing search

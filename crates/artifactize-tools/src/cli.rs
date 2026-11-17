@@ -84,6 +84,7 @@ async fn execute(tool: Tool) -> Result<(), String> {
                 path: PathBuf::new(),
                 kind: ArtifactKind::Folder,
                 name: "cwd".into(),
+                covering_part: None,
                 nested: BTreeMap::new(),
                 select: Vec::new(),
             },

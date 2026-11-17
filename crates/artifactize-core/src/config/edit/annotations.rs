@@ -60,13 +60,29 @@ fn style(
     let Some(style) = section(doc, "style")? else {
         return Ok((None, BTreeMap::new()));
     };
-    let at = if top_level(config, name) {
-        style.get("at").map(point).transpose()?
+    Ok((
+        style_at(style, config, name)?,
+        style_parts(style, config, name)?,
+    ))
+}
+fn style_at(
+    style: &dyn TableLike,
+    config: &RepoConfig,
+    name: &ArtifactName,
+) -> Result<Option<Point>, String> {
+    if top_level(config, name) {
+        style.get("at").map(point).transpose()
     } else {
-        None
-    };
-    let parts = match style.get("parts") {
-        None => BTreeMap::new(),
+        Ok(None)
+    }
+}
+fn style_parts(
+    style: &dyn TableLike,
+    config: &RepoConfig,
+    name: &ArtifactName,
+) -> Result<BTreeMap<ArtifactName, Point>, String> {
+    match style.get("parts") {
+        None => Ok(BTreeMap::new()),
         Some(parts) => parts
             .as_table_like()
             .ok_or("annotations.style.parts must be a table")?
@@ -78,9 +94,8 @@ fn style(
                     .any(|name| name.as_str() == *part)
             })
             .map(|(part, value)| Ok((part.parse().expect("configured part"), point(value)?)))
-            .collect::<Result<_, String>>()?,
-    };
-    Ok((at, parts))
+            .collect(),
+    }
 }
 fn comment(doc: &DocumentMut) -> Result<Option<String>, String> {
     section(doc, "comment")?
@@ -96,11 +111,19 @@ fn comment(doc: &DocumentMut) -> Result<Option<String>, String> {
 pub(super) fn read(source: &str, config: &RepoConfig, name: &ArtifactName) -> Annotations {
     let doc = source.parse::<DocumentMut>().expect("validated TOML");
     let mut annotations = Annotations::default();
-    match style(&doc, config, name) {
-        Ok((at, parts)) => {
-            annotations.at = at;
-            annotations.parts = parts;
+    match section(&doc, "style") {
+        Ok(Some(style)) => {
+            // A node's parent-box place and its own box are independent for drawing.
+            match style_at(style, config, name) {
+                Ok(at) => annotations.at = at,
+                Err(error) => annotations.style_error = Some(error),
+            }
+            match style_parts(style, config, name) {
+                Ok(parts) => annotations.parts = parts,
+                Err(error) => annotations.style_error = Some(error),
+            }
         }
+        Ok(None) => (),
         Err(error) => annotations.style_error = Some(error),
     }
     match comment(&doc) {
@@ -294,11 +317,16 @@ pub(super) fn rename_part(
     old: &ArtifactName,
     new: &ArtifactName,
 ) -> Result<(), Refusal> {
-    let (_, places) =
-        style(doc, before, owner).map_err(|error| invalid(doc, file, "style", error))?;
-    if !places.contains_key(old) {
+    let has_place = doc
+        .get("annotations")
+        .and_then(|annotations| annotations.get("style"))
+        .and_then(|style| style.get("parts"))
+        .and_then(Item::as_table_like)
+        .is_some_and(|parts| parts.contains_key(old));
+    if !has_place {
         return Ok(());
     }
+    style(doc, before, owner).map_err(|error| invalid(doc, file, "style", error))?;
     let parts = section_mut(doc, "style")
         .get_mut("parts")
         .expect("placed part")

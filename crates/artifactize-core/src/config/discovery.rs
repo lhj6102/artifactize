@@ -107,10 +107,19 @@ pub(super) fn populate_nested(config: &mut RepoConfig) {
                     Some((prefix, part.name.clone()))
                 })
                 .collect();
-            (name.clone(), entries)
+            let covering_part = config
+                .descendants(name)
+                .into_iter()
+                .filter_map(|part| config.artifacts.get(part))
+                .filter(|part| {
+                    part.kind == ArtifactKind::Folder && artifact.folder().starts_with(&part.path)
+                })
+                .max_by_key(|part| part.path.components().count())
+                .map(|part| part.name.clone());
+            (name.clone(), entries, covering_part)
         })
         .collect::<Vec<_>>();
-    for (name, nested) in nested {
+    for (name, nested, covering_part) in nested {
         let nested: BTreeMap<ChildPrefix, ArtifactName> = nested;
         let nearest = nested
             .iter()
@@ -124,11 +133,9 @@ pub(super) fn populate_nested(config: &mut RepoConfig) {
             })
             .map(|(prefix, name)| (prefix.clone(), name.clone()))
             .collect();
-        config
-            .artifacts
-            .get_mut(&name)
-            .expect("existing node")
-            .nested = nearest;
+        let artifact = config.artifacts.get_mut(&name).expect("existing node");
+        artifact.nested = nearest;
+        artifact.covering_part = covering_part;
     }
 }
 
@@ -274,6 +281,7 @@ pub(super) fn insert_artifact(
             target_error: None,
             path,
             kind,
+            covering_part: None,
             nested: BTreeMap::new(),
             select: select.unwrap_or_default(),
             parts: parts.into_iter().flatten().collect(),

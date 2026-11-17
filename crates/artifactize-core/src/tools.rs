@@ -80,6 +80,8 @@ struct ContextArtifact {
     path: PathBuf,
     kind: crate::config::ArtifactKind,
     nested: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    covering_part: Option<crate::config::ArtifactName>,
     /// An aspect's selected paths below `path`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     select: Vec<crate::config::LogicalPath>,
@@ -436,6 +438,7 @@ impl<'a> Registry<'a> {
                         path,
                         kind: artifact.kind,
                         nested: artifact.nested.clone(),
+                        covering_part: artifact.covering_part.clone(),
                         select: artifact.select.clone(),
                     },
                 ))

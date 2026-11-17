@@ -60,6 +60,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 tags: declaration.tags,
                 basis: declaration.basis,
                 path: name.into(),
+                covering_part: None,
                 nested: BTreeMap::new(),
                 select: Vec::new(),
                 parts: Default::default(),

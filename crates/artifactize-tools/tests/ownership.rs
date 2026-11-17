@@ -27,6 +27,7 @@ fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
         path: "".into(),
         kind: ArtifactKind::Folder,
         name: "parent".into(),
+        covering_part: None,
         nested: BTreeMap::from([(ChildPrefix::new("Secret").unwrap(), id("child"))]),
         select: Vec::new(),
     };

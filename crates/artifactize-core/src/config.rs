@@ -1194,6 +1194,9 @@ pub struct Artifact {
     /// Folder Artifacts declared in subfolders, by their path here. Their files are theirs,
     /// not this Artifact's; discovery also records them as parts.
     pub nested: BTreeMap<ChildPrefix, ArtifactName>,
+    /// A folder part at the same target or an ancestor, owning every file here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub covering_part: Option<ArtifactName>,
     /// An aspect's selected paths below its folder; empty for other kinds.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub select: Vec<LogicalPath>,
@@ -1214,6 +1217,7 @@ impl Artifact {
             kind: self.kind,
             name: self.name.to_string(),
             nested: tool_nested(&self.nested),
+            covering_part: self.covering_part.as_ref().map(crate::scope::tool_id),
             select: self.select.iter().map(|path| path.to_string()).collect(),
         }
     }

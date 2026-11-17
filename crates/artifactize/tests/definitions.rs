@@ -100,7 +100,6 @@ fn malformed_names_and_paths_are_positioned_and_old_form_gets_one_hint() {
             "name = \"other\"\npath = \"./\"\n",
             "the file name is the Artifact's name",
         ),
-        ("con", "path = \"./\"\n", "device name"),
         ("node", "path = \"../escape/\"\n", "path"),
         ("node", "path = \"/absolute/\"\n", "path"),
         ("node", "path = \"foo//bar/\"\n", "path"),

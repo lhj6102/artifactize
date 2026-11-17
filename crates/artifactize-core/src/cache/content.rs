@@ -179,7 +179,13 @@ impl Walk {
                     vec![part.referenced_path().to_owned()]
                 }
             })
-            .filter_map(|path| path.strip_prefix(artifact.folder()).ok().map(PathBuf::from))
+            .filter_map(|path| {
+                if artifact.folder().starts_with(&path) {
+                    Some(PathBuf::new())
+                } else {
+                    path.strip_prefix(artifact.folder()).ok().map(PathBuf::from)
+                }
+            })
             .chain(
                 artifact
                     .nested

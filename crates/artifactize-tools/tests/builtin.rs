@@ -25,6 +25,7 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
         path,
         kind: ArtifactKind::Folder,
         name: "fixture".into(),
+        covering_part: None,
         nested: BTreeMap::new(),
         select: Vec::new(),
     };
@@ -33,6 +34,7 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
             (
                 owner.clone(),
                 Artifact {
+                    covering_part: None,
                     nested: BTreeMap::from([(ChildPrefix::new("docs").unwrap(), id("target"))]),
                     ..folder("".into())
                 },
@@ -114,6 +116,7 @@ fn folder_scope(owner: &ArtifactId) -> Scope {
                 path: "".into(),
                 kind: ArtifactKind::Folder,
                 name: "fixture".into(),
+                covering_part: None,
                 nested: BTreeMap::new(),
                 select: Vec::new(),
             },
@@ -318,6 +321,7 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
         kind: ArtifactKind::Folder,
         name: "fixture".into(),
         nested,
+        covering_part: None,
         select: Vec::new(),
     };
     let app = folder(

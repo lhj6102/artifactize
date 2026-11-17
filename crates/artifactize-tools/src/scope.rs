@@ -154,6 +154,8 @@ pub struct Artifact {
     pub name: String,
     /// Logical path prefix to the nested folder Artifact that owns it.
     pub nested: BTreeMap<ChildPrefix, ArtifactId>,
+    /// A folder part whose target contains this entire target's containing folder.
+    pub covering_part: Option<ArtifactId>,
     /// An aspect's selected paths, relative to its folder; empty for other kinds.
     pub select: Vec<String>,
 }
@@ -225,6 +227,13 @@ impl Scope {
                 .artifacts
                 .get(current)
                 .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {current}")))?;
+            if let Some(part) = &artifact.covering_part
+                && !self.artifacts.contains_key(part)
+            {
+                return Err(ScopeError(format!(
+                    "Artifact {current} is covered by folder part {part}; reference {{{part}}} to read its files."
+                )));
+            }
             if remaining.is_empty() {
                 break;
             }

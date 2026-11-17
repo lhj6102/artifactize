@@ -35,6 +35,7 @@ fn nested_folders_resolve_to_their_target_ids() {
         path: PathBuf::from(path),
         kind: ArtifactKind::Folder,
         name: path.into(),
+        covering_part: None,
         nested: nested
             .iter()
             .map(|(prefix, target)| (ChildPrefix::new(*prefix).unwrap(), id(target)))

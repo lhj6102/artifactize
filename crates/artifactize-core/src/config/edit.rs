@@ -6,9 +6,28 @@
 //! invalid definitions include their file and source position, conflicts include the disk
 //! contents, and forbidden operations explain the remaining reference or cycle.
 //!
-//! Definitions validate as a complete prospective project before any write. A move changes
-//! both wholes in one transaction. Annotations are workbench-only and cannot invalidate a CLI
-//! check. Coordinates are local to a box; `None` names the top level.
+//! [`read_project`] returns each node's definition file, exact authored PATH, target kind,
+//! missing-target mark, raw-content SHA-256 identity and annotations, plus the file contents
+//! used as [`BasedOn`]. Merge a successful delta into those bases before the next edit.
+//! Creation is always `.artifactize/<name>.artf`; rename stays in its original subfolder.
+//!
+//! [`Operation`] creates a node, changes PATH or source, adds/removes/moves parts, renames
+//! and deletes, and saves/resets places or sets/moves a comment. A move changes both wholes
+//! in one transaction. Rename updates structural references and whole-local place keys;
+//! delete names every remaining referrer. Comments and unknown annotations are not references.
+//! A stale file returns [`Refusal::Changed`] with its current text (`None` when deleted),
+//! including when the changed text is no longer valid. Source can repair that text after
+//! the caller reloads its base. Invalid candidates include file, line and column; cycles,
+//! occupied comment destinations and remaining referrers have readable reasons.
+//!
+//! Every complete prospective project validates before writes. Annotations never invalidate
+//! a configuration check; a known malformed section refuses operations that edit it. Other
+//! annotation data and untouched text remain as authored. The UI owns unsaved-typing policy.
+//! [`Operation::SavePlaces`] uses a plain node name for its top-level `at`, or `whole/part`
+//! for a whole-local position. The client supplies every top-level node on its first manual
+//! placement, and destination-local coordinates for drops. Omitted drop coordinates carry
+//! the previous numeric position. Reset with `None` removes top-level places only; `Some`
+//! removes that whole's local places. Empty comment text removes it. No layout file exists.
 use super::*;
 mod annotations;
 pub use annotations::Annotations;
@@ -177,6 +196,85 @@ fn disk(file: &Path) -> Result<Option<String>, Refusal> {
     }
 }
 
+// Give a stale edit its current disk text even when the edit's other preconditions now fail.
+// The final comparison below remains authoritative and covers every actually changed file.
+fn compare_named_bases(
+    root: &Path,
+    based_on: &BasedOn,
+    operation: &Operation,
+) -> Result<(), Refusal> {
+    let names = match operation {
+        Operation::Create { name, .. }
+        | Operation::SetPath { name, .. }
+        | Operation::SaveSource { name, .. }
+        | Operation::Delete { name }
+        | Operation::SetComment { name, .. } => vec![name.clone()],
+        Operation::AddPart { whole, .. } | Operation::RemovePart { whole, .. } => {
+            vec![whole.clone()]
+        }
+        Operation::MovePart { from, to, .. } => from.iter().chain(to.iter()).cloned().collect(),
+        Operation::Rename { old, new } => vec![old.clone(), new.clone()],
+        Operation::MoveComment { from, to } => vec![from.clone(), to.clone()],
+        Operation::SavePlaces { places } => places
+            .keys()
+            .filter_map(|key| key.split('/').next()?.parse::<ArtifactName>().ok())
+            .collect(),
+        Operation::ResetPlaces { whole } => whole.iter().cloned().collect(),
+    };
+    for name in &names {
+        discovery::definition_name(name).map_err(forbidden)?;
+    }
+    for (file, expected) in based_on.iter().filter(|(file, _)| {
+        names
+            .iter()
+            .any(|name| file.file_stem().and_then(|stem| stem.to_str()) == Some(name.as_str()))
+    }) {
+        if !file.starts_with(discovery::DEFINITION_DIR)
+            || file.extension().is_none_or(|extension| extension != "artf")
+        {
+            return Err(forbidden(
+                "Base files must be definition paths below .artifactize/.",
+            ));
+        }
+        crate::scope::logical_path(&crate::platform::path_text(file))
+            .map_err(|error| forbidden(error.to_string()))?;
+        let absolute = root.join(file);
+        crate::platform::program::reject_link_ancestors(&absolute).map_err(forbidden)?;
+        let current = disk(&absolute)?;
+        if &current != expected {
+            return Err(Refusal::Changed {
+                file: file.clone(),
+                current,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn compare_changes(
+    root: &Path,
+    based_on: &BasedOn,
+    changes: &BTreeMap<PathBuf, Option<String>>,
+) -> Result<(), Refusal> {
+    for file in changes.keys() {
+        let relative = file.strip_prefix(root).expect("project file");
+        let current = disk(file)?;
+        let expected = based_on.get(relative).ok_or_else(|| {
+            forbidden(format!(
+                "No base content was supplied for {}.",
+                crate::platform::path_text(relative)
+            ))
+        })?;
+        if &current != expected {
+            return Err(Refusal::Changed {
+                file: relative.to_owned(),
+                current,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Apply one validated operation. An absent entry in `based_on` is never an implicit CAS.
 pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result<BasedOn, Refusal> {
     let root = crate::platform::canonicalize(project).map_err(io)?;
@@ -201,8 +299,20 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
     .map_err(io)?;
     lock.lock().map_err(io)?;
     let sources = discovery::sources(&root)?;
-    let config = discovery::read_sources(root.clone(), &sources)?;
+    compare_named_bases(&root, based_on, &operation)?;
     let mut proposed = sources.clone();
+    // Source can repair a broken definition after its current text has been reloaded.
+    // Every operation still validates the complete prospective project before writing.
+    let config = if let Operation::SaveSource { name, source } = &operation {
+        let file = sources
+            .keys()
+            .find(|file| file.file_stem().and_then(|stem| stem.to_str()) == Some(name.as_str()))
+            .ok_or_else(|| forbidden(format!("Unknown Artifact {name}.")))?;
+        proposed.insert(file.clone(), source.clone());
+        discovery::read_sources(root.clone(), &proposed)?
+    } else {
+        discovery::read_sources(root.clone(), &sources)?
+    };
     match operation {
         Operation::Create { name, path } => {
             discovery::definition_name(&name).map_err(forbidden)?;
@@ -221,13 +331,19 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
             );
         }
         Operation::SetPath { name, path } => update(&config, &mut proposed, &name, |doc, _| {
-            doc["path"] = toml_edit::value(path);
+            if doc["path"].as_str() != Some(path.as_str()) {
+                let decor = doc["path"]
+                    .as_value()
+                    .expect("validated PATH")
+                    .decor()
+                    .clone();
+                let mut value = toml_edit::Value::from(path);
+                *value.decor_mut() = decor;
+                doc["path"] = toml_edit::Item::Value(value);
+            }
             Ok(())
         })?,
-        Operation::SaveSource { name, source } => {
-            let file = node_file(&config, &name)?;
-            proposed.insert(file, source);
-        }
+        Operation::SaveSource { .. } => {}
         Operation::AddPart { whole, part, at } => {
             let at = at.or_else(|| placement(&config, &proposed, &part, None));
             check_style(&config, &mut proposed, &whole)?;
@@ -322,7 +438,7 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
                 let mut doc = proposed[&file]
                     .parse::<toml_edit::DocumentMut>()
                     .expect("validated source");
-                rename_item(doc.as_item_mut(), &old, &new, &mut Vec::new());
+                rename_item(doc.as_item_mut(), &old, &new, artifact, &mut Vec::new());
                 if artifact.parts.contains(&old) {
                     annotations::rename_part(&mut doc, &file, &config, owner, &old, &new)?;
                 }
@@ -344,7 +460,13 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
                         .parse::<toml_edit::DocumentMut>()
                         .expect("validated source");
                     let original = doc.to_string();
-                    rename_item(doc.as_item_mut(), &name, "renamed-node", &mut Vec::new());
+                    rename_item(
+                        doc.as_item_mut(),
+                        &name,
+                        "renamed-node",
+                        artifact,
+                        &mut Vec::new(),
+                    );
                     (doc.to_string() != original).then(|| other.to_string())
                 })
                 .collect::<Vec<_>>();
@@ -436,23 +558,7 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
         .filter(|&file| sources.get(file) != proposed.get(file))
         .map(|file| (file.clone(), proposed.get(file).cloned()))
         .collect::<BTreeMap<_, _>>();
-    // Compare every written file before the first write, including rename destinations.
-    for file in changes.keys() {
-        let relative = file.strip_prefix(&root).expect("project file");
-        let current = disk(file)?;
-        let expected = based_on.get(relative).ok_or_else(|| {
-            forbidden(format!(
-                "No base content was supplied for {}.",
-                crate::platform::path_text(relative)
-            ))
-        })?;
-        if &current != expected {
-            return Err(Refusal::Changed {
-                file: relative.to_owned(),
-                current,
-            });
-        }
-    }
+    compare_changes(&root, based_on, &changes)?;
     discovery::read_sources(root.clone(), &proposed)?;
     let originals = changes
         .keys()
@@ -468,6 +574,8 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
             staged.push((file.clone(), temp));
         }
     }
+    // Validation and staging may take time: compare again immediately before persistence.
+    compare_changes(&root, based_on, &changes)?;
     let written = (|| -> Result<(), Refusal> {
         for (file, temp) in staged {
             temp.persist(&file).map_err(io)?;
@@ -531,16 +639,22 @@ fn change_part(
     }
     Ok(())
 }
-fn rename_item(item: &mut toml_edit::Item, old: &str, new: &str, path: &mut Vec<String>) {
+fn rename_item(
+    item: &mut toml_edit::Item,
+    old: &str,
+    new: &str,
+    artifact: &Artifact,
+    path: &mut Vec<String>,
+) {
     if path.first().is_some_and(|key| key == "annotations") {
         return;
     }
     match item {
-        toml_edit::Item::Value(value) => rename_value(value, old, new, path),
+        toml_edit::Item::Value(value) => rename_value(value, old, new, artifact, path),
         toml_edit::Item::Table(table) => {
             for (key, item) in table.iter_mut() {
                 path.push(key.to_string());
-                rename_item(item, old, new, path);
+                rename_item(item, old, new, artifact, path);
                 path.pop();
             }
         }
@@ -548,7 +662,7 @@ fn rename_item(item: &mut toml_edit::Item, old: &str, new: &str, path: &mut Vec<
             for table in tables.iter_mut() {
                 for (key, item) in table.iter_mut() {
                     path.push(key.to_string());
-                    rename_item(item, old, new, path);
+                    rename_item(item, old, new, artifact, path);
                     path.pop();
                 }
             }
@@ -556,14 +670,27 @@ fn rename_item(item: &mut toml_edit::Item, old: &str, new: &str, path: &mut Vec<
         toml_edit::Item::None => (),
     }
 }
-fn rename_value(value: &mut toml_edit::Value, old: &str, new: &str, path: &mut Vec<String>) {
+fn rename_value(
+    value: &mut toml_edit::Value,
+    old: &str,
+    new: &str,
+    artifact: &Artifact,
+    path: &mut Vec<String>,
+) {
     match value {
         toml_edit::Value::String(text) => {
             let original = text.value();
             let updated = if path.as_slice() == ["parts"] && original == old {
                 new.to_owned()
-            } else if reference_field(path) {
-                rename_references(original, old, new)
+            } else if let Some(field) = reference_field(path, artifact) {
+                match field {
+                    ReferenceField::Instruction => rename_references(original, old, new),
+                    ReferenceField::Arguments => rename_argument(original, old, new),
+                    ReferenceField::HumanArguments if old != "artifactPath" => {
+                        rename_argument(original, old, new)
+                    }
+                    ReferenceField::HumanArguments => original.clone(),
+                }
             } else {
                 return;
             };
@@ -575,30 +702,53 @@ fn rename_value(value: &mut toml_edit::Value, old: &str, new: &str, path: &mut V
         }
         toml_edit::Value::Array(array) => {
             for value in array.iter_mut() {
-                rename_value(value, old, new, path);
+                rename_value(value, old, new, artifact, path);
             }
         }
         toml_edit::Value::InlineTable(table) => {
             for (key, value) in table.iter_mut() {
                 path.push(key.to_string());
-                rename_value(value, old, new, path);
+                rename_value(value, old, new, artifact, path);
                 path.pop();
             }
         }
         _ => (),
     }
 }
-fn reference_field(path: &[String]) -> bool {
+enum ReferenceField {
+    Instruction,
+    Arguments,
+    HumanArguments,
+}
+fn reference_field(path: &[String], artifact: &Artifact) -> Option<ReferenceField> {
     let keys = path.iter().map(String::as_str).collect::<Vec<_>>();
-    matches!(
-        keys.as_slice(),
-        ["evals", _, "payload", "instruction"]
-            | ["evals", _, "profile", "args"]
-            | ["evals", _, "profile_variants", _, "args"]
-            | ["views", "agent_tools" | "human_tools", _, "args"]
-            | ["views", "agent_sessions", _, "start" | "stop", "args"]
-            | ["fingerprint", "script", "args"]
-    )
+    match keys.as_slice() {
+        ["evals", _, "payload", "instruction"] => Some(ReferenceField::Instruction),
+        ["evals", _, "profile", "args"]
+        | ["evals", _, "profile_variants", _, "args"]
+        | ["views", "agent_sessions", _, "start" | "stop", "args"]
+        | ["fingerprint", "script", "args"] => Some(ReferenceField::Arguments),
+        ["views", "agent_tools", tool, "args"] => match artifact.views.agent_tools.get(*tool) {
+            Some(AgentTool::Command(tool)) if tool.protocol == ToolProtocol::Json => {
+                Some(ReferenceField::Arguments)
+            }
+            _ => None, // Plain placeholders and fixed builtin operands are not Artifact references.
+        },
+        ["views", "human_tools", tool, "args"] => match artifact.views.human_tools.get(*tool) {
+            Some(HumanTool::Builtin(tool)) if tool.builtin == Builtin::Help => None,
+            _ => Some(ReferenceField::HumanArguments),
+        },
+        _ => None,
+    }
+}
+fn rename_argument(text: &str, old: &str, new: &str) -> String {
+    match text.parse::<crate::scope::Argument>() {
+        Ok(crate::scope::Argument::Reference { prefix, name, .. }) if name.as_str() == old => {
+            let start = prefix.len() + 1;
+            format!("{}{}{}", &text[..start], new, &text[start + old.len()..])
+        }
+        _ => text.to_owned(),
+    }
 }
 fn rename_references(text: &str, old: &str, new: &str) -> String {
     let mut result = String::new();

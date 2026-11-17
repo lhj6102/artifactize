@@ -106,6 +106,8 @@ impl Graph {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
+    #[serde(default, skip_serializing_if = "missing", with = "path_field")]
+    pub definition: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
     pub kind: Field<config::ArtifactKind>,
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
