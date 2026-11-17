@@ -229,7 +229,10 @@ export const scenarios: Scenario[] = [
     "lists a starred branch first, keeps its star for the next monitor, and lists it with the others again once the star is taken away",
     async () => {
       const fixture = await create();
-      await addWorktrees(fixture);
+      const first = [...new Set(requests(fixture).map((request) => request.runId))];
+      assert.equal(first.length, 1, "one Run before the worktrees");
+      // Explicit times, so sort:recent lists the worktrees newest first whatever the clock did.
+      orderRuns(fixture, [...first, ...(await addWorktrees(fixture))]);
       return { fixture, data: {} };
     },
     async (browser, { fixture }) => {

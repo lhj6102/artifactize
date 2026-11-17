@@ -111,12 +111,9 @@ const commentOf = (browser: WebdriverIO.Browser, id: string) => browser.execute(
   const text = node?.querySelector<HTMLElement>(".comment");
   if (!node || !text) return null;
   const [at, around, style] = [text.getBoundingClientRect(), node.getBoundingClientRect(), getComputedStyle(text)];
-  const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim();
-  const probe = document.createElement("span");
-  probe.style.color = ink;
-  document.body.append(probe);
-  const quiet = getComputedStyle(probe).color;
-  probe.remove();
+  // The token as the computed colour reads it: `#rrggbb` as `rgb(r, g, b)`.
+  const hex = getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim();
+  const quiet = `rgb(${[1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
   return {
     box: { left: at.left, top: at.top, right: at.right, bottom: at.bottom, height: at.height - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom) },
     node: { left: around.left, top: around.top, right: around.right, bottom: around.bottom },
@@ -302,11 +299,9 @@ export const scenarios: Scenario[] = [
       assert.equal(file(fixture, "core"), kept, "a refused Path writes nothing");
       assert.equal((await definition(browser))?.path, "../outside/", "the Path stays typed");
       assert.equal(await browser.execute((field) => {
-        const probe = document.createElement("span");
-        probe.style.color = "var(--red)";
-        document.body.append(probe);
-        const red = getComputedStyle(probe).color;
-        probe.remove();
+        // The token as the computed colour reads it: `#rrggbb` as `rgb(r, g, b)`.
+        const hex = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
+        const red = `rgb(${[1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
         return getComputedStyle(document.querySelector(field)!.closest("dd")!.querySelector('[role="alert"]')!).color === red;
       }, path), true, "the refusal in red");
       await browser.keys("Escape");
@@ -888,7 +883,8 @@ export const scenarios: Scenario[] = [
       // Onto app, which has one, it is no drop target and returns; Esc puts one back too.
       const docsComment = async () => visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:docs")} .comment`).getElement());
       const appBox = (await box(browser, "a:app"))!;
-      await drag(browser, await docsComment(), { x: appBox.x, y: appBox.top + 10 }, { held: async () => assert.equal(await targeted(browser, "a:app"), false, "app has a comment: no target") });
+      // Onto app's title row: app itself, not a part in its box.
+      await drag(browser, await docsComment(), { x: appBox.left + 60, y: appBox.top + 14 }, { held: async () => assert.equal(await targeted(browser, "a:app"), false, "app has a comment: no target") });
       await afterRender(browser);
       assert.equal(commentIn(fixture, "docs"), KIT_NOTE, "the comment stays with docs");
       await drag(browser, await docsComment(), { x: docs.x + 200, y: docs.y }, { escape: true });
