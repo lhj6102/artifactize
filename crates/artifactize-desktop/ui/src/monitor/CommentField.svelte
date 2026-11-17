@@ -19,7 +19,14 @@
 
   function keydown(event: KeyboardEvent) {
     if (composing(event)) return;
-    if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      // The line break is the field's own, the same on every engine.
+      event.preventDefault();
+      event.stopPropagation();
+      const field = event.currentTarget as HTMLTextAreaElement;
+      field.setRangeText("\n", field.selectionStart, field.selectionEnd, "end");
+      defs.fieldText = field.value;
+    } else if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
       onclose(defs.fieldText.trim() === "" ? "" : defs.fieldText);

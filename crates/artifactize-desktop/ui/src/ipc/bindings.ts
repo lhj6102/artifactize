@@ -447,7 +447,9 @@ export type CustomProvider = {
 };
 
 /**  What an Artifact's PATH names, as the library reads it. */
-export type DefinitionKind = "folder" | "file" | "aspect" | "graph";
+export type DefinitionKind = "folder" | "file" | "aspect" | "graph" | 
+/**  An address outside the worktree: a Live Artifact. */
+"live";
 
 /**  One Artifact's definition as its file says now. */
 export type DefinitionNode = {

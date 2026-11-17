@@ -216,6 +216,13 @@ function wrap(context: CanvasRenderingContext2D, text: string, width: number, mo
         found.push(line);
         line = word;
       } else line = next;
+      // A word wider than the line, unbroken text such as Korean included, breaks inside it.
+      while (context.measureText(line).width > width && line.length > 1) {
+        let fits = 1;
+        while (fits < line.length && context.measureText(line.slice(0, fits + 1)).width <= width) fits += 1;
+        found.push(line.slice(0, fits));
+        line = line.slice(fits);
+      }
     }
     found.push(line);
   }

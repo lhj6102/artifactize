@@ -49,6 +49,8 @@ pub enum DefinitionKind {
     File,
     Aspect,
     Graph,
+    /// An address outside the worktree: a Live Artifact.
+    Live,
 }
 
 impl From<artifactize_tools::scope::ArtifactKind> for DefinitionKind {
@@ -59,6 +61,7 @@ impl From<artifactize_tools::scope::ArtifactKind> for DefinitionKind {
             K::File => Self::File,
             K::Aspect => Self::Aspect,
             K::Graph => Self::Graph,
+            K::Live => Self::Live,
         }
     }
 }
@@ -200,7 +203,18 @@ impl TryFrom<EditOperation> for edit::Operation {
                 new: name(&new)?,
             },
             E::Delete { name: of } => Self::Delete { name: name(&of)? },
-            E::SavePlaces { places } => Self::SavePlaces { places },
+            E::SavePlaces { places } => Self::SavePlaces {
+                places: places
+                    .into_iter()
+                    .map(|(key, at)| {
+                        Ok((
+                            key.parse::<edit::PlacementKey>()
+                                .map_err(Failure::Invalid)?,
+                            at,
+                        ))
+                    })
+                    .collect::<Result<_, Failure>>()?,
+            },
             E::ResetPlaces { whole } => Self::ResetPlaces {
                 whole: optional(whole)?,
             },

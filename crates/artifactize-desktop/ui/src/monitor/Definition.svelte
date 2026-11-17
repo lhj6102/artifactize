@@ -277,8 +277,15 @@
     min-height: var(--row-dense);
     cursor: pointer;
   }
+  .suggested li:not([aria-selected="true"]):hover {
+    background: var(--surface-group);
+  }
+  /* The chosen suggestion, with the inset bar while the keyboard is in the field. */
   .suggested li[aria-selected="true"] {
     background: var(--selection);
+  }
+  dd:focus-within .suggested li[aria-selected="true"] {
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   .actions {
     display: flex;
