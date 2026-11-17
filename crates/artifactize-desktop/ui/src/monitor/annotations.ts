@@ -84,26 +84,45 @@ export function commentHeight(text: string | undefined, width: number): number {
 
 /** The lines `text` wraps to `width` wide, counted up to `most`. */
 function lines(text: string, width: number, most: number): number {
-  const perLine = Math.max(1, Math.floor(width / COMMENT.char));
+  const space = widthOf(" ");
   let total = 0;
   for (const paragraph of text.split("\n")) {
     // Words wrap at spaces: a line holds whole words while they fit.
     let used = 0;
     let count = 1;
     for (const word of paragraph.split(" ")) {
-      if (used > 0 && used + 1 + word.length > perLine) {
+      const wide = widthOf(word);
+      if (used > 0 && used + space + wide > width) {
         count += 1;
         used = 0;
       }
-      used += used === 0 ? word.length : word.length + 1;
-      // A word longer than a line breaks inside it.
-      while (used > perLine) {
+      used += used === 0 ? wide : space + wide;
+      // A word wider than a line, unbroken text such as Korean included, breaks inside it.
+      while (used > width) {
         count += 1;
-        used -= perLine;
+        used -= width;
       }
     }
     total += count;
     if (total >= most) break;
   }
   return Math.min(total, most);
+}
+
+/** A 2D context with the comment's font, to measure its text as it is drawn; none where the
+ * page cannot draw, such as the component tests' document. */
+let measuring: CanvasRenderingContext2D | null | undefined;
+
+/** How wide `text` is in the comment's font: measured where the page draws, else guessed from
+ * an average character. */
+function widthOf(text: string): number {
+  if (measuring === undefined) {
+    measuring = null;
+    if (typeof navigator !== "undefined" && !/jsdom/i.test(navigator.userAgent) && typeof document !== "undefined") {
+      measuring = document.createElement("canvas").getContext("2d");
+      const root = getComputedStyle(document.documentElement);
+      if (measuring) measuring.font = `400 ${root.getPropertyValue("--text-small").trim() || "12px"} ${root.getPropertyValue("--font").trim() || "sans-serif"}`;
+    }
+  }
+  return measuring ? measuring.measureText(text).width : text.length * COMMENT.char;
 }

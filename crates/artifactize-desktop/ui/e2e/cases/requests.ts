@@ -122,6 +122,10 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { text, human } = submission(browser);
       await graphShown(browser, "a:release");
+      // The Refresh observation sees a real F5 here, before it witnesses that composition
+      // dispatched none.
+      const unrefreshed = (await checkpoint(browser)).activity.refresh?.generation ?? 0;
+      await press(browser, ["F5"], async () => ((await checkpoint(browser)).activity.refresh?.generation ?? 0) > unrefreshed, "a Refresh the observation sees");
       await openArtifact(browser, "a:release", "Artifact release");
       await openTab(browser, "e:release/signoff");
       await human().waitForExist({ timeout: 15000, timeoutMsg: "the Human review" });
@@ -174,6 +178,13 @@ export const scenarios: Scenario[] = [
             return { composing: event.isComposing, keyCode: event.keyCode, key: event.key };
           }, { key, primary, modifier: primaryModifier, composing, keyCode });
           assert.deepEqual(received, { composing, keyCode, key }, "the page received the guard fields it actually reads");
+          // What this key would have done, had it not been guarded, before the next one.
+          await commandsRendered(browser);
+          const now = (await checkpoint(browser)).activity;
+          assert.equal(await browser.$('[role="dialog"]').isExisting(), false, `${key}: no palette, Open by ID, Settings or Help`);
+          assert.equal(await browser.$('input[aria-label="Search branches and reviews"]').isDisplayed(), true, `${key}: the Pane still shown`);
+          assert.deepEqual(now.refresh, before.refresh, `${key}: no Refresh`);
+          assert.ok(await browser.$("#field-comment").isExisting() && !(await browser.$("#field-reason").isExisting()), `${key}: the GREEN form still open`);
         }
       }
       assert.ok(!(await events()).some((event) => event.type === "compositionend"), "native composition stayed active through every guarded shortcut");

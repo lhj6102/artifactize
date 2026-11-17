@@ -472,6 +472,17 @@ export const scenarios: Scenario[] = [
         const shown = await source(browser);
         return shown !== null && !shown.save && shown.refused === "" && shown.text === file(fixture, "core");
       }, "the Source shows the saved file, nothing left to save");
+      // An eval added in docs's Source: the Current is scanned again and docs's open Detail lists
+      // it as what verify would do now.
+      await openArtifact(browser, "a:docs", "Artifact docs");
+      await unfold(browser, "Source");
+      const docsText = `${DETAIL} textarea[aria-label="Source of docs"]`;
+      const evals = () => browser.execute((root) => document.querySelector(`${root} section[aria-label="Evals"]`)?.textContent?.replace(/\s+/g, " ") ?? "", DETAIL);
+      assert.equal((await evals()).includes("lint"), false, "docs has no lint yet");
+      await typeIn(browser, docsText, `\n[evals.lint]\ntitle = "The docs are linted"\nprofile = ${runtimeProfile()}\npayload.instruction = "Lint {docs}."\n`);
+      await browser.$(DETAIL).$("button=Save").click();
+      await waitFor(browser, async () => /\blint\b.*would run/.test(await evals()), `docs's Detail lists lint as would run: ${await evals()}`);
+      assert.equal((await detail(browser))?.title, "Artifact docs", "docs's Detail stayed open");
     },
   ),
 

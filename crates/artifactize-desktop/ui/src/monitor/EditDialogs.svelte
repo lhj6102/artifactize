@@ -131,6 +131,11 @@
   }
   .sentence {
     margin: 0 0 8px;
+    overflow-wrap: anywhere;
+  }
+  /* A long name wraps inside the dialog. */
+  :global(.dialog.edit .dialog-title) {
+    overflow-wrap: anywhere;
   }
   .refusal {
     margin: 4px 0 0;
