@@ -40,7 +40,7 @@ pub const BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 
 /// The Codex backend filters its model catalog by client version. artifactize asks
 /// for the catalog of the Codex release whose Responses protocol it follows.
-pub const CLIENT_VERSION: &str = "0.160.0";
+pub const CLIENT_VERSION: &str = "0.169.0";
 
 static HOOKS: DialectHooks = DialectHooks {
     default_endpoint: None,

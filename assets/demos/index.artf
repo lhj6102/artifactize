@@ -37,7 +37,7 @@ additionalProperties = false
 
 [evals.matches-recording]
 title = "The saved demos show what the script records from the current app"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 
 [evals.matches-recording.payload]
 instruction = """

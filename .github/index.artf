@@ -8,7 +8,7 @@ read = { builtin = "read" }
 
 [evals.coherent]
 title = "The release packaging, its smoke checks and its notes agree"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "high", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 
 [evals.coherent.payload]
 instruction = """

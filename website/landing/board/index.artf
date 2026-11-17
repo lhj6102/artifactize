@@ -9,7 +9,7 @@ read = { builtin = "read" }
 
 [evals.reads-the-record]
 title = "The board reads the record the development skills write"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.reads-the-record.payload]
 instruction = """
@@ -43,7 +43,7 @@ additionalProperties = false
 
 [evals.follows-rules]
 title = "The board's text is plain for a first-time visitor"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-rules.payload]
 instruction = """

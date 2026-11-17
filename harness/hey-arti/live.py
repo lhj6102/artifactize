@@ -258,7 +258,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifactize", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--model", default="ocx-claude-native--gpt-6.1-sol")
+    parser.add_argument("--model", default="ocx-claude-native--gpt-6.2-sol")
     parser.add_argument("--evidence-root", required=True, type=Path)
     args = parser.parse_args()
     run(args.artifactize.resolve(strict=True), args.output, args.model, args.evidence_root)

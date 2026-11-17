@@ -9,7 +9,7 @@ read = { builtin = "read" }
 
 [evals.matches-core]
 title = "The documentation explains the core Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-core.payload]
 instruction = """
@@ -59,7 +59,7 @@ additionalProperties = false
 
 [evals.matches-tools]
 title = "The documentation explains the tools Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-tools.payload]
 instruction = """
@@ -109,7 +109,7 @@ additionalProperties = false
 
 [evals.matches-desktop]
 title = "The documentation explains the desktop Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-desktop.payload]
 instruction = """
@@ -159,7 +159,7 @@ additionalProperties = false
 
 [evals.matches-hey-arti]
 title = "The documentation explains the hey-arti Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-hey-arti.payload]
 instruction = """
@@ -209,7 +209,7 @@ additionalProperties = false
 
 [evals.matches-focus-then-sweep]
 title = "The documentation explains the focus-then-sweep Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-focus-then-sweep.payload]
 instruction = """
@@ -259,7 +259,7 @@ additionalProperties = false
 
 [evals.matches-agent-plugin]
 title = "The documentation explains the agent-plugin Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-agent-plugin.payload]
 instruction = """
@@ -309,7 +309,7 @@ additionalProperties = false
 
 [evals.matches-mcp]
 title = "The documentation explains the mcp Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-mcp.payload]
 instruction = """
@@ -359,7 +359,7 @@ additionalProperties = false
 
 [evals.matches-cli]
 title = "The documentation explains the cli Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-cli.payload]
 instruction = """
@@ -409,7 +409,7 @@ additionalProperties = false
 
 [evals.matches-tui]
 title = "The documentation explains the tui Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.matches-tui.payload]
 instruction = """
@@ -459,11 +459,11 @@ additionalProperties = false
 
 [evals.follows-rules]
 title = "The documentation is concise, plain and written for people who use artifactize"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-rules.profile_variants]
-sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000 }
-sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000 }
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "medium", timeout_ms = 1800000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "max", timeout_ms = 1800000 }
 luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000 }
 
 [evals.follows-rules.payload]

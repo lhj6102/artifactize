@@ -229,7 +229,7 @@ ask it a follow-up with `session send`; see [Agent sessions](../cli/index.md#age
 ## Codex
 
 `codex` reviews with the Codex models of your ChatGPT plan, such as `gpt-6-luna` and
-`gpt-6.1-sol`.
+`gpt-6.2-sol`.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
