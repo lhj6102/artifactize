@@ -446,6 +446,9 @@ export type CustomProvider = {
 	target: Target,
 };
 
+/**  What an Artifact's PATH names, as the library reads it. */
+export type DefinitionKind = "folder" | "file" | "aspect" | "graph";
+
 /**  One Artifact's definition as its file says now. */
 export type DefinitionNode = {
 	name: string,
@@ -453,10 +456,18 @@ export type DefinitionNode = {
 	definition: string,
 	/**  Its PATH as written: a folder ends in `/`, a Live Artifact is an address. */
 	target: string,
-	kind: string,
+	kind: DefinitionKind,
 	targetMissing: boolean,
 	/**  Its parts, in its file's order. */
 	parts: string[],
+	/**
+	 *  The Artifacts it may become a part of: every other one it is not made of, directly or
+	 *  through its parts, as the library reads the project. Empty while the project does not
+	 *  read.
+	 */
+	wholes: string[],
+	/**  Whether a comment dragged onto it is taken: it has none, as the library reads its file. */
+	takesComment: boolean,
 	/**  Its own place at the top level, when the top level is placed by hand. */
 	at: [(number | null), (number | null)] | null,
 	/**  Its parts' places inside its box, by part, when the box is placed by hand. */

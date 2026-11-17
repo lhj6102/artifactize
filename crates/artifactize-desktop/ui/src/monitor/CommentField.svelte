@@ -2,14 +2,14 @@
   // An Artifact's comment in place under its node, opened by the Definition's Comment or a click
   // on the comment: its text whole, with its line breaks. Enter writes it into the Artifact's
   // file, Shift+Enter breaks the line, Enter on an empty field removes the comment, and Esc or
-  // a click elsewhere puts it back. No button and no hint: Help names the keys.
-  import { untrack } from "svelte";
+  // a click elsewhere puts it back. No button and no hint: Help names the keys. What it holds
+  // is the Definitions' `fieldText`, set from the comment as it opened.
   import type { Attachment } from "svelte/attachments";
+  import { getAppState } from "../shell/app.svelte";
   import { composing } from "../shell/keys";
 
-  let { name, text, onclose }: { name: string; text: string; onclose: (written: string | null) => void } = $props();
-  /** What the field holds, from the comment as it opened. */
-  let value = $state(untrack(() => text));
+  let { name, onclose }: { name: string; onclose: (written: string | null) => void } = $props();
+  const { definitions: defs } = getAppState();
 
   /** Focused when it opens, the caret at the end of the text. */
   const focus: Attachment<HTMLTextAreaElement> = (field) => {
@@ -22,7 +22,7 @@
     if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
-      onclose(value.trim() === "" ? "" : value);
+      onclose(defs.fieldText.trim() === "" ? "" : defs.fieldText);
     } else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -36,7 +36,7 @@
   class="field nodrag nopan nowheel"
   aria-label="Comment on {name}"
   rows="3"
-  bind:value
+  bind:value={defs.fieldText}
   onkeydown={keydown}
   onblur={() => onclose(null)}
   onpointerdown={(event) => event.stopPropagation()}

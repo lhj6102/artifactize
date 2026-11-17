@@ -11,10 +11,8 @@
   let { branch, ondeleted }: { branch: BranchKey | null; ondeleted: (name: string) => void } = $props();
   const { definitions: defs } = getAppState();
 
-  let name = $state("");
-  let path = $state("");
-  /** Why the last try wrote nothing, and which field it concerns. */
-  let refused = $state<{ field: "name" | "path" | "delete"; text: string } | null>(null);
+  /** What the dialog holds: its name and Path typed, and why the last try wrote nothing. */
+  const form = defs.dialogForm;
   const open = $derived(defs.dialog !== null);
 
   /** The field a refusal concerns: the Path's when it names the path, else the name's. */
@@ -23,9 +21,9 @@
   /** A dialog opens empty, Rename with the name it renames. */
   function reset() {
     const dialog = defs.dialog;
-    name = dialog?.kind === "rename" ? dialog.name : "";
-    path = "";
-    refused = null;
+    form.name = dialog?.kind === "rename" ? dialog.name : "";
+    form.path = "";
+    form.refused = null;
   }
 
   /** Enter in a field does what the primary button does, outside a composition. */
@@ -40,18 +38,20 @@
     const dialog = defs.dialog;
     if (!dialog || !branch || defs.busy) return;
     if (dialog.kind === "new") {
-      const why = await defs.edit(branch, { kind: "create", name: name.trim(), path: path.trim() }, "dialog");
-      if (why !== null) refused = { field: fieldOf(why), text: why };
+      const [name, path] = [form.name.trim(), form.path.trim()];
+      const why = await defs.edit(branch, { kind: "create", name, path }, "dialog");
+      if (why !== null) form.refused = { field: fieldOf(why), text: why };
       else {
-        defs.created = { name: name.trim(), centre: true };
+        defs.created = { name, centre: true };
         defs.dialog = null;
       }
     } else if (dialog.kind === "rename") {
-      const why = await defs.edit(branch, { kind: "rename", old: dialog.name, new: name.trim() }, "dialog");
-      if (why !== null) refused = { field: "name", text: why };
+      const name = form.name.trim();
+      const why = await defs.edit(branch, { kind: "rename", old: dialog.name, new: name }, "dialog");
+      if (why !== null) form.refused = { field: "name", text: why };
       else {
         // Its Detail goes on with the new name once the graph draws it.
-        defs.created = { name: name.trim(), centre: false };
+        defs.created = { name, centre: false };
         defs.dialog = null;
       }
     }
@@ -61,7 +61,7 @@
     const dialog = defs.dialog;
     if (dialog?.kind !== "delete" || !branch || defs.busy) return;
     const why = await defs.edit(branch, { kind: "delete", name: dialog.name }, "dialog");
-    if (why !== null) refused = { field: "delete", text: why };
+    if (why !== null) form.refused = { field: "delete", text: why };
     else {
       defs.dialog = null;
       ondeleted(dialog.name);
@@ -81,7 +81,7 @@
       {#if defs.dialog?.kind === "delete"}
         <Dialog.Title class="dialog-title">Delete {defs.dialog.name}?</Dialog.Title>
         <p class="sentence">{defs.node(defs.dialog.name)?.definition ?? defs.dialog.name} is removed.</p>
-        {#if refused}<p class="refusal" role="alert">{refused.text}</p>{/if}
+        {#if form.refused}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
         <div class="dialog-actions">
           <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>
           <button class="button primary" type="button" disabled={defs.busy} onclick={() => void remove()}>Delete</button>
@@ -92,17 +92,17 @@
           {#if defs.dialog.kind === "new"}
             <label class="field">
               <span class="label">Name</span>
-              <input class="field-input text" bind:value={name} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={refused?.field === "name"} />
+              <input class="field-input text" bind:value={form.name} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused?.field === "name"} />
             </label>
-            {#if refused?.field === "name"}<p class="refusal" role="alert">{refused.text}</p>{/if}
+            {#if form.refused?.field === "name"}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
             <label class="field">
               <span class="label">Path</span>
-              <input class="field-input" bind:value={path} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={refused?.field === "path"} />
+              <input class="field-input" bind:value={form.path} autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused?.field === "path"} />
             </label>
-            {#if refused?.field === "path"}<p class="refusal" role="alert">{refused.text}</p>{/if}
+            {#if form.refused?.field === "path"}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
           {:else}
-            <input class="field-input text" bind:value={name} aria-label="Name" autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={refused !== null} />
-            {#if refused}<p class="refusal" role="alert">{refused.text}</p>{/if}
+            <input class="field-input text" bind:value={form.name} aria-label="Name" autocomplete="off" spellcheck="false" onkeydown={enter} aria-invalid={form.refused !== null} />
+            {#if form.refused}<p class="refusal" role="alert">{form.refused.text}</p>{/if}
           {/if}
           <div class="dialog-actions">
             <Dialog.Close class="button" aria-keyshortcuts="Escape">Cancel</Dialog.Close>

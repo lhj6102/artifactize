@@ -25,7 +25,7 @@
 import type { Shape } from "../ipc/client";
 import { NODE, type Point } from "./graph";
 import { BOX, around, copies, drawings, header, type Copy } from "./parts";
-import { NO_ANNOTATIONS, commentHeight, type Annotations } from "./annotations";
+import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
 
 export { NODE };
 /** The most Artifacts ELK lays out, in about half a second for a real graph this size. A larger
@@ -71,7 +71,7 @@ function largest(values: ArrayLike<number>): number {
 export async function layout(graph: Shape, minimized: readonly string[] = [], annotations: Annotations = NO_ANNOTATIONS): Promise<Map<string, Point>> {
   const drawn = copies(graph, minimized);
   const flat = drawn.length > ELK_LIMIT ? (level: Level) => Promise.resolve(layered(level, ROOM)) : (level: Level) => elk(level, ROOM);
-  const plain = annotations.at.size === 0 && annotations.places.size === 0 && annotations.comments.size === 0;
+  const plain = annotations.at.size === 0 && annotations.places.size === 0 && annotations.comments.size === 0 && !annotations.open;
   if (plain && drawn.every((copy) => copy.parts.length === 0 && !copy.minimized)) return flat(graph);
   return nest(graph, drawn, flat, annotations);
 }
@@ -98,6 +98,7 @@ function byHand(members: Copy[], stored: ReadonlyMap<string, Point>, size: (key:
  * first, then the copies drawn in no whole; a level `annotations` has places for is placed by
  * hand instead. A box's parts are placed from its inner corner, under its name and comment. */
 async function nest(graph: Shape, drawn: Copy[], flat: (level: Level) => Promise<Map<string, Point>>, annotations: Annotations): Promise<Map<string, Point>> {
+  const room = roomOf(annotations);
   const byKey = new Map(drawn.map((copy) => [copy.key, copy]));
   // An Artifact a minimized whole hides is where that whole is.
   const keys = drawings(drawn);
@@ -129,7 +130,7 @@ async function nest(graph: Shape, drawn: Copy[], flat: (level: Level) => Promise
   const inside = new Map<string, Map<string, Point>>();
   const sizes = new Map<string, Size>();
   for (const copy of drawn) {
-    const below = copy.parts.length === 0 ? commentHeight(annotations.comments.get(copy.node.name), NODE.width) : 0;
+    const below = copy.parts.length === 0 ? room(copy.node.name, NODE.width) : 0;
     if (below > 0) sizes.set(copy.key, { width: NODE.width, height: NODE.height + below });
   }
   const sizeOf = (key: string) => sizes.get(key) ?? NODE;
@@ -156,7 +157,7 @@ async function nest(graph: Shape, drawn: Copy[], flat: (level: Level) => Promise
     const start = hand ? { x: 0, y: 0 } : { x: box.x, y: box.y };
     const width = box.x + box.width - start.x + 2 * BOX.pad;
     // The same room boxes() gives it, from the width of its parts alone.
-    const top = header(annotations.comments, whole!, box.width + 2 * BOX.pad);
+    const top = header(room, whole!, box.width + 2 * BOX.pad);
     inside.set(level, new Map([...placed].map(([key, at]) => [key, { x: at.x - start.x + BOX.pad, y: at.y - start.y + top }])));
     sizes.set(level, { width, height: box.y + box.height - start.y + top + BOX.pad });
     return placed;

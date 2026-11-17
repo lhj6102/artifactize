@@ -21,10 +21,16 @@ pub struct DefinitionNode {
     pub definition: String,
     /// Its PATH as written: a folder ends in `/`, a Live Artifact is an address.
     pub target: String,
-    pub kind: String,
+    pub kind: DefinitionKind,
     pub target_missing: bool,
-    /// Its parts, in its file's order.
+    /// Its parts, by name; none while the project does not read.
     pub parts: Vec<String>,
+    /// The Artifacts it may become a part of: every other one it is not made of, directly or
+    /// through its parts, as the library reads the project. Empty while the project does not
+    /// read.
+    pub wholes: Vec<String>,
+    /// Whether a comment dragged onto it is taken: it has none, as the library reads its file.
+    pub takes_comment: bool,
     /// Its own place at the top level, when the top level is placed by hand.
     pub at: Option<Place>,
     /// Its parts' places inside its box, by part, when the box is placed by hand.
@@ -33,6 +39,28 @@ pub struct DefinitionNode {
     /// Why its place or its comment cannot be read; drawing ignores them.
     pub style_error: Option<String>,
     pub comment_error: Option<String>,
+}
+
+/// What an Artifact's PATH names, as the library reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum DefinitionKind {
+    Folder,
+    File,
+    Aspect,
+    Graph,
+}
+
+impl From<artifactize_tools::scope::ArtifactKind> for DefinitionKind {
+    fn from(kind: artifactize_tools::scope::ArtifactKind) -> Self {
+        use artifactize_tools::scope::ArtifactKind as K;
+        match kind {
+            K::Folder => Self::Folder,
+            K::File => Self::File,
+            K::Aspect => Self::Aspect,
+            K::Graph => Self::Graph,
+        }
+    }
 }
 
 /// A branch's definitions, and the exact text of every definition file, which the next edit
@@ -189,7 +217,7 @@ impl TryFrom<EditOperation> for edit::Operation {
 }
 
 fn text(path: &std::path::Path) -> String {
-    artifactize_tools::files::path_text(path).replace('\\', "/")
+    artifactize_tools::files::path_text(path)
 }
 
 fn count(number: Option<usize>) -> Option<u32> {
@@ -205,7 +233,7 @@ impl From<edit::Refusal> for EditRefusal {
                 line,
                 column,
             } => Self::Invalid {
-                file: file.replace('\\', "/"),
+                file,
                 message,
                 line: count(line),
                 column: count(column),
@@ -217,44 +245,49 @@ impl From<edit::Refusal> for EditRefusal {
     }
 }
 
-fn view(project: edit::Project) -> DefinitionsView {
+/// The project as the library reads it for verify, for what it says of parts.
+type Config = Option<artifactize_core::config::RepoConfig>;
+
+fn view(project: edit::Project, config: &Config) -> DefinitionsView {
     let files = project
         .files
         .iter()
         .filter_map(|(file, source)| Some((text(file), source.clone()?)))
         .collect();
-    // A read project's sources are valid definitions: `parts`, when present, is names.
-    let parts = |file: &std::path::Path| -> Vec<String> {
-        project.files[file]
-            .as_deref()
-            .and_then(|source| source.parse::<toml::Table>().ok())
-            .and_then(|doc| {
-                doc.get("parts")?.as_array().map(|parts| {
-                    parts
-                        .iter()
-                        .filter_map(|part| part.as_str().map(str::to_owned))
-                        .collect()
-                })
-            })
+    // Its parts as the library reads the project, by name.
+    let parts = |name: &ArtifactName| -> Vec<String> {
+        config
+            .as_ref()
+            .and_then(|config| config.artifacts.get(name))
+            .map(|artifact| artifact.parts.iter().map(ToString::to_string).collect())
             .unwrap_or_default()
+    };
+    // Nothing is a part of itself, however many parts lie between: the library's own reading.
+    let wholes = |name: &ArtifactName| -> Vec<String> {
+        let Some(config) = config else {
+            return Vec::new();
+        };
+        let within = config.descendants(name);
+        project
+            .nodes
+            .keys()
+            .filter(|other| *other != name && !within.contains(other))
+            .map(ToString::to_string)
+            .collect()
     };
     let nodes = project
         .nodes
         .iter()
-        .map(|(name, node)| (name.clone(), parts(&node.definition), node))
-        .collect::<Vec<_>>();
-    let nodes = nodes
-        .into_iter()
-        .map(|(name, parts, node)| DefinitionNode {
+        .map(|(name, node)| DefinitionNode {
             name: name.to_string(),
             definition: text(&node.definition),
             target: node.target.clone(),
-            kind: serde_json::to_value(node.kind)
-                .ok()
-                .and_then(|kind| kind.as_str().map(str::to_owned))
-                .unwrap_or_default(),
+            kind: node.kind.into(),
             target_missing: node.target_missing,
-            parts,
+            parts: parts(name),
+            wholes: wholes(name),
+            takes_comment: node.annotations.comment.is_none()
+                && node.annotations.comment_error.is_none(),
             at: node.annotations.at,
             places: node
                 .annotations
@@ -283,10 +316,14 @@ pub async fn definitions(
 ) -> Result<DefinitionsView, Failure> {
     let workspace = workspace(&app, &branch).await?;
     crate::failure::joined(
-        tokio::task::spawn_blocking(move || edit::read_project(&workspace)).await,
+        tokio::task::spawn_blocking(move || {
+            let project = edit::read_project(&workspace)?;
+            let config = artifactize_core::config::read_workspace_config(&workspace).ok();
+            Ok(view(project, &config))
+        })
+        .await,
     )?
-    .map(view)
-    .map_err(|refusal| Failure::Read(refusal.to_string()))
+    .map_err(|refusal: edit::Refusal| Failure::Read(refusal.to_string()))
 }
 
 /// Apply `operation` to `branch`'s definitions, `based_on` naming the text of each file it was

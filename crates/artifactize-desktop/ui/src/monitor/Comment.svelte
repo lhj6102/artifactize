@@ -24,7 +24,7 @@
 </script>
 
 {#if editing && onfield}
-  <div class="place" class:inset><CommentField {name} text={text ?? ""} onclose={onfield} /></div>
+  <div class="place" class:inset><CommentField {name} onclose={onfield} /></div>
 {:else if text}
   <!-- On a Current the press is the comment's: it takes no drag or pan of the graph's. The
        keyboard reaches a comment through the Definition's Comment button. -->

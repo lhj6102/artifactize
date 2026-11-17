@@ -11,6 +11,7 @@
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
   import { composing } from "../shell/keys";
+  import type { Place } from "./definitions.svelte";
 
   let { branch, name }: { branch: BranchKey; name: string } = $props();
   const { definitions: defs } = getAppState();
@@ -22,13 +23,9 @@
   const source = $derived(draft?.text ?? file);
   const lines = $derived(source.split("\n").length);
 
-  /** The Path being typed, until it is written or put back. */
-  let path = $state<string | null>(null);
-  /** The Parts field, while a part is being added, and its suggestion chosen with ↑ ↓. */
-  let adding = $state<string | null>(null);
-  let chosen = $state(0);
-  /** Why the last edit of each place wrote nothing. */
-  let refused = $state<{ at: "path" | "parts" | "source"; text: string } | null>(null);
+  /** What is typed here: the Path, a part being added, and why the last edit wrote nothing. */
+  const form = $derived(defs.shownForm(name));
+  const { path, adding, chosen, refused } = $derived(form);
 
   /** The line a refused Source names, marked in its margin. */
   const marked = $derived(refused?.at === "source" ? Number(/line (\d+)/.exec(refused.text)?.[1] ?? 0) : 0);
@@ -44,10 +41,11 @@
       .slice(0, 8);
   });
 
-  async function edit(at: "path" | "parts" | "source", operation: Parameters<typeof defs.edit>[1]): Promise<boolean> {
-    refused = null;
+  async function edit(at: Place, operation: Parameters<typeof defs.edit>[1]): Promise<boolean> {
+    const typing = defs.form(name);
+    typing.refused = null;
     const why = await defs.edit(branch, operation, "detail");
-    if (why !== null) refused = { at, text: why };
+    if (why !== null) typing.refused = { at, text: why };
     return why === null;
   }
 
@@ -56,31 +54,37 @@
     if (alone(event, "Enter") && path !== null) {
       event.preventDefault();
       const wanted = path;
-      if (wanted === node?.target) path = null;
-      else void edit("path", { kind: "setPath", name, path: wanted }).then((written) => written && (path = null));
+      const typing = defs.form(name);
+      if (wanted === node?.target) typing.path = null;
+      else void edit("path", { kind: "setPath", name, path: wanted }).then((written) => written && (typing.path = null));
     } else if (alone(event, "Escape") && path !== null) {
       event.preventDefault();
       event.stopPropagation();
-      path = null;
-      if (refused?.at === "path") refused = null;
+      const typing = defs.form(name);
+      typing.path = null;
+      if (typing.refused?.at === "path") typing.refused = null;
     }
   }
 
   function partKey(event: KeyboardEvent) {
     if (composing(event) || adding === null) return;
+    const typing = defs.form(name);
     if (alone(event, "ArrowDown") || alone(event, "ArrowUp")) {
       event.preventDefault();
-      if (suggested.length > 0) chosen = (chosen + (event.key === "ArrowDown" ? 1 : suggested.length - 1)) % suggested.length;
+      if (suggested.length > 0) typing.chosen = (chosen + (event.key === "ArrowDown" ? 1 : suggested.length - 1)) % suggested.length;
     } else if (alone(event, "Enter")) {
       event.preventDefault();
-      const part = suggested[chosen] ?? adding.trim();
-      if (part) void edit("parts", { kind: "addPart", whole: name, part, at: null }).then((written) => written && (adding = null));
+      addPart(suggested[chosen] ?? adding.trim());
     } else if (alone(event, "Escape")) {
       event.preventDefault();
       event.stopPropagation();
-      adding = null;
-      if (refused?.at === "parts") refused = null;
+      typing.adding = null;
+      if (typing.refused?.at === "parts") typing.refused = null;
     }
+  }
+
+  function addPart(part: string) {
+    if (part) void edit("parts", { kind: "addPart", whole: name, part, at: null }).then((written) => written && (defs.form(name).adding = null));
   }
 
   function type(text: string) {
@@ -97,7 +101,7 @@
   async function revert() {
     await defs.load(branch);
     defs.drafts.delete(name);
-    if (refused?.at === "source") refused = null;
+    if (refused?.at === "source") defs.form(name).refused = null;
   }
 
   function sourceKey(event: KeyboardEvent) {
@@ -127,7 +131,7 @@
           spellcheck="false"
           autocomplete="off"
           value={path ?? node.target}
-          oninput={(event) => (path = event.currentTarget.value)}
+          oninput={(event) => (defs.form(name).path = event.currentTarget.value)}
           onkeydown={pathKey}
         />
         {#if node.targetMissing}<p class="refusal">{node.target} does not exist.</p>{/if}
@@ -144,7 +148,7 @@
           {/each}
         </ul>
         {#if adding === null}
-          <button class="button small quiet add" onclick={() => ((adding = ""), (chosen = 0))}><Icon name="add" />Add</button>
+          <button class="button small quiet add" onclick={() => Object.assign(defs.form(name), { adding: "", chosen: 0 })}><Icon name="add" />Add</button>
         {:else}
           <input
             class="field-input"
@@ -154,17 +158,17 @@
             aria-controls="parts-of-{name}"
             spellcheck="false"
             autocomplete="off"
-            bind:value={adding}
-            oninput={() => (chosen = 0)}
+            value={adding}
+            oninput={(event) => Object.assign(defs.form(name), { adding: event.currentTarget.value, chosen: 0 })}
             onkeydown={partKey}
-            onblur={() => adding === "" && (adding = null)}
+            onblur={() => adding === "" && (defs.form(name).adding = null)}
             {@attach grow}
           />
           {#if suggested.length > 0}
             <ul class="suggested" id="parts-of-{name}" role="listbox">
               {#each suggested as other, at (other)}
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <li role="option" aria-selected={at === chosen} onmousedown={(event) => event.preventDefault()} onclick={() => void edit("parts", { kind: "addPart", whole: name, part: other, at: null }).then((written) => written && (adding = null))}>{other}</li>
+                <li role="option" aria-selected={at === chosen} onmousedown={(event) => event.preventDefault()} onclick={() => addPart(other)}>{other}</li>
               {/each}
             </ul>
           {/if}
@@ -173,13 +177,14 @@
       </dd>
     </dl>
     <div class="actions">
-      <button class="button small quiet" data-comment-button onclick={() => (defs.field = { name, from: "button" })}>Comment</button>
+      <button class="button small quiet" data-comment-button onclick={() => defs.openField(name, "button")}>Comment</button>
       <button class="button small quiet" onclick={() => (defs.dialog = { kind: "rename", name })}>Rename</button>
       <button class="button small quiet" onclick={() => (defs.dialog = { kind: "delete", name })}>Delete</button>
     </div>
   </Section>
   <Section name="Source">
     <div class="source">
+      {#if marked > 0}<div class="mark" aria-hidden="true" style:top="calc(6px + {marked - 1} * var(--text-small) * 1.5)"></div>{/if}
       <ol class="margin" aria-hidden="true">
         {#each { length: lines } as _, at (at)}<li class:marked={at + 1 === marked}>{at + 1}</li>{/each}
       </ol>
@@ -195,7 +200,7 @@
         onkeydown={sourceKey}
       ></textarea>
     </div>
-    {#if refused?.at === "source"}<p class="refusal padded" role="alert">{refused.text}</p>{/if}
+    {#if refused?.at === "source"}<p class="refusal" role="alert">{refused.text}</p>{/if}
     {#if draft}
       <div class="actions">
         <button class="button small primary" disabled={defs.busy} onclick={() => void save()}>Save</button>
@@ -204,7 +209,7 @@
     {/if}
   </Section>
 {:else if defs.error}
-  <p class="refusal padded">{defs.error}</p>
+  <p class="refusal">{defs.error}</p>
 {/if}
 
 <style>
@@ -213,7 +218,7 @@
     grid-template-columns: fit-content(40%) minmax(0, 1fr);
     gap: 4px 12px;
     margin: 0;
-    padding: 4px var(--pad) 0;
+    padding: 4px 0 0;
     align-items: baseline;
   }
   dt {
@@ -278,7 +283,7 @@
   .actions {
     display: flex;
     gap: var(--gap);
-    padding: 6px var(--pad) 0;
+    padding: 6px 0 0;
   }
   .refusal {
     margin: 4px 0 0;
@@ -286,14 +291,12 @@
     font-size: var(--text-small);
     overflow-wrap: anywhere;
   }
-  .refusal.padded {
-    padding: 0 var(--pad);
-  }
   /* The file's text in monospace on a field's surface, its line numbers in faint ink; it scrolls
      sideways in its own box rather than wrap, so each number stays with its line. */
   .source {
+    position: relative;
     display: flex;
-    margin: 4px var(--pad) 0;
+    margin: 4px 0 0;
     border: 1px solid var(--line-input);
     border-radius: var(--radius-control);
     background: var(--surface-input);
@@ -311,8 +314,20 @@
     user-select: none;
   }
   .margin li.marked {
-    background: var(--selection);
     color: var(--ink);
+  }
+  /* A refused line: the selection's background across its number and its text. */
+  .mark {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: calc(var(--text-small) * 1.5);
+    background: var(--selection);
+    pointer-events: none;
+  }
+  .margin,
+  .text {
+    position: relative;
   }
   .text {
     flex: 1;

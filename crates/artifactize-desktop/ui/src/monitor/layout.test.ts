@@ -10,6 +10,7 @@ import type { Point } from "./graph";
 import { ELK_LIMIT, NODE, layered, layout } from "./layout";
 import { REVIEWS, SHARED, catalog } from "./catalog.fixture";
 import { PRECEDENCE } from "../ipc/bindings";
+import { roomOf } from "./annotations";
 import { BOX, boxes, copies, copyEdges, drawings, type Rect } from "./parts";
 
 /** How often the app loaded ELK, started it, and asked it for a layout. */
@@ -330,7 +331,7 @@ describe("layout with places and comments", () => {
     // suite's parts start lower by its comment's room.
     expect(noted.get("a:suite/a:app")!.y - plain.get("a:suite/a:app")!.y).toBeGreaterThan(0);
     // The box holds app's comment: it reaches below the last part by its own room.
-    const rects = boxes(copies(graph), noted, new Map([["suite", "Split it."], ["app", "A long note that wraps onto a second line under the node."]]));
+    const rects = boxes(copies(graph), noted, roomOf({ comments: new Map([["suite", "Split it."], ["app", "A long note that wraps onto a second line under the node."]]) }));
     expect(rects.get("a:suite")!.y + rects.get("a:suite")!.height).toBeGreaterThanOrEqual(noted.get("a:suite/a:kit")!.y + NODE.height + BOX.pad);
   });
 });

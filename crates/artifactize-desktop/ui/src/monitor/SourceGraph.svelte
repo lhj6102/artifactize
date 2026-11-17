@@ -123,8 +123,6 @@ import { NO_ANNOTATIONS } from "./annotations";
   <p class="note error">{g.error}</p>
 {:else if !g.shown}
   <p class="note">Laying out…</p>
-{:else if g.shown.graph.nodes.length === 0}
-  <p class="note">{current ? "This worktree defines no Artifacts." : "This Run has no Artifacts."}</p>
 {:else}
   {#key keyOf(g.shown.source)}
     <SvelteFlowProvider>
@@ -136,6 +134,7 @@ import { NO_ANNOTATIONS } from "./annotations";
         annotations={g.shown.annotations}
         {branch}
         {current}
+        empty={current ? "This worktree defines no Artifacts." : "This Run has no Artifacts."}
         {opened}
         {onopen}
         {onclose}

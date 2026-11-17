@@ -46,7 +46,7 @@
   import { Picture, hit, legible, scene, view, within } from "./scene";
   import { label, plain } from "../shell/keys";
   import { useCommands } from "../shell/commands.svelte";
-  import { NO_ANNOTATIONS, type Annotations } from "./annotations";
+  import { NO_ANNOTATIONS, roomOf, type Annotations } from "./annotations";
   import { accepted, anchor, boxPlaces, dropAt, inside, placesOf, topLevel, under, type Drop } from "./placing";
   import type { BranchKey, EditOperation } from "../ipc/client";
 
@@ -59,6 +59,7 @@
     branch: owner = null,
     opened = null,
     current = false,
+    empty = "",
     onopen,
     onclose,
     onminimize,
@@ -68,6 +69,8 @@
     graph: Shape;
     /** A Current: lit by what verify would do. */
     current?: boolean;
+    /** Said under the tool strip when the graph has no Artifacts. */
+    empty?: string;
     /** The wholes drawn as nodes, by tree id: those `positions` was laid out for. */
     minimized: readonly string[];
     /** Where the layout put each copy that is no box, by key. */
@@ -124,7 +127,7 @@
   /** The copies that show the opened Artifact: its own, and the minimized wholes hiding it. */
   const showing = $derived(new Set(opened === null ? [] : (keys.get(opened) ?? [])));
   /** Where every copy is, wholes around their parts and their comments. */
-  const rects = $derived(boxes(drawn, positions, annotations.comments));
+  const rects = $derived(boxes(drawn, positions, roomOf(annotations)));
   const defs = app.definitions;
   /** A Current of a branch whose definitions are read: what is on it can be edited. */
   const editable = $derived(current && owner !== null && defs.of(owner));
@@ -195,7 +198,8 @@
             artifact: node.id,
             count,
             onminimize: () => void minimize(key, !folded),
-            comment: annotations.comments.get(node.name) ?? null,
+            // A comment being dragged leaves its place empty: its lifted copy follows the pointer.
+            comment: v.comment?.key === key ? null : (annotations.comments.get(node.name) ?? null),
             editing: editable && defs.field?.name === node.name && keys.get(node.id)?.[0] === key,
             target: v.target === key,
             reset: editable && box && annotations.places.has(node.name),
@@ -323,6 +327,7 @@
       boxes: painted,
       opened: showing,
       minimized: hidden,
+      comments: annotations.comments,
     };
     const where = laid;
     let settle: ReturnType<typeof setTimeout> | undefined;
@@ -462,7 +467,7 @@
   function dragMove(key: string, event: MouseEvent | TouchEvent) {
     if (!dragging || dragging.cancelled) return;
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
-    v.target = copy && drop && accepted(graph, copy, drop, drawn) && drop.kind === "join" ? drop.key : null;
+    v.target = copy && drop && accepted(drop, defs.node(copy.node.name)?.wholes ?? []) ? drop.key : null;
   }
 
   /** A released node: placed, made a part of the Artifact under it, or out of its whole. */
@@ -535,7 +540,8 @@
       if (box) v.comment = { key, x: next.clientX - box.left, y: next.clientY - box.top };
       const at = pointOf(next);
       const target = at ? under(drawn, rects, at) : null;
-      v.target = target && target.node.name !== copy.node.name && !annotations.comments.has(target.node.name) ? target.key : null;
+      // The library says which Artifacts take a comment: those without one.
+      v.target = target && target.node.name !== copy.node.name && defs.node(target.node.name)?.takesComment ? target.key : null;
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -547,7 +553,7 @@
       const target = cancelled || v.target === null ? null : byKey.get(v.target);
       [v.comment, v.target] = [null, null];
       if (cancelled) return;
-      if (!moved) defs.field = { name: copy.node.name, from: "graph" };
+      if (!moved) defs.openField(copy.node.name, "graph");
       else if (target) void edit({ kind: "moveComment", from: copy.node.name, to: target.node.name });
     };
     const escape = (next: KeyboardEvent) => {
@@ -677,6 +683,9 @@
       {/if}
     {/if}
   </div>
+  {#if graph.nodes.length === 0}
+  <p class="empty">{empty}</p>
+  {:else}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="canvas"
@@ -733,9 +742,16 @@
       <Navigator {laid} {lights} viewport={camera.current} width={v.area.width} height={v.area.height} onmove={navigate} />
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
+  /* No Artifacts: the tool strip stays above the sentence. */
+  .empty {
+    margin: 0;
+    padding: var(--pad);
+    color: var(--ink-2);
+  }
   .graph {
     position: relative;
     height: 100%;
@@ -848,6 +864,7 @@
     box-shadow: 0 2px 8px var(--scrim), inset 0 calc(-1 * var(--strip)) 0 var(--light);
   }
   .canvas :global(.svelte-flow__node.dragging .whole:not(.minimized)) {
+    background: var(--surface-raised);
     box-shadow: 0 2px 8px var(--scrim);
   }
   /* A comment being dragged floats by the pointer, raised one step with the faint shadow. */

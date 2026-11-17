@@ -143,6 +143,14 @@
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
   }
+  /* Minimized, it keeps its second outline and its strip under the accent outline. */
+  .minimized.target {
+    box-shadow:
+      0 0 0 1px var(--accent),
+      3px 3px 0 -1px var(--surface-app),
+      3px 3px 0 0 var(--line-node),
+      inset 0 calc(-1 * var(--strip)) 0 var(--light);
+  }
   /* The title row, closed below by the strip in its status's colour across the box. */
   .title {
     height: var(--header);

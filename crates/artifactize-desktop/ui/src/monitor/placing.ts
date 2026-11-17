@@ -4,7 +4,7 @@
 // for the top level. Places are saved as shown: a box's parts from its inner corner, in the
 // whole's file; the top level's in each node's own.
 import type { Shape } from "../ipc/client";
-import type { Annotations } from "./annotations";
+import { roomOf, type Annotations } from "./annotations";
 import type { Point } from "./graph";
 import { BOX, header, type Copy, type Rect } from "./parts";
 
@@ -12,21 +12,6 @@ import { BOX, header, type Copy, type Rect } from "./parts";
  * the Artifact `to` (`join`, refused by the library when it would make a cycle), or out of its
  * whole to the top level (`leave`). */
 export type Drop = { kind: "place" } | { kind: "join"; to: string; key: string } | { kind: "leave" };
-
-/** The Artifacts inside `id`, as deep as its parts go, by tree id. */
-export function within(graph: Shape, id: string): Set<string> {
-  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  const found = new Set<string>();
-  const walk = (at: string) => {
-    for (const part of byId.get(at)?.parts ?? []) {
-      if (found.has(part) || !byId.has(part)) continue;
-      found.add(part);
-      walk(part);
-    }
-  };
-  walk(id);
-  return found;
-}
 
 const contains = (rect: Rect, point: Point) => point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
 
@@ -55,12 +40,10 @@ export function dropAt(graph: Shape, drawn: Copy[], rects: Map<string, Rect>, dr
   return { kind: "join", to: target.node.name, key: target.key };
 }
 
-/** The drop target highlights only while the library would accept the drop: not for an
- * Artifact inside the dragged one, which would make a cycle. */
-export function accepted(graph: Shape, dragged: Copy, drop: Drop, drawn: Copy[]): boolean {
-  if (drop.kind !== "join") return false;
-  const target = drawn.find((copy) => copy.key === drop.key);
-  return target !== undefined && !within(graph, dragged.node.id).has(target.node.id);
+/** The drop target highlights only while the library would accept the drop: `wholes` is what
+ * the library says the dragged Artifact may become a part of, so not one inside it. */
+export function accepted(drop: Drop, wholes: readonly string[]): drop is Extract<Drop, { kind: "join" }> {
+  return drop.kind === "join" && wholes.includes(drop.to);
 }
 
 /** The least place `annotations` stores for the parts of the whole `name`: its box starts there,
@@ -83,7 +66,7 @@ export function anchor(copy: Copy, rect: Rect, annotations: Annotations): Point 
  * there. */
 export function inner(copy: Copy, box: Rect, annotations: Annotations): Point {
   const start = least(annotations, copy.node.name);
-  return { x: box.x + BOX.pad - start.x, y: box.y + header(annotations.comments, copy.node.name, box.width) - start.y };
+  return { x: box.x + BOX.pad - start.x, y: box.y + header(roomOf(annotations), copy.node.name, box.width) - start.y };
 }
 
 const round = (at: Point): [number, number] => [Math.round(at.x), Math.round(at.y)];

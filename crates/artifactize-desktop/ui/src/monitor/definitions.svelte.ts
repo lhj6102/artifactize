@@ -7,7 +7,8 @@
 import { SvelteMap } from "svelte/reactivity";
 import { call, commands, message, type BranchKey, type Commands, type DefinitionNode, type DefinitionsView, type EditOperation, type EditRefusal } from "../ipc/client";
 import { keyOf } from "./monitor-state.svelte";
-import { annotationsOf, type Annotations } from "./annotations";
+import { annotationsOf, fieldLines, withField, type Annotations } from "./annotations";
+import { NODE } from "./graph";
 
 /** Typed text in an Artifact's Source: the file's text it was typed over, and what it holds. */
 export type Draft = { base: string; text: string };
@@ -61,6 +62,31 @@ export function writes(operation: EditOperation, view: DefinitionsView | null): 
   }
 }
 
+/** Where in a Definition an edit was refused. */
+export type Place = "path" | "parts" | "source";
+
+/** What is being typed in an Artifact's Definition: its Path, a part being added with the
+ * suggestion chosen by ↑ ↓, and why the last edit there wrote nothing. */
+export class DefinitionForm {
+  /** The Path being typed, until it is written or put back. */
+  path = $state<string | null>(null);
+  /** The Parts field's text while a part is being added. */
+  adding = $state<string | null>(null);
+  chosen = $state(0);
+  refused = $state<{ at: Place; text: string } | null>(null);
+}
+
+/** What an edit dialog holds: the name and Path typed, and why the last try wrote nothing and
+ * which field that concerns. */
+export class DialogForm {
+  name = $state("");
+  path = $state("");
+  refused = $state<{ field: "name" | "path" | "delete"; text: string } | null>(null);
+}
+
+/** Nothing typed: what a Definition shows before anything is. */
+const UNTYPED: Readonly<DefinitionForm> = new DefinitionForm();
+
 export class Definitions {
   constructor(
     readonly ipc: Commands = commands,
@@ -79,6 +105,12 @@ export class Definitions {
   /** The comment field open under an Artifact's node, and where it was opened from: the
    * Definition's Comment button, or a click on the comment. */
   field = $state.raw<{ name: string; from: "button" | "graph" } | null>(null);
+  /** What the open comment field holds, from the comment as it opened. */
+  fieldText = $state("");
+  /** What each Artifact's Definition has typed, by name, while the app runs. */
+  readonly forms = new SvelteMap<string, DefinitionForm>();
+  /** What the open edit dialog holds. */
+  readonly dialogForm = new DialogForm();
   /** The edit dialog open: New Artifact, or Rename or Delete of an Artifact. */
   dialog = $state.raw<{ kind: "new" } | { kind: "rename"; name: string } | { kind: "delete"; name: string } | null>(null);
   /** An Artifact just created or renamed, whose Detail opens once the graph draws it; a new
@@ -90,11 +122,32 @@ export class Definitions {
   #branch: BranchKey | null = null;
   #reads = 0;
 
-  readonly annotations: Annotations = $derived(annotationsOf(this.view));
+  /** The lines the open comment field holds, under a node's width: its room grows with them. */
+  readonly #fieldLines = $derived(this.field ? fieldLines(this.fieldText, NODE.width - 12) : 0);
+  readonly annotations: Annotations = $derived(withField(annotationsOf(this.view), this.field?.name ?? null, this.#fieldLines));
 
   /** The definitions are of `branch`. */
   of(branch: BranchKey): boolean {
     return this.#branch !== null && keyOf(this.#branch) === keyOf(branch) && this.view !== null;
+  }
+
+  /** What `name`'s Definition shows typed; nothing until something is. */
+  shownForm(name: string): Readonly<DefinitionForm> {
+    return this.forms.get(name) ?? UNTYPED;
+  }
+
+  /** `name`'s Definition form, to type into: made the first time, from an event. */
+  form(name: string): DefinitionForm {
+    let form = this.forms.get(name);
+    if (!form) this.forms.set(name, (form = new DefinitionForm()));
+    return form;
+  }
+
+  /** Open the comment field of `name`, from the Definition's button or the graph, holding its
+   * comment as it is now. */
+  openField(name: string, from: "button" | "graph") {
+    this.fieldText = this.node(name)?.comment ?? "";
+    this.field = { name, from };
   }
 
   node(name: string): DefinitionNode | undefined {
@@ -126,6 +179,7 @@ export class Definitions {
     if (this.#branch && keyOf(this.#branch) !== keyOf(branch)) {
       this.view = null;
       this.drafts.clear();
+      this.forms.clear();
       this.notice = null;
     }
     this.#branch = branch;

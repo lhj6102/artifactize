@@ -5,11 +5,14 @@ import type { DefinitionsView } from "../ipc/client";
 import type { Point } from "./graph";
 
 /** Places and comments by Artifact name: `at`, a node's own place at the top level; `places`,
- * a whole's places of its parts inside its box, by part; `comments`, each comment's text. */
+ * a whole's places of its parts inside its box, by part; `comments`, each comment's text;
+ * `open`, the Artifact whose comment field is open and the lines it holds, which take their
+ * room under it in place of its comment's. */
 export type Annotations = {
   at: ReadonlyMap<string, Point>;
   places: ReadonlyMap<string, ReadonlyMap<string, Point>>;
   comments: ReadonlyMap<string, string>;
+  open?: { name: string; lines: number } | null;
 };
 
 export const NO_ANNOTATIONS: Annotations = { at: new Map(), places: new Map(), comments: new Map() };
@@ -42,7 +45,31 @@ export function annotationsOf(view: DefinitionsView | null): Annotations {
 /** A text key of `annotations`: a layout is reused only for the same places and comments. */
 export function annotationsKey(annotations: Annotations): string {
   const places = [...annotations.places].map(([whole, inside]) => [whole, [...inside].map(([part, at]) => [part, at.x, at.y])]);
-  return JSON.stringify([[...annotations.at].map(([name, at]) => [name, at.x, at.y]), places, [...annotations.comments]]);
+  return JSON.stringify([[...annotations.at].map(([name, at]) => [name, at.x, at.y]), places, [...annotations.comments], annotations.open ?? null]);
+}
+
+/** `annotations` with the comment field of `name` open, holding `lines` lines. */
+export function withField(annotations: Annotations, name: string | null, lines: number): Annotations {
+  return name === null ? annotations : { ...annotations, open: { name, lines } };
+}
+
+/** The room under an Artifact `width` wide, by name: its open comment field's, growing with its
+ * lines, or its comment's. */
+export type Room = (name: string, width: number) => number;
+
+/** The comment field's room: a gap, then its lines inside its padding and border, at least two. */
+const FIELD = { pad: 10, least: 44 };
+
+export function roomOf(annotations: Pick<Annotations, "comments" | "open">): Room {
+  return (name, width) =>
+    annotations.open?.name === name
+      ? COMMENT.gap + Math.max(FIELD.least, annotations.open.lines * COMMENT.line + FIELD.pad)
+      : commentHeight(annotations.comments.get(name), width);
+}
+
+/** The lines the text `text` takes `width` wide, however many. */
+export function fieldLines(text: string, width: number): number {
+  return lines(text, width, Infinity);
 }
 
 /** A comment's room under what it is under: a gap, then at most `lines` lines of `line` px;
@@ -52,8 +79,13 @@ export const COMMENT = { gap: 4, line: 17, lines: 3, char: 6.6 };
 /** How much room the comment `text` takes under something `width` wide: none without one. */
 export function commentHeight(text: string | undefined, width: number): number {
   if (!text) return 0;
+  return COMMENT.gap + lines(text, width, COMMENT.lines) * COMMENT.line;
+}
+
+/** The lines `text` wraps to `width` wide, counted up to `most`. */
+function lines(text: string, width: number, most: number): number {
   const perLine = Math.max(1, Math.floor(width / COMMENT.char));
-  let lines = 0;
+  let total = 0;
   for (const paragraph of text.split("\n")) {
     // Words wrap at spaces: a line holds whole words while they fit.
     let used = 0;
@@ -70,8 +102,8 @@ export function commentHeight(text: string | undefined, width: number): number {
         used -= perLine;
       }
     }
-    lines += count;
-    if (lines >= COMMENT.lines) break;
+    total += count;
+    if (total >= most) break;
   }
-  return COMMENT.gap + Math.min(lines, COMMENT.lines) * COMMENT.line;
+  return Math.min(total, most);
 }

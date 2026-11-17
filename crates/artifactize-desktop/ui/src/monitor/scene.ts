@@ -10,6 +10,10 @@ import { BLOCKING, type Point } from "./graph";
 import { NODE } from "./layout";
 import { BOX, partsCount } from "./parts";
 
+/** A comment's gap under its node, its inset inside a box, its line height and its lines, as
+ * its element draws it. */
+const [COMMENT_GAP, COMMENT_INSET, COMMENT_LEADING, COMMENT_LINES] = [4, 10, 1.4, 3];
+
 /** The side of one cell of the index, in graph coordinates: a few Artifacts across. */
 const CELL = 1024;
 /** Cells per row of the index's keys: more than any layout's columns of cells. */
@@ -155,6 +159,8 @@ export type Paint = {
   boxes: boolean;
   opened: ReadonlySet<string>;
   minimized: ReadonlyMap<string, number>;
+  /** Each Artifact's comment by name, painted under its node or a box's title row. */
+  comments?: ReadonlyMap<string, string>;
 };
 
 /** The graph's edges by the numbers of their ends in a scene, with their lights. */
@@ -195,6 +201,29 @@ function cut(context: CanvasRenderingContext2D, text: string, width: number): st
     else over = middle;
   }
   return `${text.slice(0, fits)}…`;
+}
+
+/** `text` in at most `most` lines of `width` with `context`'s font, wrapped at spaces and its
+ * own line breaks, the last one cut with an ellipsis when more is left, as a comment's element
+ * clamps it. */
+function wrap(context: CanvasRenderingContext2D, text: string, width: number, most: number): string[] {
+  const found: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    let line = "";
+    for (const word of paragraph.split(" ")) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && context.measureText(next).width > width) {
+        found.push(line);
+        line = word;
+      } else line = next;
+    }
+    found.push(line);
+  }
+  if (found.length <= most) return found;
+  const kept = found.slice(0, most);
+  kept[most - 1] = cut(context, `${kept[most - 1]} ${found[most]}`, width);
+  if (!kept[most - 1].endsWith("…")) kept[most - 1] = cut(context, `${kept[most - 1]}…`, width);
+  return kept;
 }
 
 function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
@@ -269,6 +298,8 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
   const ports = new Path2D();
   const marks: { light: Light; x: number; y: number }[] = [];
   const names: { x: number; y: number; width: number; text: string; count: string; tally: string; whole: boolean }[] = [];
+  /** Each comment in view: under a node, or inside a box under its title row. */
+  const notes: { x: number; y: number; width: number; text: string }[] = [];
   const add = (into: Map<Light, Path2D>, light: Light) => {
     let path = into.get(light);
     if (!path) into.set(light, (path = new Path2D()));
@@ -306,6 +337,12 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
     const tally = node?.tally ? `${node.tally.passed}/${node.tally.of}` : "";
     const count = folded === undefined ? "" : partsCount(folded);
     if (node) names.push({ x: x + start, y: y + row / 2, width: w - start - end, text: node.name, count, tally, whole });
+    const comment = node ? what.comments?.get(node.name) : undefined;
+    if (comment) {
+      notes.push(whole
+        ? { x: x + COMMENT_INSET * zoom, y: y + row + COMMENT_GAP * zoom, width: w - 2 * COMMENT_INSET * zoom, text: comment }
+        : { x, y: y + h + COMMENT_GAP * zoom, width: w, text: comment });
+    }
     if (port >= PORT_SHOWN && (inward[number] || outward[number])) {
       const [middle, half] = [y + h / 2, port / 2];
       if (inward[number]) {
@@ -408,6 +445,14 @@ function paint(context: CanvasRenderingContext2D, at: Scene, what: Paint) {
       context.fillText(cut(context, name.count, room), name.x, lines[1]);
     }
     context.restore();
+  }
+  // Comments in the quieter ink at the small size, at most three lines.
+  const small = pixels("--text-small");
+  context.font = `400 ${small * zoom}px ${face}`;
+  context.fillStyle = token("--ink-2");
+  context.textBaseline = "top";
+  for (const note of notes) {
+    wrap(context, note.text, note.width, COMMENT_LINES).forEach((line, at) => context.fillText(line, note.x, note.y + at * small * COMMENT_LEADING * zoom));
   }
 }
 
