@@ -203,7 +203,7 @@ follow-up을 보냅니다. [Agent 세션](../cli/index.md#agent-sessions)을 보
 
 ## Codex {#codex}
 
-`codex` 백엔드는 사용 중인 ChatGPT 요금제에서 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.1-sol` 등)로 리뷰합니다.
+`codex` 백엔드는 사용 중인 ChatGPT 요금제에서 이용할 수 있는 Codex 모델(`gpt-6-luna`, `gpt-6.2-sol` 등)로 리뷰합니다.
 
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser

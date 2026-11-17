@@ -494,7 +494,7 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
     let call = &provider.requests()[0];
     assert_eq!(
         (call.method.as_str(), call.path.as_str()),
-        ("GET", "/backend-api/codex/models?client_version=0.160.0")
+        ("GET", "/backend-api/codex/models?client_version=0.169.0")
     );
     assert_eq!(call.headers["chatgpt-account-id"], "account-1");
     assert_eq!(call.headers["originator"], "artifactize");
