@@ -353,7 +353,7 @@ that makes the transition happen and checks where it leads.
 | E-DETAIL-TOOL | Detail on an Artifact's tab, no tool of it running | click an output tool's `▶` | same Detail, the tool running at once in the branch's worktree with no claim until it ends, its run in the Artifact's Tool log, shown from the first run on and unfolded if it was folded: `▶ HH:MM:SS · operation · Artifact`, each printed line, `■ exit 0`; no review's evidence recorded |
 | E-DETAIL-TOOL-LAUNCH | Detail on an Artifact's tab, no tool of it running | click a launch tool's `▶` | same Detail at once, the application opened, its run started in the Artifact's Tool log (unfolded if it was folded) and open there until it exits |
 | E-DETAIL-TOOL-FAIL | Detail on an Artifact's tab, no tool of it running | click a tool that fails | same Detail, the failure said and its run ended red in the Artifact's Tool log, unfolded if it was folded: `■ exit N` with N not 0, or `■ error: …` when the tool could not run |
-| E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form, and on a Current nothing being typed in its Definition's Path or new part (Esc there takes E-DEFINITION-PATH-ESC first) | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
+| E-MON-DETAIL-BACK | Detail, no Human review in it running work or editing its form, and on a Current nothing being typed in its Definition's Path or new part (Esc there takes E-DEFINITION-ESC first) | Esc, ←, Close, or a click on the graph's background | the graph, Detail closed |
 | E-CURRENT-CLOSE | Detail over a Current, nothing being typed in its Definition | Esc, Close, or a click on the graph's background | the Current graph, Detail closed |
 | E-MON-DETAIL-WIDTH | Detail | drag its left edge (hovering it shows only the resize cursor) | Detail resized, never narrower than a readable column nor so wide that no graph shows on its left, never over the Pane; the width kept for the next opening and launch |
 
@@ -367,14 +367,15 @@ is scanned again, as by E-CURRENT-REFRESH, and the Detail stays on the same Arti
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
 | E-DEFINITION-PATH | Detail of an Artifact of a Current, its Definition unfolded | change its Path, then Enter | the file's `path` written; the graph and the Definition following, a missing target said in red beside the Path |
-| E-DEFINITION-PATH-ESC | Definition, its Path being changed | Esc | the Path as in the file, nothing written |
+| E-DEFINITION-ESC | Definition, its Path being changed or its Parts field open | Esc | the Path as in the file, or the Parts field closed; nothing written |
 | E-DEFINITION-INVALID | Definition with its Path being changed, or Source holding typed text | Enter, or Save or Ctrl+S in the Source, with an edit the project would not accept | the same Detail, nothing written: the error in red under the field or the Source, the Source's with its line and column; the text kept to be corrected |
 | E-SOURCE-TYPE | Detail of an Artifact of a Current, its Source unfolded | type in the Source | the Source holding typed text, Save and Revert under it |
 | E-SOURCE-SAVE | Source holding typed text | Save, or Ctrl+S in the Source | the file holding the text; Save and Revert gone; the graph and the Definition following |
 | E-SOURCE-REVERT | Source holding typed text | Revert | the Source holding the file's text as it is on disk; Save and Revert gone |
-| E-PARTS-ADD | Definition | `+ Add` under Parts, choose an Artifact the field suggests, then Enter | that Artifact added to the file's `parts`; the graph drawing it inside this whole's box, in free space when the box is placed by hand |
+| E-PARTS-PICK | Definition | `+ Add` under Parts | the Parts field open under Parts, focused, suggesting the project's Artifacts that are not yet parts of this one |
+| E-PARTS-ADD | Parts field | choose an Artifact it suggests, then Enter | that Artifact added to the file's `parts`; the graph drawing it inside this whole's box, in free space when the box is placed by hand |
 | E-PARTS-REMOVE | Definition with a part listed | `✕` on it | that part, and the place the box kept for it, gone from the file; the graph drawing it outside this whole's box |
-| E-PARTS-REFUSED | Definition, a part being added | Enter on an Artifact that would make a cycle | the reason under Parts, nothing written |
+| E-PARTS-REFUSED | Parts field | Enter on an Artifact that would make a cycle | the reason under Parts, nothing written |
 | E-EDIT-CONFLICT | Detail of a Current, an edit dialog, a comment field or the Current graph, a file the edit writes changed on disk since the Current read it | Enter on the Path, Save, a part added or removed, Rename, Delete, a drop, a placing release, Reset layout, Enter in a comment field or a comment's drop | nothing written; the refusal naming the file, under the field, the Source or in the dialog for an edit made there and as the Main area's notice for one on the graph; the Current scanned again, the graph and the Definition showing what is on disk; a Source holding typed text keeping it until Revert |
 | E-EDIT-UNSAVED | Current graph, a Source holding typed text for a file that a release, a Reset layout or a comment would write | a placing release, a drop, Reset layout, Enter in a comment field or a comment's drop | nothing written; what was dragged back where it was, or the comment field as it was; the Main area's notice naming the file whose Source holds typed text |
 | E-NODE-NEW-OPEN | Current graph | the tool strip's New Artifact | New Artifact dialog, its Name field focused, its Path field under it |
@@ -449,14 +450,16 @@ is scanned again, as by E-CURRENT-REFRESH, and the Detail stays on the same Arti
 | E-SET-CUSTOM-REMOVE | a custom provider | Remove provider | the custom provider gone from the list |
 | E-SET-CODEX-LOGIN | Codex | Sign in with Codex | sign-in in progress, Cancel sign-in under it; the system browser opened at the sign-in address, which Finish by hand shows once unfolded |
 | E-SET-CODEX-RETURN | sign-in in progress | the browser returns to the app's loopback address | signed in |
-| E-SET-CODEX-PASTE | sign-in in progress | unfold Finish by hand, paste the redirect URL, then Finish sign-in | signed in |
+| E-SET-CODEX-BY-HAND | sign-in in progress | unfold Finish by hand | sign-in still in progress, the sign-in address shown and a field for the redirect URL under it |
+| E-SET-CODEX-PASTE | sign-in in progress, Finish by hand unfolded | paste the redirect URL, then Finish sign-in | signed in |
 | E-SET-CODEX-CANCEL | sign-in in progress | Cancel sign-in | Codex, signed out |
 | E-SET-CODEX-LOGOUT | Codex, signed in | Sign out of Codex | Codex, signed out |
 | E-SET-CLAUDE-AGENT | Providers | choose Claude Agent | Claude Code's sign-in shown as Claude Code reports it: `claude` not found, not signed in, signed in with its login method and plan, or its error |
 | E-SET-CLAUDE-AGENT-CHECK | Claude Agent | Check again | Claude Code's sign-in asked again and shown |
 | E-SET-CLAUDE-AGENT-LOGIN | Claude Agent | Sign in with Claude Code | Claude Code sign-in in progress: `claude auth login` running, the browser opened by Claude Code, the URL it printed shown once Finish by hand is unfolded |
 | E-SET-CLAUDE-AGENT-RETURN | Claude Code sign-in in progress | the browser returns to Claude Code and its `claude auth login` ends signed in | Claude Agent, Claude Code's sign-in asked again and shown: signed in with its login method and plan |
-| E-SET-CLAUDE-AGENT-PASTE | Claude Code sign-in in progress | unfold Finish by hand, paste the code the sign-in page gives, then Finish sign-in | Claude Code takes the code and signs in; Claude Agent, its sign-in shown again |
+| E-SET-CLAUDE-AGENT-BY-HAND | Claude Code sign-in in progress | unfold Finish by hand | sign-in still in progress, the URL Claude Code printed shown and a field for the code its page gives |
+| E-SET-CLAUDE-AGENT-PASTE | Claude Code sign-in in progress, Finish by hand unfolded | paste the code the sign-in page gives, then Finish sign-in | Claude Code takes the code and signs in; Claude Agent, its sign-in shown again |
 | E-SET-CLAUDE-AGENT-END | Claude Code sign-in in progress | Claude Code ends without signing in: it refuses a pasted code, fails, or ten minutes pass | Claude Agent, the error Claude Code ended with shown and its sign-in shown again |
 | E-SET-CLAUDE-AGENT-CANCEL | Claude Code sign-in in progress | Cancel sign-in | Claude Agent, Claude Code stopped, its sign-in shown again |
 | E-SET-CLAUDE-AGENT-LOGOUT | Claude Agent, signed in | Sign out of Claude Code | `claude auth logout` run; Claude Agent, not signed in |
@@ -545,7 +548,7 @@ E-PANE-SELECT.
   E-GRAPH-CAMERA → E-GRAPH-MINIMIZE → E-GRAPH-EXPAND
 - J-DEFINITION: E-CURRENT-CHIP → E-CURRENT-EVALS → E-DETAIL-SECTION
   E-PANE-CHIP → E-MON-DETAIL-ARTIFACT
-- J-DEFINITION-EDIT: E-CURRENT-EVALS → E-DEFINITION-PATH | E-CURRENT-EVALS → E-DEFINITION-PATH-ESC
+- J-DEFINITION-EDIT: E-CURRENT-EVALS → E-DEFINITION-PATH | E-CURRENT-EVALS → E-DEFINITION-ESC
   E-CURRENT-EVALS → E-DETAIL-SECTION → E-SOURCE-TYPE → E-SOURCE-SAVE
   E-SOURCE-TYPE → E-DEFINITION-INVALID → E-SOURCE-REVERT
 - J-DEFINITION-CONFLICT: E-SOURCE-TYPE → E-EDIT-CONFLICT → E-SOURCE-REVERT
@@ -553,8 +556,9 @@ E-PANE-SELECT.
   E-COMMENT-DRAG → E-EDIT-CONFLICT
   E-CURRENT-EVALS → E-EDIT-CONFLICT
   E-SOURCE-TYPE → E-NODE-DRAG → E-EDIT-UNSAVED → E-SOURCE-SAVE
-- J-PARTS-EDIT: E-CURRENT-EVALS → E-PARTS-ADD → E-PARTS-REMOVE
-  E-CURRENT-EVALS → E-PARTS-REFUSED
+- J-PARTS-EDIT: E-CURRENT-EVALS → E-PARTS-PICK → E-PARTS-ADD → E-PARTS-REMOVE
+  E-CURRENT-EVALS → E-PARTS-PICK → E-PARTS-REFUSED
+  E-PARTS-PICK → E-DEFINITION-ESC
 - J-NODE-NEW: E-NODE-NEW-OPEN → E-NODE-NEW
   E-NODE-NEW-OPEN → E-EDIT-DIALOG-INVALID → E-EDIT-DIALOG-CANCEL
 - J-NODE-RENAME: E-CURRENT-EVALS → E-NODE-RENAME-OPEN → E-NODE-RENAME
@@ -601,8 +605,8 @@ E-PANE-SELECT.
 - J-HUMAN-ESC: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TOOL → E-HUMAN-ESC-CANCEL → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
   E-REVIEW-OPEN → E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
 - J-SET-PROVIDERS: E-SCREEN-SETTINGS → E-SET-PROVIDER
-- J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
-- J-SET-CLAUDE-AGENT: E-SET-PROVIDER → E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-CHECK | E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-RETURN | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-PASTE | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-CANCEL | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-END; E-SET-CLAUDE-AGENT-LOGOUT
+- J-SET-CODEX: E-SET-PROVIDER → E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-BY-HAND → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
+- J-SET-CLAUDE-AGENT: E-SET-PROVIDER → E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-CHECK | E-SET-CLAUDE-AGENT → E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-RETURN | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-BY-HAND → E-SET-CLAUDE-AGENT-PASTE | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-CANCEL | E-SET-CLAUDE-AGENT-LOGIN → E-SET-CLAUDE-AGENT-END; E-SET-CLAUDE-AGENT-LOGOUT
 - J-SET-KEY: E-SET-PROVIDER → E-SET-KEY → E-SET-KEY-SAVE → E-SET-KEY-REMOVE
 - J-SET-CUSTOM: E-SET-CUSTOM-NEW → E-SET-CUSTOM-SAVE → E-SET-CUSTOM-REMOVE
 - J-SET-MODELS: E-SET-PROVIDER → E-SET-MODELS
