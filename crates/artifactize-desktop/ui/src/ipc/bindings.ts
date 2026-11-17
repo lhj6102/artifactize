@@ -313,10 +313,8 @@ export type BrowseView = {
 	waiting: WaitingRow[],
 	/**  The branch of the folder the app was started for. */
 	launch: BranchKey | null,
-	/**  The shown Run, once read. */
-	run: RunPanel | null,
-	/**  The shown Run no longer exists or cannot be read. */
-	missing: boolean,
+	/**  The Run shown in the Main area: none, read, or no longer there to read. */
+	run: ShownRun,
 	/**  What went wrong: a failed read, Run records that cannot be read. */
 	notice: string | null,
 	/**  False until the first snapshot was read. */
@@ -524,10 +522,7 @@ export type Draft = {
  *  What the library says of an edit before it is made: the definition files it would write, by
  *  their paths relative to the project, or why it would refuse it.
  */
-export type EditCheck = {
-	files: string[],
-	refusal: EditRefusal | null,
-};
+export type EditCheck = { kind: "checked"; files: string[] } | { kind: "refused"; refusal: EditRefusal };
 
 /**  An edit of a branch's definitions, the library's [`edit::Operation`] by name. */
 export type EditOperation = { kind: "create"; name: string; path: string } | { kind: "setPath"; name: string; path: string } | { kind: "addPart"; whole: string; part: string; at: [(number | null), (number | null)] | null } | { kind: "removePart"; whole: string; part: string } | { kind: "movePart"; part: string; from: string | null; to: string | null; at: [(number | null), (number | null)] | null } | { kind: "saveSource"; name: string; source: string } | { kind: "rename"; old: string; new: string } | { kind: "delete"; name: string } | { kind: "savePlaces"; places: { [key in string]: [(number | null), (number | null)] } } | { kind: "resetPlaces"; whole: string | null } | { kind: "setComment"; name: string; text: string } | { kind: "moveComment"; from: string; to: string };
@@ -1045,6 +1040,17 @@ export type Share =
 "summary" | 
 /**  Also the saved execution as is. */
 "full";
+
+/**  The Run the Main area shows. */
+export type ShownRun = 
+/**  No Run is shown. */
+{ kind: "none" } | 
+/**  The shown Run, read. */
+{
+	kind: "read",
+} & RunPanel | 
+/**  The shown Run no longer exists or cannot be read. */
+{ kind: "missing" };
 
 /**  A Codex sign-in in progress. */
 export type SignInId = number;

@@ -14,9 +14,11 @@
   import type { Light, Tally } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import { LIGHTS } from "../shell/icons";
+  import { graphViewStateOf } from "./graph-view-state.svelte";
   import { BOX, partsCount } from "./parts";
 
   let {
+    id,
     data,
     selected,
     type,
@@ -32,7 +34,7 @@
       onminimize: () => void;
       comment?: string | null;
       editing?: boolean;
-      target?: boolean;
+     
       reset?: boolean;
       onreset?: () => void;
       oncomment?: (event: PointerEvent) => void;
@@ -40,6 +42,11 @@
       onpan?: (event: PointerEvent) => void;
     };
   } = $props();
+  const v = graphViewStateOf();
+  /** The Artifact a release would make the dragged one's whole. */
+  const target = $derived(v?.target === id);
+  /** Its comment, its place left empty while the comment is dragged. */
+  const comment = $derived(v?.comment?.key === id ? null : (data.comment ?? null));
   const minimized = $derived(type === "minimized");
   const action = $derived(minimized ? "Expand" : "Minimize");
 
@@ -69,7 +76,7 @@
   class:minimized
   class:selected
   class:open={data.open}
-  class:target={data.target}
+  class:target
   onpointerdown={press}
   role="presentation"
   style:--header="{BOX.header}px"
@@ -91,11 +98,11 @@
     </button>
   </div>
   {#if !minimized}
-    <Comment name={data.name} text={data.comment ?? null} editing={data.editing ?? false} inset oncomment={data.oncomment} onfield={data.onfield} />
+    <Comment name={data.name} text={comment} editing={data.editing ?? false} inset oncomment={data.oncomment} onfield={data.onfield} />
   {/if}
   <Handle type="source" position={Position.Right} isConnectable={false} />
   {#if minimized}
-    <Comment name={data.name} text={data.comment ?? null} editing={data.editing ?? false} oncomment={data.oncomment} onfield={data.onfield} />
+    <Comment name={data.name} text={comment} editing={data.editing ?? false} oncomment={data.oncomment} onfield={data.onfield} />
   {/if}
 </div>
 

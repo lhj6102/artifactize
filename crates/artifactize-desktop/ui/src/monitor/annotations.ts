@@ -13,7 +13,15 @@ export type Annotations = {
   places: ReadonlyMap<string, ReadonlyMap<string, Point>>;
   comments: ReadonlyMap<string, string>;
   open?: { name: string; lines: number } | null;
+  /** How wide a text is in the comment's font, as the page draws it; guessed without. */
+  measure?: Measure | null;
 };
+
+/** How wide `text` is in the comment's font. */
+export type Measure = (text: string) => number;
+
+/** A text's width guessed from an average character, where nothing measures it. */
+const GUESS: Measure = (text) => text.length * COMMENT.char;
 
 export const NO_ANNOTATIONS: Annotations = { at: new Map(), places: new Map(), comments: new Map() };
 
@@ -60,16 +68,16 @@ export type Room = (name: string, width: number) => number;
 /** The comment field's room: a gap, then its lines inside its padding and border, at least two. */
 const FIELD = { pad: 10, least: 44 };
 
-export function roomOf(annotations: Pick<Annotations, "comments" | "open">): Room {
+export function roomOf(annotations: Pick<Annotations, "comments" | "open" | "measure">): Room {
   return (name, width) =>
     annotations.open?.name === name
       ? COMMENT.gap + Math.max(FIELD.least, annotations.open.lines * COMMENT.line + FIELD.pad)
-      : commentHeight(annotations.comments.get(name), width);
+      : commentHeight(annotations.comments.get(name), width, annotations.measure ?? GUESS);
 }
 
 /** The lines the text `text` takes `width` wide, however many. */
-export function fieldLines(text: string, width: number): number {
-  return lines(text, width, Infinity);
+export function fieldLines(text: string, width: number, measure: Measure = GUESS): number {
+  return lines(text, width, Infinity, measure);
 }
 
 /** A comment's room under what it is under: a gap, then at most `lines` lines of `line` px;
@@ -77,13 +85,13 @@ export function fieldLines(text: string, width: number): number {
 export const COMMENT = { gap: 4, line: 17, lines: 3, char: 6.6 };
 
 /** How much room the comment `text` takes under something `width` wide: none without one. */
-export function commentHeight(text: string | undefined, width: number): number {
+export function commentHeight(text: string | undefined, width: number, measure: Measure = GUESS): number {
   if (!text) return 0;
-  return COMMENT.gap + lines(text, width, COMMENT.lines) * COMMENT.line;
+  return COMMENT.gap + lines(text, width, COMMENT.lines, measure) * COMMENT.line;
 }
 
 /** The lines `text` wraps to `width` wide, counted up to `most`. */
-function lines(text: string, width: number, most: number): number {
+function lines(text: string, width: number, most: number, widthOf: Measure): number {
   const space = widthOf(" ");
   let total = 0;
   for (const paragraph of text.split("\n")) {
@@ -107,22 +115,4 @@ function lines(text: string, width: number, most: number): number {
     if (total >= most) break;
   }
   return Math.min(total, most);
-}
-
-/** A 2D context with the comment's font, to measure its text as it is drawn; none where the
- * page cannot draw, such as the component tests' document. */
-let measuring: CanvasRenderingContext2D | null | undefined;
-
-/** How wide `text` is in the comment's font: measured where the page draws, else guessed from
- * an average character. */
-function widthOf(text: string): number {
-  if (measuring === undefined) {
-    measuring = null;
-    if (typeof navigator !== "undefined" && !/jsdom/i.test(navigator.userAgent) && typeof document !== "undefined") {
-      measuring = document.createElement("canvas").getContext("2d");
-      const root = getComputedStyle(document.documentElement);
-      if (measuring) measuring.font = `400 ${root.getPropertyValue("--text-small").trim() || "12px"} ${root.getPropertyValue("--font").trim() || "sans-serif"}`;
-    }
-  }
-  return measuring ? measuring.measureText(text).width : text.length * COMMENT.char;
 }

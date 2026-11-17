@@ -27,10 +27,6 @@ export class GraphViewState {
   /** Where the pointer last went down on the graph: a dropped node moved as far as the pointer
    * did from there, whatever frames its drawing skipped. */
   pressed = $state.raw<Point | null>(null);
-  /** Where the node being dragged is now, as its drag last moved it: the nodes are drawn with it
-   * there whenever they are drawn again, a drop target's highlight included. Read untracked, so
-   * a move alone redraws nothing. */
-  lifted = $state.raw<{ key: string; position: Point } | null>(null);
   /** The copy the pointer is over while something is dragged, which the library is asked about. */
   aim: string | null = null;
   /** The drawn copy focus is on, by key. */
@@ -40,3 +36,13 @@ export class GraphViewState {
 }
 
 export const [getGraphViewState, setGraphViewState] = createContext<GraphViewState>();
+
+/** The graph view a node is drawn in; none for a node drawn elsewhere, such as the Detail's
+ * Neighbours, which nothing is dragged onto. */
+export function graphViewStateOf(): GraphViewState | null {
+  try {
+    return getGraphViewState();
+  } catch {
+    return null;
+  }
+}

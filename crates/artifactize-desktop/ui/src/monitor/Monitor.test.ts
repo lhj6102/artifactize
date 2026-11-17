@@ -236,7 +236,7 @@ it("says a Run's verdict and what needs attention in the header row, which opens
     ],
   };
   const feature = branch("feat/x", [runChip("run-2", "RED", false, "Fixing the login form")]);
-  backend(monitor(), () => browseView(1, { branches: [feature], run }));
+  backend(monitor(), () => browseView(1, { branches: [feature], run: { kind: "read", ...run } }));
   render(App);
   const entries = await screen.findByRole("group", { name: "Pane entries" });
   await fireEvent.click(await within(entries).findByRole("button", { name: /^app \/ feat\/x/ }));

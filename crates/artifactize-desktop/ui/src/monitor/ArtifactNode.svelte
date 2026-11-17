@@ -10,20 +10,27 @@
   import type { Light, Tally } from "../ipc/client";
   import Icon from "../shell/Icon.svelte";
   import { LIGHTS } from "../shell/icons";
+  import { graphViewStateOf } from "./graph-view-state.svelte";
 
   let {
+    id,
     data,
     selected,
-  }: NodeProps & { data: { name: string; light: Light; tally: Tally | null; open: boolean; inward: boolean; outward: boolean; comment?: string | null; editing?: boolean; target?: boolean; oncomment?: (event: PointerEvent) => void; onfield?: (written: string | null) => void } } = $props();
+  }: NodeProps & { data: { name: string; light: Light; tally: Tally | null; open: boolean; inward: boolean; outward: boolean; comment?: string | null; editing?: boolean; oncomment?: (event: PointerEvent) => void; onfield?: (written: string | null) => void } } = $props();
+  const v = graphViewStateOf();
+  /** The Artifact a release would make the dragged one's whole. */
+  const target = $derived(v?.target === id);
+  /** Its comment, its place left empty while the comment is dragged. */
+  const comment = $derived(v?.comment?.key === id ? null : (data.comment ?? null));
 </script>
 
-<div class="artifact ported light-{data.light}" class:selected class:open={data.open} class:target={data.target} class:inward={data.inward} class:outward={data.outward}>
+<div class="artifact ported light-{data.light}" class:selected class:open={data.open} class:target class:inward={data.inward} class:outward={data.outward}>
   <Handle type="target" position={Position.Left} isConnectable={false} />
   <span class="light"><Icon name={LIGHTS[data.light].icon} /></span>
   <span class="name">{data.name}</span>
   {#if data.tally}<span class="tally" aria-hidden="true">{data.tally.passed}/{data.tally.of}</span>{/if}
   <Handle type="source" position={Position.Right} isConnectable={false} />
-  <Comment name={data.name} text={data.comment ?? null} editing={data.editing ?? false} oncomment={data.oncomment} onfield={data.onfield} />
+  <Comment name={data.name} text={comment} editing={data.editing ?? false} oncomment={data.oncomment} onfield={data.onfield} />
 </div>
 
 <style>

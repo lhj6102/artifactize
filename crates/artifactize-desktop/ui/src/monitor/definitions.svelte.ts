@@ -7,7 +7,7 @@
 import { SvelteMap } from "svelte/reactivity";
 import { call, commands, message, type BranchKey, type Commands, type DefinitionNode, type DefinitionsView, type EditCheck, type EditOperation, type EditRefusal } from "../ipc/client";
 import { keyOf } from "./monitor-state.svelte";
-import { annotationsOf, fieldLines, withField, type Annotations } from "./annotations";
+import { annotationsOf, fieldLines, withField, type Annotations, type Measure } from "./annotations";
 import { NODE } from "./graph";
 
 /** Typed text in an Artifact's Source: the file's text it was typed over, and what it holds. */
@@ -95,8 +95,13 @@ export class Definitions {
   #reads = 0;
 
   /** The lines the open comment field holds, under a node's width: its room grows with them. */
-  readonly #fieldLines = $derived(this.field ? fieldLines(this.fieldText, NODE.width - 12) : 0);
-  readonly annotations: Annotations = $derived(withField(annotationsOf(this.view), this.field?.name ?? null, this.#fieldLines));
+  /** How wide a text is in the comment's font as the page draws it, once a graph has measured. */
+  measure = $state.raw<Measure | null>(null);
+  readonly #fieldLines = $derived(this.field ? fieldLines(this.fieldText, NODE.width - 12, this.measure ?? undefined) : 0);
+  readonly annotations: Annotations = $derived({
+    ...withField(annotationsOf(this.view), this.field?.name ?? null, this.#fieldLines),
+    measure: this.measure,
+  });
 
   /** The definitions are of `branch`. */
   of(branch: BranchKey): boolean {
@@ -175,13 +180,22 @@ export class Definitions {
   /** What the library says of `operation` on `branch`'s definitions now, writing nothing. */
   check(branch: BranchKey, operation: EditOperation): Promise<EditCheck> {
     const key = JSON.stringify(operation);
-    this.#checks[key] ??= call(this.ipc.definitionCheck(branch, operation)).catch(() => ({ files: [], refusal: null }));
+    // A check that failed is asked again next time.
+    this.#checks[key] ??= call(this.ipc.definitionCheck(branch, operation)).catch((failure: unknown) => {
+      delete this.#checks[key];
+      throw failure;
+    });
     return this.#checks[key];
   }
 
-  /** Whether the library would accept `operation`, for a drop target's highlight. */
+  /** Whether the library says it would accept `operation`, for a drop target's highlight; a
+   * check that could not be made highlights nothing. */
   async accepts(branch: BranchKey, operation: EditOperation): Promise<boolean> {
-    return (await this.check(branch, operation)).refusal === null;
+    try {
+      return (await this.check(branch, operation)).kind === "checked";
+    } catch {
+      return false;
+    }
   }
 
   /** The text each file was shown with: the definitions' files, a Source's saved text being
@@ -205,7 +219,8 @@ export class Definitions {
     try {
       if (where === "graph") {
         // The files the library says the edit writes: one with typed text in its Source refuses it.
-        const { files: writes } = await this.check(branch, operation);
+        const checked = await this.check(branch, operation);
+        const writes = checked.kind === "checked" ? checked.files : [];
         const typed = [...this.drafts.keys()].map((name) => this.node(name)?.definition).find((file) => file !== undefined && writes.includes(file));
         if (typed !== undefined) {
           const why = `${typed} has typed text in its Source; save or revert it first.`;

@@ -234,6 +234,18 @@ pub struct RunPanel {
     pub needs: Vec<Attention>,
 }
 
+/// The Run the Main area shows.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ShownRun {
+    /// No Run is shown.
+    None,
+    /// The shown Run, read.
+    Read(RunPanel),
+    /// The shown Run no longer exists or cannot be read.
+    Missing,
+}
+
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowseView {
@@ -244,10 +256,8 @@ pub struct BrowseView {
     pub waiting: Vec<WaitingRow>,
     /// The branch of the folder the app was started for.
     pub launch: Option<BranchKey>,
-    /// The shown Run, once read.
-    pub run: Option<RunPanel>,
-    /// The shown Run no longer exists or cannot be read.
-    pub missing: bool,
+    /// The Run shown in the Main area: none, read, or no longer there to read.
+    pub run: ShownRun,
     /// What went wrong: a failed read, Run records that cannot be read.
     pub notice: Option<String>,
     /// False until the first snapshot was read.
@@ -463,8 +473,11 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         branches,
         waiting: waiting_rows,
         launch: shown.launch.as_ref().map(BranchKey::new),
-        run,
-        missing: matches!(shown.opened, Opened::Missing(_)),
+        run: match (run, &shown.opened) {
+            (Some(panel), _) => ShownRun::Read(panel),
+            (None, Opened::Missing(_)) => ShownRun::Missing,
+            (None, _) => ShownRun::None,
+        },
         notice: (!notice.is_empty()).then(|| notice.join("; ")),
         refreshed: shown.refreshed,
         replaced: shown.replaced,

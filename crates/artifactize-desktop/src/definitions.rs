@@ -321,10 +321,10 @@ pub async fn definitions(
 /// What the library says of an edit before it is made: the definition files it would write, by
 /// their paths relative to the project, or why it would refuse it.
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct EditCheck {
-    pub files: Vec<String>,
-    pub refusal: Option<EditRefusal>,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum EditCheck {
+    Checked { files: Vec<String> },
+    Refused { refusal: EditRefusal },
 }
 
 /// Check `operation` on `branch`'s definitions as they are now, writing nothing.
@@ -342,13 +342,11 @@ pub async fn definition_check(
             match edit::read_project(&workspace)
                 .and_then(|project| edit::footprint(&project, &operation))
             {
-                Ok(footprint) => EditCheck {
+                Ok(footprint) => EditCheck::Checked {
                     files: footprint.files.keys().map(|file| text(file)).collect(),
-                    refusal: None,
                 },
-                Err(refusal) => EditCheck {
-                    files: Vec::new(),
-                    refusal: Some(refusal.into()),
+                Err(refusal) => EditCheck::Refused {
+                    refusal: refusal.into(),
                 },
             }
         })

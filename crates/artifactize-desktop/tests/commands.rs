@@ -316,7 +316,7 @@ fn browse_lists_the_branch_with_its_runs_and_detail_reads_the_shown_run() {
     assert_eq!(chip["status"], "Waiting for sign-off");
     // A running Run's age is its time so far, not a time ago.
     assert!(!chip["age"].as_str().unwrap().ends_with(" ago"), "{chip}");
-    assert_eq!(view["run"], Value::Null, "nothing chosen yet");
+    assert_eq!(view["run"], json!({"kind": "none"}), "nothing chosen yet");
     // The waiting stack lists the sign-off with its project and branch.
     assert_eq!(view["waiting"][0]["eval"], "release/signoff");
     assert_eq!(view["waiting"][0]["project"], "repo");

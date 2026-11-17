@@ -37,7 +37,7 @@
   const branches = $derived(view?.branches ?? []);
   const waiting = $derived(view?.waiting ?? []);
   const shown = $derived(m.shown);
-  const run = $derived(shown.kind === "run" && view?.run?.id === shown.run ? view.run : null);
+  const run = $derived(shown.kind === "run" && view?.run.kind === "read" && view.run.id === shown.run ? view.run : null);
   const source = $derived(sourceOf(shown));
   /** The branch whose Run or Current is shown. */
   const branch = $derived(
@@ -212,7 +212,7 @@
     // Leaving the shown Run (or losing it) closes its Detail; so does losing the node, which the
     // Detail finds as it reads its row.
     const opened = m.opened;
-    if (opened?.source.kind === "run" && opened.source.run !== next.run?.id) m.opened = null;
+    if (opened?.source.kind === "run" && (next.run.kind !== "read" || opened.source.run !== next.run.id)) m.opened = null;
     // A Run of the branch whose Current is shown ended: scan it again.
     for (const item of next.branches) {
       const now = item.chips.flatMap((chip) => (chip.kind === "run" && chip.running ? [chip.id] : []));
@@ -466,7 +466,7 @@
           {#if shown.kind === "run"}
             {#if run}
               <RunView {run} branch={shown.branch} {revision} opened={m.opened?.node ?? null} onopen={openNode} onclose={closeDetail} />
-            {:else if view?.missing}
+            {:else if view?.run.kind === "missing"}
               <p class="empty">This Run cannot be read; choose another.</p>
             {:else}
               <p class="empty">Loading the Run…</p>
