@@ -130,11 +130,13 @@
         <div class="m-node in light-blocked" style="left: 748px; top: 294px"><span class="m-light"></span><span class="m-name">docs</span><span class="m-tally">0/2</span></div>
         <div class="m-edge light-active" style="left: 656px; top: 186px; width: 92px"></div>
         <div class="m-node minimized in light-waiting" style="left: 748px; top: 166px"><span class="m-light"></span><span class="m-text"><span class="m-name">site</span><span class="m-count">4 parts</span></span><span class="m-tally">0/1</span><span class="m-toggle"><span class="m-icon i-add"></span></span></div>
-        <div class="m-whole light-green" style="left: 160px; top: 420px; width: 496px; height: 150px">
+        <p class="m-comment" style="left: 160px; top: 276px">Splits into core and store once the read path settles.</p>
+        <div class="m-whole light-green" style="left: 160px; top: 400px; width: 496px; height: 176px">
           <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-tally">1/1</span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
-          <div class="m-node light-green" style="left: 24px; top: 40px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
-          <div class="m-node light-green" style="left: 24px; top: 92px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">4/4</span></div>
-          <div class="m-node light-green" style="left: 300px; top: 66px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">2/2</span></div>
+          <p class="m-comment" style="left: 10px; top: 38px; width: 476px">The backend gets an eval for the store's read path next.</p>
+          <div class="m-node light-green" style="left: 24px; top: 66px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
+          <div class="m-node light-green" style="left: 24px; top: 118px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">4/4</span></div>
+          <div class="m-node light-green" style="left: 300px; top: 92px"><span class="m-light"></span><span class="m-name">desktop-e2e</span><span class="m-tally">2/2</span></div>
         </div>
       </div>
     </section>
@@ -146,6 +148,7 @@
 <span class="callout" style="left: 200px; top: 646px">4</span>
 <span class="callout" style="left: 268px; top: 43px">5</span>
 <span class="callout" style="left: 420px; top: 412px">7</span>
+<span class="callout" style="left: 612px; top: 374px">18</span>
 <span class="callout" style="left: 700px; top: 592px">8</span>
 <span class="callout" style="left: 600px; top: 68px">9</span>
 <span class="callout" style="left: 975px; top: 414px">10</span>
@@ -166,6 +169,7 @@
   <li><span class="n">9</span><div><b>Tool strip</b><span>What acts on the graph, in one row above the canvas: Find, the zoom group with the zoom in percent, and Fit. Nothing else is in it, and nothing floats on the canvas; Help says what the marks mean and which keys act on a graph.</span></div></li>
   <li><span class="n">10</span><div><b>Edges</b><span>Neutral lines. The one coloured edge leaves a RED, ERROR or blocked Artifact, in that Artifact's colour: here cli, RED, holds docs.</span></div></li>
   <li><span class="n">17</span><div><b>Grid</b><span>A faint grid marks the canvas as the working surface and moves with the camera; it never competes with a node's outline or an edge.</span></div></li>
+  <li><span class="n">18</span><div><b>Comments</b><span>The note left on an Artifact, as text alone under its node, or under a whole's title row inside its box, in the quieter ink: here on core and on desktop. It is no part of the graph's meaning and has no box of its own.</span></div></li>
   <li><span class="n">11</span><div><b>Minimized whole</b><span>A node with a second outline behind it, its parts' count under its name and the Expand button at its right.</span></div></li>
 </ol>
 
@@ -393,6 +397,8 @@
   <dd>Selection and focus change the outline, the face and the strip unchanged, and show never more than two marks at once: the opened Artifact's node has its own outline turned <code>--outline-selected</code> and 2px, with no gap; the node under the pointer has its outline stepped up to <code>--ink-3</code>; the 2px <code>--focus</code> ring sits 2px outside and shows only while the keyboard moves focus, so a node opened by a click carries the one outline. The opened node and the Detail name the same Artifact; when the opened Artifact is hidden inside a minimized whole, that whole carries the outline (every copy of a shared part carries it too). <span class="avoid">the accent as the selection; a filled face for selection; a focus ring left on a node after a click; three rings on one node.</span></dd>
   <dt id="D-NODE-3">D-NODE-3</dt>
   <dd>A whole is a box with a 1px <code>--line-node</code> outline and a face of <code>--surface-panel</code> at 40%; its title row (28–32px) holds its status's icon, its name semibold, its tally and the Minimize button (18–20px, <code>--line-group</code> border, the minus icon) at the right, on a Current led by Reset layout while the box is placed by hand (D-CUR-6), and is closed below by the strip in its status's colour, across the box. Minimized, it is a node of a node's size and anatomy with its parts' count in <code>--ink-2</code> under its name, a second <code>--line-node</code> outline drawn behind it, and the same button at its right now reading Expand (the plus icon). <span class="avoid">a whole's outline or face in its status colour; the button inside the parts' area; a minimized whole without its Expand button.</span></dd>
+  <dt id="D-NODE-6">D-NODE-6</dt>
+  <dd>An Artifact's comment is text and nothing else, on both graphs: <code>--text-small</code> in <code>--ink-2</code>, starting 4px under its node, or under a whole's title row inside its box at the title's left inset, under a minimized whole, and under every copy of a shared part; it wraps at the width of what it is under (a node's 168px, a box's inner width), keeps its line breaks and shows at most three lines, the third ending in an ellipsis when there is more. It moves with its node, and the space it takes counts in the layout, so a box fits around its parts with their comments. Where Artifacts are painted as blocks (D-GRAPH-2) and inside a minimized whole, no comment is drawn. Read aloud after its node, it is not a Tab stop of its own. <span class="avoid">a card, outline, background, colour, icon or count for a comment; a comment that opens or grows on hover; Markdown rendered; an author or a time; a comment overlapping a node or an edge.</span></dd>
   <dt id="D-NODE-4">D-NODE-4</dt>
   <dd>Edges are 1.25–1.5px strokes in the neutral <code>--edge</code>, meeting nodes at their sides and boxes at their edges. One kind of edge is coloured: an edge that leaves a RED, ERROR or blocked Artifact is drawn in that Artifact's status colour, so what holds a blocked Artifact can be traced upstream by eye; every other edge, from a GREEN, in progress or waiting Artifact, is neutral. A selected node gets no highlighted edges. <span class="avoid">an edge in the colour of GREEN, in progress or waiting; thick or animated edges; arrowheads larger than the node's icon.</span></dd>
 </dl>

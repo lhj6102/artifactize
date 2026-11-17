@@ -1373,3 +1373,42 @@
   gap: var(--gap);
   margin-top: 6px;
 }
+/* An Artifact's comment: text alone under its node (or under a whole's title row), in the
+   quieter ink, wrapped at the width of what it is under and cut after three lines. Dragged, the
+   text floats as a dragged node does; the open field is a field of the panel's kind. */
+.m-comment {
+  position: absolute;
+  width: 168px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-small);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.m-comment.lifted {
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px var(--scrim);
+}
+.m-comment-field {
+  position: absolute;
+  box-sizing: border-box;
+  width: 168px;
+  min-height: 44px;
+  padding: 4px 6px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius-control);
+  background: var(--surface-input);
+  color: var(--ink);
+  font-size: var(--text-small);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  outline: 2px solid var(--focus);
+  outline-offset: -1px;
+}

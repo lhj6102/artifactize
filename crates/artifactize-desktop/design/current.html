@@ -30,7 +30,8 @@
   tool strip and the Current graph lit by what <code>verify</code> would do. The bar and the Pane are
   as on the Monitor page; the Pane's Current entry sits in its pill. A Current is also where the
   branch's Artifacts are defined: the second figure shows an Artifact dragged into a whole's
-  box, the third a drop that was refused.
+  box, the third a drop that was refused, the fourth a comment being written and another
+  being moved.
 </p>
 
 <figure class="figure">
@@ -182,6 +183,45 @@
   <li><span class="n">8</span><div><b>Refusal</b><span>The Main area's notice in red says why in a few words; a click shows it in full. Nothing was written and the dragged Artifact is back where it was.</span></div></li>
 </ol>
 
+<figure class="figure">
+<div class="stage" style="--w: 1000; --h: 340">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
+  <section class="m-main">
+    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+    <div class="m-strip">
+      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
+      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
+      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
+    </div>
+    <div class="m-canvas">
+      <div class="m-node light-reused" style="left: 40px; top: 40px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
+      <div class="m-comment-field" style="left: 40px; top: 84px">Split the store out once
+the read path settles; an
+agent can turn this into
+a node with its own evals.</div>
+      <div class="m-node light-run" style="left: 340px; top: 40px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
+      <p class="m-comment" style="left: 340px; top: 84px">The getting-started guide still shows the old declarations and needs the definition folder instead.</p>
+      <div class="m-node light-run target" style="left: 680px; top: 120px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
+      <p class="m-comment lifted" style="left: 790px; top: 150px">Check Korean labels.</p>
+      <div class="m-node light-reused" style="left: 680px; top: 30px"><span class="m-light"></span><span class="m-name">media-brand</span><span class="m-tally">1/1</span></div>
+    </div>
+  </section>
+</div>
+<span class="callout" style="left: 214px; top: 150px">9</span>
+<span class="callout" style="left: 514px; top: 142px">10</span>
+<span class="callout" style="left: 940px; top: 186px">11</span>
+</div>
+<figcaption>Stage 1000 × 340. engine-core's comment open in its field; docs-en's comment cut after three lines; media-brand's comment dragged onto desktop-ui, the drop target.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">9</span><div><b>Comment field</b><span>Opened in place under the node by the Definition's Comment or a click on the comment, holding it whole: Enter writes it into the node's file, Shift+Enter breaks the line, Esc puts it back, Enter on an empty field removes it.</span></div></li>
+  <li><span class="n">10</span><div><b>Comment</b><span>Text alone in the quieter ink, at most three lines; the rest is in its field and in the Source.</span></div></li>
+  <li><span class="n">11</span><div><b>Comment dragged</b><span>Its text floats with the faint shadow; an Artifact without a comment under the pointer is the drop target. Released there, the comment moves from one file to the other in one edit.</span></div></li>
+</ol>
+
 <h2>Rules</h2>
 <dl class="rules">
   <dt id="D-CUR-1">D-CUR-1</dt>
@@ -191,13 +231,17 @@
   <dt id="D-CUR-3">D-CUR-3</dt>
   <dd>On a Current the tool strip (D-GRAPH-4) adds, after Fit, <b>New Artifact</b>, a small button with the add icon and its words, and, while the top level is placed by hand, <b>Reset layout</b>, a small button with the reset icon and its words; a Run's strip has neither. <span class="avoid">an edit control on a Run's graph; New Artifact as an icon alone; Reset layout shown, or disabled, for a top level laid out automatically; a key cap on either.</span></dd>
   <dt id="D-CUR-4">D-CUR-4</dt>
-  <dd>A dragged Artifact (a node, a minimized whole, or a whole with its parts) floats: raised to <code>--surface-raised</code> with the faint shadow (D-SYS-2), its outline, icon, strip and tally as they were, its edges following it; the place it left stays empty. A drag begins once the pointer has moved a few pixels with the button held, so a click stays a click; a whole is dragged by its title row. <span class="avoid">a ghost left at the old place; a drag that starts on a click; a node that turns into a block or a different shape while dragged; the camera moving while a node is dragged.</span></dd>
+  <dd>A dragged Artifact (a node, a minimized whole, or a whole with its parts) floats: raised to <code>--surface-raised</code> with the faint shadow (D-SYS-2), its outline, icon, strip and tally as they were, its edges and its comment following it; the place it left stays empty. A drag begins once the pointer has moved a few pixels with the button held, so a click stays a click; a whole is dragged by its title row. <span class="avoid">a ghost left at the old place; a drag that starts on a click; a node that turns into a block or a different shape while dragged; the camera moving while a node is dragged.</span></dd>
   <dt id="D-CUR-5">D-CUR-5</dt>
   <dd>The drop target, the box or node a release would make the dragged Artifact's whole, is outlined 2px in <code>--accent</code>, its face and strip unchanged, only while the drop would be accepted. The box the Artifact is dragged within, an Artifact a drop would make a cycle with, and the top level show nothing. <span class="avoid">a status colour or red for a drop target; a mark for a drop that would be refused; drop zones drawn on the canvas; a highlighted edge.</span></dd>
   <dt id="D-CUR-6">D-CUR-6</dt>
   <dd>A box placed by hand carries Reset layout in its title row, before Minimize: a button of Minimize's size and border (D-NODE-3) with the reset icon, named <i>Reset layout of {whole}</i> when read aloud; a box laid out automatically has none, so the button alone tells a box placed by hand. <span class="avoid">a badge, a lock or a pin marking a placed box; a tooltip on the button (D-SYS-7); Reset layout on a Run's graph.</span></dd>
   <dt id="D-CUR-7">D-CUR-7</dt>
   <dd>An edit made on the graph that is refused (a cycle, a definition the project would not accept, a file changed on disk) puts the dragged Artifact back where it was and says why as the Main area's notice (D-MAIN-1): <code>--red</code>, a few words naming the Artifacts or the file, its whole text a click away. <span class="avoid">a dialog or a toast for a refusal; a refusal said on the canvas; a refused drop left where it was dropped.</span></dd>
+  <dt id="D-CUR-8">D-CUR-8</dt>
+  <dd>The comment field opens in place of the comment, or where it would be, under its node (D-NODE-6): a <code>--surface-input</code> field with a 1px <code>--line-input</code> border and the <code>--focus</code> ring, as wide as the comment, growing with its lines to show the comment whole, its text <code>--text-small</code> in <code>--ink</code> with its line breaks; the graph around it stays as it was. It has no buttons and no hint: Enter writes, Shift+Enter breaks the line, Esc or a click outside puts back, and Enter on an empty field removes the comment; a refusal is said as the Main area's notice (D-CUR-7) and the field stays with its text. <span class="avoid">a dialog, a popover or a Detail section for a comment; Save and Cancel buttons on the field; a line that explains its keys; a field that covers other nodes' names without growing the space under its own.</span></dd>
+  <dt id="D-CUR-9">D-CUR-9</dt>
+  <dd>A comment is dragged by its text: while dragged it floats as a dragged node does (D-CUR-4), its text on <code>--surface-raised</code> with the faint shadow and no outline; the Artifact a release would give it, one without a comment, is the drop target of D-CUR-5, and nothing else shows. Released elsewhere it returns under its node. <span class="avoid">a comment that keeps a card after the drag; a drop target on an Artifact that has a comment; a comment left on the canvas where it was dropped.</span></dd>
 </dl>
 </main>
 </div>

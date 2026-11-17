@@ -90,14 +90,18 @@ that makes the transition happen and checks where it leads.
   be reused of how many, or nothing while it is still being checked; read aloud it says which,
   would run with how many of its evals would run, or that it is still being checked.
   It is also where the branch's Artifacts are edited (the Editing edges): a node, a minimized
-  whole or a whole's title row can be **dragged**, drawn lifted and followed by its edges, a
-  whole carrying its parts, while the box or node a drop would make its whole is a highlighted
-  **drop target**; a box, and the top level, is **laid out automatically** until something in
-  it is moved and then **placed by hand**, its places kept in `.artifactize/layout.toml`, which
-  draws the branch's Runs too; a box placed by hand has **Reset layout** in its title row, and
-  the tool strip has it while the top level is placed by hand. A refused edit says why as the
-  Main area's notice. States: nothing dragged, an Artifact dragged with a drop target
-  highlighted or none; each box and the top level laid out automatically or placed by hand.
+  whole or a whole's title row can be **dragged**, drawn lifted and followed by its edges and
+  its comment, a whole carrying its parts, while the box or node a drop would make its whole
+  is a highlighted **drop target**; a box, and the top level, is **laid out automatically**
+  until something in it is moved and then **placed by hand**, its places kept in definition
+  files (a box's in its whole's file, the top level's each in its node's own file), which
+  draw the branch's Runs too; a box placed by hand has **Reset layout** in its title row, and
+  the tool strip has it while the top level is placed by hand. An Artifact's **comment** can
+  be opened in a **comment field** in place under its node, and dragged by its text onto
+  another Artifact. A refused edit on the graph says why as the Main area's notice. States:
+  nothing dragged, an Artifact or a comment dragged with a drop target highlighted or none;
+  each box and the top level laid out automatically or placed by hand; a comment field open
+  or none.
 - On both graphs an Artifact made of **parts** (those its `parts` names) is a **whole**, drawn as a **box** that encloses its parts' nodes, its name, its
   verdict's icon and a strip in its verdict's colour at the box's top; a part that is a whole too is a box inside it, as deep as
   the parts go. The box is the whole's Artifact: Tab reaches it before its parts, Enter on it
@@ -112,6 +116,12 @@ that makes the transition happen and checks where it leads.
   and those among them are not drawn. It is a node otherwise. A whole stays minimized on every
   graph of its branch, its Runs' and its Current, until it is expanded or the app quits; a part
   of several wholes stays drawn inside those not minimized.
+  An Artifact's **comment**, the note people and agents leave on it in its definition (not
+  the comment a Run was requested with), is drawn on both graphs as text alone under its node,
+  under a whole's title row inside its box, under a minimized whole and under every copy of a
+  shared part, in the quieter ink, wrapped at the width of what it is under, at most its first
+  three lines and an ellipsis; it moves with its node. Where Artifacts are drawn as blocks, and
+  for the parts a minimized whole hides, no comment is drawn.
   States: a copy selected, its other copies highlighted with it; a whole drawn as a box or
   minimized; a minimized whole highlighted while an Artifact it hides is open.
 - Both graphs take the pointer: Tab reaches their Artifacts and Enter on one does what a click
@@ -154,7 +164,7 @@ that makes the transition happen and checks where it leads.
   pan, zoom or drag; then its **Tools** and their **Tool log**, then, of a Run, its **Path**
   (the target and, for a Live Artifact, its address) or, of a Current, its **Definition**
   (the file that defines it, its Path as a field with a missing target said in red, its Parts
-  each with `✕` and `+ Add`, Rename and Delete) and its **Source** (the file's text, with Save
+  each with `✕` and `+ Add`, Comment, Rename and Delete) and its **Source** (the file's text, with Save
   and Revert while it holds typed text), every other fact (what it waits for included) under Debug (unfolded with `t` or a click). Its
   Tools are the Human tools the Artifact declares in the branch's worktree as it is now,
   whichever Run is shown, each a `▶` button; the graph's nodes carry no tool buttons. An
@@ -350,8 +360,9 @@ that makes the transition happen and checks where it leads.
 ## Editing
 
 Each edit of a Current writes `.artifactize/` only after the whole project accepts the result;
-a refused edit writes nothing. After every edit that writes, the Current is scanned again, as by
-E-CURRENT-REFRESH, and the Detail stays on the same Artifact.
+a refused edit writes nothing. Places (`[annotations.style]`) and comments (`[annotations.comment]`) are sections of
+the definition files and change nothing verify does. After every edit that writes, the Current
+is scanned again, as by E-CURRENT-REFRESH, and the Detail stays on the same Artifact.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
@@ -361,28 +372,39 @@ E-CURRENT-REFRESH, and the Detail stays on the same Artifact.
 | E-SOURCE-TYPE | Detail of an Artifact of a Current, its Source unfolded | type in the Source | the Source holding typed text, Save and Revert under it |
 | E-SOURCE-SAVE | Source holding typed text | Save, or Ctrl+S in the Source | the file holding the text; Save and Revert gone; the graph and the Definition following |
 | E-SOURCE-REVERT | Source holding typed text | Revert | the Source holding the file's text as it is on disk; Save and Revert gone |
-| E-PARTS-ADD | Definition | `+ Add` under Parts, choose an Artifact the field suggests, then Enter | that Artifact added to the file's `parts`; the graph drawing it inside this whole's box |
-| E-PARTS-REMOVE | Definition with a part listed | `✕` on it | that part gone from the file's `parts`; the graph drawing it outside this whole's box |
+| E-PARTS-ADD | Definition | `+ Add` under Parts, choose an Artifact the field suggests, then Enter | that Artifact added to the file's `parts`; the graph drawing it inside this whole's box, in free space when the box is placed by hand |
+| E-PARTS-REMOVE | Definition with a part listed | `✕` on it | that part, and the place the box kept for it, gone from the file; the graph drawing it outside this whole's box |
 | E-PARTS-REFUSED | Definition, a part being added | Enter on an Artifact that would make a cycle | the reason under Parts, nothing written |
-| E-EDIT-CONFLICT | Detail of a Current, an edit dialog or the Current graph, a file the edit writes changed on disk since the Current read it | Enter on the Path, Save, a part added or removed, Rename, Delete, a drop or a placing release | nothing written; the refusal naming the file, under the field, the Source or in the dialog for an edit made there and as the Main area's notice for one on the graph; the Current scanned again, the graph and the Definition showing what is on disk; a Source holding typed text keeping it until Revert |
+| E-EDIT-CONFLICT | Detail of a Current, an edit dialog, a comment field or the Current graph, a file the edit writes changed on disk since the Current read it | Enter on the Path, Save, a part added or removed, Rename, Delete, a drop, a placing release, Enter in a comment field or a comment's drop | nothing written; the refusal naming the file, under the field, the Source or in the dialog for an edit made there and as the Main area's notice for one on the graph; the Current scanned again, the graph and the Definition showing what is on disk; a Source holding typed text keeping it until Revert |
+| E-EDIT-UNSAVED | Current graph, a Source holding typed text for a file that a release or a comment would write | a placing release, a drop, Enter in a comment field or a comment's drop | nothing written; what was dragged back where it was, or the comment field as it was; the Main area's notice naming the file whose Source holds typed text |
 | E-NODE-NEW-OPEN | Current graph | the tool strip's New Artifact | New Artifact dialog, its Name field focused, its Path field under it |
 | E-NODE-NEW | New Artifact dialog | Create, or Enter, with a new name and a valid path | `.artifactize/{name}.artf` written with that path; the dialog closed; the new node drawn, in free space when the top level is placed by hand; its Detail open on its Artifact tab; the camera moved to it as by E-GRAPH-FIND-GO |
 | E-NODE-RENAME-OPEN | Definition | Rename | Rename dialog, the Artifact's name in its field |
-| E-NODE-RENAME | Rename dialog | Rename, or Enter, with a new name | in one edit, the file renamed where it is and every `parts` entry, `{name}` reference and layout place naming it changed; the dialog closed; the Detail titled with the new name; the graph showing it |
+| E-NODE-RENAME | Rename dialog | Rename, or Enter, with a new name | in one edit, the file renamed where it is and every `parts` entry, `{name}` reference and place a whole keeps for it in its file changed, its own place and comment kept in the renamed file; the dialog closed; the Detail titled with the new name; the graph showing it |
 | E-EDIT-DIALOG-INVALID | New Artifact or Rename dialog | Create or Rename, or Enter, with a name already used (ignoring case) or a name or path that is not valid | the same dialog, why under the field, nothing written |
 | E-NODE-DELETE-OPEN | Definition | Delete | Delete dialog naming the file it removes |
-| E-NODE-DELETE | Delete dialog, no other Artifact naming it | Delete | the file removed; the dialog and the Detail closed; the node gone from the graph |
+| E-NODE-DELETE | Delete dialog, no other Artifact naming it | Delete | the file removed, with its place, its parts' places and its comment; the dialog and the Detail closed; the node gone from the graph |
 | E-NODE-DELETE-REFUSED | Delete dialog, another Artifact naming it in its `parts` or a reference | Delete | the same dialog, saying which Artifacts name it; nothing written |
 | E-EDIT-DIALOG-CANCEL | New Artifact, Rename or Delete dialog | Esc or Cancel | the dialog closed, the view below as it was, nothing written |
-| E-NODE-DRAG | Current graph, an Artifact drawn as a node, a minimized whole or a whole's title row | press it and move | the Artifact dragged: drawn lifted, following the pointer with its edges, a whole carrying its parts; the box or node a drop would make its whole highlighted as the drop target, none while the pointer is over its own box, over nothing it could join, or over an Artifact that would make a cycle |
+| E-NODE-DRAG | Current graph, an Artifact drawn as a node, a minimized whole or a whole's title row | press it and move | the Artifact dragged: drawn lifted, following the pointer with its edges and its comment, a whole carrying its parts; the box or node a drop would make its whole highlighted as the drop target, none while the pointer is over its own box, over nothing it could join, or over an Artifact that would make a cycle |
 | E-NODE-DRAG-CANCEL | an Artifact dragged | Esc | the Artifact back where it was, nothing written |
-| E-NODE-PLACE | an Artifact dragged, no drop target, the pointer in the box it was dragged in (or outside every box when it was in none) | release | the Artifact placed there; the places of every Artifact in that box (or the top level), as shown, saved in the layout file, that box placed by hand and showing its Reset layout; a box fitting around its parts; the Detail, the selection and the camera as they were |
-| E-PARTS-DROP | an Artifact dragged, a drop target highlighted | release | in one edit, the Artifact added to the drop target's `parts` and gone from those of the whole whose box it was dragged out of (for a copy of a shared part, that whole only); drawn where it was dropped inside the drop target's box, the places saved |
-| E-PARTS-DROP-OUT | a part dragged out of its whole's box, outside every box | release | the part gone from that whole's `parts`; drawn where it was dropped at the top level, the places saved |
+| E-NODE-PLACE | an Artifact dragged, no drop target, the pointer in the box it was dragged in (or outside every box when it was in none) | release | the Artifact placed there and the places of every Artifact in that box, as shown, written once: in a whole's box into that whole's file alone; at the top level into the moved node's own file, or, when the top level was laid out automatically, into every top-level node's own file in one edit; that box placed by hand and showing its Reset layout; a box fitting around its parts and their comments; the Detail, the selection and the camera as they were |
+| E-PARTS-DROP | an Artifact dragged, a drop target highlighted | release | in one edit, the Artifact added to the drop target's `parts` and gone from those of the whole whose box it was dragged out of (for a copy of a shared part, that whole only), its place written into the new whole's file and removed from the old one's; drawn where it was dropped inside the drop target's box |
+| E-PARTS-DROP-OUT | a part dragged out of its whole's box, outside every box | release | in one edit, the part and its place gone from that whole's file and its place at the top level written into its own file; drawn where it was dropped |
 | E-PARTS-DROP-REFUSED | an Artifact dragged over an Artifact a drop would make a cycle with, nothing highlighted | release | the Artifact back where it was; the Main area's notice saying why; nothing written |
-| E-LAYOUT-RESET | Current graph with a box, or the top level, placed by hand | Reset layout in that box's title row, or the tool strip's Reset layout for the top level | that box laid out automatically again, boxes inside it keeping their own places; its places gone from the layout file and its Reset layout gone; the camera as it was |
-| E-LAYOUT-SAVED | Pane, or Launch | choose a Run or the Current of a branch whose layout file places Artifacts, also after a restart | its Run graph or Current graph drawn with those places, an Artifact the file does not place put in free space of its box |
-| E-RUN-NO-EDIT | Run graph | press a node and move | the camera panned as by a drag on the background; nothing moves and no drop target shows; no New Artifact, Reset layout, Definition or Source anywhere on a Run |
+| E-LAYOUT-RESET | Current graph with a box, or the top level, placed by hand | Reset layout in that box's title row, or the tool strip's Reset layout for the top level | that box laid out automatically again, boxes inside it keeping their own places; its places gone from the whole's file, or every top-level node's place gone from its own file; its Reset layout gone; the camera as it was |
+| E-LAYOUT-SAVED | Pane, or Launch | choose a Run or the Current of a branch whose definitions place Artifacts, also after a restart | its Run graph or Current graph drawn with those places, an Artifact its box keeps no place for put in free space of that box |
+| E-COMMENT-DRAWN | Pane, or Launch | choose a Run or the Current of a branch whose definitions hold comments, also after a restart | its Run graph or Current graph with each comment drawn under its node, under a whole's title row, under a minimized whole and under every copy of a shared part, cut to its first three lines and an ellipsis when longer; none where Artifacts are drawn as blocks or hidden in a minimized whole |
+| E-COMMENT-OPEN | Detail of an Artifact of a Current, its Definition unfolded | Comment, or Enter on it focused | the comment field open in place under the Artifact's node on the graph, holding its comment whole or empty, focused |
+| E-COMMENT-CLICK | Current graph with a comment drawn | click the comment (pressed and released without moving it) | the comment field open in place of that comment, holding it whole, focused |
+| E-COMMENT-WRITE | comment field holding text | type, Shift+Enter breaking a line, then Enter | the text written as the comment in the node's file, nothing else in it changed; the field closed and the comment drawn under the node and every copy of it; focus back where the field was opened from |
+| E-COMMENT-REMOVE | comment field holding no text | Enter | the comment gone from the node's file; the field closed and nothing drawn under the node |
+| E-COMMENT-ESC | comment field | Esc, or a click outside the field | the field closed, the comment as in the file, nothing written |
+| E-COMMENT-DRAG | Current graph with a comment drawn | press its text and move | the comment dragged, its text lifted and following the pointer; the Artifact under the pointer highlighted as the drop target when it has no comment, none over the background, the comment's own node or an Artifact that has one |
+| E-COMMENT-DROP | a comment dragged, a drop target highlighted | release | in one edit, the comment gone from its node's file and written into the drop target's; drawn under the drop target |
+| E-COMMENT-DROP-NONE | a comment dragged, nothing highlighted | release | the comment back under its node, nothing written |
+| E-COMMENT-DRAG-CANCEL | a comment dragged | Esc | the comment back under its node, nothing written |
+| E-RUN-NO-EDIT | Run graph | press a node or a comment and move, or click a comment | for a drag, the camera panned as by a drag on the background, nothing moving and no drop target shown; a click on a comment as a click on its node (E-MON-DETAIL-ARTIFACT), no comment field opened; no New Artifact, Reset layout, Definition or Source anywhere on a Run |
 
 ## Human review
 
@@ -528,7 +550,9 @@ E-PANE-SELECT.
   E-SOURCE-TYPE → E-DEFINITION-INVALID → E-SOURCE-REVERT
 - J-DEFINITION-CONFLICT: E-SOURCE-TYPE → E-EDIT-CONFLICT → E-SOURCE-REVERT
   E-NODE-DRAG → E-EDIT-CONFLICT
+  E-COMMENT-DRAG → E-EDIT-CONFLICT
   E-CURRENT-EVALS → E-EDIT-CONFLICT
+  E-SOURCE-TYPE → E-NODE-DRAG → E-EDIT-UNSAVED → E-SOURCE-SAVE
 - J-PARTS-EDIT: E-CURRENT-EVALS → E-PARTS-ADD → E-PARTS-REMOVE
   E-CURRENT-EVALS → E-PARTS-REFUSED
 - J-NODE-NEW: E-NODE-NEW-OPEN → E-NODE-NEW
@@ -547,6 +571,17 @@ E-PANE-SELECT.
 - J-PARTS-DRAG: E-NODE-DRAG → E-PARTS-DROP
   E-NODE-DRAG → E-PARTS-DROP-OUT
   E-NODE-DRAG → E-PARTS-DROP-REFUSED
+- J-COMMENT: E-COMMENT-DRAWN
+  E-COMMENT-DRAWN → E-GRAPH-MINIMIZE → E-GRAPH-EXPAND
+  E-RUN-NO-EDIT
+- J-COMMENT-EDIT: E-CURRENT-EVALS → E-COMMENT-OPEN → E-COMMENT-WRITE
+  E-COMMENT-CLICK → E-COMMENT-WRITE
+  E-COMMENT-CLICK → E-COMMENT-ESC
+  E-COMMENT-CLICK → E-COMMENT-REMOVE
+- J-COMMENT-MOVE: E-COMMENT-DRAG → E-COMMENT-DROP
+  E-COMMENT-DRAG → E-COMMENT-DROP-NONE
+  E-COMMENT-DRAG → E-COMMENT-DRAG-CANCEL
+  E-RUN-NO-EDIT
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
   E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-RELEASE
   E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
