@@ -25,6 +25,11 @@ RUN_PAGE_SIZE = 100  # Read every owned Run, not just the CLI's first page.
 
 def settle_runs(candidate, area):
     """Cancel active fixture Runs and require an authoritative terminal snapshot."""
+    with driver.defer_interrupts():
+        return _settle_runs(candidate, area)
+
+
+def _settle_runs(candidate, area):
     base = [str(candidate), "--repo", str(area / "repo"), "--state-dir", str(area / "state")]
     env = dict(os.environ, ARTIFACTIZE_REMOTE="off")
     cleanup, failures = [], []
@@ -69,14 +74,23 @@ def settle_runs(candidate, area):
                     # Terminal publication can precede the worker's last SQLite/
                     # notification cleanup. Observe every owned worker's actual
                     # exit, including Runs that were terminal before listing.
-                    worker = (result.get("control") or {}).get("worker", {})
-                    if worker.get("state") == "admitted":
+                    control = result.get("control") or {}
+                    worker = control.get("worker") or {}
+                    state = worker.get("state")
+                    if state == "admitted":
                         driver.wait_for_exit(worker["owner"])
-                        entry["worker_exit"] = "observed"
-                    elif worker.get("state") == "legacy":
-                        raise RuntimeError("Legacy Run has no worker identity; cannot prove safe fixture cleanup")
+                        worker_exit = "observed"
+                    elif state == "starting":
+                        # This terminal Run never admitted a worker, but its launcher
+                        # can still hold the fixture during the admission handoff.
+                        driver.wait_for_exit(worker["launcher"])
+                        worker_exit = "not_admitted"
                     else:
-                        entry["worker_exit"] = "not_admitted"
+                        raise RuntimeError(f"Unconfirmed Run worker state {state!r}; cannot prove safe fixture cleanup")
+                    if (supervisor := control.get("supervisor")) is not None:
+                        driver.wait_for_exit(supervisor)
+                        entry["supervisor_exit"] = "observed"
+                    entry["worker_exit"] = worker_exit
                 except Exception as error:
                     entry["settled_error"] = str(error)
                     failures.append(error)
@@ -97,49 +111,81 @@ def archive_case(area, evidence_root, records):
     archive.mkdir(mode=0o700)
     for name in ("repo", "evidence", "state"):
         source = area / name
+        if source.is_symlink():
+            raise ValueError(f"Cannot archive a linked case directory: {source.as_posix()}")
         if source.exists():
-            shutil.copytree(source, archive / name, ignore=shutil.ignore_patterns(".mcp.json", "__pycache__"))
+            shutil.copytree(source, archive / name, symlinks=True,
+                            ignore=shutil.ignore_patterns(".mcp.json", "__pycache__"))
     records[area.name] = archive.as_posix()
     manifest = json.dumps({"version": 1, "cases": records}, indent=2)
     (evidence_root / "index.json").write_text(manifest)
     return archive
 
 
+def save_unconfirmed_diagnostics(area, evidence_root):
+    # The builder or a Run may still write to the case. Publish only files the
+    # harness finished writing, not a repo/state snapshot or a manifest entry.
+    archive = evidence_root / area.name / "evidence"
+    archive.mkdir(mode=0o700, parents=True)
+    (archive / "settlement-unconfirmed.txt").write_text(
+        f"Host or Run exit is unconfirmed; working files retained at {area.as_posix()}\n")
+    for name in ("failure.txt", "cleanup.json"):
+        source = area / "evidence" / name
+        if not source.parent.is_symlink() and not source.is_symlink() and source.is_file():
+            shutil.copy2(source, archive / name, follow_symlinks=False)
+
+
 def run(candidate, output, model, evidence_root):
     candidate = candidate.resolve(strict=True)
     evidence_root = evidence_root.resolve()
     evidence_root.mkdir(mode=0o700, parents=True, exist_ok=False)
-    output = driver.materialize(output)
+    working = None
     records = {}
     claimed = set()
+    cases = driver.cases()
     try:
+        with driver.defer_interrupts():
+            working = driver.materialize(output)
         skill = (ROOT.parents[1] / "agent-plugin/skills/hey-arti/SKILL.md").read_text()
         version = driver.run_command([str(candidate), "--version"], capture_output=True, text=True,
                                      timeout=60, check=True).stdout.strip()
         host_version = driver.run_command(["claude", "--version"], capture_output=True, text=True,
                                           timeout=60, check=True).stdout.strip()
-        for case_id, case in driver.cases().items():
-            claimed.add(case_id)
-            run_case(candidate, output / case_id, case, model, skill, version, host_version,
-                     evidence_root, records)
+        for case_id, case in cases.items():
+            run_case(candidate, working / case_id, case, model, skill, version, host_version,
+                     evidence_root, records, claimed)
     finally:
         # Cases the host never entered cannot own Runs. Claimed cases clean up only
         # after cancellation/terminal observation AND evidence archival succeed.
-        for case_id in driver.cases():
-            area = output / case_id
-            if case_id not in claimed and area.exists():
-                shutil.rmtree(area)
-        if not any(output.iterdir()):
-            output.rmdir()
+        if working is not None:
+            release_unclaimed(working, cases.keys() - claimed)
     return evidence_root
 
 
-def run_case(candidate, area, case, model, skill, version, host_version, evidence_root, records):
+def release_unclaimed(working, unclaimed):
+    with driver.defer_interrupts():
+        failures = []
+        for case_id in unclaimed:
+            area = working / case_id
+            if area.exists():
+                try:
+                    shutil.rmtree(area)
+                except OSError as error:
+                    failures.append(error)
+        if not any(working.iterdir()):
+            working.rmdir()
+        if failures:
+            raise ExceptionGroup(f"Could not remove unclaimed cases in {working.as_posix()}", failures)
+
+
+def run_case(candidate, area, case, model, skill, version, host_version, evidence_root, records, claimed):
     case_id = area.name
     builder_started = False
+    detached = driver.Descendants()
     host_stopped = True
     failures = []
     try:
+        claimed.add(case_id)
         repo = area / "repo"
         host = area / "host"
         host.mkdir(mode=0o700)
@@ -164,7 +210,8 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
         command = ["claude", "mcp", "add", "artifactize", "--transport", "stdio", "--scope", "project"]
         for key, value in mcp_env.items():
             command.extend(["--env", f"{key}={value}"])
-        command.extend(["--", str(executable), "--state-dir", str(area / "state"), "mcp"])
+        mcp_command = [str(executable), "--state-dir", str(area / "state"), "mcp"]
+        command.extend(["--", *mcp_command])
         try:
             registration = driver.run_command(command, cwd=repo, env=env, capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired as error:
@@ -222,7 +269,8 @@ CANONICAL SKILL
                                      "--no-session-persistence", "--setting-sources", "", "--settings", json.dumps(settings),
                                      "--strict-mcp-config", "--mcp-config", str(repo / ".mcp.json"),
                                      "--allowedTools", "Read", "Write", "Edit", "Glob", "Grep", "mcp__artifactize__*", "--", prompt],
-                                    cwd=repo, env=env, stdout=transcript, stderr=errors, timeout=3600)
+                                    cwd=repo, env=env, stdout=transcript, stderr=errors, timeout=3600,
+                                    detached=detached)
         record = {"mode": "live", "host": host_version, "model": model, "candidate": version,
                   "candidate_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
                   "exit_code": result.returncode, "case": case_id,
@@ -234,23 +282,40 @@ CANONICAL SKILL
         failures.append(error)
         (area / "evidence/failure.txt").write_text(f"{type(error).__name__}: {error}\n")
     finally:
-        settled = not builder_started and host_stopped
-        if builder_started:
-            # The harness cancels leftovers, never signs off a Human request.
+        with driver.defer_interrupts():
+            settled = not builder_started and host_stopped
+            if builder_started:
+                # The harness cancels leftovers, never signs off a Human request.
+                runs_settled = detached_stopped = False
+                try:
+                    # A builder that may still be running can add Runs after
+                    # any listing; that snapshot cannot prove settlement.
+                    if host_stopped:
+                        detached.stop_mcp_submitters(mcp_command)
+                        settle_runs(candidate, area)
+                        runs_settled = True
+                except BaseException as error:
+                    failures.append(error)
+                finally:
+                    try:
+                        detached.finish()
+                        detached_stopped = True
+                    except BaseException as error:
+                        failures.append(error)
+                settled = host_stopped and runs_settled and detached_stopped
             try:
-                settle_runs(candidate, area)
-                settled = host_stopped
+                if settled:
+                    archive = archive_case(area, evidence_root, records)
+                    shutil.rmtree(area)
+                    print(f"{case_id}: evidence {archive.as_posix()}; working files removed", flush=True)
+                else:
+                    save_unconfirmed_diagnostics(area, evidence_root)
+                    print(f"{case_id}: settlement unconfirmed; working files retained at {area.as_posix()}", flush=True)
             except Exception as error:
                 failures.append(error)
-        try:
-            archive = archive_case(area, evidence_root, records)
-        except Exception as error:
-            failures.append(error)
-        else:
-            if settled:
-                shutil.rmtree(area)
-            print(f"{case_id}: evidence {archive.as_posix()}; working files {'removed' if settled else 'retained'}", flush=True)
     if failures:
+        if len(failures) == 1 and isinstance(failures[0], driver.Terminated):
+            raise failures[0]
         raise BaseExceptionGroup(f"Live fixture failed; evidence at {(evidence_root / case_id).as_posix()}", failures)
 
 
@@ -261,4 +326,8 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="ocx-claude-native--gpt-6.2-sol")
     parser.add_argument("--evidence-root", required=True, type=Path)
     args = parser.parse_args()
-    run(args.artifactize.resolve(strict=True), args.output, args.model, args.evidence_root)
+    try:
+        with driver.term_as_interrupt():
+            run(args.artifactize.resolve(strict=True), args.output, args.model, args.evidence_root)
+    except driver.Terminated as error:
+        raise SystemExit(error.exit_code) from None

@@ -4,10 +4,11 @@ import json
 import os
 from pathlib import Path
 import selectors
+import shlex
 import shutil
 import subprocess
 import sys
-import time
+from time import monotonic
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,10 +51,44 @@ def smoke(host, candidate, output, model):
     finally:
         # Retain inputs if a host group cannot be joined; evidence is never deleted.
         if stopped:
-            for name in ("repo", "config", "bin", "state"):
-                path = output / name
-                if path.exists():
-                    shutil.rmtree(path)
+            failures = []
+            with driver.defer_interrupts():
+                for name in ("repo", "config", "bin", "state"):
+                    path = output / name
+                    if path.exists():
+                        try:
+                            shutil.rmtree(path)
+                        except OSError as error:
+                            failures.append(error)
+                if failures:
+                    raise ExceptionGroup(f"Could not remove all smoke inputs at {output.as_posix()}", failures)
+
+
+# Bound each host request even when unsolicited output keeps the pipe readable.
+RPC_BOUND = 90
+
+
+def rpc_response(reader, stream, pending, messages, identifier, deadline):
+    while True:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Codex host inventory observation timed out")
+        if b"\n" not in pending:
+            if not reader.select(remaining):
+                raise TimeoutError("Codex host inventory observation timed out")
+            fragment = os.read(stream.fileno(), 8192)
+            if not fragment:
+                raise RuntimeError("Codex host closed before listing MCP tools")
+            pending.extend(fragment)
+            continue
+        line, _, rest = pending.partition(b"\n")
+        pending[:] = rest
+        message = json.loads(line)
+        messages.append(message)
+        if message.get("id") == identifier:
+            if "error" in message:
+                raise RuntimeError(message["error"])
+            return message["result"]
 
 
 def inventory(host, candidate, output, model):
@@ -82,10 +117,17 @@ def inventory(host, candidate, output, model):
         gateway = env.get("ANTHROPIC_BASE_URL", "")
         if gateway.startswith(("http://127.0.0.1:", "http://localhost:")):
             env.setdefault("ANTHROPIC_API_KEY", "local-proxy")
+        # Keep MCP discovery intact but deny invocation before the host calls a
+        # tool. The prompt alone is not the read-only boundary.
+        deny = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": "This smoke probe only inventories tools."}}
+        command = shlex.join([sys.executable, "-I", "-c", f"print({json.dumps(deny)!r})"])
+        settings = {"hooks": {"PreToolUse": [{"matcher": "mcp__artifactize__.*",
+                                               "hooks": [{"type": "command", "command": command}]}]}}
         result = capture([host, "-p", "--model", model, "--verbose", "--output-format", "stream-json",
                                  "--no-session-persistence", "--setting-sources", "", "--tools", "",
-                                 "--strict-mcp-config", "--mcp-config", str(repo / ".mcp.json"), "--",
-                                 "Do not call tools or edit anything. List the names of all artifactize MCP tools you have."],
+                                 "--settings", json.dumps(settings), "--strict-mcp-config", "--mcp-config",
+                                 str(repo / ".mcp.json"), "--", "List the names of all artifactize MCP tools you have."],
                          repo, env, 180, output / "transcript.jsonl", output / "stderr.txt")
         initial = next(json.loads(line) for line in result.stdout.splitlines()
                        if json.loads(line).get("subtype") == "init")
@@ -93,51 +135,43 @@ def inventory(host, candidate, output, model):
     else:
         # App-server is the Codex host's real MCP runtime. Listing its inventory
         # needs no inference or authentication, so CI can run this when installed.
-        with (output / "stderr.txt").open("w") as errors:
-            process = driver.spawn([host, "app-server", "--stdio"], cwd=repo, env=env,
-                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True)
-            messages = []
-            try:
+        messages = []
+
+        def write_transcript():
+            (output / "transcript.jsonl").write_text(
+                "".join(json.dumps(message) + "\n" for message in messages))
+
+        try:
+            with (output / "stderr.txt").open("w") as errors, driver.owned_child(
+                [host, "app-server", "--stdio"], cwd=repo, env=env,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors, text=True,
+            ) as process:
                 # Read bounded pipe fragments, not an uncancellable readline
                 # thread which can hang executor shutdown after a host timeout.
                 with selectors.DefaultSelector() as reader:
                     reader.register(process.stdout, selectors.EVENT_READ)
                     pending = bytearray()
                     def rpc(identifier, method, params):
+                        deadline = monotonic() + RPC_BOUND
                         process.stdin.write(json.dumps({"id": identifier, "method": method, "params": params}) + "\n")
                         process.stdin.flush()
-                        deadline = time.monotonic() + 90  # Existing host-RPC observation bound.
-                        while True:
-                            while b"\n" not in pending:
-                                if not reader.select(max(0, deadline - time.monotonic())):
-                                    raise TimeoutError("Codex host inventory observation timed out")
-                                fragment = os.read(process.stdout.fileno(), 8192)
-                                if not fragment:
-                                    raise RuntimeError("Codex host closed before listing MCP tools")
-                                pending.extend(fragment)
-                            line, _, rest = pending.partition(b"\n")
-                            pending[:] = rest
-                            message = json.loads(line)
-                            messages.append(message)
-                            if message.get("id") == identifier:
-                                if "error" in message:
-                                    raise RuntimeError(message["error"])
-                                return message["result"]
+                        return rpc_response(reader, process.stdout, pending, messages, identifier, deadline)
                     rpc(1, "initialize", {"clientInfo": {"name": "artifactize-smoke", "version": "1"}})
                     process.stdin.write(json.dumps({"method": "initialized"}) + "\n")
                     process.stdin.flush()
                     inventory = rpc(2, "mcpServerStatus/list", {"serverName": "artifactize", "detail": "toolsAndAuthOnly"})
                     names = set(next(item for item in inventory["data"] if item["name"] == "artifactize")["tools"])
-            finally:
-                # A broken input pipe must not skip process-group teardown.
-                try:
-                    process.stdin.close()
-                finally:
-                    try:
-                        driver.close_child(process)
-                    finally:
-                        (output / "transcript.jsonl").write_text(
-                            "".join(json.dumps(message) + "\n" for message in messages))
+        except driver.ProcessExitError as unsettled:
+            try:
+                write_transcript()
+            except BaseException as diagnostic_error:
+                raise unsettled from diagnostic_error
+            raise
+        except BaseException:
+            write_transcript()
+            raise
+        else:
+            write_transcript()
     if names != TOOLS:
         raise RuntimeError(f"{host}: expected 20 tools, got {sorted(names)}")
     (output / "result.json").write_text(json.dumps({"host": host, "tools": sorted(names), "passed": True}, indent=2))
@@ -151,4 +185,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--model", default="ocx-claude-native--gpt-6.2-sol")
     args = parser.parse_args()
-    smoke(args.host, args.artifactize.resolve(strict=True), args.output, args.model)
+    try:
+        with driver.term_as_interrupt():
+            smoke(args.host, args.artifactize.resolve(strict=True), args.output, args.model)
+    except driver.Terminated as error:
+        raise SystemExit(error.exit_code) from None
