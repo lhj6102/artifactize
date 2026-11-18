@@ -240,12 +240,7 @@ impl Monitor {
                         Action::None
                     }
                     Button::SessionDetails => {
-                        pane.show_details = !pane.show_details;
-                        pane.focus = if pane.show_details {
-                            DetailArea::Summary
-                        } else {
-                            DetailArea::Evidence
-                        };
+                        pane.toggle_session_view();
                         Action::None
                     }
                     Button::SessionTop | Button::SessionBottom => {

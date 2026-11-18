@@ -18,12 +18,15 @@ const DEFAULT_RUN_WAIT: Duration = Duration::from_secs(600);
 
 pub(super) async fn list(
     context: Context,
-    all: bool,
+    scope: ListScope,
     limit: u32,
     offset: u32,
 ) -> Result<u8, String> {
     let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
-    let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
+    let repo = match scope {
+        ListScope::Repo => Some(context.repo.unwrap_or_else(|| PathBuf::from("."))),
+        ListScope::All => None,
+    };
     let runs = artifactize_core::store::read_runs(&state, repo.as_deref(), limit, offset).await?;
     if context.json {
         print_json(&runs)?;
@@ -235,18 +238,70 @@ fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
     Ok(std::time::Duration::from_millis(millis))
 }
 
+#[derive(Debug)]
+pub enum ListScope {
+    Repo,
+    All,
+}
+
+#[derive(Args)]
+#[group(skip)]
+struct ListScopeFlags {
+    /// Explicitly restrict results to --repo (the default).
+    #[arg(long, conflicts_with = "all")]
+    repo_only: bool,
+    /// List Runs from every repository in the shared state.
+    #[arg(long)]
+    all: bool,
+}
+
+impl ListScopeFlags {
+    fn selected(self) -> Result<Option<ListScope>, Error> {
+        match (self.repo_only, self.all) {
+            (false, false) => Ok(None),
+            (true, false) => Ok(Some(ListScope::Repo)),
+            (false, true) => Ok(Some(ListScope::All)),
+            (true, true) => Err(Error::raw(
+                ErrorKind::ArgumentConflict,
+                "Use --repo-only or --all, not both.",
+            )),
+        }
+    }
+}
+
+impl FromArgMatches for ListScope {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, Error> {
+        Ok(ListScopeFlags::from_arg_matches(matches)?
+            .selected()?
+            .unwrap_or(Self::Repo))
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), Error> {
+        if let Some(scope) = ListScopeFlags::from_arg_matches(matches)?.selected()? {
+            *self = scope;
+        }
+        Ok(())
+    }
+}
+
+impl Args for ListScope {
+    fn augment_args(command: Command) -> Command {
+        ListScopeFlags::augment_args(command)
+    }
+
+    fn augment_args_for_update(command: Command) -> Command {
+        ListScopeFlags::augment_args_for_update(command)
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
     /// Request cancellation; committed results are kept and cleanup settles asynchronously.
     Cancel { run_id: RunId },
     /// List saved Runs, newest first; defaults to the current repository.
     List {
-        /// Explicitly restrict results to --repo (the default).
-        #[arg(long, conflicts_with = "all")]
-        repo_only: bool,
-        /// List Runs from every repository in the shared state.
-        #[arg(long)]
-        all: bool,
+        #[command(flatten)]
+        scope: ListScope,
         /// Maximum number of Runs to return.
         #[arg(long, value_name = "N", default_value_t = DEFAULT_RUN_LIST_LIMIT)]
         limit: u32,

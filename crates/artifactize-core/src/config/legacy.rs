@@ -3,6 +3,8 @@
 use super::{site::declaration_of, validation::path, *};
 use std::io::Read;
 
+type DeclarationTable<'a> = toml::Spanned<toml::de::DeTable<'a>>;
+
 struct DiscoveryEntry {
     path: PathBuf,
     name: std::ffi::OsString,
@@ -37,8 +39,18 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
         relations: Vec::new(),
     };
     let mut schemas = super::schemas::Schemas::default();
-    walk(&root, &ignored, targets, &mut |found: Found<'_>| {
-        let declaration = declaration(&found, &mut schemas)?;
+    walk(&root, &ignored, targets, |found, table| {
+        let declaration = super::definition::parse_table(
+            &super::definition::Input {
+                kind: found.kind,
+                path: &found.path,
+                file: found.file,
+                source: found.source,
+                name: None,
+            },
+            &mut schemas,
+            table,
+        )?;
         declare(&mut config, found, declaration)
     })?;
     if config.artifacts.is_empty() {
@@ -70,26 +82,26 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
 }
 
 /// A declaration a walk found.
-pub(super) struct Found<'a> {
-    pub(super) kind: ArtifactKind,
+struct Found<'a> {
+    kind: ArtifactKind,
     /// The Artifact's logical path.
-    pub(super) path: PathBuf,
-    pub(super) file: &'a Path,
-    pub(super) source: String,
+    path: PathBuf,
+    file: &'a Path,
+    source: &'a str,
     /// The folder Artifact it is nested in, and its path there.
-    pub(super) folder: Option<(&'a ArtifactName, ChildPrefix)>,
+    folder: Option<(&'a ArtifactName, ChildPrefix)>,
     /// The nearest folder Artifact around it, which it is a part of.
-    pub(super) owner: Option<&'a ArtifactName>,
+    owner: Option<&'a ArtifactName>,
 }
 
 /// Walk `reach` below `root` in deterministic path order, handing each declaration to
 /// `visit`, which names the Artifact it declares.
-pub(super) fn walk<E: From<ConfigError>>(
+fn walk(
     root: &Path,
     ignored: &ignore::gitignore::Gitignore,
     targets: FileTargets,
-    visit: &mut dyn FnMut(Found<'_>) -> Result<ArtifactName, E>,
-) -> Result<(), E> {
+    mut visit: impl FnMut(Found<'_>, DeclarationTable<'_>) -> Result<ArtifactName, ConfigError>,
+) -> Result<(), ConfigError> {
     // Each folder with the folder Artifact it is nested in, and that Artifact's path.
     let mut pending = vec![(PathBuf::new(), None::<(ArtifactName, PathBuf)>)];
     while let Some((relative, mut owner)) = pending.pop() {
@@ -128,8 +140,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 return Err(ConfigError::new(
                     file,
                     "artifactize.json is no longer read; declare this Artifact in index.artf (TOML).",
-                )
-                .into());
+                ));
             }
         }
         if let Some(marker) = entries
@@ -139,7 +150,7 @@ pub(super) fn walk<E: From<ConfigError>>(
             let file = marker.path();
             let kind = marker.kind;
             if kind != crate::platform::FileKind::File {
-                return Err(ConfigError::new(file, "index.artf must be a regular file.").into());
+                return Err(ConfigError::new(file, "index.artf must be a regular file."));
             }
             let source =
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
@@ -156,14 +167,17 @@ pub(super) fn walk<E: From<ConfigError>>(
                 }
                 None => None,
             };
-            let name = visit(Found {
-                kind: ArtifactKind::Folder,
-                path: relative.clone(),
-                file: &file,
-                source,
-                owner: folder.as_ref().map(|(folder, _)| *folder),
-                folder,
-            })?;
+            let name = visit(
+                Found {
+                    kind: ArtifactKind::Folder,
+                    path: relative.clone(),
+                    file: &file,
+                    source: &source,
+                    owner: folder.as_ref().map(|(folder, _)| *folder),
+                    folder,
+                },
+                parse_source(&file, &source)?,
+            )?;
             owner = Some((name, relative.clone()));
         }
         for marker in &entries {
@@ -176,8 +190,7 @@ pub(super) fn walk<E: From<ConfigError>>(
                 return Err(ConfigError::new(
                     marker.path(),
                     "File Artifact target must not be a declaration (.artf).",
-                )
-                .into());
+                ));
             }
         }
         for marker in &entries {
@@ -189,9 +202,10 @@ pub(super) fn walk<E: From<ConfigError>>(
                 continue;
             }
             let Some(filename) = filename.to_str() else {
-                return Err(
-                    ConfigError::new(marker.path(), "Artifact paths must be UTF-8.").into(),
-                );
+                return Err(ConfigError::new(
+                    marker.path(),
+                    "Artifact paths must be UTF-8.",
+                ));
             };
             let Some(target) = filename.strip_suffix(".artf") else {
                 continue;
@@ -204,40 +218,44 @@ pub(super) fn walk<E: From<ConfigError>>(
                 return Err(ConfigError::new(
                     &file,
                     "File Artifact declaration must be a regular file.",
-                )
-                .into());
+                ));
             }
             if target.is_empty() {
                 if !relative.as_os_str().is_empty() {
                     return Err(ConfigError::new(
                         &file,
                         "The graph Artifact .artf belongs only at the repository root.",
-                    )
-                    .into());
+                    ));
                 }
                 let source =
                     read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
-                visit(Found {
-                    kind: ArtifactKind::Graph,
-                    path: PathBuf::new(),
-                    file: &file,
-                    source,
-                    folder: None,
-                    owner: None,
-                })?;
+                visit(
+                    Found {
+                        kind: ArtifactKind::Graph,
+                        path: PathBuf::new(),
+                        file: &file,
+                        source: &source,
+                        folder: None,
+                        owner: None,
+                    },
+                    parse_source(&file, &source)?,
+                )?;
                 continue;
             }
             if target.ends_with(".artf") {
                 return Err(ConfigError::new(
                     &file,
                     "File Artifact target must not be a declaration (.artf).",
-                )
-                .into());
+                ));
             }
             path(target).map_err(|error| ConfigError::new(&file, error))?;
             let source =
                 read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
-            if super::definition::selects(&source) {
+            let table = parse_source(&file, &source);
+            if table
+                .as_ref()
+                .is_ok_and(|table| table.get_ref().contains_key("select"))
+            {
                 // Its label names no file: the declaration selects paths of its folder.
                 match crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target)) {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -248,26 +266,27 @@ pub(super) fn walk<E: From<ConfigError>>(
                             format!(
                                 "select declares an aspect, but {target}.artf declares the file {target}; give the aspect a label that names no file."
                             ),
-                        )
-                        .into());
+                        ));
                     }
                 }
-                visit(Found {
-                    kind: ArtifactKind::Aspect,
-                    path: logical_join(&relative, std::ffi::OsStr::new(target)),
-                    file: &file,
-                    source,
-                    folder: None,
-                    owner: owner.as_ref().map(|(owner, _)| owner),
-                })?;
+                visit(
+                    Found {
+                        kind: ArtifactKind::Aspect,
+                        path: logical_join(&relative, std::ffi::OsStr::new(target)),
+                        file: &file,
+                        source: &source,
+                        folder: None,
+                        owner: owner.as_ref().map(|(owner, _)| owner),
+                    },
+                    table?,
+                )?;
                 continue;
             }
             if target.contains(':') {
                 return Err(ConfigError::new(
                     &file,
                     "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
-                )
-                .into());
+                ));
             }
             if matches!(targets, FileTargets::Required) {
                 let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target))
@@ -287,18 +306,20 @@ pub(super) fn walk<E: From<ConfigError>>(
                         format!(
                             "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
                         ),
-                    )
-                    .into());
+                    ));
                 }
             }
-            visit(Found {
-                kind: ArtifactKind::File,
-                path: logical_join(&relative, std::ffi::OsStr::new(target)),
-                file: &file,
-                source,
-                folder: None,
-                owner: owner.as_ref().map(|(owner, _)| owner),
-            })?;
+            visit(
+                Found {
+                    kind: ArtifactKind::File,
+                    path: logical_join(&relative, std::ffi::OsStr::new(target)),
+                    file: &file,
+                    source: &source,
+                    folder: None,
+                    owner: owner.as_ref().map(|(owner, _)| owner),
+                },
+                table?,
+            )?;
         }
         for entry in entries.into_iter().rev() {
             let kind = entry.kind;
@@ -314,25 +335,13 @@ pub(super) fn walk<E: From<ConfigError>>(
     Ok(())
 }
 
-fn declaration(
-    found: &Found<'_>,
-    schemas: &mut super::schemas::Schemas,
-) -> Result<ArtifactDeclaration, ConfigError> {
-    super::definition::parse(
-        &super::definition::Input {
-            kind: found.kind,
-            path: &found.path,
-            file: found.file,
-            source: &found.source,
-            name: None,
-        },
-        schemas,
-    )
+fn parse_source<'a>(file: &Path, source: &'a str) -> Result<DeclarationTable<'a>, ConfigError> {
+    toml::de::DeTable::parse(source).map_err(|error| ConfigError::new(file, error))
 }
 
 /// Add a found declaration to `config`, nested in the folder Artifact around it and a part
 /// of it.
-pub(super) fn declare(
+fn declare(
     config: &mut RepoConfig,
     found: Found<'_>,
     declaration: ArtifactDeclaration,

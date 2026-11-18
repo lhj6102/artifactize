@@ -200,21 +200,17 @@ impl Artifact {
     }
 
     pub fn file_name(&self) -> Option<&str> {
-        (self.kind() == ArtifactKind::File)
-            .then(|| {
-                self.path
-                    .local()
-                    .and_then(Path::file_name)
-                    .and_then(|name| name.to_str())
-            })
-            .flatten()
+        match &self.path {
+            Target::File(path) => crate::files::file_name(path),
+            _ => None,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopedPath {
     pub artifact_id: ArtifactId,
-    pub path: String,
+    pub path: InputPath,
 }
 
 #[derive(Debug)]
@@ -238,7 +234,7 @@ impl Scope {
         let location = self.locate(artifact_id, InputPath::parse(path)?)?;
         Ok(ScopedPath {
             artifact_id: location.artifact_id.clone(),
-            path: location.path.as_str().to_owned(),
+            path: location.path.owned(),
         })
     }
 
@@ -298,11 +294,11 @@ pub(crate) struct Location<'a, 'p> {
 }
 
 /// A validated tool path, distinct from declaration selections. Empty denotes the root.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct InputPath<T>(T);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InputPath<T = String>(T);
 
 impl<T: AsRef<str>> InputPath<T> {
-    pub fn parse(path: T) -> Result<Self, ScopeError> {
+    pub(crate) fn parse(path: T) -> Result<Self, ScopeError> {
         logical_path(path.as_ref())?;
         Ok(Self(path))
     }
@@ -311,12 +307,12 @@ impl<T: AsRef<str>> InputPath<T> {
         self.0.as_ref()
     }
 
-    pub fn borrowed(&self) -> InputPath<&str> {
+    pub(crate) fn borrowed(&self) -> InputPath<&str> {
         InputPath(self.as_str())
     }
 
     /// A native entry has already been checked as a single logical name by the platform.
-    pub fn child(&self, name: &str) -> Option<InputPath<String>> {
+    pub(crate) fn child(&self, name: &str) -> Option<InputPath<String>> {
         let path = if self.as_str().is_empty() {
             name.to_owned()
         } else {
@@ -326,11 +322,35 @@ impl<T: AsRef<str>> InputPath<T> {
     }
 }
 
+impl std::str::FromStr for InputPath<String> {
+    type Err = ScopeError;
+
+    fn from_str(path: &str) -> Result<Self, Self::Err> {
+        InputPath::parse(path).map(InputPath::owned)
+    }
+}
+
+impl<T: AsRef<str>> fmt::Display for InputPath<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl<T: AsRef<str>> AsRef<Path> for InputPath<T> {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.as_str())
+    }
+}
+
 impl<'a> InputPath<&'a str> {
+    pub(crate) fn root() -> Self {
+        Self("")
+    }
+
     fn after(self, prefix: &str) -> Option<Self> {
         let suffix = self.0.strip_prefix(prefix)?;
         if suffix.is_empty() {
-            Some(Self::default())
+            Some(Self::root())
         } else {
             suffix.strip_prefix('/').map(Self)
         }
@@ -340,7 +360,7 @@ impl<'a> InputPath<&'a str> {
         self.0.split('/').filter(|name| !name.is_empty())
     }
 
-    pub fn owned(self) -> InputPath<String> {
+    pub(crate) fn owned(self) -> InputPath<String> {
         InputPath(self.0.to_owned())
     }
 }

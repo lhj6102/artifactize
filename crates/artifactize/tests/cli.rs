@@ -252,8 +252,12 @@ async fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         format!("Waiting timed out; Run {run} is still RUNNING."),
     );
     assert_eq!(
-        fixture.json(&["run", "show", run], 0)["status"],
-        "WAITING_HUMAN"
+        artifactize_core::store::read_run(&fixture.state, run)
+            .await
+            .unwrap()
+            .run
+            .status(),
+        artifactize_core::types::RunStatus::WaitingHuman
     );
     fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 0);
     assert_eq!(

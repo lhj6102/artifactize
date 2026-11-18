@@ -435,16 +435,8 @@ where
     F: FnOnce(ChildIdentity) -> R,
     R: Future<Output = io::Result<()>>,
 {
-    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
-        environment_value(&command.env, name).map(ToOwned::to_owned)
-    })
-    .map_err(Error::Spawn)?;
-    let mut child = tokio::process::Command::new(&program);
+    let mut child = child_command(command)?;
     child
-        .args(&command.args)
-        .current_dir(&command.cwd)
-        .env_clear()
-        .envs(&command.env)
         .stdin(if input { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -493,11 +485,19 @@ where
     Ok(child)
 }
 
-fn environment_value<'a>(
-    environment: &'a BTreeMap<OsString, OsString>,
-    name: &str,
-) -> Option<&'a std::ffi::OsStr> {
-    crate::platform::environment::lookup(environment, name)
+fn child_command(command: &Command) -> Result<tokio::process::Command, Error> {
+    let environment = platform::environment::for_child(&command.env);
+    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
+        platform::environment::lookup(&environment, name).map(ToOwned::to_owned)
+    })
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(program);
+    child
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .env_clear()
+        .envs(environment.iter());
+    Ok(child)
 }
 
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
@@ -529,16 +529,8 @@ fn launch_detached(
 /// what it starts are stopped when the child drops, also when its owner dies where the
 /// system allows; [`Child::release`] lets what it started go on once it has ended.
 pub(crate) async fn spawn_handoff(command: &Command) -> Result<Child, Error> {
-    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
-        environment_value(&command.env, name).map(ToOwned::to_owned)
-    })
-    .map_err(Error::Spawn)?;
-    let mut child = tokio::process::Command::new(program);
+    let mut child = child_command(command)?;
     child
-        .args(&command.args)
-        .current_dir(&command.cwd)
-        .env_clear()
-        .envs(&command.env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

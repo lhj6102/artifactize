@@ -40,7 +40,7 @@ async function openById(browser: WebdriverIO.Browser, id: string) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journeys: J-WAITING J-LIVE; UX edge: E-MON-LIVE
+  // UX journeys: J-WAITING J-LIVE
   scenario<null>(
     "review-waiting-claim",
     "shows in a waiting review's row who claimed it, as another process claims and releases it",
@@ -61,7 +61,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-OPEN-ID J-WAITING; UX edges: E-REVIEW-OPEN-ID E-WAITING-CHANGE E-HUMAN-CLAIM
+  // UX journeys: J-OPEN-ID J-WAITING
   scenario<null>(
     "review-open-id",
     "opens a waiting review by its ID, actionable, and claims it, while another repository's review arrives in the stack",
@@ -97,7 +97,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-HUMAN-ESC; UX edges: E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL E-REVIEW-OPEN
+  // UX journey: J-HUMAN-ESC
   scenario<null>(
     "review-escape-form-detail",
     "leaves a field's form with Esc, then the review back to the Pane with the next Esc, and opens it again with Enter, keyboard only",
@@ -122,7 +122,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-QUIT; UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
+  // UX journey: J-QUIT
   scenario<null>(
     "review-quit-claim",
     "asks before quitting with the claim: Esc stays, u releases and quits",
@@ -139,6 +139,13 @@ export const scenarios: Scenario[] = [
       await prompted();
       const shown = await browser.execute((element) => (element as HTMLElement).innerText, dialog);
       assert.match(shown, new RegExp(signoff(fixture).id));
+      // Its two keys show as hints on its buttons: Esc on Stay, u on Release and quit.
+      const hints = await browser.execute((element) => [...(element as HTMLElement).querySelectorAll("button")]
+        .map((button) => {
+          const label = [...button.childNodes].filter((node) => node.nodeName !== "KBD").map((node) => node.textContent ?? "").join("");
+          return [label.trim(), button.querySelector("kbd")?.textContent?.trim() ?? ""];
+        }), dialog);
+      assert.deepEqual(hints, [["Stay", "Esc"], ["Release and quit", "u"]], `the Leave dialog's key hints: ${JSON.stringify(hints)}`);
       await browser.keys(["Escape"]);
       await dialog.waitForExist({ reverse: true, timeout: 10000 });
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "staying keeps the claim");
@@ -163,7 +170,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-HUMAN-GREEN J-WAITING; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT E-WAITING-CHANGE
+  // UX journeys: J-HUMAN-GREEN J-WAITING
   scenario<null>(
     "review-green-completed",
     "keeps the completed result open until the reviewer leaves it, the Waiting stack and the branch's chip following",
@@ -201,7 +208,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await mainTitle(browser), "Review · read-only", "completed, the review is read-only");
     },
   ),
-  // UX journey: J-HUMAN-LAYOUT; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN
+  // UX journey: J-HUMAN-LAYOUT
   scenario<null>(
     "review-layout",
     "lays a review in the Main area out as two panels where it is at least twice the Detail's width, the Tool log the view at the left and the rest a column at the right, and in one column where it is narrower",

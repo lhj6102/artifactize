@@ -8,6 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
+use std::time::Duration;
 use time::OffsetDateTime;
 
 use super::{Focus, Form, Input, Mode, Review, Row as FormRow, detail};
@@ -53,7 +54,10 @@ pub(super) fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
 }
 
 fn popup(frame: &mut Frame, area: Rect, title: String, text: Vec<Line<'static>>) {
-    let height = (text.len() as u16 + BORDER_CELLS).min(area.height);
+    let height = text
+        .len()
+        .saturating_add(usize::from(BORDER_CELLS))
+        .min(usize::from(area.height)) as u16;
     let [area] = Layout::horizontal([Constraint::Percentage(POPUP_WIDTH)])
         .flex(Flex::Center)
         .areas(area);
@@ -87,15 +91,11 @@ fn text_width(text: &str) -> u16 {
 }
 
 impl Review {
-    pub fn draw(&mut self, frame: &mut Frame) {
-        self.draw_at(frame, OffsetDateTime::now_utc());
-    }
-
-    /// Draw with all request ages measured at the same frame timestamp.
-    pub(super) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime) {
+    /// Draw with the request ages and current job duration sampled for this frame.
+    pub(super) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime, elapsed: Duration) {
         // With Detail focused the component shows the status itself.
         let status = if self.focus == Focus::List {
-            self.status_line()
+            self.status_line(elapsed)
         } else {
             Vec::new()
         };
@@ -122,7 +122,7 @@ impl Review {
                     hits.detail = area;
                     match self.shown.record_mut() {
                         Some(record) => record.draw(frame, area, true),
-                        None => hits.review = self.draw_detail(frame, area, true, now),
+                        None => hits.review = self.draw_detail(frame, area, true, now, elapsed),
                     }
                 }
                 _ => {
@@ -192,9 +192,8 @@ impl Review {
         frame.render_widget(right, end);
     }
 
-    pub(super) fn status_line(&self) -> Vec<Line<'static>> {
+    pub(super) fn status_line(&self, elapsed: Duration) -> Vec<Line<'static>> {
         if let Some(busy) = &self.busy {
-            let elapsed = busy.since.elapsed();
             let frame = spinner(elapsed);
             return vec![
                 Line::from(format!(
@@ -552,9 +551,11 @@ pub(super) fn draw_inline_form(
             "This verdict asks for nothing more; Ctrl-S or Submit records it.",
         ));
     }
-    for (index, row) in rows.into_iter().enumerate() {
-        text.push(row_line(form, row, index == form.selected));
-    }
+    text.extend(
+        rows.into_iter()
+            .enumerate()
+            .map(|(index, row)| row_line(form, row, index == form.selected)),
+    );
     if let Some(error) = &form.error {
         text.push(Line::default());
         text.extend(error.lines().map(|line| Line::from(line.to_owned()).red()));

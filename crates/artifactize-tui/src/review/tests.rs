@@ -271,7 +271,9 @@ pub(crate) fn sized(review: &mut Review, width: u16, height: u16) -> String {
 
 fn draw_buffer(review: &mut Review, width: u16, height: u16) -> ratatui::buffer::Buffer {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal.draw(|frame| review.draw_at(frame, now())).unwrap();
+    terminal
+        .draw(|frame| review.draw_at(frame, now(), std::time::Duration::ZERO))
+        .unwrap();
     terminal.backend().buffer().clone()
 }
 
@@ -632,7 +634,15 @@ fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         let mut hits = None;
         terminal
-            .draw(|frame| hits = Some(review.draw_detail(frame, frame.area(), true, now())))
+            .draw(|frame| {
+                hits = Some(review.draw_detail(
+                    frame,
+                    frame.area(),
+                    true,
+                    now(),
+                    std::time::Duration::ZERO,
+                ))
+            })
             .unwrap();
         hits.unwrap()
     };
@@ -1004,6 +1014,16 @@ fn a_running_job_only_scrolls_or_cancels() {
         claim: false,
     }));
     assert!(review.busy());
+    let mut terminal = Terminal::new(TestBackend::new(140, 40)).unwrap();
+    for (elapsed, status) in [
+        (Duration::ZERO, "⠋ Running notes_release… 0s"),
+        (Duration::from_millis(1_100), "⠙ Running notes_release… 1s"),
+    ] {
+        terminal
+            .draw(|frame| review.draw_at(frame, now(), elapsed))
+            .unwrap();
+        crate::test_frame::point(terminal.backend().buffer(), status);
+    }
     let text = screen(&mut review);
     assert!(
         text.contains("Running notes_release…") && text.contains("Esc or Ctrl-C cancel"),
@@ -1206,6 +1226,27 @@ fn a_refresh_never_drops_the_quit_prompt() {
             ids: vec![ID.parse().unwrap(), "run-2-1".parse().unwrap()],
             quit: true
         })
+    );
+}
+
+#[test]
+fn quit_prompt_clips_a_claim_list_larger_than_the_terminal_can_address() {
+    let mut review = opened(Some("alice"), demo());
+    // The heading, blank line and keys make the content exactly u16::MAX rows before borders.
+    const CLAIM_COUNT: u16 = u16::MAX - 3;
+    review.taken = (0..CLAIM_COUNT)
+        .map(|index| format!("run-{index}-claim").parse().unwrap())
+        .collect();
+    assert_eq!(press(&mut review, KeyCode::Char('q')), Action::None);
+    let text = sized(&mut review, 120, 30);
+    assert!(
+        text.contains("Quit")
+            && text.contains(&format!("This session claimed {CLAIM_COUNT} request(s)")),
+        "{text}"
+    );
+    assert!(
+        text.contains("run-1-claim") && !text.contains(&format!("run-{}-claim", CLAIM_COUNT - 1)),
+        "{text}"
     );
 }
 

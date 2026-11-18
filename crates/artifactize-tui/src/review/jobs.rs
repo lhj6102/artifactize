@@ -3,7 +3,10 @@ use super::{
     Action, CLAIM_FIRST, Focus, Job, Mode, NOT_CLAIMED, Outcome, Review, Shown, Submission, log,
 };
 use crate::{config::ToolName, store::HumanClaim, types::RequestId};
-use std::{future::Future, time::Instant};
+use std::{
+    future::Future,
+    time::{Duration, Instant},
+};
 use tokio_util::sync::CancellationToken;
 
 pub(super) struct Busy {
@@ -74,6 +77,13 @@ impl Review {
                 Action::None
             }
         }
+    }
+
+    /// Time since this job started, using the monotonic time sampled for this frame.
+    pub(crate) fn busy_elapsed_at(&self, now: Instant) -> Duration {
+        self.busy.as_ref().map_or(Duration::ZERO, |busy| {
+            now.saturating_duration_since(busy.since)
+        })
     }
 
     /// Mark the screen busy and return the job's future; feed its outcome to `finish`.

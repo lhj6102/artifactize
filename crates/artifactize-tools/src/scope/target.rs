@@ -101,7 +101,7 @@ impl Target {
     pub fn folder(&self) -> &Path {
         match self {
             Self::Folder(path) | Self::Graph(path) | Self::Aspect { path, .. } => path,
-            Self::File(path) => path.parent().unwrap_or(Path::new("")),
+            Self::File(path) => crate::files::parent(path).unwrap_or(Path::new("")),
             Self::Live(_) => Path::new(""),
         }
     }

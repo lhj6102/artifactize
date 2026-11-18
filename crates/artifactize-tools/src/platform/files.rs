@@ -25,8 +25,6 @@ pub use windows::{
     open_directory, open_entry, open_no_follow, open_nonblocking, read_dir, verified_path,
 };
 
-/// The filesystem root of an absolute path (`/`, or a Windows volume or share) and the names
-/// below it, in order. `None` when a component is `.` or `..`.
 /// Whether a native path is absolute on this system.
 pub fn is_absolute(path: &std::path::Path) -> bool {
     path.is_absolute()
@@ -43,6 +41,16 @@ pub fn logical_below(root: &std::path::Path, path: &str) -> Option<String> {
     }
 }
 
+pub(crate) fn parent(path: &Path) -> Option<&Path> {
+    path.parent()
+}
+
+pub(crate) fn file_name(path: &Path) -> Option<&str> {
+    path.file_name()?.to_str()
+}
+
+/// The filesystem root of an absolute path (`/`, or a Windows volume or share) and the names
+/// below it, in order. `None` when a component is `.` or `..`.
 pub fn split_root(path: &std::path::Path) -> Option<(&std::path::Path, Vec<&std::ffi::OsStr>)> {
     use std::path::Component;
     let root = path.ancestors().last()?;
@@ -252,8 +260,7 @@ mod tests {
     #[test]
     fn literal_backslash_in_a_file_name_is_not_a_separator() {
         let root = crate::test_os::tempdir();
-        let path = root.path().join(r"input\name");
-        std::fs::write(&path, "data").unwrap();
+        let path = crate::test_os::file_with_backslash(root.path());
         assert_eq!(
             path_text(std::path::Path::new(path.file_name().unwrap())),
             r"input\name"
@@ -289,9 +296,7 @@ mod tests {
     fn a_pin_with_a_win32_alias_is_not_returned_as_an_ordinary_path() {
         use crate::scope::{open_scoped, scoped_path};
         let root = crate::test_os::tempdir();
-        let root = std::fs::canonicalize(root.path()).unwrap();
-        std::fs::write(root.join("literal"), "ordinary").unwrap();
-        std::fs::write(root.join("literal."), "verbatim").unwrap();
+        let root = crate::test_os::trailing_dot_alias(root.path());
         assert!(open_scoped(&root, "literal.").is_ok());
         assert!(
             scoped_path(&root, std::path::Path::new("literal."))

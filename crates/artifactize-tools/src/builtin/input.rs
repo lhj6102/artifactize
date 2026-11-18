@@ -159,7 +159,7 @@ fn pattern_size(pattern: &str) -> Result<(), String> {
 pub struct LogicalPath(Option<InputPath<String>>);
 impl Default for LogicalPath {
     fn default() -> Self {
-        Self(Some(InputPath::default()))
+        Self(Some(InputPath::root().owned()))
     }
 }
 impl LogicalPath {
@@ -189,7 +189,7 @@ impl LogicalPath {
                 .map_err(|error| error.to_string())?
                 .selective()
         {
-            return Ok(InputPath::default());
+            return Ok(InputPath::root());
         }
         Err("Artifact path must be a safe relative logical path.".into())
     }

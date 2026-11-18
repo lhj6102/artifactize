@@ -8,7 +8,7 @@ import { primaryModifier } from "../platform.ts";
 import { entriesFocused, expectMainReview, mainTitle, showRun } from "../pane.ts";
 
 export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
-  // UX journey: J-OPEN-ID; UX edges: E-REVIEW-OPEN-ID E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL
+  // UX journey: J-OPEN-ID
   scenario<{ ids: string[]; canonical: string; run: string }>(
     `canonical-review-${followerFirst ? "follower" : "original"}-first`,
     `canonical Review (${followerFirst ? "follower" : "original"} first): keeps the same draft through original/follower/original request openings`,

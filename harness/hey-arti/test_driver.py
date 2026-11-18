@@ -1,7 +1,6 @@
 """Deterministic harness seams. Fake declarations are tests, not skill-quality evidence."""
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 import errno
 import importlib.util
@@ -17,7 +16,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import traceback
 import time
 import unittest
@@ -293,14 +291,15 @@ except module.driver.Terminated as error:
     raise SystemExit(error.exit_code)
 ''')
         original_arguments = list(sys.argv)
-        start_child = subprocess.Popen.__init__
+        start_child = driver.spawn
         children = []
-        def capture_child(process, command, **options):
-            start_child(process, command, **options)
+        def capture_child(command, **options):
+            process = start_child(command, **options)
             children.append(process)
             self.register_child(process)
+            return process
         with mock.patch.object(driver, "ROOT", suite_root), \
-                mock.patch.object(subprocess.Popen, "__init__", capture_child), \
+                mock.patch.object(driver, "spawn", capture_child), \
                 mock.patch.object(tempfile, "tempdir", str(self.root)):
             self.assertEqual(driver.run_tests(None), 128 + signal.SIGTERM)
         self.assertFalse((suite_root / "continued").exists())
@@ -315,7 +314,7 @@ except module.driver.Terminated as error:
     def test_command_refuses_to_launch_without_pidfd_support(self):
         command = [sys.executable, "-I", "-c", "pass"]
         for module, operation in ((os, "pidfd_open"), (signal, "pidfd_send_signal"),
-                                  (driver.selectors.DefaultSelector, "register")):
+                                  (driver.process_owner.selectors.DefaultSelector, "register")):
             with self.subTest(operation=operation), \
                     mock.patch.object(module, operation, create=True, side_effect=OSError(errno.ENOSYS, operation)), \
                     mock.patch.object(subprocess.Popen, "__init__", side_effect=AssertionError("launched a child")) as launch:
@@ -394,6 +393,47 @@ child.wait()
                 info = Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
                 self.assertIn(["Pid:", "-1"], [line.split() for line in info], "the exited child was not reaped")
 
+    def test_reaps_a_detached_descendant_that_exited_before_teardown(self):
+        program = """import os, sys
+if os.fork() == 0:
+    os.setsid()
+    print(os.getpid(), flush=True)
+    sys.stdin.read()
+os._exit(0)
+"""
+        for defer_detached in (False, True):
+            with self.subTest(deferred=defer_detached), ExitStack() as observation:
+                detached = driver.Descendants() if defer_detached else None
+                if detached is not None:
+                    self.fixture_cleanups.append(detached.finish)
+                process = self.spawn([sys.executable, "-I", "-c", program], stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, detached=detached)
+                self.assertTrue(select.select([process.stdout], [], [], READY_BOUND)[0])
+                pid = int(process.stdout.readline())
+
+                def reap_if_adopted_by_test(pid=pid):
+                    # Also own cleanup if a regression has the test process,
+                    # rather than the command's reaper, adopt the exited child.
+                    try:
+                        os.waitpid(pid, os.WNOHANG)
+                    except ChildProcessError:
+                        pass
+
+                self.fixture_cleanups.append(reap_if_adopted_by_test)
+                descriptor = owned_descriptor(lambda: os.pidfd_open(pid), observation.callback)
+                process.stdin.close()
+                self.assert_exit_ready(descriptor)
+
+                def proc_pid():
+                    info = Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
+                    return next(int(line.split()[1]) for line in info if line.startswith("Pid:"))
+
+                self.assertEqual(proc_pid(), pid, "the fixture must present an exited, unreaped process")
+                driver.child_cleanup.close(process)
+                if detached is not None:
+                    detached.finish()
+                self.assertEqual(proc_pid(), -1, "the early-exiting detached child must be reaped")
+
     def assert_exit_ready(self, descriptor):
         self.assertTrue(select.select([descriptor], [], [], READY_BOUND)[0],
                         "fixture-owned process did not reach exit readiness")
@@ -430,17 +470,19 @@ ctypes.CDLL(None).pthread_exit(None)
             descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
             self.assert_exit_ready(descriptor)
             self.command([sys.executable, "-I", "-c", "pass"], timeout=READY_BOUND, check=True)
-            self.assertEqual(process.wait(), 23)
+            status = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            self.assertIsNotNone(status)
+            self.assertEqual((status.si_code, status.si_status), (os.CLD_EXITED, 23))
 
     def test_child_cleanup_reports_interrupted_join_and_never_resignals_a_reaped_group(self):
         process = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
-        with mock.patch.object(driver.os, "killpg", side_effect=KeyboardInterrupt):
+        with mock.patch.object(driver.process_owner, "send", side_effect=KeyboardInterrupt):
             with self.assertRaises(driver.ProcessExitError):
                 driver.close_child(process)
         self.assertIsNone(process.returncode)
         driver.close_child(process)
         self.assertIsNotNone(process.returncode)
-        with mock.patch.object(driver.os, "killpg", side_effect=AssertionError("group no longer owned")):
+        with mock.patch.object(driver.process_owner, "send", side_effect=AssertionError("group no longer owned")):
             driver.close_child(process)
 
     def test_managed_child_with_unconfirmed_exit_stays_owned_until_retry(self):
@@ -475,7 +517,7 @@ ctypes.CDLL(None).pthread_exit(None)
                 self.children.append(child)  # Independently release it if the tested retry regresses.
                 marker = fixture.root / "owned.txt"
                 marker.write_text("fixture input")
-                with mock.patch.object(driver.os, "killpg", side_effect=PermissionError("controlled stop failure")):
+                with mock.patch.object(driver.process_owner, "send", side_effect=PermissionError("controlled stop failure")):
                     with self.assertRaises(ExceptionGroup):
                         fixture.release_files()
                 self.assertTrue(marker.exists())
@@ -670,7 +712,6 @@ elif operation == "stop":
                 for owner in owners.glob("*.json"):
                     with ExitStack() as observation:
                         identity = json.loads(owner.read_text())
-                        detached.observed.add((identity["pid"], identity["start_time"]))
                         descriptor = owned_descriptor(lambda: driver.process_descriptor(identity), observation.callback)
                         if descriptor is not None:
                             try:
@@ -703,7 +744,6 @@ elif operation == "stop":
 
             def live_owner(receipt):
                 owner = json.loads(receipt.read_text())
-                detached.observed.add((owner["pid"], owner["start_time"]))
                 descriptor = owned_descriptor(lambda: driver.process_descriptor(owner), observation.callback)
                 if descriptor is not None and not select.select([descriptor], [], [], 0)[0]:
                     return descriptor
@@ -871,20 +911,14 @@ class HostLifecycleTests(OwnedTestCase):
                 control = {"worker": {"state": "admitted", "owner": owner}}
                 if pending == "supervisor":
                     control = {"worker": {"state": "admitted", "owner": self.launcher}, "supervisor": owner}
-                terminal_view = threading.Event()
-                exit_wait = threading.Event()
                 cli = self.host_cli(control=control, saved_status=status)
-                wait_for_exit = driver.wait_for_exit
-
-                def observe_owner(identity):
-                    if identity == owner:
-                        exit_wait.set()
-                    wait_for_exit(identity)
 
                 def respond(command, **options):
                     result = cli(command, **options)
                     if command[0] == str(self.candidate) and "show" in command and "--wait" in command:
-                        terminal_view.set()
+                        self.assertFalse(select.select([descriptor], [], [], 0)[0],
+                                         "the worker must still be alive when the CLI reports terminal")
+                        process.stdin.close()
                     return result
 
                 def require_worker_exit(action):
@@ -901,20 +935,12 @@ class HostLifecycleTests(OwnedTestCase):
                         require_worker_exit("deletion")
                     return remove_tree(path, *args, **kwargs)
 
-                # Synchronize at the lifecycle's saved-owner observation seam,
-                # not the implementation's kernel calls. Archive and deletion
-                # still check actual process exit at the filesystem boundary.
+                # Only the CLI response and the filesystem boundaries drive
+                # the ordering check; observe exit with an independent pidfd.
                 with mock.patch.object(driver, "run_command", side_effect=respond), \
-                        mock.patch.object(driver, "wait_for_exit", side_effect=observe_owner), \
                         mock.patch.object(shutil, "copytree", side_effect=copy), \
-                        mock.patch.object(shutil, "rmtree", side_effect=remove), ThreadPoolExecutor() as executor:
-                    completion = executor.submit(live.run, self.candidate, self.output, "test-model", self.evidence)
-                    try:
-                        self.assertTrue(terminal_view.wait(READY_BOUND), "cleanup never reached the terminal response")
-                        self.assertTrue(exit_wait.wait(READY_BOUND), "cleanup never joined the saved worker identity")
-                    finally:
-                        process.stdin.close()
-                    completion.result(timeout=READY_BOUND)
+                        mock.patch.object(shutil, "rmtree", side_effect=remove):
+                    live.run(self.candidate, self.output, "test-model", self.evidence)
                 self.assertFalse(self.output.exists())
                 cleanup = json.loads((self.evidence / "library-consumer/evidence/cleanup.json").read_text())
                 self.assertEqual(cleanup[0]["worker_exit"], "observed")
@@ -1101,6 +1127,87 @@ class HostLifecycleTests(OwnedTestCase):
         self.assertTrue(select.select([descriptor], [], [], 0)[0], "the final retry must join the detached worker")
         self.assertIn("listing_error", json.loads((self.assert_unconfirmed() / "cleanup.json").read_text())[0])
 
+    def test_final_retry_stops_detached_workers_even_when_host_join_fails(self):
+        cleanup = driver.ChildCleanup()
+        host, _ = self.controlled_worker()
+        worker = None
+        cli = self.host_cli()
+        close_child = driver.close_child
+
+        def call(command, **options):
+            nonlocal worker
+            response = cli(command, **options)
+            if command[0] == "claude" and "-p" in command:
+                worker = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"],
+                                    stdin=subprocess.PIPE, detached=options["detached"])
+                # This is an independently owned detached tree, not a child the
+                # global retry will stop before the case's retry runs.
+                cleanup.pending.remove(worker)
+                raise driver.ProcessExitError("host exit unconfirmed", process=host)
+            return response
+
+        def close(process):
+            if process is host:
+                raise driver.ProcessExitError("host exit still unconfirmed", process=host)
+            close_child(process)
+
+        with mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(driver, "run_command", side_effect=call), \
+                mock.patch.object(driver, "close_child", side_effect=close):
+            with self.assertRaises(ExceptionGroup):
+                live.run(self.candidate, self.output, "test-model", self.evidence)
+            self.assertIsNotNone(worker)
+            descriptor = owned_descriptor(lambda: os.pidfd_open(worker.pid), self.addCleanup)
+            self.assertFalse(select.select([descriptor], [], [], 0)[0])
+            cleanup.retry()
+            self.assertTrue(select.select([descriptor], [], [], 0)[0], "the detached worker must be joined")
+            self.assertIsNone(host.returncode)
+            self.assertFalse(any("run" in command for command in self.calls))
+            self.assert_unconfirmed()
+
+    def test_retry_requires_previous_run_cleanup_command_exit_before_archival(self):
+        cleanup = driver.ChildCleanup()
+        command_process, _ = self.controlled_worker()
+        descriptor = owned_descriptor(lambda: os.pidfd_open(command_process.pid), self.addCleanup)
+        cli = self.host_cli()
+        close_child = driver.close_child
+        blocked = True
+        failed_command = False
+
+        def call(command, **options):
+            nonlocal failed_command
+            response = cli(command, **options)
+            if "cancel" in command and not failed_command:
+                failed_command = True
+                options["on_spawn"](command_process)
+                cleanup.add(command_process)
+                # The spawn receipt must be sufficient even if the failure
+                # does not repeat the command handle.
+                raise driver.ProcessExitError("cancel exit unconfirmed")
+            return response
+
+        def close(process):
+            if process is command_process and blocked:
+                raise driver.ProcessExitError("cancel exit still unconfirmed", process=command_process)
+            close_child(process)
+
+        with mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(driver, "run_command", side_effect=call), \
+                mock.patch.object(driver, "close_child", side_effect=close):
+            with self.assertRaises(ExceptionGroup):
+                live.run(self.candidate, self.output, "test-model", self.evidence)
+            self.assert_unconfirmed()
+            # The simulated CLI will now report successful settlement, but the
+            # previous cancellation command is still using the case.
+            cleanup.retry()
+            self.assert_unconfirmed()
+            self.assertFalse(select.select([descriptor], [], [], 0)[0])
+            blocked = False
+            cleanup.retry()
+            self.assertTrue(select.select([descriptor], [], [], 0)[0])
+            self.assertFalse(self.output.exists())
+            self.assertTrue((self.evidence / "index.json").is_file())
+
     def test_failed_cancellation_or_nonterminal_observation_never_deletes_run_inputs(self):
         scenarios = ({"cancel_code": 2}, {"failure": "cancel-timeout"},
                      {"terminal": "RUNNING", "show_code": 3}, {"failure": "show-timeout"},
@@ -1197,6 +1304,7 @@ class HostLifecycleTests(OwnedTestCase):
         # actual Run's files, rather than an unrelated tempdir cleanup deleting them.
         handles = {}
         run_commands = []
+        cleanup_commands = live.RunCommands()
         detached = driver.Descendants()
         submission_attempted = False
         identifier = None
@@ -1240,7 +1348,7 @@ class HostLifecycleTests(OwnedTestCase):
                                 failures.append(error)
                         if failures:
                             raise ExceptionGroup(f"Run commands still own inputs at {area.as_posix()}", failures)
-                        live.settle_runs(candidate, area)
+                        live.settle_runs(candidate, area, cleanup_commands)
                         for descriptor in handles.values():
                             self.assertTrue(select.select([descriptor], [], [], 0)[0],
                                             f"Run settlement did not join the worker; fixture retained at {area.as_posix()}")

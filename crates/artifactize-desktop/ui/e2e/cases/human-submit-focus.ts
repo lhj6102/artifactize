@@ -11,7 +11,7 @@ import { graphShown, openArtifact, openTab } from "../graph-view.ts";
 import { entriesFocused, mainTitle } from "../pane.ts";
 
 export const scenarios: Scenario[] = ["Run graph", "Review"].map((screen) =>
-  // UX journey: J-HUMAN-ESC; UX edges: E-HUMAN-GREEN E-HUMAN-SUBMIT E-HUMAN-ESC-DETAIL
+  // UX journey: J-HUMAN-ESC
   scenario<{ screen: string }>(
     `human-submit-focus-${screen === "Review" ? "review" : "run-graph"}`,
     `leaves the completed Human Detail with Escape after GREEN submission in ${screen}`,

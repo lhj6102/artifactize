@@ -17,7 +17,8 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let destination = root.join(discovery::DEFINITION_DIR);
-    let existed = destination.exists();
+    let existed = crate::platform::paths::reusable_directory(&root, discovery::DEFINITION_DIR)
+        .map_err(|error| ConfigError::new(&destination, error))?;
     if existed && !discovery::sources(&root)?.is_empty() {
         return Err(ConfigError::new(
             destination,
@@ -102,13 +103,15 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             if doc.get("fingerprint").is_none() {
                 doc["fingerprint"] = toml_edit::Item::Table(toml_edit::Table::new());
             }
-            if doc["fingerprint"].get("ignore").is_none() {
-                doc["fingerprint"]["ignore"] = toml_edit::value(toml_edit::Array::new());
-            }
-            doc["fingerprint"]["ignore"]
+            let fingerprint = doc["fingerprint"]
+                .as_table_like_mut()
+                .ok_or_else(|| ConfigError::new(&file, "fingerprint must be a table."))?;
+            let ignores = fingerprint
+                .entry("ignore")
+                .or_insert(toml_edit::value(toml_edit::Array::new()))
                 .as_array_mut()
-                .expect("validated ignores")
-                .push(".artifactize/");
+                .ok_or_else(|| ConfigError::new(&file, "fingerprint.ignore must be an array."))?;
+            ignores.push(".artifactize/");
             report.ignored.push(name.clone());
         }
         let new = destination.join(format!("{name}.artf"));
@@ -250,5 +253,40 @@ fn normalize_commands(table: &mut dyn toml_edit::TableLike) {
         } else {
             visit(item);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_refuses_a_destination_link_or_case_alias_without_writing() {
+        let temp = crate::test_os::tempdir();
+        let root = temp.path();
+        let original = root.join("index.artf");
+        let source = "name = 'root'\nbasis = true\n";
+        std::fs::write(&original, source).unwrap();
+
+        let target = root.join("linked");
+        std::fs::create_dir(&target).unwrap();
+        let destination = root.join(discovery::DEFINITION_DIR);
+        crate::test_os::link_dir(&target, &destination);
+        assert!(migrate(root).unwrap_err().message.contains("exact name"));
+        assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0);
+        assert_eq!(std::fs::read_to_string(&original).unwrap(), source);
+        crate::test_os::remove_link_dir(&destination);
+
+        let alias = root.join(discovery::DEFINITION_DIR.to_ascii_uppercase());
+        std::fs::create_dir(&alias).unwrap();
+        assert!(migrate(root).unwrap_err().message.contains("exact name"));
+        assert_eq!(std::fs::read_dir(&alias).unwrap().count(), 0);
+        assert_eq!(std::fs::read_to_string(&original).unwrap(), source);
+        std::fs::remove_dir(&alias).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+
+        migrate(root).unwrap();
+        assert!(destination.join("root.artf").is_file());
+        assert!(!original.exists());
     }
 }

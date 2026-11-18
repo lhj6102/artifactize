@@ -92,6 +92,24 @@ pub(crate) struct VerdictSchema {
     pub schema: Value,
 }
 
+/// Print only the bare error in the saved failure. The rejected, decoded result is
+/// available for diagnostics if this failure leads to a provider repair turn.
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub(super) struct ModelError {
+    message: &'static str,
+    decoded: Option<Value>,
+}
+
+impl From<&'static str> for ModelError {
+    fn from(message: &'static str) -> Self {
+        Self {
+            message,
+            decoded: None,
+        }
+    }
+}
+
 impl VerdictSchema {
     pub fn new(
         pass: Option<&Map<String, Value>>,
@@ -110,19 +128,19 @@ impl VerdictSchema {
 
     #[cfg(test)]
     pub fn parse(&self, text: &str) -> Result<ValidatedResult, &'static str> {
-        self.parse_model(text, None)
+        self.parse_model(text, None).map_err(|error| error.message)
     }
 
     pub(super) fn parse_model(
         &self,
         text: &str,
         structured: Option<&Structured>,
-    ) -> Result<ValidatedResult, &'static str> {
+    ) -> Result<ValidatedResult, ModelError> {
         if text.len() > MAX_RESPONSE_BYTES {
-            return Err("over_size: final JSON exceeds 1 MiB");
+            return Err("over_size: final JSON exceeds 1 MiB".into());
         }
         if text.trim().is_empty() {
-            return Err("empty: return one JSON object");
+            return Err("empty: return one JSON object".into());
         }
         let value: Value = serde_json::from_str(text).map_err(
             |_| "not_json: return exactly one JSON object, without prose or code fences",
@@ -131,29 +149,20 @@ impl VerdictSchema {
             Some(structured) => structured.decode(value)?,
             None => value,
         };
-        self.validate(&value)?;
+        if let Err(message) = self.validate(&value) {
+            return Err(ModelError {
+                message,
+                decoded: Some(value),
+            });
+        }
         Ok(ValidatedResult::from_validated(value))
     }
 
-    /// What the single repair turn tells the model: the parse error and, when the
-    /// response was a JSON object, its failing instance paths, bounded as for a Human
-    /// submission. Sent to the provider only; the persisted error stays the bare code.
-    pub(super) fn repair_detail(
-        &self,
-        text: &str,
-        error: &str,
-        structured: Option<&Structured>,
-    ) -> String {
-        let value = (text.len() <= MAX_RESPONSE_BYTES)
-            .then(|| serde_json::from_str::<Value>(text).ok())
-            .flatten()
-            .and_then(|value| match structured {
-                Some(structured) => structured.decode(value).ok(),
-                None => Some(value),
-            });
-        match value {
-            Some(value) => self.explain(error, &value),
-            None => error.into(),
+    /// Give the repair turn bounded failing paths from the already decoded response.
+    pub(super) fn repair_detail(&self, error: ModelError) -> String {
+        match error.decoded {
+            Some(value) => self.explain(error.message, &value),
+            None => error.message.into(),
         }
     }
 
@@ -223,11 +232,12 @@ impl VerdictSchema {
     }
 }
 
-fn bounded(mut text: String) -> String {
+fn bounded(text: String) -> String {
     if text.chars().count() > MAX_DIAGNOSTIC_CHARS {
-        text = text.chars().take(MAX_DIAGNOSTIC_CHARS).collect::<String>() + "… (truncated)";
+        text.chars().take(MAX_DIAGNOSTIC_CHARS).collect::<String>() + "… (truncated)"
+    } else {
+        text
     }
-    text
 }
 
 fn branch(verdict: &str, owner: Option<&Map<String, Value>>) -> Result<Value, String> {

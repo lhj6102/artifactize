@@ -98,7 +98,7 @@ export const scenarios: Scenario[] = [
       assert.match(after.notice, new RegExp(`Unreadable run ${readable}`), "the notice names the Run");
     },
   ),
-  // UX journeys: J-MAIN-RUN J-GRAPH-LARGE; UX edge: E-GRAPH-BEYOND
+  // UX journeys: J-MAIN-RUN J-GRAPH-LARGE
   scenario<{ run: string }>(
     "main-loading",
     "keeps the graph's place and divider while a large Run loads and says so, then lays it out whole, opens an Artifact clicked in it and those a zoom brings into view",
@@ -221,7 +221,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual((await slot(browser))?.bounds, before.bounds, "the graph fills that same slot");
     },
   ),
-  // UX journey: J-GRAPH-LARGE; UX edges: E-GRAPH-BEYOND E-GRAPH-FIND-GO E-GRAPH-CAMERA
+  // UX journey: J-GRAPH-LARGE
   scenario<{ run: string }>(
     "main-large-wholes",
     "draws a whole of a large graph, too far out for names, as its box's outline in its status's colour, opens it on a click, and draws it as a named box again when zoomed in",

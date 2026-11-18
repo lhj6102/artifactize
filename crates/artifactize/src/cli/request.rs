@@ -4,14 +4,14 @@ mod actions;
 mod fields;
 mod inspect;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use artifactize_core::{
     runtime::Verdict,
     types::{RequestId, ReviewerId, RunId},
 };
 use clap::Subcommand;
-use fields::{OwnerFields, OwnerFieldsParser};
+use fields::FieldsSource;
 
 #[derive(Debug, Subcommand)]
 pub enum RequestCommand {
@@ -56,12 +56,8 @@ pub enum RequestCommand {
         id: RequestId,
         #[arg(long, value_enum)]
         verdict: Verdict,
-        /// Owner fields as a JSON object (default {}).
-        #[arg(long, value_name = "JSON", conflicts_with = "fields_file", value_parser = OwnerFieldsParser)]
-        fields: Option<OwnerFields>,
-        /// Read owner fields from a regular JSON file.
-        #[arg(long, value_name = "PATH")]
-        fields_file: Option<PathBuf>,
+        #[command(flatten)]
+        fields: FieldsSource,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<ReviewerId>,
@@ -86,10 +82,9 @@ pub(super) async fn execute(
             id,
             verdict,
             fields,
-            fields_file,
             reviewer,
         } => {
-            actions::submit(state, id, verdict, fields, fields_file, reviewer).await?;
+            actions::submit(state, id, verdict, fields, reviewer).await?;
         }
     }
     Ok(0)

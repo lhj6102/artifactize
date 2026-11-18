@@ -5,18 +5,17 @@
 //! The focused sub-area grows: the instruction (`i`), the tools with their output, or the
 //! CLAIM/REVIEW fields. Keys follow one protocol in both entry points.
 use super::{
-    Action, Area, Control, Mode, Review, Runs, SCROLL_PAGE, Stage, Tool, meta, outcome_text,
-    shared, stage, view,
+    Area, Control, Mode, Review, Runs, Stage, Tool, meta, outcome_text, shared, stage, view,
 };
-use crate::{config::HumanToolKind, monitor::plain, store::RequestView};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::{config::HumanToolKind, monitor::plain, store::RequestView, types::ReviewerId};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Position, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph, Wrap},
 };
+use std::time::Duration;
 use time::OffsetDateTime;
 
 /// The expanded instruction (or Technical section) takes this share of the body height.
@@ -37,17 +36,6 @@ const BUTTON_GAP: u16 = 1;
 const WRAP_INDENT: u16 = 4;
 /// The cells a bordered box's two opposite borders take from its width or its height.
 const BORDERS: u16 = 2;
-
-/// Where a key left a Human review Detail.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Handled {
-    Action(Action),
-    /// Step back out of the Detail, after any form or job is closed.
-    Back,
-    Quit,
-    /// A Detail-wide key for the caller: `?` help or `!` next attention, never while editing.
-    Pass,
-}
 
 /// Geometry of the last drawn Detail for mouse hit tests.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -103,7 +91,7 @@ fn title(view: &RequestView) -> String {
 }
 
 /// The instruction, followed by the Technical section when it is unfolded.
-fn instruction(view: &RequestView, reviewer: &str, technical: bool) -> Vec<Line<'static>> {
+fn instruction(view: &RequestView, reviewer: &ReviewerId, technical: bool) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = view
         .request
         .payload
@@ -114,7 +102,7 @@ fn instruction(view: &RequestView, reviewer: &str, technical: bool) -> Vec<Line<
     if technical {
         lines.push(Line::default());
         lines.push(Line::from("Technical").bold());
-        lines.extend(view::lines(super::technical(view, reviewer)));
+        lines.extend(view::lines(super::technical(view, reviewer.as_str())));
     }
     lines
 }
@@ -141,13 +129,13 @@ pub(super) fn draw_peek(
     frame: &mut Frame,
     area: Rect,
     view: &RequestView,
-    reviewer: &str,
+    reviewer: &ReviewerId,
     now: OffsetDateTime,
 ) {
     let outer = Block::bordered().title(format!(" {} ", title(view)));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
-    let mut lines = vec![Line::from(meta(view, reviewer, now)).bold()];
+    let mut lines = vec![Line::from(meta(view, reviewer.as_str(), now)).bold()];
     if let Some(shared) = shared(view) {
         lines.push(Line::from(shared).yellow());
     }
@@ -169,14 +157,6 @@ pub(super) fn draw_peek(
 }
 
 impl Review {
-    fn move_tool(&mut self, down: bool) {
-        self.tool = if down {
-            (self.tool + 1).min(self.tools().len().saturating_sub(1))
-        } else {
-            self.tool.saturating_sub(1)
-        };
-    }
-
     fn stage(&self) -> Stage {
         stage(self.settled(), self.owned())
     }
@@ -264,174 +244,6 @@ impl Review {
         hints.join(" · ")
     }
 
-    /// A left click inside the Detail at `point`, over the geometry of the last drawn frame:
-    /// buttons act, the instruction, tools or fields take focus, a click selects a tool row and
-    /// a click on the selected tool of the focused Tools pane runs it.
-    pub(crate) fn click(&mut self, hits: &Hits, point: Position) -> Action {
-        if let Some((_, control)) = hits.buttons.iter().find(|(rect, _)| rect.contains(point)) {
-            return self.control(*control);
-        }
-        if self.busy() {
-            return Action::None;
-        }
-        if let Some((_, index)) = hits.tool_rows.iter().find(|(rect, _)| rect.contains(point)) {
-            let run = self.area == Area::Tools && self.tool == *index;
-            self.area = Area::Tools;
-            self.selected_tool(*index);
-            return if run {
-                self.control(Control::RunTool)
-            } else {
-                Action::None
-            };
-        }
-        if let Some((_, index)) = hits
-            .field_rows
-            .iter()
-            .find(|(rect, _)| rect.contains(point))
-        {
-            self.area = Area::Fields;
-            self.select_field(*index);
-        } else if hits.tools.contains(point) {
-            self.area = Area::Tools;
-        } else if hits.fields.contains(point) {
-            self.area = Area::Fields;
-        } else if hits.instruction.contains(point) && !self.editing() {
-            self.area = Area::Instruction;
-        }
-        Action::None
-    }
-
-    /// Keys of a Human review Detail, in monitor and the standalone review alike. Review keys
-    /// act only here; while a form is edited letters are text and only Ctrl keys act.
-    pub(crate) fn key_detail(&mut self, key: KeyEvent) -> Handled {
-        let control = key.modifiers.contains(KeyModifiers::CONTROL);
-        let page = |down: bool| {
-            if down {
-                SCROLL_PAGE as i16
-            } else {
-                -(SCROLL_PAGE as i16)
-            }
-        };
-        if control && matches!(key.code, KeyCode::PageDown | KeyCode::PageUp) {
-            self.scroll_instruction(page(key.code == KeyCode::PageDown));
-            return Handled::Action(Action::None);
-        }
-        if let Some(busy) = &self.busy {
-            match key.code {
-                KeyCode::Esc => busy.cancel.cancel(),
-                KeyCode::Char('c') if control => busy.cancel.cancel(),
-                KeyCode::PageDown | KeyCode::PageUp => {
-                    self.scroll_single(page(key.code == KeyCode::PageDown), false)
-                }
-                _ => {}
-            }
-            return Handled::Action(Action::None);
-        }
-        // Esc closes one thing at a time: the form, then the Detail.
-        if key.code == KeyCode::Esc {
-            if self.editing() {
-                self.stop_editing();
-                return Handled::Action(Action::None);
-            }
-            return Handled::Back;
-        }
-        let editing = self.editing();
-        if matches!(key.code, KeyCode::PageDown | KeyCode::PageUp) {
-            let delta = page(key.code == KeyCode::PageDown);
-            match self.area {
-                Area::Instruction => self.scroll_instruction(delta),
-                Area::Fields if editing || self.settled() => self.scroll_single(delta, true),
-                Area::Tools | Area::Fields => self.scroll_single(delta, false),
-            }
-            return Handled::Action(Action::None);
-        }
-        if key.code == KeyCode::BackTab
-            || key.code == KeyCode::Tab && (self.area != Area::Fields || !editing)
-        {
-            self.area = if self.area == Area::Tools {
-                Area::Fields
-            } else {
-                Area::Tools
-            };
-            return Handled::Action(Action::None);
-        }
-        // An unowned form (after losing the claim) still takes c to claim it again.
-        if !self.owned() && !control && key.code == KeyCode::Char('c') {
-            return Handled::Action(self.control(Control::Claim));
-        }
-        if control {
-            let action = match key.code {
-                KeyCode::Char('g') => self.control(Control::Green),
-                KeyCode::Char('r') => self.control(Control::Red),
-                KeyCode::Char('u') => self.control(Control::Release),
-                KeyCode::Char('s') => self.control(Control::Submit),
-                KeyCode::Char('d') if self.owned() && self.area == Area::Fields => {
-                    if let Mode::Form(form) = &mut self.mode {
-                        form.remove_selected();
-                    }
-                    Action::None
-                }
-                _ => Action::None,
-            };
-            return Handled::Action(action);
-        }
-        if !editing {
-            let action = match key.code {
-                KeyCode::Char('c') => self.control(Control::Claim),
-                KeyCode::Char('g') => self.control(Control::Green),
-                KeyCode::Char('r') => self.control(Control::Red),
-                KeyCode::Char('u') => self.control(Control::Release),
-                KeyCode::Char('i') => {
-                    self.area = if self.area == Area::Instruction {
-                        Area::Fields
-                    } else {
-                        Area::Instruction
-                    };
-                    Action::None
-                }
-                KeyCode::Char('t') => {
-                    self.technical = !self.technical;
-                    Action::None
-                }
-                KeyCode::Char('q') => return Handled::Quit,
-                KeyCode::Char('?' | '!') => return Handled::Pass,
-                KeyCode::Left => return Handled::Back,
-                _ => return Handled::Action(self.area_key(key, false)),
-            };
-            return Handled::Action(action);
-        }
-        Handled::Action(self.area_key(key, true))
-    }
-
-    /// Keys for the focused sub-area: tool choice and runs, instruction scrolling, the form.
-    fn area_key(&mut self, key: KeyEvent, editing: bool) -> Action {
-        match self.area {
-            Area::Tools => match key.code {
-                KeyCode::Enter => return self.control(Control::RunTool),
-                KeyCode::Up => self.move_tool(false),
-                KeyCode::Down => self.move_tool(true),
-                KeyCode::Char('k') if !editing => self.move_tool(false),
-                KeyCode::Char('j') if !editing => self.move_tool(true),
-                _ => {}
-            },
-            Area::Instruction => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => self.scroll_instruction(-1),
-                KeyCode::Down | KeyCode::Char('j') => self.scroll_instruction(1),
-                _ => {}
-            },
-            Area::Fields => {
-                if editing
-                    && self.owned()
-                    && let Mode::Form(form) = &mut self.mode
-                {
-                    let (key, modified) = super::form_key(key);
-                    form.inline_key(key, modified);
-                }
-            }
-        }
-        Action::None
-    }
-
     /// Draw the Full Detail of the open request into `area`, borders included.
     pub(crate) fn draw_detail(
         &mut self,
@@ -439,6 +251,7 @@ impl Review {
         area: Rect,
         focused: bool,
         now: OffsetDateTime,
+        elapsed: Duration,
     ) -> Hits {
         // Lines that arrived while another Detail was shown.
         self.drain_log();
@@ -459,7 +272,7 @@ impl Review {
             .border_style(focused_border(focused));
         let inner = outer.inner(area);
         frame.render_widget(outer, area);
-        let status = self.status_line();
+        let status = self.status_line(elapsed);
         let shared = shared(&view);
         let [meta_area, shared_area, body, status_area, buttons] = Layout::vertical([
             Constraint::Length(1),
@@ -481,7 +294,7 @@ impl Review {
         ])
         .areas(meta_area);
         frame.render_widget(
-            Line::from(meta(&view, &self.reviewer, now)).bold(),
+            Line::from(meta(&view, self.reviewer.as_str(), now)).bold(),
             meta_text,
         );
         frame.render_widget(fold.right_aligned(), fold_area);
@@ -604,8 +417,12 @@ impl Review {
                 rows.push((name, index));
             }
         }
-        let height = (rows.len().max(1) as u16 + BORDERS)
-            .min((area.height / TOOL_LIST_HEIGHT_DIVISOR).max(MIN_BOX));
+        let limit = (area.height / TOOL_LIST_HEIGHT_DIVISOR).max(MIN_BOX);
+        let height = rows
+            .len()
+            .max(1)
+            .saturating_add(usize::from(BORDERS))
+            .min(usize::from(limit)) as u16;
         let [list, output] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
         let block = Block::bordered()

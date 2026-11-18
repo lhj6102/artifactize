@@ -38,6 +38,7 @@ pub(crate) fn release_free_memory() {}
 /// still own handles, so retry transient sharing failures within a fixed bound.
 pub(crate) fn remove_tree(path: &Path) -> io::Result<()> {
     const RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    // Closing handles often clears the conflict quickly; a short sleep yields without spinning.
     const SHARING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
     let deadline = std::time::Instant::now() + RECOVERY_TIMEOUT;
     loop {

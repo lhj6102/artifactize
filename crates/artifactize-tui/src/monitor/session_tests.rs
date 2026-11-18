@@ -306,18 +306,17 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         },
         focus: DetailArea::Evidence,
         scroll: [0; 2],
-        content: Content::Session(Box::new(live)),
-        show_details: false,
+        content: Content::session(live),
         technical: false,
         pending: false,
     }));
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     complete(monitor.detail_mut().unwrap().content.live_mut().unwrap());
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     let evidence = monitor.hits.areas[1];
     let mouse = |kind| MouseEvent {
@@ -349,15 +348,9 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         monitor.detail().unwrap().content.live().unwrap().scroll.top,
         0
     );
-    let button = monitor
-        .hits
-        .buttons
-        .iter()
-        .find(|(_, button)| *button == input::Button::SessionBottom)
-        .unwrap()
-        .0;
+    let button = crate::test_frame::point(terminal.backend().buffer(), "[Bottom]");
     monitor.mouse(MouseEvent {
-        column: button.x + 1,
+        column: button.x,
         row: button.y,
         ..mouse(MouseEventKind::Down(MouseButton::Left))
     });
@@ -383,7 +376,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     let live = monitor.detail().unwrap().content.live().unwrap();
     assert_eq!(live.scroll.top, top - live.scroll.height);
     monitor.key(KeyEvent::from(KeyCode::Char('d')));
-    assert!(monitor.detail().unwrap().show_details);
+    assert!(tests::sized(&mut monitor, 80, 30).contains("RUNNING — executing"));
     let position = monitor.detail().unwrap().content.live().unwrap().scroll.top;
     monitor.key(KeyEvent::from(KeyCode::Up));
     assert_eq!(
@@ -407,7 +400,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     // An 80×30 Detail has 24 transcript rows, so its bottom window starts at row 99,977.
     let visible_position = "99977/100000";
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     let text = terminal
         .backend()
@@ -460,12 +453,12 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
             .collect::<String>()
     };
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     assert!(screen(&terminal).contains("last: reading the session…"));
     complete(monitor.live_mut().unwrap());
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     assert!(
         screen(&terminal).contains("last: Reading reference/cli.md now"),
@@ -475,12 +468,12 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     // Narrow terminals retain the fixed-width peek; moving focus away hides it.
     terminal.backend_mut().resize(90, 30);
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     assert!(screen(&terminal).contains("last:"));
     monitor.focus_on(Pane::Runs);
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     assert!(!screen(&terminal).contains("last:"));
 }
@@ -536,6 +529,7 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
 
 #[tokio::test]
 async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_readers_stay() {
+    use crossterm::event::{KeyCode, KeyEvent};
     use serde_json::json;
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
@@ -647,4 +641,23 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     let replaced = tests::sized(&mut monitor, 160, 30);
     assert!(replaced.contains("last: replacement tail"), "{replaced}");
     assert!(!replaced.contains("first session row"), "{replaced}");
+
+    // If the session becomes unavailable while showing its sections, the next Esc leaves
+    // Detail immediately; there is no transcript to return to.
+    monitor.open_detail().await;
+    let transcript = tests::sized(&mut monitor, 160, 30);
+    assert!(transcript.contains("[Details (d)]"), "{transcript}");
+    monitor.key(KeyEvent::from(KeyCode::Char('d')));
+    request.session = None;
+    receipts.save_request(&request).await.unwrap();
+    monitor.refresh().await;
+    let evidence = tests::sized(&mut monitor, 160, 30);
+    assert!(
+        evidence.contains("No saved Agent conversation"),
+        "{evidence}"
+    );
+    assert!(!evidence.contains("[Details (d)]"), "{evidence}");
+    assert_eq!(monitor.focus(), Pane::Detail);
+    monitor.key(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(monitor.focus(), Pane::Artifacts);
 }

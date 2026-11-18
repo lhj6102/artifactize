@@ -354,6 +354,25 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         r#"{"approved":true}"#,
     )
     .unwrap();
+    let error = fixture.json(
+        &[
+            "request",
+            "submit",
+            id,
+            "--verdict",
+            "GREEN",
+            "--fields",
+            r#"{"approved":true}"#,
+            "--fields-file",
+            fields.to_str().unwrap(),
+        ],
+        2,
+    );
+    let message = error["error"].as_str().unwrap();
+    assert!(
+        message.contains("--fields ") && message.contains("--fields-file"),
+        "{message}"
+    );
     let submitted = fixture.json(
         &[
             "request",

@@ -14,19 +14,17 @@ use tokio_util::sync::CancellationToken;
 const HELP_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(super) async fn help(
-    args: &[String],
+    program: &OsStr,
+    mut args: Vec<OsString>,
     cwd: &Path,
     launcher: &dyn Launcher,
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
-    let program = program::resolve(OsStr::new(&args[0]), cwd).map_err(|error| error.to_string())?;
+    let program = program::resolve(program, cwd).map_err(|error| error.to_string())?;
+    args.push(OsString::from("--help"));
     let launch = Launch {
         program,
-        args: args[1..]
-            .iter()
-            .map(OsString::from)
-            .chain([OsString::from("--help")])
-            .collect(),
+        args,
         cwd: cwd.to_owned(),
         timeout: HELP_TIMEOUT,
         output_limit: TEXT_BYTES,

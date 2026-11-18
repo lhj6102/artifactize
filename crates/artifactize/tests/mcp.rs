@@ -617,6 +617,7 @@ async fn b1_wait_bounds_are_eval_kind_independent() {
         let project = Project::new(
             json!([{ "id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review this long active audit.\n".repeat(1000)} }]),
         );
+        let _release_provider = owned_run::ReleaseGate::new(gate.clone());
         let mut command = project.command();
         command
             .env("OPENAI_API_KEY", "fake-key")

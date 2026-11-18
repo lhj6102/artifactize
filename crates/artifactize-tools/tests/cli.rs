@@ -133,6 +133,25 @@ fn help_resolves_path_and_enforces_output_bounds() {
 }
 
 #[tokio::test]
+async fn standalone_refuses_an_output_limit_without_room_for_the_probe() {
+    use artifactize_tools::launch::{Launch, LaunchError, Launcher, Standalone};
+
+    let root = os::tempdir();
+    let launch = Launch {
+        program: root.path().join("not-started"),
+        args: Vec::new(),
+        cwd: root.path().to_owned(),
+        timeout: std::time::Duration::ZERO,
+        output_limit: usize::MAX,
+    };
+    let error = Standalone
+        .run(launch, &tokio_util::sync::CancellationToken::new())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, LaunchError::Failed(message) if message.contains("Output limit")));
+}
+
+#[tokio::test]
 async fn help_timeout_ends_the_program_and_the_children_it_starts_at_once() {
     let root = os::tempdir();
     let result = process::timeout_tree(root.path()).await;

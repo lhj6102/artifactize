@@ -18,6 +18,23 @@ pub fn tempdir() -> tempfile::TempDir {
     tempfile::tempdir_in(fs::canonicalize(std::env::temp_dir()).unwrap()).unwrap()
 }
 
+/// Create a Unix entry containing a literal backslash, not a path separator.
+#[cfg(unix)]
+pub fn file_with_backslash(root: &Path) -> PathBuf {
+    let path = root.join(r"input\name");
+    fs::write(&path, "data").unwrap();
+    path
+}
+
+/// The verbatim fixture path and two distinct entries that Win32 would treat as aliases.
+#[cfg(windows)]
+pub fn trailing_dot_alias(root: &Path) -> PathBuf {
+    let root = fs::canonicalize(root).unwrap();
+    fs::write(root.join("literal"), "ordinary").unwrap();
+    fs::write(root.join("literal."), "verbatim").unwrap();
+    root
+}
+
 /// Make `path` runnable by name: mode 0700 on Unix. Windows runs any file whose
 /// extension is in `PATHEXT`, so nothing changes there.
 pub fn make_executable(path: &Path) {

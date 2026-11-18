@@ -43,7 +43,7 @@ async function prepareReviews() {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journeys: J-LAUNCH J-PANE J-BRANCHES; UX edges: E-LAUNCH-MONITOR E-PANE-SELECT
+  // UX journeys: J-LAUNCH J-PANE J-BRANCHES
   scenario<{ initialRun: string; worktreeRuns: string[] }>(
     "launch-monitor",
     "opens on the Pane of every live branch beside the Main area with nothing chosen, each folded to its newest Run, and a branch's name expands it and shows its newest entry",
@@ -127,7 +127,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-LAUNCH; UX edge: E-LAUNCH-REPO
+  // UX journey: J-LAUNCH
   scenario<{ run: string }>(
     "launch-repo",
     "starts with --repo on that branch selected and expanded, its newest entry (the Run in progress) shown",
@@ -148,7 +148,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-LAUNCH; UX edge: E-LAUNCH-REPO
+  // UX journey: J-LAUNCH
   scenario<Record<string, never>>(
     "launch-repo-without-runs",
     "lists the branch of --repo before its project has a Run, its Current shown",
@@ -168,7 +168,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-LAUNCH J-WAITING; UX edge: E-LAUNCH-REVIEW
+  // UX journeys: J-LAUNCH J-WAITING
   scenario<{ ids: string[] }>(
     "launch-review",
     "starts with review on the newest waiting review of every repository, open in the Main area",
@@ -191,7 +191,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-LAUNCH; UX edge: E-LAUNCH-REVIEW-ID
+  // UX journey: J-LAUNCH
   scenario<{ ids: string[] }>(
     "launch-review-id",
     "starts with review ID on that review, not the newest one",

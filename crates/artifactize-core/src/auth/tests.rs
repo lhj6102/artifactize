@@ -3,7 +3,7 @@ use std::{fs, path::Path, sync::Arc};
 use serde::{Deserialize, Serialize};
 
 use super::storage::{Storage, Tokens};
-use crate::test_os::{grant_everyone_read, symlink_dir, symlink_file};
+use crate::test_os::{file_link, grant_everyone_read, remove_file_link, symlink_dir};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 struct Secret {
@@ -60,10 +60,14 @@ fn storage_is_atomic_private_and_refuses_links() {
         r#"{"token":"public"}"#,
     )
     .unwrap();
-    if symlink_file(&target, &path).is_some() {
-        assert!(storage.read::<Secret>("secret.json").is_err());
-        crate::test_declaration::remove_file(&path).unwrap();
-    }
+    file_link(&target, &path);
+    assert!(storage.read::<Secret>("secret.json").is_err());
+    assert!(storage.remove("secret.json").is_err());
+    remove_file_link(&path);
+    assert_eq!(
+        fs::read_to_string(&target).unwrap(),
+        r#"{"token":"public"}"#
+    );
     std::fs::write(
         crate::test_declaration::source_path(&path),
         r#"{"token":"readable"}"#,
@@ -159,9 +163,9 @@ async fn named_locks_serialize_holders_and_stay_private() {
     let second = second.await.unwrap();
     drop(second);
     crate::test_declaration::remove_file(&lock).unwrap();
-    if symlink_file(temp.path().join("elsewhere"), &lock).is_some() {
-        assert!(storage.lock("codex").await.is_err());
-    }
+    file_link(&temp.path().join("elsewhere"), &lock);
+    assert!(storage.lock("codex").await.is_err());
+    remove_file_link(&lock);
 }
 
 #[test]

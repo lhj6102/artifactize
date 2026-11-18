@@ -6,8 +6,78 @@ use artifactize_core::{
     human::{self, Submission},
     runtime::Verdict,
 };
-use clap::{builder::TypedValueParser, error::ErrorKind};
+use clap::{
+    ArgMatches, Args, Command, Error, FromArgMatches, builder::TypedValueParser, error::ErrorKind,
+};
 use serde_json::{Map, Value};
+
+#[derive(Debug)]
+pub enum FieldsSource {
+    Absent,
+    Inline(OwnerFields),
+    File(PathBuf),
+}
+
+#[derive(Args)]
+#[group(skip)]
+struct FieldsFlags {
+    /// Owner fields as a JSON object (default {}).
+    #[arg(long, value_name = "JSON", conflicts_with = "fields_file", value_parser = OwnerFieldsParser)]
+    fields: Option<OwnerFields>,
+    /// Read owner fields from a regular JSON file.
+    #[arg(long, value_name = "PATH")]
+    fields_file: Option<PathBuf>,
+}
+
+impl FieldsFlags {
+    fn source(self) -> Result<Option<FieldsSource>, Error> {
+        match (self.fields, self.fields_file) {
+            (None, None) => Ok(None),
+            (Some(fields), None) => Ok(Some(FieldsSource::Inline(fields))),
+            (None, Some(path)) => Ok(Some(FieldsSource::File(path))),
+            (Some(_), Some(_)) => Err(Error::raw(
+                ErrorKind::ArgumentConflict,
+                "Use --fields or --fields-file, not both.",
+            )),
+        }
+    }
+}
+
+impl FromArgMatches for FieldsSource {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, Error> {
+        Ok(FieldsFlags::from_arg_matches(matches)?
+            .source()?
+            .unwrap_or(Self::Absent))
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), Error> {
+        if let Some(source) = FieldsFlags::from_arg_matches(matches)?.source()? {
+            *self = source;
+        }
+        Ok(())
+    }
+}
+
+impl Args for FieldsSource {
+    fn augment_args(command: Command) -> Command {
+        FieldsFlags::augment_args(command)
+    }
+
+    fn augment_args_for_update(command: Command) -> Command {
+        FieldsFlags::augment_args_for_update(command)
+    }
+}
+
+impl FieldsSource {
+    pub(super) fn submission(self, verdict: Verdict) -> Result<Submission, String> {
+        let fields = match self {
+            Self::Absent => OwnerFields::default(),
+            Self::Inline(fields) => fields,
+            Self::File(path) => OwnerFields::read_file(path)?,
+        };
+        Ok(Submission::new(verdict, fields.0).expect("OwnerFields excludes the verdict"))
+    }
+}
 
 /// A bounded JSON object without the verdict, supplied separately by `--verdict`.
 #[derive(Clone, Debug, Default)]
@@ -34,7 +104,7 @@ impl std::str::FromStr for OwnerFields {
 }
 
 #[derive(Clone)]
-pub(super) struct OwnerFieldsParser;
+struct OwnerFieldsParser;
 
 impl TypedValueParser for OwnerFieldsParser {
     type Value = OwnerFields;
@@ -57,20 +127,6 @@ impl TypedValueParser for OwnerFieldsParser {
 }
 
 impl OwnerFields {
-    pub(super) fn submission(
-        verdict: Verdict,
-        fields: Option<Self>,
-        fields_file: Option<PathBuf>,
-    ) -> Result<Submission, String> {
-        let fields = match (fields, fields_file) {
-            (None, None) => Self::default(),
-            (Some(fields), None) => fields,
-            (None, Some(path)) => Self::read_file(path)?,
-            (Some(_), Some(_)) => return Err("Use --fields or --fields-file, not both.".into()),
-        };
-        Ok(Submission::new(verdict, fields.0).expect("OwnerFields excludes the verdict"))
-    }
-
     fn read_file(path: PathBuf) -> Result<Self, String> {
         let file = artifactize_core::platform::open_regular_input(&path)
             .map_err(|e| e.to_string())?

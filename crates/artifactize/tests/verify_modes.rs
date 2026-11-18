@@ -1139,7 +1139,6 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
     fixture.declare("a-spec", vec![agent("Speculative", "up")]);
     fixture.declare("b-ready", vec![agent("Ready", "trigger")]);
     let gate = support::Gate::default();
-    gate.close();
     let spec_starts = Arc::new(AtomicUsize::new(0));
     let ready_started = Arc::new(AtomicBool::new(false));
     let provider = support::FakeProvider::start({
@@ -1167,6 +1166,7 @@ async fn c3_capacity_prioritizes_unblockable_longest_paths_before_speculation() 
             )
         }
     });
+    let _release_provider = owned_run::ReleaseGate::new(gate.clone());
     let run = fixture.submit(
         &["--speculate", "--jobs", "3", "--max-executions", "5"],
         Some(&provider),

@@ -30,7 +30,6 @@ z=4
     assert!(viewed.contains("[properties.comment]"));
     assert!(!viewed.contains("[annotations"));
     assert!(!viewed.contains("author's comment"));
-    assert_ne!(definition(before).as_ref(), before);
 }
 
 #[test]

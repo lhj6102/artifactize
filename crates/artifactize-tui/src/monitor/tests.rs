@@ -316,10 +316,12 @@ pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
     sized_at(monitor, width, height, now())
 }
 
-/// `sized`, with ages and elapsed times measured at `now`.
+/// `sized`, with request ages measured at `now`.
 fn sized_at(monitor: &mut Monitor, width: u16, height: u16, now: OffsetDateTime) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal.draw(|frame| monitor.draw_at(frame, now)).unwrap();
+    terminal
+        .draw(|frame| monitor.draw_at(frame, now, std::time::Duration::ZERO))
+        .unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());

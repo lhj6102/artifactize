@@ -2,8 +2,25 @@
 use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, loading::Refresh, review};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
+use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
+
+impl Monitor {
+    pub fn draw(&mut self, frame: &mut ratatui::Frame) {
+        let now = OffsetDateTime::now_utc();
+        let elapsed = self
+            .detail()
+            .and_then(|pane| pane.content.review())
+            .map_or(Duration::ZERO, |review| {
+                review.busy_elapsed_at(Instant::now())
+            });
+        self.draw_at(frame, now, elapsed);
+    }
+}
 
 /// Restore every input protocol when leaving, including errors, signals and panic unwinding.
 pub(crate) struct InputGuard;

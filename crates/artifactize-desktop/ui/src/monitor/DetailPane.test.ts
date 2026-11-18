@@ -116,7 +116,7 @@ it("shows the Artifact tab first, without chips, with its evals' verdicts, and s
   expect(read).toEqual(["a:app"]);
   // Sections under header rows: Evals, Tools and Path unfolded, Neighbours and Debug folded.
   expect(screen.getByRole("button", { name: "Evals" }).getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByRole("button", { name: "Neighbours" }).getAttribute("aria-expanded")).toBe("false");
+  expect((await screen.findByRole("button", { name: "Neighbours" })).getAttribute("aria-expanded")).toBe("false");
 
   await fireEvent.click(evals[1]);
   expect(ontab).toHaveBeenLastCalledWith("e:app/test");
@@ -252,9 +252,17 @@ it("keeps Close alone in the header on a Human review's tab, the review showing 
   expect(onback).toHaveBeenCalledOnce();
 });
 
-it("shows an Artifact without evals with no chips and no rows", async () => {
+it("shows an Artifact without evals or neighbours with no chips, no Evals and no Neighbours", async () => {
+  const neighbours = vi.fn();
   mockIPC((command, args) => {
     if (command === "detail_row") return rowOf(args, [row("a:lone", "artifact", "lone", "✓", "green")]);
+    if (command === "neighbours") {
+      neighbours();
+      // Drawn once, using nothing and used by nothing.
+      return { moreUses: 0, moreUsedBy: 0, wholes: [], copies: 1, shape: {
+        nodes: [{ id: "a:lone", name: "lone", light: "green", tally: null, note: null, parts: [] }], edges: [],
+      } };
+    }
     return command === "detail" ? view("a:lone", "Artifact lone") : null;
   });
   renderHosted(DetailPane, {
@@ -264,6 +272,11 @@ it("shows an Artifact without evals with no chips and no rows", async () => {
   await screen.findByRole("heading", { name: "Artifact lone" });
   expect(screen.queryByRole("tablist")).toBeNull();
   expect(screen.queryByRole("list", { name: "Evals of lone" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Evals" })).toBeNull();
+  // A section with nothing to show is not shown, once its neighbours are read.
+  await waitFor(() => expect(neighbours).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByRole("button", { name: "Neighbours" })).toBeNull();
 });
 
 it("draws the Artifact between the Artifacts its evals use and those that use it once Neighbours is unfolded, and opens a neighbour on a click", async () => {

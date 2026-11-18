@@ -171,7 +171,7 @@ async fn judge<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     };
     let repair = Message::user(format!(
         "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
-        verdict.repair_detail(&answer, error, Some(structured))
+        verdict.repair_detail(error)
     ));
     conversation
         .session

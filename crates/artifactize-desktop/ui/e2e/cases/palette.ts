@@ -120,7 +120,7 @@ function palette(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-PALETTE; UX edges: E-PALETTE-OPEN E-PALETTE-CLOSE
+  // UX journey: J-PALETTE
   scenario<PaletteData>(
     "palette-reopen",
     "opens by its button and by Ctrl+K, and again after Esc, several times",
@@ -139,7 +139,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await errors(browser), []);
     },
   ),
-  // UX journey: J-PALETTE; UX edges: E-PALETTE-OPEN E-PALETTE-FILTER
+  // UX journey: J-PALETTE
   scenario<PaletteData>(
     "palette-filter",
     "lists the enabled commands of the shown Run and filters them by what is typed",
@@ -206,7 +206,7 @@ export const scenarios: Scenario[] = [
       await escape("Esc");
     },
   ),
-  // UX journey: J-PALETTE; UX edges: E-PALETTE-RUN E-SCREEN-SETTINGS
+  // UX journey: J-PALETTE
   scenario<PaletteData>(
     "palette-run",
     "runs commands to their targets, opening again after each",
@@ -247,7 +247,7 @@ export const scenarios: Scenario[] = [
       await escape("Esc");
     },
   ),
-  // UX journeys: J-PALETTE J-OPEN-ID; UX edges: E-PALETTE-OPEN E-REVIEW-OPEN-ID
+  // UX journeys: J-PALETTE J-OPEN-ID
   scenario<PaletteData>(
     "palette-id-follower",
     "opens after requests were opened by ID, a follower included",
@@ -276,7 +276,7 @@ export const scenarios: Scenario[] = [
       }
     },
   ),
-  // UX journey: J-PALETTE; UX edge: E-PALETTE-OPEN
+  // UX journey: J-PALETTE
   scenario<PaletteData>(
     "palette-search",
     "opens after a review opened by ID, Esc and a search of the Pane",
@@ -308,7 +308,7 @@ export const scenarios: Scenario[] = [
       }
     },
   ),
-  // UX journey: J-PALETTE; UX edge: E-PALETTE-CLOSE
+  // UX journey: J-PALETTE
   scenario<PaletteData>(
     "palette-outside",
     "opens again after a click outside closed it",
@@ -325,7 +325,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual(await errors(browser), []);
     },
   ),
-  // UX journey: J-PALETTE; UX edges: E-PALETTE-OPEN E-PALETTE-CLOSE
+  // UX journey: J-PALETTE
   scenario<Record<string, never>>(
     "palette-review",
     "lists a Human review's commands with their keys after the app's, as its claim and its form allow",

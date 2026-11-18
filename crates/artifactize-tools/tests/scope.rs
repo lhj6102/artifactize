@@ -52,14 +52,21 @@ fn nested_folders_resolve_to_their_target_ids() {
             .unwrap(),
         ScopedPath {
             artifact_id: id("leaf"),
-            path: "file".into(),
+            path: "file".parse().unwrap(),
         }
     );
     assert_eq!(
         scope.resolve_path(&id("review"), "data/deep").unwrap(),
         ScopedPath {
             artifact_id: id("input"),
-            path: "deep".into(),
+            path: "deep".parse().unwrap(),
+        }
+    );
+    assert_eq!(
+        scope.resolve_path(&id("review"), "data").unwrap(),
+        ScopedPath {
+            artifact_id: id("input"),
+            path: "".parse().unwrap(),
         }
     );
     assert!(

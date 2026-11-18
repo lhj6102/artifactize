@@ -257,8 +257,8 @@
 </div>
 
 <style>
-  /* A plain text switch, a level below the Detail's chips: the chosen view dark and bold, the
-   * other light. Hover only highlights. */
+  /* A plain text switch, a level below the Detail's chips: the chosen view bold in the strong
+   * text colour, the other in the quieter one. Hover only highlights. */
   .views {
     display: flex;
     flex-wrap: wrap;

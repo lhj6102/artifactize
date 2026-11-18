@@ -392,8 +392,15 @@ impl Fixture {
 /// supplies its verdict or non-retryable operational error; no child deadline orders it.
 struct ClaimProvider {
     gate: support::Gate,
-    entered: std::sync::mpsc::Receiver<()>,
+    // Join handlers before dropping the receiver they may still notify.
     provider: support::FakeProvider,
+    entered: std::sync::mpsc::Receiver<()>,
+}
+
+impl Drop for ClaimProvider {
+    fn drop(&mut self) {
+        self.gate.open();
+    }
 }
 
 impl ClaimProvider {
@@ -427,8 +434,8 @@ impl ClaimProvider {
         });
         Self {
             gate,
-            entered: receiving,
             provider,
+            entered: receiving,
         }
     }
 

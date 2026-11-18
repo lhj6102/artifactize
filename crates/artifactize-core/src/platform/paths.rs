@@ -30,6 +30,40 @@ pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
     Ok(resolved)
 }
 
+/// Whether a prospective directory can be reused, without following links or resolving
+/// another spelling on case-insensitive filesystems. Refuse case variants on all volumes so
+/// a project migrated on a case-sensitive volume can also run on a case-insensitive one.
+pub(crate) fn reusable_directory(parent: &Path, name: &str) -> io::Result<bool> {
+    let parent = super::open_directory(parent)?;
+    let name = OsStr::new(name);
+    let mut found = false;
+    for entry in super::read_dir(&parent)? {
+        let entry = entry?;
+        let actual = entry.file_name();
+        if actual == name && entry.file_type()? == super::FileKind::Directory {
+            found = true;
+        } else if actual.eq_ignore_ascii_case(name) {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "The destination must be a real directory with the exact name.",
+            ));
+        }
+    }
+    Ok(found)
+}
+
+/// Remove a regular file, refusing links and other special entries. The unlink itself never
+/// follows the final component, including if the entry changes after the type probe.
+pub(crate) fn remove_regular(path: &Path) -> io::Result<()> {
+    match super::path_kind(path)? {
+        super::FileKind::File => std::fs::remove_file(path),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        )),
+    }
+}
+
 /// Open a regular file by name in a pinned directory, refusing links and reparse points.
 pub(crate) fn open_regular_entry(directory: &File, name: &OsStr) -> io::Result<File> {
     let file = open_named(directory, name)?;

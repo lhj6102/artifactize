@@ -20,7 +20,6 @@
     <a href="review.html">Review</a>
     <a href="settings.html">Settings</a>
     <a href="overlays.html">Overlays</a>
-    <a href="ux-graph-doc.html">UX graph</a>
   </nav>
 </header>
 <main data-screen="current">
@@ -312,7 +311,7 @@ a node with its own evals.</div>
   <dt id="D-CUR-4">D-CUR-4</dt>
   <dd>A dragged Artifact (a node, a minimized whole, or a whole with its parts) floats: raised to <code>--surface-raised</code> with the faint shadow (D-SYS-2), its outline, icon, strip and tally as they were, its edges and its comment following it; the place it left stays empty. A press and release without moving is a click (it opens the Detail); a press followed by moving starts the drag; a whole is dragged by its title row. <span class="avoid">a ghost left at the old place; a drag that starts on a press and release without moving; a node that turns into a block or a different shape while dragged; the camera moving while a node is dragged.</span></dd>
   <dt id="D-CUR-5">D-CUR-5</dt>
-  <dd>The drop target, the box or node a release would make the dragged Artifact's whole, is outlined 2px in <code>--accent</code>, its face and strip unchanged, while the drop would make a valid whole, as the graph knows during the drag (E-NODE-DRAG). The box the Artifact is dragged within, an Artifact a drop would make a cycle with, and the top level show nothing. Whether a file can be written is learnt only on release: a highlighted drop whose file changed on disk, or whose file's Source in the Detail holds typed text, is refused then, the Artifact back where it was, nothing written, and the Main area's notice naming the file (D-CUR-7). <span class="avoid">a status colour or red for a drop target; a mark for a drop that would make a cycle; a drop target withheld because of a file's state on disk or in a Source; drop zones drawn on the canvas; a highlighted edge.</span></dd>
+  <dd>The drop target, the box or node a release would make the dragged Artifact's whole, is outlined 2px in <code>--accent</code>, its face and strip unchanged, while the drop would make a valid whole, as the graph knows during the drag (J-PARTS-DRAG). The box the Artifact is dragged within, an Artifact a drop would make a cycle with, and the top level show nothing. Whether a file can be written is learnt only on release: a highlighted drop whose file changed on disk, or whose file's Source in the Detail holds typed text, is refused then, the Artifact back where it was, nothing written, and the Main area's notice naming the file (D-CUR-7). <span class="avoid">a status colour or red for a drop target; a mark for a drop that would make a cycle; a drop target withheld because of a file's state on disk or in a Source; drop zones drawn on the canvas; a highlighted edge.</span></dd>
   <dt id="D-CUR-6">D-CUR-6</dt>
   <dd>A box placed by hand carries Reset layout in its title row, before Minimize: a button of Minimize's size and border (D-NODE-3) with the reset icon, named <i>Reset layout of {whole}</i> when read aloud; a box laid out automatically has none, so the button alone tells a box placed by hand. <span class="avoid">a badge, a lock or a pin marking a placed box; a tooltip on the button (D-SYS-7); Reset layout on a Run's graph.</span></dd>
   <dt id="D-CUR-7">D-CUR-7</dt>

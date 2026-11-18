@@ -23,8 +23,6 @@ function requireCallbackPort(): Promise<void> {
 
 export const scenarios: Scenario[] = [
   // UX journeys: J-SET-CODEX J-SET-MODELS
-  // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-CANCEL E-SET-CODEX-BY-HAND E-SET-CODEX-PASTE
-  // E-SET-CODEX-LOGOUT E-SET-CODEX-RETURN E-SET-MODELS
   scenario(
     "accounts",
     "accounts and models: cancel, paste, sign out, browser callback, sign out, list models",
@@ -107,7 +105,7 @@ export const scenarios: Scenario[] = [
         // asked for.
         await browser.waitUntil(async () => (await status()).trim() === "sign-in in progress", { timeout: 15000, timeoutMsg: "the sign-in is in progress" });
         assert.equal(await browser.$("#codex-redirect").isExisting(), false, "Finish by hand starts folded");
-        // E-SET-CODEX-BY-HAND: unfolding shows the address and the redirect field, the sign-in
+        // unfolding shows the address and the redirect field, the sign-in
         // still in progress.
         await browser.$("button=Finish by hand").click();
         await browser.$("#codex-redirect").waitForExist({ timeout: 15000 });

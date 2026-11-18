@@ -154,7 +154,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* Expanded, the notice keeps its place in the header row (E-MON-NOTICE): raised inside a
+  /* Expanded, the notice keeps its place in the header row (D-MAIN-1): raised inside a
    * panel line, its whole text wrapped at that place's width and scrolling within the row's
    * height, so the header keeps its height and nothing below it moves or is covered. */
   .notice.open {

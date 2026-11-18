@@ -42,7 +42,7 @@ function shortcuts(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-HELP; UX edges: E-HELP-OPEN E-HELP-CLOSE
+  // UX journey: J-HELP
   scenario<Record<string, never>>(
     "navigation-help",
     "lists the keys of the Pane, the Main area or Settings, whichever has focus, with ? and closes them with Esc",
@@ -101,7 +101,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-LIVE; UX edge: E-MON-LIVE
+  // UX journey: J-LIVE
   scenario<{ run: string }>(
     "navigation-live-run",
     "shows a Run another process starts on the shown branch without a reload",
@@ -121,7 +121,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-REFRESH J-MAIN-CURRENT; UX edges: E-REFRESH E-CURRENT-REFRESH
+  // UX journeys: J-REFRESH J-MAIN-CURRENT
   scenario<{ worktree: string }>(
     "navigation-refresh",
     "reloads the state, scans the branches and the shown Current again with F5 and Ctrl+R, on the same view",
@@ -176,7 +176,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "navigation-technical-detail",
     "shows the Debug facts of an eval's Summary with t and closes the Detail back to the graph",
@@ -255,8 +254,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-PANE-NAVIGATE J-WAITING; UX edges: E-MON-SCOPE-MOVE E-MON-EXPAND E-MON-RUNS-MOVE
-  // E-MON-RUNS-GRAPH E-MON-GRAPH-TO-RUNS E-REVIEW-OPEN E-HUMAN-ESC-DETAIL
+  // UX journeys: J-PANE-NAVIGATE J-WAITING
   scenario<NavigationData>(
     "navigation-pane-keys",
     "moves through the branches and then the waiting reviews by keys, expands a branch and moves through its timeline, folds it, enters the Main area and comes back",
@@ -327,7 +325,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-PANE-NAVIGATE; UX edges: E-MON-RUNS-MOVE E-MON-RUNS-OLDER
+  // UX journey: J-PANE-NAVIGATE
   scenario<{ runs: string[] }>(
     "navigation-timeline-keys",
     "moves by ↓ and ↑ through a timeline longer than the Pane, the list scrolling so that each chosen entry shows, and asks for older Runs past the oldest",
@@ -384,7 +382,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-MAIN-RUN; UX edge: E-MON-NOTICE
+  // UX journey: J-MAIN-RUN
   scenario<{ readable: string; unreadable: string[] }>(
     "navigation-unreadable-runs",
     "keeps a shown Run's graph within the Main area while its notice names the Runs that cannot be read, in full on a click",
@@ -454,7 +452,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-QUIT; UX edge: E-QUIT-CLEAN
+  // UX journey: J-QUIT
   scenario<Record<string, never>>(
     "navigation-quit-clean",
     "closes the window at once with q",
@@ -470,7 +468,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-QUIT; UX edge: E-QUIT-CLEAN
+  // UX journey: J-QUIT
   scenario<Record<string, never>>(
     "navigation-close-clean",
     "closes at once, asking nothing",
@@ -483,7 +481,7 @@ export const scenarios: Scenario[] = [
       await sessionEndedByApp(browser, () => requestWindowClose(browser));
     },
   ),
-  // UX journey: J-PANE-TOGGLE; UX edges: E-PANE-HIDE E-PANE-SHOW E-REVIEW-SEARCH-FOCUS E-MON-RUNS-GRAPH E-MON-GRAPH-TO-RUNS
+  // UX journey: J-PANE-TOGGLE
   scenario<Record<string, never>>(
     "navigation-pane-toggle",
     "hides the Pane by Ctrl+B, its switch or the palette, the Main area taking the window's width with its view as it was, and shows it again as it was: its width, search, selection and expanded branches",
@@ -582,7 +580,7 @@ export const scenarios: Scenario[] = [
       assert.equal((await waiting(browser)).rows.find((row) => row.selected)?.id, id, "the review's entry stays selected");
     },
   ),
-  // UX journey: J-HELP; UX edges: E-HELP-OPEN E-HELP-CLOSE
+  // UX journey: J-HELP
   scenario<Record<string, never>>(
     "navigation-help-review",
     "lists the keys of a Human review with ? while it has focus, and closes them with Esc",
@@ -604,7 +602,7 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => !(await helpOpen()), "the review's keys closed");
     },
   ),
-  // UX journeys: J-HELP J-MAIN-CURRENT; UX edges: E-HELP-OPEN E-HELP-CLOSE
+  // UX journeys: J-HELP J-MAIN-CURRENT
   scenario<Record<string, never>>(
     "navigation-help-current",
     "pairs each of a Current's marks with what verify would do, with ? on its graph",

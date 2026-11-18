@@ -8,7 +8,8 @@ use crate::scope;
 pub(crate) fn read_output(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     let relative = crate::files::logical_below(root, path)
         .ok_or("Image path must be a UTF-8 path below the tool output directory.")?;
-    let file = scope::open_scoped(root, &relative).map_err(|e| format!("Image {relative}: {e}"))?;
+    let file = scope::open_scoped(root, &relative)
+        .map_err(|e| format!("Image {}: {e}", crate::files::path_text(&relative)))?;
     read(file)
 }
 

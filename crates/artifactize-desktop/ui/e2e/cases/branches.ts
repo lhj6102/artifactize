@@ -35,7 +35,7 @@ const COMMENT = "Fixing the login form so that a wrong password says which field
 const FIRST = '[aria-label="Branches"] > [role="treeitem"]:first-child';
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-LIVE; UX edges: E-BRANCH-RUNNING E-BRANCH-RUN-END
+  // UX journey: J-LIVE
   scenario<{ gate: NativePath }>(
     "branches-run-executing",
     "starts a branch's timeline with a Run another process starts while its eval still runs, Running and its time so far, folded the same, and ends it",
@@ -68,7 +68,7 @@ export const scenarios: Scenario[] = [
       assert.match((await run())!.chips[1].text, /^GREEN \d+[smhd]( \d+[smh])? ago$/);
     },
   ),
-  // UX journeys: J-BRANCH-RUNS J-MAIN-RUN; UX edges: E-PANE-FOLD E-PANE-SELECT E-PANE-OLDER E-PANE-CHIP E-CURRENT-CHIP
+  // UX journeys: J-BRANCH-RUNS J-MAIN-RUN
   scenario<{ runs: string[] }>(
     "branches-timeline",
     "folds a branch to its newest Run's status, expands it on a click to its Runs newest first after its Current, each with its comment cut short to one line, brings older Runs with Older runs, and shows a clicked entry with its comment in full",
@@ -178,7 +178,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-BRANCH-RUNS J-LIVE; UX edges: E-BRANCH-RUNNING E-BRANCH-RUN-END
+  // UX journeys: J-BRANCH-RUNS J-LIVE
   scenario<{ first: string }>(
     "branches-run-in-progress",
     "starts a branch's timeline with a Run another process starts, running its time so far, and with the Current again once it ends",
@@ -223,7 +223,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-BRANCH-STAR; UX edge: E-PANE-STAR
+  // UX journey: J-BRANCH-STAR
   scenario<Record<string, never>>(
     "branches-star",
     "lists a starred branch first, keeps its star for the next monitor, and lists it with the others again once the star is taken away",
@@ -290,7 +290,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-BRANCHES J-LIVE J-WAITING; UX edges: E-PANE-WORKTREES E-WAITING-CHANGE
+  // UX journeys: J-BRANCHES J-LIVE J-WAITING
   scenario<{ runs: string[]; plain: { folder: NativePath; run: string } }>(
     "branches-worktrees",
     "lists worktrees another process adds, a detached one by its folder, a folder outside Git by its name, and drops removed or deleted ones, the waiting reviews of a deleted folder too",
@@ -346,7 +346,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-WAITING J-LIVE; UX edge: E-WAITING-CHANGE
+  // UX journeys: J-WAITING J-LIVE
   scenario<{ runs: string[] }>(
     "branches-waiting-shared-deleted",
     "keeps a review two worktrees wait on in the Waiting stack when the folder its row names is deleted, now named by the other worktree",
@@ -374,7 +374,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-WAITING J-LIVE; UX edges: E-WAITING-CHANGE E-REVIEW-OPEN
+  // UX journeys: J-WAITING J-LIVE
   scenario<Record<string, never>>(
     "branches-waiting-change",
     "adds a review that starts waiting elsewhere to the stack, opens it on a click, and drops it once submitted elsewhere",
@@ -448,7 +448,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-MAIN-REVIEW; UX edges: E-REVIEW-OPEN E-MAIN-REVIEW-LEAVE
+  // UX journey: J-MAIN-REVIEW
   scenario<{ run: string }>(
     "branches-review-leave",
     "leaves a review opened from the Pane for a branch's chip without closing it, and opens it again as it was left, its Tool log included",
@@ -496,7 +496,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-BRANCHES J-BRANCH-RUNS; UX edge: E-PANE-CHIP
+  // UX journeys: J-BRANCHES J-BRANCH-RUNS
   scenario<{ master: string; shared: string[] }>(
     "branches-one-entry",
     "lists a branch once with the Runs made on it from every folder, by a person and by an agent session, and no entry per folder or session",

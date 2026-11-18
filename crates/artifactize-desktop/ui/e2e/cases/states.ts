@@ -52,7 +52,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL
   scenario<Record<string, never>>(
     "states-finished-detail",
     "shows an eval's status, instruction and result in its Summary, and every other fact under Debug only on demand",
@@ -87,7 +86,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "states-detail-tabs",
     "shares verdict colours between the pane, graph, eval rows and eval chips",
@@ -155,7 +153,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-MAIN-RUN; UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-RUN E-MON-DETAIL-BACK
+  // UX journey: J-MAIN-RUN
   scenario<Record<string, never>>(
     "states-run-outcome",
     "names a Run with RED and ERROR evals and a waiting sign-off in its one header row, and opens its outcome from there: its status, the evals that failed, its tally, its time and what it waits for",

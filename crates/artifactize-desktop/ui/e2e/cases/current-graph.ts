@@ -82,7 +82,7 @@ const evalRows = (browser: WebdriverIO.Browser) => browser.execute((root) => [..
   .map((row) => ({ name: row.querySelector(".name")?.firstChild?.textContent?.trim() ?? "", status: row.querySelector(".status")?.textContent?.trim() ?? "" })), DETAIL);
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-LAUNCH; UX edges: E-CURRENT-LAUNCH E-DETAIL-TOOL
+  // UX journey: J-LAUNCH
   scenario<Record<string, never>>(
     "current-human-graph-tool",
     "opens the selected sibling worktree's Current in a real companion window when the declared Human graph tool is clicked",
@@ -127,7 +127,6 @@ payload.instruction = "Check {graph-marker}."
   ),
 
   // UX journeys: J-LAUNCH J-MAIN-CURRENT J-DETAIL J-DETAIL-SUMMARY J-DETAIL-TOOLS J-GRAPH-COLOURS J-GRAPH-CAMERA
-  // UX edges: E-CURRENT-LAUNCH E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-TOOL E-CURRENT-CLOSE E-CURRENT-REFRESH E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
   scenario<Record<string, never>>(
     "current-launch",
     "opens graph --repo on the branch's Current without a Run, marks what verify would run, opens an Artifact's evals and tools, closes, then refreshes changed declarations",
@@ -270,7 +269,7 @@ Summarize {docs}."""
     },
   ),
 
-  // UX journeys: J-DETAIL J-DETAIL-SUMMARY J-GRAPH-COLOURS; UX edges: E-CURRENT-CHIP E-CURRENT-EVALS E-CURRENT-TAB E-DETAIL-ARTIFACT-TAB E-CURRENT-CLOSE
+  // UX journeys: J-DETAIL J-DETAIL-SUMMARY J-GRAPH-COLOURS
   scenario<{ run: string }>(
     "current-reused",
     "marks an Artifact whose every eval would be reused, its eval's tab says why with the result it would reuse, and its chip returns to its Artifact tab",
@@ -302,7 +301,6 @@ Summarize {docs}."""
   ),
 
   // UX journeys: J-MAIN-CURRENT J-DETAIL-SUMMARY J-GRAPH-COLOURS
-  // UX edges: E-CURRENT-CHIP E-CURRENT-EVALS E-CURRENT-TAB E-CURRENT-RUN-END E-GRAPH-RECOLOUR
   scenario<{ first: string }>(
     "current-run-end",
     "shows the signed-off result a Current would reuse, scans again when its chip is chosen again and when a Run of its branch ends, recolouring the graph in place",
@@ -391,7 +389,6 @@ Summarize {docs}."""
   ),
 
   // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS J-DETAIL J-DETAIL-SUMMARY
-  // UX edges: E-CURRENT-CHIP E-CURRENT-CHECKED E-REFRESH E-CURRENT-REFRESH E-CURRENT-RUN-END E-CURRENT-EVALS E-CURRENT-TAB E-CURRENT-CLOSE E-CURRENT-FAILED E-GRAPH-RECOLOUR
   scenario<{ gate: NativePath; runs: NativePath }>(
     "current-checking",
     "draws a Current's graph at once, its Artifacts being checked until their fingerprints are in, shows its running scan instead of starting over, and keeps the graph when a scan fails",
@@ -504,7 +501,7 @@ payload.instruction = "Check {added}."
     },
   ),
 
-  // UX journey: J-MAIN-CURRENT; UX edge: E-CURRENT-CHECKED
+  // UX journey: J-MAIN-CURRENT
   scenario<{ first: NativePath; second: NativePath }>(
     "current-checked-progress",
     "paints independently checked Artifacts in place, showing each tally and the decreasing header count",
@@ -553,7 +550,7 @@ payload.instruction = "Check {${name}}."
     },
   ),
 
-  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS; UX edges: E-CURRENT-CHIP E-CURRENT-EVALS
+  // UX journeys: J-MAIN-CURRENT J-GRAPH-COLOURS
   scenario<Record<string, never>>(
     "current-mixed",
     "marks a Current's Artifacts blocked by a RED one, and an Artifact some of whose evals would run with how many",

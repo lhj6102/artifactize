@@ -133,7 +133,7 @@ async function prepare(tag: string, options: {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-LINK E-UPDATE-CLOSE
+  // UX journey: J-UPDATE
   scenario<Site>(
     "release-notice",
     "a release found later while the app runs shows in the header, as doctor reports it; its dialog links the release page, which opens in the browser, and closes by Esc or Close",
@@ -187,7 +187,7 @@ export const scenarios: Scenario[] = [
       await closeByButton(browser);
     },
   ),
-  // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-CLOSE
+  // UX journey: J-UPDATE
   scenario<Site>(
     "release-command",
     "an app installed with Cargo shows Cargo's update command, as text that can be selected, and runs nothing itself",
@@ -233,7 +233,7 @@ export const scenarios: Scenario[] = [
       onlyLookups(data);
     },
   ),
-  // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE E-UPDATE-OPEN E-UPDATE-LINK E-UPDATE-CLOSE
+  // UX journey: J-UPDATE
   scenario<Site>(
     "release-download",
     "an app installed from the disk image links the newest disk image to download and install by hand, and downloads nothing itself",
@@ -250,7 +250,7 @@ export const scenarios: Scenario[] = [
       await closeByButton(browser);
     },
   ),
-  // UX journey: J-UPDATE; UX edge: E-UPDATE-NOTICE
+  // UX journey: J-UPDATE
   scenario<Site>(
     "release-prerelease",
     "a newer prerelease is not shown after a fresh lookup replaces the previous stable-release notice",
@@ -266,7 +266,7 @@ export const scenarios: Scenario[] = [
       onlyLookups(data);
     },
   ),
-  // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE
+  // UX journey: J-UPDATE
   scenario<Site>(
     "release-store",
     "a Microsoft Store install shows no notice, whatever release is out",

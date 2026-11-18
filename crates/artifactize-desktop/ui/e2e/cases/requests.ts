@@ -46,7 +46,7 @@ function submission(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-HUMAN-RED; UX edge: E-HUMAN-SWITCH
+  // UX journey: J-HUMAN-RED
   scenario<Record<string, never>>(
     "requests-verdict-switch",
     "switches between the GREEN and the RED form while editing",
@@ -81,7 +81,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
     },
   ),
-  // UX journey: J-HUMAN-CLAIM; UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM
+  // UX journey: J-HUMAN-CLAIM
   scenario<Record<string, never>>(
     "requests-claim-elsewhere",
     "refuses a claim here while it is held, and offers it again once released",
@@ -113,7 +113,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await requestState(browser)).includes("claimed by you (alice)"), "this review displays the new claim");
     },
   ),
-  // UX journeys: J-HUMAN-TEXT J-HUMAN-GREEN; UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
+  // UX journeys: J-HUMAN-TEXT J-HUMAN-GREEN
   scenario<Record<string, never>>(
     "requests-green-composition",
     "claims, composes Korean through the engine and guards page shortcuts before submitting GREEN",

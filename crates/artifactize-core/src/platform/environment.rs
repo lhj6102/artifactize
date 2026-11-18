@@ -3,6 +3,7 @@
 //! gets a snapshot, never this process's environment by inheritance.
 
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     ffi::{OsStr, OsString},
 };
@@ -40,6 +41,21 @@ pub(crate) fn for_command() -> BTreeMap<OsString, OsString> {
     environment
 }
 
+/// Use the same environment for program lookup and launch. When a caller supplies aliases,
+/// the last entry in map order wins, as when passing the ordered map to `Command::envs`.
+pub(crate) fn for_child(
+    environment: &BTreeMap<OsString, OsString>,
+) -> Cow<'_, BTreeMap<OsString, OsString>> {
+    if !super::ENV_NAMES_IGNORE_CASE {
+        return Cow::Borrowed(environment);
+    }
+    let mut normalized = BTreeMap::new();
+    for (name, value) in environment {
+        insert(&mut normalized, name, value.clone());
+    }
+    Cow::Owned(normalized)
+}
+
 /// Set one variable of a built environment, replacing a variable of the same name as this
 /// system compares names.
 pub(crate) fn set(
@@ -47,10 +63,14 @@ pub(crate) fn set(
     name: &str,
     value: impl Into<OsString>,
 ) {
+    insert(environment, OsStr::new(name), value.into());
+}
+
+fn insert(environment: &mut BTreeMap<OsString, OsString>, name: &OsStr, value: OsString) {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.retain(|key, _| !same_name(key, OsStr::new(name)));
+        environment.retain(|key, _| !same_name(key, name));
     }
-    environment.insert(name.into(), value.into());
+    environment.insert(name.into(), value);
 }
 
 /// Remove one variable of a built environment, matching its name as this system compares

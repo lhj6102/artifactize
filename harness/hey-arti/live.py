@@ -23,22 +23,62 @@ TERMINAL_STATUSES = {"GREEN", "RED", "INCOMPLETE", "YELLOW", "ERROR"}
 RUN_PAGE_SIZE = 100  # Read every owned Run, not just the CLI's first page.
 
 
-def settle_runs(candidate, area):
+class RunCommands:
+    """Keep failed CLI invocations tied to their case across settlement attempts."""
+
+    def __init__(self):
+        self.pending = set()
+
+    def run(self, command, **options):
+        spawned = None
+
+        def register(process):
+            nonlocal spawned
+            spawned = process
+            self.pending.add(process)
+
+        try:
+            result = driver.run_command(command, on_spawn=register, **options)
+        except driver.ProcessExitError as error:
+            if error.process is not None:
+                self.pending.add(error.process)
+            raise
+        else:
+            self.pending.discard(spawned)
+            return result
+
+    def join(self):
+        failures = []
+        for process in tuple(self.pending):
+            try:
+                driver.child_cleanup.close(process)
+                self.pending.remove(process)
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise BaseExceptionGroup("Run cleanup commands did not settle", failures)
+
+
+def settle_runs(candidate, area, commands=None):
     """Cancel active fixture Runs and require an authoritative terminal snapshot."""
+    if commands is None:
+        commands = RunCommands()
     with driver.defer_interrupts():
-        return _settle_runs(candidate, area)
+        commands.join()
+        _settle_runs(candidate, area, commands.run)
+        commands.join()
 
 
-def _settle_runs(candidate, area):
+def _settle_runs(candidate, area, run_command):
     base = [str(candidate), "--repo", str(area / "repo"), "--state-dir", str(area / "state")]
     env = dict(os.environ, ARTIFACTIZE_REMOTE="off")
     cleanup, failures = [], []
     try:
         offset = 0
         while True:
-            listing = driver.run_command(base + ["run", "list", "--json", "--limit", str(RUN_PAGE_SIZE),
-                                             "--offset", str(offset)], env=env, capture_output=True,
-                                     text=True, timeout=60, check=True)
+            listing = run_command(base + ["run", "list", "--json", "--limit", str(RUN_PAGE_SIZE),
+                                          "--offset", str(offset)], env=env, capture_output=True,
+                                  text=True, timeout=60, check=True)
             saved_runs = json.loads(listing.stdout)
             for saved in saved_runs:
                 entry = {"run": saved["id"]}
@@ -46,7 +86,7 @@ def _settle_runs(candidate, area):
                 if saved["status"] not in TERMINAL_STATUSES:
                     # A failed cancel must not prevent joining/cancelling other Runs.
                     try:
-                        cancelled = driver.run_command(base + ["run", "cancel", saved["id"]], env=env,
+                        cancelled = run_command(base + ["run", "cancel", saved["id"]], env=env,
                                                        capture_output=True, text=True, timeout=60)
                         entry.update(cancel_exit=cancelled.returncode, cancel_stdout=cancelled.stdout,
                                      cancel_stderr=cancelled.stderr)
@@ -62,7 +102,7 @@ def _settle_runs(candidate, area):
                         entry["cancel_error"] = str(error)
                         failures.append(error)
                 try:
-                    settled = driver.run_command(base + ["run", "show", saved["id"], "--wait",
+                    settled = run_command(base + ["run", "show", saved["id"], "--wait",
                                                       "--timeout-ms", "30000"], env=env,
                                              capture_output=True, text=True, timeout=45)
                     entry.update(settled_exit=settled.returncode, settled_stdout=settled.stdout,
@@ -201,28 +241,36 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
     case_id = area.name
     builder_started = False
     detached = driver.Descendants()
+    commands = RunCommands()
     host_exit_error = None
     failures = []
 
     def settle(*, final=False):
-        if host_exit_error is not None:
-            if host_exit_error.process is None:
-                raise host_exit_error
-            driver.child_cleanup.close(host_exit_error.process)
-        if builder_started:
-            # Stop submissions before listing; do not kill admitted workers
-            # before the owned Runs can acknowledge cancellation and settle.
-            try:
+        try:
+            if host_exit_error is not None:
+                if host_exit_error.process is None:
+                    raise host_exit_error
+                driver.child_cleanup.close(host_exit_error.process)
+            if builder_started:
+                # Stop submissions before listing; do not kill admitted workers
+                # before the owned Runs can acknowledge cancellation and settle.
                 detached.stop_mcp_submitters(mcp_command)
-                settle_runs(candidate, area)
-            except BaseException as error:
-                if final:
+                settle_runs(candidate, area, commands)
+        except BaseException as error:
+            if final:
+                unconfirmed = [error]
+                # Neither a host join failure nor a CLI failure discharges
+                # ownership of the other trees. Keep the case even if this
+                # fallback stops every process: settlement was not confirmed.
+                for stop in (commands.join, detached.finish):
                     try:
-                        detached.finish()
+                        stop()
                     except BaseException as cleanup_error:
-                        raise BaseExceptionGroup("Run settlement and detached cleanup failed", [error, cleanup_error]) from None
-                raise
-            detached.finish()
+                        unconfirmed.append(cleanup_error)
+                if len(unconfirmed) > 1:
+                    raise BaseExceptionGroup("Live case cleanup failed", unconfirmed) from None
+            raise
+        detached.finish()
 
     def archive_and_release():
         try:

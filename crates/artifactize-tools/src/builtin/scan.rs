@@ -3,6 +3,9 @@ use globset::GlobMatcher;
 
 use super::{input, output, relative};
 
+/// Reserve one byte per serialized JSON array entry for its comma separator.
+const JSON_SEPARATOR_BYTES: usize = 1;
+
 pub(super) enum ReadEnd {
     Complete,
     Bounded,
@@ -134,7 +137,7 @@ impl<'a> Glob<'a> {
         if !self.matcher.is_match(relative(self.path, file)) {
             return Selection::Skip;
         }
-        self.bytes += serde_json::to_vec(file).expect("path is JSON").len() + 1;
+        self.bytes += serde_json::to_vec(file).expect("path is JSON").len() + JSON_SEPARATOR_BYTES;
         if self.files.len() == super::MAX_RESULTS || self.bytes > super::RESULT_BYTES {
             self.truncated = true;
             return Selection::Full;
@@ -224,7 +227,8 @@ impl<'a> Grep<'a> {
             line: index + 1,
             text: line.to_owned(),
         };
-        self.bytes += serde_json::to_vec(&entry).expect("match is JSON").len() + 1;
+        self.bytes +=
+            serde_json::to_vec(&entry).expect("match is JSON").len() + JSON_SEPARATOR_BYTES;
         if self.matches.len() == self.input.max_results || self.bytes > super::RESULT_BYTES {
             self.truncated = true;
             return false;
@@ -263,7 +267,7 @@ pub(super) fn list(
         .skip(offset)
         .take(limit)
         .take_while(|entry| {
-            bytes += serde_json::to_vec(entry).expect("entry is JSON").len() + 1;
+            bytes += serde_json::to_vec(entry).expect("entry is JSON").len() + JSON_SEPARATOR_BYTES;
             bytes <= super::RESULT_BYTES
         })
         .collect();

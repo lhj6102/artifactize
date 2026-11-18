@@ -2,6 +2,7 @@
 use super::model::Status;
 use super::{
     DetailArea, Focus, Monitor, Pane, Scope,
+    detail::{Content, SessionView},
     input::{Button, Hits},
     layout::{self, Density},
     model::{self, Section},
@@ -14,11 +15,13 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use time::OffsetDateTime;
 
 /// Buttons stay two columns apart so adjacent hit areas never overlap.
 const BUTTON_GAP: u16 = 2;
+/// A button reserves one column for each square bracket around its label.
+const BUTTON_BRACKETS: usize = 2;
 /// Evidence sits beside the sections from this inner width, and below them otherwise.
 const SIDE_BY_SIDE: u16 = 90;
 /// Rows of a running Agent's transcript the peek reads to find its last line.
@@ -302,12 +305,8 @@ fn short_id(id: &str) -> &str {
 const COMPACT_SCOPE_BADGES: usize = 1;
 
 impl Monitor {
-    pub fn draw(&mut self, frame: &mut Frame) {
-        self.draw_at(frame, OffsetDateTime::now_utc());
-    }
-
-    /// Draw with ages and elapsed times measured at `now`.
-    pub(crate) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime) {
+    /// Draw with the request ages and current review job duration sampled for this frame.
+    pub(crate) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime, elapsed: Duration) {
         self.hits = Hits::default();
         self.size = frame.area();
         let [header, body, notice, keys] = Layout::vertical([
@@ -343,7 +342,9 @@ impl Monitor {
                 Pane::Repositories => self.draw_scope(frame, area, density),
                 Pane::Runs => self.draw_runs(frame, area, density, now),
                 Pane::Artifacts => self.draw_run(frame, area, density, nodes.clone(), now),
-                Pane::Detail if density == Density::Full => self.draw_detail(frame, area, now),
+                Pane::Detail if density == Density::Full => {
+                    self.draw_detail(frame, area, now, elapsed)
+                }
                 Pane::Detail => self.draw_peek(frame, area, now),
             }
         }
@@ -425,7 +426,7 @@ impl Monitor {
             }
             Focus::Detail(pane) => match pane.content.review() {
                 Some(review) => return review.detail_hints(),
-                None if pane.content.live().is_some() && !pane.show_details => {
+                None if pane.content.session_view() == Some(SessionView::Transcript) => {
                     "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back"
                 }
                 None if pane.detail.field("Waits for").is_some() => {
@@ -725,7 +726,13 @@ impl Monitor {
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
     }
     /// The opened Detail: sections and evidence, an Agent session, or a Human review.
-    fn draw_detail(&mut self, frame: &mut Frame, area: Rect, now: OffsetDateTime) {
+    fn draw_detail(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        now: OffsetDateTime,
+        elapsed: Duration,
+    ) {
         let Focus::Detail(pane) = &mut self.focus else {
             return;
         };
@@ -733,7 +740,7 @@ impl Monitor {
         let detail = pane.detail.clone();
         // A Human review is the shared component, the same one the standalone review draws.
         if let Some(review) = pane.content.review_mut() {
-            let hits = review.draw_detail(frame, area, true, now);
+            let hits = review.draw_detail(frame, area, true, now, elapsed);
             self.hits.areas = [hits.tools, hits.fields];
             self.hits.buttons = hits
                 .buttons
@@ -754,7 +761,7 @@ impl Monitor {
         frame.render_widget(outer, area);
         let [content, buttons] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
-        if let Some(live) = pane.content.live_mut() {
+        if let Content::Session { live, view } = &mut pane.content {
             let [transcript, footer] =
                 Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(content);
             self.hits.areas = [Rect::default(), transcript];
@@ -766,7 +773,7 @@ impl Monitor {
                 Line::from(format!("{} · Space tools · d details", live.indicator())).dark_gray(),
                 footer,
             );
-            if pane.show_details {
+            if *view == SessionView::Sections {
                 frame.render_widget(
                     Paragraph::new(section_lines(&detail, pane.technical, pane.pending, false))
                         .wrap(Wrap { trim: false })
@@ -856,7 +863,7 @@ impl Monitor {
         controls.push(("Close", Button::Close));
         let mut x = area.x;
         for (label, button) in controls {
-            let width = label.len() as u16 + 2;
+            let width = cap(width(label).saturating_add(BUTTON_BRACKETS));
             if x.saturating_add(width) > area.right() {
                 break;
             }

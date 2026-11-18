@@ -1,6 +1,7 @@
 //! Keyboard and paste routing, including the opened Detail's review or transcript.
 use super::{
-    Action, DetailArea, Focus, Monitor, Node, Pane, input::SCROLL_PAGE, layout, loader, model,
+    Action, DetailArea, Focus, Monitor, Node, Pane, detail::SessionView, input::SCROLL_PAGE,
+    layout, loader, model,
 };
 use crate::review;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -226,9 +227,8 @@ impl Monitor {
             }
         }
         if key.code == KeyCode::Esc {
-            if pane.show_details {
-                pane.show_details = false;
-                pane.focus = DetailArea::Evidence;
+            if pane.content.session_view() == Some(SessionView::Sections) {
+                pane.toggle_session_view();
                 return Action::None;
             }
             self.leave_detail();
@@ -259,27 +259,23 @@ impl Monitor {
         let Focus::Detail(pane) = &mut self.focus else {
             return Action::None;
         };
+        let transcript = pane.content.session_view() == Some(SessionView::Transcript);
         match key.code {
-            KeyCode::Char('t') if pane.content.live().is_none() || pane.show_details => {
+            KeyCode::Char('t') if !transcript => {
                 pane.technical = !pane.technical;
                 return Action::None;
             }
-            KeyCode::Char('w') if pane.content.live().is_none() || pane.show_details => {
+            KeyCode::Char('w') if !transcript => {
                 pane.pending = !pane.pending;
                 return Action::None;
             }
             _ => {}
         }
-        if pane.content.live().is_some() && key.code == KeyCode::Char('d') {
-            pane.show_details = !pane.show_details;
-            pane.focus = if pane.show_details {
-                DetailArea::Summary
-            } else {
-                DetailArea::Evidence
-            };
+        if key.code == KeyCode::Char('d') {
+            pane.toggle_session_view();
             return Action::None;
         }
-        if pane.content.live().is_some() && !pane.show_details {
+        if transcript {
             pane.focus = DetailArea::Evidence;
         }
         if pane.focus == DetailArea::Evidence

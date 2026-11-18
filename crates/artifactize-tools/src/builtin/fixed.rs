@@ -6,7 +6,11 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::{io::Read, path::Path};
+use std::{
+    ffi::{OsStr, OsString},
+    io::Read,
+    path::Path,
+};
 use tokio_util::sync::CancellationToken;
 mod declaration;
 mod help;
@@ -50,7 +54,7 @@ pub async fn call_fixed(
     } = context;
     let input = match input {
         FixedInput::Text(input) => input,
-        FixedInput::Help(args) => {
+        FixedInput::Help { program, args } => {
             let cwd = match scope
                 .artifact(owner)
                 .and_then(|artifact| scope::scoped_path(root, artifact.folder()))
@@ -58,7 +62,7 @@ pub async fn call_fixed(
                 Ok(cwd) => cwd,
                 Err(error) => return ToolResult::error(error.to_string()),
             };
-            return match help(&args, &cwd, launcher, cancellation).await {
+            return match help(program, args, &cwd, launcher, cancellation).await {
                 Ok(text) => text_result(text),
                 Err(error) => ToolResult::error(bounded(&error)),
             };
@@ -91,9 +95,12 @@ struct SectionInput {
 
 /// Parsed fixed declarations and model input. Execution cannot index an absent argument
 /// or combine a heading with a tool that does not accept one.
-enum FixedInput {
+enum FixedInput<'a> {
     Text(TextInput),
-    Help(Vec<String>),
+    Help {
+        program: &'a OsStr,
+        args: Vec<OsString>,
+    },
 }
 
 enum TextInput {
@@ -107,8 +114,8 @@ enum TextInput {
     },
 }
 
-impl FixedInput {
-    fn parse(builtin: Builtin, args: &[String], value: Value) -> Result<Self, String> {
+impl<'a> FixedInput<'a> {
+    fn parse(builtin: Builtin, args: &'a [String], value: Value) -> Result<Self, String> {
         validate_args(builtin, Some(args), false)?;
         let validator = crate::schema::compile(&fixed_schema(builtin, args))?;
         crate::schema::validate(&validator, &value)?;
@@ -135,7 +142,13 @@ impl FixedInput {
                     heading,
                 }
             }
-            Builtin::Help => return Ok(Self::Help(args.to_vec())),
+            Builtin::Help => {
+                let (program, args) = args.split_first().ok_or("Missing help program.")?;
+                return Ok(Self::Help {
+                    program: OsStr::new(program),
+                    args: args.iter().map(OsString::from).collect(),
+                });
+            }
             _ => return Err("This builtin cannot run as a fixed Agent tool.".into()),
         };
         Ok(Self::Text(input))

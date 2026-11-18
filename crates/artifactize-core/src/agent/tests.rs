@@ -84,7 +84,8 @@ impl Fixture {
             .to_string(),
         )
         .unwrap();
-        fs::write(crate::test_declaration::source_path(repo.join("tool.py")),
+        fs::write(
+            crate::test_declaration::source_path(repo.join("tool.py")),
             "import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'text','text':'tool evidence'},{'type':'json','data':{'ok':True}}]}))\n",
         )
         .unwrap();
@@ -749,12 +750,11 @@ async fn registry_image_blocks_reach_both_provider_wires() {
     let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=";
     for backend in ["openai", "anthropic"] {
         let fixture = Fixture::new(backend);
-        fs::write(crate::test_declaration::source_path(fixture.config.root.join("tool.py")),
-            format!(
-                "import json\nprint(json.dumps({{'content':[{{'type':'image','mimeType':'image/png','data':'{png}'}}]}}))\n"
-            ),
-        )
-        .unwrap();
+        let tool = crate::test_declaration::source_path(fixture.config.root.join("tool.py"));
+        let source = format!(
+            "import json\nprint(json.dumps({{'content':[{{'type':'image','mimeType':'image/png','data':'{png}'}}]}}))\n"
+        );
+        fs::write(tool, source).unwrap();
         let responses = if backend == "openai" {
             vec![
                 openai_response(

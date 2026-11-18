@@ -230,7 +230,6 @@ async function clickWhole(browser: WebdriverIO.Browser, root: string, key: strin
 }
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-GRAPH-RECOLOUR E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-live-verdicts",
     "lights Artifacts and edges, recolours them in place with an Artifact's Detail open and shows the submitted eval's tab",
@@ -315,7 +314,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-GRAPH-COLOURS; UX edge: E-GRAPH-RECOLOUR
+  // UX journey: J-GRAPH-COLOURS
   scenario<null>(
     "graph-live-blocking-edge",
     "repaints a previously neutral outgoing edge with its new blocking colour in place",
@@ -348,7 +347,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-MON-DETAIL-ARTIFACT E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK E-MON-GRAPH-TO-RUNS
+  // UX journey: J-DETAIL
   scenario<Record<string, never>>(
     "graph-click-detail",
     "opens an Artifact's Detail on a click or Enter over the graph's right side with the graph visible beside it, switches it on a click on another Artifact, closes it on the background, then steps back to the Pane",
@@ -414,7 +413,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-GRAPH-PARTS; UX edges: E-GRAPH-PARTS E-GRAPH-WHOLE E-GRAPH-PART E-MON-DETAIL-BACK
+  // UX journey: J-GRAPH-PARTS
   scenario<{ run: string }>(
     "graph-parts",
     "draws each whole of a Run as a box around its parts, nested as deep as they go, a shared part in each of its wholes, edges into a box like any other, and opens the whole's Detail from its box and a part's from the part",
@@ -466,7 +465,9 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await detail(browser))?.title === "Artifact suite", { timeout: 15000, timeoutMsg: "the click on suite's box opened suite's Detail" });
       const whole = (await detail(browser))!;
       assert.deepEqual(whole.tabs, [], `suite's Detail opens on its Artifact tab: ${JSON.stringify(whole.tabs)}`);
-      assert.ok(await aside(browser).$('[aria-label="Evals of suite"]').isExisting() && await aside(browser).$('[aria-label="Neighbours"]').isExisting(),
+      // Its neighbours are read with the tab: the section shows once they are, as it has some.
+      await aside(browser).$('[aria-label="Neighbours"]').waitForExist({ timeout: 15000, timeoutMsg: "suite's Neighbours section" });
+      assert.ok(await aside(browser).$('[aria-label="Evals of suite"]').isExisting(),
         "the tab shows the whole's own Artifact content: its neighbours and its evals");
       const suite = (await partsDrawn(browser, ".graph"))["a:suite"].rect;
       await openArtifact(browser, "a:suite/a:app/a:kit", "Artifact kit");
@@ -475,8 +476,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-GRAPH-PARTS J-GRAPH-FIND J-DETAIL; UX edges: E-GRAPH-PARTS E-GRAPH-TAB E-GRAPH-WHOLE E-GRAPH-PART
-  // E-CURRENT-EVALS E-GRAPH-SHARED E-CURRENT-CLOSE E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO
+  // UX journeys: J-GRAPH-PARTS J-GRAPH-FIND J-DETAIL
   scenario<Record<string, never>>(
     "graph-parts-shared",
     "on a branch's Current, selecting one copy of a part of two wholes highlights both and its Detail names the wholes; the find field lists it once and goes to its first copy",
@@ -548,9 +548,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE E-GRAPH-MINIMIZED
-  // E-GRAPH-WHOLE E-GRAPH-MINIMIZE-KEY E-GRAPH-EXPAND-KEY E-MON-DETAIL-BACK E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE
-  // E-GRAPH-MINIMIZED-FIND E-CURRENT-CHIP E-GRAPH-TAB E-GRAPH-TAB-WHOLE E-GRAPH-EXPAND E-PANE-CHIP
+  // UX journeys: J-GRAPH-MINIMIZE J-GRAPH-CAMERA
   scenario<{ run: string }>(
     "graph-minimize",
     "minimizes a whole of a Run to a node that says how many parts it has, the edges of what it hides meeting it, its corner kept on the screen and an open Detail kept; opens it as a node, expands and minimizes it with m while its Detail is open, leaves it as it is when m is typed in a field, during a composition or with focus in the Pane, finds what it hides, keeps it minimized on the branch's Current, expands it there, minimizes and expands it there with m while it is focused, expands it on the Run, and draws every whole as a box again after the app quits",
@@ -751,7 +749,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-GRAPH-TAB E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL
   scenario<Record<string, never>>(
     "graph-keyboard-artifacts",
     "Tabs from the Main area to every Artifact of the Run's graph, opening nothing, and opens the corresponding Detail with Enter, without clicking a node",
@@ -784,7 +782,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL; UX edges: E-MON-RUNS-GRAPH E-GRAPH-TAB E-CURRENT-EVALS E-CURRENT-CLOSE
+  // UX journey: J-DETAIL
   scenario<Record<string, never>>(
     "graph-keyboard-current",
     "Tabs from the Main area to an Artifact of a branch's Current, opening nothing, and opens its Detail with Enter and closes it with Esc, without clicking a node",
@@ -813,7 +811,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-RUN E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "graph-run-detail",
     "opens the Run's Detail from its headline and closes it again",
@@ -837,7 +834,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-GRAPH-CAMERA; UX edges: E-GRAPH-FIRST E-GRAPH-CAMERA E-GRAPH-CAMERA-KEPT
+  // UX journey: J-GRAPH-CAMERA
   scenario<{ request: string }>(
     "graph-camera-stays",
     "shows the whole graph first, then leaves its camera to the person: the Detail and a new result never move it, Zoom out and Fit do",
@@ -978,7 +975,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-GRAPH-BEYOND
   scenario<{ run: string }>(
     "graph-chain-culling",
     "draws the Artifacts the camera brings into view when zooming over a chain too large to draw at once",
@@ -1015,7 +1011,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL; UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-TECHNICAL E-MON-DETAIL-LOG E-DETAIL-ARTIFACT-TAB E-MON-DETAIL-SWITCH E-MON-DETAIL-BACK
+  // UX journey: J-DETAIL
   scenario<{ run: string }>(
     "graph-eval-tabs",
     "lists an Artifact's evals on its Artifact tab, shows one's Summary from the list with its Debug facts and its Runtime log, returns to the Artifact tab by its chip, and shows another eval from the tabs",
@@ -1084,7 +1080,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TECHNICAL E-MON-DETAIL-NEIGHBOUR E-MON-DETAIL-TAB
   scenario<Record<string, never>>(
     "graph-detail-neighbours",
     "draws an Artifact's Detail between the Artifacts its evals use and those using it, then its evals, path and Debug, and opens a neighbour's Detail on a click",
@@ -1170,7 +1165,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL-NEIGHBOURS; UX edge: E-MON-DETAIL-ARTIFACT
+  // UX journey: J-DETAIL-NEIGHBOURS
   scenario<{ run: string; address: string }>(
     "graph-detail-live-target",
     "shows the Live target and its address in the saved Run's Artifact Path section",
@@ -1200,8 +1195,7 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
-  // UX journeys: J-GRAPH-FIND J-PANE-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-LEAVE E-MON-RUNS-GRAPH
-  // E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-CLOSE E-MON-DETAIL-ARTIFACT E-GRAPH-FIND-GO E-GRAPH-FIND-CHOOSE
+  // UX journeys: J-GRAPH-FIND J-PANE-SEARCH
   scenario<Record<string, never>>(
     "graph-find",
     "Ctrl+F searches the Pane from the Pane; over the Run's graph it finds Artifacts and evals by name, opens the chosen one's Detail on its tab with the Artifact in the middle of the graph left of the Detail, and Esc or a click outside closes it",
@@ -1303,8 +1297,7 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
-  // UX journeys: J-DETAIL-STAR J-GRAPH-FIND; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-STAR E-MON-DETAIL-TAB
-  // E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-CHOOSE E-GRAPH-FIND-GO E-GRAPH-FIND-CLOSE E-CURRENT-EVALS
+  // UX journeys: J-DETAIL-STAR J-GRAPH-FIND
   scenario<{ request: string; other: string }>(
     "graph-favorites",
     "stars Artifacts with the ☆ beside their Detail's title on any tab; Ctrl+F with nothing typed lists the starred ones in the graph's order and opens one as found, on the Run and the Current alike, says how to star one while none is; the stars stay for the next monitor and for every branch of the project",
@@ -1421,7 +1414,7 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
-  // UX journey: J-GRAPH-FIND; UX edges: E-GRAPH-FIND-OPEN E-GRAPH-FIND-TYPE E-GRAPH-FIND-GO E-GRAPH-FIND-CHOOSE
+  // UX journey: J-GRAPH-FIND
   scenario<Record<string, never>>(
     "graph-find-many",
     "lists the first 50 Artifacts of a Current that match, in the graph's order, says how many more do, and Enter opens the first",
@@ -1474,7 +1467,7 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
-  // UX journey: J-GRAPH-MINIMIZE; UX edges: E-GRAPH-PARTS E-GRAPH-MINIMIZE
+  // UX journey: J-GRAPH-MINIMIZE
   scenario<{ run: string }>(
     "graph-minimize-joined",
     "draws the edges of a minimized whole's parts to the same Artifact as one, lit by the light that comes first",
@@ -1502,7 +1495,7 @@ payload.instruction = "Check the Live Artifact."
       assert.deepEqual(edges, ["a:pack>a:user"], "the two edges drawn as one");
     },
   ),
-  // UX journey: J-GRAPH-NAVIGATOR; UX edges: E-GRAPH-CAMERA E-GRAPH-NAVIGATE
+  // UX journey: J-GRAPH-NAVIGATOR
   scenario<{ run: string }>(
     "graph-navigator",
     "shows the Navigator once part of the graph lies outside the view, and moves the camera to the place clicked or dragged to in it, the zoom kept",
@@ -1631,7 +1624,7 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
-  // UX journey: J-DETAIL-SECTIONS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-SECTION E-MON-DETAIL-TAB E-MON-DETAIL-RUN
+  // UX journey: J-DETAIL-SECTIONS
   scenario<Record<string, never>>(
     "graph-detail-sections",
     "folds and unfolds a Detail's sections by their header rows, on an Artifact's tab, an eval's Summary and a Run's Detail, kept by name for the Details opened later and the next launch",
@@ -1650,7 +1643,8 @@ payload.instruction = "Check the Live Artifact."
       await graphShown(browser, "a:release");
       // An Artifact's tab: what it is opened for unfolded, what is read now and then folded.
       await openArtifact(browser, "a:release", "Artifact release");
-      await browser.waitUntil(async () => (await sections()).Path === true, { timeout: 15000, timeoutMsg: "release's sections drawn" });
+      // Neighbours shows once release's neighbours are read: it has some.
+      await browser.waitUntil(async () => (await sections()).Path === true && "Neighbours" in (await sections()), { timeout: 15000, timeoutMsg: "release's sections drawn" });
       const first = await sections();
       assert.deepEqual([first.Evals, first.Neighbours, first.Tools, first.Path, first.Debug], [true, false, true, true, false], JSON.stringify(first));
       const pathHeader = aside(browser).$("button.head=Path");

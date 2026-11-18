@@ -3,8 +3,17 @@ use super::{Action, Outcome, REFRESH, Review, SPIN};
 use crate::types::RequestId;
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
+use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
+
+impl Review {
+    pub fn draw(&mut self, frame: &mut ratatui::Frame) {
+        let now = OffsetDateTime::now_utc();
+        let elapsed = self.busy_elapsed_at(Instant::now());
+        self.draw_at(frame, now, elapsed);
+    }
+}
 
 /// Run the review UI until q, a signal, or a submission that leaves nothing waiting.
 pub async fn run(

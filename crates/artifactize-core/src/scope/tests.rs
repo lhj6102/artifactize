@@ -125,7 +125,7 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
             .unwrap(),
         ScopedPath {
             artifact_id: ArtifactId::new("parent").unwrap(),
-            path: "unmarked/material.txt".into(),
+            path: "unmarked/material.txt".parse().unwrap(),
         }
     );
     assert_eq!(
@@ -134,7 +134,7 @@ fn files_belong_to_the_nearest_marked_folder_and_nesting_is_no_relation() {
             .unwrap(),
         ScopedPath {
             artifact_id: ArtifactId::new("child").unwrap(),
-            path: "input.txt".into(),
+            path: "input.txt".parse().unwrap(),
         }
     );
     assert_eq!(

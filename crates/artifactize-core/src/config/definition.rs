@@ -7,16 +7,7 @@ pub(super) struct Input<'a> {
     pub source: &'a str,
     pub name: Option<&'a ArtifactName>,
 }
-/// Parse and validate the declaration a walk found, as its kind declares it.
-pub(super) fn parse(
-    found: &Input<'_>,
-    schemas: &mut super::schemas::Schemas,
-) -> Result<ArtifactDeclaration, ConfigError> {
-    let table = toml::de::DeTable::parse(found.source)
-        .map_err(|error| ConfigError::new(found.file, error))?;
-    parse_table(found, schemas, table)
-}
-
+/// Validate a parsed declaration as its kind declares it.
 pub(super) fn parse_table(
     found: &Input<'_>,
     schemas: &mut super::schemas::Schemas,
@@ -168,15 +159,4 @@ fn found_error(found: &Input<'_>, keys: &[&str], message: impl ToString) -> Conf
         found.file,
         location::error_at(found.source, keys, &message.to_string()),
     )
-}
-
-/// Whether a declaration's source declares `select`, which makes it an aspect.
-pub(super) fn selects(source: &str) -> bool {
-    declares(source, "select")
-}
-
-/// Whether a declaration's source has the top-level `key`. A source that does not parse has
-/// none; parsing it reports why.
-fn declares(source: &str, key: &str) -> bool {
-    toml::de::DeTable::parse(source).is_ok_and(|table| table.get_ref().contains_key(key))
 }

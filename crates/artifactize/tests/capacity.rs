@@ -1,5 +1,5 @@
 //! Machine-wide Agent backend capacity from `$STATE/limits.json`, shared by every `verify`
-//! process through the RUNNING executions of each backend in `state.sqlite`.
+//! process.
 
 #[path = "support/run.rs"]
 mod owned_run;
@@ -148,15 +148,14 @@ impl Fixture {
         .unwrap()
     }
 
-    /// Slots held: RUNNING executions on a backend.
-    fn slots(&self) -> u32 {
-        self.observed()
-            .query_row(
-                "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap()
+    /// A fresh review must reach the provider while the one-slot limit is still in force.
+    fn assert_slot_released(&self) {
+        let probe = self.repo("probe", 1);
+        let before = self.provider.requests().len();
+        let run = self.spawn(&probe, &["--force"]);
+        wait_until(|| self.provider.requests().len() > before);
+        finish(run, 0);
+        assert_eq!(self.provider.requests().len(), before + 1);
     }
 
     /// Hold an openai slot with an execution of this live process (the test).
@@ -227,7 +226,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     }
     assert_eq!(fixture.most.load(Ordering::SeqCst), 1);
     assert_eq!(fixture.provider.requests().len(), 6);
-    assert_eq!(fixture.slots(), 0, "every slot is released");
+    fixture.assert_slot_released();
 
     // Without a limit the same Runs review in parallel.
     support::declaration::remove_file(fixture.state().join("limits.json")).unwrap();
@@ -280,7 +279,6 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert!(run["requests"][0]["blockedReason"].is_null());
     assert_eq!(fixture.provider.requests().len(), calls + 1);
-    assert_eq!(fixture.slots(), 0);
     let held: (String, String) = db
         .query_row(
             "SELECT status,json_extract(data,'$.errorCode') FROM executions WHERE id='held'",
@@ -290,6 +288,7 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
         .unwrap();
     assert_eq!(held, ("ERROR".to_owned(), "OWNER_DIED".to_owned()));
     assert_eq!(run["requests"][0]["options"]["backend"], "openai");
+    fixture.assert_slot_released();
 }
 
 #[tokio::test]

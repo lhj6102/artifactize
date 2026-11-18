@@ -111,7 +111,7 @@ async fn fixture() -> Fixture {
 fn screen(review: &mut Review) -> String {
     let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
     terminal
-        .draw(|frame| review.draw_at(frame, super::tests::now()))
+        .draw(|frame| review.draw_at(frame, super::tests::now(), std::time::Duration::ZERO))
         .unwrap();
     let buffer = terminal.backend().buffer();
     buffer
@@ -269,8 +269,7 @@ async fn an_agent_or_settled_request_opens_a_read_only_detail_with_its_evidence(
     assert!(shown.contains("read-only"), "{shown}");
     assert!(shown.contains("The input looks complete."), "{shown}");
     // c claims nothing here; Esc goes back to the list.
-    press(&mut review, KeyEvent::from(KeyCode::Char('c'))).await;
-    assert!(review.taken.is_empty());
+    assert_eq!(review.key(KeyEvent::from(KeyCode::Char('c'))), Action::None);
     let saved = store::read_request(&fixture.state, "run-a-app-agent")
         .await
         .unwrap();

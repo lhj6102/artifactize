@@ -726,7 +726,7 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
 fn render(monitor: &mut Monitor, width: u16, height: u16) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
-        .draw(|frame| monitor.draw_at(frame, now()))
+        .draw(|frame| monitor.draw_at(frame, now(), std::time::Duration::ZERO))
         .unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);

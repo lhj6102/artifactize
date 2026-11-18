@@ -16,7 +16,7 @@ fn populated() -> (tempfile::TempDir, Monitor) {
     // Tree key navigation uses paths from its most recently drawn frame.
     ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40))
         .unwrap()
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     (_monitor_root, monitor)
 }

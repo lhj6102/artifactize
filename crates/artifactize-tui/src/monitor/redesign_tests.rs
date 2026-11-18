@@ -20,7 +20,7 @@ fn render(monitor: &mut Monitor, width: u16, height: u16) {
 fn draw_terminal(monitor: &mut Monitor, width: u16, height: u16) -> Terminal<TestBackend> {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
-        .draw(|frame| monitor.draw_at(frame, tests::now()))
+        .draw(|frame| monitor.draw_at(frame, tests::now(), std::time::Duration::ZERO))
         .unwrap();
     terminal
 }
@@ -385,17 +385,10 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     monitor.mouse(mouse(MouseEventKind::ScrollDown, tree.x + 2, tree.y + 1));
     assert_eq!(monitor.focus(), Pane::Detail);
     assert!(monitor.detail().is_some());
-    render(&mut monitor, 100, 30);
-    let close = monitor
-        .hits
-        .buttons
-        .iter()
-        .find(|(_, button)| *button == input::Button::Close)
-        .unwrap()
-        .0;
+    let close = rendered_point(&mut monitor, 100, 30, "[Close]");
     monitor.mouse(mouse(
         MouseEventKind::Down(MouseButton::Left),
-        close.x + 1,
+        close.x,
         close.y,
     ));
     assert!(monitor.detail().is_none());
@@ -629,13 +622,14 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
 
 #[tokio::test]
 async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts() {
-    if crate::platform::environment::var("ARTIFACTIZE_HUMAN_MODAL_SEAM").is_none() {
-        let mut command = crate::test_os::self_test(
+    const SEAM: &str = "ARTIFACTIZE_HUMAN_MODAL_SEAM";
+    if crate::platform::environment::var(SEAM).is_none() {
+        let mut command = crate::test_os::test_command(
             "monitor::redesign_tests::human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts",
+            &[(SEAM, "1".into())],
         );
-        crate::test_os::sign_in_as(command.as_std_mut(), "alice");
-        command.env("ARTIFACTIZE_HUMAN_MODAL_SEAM", "1");
-        crate::test_os::assert_self_test_success(&mut command).await;
+        crate::test_os::sign_in_as(&mut command, "alice");
+        crate::test_os::assert_self_test_success(&mut command.into()).await;
         return;
     }
     let (view, mut requests) = super::tests::live();
@@ -661,23 +655,21 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     review.control(review::Control::Red);
     monitor.detail_mut().unwrap().content = Content::Review(Box::new(review));
     monitor.paste("qrg한글");
-    let draft = |monitor: &Monitor| match monitor.detail().unwrap().content.review().unwrap().mode()
-    {
-        review::Mode::Form(form) => form.fields.clone(),
-        _ => panic!("form"),
-    };
-    let before = draft(&monitor);
     monitor.key(KeyEvent::from(KeyCode::BackTab));
     assert_eq!(
         monitor.detail().unwrap().content.review().unwrap().area(),
         review::Area::Tools
     );
     monitor.paste("must not modify hidden field");
-    assert_eq!(draft(&monitor), before);
     monitor.key(KeyEvent::from(KeyCode::Tab));
     assert_eq!(
         monitor.detail().unwrap().content.review().unwrap().area(),
         review::Area::Fields
+    );
+    let shown = render_text(&mut monitor, 160, 40);
+    assert!(
+        shown.contains("reason*: qrg한 글 ▏") && !shown.contains("must not modify"),
+        "{shown}"
     );
     for label in ["[GREEN ^G]", "[RED ^R]"] {
         let point = rendered_point(&mut monitor, 160, 40, label);
@@ -690,7 +682,11 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
             Action::Review(review::Action::None)
         ));
     }
-    assert_eq!(draft(&monitor), before);
+    let shown = render_text(&mut monitor, 160, 40);
+    assert!(
+        shown.contains("RED fields") && shown.contains("reason*: qrg한 글 ▏"),
+        "{shown}"
+    );
     // While a form is edited, a click on the tree cannot move focus out of Detail.
     let tree = monitor.hits.tree;
     monitor.mouse(mouse(
@@ -705,7 +701,6 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         assert_eq!(monitor.focus(), Pane::Detail);
         assert!(!monitor.help);
     }
-    let before = draft(&monitor);
     // Ctrl-S submits only inside a Human review, and the keys line says so only there.
     assert!(render_text(&mut monitor, 160, 40).contains("Ctrl-S submit"));
     // Esc first stops editing and stays in Detail; the next Esc steps back to the tree.
@@ -727,16 +722,13 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     monitor.open_detail().await;
     assert!(!render_text(&mut monitor, 160, 40).contains("reason*: qrg"));
     monitor.key(KeyEvent::from(KeyCode::Char('r')));
-    assert_eq!(draft(&monitor), before);
     let shown = render_text(&mut monitor, 160, 40);
-    assert!(
-        shown.contains("reason*: qrg") && shown.contains("q?!"),
-        "{shown}"
-    );
+    assert!(shown.contains("reason*: qrg한 글 q?!▏"), "{shown}");
     assert_eq!(monitor.focus(), Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
-    assert!(draft(&monitor)[0].display().contains(" off"));
+    let shown = render_text(&mut monitor, 160, 40);
+    assert!(shown.contains("reason*: qrg한 글 q?! off▏"), "{shown}");
     assert_eq!(
         monitor.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
         Action::Quit
@@ -948,13 +940,14 @@ async fn a_review_settled_while_editing_gives_its_keys_back_to_monitor() {
 async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_detail() {
     // The real UI resolves its reviewer from the process environment; declare that input
     // in an owned child rather than inheriting the developer's account or changing globals.
-    if crate::platform::environment::var("ARTIFACTIZE_EXTERNAL_SUBMISSION_SEAM").is_none() {
-        let mut command = crate::test_os::self_test(
+    const SEAM: &str = "ARTIFACTIZE_EXTERNAL_SUBMISSION_SEAM";
+    if crate::platform::environment::var(SEAM).is_none() {
+        let mut command = crate::test_os::test_command(
             "monitor::redesign_tests::an_external_submission_frees_the_keys_and_focus_of_an_edited_human_detail",
+            &[(SEAM, "1".into())],
         );
-        crate::test_os::sign_in_as(command.as_std_mut(), "alice");
-        command.env("ARTIFACTIZE_EXTERNAL_SUBMISSION_SEAM", "1");
-        crate::test_os::assert_self_test_success(&mut command).await;
+        crate::test_os::sign_in_as(&mut command, "alice");
+        crate::test_os::assert_self_test_success(&mut command.into()).await;
         return;
     }
     let root = crate::test_os::tempdir();

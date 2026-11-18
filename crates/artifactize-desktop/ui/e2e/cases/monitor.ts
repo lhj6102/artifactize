@@ -101,7 +101,7 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
 
 /** The nonblank lines of `text`, as typed or pasted on any platform. */
 export const scenarios: Scenario[] = [
-  // UX journeys: J-LAUNCH J-MAIN-RUN; UX edges: E-LAUNCH-REPO E-MON-RUNS-GRAPH
+  // UX journeys: J-LAUNCH J-MAIN-RUN
   scenario<null>(
     "monitor-run",
     "shows the branch's Run under its headline as its graph, with release's waiting sign-off a click away",
@@ -145,7 +145,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM E-HUMAN-RELEASE E-MON-LIVE
   scenario<null>(
     "monitor-external-claim",
     "follows a claim another process makes, then claims and releases explicitly",
@@ -176,7 +175,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-RELEASE E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-TEXT
   scenario<null>(
     "monitor-release-editing",
     "releases the claim while its form is filled in, by Release claim, leaving the form, and keeps the draft for the next claim; u typed in a field is text",
@@ -204,7 +202,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-TOOL
   scenario<null>(
     "monitor-tool-output",
     "runs an output tool with a click and logs its run: its start, each line it printed and its exit",
@@ -230,7 +227,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-TOOL-LAUNCH
   scenario<null>(
     "monitor-tool-launch",
     "runs a launch tool, says the application was opened, and logs it until it exits",
@@ -250,7 +246,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-HUMAN-LOG; UX edge: E-HUMAN-TOOL-LAUNCH
+  // UX journey: J-HUMAN-LOG
   scenario<{ visited: NativePath }>(
     "monitor-tool-file-handoff",
     "hands a declared file to its desktop application and ends the tool log with launched",
@@ -285,7 +281,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-TOOL-LAUNCH E-HUMAN-LOG-LIVE E-HUMAN-GREEN E-HUMAN-TEXT
   scenario<null>(
     "monitor-tool-log-live",
     "keeps logging a launched application under its own run after its button returned, its stderr in red, while the reviewer writes the result",
@@ -332,7 +327,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-TOOL E-HUMAN-LOG-UP E-HUMAN-LOG-FOLLOW E-HUMAN-GREEN E-HUMAN-LOG-COPY E-HUMAN-SUBMIT
   scenario<null>(
     "monitor-tool-log-scroll",
     "scrolls the Tool log in its own box, holds it while scrolled up, follows again from its bottom, gives its text to the result and clears on submission",
@@ -434,7 +428,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-HUMAN-LOG; UX edges: E-HUMAN-TOOL-FAIL
+  // UX journey: J-HUMAN-LOG
   scenario<null>(
     "monitor-tool-missing",
     "ends the run of a tool that could not run with its error, in red",
@@ -454,7 +448,6 @@ export const scenarios: Scenario[] = [
       assert.equal(signoff(fixture).status, "DEFERRED", "a tool error is not a verdict");
     },
   ),
-  // UX edges: E-HUMAN-TOOL-FAIL
   scenario<null>(
     "monitor-tool-failure",
     "says a tool failed and ends its run red in the Tool log",
@@ -480,7 +473,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-GREEN E-HUMAN-TOOL E-HUMAN-ESC-CANCEL E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL E-MON-DETAIL-BACK
   scenario<null>(
     "monitor-tool-cancel",
     "steps back one thing per Esc from the Detail's tabs: cancels a running tool, then leaves the form, then closes the Detail",
@@ -545,7 +537,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-HUMAN-ESC; UX edge: E-HUMAN-ESC-CANCEL
+  // UX journey: J-HUMAN-ESC
   scenario<null>(
     "monitor-submit-cancel",
     "cancels an in-flight submission before it saves, staying on the same review with the same draft",
@@ -584,7 +576,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-HUMAN-RED; UX edges: E-HUMAN-RED E-HUMAN-INVALID E-HUMAN-SWITCH
+  // UX journey: J-HUMAN-RED
   scenario<null>(
     "monitor-invalid-red",
     "keeps a RED or GREEN result that fails its schema correctable and shows the failing path",
@@ -638,7 +630,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-RED E-HUMAN-LIST-ADD E-HUMAN-LIST-REMOVE E-HUMAN-GROUP-ADD E-HUMAN-GROUP-REMOVE E-HUMAN-SUBMIT
   scenario<null>(
     "monitor-red-groups",
     "enters a list of steps one text at a time and a list of findings as groups of fields, each added and removed, and submits them",
@@ -787,7 +778,6 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX edges: E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   scenario<null>(
     "monitor-green-korean",
     "submits GREEN with Korean text typed into its form and keeps the completed result open",
@@ -819,7 +809,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-PANE J-RESIZE; UX edges: E-MON-RESIZE E-MON-DETAIL-ARTIFACT E-MON-DETAIL-WIDTH E-MON-DETAIL-BACK
+  // UX journeys: J-PANE J-RESIZE
   scenario<{ width: number }>(
     "monitor-resize",
     "resizes the Main area against the Pane by dragging their divider, kept whatever the Main area shows, and the Detail by dragging its edge, kept for the next launch",
@@ -977,7 +967,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL-TOOLS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-TOOL E-DETAIL-TOOL-LAUNCH E-DETAIL-TOOL-FAIL
+  // UX journey: J-DETAIL-TOOLS
   scenario<null>(
     "monitor-detail-tools",
     "runs an Artifact's own tools from its Detail at once, unclaimed and recorded as no review's evidence: output, a launch and a failure in its Tool log",
@@ -1063,7 +1053,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-DETAIL-TOOLS; UX edges: E-MON-DETAIL-ARTIFACT E-DETAIL-TOOL
+  // UX journey: J-DETAIL-TOOLS
   scenario<{ run: string }>(
     "monitor-detail-tools-now",
     "runs a shown Run's Artifact tools as the branch declares them now, in its worktree as it is now, not as the Run saw it",
@@ -1105,7 +1095,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-QUIT; UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
+  // UX journey: J-QUIT
   scenario<null>(
     "monitor-quit-claim",
     "asks before quitting with a claim taken here: Esc stays, u releases and quits",

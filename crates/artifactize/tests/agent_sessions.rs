@@ -618,6 +618,7 @@ fn concurrent_sends_take_turns_in_one_thread() {
             responses(request, vec![openai::message(&format!("answer to {last}"))])
         }
     });
+    let _release_provider = owned_run::ReleaseGate::new(gate.clone());
     let run = project.json(&provider, &["verify", "--wait", "--all"], 0);
     let id = run["requests"][0]["id"].as_str().unwrap().to_owned();
     let session = run["requests"][0]["sessionId"].as_str().unwrap().to_owned();

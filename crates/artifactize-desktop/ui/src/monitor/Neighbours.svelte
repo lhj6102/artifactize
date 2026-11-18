@@ -4,7 +4,9 @@
   // edges. It holds still: no pan, zoom or drag; a click on a neighbour opens its Detail. A
   // shared input's thousands of users are cut to the backend's first few, failing ones first,
   // and the rest counted below. An Artifact the graph draws more than once, a part of several
-  // wholes, says so and names the wholes it is drawn in.
+  // wholes, says so and names the wholes it is drawn in. The section is its own, read whether
+  // folded or not: an Artifact with no neighbour and drawn once has nothing to show here, so it
+  // has no Neighbours section.
   import { SvelteFlow, SvelteFlowProvider, type Edge, type Node } from "@xyflow/svelte";
   import type { Attachment } from "svelte/attachments";
   import { call, useIpc, type Neighbours, type Source } from "../ipc/client";
@@ -12,6 +14,7 @@
   import { BLOCKING } from "./graph";
   import { NeighboursState, setNeighboursState } from "./neighbours-state.svelte";
   import { NODE } from "./layout";
+  import Section from "../shell/Section.svelte";
 
   let {
     source,
@@ -52,6 +55,9 @@
     const uses = graph.edges.filter((edge) => edge.target === node);
     const usedBy = graph.edges.filter((edge) => edge.source === node);
     const byId = new Map(graph.nodes.map((item) => [item.id, item]));
+    // Another Artifact's neighbours, still held while this one's are read, are not shown.
+    if (!byId.has(node)) return null;
+    if (uses.length + usedBy.length + moreUses + moreUsedBy === 0 && copies <= 1) return null;
     const column = (ids: string[], x: number) => {
       const top = -((ids.length - 1) * (NODE.height + GAP.y)) / 2;
       return ids.flatMap((id, at) => {
@@ -105,6 +111,7 @@
 
 <div class="host" {@attach reread}>
 {#if shown}
+<Section name="Neighbours">
   <div class="neighbours" role="group" aria-label="Neighbours" style:height="{Math.min(shown.height, 320)}px">
     {#key shown.key}
       <SvelteFlowProvider>
@@ -137,10 +144,15 @@
       <dt>Inside</dt><dd>{shown.copies.inside}</dd>
     </dl>
   {/if}
+</Section>
 {/if}
 </div>
 
 <style>
+  /* The reader only: its section stands among the Detail's others. */
+  .host {
+    display: contents;
+  }
   .neighbours {
     min-height: 72px;
   }

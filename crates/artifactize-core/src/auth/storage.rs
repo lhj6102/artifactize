@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File, OpenOptions, TryLockError},
+    fs::{File, OpenOptions, TryLockError},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
@@ -195,7 +195,7 @@ impl Storage {
     }
 
     pub fn remove(&self, name: &str) -> Result<(), String> {
-        match fs::remove_file(self.directory.join(name)) {
+        match platform::paths::remove_regular(&self.directory.join(name)) {
             Ok(()) => self.sync(),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.to_string()),

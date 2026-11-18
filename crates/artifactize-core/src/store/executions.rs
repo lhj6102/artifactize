@@ -6,7 +6,7 @@ pub use admission::{Capacity, Claim};
 use admission::{ProfileIdentity, available, open_read_only, sharing_identity};
 pub use wire::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
-use crate::types::{ExecutionStatus, ReuseKey};
+use crate::types::{ExecutionId, ExecutionStatus, ReuseKey};
 use std::collections::BTreeMap;
 
 use rusqlite::{OptionalExtension, params};
@@ -174,9 +174,9 @@ impl Receipts {
     /// until blocked work has been withdrawn. Mirrors never publish again.
     pub async fn published_execution(
         &self,
-        execution_id: &str,
+        execution_id: &ExecutionId,
     ) -> Result<Option<Execution>, String> {
-        let execution_id: crate::types::ExecutionId = execution_id.parse()?;
+        let execution_id = execution_id.clone();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let data: Option<String> = db

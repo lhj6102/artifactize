@@ -338,9 +338,6 @@ const field = (browser: WebdriverIO.Browser) => browser.execute(() => {
 
 export const scenarios: Scenario[] = [
   // UX journeys: J-DEFINITION J-DEFINITION-EDIT J-PARTS-EDIT J-DEFINITION-CONFLICT
-  // UX edges: E-CURRENT-EVALS E-DETAIL-SECTION E-DEFINITION-PATH E-DEFINITION-ESC E-SOURCE-TYPE E-SOURCE-SAVE
-  // E-DEFINITION-INVALID E-SOURCE-REVERT E-PARTS-PICK E-PARTS-ADD E-PARTS-REMOVE E-PARTS-REFUSED E-EDIT-CONFLICT E-EDIT-UNSAVED
-  // E-LAYOUT-RESET E-COMMENT-OPEN
   scenario<Record<string, never>>(
     "editing-definition",
     "shows and edits an Artifact's Definition and Source on the Current, refusing what the project would not accept, a changed file and a drag over typed text",
@@ -555,8 +552,6 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-NODE-NEW J-NODE-RENAME J-NODE-DELETE J-DEFINITION-CONFLICT
-  // UX edges: E-NODE-NEW-OPEN E-EDIT-DIALOG-INVALID E-EDIT-DIALOG-CANCEL E-NODE-NEW E-NODE-RENAME-OPEN E-NODE-RENAME
-  // E-NODE-DELETE-OPEN E-NODE-DELETE-REFUSED E-NODE-DELETE E-EDIT-CONFLICT
   scenario<Record<string, never>>(
     "editing-nodes",
     "creates an Artifact from the tool strip, renames one with its references, and deletes one only while nothing names it",
@@ -796,8 +791,6 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-NODE-MOVE J-LAYOUT-RESET J-PARTS-DRAG J-PARTS-EDIT J-DEFINITION
-  // UX edges: E-NODE-DRAG E-NODE-PLACE E-NODE-DRAG-CANCEL E-PARTS-DROP E-PARTS-DROP-OUT E-PARTS-DROP-REFUSED E-LAYOUT-RESET
-  // E-LAYOUT-SAVED E-RUN-NO-EDIT E-GRAPH-CAMERA E-PANE-CHIP E-MON-DETAIL-ARTIFACT E-PARTS-ADD E-PARTS-REMOVE E-GRAPH-MINIMIZE
   scenario<{ run: string }>(
     "editing-layout",
     "places Artifacts by hand and makes parts by dropping them, saving places in the definitions, which draw the branch's Run too and hold after a restart",
@@ -1113,7 +1106,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-PARTS-DRAG; UX edge: E-PARTS-DROP
+  // UX journey: J-PARTS-DRAG
   scenario<null>(
     "editing-shared-drop-position",
     "moves one copy of a shared part into an already expanded whole and draws its saved non-overlapping drop position",
@@ -1152,8 +1145,6 @@ export const scenarios: Scenario[] = [
   ),
 
   // UX journeys: J-COMMENT J-COMMENT-EDIT J-COMMENT-MOVE
-  // UX edges: E-COMMENT-DRAWN E-COMMENT-OPEN E-COMMENT-WRITE E-COMMENT-CLICK E-COMMENT-ESC E-COMMENT-REMOVE E-COMMENT-DRAG
-  // E-COMMENT-DROP E-COMMENT-DROP-NONE E-COMMENT-DRAG-CANCEL E-GRAPH-MINIMIZE E-GRAPH-EXPAND E-EDIT-CONFLICT E-RUN-NO-EDIT
   scenario<{ run: string }>(
     "editing-comments",
     "draws each comment under its node, writes one from the Definition's Comment or a click on it, and moves one by dragging",

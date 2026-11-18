@@ -2,7 +2,7 @@
 
 use std::{
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use artifactize_core::{
@@ -14,7 +14,7 @@ use artifactize_core::{
 };
 
 use super::super::{FAILURE_EXIT, cancellation_listener, print_json};
-use super::{fields::OwnerFields, inspect};
+use super::{fields::FieldsSource, inspect};
 
 pub(super) async fn claim(
     state: &Path,
@@ -93,11 +93,10 @@ pub(super) async fn submit(
     state: &Path,
     id: RequestId,
     verdict: Verdict,
-    fields: Option<OwnerFields>,
-    fields_file: Option<PathBuf>,
+    fields: FieldsSource,
     reviewer: Option<ReviewerId>,
 ) -> Result<(), String> {
-    let submission = OwnerFields::submission(verdict, fields, fields_file)?;
+    let submission = fields.submission(verdict)?;
     let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
     let (cancellation, listener) = cancellation_listener()?;
     let result = human::submit_and_publish(state, &id, &reviewer, &submission, cancellation).await;

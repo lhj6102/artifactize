@@ -164,6 +164,11 @@
   background: var(--surface-group);
   padding: 0 4px;
 }
+.m-button.primary .m-kbd {
+  color: var(--ink-on-accent);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--ink-on-accent) 40%, transparent);
+}
 .m-link {
   color: var(--accent);
   text-decoration: underline;
@@ -955,6 +960,8 @@
 .m-log .m-stderr {
   color: var(--red);
 }
+/* A choice within a tab, Summary or its log: the chosen one bold in the strong text colour,
+   the other in the quieter one. */
 .m-views {
   display: flex;
   gap: 8px;

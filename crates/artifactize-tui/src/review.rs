@@ -1,6 +1,7 @@
 //! Human review TUI: claim, run Human tools and submit, in-process like `request`.
 
 mod detail;
+mod detail_input;
 mod embedded;
 #[cfg(test)]
 mod embedded_tests;
@@ -18,7 +19,8 @@ pub(crate) mod tests;
 mod view;
 
 pub use artifactize_core::review::*;
-pub(crate) use detail::{Handled, Hits};
+pub(crate) use detail::Hits;
+pub(crate) use detail_input::Handled;
 pub(crate) use embedded::Control;
 pub(crate) use input::form_key;
 use jobs::Busy;

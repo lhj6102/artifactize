@@ -115,35 +115,33 @@ async fn read(
 
 /// A stream's evidence file. A failed write ends the evidence, not the draining, so the pipe is
 /// still read to its end and the failure is reported once it is.
-struct Evidence {
-    file: Option<(PathBuf, tokio::fs::File)>,
-    failure: Option<io::Error>,
+enum Evidence {
+    Disabled,
+    Open {
+        path: PathBuf,
+        file: tokio::fs::File,
+    },
+    Failed(io::Error),
 }
 
 impl Evidence {
     fn open(path: Option<PathBuf>) -> Self {
         let Some(path) = path else {
-            return Self {
-                file: None,
-                failure: None,
-            };
+            return Self::Disabled;
         };
         let mut options = platform::private_options();
         options.write(true).create_new(true);
         match options.open(&path) {
-            Ok(file) => Self {
-                file: Some((path, tokio::fs::File::from_std(file))),
-                failure: None,
+            Ok(file) => Self::Open {
+                path,
+                file: tokio::fs::File::from_std(file),
             },
-            Err(error) => Self {
-                file: None,
-                failure: Some(error),
-            },
+            Err(error) => Self::Failed(error),
         }
     }
 
     async fn write(&mut self, chunk: &[u8]) {
-        let Some((_, file)) = &mut self.file else {
+        let Self::Open { file, .. } = self else {
             return;
         };
         #[cfg(test)]
@@ -154,18 +152,16 @@ impl Evidence {
             file.flush().await
         };
         if let Err(error) = written.await {
-            self.file = None;
-            self.failure = Some(error);
+            *self = Self::Failed(error);
         }
     }
 
     /// Flush the file and, when the pipe was `closed`, mark the stream complete beside it.
     async fn finish(self, closed: bool) -> io::Result<()> {
-        if let Some(failure) = self.failure {
-            return Err(failure);
-        }
-        let Some((path, mut file)) = self.file else {
-            return Ok(());
+        let (path, mut file) = match self {
+            Self::Disabled => return Ok(()),
+            Self::Failed(failure) => return Err(failure),
+            Self::Open { path, file } => (path, file),
         };
         #[cfg(test)]
         slow_disk::wait().await;

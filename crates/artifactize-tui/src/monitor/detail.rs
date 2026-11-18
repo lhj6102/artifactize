@@ -13,10 +13,33 @@ use time::OffsetDateTime;
 pub(super) enum Content {
     Evidence,
     Review(Box<Review>),
-    Session(Box<session::Live>),
+    Session {
+        live: Box<session::Live>,
+        view: SessionView,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionView {
+    Transcript,
+    Sections,
 }
 
 impl Content {
+    pub(super) fn session(live: session::Live) -> Self {
+        Self::Session {
+            live: Box::new(live),
+            view: SessionView::Transcript,
+        }
+    }
+
+    pub(super) fn session_view(&self) -> Option<SessionView> {
+        match self {
+            Self::Session { view, .. } => Some(*view),
+            _ => None,
+        }
+    }
+
     pub(super) fn review(&self) -> Option<&Review> {
         match self {
             Self::Review(review) => Some(review.as_ref()),
@@ -31,19 +54,23 @@ impl Content {
     }
     pub(super) fn live(&self) -> Option<&session::Live> {
         match self {
-            Self::Session(live) => Some(live.as_ref()),
+            Self::Session { live, .. } => Some(live.as_ref()),
             _ => None,
         }
     }
     pub(super) fn live_mut(&mut self) -> Option<&mut session::Live> {
         match self {
-            Self::Session(live) => Some(live.as_mut()),
+            Self::Session { live, .. } => Some(live.as_mut()),
             _ => None,
         }
     }
     /// The conversation shown, or none: a session that cannot be read leaves only evidence.
     fn set_live(&mut self, live: Option<session::Live>) {
-        *self = live.map_or(Self::Evidence, |live| Self::Session(Box::new(live)));
+        match (self, live) {
+            (Self::Session { live: current, .. }, Some(live)) => **current = live,
+            (content, Some(live)) => *content = Self::session(live),
+            (content, None) => *content = Self::Evidence,
+        }
     }
     fn take_review(&mut self) -> Option<Review> {
         match std::mem::replace(self, Self::Evidence) {
@@ -69,11 +96,21 @@ pub struct DetailPane {
     pub(super) content: Content,
     pub(super) focus: DetailArea,
     pub(super) scroll: [u16; 2],
-    pub(super) show_details: bool,
     /// The folded Technical section is shown.
     pub(super) technical: bool,
     /// The pending evals under `Waits for` are shown.
     pub(super) pending: bool,
+}
+
+impl DetailPane {
+    pub(super) fn toggle_session_view(&mut self) {
+        if let Content::Session { view, .. } = &mut self.content {
+            (*view, self.focus) = match view {
+                SessionView::Transcript => (SessionView::Sections, DetailArea::Summary),
+                SessionView::Sections => (SessionView::Transcript, DetailArea::Evidence),
+            };
+        }
+    }
 }
 
 /// The tree-focused peek of a running Agent: only its last transcript line is read.
@@ -163,8 +200,7 @@ impl Monitor {
                 .take()
                 .filter(|peek| view.as_ref().map(|view| &view.request.id) == Some(&peek.request))
                 .and_then(|peek| peek.live)
-                .map_or(Content::Evidence, |live| Content::Session(Box::new(live))),
-            show_details: false,
+                .map_or(Content::Evidence, Content::session),
             technical: false,
             pending: false,
         };

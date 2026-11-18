@@ -125,10 +125,8 @@ impl Sink {
         self.complete(kind, block, text);
     }
     pub fn take(&self, turn: usize, attempt: usize) -> Vec<Delivery> {
-        let mut buffer = self.0.lock().unwrap();
-        let mut pending = std::mem::take(&mut buffer.pending)
-            .into_iter()
-            .collect::<Vec<_>>();
+        let pending = std::mem::take(&mut self.0.lock().unwrap().pending);
+        let mut pending = pending.into_iter().collect::<Vec<_>>();
         pending.sort_by_key(|(_, entry)| entry.order);
         pending
             .into_iter()

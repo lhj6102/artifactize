@@ -651,11 +651,33 @@ fn line(path: &str, text: &str) {
 fn next(steps: &mut std::vec::IntoIter<String>) -> String {
     steps.next().expect("the step's argument")
 }
-fn blocking_child() -> std::process::Child {
-    std::process::Command::new(std::env::current_exe().unwrap())
+// Until its PID is published the calling fixture cannot clean this child up.
+struct UnrecordedChild(Option<std::process::Child>);
+impl UnrecordedChild {
+    fn id(&self) -> u32 {
+        self.0.as_ref().unwrap().id()
+    }
+    fn record(self, path: &str) -> std::process::Child {
+        line(path, &self.id().to_string());
+        self.release()
+    }
+    fn release(mut self) -> std::process::Child {
+        self.0.take().unwrap()
+    }
+}
+impl Drop for UnrecordedChild {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+fn blocking_child() -> UnrecordedChild {
+    UnrecordedChild(Some(std::process::Command::new(std::env::current_exe().unwrap())
         .arg("block")
         .spawn()
-        .unwrap()
+        .unwrap()))
 }
 #[cfg(unix)]
 unsafe extern "C" {
@@ -722,30 +744,31 @@ fn run(steps: Vec<String>) {
             }
             "hold" => {
                 let path = next(&mut steps);
-                let mut child = blocking_child();
-                line(&path, &child.id().to_string());
-                child.wait().unwrap();
+                blocking_child().record(&path).wait().unwrap();
             }
-            "spawn" => line(&next(&mut steps), &blocking_child().id().to_string()),
+            "spawn" => {
+                blocking_child().record(&next(&mut steps));
+            }
             #[cfg(unix)]
             "leave" => {
                 use std::os::unix::process::CommandExt;
-                let child = std::process::Command::new(std::env::current_exe().unwrap())
+                let child = UnrecordedChild(Some(std::process::Command::new(std::env::current_exe().unwrap())
                     .arg("block")
                     .process_group(0)
                     .spawn()
-                    .unwrap();
-                line(&next(&mut steps), &child.id().to_string());
+                    .unwrap()));
+                child.record(&next(&mut steps));
             }
             "start-marked" => {
-                let pid = blocking_child().id().to_string();
-                line(&next(&mut steps), &pid);
-                println!("{pid}");
+                let child = blocking_child().record(&next(&mut steps));
+                println!("{}", child.id());
                 std::io::stdout().flush().unwrap();
             }
             "start" => {
-                println!("{}", blocking_child().id());
+                let child = blocking_child();
+                println!("{}", child.id());
                 std::io::stdout().flush().unwrap();
+                child.release();
             }
             "child" => {
                 let status = std::process::Command::new(std::env::current_exe().unwrap())

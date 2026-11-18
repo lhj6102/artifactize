@@ -25,6 +25,35 @@ fn echo(text: &str) -> Command {
 }
 
 #[tokio::test]
+async fn program_lookup_and_child_get_the_same_path() {
+    let temp = crate::test_os::tempdir();
+    let program = std::path::PathBuf::from(crate::test_os::steps());
+    let actual = crate::test_os::isolated_path(program.parent().unwrap());
+    let wrong = crate::test_os::isolated_path(temp.path());
+    let marker = temp.path().join("path");
+    let (upper, mixed) = if super::ENV_NAMES_IGNORE_CASE {
+        (wrong, actual.clone())
+    } else {
+        (actual.clone(), wrong)
+    };
+    let command = Command {
+        program: program.file_name().unwrap().to_owned(),
+        args: vec!["env".into(), marker.clone().into_os_string(), "PATH".into()],
+        cwd: temp.path().to_owned(),
+        env: BTreeMap::from([("PATH".into(), upper), ("Path".into(), mixed)]),
+        timeout: WATCHDOG,
+    };
+    let output = process::run_unregistered(command, None, 0, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(output.status.success(), "{}", output.status);
+    assert_eq!(
+        std::fs::read_to_string(marker).unwrap().lines().next(),
+        actual.to_str()
+    );
+}
+
+#[tokio::test]
 async fn a_sibling_held_before_exec_does_not_keep_another_runs_output_open() {
     let (first_held, first_holding) = oneshot::channel();
     let (second_held, second_holding) = oneshot::channel::<()>();

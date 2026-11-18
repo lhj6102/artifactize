@@ -96,7 +96,7 @@ function streamed(text: string): string {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-SETTINGS; UX edges: E-SCREEN-SETTINGS E-SETTINGS-BACK
+  // UX journey: J-SETTINGS
   scenario<null>(
     "settings-back",
     "opens Settings over the screen by Ctrl+, or its button, and closes it by Esc, Close or the button again, the screen beneath unchanged",
@@ -128,8 +128,7 @@ export const scenarios: Scenario[] = [
       await graphShown(browser, "a:release");
     },
   ),
-  // UX journey: J-SET-CLAUDE-AGENT; UX edges: E-SET-CLAUDE-AGENT E-SET-CLAUDE-AGENT-CHECK E-SET-CLAUDE-AGENT-LOGOUT
-  // E-SET-CLAUDE-AGENT-LOGIN E-SET-CLAUDE-AGENT-CANCEL E-SET-CLAUDE-AGENT-END E-SET-CLAUDE-AGENT-BY-HAND E-SET-CLAUDE-AGENT-PASTE E-SET-CLAUDE-AGENT-RETURN
+  // UX journey: J-SET-CLAUDE-AGENT
   scenario(
     "settings-claude-agent",
     "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, refused, with a pasted code and by the browser returning",
@@ -156,7 +155,7 @@ export const scenarios: Scenario[] = [
         await browser.waitUntil(async () => (await status()).trim() === "sign-in in progress" && (await browser.$("button=Cancel sign-in").isExisting()),
           { timeout: 15000, timeoutMsg: "the sign-in is in progress" });
         assert.equal(await browser.$("#claude-agent-code").isExisting(), false, "Finish by hand starts folded");
-        // E-SET-CLAUDE-AGENT-BY-HAND: unfolding shows the URL and the code field, the sign-in
+        // unfolding shows the URL and the code field, the sign-in
         // still in progress.
         await browser.$("button=Finish by hand").click();
         await browser.$("#claude-agent-code").waitForExist({ timeout: 15000, timeoutMsg: "the sign-in waits for the browser or a code" });
@@ -241,7 +240,7 @@ export const scenarios: Scenario[] = [
       await signOut();
     },
   ),
-  // UX journeys: J-SET-PROVIDERS J-SET-KEY; UX edges: E-SET-PROVIDER E-SET-KEY E-SET-KEY-SAVE E-SET-KEY-REMOVE
+  // UX journeys: J-SET-PROVIDERS J-SET-KEY
   scenario(
     "settings-keys",
     "settings: lists the providers on the left, shows where each key comes from without its value, saves and removes a key as the CLI sees it, and keeps a set variable first",
@@ -348,7 +347,7 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(gemini), "the Gemini fixture value is nowhere in the page");
     },
   ),
-  // UX journey: J-SET-CLAUDE-AGENT; UX edge: E-SET-CLAUDE-AGENT-END
+  // UX journey: J-SET-CLAUDE-AGENT
   scenario<null>(
     "settings-claude-timeout",
     "leaves Claude Code sign-in unanswered until the actual ten-minute deadline, then shows the timeout and refreshed sign-in status",
@@ -373,7 +372,6 @@ export const scenarios: Scenario[] = [
     },
   ),
   // UX journey: J-SET-SIGNOFF-GRACE
-  // UX edges: E-SET-TAB E-SET-GRACE E-SET-GRACE-SAVE
   scenario(
     "settings-signoff-grace",
     "settings: shows the sign-off idle grace, saves a new one the CLI reads, and a later Run ends by it",
@@ -449,7 +447,7 @@ payload.instruction = "Check the worker."
       assert.equal(newestRunStatus(fixture), "WAITING_HUMAN", "saving zero never shortened the original Run's grace");
     },
   ),
-  // UX journey: J-SET-CUSTOM; UX edges: E-SET-CUSTOM-NEW E-SET-CUSTOM-SAVE E-SET-CUSTOM-REMOVE
+  // UX journey: J-SET-CUSTOM
   scenario(
     "settings-custom",
     "settings: adds an endpoint with a key, an alias and a keyless endpoint, changes one, reviews an eval by a custom name, and removes one, as the CLI sees it",
@@ -610,7 +608,7 @@ Review the agent folder."""
       assert.deepEqual(Object.keys(await custom()), ["claude-local", "gemini-local", "work"]);
     },
   ),
-  // UX journey: J-SET-REMOTE; UX edges: E-SET-TAB E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT
+  // UX journey: J-SET-REMOTE
   scenario(
     "settings-remote",
     "settings: remote sign-in, shared CLI status, fresh identity, dry run and sign-out",

@@ -60,8 +60,7 @@ function search(browser: WebdriverIO.Browser) {
 }
 
 export const scenarios: Scenario[] = [
-  // UX journey: J-PANE-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-REVIEW-SEARCH-TERMS E-REVIEW-SUGGEST
-  // E-REVIEW-SUGGEST-CLOSE E-REVIEW-SEARCH-CLEAR E-REVIEW-SEARCH-LEAVE
+  // UX journey: J-PANE-SEARCH
   scenario<Record<string, never>>(
     "search-terms",
     "narrows the Branches and the Waiting stack alike by free text, repo: and branch:, takes suggestions, and steps back with Esc",
@@ -129,7 +128,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-PANE-SEARCH; UX edges: E-REVIEW-SEARCH-FOCUS E-PANE-SORT
+  // UX journey: J-PANE-SEARCH
   scenario<Record<string, never>>(
     "search-sort",
     "orders the Branches by their most recent Run with branches without Runs last, by project and branch with sort:name, and back",
@@ -153,7 +152,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journey: J-OPEN-ID; UX edge: E-REVIEW-READONLY
+  // UX journey: J-OPEN-ID
   scenario<{ id: string }>(
     "search-readonly",
     "opens a request by ID that is not a waiting review read-only, its facts under Debug, and Close returns to the Pane",
@@ -197,7 +196,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  // UX journeys: J-OPEN-ID J-LIVE; UX edges: E-REVIEW-READONLY E-MON-LIVE
+  // UX journeys: J-OPEN-ID J-LIVE
   scenario<{ id: string }>(
     "search-readonly-live",
     "follows a request opened by ID read-only as it changes in another process, without opening it again",

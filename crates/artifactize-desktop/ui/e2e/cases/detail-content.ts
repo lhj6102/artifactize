@@ -9,7 +9,6 @@ import { subdued } from "../rendering.ts";
 import { listed, showRun } from "../pane.ts";
 
 export const scenarios: Scenario[] = [
-  // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-TAB E-MON-DETAIL-LOG E-MON-DETAIL-BACK
   scenario<{ runs: string[] }>(
     "graph-rich-detail",
     "contains long names, wrapped eval chips, rich Summary findings and actual saved Agent and runtime logs within its width",
@@ -115,11 +114,25 @@ export const scenarios: Scenario[] = [
       });
       const before = await containment();
       assert.ok(before.fits && before.bounded, `long instruction and owner fields stay inside the Detail: ${JSON.stringify(before)}`);
-      const choices = () => browser.execute(() => [...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [aria-label="Views"] [role="tab"]')].map((tab) => {
-        const style = getComputedStyle(tab); return { selected: tab.getAttribute("aria-selected"), weight: parseInt(style.fontWeight), colour: style.color, fill: style.backgroundColor, radius: parseFloat(style.borderRadius) };
-      }));
+      const choices = () => browser.execute(() => {
+        // The app's strong and quieter text colours, as computed colours to compare with.
+        const ink = (token: string) => {
+          const probe = document.body.appendChild(document.createElement("span"));
+          probe.style.color = `var(${token})`;
+          const colour = getComputedStyle(probe).color;
+          probe.remove();
+          return colour;
+        };
+        const [strong, quieter] = [ink("--ink"), ink("--ink-2")];
+        return [...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [aria-label="Views"] [role="tab"]')].map((tab) => {
+          const style = getComputedStyle(tab);
+          return { selected: tab.getAttribute("aria-selected"), weight: parseInt(style.fontWeight), strong: style.color === strong, quieter: style.color === quieter,
+            fill: style.backgroundColor, radius: parseFloat(style.borderRadius) };
+        });
+      });
       const views = await choices();
-      assert.ok(views[0].weight > views[1].weight && views[0].colour !== views[1].colour, "the selected Summary choice is darker and bold");
+      assert.ok(views[0].selected === "true" && views[0].weight >= 700 && views[0].strong && views[1].weight < 700 && views[1].quieter,
+        `the chosen Summary bold in the strong text colour, the Agent log in the quieter one: ${JSON.stringify(views)}`);
       assert.ok(views.every((view) => view.radius === 0 && (view.fill === "rgba(0, 0, 0, 0)" || view.fill === "transparent")), "view choices are plain text rather than chips");
       await aside(browser).$('[aria-label="Views"]').$('button=Agent log').click();
       // The Summary also quotes the answer: wait for the selected Agent log's own transcript.

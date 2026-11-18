@@ -377,8 +377,7 @@ pub async fn serve(
     ready: impl FnOnce(SocketAddr) -> Result<(), String>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
-    let listener = tokio::net::TcpListener::bind(listen)
-        .await
+    let listener = crate::platform::net::http_listener(listen)
         .map_err(|e| format!("Cannot listen on {listen}: {e}"))?;
     ready(listener.local_addr().map_err(|e| e.to_string())?)?;
     axum::serve(listener, router(store))

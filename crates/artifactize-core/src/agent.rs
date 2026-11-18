@@ -442,7 +442,7 @@ async fn run(
                 }
                 Err(error) => format!(
                     "Your final response did not match the required schema: {}",
-                    verdict.repair_detail(&text, error, Some(&structured))
+                    verdict.repair_detail(error)
                 ),
             };
             repairing = true;

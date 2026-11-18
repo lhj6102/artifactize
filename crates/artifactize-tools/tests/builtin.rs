@@ -183,7 +183,10 @@ async fn help_maps_the_launcher_deadline_to_a_tool_error() {
         artifactize_tools::files::path_text(&launch.program),
         artifactize_tools::files::path_text(&program)
     );
-    assert_eq!(launch.cwd, root.path());
+    assert_eq!(
+        artifactize_tools::files::canonicalize(&launch.cwd).unwrap(),
+        artifactize_tools::files::canonicalize(root.path()).unwrap(),
+    );
     assert_eq!(launch.args, ["subcommand", "--help"]);
     assert_eq!(launch.output_limit, 64 * 1024);
     tokio::time::advance(HELP_BUDGET).await;

@@ -145,10 +145,13 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             command: ConfigCommand::Check,
         }) => config::check(context),
         Some(Command::Run {
-            command: RunCommand::List {
-                all, limit, offset, ..
-            },
-        }) => run::list(context, all, limit, offset).await,
+            command:
+                RunCommand::List {
+                    scope,
+                    limit,
+                    offset,
+                },
+        }) => run::list(context, scope, limit, offset).await,
         Some(Command::Run {
             command: RunCommand::Show { run_id, mode },
         }) => run::show(context, run_id, mode).await,

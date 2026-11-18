@@ -213,9 +213,7 @@
           </ul>
         </Section>
         {/if}
-        <Section name="Neighbours">
-          <Neighbours {source} {revision} {node} {onopen} />
-        </Section>
+        <Neighbours {source} {revision} {node} {onopen} />
         {#if branch}
           {#key `${branch.workspace}\n${row.name}`}<ArtifactTools branch={branch.key} workspace={branch.workspace} artifact={row.name} />{/key}
         {/if}

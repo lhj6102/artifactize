@@ -219,11 +219,12 @@ pub struct InvalidOutput;
 
 pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutput> {
     let wire = parse_wire(stdout)?;
-    let blocks = wire
-        .content
-        .into_iter()
-        .map(|block| load(block, output_dir));
-    normalize(blocks, wire.is_error)
+    let mut normalized = Normalized::default();
+    for block in wire.content {
+        let loaded = load(block, output_dir)?;
+        normalized.push(loaded)?;
+    }
+    normalized.finish(wire.is_error)
 }
 
 fn parse_wire(stdout: &[u8]) -> Result<WireResult, InvalidOutput> {
@@ -263,15 +264,16 @@ fn load(
     })
 }
 
-/// Normalize loaded blocks without a filesystem or an output-directory path.
-fn normalize(
-    blocks: impl Iterator<Item = Result<WireContent<LoadedImage>, InvalidOutput>>,
-    is_error: bool,
-) -> Result<ToolResult, InvalidOutput> {
-    let mut content = Vec::new();
-    let mut size = 0;
-    for block in blocks {
-        let block = match block? {
+/// Normalize one loaded block at a time to bound memory and stop I/O at the first failure.
+#[derive(Default)]
+struct Normalized {
+    content: Vec<Content>,
+    size: usize,
+}
+
+impl Normalized {
+    fn push(&mut self, block: WireContent<LoadedImage>) -> Result<(), InvalidOutput> {
+        let block = match block {
             WireContent::Text { text } if text.len() <= TEXT_LIMIT => Content::Text { text },
             WireContent::Json { data }
                 if serde_json::to_vec(&data).map_err(|_| InvalidOutput)?.len() <= JSON_LIMIT =>
@@ -286,21 +288,25 @@ fn normalize(
             }
             _ => return Err(InvalidOutput),
         };
-        size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();
-        if size > RESULT_LIMIT {
+        self.size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();
+        if self.size > RESULT_LIMIT {
             return Err(InvalidOutput);
         }
-        content.push(block);
+        self.content.push(block);
+        Ok(())
     }
-    let result = ToolResult::from_wire(content, is_error).map_err(|_| InvalidOutput)?;
-    if serde_json::to_vec(&result)
-        .map_err(|_| InvalidOutput)?
-        .len()
-        > RESULT_LIMIT
-    {
-        return Err(InvalidOutput);
+
+    fn finish(self, is_error: bool) -> Result<ToolResult, InvalidOutput> {
+        let result = ToolResult::from_wire(self.content, is_error).map_err(|_| InvalidOutput)?;
+        if serde_json::to_vec(&result)
+            .map_err(|_| InvalidOutput)?
+            .len()
+            > RESULT_LIMIT
+        {
+            return Err(InvalidOutput);
+        }
+        Ok(result)
     }
-    Ok(result)
 }
 
 pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
