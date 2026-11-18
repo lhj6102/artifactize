@@ -34,7 +34,7 @@ it("retires only the client session after the previously live native process exi
   await sessionEndedByApp(browser, async () => {
     assert.equal(browser.sessionId, "the-live-session", "the action does not retire a live session");
     exit();
-    throw new Error("ECONNRESET: the quit response ended with the app");
+    throw new Error('WebDriverError: Channel closed when running "actions" with method "POST"');
   }, alive, orderlyExit);
   assert.equal(browser.sessionId, undefined);
   assert.equal(alive(owner), false);

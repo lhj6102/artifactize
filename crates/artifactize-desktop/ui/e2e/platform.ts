@@ -1163,6 +1163,8 @@ if (!reply.ok) throw new Error(await reply.text());
   }
   return {
     env: { ...env, ARTIFACTIZE_E2E_BROWSER_NODE: nodeProgram, ARTIFACTIZE_E2E_BROWSER_PROGRAM: program,
+      // The external auth command receives the author's environment, without ARTIFACTIZE_*.
+      DESKTOP_TEST_BROWSER_NODE: nodeProgram, DESKTOP_TEST_BROWSER_CLIENT: program,
       DESKTOP_TEST_BROWSER_ENTRIES: entries },
     release: async () => {
       stop.abort(released);
@@ -1229,9 +1231,10 @@ server.listen(0, "127.0.0.1", () => {
   if (process.env.DESKTOP_TEST_BROWSER_ENTRIES) {
     appendFileSync(process.env.DESKTOP_TEST_BROWSER_ENTRIES, url + "\\n");
   }
-  if (process.env.ARTIFACTIZE_E2E_BROWSER_PROGRAM) {
-    spawn(process.env.ARTIFACTIZE_E2E_BROWSER_NODE, [process.env.ARTIFACTIZE_E2E_BROWSER_PROGRAM, url], { stdio: "inherit" })
-      .on("error", (error) => { process.stderr.write(String(error)); process.exit(1); });
+  if (process.env.DESKTOP_TEST_BROWSER_CLIENT) {
+    const opener = spawn(process.env.DESKTOP_TEST_BROWSER_NODE, [process.env.DESKTOP_TEST_BROWSER_CLIENT, url], { stdio: "inherit" });
+    opener.on("error", (error) => { process.stderr.write(String(error)); process.exit(1); });
+    opener.on("exit", (code) => { if (code !== 0) process.exit(1); });
   } else if (process.env.DESKTOP_TEST_BROWSER_PROGRAM) {
     spawn(${JSON.stringify(MACOS ? "open" : "xdg-open")}, [url], { stdio: "ignore" }).on("error", () => {});
   }

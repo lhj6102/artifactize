@@ -37,8 +37,12 @@ function recordedOrderlyExit(owner: Identity, path: string | undefined): boolean
 
 /** The expected transport error from a driver shutting down during the action. */
 function driverDisconnected(error: unknown): boolean {
-  return error instanceof Error && (/\b(?:ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR_SOCKET)\b|fetch failed|socket hang up|other side closed/i.test(error.message)
-    || driverDisconnected(error.cause));
+  if (!(error instanceof Error)) return false;
+  // The embedded driver's response channel can close before the HTTP server does.
+  const channelClosed = /^WebDriverError: Channel closed when running "(?:actions|execute\/(?:a?sync))" with method "POST"(?:$| and args )/i;
+  return channelClosed.test(error.message)
+    || /\b(?:ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR_SOCKET)\b|fetch failed|socket hang up|other side closed/i.test(error.message)
+    || driverDisconnected(error.cause);
 }
 
 /** @wdio/runner always DELETEs its session, but the embedded server dies with the
@@ -118,16 +122,31 @@ export function recordAdmission(root: NativePath, ids: string[]): NativePath[] {
   return names.map((name) => nativePath(directory, name));
 }
 
-export function assertAdmissionsStopped(root: NativePath, observer: NativePath, ownRunner = false): void {
+function readAdmission(directory: NativePath): { runner: number; owners: NativePath[] } {
+  const { runner, names } = readJson(nativePath(directory, "expected.json")) as { runner: number; names: string[] };
+  if (!Number.isSafeInteger(runner) || runner <= 0 || !Array.isArray(names) || !names.length
+    || names.some((name) => typeof name !== "string" || !/^[a-z0-9-]+\.owner\.json$/.test(name))) {
+    throw new Error(`Invalid app admission journal: ${directory}`);
+  }
+  return { runner, owners: names.map((name) => nativePath(directory, name)) };
+}
+
+export function assertAdmissionsStopped(root: NativePath, observer: NativePath): void {
   for (const directory of admissions(root)) {
-    const { runner, names } = readJson(nativePath(directory, "expected.json")) as { runner: number; names: string[] };
-    if (!Number.isSafeInteger(runner) || runner <= 0 || !Array.isArray(names) || !names.length
-      || names.some((name) => typeof name !== "string" || !/^[a-z0-9-]+\.owner\.json$/.test(name))) {
-      throw new Error(`Invalid app admission journal: ${directory}`);
-    }
-    if ((!ownRunner || runner !== processId()) && processRunning(runner)) {
-      throw new Error(`App admission still owned by a live runner: ${directory}`);
-    }
-    assertAppsStopped(observer, names.map((name) => nativePath(directory, name)));
+    const { runner, owners } = readAdmission(directory);
+    if (processRunning(runner)) throw new Error(`App admission still owned by a live runner: ${directory}`);
+    assertAppsStopped(observer, owners);
+  }
+}
+
+/** Once this runner has finished all service lifetimes, retire only its admissions
+ * whose native exit we can prove. Retaining confirmed journals across batches would
+ * make a recycled runner PID appear to own an already-ended launch. */
+export function retireOwnAdmissions(root: NativePath, observer: NativePath): void {
+  for (const directory of admissions(root)) {
+    const { runner, owners } = readAdmission(directory);
+    if (runner !== processId()) continue;
+    assertAppsStopped(observer, owners);
+    removeTree(directory);
   }
 }

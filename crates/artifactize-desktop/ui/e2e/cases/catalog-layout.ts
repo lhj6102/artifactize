@@ -135,8 +135,8 @@ export const scenarios: Scenario[] = [
       // A click where the layout puts the tree's first Artifact, its top-left corner, opens
       // that Artifact's Detail, once the first view holds still.
       await camera(browser);
-      // Read the pixels of the actual visible canvas. Encoding the whole window
-      // to PNG via the native screenshot API can convert its sRGB profiles.
+      // Read the visible canvas in its own backing-store coordinates and colour space.
+      // The first block and its gap to the next row are only a few device pixels tall.
       const painted = () => browser.execute(() => {
         const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
         const view = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
@@ -148,19 +148,30 @@ export const scenarios: Scenario[] = [
         const corner = { x: Math.round(box.left + x), y: Math.round(box.top + y) };
         if (!document.elementFromPoint(corner.x, corner.y)?.closest(".monitor .graph .canvas")) return null;
         const sx = surface.width / box.width, sy = surface.height / box.height;
-        const left = Math.ceil(view.e * sx), right = Math.floor((view.e + 150 * view.a) * sx);
-        const top = Math.ceil((view.f + 48 * view.d + 1) * sy), bottom = Math.floor((view.f + 65 * view.d) * sy);
-        if (left < 0 || right > surface.width || top < 0 || bottom > surface.height || right <= left || bottom <= top) return null;
+        const colourSpace = context.getContextAttributes().colorSpace;
+        const swatch = document.createElement("canvas").getContext("2d", { colorSpace: colourSpace })!;
+        const token = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
+        if (!CSS.supports("color", token)) throw new Error(`invalid GREEN swatch ${token}`);
+        swatch.fillStyle = token;
+        swatch.fillRect(0, 0, 1, 1);
+        const expected = [...swatch.getImageData(0, 0, 1, 1).data];
         const color = [...context.getImageData(Math.floor(x * sx), Math.floor(y * sy), 1, 1).data];
-        const expected = getComputedStyle(document.documentElement).getPropertyValue("--green").trim()
-          .match(/[0-9a-f]{2}/gi)?.map((part) => Number.parseInt(part, 16));
-        const under = context.getImageData(left, top, right - left, bottom - top).data;
-        return { corner, color, green: expected?.length === 3 && color[3] === 255 && expected.every((value, i) => Math.abs(value - color[i]) <= 1),
-          noComment: under.every((alpha, i) => i % 4 !== 3 || alpha === 0) };
+        const green = color[3] === 255 && expected.slice(0, 3).every((value, i) => Math.abs(value - color[i]) <= 1);
+        // At this fixture's top left there is a 44-unit node and then the comment
+        // area. Sample the gap, excluding one *backing pixel* at the block's edge
+        // for resampling bleed. Do not subtract a CSS pixel from a subpixel range.
+        const left = Math.ceil((view.e + 4 * view.a) * sx), right = Math.floor((view.e + 150 * view.a) * sx);
+        const top = Math.ceil((view.f + 44 * view.d) * sy) + 1;
+        const bottom = Math.floor((view.f + 78 * view.d) * sy);
+        const hasGap = left >= 0 && right <= surface.width && top >= 0 && bottom <= surface.height && right > left && bottom > top;
+        const under = hasGap ? context.getImageData(left, top, right - left, bottom - top).data : null;
+        return { corner, color, expected, green, gap: [left, top, right, bottom], scale: [sx, sy],
+          noComment: !!under && under.every((alpha, i) => i % 4 !== 3 || alpha === 0) };
       });
       let pixels = await painted();
       await browser.waitUntil(async () => (pixels = await painted())?.green === true,
-        { timeout: 15000, timeoutMsg: "the visible canvas paints the first Artifact as a GREEN block" });
+        { timeout: 15000, timeoutMsg: "the visible canvas paints the first Artifact as a GREEN block" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(pixels)}`); });
       assert.ok(pixels?.noComment, `no pixels of a comment are painted under the block: ${JSON.stringify(pixels)}`);
       const { corner } = pixels;
       const loading = await browser.execute(() => {

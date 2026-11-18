@@ -115,7 +115,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       }));
     } else {
       const target = document.elementFromPoint(input.x, input.y);
-      if (!target) throw new Error("the pointer's page position has no hit target");
+      if (!target) throw new Error(`the pointer has no hit target at (${input.x}, ${input.y}) in a ${innerWidth}×${innerHeight} viewport`);
       const common = { view: window, clientX: input.x, clientY: input.y, shiftKey: "shift" in input && input.shift === true, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
       const pointer = { ...common, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1 };
       // A cancelled pointerdown suppresses the gesture's compatibility mouse events until its
@@ -164,7 +164,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
             if (!node || offset === undefined || !target.contains(node)) throw new Error("the clicked text has no native caret position");
             // Focus can scroll its container. Capture the clicked caret before that
             // native focus step, rather than hit-testing the old point after a scroll.
-            target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
+            target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus({ preventScroll: true });
             if (common.shiftKey && selection.anchorNode) selection.extend(node, offset);
             else selection.collapse(node, offset);
           }

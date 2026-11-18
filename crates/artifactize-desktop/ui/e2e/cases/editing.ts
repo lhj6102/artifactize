@@ -133,7 +133,14 @@ const commentOf = (browser: WebdriverIO.Browser, id: string) => browser.execute(
     quiet: style.color === quiet,
     bare: style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderTopStyle === "none",
     cut: text.scrollHeight > text.clientHeight + 1,
-    clamp: [style.display, style.getPropertyValue("-webkit-box-orient"), style.getPropertyValue("-webkit-line-clamp")],
+    clamp: {
+      // Engines implementing the legacy clamp through CSS Overflow's block-container
+      // layout compute the authored -webkit-box as flow-root.
+      block: style.display === "-webkit-box" || style.display === "flow-root",
+      orientation: style.getPropertyValue("-webkit-box-orient"),
+      lines: style.getPropertyValue("-webkit-line-clamp"),
+      overflow: style.overflowY,
+    },
     lineHeight: Number.parseFloat(style.lineHeight),
   };
 }, `${CURRENT} ${nodeAt(id)}, .run ${nodeAt(id)}`);
@@ -939,8 +946,12 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "the Detail closed");
       // Moved inside app's box, docs's place is written in app's file alone, nothing before the
       // release; the camera stays.
-      const inBox = (await box(browser, "a:app/a:docs"))!;
-      const appBox = (await box(browser, "a:app"))!;
+      // Adding a part may grow the whole past the current camera. Bring the
+      // complete box into view before testing a place in its lower margin.
+      await browser.$(TOOLS).$("button=Fit").click();
+      await camera(browser);
+      const inBox = await settled(browser, "a:app/a:docs");
+      const appBox = await settled(browser, "a:app");
       const others = () => ["core", "docs", "kit", "bundle"].map((name) => file(fixture, name));
       const [othersBefore, appBefore0, cameraBefore] = [others(), file(fixture, "app"), await camera(browser)];
       // Drop in the lower margin of the whole, below the nodes. This is a place within
@@ -1148,7 +1159,8 @@ export const scenarios: Scenario[] = [
       await quiet("a:app", true);
       const clamped = await quiet("a:core", false);
       assert.equal(clamped.cut, true, "core's fourth line overflows its visible box");
-      assert.deepEqual(clamped.clamp, ["-webkit-box", "vertical", "3"], "the browser's three-line clamp paints an ellipsis, not a plain overflow clip");
+      assert.deepEqual(clamped.clamp, { block: true, orientation: "vertical", lines: "3", overflow: "hidden" },
+        "the browser's three-line clamp paints an ellipsis, not a plain overflow clip");
       // Read aloud right after its node's name or its whole's title row: the last text its node
       // holds, not hidden.
       const readAfter = (id: string) => browser.execute((selector) => {

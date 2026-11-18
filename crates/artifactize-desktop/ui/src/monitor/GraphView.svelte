@@ -760,6 +760,7 @@
       nodesConnectable={false}
       elementsSelectable={false}
       autoPanOnNodeFocus={false}
+      autoPanOnNodeDrag={false}
       elevateNodesOnSelect={false}
       onlyRenderVisibleElements={drawn.length > 80}
       oninit={() => {

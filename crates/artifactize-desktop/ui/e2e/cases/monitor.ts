@@ -404,16 +404,21 @@ export const scenarios: Scenario[] = [
       const line = browser.$(`${LOG} p:nth-last-child(2)`);
       await line.scrollIntoView({ block: "nearest" });
       await afterRender(browser);
-      const [start, end] = await browser.execute((row: HTMLElement) => {
+      const endpoint = async (end: boolean) => browser.execute((row: HTMLElement, end) => {
         const range = document.createRange();
         range.selectNodeContents(row);
-        const { left, right, top, height } = range.getBoundingClientRect();
-        return [{ x: left + 1, y: top + height / 2 }, { x: right - 1, y: top + height / 2 }];
-      }, await line.getElement() as unknown as HTMLElement);
+        const boxes = range.getClientRects();
+        const box = boxes[end ? boxes.length - 1 : 0];
+        const point = { x: end ? box.right - 1 : box.left + 1, y: box.top + box.height / 2 };
+        if (!row.contains(document.elementFromPoint(point.x, point.y))) throw new Error("the Tool log line is not visible at the selection endpoint");
+        return point;
+      }, await line.getElement() as unknown as HTMLElement, end);
       const wanted = await line.getText();
       assert.equal(wanted, "- Ready to ship.");
-      await dispatchInput(browser, { kind: "text-click", ...start });
-      await dispatchInput(browser, { kind: "text-click", ...end, shift: true });
+      await dispatchInput(browser, { kind: "text-click", ...await endpoint(false) });
+      // Measure after the first click focused the scrollable log, not in its former geometry.
+      await afterRender(browser);
+      await dispatchInput(browser, { kind: "text-click", ...await endpoint(true), shift: true });
       assert.equal(await browser.execute(() => getSelection()?.toString() ?? ""), wanted, "only the log line is selected");
       await nativeInput(browser, { type: "copy" });
       await browser.$("#field-comment").click();

@@ -1,6 +1,6 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
-import { assertAdmissionsStopped, assertAppsStopped } from "./observation.ts";
+import { assertAdmissionsStopped, assertAppsStopped, retireOwnAdmissions } from "./observation.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
@@ -60,7 +60,11 @@ async function launchBatch(): Promise<void> {
     failures.push(configuration.preparationFailure === undefined ? error
       : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
   }
-  try { await configuration.releasePrepared(); } catch (error) { failures.push(error); }
+  try {
+    await configuration.releasePrepared();
+    const candidate = readCandidate();
+    retireOwnAdmissions(candidate.root, candidate.observer);
+  } catch (error) { failures.push(error); }
   if (failures.length) {
     try {
       const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "failed batches retain service diagnostics"));
