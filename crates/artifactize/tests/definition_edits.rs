@@ -77,7 +77,7 @@ fn path_edits_keep_comments_and_stale_source_can_be_reloaded_then_repaired() {
         &base,
         Operation::SetPath {
             name: name("a"),
-            path: "after/".into(),
+            path: "after/".parse().unwrap(),
         },
     )
     .unwrap();
@@ -391,7 +391,7 @@ fn reserved_names_are_refused_before_creating_a_native_file() {
         &edit::BasedOn::default(),
         Operation::Create {
             name: name(support::os::reserved_device_name()),
-            path: "./".into(),
+            path: "./".parse().unwrap(),
         },
     )
     .unwrap_err();

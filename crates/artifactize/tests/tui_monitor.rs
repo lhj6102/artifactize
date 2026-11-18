@@ -10,7 +10,7 @@ use std::{
 };
 
 use artifactize_core::store::{self, RequestView, RunView};
-use artifactize_tui::monitor::{self, EvalView, Kind, Monitor, Node, Target};
+use artifactize_tui::monitor::{self, Monitor, Node, Target};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{Terminal, backend::TestBackend};
 use rusqlite::Connection;
@@ -677,34 +677,22 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     // A partial forced Run of c: a and b have no requests, only saved results.
     let (view, requests) = load(verify(&["c", "--force", "--jobs", "1"], 0)).await;
     assert_eq!(requests.len(), 2);
-    assert_eq!(
-        view.run.evidence,
-        [
-            (
-                "a/x".parse().unwrap(),
-                artifactize_core::types::RequestStatus::Green
-            ),
-            (
-                "b/x".parse().unwrap(),
-                artifactize_core::types::RequestStatus::Green
-            ),
-        ]
-        .into()
-    );
     let nodes = monitor::tree(&view, &requests, now);
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    assert_eq!(
-        node("e:b/x").line(),
-        "✓ x  GREEN · saved result, not in this Run"
-    );
+    for eval in ["e:a/x", "e:b/x"] {
+        assert_eq!(
+            node(eval).line(),
+            "✓ x  GREEN · saved result, not in this Run"
+        );
+    }
     let executed = node("e:c/y").line();
     assert!(
         executed.starts_with("✓ y  GREEN  ") && !executed.contains("saved result"),
         "{executed}"
     );
-    assert!(all.iter().all(|node| !node.changed));
+    assert!(all.iter().all(|node| !node.line().ends_with(" *")));
 
     // a turns RED; b's reused GREEN is masked BLOCKED, and c is blocked by b.
     fs::write(support::declaration::source_path(&flag), "").unwrap();
@@ -730,22 +718,14 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    assert_eq!(
-        node("e:a/x").kind,
-        Kind::Eval(EvalView::Failed { verdict: true })
-    );
-    assert_eq!(
-        node("e:b/x").kind,
-        Kind::Eval(EvalView::Done(monitor::Source::Reused))
-    );
+    let red = node("e:a/x").line();
+    assert!(red.starts_with("✗ x  RED · exitCode 1  "), "{red}");
+    assert_eq!(node("e:b/x").line(), "✓ x  GREEN · reused");
     assert_eq!(node("a:b").line(), "⊘ b  done, but blocked by a  0/1");
-    assert_eq!(
-        node("e:c/x").kind,
-        Kind::Eval(EvalView::BlockedBy(vec!["b".parse().unwrap()]))
-    );
+    assert_eq!(node("e:c/x").line(), "⊘ x  not run: blocked by b ⊘ blocked");
     assert_eq!(node("a:c").line(), "⊘ c  not run: blocked by b  0/2");
     assert!(
-        all.iter().all(|node| !node.changed),
+        all.iter().all(|node| !node.line().ends_with(" *")),
         "nothing changed after the Run"
     );
 }

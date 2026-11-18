@@ -307,6 +307,7 @@ async fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["status", "--repo", "."],
         vec!["verify"],
         vec!["verify", "green", "--all"],
+        vec!["verify", "green", "--wait", "--watch"],
         vec!["verify", "green", "--profile"],
         vec!["verify", "green", "--bogus"],
         vec!["verify", "green", "--jobs", "0"],

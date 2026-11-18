@@ -305,13 +305,13 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         .unwrap();
     assert!(launch.status.success());
     assert!(String::from_utf8_lossy(&launch.stdout).contains("launched"));
-    for fields in [
-        "{}",
-        "[]",
-        "invalid",
-        r#"{"verdict":"RED","approved":true}"#,
+    for (fields, expected) in [
+        ("{}", "approved"),
+        ("[]", "Human fields must be a JSON object."),
+        ("invalid", "expected value"),
+        (r#"{"verdict":"RED","approved":true}"#, "Use --verdict"),
     ] {
-        fixture.json(
+        let error = fixture.json(
             &[
                 "request",
                 "submit",
@@ -323,6 +323,9 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
             ],
             2,
         );
+        let message = error["error"].as_str().unwrap();
+        assert!(message.contains(expected), "{message}");
+        assert!(!message.contains(fields), "{message}");
         assert_eq!(
             fixture.json(&["request", "show", id], 0)["status"],
             "DEFERRED"

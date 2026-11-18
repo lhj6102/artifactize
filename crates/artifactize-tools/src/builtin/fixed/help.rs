@@ -38,10 +38,10 @@ pub(super) async fn help(
             LaunchError::TimedOut => "Help timed out.".to_owned(),
             error => error.to_string(),
         })?;
-    if !crate::platform::succeeded(&finished.status) {
+    if !finished.status.success() {
         return Err(format!(
             "Help exited unsuccessfully ({}).\n{}",
-            crate::platform::exit_description(&finished.status),
+            finished.status,
             String::from_utf8_lossy(&finished.stderr)
         ));
     }

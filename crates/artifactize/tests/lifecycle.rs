@@ -189,7 +189,16 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     }).to_string()).unwrap();
     let first = verify(&repo, &state).await;
     assert_eq!(first.requests.len(), 2);
-    let request = &first.requests[0];
+    let request = first
+        .requests
+        .iter()
+        .find(|row| row.eval_id.as_str() == "app/bad")
+        .unwrap();
+    let healthy = first
+        .requests
+        .iter()
+        .find(|row| row.eval_id.as_str() == "app/healthy")
+        .unwrap();
     let execution = request.execution_id.as_ref().unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
     db.execute(
@@ -230,21 +239,41 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     let requests = store::read_requests(&state, Some(&first.run.id))
         .await
         .unwrap();
-    assert_eq!(requests.len(), 1);
-    let saved = store::read_run(&state, &first.run.id).await.unwrap();
+    let [listed] = requests.as_slice() else {
+        panic!("one surviving request expected: {requests:?}");
+    };
+    assert_eq!(listed.request.id, healthy.id);
     let (snapshot, views) = store::read_run_requests(&state, &first.run.id)
         .await
         .unwrap();
+    assert_eq!(snapshot.run.id, first.run.id);
     assert_eq!(
-        serde_json::to_value(&snapshot).unwrap(),
-        serde_json::to_value(&saved).unwrap()
+        snapshot.run.status(),
+        artifactize_core::types::RunStatus::Green
     );
-    assert_eq!(
-        serde_json::to_value(&views).unwrap(),
-        serde_json::to_value(&requests).unwrap()
-    );
-    let monitor =
-        artifactize_core::monitor::progress(&saved, &requests, time::OffsetDateTime::now_utc());
+    let [row] = snapshot.requests.as_slice() else {
+        panic!("one surviving request expected: {:?}", snapshot.requests);
+    };
+    assert_eq!(row.id, healthy.id);
+    let [view] = views.as_slice() else {
+        panic!("one surviving request view expected: {views:?}");
+    };
+    assert_eq!(view.request.id, healthy.id);
+    assert_eq!(snapshot.unreadable.len(), 2);
+    for (kind, id) in [
+        ("request", request.id.as_str()),
+        ("execution", execution.as_str()),
+    ] {
+        assert!(
+            snapshot
+                .unreadable
+                .iter()
+                .any(|row| row.kind == kind && row.id == id),
+            "{snapshot:?}"
+        );
+    }
+    let observed_at = time::OffsetDateTime::now_utc();
+    let monitor = artifactize_core::monitor::progress(&snapshot, &views, observed_at);
     for id in [request.id.as_str(), execution.as_str()] {
         assert!(
             monitor
@@ -254,10 +283,10 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
         );
     }
     let detail = artifactize_core::monitor::detail(
-        &saved,
-        &requests,
+        &snapshot,
+        &views,
         &artifactize_core::monitor::Target::Run,
-        time::OffsetDateTime::now_utc(),
+        observed_at,
     );
     assert!(detail.field("Errors").unwrap().contains(execution.as_str()));
     let status: Value = serde_json::from_str(&cli(&repo, &state, &["status"], true)).unwrap();
@@ -269,10 +298,7 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     let second = verify(&repo, &state).await;
     assert_eq!(second.run.status().as_str(), "GREEN");
     assert_ne!(second.requests[0].execution_id.as_ref(), Some(execution));
-    assert_eq!(
-        second.requests[1].execution_id,
-        first.requests[1].execution_id
-    );
+    assert_eq!(second.requests[1].execution_id, healthy.execution_id);
     assert_eq!(
         store::read_run(&state, &first.run.id)
             .await

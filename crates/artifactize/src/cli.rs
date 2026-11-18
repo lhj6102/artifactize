@@ -8,6 +8,8 @@ use config::ConfigCommand;
 #[cfg(test)]
 mod defaults_tests;
 mod dispatch;
+mod follow;
+use follow::Follow;
 mod graph;
 #[cfg(test)]
 mod identity_tests;
@@ -24,6 +26,7 @@ mod runtime;
 use runtime::cancellation_listener;
 pub use runtime::{Screens, run};
 mod secret;
+mod status;
 mod tools;
 use tools::ToolsCommand;
 mod workflow;
@@ -152,12 +155,8 @@ pub enum Command {
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
-        /// Observe until the Run ends; interrupting stops watching, not execution.
-        #[arg(long)]
-        wait: bool,
-        /// Submit and stream JSON-line updates, eval results and final validation.
-        #[arg(long, conflicts_with = "wait")]
-        watch: bool,
+        #[command(flatten)]
+        follow: Follow,
         #[arg(long, value_name = "KEY", help = format!(
             "Retry-safe caller attempt key (1–{} ASCII letters/digits/._:-).",
             artifactize_core::types::MAX_REQUEST_KEY_BYTES

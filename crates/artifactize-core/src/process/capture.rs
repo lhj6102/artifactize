@@ -247,7 +247,7 @@ impl Captured {
 
 /// Combine how the process ended with its two streams' captures.
 pub(super) fn finish(
-    status: std::process::ExitStatus,
+    status: platform::ProcessOutcome,
     stdout: Captured,
     stderr: Captured,
     duration: Duration,
@@ -259,8 +259,7 @@ pub(super) fn finish(
         .chain(stderr_failures.map(|failure| (Stream::Stderr, failure)))
         .collect();
     let output = super::Output {
-        status: platform::ProcessOutcome::from_native(&status),
-        native_status: status,
+        status,
         stdout,
         stderr,
         truncated: stdout_truncated || stderr_truncated,

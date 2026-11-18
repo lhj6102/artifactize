@@ -346,7 +346,12 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
                     .unwrap()
                     .is_empty()
             );
-            assert!(!support::os::running(runtime_child.pid.get()));
+            support::os::wait_until(Duration::from_secs(30), || {
+                !support::os::same_process_running(
+                    runtime_child.pid.get(),
+                    runtime_child.start_time,
+                )
+            });
             let cache = artifactize_core::cache::list(&fixture.state, false)
                 .await
                 .unwrap();
@@ -951,16 +956,14 @@ async fn c2_superseding_a_signoff_leaves_other_worktrees() {
         ),
         RequestStatus::Error
     );
-    let receipts = Receipts::open(&fixture.state, &fixture.repo).await.unwrap();
     let request = &other_run.requests[0];
     let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
-    assert!(
-        waiting.iter().any(|q| q.request.id == request.id),
-        "request={request:#?}, waiting={waiting:#?}"
-    );
-    human::claim(&receipts, &request.id, &"reviewer".parse().unwrap())
-        .await
-        .unwrap();
+    let preserved = waiting
+        .iter()
+        .find(|view| view.request.id == request.id)
+        .unwrap_or_else(|| panic!("request={request:#?}, waiting={waiting:#?}"));
+    assert_eq!(preserved.request.status(), RequestStatus::Deferred);
+    assert!(preserved.claim.is_none(), "{preserved:#?}");
 }
 
 #[tokio::test]

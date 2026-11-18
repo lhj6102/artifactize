@@ -184,10 +184,7 @@ pub struct StateHomeError;
 
 /// The variables `state_home` reads, in order, for the error that names them.
 fn state_home_variables() -> String {
-    let names: Vec<&str> = std::iter::once("ARTIFACTIZE_STATE_HOME")
-        .chain(platform::STATE_VARIABLES.iter().copied())
-        .chain(platform::HOME_VARIABLES.iter().copied())
-        .collect();
+    let names: Vec<_> = platform::state_home_variables().collect();
     let (last, rest) = names.split_last().expect("constant names");
     format!("{}, or {last}", rest.join(", "))
 }

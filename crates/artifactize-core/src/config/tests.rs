@@ -22,6 +22,56 @@ fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
 }
 
 #[test]
+fn editor_path_operations_validate_the_target_at_the_wire_boundary() {
+    for kind in ["create", "setPath"] {
+        for target in [
+            "./",
+            "future/",
+            "future/file.txt",
+            "https://example.invalid/path/",
+        ] {
+            let wire = json!({"kind":kind,"name":"node","path":target});
+            let operation: edit::Operation = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+        }
+        for target in ["", "../outside", "folder//", "https://example.invalid/a b"] {
+            let wire = json!({"kind":kind,"name":"node","path":target});
+            assert!(
+                serde_json::from_value::<edit::Operation>(wire).is_err(),
+                "accepted {target:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn editor_view_preserves_authored_path_as_well_as_resolved_target_kind() {
+    let root = crate::test_os::tempdir();
+    let directory = root.path().join(discovery::DEFINITION_DIR);
+    std::fs::create_dir(&directory).unwrap();
+    for (name, target, kind) in [
+        ("root", "./", ArtifactKind::Folder),
+        ("missing", "future/", ArtifactKind::Folder),
+        (
+            "observed",
+            "HtTpS://example.invalid/detail/",
+            ArtifactKind::Live,
+        ),
+    ] {
+        std::fs::write(
+            directory.join(format!("{name}.artf")),
+            format!("path = '{target}'\nbasis = true\n"),
+        )
+        .unwrap();
+        let project = edit::read_project(root.path()).unwrap();
+        let node = &project.nodes[&name.parse::<ArtifactName>().unwrap()];
+        assert_eq!(node.target, target);
+        assert_eq!(node.kind, kind);
+        assert_eq!(node.target_missing, name == "missing");
+    }
+}
+
+#[test]
 fn eval_mutex_declarations_are_typed_and_excluded_from_criteria() {
     let declared = eval(json!({"kind":"agent","backend":"openai","model":"fixture"}));
     let baseline = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();

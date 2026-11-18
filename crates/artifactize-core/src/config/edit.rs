@@ -34,6 +34,7 @@ use super::*;
 mod annotations;
 mod placement;
 mod proposal;
+pub use super::authored_target::AuthoredTarget;
 pub use annotations::Annotations;
 pub use placement::PlacementKey;
 use serde::{Deserialize, Serialize};
@@ -76,11 +77,11 @@ impl Extend<(PathBuf, Option<String>)> for BasedOn {
 pub enum Operation {
     Create {
         name: ArtifactName,
-        path: String,
+        path: AuthoredTarget,
     },
     SetPath {
         name: ArtifactName,
-        path: String,
+        path: AuthoredTarget,
     },
     AddPart {
         whole: ArtifactName,
@@ -691,12 +692,10 @@ pub fn read_project(project: &Path) -> Result<Project, Refusal> {
                 Node {
                     definition,
                     identity,
-                    target: source
-                        .parse::<toml_edit::DocumentMut>()
-                        .expect("validated source")["path"]
-                        .as_str()
-                        .expect("validated PATH")
-                        .to_owned(),
+                    target: artifact
+                        .authored_path
+                        .clone()
+                        .expect("parsed definition PATH"),
                     path: artifact.path.local().unwrap_or(Path::new("")).to_owned(),
                     kind: artifact.kind(),
                     target_missing: artifact.target_error.is_some(),

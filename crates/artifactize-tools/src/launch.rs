@@ -9,6 +9,7 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 use crate::platform;
+pub use crate::platform::outcome::{ProcessEnd, ProcessOutcome};
 
 /// One resolved program to run: its path, its arguments and its working directory.
 #[derive(Debug, Clone)]
@@ -25,8 +26,7 @@ pub struct Launch {
 /// What a finished program produced.
 #[derive(Debug)]
 pub struct Finished {
-    /// The actual exit status, not independently editable success and diagnostic fields.
-    pub status: std::process::ExitStatus,
+    pub status: ProcessOutcome,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     /// An output stream exceeded `output_limit`.

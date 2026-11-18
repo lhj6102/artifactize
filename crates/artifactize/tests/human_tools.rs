@@ -55,6 +55,18 @@ async fn call(repo: &Path) -> ToolResult {
         .await
 }
 
+async fn call_launch(launched: &Launched) -> ToolResult {
+    let config = read_workspace_config(launched.path()).unwrap();
+    Registry::new(&config, &"a/review".parse().unwrap())
+        .unwrap()
+        .call_logged(
+            &"inspect_a".parse().unwrap(),
+            CancellationToken::new(),
+            launched.observe(artifactize_core::review::log::Run::unwatched()),
+        )
+        .await
+}
+
 fn text(result: &ToolResult) -> &str {
     let Content::Text { text } = &result.content()[0] else {
         panic!("{result:?}")
@@ -461,7 +473,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
         .call_logged(
             &name,
             CancellationToken::new(),
-            sink.start(&request, "inspect", "a"),
+            launched.observe(sink.start(&request, "inspect", "a")),
         )
         .await;
     assert_eq!(result.content(), [Content::Launch { launched: true }]);
@@ -549,7 +561,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         "Review.",
     );
     assert_eq!(
-        call(launched.path()).await.content(),
+        call_launch(&launched).await.content(),
         [Content::Launch { launched: true }]
     );
     // Handoff acceptance is not the saved marker. Observe the full marker and adopt the
@@ -579,7 +591,7 @@ async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
         );
         let launched = Launched::new(repo);
         assert_eq!(
-            call(launched.path()).await.content(),
+            call_launch(&launched).await.content(),
             [Content::Launch { launched: true }]
         );
         support::os::wait_until(Duration::from_secs(5), || {
@@ -619,15 +631,7 @@ async fn detached_fixture_reaps_a_launch_that_never_hands_off_its_pid() {
         "Review.",
     );
     let launched = Launched::new(repo);
-    let config = read_workspace_config(launched.path()).unwrap();
-    let result = Registry::new(&config, &"a/review".parse().unwrap())
-        .unwrap()
-        .call_logged(
-            &"inspect_a".parse().unwrap(),
-            CancellationToken::new(),
-            launched.observe(artifactize_core::review::log::Run::unwatched()),
-        )
-        .await;
+    let result = call_launch(&launched).await;
     assert_eq!(result.content(), [Content::Launch { launched: true }]);
     support::os::wait_until(Duration::from_secs(5), || {
         launched.path().join("handoff-ready").exists()

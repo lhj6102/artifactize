@@ -1,10 +1,10 @@
 //! Process handles for launches that outlive the requester and are not killed on drop.
 
-use std::{io, process::ExitStatus};
+use std::io;
 
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 
-use super::os;
+use super::{ProcessOutcome, os};
 
 pub(crate) struct DetachedChild(Child);
 
@@ -20,8 +20,8 @@ impl DetachedChild {
         )
     }
 
-    pub(crate) async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.0.wait().await
+    pub(crate) async fn wait(&mut self) -> io::Result<ProcessOutcome> {
+        self.0.wait().await.map(ProcessOutcome::from_native)
     }
 
     /// Leave the child running and reap it in the background, with no waiter at the call site.

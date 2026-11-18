@@ -1,4 +1,4 @@
-//! Text/JSON projections and Run outcome exit codes.
+//! Saved verification reports, Run outcome exit codes and shared output.
 
 use std::io::{self, Write};
 
@@ -19,8 +19,8 @@ const YELLOW_EXIT: u8 = 5;
 pub(super) fn verify(
     view: &artifactize_core::store::RunView,
     json_output: bool,
+    observed_at: time::OffsetDateTime,
 ) -> Result<(), String> {
-    let observed_at = time::OffsetDateTime::now_utc();
     if json_output {
         print_json(&artifactize_core::query::run_output(view, observed_at))?;
     } else {
@@ -200,82 +200,6 @@ pub(super) fn tags(tags: &[String]) -> String {
     } else {
         format!(" [{}]", tags.join(", "))
     }
-}
-
-pub(super) fn status(view: &artifactize_core::project::StatusView) -> io::Result<()> {
-    let mut out = io::stdout().lock();
-    writeln!(
-        out,
-        "Current validation: {}",
-        if view.satisfied {
-            "SATISFIED"
-        } else {
-            "NOT SATISFIED"
-        }
-    )?;
-    for unreadable in &view.unreadable {
-        writeln!(out, "  {unreadable}")?;
-    }
-    for artifact in &view.artifacts {
-        writeln!(
-            out,
-            "  Artifact {}{}{}: {} ({}/{} Evals)",
-            artifact.id,
-            tags(&artifact.tags),
-            if artifact.kind == artifactize_core::config::ArtifactKind::File {
-                format!(" [file: {}]", artifact.path)
-            } else {
-                String::new()
-            },
-            artifact.state,
-            artifact.passed,
-            artifact.total
-        )?;
-    }
-    for eval in &view.evals {
-        writeln!(
-            out,
-            "  {}: {} — {}{}\n    {}",
-            eval.id,
-            eval.state,
-            eval.action,
-            if eval.included {
-                ""
-            } else {
-                " (not included; use --recursive)"
-            },
-            eval.reason
-        )?;
-        if let Some(changes) = &eval.changes {
-            writeln!(
-                out,
-                "    Fingerprint changed since Run {}: {}",
-                changes.since_run_id, changes.summary
-            )?;
-        }
-        if let Some(last) = &eval.last {
-            writeln!(
-                out,
-                "    Last: {} (Run {}; historical, not current evidence)",
-                last.verdict, last.run_id
-            )?;
-        }
-    }
-    for artifact in &view.obligations {
-        writeln!(out, "  Unmet obligation: {artifact}")?;
-    }
-    writeln!(
-        out,
-        "Verify actions: will execute {}, will reuse {}, wait {}, blocked {}",
-        view.counts.execute, view.counts.reuse, view.counts.wait, view.counts.blocked
-    )?;
-    if view.counts.wait > 0 {
-        writeln!(
-            out,
-            "  wait: needs a result verify has not produced yet (a dependency it executes, or a live execution); status cannot predict it."
-        )?;
-    }
-    Ok(())
 }
 
 /// Run outcome exit codes shared by `verify` and `run show --wait`.

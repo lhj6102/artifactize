@@ -1,4 +1,4 @@
-//! Repository discovery and verification workflows, without text rendering.
+//! Submit a verification Run and follow it as requested.
 
 use super::{Context, INTERRUPTED_EXIT, cancellation_listener, print_json};
 
@@ -9,30 +9,7 @@ use std::{
 
 use artifactize_core::project::selection::Selection;
 
-use super::{PolicyArgs, outcome_code};
-
-/// What `verify` does after submitting the Run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Follow {
-    /// Print the Run id and return at once.
-    Submit,
-    /// Observe until the Run ends, then render its result.
-    Wait,
-    /// Stream JSON-line updates until the Run ends.
-    Watch,
-}
-
-impl Follow {
-    /// Normalizes the mutually exclusive `--wait` and `--watch` flags.
-    pub(super) fn from_flags(wait: bool, watch: bool) -> Self {
-        match (wait, watch) {
-            (false, true) => Self::Watch,
-            (true, true) => unreachable!("clap makes --wait and --watch exclusive"),
-            (true, false) => Self::Wait,
-            (false, false) => Self::Submit,
-        }
-    }
-}
+use super::{Follow, PolicyArgs, outcome_code};
 
 /// Per-request arguments, separate from selection and dependency policy.
 pub(super) struct VerifyLimits {
@@ -124,32 +101,9 @@ pub(super) async fn verify(
     if let Some(error) = view.run.error() {
         let _ = writeln!(io::stderr().lock(), "{error}");
     }
-    super::render::verify(&view, context.json)?;
+    let observed_at = time::OffsetDateTime::now_utc();
+    super::render::verify(&view, context.json, observed_at)?;
     Ok(outcome_code(&view.run))
-}
-
-pub(super) async fn status(
-    context: Context,
-    selection: Selection,
-    policy: PolicyArgs,
-) -> Result<u8, String> {
-    let (cancellation, listener) = cancellation_listener()?;
-    let result = artifactize_core::project::status(
-        &context.repo.unwrap_or_else(|| PathBuf::from(".")),
-        context.state_dir.as_deref(),
-        &selection,
-        &policy.options(),
-        cancellation,
-    )
-    .await;
-    listener.abort();
-    let view = result?;
-    if context.json {
-        print_json(&view)?;
-    } else {
-        super::render::status(&view).map_err(|error| error.to_string())?;
-    }
-    Ok(u8::from(!view.satisfied))
 }
 
 fn context_for_watch(runs: &artifactize_core::runs::Context, json: bool) -> Context {

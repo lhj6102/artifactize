@@ -54,11 +54,12 @@ pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigErr
                     .unwrap_or_default(),
             )
             .map_err(|error| ConfigError::new(&file, error))?;
-            let (path, kind, declaration) =
+            let parsed =
                 discovery::parse_definition(&name, &source, &mut schemas::Schemas::default())
                     .map_err(|error| ConfigError::new(&file, error))?;
-            let path = path
-                .with_kind(kind, declaration.select.unwrap_or_default())
+            let path = parsed
+                .path
+                .with_kind(parsed.kind, parsed.declaration.select.unwrap_or_default())
                 .map_err(|error| ConfigError::new(&file, error))?;
             Ok((
                 name,
@@ -118,10 +119,9 @@ fn read_declared(
                 ScopeReadError::Config(ConfigError::new(&file, error))
             }
         })?;
-        let (_, _, declaration) =
-            discovery::parse_definition(&next, &source, &mut schemas::Schemas::default())
-                .map_err(|error| ConfigError::new(&file, error))?;
-        pending.extend(declaration.parts.into_iter().flatten());
+        let parsed = discovery::parse_definition(&next, &source, &mut schemas::Schemas::default())
+            .map_err(|error| ConfigError::new(&file, error))?;
+        pending.extend(parsed.declaration.parts.into_iter().flatten());
         selected.insert(file, source);
     }
     let mut config = discovery::read_sources_unresolved(root, &selected)?;

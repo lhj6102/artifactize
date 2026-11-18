@@ -366,7 +366,7 @@ async fn supervise_inner(
         _ = cancellation.cancelled() => Err("start was cancelled".to_owned()),
         _ = stop_token.cancelled() => Err("start was dropped".to_owned()),
         status = child.wait_leader() => Err(match status {
-            Ok(status) => format!("exited before readiness: {}", platform::exit_description(&status)),
+            Ok(status) => format!("exited before readiness: {status}"),
             Err(error) => format!("could not wait for the start command: {error}"),
         }),
         result = ready_receive => match result {

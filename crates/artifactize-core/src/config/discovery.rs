@@ -1,6 +1,6 @@
 //! Definitions live exclusively below `.artifactize/`; target placement has no meaning.
 
-use super::{validation::path, *};
+use super::{authored_target::AuthoredTarget, *};
 use std::io::Read;
 
 pub const DEFINITION_DIR: &str = ".artifactize";
@@ -70,14 +70,21 @@ pub(super) fn read_sources_unresolved(
                 ),
             ));
         }
-        let (path, kind, declaration) = parse_definition(&name, source, &mut schemas)
+        let parsed = parse_definition(&name, source, &mut schemas)
             .map_err(|error| ConfigError::new(file, error))?;
-        insert_artifact(&mut config, path, kind, declaration, file)?;
-        config
-            .artifacts
-            .get_mut(&name)
-            .expect("just inserted")
-            .definition = file.strip_prefix(&config.root).unwrap_or(file).to_owned();
+        insert_artifact(
+            &mut config,
+            parsed.path,
+            parsed.kind,
+            parsed.declaration,
+            file,
+        )?;
+        let artifact = config.artifacts.get_mut(&name).expect("just inserted");
+        artifact.definition = file
+            .strip_prefix(&config.root)
+            .expect("definition below workspace")
+            .to_owned();
+        artifact.authored_path = Some(parsed.authored_path);
     }
     populate_nested(&mut config);
     Ok(config)
@@ -154,11 +161,18 @@ pub(super) fn definition_name(name: &str) -> Result<ArtifactName, String> {
     Ok(parsed)
 }
 
+pub(super) struct ParsedDefinition {
+    pub authored_path: String,
+    pub path: Target,
+    pub kind: ArtifactKind,
+    pub declaration: ArtifactDeclaration,
+}
+
 pub(super) fn parse_definition(
     name: &ArtifactName,
     source: &str,
     schemas: &mut schemas::Schemas,
-) -> Result<(Target, ArtifactKind, ArtifactDeclaration), String> {
+) -> Result<ParsedDefinition, String> {
     let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
     if table.get_ref().contains_key("name") {
         return Err(location::error_at(
@@ -167,14 +181,14 @@ pub(super) fn parse_definition(
             "the file name is the Artifact's name",
         ));
     }
-    let (logical, kind) = target(source, &table)?;
+    let (authored_path, path, kind) = target(source, &table)?;
     // Retain the original spans through typed validation: changing a key in memory
     // must not shift an error away from the source the editor is displaying.
     let declaration = super::definition::parse_table(
         &super::definition::Input {
             kind,
             name: Some(name),
-            path: logical.local().unwrap_or(Path::new("")),
+            path: path.local().unwrap_or(Path::new("")),
             file: Path::new(""),
             source,
         },
@@ -182,7 +196,12 @@ pub(super) fn parse_definition(
         table,
     )
     .map_err(|error| error.message)?;
-    Ok((logical, kind, declaration))
+    Ok(ParsedDefinition {
+        authored_path,
+        path,
+        kind,
+        declaration,
+    })
 }
 
 pub(super) fn files(root: &Path) -> Result<Vec<(PathBuf, crate::platform::FileKind)>, ConfigError> {
@@ -293,6 +312,7 @@ pub(super) fn insert_artifact(
         name.clone(),
         Artifact {
             definition: PathBuf::new(),
+            authored_path: None,
             target_error: None,
             path: path
                 .into()
@@ -314,9 +334,9 @@ pub(super) fn insert_artifact(
 fn target(
     source: &str,
     table: &toml::Spanned<toml::de::DeTable<'_>>,
-) -> Result<(Target, ArtifactKind), String> {
+) -> Result<(String, Target, ArtifactKind), String> {
     let doc = table.get_ref();
-    let target = doc
+    let text = doc
         .get("path")
         .and_then(|value| match value.get_ref() {
             toml::de::DeValue::String(text) => Some(text.as_ref()),
@@ -325,57 +345,27 @@ fn target(
         .ok_or_else(|| {
             location::error_at(source, &["path"], "path is required and must be a string")
         })?;
-    if Uri::has_scheme(target) {
-        let uri = target
-            .parse::<Uri>()
-            .map_err(|error| location::error_at(source, &["path"], &error.to_string()))?;
-        if doc.contains_key("select") {
+    let (authored, target) = text
+        .parse::<AuthoredTarget>()
+        .map_err(|error| location::error_at(source, &["path"], &error))?
+        .into_parts();
+    let kind = match (target.kind(), doc.contains_key("select")) {
+        (ArtifactKind::Folder, true) => ArtifactKind::Aspect,
+        (ArtifactKind::Live, true) => {
             return Err(location::error_at(
                 source,
                 &["select"],
                 "select is not supported on a Live target",
             ));
         }
-        return Ok((Target::Live(uri), ArtifactKind::Live));
-    }
-    let kind = if target.ends_with('/') {
-        if doc.contains_key("select") {
-            ArtifactKind::Aspect
-        } else {
-            ArtifactKind::Folder
+        (ArtifactKind::File, true) => {
+            return Err(location::error_at(
+                source,
+                &["select"],
+                "select requires a folder path ending in /",
+            ));
         }
-    } else {
-        ArtifactKind::File
+        (kind, _) => kind,
     };
-    let logical = target.strip_suffix('/').unwrap_or(target);
-    let logical = if target == "./" { "" } else { logical };
-    if logical.contains(':') {
-        return Err(location::error_at(
-            source,
-            &["path"],
-            "Local paths must not contain ':'.",
-        ));
-    }
-    if !logical.is_empty() {
-        path(logical).map_err(|error| location::error_at(source, &["path"], &error))?;
-    } else if target != "./" {
-        return Err(location::error_at(
-            source,
-            &["path"],
-            "path must name a file or folder",
-        ));
-    }
-    if doc.contains_key("select") && kind != ArtifactKind::Aspect {
-        return Err(location::error_at(
-            source,
-            &["select"],
-            "select requires a folder path ending in /",
-        ));
-    }
-    Ok((
-        Target::Folder(PathBuf::from(logical))
-            .with_kind(kind, Vec::new())
-            .map_err(|error| error.to_string())?,
-        kind,
-    ))
+    Ok((authored, target, kind))
 }

@@ -193,7 +193,7 @@ fn edits_are_validated_compare_content_and_preserve_untouched_text() {
             &based,
             Operation::SetPath {
                 name: name("whole"),
-                path: "next/".into()
+                path: "next/".parse().unwrap()
             }
         ),
         Err(Refusal::Changed {
@@ -244,7 +244,7 @@ fn create_move_source_delete_and_layout_share_the_file_contract() {
         &based,
         Operation::Create {
             name: name("new"),
-            path: "new/".into(),
+            path: "new/".parse().unwrap(),
         },
     )
     .unwrap();
@@ -683,7 +683,7 @@ fn operation_footprints_own_destinations_and_exact_multifile_write_sets() {
         &project,
         Operation::Create {
             name: name("fresh"),
-            path: "future/".into(),
+            path: "future/".parse().unwrap(),
         },
         &[".artifactize/fresh.artf"],
     );
@@ -726,7 +726,7 @@ fn operation_footprints_own_destinations_and_exact_multifile_write_sets() {
         &project,
         Operation::SetPath {
             name: name("fresh"),
-            path: "future/".into(),
+            path: "future/".parse().unwrap(),
         },
         &[],
     );

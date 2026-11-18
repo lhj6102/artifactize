@@ -54,6 +54,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
             name.parse().unwrap(),
             Artifact {
                 definition: std::path::PathBuf::new(),
+                authored_path: None,
                 target_error: None,
                 name: name.parse().unwrap(),
                 tags: declaration.tags,

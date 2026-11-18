@@ -349,17 +349,15 @@ impl RepoLease {
 impl Drop for RepoLease {
     fn drop(&mut self) {
         let released = self.release();
-        let fallback = if released.is_err() {
-            self.stop_saved_owners()
-        } else {
-            Ok(())
-        };
+        // A terminal Run and an exited worker do not by themselves prove that every
+        // recorded child exited. Recheck all recorded lifetimes before deleting inputs.
+        let stopped = self.stop_saved_owners();
         LEASES
             .lock()
             .unwrap()
             .remove(&(self.state.clone(), self.repo.clone()));
         let root = self.root.take().expect("fixture root is owned");
-        let (closed, ipc) = if fallback.is_ok() {
+        let (closed, ipc) = if stopped.is_ok() {
             // Name the namespace before closing the fixture; attempt both removals.
             let namespace = artifactize_core::changes::namespace(&self.state);
             (root.close(), namespace.and_then(std::fs::remove_dir_all))
@@ -377,7 +375,7 @@ impl Drop for RepoLease {
         };
         let failure = [
             released,
-            fallback,
+            stopped,
             closed.map_err(|error| error.to_string()),
             ipc.map_err(|error| error.to_string()),
         ]

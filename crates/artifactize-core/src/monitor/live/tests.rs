@@ -172,6 +172,26 @@ fn a_branch_has_its_projects_runs_on_that_branch_from_whichever_folder_they_ran_
 }
 
 #[test]
+fn a_run_below_a_worktree_alias_restores_the_nested_workspace() {
+    let root = crate::test_os::tempdir();
+    let worktree = repository(root.path());
+    let workspace = worktree.join("nested");
+    std::fs::create_dir(&workspace).unwrap();
+    let alias = root.path().join("worktree-alias");
+    crate::test_os::link_dir(&worktree, &alias);
+    let identity = Identity {
+        worktree_path: Some(alias),
+        ..repository::identify(&workspace)
+    };
+    let runs = [run("run-1", &workspace, identity, 0, RunStatus::Green)];
+    let listing = branches(&runs, None, &mut Discovery::default());
+    let [branch] = listing.branches.as_slice() else {
+        panic!("expected one branch: {:?}", listing.branches);
+    };
+    assert_eq!(branch.workspace, workspace);
+}
+
+#[test]
 fn a_folder_outside_git_lives_while_it_exists_and_holds_declarations() {
     let root = crate::test_os::tempdir();
     let folder = root.path().join("plain");

@@ -1,14 +1,14 @@
 #[path = "artifactsum_tests.rs"]
 mod artifactsum_tests;
 
-use std::{fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::config::{CONFIG_FILE, read_workspace_config};
+use crate::config::{ArtifactName, CONFIG_FILE, EvalDeclaration, read_workspace_config};
 use crate::test_os::symlink_file;
 
 struct Repo {

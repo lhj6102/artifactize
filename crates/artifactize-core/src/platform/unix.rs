@@ -9,12 +9,8 @@ use std::{
     fs::{self, DirBuilder, File, OpenOptions, Permissions},
     future::Future,
     io,
-    os::unix::{
-        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-        process::ExitStatusExt,
-    },
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
-    process::ExitStatus,
 };
 
 pub(crate) use tempfile::TempDir as PrivateTempDir;
@@ -194,11 +190,6 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = false;
 /// Whether a terminal that cannot hide input is still read, visibly, after a warning. A Unix
 /// terminal always can; failing to hide input is an error.
 pub const VISIBLE_INPUT_FALLBACK: bool = false;
-
-/// The signal that ended a process, if one did.
-pub(crate) fn exit_signal(status: &ExitStatus) -> Option<i32> {
-    status.signal()
-}
 
 /// The operating system's host name, without depending on a proc filesystem.
 pub(crate) fn host_name() -> Option<String> {

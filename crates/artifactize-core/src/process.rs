@@ -1,12 +1,7 @@
 //! Literal process launches, bounded capture, and process-group cleanup.
 
 use std::{
-    collections::BTreeMap,
-    ffi::OsString,
-    future::Future,
-    io,
-    path::PathBuf,
-    process::{ExitStatus, Stdio},
+    collections::BTreeMap, ffi::OsString, future::Future, io, path::PathBuf, process::Stdio,
     time::Duration,
 };
 
@@ -105,7 +100,6 @@ pub struct ChildIdentity {
 #[derive(Debug)]
 pub struct Output {
     pub status: platform::ProcessOutcome,
-    native_status: ExitStatus,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub truncated: bool,
@@ -146,7 +140,7 @@ impl artifactize_tools::launch::Launcher for Launcher {
             };
             match run_unregistered(command, None, launch.output_limit, cancellation.clone()).await {
                 Ok(output) => Ok(Finished {
-                    status: output.native_status,
+                    status: output.status,
                     stdout: output.stdout,
                     stderr: output.stderr,
                     truncated: output.truncated,
@@ -603,7 +597,7 @@ pub(crate) fn launch_watched(
             capture::capture(stderr, 0, None, Some(run.lines(Stream::Stderr)), &held),
         );
         run.end(match status {
-            Ok(status) => End::exited(&platform::ProcessOutcome::from_native(&status)),
+            Ok(status) => End::exited(&status),
             Err(error) => End::Failed(error.to_string()),
         });
     });

@@ -31,6 +31,8 @@ fn tool_nested(
 #[derive(Debug, Clone)]
 pub struct Artifact {
     pub definition: PathBuf,
+    /// Exact PATH from a definition node; legacy migration inputs lack this field.
+    pub(crate) authored_path: Option<String>,
     /// Current target availability is not part of the saved declaration or its identity.
     pub target_error: Option<String>,
     pub path: Target,

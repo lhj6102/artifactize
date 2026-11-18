@@ -5,10 +5,7 @@ pub(crate) mod ipc;
 mod process;
 mod security;
 
-use std::{
-    fs::File, future::Future, io, os::windows::io::AsRawHandle, path::Path, process::ExitStatus,
-    ptr,
-};
+use std::{fs::File, future::Future, io, os::windows::io::AsRawHandle, path::Path, ptr};
 
 use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close};
 use windows_sys::Win32::{
@@ -135,11 +132,6 @@ pub(crate) const CRLF_LINE_ENDINGS: bool = true;
 /// mintty (Git Bash) hands Windows programs a pipe that only looks like a terminal, with no
 /// console echo to turn off.
 pub const VISIBLE_INPUT_FALLBACK: bool = true;
-
-/// Windows processes end with an exit code, never a signal.
-pub(crate) fn exit_signal(_status: &ExitStatus) -> Option<i32> {
-    None
-}
 
 pub(crate) fn host_name() -> Option<String> {
     let mut size = 0;

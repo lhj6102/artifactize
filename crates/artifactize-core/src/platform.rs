@@ -43,14 +43,13 @@ pub use hidden_input::{SecretInput, secret_input, stdin_is_terminal};
 pub use os::HiddenInput;
 pub use os::stop_requested;
 pub(crate) use os::{
-    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLES, PrivateTempDir,
-    STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
-    exit_signal, file_identity, hide_console_window, home_directory, host_name, ipc, is_owner_only,
-    is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
-    private_named_dir, private_options, private_tempdir_in, process_start_time,
-    release_free_memory, remove_tree, resolve_system_aliases, restrict_file,
-    running_process_start_time, spawn_gated, spawn_now, spawn_windowless, sync_dir,
-    transient_file_access,
+    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, PrivateTempDir, TEMP_VARIABLES,
+    USER_VARIABLES, create_private_dir, create_private_dir_all, file_identity, hide_console_window,
+    home_directory, host_name, ipc, is_owner_only, is_private_dir, is_private_file,
+    kill_saved_group, kill_saved_session, path_from_bytes, private_named_dir, private_options,
+    private_tempdir_in, process_start_time, release_free_memory, remove_tree,
+    resolve_system_aliases, restrict_file, running_process_start_time, spawn_gated, spawn_now,
+    spawn_windowless, sync_dir, transient_file_access,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
@@ -101,28 +100,7 @@ pub(crate) struct FileIdentity {
     index: u64,
 }
 
-/// How a finished process ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessEnd {
-    /// It exited with this code.
-    Exited(i32),
-    /// It was ended without an exit code: on Unix by a signal, when known.
-    Signaled(Option<i32>),
-}
-
-/// How the process whose `status` this is ended.
-pub(crate) fn process_end(status: &std::process::ExitStatus) -> ProcessEnd {
-    match status.code() {
-        Some(code) => ProcessEnd::Exited(code),
-        None => ProcessEnd::Signaled(exit_signal(status)),
-    }
-}
-
-/// How a finished process ended, for a message: its exit code, or on Unix the signal that
-/// ended it, in the system's own wording.
-pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
-    status.to_string()
-}
+pub use artifactize_tools::launch::{ProcessEnd, ProcessOutcome};
 
 /// Poll contended process-shared file locks without blocking the async runtime;
 /// 25 ms keeps session sends and credential refreshes responsive without busy-waiting.
@@ -197,11 +175,20 @@ pub(crate) fn temporary_directory() -> std::path::PathBuf {
     std::env::temp_dir()
 }
 
+const STATE_HOME_OVERRIDE: &str = "ARTIFACTIZE_STATE_HOME";
+
+/// The environment variables consulted for state storage, in precedence order.
+pub(crate) fn state_home_variables() -> impl Iterator<Item = &'static str> {
+    std::iter::once(STATE_HOME_OVERRIDE)
+        .chain(os::STATE_VARIABLES.iter().copied())
+        .chain(os::HOME_VARIABLES.iter().copied())
+}
+
 /// Default state directory policy belongs with the platform's environment names.
 pub(crate) fn state_directory() -> Option<std::path::PathBuf> {
     resolve_state_directory(
-        environment::var("ARTIFACTIZE_STATE_HOME").map(Into::into),
-        STATE_VARIABLES
+        environment::var(STATE_HOME_OVERRIDE).map(Into::into),
+        os::STATE_VARIABLES
             .iter()
             .find_map(|name| environment::var(name).filter(|v| !v.is_empty()))
             .map(Into::into),
@@ -374,35 +361,7 @@ pub(crate) fn marker_metadata(path: &std::path::Path) -> std::io::Result<std::fs
     path.symlink_metadata()
 }
 
-/// The reason a process ended and the host's wording for diagnostics.
-#[derive(Debug)]
-pub struct ProcessOutcome {
-    pub end: ProcessEnd,
-    description: String,
-}
-
-impl ProcessOutcome {
-    pub(crate) fn from_native(status: &std::process::ExitStatus) -> Self {
-        Self {
-            end: process_end(status),
-            description: exit_description(status),
-        }
-    }
-
-    pub fn code(&self) -> Option<i32> {
-        match self.end {
-            ProcessEnd::Exited(code) => Some(code),
-            ProcessEnd::Signaled(_) => None,
-        }
-    }
-
-    pub fn success(&self) -> bool {
-        self.code() == Some(0)
-    }
-}
-
-impl std::fmt::Display for ProcessOutcome {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.description)
-    }
+#[cfg(test)]
+pub(crate) fn successful_outcome() -> ProcessOutcome {
+    ProcessOutcome::from_native(std::process::ExitStatus::default())
 }

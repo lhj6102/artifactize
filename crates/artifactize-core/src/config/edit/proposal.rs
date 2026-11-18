@@ -30,7 +30,7 @@ pub(super) fn propose(
                 return Err(forbidden(format!("Artifact {name} already exists.")));
             }
             let mut doc = toml_edit::DocumentMut::new();
-            doc["path"] = toml_edit::value(path);
+            doc["path"] = toml_edit::value(path.as_str());
             proposed.insert(
                 root.join(format!(".artifactize/{name}.artf")),
                 doc.to_string(),
@@ -43,7 +43,7 @@ pub(super) fn propose(
                     .expect("validated PATH")
                     .decor()
                     .clone();
-                let mut value = toml_edit::Value::from(path);
+                let mut value = toml_edit::Value::from(path.as_str());
                 *value.decor_mut() = decor;
                 doc["path"] = toml_edit::Item::Value(value);
             }

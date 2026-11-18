@@ -224,7 +224,9 @@ impl Sink {
     pub fn normalized(&self, item: &Item<StreamEvent>) {
         match item {
             Item::Event(StreamEvent::Text { part, text }) => {
-                self.push(DeliveryKind::Text, DeliveryBlock::text(part.index()), text)
+                self.push(DeliveryKind::Text, DeliveryBlock::text(part.index()), text);
+                #[cfg(test)]
+                super::delivery_tests::text_buffered(text);
             }
             Item::Event(StreamEvent::End { part, content }) => match content {
                 AssistantContent::Text(text) => {

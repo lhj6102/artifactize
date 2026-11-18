@@ -4,7 +4,10 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::{config::read_workspace_config, test_os::symlink_file};
+use crate::{
+    config::{RepoConfig, read_workspace_config},
+    test_os::symlink_file,
+};
 
 async fn prepare_all<'a>(
     repo: &Repo,

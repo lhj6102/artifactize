@@ -7,7 +7,7 @@ use std::{collections::BTreeMap, ffi::OsString, process::Stdio};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
-use crate::launch::{Finished, Launch, LaunchError};
+use crate::launch::{Finished, Launch, LaunchError, ProcessOutcome};
 
 /// Run one program to completion in its own process group or Job Object.
 pub(crate) async fn run(
@@ -37,7 +37,7 @@ pub(crate) async fn run(
         )
         .map_err(|error| LaunchError::Failed(error.to_string()))?;
         Ok(Finished {
-            status,
+            status: ProcessOutcome::from_native(status),
             truncated: stdout.len() > limit || stderr.len() > limit,
             stdout,
             stderr,

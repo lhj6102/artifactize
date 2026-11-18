@@ -270,12 +270,7 @@ pub async fn login_with(
     if exited.success() {
         Ok(())
     } else {
-        Err(failure(
-            "could not sign in",
-            &said,
-            &errors,
-            &ProcessOutcome::from_native(&exited),
-        ))
+        Err(failure("could not sign in", &said, &errors, &exited))
     }
 }
 
@@ -315,11 +310,7 @@ mod tests {
     fn a_signed_in_status_names_the_method_and_plan_but_not_the_account() {
         let stdout = br#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"a@example.com","orgName":"A","subscriptionType":"max"}"#;
         assert_eq!(
-            read_status(
-                stdout,
-                b"",
-                &ProcessOutcome::from_native(&std::process::ExitStatus::default())
-            ),
+            read_status(stdout, b"", &crate::platform::successful_outcome()),
             Status::SignedIn {
                 method: "claude.ai".into(),
                 plan: Some("max".into())
@@ -331,11 +322,7 @@ mod tests {
     fn a_signed_out_status_is_read_from_its_json() {
         let stdout = br#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#;
         assert_eq!(
-            read_status(
-                stdout,
-                b"",
-                &ProcessOutcome::from_native(&std::process::ExitStatus::default())
-            ),
+            read_status(stdout, b"", &crate::platform::successful_outcome()),
             Status::SignedOut
         );
     }
@@ -346,7 +333,7 @@ mod tests {
             read_status(
                 b"",
                 b"error: unknown command 'auth'\n",
-                &ProcessOutcome::from_native(&std::process::ExitStatus::default())
+                &crate::platform::successful_outcome()
             ),
             Status::Failed {
                 error: "Claude Code could not report its sign-in: error: unknown command 'auth'"

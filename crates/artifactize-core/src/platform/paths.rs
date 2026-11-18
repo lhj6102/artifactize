@@ -278,8 +278,9 @@ pub(crate) fn ipc_identity(path: &Path) -> io::Result<Vec<u8>> {
 /// Relative path below an ancestor, using volume identity for alias-equivalent ancestor names.
 pub(crate) fn relative_beneath(path: &Path, root: &Path) -> Option<PathBuf> {
     let path = canonical_target(path).unwrap_or_else(|_| path.to_owned());
+    let root = canonical_target(root).unwrap_or_else(|_| root.to_owned());
     let ancestor = path
         .ancestors()
-        .find(|candidate| super::paths_equal(candidate, root))?;
+        .find(|candidate| super::paths_equal(candidate, &root))?;
     path.strip_prefix(ancestor).ok().map(Path::to_owned)
 }

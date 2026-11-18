@@ -2,7 +2,7 @@
 
 use super::{
     Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, account, cache, config,
-    interactive, maintenance, provider, remote, request, run, server, session, workflow,
+    interactive, maintenance, provider, remote, request, run, server, session, status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -102,8 +102,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             policy,
             jobs,
             max_executions,
-            wait,
-            watch,
+            follow,
             request_key,
             comment,
             reuse_only,
@@ -121,7 +120,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                     modes: artifactize_core::runs::RunModes { speculate },
                     jobs,
                     max_executions,
-                    follow: workflow::Follow::from_flags(wait, watch),
+                    follow,
                     request_key,
                     comment,
                     reuse_only,
@@ -130,7 +129,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             .await
         }
         Some(Command::Status { selection, policy }) => {
-            workflow::status(context, selection.resolve()?, policy).await
+            status::execute(context, selection.resolve()?, policy).await
         }
         Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
         Some(Command::Config {

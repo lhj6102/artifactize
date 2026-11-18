@@ -167,11 +167,11 @@ impl TryFrom<EditOperation> for edit::Operation {
         Ok(match operation {
             E::Create { name: new, path } => Self::Create {
                 name: name(&new)?,
-                path,
+                path: path.parse().map_err(Failure::Invalid)?,
             },
             E::SetPath { name: of, path } => Self::SetPath {
                 name: name(&of)?,
-                path,
+                path: path.parse().map_err(Failure::Invalid)?,
             },
             E::AddPart { whole, part, at } => Self::AddPart {
                 whole: name(&whole)?,

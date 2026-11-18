@@ -4,7 +4,6 @@ use std::{
     io::{self, Read, Write},
     net::Shutdown,
     os::{fd::AsRawFd, unix::net::UnixStream},
-    process::ExitStatus,
     sync::{Arc, OnceLock, mpsc},
 };
 
@@ -21,6 +20,8 @@ pub(crate) struct Child {
     group: Option<crate::process::ChildIdentity>,
 }
 
+use crate::platform::ProcessOutcome;
+
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
         self.child.stdin()
@@ -35,17 +36,24 @@ impl Child {
     }
 
     /// Wait for the leader, then reap the rest of its group.
-    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.child.wait().await
+    pub async fn wait(&mut self) -> io::Result<ProcessOutcome> {
+        self.child.wait().await.map(ProcessOutcome::from_native)
     }
 
     /// Session liveness is the leader's, not its descendants'.
-    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
-        self.child.inner_mut().wait().await
+    pub async fn wait_leader(&mut self) -> io::Result<ProcessOutcome> {
+        self.child
+            .inner_mut()
+            .wait()
+            .await
+            .map(ProcessOutcome::from_native)
     }
 
-    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
-        self.child.inner_mut().try_wait()
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ProcessOutcome>> {
+        self.child
+            .inner_mut()
+            .try_wait()
+            .map(|status| status.map(ProcessOutcome::from_native))
     }
 
     /// Ask the group to stop with SIGTERM.
@@ -67,7 +75,7 @@ impl Child {
         Ok(())
     }
 
-    pub async fn cleanup(&mut self) -> io::Result<ExitStatus> {
+    pub async fn cleanup(&mut self) -> io::Result<ProcessOutcome> {
         self.kill()?;
         self.wait().await
     }

@@ -7,6 +7,7 @@ use std::{
 
 use thiserror::Error;
 
+mod authored_target;
 mod backend;
 mod declaration;
 mod definition;
