@@ -5,10 +5,7 @@ use super::{
     tests::{browser_at, jwt},
     *,
 };
-use crate::{
-    llm::tests::Server,
-    platform::net::{self, fixtures::competitor},
-};
+use crate::{llm::tests::Server, platform::net::fixtures::competitor};
 use rig_core::test_utils::MockHttpResponse;
 
 async fn token_server() -> Server {
@@ -34,9 +31,15 @@ async fn pasted_after_conflict(address: SocketAddr, reuse: bool) {
     let listener = Callback::bind(port).unwrap();
     // An IPv6 conflict must release the IPv4 reservation too, not leave a partial
     // callback behind while the UI instructs the person to paste.
-    let released = address
-        .is_ipv6()
-        .then(|| net::exclusive_listener(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).unwrap());
+    if address.is_ipv6() {
+        assert_eq!(
+            tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+                .await
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::ConnectionRefused,
+        );
+    }
     sign_in(
         &storage,
         &server.base.parse().unwrap(),
@@ -64,7 +67,6 @@ async fn pasted_after_conflict(address: SocketAddr, reuse: bool) {
             .into_owned()
             .collect();
     assert_eq!(form["code"], "pasted");
-    drop(released);
     drop(other);
 }
 

@@ -16,6 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
+use reqwest::StatusCode;
 use rig_core::{
     Model,
     completion::CompletionRequest,
@@ -266,7 +267,7 @@ pub(super) async fn models(
         // unclipped text is checked before anything is cut.
         let text = crate::secret::server_text(
             &describe_text(
-                Some(status.as_u16()),
+                Some(status),
                 body.as_ref(),
                 "Codex model listing failed.",
                 auth::now().ok(),
@@ -288,12 +289,22 @@ pub(super) async fn models(
 
 /// A plan usage limit, which no retry within a review outlasts.
 pub(super) fn usage_limited(error: &ProviderError) -> bool {
-    body(error).is_some_and(|body| body.usage_limit(error.report().http_status))
+    body(error).is_some_and(|body| body.usage_limit(response_status(error)))
 }
 /// Responses stream errors put their code at the root or inside response.error;
 /// rig's generic report only extracts error.code, so use the typed wire envelope.
 pub(super) fn overloaded(error: &ProviderError) -> bool {
     body(error).is_some_and(|body| body.code() == Some("server_is_overloaded"))
+}
+
+fn response_status(error: &ProviderError) -> Option<StatusCode> {
+    match error {
+        // A relayed wire report may have a status independently of the captured body.
+        ProviderError::Relayed(report) => report
+            .http_status
+            .and_then(|code| StatusCode::from_u16(code).ok()),
+        _ => error.provider_response_status(),
+    }
 }
 
 fn body(error: &ProviderError) -> Option<errors::Error> {
@@ -310,7 +321,7 @@ pub(super) fn diagnostic_text(error: &ProviderError) -> String {
         return super::diagnostic_text(error);
     }
     describe_text(
-        error.report().http_status,
+        response_status(error),
         body.as_ref(),
         &super::diagnostic_text(error),
         auth::now().ok(),
@@ -325,7 +336,7 @@ const SECONDS_PER_MINUTE: u64 = 60;
 /// credentials say how to sign in again.
 #[cfg(test)]
 fn describe(
-    status: Option<u16>,
+    status: Option<StatusCode>,
     body: Option<&errors::Error>,
     fallback: &str,
     now: Option<auth::Timestamp>,
@@ -338,7 +349,7 @@ fn describe(
 
 /// [`describe`] before clipping.
 fn describe_text(
-    status: Option<u16>,
+    status: Option<StatusCode>,
     body: Option<&errors::Error>,
     fallback: &str,
     now: Option<auth::Timestamp>,
@@ -371,9 +382,12 @@ fn describe_text(
         message = format!("{code}: {message}");
     }
     if let Some(status) = status {
-        message.push_str(&format!(" (HTTP {status})"));
+        message.push_str(&format!(" (HTTP {})", status.as_u16()));
     }
-    if matches!(status, Some(401 | 403)) {
+    if matches!(
+        status,
+        Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+    ) {
         message.push_str(
             " Sign in again with `artifactize login codex`, or with Codex when ARTIFACTIZE_CODEX_AUTH_FILE is set.",
         );

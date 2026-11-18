@@ -1,5 +1,12 @@
 //! Shared safe file access: pinned no-follow opens and directory listings.
 
+use std::{
+    ffi::OsStr,
+    fs::File,
+    io,
+    path::{Component, Path, PathBuf},
+};
+
 #[cfg(windows)]
 mod directory_scan;
 #[cfg(unix)]
@@ -10,12 +17,12 @@ mod windows;
 #[cfg(unix)]
 pub use unix::{
     EntryName, canonicalize, case_sensitive, entry_kind, exact_name, is_link_refusal,
-    open_directory, open_entry, open_no_follow, open_nonblocking, read_dir,
+    open_directory, open_entry, open_no_follow, open_nonblocking, read_dir, verified_path,
 };
 #[cfg(windows)]
 pub use windows::{
     EntryName, canonicalize, case_sensitive, entry_kind, exact_name, is_link_refusal,
-    open_directory, open_entry, open_no_follow, open_nonblocking, read_dir,
+    open_directory, open_entry, open_no_follow, open_nonblocking, read_dir, verified_path,
 };
 
 /// The filesystem root of an absolute path (`/`, or a Windows volume or share) and the names
@@ -116,39 +123,99 @@ fn native_path_text(path: &std::path::Path) -> String {
 /// Convert a native relative path into logical components; roots, traversal and non-UTF-8
 /// names are refused rather than guessing at the host's separator or prefix rules.
 pub fn logical_from_native(path: &std::path::Path) -> Option<String> {
-    use std::path::Component;
-    path.components()
-        .map(|component| match component {
-            Component::Normal(name) => name.to_str(),
-            _ => None,
-        })
+    relative_names(path)
+        .ok()?
+        .into_iter()
+        .map(logical_entry_name)
         .collect::<Option<Vec<_>>>()
         .map(|names| names.join("/"))
 }
 
-/// Parse the physical relative input form used by declared Artifact roots. Preserve its
-/// existing rejection of backslashes and traversal while keeping native root checks here.
-pub fn scoped_relative(path: &std::path::Path) -> std::io::Result<String> {
-    let path = path.to_str().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Artifact paths must be UTF-8.",
+/// The native name can be represented as one logical component, with no reinterpretation.
+pub(crate) fn logical_entry_name(name: &OsStr) -> Option<&str> {
+    let text = name.to_str()?;
+    (!matches!(text, "" | "." | "..")
+        && !text
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || matches!(byte, b'/' | b'\\' | b':')))
+    .then_some(text)
+}
+
+/// Validate native relative paths before traversing them. In particular, Windows prefixes
+/// and root-only paths can replace a join's base without being absolute.
+pub(crate) fn relative_names(path: &Path) -> io::Result<Vec<&OsStr>> {
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Artifact path must be relative to its declared root and use logical names.",
         )
-    })?;
-    if path.contains(['\0', '\\'])
-        || std::path::Path::new(path).is_absolute()
-        || path.split('/').any(|part| part == "." || part == "..")
-    {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Artifact path must be relative to its declared root.",
-        ));
+    };
+    let text = native_path_text(path);
+    if text.split('/').any(|part| matches!(part, "." | "..")) {
+        return Err(invalid());
     }
-    Ok(path
-        .split('/')
-        .filter(|part| !part.is_empty())
+    path.components()
+        .map(|component| match component {
+            Component::Normal(name) if logical_entry_name(name).is_some() => Ok(name),
+            _ => Err(invalid()),
+        })
+        .collect()
+}
+
+pub fn scoped_relative(path: &Path) -> io::Result<String> {
+    Ok(relative_names(path)?
+        .into_iter()
+        .map(|name| name.to_str().expect("validated logical name"))
         .collect::<Vec<_>>()
         .join("/"))
+}
+
+/// Decode a persisted project-relative target as slash syntax, not host path syntax.
+pub(crate) fn parse_target_path(text: &str) -> io::Result<PathBuf> {
+    // Empty and dot both denote the project root in saved targets.
+    if matches!(text, "" | ".") {
+        return Ok(PathBuf::new());
+    }
+    text.split('/')
+        .map(|name| {
+            logical_entry_name(OsStr::new(name)).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Invalid slash path for an Artifact target.",
+                )
+            })
+        })
+        .collect()
+}
+
+/// Determine aliasing by looking up the reserved spelling in the same pinned directory.
+/// This uses that directory's filesystem comparison (including Unicode and short names),
+/// rather than a guessed case policy or a string fold shared by unlike filesystems.
+pub(crate) fn same_entry_name(parent: &File, actual: &OsStr, reserved: &OsStr) -> io::Result<bool> {
+    if actual == reserved {
+        return Ok(true);
+    }
+    let Some(name) = EntryName::new(reserved) else {
+        return Ok(false);
+    };
+    match open_entry(parent, &name) {
+        // Two exact entries can be distinct directory names for the same inode.
+        Ok(alias) => {
+            Ok(!exact_name(parent, &alias, reserved)? && exact_name(parent, &alias, actual)?)
+        }
+        Err(error)
+            if is_link_refusal(&error)
+                || matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound
+                        | io::ErrorKind::PermissionDenied
+                        | io::ErrorKind::InvalidInput
+                ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Keep declaration inputs bounded at the existing 1024 UTF-16-unit wire limit.
@@ -190,6 +257,47 @@ mod tests {
         assert_eq!(
             path_text(std::path::Path::new(path.file_name().unwrap())),
             r"input\name"
+        );
+    }
+
+    // Windows supports prefixes and roots that are not absolute in Rust's Path grammar.
+    #[cfg(windows)]
+    #[test]
+    fn pinned_owners_refuse_drive_relative_and_rooted_paths() {
+        use crate::scope::{Artifact, open_input};
+        use std::{collections::BTreeMap, path::PathBuf};
+        let root = crate::test_os::tempdir();
+        for path in [r"C:owner", r"\owner"] {
+            let owner = Artifact {
+                path: PathBuf::from(path).into(),
+                name: "owner".into(),
+                nested: BTreeMap::new(),
+                covering_part: None,
+            };
+            assert!(
+                open_input(root.path(), &owner, "")
+                    .unwrap_err()
+                    .to_string()
+                    .contains("relative to its declared root")
+            );
+        }
+    }
+
+    // Only the Windows verbatim namespace preserves trailing dots in a file name.
+    #[cfg(windows)]
+    #[test]
+    fn a_pin_with_a_win32_alias_is_not_returned_as_an_ordinary_path() {
+        use crate::scope::{open_scoped, scoped_path};
+        let root = crate::test_os::tempdir();
+        let root = std::fs::canonicalize(root.path()).unwrap();
+        std::fs::write(root.join("literal"), "ordinary").unwrap();
+        std::fs::write(root.join("literal."), "verbatim").unwrap();
+        assert!(open_scoped(&root, "literal.").is_ok());
+        assert!(
+            scoped_path(&root, std::path::Path::new("literal."))
+                .unwrap_err()
+                .to_string()
+                .contains("ordinary Windows path")
         );
     }
 

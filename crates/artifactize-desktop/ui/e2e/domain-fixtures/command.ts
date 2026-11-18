@@ -1,18 +1,22 @@
 // Declared portable programs used by real runtime evaluations and Human tools.
 import { randomUUID } from "node:crypto";
-import { absolutePath, appendText, exists, makeDirectory, nativePath, parentOf, processId, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
+import { absolutePath, appendText, exists, nativePath, parentOf, processId, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
 
 /** How often a stand-in looks for the gate its test opens: a poll, never a wait for time. */
 const GATE_POLL = 20;
 
 const [operation, argument, record] = process.argv.slice(2);
 
-/** Publish the process before it can be used, so teardown can release and join it. */
-function gated(gate: NativePath): () => Promise<void> {
+/** Register before touching any input; if teardown closed admission first, exit. */
+function gated(gate: NativePath): (() => Promise<void>) | null {
   const root = parentOf(gate);
-  const directory = makeDirectory(nativePath(root, "gated-tools"));
-  replaceText(nativePath(directory, `${randomUUID()}.pid`), String(processId()));
-  const closed = nativePath(root, "close-tool-gates");
+  try {
+    writeText(nativePath(root, "gated-tools", `${processId()}-${randomUUID()}.pid`), "", { exclusive: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const closed = nativePath(root, "closed-gated-tools");
   return () => new Promise<void>((done) => {
     const poll = setInterval(() => {
       if (!exists(gate) && !exists(closed)) return;
@@ -44,6 +48,7 @@ switch (operation) {
     // A launched application that tells its reviewer what happened in it: one line at once,
     // then, once its gate is released, one on each stream.
     const opened = gated(absolutePath(argument));
+    if (!opened) break;
     process.stdout.write("opened the stand-in\n");
     await opened();
     process.stdout.write("chose: B\n");
@@ -54,6 +59,7 @@ switch (operation) {
     // A fingerprint script that records each of its runs, then answers once its test opens
     // the gate: it fails when the gate says so.
     const opened = gated(absolutePath(argument));
+    if (!opened) break;
     appendText(absolutePath(record), "run\n");
     await opened();
     if (exists(absolutePath(argument)) && readText(absolutePath(argument)) === "fail") process.exitCode = 1;

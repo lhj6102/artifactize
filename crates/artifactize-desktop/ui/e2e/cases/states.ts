@@ -2,7 +2,7 @@
 // colours for RED, ERROR and blocked Artifacts, each eval's verdict mark and colour, and the
 // status, instruction and result of a completed eval's Summary, with the rest under Debug.
 import assert from "node:assert/strict";
-import { createStates, requests } from "../fixture.ts";
+import { createStates, requests, savedRuns } from "../fixture.ts";
 import { press } from "../keys.ts";
 import { aside, detail, fact, graphShown, openArtifact, openTab, summary } from "../graph-view.ts";
 import { MAIN } from "../pane.ts";
@@ -90,12 +90,12 @@ export const scenarios: Scenario[] = [
   // UX edges: E-MON-DETAIL-ARTIFACT E-MON-DETAIL-BACK
   scenario<Record<string, never>>(
     "states-detail-tabs",
-    "shows each eval's verdict mark and colour in the Artifact tab's list and on its chip",
+    "shares verdict colours between the pane, graph, eval rows and eval chips",
     async () => {
       const fixture = await createStates();
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
-    async (browser) => {
+    async (browser, { fixture }) => {
       await graphShown(browser, "a:down");
       // Each Artifact's one eval, in the colour of its own verdict. Each Detail closes before the
       // next Artifact's click, so it covers none of it.
@@ -146,6 +146,12 @@ export const scenarios: Scenario[] = [
         return glyph ? getComputedStyle(glyph).color : "";
       });
       assert.equal(waitingMark, chips.get("gate"), "the waiting review's mark in the colour of gate's sign-off chip");
+      const run = savedRuns(fixture)[0].id;
+      const timeline = browser.$(`[data-chip="${run}"] .dot`);
+      await timeline.waitForDisplayed({ timeout: 15000 });
+      assert.equal(await browser.execute((dot: HTMLElement) => getComputedStyle(dot).backgroundColor, await timeline.getElement() as unknown as HTMLElement), waitingMark,
+        "the waiting Run's visible timeline dot uses the same colour as the Human verdict in its eval chip and row");
+      assert.equal(look.nodes["a:gate"].mark, waitingMark, "the graph's Human verdict shares that same colour");
     },
   ),
 
@@ -178,6 +184,7 @@ export const scenarios: Scenario[] = [
       let shown = await header();
       await browser.waitUntil(async () => (shown = await header()).needs.length === 3, { timeout: 15000, timeoutMsg: "the Run's headline drawn" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });
+      assert.deepEqual(shown.verdict, ["human", "WAITING_HUMAN"], "the waiting headline shows its independently expected mark and word");
       assert.match(shown.title, /^run-/, "the Run's ID first");
       assert.deepEqual(shown.needs.sort(), [["error", `crash/check${ATTENTION_SUFFIX}`], ["human", `gate/signoff${ATTENTION_SUFFIX}`], ["red", `red/check${ATTENTION_SUFFIX}`]], JSON.stringify(shown));
       assert.ok(shown.singleRow && shown.clipped, "ID, verdict and attention entries share one clipped row");
@@ -204,7 +211,7 @@ export const scenarios: Scenario[] = [
       let read = await outcome();
       await browser.waitUntil(async () => (read = await outcome()).status !== "", { timeout: 15000, timeoutMsg: "the Run's outcome" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(read)}`); });
-      assert.equal(read.statusIcon, shown.verdict[0], `its status, said once, by the headline's mark: ${read.status}`);
+      assert.equal(read.statusIcon, "human", `its status, said once, by the headline's mark: ${read.status}`);
       assert.deepEqual(read.failed, [["red", `red/check${ATTENTION_SUFFIX}`], ["error", `crash/check${ATTENTION_SUFFIX}`]], "the evals that failed, by name");
       assert.equal(read.status, "WAITING HUMAN", "its status in words");
       // How many evals ended in each status, as the fixture's nine Artifacts leave them.

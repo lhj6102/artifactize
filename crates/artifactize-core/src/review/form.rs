@@ -50,7 +50,7 @@ pub enum Input {
     /// `None` until chosen.
     Bool(Option<bool>),
     /// String `enum` options and the chosen index.
-    Choice(Vec<String>, Option<usize>),
+    Choice(Choice),
     Text(String),
     Integer(String),
     Number(String),
@@ -62,6 +62,57 @@ pub enum Input {
         fields: Vec<Field>,
         items: Vec<Vec<Field>>,
     },
+}
+
+/// A nonempty string enum, with an optional index into its own options.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Choice {
+    options: Vec<String>,
+    selected: Option<usize>,
+}
+
+impl Choice {
+    pub fn new(options: Vec<String>) -> Option<Self> {
+        (!options.is_empty()).then_some(Self {
+            options,
+            selected: None,
+        })
+    }
+
+    pub fn options(&self) -> &[String] {
+        &self.options
+    }
+
+    pub fn selected(&self) -> Option<usize> {
+        self.selected
+    }
+
+    /// Restore a draft selection. An index no longer offered clears the selection.
+    pub fn select(&mut self, selected: Option<usize>) {
+        self.selected = selected.filter(|&index| index < self.options.len());
+    }
+
+    fn value(&self) -> Option<Value> {
+        self.selected
+            .map(|index| Value::String(self.options[index].clone()))
+    }
+
+    fn cycle(&mut self, backwards: bool, required: bool) {
+        self.selected = if backwards {
+            match self.selected {
+                Some(0) if !required => None,
+                Some(0) | None => Some(self.options.len() - 1),
+                Some(index) => Some(index - 1),
+            }
+        } else {
+            match self.selected {
+                None => Some(0),
+                Some(index) if index + 1 < self.options.len() => Some(index + 1),
+                Some(_) if required => Some(0),
+                Some(_) => None,
+            }
+        };
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,9 +156,7 @@ impl Field {
         Ok(match &self.input {
             Input::Fixed(value) => Some(value.clone()),
             Input::Bool(value) => value.map(Value::Bool),
-            Input::Choice(options, index) => {
-                index.map(|index| Value::String(options[index].clone()))
-            }
+            Input::Choice(choice) => choice.value(),
             Input::Text(text) => (self.required || !text.is_empty()).then(|| json!(text)),
             Input::Integer(text) | Input::Number(text) if text.trim().is_empty() => None,
             Input::Integer(text) => Some(number(text, true)?),
@@ -141,7 +190,7 @@ impl Field {
         match &self.input {
             Input::Fixed(_) => true,
             Input::Bool(value) => value.is_none(),
-            Input::Choice(_, index) => index.is_none(),
+            Input::Choice(choice) => choice.selected().is_none(),
             Input::Text(text) | Input::Integer(text) | Input::Number(text) => {
                 text.trim().is_empty()
             }
@@ -154,11 +203,11 @@ impl Field {
     pub fn display(&self) -> String {
         match &self.input {
             Input::Fixed(value) => format!("{value} (fixed)"),
-            Input::Bool(None) | Input::Choice(_, None) => "–".into(),
+            Input::Bool(None) => "–".into(),
             Input::Bool(Some(value)) => value.to_string(),
-            Input::Choice(options, Some(index)) => {
-                Value::String(options[*index].clone()).to_string()
-            }
+            Input::Choice(choice) => choice
+                .value()
+                .map_or_else(|| "–".into(), |value| value.to_string()),
             Input::Text(text) | Input::Integer(text) | Input::Number(text) => text.clone(),
             Input::List(items) if items.iter().all(String::is_empty) => "–".into(),
             Input::List(items) => items.join("; "),
@@ -236,21 +285,8 @@ impl Field {
                     Some(false) => None,
                 }
             }
-            (Input::Choice(options, index), Key::Char(' ') | Key::Right) => {
-                *index = match *index {
-                    None => Some(0),
-                    Some(i) if i + 1 < options.len() => Some(i + 1),
-                    Some(_) if required => Some(0),
-                    Some(_) => None,
-                }
-            }
-            (Input::Choice(options, index), Key::Left) => {
-                *index = match *index {
-                    Some(0) if !required => None,
-                    Some(0) | None => Some(options.len() - 1),
-                    Some(i) => Some(i - 1),
-                }
-            }
+            (Input::Choice(choice), Key::Char(' ') | Key::Right) => choice.cycle(false, required),
+            (Input::Choice(choice), Key::Left) => choice.cycle(true, required),
             _ => {}
         }
     }
@@ -294,8 +330,8 @@ impl Form {
         Ok(Self::from_spec(verdict, &Specification::parse(schema)?))
     }
 
-    /// The complete result: owner fields plus the chosen verdict.
-    pub fn result(&self) -> Result<Value, String> {
+    /// The typed answer after validating the form's fields.
+    pub fn submission(&self) -> Result<super::Submission, String> {
         let mut object = Map::new();
         for field in &self.fields {
             if let Some(value) = field.value(&field.name)? {
@@ -305,8 +341,12 @@ impl Form {
         if object.contains_key("verdict") {
             return Err("Choose the verdict in the review, not inside the owner fields.".into());
         }
-        object.insert("verdict".into(), json!(self.verdict));
-        Ok(Value::Object(object))
+        super::Submission::new(self.verdict, object)
+    }
+
+    /// The complete result as JSON: owner fields plus the chosen verdict.
+    pub fn result(&self) -> Result<Value, String> {
+        self.submission().map(|submission| submission.to_json())
     }
 
     /// The rows a person moves through, in order.
@@ -586,10 +626,8 @@ fn input(property: &Value, path: &str, nested: bool) -> Result<(Input, String), 
                 .map(|option| option.as_str().map(str::to_owned))
                 .collect()
         });
-        match strings {
-            Some(strings) if !strings.is_empty() && kind.is_none_or(|kind| kind == "string") => {
-                Input::Choice(strings, None)
-            }
+        match strings.and_then(Choice::new) {
+            Some(choice) if kind.is_none_or(|kind| kind == "string") => Input::Choice(choice),
             _ => return refuse("an enum lists one or more strings"),
         }
     } else {
@@ -753,6 +791,28 @@ mod tests {
             let error = check(&schema(refused.clone())).unwrap_err();
             assert!(error.contains(says), "{refused}: {error}");
         }
+    }
+
+    #[test]
+    fn a_stale_choice_index_is_cleared_for_display_and_submission() {
+        assert!(Choice::new(Vec::new()).is_none());
+        let mut form = Form::new(
+            Verdict::Green,
+            Some(&json!({"type":"object","properties":{"level":{"enum":["low","high"]}}})),
+        )
+        .unwrap();
+        let select = |form: &mut Form, selected| {
+            let Input::Choice(choice) = &mut form.fields[0].input else {
+                panic!("expected choice field");
+            };
+            choice.select(Some(selected));
+        };
+        select(&mut form, 1);
+        assert_eq!(form.fields[0].display(), "\"high\"");
+        assert_eq!(form.result().unwrap()["level"], "high");
+        select(&mut form, 2);
+        assert_eq!(form.fields[0].display(), "–");
+        assert!(form.result().unwrap().get("level").is_none());
     }
 
     fn groups_form() -> Form {

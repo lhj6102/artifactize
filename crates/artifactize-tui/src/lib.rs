@@ -16,6 +16,9 @@ pub(crate) use artifactize_core::{
 #[cfg(test)]
 pub(crate) use artifactize_core::{project, repository};
 
+#[cfg(test)]
+mod test_frame;
+
 /// Operating-system fixtures shared with the core's tests.
 #[cfg(test)]
 #[path = "../../artifactize-core/tests/support/os.rs"]

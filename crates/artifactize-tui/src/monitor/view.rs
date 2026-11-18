@@ -1,7 +1,7 @@
 //! Ratatui rendering only; semantic selection and review lifecycle live in their controllers.
 use super::model::Status;
 use super::{
-    DetailArea, Monitor, Pane, Scope,
+    DetailArea, Focus, Monitor, Pane, Scope,
     input::{Button, Hits},
     layout::{self, Density},
     model::{self, Section},
@@ -298,6 +298,9 @@ fn short_id(id: &str) -> &str {
     &id[start..]
 }
 
+/// Keep only the most urgent badge in a compact scope row to leave room for its name.
+const COMPACT_SCOPE_BADGES: usize = 1;
+
 impl Monitor {
     pub fn draw(&mut self, frame: &mut Frame) {
         self.draw_at(frame, OffsetDateTime::now_utc());
@@ -333,16 +336,14 @@ impl Monitor {
                 framed
             }),
         };
-        let plan = layout::plan(body, self.focus);
+        let plan = layout::plan(body, self.focus());
         for (pane, area, density) in plan.panes {
             self.hits.panes.push((pane, area));
             match pane {
                 Pane::Repositories => self.draw_scope(frame, area, density),
                 Pane::Runs => self.draw_runs(frame, area, density, now),
                 Pane::Artifacts => self.draw_run(frame, area, density, nodes.clone(), now),
-                Pane::Detail if density == Density::Full && self.detail.is_some() => {
-                    self.draw_detail(frame, area)
-                }
+                Pane::Detail if density == Density::Full => self.draw_detail(frame, area, now),
                 Pane::Detail => self.draw_peek(frame, area, now),
             }
         }
@@ -355,7 +356,7 @@ impl Monitor {
     }
     /// `artifactize › scope › Run › node`, up to the focused level, and global attention.
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
-        let level = layout::level(self.focus);
+        let level = layout::level(self.focus());
         let mut segments = vec![self.scope_label()];
         if level >= 1
             && let Some(run) = &self.open
@@ -409,42 +410,38 @@ impl Monitor {
         if self.help {
             return "any key closes help".into();
         }
-        if self.focus == Pane::Artifacts {
+        if self.focus() == Pane::Artifacts {
             return format!(
                 "↑↓ node · Enter open · h/l fold · ! next attention{} · ← Runs · ? keys · q quit",
                 self.blocker_hint()
             );
         }
-        match self.focus {
-            Pane::Repositories => {
+        match &self.focus {
+            Focus::Repositories => {
                 "↑↓ scope · → Runs · Space worktrees without Runs · ? keys · q quit"
             }
-            Pane::Runs | Pane::Artifacts => {
+            Focus::Runs | Focus::Artifacts => {
                 "↑↓ Run · → Artifacts · ← scope · ! attention · ? keys · q quit"
             }
-            Pane::Detail => match &self.detail {
-                Some(pane) => match pane.content.review() {
-                    Some(review) => return review.detail_hints(),
-                    None if pane.content.live().is_some() && !pane.show_details => {
-                        "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back"
-                    }
-                    None if pane.detail.field("Waits for").is_some() => {
-                        "↑↓ scroll · Tab area · t technical · w pending · ! attention · Esc back"
-                    }
-                    None => "↑↓ scroll · Tab area · t technical · ! next attention · Esc back",
-                },
-                None => "Esc back",
+            Focus::Detail(pane) => match pane.content.review() {
+                Some(review) => return review.detail_hints(),
+                None if pane.content.live().is_some() && !pane.show_details => {
+                    "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back"
+                }
+                None if pane.detail.field("Waits for").is_some() => {
+                    "↑↓ scroll · Tab area · t technical · w pending · ! attention · Esc back"
+                }
+                None => "↑↓ scroll · Tab area · t technical · ! next attention · Esc back",
             },
         }
         .into()
     }
     fn draw_scope(&mut self, frame: &mut Frame, area: Rect, density: Density) {
-        let focused = self.focus == Pane::Repositories;
-        // Compact keeps only the most urgent badge, so names stay readable.
+        let focused = self.focus() == Pane::Repositories;
         let parts = |row: &super::catalog::CatalogRow| {
             let mut parts = row.badge.parts();
             if density == Density::Compact {
-                parts.truncate(1);
+                parts.truncate(COMPACT_SCOPE_BADGES);
             }
             parts
         };
@@ -492,7 +489,7 @@ impl Monitor {
         );
     }
     fn draw_runs(&mut self, frame: &mut Frame, area: Rect, density: Density, now: OffsetDateTime) {
-        let focused = self.focus == Pane::Runs;
+        let focused = self.focus() == Pane::Runs;
         let block = block(format!(" Runs ({}) ", self.runs.len()), focused);
         if self.runs.is_empty() {
             frame.render_widget(
@@ -571,7 +568,7 @@ impl Monitor {
         nodes: Option<Arc<Vec<model::Node>>>,
         now: OffsetDateTime,
     ) {
-        let focused = self.focus == Pane::Artifacts;
+        let focused = self.focus() == Pane::Artifacts;
         let (Some((run, requests)), Some(nodes)) = (&self.run, nodes) else {
             frame.render_widget(
                 Paragraph::new("Select a Run.").block(block(" Run ".into(), focused)),
@@ -728,15 +725,15 @@ impl Monitor {
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
     }
     /// The opened Detail: sections and evidence, an Agent session, or a Human review.
-    fn draw_detail(&mut self, frame: &mut Frame, area: Rect) {
-        let Some(pane) = &mut self.detail else {
+    fn draw_detail(&mut self, frame: &mut Frame, area: Rect, now: OffsetDateTime) {
+        let Focus::Detail(pane) = &mut self.focus else {
             return;
         };
         self.hits.detail = area;
         let detail = pane.detail.clone();
         // A Human review is the shared component, the same one the standalone review draws.
         if let Some(review) = pane.content.review_mut() {
-            let hits = review.draw_detail(frame, area, true);
+            let hits = review.draw_detail(frame, area, true, now);
             self.hits.areas = [hits.tools, hits.fields];
             self.hits.buttons = hits
                 .buttons

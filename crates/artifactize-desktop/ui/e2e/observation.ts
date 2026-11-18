@@ -1,5 +1,5 @@
 import { readCandidate } from "./build.ts";
-import { asNativePath, childDirectories, exists, nameOf, nativePath, newDirectory, processId, processRunning, readJson, runProgramOk, variable, writeJson, type NativePath } from "./platform.ts";
+import { asNativePath, childDirectories, exists, nameOf, nativePath, newDirectory, processId, processRunning, readJson, removeTree, runProgramOk, variable, writeJson, type NativePath } from "./platform.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 
@@ -107,8 +107,14 @@ function admissions(root: NativePath): NativePath[] {
 export function recordAdmission(root: NativePath, ids: string[]): NativePath[] {
   const directory = newDirectory(nativePath(root, "admissions"), "launch-");
   const names = ids.map((id) => `${id}.owner.json`);
-  writeJson(nativePath(directory, "expected.json"), { runner: processId(), names });
-  if (exists(nativePath(root, "cleaning.json"))) throw new Error("candidate cleanup already started; refusing app admission");
+  try {
+    writeJson(nativePath(directory, "expected.json"), { runner: processId(), names });
+    if (exists(nativePath(root, "cleaning.json"))) throw new Error("candidate cleanup already started; refusing app admission");
+  } catch (error) {
+    // The caller has not received the owner paths yet, so no app was admitted.
+    removeTree(directory);
+    throw error;
+  }
   return names.map((name) => nativePath(directory, name));
 }
 

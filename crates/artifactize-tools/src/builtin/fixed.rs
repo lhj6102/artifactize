@@ -48,13 +48,22 @@ pub async fn call_fixed(
         owner,
         launcher,
     } = context;
-    if let FixedInput::Help(args) = input {
-        let cwd = root.join(scope.artifacts[owner].folder());
-        return match help(&args, &cwd, launcher, cancellation).await {
-            Ok(text) => text_result(text),
-            Err(error) => ToolResult::error(bounded(&error)),
-        };
-    }
+    let input = match input {
+        FixedInput::Text(input) => input,
+        FixedInput::Help(args) => {
+            let cwd = match scope
+                .artifact(owner)
+                .and_then(|artifact| scope::scoped_path(root, artifact.folder()))
+            {
+                Ok(cwd) => cwd,
+                Err(error) => return ToolResult::error(error.to_string()),
+            };
+            return match help(&args, &cwd, launcher, cancellation).await {
+                Ok(text) => text_result(text),
+                Err(error) => ToolResult::error(bounded(&error)),
+            };
+        }
+    };
     let root = root.to_owned();
     let scope = Scope {
         artifacts: scope.artifacts.clone(),
@@ -83,6 +92,11 @@ struct SectionInput {
 /// Parsed fixed declarations and model input. Execution cannot index an absent argument
 /// or combine a heading with a tool that does not accept one.
 enum FixedInput {
+    Text(TextInput),
+    Help(Vec<String>),
+}
+
+enum TextInput {
     Read {
         path: super::input::LogicalPath,
     },
@@ -91,7 +105,6 @@ enum FixedInput {
         path: super::input::LogicalPath,
         heading: String,
     },
-    Help(Vec<String>),
 }
 
 impl FixedInput {
@@ -99,15 +112,16 @@ impl FixedInput {
         validate_args(builtin, Some(args), false)?;
         let validator = crate::schema::compile(&fixed_schema(builtin, args))?;
         crate::schema::validate(&validator, &value)?;
-        match builtin {
-            Builtin::Read => Ok(Self::Read {
-                path: super::input::LogicalPath::parse(args[0].clone())?,
-            }),
-            Builtin::List => Ok(Self::List(super::input::List {
-                path: super::input::LogicalPath::parse(args[0].clone())?,
+        let path = || {
+            super::input::LogicalPath::parse(args.first().ok_or("Missing builtin target.")?.clone())
+        };
+        let input = match builtin {
+            Builtin::Read => TextInput::Read { path: path()? },
+            Builtin::List => TextInput::List(super::input::List {
+                path: path()?,
                 offset: 0,
                 limit: super::MAX_RESULTS,
-            })),
+            }),
             Builtin::Section => {
                 let input: SectionInput = serde_json::from_value(value)
                     .map_err(|_| "Tool arguments cannot be read as the declared builtin input.")?;
@@ -116,36 +130,36 @@ impl FixedInput {
                     .cloned()
                     .or(input.heading)
                     .ok_or("Section requires heading.")?;
-                Ok(Self::Section {
-                    path: super::input::LogicalPath::parse(args[0].clone())?,
+                TextInput::Section {
+                    path: path()?,
                     heading,
-                })
+                }
             }
-            Builtin::Help => Ok(Self::Help(args.to_vec())),
-            _ => Err("This builtin cannot run as a fixed Agent tool.".into()),
-        }
+            Builtin::Help => return Ok(Self::Help(args.to_vec())),
+            _ => return Err("This builtin cannot run as a fixed Agent tool.".into()),
+        };
+        Ok(Self::Text(input))
     }
 }
 
 fn call_text(
-    input: FixedInput,
+    input: TextInput,
     root: &Path,
     scope: &Scope,
     owner: &ArtifactId,
     cancellation: &CancellationToken,
 ) -> ToolResult {
     let result = match input {
-        FixedInput::Read { path } => {
+        TextInput::Read { path } => {
             read_text(root, scope, owner, &path, TEXT_BYTES).map(|text| bounded(&text))
         }
-        FixedInput::Section { path, heading } => {
+        TextInput::Section { path, heading } => {
             read_text(root, scope, owner, &path, DOCUMENT_BYTES)
                 .and_then(|text| section(&text, &heading))
         }
-        FixedInput::List(input) => {
+        TextInput::List(input) => {
             return super::call(super::Input::List(input), root, scope, owner, cancellation);
         }
-        FixedInput::Help(_) => unreachable!("help executes asynchronously at the process edge"),
     };
     if cancellation.is_cancelled() {
         return ToolResult::error("Tool call was cancelled.");
@@ -164,19 +178,16 @@ fn read_text(
     root: &Path,
     scope: &Scope,
     owner: &ArtifactId,
-    path: &str,
+    path: &super::input::LogicalPath,
     limit: usize,
 ) -> Result<String, String> {
+    let path = path.resolve(scope, owner, false)?;
     let location = scope
-        .resolve_path(owner, path)
+        .locate(owner, path)
         .map_err(|error| error.to_string())?;
-    let artifact = &scope.artifacts[&location.artifact_id];
-    let path = if location.path.is_empty() {
-        artifact.file_name().unwrap_or("")
-    } else {
-        &location.path
-    };
-    let file = scope::open_input(root, artifact, path).map_err(|error| error.to_string())?;
+    let (path, file) = location
+        .open_direct(root)
+        .map_err(|error| error.to_string())?;
     if !file
         .metadata()
         .map_err(|error| error.to_string())?
@@ -184,7 +195,7 @@ fn read_text(
     {
         return Err("Reading requires a regular file.".into());
     }
-    let file = crate::artf::reader(file, path).map_err(|error| error.to_string())?;
+    let file = crate::artf::reader(file, path.as_str()).map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     file.take((limit + 1) as u64)
         .read_to_end(&mut bytes)

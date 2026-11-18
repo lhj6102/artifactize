@@ -1,6 +1,11 @@
 //! Shared command-line definition and current-directory tool runner.
 
-use std::{collections::BTreeMap, io::Write, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    ffi::OsString,
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
 
 use crate::{
     Builtin, Content, builtin,
@@ -76,6 +81,17 @@ fn logical(path: String) -> String {
 
 async fn execute(tool: Tool) -> Result<(), String> {
     let root = crate::files::current_directory().map_err(|error| error.to_string())?;
+    execute_in(tool, &root, async |target| {
+        crate::opener::open(&target).await
+    })
+    .await
+}
+
+async fn execute_in(
+    tool: Tool,
+    root: &Path,
+    open: impl AsyncFnOnce(OsString) -> io::Result<()>,
+) -> Result<(), String> {
     let owner = ArtifactId::new("cwd").expect("static identifier");
     let scope = Scope {
         artifacts: BTreeMap::from([(
@@ -120,13 +136,11 @@ async fn execute(tool: Tool) -> Result<(), String> {
                 target.into()
             } else {
                 scope
-                    .resolve_input(&root, &owner, &logical(target))
+                    .resolve_input(root, &owner, &logical(target))
                     .map_err(|error| error.to_string())?
                     .into_os_string()
             };
-            return crate::opener::open(&target)
-                .await
-                .map_err(|error| error.to_string());
+            return open(target).await.map_err(|error| error.to_string());
         }
     };
     let result = match invocation {
@@ -136,7 +150,7 @@ async fn execute(tool: Tool) -> Result<(), String> {
                 &args,
                 json!({}),
                 builtin::Context {
-                    root: &root,
+                    root,
                     scope: &scope,
                     owner: &owner,
                     launcher: &crate::launch::Standalone,
@@ -145,7 +159,7 @@ async fn execute(tool: Tool) -> Result<(), String> {
             )
             .await
         }
-        Invocation::Dynamic(input) => builtin::call(input, &root, &scope, &owner, &cancellation),
+        Invocation::Dynamic(input) => builtin::call(input, root, &scope, &owner, &cancellation),
     };
     let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr().lock());
     for content in result.content() {
@@ -165,5 +179,33 @@ async fn execute(tool: Tool) -> Result<(), String> {
         Err("Tool failed.".into())
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn scoped_cli_open_records_exactly_one_absolute_target() {
+        let root = crate::test_os::tempdir();
+        let root = crate::files::canonicalize(root.path()).unwrap();
+        let file = crate::test_os::opener_input(&root);
+        let cli = Cli::try_parse_from([
+            "artifactize-tools",
+            "open",
+            file.file_name().unwrap().to_str().unwrap(),
+        ])
+        .unwrap();
+        let mut targets = Vec::new();
+        // Both platforms execute the real CLI resolution; the native handoff alone is replaced.
+        execute_in(cli.command, &root, async |target| {
+            targets.push(PathBuf::from(target));
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert!(file.is_absolute());
+        assert_eq!(targets, [file]);
     }
 }

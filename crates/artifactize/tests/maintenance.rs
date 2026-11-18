@@ -42,7 +42,7 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
         .unwrap()
 }
 
-fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
+fn verify_command(state: &Path, repo: &Path, profile: Value) -> Command {
     fs::create_dir_all(repo).unwrap();
     support::declaration::write(
         repo,
@@ -62,21 +62,20 @@ fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
         .to_string(),
     )
     .unwrap();
-    // A Human request is recorded and observed while the owned Run remains waiting.
-    result(
-        command(state)
-            .arg("--repo")
-            .arg(repo)
-            .args(["verify", "--all"]),
-        code,
-    )
+    let mut command = command(state);
+    command.arg("--repo").arg(repo).args(["verify", "--all"]);
+    command
 }
 
 fn runtime_run(state: &Path, repo: &Path) -> Value {
-    verify(
-        state,
-        repo,
-        json!({"kind":"runtime", "command":true_program(), "args":[]}),
+    // RecordOutput joins the worker after a waiting command reports its terminal Run.
+    result(
+        verify_command(
+            state,
+            repo,
+            json!({"kind":"runtime", "command":true_program(), "args":[]}),
+        )
+        .arg("--wait"),
         0,
     )
 }
@@ -218,9 +217,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 
     root.track(&state, &repo);
-    let run = runtime_run(&state, &repo);
-    let id = run["id"].as_str().unwrap().parse().unwrap();
-    support::runs::finished_worker(&state, &repo, &id, support::os::running);
+    runtime_run(&state, &repo);
     // Terminal evidence can still live in WAL while readers close. Establish the physical
     // byte baseline only after every completed page has reached the main database file.
     {
@@ -369,6 +366,35 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
     assert!(!state.exists());
 }
 
+#[tokio::test]
+async fn new_receipt_storage_uses_the_current_schema_and_wal() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    let repo = root.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    let receipts = artifactize_core::store::OwnedReceipts::open(&state, &repo)
+        .await
+        .unwrap();
+    drop(receipts);
+    let database = rusqlite::Connection::open_with_flags(
+        state.join(artifactize_core::store::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    assert_eq!(
+        database
+            .pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
+            .unwrap(),
+        artifactize_core::store::STATE_SCHEMA_VERSION
+    );
+    assert_eq!(
+        database
+            .pragma_query_value::<String, _>(None, "journal_mode", |r| r.get(0))
+            .unwrap(),
+        "wal"
+    );
+}
+
 #[test]
 fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let root = owned_run::Root::from(support::os::tempdir());
@@ -377,7 +403,11 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     root.track(&state, &repo);
     let finished = runtime_run(&state, &repo);
     owned_run::hold_signoffs(&state);
-    let waiting = verify(&state, &repo, json!({"kind":"human"}), 0);
+    // Submit and observe the saved Human request without closing the Run.
+    let waiting = result(
+        &mut verify_command(&state, &repo, json!({"kind":"human"})),
+        0,
+    );
     let _waiting = owned_run::RunLease::new(
         &state,
         &repo,

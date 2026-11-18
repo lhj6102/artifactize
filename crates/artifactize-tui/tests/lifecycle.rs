@@ -38,6 +38,37 @@ async fn verify_at(
     view
 }
 
+/// A deliberately inconsistent receipt is never left for the repository lease to drain.
+struct CorruptRun<'a> {
+    db: Connection,
+    run: &'a store::Run,
+}
+
+impl<'a> CorruptRun<'a> {
+    fn open(state: &std::path::Path, run: &'a store::Run) -> Self {
+        let db = Connection::open(state.join(DATABASE)).unwrap();
+        let fixture = Self { db, run };
+        assert_eq!(fixture.set_status("RUNNING").unwrap(), 1);
+        fixture
+    }
+
+    fn set_status(&self, status: &str) -> rusqlite::Result<usize> {
+        self.db.execute(
+            "UPDATE runs SET status=?1,data=json_set(data,'$.status',?1) WHERE id=?2",
+            [status, self.run.id.as_str()],
+        )
+    }
+}
+
+impl Drop for CorruptRun<'_> {
+    fn drop(&mut self) {
+        let restored = self.set_status(self.run.status().as_str());
+        if !std::thread::panicking() {
+            assert_eq!(restored.expect("restore the fixture's receipt"), 1);
+        }
+    }
+}
+
 #[tokio::test]
 async fn contradictory_runs_do_not_abort_the_monitor() {
     let root = support::os::tempdir();
@@ -51,12 +82,7 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
     verify_at(&repo, &state, "2026-01-01T00:00:00Z").await;
     // Corrupt the newest Run: the Monitor initially selects it and must still refresh.
     let bad = verify_at(&repo, &state, "2026-01-01T00:01:00Z").await;
-    let db = Connection::open(state.join(DATABASE)).unwrap();
-    db.execute(
-        "UPDATE runs SET status='RUNNING',data=json_set(data,'$.status','RUNNING') WHERE id=?",
-        [&bad.run.id],
-    )
-    .unwrap();
+    let _corruption = CorruptRun::open(&state, &bad.run);
     let mut monitor = artifactize_tui::monitor::Monitor::new(state.clone(), Some(repo.clone()));
     monitor.refresh().await;
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40)).unwrap();
@@ -67,13 +93,6 @@ async fn contradictory_runs_do_not_abort_the_monitor() {
         .iter()
         .map(|cell| cell.symbol())
         .collect();
-    // The deliberately malformed receipt is setup, not a worker's real lifecycle. Restore
-    // it after rendering so the fixture can observe terminal worker exit during teardown.
-    db.execute(
-        "UPDATE runs SET status=?1,data=json_set(data,'$.status',?1) WHERE id=?2",
-        [bad.run.status().as_str(), bad.run.id.as_str()],
-    )
-    .unwrap();
     assert!(text.contains(bad.run.id.as_str()), "{text}");
     assert!(text.contains("An open Run cannot be completed"), "{text}");
     assert!(!text.contains("read failed"), "{text}");

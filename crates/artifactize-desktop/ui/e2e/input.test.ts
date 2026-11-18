@@ -5,10 +5,12 @@ import { JSDOM } from "jsdom";
 import { clickOption, dispatchInput, tab } from "./input.ts";
 
 test("option clicks supply the WebDriver default once and never change disabled or already-selected choices", async () => {
-  for (const state of ["fresh", "selected", "disabled", "prevented", "click-prevented"] as const) {
+  for (const state of ["fresh", "selected", "disabled", "prevented", "click-prevented", "covered", "offscreen"] as const) {
     const page = new JSDOM('<select><option value="0" selected>stable</option><option value="1">preview</option></select>', { runScripts: "outside-only" });
     try {
       const select = page.window.document.querySelector("select")!;
+      select.getBoundingClientRect = () => new page.window.DOMRect(state === "offscreen" ? -100 : 0, 0, 80, 20);
+      page.window.document.elementFromPoint = () => state === "covered" ? page.window.document.body : select;
       const option = select.options[1];
       if (state === "selected") option.selected = true;
       if (state === "disabled") select.disabled = true;
@@ -23,6 +25,12 @@ test("option clicks supply the WebDriver default once and never change disabled 
         const inPage = page.window.eval(`(${action.toString()})`) as (target: HTMLOptionElement) => void;
         return inPage(option);
       } } as unknown as WebdriverIO.Browser;
+      if (state === "covered" || state === "offscreen") {
+        await assert.rejects(clickOption(browser, target), /outside the viewport or obscured/);
+        assert.deepEqual(events, []);
+        assert.equal(select.value, "0");
+        continue;
+      }
       await clickOption(browser, target);
       const changed = state === "fresh" || state === "click-prevented";
       const initial = state === "selected" ? "1" : "0";

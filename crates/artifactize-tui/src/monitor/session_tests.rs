@@ -6,7 +6,7 @@ use crate::test_session_files::{answer, append, fixture};
 /// of them needs, so only a job that never ends reaches it.
 const JOB_LIMIT: usize = 10_000;
 
-fn complete(live: &mut session::Live) {
+pub(crate) fn complete(live: &mut session::Live) {
     for _ in 0..JOB_LIMIT {
         let Some(mut job) = live.job() else {
             return;
@@ -26,7 +26,14 @@ fn run_job(live: &mut session::Live) -> (session::Job, crate::agent::session::li
     (job, window)
 }
 fn history() -> (tempfile::TempDir, session::Live) {
+    history_with_prefix(None)
+}
+
+fn history_with_prefix(prefix: Option<&str>) -> (tempfile::TempDir, session::Live) {
     let (root, source) = fixture();
+    if let Some(prefix) = prefix {
+        append(&source, &answer(prefix));
+    }
     for n in 0..600 {
         append(
             &source,
@@ -41,6 +48,24 @@ fn history() -> (tempfile::TempDir, session::Live) {
     complete(&mut live);
     (root, live)
 }
+/// A fixed run of short rows stays one row per line at every test width. The long history
+/// behind it still forces the real reader to lay out the transcript in multiple steps.
+fn marked_history() -> (tempfile::TempDir, session::Live) {
+    let markers = (0..10)
+        .map(|n| format!("line {n:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    history_with_prefix(Some(&markers))
+}
+
+fn first_row(live: &session::Live) -> &str {
+    live.window
+        .rows
+        .first()
+        .expect("a transcript row")
+        .trim_end()
+}
+
 #[test]
 fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused() {
     use rig_core::message::{
@@ -122,30 +147,28 @@ fn paused_append_keeps_logical_anchor_bottom_resumes_and_resize_reprojects() {
 }
 #[test]
 fn queued_scroll_then_resize_and_resize_then_scroll_latest_intent_survives_stale_jobs() {
-    let (_root, mut live) = history();
-    live.movement(Move::Up(50));
+    let (_root, mut live) = marked_history();
+    live.movement(Move::Top);
+    live.movement(Move::Down(5));
     complete(&mut live);
-    let before = live.window.anchor;
+    assert_eq!(first_row(&live), "line 05");
     live.movement(Move::Up(1));
-    let (job, window) = run_job(&mut live);
-    let expected = window.anchor;
+    let (job, stale) = run_job(&mut live);
     live.geometry(40, 10);
-    live.finish(job, window);
+    live.finish(job, stale);
     complete(&mut live);
-    assert_eq!(live.window.anchor.event, expected.event);
-    assert!(live.window.anchor.byte <= expected.byte);
+    assert_eq!(first_row(&live), "line 04");
     live.geometry(80, 10);
     complete(&mut live);
-    let shown = live.window.anchor;
+    assert_eq!(first_row(&live), "line 04");
     live.geometry(40, 10);
-    let (job, window) = run_job(&mut live);
+    let (job, stale) = run_job(&mut live);
     live.movement(Move::Up(1));
-    live.finish(job, window);
+    live.finish(job, stale);
     live.geometry(23, 10);
     complete(&mut live);
-    assert!(live.window.anchor.event <= shown.event);
+    assert_eq!(first_row(&live), "line 03");
     assert_eq!(live.scroll.mode, Mode::Paused);
-    assert!(before.event > 0);
 }
 #[test]
 fn completed_but_stale_resize_never_replaces_layout_and_home_down_keeps_requested_position() {
@@ -183,15 +206,14 @@ fn completed_but_stale_resize_never_replaces_layout_and_home_down_keeps_requeste
 }
 #[test]
 fn flip_back_partial_widths_do_not_replace_committed_generation() {
-    let (_root, mut live) = history();
-    live.movement(Move::Up(50));
+    let (_root, mut live) = marked_history();
+    live.movement(Move::Top);
+    live.movement(Move::Down(4));
     complete(&mut live);
-    live.movement(Move::Up(1));
-    let (job, expected_window) = run_job(&mut live);
-    let expected = expected_window.anchor;
-    live.finish(job, expected_window);
+    assert_eq!(first_row(&live), "line 04");
     live.movement(Move::Down(1));
     complete(&mut live);
+    assert_eq!(first_row(&live), "line 05");
     for width in [40, 80, 40] {
         live.geometry(width, 10);
         let (job, window) = run_job(&mut live);
@@ -201,8 +223,7 @@ fn flip_back_partial_widths_do_not_replace_committed_generation() {
     live.movement(Move::Up(1));
     complete(&mut live);
     assert!(live.window.note().is_none(), "{:?}", live.window.status);
-    assert_eq!(live.window.anchor.event, expected.event);
-    assert!(live.window.anchor.byte <= expected.byte);
+    assert_eq!(first_row(&live), "line 04");
 }
 
 #[test]
@@ -272,7 +293,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     use ratatui::{Terminal, backend::TestBackend};
     let (root, live) = history();
     let mut monitor = Monitor::new(root.path().into(), None);
-    monitor.detail = Some(DetailPane {
+    monitor.focus = Focus::Detail(Box::new(DetailPane {
         run_id: "run".parse().unwrap(),
         target: Target::Eval("app/check".parse().unwrap()),
         request: None,
@@ -289,13 +310,12 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         show_details: false,
         technical: false,
         pending: false,
-    });
-    monitor.focus = Pane::Detail;
+    }));
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal
         .draw(|frame| monitor.draw_at(frame, tests::now()))
         .unwrap();
-    complete(monitor.detail.as_mut().unwrap().content.live_mut().unwrap());
+    complete(monitor.detail_mut().unwrap().content.live_mut().unwrap());
     terminal
         .draw(|frame| monitor.draw_at(frame, tests::now()))
         .unwrap();
@@ -306,33 +326,16 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         row: evidence.y + 1,
         modifiers: KeyModifiers::empty(),
     };
-    let old = monitor
-        .detail
-        .as_ref()
-        .unwrap()
-        .content
-        .live()
-        .unwrap()
-        .scroll
-        .top;
+    let old = monitor.detail().unwrap().content.live().unwrap().scroll.top;
     monitor.mouse(mouse(MouseEventKind::ScrollUp));
     assert_eq!(
-        monitor
-            .detail
-            .as_ref()
-            .unwrap()
-            .content
-            .live()
-            .unwrap()
-            .scroll
-            .top,
+        monitor.detail().unwrap().content.live().unwrap().scroll.top,
         old - 3
     );
     monitor.key(KeyEvent::from(KeyCode::End));
     assert_eq!(
         monitor
-            .detail
-            .as_ref()
+            .detail()
             .unwrap()
             .content
             .live()
@@ -343,15 +346,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     );
     monitor.key(KeyEvent::from(KeyCode::Home));
     assert_eq!(
-        monitor
-            .detail
-            .as_ref()
-            .unwrap()
-            .content
-            .live()
-            .unwrap()
-            .scroll
-            .top,
+        monitor.detail().unwrap().content.live().unwrap().scroll.top,
         0
     );
     let button = monitor
@@ -368,8 +363,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     });
     assert_eq!(
         monitor
-            .detail
-            .as_ref()
+            .detail()
             .unwrap()
             .content
             .live()
@@ -379,53 +373,21 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         Mode::Following
     );
     monitor.key(KeyEvent::from(KeyCode::F(2)));
-    let top = monitor
-        .detail
-        .as_ref()
-        .unwrap()
-        .content
-        .live()
-        .unwrap()
-        .scroll
-        .top;
+    let top = monitor.detail().unwrap().content.live().unwrap().scroll.top;
     monitor.mouse(mouse(MouseEventKind::ScrollUp));
     assert_eq!(
-        monitor
-            .detail
-            .as_ref()
-            .unwrap()
-            .content
-            .live()
-            .unwrap()
-            .scroll
-            .top,
+        monitor.detail().unwrap().content.live().unwrap().scroll.top,
         top
     );
     monitor.key(KeyEvent::from(KeyCode::PageUp));
-    let live = monitor.detail.as_ref().unwrap().content.live().unwrap();
+    let live = monitor.detail().unwrap().content.live().unwrap();
     assert_eq!(live.scroll.top, top - live.scroll.height);
     monitor.key(KeyEvent::from(KeyCode::Char('d')));
-    assert!(monitor.detail.as_ref().unwrap().show_details);
-    let position = monitor
-        .detail
-        .as_ref()
-        .unwrap()
-        .content
-        .live()
-        .unwrap()
-        .scroll
-        .top;
+    assert!(monitor.detail().unwrap().show_details);
+    let position = monitor.detail().unwrap().content.live().unwrap().scroll.top;
     monitor.key(KeyEvent::from(KeyCode::Up));
     assert_eq!(
-        monitor
-            .detail
-            .as_ref()
-            .unwrap()
-            .content
-            .live()
-            .unwrap()
-            .scroll
-            .top,
+        monitor.detail().unwrap().content.live().unwrap().scroll.top,
         position
     );
     let text = terminal
@@ -439,7 +401,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     // The one-line outcome stays in the title; only a Human review advertises Ctrl-S.
     assert!(text.contains("app/check · Title · RUNNING 3s · agent openai m · ← lib"));
     assert!(!text.contains("Ctrl-S") && text.contains("d details · Esc back"));
-    let live = monitor.detail.as_mut().unwrap().content.live_mut().unwrap();
+    let live = monitor.detail_mut().unwrap().content.live_mut().unwrap();
     live.scroll.total = 100000;
     live.movement(Move::Bottom);
     // An 80×30 Detail has 24 transcript rows, so its bottom window starts at row 99,977.
@@ -473,7 +435,7 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     let mut monitor = Monitor::new(root.path().into(), None);
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.tree.select(vec![
         "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
         "e:app/check"
@@ -516,7 +478,7 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
         .draw(|frame| monitor.draw_at(frame, tests::now()))
         .unwrap();
     assert!(screen(&terminal).contains("last:"));
-    monitor.focus = Pane::Runs;
+    monitor.focus_on(Pane::Runs);
     terminal
         .draw(|frame| monitor.draw_at(frame, tests::now()))
         .unwrap();
@@ -544,10 +506,10 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
             .unwrap(),
     ]);
     monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
-    monitor.focus = Pane::Runs;
+    monitor.focus_on(Pane::Runs);
     monitor.sync_peek().await;
     assert!(monitor.peek.is_none(), "no peek without tree focus");
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.size.width = 90;
     monitor.sync_peek().await;
     assert!(monitor.peek.is_some(), "the peek remains at narrow widths");
@@ -600,7 +562,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
         .unwrap();
     let mut monitor = Monitor::new(state.clone(), None);
     monitor.refresh().await;
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
     monitor.tree.select(vec![
         "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),

@@ -367,3 +367,31 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
         json!(["notes.md", "ui/view.md"])
     );
 }
+
+#[test]
+fn missing_fixed_targets_and_out_of_scope_dot_are_input_errors() {
+    let root = os::tempdir();
+    let scope = Scope {
+        artifacts: BTreeMap::new(),
+    };
+    let owner = ArtifactId::new("missing").unwrap();
+    for builtin in [
+        Builtin::Read,
+        Builtin::List,
+        Builtin::Section,
+        Builtin::Open,
+    ] {
+        assert!(builtin::validate_target(builtin, &[], root.path(), &scope, &owner).is_err());
+    }
+    let result = builtin::call(
+        Input::parse(Builtin::List, serde_json::json!({"path":"."})).unwrap(),
+        root.path(),
+        &scope,
+        &owner,
+        &CancellationToken::new(),
+    );
+    assert!(result.is_error());
+    assert!(
+        matches!(&result.content()[0], Content::Text { text } if text.contains("outside this review: missing"))
+    );
+}

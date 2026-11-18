@@ -1,5 +1,5 @@
 //! Terminal ownership and the asynchronous event/job driver.
-use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, review};
+use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, loading::Refresh, review};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
 use std::path::PathBuf;
@@ -10,25 +10,6 @@ pub(crate) struct InputGuard;
 impl Drop for InputGuard {
     fn drop(&mut self) {
         let _ = input::protocols(false, false);
-    }
-}
-
-/// What the next snapshot read must cover. Wanting more never lowers what is already wanted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Wanted {
-    /// No read is due.
-    Nothing,
-    /// A read that may reuse the snapshot on screen: navigation only moved within it.
-    Changes,
-    /// A read of everything.
-    Everything,
-    /// A read of everything after hints may have been missed; Git is asked again too.
-    Resynced,
-}
-
-impl Wanted {
-    fn at_least(&mut self, wanted: Self) {
-        *self = (*self).max(wanted);
     }
 }
 
@@ -73,7 +54,7 @@ async fn watch(
     let mut spin = tokio::time::interval(SPIN);
     let mut jobs = crate::jobs::Jobs::default();
     let mut action = Action::Refresh;
-    let mut wanted = Wanted::Nothing;
+    let mut wanted = None;
     let mut session_probe = tokio::time::interval(SESSION_PROBE);
     session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let result = std::panic::AssertUnwindSafe(async {
@@ -81,15 +62,15 @@ async fn watch(
             match action {
                 Action::Quit => return Ok(()),
                 Action::Resync => {
-                    wanted.at_least(Wanted::Resynced);
+                    wanted = wanted.max(Some(Refresh::Resync));
                     tick.reset();
                 }
                 Action::Refresh | Action::Review(review::Action::Refresh) => {
-                    wanted.at_least(if std::mem::take(&mut monitor.navigation) {
-                        Wanted::Changes
+                    wanted = wanted.max(Some(if std::mem::take(&mut monitor.navigation) {
+                        Refresh::Changes
                     } else {
-                        Wanted::Everything
-                    });
+                        Refresh::Full
+                    }));
                     tick.reset();
                 }
                 Action::OpenDetail => monitor.open_detail().await,
@@ -101,10 +82,10 @@ async fn watch(
                 }
                 _ => {}
             }
-            if wanted > Wanted::Nothing && jobs.snapshot.is_none() {
-                jobs.snapshot =
-                    monitor.start_refresh(wanted >= Wanted::Everything, wanted == Wanted::Resynced);
-                wanted = Wanted::Nothing;
+            if jobs.snapshot.is_none()
+                && let Some(mode) = wanted.take()
+            {
+                jobs.snapshot = monitor.start_refresh(mode);
             }
             monitor.sync_peek().await;
             terminal
@@ -147,7 +128,7 @@ async fn watch(
                     jobs.snapshot = None;
                     let completed = crate::task::joined(outcome).map_err(|error| error.to_string())?;
                     if !monitor.finish_refresh(completed).await {
-                        wanted.at_least(Wanted::Everything);
+                        wanted = wanted.max(Some(Refresh::Full));
                     }
                     Action::None
                 }
@@ -203,17 +184,17 @@ async fn watch(
                 _ = tick.tick() => Action::None,
                 change = changes.next() => match change {
                     crate::changes::Change::StateInvalidated => {
-                        wanted.at_least(Wanted::Everything);
+                        wanted = wanted.max(Some(Refresh::Full));
                         Action::None
                     }
                     // The list is read again, and the shown Run only when it is this one.
                     crate::changes::Change::RunInvalidated(_) => {
                         monitor.changed.add(&change);
-                        wanted.at_least(Wanted::Changes);
+                        wanted = wanted.max(Some(Refresh::Changes));
                         Action::None
                     }
                     crate::changes::Change::Resync => {
-                        wanted.at_least(Wanted::Resynced);
+                        wanted = wanted.max(Some(Refresh::Resync));
                         Action::None
                     }
                     crate::changes::Change::SessionInvalidated(id) => {

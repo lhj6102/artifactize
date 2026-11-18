@@ -476,9 +476,9 @@ export function createJoined(): Fixture {
 
 /**
  * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
- * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
+ * before it, all verified GREEN except an optionally RED final eval: a Run too large for the graph to draw every node at once.
  */
-export function createChain(count: number): Fixture {
+export function createChain(count: number, redEnd = false): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
@@ -489,7 +489,7 @@ export function createChain(count: number): Fixture {
 
   [evals.check]
   title = "Check ${name(index)}"
-  profile = ${runtimeProfile()}
+  profile = ${runtimeProfile(redEnd && index === count - 1 ? "fail" : "pass")}
 
   [evals.check.payload]
   instruction = """
@@ -500,7 +500,7 @@ export function createChain(count: number): Fixture {
     git(repo, "init", "-q", "--initial-branch=master", repo);
     const fixture = { root, repo, state };
     const status = artifactize(fixture, "verify", "--all", "--wait", "--json");
-    if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+    if (redEnd ? status === 0 : status !== 0) throw new Error(`verify exited ${status}, expected ${redEnd ? "a RED run" : "GREEN"}`);
     return fixture;
   });
 }

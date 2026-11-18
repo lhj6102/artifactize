@@ -1,7 +1,7 @@
 //! Saved Run listing and bounded wait workflows.
 
 use artifactize_core::types::RunId;
-use clap::Subcommand;
+use clap::{ArgMatches, Args, Command, Error, FromArgMatches, Subcommand, error::ErrorKind};
 
 use super::{Context, INTERRUPTED_EXIT, print_json};
 use std::{
@@ -59,21 +59,66 @@ pub(super) async fn list(
     Ok(0)
 }
 
-pub(super) enum ShowMode {
+#[derive(Debug, PartialEq, Eq)]
+pub enum ShowMode {
     Snapshot,
     Wait { timeout: Duration },
 }
 
-impl ShowMode {
-    /// Clap requires `--wait` when `--timeout-ms` is present.
-    pub(super) fn from_flags(wait: bool, timeout: Option<Duration>) -> Self {
-        match (wait, timeout) {
-            (true, timeout) => Self::Wait {
+#[derive(Args)]
+#[group(skip)]
+struct ShowFlags {
+    /// Follow a RUNNING Run until it finishes and exit with its outcome code.
+    #[arg(long)]
+    wait: bool,
+    /// Wait timeout; never cancels the Run.
+    #[arg(
+        long,
+        value_name = "MS",
+        requires = "wait",
+        value_parser = timeout_duration,
+        help = format!("Wait timeout; never cancels the Run (default {}).", DEFAULT_RUN_WAIT.as_millis())
+    )]
+    timeout_ms: Option<Duration>,
+}
+
+impl ShowFlags {
+    fn mode(self) -> Result<Option<ShowMode>, Error> {
+        match (self.wait, self.timeout_ms) {
+            (true, timeout) => Ok(Some(ShowMode::Wait {
                 timeout: timeout.unwrap_or(DEFAULT_RUN_WAIT),
-            },
-            (false, None) => Self::Snapshot,
-            (false, Some(_)) => unreachable!("clap requires --wait with --timeout-ms"),
+            })),
+            (false, None) => Ok(None),
+            (false, Some(_)) => Err(Error::raw(
+                ErrorKind::MissingRequiredArgument,
+                "--timeout-ms requires --wait.",
+            )),
         }
+    }
+}
+
+impl FromArgMatches for ShowMode {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, Error> {
+        Ok(ShowFlags::from_arg_matches(matches)?
+            .mode()?
+            .unwrap_or(Self::Snapshot))
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), Error> {
+        if let Some(mode) = ShowFlags::from_arg_matches(matches)?.mode()? {
+            *self = mode;
+        }
+        Ok(())
+    }
+}
+
+impl Args for ShowMode {
+    fn augment_args(command: Command) -> Command {
+        ShowFlags::augment_args(command)
+    }
+
+    fn augment_args_for_update(command: Command) -> Command {
+        ShowFlags::augment_args_for_update(command)
     }
 }
 
@@ -214,18 +259,8 @@ pub enum RunCommand {
     /// Read the full saved audit as JSON, even without --json.
     Show {
         run_id: RunId,
-        /// Follow a RUNNING Run until it finishes and exit with its outcome code.
-        #[arg(long)]
-        wait: bool,
-        /// Wait timeout; never cancels the Run.
-        #[arg(
-            long,
-            value_name = "MS",
-            requires = "wait",
-            value_parser = timeout_duration,
-            help = format!("Wait timeout; never cancels the Run (default {}).", DEFAULT_RUN_WAIT.as_millis())
-        )]
-        timeout_ms: Option<std::time::Duration>,
+        #[command(flatten)]
+        mode: ShowMode,
     },
 }
 

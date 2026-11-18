@@ -103,9 +103,7 @@ fn symlink_inputs_are_not_followed() {
     let root = os::tempdir();
     fs::write(root.path().join("real.md"), "# First\nbody\n").unwrap();
     let link = root.path().join("link.md");
-    if os::symlink_file(root.path().join("real.md"), &link).is_none() {
-        return;
-    }
+    os::symlink_file(root.path().join("real.md"), &link);
     for args in [
         vec!["read", "link.md"],
         vec!["section", "link.md", "First"],
@@ -153,23 +151,23 @@ async fn help_tree_fixture_cleans_up_when_its_caller_unwinds() {
     process::unwind_tree(root.path()).await;
 }
 
-// Windows opens through ShellExecute, which runs no program a test can stand in for.
+// Only Unix has a native opener subprocess; the portable CLI recorder also runs on Windows.
 #[cfg(unix)]
 #[test]
 fn open_passes_one_absolute_target_to_the_recording_opener() {
     let root = os::tempdir();
     os::recording_program(root.path(), os::OPENER);
-    fs::write(root.path().join("space ; notes.md"), "notes").unwrap();
+    let file = os::opener_input(root.path());
     let record = root.path().join("record");
     let output = os::open_recording(
         env!("CARGO_BIN_EXE_artifactize-tools"),
         root.path(),
-        "space ; notes.md",
+        file.file_name().unwrap().to_str().unwrap(),
     );
     assert!(os::succeeded(&output.status), "{output:?}");
     assert_eq!(
         fs::read_to_string(record).unwrap(),
-        format!("1\n{}\n", root.path().join("space ; notes.md").display())
+        format!("1\n{}\n", file.display())
     );
 }
 
@@ -182,4 +180,22 @@ fn version_matches_the_shared_workspace_version() {
         format!("artifactize-tools {}\n", env!("CARGO_PKG_VERSION"))
     );
     assert!(output.stderr.is_empty());
+}
+
+// Only Unix permits a backslash as one literal directory-entry character.
+#[cfg(unix)]
+#[test]
+fn list_and_glob_omit_native_names_that_cannot_be_reopened_logically() {
+    let root = os::tempdir();
+    os::write_unrepresentable_input(root.path());
+    fs::write(root.path().join("visible.md"), "visible").unwrap();
+    let list: serde_json::Value =
+        serde_json::from_str(&text(call(root.path(), &["list"]))).unwrap();
+    assert_eq!(
+        list["entries"],
+        serde_json::json!([{"kind":"file", "name":"visible.md", "path":"visible.md"}])
+    );
+    let glob: serde_json::Value =
+        serde_json::from_str(&text(call(root.path(), &["glob", "*.md"]))).unwrap();
+    assert_eq!(glob["files"], serde_json::json!(["visible.md"]));
 }

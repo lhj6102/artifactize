@@ -11,9 +11,10 @@ use std::{
 use artifactize_core::{
     human,
     project::{self, VerifyOptions, selection::Selection},
-    store::{self, OwnedReceipts, RunView},
-    types::FailureCode,
+    store::{self, OwnedReceipts, Receipts, RunView},
+    types::{FailureCode, RequestId},
 };
+use futures_util::FutureExt;
 use serde_json::{Value, json};
 use support::os::{cat_program, false_program, true_program};
 use tokio_util::sync::CancellationToken;
@@ -76,8 +77,9 @@ impl Fixture {
     }
 
     async fn verify(&self, options: VerifyOptions) -> RunView {
+        // A hang guard, not a timing assertion: a loaded machine runs the whole file at once.
         tokio::time::timeout(
-            Duration::from_secs(10),
+            support::os::patience(Duration::from_secs(60)),
             support::runs::record(
                 &self.repo,
                 Some(&self.state),
@@ -93,6 +95,31 @@ impl Fixture {
 
     async fn receipts(&self) -> OwnedReceipts {
         OwnedReceipts::open(&self.state, &self.repo).await.unwrap()
+    }
+
+    /// The separate SQLite worker must be closed before teardown, even on assertion panic.
+    async fn with_human_receipts<T>(
+        &self,
+        id: &RequestId,
+        action: impl AsyncFnOnce(&Receipts, PathBuf) -> T,
+    ) -> T {
+        let (receipts, repo) = human::open(&self.state, id).await.unwrap();
+        let outcome = std::panic::AssertUnwindSafe(async { action(&receipts, repo).await })
+            .catch_unwind()
+            .await;
+        let closed = receipts.close().await;
+        match outcome {
+            Ok(value) => {
+                closed.expect("close the Human action's receipt connection");
+                value
+            }
+            Err(panic) => {
+                if let Err(error) = closed {
+                    eprintln!("Human receipt connection cleanup failed: {error}");
+                }
+                std::panic::resume_unwind(panic)
+            }
+        }
     }
 
     fn cli_verify(&self) -> Value {
@@ -761,21 +788,23 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     assert!(store::read_request(&fixture.state, &id).await.is_err());
     assert!(artifactize_core::config::read_workspace_config(&fixture.repo).is_err());
     let alice = "alice".parse().unwrap();
-    let (receipts, repo) = human::open(&fixture.state, &id).await.unwrap();
-    assert_eq!(repo, support::os::canonical(&fixture.repo));
-    human::claim(&receipts, &id, &alice).await.unwrap();
-    let tool = human::run_human_tool(
-        &receipts,
-        &id,
-        &alice,
-        &"inspect_review".parse().unwrap(),
-        CancellationToken::new(),
-        artifactize_core::review::log::Run::unwatched(),
-    )
-    .await
-    .unwrap();
-    assert!(!tool.is_error());
-    receipts.close().await.unwrap();
+    fixture
+        .with_human_receipts(&id, async |receipts, repo| {
+            assert_eq!(repo, support::os::canonical(&fixture.repo));
+            human::claim(receipts, &id, &alice).await.unwrap();
+            let tool = human::run_human_tool(
+                receipts,
+                &id,
+                &alice,
+                &"inspect_review".parse().unwrap(),
+                CancellationToken::new(),
+                artifactize_core::review::log::Run::unwatched(),
+            )
+            .await
+            .unwrap();
+            assert!(!tool.is_error());
+        })
+        .await;
     let submitted = human::submit_and_publish(
         &fixture.state,
         &id,
@@ -1531,11 +1560,14 @@ async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_sig
     let owner = original["requests"][0]["id"].as_str().unwrap();
     let follower = joined["requests"][0]["id"].as_str().unwrap();
     assert_eq!(listed(&fixture.state).await, [owner]);
-    let (receipts, _) = human::open(&fixture.state, &rid(owner)).await.unwrap();
-    human::claim(&receipts, &rid(owner), &"alice".parse().unwrap())
-        .await
-        .unwrap();
-    receipts.close().await.unwrap();
+    let owner_id = rid(owner);
+    fixture
+        .with_human_receipts(&owner_id, async |receipts, _| {
+            human::claim(receipts, &owner_id, &"alice".parse().unwrap())
+                .await
+                .unwrap();
+        })
+        .await;
     fixture.remove_repo();
     assert_eq!(listed(&fixture.state).await, [follower]);
     assert_eq!(
@@ -1543,40 +1575,43 @@ async fn a_removed_original_leaves_review_and_a_remaining_follower_takes_its_sig
         ("ERROR".to_owned(), Some(FailureCode::RepositoryRemoved))
     );
     // Its own repository now holds the review: a claim, tools and the submission reach it.
-    let (receipts, _) = human::open(&fixture.state, &rid(follower)).await.unwrap();
-    let bob = "bob".parse().unwrap();
-    assert_eq!(
-        human::claim(&receipts, &rid(follower), &bob)
+    let follower_id = rid(follower);
+    fixture
+        .with_human_receipts(&follower_id, async |receipts, _| {
+            let bob = "bob".parse().unwrap();
+            assert_eq!(
+                human::claim(receipts, &follower_id, &bob)
+                    .await
+                    .unwrap()
+                    .request_id
+                    .as_str(),
+                follower
+            );
+            let inspected = human::run_human_tool(
+                receipts,
+                &follower_id,
+                &bob,
+                &"inspect_review".parse().unwrap(),
+                CancellationToken::new(),
+                artifactize_core::review::log::Run::unwatched(),
+            )
             .await
-            .unwrap()
-            .request_id
-            .as_str(),
-        follower
-    );
-    let inspected = human::run_human_tool(
-        &receipts,
-        &rid(follower),
-        &bob,
-        &"inspect_review".parse().unwrap(),
-        CancellationToken::new(),
-        artifactize_core::review::log::Run::unwatched(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(inspected).unwrap()["content"][0]["text"],
-        "human-v1\n"
-    );
-    human::submit(
-        &receipts,
-        &rid(follower),
-        &bob,
-        &green(),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    receipts.close().await.unwrap();
+            .unwrap();
+            assert_eq!(
+                serde_json::to_value(inspected).unwrap()["content"][0]["text"],
+                "human-v1\n"
+            );
+            human::submit(
+                receipts,
+                &follower_id,
+                &bob,
+                &green(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        })
+        .await;
     assert_eq!(outcome(&fixture.state, follower).await.0, "GREEN");
     assert!(listed(&fixture.state).await.is_empty());
 }

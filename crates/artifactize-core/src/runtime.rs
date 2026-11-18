@@ -230,7 +230,7 @@ where
         Ok(mut output) => {
             output.stdout = clean_output(&output.stdout);
             output.stderr = clean_output(&output.stderr);
-            match output.status.end {
+            match output.status.end() {
                 crate::platform::ProcessEnd::Exited(exit_code) => {
                     Outcome::Completed(ReviewResult { exit_code, output })
                 }

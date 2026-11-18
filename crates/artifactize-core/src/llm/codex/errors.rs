@@ -1,6 +1,7 @@
 //! Codex error bodies parsed at the provider boundary; unknown and wrong-typed optional
 //! diagnostics retain the endpoint's former fallback behavior.
 use crate::json::{Object, Optional};
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 #[derive(Default, Deserialize)]
@@ -60,9 +61,9 @@ impl Error {
             .or(self.fields.kind.0.as_deref())
             .filter(|code| !code.is_empty())
     }
-    pub fn usage_limit(&self, status: Option<u16>) -> bool {
+    pub fn usage_limit(&self, status: Option<StatusCode>) -> bool {
         self.code()
             .is_some_and(|code| matches!(code, "usage_limit_reached" | "usage_not_included"))
-            || (status == Some(429) && self.fields.resets_at.0.is_some())
+            || (status == Some(StatusCode::TOO_MANY_REQUESTS) && self.fields.resets_at.0.is_some())
     }
 }

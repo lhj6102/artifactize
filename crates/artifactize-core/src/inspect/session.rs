@@ -99,7 +99,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
     let mut view = match selector {
         Selector::Reference(reference) => {
             here(state, reference)?;
-            let view = store::read_request(state, &reference.request_id)
+            let view = store::read_request_id(state, &reference.request_id)
                 .await
                 .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
             if view.request.session_id.as_ref() != Some(&reference.session_id) {
@@ -110,19 +110,17 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
             }
             view
         }
-        Selector::Id { request, session } => {
-            match store::read_request(state, request.as_str()).await {
-                Ok(view) => view,
-                Err(_) => store::read_request_by_session(state, session.clone())
-                    .await?
-                    .ok_or_else(|| {
-                        format!(
-                            "No Agent request or session {session} in this state ({}).",
-                            crate::platform::path_text(state)
-                        )
-                    })?,
-            }
-        }
+        Selector::Id { request, session } => match store::read_request_id(state, request).await {
+            Ok(view) => view,
+            Err(_) => store::read_request_by_session(state, session.clone())
+                .await?
+                .ok_or_else(|| {
+                    format!(
+                        "No Agent request or session {session} in this state ({}).",
+                        crate::platform::path_text(state)
+                    )
+                })?,
+        },
     };
     let mut reused_by = None;
     if view.request.session_id.is_none() {
@@ -135,7 +133,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
         };
         here(state, &reference)?;
         reused_by = Some(view.request.id.clone());
-        view = store::read_request(state, &reference.request_id)
+        view = store::read_request_id(state, &reference.request_id)
             .await
             .map_err(|_| format!("Request {} is not in this state.", reference.request_id))?;
     }

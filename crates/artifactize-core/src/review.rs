@@ -239,7 +239,7 @@ impl Job {
                 claim: first,
             } => {
                 // The entry names the tool as the saved request declares it.
-                let declared = store::read_request(&state, &id)
+                let declared = store::read_request_id(&state, &id)
                     .await
                     .ok()
                     .and_then(|view| {
@@ -302,7 +302,7 @@ impl Job {
                 }
                 .await;
                 if let Err(error) = &result
-                    && let Ok(view) = store::read_request(&state, &id).await
+                    && let Ok(view) = store::read_request_id(&state, &id).await
                     && matches!(
                         view.request.status(),
                         crate::types::RequestStatus::Green | crate::types::RequestStatus::Red
@@ -327,7 +327,7 @@ impl Job {
                 for id in &ids {
                     let release = async {
                         // Settled requests and claims released elsewhere leave nothing to release.
-                        let view = store::read_request(&state, id).await?;
+                        let view = store::read_request_id(&state, id).await?;
                         if view.claim.is_none_or(|claim| claim.reviewer != reviewer) {
                             return Ok(());
                         }

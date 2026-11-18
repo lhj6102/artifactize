@@ -70,10 +70,7 @@ exit 2
 
     /// `PATH` for a spawned artifactize that finds the scripted Claude Code in `dir` first.
     pub fn path(dir: &Path) -> std::ffi::OsString {
-        std::env::join_paths(
-            std::iter::once(dir.to_owned()).chain(std::env::split_paths(&super::os::path())),
-        )
-        .unwrap()
+        super::os::prepend_path(dir)
     }
 }
 

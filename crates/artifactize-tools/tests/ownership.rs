@@ -46,7 +46,7 @@ fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
     for path in ["Secret/x", "secret/x", "SECRET/x"] {
         let result = call(Builtin::Read, json!({"path":path}));
         assert!(result.is_error(), "{path}: {result:?}");
-        assert!(!format!("{result:?}").contains("excluded"));
+        assert!(!serde_json::to_string(&result).unwrap().contains("excluded"));
     }
     let result = call(Builtin::Read, json!({"path":"public"}));
     assert!(!result.is_error(), "{result:?}");

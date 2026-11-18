@@ -148,14 +148,14 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
         remaining: bytes,
         removed: Vec::new(),
     };
-    if bytes <= bounds.max_bytes {
+    if bytes <= bounds.max_bytes() {
         return Ok(collection);
     }
     let running = running(state)?;
     order(&mut entries);
     let directory = directory(state);
     for entry in entries {
-        if collection.remaining <= bounds.target_bytes {
+        if collection.remaining <= bounds.target_bytes() {
             break;
         }
         if running.contains(&entry.id) {
@@ -287,11 +287,7 @@ mod tests {
     }
 
     fn bounds(max_bytes: u64, target_bytes: u64) -> AgentSessions {
-        AgentSessions {
-            enabled: true,
-            max_bytes,
-            target_bytes,
-        }
+        AgentSessions::new(true, max_bytes, target_bytes).unwrap()
     }
 
     #[test]

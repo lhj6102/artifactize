@@ -105,8 +105,10 @@ async fn marker(path: &std::path::Path, expected: &str) {
     .expect("controlled runtime saved its ready marker");
 }
 
+/// The spawned server is boxed: the child's pipes and Windows job handles make it much
+/// larger than the in-process stream owner.
 enum ServerOwner {
-    Process(support::os::PipedTestChild),
+    Process(Box<support::os::PipedTestChild>),
     Stream,
 }
 
@@ -132,7 +134,7 @@ impl Client {
         let input = child.take_stdin();
         let output = child.take_stdout();
         Self::connect(
-            ServerOwner::Process(child),
+            ServerOwner::Process(Box::new(child)),
             input,
             output,
             version,

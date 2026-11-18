@@ -97,7 +97,7 @@ pub async fn resolve_cached(
                 .and_then(|producer| producer.session.as_ref())
                 .is_none()
         {
-            let source = store::read_request(state, &original.request_id).await?;
+            let source = store::read_request_id(state, &original.request_id).await?;
             if source.request.run_id != original.run_id {
                 return Err("Original session request has a different Run identity.".into());
             }

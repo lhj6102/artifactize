@@ -9,10 +9,9 @@ import { checkpoint } from "../commands.ts";
 import { dispatchInput } from "../input.ts";
 import { afterRender, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
-import { visibleCenter } from "../pointer.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import {
-  appendText, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativePath, placeApp,
+  appendText, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativeInput, nativePath, placeApp,
   primaryModifier, readText, replaceText, runProgramOk, serveLoopbackHttp, storePackageDirectory, writeText,
   type Environment, type HttpServer, type NativePath,
 } from "../platform.ts";
@@ -209,14 +208,27 @@ export const scenarios: Scenario[] = [
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
       await openDialog(browser);
       const command = dialog(browser).$("pre.command");
-      assert.equal(await command.getText(), "cargo install artifactize artifactize-tools --locked");
-      // Select All is real keyboard input after a click in the command; the selection is
-      // only observed, never installed by page script.
-      await dispatchInput(browser, { kind: "text-click", ...await visibleCenter(browser, await command.getElement()) });
-      await browser.keys([primaryModifier, "a"]);
-      const selected = await browser.execute(() => getSelection()?.toString() ?? "");
-      assert.ok(selected.includes("cargo install artifactize artifactize-tools --locked"), `the command is selectable text: ${selected}`);
+      const wanted = "cargo install artifactize artifactize-tools --locked";
+      assert.equal(await command.getText(), wanted);
+      const [start, end] = await browser.execute((element: HTMLElement) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rows = range.getClientRects();
+        const first = rows[0], last = rows[rows.length - 1];
+        return [{ x: first.left + 1, y: first.top + first.height / 2 }, { x: last.right - 1, y: last.top + last.height / 2 }];
+      }, await command.getElement() as unknown as HTMLElement);
+      await dispatchInput(browser, { kind: "text-click", ...start });
+      await dispatchInput(browser, { kind: "text-click", ...end, shift: true });
+      assert.equal(await browser.execute(() => getSelection()?.toString() ?? ""), wanted, "only the update command is selected");
+      await nativeInput(browser, { type: "copy" });
       await closeByButton(browser);
+      const field = browser.$('input[aria-label="Request ID"]');
+      await press(browser, [primaryModifier, "o"], () => field.isDisplayed(), "a field to paste the command into");
+      await field.click();
+      await nativeInput(browser, { type: "paste" });
+      await browser.waitUntil(async () => await field.getValue() === wanted,
+        { timeout: 15000, timeoutMsg: "the update command pasted exactly" });
+      await press(browser, ["Escape"], async () => !(await field.isDisplayed()), "the paste field closed");
       assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL), "only the fixture's positive control launched Cargo");
       onlyLookups(data);
     },

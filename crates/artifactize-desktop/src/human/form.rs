@@ -108,8 +108,9 @@ fn form_field(field: &Field) -> FormField {
                 value: value.to_string(),
             },
             Input::Bool(_) => FieldInput::Bool,
-            Input::Choice(options, _) => FieldInput::Choice {
-                options: options
+            Input::Choice(choice) => FieldInput::Choice {
+                options: choice
+                    .options()
                     .iter()
                     .map(|option| serde_json::Value::String(option.clone()).to_string())
                     .collect(),
@@ -158,12 +159,11 @@ fn fill(fields: &mut [Field], values: &[(String, FieldValue)]) {
         };
         field.input = match (&field.input, value) {
             (Input::Bool(_), FieldValue::Bool(value)) => Input::Bool(*value),
-            (Input::Choice(options, _), FieldValue::Choice(index)) => Input::Choice(
-                options.clone(),
-                index
-                    .map(|index| index as usize)
-                    .filter(|index| *index < options.len()),
-            ),
+            (Input::Choice(choice), FieldValue::Choice(index)) => {
+                let mut choice = choice.clone();
+                choice.select(index.map(|index| index as usize));
+                Input::Choice(choice)
+            }
             (Input::Text(_), FieldValue::Text(text)) => Input::Text(text.clone()),
             (Input::Integer(_), FieldValue::Integer(text)) => Input::Integer(text.clone()),
             (Input::Number(_), FieldValue::Number(text)) => Input::Number(text.clone()),
@@ -190,7 +190,7 @@ fn value_of(input: &Input) -> FieldValue {
     match input {
         Input::Fixed(_) => FieldValue::Fixed,
         Input::Bool(value) => FieldValue::Bool(*value),
-        Input::Choice(_, index) => FieldValue::Choice(index.map(|index| index as u32)),
+        Input::Choice(choice) => FieldValue::Choice(choice.selected().map(|index| index as u32)),
         Input::Text(text) => FieldValue::Text(text.clone()),
         Input::Integer(text) => FieldValue::Integer(text.clone()),
         Input::Number(text) => FieldValue::Number(text.clone()),

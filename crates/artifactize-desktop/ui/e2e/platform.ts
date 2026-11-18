@@ -200,6 +200,11 @@ export function replaceText(path: NativePath, text: string): void {
   renameSync(pending, path);
 }
 
+/** Atomically close an admission directory. It must not be recreated by late clients. */
+export function closeDirectory(from: NativePath, to: NativePath): void {
+  if (exists(from)) renameSync(from, to);
+}
+
 export function copyFile(from: NativePath, to: NativePath): void {
   copyFileSync(from, to);
 }
@@ -516,9 +521,9 @@ async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & 
   const output = nativePath(root, "outcome.json");
   try {
     writeJson(input, { program: command.program, args: command.args, holdDescendants: command.holdDescendants ?? false });
-    writeText(script, String.raw`param([string]$InputPath, [string]$OutputPath, [switch]$Starter)
+    writeText(script, String.raw`param([string]$InputPath, [string]$OutputPath, [switch]$LaunchChild)
 $ErrorActionPreference = 'Stop'
-if ($Starter) {
+if ($LaunchChild) {
   if ([Console]::ReadLine() -ne 'start') { exit 1 }
   $command = Get-Content -Raw -LiteralPath $InputPath | ConvertFrom-Json
   $info = [Diagnostics.ProcessStartInfo]::new($command.program)
@@ -574,7 +579,7 @@ try {
   $info = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath)
   $info.UseShellExecute = $false
   $info.RedirectStandardInput = $true
-  @('-NoProfile', '-NonInteractive', '-File', $PSCommandPath, '-InputPath', $InputPath, '-Starter') |
+  @('-NoProfile', '-NonInteractive', '-File', $PSCommandPath, '-InputPath', $InputPath, '-LaunchChild') |
     ForEach-Object { $info.ArgumentList.Add($_) }
   $starter = [Diagnostics.Process]::Start($info)
   [FixtureJob]::Attach($job, $starter.Handle)
@@ -973,14 +978,17 @@ export function assertHarnessPlatform(): void {
 export type BrowserEntry = string | { dynamic: true } | { file: NativePath };
 
 /** A restarted cleanup may delete browser inputs only after every job owner has exited. */
-export async function releaseRecordedBrowser(root: NativePath): Promise<void> {
-  if (!WINDOWS) return;
+function browserJobsAlive(root: NativePath): boolean {
   const owners = nativePath(root, "browser-jobs");
-  if (exists(owners) && listFiles(owners).some((file) => {
+  return exists(owners) && listFiles(owners).filter((file) => file.endsWith(".pid")).some((file) => {
     const pid = Number(readText(file));
     if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid browser job record ${file}`);
     return processRunning(pid);
-  })) throw new Error(`a native browser job still owns ${root}`);
+  });
+}
+
+export async function releaseRecordedBrowser(root: NativePath): Promise<void> {
+  if (browserJobsAlive(root)) throw new Error(`a native browser job still owns ${root}`);
 }
 
 function programPath(env: Environment): string[] {
@@ -991,72 +999,6 @@ function programPath(env: Environment): string[] {
 /** Add a declared, native test command directory to an app's private PATH. */
 export function commandDirectory(env: Environment, bin: NativePath): Environment {
   return withVariable({ ...env }, "PATH", [bin, ...programPath(env)].join(delimiter));
-}
-
-/** Give a product-launched companion its own embedded endpoint. The relay is
- * an external executable fixture: it runs the real candidate with the actual
- * argv, cwd and inherited environment, changing only its E2E observation inputs. */
-export async function desktopLaunchRelay(root: NativePath, env: Environment, app: NativePath, port: number,
-  admit: (argv: string[], cwd: NativePath) => Promise<{ owner: NativePath; observe: () => Promise<void> }>) {
-  const bin = makeDirectory(nativePath(root, "desktop-launch-bin"), { private: true });
-  const program = nativePath(bin, "desktop-launch.mjs");
-  const { randomUUID } = await import("node:crypto");
-  const token = randomUUID();
-  let job: Promise<void> | undefined;
-  const server = await serveLoopbackHttp((request, response) => {
-    if (request.method !== "POST" || request.url !== `/${token}` || job) {
-      request.resume();
-      response.writeHead(404).end();
-      return;
-    }
-    job = (async () => {
-      let body = "";
-      for await (const chunk of request) {
-        body += String(chunk);
-        if (body.length > 16384) throw new Error("desktop launch arguments are too long");
-      }
-      const { args, cwd } = JSON.parse(body) as { args: unknown; cwd: unknown };
-      if (!Array.isArray(args) || !args.every((value) => typeof value === "string") || typeof cwd !== "string") {
-        throw new Error("desktop launch requires literal arguments and a working directory");
-      }
-      const { owner, observe } = await admit(args as string[], asNativePath(cwd));
-      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(owner));
-      await observe();
-    })();
-    void job.catch((error: unknown) => {
-      if (!response.headersSent) response.writeHead(500).end(String(error));
-    });
-  });
-  try {
-    writeText(program, `import { spawn } from "node:child_process";
-const args = process.argv.slice(2);
-const reply = await fetch(${JSON.stringify(`${server.url}/${token}`)}, {
-  method: "POST", body: JSON.stringify({ args, cwd: process.cwd() }),
-});
-if (!reply.ok) throw new Error(await reply.text());
-const owner = await reply.json();
-const child = spawn(${JSON.stringify(app)}, args, {
-  stdio: "inherit", env: { ...process.env, TAURI_WEBDRIVER_PORT: ${JSON.stringify(String(port))}, ARTIFACTIZE_E2E_OWNER_FILE: owner },
-});
-process.exitCode = await new Promise((resolve, reject) => {
-  child.once("error", reject);
-  child.once("close", (code, signal) => signal ? reject(new Error("companion exited by " + signal)) : resolve(code ?? 1));
-});
-`);
-    if (WINDOWS) writeText(nativePath(bin, "artifactize-desktop.cmd"), '@"%DESKTOP_TEST_NODE%" "%DESKTOP_TEST_LAUNCH_PROGRAM%" %*\r\n');
-    else writeFileSync(nativePath(bin, "artifactize-desktop"), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_LAUNCH_PROGRAM" "$@"\n', { mode: 0o755 });
-  } catch (error) {
-    await server.close();
-    throw error;
-  }
-  return {
-    env: { ...commandDirectory(env, bin), DESKTOP_TEST_NODE: nodeProgram, DESKTOP_TEST_LAUNCH_PROGRAM: program },
-    release: async () => {
-      const settled = await Promise.allSettled([server.close(), job]);
-      const failures = settled.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
-      if (failures.length) throw new AggregateError(failures, `graph companion failed: ${failures.map(String).join("; ")}`);
-    },
-  };
 }
 
 /** How many test apps run at once. A Windows desktop has one foreground window, and WebView2
@@ -1098,16 +1040,73 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
   if (WINDOWS) return ownedWindowsBrowser(root, env, entry, file);
   const bin = makeDirectory(nativePath(root, "browser-bin"));
   const program = nativePath(bin, "open-url.mjs");
-  writeText(program, file ? `import { readFileSync, realpathSync } from "node:fs";
-const file = realpathSync(process.argv[2]);
-if (file !== ${JSON.stringify(file)}) throw new Error("unexpected desktop handoff file");
-const url = readFileSync(file, "utf8").match(/content="0;url=(http:\\/\\/127\\.0\\.0\\.1:[0-9]+\\/file-opened)"/i)?.[1];
-if (!url || !(await fetch(url)).ok) throw new Error("fixture handoff page was not opened");
-` : `const response = await fetch(process.argv[2]);\nawait response.arrayBuffer();\nif (!response.ok) throw new Error(\`browser HTTP \${response.status}\`);\n`);
-  // Paths are arguments, never interpreted as shell source.
-  const opener = MACOS ? "open" : "xdg-open";
-  writeFileSync(join(bin, opener), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
-  return { env: { ...commandDirectory(env, bin), DESKTOP_TEST_NODE: process.execPath, DESKTOP_TEST_BROWSER_PROGRAM: program } };
+  const entries = nativePath(root, "browser-entries.jsonl");
+  const stop = new AbortController();
+  const owners = makeDirectory(nativePath(root, "browser-jobs"), { private: true });
+  const jobs: Promise<void>[] = [];
+  const server = await serveLoopbackHttp((request, response) => {
+    const owner = Number(request.headers["x-opener-pid"]);
+    if (request.method !== "POST" || request.url !== "/open" || stop.signal.aborted || !Number.isSafeInteger(owner) || owner <= 0) {
+      response.writeHead(404).end();
+      return;
+    }
+    const job = (async () => {
+      replaceText(nativePath(owners, `${owner}.pid`), String(owner));
+      let target = "";
+      for await (const chunk of request) {
+        target += String(chunk);
+        if (target.length > 16384) throw new Error("browser request is too long");
+      }
+      let url: URL;
+      if (file) {
+        if (canonicalPath(asNativePath(target)) !== canonicalPath(file)) throw new Error("unexpected desktop handoff file");
+        const redirect = readText(file).match(/content="0;url=(http:\/\/127\.0\.0\.1:[0-9]+\/file-opened)"/i)?.[1];
+        if (!redirect) throw new Error("fixture handoff page has no owned redirect");
+        url = new URL(redirect);
+      } else {
+        url = new URL(target);
+        const agreed = typeof entry === "string" ? new URL(entry).origin === url.origin
+          : (readTextIfExists(entries) ?? "").split("\n").includes(url.href);
+        if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !agreed) {
+          throw new Error("the handoff did not name the owned browser origin");
+        }
+      }
+      const reply = await fetch(url, { signal: AbortSignal.any([stop.signal, AbortSignal.timeout(30000)]) });
+      await reply.arrayBuffer();
+      if (!reply.ok) throw new Error(`browser HTTP ${reply.status}`);
+      response.writeHead(204).end();
+    })().catch((error: unknown) => {
+      if (!response.headersSent && !response.destroyed) response.writeHead(500).end(String(error));
+    });
+    jobs.push(job);
+  });
+  try {
+    writeText(program, `const reply = await fetch(${JSON.stringify(`${server.url}/open`)}, {
+  method: "POST", headers: { "x-opener-pid": String(process.pid) }, body: process.argv[2],
+  signal: AbortSignal.timeout(30000),
+});
+if (!reply.ok) throw new Error(await reply.text());
+`);
+    const opener = MACOS ? "open" : "xdg-open";
+    writeFileSync(join(bin, opener), '#!/bin/sh\nexec "$DESKTOP_TEST_NODE" "$DESKTOP_TEST_BROWSER_PROGRAM" "$@"\n', { mode: 0o755 });
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
+  return {
+    env: { ...commandDirectory(env, bin), DESKTOP_TEST_NODE: nodeProgram, DESKTOP_TEST_BROWSER_PROGRAM: program,
+      DESKTOP_TEST_BROWSER_ENTRIES: entries },
+    release: async () => {
+      stop.abort();
+      await server.close();
+      await Promise.all(jobs);
+      const deadline = Date.now() + 30000;
+      while (browserJobsAlive(root)) {
+        if (Date.now() >= deadline) throw new Error(`fixture browser opener still owns ${root}`);
+        await new Promise((done) => setTimeout(done, 25));
+      }
+    },
+  };
 }
 
 /** Windows takes the declared external browser program through the test-only
@@ -1144,7 +1143,7 @@ async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: Br
           (readTextIfExists(entries) ?? "").split("\n").includes(address.href);
         if (address.protocol !== "http:" || address.hostname !== "127.0.0.1" || !agreed) throw new Error("the handoff did not name the owned browser origin");
       }
-      const args = [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
+      const args = [`--user-data-dir=${portablePath(profile)}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
       const owner = nativePath(owners, `${jobs.length}.pid`);
       const job = windowsFixtureRunner({ program: edge, args, env, owner, holdDescendants: true }, stop.signal).then((done) => {
         if (done.code !== 0) throw new Error(`fixture Edge exited ${done.code}: ${done.stderr}`);
@@ -1167,8 +1166,7 @@ if (!reply.ok) throw new Error(await reply.text());
       DESKTOP_TEST_BROWSER_ENTRIES: entries },
     release: async () => {
       stop.abort(released);
-      await server.close();
-      const failures = (await Promise.allSettled(jobs)).flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+      const failures = (await Promise.allSettled([server.close(), ...jobs])).flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
       if (failures.length) throw new AggregateError(failures, "owned Edge browser jobs failed");
       await releaseRecordedBrowser(root);
     },
@@ -1230,6 +1228,8 @@ server.listen(0, "127.0.0.1", () => {
   // never the person's own.
   if (process.env.DESKTOP_TEST_BROWSER_ENTRIES) {
     appendFileSync(process.env.DESKTOP_TEST_BROWSER_ENTRIES, url + "\\n");
+  }
+  if (process.env.ARTIFACTIZE_E2E_BROWSER_PROGRAM) {
     spawn(process.env.ARTIFACTIZE_E2E_BROWSER_NODE, [process.env.ARTIFACTIZE_E2E_BROWSER_PROGRAM, url], { stdio: "inherit" })
       .on("error", (error) => { process.stderr.write(String(error)); process.exit(1); });
   } else if (process.env.DESKTOP_TEST_BROWSER_PROGRAM) {

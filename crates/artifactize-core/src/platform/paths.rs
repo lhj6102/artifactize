@@ -165,7 +165,7 @@ pub(crate) fn directory_identity(path: &Path) -> io::Result<(super::FileIdentity
     Ok((identity, canonical))
 }
 
-/// Replace a credential snapshot while a reader may still hold the old file open.
+/// Publish a file snapshot while a reader may still hold the old file open.
 /// On Windows std's rename supports that case, unlike tempfile's MoveFileEx persistence.
 pub(crate) fn replace_open_file(
     file: tempfile::NamedTempFile,

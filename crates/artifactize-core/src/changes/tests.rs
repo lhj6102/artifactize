@@ -473,10 +473,9 @@ fn unsafe_endpoint_directory_and_lock_are_refused_not_repaired() {
     let endpoint = Endpoint::new(state.path()).unwrap();
     let target = state.path().join("foreign-lock");
     std::fs::write(&target, "untouched").unwrap();
-    if crate::test_os::symlink_file(&target, endpoint.directory().join("owner.lock")).is_some() {
-        assert!(endpoint.elect().is_err());
-        assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
-    }
+    crate::test_os::file_link(&target, &endpoint.directory().join("owner.lock"));
+    assert!(endpoint.elect().is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
     crate::test_os::share_dir(endpoint.directory());
     assert!(endpoint.elect().is_err());
     assert!(!crate::test_os::private_dir(endpoint.directory()));
@@ -484,14 +483,23 @@ fn unsafe_endpoint_directory_and_lock_are_refused_not_repaired() {
 
 #[test]
 fn state_fixture_removes_external_endpoint_without_following_links_on_unwind() {
-    let foreign = crate::test_os::tempdir();
-    let target = foreign.path().join("foreign-lock");
-    std::fs::write(&target, "untouched").unwrap();
     for panicking in [false, true] {
+        let foreign = crate::test_os::tempdir();
+        let target = foreign.path().join("foreign-lock");
+        std::fs::write(&target, "untouched").unwrap();
         let state = temporary_state();
         let root = state.path().to_owned();
         let endpoint = state.endpoint.clone();
-        let _ = crate::test_os::symlink_file(&target, endpoint.join("owner.lock"));
+        crate::test_os::file_link(&target, &endpoint.join("owner.lock"));
+        // When a directory junction stands in for a symlink, protect its contents too.
+        let junction_marker = std::fs::read_dir(foreign.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|entry| entry.is_dir())
+            .map(|directory| directory.join("marker"));
+        if let Some(marker) = &junction_marker {
+            std::fs::write(marker, "untouched").unwrap();
+        }
         crate::test_os::share_dir(&endpoint);
         let result = std::panic::catch_unwind(|| {
             let state = state;
@@ -504,6 +512,9 @@ fn state_fixture_removes_external_endpoint_without_following_links_on_unwind() {
         assert!(!endpoint.exists(), "fixture retained its IPC namespace");
         assert!(!root.exists(), "fixture retained its state directory");
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
+        if let Some(marker) = junction_marker {
+            assert_eq!(std::fs::read_to_string(marker).unwrap(), "untouched");
+        }
     }
 }
 

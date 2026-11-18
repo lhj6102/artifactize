@@ -164,7 +164,7 @@ impl Monitor {
 
     /// The key hint for `b`, shown only when the selected row depends on an Artifact.
     pub(super) fn blocker_hint(&mut self) -> &'static str {
-        if self.focus != super::Pane::Artifacts {
+        if self.focus() != super::Pane::Artifacts {
             return "";
         }
         let nodes = self.nodes();

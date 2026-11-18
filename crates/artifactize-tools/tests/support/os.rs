@@ -30,28 +30,15 @@ pub fn make_executable(path: &Path) {
     let _ = path;
 }
 
-/// A symbolic link to a file, which may not exist. On Windows this needs Developer Mode or
-/// an elevated process; `None` then, after saying the check is skipped.
-pub fn symlink_file(target: impl AsRef<Path>, link: impl AsRef<Path>) -> Option<()> {
+/// A symbolic link to a file, which may not exist. Windows test runners must have
+/// Developer Mode or elevation so they actually exercise the no-follow contract.
+pub fn symlink_file(target: impl AsRef<Path>, link: impl AsRef<Path>) {
     #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).unwrap();
-        Some(())
-    }
+    std::os::unix::fs::symlink(target, link).expect("test runner can create symbolic links");
     #[cfg(windows)]
-    {
-        // ERROR_PRIVILEGE_NOT_HELD
-        match std::os::windows::fs::symlink_file(target, link) {
-            Err(error) if error.raw_os_error() == Some(1314) => {
-                eprintln!("skipping a symbolic-link check: creating one needs Developer Mode");
-                None
-            }
-            created => {
-                created.unwrap();
-                Some(())
-            }
-        }
-    }
+    std::os::windows::fs::symlink_file(target, link).expect(
+        "Windows test runner must enable Developer Mode or run with symbolic-link privileges",
+    );
 }
 
 /// The program a Unix desktop opens files with: `open` on macOS, `xdg-open` elsewhere.
@@ -180,7 +167,10 @@ pub fn call(binary: &str, root: &Path, args: &[&str]) -> std::process::Output {
 }
 
 pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::process::Output {
-    tools(binary)
+    let mut command = tools(binary);
+    #[cfg(windows)]
+    command.env("PATHEXT", ".EXE");
+    command
         .current_dir(root)
         .env("PATH", root)
         .arg("help")
@@ -200,6 +190,19 @@ pub fn rerun_recording(root: &Path, test: &str) -> std::process::Output {
         .env(RECORD, root.join("record"))
         .output()
         .unwrap()
+}
+
+// Only Unix allows literal backslashes in a native filename.
+#[cfg(unix)]
+pub fn write_unrepresentable_input(root: &Path) {
+    fs::write(root.join(r"not\logical.md"), "excluded").unwrap();
+}
+
+/// A scoped input with characters that must be passed as one literal argument.
+pub fn opener_input(root: &Path) -> PathBuf {
+    let path = root.join("space ; notes.md");
+    fs::write(&path, "notes").unwrap();
+    path
 }
 
 pub fn open_recording(binary: &str, root: &Path, target: &str) -> std::process::Output {
@@ -395,6 +398,14 @@ pub fn appimage_bundled(
         ]
         .map(|(name, value)| (name.to_owned(), value)),
     );
+    environment
+}
+
+/// The bundled environment before the runtime introduces its bundle directory marker.
+pub fn appimage_without_bundle_marker(
+    mut environment: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    environment.remove("APPDIR");
     environment
 }
 

@@ -547,7 +547,8 @@ fn main() {
     let pid = std::process::id();
     let record = std::path::PathBuf::from(std::env::var_os("ARTIFACTIZE_OPENER_RECORD").unwrap());
     let pending = record.with_extension(pid.to_string());
-    std::fs::write(&pending, format!("{pid}\n{args}\n{}\n", target.display())).unwrap();
+    let target = target.to_str().unwrap().replace('\\', "/");
+    std::fs::write(&pending, format!("{pid}\n{args}\n{target}\n")).unwrap();
     std::fs::rename(pending, record).unwrap();
 }
 "#,
@@ -586,10 +587,9 @@ fn main() {
             let pid = lines.next().unwrap().parse().unwrap();
             wait_until(WATCHDOG, || gone(pid));
             assert_eq!(lines.next(), Some("0"), "no arguments beyond the target");
-            assert_eq!(
-                canonical(Path::new(lines.next().unwrap())),
-                canonical(&self.target)
-            );
+            let target = lines.next().unwrap();
+            assert!(!target.contains('\\'), "handoff paths use forward slashes");
+            assert_eq!(canonical(Path::new(target)), canonical(&self.target));
             assert_eq!(lines.next(), None);
         }
     }
@@ -3540,6 +3540,22 @@ pub fn self_test(name: &str) -> tokio::process::Command {
         .args(["--exact", name, "--nocapture"])
         .kill_on_drop(true);
     command
+}
+
+/// Run a configured self-test to completion and print its captured diagnostics on failure.
+pub async fn assert_self_test_success(command: &mut tokio::process::Command) {
+    let output = command
+        .kill_on_drop(true)
+        .output()
+        .await
+        .expect("run the self-test");
+    assert!(
+        output.status.success(),
+        "{}\n{}{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// Windows process fixture that emits a marker when admitted, or exits with a given code.

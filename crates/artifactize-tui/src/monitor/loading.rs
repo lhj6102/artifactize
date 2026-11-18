@@ -1,9 +1,55 @@
 //! The Monitor's snapshot loading: what it reads, and how a finished read lands.
-use super::{Input, Monitor, Page};
+use super::{Focus, Input, Monitor, Page, RunSummary};
 use artifactize_core::monitor::loader::{Completed, Selection};
 use time::OffsetDateTime;
 
+/// What a snapshot read must cover, from cheapest to most comprehensive.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Refresh {
+    /// Reuse unchanged pages when navigation only moved within them.
+    Changes,
+    /// Read the whole snapshot.
+    Full,
+    /// Read the whole snapshot and rescan Git after hints may have been missed.
+    Resync,
+}
+
 impl Monitor {
+    pub async fn refresh(&mut self) {
+        if let Some(job) = self.start_refresh(Refresh::Full) {
+            match crate::task::joined(job.await) {
+                Ok(completed) => {
+                    self.finish_refresh(completed).await;
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+    }
+    pub(super) fn set_runs(&mut self, runs: Vec<RunSummary>) {
+        let selected = self
+            .open
+            .clone()
+            .or_else(|| self.selected_run().map(|run| run.id.clone()));
+        let index = selected
+            .and_then(|id| runs.iter().position(|run| run.id == id))
+            .or(self.list.selected());
+        self.runs = runs;
+        self.list.select(
+            index
+                .map(|index| index.min(self.runs.len().saturating_sub(1)))
+                .or(Some(0))
+                .filter(|_| !self.runs.is_empty()),
+        );
+        self.open = self
+            .selected_run()
+            .filter(|run| run.readable())
+            .map(|run| run.id.clone());
+        if self.open.is_none() {
+            self.run = None;
+            self.footprint = None;
+        }
+    }
+
     fn selection(&self) -> Selection {
         Selection {
             state: self.state.clone(),
@@ -19,22 +65,21 @@ impl Monitor {
     }
     pub(super) fn start_refresh(
         &mut self,
-        full: bool,
-        resync: bool,
+        mode: Refresh,
     ) -> Option<tokio::task::JoinHandle<Completed>> {
-        self.start_refresh_after(full, resync, || {})
+        self.start_refresh_after(mode, || {})
     }
     pub(super) fn start_refresh_after(
         &mut self,
-        full: bool,
-        resync: bool,
+        mode: Refresh,
         before: impl FnOnce() + Send + 'static,
     ) -> Option<tokio::task::JoinHandle<Completed>> {
         let mut loader = self.loader.take()?;
-        if resync {
+        if mode == Refresh::Resync {
             loader.rescan();
         }
         let selection = self.selection();
+        let full = mode != Refresh::Changes;
         let input = Input {
             state: self.state.clone(),
             initial: self.initial.clone(),
@@ -71,12 +116,12 @@ impl Monitor {
                     .and_then(|index| self.catalog.rows.get(index))
                     .and_then(|row| row.fold.clone());
                 if snapshot.origin.replaces(&self.origin) {
-                    if let Some(review) =
-                        self.detail.as_ref().and_then(|pane| pane.content.review())
-                    {
-                        review.cancel_single();
+                    if let Focus::Detail(pane) = &self.focus {
+                        if let Some(review) = pane.content.review() {
+                            review.cancel_single();
+                        }
+                        self.focus = Focus::Artifacts;
                     }
-                    self.detail = None;
                     self.peek = None;
                     self.reviews.clear();
                     self.run = None;
@@ -128,7 +173,7 @@ impl Monitor {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>();
                 self.error = (!unreadable.is_empty()).then(|| unreadable.join("; "));
-                self.refresh_detail(changed).await;
+                self.refresh_detail(changed, now).await;
             }
         }
         true

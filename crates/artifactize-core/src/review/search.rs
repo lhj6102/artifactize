@@ -643,7 +643,7 @@ async fn follows_waiting(state: &Path, view: &RequestView) -> bool {
         return false;
     };
     // Only the original's status matters, never what its Run's definitions hold.
-    store::read_request_as(state, source, store::Shown::Requests)
+    store::read_request_by_id(state, source, store::Shown::Requests)
         .await
         .is_ok_and(|original| original.request.status().is_human_wait())
 }

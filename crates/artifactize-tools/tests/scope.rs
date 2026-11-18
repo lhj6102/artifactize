@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use artifactize_tools::scope::{Artifact, ArtifactId, ChildPrefix, Scope, ScopedPath};
+use artifactize_tools::scope::{Artifact, ArtifactId, ChildPrefix, Scope, ScopedPath, Target};
 
 fn id(value: &str) -> ArtifactId {
     ArtifactId::new(value).unwrap()
@@ -69,4 +69,23 @@ fn nested_folders_resolve_to_their_target_ids() {
             .to_string()
             .contains("outside this review")
     );
+}
+
+#[test]
+fn stored_targets_accept_slash_paths_and_keep_live_addresses_opaque() {
+    for text in [
+        "",
+        "crates/tools/note.md",
+        "https://example.invalid/open?q=a:b",
+    ] {
+        let wire = serde_json::json!(text);
+        let target: Target = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(target).unwrap(), wire);
+    }
+    for text in ["/root", "notes/../outside", "notes//file", r"notes\file"] {
+        assert!(
+            serde_json::from_value::<Target>(serde_json::json!(text)).is_err(),
+            "{text:?}"
+        );
+    }
 }

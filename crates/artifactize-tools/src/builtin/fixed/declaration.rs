@@ -1,7 +1,7 @@
 //! Validation and descriptions of fixed builtin declarations.
 use crate::{
     Builtin,
-    scope::{self, ArtifactId, Scope},
+    scope::{ArtifactId, Scope},
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -79,24 +79,16 @@ pub fn validate_target(
     scope: &Scope,
     owner: &ArtifactId,
 ) -> Result<(), String> {
-    if builtin == Builtin::Graph
-        || builtin == Builtin::Help
-        || builtin == Builtin::Open && is_url(&args[0])
-    {
+    if matches!(builtin, Builtin::Graph | Builtin::Help) {
+        return Ok(());
+    }
+    let target = args.first().ok_or("Missing builtin target.")?;
+    if builtin == Builtin::Open && is_url(target) {
         return Ok(());
     }
     // Existing targets are validated without following any symlink.
-    let location = scope
-        .resolve_path(owner, &args[0])
-        .map_err(|error| error.to_string())?;
-    let artifact = &scope.artifacts[&location.artifact_id];
-    let base = scope::scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let path = if location.path.is_empty() {
-        artifact.file_name().unwrap_or("")
-    } else {
-        &location.path
-    };
-    scope::scoped_path(&base, Path::new(path))
+    scope
+        .resolve_input(root, owner, target)
         .map(|_| ())
         .map_err(|error| error.to_string())
 }

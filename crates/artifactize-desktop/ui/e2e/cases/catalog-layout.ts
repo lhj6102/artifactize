@@ -8,7 +8,6 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
 import { afterRender, fill, press } from "../keys.ts";
-import { screenshotPixels } from "../rendering.ts";
 
 function slot(browser: WebdriverIO.Browser) {
   return browser.execute(() => {
@@ -112,58 +111,67 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await slot(browser))?.text.includes("Choose a branch or a waiting review in the Pane.") === true,
         { timeout: 15000, timeoutMsg: "nothing is chosen at launch" });
       const before = (await slot(browser))!;
-      // Every state of the graph slot from now until the graph shows, with its geometry: one
-      // record per change to the page, laid out as it was before anything replaced it.
+      // Sample render frames, not each DOM mutation: an explanation replaced before
+      // the browser gets a rendering opportunity does not count.
       await browser.execute(() => {
-        const recorded: { text: string; bounds: number[]; divider: boolean }[] = [];
-        (window as unknown as { catalogLoading: typeof recorded }).catalogLoading = recorded;
+        const trace = { frames: [] as { text: string; bounds: number[]; divider: boolean }[], done: false };
+        (window as unknown as { catalogLoading: typeof trace }).catalogLoading = trace;
         const stage = document.querySelector<HTMLElement>(".monitor .stage")!;
-        const observer = new MutationObserver(() => {
+        function sample() {
+          if (trace.done) return;
           const divider = document.querySelector(".monitor [data-pane-resizer]")!;
           const box = stage.getBoundingClientRect();
-          recorded.push({ text: stage.innerText, bounds: [box.left, box.top, box.width, box.height].map(Math.round), divider: divider.getBoundingClientRect().width > 0 });
-          if (stage.querySelector(".graph")) observer.disconnect();
-        });
-        observer.observe(stage, { childList: true, subtree: true, characterData: true });
+          const text = stage.innerText;
+          const frame = { text, bounds: [box.left, box.top, box.width, box.height].map(Math.round), divider: divider.getBoundingClientRect().width > 0 };
+          requestAnimationFrame(() => {
+            // Keep the completed frame, including its geometry; repeats add no evidence.
+            if (JSON.stringify(trace.frames.at(-1)) !== JSON.stringify(frame)) trace.frames.push(frame);
+            sample();
+          });
+        }
+        requestAnimationFrame(sample);
       });
       await showRun(browser, "repo  master", run);
-      await browser.waitUntil(() => browser.$(".monitor .graph").isExisting(), { timeout: 60000, timeoutMsg: "the large Run's graph shown" });
-      const loading = await browser.execute(() => (window as unknown as { catalogLoading: { text: string; bounds: number[]; divider: boolean }[] }).catalogLoading);
-      const explained = loading.filter((shown) => /Loading the graph…|Laying out…/.test(shown.text));
-      assert.ok(explained.length > 0, `the graph slot said it was loading: ${JSON.stringify(loading.map((shown) => shown.text.slice(-80)))}`);
-      assert.ok(loading.every((shown) => !/Lay out all/.test(shown.text)), "the Run lays out without asking first");
-      assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(before.bounds)), "loading kept the same pane geometry and its divider");
       // A click where the layout puts the tree's first Artifact, its top-left corner, opens
       // that Artifact's Detail, once the first view holds still.
       await camera(browser);
-      const frame = await browser.execute(() => {
+      // Read the pixels of the actual visible canvas. Encoding the whole window
+      // to PNG via the native screenshot API can convert its sRGB profiles.
+      const painted = () => browser.execute(() => {
         const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
-        const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
-        const canvas = document.querySelector<HTMLElement>(".monitor .graph .canvas")!;
-        const box = canvas.getBoundingClientRect();
-        const left = box.left + camera.e;
-        const top = box.top + camera.f;
-        const green = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
-        const background = getComputedStyle(canvas).backgroundColor;
-        return {
-          width: innerWidth, height: innerHeight, green, background,
-          corner: { x: Math.round(left + 84 * camera.a), y: Math.round(top + 22 * camera.d) },
-          // The first line of the would-be comment, clear of the block's lower edge.
-          under: { left, right: left + 150 * camera.a, top: top + 48 * camera.d + 1, bottom: top + 65 * camera.d },
-        };
+        const view = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+        const surface = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
+        const box = surface?.getBoundingClientRect();
+        const context = surface?.getContext("2d");
+        if (!surface || !box?.width || !box.height || !context || !surface.checkVisibility({ visibilityProperty: true })) return null;
+        const x = view.e + 84 * view.a, y = view.f + 22 * view.d;
+        const corner = { x: Math.round(box.left + x), y: Math.round(box.top + y) };
+        if (!document.elementFromPoint(corner.x, corner.y)?.closest(".monitor .graph .canvas")) return null;
+        const sx = surface.width / box.width, sy = surface.height / box.height;
+        const left = Math.ceil(view.e * sx), right = Math.floor((view.e + 150 * view.a) * sx);
+        const top = Math.ceil((view.f + 48 * view.d + 1) * sy), bottom = Math.floor((view.f + 65 * view.d) * sy);
+        if (left < 0 || right > surface.width || top < 0 || bottom > surface.height || right <= left || bottom <= top) return null;
+        const color = [...context.getImageData(Math.floor(x * sx), Math.floor(y * sy), 1, 1).data];
+        const expected = getComputedStyle(document.documentElement).getPropertyValue("--green").trim()
+          .match(/[0-9a-f]{2}/gi)?.map((part) => Number.parseInt(part, 16));
+        const under = context.getImageData(left, top, right - left, bottom - top).data;
+        return { corner, color, green: expected?.length === 3 && color[3] === 255 && expected.every((value, i) => Math.abs(value - color[i]) <= 1),
+          noComment: under.every((alpha, i) => i % 4 !== 3 || alpha === 0) };
       });
-      const { corner } = frame;
-      const green = frame.green.match(/[0-9a-f]{2}/gi)?.map((part) => Number.parseInt(part, 16));
-      const background = frame.background.match(/[\d.]+/g)?.slice(0, 3).map(Number);
-      assert.equal(green?.length, 3, "the expected GREEN palette color is declared");
-      assert.equal(background?.length, 3, "the graph has a computed background color");
-      const sameColor = (sample: number[], expected: number[]) => sample.every((value, channel) => Math.abs(value - expected[channel]) <= 1);
-      let pixels = await screenshotPixels(browser, frame);
-      await browser.waitUntil(async () => {
-        pixels = await screenshotPixels(browser, frame);
-        return sameColor(pixels.at(corner.x, corner.y), green!);
-      }, { timeout: 15000, timeoutMsg: "the screenshot shows the first Artifact as a GREEN block" });
-      assert.ok(pixels.every(frame.under, (sample) => sameColor(sample, background!)), "no comment is painted under the block in that screenshot");
+      let pixels = await painted();
+      await browser.waitUntil(async () => (pixels = await painted())?.green === true,
+        { timeout: 15000, timeoutMsg: "the visible canvas paints the first Artifact as a GREEN block" });
+      assert.ok(pixels?.noComment, `no pixels of a comment are painted under the block: ${JSON.stringify(pixels)}`);
+      const { corner } = pixels;
+      const loading = await browser.execute(() => {
+        const trace = (window as unknown as { catalogLoading: { frames: { text: string; bounds: number[]; divider: boolean }[]; done: boolean } }).catalogLoading;
+        trace.done = true;
+        return trace.frames;
+      });
+      assert.ok(loading.some((shown) => /Loading the graph…|Laying out…/.test(shown.text)),
+        `a completed render frame explained the loading: ${JSON.stringify(loading.map((shown) => shown.text.slice(-80)))}`);
+      assert.ok(loading.every((shown) => !/Lay out all/.test(shown.text)), "the Run lays out without asking first");
+      assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(before.bounds)), "loading kept the same pane geometry and its divider");
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
       await aside(browser).$("button*=Close").click();

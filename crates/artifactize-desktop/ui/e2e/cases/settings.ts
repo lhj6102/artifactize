@@ -13,7 +13,7 @@ import { git } from "../environment.ts";
 import { commandFields, runtimeProfile } from "../native-fixtures.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
-import { mainTitle, openWaiting } from "../pane.ts";
+import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
 
@@ -312,9 +312,11 @@ export const scenarios: Scenario[] = [
       await browser.$("#provider-key").click();
       await typeText(browser, shadowed);
       await browser.$("button=Save key").click();
-      await browser.waitUntil(async () => (await browser.$("#provider-key").getValue()) === "" && (await browser.$("button=Remove saved key").isExisting()),
-        { timeout: 15000, timeoutMsg: "the OpenAI key is saved" });
-      assert.equal(await keyText(browser, "openai"), "set from the environment (OPENAI_API_KEY); a saved key is kept but not used", "the variable is still the key in use");
+      const shadowedMessage = "set from the environment (OPENAI_API_KEY); a saved key is kept but not used";
+      await browser.waitUntil(async () => (await keyText(browser, "openai")) === shadowedMessage,
+        { timeout: 15000, timeoutMsg: "OpenAI shows that the saved key is shadowed by the environment" });
+      assert.equal(await browser.$("#provider-key").getValue(), "", "the stored value left the input");
+      assert.equal(await keyText(browser, "openai"), shadowedMessage);
       const both = JSON.parse((await providerList(fixture, { OPENAI_API_KEY: key })).stdout).keys.find((one: { provider: string }) => one.provider === "openai");
       assert.deepEqual([both.source, both.saved], ["environment", true]);
       await listModels(browser, "openai-model");
@@ -432,9 +434,16 @@ payload.instruction = "Check the worker."
       await browser.waitUntil(async () => newestRunStatus(next) === "WAITING_HUMAN" && await browser.$("button=Release claim").isDisplayed(),
         { timeout: 15000, timeoutMsg: "the later Run does not expire after becoming idle with a claimed review and grace zero" });
       assert.equal(laterReview()?.claim?.reviewer, "alice");
+      const laterRun = laterReview()!.runId;
+      assert.ok(laterRun, "the claimed request belongs to the later Run");
+      const laterStatus = async () => (await branch(browser, "later  master"))?.chips.find((chip) => chip.id === laterRun)?.text ?? "";
+      await showRun(browser, "later  master", laterRun);
+      await browser.waitUntil(async () => /^Waiting for sign-off\b/i.test(await laterStatus()),
+        { timeout: 15000, timeoutMsg: "the later Run's timeline shows it waiting before release" });
+      await openWaiting(browser, laterReview()!.id);
       await browser.$("button=Release claim").click();
-      await browser.waitUntil(() => newestRunStatus(next) === "YELLOW", {
-        timeout: 15000, timeoutMsg: "the later Run ends YELLOW once its zero grace is allowed to run",
+      await browser.waitUntil(async () => /^YELLOW\b/.test(await laterStatus()) && newestRunStatus(next) === "YELLOW", {
+        timeout: 15000, timeoutMsg: "the later Run ends YELLOW in the timeline and CLI after release",
       });
       assert.equal(savedRuns(fixture).some(({ id }) => id === prior), true);
       assert.equal(newestRunStatus(fixture), "WAITING_HUMAN", "saving zero never shortened the original Run's grace");
@@ -581,9 +590,24 @@ Review the agent folder."""
         && await browser.$("#custom-key").getAttribute("placeholder") === "Saved; type to replace",
       { timeout: 15000, timeoutMsg: "Settings reopens the saved responses endpoint and its kept key" });
 
+      const geminiUrl = `${root}/gemini`;
+      await add("gemini-local", async () => {
+        await select(browser, "#custom-api", "gemini");
+        await fill(browser, "#custom-url", geminiUrl);
+      });
+      assert.deepEqual((await custom())["gemini-local"], { kind: "endpoint", api: "gemini", url: geminiUrl, key: false });
+      await choose(browser, "local");
+      await choose(browser, "gemini-local");
+      await browser.waitUntil(async () => await browser.$("#custom-api").getValue() === "gemini"
+        && await browser.$("#custom-url").getValue() === geminiUrl
+        && await browser.$("#custom-key").getValue() === ""
+        && await browser.$("#custom-key").getAttribute("placeholder") !== "Saved; type to replace",
+      { timeout: 15000, timeoutMsg: "Settings reopens the saved keyless Gemini endpoint" });
+      await choose(browser, "local");
+
       await browser.$("button=Remove provider").click();
       await browser.waitUntil(async () => !(await listed(browser)).includes("local"), { timeout: 15000, timeoutMsg: "local is removed" });
-      assert.deepEqual(Object.keys(await custom()), ["claude-local", "work"]);
+      assert.deepEqual(Object.keys(await custom()), ["claude-local", "gemini-local", "work"]);
     },
   ),
   // UX journey: J-SET-REMOTE; UX edges: E-SET-TAB E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT
@@ -649,13 +673,22 @@ Review the agent folder."""
       await browser.$('input[name="share"][value="full"]').click();
       assert.equal(await browser.$("#remote-token").getAttribute("type"), "password");
       await browser.$("button=Sign in to the store").click();
-      await browser.waitUntil(async () => (await text()).includes("alice-laptop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "the remote principal appears" });
+      const storeFacts = 'section[aria-labelledby="remote-title"] dl[aria-label="Remote store"]';
+      const facts = () => browser.execute((selector) => Object.fromEntries([...document.querySelectorAll(`${selector} > dt`)]
+        .map((label) => [label.textContent?.trim(), (label.nextElementSibling as HTMLElement | null)?.innerText.trim()])), storeFacts);
+      const statusLine = () => browser.$(`${storeFacts} dt:last-of-type + dd`);
+      await browser.waitUntil(async () => await statusLine().isDisplayed()
+        && await statusLine().getText() === "Signed in · alice-laptop (scopes: read, publish) · 0 pushed today",
+      { timeout: 15000, timeoutMsg: "the Remote panel shows the reviewer and push count together in its status" });
       // Signed in: the store's URL and share level as facts, without the fields that sign in.
       assert.equal(await browser.$("#remote-token").isExisting(), false, "the token field is gone once signed in");
       assert.equal(await browser.$("#remote-url").isExisting(), false, "so is the URL field");
       assert.equal(await browser.$('input[name="share"]').isExisting(), false, "and the share level's choices");
       assert.equal(await browser.$("button=Sign in to the store").isExisting(), false, "and Sign in");
-      assert.equal(await browser.$('[data-testid="remote-status"]').getText(), url, "the store's URL as a fact");
+      const signedIn = await facts();
+      assert.equal(signedIn["Store URL"], url, "the Remote panel's Store URL fact");
+      assert.equal(signedIn["Share level"], "full", "the Remote panel's chosen Share level fact");
+      assert.equal(signedIn.Status, "Signed in · alice-laptop (scopes: read, publish) · 0 pushed today", "both parts are the same Status fact");
       assert.ok(!(await html()).includes(token), "the token is nowhere on the page");
 
       // The asynchronous CLI query shares saved state without blocking this store.
@@ -665,7 +698,6 @@ Review the agent folder."""
       assert.equal(parsed.principal, "alice-laptop");
       assert.equal(parsed.tokenSource, "file");
       assert.equal(parsed.share, "full", "the chosen share level was saved");
-      assert.ok((await text()).includes("full"), "the share level is also shown");
       assert.ok(!status.stdout.includes(token));
 
       writeText(principalFile, "alice-desktop");
@@ -673,7 +705,10 @@ Review the agent folder."""
       await browser.waitUntil(async () => (await text()).includes("alice-desktop (scopes: read, publish)"), { timeout: 15000, timeoutMsg: "Check status displays the fresh remote principal" });
       await browser.waitUntil(() => browser.execute(() => document.querySelector('[aria-label="Remote store"] .notice [data-testid="remote-principal"]') !== null), { timeout: 15000, timeoutMsg: "the store is reachable" });
       /** What the status says was pushed today, or "" while it says nothing. */
-      const pushedToday = async () => (await browser.$('[data-testid="remote-pushed"]').isExisting()) ? await browser.$('[data-testid="remote-pushed"]').getText() : "";
+      const pushedToday = async () => {
+        const pushed = statusLine().$('[data-testid="remote-pushed"]');
+        return await pushed.isDisplayed() ? await pushed.getText() : "";
+      };
       await browser.$("button=Push (dry run)").click();
       await browser.waitUntil(async () => /Would push 1, already in the store 0, skipped 0\./.test(await text()), { timeout: 15000, timeoutMsg: "the dry run would push the one result" });
       // A dry run pushes nothing: the store received nothing, and the status, read again,
@@ -687,6 +722,7 @@ Review the agent folder."""
       assert.equal(received(), 1, "the store received the one record");
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the push counted today" });
+      assert.equal(await statusLine().getText(), "Signed in · alice-desktop (scopes: read, publish) · 1 pushed today");
       writeText(principalFile, "");
       await browser.$("button=Check status").click();
       const error = browser.$('section[aria-labelledby="remote-title"]').$('p[aria-label="Remote store"], [role="alert"]');

@@ -267,7 +267,7 @@ impl<'a> Registry<'a> {
             args,
             output_root,
             cancellation,
-            tempfile::TempDir::close,
+            crate::platform::PrivateTempDir::close,
         )
         .await
     }
@@ -278,7 +278,7 @@ impl<'a> Registry<'a> {
         args: Value,
         output_root: &Path,
         cancellation: CancellationToken,
-        cleanup: impl FnOnce(tempfile::TempDir) -> std::io::Result<()> + Send + 'static,
+        cleanup: impl FnOnce(crate::platform::PrivateTempDir) -> std::io::Result<()> + Send + 'static,
     ) -> ToolResult {
         let Some(tool) = self.tools.get(name) else {
             return ToolResult::error("Unknown registered Agent tool.");
@@ -536,14 +536,11 @@ async fn invoke(
     output_root: &Path,
     cancellation: CancellationToken,
     environment: Option<sessions::ownership::Call>,
-    cleanup: impl FnOnce(tempfile::TempDir) -> std::io::Result<()>,
+    cleanup: impl FnOnce(crate::platform::PrivateTempDir) -> std::io::Result<()>,
 ) -> ToolResult {
     let run = || {
         let root = workspace::prepare_directory(output_root, workspace).map_err(|_| ())?;
-        tempfile::Builder::new()
-            .prefix("tool-")
-            .tempdir_in(root)
-            .map_err(|_| ())
+        crate::platform::private_tempdir_in("tool-", &root).map_err(|_| ())
     };
     let Ok(directory) = run() else {
         return ToolResult::error("Agent tool preparation failed.");

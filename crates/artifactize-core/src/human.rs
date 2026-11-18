@@ -32,7 +32,7 @@ pub async fn open(
     state: &Path,
     request: &crate::types::RequestId,
 ) -> Result<(Receipts, PathBuf), String> {
-    let repo = store::read_request_repo(state, request).await?;
+    let repo = store::read_request_repo_by_id(state, request.clone()).await?;
     Ok((Receipts::open(state, &repo).await?, repo))
 }
 

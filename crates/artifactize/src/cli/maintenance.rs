@@ -123,11 +123,12 @@ pub(super) fn limits(
                 .map_err(|e| e.to_string())?;
         }
         let sessions = limits.agent_sessions();
-        if sessions.enabled {
+        if sessions.enabled() {
             writeln!(
                 out,
                 "Agent sessions: saved; past {} bytes, collected down to {} bytes",
-                sessions.max_bytes, sessions.target_bytes
+                sessions.max_bytes(),
+                sessions.target_bytes()
             )
         } else {
             writeln!(out, "Agent sessions: not saved")

@@ -133,23 +133,30 @@ pub(crate) async fn read_requests_for_run(
 }
 
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
-    read_request_as(state, id, Shown::Definitions).await
+    read_request_id(state, &id.parse()?).await
+}
+
+pub(crate) async fn read_request_id(
+    state: &Path,
+    id: &crate::types::RequestId,
+) -> Result<RequestView, String> {
+    read_request_by_id(state, id, Shown::Definitions).await
 }
 
 /// Request `id` with what `shown` names besides it.
 pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<RequestView, String> {
-    read_request_by_id(state, id.parse()?, shown).await
+    read_request_by_id(state, &id.parse()?, shown).await
 }
 
-async fn read_request_by_id(
+pub(crate) async fn read_request_by_id(
     state: &Path,
-    id: crate::types::RequestId,
+    id: &crate::types::RequestId,
     shown: Shown,
 ) -> Result<RequestView, String> {
     read(
         state,
         Filter {
-            id: Some(id),
+            id: Some(id.clone()),
             shown,
             ..Filter::default()
         },
@@ -203,7 +210,7 @@ pub async fn read_original_as(
                 .map(|source| &source.request_id)
         });
     match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request_by_id(state, id.clone(), shown).await,
+        Some(id) => read_request_by_id(state, id, shown).await,
         None => Ok(view.clone()),
     }
 }
@@ -296,8 +303,14 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
 /// recorded. Only the request's Run row is read, never the Run's record or definitions, so a
 /// Human action finds its receipts at once however large the Run's workspace is.
 pub async fn read_request_repo(state: &Path, id: &str) -> Result<std::path::PathBuf, String> {
+    read_request_repo_by_id(state, id.parse()?).await
+}
+
+pub(crate) async fn read_request_repo_by_id(
+    state: &Path,
+    id: crate::types::RequestId,
+) -> Result<std::path::PathBuf, String> {
     let not_found = || "Review request not found.".to_owned();
-    let id: crate::types::RequestId = id.parse()?;
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     let Some(connection) = open_read(&state).await? else {
         return Err(not_found());

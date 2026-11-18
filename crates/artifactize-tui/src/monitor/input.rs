@@ -1,5 +1,5 @@
-//! Terminal protocol and hit tests over geometry from the most recently rendered frame.
-use super::{Action, DetailArea, Monitor, Pane};
+//! Terminal input protocols and mouse hit tests over the last drawn frame.
+use super::{Action, DetailArea, Focus, Monitor, Pane};
 use crate::review::Control;
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
@@ -99,7 +99,7 @@ impl Monitor {
             .iter()
             .find(|(_, rect)| contains(*rect, point))
             .map(|(pane, _)| *pane);
-        if self.focus == Pane::Detail && self.detail.is_some() {
+        if matches!(self.focus, Focus::Detail(_)) {
             if contains(self.hits.detail, point) {
                 return self.detail_mouse(event, point);
             }
@@ -122,16 +122,13 @@ impl Monitor {
                 };
                 if pane == Pane::Detail {
                     // Clicking the peek opens it.
-                    return if self.focus == Pane::Artifacts {
+                    return if matches!(self.focus, Focus::Artifacts) {
                         Action::OpenDetail
                     } else {
                         Action::None
                     };
                 }
-                if self.focus == Pane::Detail {
-                    self.leave_detail();
-                }
-                self.focus = pane;
+                self.focus_on(pane);
                 let area = if pane == Pane::Artifacts {
                     self.hits.tree
                 } else {
@@ -222,7 +219,7 @@ impl Monitor {
     }
     /// Clicks and the wheel inside the opened Detail pane.
     fn detail_mouse(&mut self, event: MouseEvent, point: Position) -> Action {
-        let Some(pane) = &mut self.detail else {
+        let Focus::Detail(pane) = &mut self.focus else {
             return Action::None;
         };
         if event.kind == MouseEventKind::Down(MouseButton::Left) {

@@ -1,11 +1,11 @@
 // Exercise the public Launcher and actual Tauri service, not a replacement service hook.
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { assertAdmissionsStopped, recordAdmission } from "./observation.ts";
+import { releaseToolGates } from "./process-fixtures.ts";
 import { environment } from "./environment.ts";
 import {
-  executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
-  exists, nodeProgram, processRunning, readLoopback, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
+  childDirectories, executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
+  exists, nodeProgram, processRunning, readLoopback, runProgramOk, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
 } from "./platform.ts";
 
 function root(): NativePath {
@@ -37,17 +37,19 @@ it("a failed preparation stops the real service before its executable boundary",
     writeJson(nativePath(directory, "candidate.json"), { root: directory, cli: app, app, observer: app, manifest: nativePath(directory, "candidate.json") });
     // Fail on a private external input after setup has acquired its HTTP fixture.
     // Never occupy the product's fixed auth callback port: the suite may run beside us.
-    const context = makeDirectory(nativePath(directory, "settings-keys-logs", "settings-keys.json"));
+    const owner = nativePath(directory, "runner-environment");
+    writeText(owner, "not a directory");
     const blocked = await launch(directory, "settings-keys", test.signal);
     assert.equal(blocked.code, 1, blocked.stdout + blocked.stderr);
     assert.match(blocked.stderr, /Desktop scenario preparation failed/);
     assert.doesNotMatch(blocked.stderr, /Failed to start embedded WebDriver/);
-    assert.match(blocked.stderr, /\b(?:EISDIR|EACCES|EPERM)\b/);
-    assert.ok(blocked.stderr.includes(context), "nested causes identify this fixture's failed context output");
+    assert.match(blocked.stderr, /\b(?:ENOTDIR|EEXIST|EACCES|EPERM)\b/);
+    assert.ok(blocked.stderr.includes("runner-environment"), "nested causes identify the blocked owner path");
+    assert.deepEqual(childDirectories(nativePath(directory, "fixtures")), [], "failed preparation released its fixture inputs");
 
     // Positive control: fixing only that input must reach the same real service's
     // executable boundary, proving the first rejection was before app admission.
-    removeTree(context);
+    removeTree(owner);
     const admitted = await launch(directory, "settings-keys", test.signal, "settings-keys-retry-logs");
     assert.equal(admitted.code, 1, admitted.stdout + admitted.stderr);
     assert.match(admitted.stderr, /Failed to start embedded WebDriver/);
@@ -104,32 +106,60 @@ it("cancelling a wrapped runner joins its fixture descendants before releasing i
 it("joins fixture descendants even after their root process returned", { timeout: 120000 }, async (test) => {
   const directory = root();
   let descendant: number | undefined;
-  const receiver = await serveLoopback((socket) => {
-    let input = "";
-    socket.setEncoding("utf8");
-    socket.on("data", (chunk: string) => { input += chunk; });
-    socket.once("end", () => { descendant = JSON.parse(input) as number; });
-  });
+  let receiver: LoopbackServer | undefined;
   try {
+    receiver = await serveLoopback((socket) => {
+      let input = "";
+      socket.setEncoding("utf8");
+      socket.on("data", (chunk: string) => { input += chunk; });
+      socket.once("end", () => { descendant = JSON.parse(input) as number; });
+    });
     const command = runnerCommand([suitePath("domain-fixtures", "tree.ts"), "owner-exits", String(receiver.port)], environment(fixture(directory)));
     const result = await fixtureRunner(command, test.signal);
     assert.equal(result.code, 0, result.stderr);
     assert.ok(descendant && !processRunning(descendant), "the root returned but the same fixture had to join its still-live descendant");
   } finally {
-    await receiver.close();
-    removeTree(directory);
+    try { await receiver?.close(); } finally { removeTree(directory); }
   }
 });
 
-it("a missing native birth record cannot authorize cleanup of admitted inputs", () => {
+it("the cleanup entry point retains inputs if native shutdown is unconfirmed", { timeout: 120000 }, async (test) => {
   const directory = root();
   try {
-    const fixtureFile = nativePath(directory, "owned-input");
-    writeText(fixtureFile, "the app still may use this");
-    recordAdmission(directory, ["unconfirmed"]);
-    assert.throws(() => assertAdmissionsStopped(directory, nodeProgram), /live runner/);
-    assert.throws(() => assertAdmissionsStopped(directory, nodeProgram, true), /birth record missing/);
-    assert.equal(exists(fixtureFile), true);
+    const manifest = nativePath(directory, "candidate.json");
+    const app = nativePath(directory, executableName("unconfirmed-app"));
+    writeText(app, "the app still may use this");
+    writeJson(manifest, { root: directory, cli: app, app, observer: app, manifest });
+    const journal = makeDirectory(nativePath(directory, "admissions", "unconfirmed"));
+    const runner = Number(runProgramOk(nodeProgram, ["-p", "process.pid"]));
+    writeJson(nativePath(journal, "expected.json"), { runner, names: ["unconfirmed.owner.json"] });
+    const command = { program: nodeProgram, args: [suitePath("run.ts"), "cleanup", manifest], env: environment(fixture(directory)) };
+    const refused = await fixtureRunner(command, test.signal);
+    assert.equal(refused.code, 1);
+    assert.match(refused.stderr, /birth record missing/);
+    assert.equal(exists(app), true);
+    // Positive control: removing the unconfirmed admission, not changing the fixture,
+    // lets the same public cleanup command delete it.
+    removeTree(journal);
+    const released = await fixtureRunner(command, test.signal);
+    assert.equal(released.code, 0, released.stderr);
+    assert.equal(exists(directory), false);
+  } finally { removeTree(directory); }
+});
+
+it("a stand-in starting after gate teardown cannot recreate or wait on its released fixture", { timeout: 10000 }, () => {
+  const directory = root();
+  const owned = fixture(directory);
+  try {
+    makeDirectory(nativePath(owned.root, "gated-tools"));
+    releaseToolGates(owned);
+    // A late process still has its literal command line, but no open admission.
+    const args = [suitePath("domain-fixtures", "command.ts"), "talk", nativePath(owned.root, "talk.gate")];
+    assert.equal(runProgramOk(nodeProgram, args, { timeout: 5000 }), "");
+    assert.equal(exists(nativePath(owned.root, "gated-tools")), false);
+    removeTree(owned.root);
+    assert.equal(runProgramOk(nodeProgram, args, { timeout: 5000 }), "");
+    assert.equal(exists(owned.root), false);
   } finally { removeTree(directory); }
 });
 
@@ -140,10 +170,11 @@ it("closing an owned TCP endpoint joins a stalled connection and repeated caller
   const client = readLoopback(server.port, 5000);
   try {
     await accepted;
-    const first = server.close();
-    assert.equal(server.close(), first, "both callers await one teardown");
-    await first;
-    assert.equal(server.listening(), false);
-    assert.ok([null, ""].includes(await client), "the stalled accepted peer was disconnected");
+    const checkClosed = async (closing: Promise<void>) => {
+      await closing;
+      assert.equal(server.listening(), false);
+      assert.ok([null, ""].includes(await client), "the stalled accepted peer was disconnected");
+    };
+    await Promise.all([checkClosed(server.close()), checkClosed(server.close())]);
   } finally { await server.close(); }
 });

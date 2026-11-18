@@ -1,6 +1,6 @@
 //! Regression tests for catalog, modal isolation, saved evidence and UTF-8 drafts.
 use super::*;
-use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend, layout::Position};
 use serde_json::json;
 use std::{fs, path::Path};
@@ -14,16 +14,27 @@ fn mouse(kind: MouseEventKind, x: u16, y: u16) -> MouseEvent {
     }
 }
 fn render(monitor: &mut Monitor, width: u16, height: u16) {
-    Terminal::new(TestBackend::new(width, height))
-        .unwrap()
+    draw_terminal(monitor, width, height);
+}
+
+fn draw_terminal(monitor: &mut Monitor, width: u16, height: u16) -> Terminal<TestBackend> {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal
         .draw(|frame| monitor.draw_at(frame, tests::now()))
         .unwrap();
+    terminal
 }
+
+fn rendered_point(monitor: &mut Monitor, width: u16, height: u16, label: &str) -> Position {
+    let terminal = draw_terminal(monitor, width, height);
+    crate::test_frame::point(terminal.backend().buffer(), label)
+}
+
 fn render_text(monitor: &mut Monitor, width: u16, height: u16) -> String {
     super::tests::sized(monitor, width, height)
 }
-#[test]
-fn rendered_panes_keep_neighbours_and_fill_the_body_at_every_breakpoint() {
+#[tokio::test]
+async fn rendered_panes_keep_neighbours_and_fill_the_body_at_every_breakpoint() {
     use Pane::{Artifacts as Tree, Detail, Repositories as Scope, Runs};
     let (view, requests) = super::tests::live();
     let (_monitor_root, mut monitor) = tests::monitor();
@@ -44,7 +55,12 @@ fn rendered_panes_keep_neighbours_and_fill_the_body_at_every_breakpoint() {
             (Tree, vec![(Runs, side), (Tree, middle), (Detail, side)]),
             (Detail, vec![(Tree, side), (Detail, end)]),
         ] {
-            monitor.focus = focus;
+            if focus == Detail {
+                monitor.open_detail().await;
+                assert_eq!(monitor.focus(), Detail);
+            } else {
+                monitor.focus_on(focus);
+            }
             render(&mut monitor, width, 30);
             let actual: Vec<_> = monitor
                 .hits
@@ -256,7 +272,7 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
         .position(|row| row.fold.is_some())
         .unwrap();
     assert_eq!(fresh.catalog.rows[fold].label, "+1 without Runs (Space)");
-    fresh.focus = Pane::Repositories;
+    fresh.focus_on(Pane::Repositories);
     assert_eq!(
         fresh.select_scope(fold),
         Action::None,
@@ -342,7 +358,7 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     let (_monitor_root, mut monitor) = tests::monitor();
     monitor.set_runs(vec![super::tests::summary("run-1", 1)]);
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     render(&mut monitor, 200, 45);
     let area = monitor.hits.tree;
     let point = (area.x + 5, area.y + 1);
@@ -356,19 +372,19 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     assert_eq!(monitor.mouse_at(click(), later(500)), Action::OpenDetail);
     monitor.open_detail().await;
     render(&mut monitor, 200, 45);
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     let sections = monitor.hits.areas[0];
     monitor.mouse(mouse(
         MouseEventKind::ScrollDown,
         sections.x + 1,
         sections.y + 1,
     ));
-    assert_eq!(monitor.detail.as_ref().unwrap().scroll[0], 3);
+    assert_eq!(monitor.detail().unwrap().scroll[0], 3);
     // The wheel over the tree scrolls it without taking focus from Detail.
     let tree = monitor.hits.tree;
     monitor.mouse(mouse(MouseEventKind::ScrollDown, tree.x + 2, tree.y + 1));
-    assert_eq!(monitor.focus, Pane::Detail);
-    assert!(monitor.detail.is_some());
+    assert_eq!(monitor.focus(), Pane::Detail);
+    assert!(monitor.detail().is_some());
     render(&mut monitor, 100, 30);
     let close = monitor
         .hits
@@ -382,8 +398,8 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
         close.x + 1,
         close.y,
     ));
-    assert!(monitor.detail.is_none());
-    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert!(monitor.detail().is_none());
+    assert_eq!(monitor.focus(), Pane::Artifacts);
     let before = monitor.target();
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.mouse(mouse(MouseEventKind::ScrollDown, area.x + 2, area.y + 2));
@@ -398,17 +414,17 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
             .is_some()
     );
     // A click on the Runs pane moves focus there; the wheel elsewhere never does.
-    monitor.focus = Pane::Runs;
+    monitor.focus_on(Pane::Runs);
     render(&mut monitor, 160, 30);
     let tree = monitor.hits.tree;
     monitor.mouse(mouse(MouseEventKind::ScrollDown, tree.x + 1, tree.y + 1));
-    assert_eq!(monitor.focus, Pane::Runs);
+    assert_eq!(monitor.focus(), Pane::Runs);
     monitor.mouse(mouse(
         MouseEventKind::Down(MouseButton::Left),
         tree.x + 2,
         tree.y + 1,
     ));
-    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert_eq!(monitor.focus(), Pane::Artifacts);
 }
 
 #[tokio::test]
@@ -527,7 +543,7 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
     monitor.refresh().await;
     monitor.open_detail().await;
     assert_eq!(
-        monitor.detail.as_ref().unwrap().detail.field("Path"),
+        monitor.detail().unwrap().detail.field("Path"),
         Some("path-0")
     );
     receipts
@@ -540,7 +556,7 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
     monitor.refresh().await;
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-0");
     assert_eq!(
-        monitor.detail.as_ref().unwrap().detail.field("Path"),
+        monitor.detail().unwrap().detail.field("Path"),
         Some("path-0")
     );
     assert_eq!(monitor.runs.len(), 101);
@@ -579,14 +595,13 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     monitor.open_detail().await;
     assert!(
         monitor
-            .detail
-            .as_ref()
+            .detail()
             .unwrap()
             .evidence
             .text
             .contains("while running")
     );
-    monitor.detail.as_mut().unwrap().scroll[1] = 7;
+    monitor.detail_mut().unwrap().scroll[1] = 7;
     request.state = crate::store::RequestState::completed(
         json!({
             "verdict":"GREEN",
@@ -603,14 +618,13 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     monitor.refresh().await;
     assert!(
         monitor
-            .detail
-            .as_ref()
+            .detail()
             .unwrap()
             .evidence
             .text
             .contains("final output")
     );
-    assert_eq!(monitor.detail.as_ref().unwrap().scroll[1], 7);
+    assert_eq!(monitor.detail().unwrap().scroll[1], 7);
 }
 
 #[tokio::test]
@@ -620,17 +634,8 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
             "monitor::redesign_tests::human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts",
         );
         crate::test_os::sign_in_as(command.as_std_mut(), "alice");
-        let output = command
-            .env("ARTIFACTIZE_HUMAN_MODAL_SEAM", "1")
-            .output()
-            .await
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        command.env("ARTIFACTIZE_HUMAN_MODAL_SEAM", "1");
+        crate::test_os::assert_self_test_success(&mut command).await;
         return;
     }
     let (view, mut requests) = super::tests::live();
@@ -654,16 +659,9 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     monitor.open_detail().await;
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
-    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
+    monitor.detail_mut().unwrap().content = Content::Review(Box::new(review));
     monitor.paste("qrg한글");
-    let draft = |monitor: &Monitor| match monitor
-        .detail
-        .as_ref()
-        .unwrap()
-        .content
-        .review()
-        .unwrap()
-        .mode()
+    let draft = |monitor: &Monitor| match monitor.detail().unwrap().content.review().unwrap().mode()
     {
         review::Mode::Form(form) => form.fields.clone(),
         _ => panic!("form"),
@@ -671,48 +669,26 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     let before = draft(&monitor);
     monitor.key(KeyEvent::from(KeyCode::BackTab));
     assert_eq!(
-        monitor
-            .detail
-            .as_ref()
-            .unwrap()
-            .content
-            .review()
-            .unwrap()
-            .area(),
+        monitor.detail().unwrap().content.review().unwrap().area(),
         review::Area::Tools
     );
     monitor.paste("must not modify hidden field");
     assert_eq!(draft(&monitor), before);
     monitor.key(KeyEvent::from(KeyCode::Tab));
     assert_eq!(
-        monitor
-            .detail
-            .as_ref()
-            .unwrap()
-            .content
-            .review()
-            .unwrap()
-            .area(),
+        monitor.detail().unwrap().content.review().unwrap().area(),
         review::Area::Fields
     );
-    render(&mut monitor, 160, 40);
-    for control in [review::Control::Green, review::Control::Red] {
-        let area = monitor
-            .hits
-            .buttons
-            .iter()
-            .find(|(_, button)| *button == input::Button::Review(control))
-            .unwrap()
-            .0;
+    for label in ["[GREEN ^G]", "[RED ^R]"] {
+        let point = rendered_point(&mut monitor, 160, 40, label);
         assert!(matches!(
             monitor.mouse(mouse(
                 MouseEventKind::Down(MouseButton::Left),
-                area.x + 1,
-                area.y
+                point.x,
+                point.y
             )),
             Action::Review(review::Action::None)
         ));
-        render(&mut monitor, 160, 40);
     }
     assert_eq!(draft(&monitor), before);
     // While a form is edited, a click on the tree cannot move focus out of Detail.
@@ -722,11 +698,11 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         tree.x + 2,
         tree.y + 1,
     ));
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     // Human keys are text here: q, ? and ! never quit, open help or move the tree.
     for key in ['q', '?', '!'] {
         monitor.key(KeyEvent::from(KeyCode::Char(key)));
-        assert_eq!(monitor.focus, Pane::Detail);
+        assert_eq!(monitor.focus(), Pane::Detail);
         assert!(!monitor.help);
     }
     let before = draft(&monitor);
@@ -734,14 +710,14 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     assert!(render_text(&mut monitor, 160, 40).contains("Ctrl-S submit"));
     // Esc first stops editing and stays in Detail; the next Esc steps back to the tree.
     monitor.key(KeyEvent::from(KeyCode::Esc));
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     assert!(
         !monitor.locked(),
         "focus may move once the form is set aside"
     );
     monitor.key(KeyEvent::from(KeyCode::Esc));
-    assert_eq!(monitor.focus, Pane::Artifacts);
-    assert!(monitor.detail.is_none());
+    assert_eq!(monitor.focus(), Pane::Artifacts);
+    assert!(monitor.detail().is_none());
     assert!(!render_text(&mut monitor, 160, 40).contains("Ctrl-S"));
     // Reopening through the same UI path restores the draft without inspecting its cache.
     assert_eq!(
@@ -757,7 +733,7 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         shown.contains("reason*: qrg") && shown.contains("q?!"),
         "{shown}"
     );
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
     assert!(draft(&monitor)[0].display().contains(" off"));
@@ -779,7 +755,7 @@ async fn human_detail(review: review::Review) -> (tempfile::TempDir, Monitor) {
             .unwrap(),
     ]);
     monitor.open_detail().await;
-    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
+    monitor.detail_mut().unwrap().content = Content::Review(Box::new(review));
     monitor.notice = None;
     (_monitor_root, monitor)
 }
@@ -841,8 +817,7 @@ async fn human_detail_keys_follow_the_shared_protocol() {
     let (_monitor_root, mut monitor) = human_detail(embedded(None, demo())).await;
     let review = |monitor: &Monitor| {
         monitor
-            .detail
-            .as_ref()
+            .detail()
             .unwrap()
             .content
             .review()
@@ -863,13 +838,11 @@ async fn human_detail_keys_follow_the_shared_protocol() {
     ));
     // Tab focuses the tools, and a click on a tool's row selects it.
     monitor.key(KeyEvent::from(KeyCode::Tab));
-    render(&mut monitor, 160, 40);
-    let (row, index) = *monitor.hits.review.tool_rows.last().unwrap();
-    assert_eq!(index, 1);
+    let point = rendered_point(&mut monitor, 160, 40, "open_release  launch");
     monitor.mouse(mouse(
         MouseEventKind::Down(MouseButton::Left),
-        row.x + 1,
-        row.y,
+        point.x,
+        point.y,
     ));
     assert!(render_text(&mut monitor, 160, 40).contains("$ show-release {artifactPath}"));
     // The wheel over the instruction scrolls it without moving focus.
@@ -879,15 +852,15 @@ async fn human_detail_keys_follow_the_shared_protocol() {
         instruction.x + 2,
         instruction.y + 1,
     ));
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     // Outside a form, q quits and Left steps back to the tree.
     assert_eq!(
         monitor.key(KeyEvent::from(KeyCode::Char('q'))),
         Action::Quit
     );
     assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
-    assert_eq!(monitor.focus, Pane::Artifacts);
-    assert!(monitor.detail.is_none());
+    assert_eq!(monitor.focus(), Pane::Artifacts);
+    assert!(monitor.detail().is_none());
 }
 
 #[tokio::test]
@@ -914,30 +887,22 @@ async fn human_detail_names_the_tools_and_a_click_on_the_selected_tool_runs_it()
     assert!(text.contains("Tools (2) · Tab "), "{text}");
     assert!(text.contains("Tab tools, Enter run"), "{text}");
     // The first click focuses the tools and selects the row; the next one runs it at once.
-    let (row, index) = *monitor.hits.review.tool_rows.last().unwrap();
-    assert_eq!(index, 1);
-    let click = |monitor: &mut Monitor, row: Rect| {
+    let click_tool = |monitor: &mut Monitor| {
+        let point = rendered_point(monitor, 160, 40, "open_release  launch");
         monitor.mouse(mouse(
             MouseEventKind::Down(MouseButton::Left),
-            row.x + 1,
-            row.y,
+            point.x,
+            point.y,
         ))
     };
     assert_eq!(
-        click(&mut monitor, row),
+        click_tool(&mut monitor),
         Action::Review(review::Action::None)
     );
     let text = render_text(&mut monitor, 160, 40);
     assert!(text.contains("↑↓ tool · Enter run · Tab fields"), "{text}");
-    let (row, _) = *monitor
-        .hits
-        .review
-        .tool_rows
-        .iter()
-        .find(|(_, index)| *index == 1)
-        .unwrap();
     assert!(matches!(
-        click(&mut monitor, row),
+        click_tool(&mut monitor),
         Action::Review(review::Action::Start(review::Job::Run { ref tool, claim: false, .. }))
             if tool == "open_release"
     ));
@@ -966,10 +931,10 @@ async fn a_review_settled_while_editing_gives_its_keys_back_to_monitor() {
         monitor.key(KeyEvent::from(KeyCode::Char('!'))),
         Action::OpenDetail
     );
-    assert!(monitor.detail.is_none());
+    assert!(monitor.detail().is_none());
     let (_monitor_root, mut monitor) = human_detail(settled_while_editing()).await;
     assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
-    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert_eq!(monitor.focus(), Pane::Artifacts);
     let (_monitor_root, mut monitor) = human_detail(settled_while_editing()).await;
     assert_eq!(
         monitor.key(KeyEvent::from(KeyCode::Char('q'))),
@@ -988,17 +953,8 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
             "monitor::redesign_tests::an_external_submission_frees_the_keys_and_focus_of_an_edited_human_detail",
         );
         crate::test_os::sign_in_as(command.as_std_mut(), "alice");
-        let output = command
-            .env("ARTIFACTIZE_EXTERNAL_SUBMISSION_SEAM", "1")
-            .output()
-            .await
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        command.env("ARTIFACTIZE_EXTERNAL_SUBMISSION_SEAM", "1");
+        crate::test_os::assert_self_test_success(&mut command).await;
         return;
     }
     let root = crate::test_os::tempdir();
@@ -1032,7 +988,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
         .unwrap();
     let mut monitor = Monitor::new(state.clone(), Some(repo.clone()));
     monitor.refresh().await;
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     render(&mut monitor, 160, 30);
     monitor.open_detail().await;
     monitor.key(KeyEvent::from(KeyCode::Char('g')));
@@ -1048,7 +1004,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
         ));
     };
     click(&mut monitor);
-    assert_eq!(monitor.focus, Pane::Detail, "an active form keeps focus");
+    assert_eq!(monitor.focus(), Pane::Detail, "an active form keeps focus");
 
     crate::human::submit(
         &receipts,
@@ -1076,11 +1032,11 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     assert!(monitor.help);
     monitor.key(KeyEvent::from(KeyCode::Char('x')));
     monitor.key(KeyEvent::from(KeyCode::Char('!')));
-    assert!(monitor.detail.is_none(), "! leaves the Detail");
-    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert!(monitor.detail().is_none(), "! leaves the Detail");
+    assert_eq!(monitor.focus(), Pane::Artifacts);
     monitor.open_detail().await;
     assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
-    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert_eq!(monitor.focus(), Pane::Artifacts);
     monitor.open_detail().await;
     assert_eq!(
         monitor.key(KeyEvent::from(KeyCode::Char('q'))),
@@ -1089,8 +1045,8 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     // A click outside leaves the settled Detail.
     render(&mut monitor, 160, 30);
     click(&mut monitor);
-    assert_eq!(monitor.focus, Pane::Artifacts);
-    assert!(monitor.detail.is_none());
+    assert_eq!(monitor.focus(), Pane::Artifacts);
+    assert!(monitor.detail().is_none());
 }
 
 #[tokio::test]
@@ -1111,13 +1067,13 @@ async fn help_and_next_attention_reach_monitor_from_idle_human_details() {
         assert!(render_text(&mut monitor, 160, 40).contains("Keys · any key closes"));
         monitor.key(KeyEvent::from(KeyCode::Char('x')));
         assert!(!monitor.help);
-        assert_eq!(monitor.focus, Pane::Detail);
+        assert_eq!(monitor.focus(), Pane::Detail);
         // ! leaves through the draft-keeping path and opens the next attention eval.
         assert_eq!(
             monitor.key(KeyEvent::from(KeyCode::Char('!'))),
             Action::OpenDetail
         );
-        assert!(monitor.detail.is_none());
+        assert!(monitor.detail().is_none());
         assert_eq!(
             monitor.target(),
             Some(Target::Eval("p2/check".parse().unwrap()))

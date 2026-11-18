@@ -200,7 +200,13 @@ pub async fn wait_observing(
         observe(&snapshot);
         return Ok(snapshot);
     }
-    let deadline = bound.map(|bound| tokio::time::Instant::now() + bound);
+    let deadline = bound
+        .map(|bound| {
+            tokio::time::Instant::now()
+                .checked_add(bound)
+                .ok_or("Run observation bound is too large.")
+        })
+        .transpose()?;
     let mut last = None;
     let mut subscription = None;
     let result = {
@@ -245,6 +251,22 @@ pub async fn wait_observing(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[tokio::test]
+    async fn an_unrepresentable_wait_bound_is_an_input_error() {
+        let scratch = crate::test_os::tempdir();
+        let context = Context::new(scratch.path(), Some(scratch.path()), Path::new("")).unwrap();
+        let error = wait(
+            &context,
+            &"run-missing".parse().unwrap(),
+            Some(Duration::MAX),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, "Run observation bound is too large.");
+    }
 
     #[test]
     fn core_durations_keep_the_existing_integer_second_wire_values() {

@@ -88,10 +88,11 @@ fn text_width(text: &str) -> u16 {
 
 impl Review {
     pub fn draw(&mut self, frame: &mut Frame) {
-        #[cfg(not(test))]
-        let now = OffsetDateTime::now_utc();
-        #[cfg(test)]
-        let now = super::tests::now();
+        self.draw_at(frame, OffsetDateTime::now_utc());
+    }
+
+    /// Draw with all request ages measured at the same frame timestamp.
+    pub(super) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime) {
         // With Detail focused the component shows the status itself.
         let status = if self.focus == Focus::List {
             self.status_line()
@@ -121,12 +122,12 @@ impl Review {
                     hits.detail = area;
                     match self.shown.record_mut() {
                         Some(record) => record.draw(frame, area, true),
-                        None => hits.review = self.draw_detail(frame, area, true),
+                        None => hits.review = self.draw_detail(frame, area, true, now),
                     }
                 }
                 _ => {
                     hits.preview = area;
-                    self.draw_preview(frame, area);
+                    self.draw_preview(frame, area, now);
                 }
             }
         }
@@ -367,13 +368,13 @@ impl Review {
     }
 
     /// The Detail Preview of the selected request, read-only.
-    fn draw_preview(&self, frame: &mut Frame, area: Rect) {
+    fn draw_preview(&self, frame: &mut Frame, area: Rect, now: OffsetDateTime) {
         match self
             .list
             .selected()
             .and_then(|index| self.listed.get(index))
         {
-            Some(view) => detail::draw_peek(frame, area, view, &self.reviewer),
+            Some(view) => detail::draw_peek(frame, area, view, &self.reviewer, now),
             None => frame.render_widget(
                 Paragraph::new("Select a request.")
                     .dark_gray()

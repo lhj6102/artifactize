@@ -1,6 +1,6 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
-import { AppStillAlive, assertAdmissionsStopped, assertAppsStopped } from "./observation.ts";
+import { assertAdmissionsStopped, assertAppsStopped } from "./observation.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
@@ -60,28 +60,7 @@ async function launchBatch(): Promise<void> {
     failures.push(configuration.preparationFailure === undefined ? error
       : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
   }
-  try {
-    if (configuration.preparationFailure !== undefined && !configuration.ownerFiles) {
-      await configuration.releasePrepared();
-    } else {
-      // No release callback or Run settlement is safe while a native owner may still use it.
-      const candidate = readCandidate();
-      let reported = false;
-      for (;;) {
-        try { assertAdmissionsStopped(candidate.root, candidate.observer, true); break; }
-        catch (error) {
-          if (!(error instanceof AppStillAlive)) throw error;
-          if (!reported) {
-            reported = true;
-            failures.push(error);
-            console.error(`${error.message}; waiting without dismantling their fixtures`);
-          }
-        }
-        await new Promise((done) => setTimeout(done, 100));
-      }
-      await configuration.releasePrepared();
-    }
-  } catch (error) { failures.push(error); }
+  try { await configuration.releasePrepared(); } catch (error) { failures.push(error); }
   if (failures.length) {
     try {
       const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "failed batches retain service diagnostics"));

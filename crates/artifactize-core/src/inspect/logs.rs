@@ -101,7 +101,7 @@ impl Default for LogQuery {
 }
 
 pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs, String> {
-    let view = store::read_request(state, id).await?;
+    let view = store::read_request_id(state, id).await?;
     // Reused/joined results point at the execution's original request, not this Run's output.
     let producer = view
         .request
@@ -115,7 +115,7 @@ pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs,
         Some(view.clone())
     } else {
         // Remote mirrors need not carry the original local request.
-        store::read_request(state, &producer).await.ok()
+        store::read_request_id(state, &producer).await.ok()
     };
     let runtime = matches!(
         view.request.result(),

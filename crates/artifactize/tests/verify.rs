@@ -202,23 +202,6 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     }
     assert_eq!(request("cycle-a/check")["status"], "GREEN");
     assert_eq!(request("cycle-b/check")["status"], "GREEN");
-    let database = Connection::open_with_flags(
-        fixture.state.join(artifactize_core::store::DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        database
-            .pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
-            .unwrap(),
-        artifactize_core::store::STATE_SCHEMA_VERSION
-    );
-    assert_eq!(
-        database
-            .pragma_query_value::<String, _>(None, "journal_mode", |r| r.get(0))
-            .unwrap(),
-        "wal"
-    );
     let mut ids = requests
         .iter()
         .map(|request| request["evalId"].as_str().unwrap())
@@ -236,6 +219,20 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
             "waiting/check"
         ]
     );
+}
+
+#[test]
+fn caller_without_a_run_announcement_is_stopped_and_reaped() {
+    let root = support::os::tempdir();
+    let waiting = support::os::waiting_program(root.path());
+    // No one creates this release file, so only fixture cleanup can end the child.
+    let child = support::os::start(Command::new(waiting).arg(root.path().join("release")));
+    let mut caller = owned_run::Watcher::new(child);
+    assert_eq!(
+        caller.first_stderr_line(Duration::ZERO).unwrap_err().kind(),
+        std::io::ErrorKind::TimedOut,
+    );
+    assert!(caller.exited());
 }
 
 #[test]

@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::{
     config::HumanToolKind,
+    store::HumanClaim,
     tools::human::{Content, ToolResult},
 };
 
@@ -262,12 +263,16 @@ fn screen(review: &mut Review) -> String {
 }
 
 pub(crate) fn sized(review: &mut Review, width: u16, height: u16) -> String {
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal.draw(|frame| review.draw(frame)).unwrap();
-    let buffer = terminal.backend().buffer();
+    let buffer = draw_buffer(review, width, height);
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());
     rows.collect::<Vec<_>>().join("\n")
+}
+
+fn draw_buffer(review: &mut Review, width: u16, height: u16) -> ratatui::buffer::Buffer {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    terminal.draw(|frame| review.draw_at(frame, now())).unwrap();
+    terminal.backend().buffer().clone()
 }
 
 /// Claim the open request through the claim job's outcome, as the driver would.
@@ -607,6 +612,15 @@ fn review_keys_need_detail_focus_and_an_owned_request() {
 }
 
 #[test]
+fn expanded_instruction_can_render_in_a_tall_terminal() {
+    let mut review = opened(Some("alice"), demo());
+    press(&mut review, KeyCode::Char('i'));
+    let shown = sized(&mut review, 60, 1_000);
+    assert!(shown.contains("Instruction · i fold"), "{shown}");
+    assert!(shown.contains("Approve the notes."), "{shown}");
+}
+
+#[test]
 fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
     let mut review = opened(Some("alice"), demo());
     let instruction = (0..30)
@@ -618,7 +632,7 @@ fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
         let mut hits = None;
         terminal
-            .draw(|frame| hits = Some(review.draw_detail(frame, frame.area(), true)))
+            .draw(|frame| hits = Some(review.draw_detail(frame, frame.area(), true, now())))
             .unwrap();
         hits.unwrap()
     };
@@ -1289,11 +1303,15 @@ fn review_uses_the_reactive_layout_of_monitor() {
     }
 }
 
-fn click(review: &mut Review, rect: ratatui::layout::Rect) -> Action {
+fn rendered_point(review: &mut Review, label: &str) -> ratatui::layout::Position {
+    crate::test_frame::point(&draw_buffer(review, 140, 40), label)
+}
+
+fn click(review: &mut Review, point: ratatui::layout::Position) -> Action {
     review.mouse(crossterm::event::MouseEvent {
         kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
-        column: rect.x + 1,
-        row: rect.y,
+        column: point.x,
+        row: point.y,
         modifiers: KeyModifiers::NONE,
     })
 }
@@ -1364,59 +1382,35 @@ fn every_focus_names_the_way_to_the_tools_and_how_to_run_one() {
 #[test]
 fn clicks_focus_select_and_run_tools_and_f2_turns_the_mouse_off() {
     let mut review = listed();
-    screen(&mut review);
     // A click selects a list row, a click on the selected row opens it.
-    let (row, index) = review.hits.rows[1];
-    assert_eq!(index, 1);
+    let row = rendered_point(&mut review, "release/signoff");
     assert_eq!(click(&mut review, row), Action::None);
     assert_eq!(review.list.selected(), Some(1));
     assert_eq!(click(&mut review, row), Action::Refresh);
     assert_eq!(review.focus(), Focus::Detail);
     assert_eq!(review.open.as_deref(), Some(ID));
     // Claimed by alice: a click on a tool focuses and selects it; a second click runs it.
-    screen(&mut review);
-    let (row, index) = *review.hits.review.tool_rows.last().unwrap();
-    assert_eq!(index, 1);
+    let row = rendered_point(&mut review, "open_release  launch");
     assert_eq!(click(&mut review, row), Action::None);
     assert_eq!((review.area(), review.tool), (Area::Tools, 1));
-    screen(&mut review);
-    let (row, _) = *review
-        .hits
-        .review
-        .tool_rows
-        .iter()
-        .find(|(_, index)| *index == 1)
-        .unwrap();
-    assert_eq!(
-        click(&mut review, row),
-        Action::Start(Job::Run {
-            id: ID.parse().unwrap(),
-            tool: "open_release".parse().unwrap(),
-            claim: false,
-        })
-    );
-    // The visible Run tool button runs the selected tool too.
-    let (button, _) = *review
-        .hits
-        .review
-        .buttons
-        .iter()
-        .find(|(_, control)| *control == Control::RunTool)
-        .unwrap();
-    assert!(matches!(
-        click(&mut review, button),
-        Action::Start(Job::Run { .. })
-    ));
-    // Close steps back to the list.
-    let close = review.hits.review.close;
+    let row = rendered_point(&mut review, "open_release  launch");
+    let run = Action::Start(Job::Run {
+        id: ID.parse().unwrap(),
+        tool: "open_release".parse().unwrap(),
+        claim: false,
+    });
+    assert_eq!(click(&mut review, row), run);
+    // The visible Run tool button runs the same tool, and Close steps back to the list.
+    let button = rendered_point(&mut review, "[Run tool ⏎]");
+    assert_eq!(click(&mut review, button), run);
+    let close = rendered_point(&mut review, "[Close]");
     assert_eq!(click(&mut review, close), Action::Refresh);
     assert_eq!(review.focus(), Focus::List);
 
     // Unclaimed: a click on the selected tool asks for the claim and starts nothing.
     let mut review = opened(None, demo());
     press(&mut review, KeyCode::Tab);
-    screen(&mut review);
-    let (row, _) = review.hits.review.tool_rows[0];
+    let row = rendered_point(&mut review, "notes_release  output");
     assert_eq!(click(&mut review, row), Action::None);
     assert!(screen(&mut review).contains("Claim this request before reviewing it."));
 
@@ -1425,7 +1419,7 @@ fn clicks_focus_select_and_run_tools_and_f2_turns_the_mouse_off() {
     assert_eq!(press(&mut review, KeyCode::F(2)), Action::Capture(false));
     let text = screen(&mut review);
     assert!(text.contains("mouse off · F2"), "{text}");
-    let (row, _) = review.hits.rows[1];
+    let row = rendered_point(&mut review, "release/signoff");
     assert_eq!(click(&mut review, row), Action::None);
     assert_eq!(review.list.selected(), Some(0));
     assert_eq!(press(&mut review, KeyCode::F(2)), Action::Capture(true));

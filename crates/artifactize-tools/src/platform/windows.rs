@@ -28,7 +28,9 @@ use windows_sys::Win32::{
 /// An extensionless program name is tried with each `PATHEXT` suffix.
 pub(crate) const USES_PATHEXT: bool = true;
 
-/// Windows has no execute bit; any regular file is a candidate.
+/// Windows has no execute bit; any regular file is a candidate. A `.bat`/`.cmd` shim (npm's
+/// `pnpm.cmd`, `codex.cmd`) runs through cmd.exe, and the standard library quotes its argument
+/// vector for cmd.exe or refuses arguments it cannot pass safely.
 pub(crate) fn is_executable(path: &Path) -> bool {
     path.metadata().is_ok_and(|metadata| metadata.is_file())
 }

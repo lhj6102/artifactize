@@ -1,7 +1,7 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { childDirectories, exists, isLink, nameOf, nativePath, newDirectory, parentOf, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
+import { childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
@@ -9,7 +9,9 @@ import { observe } from "./domain-fixtures/observe.ts";
 function fixturesRoot(): NativePath { return nativePath(readCandidate().root, "fixtures"); }
 
 export function newRoot(): NativePath {
-  return newDirectory(fixturesRoot(), "fixture-");
+  const root = newDirectory(fixturesRoot(), "fixture-");
+  makeDirectory(nativePath(root, "gated-tools"));
+  return root;
 }
 
 /** Failed acquisition has no app owner yet, so it can settle its own domain work.

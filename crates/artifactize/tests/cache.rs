@@ -243,10 +243,14 @@ impl Fixture {
                     {
                         "id":"check",
                         "title":"Review",
+                        // Live claims here end only through the tests' cancel or release
+                        // stimuli, so the eval's own deadline must not end them first on a
+                        // loaded machine (the runtime default is 30 seconds).
                         "profile":{
                             "kind":"runtime",
                             "command":support::os::steps(),
                             "args":["from", "review.txt"],
+                            "timeout_ms":600000,
                         },
                         "payload":{"instruction":"Review."},
                     },

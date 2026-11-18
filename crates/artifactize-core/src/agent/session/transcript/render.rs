@@ -171,7 +171,7 @@ pub(super) fn target(call: &ToolCall) -> String {
     let path = args
         .get("path")
         .and_then(serde_json::Value::as_str)
-        .map(header)
+        .map(|path| header(&crate::platform::path_text(std::path::Path::new(path))))
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| ".".into());
     match args.get("pattern").and_then(serde_json::Value::as_str) {

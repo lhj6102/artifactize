@@ -37,7 +37,7 @@ export async function camera(browser: WebdriverIO.Browser): Promise<string> {
     const before = shown;
     await browser.execute(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
     shown = await read();
-    return before === shown;
+    return shown !== "" && before === shown;
   }, { timeout: 15000, timeoutMsg: "the graph's camera held still" });
   return shown;
 }

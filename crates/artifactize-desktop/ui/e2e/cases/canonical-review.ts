@@ -1,16 +1,15 @@
 // The real IPC resolves both request IDs to one review and one kept draft, in either order.
 import assert from "node:assert/strict";
-import { artifactize, create, requests, verifyWaiting } from "../fixture.ts";
-import { requestState, showDebug, reviewing } from "../human-review.ts";
+import { artifactize, create, requests, savedRuns, verifyWaiting } from "../fixture.ts";
+import { reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier } from "../platform.ts";
-import { entriesFocused, mainTitle } from "../pane.ts";
-import { checkpoint, commandsRendered } from "../commands.ts";
+import { entriesFocused, expectMainReview, mainTitle, showRun } from "../pane.ts";
 
 export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
   // UX journey: J-OPEN-ID; UX edges: E-REVIEW-OPEN-ID E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL
-  scenario<{ ids: string[]; canonical: string }>(
+  scenario<{ ids: string[]; canonical: string; run: string }>(
     `canonical-review-${followerFirst ? "follower" : "original"}-first`,
     `canonical Review (${followerFirst ? "follower" : "original"} first): keeps the same draft through original/follower/original request openings`,
     async () => {
@@ -23,31 +22,21 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
       const follower = signoffs.find((request) => request.id !== original.id)!;
       const ids = followerFirst ? [follower.id, original.id] : [original.id, follower.id];
       assert.equal(artifactize(fixture, "request", "claim", original.id, "--reviewer", "alice"), 0);
-      return { fixture, args: ["review"], data: { ids, canonical: original.id } };
+      return { fixture, args: ["review"], data: { ids, canonical: original.id, run: savedRuns(fixture)[0].id } };
     },
-    async (browser, { fixture, data: { ids, canonical } }) => {
+    async (browser, { fixture, data: { ids, canonical, run } }) => {
       const human = () => browser.$('[aria-label="Human review"]');
       const field = () => browser.$("#field-comment");
       await browser.waitUntil(async () => (await mainTitle(browser)) === "Review", { timeout: 15000, timeoutMsg: "the newest waiting review open at launch" });
 
       async function open(id: string) {
-        await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the request ID dialog");
+        await showRun(browser, "repo  master", run);
+        await human().waitForDisplayed({ reverse: true });
+        await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isDisplayed(), "the request ID dialog");
         await fill(browser, '[aria-label="Request ID"]', id);
-        const before = await checkpoint(browser);
-        const lookups = before.activity.commands.requestDetail;
         await browser.$('[role="dialog"] button[type="submit"]').click();
-        // The same review may already show: only this lookup's own success, rendered, resolves it.
-        await browser.waitUntil(async () => ((await checkpoint(browser)).activity.commands.requestDetail?.completed ?? 0) === (lookups?.completed ?? 0) + 1,
-          { timeout: 15000, timeoutMsg: `the lookup of ${id} completed` });
-        assert.equal((await checkpoint(browser)).activity.commands.requestDetail?.failed ?? 0, lookups?.failed ?? 0, `the lookup of ${id} succeeded`);
-        await commandsRendered(browser, before);
-        await browser.waitUntil(
-          async () => !(await browser.$('[aria-label="Request ID"]').isExisting()) && await human().isExisting(),
-          { timeout: 15000, timeoutMsg: "the resolved review opens" },
-        );
-        await showDebug(browser);
-        await browser.waitUntil(async () => (await requestState(browser)).startsWith(`Request ${canonical} · `),
-          { timeout: 15000, timeoutMsg: `${id} resolved to the canonical review ${canonical}` });
+        await browser.$('[aria-label="Request ID"]').waitForDisplayed({ reverse: true });
+        await expectMainReview(browser, canonical);
         await browser.waitUntil(() => reviewing(browser), { timeout: 15000 });
         await human().click();
         await press(browser, ["g"], () => field().isExisting(), "the kept GREEN form");

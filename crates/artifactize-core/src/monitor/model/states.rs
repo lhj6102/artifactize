@@ -374,15 +374,12 @@ impl<'a> States<'a> {
     }
 
     fn dependencies(&self, artifact: &ArtifactName) -> Vec<&'a ArtifactName> {
-        let mut dependencies: Vec<&'a ArtifactName> = Vec::new();
-        for eval in self.evals(artifact) {
-            for &upstream in self.upstream(eval) {
-                if !dependencies.contains(&upstream) {
-                    dependencies.push(upstream);
-                }
-            }
-        }
-        dependencies
+        let mut seen = HashSet::new();
+        self.evals(artifact)
+            .iter()
+            .flat_map(|eval| self.upstream(eval).iter().copied())
+            .filter(|name| seen.insert(*name))
+            .collect()
     }
 
     /// The Artifact id as borrowed from the index, for memo keys.

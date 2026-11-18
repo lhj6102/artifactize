@@ -277,7 +277,8 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         Err(_) => Vec::new(),
     };
     for status in keys {
-        let (name, variable, source) = (status.provider.as_str(), status.variable, status.source);
+        let backend = status.provider();
+        let (name, variable, source) = (backend.as_str(), status.variable(), status.source());
         let present = source != auth::providers::KeySource::Absent;
         let key = match source {
             auth::providers::KeySource::Saved => format!(
@@ -288,7 +289,6 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 if present { "present" } else { "absent" }
             ),
         };
-        let backend = status.provider;
         match llm::test_endpoint(backend) {
             Ok(None) => report.add(
                 name,
@@ -540,20 +540,20 @@ fn sessions(state: &Path) -> (CheckStatus, String, Details) {
         usage.sessions,
         if usage.sessions == 1 { "" } else { "s" },
         mib(usage.bytes),
-        mib(bounds.max_bytes),
-        mib(bounds.target_bytes),
-        if bounds.enabled {
+        mib(bounds.max_bytes()),
+        mib(bounds.target_bytes()),
+        if bounds.enabled() {
             ""
         } else {
             " Saving is off (limits.json agentSessions.enabled)."
         }
     );
     let details = Details::Sessions {
-        enabled: bounds.enabled,
+        enabled: bounds.enabled(),
         sessions: usage.sessions,
         bytes: usage.bytes,
-        max_bytes: bounds.max_bytes,
-        target_bytes: bounds.target_bytes,
+        max_bytes: bounds.max_bytes(),
+        target_bytes: bounds.target_bytes(),
         directory: crate::agent::session::directory(state),
         state_id,
     };

@@ -60,7 +60,10 @@ pub use requests::{
     read_request_batch, read_requests, read_requests_in, read_run_requests, read_session_request,
     read_waiting, read_waiting_originals,
 };
-pub(crate) use requests::{read_request_by_session, read_requests_for_run};
+pub(crate) use requests::{
+    read_request_by_id, read_request_by_session, read_request_id, read_request_repo_by_id,
+    read_requests_for_run,
+};
 
 /// How long one database operation waits for the state other processes are writing before it
 /// fails. Several Runs, the monitor and MCP servers share one state; a Run's write waits behind

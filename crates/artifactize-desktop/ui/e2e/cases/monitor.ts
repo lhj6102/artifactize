@@ -100,22 +100,6 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
 }
 
 /** The nonblank lines of `text`, as typed or pasted on any platform. */
-const linesOf = (text: string) => text.split(/\r?\n/).filter((line) => line !== "");
-
-/** Whether `text` holds `lines` unchanged, in order, with no other line between them. */
-function holds(text: string, lines: string[]): boolean {
-  const got = linesOf(text);
-  return got.some((_, at) => lines.every((line, step) => got[at + step] === line));
-}
-
-/** Where `text` first leaves `lines`, from where their first line appears in it. */
-function difference(lines: string[], text: string): string {
-  const got = linesOf(text);
-  const start = Math.max(got.indexOf(lines[0]), 0);
-  const at = lines.findIndex((line, step) => got[start + step] !== line);
-  return `the log has ${lines.length} lines, the pasted text ${got.length}; log line ${at} ${JSON.stringify(lines[at])}, pasted ${JSON.stringify(got[start + at])}`;
-}
-
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-MAIN-RUN; UX edges: E-LAUNCH-REPO E-MON-RUNS-GRAPH
   scenario<null>(
@@ -408,39 +392,38 @@ export const scenarios: Scenario[] = [
       await browser.$(`${LOG} p.end:last-child`).scrollIntoView({ block: "nearest" });
       await browser.waitUntil(async () => (await box()).below < 24, { timeout: 15000, timeoutMsg: "the Tool log at its bottom" });
       await runNotes();
-      assert.ok((await box()).below < 24, "the Tool log follows its newest line again");
+      await browser.waitUntil(async () => (await box()).below < 24,
+        { timeout: 15000, timeoutMsg: "the Tool log follows its newest line again" });
       // Its text is ordinary selectable page text. Select it through input, then copy
       // and paste through the engine's own editing commands.
       // The tool buttons let go of the keyboard while they ran: the instruction takes it.
       await human().$('[aria-label="Instruction"]').click();
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
-      // Select All is real WebDriver keyboard input. It includes the log along with the
-      // surrounding review; the selection is only observed, never installed by page script.
-      await browser.$(LOG).scrollIntoView({ block: "nearest" });
+      // Click the start of a release-note line, then Shift+click its end. The selection
+      // belongs wholly to the Tool log, not the surrounding form.
+      const line = browser.$(`${LOG} p:nth-last-child(2)`);
+      await line.scrollIntoView({ block: "nearest" });
       await afterRender(browser);
-      const logPoint = await visibleCenter(browser, await browser.$(LOG).getElement());
-      await dispatchInput(browser, { kind: "text-click", ...logPoint });
-      await browser.keys([primaryModifier, "a"]);
-      const copied = await browser.execute(() => getSelection()?.toString() ?? "");
-      assert.ok(copied.includes("- Ready to ship."), "the selected text includes the selectable Tool log");
-      // The Tool log as it shows, line by line. Engines serialize the rest of a whole-page
-      // selection differently (WebView2 copies form field values that a selection string
-      // leaves out, and blank lines between blocks vary), so the result is checked for the
-      // log's own lines, unchanged and in order with nothing between them.
-      const shown = await browser.execute((log) => [...document.querySelectorAll(`${log} p`)].map((row) => row.textContent ?? ""), LOG);
-      // The pristine provider has no clipboard shortcuts. The evaluated device uses only
-      // the WebView's editing API; it copies our selection and pastes into the focused field.
+      const [start, end] = await browser.execute((row: HTMLElement) => {
+        const range = document.createRange();
+        range.selectNodeContents(row);
+        const { left, right, top, height } = range.getBoundingClientRect();
+        return [{ x: left + 1, y: top + height / 2 }, { x: right - 1, y: top + height / 2 }];
+      }, await line.getElement() as unknown as HTMLElement);
+      const wanted = await line.getText();
+      assert.equal(wanted, "- Ready to ship.");
+      await dispatchInput(browser, { kind: "text-click", ...start });
+      await dispatchInput(browser, { kind: "text-click", ...end, shift: true });
+      assert.equal(await browser.execute(() => getSelection()?.toString() ?? ""), wanted, "only the log line is selected");
       await nativeInput(browser, { type: "copy" });
       await browser.$("#field-comment").click();
       await nativeInput(browser, { type: "paste" });
-      let pasted = "";
-      await browser.waitUntil(async () => holds(pasted = await browser.$("#field-comment").getValue(), shown),
-        { timeout: 15000, timeoutMsg: "the copied Tool log text pasted unchanged into the result" })
-        .catch((error: Error) => { throw new Error(`${error.message}: ${pasted ? difference(shown, pasted) : "nothing pasted"}`); });
+      await browser.waitUntil(async () => await browser.$("#field-comment").getValue() === wanted,
+        { timeout: 15000, timeoutMsg: "the selected Tool log line pasted exactly into Result" });
       // A submission clears the Tool log; the completed result stays open.
       await browser.keys([primaryModifier, "s"]);
       await browser.waitUntil(() => signoff(fixture).status === "GREEN", { timeout: 15000, timeoutMsg: "GREEN saved" });
-      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: pasted });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: wanted });
       await browser.waitUntil(async () => (await toolLog()).rows.length === 0, { timeout: 15000, timeoutMsg: "the Tool log cleared by the submission" });
       await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the completed result open" });
     },

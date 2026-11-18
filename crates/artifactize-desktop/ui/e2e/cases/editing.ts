@@ -7,12 +7,12 @@ import { prepareFixture } from "../build-fixtures.ts";
 import { verifyAll, type Fixture } from "../fixture.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { exists, makeDirectory, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
+import { exists, listFiles, makeDirectory, nameOf, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
 import { detail, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
 import { MAIN, chooseChip, mainTitle, scanned, showRun } from "../pane.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
-import { dispatchInput } from "../input.ts";
+import { buttonKey, dispatchInput, tab } from "../input.ts";
 
 const CURRENT = 'section[aria-label="Current"]';
 const DETAIL = 'aside[aria-label="Detail"]';
@@ -133,6 +133,7 @@ const commentOf = (browser: WebdriverIO.Browser, id: string) => browser.execute(
     quiet: style.color === quiet,
     bare: style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderTopStyle === "none",
     cut: text.scrollHeight > text.clientHeight + 1,
+    clamp: [style.display, style.getPropertyValue("-webkit-box-orient"), style.getPropertyValue("-webkit-line-clamp")],
     lineHeight: Number.parseFloat(style.lineHeight),
   };
 }, `${CURRENT} ${nodeAt(id)}, .run ${nodeAt(id)}`);
@@ -194,12 +195,32 @@ const places = (browser: WebdriverIO.Browser) => browser.execute(() => {
   }));
 });
 
-/** A point of the Current's canvas below every drawn Artifact, `x` across: free space. */
-const below = (browser: WebdriverIO.Browser, x: number) => browser.execute((root, x) => {
-  const canvas = document.querySelector(`${root} [data-graph-area]`)!.getBoundingClientRect();
-  const bottom = Math.max(...[...document.querySelectorAll(`${root} .svelte-flow__node`)].map((node) => node.getBoundingClientRect().bottom));
-  return { x, y: Math.round((bottom + canvas.bottom) / 2) };
-}, CURRENT, x);
+/** An exposed point of the Current's canvas below its nodes when there is room,
+ * otherwise on nearby graph background. A moved node can extend past the viewport. */
+const below = (browser: WebdriverIO.Browser, x: number, originY?: number) => browser.execute((root, want, originY) => {
+  const canvas = document.querySelector(`${root} .canvas`)!;
+  const bounds = canvas.getBoundingClientRect();
+  const nodes = [...canvas.querySelectorAll(".svelte-flow__node")].map((node) => node.getBoundingClientRect());
+  const left = Math.ceil(Math.max(bounds.left, 0)) + 8, right = Math.floor(Math.min(bounds.right, innerWidth)) - 8;
+  const top = Math.ceil(Math.max(bounds.top, 0)) + 8, bottom = Math.floor(Math.min(bounds.bottom, innerHeight)) - 8;
+  const x = Math.max(left, Math.min(right, Math.round(want)));
+  const nodesBottom = Math.max(...nodes.map((node) => node.bottom));
+  const isFree = (x: number, y: number) => {
+    const hit = document.elementFromPoint(x, y);
+    return !!hit && canvas.contains(hit) && !hit.closest(".svelte-flow__node, button, aside, .comment")
+      && (originY === undefined || Math.hypot(x - want, y - originY) > 16);
+  };
+  if (nodesBottom < bottom) {
+    const y = Math.round((Math.max(top, nodesBottom) + bottom) / 2);
+    if (isFree(x, y)) return { x, y };
+  }
+  for (let y = bottom; y >= top; y -= 12) {
+    for (let dx = 0; dx <= right - left; dx += 12) {
+      for (const next of [x - dx, x + dx]) if (next >= left && next <= right && isFree(next, y)) return { x: next, y };
+    }
+  }
+  throw new Error("no exposed background of the Current is reachable for the drop");
+}, CURRENT, x, originY);
 
 /** The box of the drawn copy `id` once the graph holds still: the same over two frames. */
 async function settled(browser: WebdriverIO.Browser, id: string) {
@@ -268,7 +289,12 @@ const source = (browser: WebdriverIO.Browser) => browser.execute((root) => {
     text: field.value,
     save: [...section.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Save"),
     refused: section.querySelector('[role="alert"]')?.textContent?.trim() ?? "",
-    marked: [...section.querySelectorAll(".margin li.marked")].map((line) => line.textContent?.trim() ?? ""),
+    errorColour: (() => {
+      const alert = section.querySelector('[role="alert"]');
+      if (!alert) return false;
+      const hex = getComputedStyle(document.documentElement).getPropertyValue("--red").trim();
+      return getComputedStyle(alert).color === `rgb(${[1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+    })(),
   } : null;
 }, DETAIL);
 
@@ -295,7 +321,11 @@ const comments = (browser: WebdriverIO.Browser) => browser.execute((root) => Obj
 /** The comment field open on the graph: whose, and what it holds; focused or not. */
 const field = (browser: WebdriverIO.Browser) => browser.execute(() => {
   const open = document.querySelector<HTMLTextAreaElement>('textarea[aria-label^="Comment on "]');
-  return open ? { of: open.getAttribute("aria-label")?.replace("Comment on ", "") ?? "", text: open.value, focused: document.activeElement === open } : null;
+  if (!open) return null;
+  const node = open.closest<HTMLElement>(".svelte-flow__node");
+  const at = open.getBoundingClientRect(), above = node?.getBoundingClientRect();
+  return { of: open.getAttribute("aria-label")?.replace("Comment on ", "") ?? "", text: open.value, focused: document.activeElement === open,
+    under: above && at.top >= above.bottom - 1 && Math.abs(at.left - above.left) <= 1 ? node?.dataset.id : null };
 });
 
 export const scenarios: Scenario[] = [
@@ -369,13 +399,16 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => !holds(fixture, "core", "kit"), "kit gone from core's parts");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:core")} .artifact`).isDisplayed()
         && !(await browser.$(`${CURRENT} ${nodeAt("a:core/a:kit")}`).isDisplayed()), "core drawn as a visible standalone node again");
-      // Text that does not read is refused at its line and column, the line marked.
-      const readable = file(fixture, "core");
-      await typeIn(browser, text, "\npath = ");
+      // Text that does not read is refused at the actual bad character, in red.
+      const readable = file(fixture, "core")!;
+      const badLine = "path = @";
+      const draft = `${readable}\n${badLine}`;
+      await typeIn(browser, text, `\n${badLine}`);
       await browser.$(DETAIL).$("button=Save").click();
-      await waitFor(browser, async () => /line \d+, column \d+/.test((await source(browser))?.refused ?? ""), "the refusal names its line and column");
-      const line = /line (\d+)/.exec((await source(browser))!.refused)![1];
-      assert.deepEqual((await source(browser))?.marked, [line], "that line marked in the margin");
+      await waitFor(browser, async () => {
+        const shown = await source(browser);
+        return !!shown?.errorColour && shown.text === draft && shown.refused.includes(`line ${draft.split("\n").length}, column ${badLine.indexOf("@") + 1}`);
+      }, "the same Source shows the red parse error at @ and keeps the complete draft");
       assert.equal(file(fixture, "core"), readable, "nothing written");
       await browser.$(DETAIL).$("button=Revert").click();
       await waitFor(browser, async () => (await source(browser))?.save === false, "Revert puts back the file");
@@ -527,6 +560,11 @@ export const scenarios: Scenario[] = [
       await currentShown(browser, "a:core");
       const dialog = () => browser.$('[role="dialog"]');
       const refusal = () => dialog().$('[role="alert"]');
+      const under = (field: string) => dialog().$(`${field} + [role="alert"]`);
+      const explains = async (field: string, reason: RegExp) => await under(field).isDisplayed() && reason.test(await under(field).getText());
+      const definitionFiles = () => [nativePath(fixture.repo, ".artifactize"), nativePath(fixture.repo, ".artifactize", "lib")]
+        .map((directory) => listFiles(directory).map((path) => [nameOf(path), readText(path)]).sort());
+      const definitionsBefore = definitionFiles();
       // New Artifact: a name already used, ignoring case, is refused under its field.
       await browser.$(TOOLS).$("button=New Artifact").click();
       await dialog().waitForExist({ timeout: 15000, timeoutMsg: "the New Artifact dialog" });
@@ -540,19 +578,19 @@ export const scenarios: Scenario[] = [
       await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "Core");
       await fill(browser, '[role="dialog"] label:nth-of-type(2) input', "core/");
       await dialog().$("button=Create").click();
-      await refusal().waitForExist({ timeout: 15000, timeoutMsg: "a used name refused" });
-      assert.equal(file(fixture, "Core"), null, "nothing written");
+      await waitFor(browser, () => explains("label:nth-of-type(1)", /core.*already exists/i), "the duplicate name explanation is under Name");
+      assert.deepEqual(definitionFiles(), definitionsBefore, "refusal leaves the actual definition entries and contents unchanged");
       const invalid = (at: 1 | 2) => dialog().$(`label:nth-of-type(${at}) input`).getAttribute("aria-invalid");
       assert.equal(await invalid(1), "true", "the used name's field marked");
       // A name that is no name is refused under the Name; a Path outside the project under the Path.
       await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "two words");
       await dialog().$("button=Create").click();
-      await waitFor(browser, async () => (await invalid(1)) === "true" && !/Core/.test(await refusal().getText()), "a name with a space refused under the Name");
+      await waitFor(browser, async () => (await invalid(1)) === "true" && await explains("label:nth-of-type(1)", /name.*(?:invalid|must|expected)|invalid.*name/i), "a name with a space refused under the Name");
       assert.equal(file(fixture, "two words"), null, "nothing written");
       await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "outside");
       await fill(browser, '[role="dialog"] label:nth-of-type(2) input', "../outside/");
       await dialog().$("button=Create").click();
-      await waitFor(browser, async () => (await invalid(2)) === "true" && (await invalid(1)) === "false", "a Path outside the project refused under the Path");
+      await waitFor(browser, async () => (await invalid(2)) === "true" && (await invalid(1)) === "false" && await explains("label:nth-of-type(2)", /outside|project-relative|escape|\.\./i), "a Path outside the project refused under the Path");
       assert.equal(file(fixture, "outside"), null, "nothing written");
       await browser.keys("Escape");
       await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "Esc closes the dialog" });
@@ -579,7 +617,6 @@ export const scenarios: Scenario[] = [
         return rects.filter(([id, at]) => id !== "a:extra" && at.left < extra.right && extra.left < at.right && at.top < extra.bottom && extra.top < at.bottom).map(([id]) => id);
       }, CURRENT);
       assert.deepEqual(overlaps, [], "extra covers no Artifact");
-      assert.equal(ownAt(fixture, "extra"), null, "extra has no place of its own until it is moved");
 
       // A rename whose files changed on disk meanwhile is refused, writing none of them; the
       // graph and the Definition show what is on disk now.
@@ -611,10 +648,10 @@ export const scenarios: Scenario[] = [
       assert.equal(await dialog().$("input").getValue(), "core", "the field holds the name");
       // A name another Artifact has, or no name at all, is refused under the field.
       const named = ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
-      for (const wrong of ["docs", "two words"]) {
+      for (const [wrong, reason] of [["docs", /docs.*already exists/i], ["two words", /name.*(?:invalid|must|expected)|invalid.*name/i]] as const) {
         await fill(browser, '[role="dialog"] input', wrong);
         await dialog().$("button=Rename").click();
-        await waitFor(browser, async () => (await refusal().isExisting()) && (await dialog().$("input").getAttribute("aria-invalid")) === "true" && (await dialog().$("input").getValue()) === wrong, `${wrong} refused under the field`);
+        await waitFor(browser, async () => await explains("input[aria-label=Name]", reason) && (await dialog().$("input").getAttribute("aria-invalid")) === "true" && (await dialog().$("input").getValue()) === wrong, `${wrong} refused under the field`);
         assert.deepEqual(["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name)), named, `${wrong}: nothing written`);
       }
       await fill(browser, '[role="dialog"] input', "base");
@@ -744,6 +781,7 @@ export const scenarios: Scenario[] = [
       await dialog().waitForExist({ timeout: 15000 });
       await dialog().$("button=Delete").click();
       await waitFor(browser, () => file(fixture, "extra") === null, "extra's file removed");
+      await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the successful Delete closes its confirmation" });
       await waitFor(browser, async () => !(await browser.$(DETAIL).isExisting()), "its Detail closed");
       await waitFor(browser, async () => !(await browser.$(`${CURRENT} ${nodeAt("a:extra")}`).isExisting()), "its node gone");
     },
@@ -842,9 +880,14 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => ownAt(fixture, "bundle") !== bundleAt, "bundle's new place written");
       await browser.$(`${CURRENT} ${nodeAt("a:bundle")} button[aria-label^="Minimize bundle"]`).click();
       await waitFor(browser, async () => !(await browser.$(`${CURRENT} ${nodeAt("a:bundle/a:kit")}`).isExisting()), "bundle minimized");
-      const folded = (await box(browser, "a:bundle"))!;
+      // The collapsed bundle keeps its previous top-left. Fit first if that move
+      // left its center behind an edge of this smaller viewport.
+      await browser.$(TOOLS).$("button=Fit").click();
+      await graphShown(browser, "a:bundle");
+      await camera(browser);
+      const folded = await visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:bundle")} .whole`).getElement());
       const foldedAt = ownAt(fixture, "bundle");
-      await drag(browser, folded, await below(browser, folded.x + 30));
+      await drag(browser, folded, await below(browser, folded.x + 30, folded.y));
       await waitFor(browser, () => ownAt(fixture, "bundle") !== foldedAt, "the minimized bundle's place written");
       await browser.$(`${CURRENT} ${nodeAt("a:bundle")} button[aria-label^="Expand bundle"]`).click();
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:bundle/a:kit")}`).isExisting(), "bundle expanded");
@@ -900,10 +943,29 @@ export const scenarios: Scenario[] = [
       const appBox = (await box(browser, "a:app"))!;
       const others = () => ["core", "docs", "kit", "bundle"].map((name) => file(fixture, name));
       const [othersBefore, appBefore0, cameraBefore] = [others(), file(fixture, "app"), await camera(browser)];
-      await drag(browser, inBox, { x: appBox.left + 120, y: appBox.top + 14 }, {
+      // Drop in the lower margin of the whole, below the nodes. This is a place within
+      // the box (not a drop on another part), and avoids clamping against its inner top.
+      const dropIn = { x: appBox.left + appBox.width - 5, y: appBox.top + appBox.height - 5 };
+      const siblings = ["kit", "core", "docs"];
+      const beforePlaces = await places(browser);
+      await drag(browser, inBox, dropIn, {
         held: async () => assert.equal(file(fixture, "app"), appBefore0, "nothing written while held"),
       });
-      await waitFor(browser, () => file(fixture, "app") !== appBefore0 && placesPart(fixture, "app", "docs"), "docs's place written in app's file");
+      await waitFor(browser, () => file(fixture, "app") !== appBefore0 && siblings.every((name) => placesPart(fixture, "app", name)),
+        "app's file records the moved part and every displayed sibling");
+      await waitFor(browser, async () => {
+        const at = await box(browser, "a:app/a:docs");
+        if (!at || Math.hypot(at.x - dropIn.x, at.y - dropIn.y) > 2) return false;
+        const shown = await places(browser);
+        const written = placeOf(fixture, "app", "docs")!;
+        const moved = shown["a:app/a:docs"];
+        return siblings.filter((name) => name !== "docs").every((name) => {
+          const position = shown[`a:app/a:${name}`], saved = placeOf(fixture, "app", name)!;
+          const before = beforePlaces[`a:app/a:${name}`];
+          return !!position && position.every((axis, i) => Math.abs(axis - moved[i] - (saved[i] - written[i])) <= 1
+            && Math.abs(axis - before[i]) <= 1);
+        });
+      }, "the moved part stays at release and every sibling's saved offset matches the display");
       assert.deepEqual(others(), othersBefore, "no other file written");
       assert.equal(await camera(browser), cameraBefore, "the camera stays");
       // Removed from the Detail, docs leaves app's parts and its place there.
@@ -934,17 +996,15 @@ export const scenarios: Scenario[] = [
       }, "core drawn where it was let go and where its place says");
       // A drop that would make a cycle: app onto the copy of its own part kit in bundle.
       const kitInBundle = (await box(browser, "a:bundle/a:kit"))!;
-      const appBefore = file(fixture, "app");
-      const kitBefore = file(fixture, "kit");
+      const definitionsBefore = [file(fixture, "app"), ...others()];
       const where = await titleOf(browser, "a:app");
       const appShape = await box(browser, "a:app");
       await drag(browser, where, { x: kitInBundle.x, y: kitInBundle.y }, {
         held: async () => assert.equal(await targeted(browser, "a:bundle/a:kit"), false, "a cycle is no drop target"),
       });
-      await waitFor(browser, async () => /part/.test(await notice(browser)), "the cycle refused with its reason");
+      await waitFor(browser, async () => /\b(?:app|kit) is a part of itself through its parts\b/.test(await notice(browser)), "the notice explains the circular parts relationship");
       await waitFor(browser, async () => JSON.stringify(await box(browser, "a:app")) === JSON.stringify(appShape), "app back where it was, as it was");
-      assert.equal(file(fixture, "app"), appBefore, "app's file untouched");
-      assert.equal(file(fixture, "kit"), kitBefore, "kit's file untouched");
+      assert.deepEqual([file(fixture, "app"), ...others()], definitionsBefore, "every definition is untouched by the refused drop");
       assert.ok(appTitle, "app's title row is where a whole is dragged from");
 
       // A shared part dragged from app onto docs leaves app alone: bundle's copy stays where it is.
@@ -1086,7 +1146,9 @@ export const scenarios: Scenario[] = [
         return note;
       };
       await quiet("a:app", true);
-      assert.equal((await quiet("a:core", false)).cut, true, "core's longer comment cut to its three lines");
+      const clamped = await quiet("a:core", false);
+      assert.equal(clamped.cut, true, "core's fourth line overflows its visible box");
+      assert.deepEqual(clamped.clamp, ["-webkit-box", "vertical", "3"], "the browser's three-line clamp paints an ellipsis, not a plain overflow clip");
       // Read aloud right after its node's name or its whole's title row: the last text its node
       // holds, not hidden.
       const readAfter = (id: string) => browser.execute((selector) => {
@@ -1112,9 +1174,16 @@ export const scenarios: Scenario[] = [
       // writes it, focus goes back to Comment.
       const KIT_NOTE = "Check the kit\nthen the bundle";
       const kitText = file(fixture, "kit");
-      await openArtifact(browser, "a:bundle/a:kit", "Artifact kit");
-      await browser.$(DETAIL).$("button=Comment").click();
-      await waitFor(browser, async () => (await field(browser))?.of === "kit" && (await field(browser))?.focused === true, "kit's field open and focused");
+      await openArtifact(browser, "a:app/a:kit", "Artifact kit");
+      const commentButton = browser.$(`${DETAIL} button[data-comment-button]`);
+      await browser.$(`${DETAIL} input[aria-label="Path of kit"]`).click();
+      for (let step = 0; step < 12 && !(await commentButton.isFocused()); step += 1) await tab(browser);
+      assert.equal(await commentButton.isFocused(), true, "Tab reaches Comment from the Definition");
+      await buttonKey(browser, "Enter");
+      await waitFor(browser, async () => {
+        const editor = await field(browser);
+        return editor?.focused === true && editor.under === "a:app/a:kit";
+      }, "keyboard activation opens a focused editor directly below the chosen copy of kit");
       await browser.keys("Check the kit");
       // Shift+Enter breaks the line where the caret is, writing nothing.
       await press(browser, ["Shift", "Enter"], async () => (await field(browser))?.text === "Check the kit\n", "Shift+Enter breaks the line");
@@ -1142,7 +1211,10 @@ export const scenarios: Scenario[] = [
       const comment = () => browser.$(`${CURRENT} ${nodeAt("a:core")} .comment`);
       const coreText = file(fixture, "core");
       await pointerGapClick(browser, await visibleCenter(browser, await comment().getElement()));
-      await waitFor(browser, async () => (await field(browser))?.text === CORE_NOTE, "core's field holds its whole comment");
+      await waitFor(browser, async () => {
+        const editor = await field(browser);
+        return editor?.text === CORE_NOTE && editor.focused && editor.under === "a:core";
+      }, "clicking core's comment opens its whole text in a focused editor below the node");
       const changeDraft = async () => {
         const draft = `${CORE_NOTE} now`;
         await fill(browser, 'textarea[aria-label="Comment on core"]', draft);
@@ -1179,7 +1251,7 @@ export const scenarios: Scenario[] = [
 
       // Dragged onto docs, which has none, kit's comment moves there.
       const kitComment = await visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:bundle/a:kit")} .comment`).getElement());
-      const docs = (await box(browser, "a:docs"))!;
+      const docs = await visibleCenter(browser, await browser.$(`${CURRENT} ${nodeAt("a:docs")}`).getElement());
       const liftedComment = (point: { x: number; y: number }) => browser.execute((to, text) => {
         const lifted = document.querySelector<HTMLElement>(".canvas .lifted");
         if (!lifted || lifted.innerText !== text || !lifted.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;

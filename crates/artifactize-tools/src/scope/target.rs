@@ -173,7 +173,9 @@ impl<'de> Deserialize<'de> for Target {
                 .map(Self::Live)
                 .map_err(serde::de::Error::custom)
         } else {
-            Ok(Self::Folder(value.into()))
+            crate::files::parse_target_path(&value)
+                .map(Self::Folder)
+                .map_err(serde::de::Error::custom)
         }
     }
 }

@@ -369,12 +369,12 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.key(key(KeyCode::Enter)), Action::Refresh);
     assert_eq!(monitor.open.as_deref(), Some("run-b"));
     assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
-    assert_eq!(monitor.focus, Pane::Runs);
+    assert_eq!(monitor.focus(), Pane::Runs);
     assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Resync);
     // Esc steps back one level and never quits, even on the first level.
     for pane in [Pane::Repositories, Pane::Repositories] {
         assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
-        assert_eq!(monitor.focus, pane);
+        assert_eq!(monitor.focus(), pane);
     }
     assert_eq!(monitor.key(key(KeyCode::Char('q'))), Action::Quit);
     assert_eq!(
@@ -405,7 +405,7 @@ async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
         "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
     ]);
     monitor.open_detail().await;
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     // Tags are Technical: folded, but named, until `t` shows them.
     let text = screen(&mut monitor);
     assert!(text.contains("▸ Technical  Tags"), "{text}");
@@ -421,7 +421,7 @@ fn run_screen_renders_progress_tree_and_detail() {
     let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     let text = screen(&mut monitor);
     for expected in [
         "Run run-1",
@@ -504,7 +504,7 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
             monitor.open = Some("run-1".parse().unwrap());
             let (view, requests) = heavy();
             monitor.set_run(view, requests);
-            monitor.focus = focus;
+            monitor.focus_on(focus);
             let text = sized(&mut monitor, width, height);
             let expected = if focus == Pane::Artifacts {
                 vec![
@@ -579,7 +579,7 @@ fn more_than_three_attention_items_fold_into_more() {
     let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     let text = sized(&mut monitor, 160, 40);
     assert!(text.contains("+2 more · Enter on the Run node"), "{text}");
 }
@@ -595,7 +595,7 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
     let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.tree.select(vec![
         "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
         "e:p2/check"
@@ -620,7 +620,7 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
     assert!(text.contains("reason two mismatches …"), "{text}");
     assert!(text.contains("findings [2 items]"), "{text}");
     monitor.open_detail().await;
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     let text = sized(&mut monitor, 160, 40);
     let at = |needle: &str| {
         text.find(needle)
@@ -776,7 +776,7 @@ fn review_key_hands_off_only_waiting_human_requests() {
     assert_eq!(monitor.key(review), Action::None, "no Run is open");
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     for (path, action) in [
         (vec!["a:app", "e:app/check"], Action::OpenDetail),
         (vec!["a:app"], Action::OpenDetail),
@@ -835,7 +835,7 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     for focus in [Pane::Repositories, Pane::Runs, Pane::Artifacts] {
-        monitor.focus = focus;
+        monitor.focus_on(focus);
         for (width, height) in [(160, 30), (100, 24), (80, 24)] {
             let text = sized(&mut monitor, width, height);
             // Independent pane boundaries: long user text must not overwrite the borders
@@ -865,7 +865,7 @@ fn saved_texts_of_any_length_never_overflow_pane_widths() {
             }
         }
     }
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.tree.select(vec![
         "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
         "e:p2/check"
@@ -942,7 +942,7 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
         (Pane::Artifacts, "ERROR · [SPAWN] first diagnostic  "),
         (Pane::Artifacts, "running · runtime line break  "),
     ] {
-        monitor.focus = focus;
+        monitor.focus_on(focus);
         for (width, height) in [(160, 30), (100, 24), (80, 24)] {
             let text = sized(&mut monitor, width, height);
             if width == 160 {
@@ -951,7 +951,7 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
         }
     }
     // The Compact tree beside Detail, and Detail keeps the full text on its own lines.
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.open_detail().await;
     let text = sized(&mut monitor, 160, 30);
     assert!(text.contains("Error: [SPAWN] first diagnostic"), "{text}");
@@ -967,7 +967,7 @@ fn short_terminals_keep_every_attention_line_or_count_the_rest() {
             let (_monitor_root, mut monitor) = monitor();
             monitor.open = Some("run-1".parse().unwrap());
             monitor.set_run(view, requests);
-            monitor.focus = focus;
+            monitor.focus_on(focus);
             let text = sized(&mut monitor, 160, height);
             for expected in [
                 "! p2/check  [SPAWN] spawn failed",
@@ -989,7 +989,7 @@ fn short_terminals_keep_every_attention_line_or_count_the_rest() {
     let (_monitor_root, mut monitor) = monitor();
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     let text = sized(&mut monitor, 160, 12);
     assert!(text.contains("+3 more · Enter on the Run node"), "{text}");
     assert_eq!(text.matches("  boom").count(), 1, "{text}");

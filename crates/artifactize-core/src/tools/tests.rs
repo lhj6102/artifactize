@@ -97,12 +97,12 @@ fn owned_call(
     CancellationToken,
     impl std::future::Future<Output = ToolResult> + Send + 'static,
 ) {
-    owned_call_with_cleanup(fixture, tempfile::TempDir::close)
+    owned_call_with_cleanup(fixture, crate::platform::PrivateTempDir::close)
 }
 
 fn owned_call_with_cleanup(
     fixture: &Fixture,
-    cleanup: impl FnOnce(tempfile::TempDir) -> std::io::Result<()> + Send + 'static,
+    cleanup: impl FnOnce(crate::platform::PrivateTempDir) -> std::io::Result<()> + Send + 'static,
 ) -> (
     CancellationToken,
     impl Future<Output = ToolResult> + Send + 'static,
@@ -835,6 +835,8 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
 #[tokio::test]
 async fn dropping_call_cleans_process_before_removing_directories() {
     let fixture = Fixture::new(command());
+    crate::test_os::share_dir(&fixture.output);
+    assert!(!crate::test_os::private_dir(&fixture.output));
     let listener = crate::test_os::tcp::async_loopback_listener();
     fixture.script(&crate::test_os::tcp::tool_ready_script(
         listener.local_addr().unwrap(),
@@ -847,8 +849,9 @@ async fn dropping_call_cleans_process_before_removing_directories() {
             .try_recv()
             .expect("fixture announces the child before dropping the call");
         let gone = crate::test_os::gone(pid);
+        let private = crate::test_os::private_dir(directory.path());
         let result = directory.close();
-        let _ = send_released.send((gone, result.is_ok()));
+        let _ = send_released.send((gone, private, result.is_ok()));
         result
     });
     crate::test_os::scoped(cancellation, work, async |call| {
@@ -865,12 +868,16 @@ async fn dropping_call_cleans_process_before_removing_directories() {
         send_pid.send(pid).unwrap();
         // Dropping the caller is what is under test: abort it rather than cancel it.
         call.abort();
-        let (reaped_before_removal, removed) =
+        let (reaped_before_removal, private, removed) =
             tokio::time::timeout(std::time::Duration::from_secs(5), released)
                 .await
                 .unwrap()
                 .unwrap();
         assert!(reaped_before_removal);
+        assert!(
+            private,
+            "tool scratch must stay private inside a shared output root"
+        );
         assert!(removed);
         assert_eq!(fixture.output_entries(), [fixture.output.join("retained")]);
     })

@@ -166,15 +166,66 @@ pub enum KeySource {
     Absent,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum KeyAvailability {
+    Absent,
+    Saved,
+    Environment { saved: bool },
+}
+
 /// A built-in API-key provider's key, as Settings and `doctor` show it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct KeyStatus {
-    pub provider: Provider,
+    provider: Provider,
+    variable: &'static str,
+    availability: KeyAvailability,
+}
+
+impl KeyStatus {
+    pub fn provider(&self) -> Provider {
+        self.provider
+    }
+
     /// The environment variable read first.
-    pub variable: &'static str,
-    pub source: KeySource,
+    pub fn variable(&self) -> &'static str {
+        self.variable
+    }
+
+    pub fn source(&self) -> KeySource {
+        match self.availability {
+            KeyAvailability::Absent => KeySource::Absent,
+            KeyAvailability::Saved => KeySource::Saved,
+            KeyAvailability::Environment { .. } => KeySource::Environment,
+        }
+    }
+
     /// Whether a key is saved here, also while the variable comes first.
-    pub saved: bool,
+    pub fn saved(&self) -> bool {
+        match self.availability {
+            KeyAvailability::Absent => false,
+            KeyAvailability::Saved => true,
+            KeyAvailability::Environment { saved } => saved,
+        }
+    }
+}
+
+impl Serialize for KeyStatus {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire {
+            provider: Provider,
+            variable: &'static str,
+            source: KeySource,
+            saved: bool,
+        }
+        Wire {
+            provider: self.provider(),
+            variable: self.variable(),
+            source: self.source(),
+            saved: self.saved(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// The providers this machine has set up.
@@ -244,18 +295,17 @@ pub fn list(state: Option<&Path>, repo: Option<&Path>) -> Result<Providers, Stri
             .filter_map(|provider| {
                 let variable = key_variable(provider)?;
                 let stored = saved.keys.contains_key(&provider);
-                let source = if environment_key(provider).is_some() {
-                    KeySource::Environment
+                let availability = if environment_key(provider).is_some() {
+                    KeyAvailability::Environment { saved: stored }
                 } else if stored {
-                    KeySource::Saved
+                    KeyAvailability::Saved
                 } else {
-                    KeySource::Absent
+                    KeyAvailability::Absent
                 };
                 Some(KeyStatus {
                     provider,
                     variable,
-                    source,
-                    saved: stored,
+                    availability,
                 })
             })
             .collect(),
@@ -385,4 +435,39 @@ pub async fn remove_custom(
             .ok_or_else(|| format!("No custom provider is named {name}."))
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_availability_keeps_the_wire_fields_for_each_state() {
+        for (availability, source, saved) in [
+            (KeyAvailability::Absent, "absent", false),
+            (KeyAvailability::Saved, "saved", true),
+            (
+                KeyAvailability::Environment { saved: false },
+                "environment",
+                false,
+            ),
+            (
+                KeyAvailability::Environment { saved: true },
+                "environment",
+                true,
+            ),
+        ] {
+            let provider = Provider::Openai;
+            let variable = key_variable(provider).unwrap();
+            let key = KeyStatus {
+                provider,
+                variable,
+                availability,
+            };
+            assert_eq!(
+                serde_json::to_value(key).unwrap(),
+                serde_json::json!({"provider":"openai", "variable":variable, "source":source, "saved":saved}),
+            );
+        }
+    }
 }

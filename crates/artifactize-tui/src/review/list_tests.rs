@@ -110,7 +110,9 @@ async fn fixture() -> Fixture {
 
 fn screen(review: &mut Review) -> String {
     let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-    terminal.draw(|frame| review.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| review.draw_at(frame, super::tests::now()))
+        .unwrap();
     let buffer = terminal.backend().buffer();
     buffer
         .content()
@@ -258,14 +260,11 @@ async fn an_agent_or_settled_request_opens_a_read_only_detail_with_its_evidence(
         review.shown.request().is_none(),
         "no Human Detail, claim or form"
     );
-    // Read the session as the driver's reader job would.
+    // Drawing supplies the geometry; drive the bounded reader until it commits the window.
     screen(&mut review);
     let live = review.record_live().expect("the Agent session");
-    let mut job = live.job().expect("a reader job");
-    let window = job
-        .reader
-        .step_expanded(job.width, job.height, job.position, &job.expanded);
-    review.record_live().unwrap().finish(job, window);
+    crate::monitor::session_tests::complete(live);
+    assert!(live.window.note().is_none(), "{:?}", live.window.status);
     let shown = screen(&mut review);
     assert!(shown.contains("read-only"), "{shown}");
     assert!(shown.contains("The input looks complete."), "{shown}");

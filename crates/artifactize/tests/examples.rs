@@ -47,6 +47,7 @@ impl Session {
             .current_dir(repo)
             .args(args)
             .env("ARTIFACTIZE_STATE_HOME", self.root.path().join("state"))
+            .env("ARTIFACTIZE_REMOTE", "off")
             .env_remove("OPENAI_API_KEY")
             .env_remove("ANTHROPIC_API_KEY");
         command

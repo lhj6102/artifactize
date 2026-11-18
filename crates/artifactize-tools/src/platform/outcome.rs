@@ -14,7 +14,7 @@ pub enum ProcessEnd {
 /// The reason a process ended and the host's wording for diagnostics.
 #[derive(Debug)]
 pub struct ProcessOutcome {
-    pub end: ProcessEnd,
+    end: ProcessEnd,
     description: String,
 }
 
@@ -28,6 +28,10 @@ impl ProcessOutcome {
             },
             description: status.to_string(),
         }
+    }
+
+    pub fn end(&self) -> ProcessEnd {
+        self.end
     }
 
     pub fn code(&self) -> Option<i32> {

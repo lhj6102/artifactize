@@ -1,14 +1,15 @@
 // The upstream embedded service is the sole native app/driver lifecycle owner.
 import { remote, SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
-import { recordAdmission } from "./observation.ts";
-import { graphToolSession } from "./graph-tool-session.ts";
+import { AppStillAlive, assertAppsStopped, recordAdmission } from "./observation.ts";
+import { graphToolFailure, observeGraphTool } from "./graph-tool-session.ts";
+import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { environment, releaseFixtures } from "./fixture.ts";
+import { createdRoots, environment, releaseFixtures, settleFixtures } from "./fixture.ts";
 import {
   browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
-  assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
-  type Environment,
+  assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
+  type Environment, type NativePath,
 } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
 
@@ -20,6 +21,7 @@ if (!ids.length) throw new Error("a WDIO invocation requires an explicit scenari
 const selected = selectedScenarios(ids);
 const outputDir = makeDirectory(asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each WDIO batch writes its own logs")));
 const prepared: Prepared[] = [];
+const companions = new Map<number, { port: number; owner?: NativePath; observation?: Promise<void> }>();
 const driverClaims: (() => Promise<void>)[] = [];
 // WDIO wraps severe hook errors; retain the original for the matching runner owner.
 export let preparationFailure: unknown;
@@ -38,15 +40,41 @@ export const fixedResources = {
  * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
 export async function releasePrepared(): Promise<void> {
   const failures: unknown[] = [];
-  for (const input of prepared.splice(0)) {
-    try { await input.release?.(); } catch (error) { failures.push(error); }
+  // A missing birth record is not permission to remove that capability's inputs.
+  // It must not strand unrelated fixtures whose native owners did stop.
+  const removable = new Set(createdRoots());
+  const release = async (action: () => Promise<void>) => {
+    try { await action(); } catch (error) { failures.push(error); }
+  };
+  const uncertain: NativePath[] = [];
+  for (const [index, input] of prepared.splice(0).entries()) {
+    const companion = companions.get(index);
+    if (companion?.observation) await release(() => companion.observation!);
+    try {
+      if (ownerFiles?.[index]) assertAppsStopped(candidate.observer, [ownerFiles[index]]);
+      if (companion?.owner) {
+        const owner = companion.owner;
+        // The test build's companion has a native close watchdog if attachment failed.
+        // Do not report a routine deadline as success, or delete without the native join.
+        await observe(() => {
+          try { assertAppsStopped(candidate.observer, [owner]); return true; }
+          catch (error) { if (error instanceof AppStillAlive) return false; throw error; }
+        }, () => "native graph companion shutdown is unconfirmed after its close watchdog", 65000);
+      }
+    }
+    catch (error) {
+      failures.push(error);
+      removable.delete(input.fixture.root);
+      uncertain.push(input.fixture.root);
+      continue;
+    }
+    const before = failures.length;
+    await release(async () => { await input.release?.(); });
+    if (failures.length !== before) removable.delete(input.fixture.root);
   }
-  for (const release of driverClaims.splice(0)) {
-    try { await release(); } catch (error) { failures.push(error); }
-  }
-  try {
-    if (!failures.length) await releaseFixtures();
-  } catch (error) { failures.push(error); }
+  for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
+  await release(() => settleFixtures(uncertain));
+  await release(() => releaseFixtures([...removable]));
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
 
@@ -91,31 +119,33 @@ export const config = {
     try {
       assertHarnessPlatform();
       const native = harnessEnvironment();
+      const relaunch = variable("DESKTOP_TEST_RELAUNCH") === "1";
       for (let index = 0; index < selected.length; index++) {
         const item = selected[index];
         if (item.id === "monitor-tool-log-scroll") assertClipboardDesktop();
-        const input = variable("DESKTOP_TEST_RELAUNCH") === "1" ? prepared[index] : await item.prepare();
+        const input = relaunch ? prepared[index] : await item.prepare();
         if (!input) throw new Error("the relaunched case lost its owning fixture");
-        if (variable("DESKTOP_TEST_RELAUNCH") !== "1") prepared.push(input);
-        const context = nativePath(outputDir, `${item.id}.json`);
+        if (!relaunch) prepared.push(input);
+        const context = nativePath(input.fixture.root, "worker-context.json");
         const args = ["--state-dir", input.fixture.state, "--reviewer", "alice", ...(input.args ?? [])];
         let env: Environment = {
-          ...environment(input.fixture), ...native, ...input.env,
+          ...environment(input.fixture), ...native,
+          ARTIFACTIZE_NO_UPDATE_CHECK: input.env?.ARTIFACTIZE_RELEASES_URL ? undefined : "1", ...input.env,
           DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
           DESKTOP_TEST_RELAUNCH: variable("DESKTOP_TEST_RELAUNCH"),
         };
         if (item.id === "current-human-graph-tool") {
+          const bin = nativePath(input.fixture.root, "graph-tool-bin");
+          const app = placeApp(candidate.app, bin);
           const [endpoint] = await reserveEmbeddedPorts(1);
           driverClaims.push(async () => { await endpoint.close(); await endpoint.release(); });
-          const graph = await graphToolSession(candidate, input.fixture, env, endpoint.port, endpoint.close, () => remote({
-            hostname: "127.0.0.1", port: endpoint.port, path: "/", logLevel: "warn",
-            capabilities: { browserName: "tauri", "wdio:enforceWebDriverClassic": true }, connectionRetryCount: 0,
-          }));
-          env = graph.env;
-          input.release = graph.release;
+          await endpoint.close();
+          companions.set(index, { port: endpoint.port });
+          env = { ...commandDirectory(env, bin), ARTIFACTIZE_STATE_HOME: input.fixture.state, ARTIFACTIZE_E2E_COMPANION_EXE: app,
+            ARTIFACTIZE_E2E_COMPANION_PORT: String(endpoint.port) };
         }
         const entry = input.browser;
-        if (entry && variable("DESKTOP_TEST_RELAUNCH") !== "1") {
+        if (entry && !relaunch) {
           const browser = await browserEnvironment(input.fixture.root, env, entry);
           env = browser.env;
           // Runs after the app has ended and before the fixture is deleted.
@@ -156,10 +186,17 @@ export const config = {
       } finally {
         await Promise.all(endpoints.map((endpoint) => endpoint.close()));
       }
-      ownerFiles = recordAdmission(candidate.root, ids);
+      const hasCompanion = companions.size > 0;
+      const recorded = recordAdmission(candidate.root, hasCompanion ? [...ids, "graph-tool-companion"] : ids);
+      ownerFiles = recorded.slice(0, selected.length);
       for (const [index, capability] of capabilities.entries()) {
-        Object.assign(capability["wdio:tauriServiceOptions"]!.env as Environment,
-          { ARTIFACTIZE_E2E_OWNER_FILE: ownerFiles[index] });
+        const env = capability["wdio:tauriServiceOptions"]!.env as Environment;
+        env.ARTIFACTIZE_E2E_OWNER_FILE = ownerFiles[index];
+        const companion = companions.get(index);
+        if (companion) {
+          companion.owner = recorded[selected.length];
+          env.ARTIFACTIZE_E2E_COMPANION_OWNER = companion.owner;
+        }
       }
     } catch (cause) {
       preparationFailure = cause;
@@ -169,6 +206,23 @@ export const config = {
       failure.cause = cause;
       throw failure;
     }
+  },
+  onWorkerStart(_cid: string, capability: Capability) {
+    const index = selected.findIndex((item) => item.id === capability["artifactize:scenario"]);
+    const companion = companions.get(index);
+    if (!companion?.owner) return;
+    const { fixture } = prepared[index];
+    const { owner, port } = companion;
+    // The app is launched by the real Human tool, not by this observation session.
+    companion.observation = (async () => {
+      await observe(() => exists(owner) ? embeddedReady(port) : false,
+        () => "the product-launched graph companion did not bring up its WebDriver endpoint");
+      const window = await remote({ hostname: "127.0.0.1", port, path: "/", logLevel: "warn",
+        capabilities: { browserName: "tauri", "wdio:enforceWebDriverClassic": true },
+        connectionRetryCount: 0, connectionRetryTimeout: 5000 });
+      await observeGraphTool(fixture, window);
+    })();
+    void companion.observation.catch((error: unknown) => writeText(graphToolFailure(fixture), String(error))).catch(() => {});
   },
   beforeSession(_config: unknown, capabilities: Capability) {
     const context = capabilities["artifactize:context"];

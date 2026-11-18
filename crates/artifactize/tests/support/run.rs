@@ -100,6 +100,38 @@ impl Watcher {
         const EXIT_BOUND: Duration = Duration::from_secs(20);
         crate::support::os::wait_child_for(self, EXIT_BOUND)
     }
+    pub fn first_stderr_line(&mut self, bound: Duration) -> io::Result<String> {
+        let mut stderr = self.stderr.take().expect("piped fixture stderr");
+        let (send, receive) = std::sync::mpsc::channel();
+        let line = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let mut line = String::new();
+                // A one-byte reader cannot swallow later stderr from the caller.
+                let read = io::BufReader::with_capacity(1, &mut stderr).read_line(&mut line);
+                let _ = send.send(read.map(|_| line));
+            });
+            match receive.recv_timeout(crate::support::os::patience(bound)) {
+                Ok(line) => line,
+                Err(error) => {
+                    // The CLI's detached workers use their own stderr files. Stopping and
+                    // reaping the caller closes its pipe and lets the scoped reader join.
+                    self.stop()?;
+                    Err(match error {
+                        std::sync::mpsc::RecvTimeoutError::Timeout => io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "fixture caller did not announce its Run",
+                        ),
+                        std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                            io::Error::other("fixture stderr reader disconnected")
+                        }
+                    })
+                }
+            }
+        });
+        self.stderr = Some(stderr);
+        line
+    }
+
     pub fn wait_with_output(mut self) -> io::Result<Output> {
         // Retain the caller guard while draining both pipes, including I/O-error exits.
         fn drain(pipe: Option<impl io::Read>) -> io::Result<Vec<u8>> {
@@ -234,10 +266,12 @@ impl RunChild {
             run: None,
             announcement: String::new(),
         };
-        // A one-byte reader cannot swallow later stderr from the watcher.
-        std::io::BufReader::with_capacity(1, owned.child.stderr.as_mut().expect("piped stderr"))
-            .read_line(&mut owned.announcement)
-            .unwrap();
+        // Startup is only a fixture watchdog; a slow evaluation does not use this bound.
+        const ANNOUNCEMENT_BOUND: Duration = Duration::from_secs(30);
+        owned.announcement = owned
+            .child
+            .first_stderr_line(ANNOUNCEMENT_BOUND)
+            .expect("read the fixture caller's Run announcement");
         owned.run = owned.announcement.starts_with("Started run-").then(|| {
             owned
                 .announcement

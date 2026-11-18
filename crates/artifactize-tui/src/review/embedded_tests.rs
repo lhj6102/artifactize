@@ -2,7 +2,8 @@
 use super::*;
 use crate::project::{VerifyOptions, selection::Selection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use serde_json::json;
+use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
 
 /// Read one ordinary page of the small loopback request before deliberately rejecting
 /// publication; the fixture needs a bounded request prefix, not the whole request body.
@@ -736,7 +737,7 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 40)).unwrap();
         terminal
             .draw(|frame| {
-                review.draw_detail(frame, frame.area(), true);
+                review.draw_detail(frame, frame.area(), true, super::tests::now());
             })
             .unwrap();
         terminal
@@ -787,7 +788,7 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
     terminal
         .draw(|frame| {
-            review.draw_detail(frame, frame.area(), true);
+            review.draw_detail(frame, frame.area(), true, super::tests::now());
         })
         .unwrap();
     let text: String = terminal
@@ -848,7 +849,9 @@ additionalProperties = false
 fn drawn(review: &mut Review) -> String {
     // The resolved executable and Windows temp paths can exceed a narrow Tools pane.
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(400, 40)).unwrap();
-    terminal.draw(|frame| review.draw(frame)).unwrap();
+    terminal
+        .draw(|frame| review.draw_at(frame, super::tests::now()))
+        .unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());

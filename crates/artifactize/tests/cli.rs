@@ -229,47 +229,28 @@ async fn waiting_run(fixture: &Fixture, id: &str) -> artifactize_core::types::Re
 #[tokio::test]
 async fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     let fixture = Fixture::new();
+    owned_run::hold_signoffs(&fixture.state);
     let submitted = fixture.submit_human();
     let run = submitted.as_str();
     let waiting = waiting_run(&fixture, run).await;
     let id = waiting.as_str();
     // The live claim keeps the Run open until this fixture supplies a verdict.
     fixture.json(&["request", "claim", id], 0);
-    let context = artifactize_core::runs::Context::new(
-        &fixture.repo,
-        Some(&fixture.state),
-        &support::os::cli(),
-    )
-    .unwrap();
-    // Keep the deadline well beyond the readiness watchdog. Advance only after the
-    // waiter reports its first saved snapshot, so a slow read cannot consume the deadline.
-    const BOUND: Duration = Duration::from_secs(600);
-    const WATCHDOG: Duration = Duration::from_secs(20);
-    let (sender, first) = tokio::sync::oneshot::channel();
-    let mut sender = Some(sender);
-    let run_id = submitted.parse().unwrap();
-    let pending = artifactize_core::runs::wait_observing(
-        &context,
-        &run_id,
-        Some(BOUND),
-        tokio_util::sync::CancellationToken::new(),
-        |snapshot| {
-            if let Some(sender) = sender.take() {
-                let _ = sender.send(snapshot.state);
-            }
-        },
+    // The live claim keeps the Run open, so the product's own deadline determines the exit.
+    // Leave room for the initial SQLite read even on a loaded builder. The test asserts
+    // the outcome, not how much wall time elapsed.
+    const WAIT_MS: &str = "5000";
+    let expired = fixture
+        .command()
+        .args(["run", "show", run, "--wait", "--timeout-ms", WAIT_MS])
+        .record_output()
+        .unwrap();
+    assert_eq!(expired.status.code(), Some(3), "{expired:?}");
+    assert_eq!(parse(&expired)["status"], "WAITING_HUMAN");
+    assert_eq!(
+        String::from_utf8_lossy(&expired.stderr).trim_end(),
+        format!("Waiting timed out; Run {run} is still RUNNING."),
     );
-    tokio::pin!(pending);
-    let state = tokio::select! {
-        early = &mut pending => panic!("observer returned before controlled expiry: {early:?}"),
-        observed = tokio::time::timeout(support::os::patience(WATCHDOG), first) => observed.unwrap().unwrap(),
-    };
-    assert_eq!(state, artifactize_core::runs::State::WaitingHuman);
-    tokio::time::pause();
-    tokio::time::advance(BOUND).await;
-    let expired = pending.await.unwrap();
-    tokio::time::resume();
-    assert_eq!(expired.state, artifactize_core::runs::State::WaitingHuman);
     assert_eq!(
         fixture.json(&["run", "show", run], 0)["status"],
         "WAITING_HUMAN"
@@ -508,6 +489,20 @@ fn tools_facade_matches_the_standalone_cli() {
         assert_eq!(facade.stdout, direct.stdout, "{args:?}");
         if code != 2 {
             assert_eq!(facade.stderr, direct.stderr, "{args:?}");
+        }
+        match args.as_slice() {
+            ["read", "notes.md"] => assert_eq!(facade.stdout, b"# First\nalpha\n# Next\nomega\n"),
+            ["section", "notes.md", "First"] => assert_eq!(facade.stdout, b"# First\nalpha\n"),
+            ["list"] => assert_eq!(
+                parse(&facade)["entries"],
+                json!([{"kind":"file", "name":"notes.md", "path":"notes.md"}]),
+            ),
+            ["glob", "*.md"] => assert_eq!(parse(&facade)["files"], json!(["notes.md"])),
+            ["grep", "--case-insensitive", "ALPHA"] => assert_eq!(
+                parse(&facade)["matches"],
+                json!([{"path":"notes.md", "line":2, "text":"alpha"}]),
+            ),
+            _ => {}
         }
     }
     let help = Command::new(support::os::cli())

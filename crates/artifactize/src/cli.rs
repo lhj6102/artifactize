@@ -26,6 +26,8 @@ mod runtime;
 use runtime::cancellation_listener;
 pub use runtime::{Screens, run};
 mod secret;
+mod selection;
+use selection::SelectionArgs;
 mod status;
 mod tools;
 use tools::ToolsCommand;
@@ -45,7 +47,7 @@ use clap::{Args, Parser, Subcommand};
 
 use artifactize_core::{
     config::ProfileKind,
-    project::selection::{ProfileSelection, Selection, read_selection_file},
+    project::selection::ProfileSelection,
     types::{RequestId, RunId},
 };
 
@@ -248,67 +250,6 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
-#[group(multiple = false)]
-pub struct SelectionArgs {
-    /// Select one Artifact.
-    artifact: Option<Selector>,
-    /// Select one qualified Eval ID.
-    #[arg(long, value_name = "ID")]
-    eval: Option<artifactize_core::types::EvalId>,
-    /// Select comma-separated qualified Eval IDs.
-    #[arg(long, value_name = "CSV", value_delimiter = ',', num_args = 1)]
-    evals: Option<Vec<artifactize_core::types::EvalId>>,
-    /// Select comma-separated Artifact names.
-    #[arg(long, value_name = "CSV", value_delimiter = ',', num_args = 1)]
-    artifacts: Option<Vec<artifactize_core::types::ArtifactName>>,
-    /// Read Eval IDs from a JSON array or one ID per line.
-    #[arg(long, value_name = "PATH")]
-    evals_file: Option<PathBuf>,
-    /// Read Artifact names from a JSON array or one ID per line.
-    #[arg(long, value_name = "PATH")]
-    artifacts_file: Option<PathBuf>,
-    /// Select every Artifact.
-    #[arg(long)]
-    all: bool,
-}
-
-impl SelectionArgs {
-    fn resolve(self) -> Result<Selection, String> {
-        match (
-            self.artifact,
-            self.eval,
-            self.evals,
-            self.artifacts,
-            self.evals_file,
-            self.artifacts_file,
-            self.all,
-        ) {
-            (None, None, None, None, None, None, _) => Ok(Selection::All),
-            (Some(Selector::Artifact(artifact_id)), None, None, None, None, None, false) => {
-                Ok(Selection::Artifact { artifact_id })
-            }
-            (Some(Selector::Eval(eval_id)), None, None, None, None, None, false)
-            | (None, Some(eval_id), None, None, None, None, false) => {
-                Ok(Selection::Eval { eval_id })
-            }
-            (None, None, Some(eval_ids), None, None, None, false) => {
-                Ok(Selection::Evals { eval_ids })
-            }
-            (None, None, None, Some(artifact_ids), None, None, false) => {
-                Ok(Selection::Artifacts { artifact_ids })
-            }
-            (None, None, None, None, Some(path), None, false) => Ok(Selection::Evals {
-                eval_ids: selection_file(&path)?,
-            }),
-            (None, None, None, None, None, Some(path), false) => Ok(Selection::Artifacts {
-                artifact_ids: selection_file(&path)?,
-            }),
-            _ => unreachable!("clap makes Artifact and Eval selectors exclusive"),
-        }
-    }
-}
-
-#[derive(Debug, Args)]
 pub struct PolicyArgs {
     /// Use a declared profile variant for every included Eval.
     #[arg(long, value_name = "NAME")]
@@ -338,32 +279,6 @@ impl PolicyArgs {
 
 mod argv;
 use argv::{ParseError, parse_args};
-
-/// The positional selection intentionally accepts either an Artifact or qualified Eval.
-#[derive(Debug, Clone)]
-enum Selector {
-    Artifact(artifactize_core::types::ArtifactName),
-    Eval(artifactize_core::types::EvalId),
-}
-impl std::str::FromStr for Selector {
-    type Err = String;
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        if text.contains('/') {
-            text.parse().map(Self::Eval)
-        } else {
-            text.parse().map(Self::Artifact)
-        }
-    }
-}
-fn selection_file<T>(path: &std::path::Path) -> Result<Vec<T>, String>
-where
-    T: std::str::FromStr<Err = String>,
-{
-    read_selection_file(path)?
-        .into_iter()
-        .map(|text| text.parse::<T>())
-        .collect()
-}
 
 /// Whole seconds as a duration, read at the command line.
 fn seconds(text: &str) -> Result<std::time::Duration, String> {

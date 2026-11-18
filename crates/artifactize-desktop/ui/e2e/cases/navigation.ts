@@ -10,7 +10,7 @@ import { afterRender, fill, press } from "../keys.ts";
 import { checkpoint, refreshed } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, writeText } from "../platform.ts";
+import { nativePath, primaryModifier, readText, requestWindowClose, shortcutLabel, updateDatabase, writeText } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { aside, camera, detail, fact, graphShown, nodeAt, openArtifact, openTab, summary } from "../graph-view.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainFocused, mainTitle, openWaiting, scanned, SEARCH, showRun, waiting } from "../pane.ts";
@@ -134,12 +134,22 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data }) => {
       await graphShown(browser, "a:release");
       const run = requests(fixture)[0].runId;
+      // Overwrite an existing Run on disk without going through the app or emitting a state hint.
+      const comment = "A Run comment saved outside the window";
+      const timeline = () => browser.$(`[data-chip="${run}"] .sub`);
+      await timeline().waitForDisplayed({ timeout: 15000 });
+      assert.equal(await timeline().getText(), run, "the Run initially has no comment");
+      updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
+        assert.equal(db.prepare("UPDATE runs SET data=json_set(data,'$.comment',?) WHERE id=?").run(comment, run).changes, 1);
+      });
       // The Run shown: a refresh keeps it shown, and finds a worktree Git alone added.
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", data.worktree);
+      assert.equal(await timeline().getText(), run, "the changed Run is not yet rendered");
       let before = await checkpoint(browser);
       await press(browser, ["F5"], async () => (await checkpoint(browser)).activity.refresh?.generation === (before.activity.refresh?.generation ?? 0) + 1,
         "F5's refresh shown", { handled: true });
       await refreshed(browser, before);
+      await waitFor(browser, async () => await timeline().isDisplayed() && await timeline().getText() === comment, "the timeline renders the Run comment reloaded from disk");
       assert.ok(await branch(browser, "repo  after-refresh"), "the refresh scanned the branches again: the new worktree listed");
       assert.equal(await mainTitle(browser), run, "on the same view");
       assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
@@ -220,14 +230,21 @@ export const scenarios: Scenario[] = [
         over: (window as unknown as { overs: string[] }).overs.slice(),
         opened: !!document.querySelector('aside[aria-label="Detail"], [aria-label="Summary"], [aria-label^="Evals of "], [role="tooltip"], [role="menu"]'),
         tooltip: !!document.querySelector(selector)?.querySelector("[title]") || !!document.querySelector(selector)?.closest("[title]")
-          || !!document.querySelector("button[data-chip][title]"),
+          || !!document.querySelector("button[data-chip][title], button[data-chip] [title]"),
       }), nodeAt("a:ship"));
       const chip = await browser.$("button[data-chip]");
+      const chipId = await chip.getAttribute("data-chip");
+      assert.ok(chipId, "the timeline entry has an identity");
       await browser.action("pointer").move(await visibleCenter(browser, await chip.getElement())).perform();
-      await browser.waitUntil(async () => (await look()).over.length > 0, { timeout: 15000, timeoutMsg: "the pointer moved over a timeline entry" });
+      await browser.waitUntil(async () => (await look()).over.includes(chipId), { timeout: 15000, timeoutMsg: "the pointer moved over the named timeline entry" });
+      await afterRender(browser);
+      const overChip = await look();
+      assert.equal(overChip.opened, false, "hovering the timeline entry opens nothing");
+      assert.equal(overChip.tooltip, false, "the timeline entry has no native tooltip");
       const point = await visibleCenter(browser, await browser.$(nodeAt("a:ship")).getElement());
       await browser.action("pointer").move(point).perform();
       await browser.waitUntil(async () => (await look()).over.includes("a:ship"), { timeout: 15000, timeoutMsg: "the pointer moved over ship" });
+      await afterRender(browser);
       const hovered = await look();
       assert.equal(hovered.opened, false, "hovering opens no Detail, summary, eval list, tooltip or menu");
       assert.equal(hovered.tooltip, false, "neither the Artifact nor a timeline entry carries a tooltip");

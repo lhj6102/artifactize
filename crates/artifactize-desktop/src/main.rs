@@ -16,13 +16,17 @@ fn main() -> std::process::ExitCode {
     };
     let builder = tauri::Builder::default();
     #[cfg(feature = "e2e")]
-    let (builder, exit) = match e2e_metadata::init() {
-        Ok((metadata, exit)) => (
+    let (builder, exit, companion) = match e2e_metadata::init() {
+        Ok((metadata, exit, companion)) => (
             builder
                 .plugin(metadata)
                 .plugin(tauri_plugin_wdio::init())
-                .plugin(tauri_plugin_wdio_webdriver::init()),
+                .plugin(companion.map_or_else(
+                    tauri_plugin_wdio_webdriver::init,
+                    tauri_plugin_wdio_webdriver::init_with_port,
+                )),
             exit,
+            companion,
         ),
         Err(error) => {
             eprintln!("cannot initialize E2E observation: {error}");
@@ -34,7 +38,21 @@ fn main() -> std::process::ExitCode {
     let result = app.run(tauri::generate_context!());
     #[cfg(feature = "e2e")]
     let result = app.build(tauri::generate_context!()).map(|app| {
-        let code = app.run_return(|_, _| {});
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let watchdog = abandoned.clone();
+        let code = app.run_return(move |app, event| {
+            if companion.is_some() && matches!(event, tauri::RunEvent::Ready) {
+                e2e_metadata::arm_companion_close(app, watchdog.clone());
+            }
+        });
+        if abandoned.load(Ordering::Acquire) {
+            // If emergency cleanup fired, it is not a successful observed close.
+            std::process::exit(1);
+        }
         if code == 0 {
             if let Err(error) = exit.record() {
                 eprintln!("cannot record orderly E2E app exit: {error}");

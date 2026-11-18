@@ -79,9 +79,8 @@ pub(super) fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(),
     let mut file = tempfile::NamedTempFile::new_in(state).map_err(|error| error.to_string())?;
     serde_json::to_writer(&mut file, &pushes).map_err(|error| error.to_string())?;
     file.flush().map_err(|error| error.to_string())?;
-    file.persist(state.join(FILE))
-        .map_err(|error| error.error.to_string())?;
-    Ok(())
+    crate::platform::paths::replace_open_file(file, &state.join(FILE))
+        .map_err(|error| error.to_string())
 }
 #[cfg(test)]
 mod tests {

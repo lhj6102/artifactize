@@ -6,7 +6,6 @@ use std::{
     fs::File,
     io, mem,
     os::windows::{ffi::OsStringExt, io::AsRawHandle},
-    slice,
 };
 use windows_sys::Win32::{
     Foundation::ERROR_NO_MORE_FILES,
@@ -16,22 +15,25 @@ use windows_sys::Win32::{
     },
 };
 
-/// Batch directory records in 64 KiB without unbounded allocation; u64 storage
-/// gives the Windows record structs their required eight-byte alignment.
-const DIRECTORY_BUFFER_WORDS: usize = 8 * 1024;
+/// Batch directory records in 64 KiB without unbounded allocation.
+const DIRECTORY_PAGE_BYTES: usize = 64 * 1024;
 /// FileIdBothDirectoryInfo records start on an eight-byte boundary.
 const DIRECTORY_RECORD_ALIGNMENT: usize = 8;
+
+/// The native query requires aligned storage; decoding only uses checked byte slices.
+#[repr(align(8))]
+struct Page([u8; DIRECTORY_PAGE_BYTES]);
 
 /// The entries of a pinned directory, read from its handle rather than a path that could
 /// have been replaced by a link.
 pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry>> + '_> {
-    Ok(ReadDir::new(move |query, buffer: &mut [u64]| {
+    Ok(ReadDir::new(move |query, buffer: &mut Page| {
         query_directory(directory, query, buffer)
     }))
 }
 
 /// The native-query seam: choose restart/continuation and fill one aligned record page.
-fn query_directory(directory: &File, query: Query, buffer: &mut [u64]) -> io::Result<()> {
+fn query_directory(directory: &File, query: Query, buffer: &mut Page) -> io::Result<()> {
     let class = match query {
         Query::Restart => FileIdBothDirectoryRestartInfo,
         Query::Continue => FileIdBothDirectoryInfo,
@@ -41,8 +43,8 @@ fn query_directory(directory: &File, query: Query, buffer: &mut [u64]) -> io::Re
         GetFileInformationByHandleEx(
             directory.as_raw_handle(),
             class,
-            buffer.as_mut_ptr().cast(),
-            mem::size_of_val(buffer) as u32,
+            buffer.0.as_mut_ptr().cast(),
+            DIRECTORY_PAGE_BYTES as u32,
         )
     };
     if ok == 0 {
@@ -69,7 +71,7 @@ impl DirEntry {
 
 struct ReadDir<Q> {
     query: Q,
-    buffer: Vec<u64>,
+    buffer: Box<Page>,
     /// Byte offset of the next record in `buffer`.
     next: Option<usize>,
     scan: DirectoryScan,
@@ -77,7 +79,7 @@ struct ReadDir<Q> {
 
 impl<Q> Iterator for ReadDir<Q>
 where
-    Q: FnMut(Query, &mut [u64]) -> io::Result<()>,
+    Q: FnMut(Query, &mut Page) -> io::Result<()>,
 {
     type Item = io::Result<DirEntry>;
 
@@ -107,7 +109,7 @@ impl<Q> ReadDir<Q> {
     fn new(query: Q) -> Self {
         Self {
             query,
-            buffer: vec![0; DIRECTORY_BUFFER_WORDS],
+            buffer: Box::new(Page([0; DIRECTORY_PAGE_BYTES])),
             next: None,
             scan: DirectoryScan::First,
         }
@@ -115,55 +117,64 @@ impl<Q> ReadDir<Q> {
 
     /// Decode the record at `offset` and advance past it; `.` and `..` decode to `None`.
     fn record(&mut self, offset: usize) -> io::Result<Option<DirEntry>> {
-        let size = mem::size_of_val(self.buffer.as_slice());
-        let header = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
-        if !offset.is_multiple_of(DIRECTORY_RECORD_ALIGNMENT) || offset + header > size {
+        let Some((next, entry)) = decode_record(&self.buffer.0, offset) else {
             self.scan.finish();
             self.next = None;
             return Err(io::Error::other("malformed directory listing"));
-        }
-        // SAFETY: the record starts inside the buffer at an 8-byte boundary, which suits
-        // FILE_ID_BOTH_DIR_INFO, and its fixed fields were checked to fit.
-        let info = unsafe {
-            self.buffer
-                .as_ptr()
-                .cast::<u8>()
-                .add(offset)
-                .cast::<FILE_ID_BOTH_DIR_INFO>()
         };
-        // SAFETY: as above; these are plain integer fields.
-        let (next, attributes, tag, length) = unsafe {
-            (
-                (*info).NextEntryOffset as usize,
-                (*info).FileAttributes,
-                // With FILE_ATTRIBUTE_REPARSE_POINT, this field holds the reparse tag.
-                (*info).EaSize,
-                (*info).FileNameLength as usize,
-            )
-        };
-        if !length.is_multiple_of(WIDE_UNIT_BYTES) || offset + header + length > size {
-            self.scan.finish();
-            self.next = None;
-            return Err(io::Error::other("malformed directory listing"));
-        }
-        // SAFETY: the name's bytes were checked to lie inside the buffer, and UTF-16 units
-        // are 2-byte aligned after the 8-byte-aligned header.
-        let name = unsafe {
-            slice::from_raw_parts(
-                (&raw const (*info).FileName).cast::<u16>(),
-                length / WIDE_UNIT_BYTES,
-            )
-        };
-        self.next = (next != 0).then_some(offset + next);
-        let dot = u16::from(b'.');
-        if name == [dot] || name == [dot, dot] {
-            return Ok(None);
-        }
-        Ok(Some(DirEntry {
-            name: OsString::from_wide(name),
-            kind: kind(attributes, tag),
-        }))
+        self.next = next;
+        Ok(entry)
     }
+}
+
+fn decode_record(page: &[u8], offset: usize) -> Option<(Option<usize>, Option<DirEntry>)> {
+    if !offset.is_multiple_of(DIRECTORY_RECORD_ALIGNMENT) {
+        return None;
+    }
+    let record = page.get(offset..)?;
+    let field = |start: usize| {
+        let bytes = record.get(start..start + mem::size_of::<u32>())?;
+        Some(u32::from_le_bytes(bytes.try_into().ok()?))
+    };
+    let next = usize::try_from(field(mem::offset_of!(
+        FILE_ID_BOTH_DIR_INFO,
+        NextEntryOffset
+    ))?)
+    .ok()?;
+    let attributes = field(mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileAttributes))?;
+    // When FILE_ATTRIBUTE_REPARSE_POINT is set, EaSize carries the reparse tag.
+    let tag = field(mem::offset_of!(FILE_ID_BOTH_DIR_INFO, EaSize))?;
+    let length = usize::try_from(field(mem::offset_of!(
+        FILE_ID_BOTH_DIR_INFO,
+        FileNameLength
+    ))?)
+    .ok()?;
+    if length == 0 || !length.is_multiple_of(WIDE_UNIT_BYTES) {
+        return None;
+    }
+    let name_start = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
+    let name_end = name_start.checked_add(length)?;
+    let next = match next {
+        0 => None,
+        next if next >= name_end
+            && next < record.len()
+            && next.is_multiple_of(DIRECTORY_RECORD_ALIGNMENT) =>
+        {
+            Some(offset.checked_add(next)?)
+        }
+        _ => return None,
+    };
+    let name: Vec<_> = record
+        .get(name_start..name_end)?
+        .chunks_exact(WIDE_UNIT_BYTES)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .collect();
+    let dot = u16::from(b'.');
+    let entry = (name != [dot] && name != [dot, dot]).then(|| DirEntry {
+        name: OsString::from_wide(&name),
+        kind: kind(attributes, tag),
+    });
+    Some((next, entry))
 }
 
 // These tests exercise Windows-native directory query buffers, unavailable on other OSes.
@@ -171,7 +182,6 @@ impl<Q> ReadDir<Q> {
 mod tests {
     use super::super::open_directory;
     use super::*;
-    use std::ptr;
 
     #[test]
     fn native_directory_iteration_continues_after_a_full_record_page() {
@@ -203,37 +213,38 @@ mod tests {
     }
 
     /// Encode supplied native records, not iterator cursor/state, into a query response.
-    fn page(names: &[&str]) -> Vec<u64> {
-        let mut buffer = vec![0; DIRECTORY_BUFFER_WORDS];
+    fn page(names: &[&str]) -> Page {
+        let mut buffer = Page([0; DIRECTORY_PAGE_BYTES]);
         let header = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
         let mut offset = 0;
         for (index, name) in names.iter().enumerate() {
-            let name: Vec<_> = name.encode_utf16().collect();
-            let record_bytes = (header + mem::size_of_val(name.as_slice()))
-                .next_multiple_of(DIRECTORY_RECORD_ALIGNMENT);
-            assert!(offset + record_bytes <= mem::size_of_val(buffer.as_slice()));
-            // SAFETY: the complete native header/name fit in an eight-byte-aligned page.
-            unsafe {
-                let info = buffer
-                    .as_mut_ptr()
-                    .cast::<u8>()
-                    .add(offset)
-                    .cast::<FILE_ID_BOTH_DIR_INFO>();
-                (*info).NextEntryOffset = if index + 1 == names.len() {
-                    0
-                } else {
-                    record_bytes as u32
-                };
-                (*info).FileNameLength = mem::size_of_val(name.as_slice()) as u32;
-                ptr::copy_nonoverlapping(
-                    name.as_ptr(),
-                    (&raw mut (*info).FileName).cast::<u16>(),
-                    name.len(),
-                );
-            }
+            let name: Vec<_> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let record_bytes = (header + name.len()).next_multiple_of(DIRECTORY_RECORD_ALIGNMENT);
+            let record = &mut buffer.0[offset..offset + record_bytes];
+            let next = if index + 1 == names.len() {
+                0
+            } else {
+                record_bytes
+            };
+            write_field(
+                record,
+                mem::offset_of!(FILE_ID_BOTH_DIR_INFO, NextEntryOffset),
+                next,
+            );
+            write_field(
+                record,
+                mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileNameLength),
+                name.len(),
+            );
+            record[header..header + name.len()].copy_from_slice(&name);
             offset += record_bytes;
         }
         buffer
+    }
+
+    fn write_field(record: &mut [u8], offset: usize, value: usize) {
+        let value = u32::try_from(value).unwrap().to_le_bytes();
+        record[offset..offset + value.len()].copy_from_slice(&value);
     }
 
     #[test]
@@ -243,12 +254,12 @@ mod tests {
             (Query::Continue, Some(page(&["c"]))),
             (Query::Continue, None),
         ]);
-        let mut entries = ReadDir::new(move |query, buffer: &mut [u64]| {
+        let mut entries = ReadDir::new(move |query, buffer: &mut Page| {
             let (expected, response) = replies.pop_front().expect("query after end-of-directory");
             assert_eq!(query, expected, "native query restart/continuation request");
             match response {
                 Some(page) => {
-                    buffer.copy_from_slice(&page);
+                    buffer.0.copy_from_slice(&page.0);
                     Ok(())
                 }
                 None => Err(io::Error::from_raw_os_error(ERROR_NO_MORE_FILES as i32)),
@@ -272,7 +283,7 @@ mod tests {
 
     #[test]
     fn injected_native_query_errors_and_malformed_records_end_iteration() {
-        let mut query_error = ReadDir::new(|_, _: &mut [u64]| {
+        let mut query_error = ReadDir::new(|_, _: &mut Page| {
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "query refused",
@@ -286,16 +297,18 @@ mod tests {
         assert!(query_error.next().is_none());
 
         // Odd UTF-16 byte count and a name longer than the supplied native page.
-        for length in [3, mem::size_of::<u64>() * DIRECTORY_BUFFER_WORDS + 2] {
+        for length in [3, DIRECTORY_PAGE_BYTES + 2] {
             let mut response = page(&["a"]);
-            // SAFETY: the response contains a complete, aligned FILE_ID_BOTH_DIR_INFO header.
-            unsafe {
-                (*response.as_mut_ptr().cast::<FILE_ID_BOTH_DIR_INFO>()).FileNameLength =
-                    length as u32;
-            }
+            write_field(
+                &mut response.0,
+                mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileNameLength),
+                length,
+            );
             let mut response = Some(response);
-            let mut entries = ReadDir::new(move |_, buffer: &mut [u64]| {
-                buffer.copy_from_slice(&response.take().expect("query after malformed record"));
+            let mut entries = ReadDir::new(move |_, buffer: &mut Page| {
+                buffer
+                    .0
+                    .copy_from_slice(&response.take().expect("query after malformed record").0);
                 Ok(())
             });
             assert_eq!(
@@ -306,19 +319,20 @@ mod tests {
             assert!(entries.next().is_none());
         }
 
-        // A valid first record followed by an unaligned native offset must yield one
-        // entry, one error, then terminate without another query.
+        // An overlapping, unaligned native offset must end iteration without another query.
         let mut response = page(&["a"]);
-        // SAFETY: as above; the injected offset is data to validate, not dereferenced here.
-        unsafe {
-            (*response.as_mut_ptr().cast::<FILE_ID_BOTH_DIR_INFO>()).NextEntryOffset = 1;
-        }
+        write_field(
+            &mut response.0,
+            mem::offset_of!(FILE_ID_BOTH_DIR_INFO, NextEntryOffset),
+            1,
+        );
         let mut response = Some(response);
-        let mut entries = ReadDir::new(move |_, buffer: &mut [u64]| {
-            buffer.copy_from_slice(&response.take().expect("query after malformed offset"));
+        let mut entries = ReadDir::new(move |_, buffer: &mut Page| {
+            buffer
+                .0
+                .copy_from_slice(&response.take().expect("query after malformed offset").0);
             Ok(())
         });
-        assert_eq!(entries.next().unwrap().unwrap().file_name(), "a");
         assert_eq!(
             entries.next().unwrap().err().unwrap().to_string(),
             "malformed directory listing"

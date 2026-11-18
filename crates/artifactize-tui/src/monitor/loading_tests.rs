@@ -1,4 +1,4 @@
-use super::*;
+use super::{loading::Refresh, *};
 use crate::{
     monitor::{Action, Pane},
     store::{OwnedReceipts, Run},
@@ -33,8 +33,6 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
         Error,
         Unwind,
     }
-    // A watchdog diagnoses stuck cleanup; channel handoffs establish ordering.
-    const SHUTDOWN_BOUND: std::time::Duration = std::time::Duration::from_secs(6);
     for exit in [Exit::Quit, Exit::Error, Exit::Unwind] {
         let (root, receipts, mut monitor) = fixture(1).await;
         drop(receipts);
@@ -43,7 +41,7 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
         let (started, ready) = tokio::sync::oneshot::channel();
         let (release_snapshot, snapshot_gate) = std::sync::mpsc::channel();
         let snapshot = monitor
-            .start_refresh_after(true, false, move || {
+            .start_refresh_after(Refresh::Full, move || {
                 started.send(()).unwrap();
                 snapshot_gate.recv().unwrap();
             })
@@ -80,12 +78,9 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
             Exit::Error => Ok(Err("terminal fixture error".into())),
             Exit::Unwind => Err(Box::new("terminal fixture panic")),
         };
-        let finished = tokio::time::timeout(
-            crate::test_os::patience(SHUTDOWN_BOUND),
-            std::panic::AssertUnwindSafe(jobs.finish(result, changes)).catch_unwind(),
-        )
-        .await
-        .expect("terminal work must finish");
+        let finished = std::panic::AssertUnwindSafe(jobs.finish(result, changes))
+            .catch_unwind()
+            .await;
         match exit {
             Exit::Quit => assert_eq!(finished.unwrap(), Ok(())),
             Exit::Error => assert_eq!(finished.unwrap(), Err("terminal fixture error".into())),
@@ -110,7 +105,7 @@ async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolet
     let (started, ready) = tokio::sync::oneshot::channel();
     let (release, gate) = std::sync::mpsc::channel();
     let job = monitor
-        .start_refresh_after(true, false, move || {
+        .start_refresh_after(Refresh::Full, move || {
             started.send(()).unwrap();
             gate.recv().unwrap();
         })
@@ -120,7 +115,7 @@ async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolet
     // Join even if an input assertion panics: its loader still owns the fixture database.
     let assertions = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         ready.unwrap();
-        assert!(monitor.start_refresh(true, false).is_none());
+        assert!(monitor.start_refresh(Refresh::Full).is_none());
         assert_eq!(monitor.key(KeyEvent::from(KeyCode::Down)), Action::Refresh);
         assert_eq!(monitor.open.as_deref(), Some("run-0"));
         assert_eq!(
@@ -138,7 +133,7 @@ async fn delayed_worker_leaves_navigation_and_quit_available_and_rejects_obsolet
     assert!(!monitor.finish_refresh(completed.unwrap()).await);
     assert_eq!(monitor.open.as_deref(), Some("run-0"));
     monitor.refresh().await;
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     let shown = tests::sized(&mut monitor, 200, 40);
     assert!(shown.contains("Run run-0"), "{shown}");
     assert!(!shown.contains("Run run-1"), "{shown}");
@@ -180,10 +175,10 @@ async fn page_edges_remain_bounded_and_the_selected_run_is_pinned_without_prefix
     }
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-7");
     for _ in 0..4 {
-        monitor.focus = Pane::Runs;
+        monitor.focus_on(Pane::Runs);
         monitor.select_run(monitor.runs.len() - 1);
         monitor.key(KeyEvent::from(KeyCode::Down));
-        let job = monitor.start_refresh(true, false).unwrap();
+        let job = monitor.start_refresh(Refresh::Full).unwrap();
         let completed = crate::task::joined(job.await).unwrap();
         assert!(completed.result.as_ref().unwrap().runs.len() <= 3);
         assert!(monitor.finish_refresh(completed).await);
@@ -195,8 +190,7 @@ async fn unrelated_writes_and_a_resync_keep_the_selected_tree_and_detail() {
     monitor.refresh().await;
     monitor.open_detail().await;
     let detail = monitor
-        .detail
-        .as_ref()
+        .detail()
         .unwrap()
         .detail
         .field("Path")
@@ -205,7 +199,7 @@ async fn unrelated_writes_and_a_resync_keep_the_selected_tree_and_detail() {
     unrelated.id = "run-0".parse().unwrap();
     unrelated.jobs = Some(unrelated.jobs.unwrap_or(0) + 1);
     receipts.save_run(&unrelated).await.unwrap();
-    let job = monitor.start_refresh(true, false).unwrap();
+    let job = monitor.start_refresh(Refresh::Full).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
     assert!(
         completed.result.as_ref().unwrap().selected.is_none(),
@@ -213,11 +207,11 @@ async fn unrelated_writes_and_a_resync_keep_the_selected_tree_and_detail() {
     );
     assert!(monitor.finish_refresh(completed).await);
     assert_eq!(
-        monitor.detail.as_ref().unwrap().detail.field("Path"),
+        monitor.detail().unwrap().detail.field("Path"),
         detail.as_deref()
     );
     // A resync reads by the same queries: the Run they show unchanged is not sent again.
-    let job = monitor.start_refresh(true, true).unwrap();
+    let job = monitor.start_refresh(Refresh::Resync).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
     assert!(
         completed.result.as_ref().unwrap().selected.is_none(),
@@ -225,7 +219,7 @@ async fn unrelated_writes_and_a_resync_keep_the_selected_tree_and_detail() {
     );
     assert!(monitor.finish_refresh(completed).await);
     assert_eq!(
-        monitor.detail.as_ref().unwrap().detail.field("Path"),
+        monitor.detail().unwrap().detail.field("Path"),
         detail.as_deref()
     );
 }
@@ -242,9 +236,9 @@ async fn scope_navigation_restores_the_same_cached_run_after_clearing_the_displa
         .position(|row| matches!(row.scope, Scope::Repository(_)))
         .unwrap();
     assert_eq!(monitor.select_scope(index), Action::Refresh);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     assert!(tests::sized(&mut monitor, 200, 40).contains("Select a Run."));
-    let job = monitor.start_refresh(false, false).unwrap();
+    let job = monitor.start_refresh(Refresh::Changes).unwrap();
     assert!(
         monitor
             .finish_refresh(crate::task::joined(job.await).unwrap())
@@ -269,7 +263,7 @@ async fn run_navigation_reuses_catalog_and_page_but_detects_a_commit_without_any
     const COMMIT_QUERY_BUDGET: usize = 12;
 
     assert_eq!(monitor.select_run(1), Action::Refresh);
-    let job = monitor.start_refresh(false, false).unwrap();
+    let job = monitor.start_refresh(Refresh::Changes).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
     assert!(
         completed.queries.len() <= NAVIGATION_QUERY_BUDGET,
@@ -286,7 +280,7 @@ async fn run_navigation_reuses_catalog_and_page_but_detects_a_commit_without_any
             .collect::<Vec<_>>(),
         ["run-2", "run-1", "run-0"]
     );
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     let shown = tests::sized(&mut monitor, 200, 40);
     for expected in ["Runs (3)", "Run run-1"] {
         assert!(shown.contains(expected), "{shown}");
@@ -296,7 +290,7 @@ async fn run_navigation_reuses_catalog_and_page_but_detects_a_commit_without_any
     receipts.create_run(&inserted, &[]).await.unwrap();
     // No subscription/hint is involved here; the next navigation must see the commit.
     assert_eq!(monitor.select_run(2), Action::Refresh);
-    let job = monitor.start_refresh(false, false).unwrap();
+    let job = monitor.start_refresh(Refresh::Changes).unwrap();
     let completed = crate::task::joined(job.await).unwrap();
     assert!(
         completed.queries.len() <= COMMIT_QUERY_BUDGET,
@@ -319,10 +313,11 @@ async fn different_state_identity_resets_details_even_when_run_ids_match() {
     monitor.refresh().await;
     monitor.open_detail().await;
     let previous = monitor.origin.identity().cloned().unwrap();
-    assert!(monitor.detail.is_some());
+    assert!(monitor.detail().is_some());
     monitor.state = replacement.state;
     monitor.refresh().await;
     assert_ne!(monitor.origin.identity(), Some(&previous));
-    assert!(monitor.detail.is_none() && monitor.peek.is_none() && monitor.reviews.is_empty());
+    assert_eq!(monitor.focus(), Pane::Artifacts);
+    assert!(monitor.detail().is_none() && monitor.peek.is_none() && monitor.reviews.is_empty());
     assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
 }

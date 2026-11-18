@@ -1,7 +1,7 @@
 // One WebDriver page-input adapter for standard events omitted by the pristine provider.
 // This delivers only input to actual UI targets: no app handlers, commands or state access.
 // The provider's special keys carry no modifier: Shift+Enter arrives as a plain Enter.
-type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number }
+type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number; shift?: true }
   | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number };
 
 /** WebDriver Element Click's option path targets its containing select. The
@@ -13,9 +13,15 @@ export async function clickOption(browser: WebdriverIO.Browser, target: Webdrive
     const select = option.closest("select");
     if (!select || select.multiple) throw new Error("option-click requires a single-choice select");
     const { left, top, right, bottom } = select.getBoundingClientRect();
+    const x0 = Math.max(left, 0), x1 = Math.min(right, innerWidth);
+    const y0 = Math.max(top, 0), y1 = Math.min(bottom, innerHeight);
+    const clientX = (x0 + x1) / 2, clientY = (y0 + y1) / 2;
+    const hit = document.elementFromPoint(clientX, clientY);
+    if (x0 >= x1 || y0 >= y1 || !hit || !select.contains(hit) || getComputedStyle(select).visibility !== "visible") {
+      throw new Error("the option's select is outside the viewport or obscured");
+    }
     const common = {
-      view: window, clientX: (Math.max(left, 0) + Math.min(right, innerWidth)) / 2,
-      clientY: (Math.max(top, 0) + Math.min(bottom, innerHeight)) / 2,
+      view: window, clientX, clientY,
       button: 0, bubbles: true, cancelable: true, composed: true,
     };
     const mouse = (type: string, buttons: number, detail: number) =>
@@ -35,6 +41,18 @@ export async function clickOption(browser: WebdriverIO.Browser, target: Webdrive
       ...common, detail: 1, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1,
     }));
   }, target as unknown as HTMLOptionElement);
+}
+
+/** Probe only the app's shortcut guard while the native IME is composing. */
+export async function compositionKey(browser: WebdriverIO.Browser, key: "m" | "Escape", context: string,
+  isComposing: boolean, keyCode: number): Promise<void> {
+  await browser.execute(({ key, context, isComposing, keyCode }) => {
+    const target = document.activeElement;
+    if (!target?.closest(context)) throw new Error(`composition shortcut lost focus in ${context}`);
+    target.dispatchEvent(new KeyboardEvent("keydown", {
+      key, code: key === "m" ? "KeyM" : "Escape", bubbles: true, cancelable: true, composed: true, isComposing, keyCode,
+    }));
+  }, { key, context, isComposing, keyCode });
 }
 
 /** Supply only Tab's omitted browser default, after the page has had its keydown. */
@@ -98,7 +116,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
     } else {
       const target = document.elementFromPoint(input.x, input.y);
       if (!target) throw new Error("the pointer's page position has no hit target");
-      const common = { view: window, clientX: input.x, clientY: input.y, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
+      const common = { view: window, clientX: input.x, clientY: input.y, shiftKey: "shift" in input && input.shift === true, button: 0, detail: 1, bubbles: true, cancelable: true, composed: true };
       const pointer = { ...common, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1 };
       // A cancelled pointerdown suppresses the gesture's compatibility mouse events until its
       // pointerup, as the engine does for a real primary pointer; its click still follows.
@@ -147,7 +165,8 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
             // Focus can scroll its container. Capture the clicked caret before that
             // native focus step, rather than hit-testing the old point after a scroll.
             target.closest<HTMLElement>("[tabindex], button, a[href]")?.focus();
-            selection.collapse(node, offset);
+            if (common.shiftKey && selection.anchorNode) selection.extend(node, offset);
+            else selection.collapse(node, offset);
           }
         }
       }

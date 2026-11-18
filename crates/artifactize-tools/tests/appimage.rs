@@ -100,10 +100,8 @@ fn without_an_appimage_a_started_program_gets_the_environment_unchanged() {
     let fixture = Fixture::new();
     let root = fixture.root.path();
     let bundled = os::appimage_bundled(&fixture.bundle, &os::appimage_person(root));
-    // The same environment without APPDIR, as when nothing exported it.
-    let mut unnamed = bundled.clone();
-    unnamed.remove("APPDIR");
+    let unnamed = os::appimage_without_bundle_marker(bundled.clone());
     assert_eq!(opened_with(root, &fixture.inside, test, &unnamed), unnamed);
-    // An APPDIR this program is not inside, as in a terminal started from another AppImage.
+    // The program is outside the bundle, as in a terminal started from another AppImage.
     assert_eq!(opened_with(root, &fixture.outside, test, &bundled), bundled);
 }

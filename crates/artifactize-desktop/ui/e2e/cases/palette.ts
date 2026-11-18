@@ -3,16 +3,17 @@
 // follower included) and after a search of the Pane.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
-import { verifyWaiting, addRepository, create, requests, signoff } from "../fixture.ts";
-import { fill, press, typeText } from "../keys.ts";
+import { verifyWaiting, addRepository, create, requests, signOff, signoff } from "../fixture.ts";
+import { afterRender, fill, press, typeText } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, shortcutLabel } from "../platform.ts";
 import { reviewing } from "../human-review.ts";
 import { detail, graphShown } from "../graph-view.ts";
-import { pointerGapClick } from "../pointer.ts";
-import { entriesFocused, expectMainReview, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
+import { dispatchInput } from "../input.ts";
+import { pointerGapClick, visibleCenter } from "../pointer.ts";
+import { chooseChip, entriesFocused, expectMainReview, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -143,7 +144,7 @@ export const scenarios: Scenario[] = [
     "palette-filter",
     "lists the enabled commands of the shown Run and filters them by what is typed",
     async () => preparePalette(),
-    async (browser) => {
+    async (browser, { fixture, data: { originalId } }) => {
       const { ctrlK, escape } = palette(browser);
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       await graphShown(browser, "a:release");
@@ -172,6 +173,36 @@ export const scenarios: Scenario[] = [
       assert.deepEqual([...groups[1].commands].sort(), [["Find", shortcutLabel("Ctrl+F")], ["Fit", ""], ["Open the Run's Detail", ""]].sort(), "the graph's commands, Find with its key");
       await typeText(browser, "Show Set");
       await waitFor(browser, async () => JSON.stringify(await listed()) === JSON.stringify(["Show Settings"]), "only the matching command remains");
+      await escape("Esc");
+
+      // The in-progress Run stands in for Current until its shared sign-off is submitted.
+      signOff(fixture, originalId);
+      await chooseChip(browser, "repo  master", "current");
+      await graphShown(browser, "a:release");
+      const currentCommands = [["Find", shortcutLabel("Ctrl+F")], ["Fit", ""], ["New Artifact", ""]];
+      const checkCurrent = async (placed: boolean) => {
+        await ctrlK("a Current");
+        await waitFor(browser, async () => isDeepStrictEqual(await rendered(browser), [
+          { group: "App", commands: APP() },
+          { group: "Graph", commands: placed ? [...currentCommands, ["Reset layout", ""]] : currentCommands },
+        ]), `the Current palette shows the available commands and keys (hand-placed: ${placed})`);
+      };
+      await checkCurrent(false);
+      await escape("Esc");
+      const node = await browser.$('section[aria-label="Current"] .svelte-flow__node[data-id="a:release"] .artifact').getElement();
+      const from = await visibleCenter(browser, node);
+      const to = { x: from.x, y: from.y + 80 };
+      await dispatchInput(browser, { kind: "pointer", phase: "down", ...from });
+      await dispatchInput(browser, { kind: "pointer", phase: "move", x: from.x, y: from.y + 40 });
+      await dispatchInput(browser, { kind: "pointer", phase: "move", ...to });
+      await afterRender(browser);
+      await dispatchInput(browser, { kind: "pointer", phase: "up", ...to });
+      const reset = () => browser.$('[aria-label="Graph tools"]').$("button=Reset layout");
+      await reset().waitForDisplayed({ timeout: 15000 });
+      await checkCurrent(true);
+      await palette(browser).run("Reset layout");
+      await reset().waitForDisplayed({ reverse: true, timeout: 15000 });
+      await checkCurrent(false);
       await escape("Esc");
     },
   ),

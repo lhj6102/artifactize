@@ -70,18 +70,45 @@ impl Default for Limits {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessions {
-    pub enabled: bool,
-    pub max_bytes: u64,
-    pub target_bytes: u64,
+    enabled: bool,
+    max_bytes: u64,
+    target_bytes: u64,
+}
+
+impl AgentSessions {
+    pub fn new(enabled: bool, max_bytes: u64, target_bytes: u64) -> Result<Self, String> {
+        if max_bytes == 0 {
+            return Err("agentSessions.maxBytes must be at least 1.".into());
+        }
+        if target_bytes >= max_bytes {
+            return Err(format!(
+                "agentSessions.targetBytes ({target_bytes}) must be lower than maxBytes ({max_bytes})."
+            ));
+        }
+        Ok(Self {
+            enabled,
+            max_bytes,
+            target_bytes,
+        })
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn max_bytes(&self) -> u64 {
+        self.max_bytes
+    }
+
+    pub fn target_bytes(&self) -> u64 {
+        self.target_bytes
+    }
 }
 
 impl Default for AgentSessions {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            max_bytes: SESSIONS_MAX_BYTES,
-            target_bytes: SESSIONS_TARGET_BYTES,
-        }
+        Self::new(true, SESSIONS_MAX_BYTES, SESSIONS_TARGET_BYTES)
+            .expect("valid default session bounds")
     }
 }
 
@@ -186,24 +213,18 @@ impl DeclaredSessions {
             .value()
             .copied()
             .unwrap_or(SESSIONS_MAX_BYTES);
-        if max_bytes == 0 {
-            return Err("agentSessions.maxBytes must be at least 1.".into());
-        }
-        let target_bytes = match self.target_bytes.value().copied() {
-            Some(target) if target >= max_bytes => {
-                return Err(format!(
-                    "agentSessions.targetBytes ({target}) must be lower than maxBytes ({max_bytes})."
-                ));
+        let target_bytes = self.target_bytes.value().copied().unwrap_or_else(|| {
+            if SESSIONS_TARGET_BYTES < max_bytes {
+                SESSIONS_TARGET_BYTES
+            } else {
+                max_bytes / SESSION_TARGET_DENOMINATOR * SESSION_TARGET_NUMERATOR
             }
-            Some(target) => target,
-            None if SESSIONS_TARGET_BYTES < max_bytes => SESSIONS_TARGET_BYTES,
-            None => max_bytes / SESSION_TARGET_DENOMINATOR * SESSION_TARGET_NUMERATOR,
-        };
-        Ok(AgentSessions {
-            enabled: self.enabled.value().copied().unwrap_or(true),
+        });
+        AgentSessions::new(
+            self.enabled.value().copied().unwrap_or(true),
             max_bytes,
             target_bytes,
-        })
+        )
     }
 }
 

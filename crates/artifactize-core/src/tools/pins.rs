@@ -107,13 +107,16 @@ fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
 
 type EntryDigest = (String, u8, crate::types::Sha256Bytes);
 
+// The NUL separates the path from the digest bytes; existing pins depend on this format.
+const DIGEST_PATH_SEPARATOR: [u8; 1] = [0];
+
 fn directory_digest(mut entries: Vec<EntryDigest>) -> crate::types::Sha256Digest {
     entries.sort();
     let mut digest = Sha256::new();
     for (relative, kind, entry) in entries {
         digest.update([kind]);
         digest.update(relative.as_bytes());
-        digest.update([0]);
+        digest.update(DIGEST_PATH_SEPARATOR);
         digest.update(entry.as_bytes());
     }
     hex(&digest.finalize())

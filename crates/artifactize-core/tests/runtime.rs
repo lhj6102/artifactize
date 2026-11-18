@@ -519,12 +519,30 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
     let command = scratch.command(&support::os::steps(), GRANDCHILD, Some(1000));
     let marker = scratch.workspace().join("grandchild");
+    let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
-    let work = runtime::execute(command, cancellation.clone(), |_| async { Ok(()) });
+    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+        let _ = registered.send(support::os::OwnedProcess {
+            pid: child.pid.get(),
+            birth: child.start_time,
+        });
+        Ok(())
+    });
     support::os::scoped(cancellation, work, async |running| {
-        let pid = grandchild(&marker, running).await;
+        let descendant = support::os::MarkedChild::new(&marker);
+        wait_for(|| !child.is_empty() || running.is_finished()).await;
+        let _leader = child.await.unwrap();
+        wait_for(|| descendant.pid().is_some() || running.is_finished()).await;
+        let pid = descendant
+            .pid()
+            .expect("the blocking grandchild recorded its PID");
         tokio::time::advance(Duration::from_millis(1000)).await;
-        let outcome = running.await.unwrap();
+        // The deadline has elapsed; allow termination grace and reaping to use real time.
+        tokio::time::resume();
+        let outcome = timeout(support::os::patience(TEST_TIMEOUT), &mut *running)
+            .await
+            .expect("the runtime settled after the deadline")
+            .unwrap();
         assert!(
             matches!(
                 outcome,
@@ -540,26 +558,6 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
 fn reported_pid(marker: &Path) -> Option<u32> {
     let written = std::fs::read_to_string(marker).ok()?;
     written.strip_suffix('\n')?.trim().parse().ok()
-}
-
-/// The PID the lingering grandchild wrote to `marker`, once it has. The test yields rather
-/// than sleeps while it waits, so that a paused clock stands still.
-async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -> u32 {
-    let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
-    loop {
-        if let Some(pid) = reported_pid(marker) {
-            return pid;
-        }
-        assert!(
-            !running.is_finished(),
-            "execution ended before its grandchild started"
-        );
-        assert!(
-            std::time::Instant::now() < failure_deadline,
-            "the grandchild did not start"
-        );
-        tokio::task::yield_now().await;
-    }
 }
 
 #[tokio::test]

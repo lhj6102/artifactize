@@ -126,8 +126,8 @@ mod tests {
     fn wsl_explorer_status_counts_as_opened_only_on_wsl() {
         assert!(opened(&exited(0), false));
         assert!(opened(&exited(0), true));
-        assert!(opened(&exited(WSL_EXPLORER_STATUS), true));
-        assert!(!opened(&exited(WSL_EXPLORER_STATUS), false));
+        assert!(opened(&exited(4), true));
+        assert!(!opened(&exited(4), false));
         for code in [1, 2, 3] {
             assert!(!opened(&exited(code), true));
         }

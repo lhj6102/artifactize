@@ -768,7 +768,7 @@ fn wide(monitor: &mut Monitor) {
     let (run, requests) = saved(definitions, true, requests);
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(run, requests);
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
 }
 
 #[test]

@@ -176,17 +176,17 @@ impl<'de> Deserialize<'de> for ToolResult {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct WireResult {
-    content: Vec<WireContent>,
+    content: Vec<WireContent<WireImage>>,
     #[serde(default)]
     is_error: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
-enum WireContent {
+enum WireContent<I> {
     Text { text: String },
     Json { data: Value },
-    Image(WireImage),
+    Image(I),
 }
 
 /// An image block carries its bytes inline or names a file in the output directory, never
@@ -218,6 +218,15 @@ struct ImageFile {
 pub struct InvalidOutput;
 
 pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutput> {
+    let wire = parse_wire(stdout)?;
+    let blocks = wire
+        .content
+        .into_iter()
+        .map(|block| load(block, output_dir));
+    normalize(blocks, wire.is_error)
+}
+
+fn parse_wire(stdout: &[u8]) -> Result<WireResult, InvalidOutput> {
     let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| InvalidOutput)?;
     if !(1..=MAX_CONTENT_BLOCKS).contains(&wire.content.len())
         || wire.is_error
@@ -228,22 +237,52 @@ pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutp
     {
         return Err(InvalidOutput);
     }
-    let mut content = Vec::with_capacity(wire.content.len());
+    Ok(wire)
+}
+
+enum LoadedImage {
+    Data(InlineImage),
+    FileBytes {
+        mime_type: image::Mime,
+        bytes: Vec<u8>,
+    },
+}
+
+fn load(
+    block: WireContent<WireImage>,
+    output_dir: &Path,
+) -> Result<WireContent<LoadedImage>, InvalidOutput> {
+    Ok(match block {
+        WireContent::Text { text } => WireContent::Text { text },
+        WireContent::Json { data } => WireContent::Json { data },
+        WireContent::Image(WireImage::Data(data)) => WireContent::Image(LoadedImage::Data(data)),
+        WireContent::Image(WireImage::Path(ImageFile { mime_type, path })) => {
+            let bytes = image::read_output(output_dir, &path).map_err(|_| InvalidOutput)?;
+            WireContent::Image(LoadedImage::FileBytes { mime_type, bytes })
+        }
+    })
+}
+
+/// Normalize loaded blocks without a filesystem or an output-directory path.
+fn normalize(
+    blocks: impl Iterator<Item = Result<WireContent<LoadedImage>, InvalidOutput>>,
+    is_error: bool,
+) -> Result<ToolResult, InvalidOutput> {
+    let mut content = Vec::new();
     let mut size = 0;
-    for block in wire.content {
-        let block = match block {
+    for block in blocks {
+        let block = match block? {
             WireContent::Text { text } if text.len() <= TEXT_LIMIT => Content::Text { text },
             WireContent::Json { data }
                 if serde_json::to_vec(&data).map_err(|_| InvalidOutput)?.len() <= JSON_LIMIT =>
             {
                 Content::Json { data }
             }
-            WireContent::Image(WireImage::Data(InlineImage { mime_type, data })) => {
-                image::from_base64(&data, mime_type.as_str()).map_err(|_| InvalidOutput)?
+            WireContent::Image(LoadedImage::Data(InlineImage { mime_type, data })) => {
+                image::normalize_base64(&data, mime_type).map_err(|_| InvalidOutput)?
             }
-            WireContent::Image(WireImage::Path(ImageFile { mime_type, path })) => {
-                image::from_output(output_dir, &path, mime_type.as_str())
-                    .map_err(|_| InvalidOutput)?
+            WireContent::Image(LoadedImage::FileBytes { mime_type, bytes }) => {
+                image::normalize(&bytes, Some(mime_type)).map_err(|_| InvalidOutput)?
             }
             _ => return Err(InvalidOutput),
         };
@@ -253,7 +292,7 @@ pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutp
         }
         content.push(block);
     }
-    let result = ToolResult::from_wire(content, wire.is_error).map_err(|_| InvalidOutput)?;
+    let result = ToolResult::from_wire(content, is_error).map_err(|_| InvalidOutput)?;
     if serde_json::to_vec(&result)
         .map_err(|_| InvalidOutput)?
         .len()

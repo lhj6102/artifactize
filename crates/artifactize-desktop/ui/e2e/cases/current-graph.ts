@@ -8,7 +8,7 @@ import {
   verifyWaiting,
 } from "../fixture.ts";
 import { git } from "../environment.ts";
-import { graphToolObservation } from "../graph-tool-session.ts";
+import { graphToolFailure, graphToolObservation } from "../graph-tool-session.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -112,7 +112,11 @@ payload.instruction = "Check {graph-marker}."
       const tool = browser.$(DETAIL).$('section[aria-label="Tools of docs"]').$("button=graph");
       await tool.waitForEnabled();
       await tool.click();
-      await waitFor(browser, async () => (await runOf(browser, DETAIL, "graph", "docs"))?.at(-1)?.kind === "end", "the tool exits after its window is observed and released", 60000);
+      await waitFor(browser, async () => {
+        const failure = graphToolFailure(fixture);
+        if (exists(failure)) throw new Error(`graph companion observation failed: ${readText(failure)}`);
+        return (await runOf(browser, DETAIL, "graph", "docs"))?.at(-1)?.kind === "end";
+      }, "the tool exits after its window is observed and released", 60000);
       assert.equal((await runOf(browser, DETAIL, "graph", "docs"))?.at(-1)?.text, "■ exit 0", JSON.stringify(await runOf(browser, DETAIL, "graph", "docs")));
       await waitFor(browser, () => exists(evidence), "the renderer observation is saved after the actual companion quits");
       const shown = readJson(evidence) as { title: string; selection: string[]; artifacts: string[] };
@@ -428,7 +432,7 @@ Summarize {docs}."""
       await waitFor(browser, async () => (await summary(browser)).status.startsWith("checking Still being checked"),
         `slow's plan: ${JSON.stringify(await summary(browser))}`);
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "slow's Detail closed");
-      // Choosing the Current again, F5 and the end of a Run of the branch all show the scan
+      // Choosing the Current again, Refresh and the end of a Run of the branch all show the scan
       // still running: its fingerprint script runs once.
       await waitFor(browser, () => fingerprintRuns(checking) === 1, "the scan started the fingerprint script once");
       await chooseChip(browser, "repo  master", "current");
@@ -440,8 +444,6 @@ profile = ${runtimeProfile()}
 payload.instruction = "Check {added}."
 `);
 
-      await press(browser, ["F5"], async () => (await scanned(browser)) === "2 left", "F5 leaves the gated Current showing", { handled: true });
-      await stillChecking("F5");
       assert.equal((await drawn()).nodes["a:added"], undefined, "the scan still running predates the new declaration");
       const run = await verifyWaiting(fixture, ["--artifacts", "other"]);
       await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === run, "the Run in progress starts the row");
@@ -451,7 +453,9 @@ payload.instruction = "Check {added}."
       await waitFor(browser, async () => (await branch(browser, "repo  master"))?.chips[0]?.id === "current", "the Run ended: the row starts with the Current");
       await stillChecking("the Run's end");
       assert.equal(fingerprintRuns(checking), 1, "nothing started over");
-      // The fingerprint comes in: each Artifact is coloured in place, and the scan ends. F5
+      await refresh(browser).click();
+      await stillChecking("the header's Refresh button");
+      // The fingerprint comes in: each Artifact is coloured in place, and the scan ends. Refresh
       // asked for the files as they are now, so one scan more follows, then the Current ends.
       writeText(gate, "go");
       const known = JSON.stringify({ "a:added": "added: would run (1 eval)", "a:other": "other: reused", "a:quick": "quick: waiting", "a:slow": "slow: would run (1 eval)" });
@@ -459,7 +463,7 @@ payload.instruction = "Check {added}."
         .catch(async (error: Error) => { throw new Error(`${error.message}: ${await nodes()}; ${await scanned(browser)}; ${await failure()}`); });
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the header says when it was scanned");
       await graphShown(browser, "a:added");
-      assert.equal(fingerprintRuns(checking), 2, "the scan F5 asked for followed the one running, once");
+      assert.equal(fingerprintRuns(checking), 2, "the scan the header’s Refresh button asked for followed the one running, once");
       // Chosen again once it ended, the Current scans again, every Artifact checked again.
       removeTree(gate);
       await chooseChip(browser, "repo  master", "current");
@@ -467,9 +471,12 @@ payload.instruction = "Check {added}."
       const rechecked = await drawn();
       assert.deepEqual([rechecked.nodes["a:quick"], rechecked.nodes["a:slow"]], ["quick: checking", "slow: checking"]);
       await waitFor(browser, () => fingerprintRuns(checking) === 3, "the new scan ran the fingerprint script again");
+      await press(browser, ["F5"], async () => (await scanned(browser)) === "2 left", "F5 leaves the second gated scan showing", { handled: true });
+      assert.equal(fingerprintRuns(checking), 3, "F5 did not replace the scan already running");
       writeText(gate, "go");
+      await waitFor(browser, () => fingerprintRuns(checking) === 4, "F5 also queues a follow-up scan");
       await waitFor(browser, async () => (await nodes()) === known, "known again");
-      // Refresh is unavailable until the scan ends, so wait for its header first.
+      // Let the successful scan finish before testing a separate failed scan.
       await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the scan ended again");
       // A fingerprint that fails ends a running scan; what it showed stays.
       removeTree(gate);

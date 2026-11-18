@@ -1,7 +1,7 @@
 // Read-only lifetime observations for tools executed by the real application.
 // There are no PID identities, process scans, signals or app lifecycle controls here.
 import type { Fixture } from "./fixture.ts";
-import { exists, listFiles, nativePath, processRunning, readLoopback, readText, readTextIfExists, writeTextOnce } from "./platform.ts";
+import { closeDirectory, exists, listFiles, nameOf, nativePath, processRunning, readLoopback, readTextIfExists } from "./platform.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 
 /** A protocol watchdog, never a delay used to infer that a tool stopped. */
@@ -25,18 +25,21 @@ export function slowTool(fixture: Fixture): (() => Promise<boolean>) | null {
   return async () => (await readLoopback(endpoint.port, CONNECTION_TIMEOUT)) === endpoint.token;
 }
 
-/** Release every still-gated command without touching the files it is reading. */
+/** Stop accepting tool registrations before releasing every already registered tool. */
 export function releaseToolGates(fixture: Fixture): void {
-  writeTextOnce(nativePath(fixture.root, "close-tool-gates"), "go");
+  closeDirectory(nativePath(fixture.root, "gated-tools"), nativePath(fixture.root, "closed-gated-tools"));
 }
 
-/** Identity records are written by the fixture processes before their first output.
- * Retain the root if any published native process is still alive after release. */
+/** Each empty, exclusive PID file is the admission: even if teardown renames the
+ * directory between opening and closing that file, the record moves with it. */
 export async function joinGatedTools(fixture: Fixture): Promise<void> {
-  const directory = nativePath(fixture.root, "gated-tools");
-  await observe(() => !exists(directory) || listFiles(directory).filter((file) => file.endsWith(".pid")).every((file) => {
-    const pid = Number(readText(file));
-    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid gated tool identity: ${file}`);
-    return !processRunning(pid);
+  await observe(() => ["gated-tools", "closed-gated-tools"].every((name) => {
+    const directory = nativePath(fixture.root, name);
+    return !exists(directory) || listFiles(directory).every((file) => {
+      const match = /^(\d+)-[a-f0-9-]+\.pid$/.exec(nameOf(file));
+      const pid = Number(match?.[1]);
+      if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid gated tool identity: ${file}`);
+      return !processRunning(pid);
+    });
   }), () => `gated tools still own fixture ${fixture.root}; preserve inputs`);
 }

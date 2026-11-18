@@ -421,9 +421,7 @@ async fn execute_tool(
             let state = crate::store::state_dir(state)?;
             let root =
                 workspace::prepare_directory(&state, &config.root).map_err(|e| e.to_string())?;
-            let directory = tempfile::Builder::new()
-                .prefix("tools-check-")
-                .tempdir_in(root)
+            let directory = crate::platform::private_tempdir_in("tools-check-", &root)
                 .map_err(|e| e.to_string())?;
             let args =
                 serde_json::Value::Object(args.map(|args| args.0.clone()).unwrap_or_default());

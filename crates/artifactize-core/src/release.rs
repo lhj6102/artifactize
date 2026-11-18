@@ -315,9 +315,7 @@ fn write_cache(state: &Path, cached: &Cached) -> Result<(), String> {
     let mut file = tempfile::NamedTempFile::new_in(state).map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut file, cached).map_err(|e| e.to_string())?;
     file.flush().map_err(|e| e.to_string())?;
-    file.persist(state.join(CACHE))
-        .map_err(|e| e.error.to_string())?;
-    Ok(())
+    crate::platform::paths::replace_open_file(file, &state.join(CACHE)).map_err(|e| e.to_string())
 }
 
 /// Ask `url`, GitHub's latest-release API or its stand-in, for the latest release's version.

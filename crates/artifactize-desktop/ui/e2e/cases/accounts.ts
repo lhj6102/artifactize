@@ -6,7 +6,7 @@ import { createOutside, environment } from "../fixture.ts";
 import { fill } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import {
-  appendText, closeServers, httpGet, nativePath, readText, requireFreeLoopbackPort, serveLoopbackHttp, writeText,
+  appendText, closeServers, nativePath, readText, requireFreeLoopbackPort, serveLoopbackHttp, writeText,
   type HttpServer,
 } from "../platform.ts";
 
@@ -32,7 +32,9 @@ export const scenarios: Scenario[] = [
       await requireCallbackPort();
       const fixture = createOutside();
       const authorizationLog = nativePath(fixture.root, "auth-get-urls.jsonl");
+      const browserReturn = nativePath(fixture.root, "browser-return");
       writeText(authorizationLog, "");
+      writeText(browserReturn, "");
       let authUrl = "";
       const servers: HttpServer[] = [];
       try {
@@ -42,6 +44,19 @@ export const scenarios: Scenario[] = [
           if (request.url === "/oauth/token") {
             response.writeHead(200, { "content-type": "application/json" });
             response.end(JSON.stringify({ access_token: token(), refresh_token: "refresh-e2e", expires_in: 3600 }));
+          } else if (request.method === "GET" && request.url?.startsWith("/oauth/authorize?") && readText(browserReturn) === "enabled") {
+            const authorization = new URL(request.url, authUrl);
+            const advertised = authorization.searchParams.get("redirect_uri");
+            const state = authorization.searchParams.get("state");
+            if (!advertised || !URL.canParse(advertised) || !state) { response.writeHead(400).end(); return; }
+            const callback = new URL(advertised);
+            // The fixture only redirects locally, and uses the URI advertised to the browser.
+            if (callback.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(callback.hostname)) {
+              response.writeHead(400).end(); return;
+            }
+            callback.searchParams.set("code", "e2e-return");
+            callback.searchParams.set("state", state);
+            response.writeHead(302, { location: callback.href }).end();
           } else {
             response.writeHead(200).end();
           }
@@ -64,7 +79,7 @@ export const scenarios: Scenario[] = [
             ARTIFACTIZE_OPENAI_BASE_URL: `${provider.url}/v1`,
             OPENAI_API_KEY: "sk-e2e-accounts",
           },
-          data: { authorizationLog },
+          data: { authorizationLog, browserReturn },
           browser: `${authUrl}/oauth/authorize`,
           release: () => closeServers(servers, "account fixture servers"),
         };
@@ -74,7 +89,7 @@ export const scenarios: Scenario[] = [
         throw error;
       }
     },
-    async (browser, { data: { authorizationLog } }) => {
+    async (browser, { data: { authorizationLog, browserReturn } }) => {
       const status = () => browser.$('[data-testid="codex-status"]').getText();
       const text = () => browser.execute(() => document.body.innerText);
       const visited = (): string[] => readText(authorizationLog).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
@@ -135,8 +150,11 @@ export const scenarios: Scenario[] = [
       await signOut();
 
       // A fresh signed-out state makes this callback, not the earlier paste, causal.
-      const returnedState = await begin();
-      assert.equal(await httpGet(`http://localhost:1455/auth/callback?code=e2e-return&state=${returnedState}`), 200);
+      const previousVisits = visited().length;
+      writeText(browserReturn, "enabled");
+      await browser.$("button=Sign in with Codex").click();
+      await browser.waitUntil(() => visited().slice(previousVisits).some((url) => new URL(url).pathname === "/oauth/authorize"),
+        { timeout: 15000, timeoutMsg: "the browser reaches authorization for the callback sign-in" });
       await signedIn();
       await signOut();
 

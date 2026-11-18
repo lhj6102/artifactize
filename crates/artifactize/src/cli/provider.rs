@@ -107,18 +107,18 @@ pub(super) async fn execute(
             }
             let mut out = io::stdout().lock();
             for key in &list.keys {
-                let source = match key.source {
-                    providers::KeySource::Environment if key.saved => {
+                let source = match key.source() {
+                    providers::KeySource::Environment if key.saved() => {
                         format!(
                             "key from {}; a saved key is kept but not used",
-                            key.variable
+                            key.variable()
                         )
                     }
-                    providers::KeySource::Environment => format!("key from {}", key.variable),
+                    providers::KeySource::Environment => format!("key from {}", key.variable()),
                     providers::KeySource::Saved => "saved key".to_owned(),
                     providers::KeySource::Absent => "no key".to_owned(),
                 };
-                writeln!(out, "{}\t{source}", key.provider).map_err(|e| e.to_string())?;
+                writeln!(out, "{}\t{source}", key.provider()).map_err(|e| e.to_string())?;
             }
             for (name, custom) in &list.custom {
                 let target = match custom {

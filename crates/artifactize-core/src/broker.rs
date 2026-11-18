@@ -285,7 +285,7 @@ impl Scheduler<'_, '_> {
         let owner = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
         let producer = Producer::current();
         // Agent conversations are saved under the state, named by its id and this producer.
-        let saving = if self.limits.agent_sessions().enabled {
+        let saving = if self.limits.agent_sessions().enabled() {
             Some(crate::agent::session::Saving {
                 state: self.run.state_dir.clone(),
                 state_id: self.receipts.state_id().await?,

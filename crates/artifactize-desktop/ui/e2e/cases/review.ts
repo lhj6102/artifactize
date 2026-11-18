@@ -9,7 +9,7 @@ import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, requestWindowClose } from "../platform.ts";
-import { branch, entriesFocused, expand, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
+import { branch, entriesFocused, expand, MAIN, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
 import { detail, openArtifact, openTab } from "../graph-view.ts";
 
 /** How many Human reviews this case's state holds waiting, read through the public CLI. */
@@ -226,6 +226,32 @@ export const scenarios: Scenario[] = [
         `the window sizes fall on both sides of twice the Detail's width: ${JSON.stringify({ wideSizes, narrowSizes })}`);
       await openWaiting(browser, signoff(fixture).id);
       await claimReview(browser, fixture);
+      const title = "release/signoff · A person approves the release";
+      const checkHeadingAndDebug = async (shell: string, heading: string, viaKey: boolean) => {
+        const review = browser.$(`${shell} [aria-label="Human review"]`);
+        const debug = review.$("button.head=Debug");
+        const id = signoff(fixture).id;
+        const countTitle = () => browser.execute((selector, text) => {
+          const content = document.querySelector<HTMLElement>(selector)?.innerText ?? "";
+          return content.split(text).length - 1;
+        }, shell, "A person approves the release");
+        await waitFor(browser, async () => await browser.$(heading).getText() === title && await countTitle() === 1,
+          "the eval title is rendered only once, in the review heading");
+        const state = () => requestState(browser, `${shell} [aria-label="Human review"]`);
+        assert.equal(await debug.getAttribute("aria-expanded"), "false", "Debug starts folded");
+        assert.equal(await state(), "");
+        assert.ok(!(await review.getText()).includes(id), "the request facts are not shown outside Debug");
+        if (viaKey) {
+          await review.$('[aria-label="Instruction"]').click();
+          await press(browser, ["t"], async () => (await state()).includes(id), "t shows the request facts");
+        } else await debug.click();
+        await waitFor(browser, async () => (await state()).includes(`Request ${id} · DEFERRED · claimed by you (alice) · waiting `)
+          && / · waiting \d/.test(await state()), "Debug shows the request ID, deferred mode, claimant, and waiting time");
+        if (viaKey) await press(browser, ["t"], async () => (await state()) === "", "t hides the request facts again");
+        else await debug.click();
+        await waitFor(browser, async () => (await debug.getAttribute("aria-expanded")) === "false" && (await state()) === "", "Debug folds away its facts");
+      };
+      await checkHeadingAndDebug(MAIN, `${MAIN} > header .title`, true);
       await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
       /** The review's arrangement: its panels' boxes, its Result's and its row of actions' boxes. */
       const arranged = () => browser.execute(() => {
@@ -313,6 +339,7 @@ export const scenarios: Scenario[] = [
       await openTab(browser, "e:release/signoff");
       await waitFor(browser, async () => await browser.$('aside[aria-label="Detail"] [aria-label="Human review"] [aria-label="Instruction"]').isDisplayed() && oneColumn(await arranged()),
         "the Run Detail has the instruction above Tools, Tool log and Result in one readable column");
+      await checkHeadingAndDebug('aside[aria-label="Detail"]', 'aside[aria-label="Detail"] header h2', false);
     },
   ),
 ];

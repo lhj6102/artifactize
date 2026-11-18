@@ -668,9 +668,15 @@
     else onopen(id);
   };
 
+  const newArtifact = () => (defs.dialog = { kind: "new" });
+  const resetTop = () => void edit({ kind: "resetPlaces", whole: null });
+  const canResetTop = $derived(editable && annotations.at.size > 0);
+
   useCommands(() => [
     { id: "graph.find", group: "Graph", label: "Find", keys: "Ctrl+F", run: () => (m.finding = true) },
     { id: "graph.fit", group: "Graph", label: "Fit", run: fitAll },
+    { id: "graph.new", group: "Graph", label: "New Artifact", enabled: () => editable, run: newArtifact },
+    { id: "graph.reset-layout", group: "Graph", label: "Reset layout", enabled: () => canResetTop, run: resetTop },
     {
       id: "graph.minimize",
       group: "Graph",
@@ -710,9 +716,9 @@
     </span>
     <button class="button small" onclick={fitAll}><Icon name="fit" />Fit</button>
     {#if editable}
-      <button class="button small" onclick={() => (defs.dialog = { kind: "new" })}><Icon name="add" />New Artifact</button>
-      {#if annotations.at.size > 0}
-        <button class="button small" onclick={() => void edit({ kind: "resetPlaces", whole: null })}><Icon name="reset" />Reset layout</button>
+      <button class="button small" onclick={newArtifact}><Icon name="add" />New Artifact</button>
+      {#if canResetTop}
+        <button class="button small" onclick={resetTop}><Icon name="reset" />Reset layout</button>
       {/if}
     {/if}
   </div>

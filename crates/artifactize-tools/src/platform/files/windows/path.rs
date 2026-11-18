@@ -16,7 +16,7 @@ pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
 
 /// `\\?\C:\a` as `C:\a` and `\\?\UNC\server\share\a` as `\\server\share\a`, when the Win32
 /// layer would pass every component through unchanged and the result is below `MAX_PATH`.
-fn plain(path: &Path) -> Option<PathBuf> {
+pub(super) fn plain(path: &Path) -> Option<PathBuf> {
     let mut components = path.components();
     let Some(Component::Prefix(prefix)) = components.next() else {
         return None;

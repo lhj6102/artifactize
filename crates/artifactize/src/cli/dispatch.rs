@@ -150,13 +150,8 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             },
         }) => run::list(context, all, limit, offset).await,
         Some(Command::Run {
-            command:
-                RunCommand::Show {
-                    run_id,
-                    wait,
-                    timeout_ms,
-                },
-        }) => run::show(context, run_id, run::ShowMode::from_flags(wait, timeout_ms)).await,
+            command: RunCommand::Show { run_id, mode },
+        }) => run::show(context, run_id, mode).await,
         Some(Command::Monitor { all, path }) => {
             let scope = interactive::Scope::from_args(all, path, context.repo)?;
             interactive::monitor(context.state_dir, scope, context.json, screens).await

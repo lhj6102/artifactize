@@ -24,7 +24,7 @@ fn populated() -> (tempfile::TempDir, Monitor) {
 #[test]
 fn main_arrows_move_both_directions_without_wrapping_or_changing_tree() {
     let (_monitor_root, mut monitor) = populated();
-    monitor.focus = Pane::Repositories;
+    monitor.focus_on(Pane::Repositories);
     let selected = monitor.tree.selected().to_vec();
     let opened = monitor.tree.opened().clone();
     for (code, pane, action) in [
@@ -38,21 +38,21 @@ fn main_arrows_move_both_directions_without_wrapping_or_changing_tree() {
         (KeyCode::Left, Pane::Repositories, Action::None),
     ] {
         assert_eq!(press(&mut monitor, code), action);
-        assert_eq!(monitor.focus, pane);
+        assert_eq!(monitor.focus(), pane);
         assert_eq!(monitor.tree.selected(), selected);
         assert_eq!(monitor.tree.opened(), &opened);
     }
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     press(&mut monitor, KeyCode::Tab);
-    assert_eq!(monitor.focus, Pane::Repositories);
+    assert_eq!(monitor.focus(), Pane::Repositories);
     press(&mut monitor, KeyCode::BackTab);
-    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert_eq!(monitor.focus(), Pane::Artifacts);
 }
 
 #[test]
 fn tree_h_l_and_space_still_expand_and_collapse() {
     let (_monitor_root, mut monitor) = populated();
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     let artifact = vec!["a:p2".parse::<crate::monitor::model::NodeId>().unwrap()];
     press(&mut monitor, KeyCode::Char('h'));
     assert!(!monitor.tree.opened().contains(&artifact));
@@ -69,18 +69,18 @@ fn tree_h_l_and_space_still_expand_and_collapse() {
 #[tokio::test]
 async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     let (_monitor_root, mut monitor) = populated();
-    monitor.focus = Pane::Artifacts;
+    monitor.focus_on(Pane::Artifacts);
     monitor.open_detail().await;
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     // Outside a Human review, Left and Esc step back to the tree.
     for code in [KeyCode::Left, KeyCode::Esc] {
         assert_eq!(press(&mut monitor, code), Action::None);
-        assert_eq!(monitor.focus, Pane::Artifacts);
-        assert!(monitor.detail.is_none());
+        assert_eq!(monitor.focus(), Pane::Artifacts);
+        assert!(monitor.detail().is_none());
         monitor.open_detail().await;
     }
     assert_eq!(press(&mut monitor, KeyCode::Right), Action::None);
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     let schema = json!({"type":"object","properties":{"level":{"enum":["low","high"]}}});
     // A choice field owns Left/Right; focus stays in Detail.
     let mut view = tests::request(
@@ -104,45 +104,38 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     );
     review.load_single(view);
     review.control(review::Control::Red);
-    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
-    let choice = |monitor: &Monitor| match monitor
-        .detail
-        .as_ref()
-        .unwrap()
-        .content
-        .review()
-        .unwrap()
-        .mode()
-    {
-        review::Mode::Form(form) => form.fields[0].display(),
-        _ => panic!("form"),
-    };
+    monitor.detail_mut().unwrap().content = Content::Review(Box::new(review));
+    let choice =
+        |monitor: &Monitor| match monitor.detail().unwrap().content.review().unwrap().mode() {
+            review::Mode::Form(form) => form.fields[0].display(),
+            _ => panic!("form"),
+        };
     assert_eq!(choice(&monitor), "–");
     assert_eq!(
         press(&mut monitor, KeyCode::Left),
         Action::Review(review::Action::None)
     );
     assert_eq!(choice(&monitor), r#""high""#);
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
     assert_eq!(
         press(&mut monitor, KeyCode::Right),
         Action::Review(review::Action::None)
     );
     assert_eq!(choice(&monitor), "–");
-    assert_eq!(monitor.focus, Pane::Detail);
+    assert_eq!(monitor.focus(), Pane::Detail);
 }
 
 #[test]
 fn claim_key_is_inert_outside_detail_and_esc_never_quits() {
     let (_monitor_root, mut monitor) = populated();
     for pane in [Pane::Repositories, Pane::Runs, Pane::Artifacts] {
-        monitor.focus = pane;
+        monitor.focus_on(pane);
         assert_eq!(press(&mut monitor, KeyCode::Char('c')), Action::None);
-        assert_eq!(monitor.focus, pane);
+        assert_eq!(monitor.focus(), pane);
     }
     for expected in [Pane::Runs, Pane::Repositories, Pane::Repositories] {
         assert_eq!(press(&mut monitor, KeyCode::Esc), Action::None);
-        assert_eq!(monitor.focus, expected);
+        assert_eq!(monitor.focus(), expected);
     }
     assert_eq!(press(&mut monitor, KeyCode::Char('q')), Action::Quit);
 }
@@ -150,7 +143,7 @@ fn claim_key_is_inert_outside_detail_and_esc_never_quits() {
 #[test]
 fn help_overlay_opens_with_question_mark_and_any_key_closes_it() {
     let (_monitor_root, mut monitor) = populated();
-    monitor.focus = Pane::Runs;
+    monitor.focus_on(Pane::Runs);
     press(&mut monitor, KeyCode::Char('?'));
     assert!(monitor.help);
     let text = tests::sized(&mut monitor, 120, 40);
@@ -159,17 +152,17 @@ fn help_overlay_opens_with_question_mark_and_any_key_closes_it() {
     // The closing key does nothing else, even q.
     assert_eq!(press(&mut monitor, KeyCode::Char('q')), Action::None);
     assert!(!monitor.help);
-    assert_eq!(monitor.focus, Pane::Runs);
+    assert_eq!(monitor.focus(), Pane::Runs);
 }
 
 #[test]
 fn bang_cycles_attention_evals_in_tree_order_and_focuses_the_tree() {
     let (_monitor_root, mut monitor) = populated();
-    monitor.focus = Pane::Repositories;
+    monitor.focus_on(Pane::Repositories);
     let mut seen = Vec::new();
     for _ in 0..3 {
         assert_eq!(press(&mut monitor, KeyCode::Char('!')), Action::None);
-        assert_eq!(monitor.focus, Pane::Artifacts);
+        assert_eq!(monitor.focus(), Pane::Artifacts);
         seen.push(monitor.target());
     }
     // From the selected Artifact p2: its ERROR eval, the waiting Human review, then wrap.

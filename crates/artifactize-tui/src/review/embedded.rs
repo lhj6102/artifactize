@@ -150,7 +150,7 @@ impl Review {
             }
             Control::Submit => {
                 let result = match &self.mode {
-                    Mode::Form(form) => form.result(),
+                    Mode::Form(form) => form.submission(),
                     _ => return self.notify("Choose GREEN or RED first.", true),
                 };
                 match result {

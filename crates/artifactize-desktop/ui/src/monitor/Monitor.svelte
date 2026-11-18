@@ -458,7 +458,7 @@
           {/snippet}
           {#snippet actions()}
             {#if shown.kind === "current"}
-              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" disabled={current.scanning} onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
+              <button class="button small" aria-label="Refresh (Ctrl+R)" aria-keyshortcuts="Control+R F5" onclick={() => void current.scan(shown.branch, true)}>Refresh</button>
             {:else if (shown.kind === "request" || shown.kind === "review") && !m.settings}
               <button class="button small" aria-label="Close (Esc)" aria-keyshortcuts="Escape" onclick={closeMain}>Close</button>
             {/if}

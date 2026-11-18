@@ -144,7 +144,7 @@ pub(super) fn propose(
                 let mut doc = proposed[&file]
                     .parse::<toml_edit::DocumentMut>()
                     .expect("validated source");
-                rename_item(doc.as_item_mut(), &old, &new, artifact, &mut Vec::new());
+                references::rename(&mut doc, artifact, &old, &new);
                 if artifact.parts.contains(&old) {
                     annotations::rename_part(&mut doc, &file, &config, owner, &old, &new)?;
                 }
@@ -165,8 +165,7 @@ pub(super) fn propose(
                     let doc = sources[&root.join(artifact.declaration_path())]
                         .parse::<toml_edit::DocumentMut>()
                         .expect("validated source");
-                    names_artifact(doc.as_item(), artifact, &name, &mut Vec::new())
-                        .then(|| other.to_string())
+                    references::names(&doc, artifact, &name).then(|| other.to_string())
                 })
                 .collect::<Vec<_>>();
             if !users.is_empty() {

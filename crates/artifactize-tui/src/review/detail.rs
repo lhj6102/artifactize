@@ -17,11 +17,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph, Wrap},
 };
-#[cfg(not(test))]
 use time::OffsetDateTime;
 
 /// The expanded instruction (or Technical section) takes this share of the body height.
-const EXPANDED: u16 = 70;
+const EXPANDED: u32 = 70;
 /// A bordered box never shrinks below one line of text between its borders.
 const MIN_BOX: u16 = 3;
 /// Reserve at least half of the tools pane for the Tool log.
@@ -138,14 +137,16 @@ fn tools_line(tools: &[Tool], way_in: Option<&str>) -> Line<'static> {
 }
 
 /// The Preview of a listed request: metadata, the instruction and its tools, read-only.
-pub(super) fn draw_peek(frame: &mut Frame, area: Rect, view: &RequestView, reviewer: &str) {
+pub(super) fn draw_peek(
+    frame: &mut Frame,
+    area: Rect,
+    view: &RequestView,
+    reviewer: &str,
+    now: OffsetDateTime,
+) {
     let outer = Block::bordered().title(format!(" {} ", title(view)));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
-    #[cfg(not(test))]
-    let now = OffsetDateTime::now_utc();
-    #[cfg(test)]
-    let now = super::tests::now();
     let mut lines = vec![Line::from(meta(view, reviewer, now)).bold()];
     if let Some(shared) = shared(view) {
         lines.push(Line::from(shared).yellow());
@@ -168,6 +169,14 @@ pub(super) fn draw_peek(frame: &mut Frame, area: Rect, view: &RequestView, revie
 }
 
 impl Review {
+    fn move_tool(&mut self, down: bool) {
+        self.tool = if down {
+            (self.tool + 1).min(self.tools().len().saturating_sub(1))
+        } else {
+            self.tool.saturating_sub(1)
+        };
+    }
+
     fn stage(&self) -> Stage {
         stage(self.settled(), self.owned())
     }
@@ -424,7 +433,13 @@ impl Review {
     }
 
     /// Draw the Full Detail of the open request into `area`, borders included.
-    pub(crate) fn draw_detail(&mut self, frame: &mut Frame, area: Rect, focused: bool) -> Hits {
+    pub(crate) fn draw_detail(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+        now: OffsetDateTime,
+    ) -> Hits {
         // Lines that arrived while another Detail was shown.
         self.drain_log();
         let mut hits = Hits::default();
@@ -465,10 +480,6 @@ impl Review {
             Constraint::Length(fold.width() as u16 + 1),
         ])
         .areas(meta_area);
-        #[cfg(not(test))]
-        let now = OffsetDateTime::now_utc();
-        #[cfg(test)]
-        let now = super::tests::now();
         frame.render_widget(
             Line::from(meta(&view, &self.reviewer, now)).bold(),
             meta_text,
@@ -487,7 +498,9 @@ impl Review {
             .wrap(Wrap { trim: false })
             .line_count(body.width.saturating_sub(BORDERS));
         let height = if expanded {
-            (body.height * EXPANDED / 100).max(MIN_BOX)
+            let share = u32::from(body.height) * EXPANDED / 100;
+            // The percentage is less than 100, so the result still fits a terminal height.
+            (share as u16).max(MIN_BOX)
         } else if summary {
             (u16::try_from(rows)
                 .unwrap_or(u16::MAX)
@@ -619,17 +632,18 @@ impl Review {
             let scroll = (last + 1)
                 .saturating_sub(usize::from(inner.height))
                 .min(selected.unwrap_or(0));
-            let mut hits = Vec::new();
-            for (row, (_, index)) in rows.iter().enumerate().skip(scroll) {
-                let y = row - scroll;
-                if y >= usize::from(inner.height) {
-                    break;
-                }
-                hits.push((
-                    Rect::new(inner.x, inner.y + y as u16, inner.width, 1),
-                    *index,
-                ));
-            }
+            let hits = rows
+                .iter()
+                .skip(scroll)
+                .take(usize::from(inner.height))
+                .enumerate()
+                .map(|(y, (_, index))| {
+                    (
+                        Rect::new(inner.x, inner.y + y as u16, inner.width, 1),
+                        *index,
+                    )
+                })
+                .collect();
             let lines: Vec<Line> = rows.into_iter().map(|(line, _)| line).collect();
             frame.render_widget(
                 Paragraph::new(lines)

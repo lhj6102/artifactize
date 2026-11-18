@@ -1,6 +1,6 @@
 //! Parse the mutually exclusive ways that `verify` follows a submitted Run.
 
-use clap::{ArgMatches, Args, Command, Error, FromArgMatches};
+use clap::{ArgMatches, Args, Command, Error, FromArgMatches, error::ErrorKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Follow {
@@ -23,12 +23,15 @@ struct Flags {
 }
 
 impl Flags {
-    fn selected(self) -> Option<Follow> {
+    fn selected(self) -> Result<Option<Follow>, Error> {
         match (self.wait, self.watch) {
-            (false, false) => None,
-            (true, false) => Some(Follow::Wait),
-            (false, true) => Some(Follow::Watch),
-            (true, true) => unreachable!("clap makes --wait and --watch exclusive"),
+            (false, false) => Ok(None),
+            (true, false) => Ok(Some(Follow::Wait)),
+            (false, true) => Ok(Some(Follow::Watch)),
+            (true, true) => Err(Error::raw(
+                ErrorKind::ArgumentConflict,
+                "Use --wait or --watch, not both.",
+            )),
         }
     }
 }
@@ -36,12 +39,12 @@ impl Flags {
 impl FromArgMatches for Follow {
     fn from_arg_matches(matches: &ArgMatches) -> Result<Self, Error> {
         Ok(Flags::from_arg_matches(matches)?
-            .selected()
+            .selected()?
             .unwrap_or(Self::Submit))
     }
 
     fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), Error> {
-        if let Some(follow) = Flags::from_arg_matches(matches)?.selected() {
+        if let Some(follow) = Flags::from_arg_matches(matches)?.selected()? {
             *self = follow;
         }
         Ok(())

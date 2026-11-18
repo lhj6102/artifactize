@@ -11,6 +11,69 @@ pub(super) struct Pass<'a, 'cfg> {
     pub stops: &'a Stops,
 }
 
+enum Decision {
+    Skip,
+    Gated,
+    Claim,
+}
+
+struct LocalAdmission<'a> {
+    index: usize,
+    states: &'a [Admission],
+    job_limit: Option<usize>,
+}
+
+/// Local admission policy. A claim may still reuse an execution or wait for an external slot.
+fn decide(
+    request: &Request,
+    graph: &Graph<'_>,
+    eval: &crate::graph::EvalEvaluation<'_>,
+    evidence: Option<Evidence>,
+    deferred: bool,
+    speculate: bool,
+    local: LocalAdmission<'_>,
+) -> Decision {
+    use crate::graph::Readiness;
+
+    let admission = &local.states[local.index];
+    if admission.blocked()
+        || admission.running()
+        || request.status().is_human_wait()
+        || superseded(request)
+        || evidence.is_some_and(|evidence| evidence != Evidence::Deferred)
+    {
+        return Decision::Skip;
+    }
+    let human = request.profile.kind() == ProfileKind::Human;
+    // People are never asked before the machine evals of their Artifact pass.
+    let siblings_pending = human
+        && eval
+            .unmet_gates
+            .iter()
+            .any(|gate| graph.eval_target(gate) == Some(&request.target));
+    let speculative = speculate
+        && eval.readiness == Readiness::Wait
+        && !siblings_pending
+        && matches!(eval.evidence, None | Some(Evidence::Stale));
+    if !(eval.can_execute() || speculative || (deferred && eval.readiness == Readiness::Ready)) {
+        return Decision::Gated;
+    }
+    // A sign-off is asked for only once its gates are met, never speculatively.
+    if (human && eval.readiness != Readiness::Ready)
+        || jobs_full(local.index, local.states, local.job_limit)
+    {
+        return Decision::Skip;
+    }
+    Decision::Claim
+}
+
+fn jobs_full(index: usize, admissions: &[Admission], limit: Option<usize>) -> bool {
+    !matches!(admissions[index], Admission::Joining)
+        && limit.is_some_and(|limit| {
+            admissions.iter().filter(|state| state.uses_job()).count() >= limit
+        })
+}
+
 impl<'a> Scheduler<'a, '_> {
     pub(super) async fn admit(
         &mut self,
@@ -82,10 +145,7 @@ impl<'a> Scheduler<'a, '_> {
             {
                 // Ready work owns capacity; speculative tasks yield before any ready task.
                 let backend = current.options.backend.as_ref();
-                let jobs_full = !matches!(admissions[index], Admission::Joining)
-                    && self.run.jobs.is_some_and(|limit| {
-                        admissions.iter().filter(|state| state.uses_job()).count() >= limit
-                    });
+                let jobs_full = jobs_full(index, admissions, self.run.jobs);
                 let backend_full = backend.is_some_and(|backend| {
                     matches!(admissions[index], Admission::Capacity)
                         && admissions.iter().enumerate().any(|(active, state)| {
@@ -123,56 +183,39 @@ impl<'a> Scheduler<'a, '_> {
                 }
             }
             let request = &mut self.requests[index];
-            if admissions[index].blocked()
-                || admissions[index].running()
-                || request.status().is_human_wait()
-                || superseded(request)
-                || matches!(evidence.get(&request.eval_id), Some(value) if *value != Evidence::Deferred)
-            {
-                continue;
-            }
             let eval = &evaluation.evals[request.eval_id.as_str()];
-            // People are never asked before the machine evals of their Artifact pass.
-            let siblings_pending = request.profile.kind() == ProfileKind::Human
-                && eval
-                    .unmet_gates
-                    .iter()
-                    .any(|gate| self.graph.eval_target(gate) == Some(&request.target));
-            let speculative = self.run.modes.speculate
-                && eval.readiness == crate::graph::Readiness::Wait
-                && !siblings_pending
-                && matches!(eval.evidence, None | Some(Evidence::Stale));
             let deferred_human = deferred.contains(&request.eval_id);
-            let may_execute = eval.can_execute()
-                || speculative
-                || (deferred_human && eval.readiness == crate::graph::Readiness::Ready);
-            if !may_execute {
-                admissions[index] = Admission::Idle;
-                let status = crate::project::verify::status(eval.status);
-                let blocked_by: Vec<_> = eval.blocked_by.iter().copied().map(Into::into).collect();
-                if request.status() != status || request.blocked_by != blocked_by {
-                    request.state =
-                        crate::store::RequestState::pending(status, request.completed_at())
-                            .expect("gated request");
-                    request.blocked_by = blocked_by;
-                    request.queue = None;
-                    request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
-                    self.receipts.save_request(request).await?;
+            match decide(
+                request,
+                self.graph,
+                eval,
+                evidence.get(&request.eval_id).copied(),
+                deferred_human,
+                self.run.modes.speculate,
+                LocalAdmission {
+                    index,
+                    states: admissions,
+                    job_limit: self.run.jobs,
+                },
+            ) {
+                Decision::Skip => continue,
+                Decision::Gated => {
+                    admissions[index] = Admission::Idle;
+                    let status = crate::project::verify::status(eval.status);
+                    let blocked_by: Vec<_> =
+                        eval.blocked_by.iter().copied().map(Into::into).collect();
+                    if request.status() != status || request.blocked_by != blocked_by {
+                        request.state =
+                            crate::store::RequestState::pending(status, request.completed_at())
+                                .expect("gated request");
+                        request.blocked_by = blocked_by;
+                        request.queue = None;
+                        request.blocked_reason = Some(crate::project::verify::gate_reason(eval));
+                        self.receipts.save_request(request).await?;
+                    }
+                    continue;
                 }
-                continue;
-            }
-            // A sign-off is asked for only once its gates are met, never speculatively.
-            if request.profile.kind() == ProfileKind::Human
-                && eval.readiness != crate::graph::Readiness::Ready
-            {
-                continue;
-            }
-            if !matches!(admissions[index], Admission::Joining)
-                && self.run.jobs.is_some_and(|limit| {
-                    admissions.iter().filter(|state| state.uses_job()).count() >= limit
-                })
-            {
-                continue;
+                Decision::Claim => (),
             }
             let declared = declarations[&request.eval_id];
             if let Err(error) = cache::validate_file_inputs(&self.config, declared) {

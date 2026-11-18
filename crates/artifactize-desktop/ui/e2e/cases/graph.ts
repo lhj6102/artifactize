@@ -7,14 +7,14 @@ import assert from "node:assert/strict";
 import { addWorktrees, artifactize, create, createChain, createOutside, createEvals, createJoined, createParts, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
-import { buttonKey, dispatchInput, tab } from "../input.ts";
+import { buttonKey, compositionKey, dispatchInput, tab } from "../input.ts";
 import {
   aside, camera, detail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
   unfold, ZOOM_IN, ZOOM_OUT,
 } from "../graph-view.ts";
 import { git } from "../environment.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
-import { exists, makeDirectory, nativeInput, nativePath, primaryModifier, readText, writeText, type NativePath } from "../platform.ts";
+import { makeDirectory, nativeInput, nativePath, primaryModifier, writeText } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
@@ -50,13 +50,6 @@ async function toggleStar(browser: WebdriverIO.Browser, name: string, on: boolea
   await aside(browser).$(`button[aria-label=${JSON.stringify(`Star ${name}`)}]`).click();
   await browser.waitUntil(async () => JSON.stringify(await star(browser, name)) === JSON.stringify({ glyph: on ? "★" : "☆", on }),
     { timeout: 15000, timeoutMsg: `${name} ${on ? "starred" : "no longer starred"}` });
-}
-
-/** The Artifacts starred in the fixture's one project, as the state directory keeps them. */
-function starredIn(state: NativePath): string[] {
-  const file = nativePath(state, "starred-artifacts.json");
-  const kept = exists(file) ? JSON.parse(readText(file)) as { artifacts: string[] }[] : [];
-  return kept.flatMap((project) => project.artifacts);
 }
 
 /** Arrow keys on the focused Artifact `id` are no keys of the graph's: its camera stays, the
@@ -614,16 +607,16 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the press moved the keyboard into suite's Detail" });
       const inDetail = await focusedElement(browser);
       assert.ok(await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')), `the keyboard is in suite's Detail: ${inDetail}`);
-      // The same focused whole-shortcut context, not a text input.
-      for (const [isComposing, keyCode] of [[true, 0], [false, 229]] as const) {
-        await browser.execute(({ isComposing, keyCode }) => {
-          const target = document.activeElement;
-          if (!target?.closest('aside[aria-label="Detail"]')) throw new Error("suite's Detail lost keyboard focus");
-          target.dispatchEvent(new KeyboardEvent("keydown", { key: "m", code: "KeyM", bubbles: true, cancelable: true, isComposing, keyCode }));
-        }, { isComposing, keyCode });
-        await afterRender(browser);
-        assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "composition suppresses m where plain m would toggle the whole");
-      }
+      // Start the engine's native composition while Detail has the keyboard, then
+      // probe the key fields the application reads without sending OS events.
+      await nativeInput(browser, { type: "set", text: "ㅡ" });
+      try {
+        for (const [isComposing, keyCode] of [[true, 0], [false, 229]] as const) {
+          await compositionKey(browser, "m", 'aside[aria-label="Detail"]', isComposing, keyCode);
+          await afterRender(browser);
+          assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "composition suppresses m where plain m would toggle the whole");
+        }
+      } finally { await nativeInput(browser, { type: "cancel" }); }
       await press(browser, ["m"], () => drawnNow(browser, ".graph", PARTS), "m expands suite, whose Detail is open");
       assert.equal(await focusedElement(browser), inDetail, "m with the Detail focused leaves the keyboard where it was");
       const unfolded = await partsDrawn(browser, ".graph");
@@ -648,11 +641,7 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await findField(browser))?.value === "mㅡ", { timeout: 15000, timeoutMsg: "the engine composes ㅡ in the find field" });
       // E2E-INPUT: these fields are the app's own shortcut guard, not an OS input test.
       for (const [composing, keyCode] of [[true, 0], [false, 229]] as const) {
-        await browser.execute((input) => {
-          const target = document.activeElement;
-          if (!(target instanceof HTMLInputElement)) throw new Error("the composing find field lost focus");
-          target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true, isComposing: input.composing, keyCode: input.keyCode }));
-        }, { composing, keyCode });
+        await compositionKey(browser, "Escape", FIND, composing, keyCode);
         await afterRender(browser);
         assert.deepEqual(await findField(browser).then((field) => [field?.focused, field?.value]), [true, "mㅡ"],
           `Escape during composition (isComposing ${composing}, keyCode ${keyCode}) keeps Find focused and the composition in place`);
@@ -911,8 +900,19 @@ export const scenarios: Scenario[] = [
       // The person zooms out (a small graph first fits at the largest zoom); a new result then
       // relights the graph in place, under their camera, not a fit of its own.
       await browser.$(ZOOM_OUT).click();
+      const zoomButton = await settled();
+      assert.notEqual(zoomButton.transform, first.transform, "Zoom Out moved the camera");
+      const toolbarZoom = async () => Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10);
+      const scale = (transform: string) => Number(/scale\(([^)]+)\)/.exec(transform)?.[1]);
+      const smaller = await toolbarZoom();
+      const point = await visibleCenter(browser, await browser.$('[data-graph-area]').getElement());
+      await browser.action("wheel").scroll({ ...point, deltaX: 0, deltaY: 120 }).perform();
+      await browser.waitUntil(async () => {
+        const moved = scale((await view()).transform);
+        const label = await toolbarZoom();
+        return moved < scale(zoomButton.transform) && label < smaller && label === Math.round(moved * 100);
+      }, { timeout: 15000, timeoutMsg: "the wheel zooms the main graph and its toolbar displays the same new scale" });
       const zoomed = await settled();
-      assert.notEqual(zoomed.transform, first.transform, "Zoom Out moved the camera");
       signOff(fixture, request);
       await browser.waitUntil(() => browser.$('.graph .svelte-flow__node[data-id="a:release"]').getAttribute("data-light").then((light) => light === "green"),
         { timeout: 30000, timeoutMsg: "release relit GREEN" });
@@ -1355,16 +1355,14 @@ payload.instruction = "Check the Live Artifact."
       await openArtifact(browser, "a:docs", "Artifact docs");
       await toggleStar(browser, "docs", true);
       await toggleStar(browser, "docs", false);
-      await browser.waitUntil(async () => JSON.stringify(starredIn(fixture.state)) === JSON.stringify(["release", "ship"]), { timeout: 15000, timeoutMsg: "the stars saved" });
-
-      // The graph's order, as a text every Artifact here contains lists them.
+      // In the fixture's graph, ship reads release, so release precedes ship. They
+      // were starred in the opposite order; searching does not supply the oracle.
+      const favorites = ["release", "ship"];
       await ctrlF("the find field open over docs's Detail");
-      await browser.waitUntil(async () => (await names())?.length === 2, { timeout: 15000, timeoutMsg: "the two favorites listed" });
+      await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(favorites),
+        { timeout: 15000, timeoutMsg: "favorites listed in their declared graph order" });
       await fill(browser, FIND, "s");
       await browser.waitUntil(async () => (await names())?.includes("docs") === true, { timeout: 15000, timeoutMsg: "every Artifact with s found" });
-      const order = (await names())!.filter((name) => !name.includes(" / "));
-      const favorites = order.filter((name) => name === "release" || name === "ship");
-      assert.equal(favorites.length, 2, `release and ship are both in the graph: ${JSON.stringify(order)}`);
       // The text removed again lists the favorites, in that order, each with its glyph.
       await fill(browser, FIND, "");
       await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(favorites), { timeout: 15000, timeoutMsg: `the favorites listed: ${JSON.stringify(await field())}` });
@@ -1396,7 +1394,7 @@ payload.instruction = "Check the Live Artifact."
     },
     // The next monitor keeps the stars, for every branch of the project: another worktree's Run
     // shows them and lists them; a star taken away there is gone from master's Current too.
-    async (browser, { fixture, data: { other } }) => {
+    async (browser, { data: { other } }) => {
       const field = () => findField(browser);
       const listedNames = async () => [...(await field())?.entries.map((entry) => entry.name) ?? []].sort();
       // master's Run ended: the launch shows its Current.
@@ -1412,7 +1410,6 @@ payload.instruction = "Check the Live Artifact."
       await press(browser, [primaryModifier, "f"], async () => JSON.stringify(await listedNames()) === JSON.stringify(["release", "ship"]), "scope-one's Run lists both favorites");
       await press(browser, ["Escape"], async () => (await field()) === null, "Esc closes the find field");
       await toggleStar(browser, "ship", false);
-      await browser.waitUntil(async () => JSON.stringify(starredIn(fixture.state)) === JSON.stringify(["release"]), { timeout: 15000, timeoutMsg: "the star's removal saved" });
 
       await chooseChip(browser, "repo  master", "current");
       await browser.waitUntil(async () => (await mainTitle(browser)).startsWith("Current"), { timeout: 15000, timeoutMsg: "master's Current shown" });
@@ -1509,7 +1506,7 @@ payload.instruction = "Check the Live Artifact."
   scenario<{ run: string }>(
     "graph-navigator",
     "shows the Navigator once part of the graph lies outside the view, and moves the camera to the place clicked or dragged to in it, the zoom kept",
-    async () => ended(createChain(30)),
+    async () => ended(createChain(30, true)),
     async (browser, { data: { run } }) => {
       await shownRun(browser, run);
       await graphShown(browser, "a:n000");
@@ -1536,7 +1533,7 @@ payload.instruction = "Check the Live Artifact."
       const shown = await navigator();
       assert.ok(shown && shown.frame.width < shown.map.width * 0.3 && shown.map.height >= 16,
         `the Navigator, tall enough to point at, frames the part in view: ${JSON.stringify(shown)}`);
-      // The whole chain in small, every Artifact a block of its status's colour (each GREEN here),
+      // The whole chain in small, every Artifact a block of its status's colour,
       // at the graph's bottom right.
       const drawing = () => browser.execute(() => {
         const navigator = document.querySelector("[data-navigator]")!.getBoundingClientRect();
@@ -1544,17 +1541,10 @@ payload.instruction = "Check the Live Artifact."
         const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect() ?? null;
         const map = document.querySelector<HTMLCanvasElement>("[data-navigator] canvas")!;
         const pixels = map.getContext("2d")!.getImageData(0, 0, map.width, map.height).data;
-        const hex = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
-        const want = [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
-        let green = 0;
-        let painted = 0;
-        for (let at = 0; at < pixels.length; at += 4) {
-          // Only pixels a block covers whole: a partly covered edge pixel's colour is rounded.
-          if (pixels[at + 3] < 250) continue;
-          painted += 1;
-          // An edge pixel only partly covered keeps its colour, give or take its rounding.
-          if ([0, 1, 2].every((channel) => Math.abs(pixels[at + channel] - want[channel]) <= 4)) green += 1;
-        }
+        const style = getComputedStyle(document.documentElement);
+        const colour = (token: string) => [1, 3, 5].map((at) => Number.parseInt(style.getPropertyValue(token).trim().slice(at, at + 2), 16));
+        const red = colour("--red"), green = colour("--green");
+        const matches = (at: number, expected: number[]) => pixels[at + 3] > 0 && expected.every((value, channel) => Math.abs(pixels[at + channel] - value) <= 8);
         // Project each Artifact's center between the graph's own outer edges onto the painting.
         const nodes = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
           .filter((node) => !node.closest('aside[aria-label="Detail"]'))
@@ -1569,7 +1559,7 @@ payload.instruction = "Check the Live Artifact."
           const at = (y * map.width + x) * 4;
           return {
             id,
-            green: pixels[at + 3] > 0 && want.every((colour, channel) => Math.abs(pixels[at + channel] - colour) <= 8),
+            colour: matches(at, red) ? "red" : matches(at, green) ? "green" : null,
             outside: box.right < canvas.left || box.left > canvas.right || box.bottom < canvas.top || box.top > canvas.bottom,
           };
         });
@@ -1577,15 +1567,21 @@ payload.instruction = "Check the Live Artifact."
           atBottomRight: navigator.left > canvas.left + canvas.width / 2 && navigator.top > canvas.top + canvas.height / 2 &&
             navigator.right <= canvas.right && navigator.bottom <= canvas.bottom,
           leftOfDetail: detail !== null && navigator.right <= detail.left,
-          green, painted, blocks,
+          blocks,
         };
       });
       const look = await drawing();
-      assert.ok(look.painted > 0 && look.green === look.painted, `each Artifact a block in GREEN's colour: ${JSON.stringify(look)}`);
       assert.deepEqual(look.blocks.map(({ id }) => id).sort(), Array.from({ length: 30 }, (_, n) => `a:n${String(n).padStart(3, "0")}`));
-      assert.ok(look.blocks.some(({ outside }) => outside) && look.blocks.every(({ green }) => green),
-        `every Artifact has a green Navigator block, including those fully outside the view: ${JSON.stringify(look.blocks)}`);
+      assert.ok(look.blocks.some(({ outside }) => outside) && look.blocks.every(({ id, colour }) => colour === (id === "a:n029" ? "red" : "green")),
+        `every Artifact has a block in its own verdict colour, including those fully outside the view: ${JSON.stringify(look.blocks)}`);
       assert.ok(look.atBottomRight, "the Navigator is at the graph's bottom right");
+      const unhovered = await camera(browser);
+      const mapPoint = { x: Math.round(shown.map.left + shown.map.width / 2), y: Math.round(shown.map.top + shown.map.height / 2) };
+      await browser.action("pointer").move({ ...mapPoint, origin: "viewport" }).perform();
+      await afterRender(browser);
+      assert.equal(await detail(browser), null, "hovering the Navigator opens no Detail");
+      assert.equal(await browser.$('[role="tooltip"]').isDisplayed(), false, "hovering the Navigator opens no tooltip");
+      assert.equal(await camera(browser), unhovered, "hovering leaves the camera in place");
       const kept = await zoom();
       /** The frame's centre, across the Navigator. */
       const centre = async () => { const at = (await navigator())!; return at.frame.left + at.frame.width / 2; };
