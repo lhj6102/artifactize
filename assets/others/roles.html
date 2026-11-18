@@ -2,7 +2,7 @@
 <!-- Collaborate in Artifactize, in motion: one Artifact Graph passed between three roles, each
      with its team of five people and AI agents. The Director adds to the graph, the Builder
      builds it and the Evaluator checks it node by node; a RED sends it back to the Builder, and
-     the fixed node is checked again until GREEN. Then the Director adds a node and changes
+     the fixed node is checked again, the person signing off, until GREEN. Then the Director adds a node and changes
      another, and the Builder and the Evaluator go back and forth again. The graph is abstract:
      one node on the left fanning out to the right, nothing around them. A node is dashed when new or changed,
      white when built, then GREEN or RED once checked. The scene is 16:9 and a
@@ -27,11 +27,11 @@
   }
   html, body { margin: 0; background: var(--bg); }
   svg.scene { display: block; width: 1440px; height: 810px; }
-  .title { fill: var(--text); font: 700 54px var(--display); letter-spacing: -0.03em; }
-  .kicker { fill: var(--dim); font: 500 28px var(--sans); }
-  .brand { fill: var(--text); font: 700 42px var(--display); letter-spacing: -0.03em; }
+  .title { fill: var(--text); font: 700 74px var(--display); letter-spacing: -0.03em; }
+  .kicker { fill: var(--dim); font: 500 34px var(--sans); }
+  .brand { fill: var(--text); font: 700 52px var(--display); letter-spacing: -0.03em; }
   .edge { fill: none; stroke: #4A5568; stroke-width: 3; marker-end: url(#arrow); }
-  .tag-text { font: 700 22px var(--mono); }
+  .tag-text { font: 700 36px var(--mono); }
 </style>
 </head>
 <body>
@@ -39,7 +39,7 @@
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M1 1.5 9 5 1 8.5Z" fill="#4A5568"/></marker>
     <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feGaussianBlur stdDeviation="3" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
     <symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></g></symbol>
@@ -47,9 +47,9 @@
   </defs>
 
   <!-- The three roles. -->
-  <text class="title" x="720" y="76" text-anchor="middle">Director</text>
-  <text class="title" x="215" y="432" text-anchor="middle">Builder</text>
-  <text class="title" x="1225" y="432" text-anchor="middle">Evaluator</text>
+  <text class="title" x="720" y="94" text-anchor="middle">Director</text>
+  <text class="title" x="232" y="462" text-anchor="middle">Builder</text>
+  <text class="title" x="1208" y="462" text-anchor="middle">Evaluator</text>
   <g id="teams"></g>
 
   <!-- The Artifact Graph, and the tag naming what it is passed for. -->
@@ -58,58 +58,60 @@
     <g id="nodes"></g>
   </g>
   <g id="tag">
-    <rect id="tag-box" y="-21" height="42" rx="21"/>
-    <text id="tag-text" class="tag-text" y="8" text-anchor="middle" fill="#090B0F"></text>
+    <rect id="tag-box" y="-29" height="58" rx="29"/>
+    <text id="tag-text" class="tag-text" y="12" text-anchor="middle" fill="#090B0F"></text>
   </g>
 
   <!-- The logo along the bottom. -->
   <g id="logo">
-    <text class="kicker" id="logo-kicker" y="750">Collaborate in</text>
-    <image id="logo-icon" href="/brand/artifactize-icon.svg" y="704" width="60" height="60"/>
-    <text class="brand" id="logo-name" y="752">Artifactize</text>
+    <text class="kicker" id="logo-kicker" y="766">Collaborate in</text>
+    <image id="logo-icon" href="/brand/artifactize-icon.svg" y="712" width="72" height="72"/>
+    <text class="brand" id="logo-name" y="768">Artifactize</text>
   </g>
 </svg>
 
 <script>
   const SVG = "http://www.w3.org/2000/svg";
   /** The loop's length in seconds. */
-  const SECONDS = 19;
+  const SECONDS = 25.8;
   const COLOURS = { person: "#F5B84B", agent: "#B49CFF" };
 
   // ---------- The story, second by second ----------
 
   /** Where the graph rests beside each role. */
-  const SPOTS = { director: { x: 720, y: 375 }, builder: { x: 600, y: 505 }, evaluator: { x: 840, y: 505 } };
+  const SPOTS = { director: { x: 720, y: 440 }, builder: { x: 628, y: 530 }, evaluator: { x: 812, y: 530 } };
   /** The passes: from one role to another between `start` and `end`, tagged with why. */
   const PASSES = [
-    { from: "director", to: "builder", start: 1.4, end: 2.2, tag: "build" },
-    { from: "builder", to: "evaluator", start: 3.2, end: 4.0, tag: "verify" },
-    { from: "evaluator", to: "builder", start: 5.8, end: 6.6, tag: "RED" },
-    { from: "builder", to: "evaluator", start: 7.4, end: 8.2, tag: "verify" },
-    { from: "evaluator", to: "director", start: 9.0, end: 9.8, tag: "GREEN" },
-    { from: "director", to: "builder", start: 10.8, end: 11.6, tag: "build" },
-    { from: "builder", to: "evaluator", start: 12.6, end: 13.4, tag: "verify" },
-    { from: "evaluator", to: "builder", start: 14.5, end: 15.3, tag: "RED" },
-    { from: "builder", to: "evaluator", start: 16.0, end: 16.8, tag: "verify" },
-    { from: "evaluator", to: "director", start: 17.5, end: 18.3, tag: "GREEN" },
+    { from: "director", to: "builder", start: 1.5, end: 2.4, tag: "build" },
+    { from: "builder", to: "evaluator", start: 3.7, end: 4.6, tag: "verify" },
+    { from: "evaluator", to: "builder", start: 7.7, end: 8.6, tag: "RED" },
+    { from: "builder", to: "evaluator", start: 9.8, end: 10.7, tag: "verify" },
+    { from: "evaluator", to: "director", start: 12.5, end: 13.4, tag: "GREEN" },
+    { from: "director", to: "builder", start: 14.7, end: 15.6, tag: "build" },
+    { from: "builder", to: "evaluator", start: 16.9, end: 17.8, tag: "verify" },
+    { from: "evaluator", to: "builder", start: 19.1, end: 20.0, tag: "RED" },
+    { from: "builder", to: "evaluator", start: 21.2, end: 22.1, tag: "verify" },
+    { from: "evaluator", to: "director", start: 23.9, end: 24.8, tag: "GREEN" },
   ];
   const TAGS = { build: "#B49CFF", verify: "#6AA8FF", RED: "#FF5D5D", GREEN: "#3EE08F" };
 
+  /** When everything returns to the first state, so the loop starts again. */
+  const RESET = 24.9;
   /** The graph's nodes, one on the left fanning out to the right, and each one's states over the
    * loop: five built at the start, a leaf added in each round, and a branch changed in the
-   * second. The Evaluator checks them column by column. At the loop's end everything returns to the first state, so
-   * the loop starts again. */
+   * second. `checks` are when the Evaluator starts checking a node and when its verdict shows;
+   * it checks the white nodes one at a time, column by column. */
   const NODES = {
-    a: { x: -115, y: 0, states: [[0, "built"], [4.15, "green"], [18.3, "built"]] },
-    b: { x: -5, y: -62, states: [[0, "built"], [4.4, "green"], [10.5, "new"], [12.0, "built"], [13.8, "green"], [18.3, "built"]] },
-    c: { x: -5, y: 62, states: [[0, "built"], [4.65, "green"], [18.3, "built"]] },
-    d: { x: 115, y: -96, states: [[0, "built"], [4.9, "green"], [18.3, "built"]] },
-    e: { x: 115, y: -32, states: [[0, "built"], [5.15, "green"], [18.3, "built"]] },
-    f: { x: 115, y: 32, states: [[0, "hidden"], [0.9, "new"], [2.8, "built"], [5.45, "red"], [7.1, "built"], [8.6, "green"], [18.3, "hidden"]] },
-    g: { x: 115, y: 96, states: [[0, "hidden"], [10.1, "new"], [12.3, "built"], [14.2, "red"], [15.7, "built"], [17.1, "green"], [18.3, "hidden"]] },
+    a: { x: -115, y: 0, states: [[0, "built"], [5.1, "green"], [RESET, "built"]], checks: [[4.8, 5.1]] },
+    b: { x: -5, y: -62, states: [[0, "built"], [5.56, "green"], [14.15, "new"], [16.0, "built"], [18.3, "green"], [RESET, "built"]], checks: [[5.26, 5.56], [18.0, 18.3]] },
+    c: { x: -5, y: 62, states: [[0, "built"], [6.02, "green"], [RESET, "built"]], checks: [[5.72, 6.02]] },
+    d: { x: 115, y: -96, states: [[0, "built"], [6.48, "green"], [RESET, "built"]], checks: [[6.18, 6.48]] },
+    e: { x: 115, y: -32, states: [[0, "built"], [6.94, "green"], [RESET, "built"]], checks: [[6.64, 6.94]] },
+    f: { x: 115, y: 32, states: [[0, "hidden"], [0.7, "new"], [3.0, "built"], [7.4, "red"], [9.1, "built"], [11.9, "green"], [RESET, "hidden"]], checks: [[7.1, 7.4], [10.9, 11.9]] },
+    g: { x: 115, y: 96, states: [[0, "hidden"], [13.85, "new"], [16.3, "built"], [18.76, "red"], [20.5, "built"], [23.3, "green"], [RESET, "hidden"]], checks: [[18.46, 18.76], [22.3, 23.3]] },
   };
   /** The graph is drawn this much larger than its coordinates. */
-  const GRAPH_SCALE = 1.45;
+  const GRAPH_SCALE = 1.2;
   const EDGES = [["a", "b"], ["a", "c"], ["b", "d"], ["b", "e"], ["c", "f"], ["c", "g"]];
   const RADIUS = 22;
   /** How each state looks: fill, outline, and whether the outline is dashed. */
@@ -121,21 +123,22 @@
     red: { fill: "#FF5D5D", stroke: "#FF5D5D", opacity: 1 },
   };
 
-  /** When each team works: [role, first member's start, step between members, members]. The
-   * person on the Evaluator signs off each GREEN that ends a round. */
+  /** When each team works, between the graph's arrival and its departure: [role, members, start,
+   * end, step between members' starts]. Only the agents check; the person on the Evaluator then
+   * signs off, alone, each GREEN that ends a round. */
   const WORK = [
-    ["director", 0.5, 0.1, [0, 1, 2, 3, 4]],
-    ["builder", 2.3, 0.14, [0, 1, 2, 3, 4]],
-    ["evaluator", 4.0, 0.36, [0, 1, 2, 3]],
-    ["builder", 6.65, 0.1, [0, 1, 2, 3, 4]],
-    ["evaluator", 8.25, 0.08, [0, 1, 2, 3]],
-    ["evaluator", 8.4, 0, [4]],
-    ["director", 9.9, 0.1, [0, 1, 2, 3, 4]],
-    ["builder", 11.65, 0.14, [0, 1, 2, 3, 4]],
-    ["evaluator", 13.45, 0.35, [0, 1, 2, 3]],
-    ["builder", 15.35, 0.1, [0, 1, 2, 3, 4]],
-    ["evaluator", 16.85, 0.08, [0, 1, 2, 3]],
-    ["evaluator", 16.95, 0, [4]],
+    ["director", [0, 1, 2, 3, 4], 0.25, 1.4, 0.08],
+    ["builder", [0, 1, 2, 3, 4], 2.5, 3.6, 0.08],
+    ["evaluator", [0, 1, 2, 3], 4.7, 7.6, 0.08],
+    ["builder", [0, 1, 2, 3, 4], 8.7, 9.7, 0.08],
+    ["evaluator", [0, 1, 2, 3], 10.8, 11.5, 0.06],
+    ["evaluator", [4], 11.55, 12.4, 0],
+    ["director", [0, 1, 2, 3, 4], 13.5, 14.6, 0.08],
+    ["builder", [0, 1, 2, 3, 4], 15.7, 16.8, 0.08],
+    ["evaluator", [0, 1, 2, 3], 17.9, 19.0, 0.08],
+    ["builder", [0, 1, 2, 3, 4], 20.1, 21.1, 0.08],
+    ["evaluator", [0, 1, 2, 3], 22.2, 22.9, 0.06],
+    ["evaluator", [4], 22.95, 23.8, 0],
   ];
 
   // ---------- Building the scene ----------
@@ -150,18 +153,20 @@
 
   /** Each role's team, left to right, at the centre of its row. */
   const TEAMS = {
-    director: { x: 720, y: 138, members: ["person", "person", "person", "agent", "agent"] },
-    builder: { x: 215, y: 494, members: ["agent", "agent", "agent", "agent", "agent"] },
-    evaluator: { x: 1225, y: 494, members: ["agent", "agent", "agent", "agent", "person"] },
+    director: { x: 720, y: 166, members: ["person", "person", "person", "agent", "agent"] },
+    builder: { x: 232, y: 536, members: ["agent", "agent", "agent", "agent", "agent"] },
+    evaluator: { x: 1208, y: 536, members: ["agent", "agent", "agent", "agent", "person"] },
   };
+  /** A team member's disc: its radius, and the step from one member to the next. */
+  const [BADGE, BADGE_STEP] = [32, 82];
   const badges = {};
   for (const [role, team] of Object.entries(TEAMS)) {
     badges[role] = team.members.map((kind, index) => {
-      const x = team.x + (index - 2) * 64;
+      const x = team.x + (index - 2) * BADGE_STEP;
       const group = make("g", { transform: `translate(${x} ${team.y})`, color: COLOURS[kind] }, byId("teams"));
-      const pulse = make("circle", { r: 25, fill: "none", stroke: COLOURS[kind], "stroke-width": 2, opacity: 0 }, group);
-      const disc = make("circle", { r: 25, fill: "#10141B", stroke: COLOURS[kind], "stroke-width": 2 }, group);
-      make("use", { href: kind === "person" ? "#i-person" : "#i-agent", x: -14, y: -14, width: 28, height: 28 }, group);
+      const pulse = make("circle", { r: BADGE, fill: "none", stroke: COLOURS[kind], "stroke-width": 2.5, opacity: 0 }, group);
+      const disc = make("circle", { r: BADGE, fill: "#10141B", stroke: COLOURS[kind], "stroke-width": 2.5 }, group);
+      make("use", { href: kind === "person" ? "#i-person" : "#i-agent", x: -18, y: -18, width: 36, height: 36 }, group);
       return { kind, group, pulse, disc };
     });
   }
@@ -178,7 +183,7 @@
   });
   for (const node of Object.values(NODES)) {
     node.group = make("g", { transform: `translate(${node.x} ${node.y})` }, byId("nodes"));
-    node.ring = make("circle", { r: 33, fill: "none", stroke: "#6AA8FF", "stroke-width": 3, opacity: 0 }, node.group);
+    node.ring = make("circle", { r: 31, fill: "none", stroke: "#6AA8FF", "stroke-width": 3, opacity: 0 }, node.group);
     node.dot = make("circle", { r: RADIUS, "stroke-width": 3 }, node.group);
   }
 
@@ -186,11 +191,6 @@
 
   const ease = (x) => (x < 0.5 ? 2 * x * x : 1 - (-2 * x + 2) ** 2 / 2);
   const progress = (t, start, end) => ease(Math.min(Math.max((t - start) / (end - start), 0), 1));
-  /** A soft rise and fall, 0 outside [start, start + width]. */
-  const bump = (t, start, width) => {
-    const x = (t - start) / width;
-    return x <= 0 || x >= 1 ? 0 : Math.sin(Math.PI * x);
-  };
   const channels = (hex) => [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
   const mix = (a, b, x) => {
     const [from, to] = [channels(a), channels(b)];
@@ -211,25 +211,29 @@
       x: (1 - x) ** 2 * a.x + 2 * (1 - x) * x * control.x + x ** 2 * b.x,
       y: (1 - x) ** 2 * a.y + 2 * (1 - x) * x * control.y + x ** 2 * b.y,
     };
-    return { ...point, pass, lift: Math.sin(Math.PI * x) };
+    return { ...point, pass };
   }
 
-  /** A node's look at `t`: its state, blended into the next over a quarter second (the loop's
-   * final return over 0.7 s), with a blue ring while it is being checked. */
+  /** A node's look at `t`: its state, blended into the next (over 0.4 s when it is built, the
+   * loop's final return over 0.7 s, otherwise a quarter second), with a blue ring from when its
+   * check starts until just after its verdict shows. A new or changed node keeps its dashes until
+   * it is fully white. */
   function look(node, t) {
     let index = 0;
     node.states.forEach(([start], i) => { if (t >= start) index = i; });
     const [start, state] = node.states[index];
     const before = LOOKS[index > 0 ? node.states[index - 1][1] : state];
     const after = LOOKS[state];
-    const turn = Math.min((t - start) / (start >= 18 ? 0.7 : 0.25), 1);
-    const checked = state === "green" || state === "red";
+    const length = start >= RESET ? 0.7 : state === "built" ? 0.4 : 0.25;
+    const turn = Math.min((t - start) / length, 1);
+    const ring = Math.max(0, ...node.checks.map(([check, verdict]) =>
+      Math.min(Math.min((t - check) / 0.08, 1), 1 - Math.min(Math.max((t - verdict) / 0.15, 0), 1))));
     return {
       fill: mix(before.fill, after.fill, turn),
       stroke: mix(before.stroke, after.stroke, turn),
       opacity: before.opacity + (after.opacity - before.opacity) * turn,
-      dashed: after.dashed && turn > 0.5,
-      ring: checked && start < 18 ? bump(t, start - 0.3, 0.55) : 0,
+      dashed: after.dashed || (before.dashed && turn < 1),
+      ring,
       pop: state === "new" && before.opacity === 0 ? 0.6 + 0.4 * turn : 1,
     };
   }
@@ -250,9 +254,9 @@
       box.setAttribute("x", (-width / 2).toFixed(2));
       box.setAttribute("width", width.toFixed(2));
       box.setAttribute("fill", TAGS[place.pass.tag]);
-      // Above the graph, but never higher than just below the Director's team.
-      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${Math.max(place.y - 186, 202).toFixed(2)})`);
-      tag.setAttribute("opacity", Math.min(1, place.lift * 2.5).toFixed(3));
+      // Above the graph, but never higher than just below the Director's team; fully opaque the
+      // whole way, so it reads from departure to arrival.
+      tag.setAttribute("transform", `translate(${place.x.toFixed(2)} ${Math.max(place.y - 190, 246).toFixed(2)})`);
     }
 
     const looks = {};
@@ -268,11 +272,15 @@
     }
     for (const edge of edges) edge.line.setAttribute("opacity", Math.min(looks[edge.from].opacity, looks[edge.to].opacity).toFixed(3));
 
-    // Teams light up while they work.
+    // Teams light up while they work, breathing softly, and are dark again before the graph
+    // leaves them.
     const glow = { director: [0, 0, 0, 0, 0], builder: [0, 0, 0, 0, 0], evaluator: [0, 0, 0, 0, 0] };
-    for (const [role, start, step, members] of WORK) {
+    for (const [role, members, start, end, step] of WORK) {
       members.forEach((member, order) => {
-        glow[role][member] = Math.max(glow[role][member], bump(t, start + order * step, member === 4 && role === "evaluator" ? 0.7 : 0.5));
+        const from = start + order * step;
+        const on = Math.min(progress(t, from, from + 0.15), 1 - progress(t, end - 0.15, end));
+        const breath = 0.85 + 0.15 * Math.cos(2 * Math.PI * 1.6 * (t - from));
+        glow[role][member] = Math.max(glow[role][member], t > from && t < end ? on * breath : 0);
       });
     }
     for (const [role, team] of Object.entries(badges)) {
@@ -280,7 +288,7 @@
         const x = glow[role][i];
         badge.disc.setAttribute("fill", mix("#10141B", badge.kind === "person" ? "#4A3510" : "#2E2550", x));
         badge.group.setAttribute("filter", x > 0.05 ? "url(#glow)" : "none");
-        badge.pulse.setAttribute("r", (25 + 6 * x).toFixed(2));
+        badge.pulse.setAttribute("r", (BADGE + 4 * x).toFixed(2));
         badge.pulse.setAttribute("opacity", (0.6 * x).toFixed(3));
       });
     }
@@ -290,7 +298,7 @@
   function placeLogo() {
     const kicker = byId("logo-kicker");
     const name = byId("logo-name");
-    const [gap, icon] = [14, 60];
+    const [gap, icon] = [16, 72];
     const width = kicker.getComputedTextLength() + gap + icon + gap + name.getComputedTextLength();
     const left = 720 - width / 2;
     kicker.setAttribute("x", left.toFixed(2));

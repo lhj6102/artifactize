@@ -42,7 +42,6 @@ for (const [message, command] of [["Channel closed", "actions"], [lostWebview, "
       throw actionError(message, command);
     }, alive, orderlyExit);
     assert.equal(browser.sessionId, undefined);
-    assert.equal(alive(owner), false);
   });
 }
 

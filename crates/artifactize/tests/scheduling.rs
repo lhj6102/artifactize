@@ -338,7 +338,7 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
         });
         let child = fixture.spawn(&args);
         wait_until(|| fixture.starts().len() >= jobs);
-        let view = observed(&fixture, &child.run(), |view| {
+        observed(&fixture, &child.run(), |view| {
             view.run.executions_started == jobs as u64
                 && view
                     .requests
@@ -351,7 +351,6 @@ async fn ready_evals_are_unlimited_unless_jobs_is_explicit() {
                     == jobs
         })
         .await;
-        assert_eq!(view.run.executions_started, jobs as u64);
         fs::write(
             support::declaration::source_path(fixture.repo.join("release")),
             "",

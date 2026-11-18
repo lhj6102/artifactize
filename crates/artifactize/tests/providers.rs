@@ -320,6 +320,31 @@ fn gemini_reviews_with_a_saved_key_and_its_thinking_level() {
 }
 
 #[test]
+fn provider_add_requires_exactly_one_complete_target() {
+    let project = Project::new(json!({"kind":"agent", "backend":"openai", "model":"fake-model"}));
+    for flags in [
+        &[][..],
+        &["--api", "openai-chat"],
+        &["--url", "https://example.invalid/v1"],
+        &[
+            "--alias",
+            "openai",
+            "--api",
+            "openai-chat",
+            "--url",
+            "https://example.invalid/v1",
+        ],
+    ] {
+        let mut args = vec!["provider", "add", "work"];
+        args.extend_from_slice(flags);
+        let output = support::os::run(&mut project.command(&args));
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {output:?}");
+        let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(diagnostic["error"].is_string(), "{args:?}: {diagnostic}");
+    }
+}
+
+#[test]
 fn an_alias_reaches_its_provider_and_an_unknown_name_is_an_authentication_error() {
     let project = Project::new(json!({"kind":"agent", "backend":"work", "model":"fake-model"}));
     let provider = FakeProvider::start(|request| {

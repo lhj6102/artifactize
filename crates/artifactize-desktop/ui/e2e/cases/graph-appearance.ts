@@ -122,16 +122,19 @@ export function currentHasColours(
   return hasColours(graph, CURRENT_TOKENS, nodes, edges);
 }
 
-/** Every status colour of `tokens` is visible and its own; each node's mark and strip are its
- * light's colour within a neutral outline; each edge is neutral, or its source's colour when
- * that source holds others up. */
+/** Each tested node's mark and strip take its light's colour within a neutral outline;
+ * each tested edge is neutral or its source's colour when that source holds others up. */
 function hasColours<L extends string>(
   graph: GraphAppearance,
   tokens: Record<L, string>,
   nodes: Record<string, L>,
   edges: Record<string, L>,
 ): boolean {
-  const colours = Object.values<string>(tokens).map((token) => graph.palette[token]);
+  const expected = new Set([
+    ...Object.values(nodes).map((light) => tokens[light]),
+    ...Object.values(edges).map((light) => BLOCKING.has(light) ? tokens[light] : "--edge"),
+  ]);
+  const colours = [...expected].map((token) => graph.palette[token] ?? "");
   if (!colours.every(visibleColour) || new Set(colours).size !== colours.length) return false;
   return Object.entries<L>(nodes).every(([id, light]) => {
     const node = graph.nodes[id];

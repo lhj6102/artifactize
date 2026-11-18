@@ -10,6 +10,7 @@ mod platform;
 pub mod result;
 pub mod schema;
 pub mod scope;
+mod terminal_text;
 
 pub use platform::{environment, files, program};
 

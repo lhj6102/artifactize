@@ -197,14 +197,19 @@ pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::pro
         .unwrap()
 }
 
-pub fn record_path() -> Option<std::ffi::OsString> {
-    std::env::var_os(RECORD)
+/// Only the exact, explicitly selected child may launch the fixture opener.
+pub fn is_recording_child(name: &str) -> bool {
+    std::env::args_os()
+        .skip(1)
+        .eq(["--exact", name, "--nocapture", "--ignored"].map(std::ffi::OsStr::new))
 }
 
-pub fn rerun_recording(root: &Path, test: &str) -> std::process::Output {
+pub fn rerun_recording(root: &Path, record: &Path, test: &str) -> std::process::Output {
     rerun(test)
+        .arg("--ignored")
+        .env_clear()
         .env("PATH", root)
-        .env(RECORD, root.join("record"))
+        .env(RECORD, record)
         .output()
         .unwrap()
 }
@@ -268,13 +273,13 @@ pub fn copy_test_binary(path: &Path) {
 
 /// `program`, a copy of this test binary, set to run only the test `name` with exactly
 /// `environment`; its output once it has succeeded.
-pub fn rerun_as(
+pub fn rerun_recording_as(
     program: &Path,
     name: &str,
     environment: &std::collections::BTreeMap<String, String>,
 ) -> std::process::Output {
     let output = Command::new(program)
-        .args(["--exact", name, "--nocapture"])
+        .args(["--exact", name, "--nocapture", "--ignored"])
         .env_clear()
         .envs(environment)
         .output()

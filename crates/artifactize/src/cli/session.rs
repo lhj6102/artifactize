@@ -94,15 +94,20 @@ pub(super) async fn execute(
                 }))?;
             } else {
                 let mut out = io::stdout().lock();
-                let mut header = format!(
-                    "Session {} · follow-up {} · {}",
-                    located.id, send.number, send.model
-                );
-                if send.files_changed == Some(true) {
-                    header.push_str(" · files changed since this review");
-                }
-                writeln!(out, "{header}\n\n{}", answer_text.trim_end())
-                    .map_err(|e| e.to_string())?;
+                let suffix = if send.files_changed == Some(true) {
+                    " · files changed since this review"
+                } else {
+                    ""
+                };
+                writeln!(
+                    out,
+                    "Session {} · follow-up {} · {}{suffix}\n\n{}",
+                    located.id,
+                    send.number,
+                    send.model,
+                    answer_text.trim_end()
+                )
+                .map_err(|e| e.to_string())?;
             }
         }
     }

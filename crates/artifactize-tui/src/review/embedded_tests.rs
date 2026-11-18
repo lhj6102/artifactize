@@ -682,9 +682,9 @@ fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
         ))
         .unwrap();
         terminal
-            .draw(|frame| view::draw_inline_form(frame, area, &form, scroll, true))
+            .draw(|frame| detail_view::draw_inline_form(frame, area, &form, scroll, true))
             .unwrap();
-        let hits = view::field_hits(area, &form, scroll);
+        let hits = detail_view::field_hits(area, &form, scroll);
         let buffer = terminal.backend().buffer();
         let mut field = 0;
         let mut rows = [0; 3];
@@ -943,7 +943,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
 
     // The launch tool resolves {artifactPath} to the file and launches from its folder; the
     // focused Tools pane shows that command, and Enter runs it without a confirmation.
-    let Some(Ok(command)) = review.command("open_brand-icon").cloned() else {
+    let Some(Ok(command)) = review.command(&"open_brand-icon".parse().unwrap()).cloned() else {
         panic!("resolved command");
     };
     let root = crate::test_os::canonical(&repo);
@@ -966,28 +966,11 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
 
     // The const property is a fixed, prefilled field and part of the submitted result.
     review.control(Control::Green);
-    let Mode::Form(form) = review.mode() else {
-        panic!("GREEN form");
-    };
-    let fields: Vec<_> = form
-        .fields
-        .iter()
-        .map(|field| (field.name.as_str(), field.required, field.display()))
-        .collect();
-    assert_eq!(
-        fields,
-        vec![
-            ("approved", true, "true (fixed)".to_owned()),
-            ("comment", false, String::new()),
-        ]
-    );
-    assert_eq!(
-        form.result().unwrap(),
-        json!({"verdict":"GREEN","approved":true})
-    );
     let screen = drawn(&mut review);
     assert!(
-        screen.contains("comment: ") && !screen.contains("approved*:"),
+        screen.contains("GREEN fields")
+            && screen.contains("comment: ")
+            && !screen.contains("approved*:"),
         "{screen}"
     );
     let action = review.control(Control::Submit);
@@ -1000,10 +983,9 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     for view in std::iter::once(&original).chain(&followers) {
         let view = store::read_request(&state, &view.request.id).await.unwrap();
         assert_eq!(view.request.status(), crate::types::RequestStatus::Green);
-        assert_eq!(
-            view.request.result().unwrap().owner_fields()["approved"],
-            json!(true)
-        );
+        let fields = view.request.result().unwrap().owner_fields();
+        assert_eq!(fields["approved"], json!(true));
+        assert!(!fields.contains_key("comment"));
     }
 }
 

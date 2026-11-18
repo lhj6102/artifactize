@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
 
 mod open;
@@ -336,6 +336,12 @@ impl<T: AsRef<str>> fmt::Display for InputPath<T> {
     }
 }
 
+impl<T: AsRef<str>> Serialize for InputPath<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl<T: AsRef<str>> AsRef<Path> for InputPath<T> {
     fn as_ref(&self) -> &Path {
         Path::new(self.as_str())
@@ -343,6 +349,10 @@ impl<T: AsRef<str>> AsRef<Path> for InputPath<T> {
 }
 
 impl<'a> InputPath<&'a str> {
+    pub(crate) fn into_str(self) -> &'a str {
+        self.0
+    }
+
     pub(crate) fn root() -> Self {
         Self("")
     }

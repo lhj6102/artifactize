@@ -4,10 +4,15 @@ use super::super::{Delivery, DeliveryKind, DeliveryState, Event, Kind};
 use super::{
     BlockId, Patch,
     candidate::{Candidate, candidate},
-    render::{Activity, Group, State, failure_reason, header, markdown, result_text, target},
+    render::{
+        Activity, Group, State, Target, failure_reason, header, markdown, result_text, target,
+    },
 };
 use rig_core::message::{AssistantContent, Message, ToolCall, ToolResult, UserContent};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 struct LiveBlock {
     id: BlockId,
@@ -22,6 +27,32 @@ struct Correlation(String);
 impl Correlation {
     fn of(id: &rig_core::message::CallId) -> Self {
         Self(id.wire().into_owned())
+    }
+}
+
+/// Project the recorded wire arguments onto only the built-in fields this view exposes.
+fn call_target(call: &ToolCall) -> Target<'_> {
+    let name = call.function.name.as_str();
+    let builtin = ["read", "list", "glob", "grep", "view_image"]
+        .iter()
+        .any(|base| {
+            name == *base
+                || name
+                    .strip_prefix(base)
+                    .is_some_and(|rest| rest.starts_with('_'))
+        });
+    if !builtin {
+        return Target::Unrecorded;
+    }
+    let text = |field| {
+        call.function
+            .arguments
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+    };
+    Target::Builtin {
+        path: text("path").map(Path::new),
+        pattern: text("pattern"),
     }
 }
 
@@ -93,7 +124,7 @@ impl Transcript {
         let index = group.activities.len();
         group.activities.push(Activity {
             name: header(call.function.name.as_str()),
-            target: target(call),
+            target: target(call_target(call)),
             state: State::Running,
             orphan: false,
         });

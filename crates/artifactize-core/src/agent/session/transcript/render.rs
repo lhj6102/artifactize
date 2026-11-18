@@ -1,6 +1,7 @@
 //! Render prose, activities and verdicts without exposing private tool or provider payloads.
 
-use rig_core::message::{ToolCall, ToolResult, ToolResultContent};
+use rig_core::message::{ToolResult, ToolResultContent};
+use std::path::Path;
 
 /// Activity labels must stay small even when a custom tool or error has very large text.
 const HEADER_CHARS: usize = 180;
@@ -154,27 +155,23 @@ fn activity_label(name: &str) -> &str {
         name
     }
 }
-pub(super) fn target(call: &ToolCall) -> String {
-    let name = call.function.name.as_str();
-    let builtin = ["read", "list", "glob", "grep", "view_image"]
-        .iter()
-        .any(|base| {
-            name == *base
-                || name
-                    .strip_prefix(base)
-                    .is_some_and(|rest| rest.starts_with('_'))
-        });
-    if !builtin {
+pub(super) enum Target<'a> {
+    Builtin {
+        path: Option<&'a Path>,
+        pattern: Option<&'a str>,
+    },
+    Unrecorded,
+}
+
+pub(super) fn target(target: Target<'_>) -> String {
+    let Target::Builtin { path, pattern } = target else {
         return "target not recorded".into();
-    }
-    let args = &call.function.arguments;
-    let path = args
-        .get("path")
-        .and_then(serde_json::Value::as_str)
-        .map(|path| header(&crate::platform::path_text(std::path::Path::new(path))))
+    };
+    let path = path
+        .map(|path| header(&crate::platform::path_text(path)))
         .filter(|text| !text.is_empty())
         .unwrap_or_else(|| ".".into());
-    match args.get("pattern").and_then(serde_json::Value::as_str) {
+    match pattern {
         Some(pattern) => format!("{path} · {}", header(pattern)),
         None => path,
     }

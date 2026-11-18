@@ -9,9 +9,9 @@ import { checkpoint } from "../commands.ts";
 import { dispatchInput } from "../input.ts";
 import { afterRender, press } from "../keys.ts";
 import { mainTitle } from "../pane.ts";
-import { scenario, type Scenario } from "../scenario.ts";
+import { scenario, type Prepared, type Scenario } from "../scenario.ts";
 import {
-  appendText, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativeInput, nativePath, placeApp,
+  appendText, browserHandoffs, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativeInput, nativePath, placeApp,
   primaryModifier, readText, replaceText, runProgramOk, serveLoopbackHttp, storePackageDirectory, writeText,
   type Environment, type HttpServer, type NativePath,
 } from "../platform.ts";
@@ -94,11 +94,13 @@ async function openDialog(browser: WebdriverIO.Browser): Promise<string> {
 }
 
 /** A click on the dialog's link to `path` opens it in the system browser; the dialog stays. */
-async function follow(browser: WebdriverIO.Browser, data: Site, path: string): Promise<void> {
-  await dialog(browser).$(`button=${data.url}${path}`).click();
-  await browser.waitUntil(() => visited(data).includes(path), {
+async function follow(browser: WebdriverIO.Browser, fixture: Fixture, data: Site, path: string): Promise<void> {
+  const url = `${data.url}${path}`;
+  const before = browserHandoffs(fixture.root).length;
+  await dialog(browser).$(`button=${url}`).click();
+  await browser.waitUntil(() => browserHandoffs(fixture.root).slice(before).includes(url) && visited(data).includes(path), {
     timeout: 15000,
-    timeoutMsg: `the system browser reaches ${path}, which the dialog links`,
+    timeoutMsg: `the desktop opener receives ${url} and its browser visits it`,
   });
   assert.equal(await shown(browser)(), true, "the dialog stays open after its link opens");
 }
@@ -112,12 +114,13 @@ async function closeByButton(browser: WebdriverIO.Browser): Promise<void> {
 /** A release case's fixture: the stand-in site, the app placed by `place` when given, and
  * the system browser for `browser`. */
 async function prepare(tag: string, options: {
+  fixture?: Fixture;
   place?: (fixture: Fixture) => { app: NativePath; env?: Environment };
   browser?: string;
   /** A fixture whose state the CLI already made, as on a machine that ran artifactize before. */
   used?: boolean;
 } = {}) {
-  const fixture = options.used ? await create() : createOutside();
+  const fixture = options.fixture ?? (options.used ? await create() : createOutside());
   const placed = options.place?.(fixture);
   // Everything that can fail comes before the site starts, so its server is always released.
   const env = { ...environment(fixture), ...placed?.env };
@@ -130,6 +133,53 @@ async function prepare(tag: string, options: {
     ...(options.browser ? { browser: `${data.url}${options.browser}` } : {}),
     release: () => server.close(),
   };
+}
+
+// UX journey: J-UPDATE. Shares the Tool log capability, the only clipboard owner.
+export function prepareCargoUpdate(fixture: Fixture) {
+  return prepare(`v${LATEST}`, {
+    fixture,
+    place: (fixture) => {
+      const cargo = nativePath(fixture.root, "cargo");
+      const bin = nativePath(cargo, "bin");
+      const placed = placeApp(app(), bin);
+      copyFile(readCandidate().observer, nativePath(bin, executableName("cargo")));
+      const env = commandDirectory({ ...environment(fixture), CARGO_HOME: cargo, ARTIFACTIZE_E2E_CARGO_LOG: cargoLog(fixture) }, bin);
+      // Positive control: the same command on the app's private PATH is recorded.
+      runProgramOk("cargo", CARGO_CONTROL, { env });
+      assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL));
+      return { app: placed, env };
+    },
+  });
+}
+
+export async function copyCargoUpdate(browser: WebdriverIO.Browser, { data, fixture }: Prepared<Site>): Promise<void> {
+  await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
+  await openDialog(browser);
+  const command = dialog(browser).$("pre.command");
+  const wanted = "cargo install artifactize artifactize-tools --locked";
+  assert.equal(await command.getText(), wanted);
+  const [start, end] = await browser.execute((element: HTMLElement) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const rows = range.getClientRects();
+    const first = rows[0], last = rows[rows.length - 1];
+    return [{ x: first.left + 1, y: first.top + first.height / 2 }, { x: last.right - 1, y: last.top + last.height / 2 }];
+  }, await command.getElement() as unknown as HTMLElement);
+  await dispatchInput(browser, { kind: "text-click", ...start });
+  await dispatchInput(browser, { kind: "text-click", ...end, shift: true });
+  assert.equal(await browser.execute(() => getSelection()?.toString() ?? ""), wanted, "only the update command is selected");
+  await nativeInput(browser, { type: "copy" });
+  await closeByButton(browser);
+  const field = browser.$('input[aria-label="Request ID"]');
+  await press(browser, [primaryModifier, "o"], () => field.isDisplayed(), "a field to paste the command into");
+  await field.click();
+  await nativeInput(browser, { type: "paste" });
+  await browser.waitUntil(async () => await field.getValue() === wanted,
+    { timeout: 15000, timeoutMsg: "the update command pasted exactly" });
+  await press(browser, ["Escape"], async () => !(await field.isDisplayed()), "the paste field closed");
+  assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL), "only the fixture's positive control launched Cargo");
+  onlyLookups(data);
 }
 
 export const scenarios: Scenario[] = [
@@ -179,58 +229,12 @@ export const scenarios: Scenario[] = [
       assert.equal(await dialog(browser).$(`button=${data.url}${PAGE}`).isExisting(), true, "the release page linked");
       assert.equal(await dialog(browser).$("pre.command").isExisting(), false, "nothing to run");
       onlyLookups(data);
-      await follow(browser, data, PAGE);
+      await follow(browser, fixture, data, PAGE);
       await press(browser, ["Escape"], closed(browser), "the dialog closes by Esc");
       assert.equal(await notice(browser).isExisting(), true, "the notice stays in the header after Esc");
 
       await openDialog(browser);
       await closeByButton(browser);
-    },
-  ),
-  // UX journey: J-UPDATE
-  scenario<Site>(
-    "release-command",
-    "an app installed with Cargo shows Cargo's update command, as text that can be selected, and runs nothing itself",
-    () => prepare(`v${LATEST}`, {
-      place: (fixture) => {
-        const cargo = nativePath(fixture.root, "cargo");
-        const bin = nativePath(cargo, "bin");
-        const placed = placeApp(app(), bin);
-        copyFile(readCandidate().observer, nativePath(bin, executableName("cargo")));
-        const env = commandDirectory({ ...environment(fixture), CARGO_HOME: cargo, ARTIFACTIZE_E2E_CARGO_LOG: cargoLog(fixture) }, bin);
-        // Positive control: the same command on the app's private PATH is recorded.
-        runProgramOk("cargo", CARGO_CONTROL, { env });
-        assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL));
-        return { app: placed, env };
-      },
-    }),
-    async (browser, { data, fixture }) => {
-      await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
-      await openDialog(browser);
-      const command = dialog(browser).$("pre.command");
-      const wanted = "cargo install artifactize artifactize-tools --locked";
-      assert.equal(await command.getText(), wanted);
-      const [start, end] = await browser.execute((element: HTMLElement) => {
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        const rows = range.getClientRects();
-        const first = rows[0], last = rows[rows.length - 1];
-        return [{ x: first.left + 1, y: first.top + first.height / 2 }, { x: last.right - 1, y: last.top + last.height / 2 }];
-      }, await command.getElement() as unknown as HTMLElement);
-      await dispatchInput(browser, { kind: "text-click", ...start });
-      await dispatchInput(browser, { kind: "text-click", ...end, shift: true });
-      assert.equal(await browser.execute(() => getSelection()?.toString() ?? ""), wanted, "only the update command is selected");
-      await nativeInput(browser, { type: "copy" });
-      await closeByButton(browser);
-      const field = browser.$('input[aria-label="Request ID"]');
-      await press(browser, [primaryModifier, "o"], () => field.isDisplayed(), "a field to paste the command into");
-      await field.click();
-      await nativeInput(browser, { type: "paste" });
-      await browser.waitUntil(async () => await field.getValue() === wanted,
-        { timeout: 15000, timeoutMsg: "the update command pasted exactly" });
-      await press(browser, ["Escape"], async () => !(await field.isDisplayed()), "the paste field closed");
-      assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL), "only the fixture's positive control launched Cargo");
-      onlyLookups(data);
     },
   ),
   // UX journey: J-UPDATE
@@ -241,12 +245,12 @@ export const scenarios: Scenario[] = [
       place: (fixture) => ({ app: placeApp(app(), diskImageAppDirectory(fixture.root)) }),
       browser: DISK_IMAGE,
     }),
-    async (browser, { data }) => {
+    async (browser, { fixture, data }) => {
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
       await openDialog(browser);
       assert.equal(await dialog(browser).$("pre.command").isExisting(), false, "a disk image has no command to run");
       onlyLookups(data);
-      await follow(browser, data, DISK_IMAGE);
+      await follow(browser, fixture, data, DISK_IMAGE);
       await closeByButton(browser);
     },
   ),

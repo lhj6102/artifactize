@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::image;
+pub use crate::terminal_text::clean_output;
 
 /// Text stays readable in the next provider turn rather than filling its whole context.
 const TEXT_LIMIT: usize = 64 * 1024;
@@ -218,27 +219,51 @@ struct ImageFile {
 pub struct InvalidOutput;
 
 pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutput> {
-    let wire = parse_wire(stdout)?;
-    let mut normalized = Normalized::default();
-    for block in wire.content {
-        let loaded = load(block, output_dir)?;
-        normalized.push(loaded)?;
-    }
-    normalized.finish(wire.is_error)
-}
-
-fn parse_wire(stdout: &[u8]) -> Result<WireResult, InvalidOutput> {
-    let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| InvalidOutput)?;
-    if !(1..=MAX_CONTENT_BLOCKS).contains(&wire.content.len())
-        || wire.is_error
-            && !matches!(
-                wire.content.as_slice(),
-                [WireContent::Text { text }] if !text.trim().is_empty()
-            )
+    let result = match parse_wire(stdout)? {
+        CommandOutput::Error(message) => {
+            if message.as_str().len() > TEXT_LIMIT {
+                return Err(InvalidOutput);
+            }
+            ToolResult::Error(message)
+        }
+        CommandOutput::Success(blocks) => {
+            let mut normalized = Normalized::default();
+            for block in blocks.into_vec() {
+                normalized.push(load(block, output_dir)?)?;
+            }
+            ToolResult::try_success(normalized.content).map_err(|_| InvalidOutput)?
+        }
+    };
+    if serde_json::to_vec(&result)
+        .map_err(|_| InvalidOutput)?
+        .len()
+        > RESULT_LIMIT
     {
         return Err(InvalidOutput);
     }
-    Ok(wire)
+    Ok(result)
+}
+
+enum CommandOutput {
+    Success(ContentBlocks<WireContent<WireImage>>),
+    Error(ErrorMessage),
+}
+
+fn parse_wire(stdout: &[u8]) -> Result<CommandOutput, InvalidOutput> {
+    let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| InvalidOutput)?;
+    if !wire.is_error {
+        return ContentBlocks::new(wire.content)
+            .map(CommandOutput::Success)
+            .map_err(|_| InvalidOutput);
+    }
+    let [WireContent::Text { text }] =
+        <[_; 1]>::try_from(wire.content).map_err(|_| InvalidOutput)?
+    else {
+        return Err(InvalidOutput);
+    };
+    ErrorMessage::new(text)
+        .map(CommandOutput::Error)
+        .map_err(|_| InvalidOutput)
 }
 
 enum LoadedImage {
@@ -295,18 +320,6 @@ impl Normalized {
         self.content.push(block);
         Ok(())
     }
-
-    fn finish(self, is_error: bool) -> Result<ToolResult, InvalidOutput> {
-        let result = ToolResult::from_wire(self.content, is_error).map_err(|_| InvalidOutput)?;
-        if serde_json::to_vec(&result)
-            .map_err(|_| InvalidOutput)?
-            .len()
-            > RESULT_LIMIT
-        {
-            return Err(InvalidOutput);
-        }
-        Ok(result)
-    }
 }
 
 pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
@@ -332,47 +345,4 @@ pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
     } else {
         ToolResult::success(Content::Text { text })
     }
-}
-
-/// ECMA-48 control sequence bytes: after `ESC [`, parameter bytes, then intermediate bytes,
-/// then one final byte end the sequence.
-const CSI_PARAMETER: std::ops::RangeInclusive<u8> = 0x30..=0x3f;
-const CSI_INTERMEDIATE: std::ops::RangeInclusive<u8> = 0x20..=0x2f;
-const CSI_FINAL: std::ops::RangeInclusive<u8> = 0x40..=0x7e;
-
-/// The two-byte prefix introducing an ECMA-48 control sequence.
-const CSI_PREFIX: &[u8] = b"\x1b[";
-/// C0 controls except tab, line feed and carriage return are not printable tool output.
-const C0_CONTROLS: &[std::ops::RangeInclusive<u8>] = &[0..=8, 11..=12, 14..=31];
-
-pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut bytes = text.as_bytes();
-    let mut clean = Vec::with_capacity(bytes.len());
-    while let Some((&byte, tail)) = bytes.split_first() {
-        if bytes.starts_with(CSI_PREFIX) {
-            let mut end = CSI_PREFIX.len();
-            while bytes
-                .get(end)
-                .is_some_and(|byte| CSI_PARAMETER.contains(byte))
-            {
-                end += 1;
-            }
-            while bytes
-                .get(end)
-                .is_some_and(|byte| CSI_INTERMEDIATE.contains(byte))
-            {
-                end += 1;
-            }
-            if bytes.get(end).is_some_and(|byte| CSI_FINAL.contains(byte)) {
-                bytes = &bytes[end + 1..];
-                continue;
-            }
-        }
-        if !C0_CONTROLS.iter().any(|range| range.contains(&byte)) {
-            clean.push(byte);
-        }
-        bytes = tail;
-    }
-    clean
 }

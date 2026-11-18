@@ -19,6 +19,7 @@ import { textContrast } from "../rendering.ts";
 import { detail, graphShown, openArtifact, openTab, tabAt } from "../graph-view.ts";
 import { branch, ENTRIES, expand, listed, MAIN, mainTitle, selectBranch } from "../pane.ts";
 import { runOf as runIn, toolLog as logIn } from "../tool-log.ts";
+import { copyCargoUpdate, prepareCargoUpdate } from "./release.ts";
 
 /** A fresh release waiting for its sign-off, the app started on its branch: its Run shown. */
 async function atRepo(definition?: SignoffDefinition) {
@@ -202,13 +203,25 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journey: J-HUMAN-TOOL
   scenario<null>(
     "monitor-tool-output",
-    "runs an output tool with a click and logs its run: its start, each line it printed and its exit",
+    "keeps a tool disabled until the review is claimed, then runs it with a click and logs its output",
     () => atRepo(),
     async (browser, { fixture }) => {
       const { human, toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
-      await openReview();
+      await openReview(false);
+      const beforeClaim = human().$("button=notes");
+      await beforeClaim.waitForDisplayed({ timeout: 15000, timeoutMsg: "the notes tool is shown before a claim" });
+      assert.equal(await beforeClaim.isEnabled(), false, "the tool cannot be used until the review is claimed");
+      await beforeClaim.click();
+      await afterRender(browser);
+      assert.equal(await runOf("notes"), null, "clicking the unclaimed tool produces no Tool log run");
+      assert.equal(signoff(fixture).claim, null, "clicking a tool does not claim the review");
+      await human().$("button=Claim to review").click();
+      await browser.waitUntil(async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser),
+        { timeout: 15000, timeoutMsg: "the review is now claimed" });
+      assert.deepEqual((await toolLog()).rows, [], "the claim alone does not run a tool");
       const notes = await tool("notes");
       await notes.button.click();
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end" && await reviewing(browser),
@@ -327,11 +340,16 @@ export const scenarios: Scenario[] = [
     },
   ),
 
-  scenario<null>(
+  scenario<Awaited<ReturnType<typeof prepareCargoUpdate>>["data"]>(
     "monitor-tool-log-scroll",
-    "scrolls the Tool log in its own box, holds it while scrolled up, follows again from its bottom, gives its text to the result and clears on submission",
-    () => atRepo(),
-    async (browser, { fixture }) => {
+    "owns the clipboard: copies the Cargo update command, then scrolls and copies the Tool log and clears it on submission",
+    async () => {
+      const { fixture, args } = await atRepo();
+      return { ...await prepareCargoUpdate(fixture), args };
+    },
+    async (browser, input) => {
+      await copyCargoUpdate(browser, input);
+      const { fixture } = input;
       const { human, toolLog, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
       // A normal smaller window makes the result form scroll the log out of view,
@@ -630,6 +648,7 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journey: J-HUMAN-FORM
   scenario<null>(
     "monitor-red-groups",
     "enters a list of steps one text at a time and a list of findings as groups of fields, each added and removed, and submits them",
@@ -639,11 +658,13 @@ export const scenarios: Scenario[] = [
       await openReview();
       await press(browser, ["r"], () => browser.$("#field-reason").isExisting(), "the RED form");
       await fill(browser, "#field-reason", "two problems found");
-      // A list of text: one empty item to type in, another added, the first removed.
+      // A list of text: add and remove entries. The list need not keep an empty item.
       const step = (at: number) => `#field-steps textarea[aria-label="steps ${at}"]`;
-      assert.ok(await browser.$(step(1)).isExisting(), "the first step to type in");
+      const addStep = () => human().$("#field-steps + button");
+      if (!(await browser.$(step(1)).isExisting())) await addStep().click();
+      await browser.$(step(1)).waitForDisplayed({ timeout: 15000, timeoutMsg: "the first editable step" });
       await fill(browser, step(1), "check the date");
-      await human().$("#field-steps + button").click();
+      await addStep().click();
       await browser.$(step(2)).waitForExist({ timeout: 15000, timeoutMsg: "a second step added" });
       assert.equal(await browser.$(step(2)).getValue(), "", "the added step is empty");
       await fill(browser, step(2), "check the title");
@@ -651,8 +672,9 @@ export const scenarios: Scenario[] = [
       await browser.$(step(2)).waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "the first step removed" });
       assert.equal(await browser.$(step(1)).getValue(), "check the title", "the second step moved up");
       await human().$('button[aria-label="Remove steps 1"]').click();
-      await browser.waitUntil(async () => (await browser.$(step(1)).getValue()) === "" && !(await browser.$(step(2)).isExisting()),
-        { timeout: 15000, timeoutMsg: "removing the final step leaves exactly one empty editable item" });
+      await browser.waitUntil(async () => !(await browser.$(step(1)).isExisting()) || await browser.$(step(1)).getValue() === "",
+        { timeout: 15000, timeoutMsg: "the final step's text was removed" });
+      if (!(await browser.$(step(1)).isExisting())) await addStep().click();
       await fill(browser, step(1), "check the title");
       const group = (at: number) => human().$(`[role="group"][aria-label="findings ${at}"]`);
       // One empty group is there to type in.

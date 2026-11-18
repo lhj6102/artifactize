@@ -1,5 +1,6 @@
 //! Terminal ownership and the asynchronous event/job driver.
 use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, loading::Refresh, review};
+use crate::platform::terminal;
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
 use std::{
@@ -22,45 +23,33 @@ impl Monitor {
     }
 }
 
-/// Restore every input protocol when leaving, including errors, signals and panic unwinding.
-pub(crate) struct InputGuard;
-impl Drop for InputGuard {
-    fn drop(&mut self) {
-        let _ = input::protocols(false, false);
-    }
-}
-
-pub(crate) fn repaint(terminal: &mut ratatui::DefaultTerminal) -> Result<(), String> {
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-    )
-    .map_err(|error| error.to_string())?;
-    terminal.swap_buffers();
-    Ok(())
-}
 pub async fn run(
     state: PathBuf,
     repo: Option<PathBuf>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
-    let mut terminal = ratatui::try_init().map_err(|error| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        format!("cannot start the monitor: {error}")
-    })?;
-    let guard = InputGuard;
+    let mut display =
+        terminal::init().map_err(|error| format!("cannot start the monitor: {error}"))?;
+    let input = terminal::Input;
     let result = async {
-        input::protocols(true, true)?;
-        watch(&mut terminal, Monitor::new(state, repo), cancellation).await
+        input.capture(true)?;
+        watch(
+            &mut display,
+            &input,
+            Monitor::new(state, repo),
+            cancellation,
+        )
+        .await
     }
     .await;
-    drop(guard);
-    drop(terminal);
-    ratatui::try_restore().map_err(|error| error.to_string())?;
+    drop(input);
+    drop(display);
+    terminal::restore()?;
     result
 }
 async fn watch(
     terminal: &mut ratatui::DefaultTerminal,
+    input: &terminal::Input,
     mut monitor: Monitor,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
@@ -91,7 +80,7 @@ async fn watch(
                     tick.reset();
                 }
                 Action::OpenDetail => monitor.open_detail().await,
-                Action::Capture(capture) => input::protocols(capture, true)?,
+                Action::Capture(capture) => input.capture(capture)?,
                 Action::Review(review::Action::Start(job)) => {
                     if let Some(review) = monitor.review_mut() {
                         jobs.action = Some(Box::pin(review.start(job)));
@@ -180,7 +169,7 @@ async fn watch(
                 }, if jobs.action.is_some() => {
                     jobs.action = None;
                     // Publishing may have emitted a fail-open warning on stderr.
-                    repaint(terminal)?;
+                    terminal::repaint(terminal)?;
                     match (outcome, monitor.review_mut()) {
                         (Some(outcome), Some(review)) => Action::Review(review.finish_single(outcome)),
                         _ => Action::Refresh,

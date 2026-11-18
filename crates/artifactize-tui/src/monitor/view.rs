@@ -2,7 +2,7 @@
 use super::model::Status;
 use super::{
     DetailArea, Focus, Monitor, Pane, Scope,
-    detail::{Content, SessionView},
+    detail::{Content, PeekContent, SessionView},
     input::{Button, Hits},
     layout::{self, Density},
     model::{self, Section},
@@ -46,6 +46,8 @@ const SCOPE_INDENT: usize = 2;
 const LAST_LABEL: &str = "last: ";
 /// The help popup stays this wide, so its key column and descriptions read as a table.
 const HELP_WIDTH: u16 = 72;
+/// The help popup reserves one row for each of its top and bottom borders.
+const HELP_BORDER_ROWS: u16 = 2;
 /// One more than "Tab / Shift-Tab", the longest key label in [`HELP`], so every label gets
 /// at least one space before its text.
 const HELP_KEY_WIDTH: usize = 16;
@@ -267,12 +269,12 @@ fn run_cells(row: &model::RunRow, workspace: bool) -> [String; COLUMNS] {
 /// the status word, so glyph, id and age always remain. The comment takes the room left over,
 /// cut short to fit, and is left out when that room is too small.
 fn run_widths(rows: &[[String; COLUMNS]], available: usize) -> [usize; COLUMNS] {
-    let mut widths = [0usize; COLUMNS];
-    for row in rows {
-        for (column, cell) in row.iter().enumerate() {
-            widths[column] = widths[column].max(width(cell));
-        }
-    }
+    let mut widths = std::array::from_fn(|column| {
+        rows.iter()
+            .map(|row| width(&row[column]))
+            .max()
+            .unwrap_or(0)
+    });
     let comment = std::mem::take(&mut widths[COMMENT]);
     for column in DROPPED {
         if total(&widths) <= available {
@@ -320,9 +322,9 @@ impl Monitor {
         if let Some(message) = self.error.as_ref().or(self.notice.as_ref()) {
             frame.render_widget(Line::from(message.as_str()).red(), notice);
         }
-        frame.render_widget(Line::from(self.key_hints()).dark_gray(), keys);
+        let tree = self.nodes(now);
+        frame.render_widget(Line::from(self.key_hints(&tree)).dark_gray(), keys);
         // The cached tree with the Run row above it, built once per cached tree.
-        let tree = self.nodes();
         let nodes = match &self.framed {
             Some((source, framed)) if Arc::ptr_eq(source, &tree) => Some(framed.clone()),
             _ => self.run.as_ref().map(|(run, _)| {
@@ -407,14 +409,14 @@ impl Monitor {
         frame.render_widget(Line::from(crumb).bold(), left);
         frame.render_widget(right, end);
     }
-    fn key_hints(&mut self) -> String {
+    fn key_hints(&self, nodes: &[model::Node]) -> String {
         if self.help {
             return "any key closes help".into();
         }
         if self.focus() == Pane::Artifacts {
             return format!(
                 "↑↓ node · Enter open · h/l fold · ! next attention{} · ← Runs · ? keys · q quit",
-                self.blocker_hint()
+                self.blocker_hint(nodes)
             );
         }
         match &self.focus {
@@ -695,8 +697,8 @@ impl Monitor {
         };
         let mut lines = section_lines(&detail, false, false, true);
         if let Some(peek) = &mut self.peek {
-            match &mut peek.live {
-                Some(live) => {
+            match &mut peek.content {
+                PeekContent::Live(live) => {
                     live.geometry(PEEK_WIDTH, PEEK_ROWS);
                     let last = live.window.note().map(str::to_owned).or_else(|| {
                         live.window
@@ -715,10 +717,9 @@ impl Monitor {
                         )),
                     ]));
                 }
-                None if !peek.text.is_empty() => {
-                    lines.push(Line::from(peek.text.clone()).dark_gray())
+                PeekContent::Unavailable(text) => {
+                    lines.push(Line::from(text.clone()).dark_gray());
                 }
-                None => {}
             }
         }
         lines.push(Line::default());
@@ -970,7 +971,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         })
         .collect();
     let width = area.width.min(HELP_WIDTH);
-    let height = area.height.min(lines.len() as u16 + 2);
+    let height = area.height.min(lines.len() as u16 + HELP_BORDER_ROWS);
     let area = Rect::new(
         area.x + (area.width - width) / 2,
         area.y + (area.height - height) / 2,

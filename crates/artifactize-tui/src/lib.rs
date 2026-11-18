@@ -3,6 +3,7 @@
 
 mod jobs;
 pub mod monitor;
+mod platform;
 pub mod review;
 
 /// Two blank columns separate the header breadcrumb from its right-aligned status.
@@ -10,7 +11,7 @@ pub(crate) const HEADER_GAP: usize = 2;
 
 // The core modules the screens use, under the paths their code has always named.
 pub(crate) use artifactize_core::{
-    agent, changes, config, human, platform, runtime, store, task, tools, types, workspace,
+    agent, changes, config, human, runtime, store, task, tools, types, workspace,
 };
 
 #[cfg(test)]

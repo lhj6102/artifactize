@@ -45,6 +45,20 @@ export async function screenshotPixels(browser: WebdriverIO.Browser, viewport: {
   }
   return {
     at: (x: number, y: number) => rgb(Math.round(x * sx), Math.round(y * sy)),
+    inkColumns: (box: ViewportBox, ink: number[]) => {
+      const left = Math.ceil(box.left * sx), right = Math.floor(box.right * sx);
+      const top = Math.ceil(box.top * sy), bottom = Math.floor(box.bottom * sy);
+      if (left < 0 || top < 0 || right > image.width || bottom > image.height || left >= right || top >= bottom) {
+        throw new Error("text pixel sample is empty or outside the viewport");
+      }
+      return Array.from({ length: right - left }, (_, column) => {
+        for (let y = top; y < bottom; y += 1) {
+          const color = rgb(left + column, y);
+          if (Math.hypot(...color.map((channel, i) => channel - ink[i])) < 65) return true;
+        }
+        return false;
+      });
+    },
     every: (box: ViewportBox, matches: (color: number[]) => boolean) => {
       const left = Math.ceil(box.left * sx), right = Math.floor(box.right * sx);
       const top = Math.ceil(box.top * sy), bottom = Math.floor(box.bottom * sy);

@@ -1,4 +1,5 @@
 //! Fixed tool parsing and scoped text execution shared by every caller.
+use super::input::{List, LogicalPath};
 use crate::{
     Builtin, Content, ToolResult,
     launch::Launcher,
@@ -6,12 +7,9 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::{
-    ffi::{OsStr, OsString},
-    io::Read,
-    path::Path,
-};
+use std::{ffi::OsString, io::Read, path::Path};
 use tokio_util::sync::CancellationToken;
+
 mod declaration;
 mod help;
 mod markdown;
@@ -22,6 +20,8 @@ use markdown::section;
 const TEXT_BYTES: usize = 64 * 1024;
 /// Bound Markdown parsing, including a section near the end of the document.
 const DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
+/// Read one byte past the cap to distinguish an exact fit from truncated input.
+const OVERFLOW_PROBE_BYTES: usize = 1;
 
 /// Where a fixed built-in runs: the workspace root, the scope it may read, the Artifact
 /// that declares it, and the launcher that starts a `help` program.
@@ -46,15 +46,26 @@ pub async fn call_fixed(
         Ok(input) => input,
         Err(error) => return ToolResult::error(error),
     };
+    execute(input, context, cancellation).await
+}
+
+pub(crate) async fn execute(
+    input: FixedInput,
+    context: Context<'_>,
+    cancellation: &CancellationToken,
+) -> ToolResult {
+    if cancellation.is_cancelled() {
+        return ToolResult::error("Tool call was cancelled.");
+    }
     let Context {
         root,
         scope,
         owner,
         launcher,
     } = context;
-    let input = match input {
-        FixedInput::Text(input) => input,
-        FixedInput::Help { program, args } => {
+    let input = match input.0 {
+        Invocation::Text(input) => input,
+        Invocation::Help { program, args } => {
             let cwd = match scope
                 .artifact(owner)
                 .and_then(|artifact| scope::scoped_path(root, artifact.folder()))
@@ -62,7 +73,7 @@ pub async fn call_fixed(
                 Ok(cwd) => cwd,
                 Err(error) => return ToolResult::error(error.to_string()),
             };
-            return match help(program, args, &cwd, launcher, cancellation).await {
+            return match help(&program, args, &cwd, launcher, cancellation).await {
                 Ok(text) => text_result(text),
                 Err(error) => ToolResult::error(bounded(&error)),
             };
@@ -95,40 +106,76 @@ struct SectionInput {
 
 /// Parsed fixed declarations and model input. Execution cannot index an absent argument
 /// or combine a heading with a tool that does not accept one.
-enum FixedInput<'a> {
+pub(crate) struct FixedInput(Invocation);
+
+enum Invocation {
     Text(TextInput),
     Help {
-        program: &'a OsStr,
+        program: OsString,
         args: Vec<OsString>,
     },
 }
 
 enum TextInput {
-    Read {
-        path: super::input::LogicalPath,
-    },
-    List(super::input::List),
-    Section {
-        path: super::input::LogicalPath,
-        heading: String,
-    },
+    Read { path: LogicalPath },
+    List(List),
+    Section { path: LogicalPath, heading: String },
 }
 
-impl<'a> FixedInput<'a> {
-    fn parse(builtin: Builtin, args: &'a [String], value: Value) -> Result<Self, String> {
+impl FixedInput {
+    fn text(input: TextInput) -> Self {
+        Self(Invocation::Text(input))
+    }
+
+    pub(crate) fn read(path: String) -> Result<Self, String> {
+        Ok(Self::text(TextInput::Read {
+            path: LogicalPath::parse(path)?,
+        }))
+    }
+
+    pub(crate) fn list(path: String) -> Result<Self, String> {
+        Ok(Self::text(TextInput::List(List {
+            path: LogicalPath::parse(path)?,
+            offset: 0,
+            limit: super::MAX_RESULTS,
+        })))
+    }
+
+    pub(crate) fn section(path: String, heading: String) -> Result<Self, String> {
+        declaration::validate_heading(&heading)?;
+        Self::with_heading(path, heading)
+    }
+
+    fn with_heading(path: String, heading: String) -> Result<Self, String> {
+        Ok(Self::text(TextInput::Section {
+            path: LogicalPath::parse(path)?,
+            heading,
+        }))
+    }
+
+    pub(crate) fn help(args: &[String]) -> Result<Self, String> {
+        validate_args(Builtin::Help, Some(args), false)?;
+        Ok(Self::with_help(args))
+    }
+
+    fn with_help(args: &[String]) -> Self {
+        let (program, args) = args
+            .split_first()
+            .expect("validated help requires a program");
+        Self(Invocation::Help {
+            program: OsString::from(program),
+            args: args.iter().map(OsString::from).collect(),
+        })
+    }
+
+    fn parse(builtin: Builtin, args: &[String], value: Value) -> Result<Self, String> {
         validate_args(builtin, Some(args), false)?;
         let validator = crate::schema::compile(&fixed_schema(builtin, args))?;
         crate::schema::validate(&validator, &value)?;
-        let path = || {
-            super::input::LogicalPath::parse(args.first().ok_or("Missing builtin target.")?.clone())
-        };
-        let input = match builtin {
-            Builtin::Read => TextInput::Read { path: path()? },
-            Builtin::List => TextInput::List(super::input::List {
-                path: path()?,
-                offset: 0,
-                limit: super::MAX_RESULTS,
-            }),
+        let path = || args.first().cloned().ok_or("Missing builtin target.");
+        match builtin {
+            Builtin::Read => Self::read(path()?),
+            Builtin::List => Self::list(path()?),
             Builtin::Section => {
                 let input: SectionInput = serde_json::from_value(value)
                     .map_err(|_| "Tool arguments cannot be read as the declared builtin input.")?;
@@ -137,21 +184,11 @@ impl<'a> FixedInput<'a> {
                     .cloned()
                     .or(input.heading)
                     .ok_or("Section requires heading.")?;
-                TextInput::Section {
-                    path: path()?,
-                    heading,
-                }
+                Self::with_heading(path()?, heading)
             }
-            Builtin::Help => {
-                let (program, args) = args.split_first().ok_or("Missing help program.")?;
-                return Ok(Self::Help {
-                    program: OsStr::new(program),
-                    args: args.iter().map(OsString::from).collect(),
-                });
-            }
-            _ => return Err("This builtin cannot run as a fixed Agent tool.".into()),
-        };
-        Ok(Self::Text(input))
+            Builtin::Help => Ok(Self::with_help(args)),
+            _ => Err("This builtin cannot run as a fixed Agent tool.".into()),
+        }
     }
 }
 
@@ -163,11 +200,9 @@ fn call_text(
     cancellation: &CancellationToken,
 ) -> ToolResult {
     let result = match input {
-        TextInput::Read { path } => {
-            read_text(root, scope, owner, &path, TEXT_BYTES).map(|text| bounded(&text))
-        }
+        TextInput::Read { path } => read_text(root, scope, owner, &path, ReadKind::Excerpt),
         TextInput::Section { path, heading } => {
-            read_text(root, scope, owner, &path, DOCUMENT_BYTES)
+            read_text(root, scope, owner, &path, ReadKind::Document)
                 .and_then(|text| section(&text, &heading))
         }
         TextInput::List(input) => {
@@ -187,12 +222,27 @@ fn text_result(text: String) -> ToolResult {
     ToolResult::success(Content::Text { text })
 }
 
+#[derive(Clone, Copy)]
+enum ReadKind {
+    Excerpt,
+    Document,
+}
+
+impl ReadKind {
+    fn limit(self) -> usize {
+        match self {
+            Self::Excerpt => TEXT_BYTES,
+            Self::Document => DOCUMENT_BYTES,
+        }
+    }
+}
+
 fn read_text(
     root: &Path,
     scope: &Scope,
     owner: &ArtifactId,
-    path: &super::input::LogicalPath,
-    limit: usize,
+    path: &LogicalPath,
+    kind: ReadKind,
 ) -> Result<String, String> {
     let path = path.resolve(scope, owner, false)?;
     let location = scope
@@ -210,38 +260,43 @@ fn read_text(
     }
     let file = crate::artf::reader(file, path.as_str()).map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
-    file.take((limit + 1) as u64)
+    file.take((kind.limit() + OVERFLOW_PROBE_BYTES) as u64)
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
+    text_from_bytes(bytes, kind)
+}
+
+fn text_from_bytes(bytes: Vec<u8>, kind: ReadKind) -> Result<String, String> {
     if bytes.contains(&0) {
         return Err("Reading requires UTF-8 text, not binary data.".into());
     }
-    if bytes.len() > limit && limit == DOCUMENT_BYTES {
+    let overflow = bytes.len() > kind.limit();
+    if overflow && matches!(kind, ReadKind::Document) {
         return Err("Markdown document exceeds 8 MiB.".into());
     }
-    if bytes.len() > limit {
+    let text = match String::from_utf8(bytes) {
+        Ok(text) => text,
         // Only an incomplete trailing UTF-8 sequence may be omitted at the byte boundary.
-        if let Err(error) = std::str::from_utf8(&bytes) {
-            if error.error_len().is_some() {
-                return Err("Reading requires UTF-8 text.".into());
-            }
-            bytes.truncate(error.valid_up_to());
+        Err(error) if overflow && error.utf8_error().error_len().is_none() => {
+            let end = error.utf8_error().valid_up_to();
+            let mut bytes = error.into_bytes();
+            bytes.truncate(end);
+            String::from_utf8(bytes).expect("valid UTF-8 prefix")
         }
-        let text =
-            String::from_utf8(bytes).map_err(|_| "Reading requires UTF-8 text.".to_owned())?;
-        return Ok(bounded(&format!("{text}\n[output truncated]")));
-    }
-    String::from_utf8(bytes).map_err(|_| "Reading requires UTF-8 text.".into())
+        Err(_) => return Err("Reading requires UTF-8 text.".into()),
+    };
+    Ok(if overflow { truncated(&text) } else { text })
 }
 
 fn bounded(text: &str) -> String {
     if text.len() <= TEXT_BYTES {
         return text.to_owned();
     }
+    truncated(text)
+}
+
+fn truncated(text: &str) -> String {
     let suffix = "\n[output truncated]";
-    let mut end = TEXT_BYTES - suffix.len();
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = text.floor_char_boundary((TEXT_BYTES - suffix.len()).min(text.len()));
     format!("{}{suffix}", &text[..end])
 }

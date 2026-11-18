@@ -44,14 +44,13 @@ pub(super) fn register(
     if reachable {
         return Ok(());
     }
-    let bin_text = bin
-        .to_str()
+    bin.to_str()
         .filter(|text| !text.contains(['\n', '\r']))
         .ok_or_else(|| io::Error::other("bundle path cannot be represented in paths.d"))?;
     if !bin.join("artifactize").is_file() || !bin.join("artifactize-tools").is_file() {
         return Err(io::Error::other("bundle is missing its commands"));
     }
-    let content = format!("{bin_text}\n");
+    let content = format!("{}\n", crate::platform::path_text(bin));
     match fs::read_to_string(paths_file) {
         Ok(existing) if existing == content => return Ok(()),
         // A moved/deleted bundle's old entry can be repaired. Another working bundle is
@@ -92,6 +91,8 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         process::{Command, Stdio},
         time::Duration,
     };
+    // AppleScript reports this error marker when the user cancels the authorization prompt.
+    const USER_CANCELLED: &str = "(-128)";
     // A noninteractive sudo probe should finish immediately; bound a stalled plugin.
     const SUDO_TIMEOUT: Duration = Duration::from_secs(5);
     // Give the person time to read the system prompt and authenticate, without leaving
@@ -129,7 +130,7 @@ pub(super) fn write_privileged(destination: &Path, content: &str) -> io::Result<
         Ok(Consent::Installed)
     } else {
         let message = fs::read_to_string(errors.path())?;
-        if message.contains("(-128)") {
+        if message.contains(USER_CANCELLED) {
             Ok(Consent::Declined)
         } else {
             Err(io::Error::other(format!(
@@ -151,15 +152,19 @@ mod tests {
         let first = root.path().join("first-bin");
         let last = root.path().join("last-bin");
         fs::create_dir_all(system.join("paths.d")).unwrap();
-        fs::write(system.join("paths"), format!("{}\n\n", base.display())).unwrap();
+        fs::write(
+            system.join("paths"),
+            format!("{}\n\n", crate::platform::path_text(&base)),
+        )
+        .unwrap();
         fs::write(
             system.join("paths.d/z-last"),
-            format!("{}\n", last.display()),
+            format!("{}\n", crate::platform::path_text(&last)),
         )
         .unwrap();
         fs::write(
             system.join("paths.d/a-first"),
-            format!("{}\n", first.display()),
+            format!("{}\n", crate::platform::path_text(&first)),
         )
         .unwrap();
         assert_eq!(terminal_paths(&system).unwrap(), [base, first, last]);
@@ -189,7 +194,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&paths).unwrap(),
-            format!("{}\n", first.display())
+            format!("{}\n", crate::platform::path_text(&first))
         );
         fs::create_dir_all(moved.parent().unwrap()).unwrap();
         fs::rename(&first, &moved).unwrap();
@@ -200,7 +205,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&paths).unwrap(),
-            format!("{}\n", moved.display())
+            format!("{}\n", crate::platform::path_text(&moved))
         );
         fs::remove_file(&paths).unwrap();
         register(&moved, &paths, &state, false, |_, _| Ok(Consent::Declined)).unwrap();
@@ -220,7 +225,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             fs::read_to_string(&paths).unwrap(),
-            format!("{}\n", first.display())
+            format!("{}\n", crate::platform::path_text(&first))
         );
     }
 }

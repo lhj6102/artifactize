@@ -116,12 +116,14 @@ export const scenarios: Scenario[] = [
       assert.ok(before.fits && before.bounded, `long instruction and owner fields stay inside the Detail: ${JSON.stringify(before)}`);
       const choices = () => browser.execute(() => {
         // The app's strong and quieter text colours, as computed colours to compare with.
+        const root = getComputedStyle(document.documentElement);
+        const swatch = document.createElement("canvas").getContext("2d")!;
         const ink = (token: string) => {
-          const probe = document.body.appendChild(document.createElement("span"));
-          probe.style.color = `var(${token})`;
-          const colour = getComputedStyle(probe).color;
-          probe.remove();
-          return colour;
+          const value = root.getPropertyValue(token).trim();
+          if (!CSS.supports("color", value)) throw new Error(`invalid text colour ${token}: ${value}`);
+          swatch.fillStyle = value;
+          swatch.fillRect(0, 0, 1, 1);
+          return `rgb(${[...swatch.getImageData(0, 0, 1, 1).data.slice(0, 3)].join(", ")})`;
         };
         const [strong, quieter] = [ink("--ink"), ink("--ink-2")];
         return [...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [aria-label="Views"] [role="tab"]')].map((tab) => {
@@ -169,7 +171,12 @@ export const scenarios: Scenario[] = [
       assert.equal((await containment()).width, before.width, "long transcript lines do not expand the chosen Detail width");
       assert.ok((await containment()).bounded);
       await aside(browser).$('[aria-label="Views"]').$('button=Summary').click();
-      assert.ok((await record()).result.includes(FINDING), "switching back restores the owner findings");
+      await browser.waitUntil(async () => {
+        const summary = aside(browser).$('[aria-label="Views"] [role="tab"][aria-selected="true"]');
+        const result = aside(browser).$(".result");
+        return await summary.isDisplayed() && await summary.getText() === "Summary"
+          && await result.isDisplayed() && (await result.getText()).includes(FINDING);
+      }, { timeout: 15000, timeoutMsg: "switching back to Summary restores the saved owner findings" });
       await openTab(browser, `e:${LONG_NAME}/runtime`);
       await aside(browser).$('[aria-label="Views"]').$('button=Runtime log').click();
       await browser.waitUntil(async () => (await aside(browser).getText()).includes("fixture stdout 079") && (await aside(browser).getText()).includes("fixture stderr 079"),

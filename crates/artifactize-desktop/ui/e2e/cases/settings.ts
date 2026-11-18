@@ -15,7 +15,7 @@ import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
 import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
+import { claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const SAVED = "sk-e2e-saved-gemini-key";
@@ -165,7 +165,8 @@ export const scenarios: Scenario[] = [
         // The shown origin is the running Claude Code's own, and the browser it opened visited
         // that URL.
         assert.equal(await httpGet(`${address.origin}/alive`), 200);
-        await browser.waitUntil(async () => visited().length > before && visited().at(-1) === `${address.pathname}${address.search}`,
+        await browser.waitUntil(() => claudeBrowserOpened(fixture.root).includes(address.href)
+          && visited().length > before && visited().at(-1) === `${address.pathname}${address.search}`,
           { timeout: 15000, timeoutMsg: `the browser Claude Code opened visited ${address.pathname}${address.search}: ${JSON.stringify(visited())}` });
         return address.origin;
       }
@@ -347,10 +348,10 @@ export const scenarios: Scenario[] = [
       assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(gemini), "the Gemini fixture value is nowhere in the page");
     },
   ),
-  // UX journey: J-SET-CLAUDE-AGENT
+  // Sign-in failure regression; J-SET-CLAUDE-AGENT does not prescribe a deadline.
   scenario<null>(
     "settings-claude-timeout",
-    "leaves Claude Code sign-in unanswered until the actual ten-minute deadline, then shows the timeout and refreshed sign-in status",
+    "shows the timeout and refreshes sign-in status when an unanswered Claude Code sign-in ends",
     async () => {
       const fixture = createOutside();
       return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture), 660000), data: null, browser: { dynamic: true } };
@@ -360,14 +361,16 @@ export const scenarios: Scenario[] = [
       await openSettings(browser);
       await choose(browser, "Claude Agent");
       await browser.waitUntil(async () => (await status()) === "Not signed in", { timeout: 15000, timeoutMsg: "Claude Code starts signed out" });
-      const started = Date.now();
       await browser.$("button=Sign in with Claude Code").click();
       await browser.waitUntil(async () => (await status()) === "sign-in in progress" && await browser.$("button=Cancel sign-in").isDisplayed(),
         { timeout: 15000, timeoutMsg: "real sign-in starts and waits, with no code or browser callback" });
+      await browser.waitUntil(() => claudeBrowserOpened(fixture.root).length === 1
+        && exists(nativePath(fixture.root, "claude-visits"))
+        && readText(nativePath(fixture.root, "claude-visits")).split("\n").includes("/oauth/authorize?code=true"),
+      { timeout: 15000, timeoutMsg: "Claude Code opened its unanswered sign-in page through the fixture browser" });
       await browser.waitUntil(async () => (await status()) === "Not signed in" &&
         await browser.$("dd*=Claude Code sign-in timed out").isDisplayed() && await browser.$("button=Sign in with Claude Code").isEnabled(),
-      { timeout: 620000, interval: 1000, timeoutMsg: "the ten-minute deadline ends the sign-in, reports the timeout, and refreshes its status" });
-      assert.ok(Date.now() - started >= 599000, "the sign-in did not terminate before its ten-minute deadline");
+      { timeout: 620000, interval: 1000, timeoutMsg: "the unanswered sign-in reports the timeout and refreshes its status" });
       assert.equal(exists(nativePath(fixture.root, "signed-in")), false);
     },
   ),
@@ -712,15 +715,23 @@ Review the agent folder."""
       // A dry run pushes nothing: the store received nothing, and the status, read again,
       // says nothing was pushed today.
       assert.equal(received(), 0, "the dry run sent no record");
+      // Only the response to the fresh status request has this principal; the old
+      // zero counter cannot satisfy the wait while Check status is pending.
+      writeText(principalFile, "alice-after-dry-run");
       await browser.$("button=Check status").click();
-      await browser.waitUntil(async () => (await pushedToday()) === "0 pushed today", { timeout: 15000, timeoutMsg: "nothing pushed today" });
+      await browser.waitUntil(async () => await statusLine().isDisplayed()
+        && await statusLine().getText() === "Signed in · alice-after-dry-run (scopes: read, publish) · 0 pushed today",
+      { timeout: 15000, timeoutMsg: "the fresh status after the dry run shows nothing pushed today" });
       // A real push: the store receives the record, and the same status counts it.
       await browser.$("button=Push results").click();
       await browser.waitUntil(async () => /Pushed 1, already in the store 0, skipped 0\./.test(await text()), { timeout: 15000, timeoutMsg: "the push reports its result" });
       assert.equal(received(), 1, "the store received the one record");
-      await browser.$("button=Check status").click();
+      // The push reports success before its follow-up status request enables the button.
+      const checkStatus = browser.$("button=Check status");
+      await checkStatus.waitForEnabled({ timeout: 15000, timeoutMsg: "the push's status refresh finished" });
+      await checkStatus.click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the push counted today" });
-      assert.equal(await statusLine().getText(), "Signed in · alice-desktop (scopes: read, publish) · 1 pushed today");
+      assert.equal(await statusLine().getText(), "Signed in · alice-after-dry-run (scopes: read, publish) · 1 pushed today");
       writeText(principalFile, "");
       await browser.$("button=Check status").click();
       const error = browser.$('section[aria-labelledby="remote-title"]').$('p[aria-label="Remote store"], [role="alert"]');
@@ -733,8 +744,14 @@ Review the agent folder."""
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the store recovered" });
       await browser.$("button=Sign out of the store").click();
-      await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "the store is signed out, its fields back" });
-      assert.equal(await browser.$("#remote-token").getValue(), "", "the token field is empty");
+      const remote = browser.$('section[aria-labelledby="remote-title"]');
+      const signedOut = remote.$('p[aria-label="Remote store"]');
+      await browser.waitUntil(async () => await signedOut.isDisplayed() && await signedOut.getText() === "Signed out"
+        && await remote.$("#remote-url").isDisplayed() && await remote.$("#remote-token").isDisplayed()
+        && await remote.$('[role="radiogroup"][aria-label="Share level"]').isDisplayed()
+        && await remote.$("button=Sign in to the store").isDisplayed(),
+      { timeout: 15000, timeoutMsg: "the Remote tab shows Signed out and restores the URL, share level and token fields" });
+      assert.equal(await remote.$("#remote-token").getValue(), "", "the token field is empty");
       const after = await remoteStatus(fixture);
       assert.equal(after.code, 1, after.stdout);
       assert.deepEqual(JSON.parse(after.stdout), { configured: false });

@@ -70,6 +70,8 @@
       <p class="error" role="alert" aria-label="Remote store">{s.remoteError}</p>
     {:else if s.remote?.state === "configured" && !signedIn && s.remote.connection.state !== "signedIn"}
       <p class="error" aria-label="Remote store"><span data-testid="remote-status">{s.remote.url}</span> · {s.remote.connection.state === "unreachable" ? "unreachable" : "not signed in"}: {s.remote.connection.error}</p>
+    {:else if s.remote?.state === "unconfigured"}
+      <p class="muted" role="status" aria-label="Remote store">Signed out</p>
     {/if}
   {/if}
 </section>

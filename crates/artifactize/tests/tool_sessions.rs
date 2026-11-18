@@ -299,6 +299,8 @@ fn session_commands_share_the_session_directory_and_run_in_the_authors_home() {
     let stop = fixture.records("stop").pop().unwrap();
     for record in [&start, &call, &stop] {
         assert_eq!(record["home"], support::os::path_text(&home), "{record}");
+    }
+    for record in [&call, &stop] {
         assert_eq!(record["directory"], start["directory"], "{record}");
     }
 }

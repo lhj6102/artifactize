@@ -1,21 +1,47 @@
-//! Opt-in fixture driven by the scratch PTY harness, never a model or default state.
+//! Exercise the real Monitor loop and live transcript on the shared Unix/Windows PTY.
 use super::*;
-use crate::agent::session::{self as saved, Answer, Header, Kind, Recorder, Saving};
+use crate::{
+    agent::session::{
+        Answer, Delivery, DeliveryKind, DeliveryState, Header, Kind, Recorder, Saving,
+    },
+    test_os::{self, PseudoTerminal},
+    types::DeliveryBlock,
+};
 use serde_json::json;
-use std::{fs, time::Duration};
+use std::{
+    fs,
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
+};
 
-/// Check the harness's command files often enough for interactive key delivery without
-/// continuously scanning an idle PTY fixture. Assertions wait on its acknowledgement files.
-const COMMAND_CHECK_INTERVAL: Duration = Duration::from_millis(20);
+const TEST: &str = "monitor::pty_fixture_tests::live_session_pty_fixture";
+// A second exact libtest filter carries the state path; it matches no test of its own.
+const STATE_ARGUMENT: &str = "fixture-state=";
+/// Bound failures, not the time given to redraw: every key waits for the previous frame.
+const FRAME_DEADLINE: Duration = Duration::from_secs(10);
+/// A complete terminal sequence for Left, which backs out of Detail.
+const LEFT: &[u8] = b"\x1b[D";
+/// Uppercase, non-overlapping markers replace the lowercase rows and loading text
+/// without Ratatui eliding unchanged letters from the terminal's patch stream.
+const SEED: &str = "QUACK-BUZZ";
+const DELIVERY: &str = "LIVE_PROVIDER_FRAGMENT";
+const RUNTIME: &str = "RUNTIME_OUTPUT_VISIBLE";
+const APPEND: &str = "NEW_ANSWER_AFTER_SWITCH";
 
 #[tokio::test]
-#[ignore = "requires the external fixture PTY harness"]
 async fn live_session_pty_fixture() {
-    let path = crate::platform::environment::var("ARTIFACTIZE_LIVE_PTY_FIXTURE")
-        .expect("the external PTY harness must declare its owned fixture directory");
-    let root = std::path::PathBuf::from(path);
-    let repo = root.join("repo");
-    let state = root.join("state");
+    if let Some(state) =
+        std::env::args().find_map(|arg| arg.strip_prefix(STATE_ARGUMENT).map(PathBuf::from))
+    {
+        terminal::run(state, None, tokio_util::sync::CancellationToken::new())
+            .await
+            .unwrap();
+        return;
+    }
+
+    let root = test_os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({
@@ -67,7 +93,7 @@ async fn live_session_pty_fixture() {
         "GREEN",
         json!({
             "completedAt":"2026-01-01T00:01:00Z",
-            "result":{"verdict":"GREEN","exitCode":0,"stdout":"other modal unaffected","stderr":""},
+            "result":{"verdict":"GREEN","exitCode":0,"stdout":RUNTIME,"stderr":""},
         }),
     );
     std::sync::Arc::make_mut(&mut runtime.request).run_id = run.id.clone();
@@ -97,40 +123,75 @@ async fn live_session_pty_fixture() {
             "initial row {n} 한글 e\u{301}"
         ))));
     }
+    recorder.event(Kind::Answer(Answer::Completed(SEED.into())));
     std::sync::Arc::make_mut(&mut view.request).session = recorder.reference().cloned();
     receipts.save_request(&view.request).await.unwrap();
-    let cancellation = tokio_util::sync::CancellationToken::new();
-    let control = root.clone();
-    let token = cancellation.clone();
-    // The task set aborts the fixture writer during panic unwinding; normal exit joins it.
-    let mut writers = tokio::task::JoinSet::new();
-    writers.spawn(async move {
-        fs::write(control.join("ready"), "ready").unwrap();
-        loop {
-            if token.is_cancelled() || control.join("quit").exists() {
-                token.cancel();
-                break;
-            }
-            if let Ok(text) = fs::read_to_string(control.join("delivery")) {
-                let _ = fs::remove_file(control.join("delivery"));
-                let delivery: saved::Delivery = serde_json::from_str(&text).unwrap();
-                recorder.event(Kind::Delivery(delivery));
-                crate::changes::drain().await;
-                fs::write(control.join("delivered"), "flushed and notified").unwrap();
-            }
-            if let Ok(text) = fs::read_to_string(control.join("append")) {
-                let _ = fs::remove_file(control.join("append"));
-                recorder.event(Kind::Answer(Answer::Completed(text)));
-                crate::changes::drain().await;
-                fs::write(control.join("appended"), "flushed and notified").unwrap();
-            }
-            tokio::time::sleep(COMMAND_CHECK_INTERVAL).await;
-        }
-    });
-    let terminal_result = terminal::run(state, None, cancellation.clone()).await;
-    cancellation.cancel();
-    fs::write(root.join("quit"), "quit").unwrap();
-    writers.join_next().await.unwrap().unwrap();
-    terminal_result.unwrap();
-    assert!(saved::path(&saving.state, &"fixture-session".parse().unwrap()).exists());
+    drop(receipts);
+
+    let state_argument = format!("{STATE_ARGUMENT}{}", state.to_str().unwrap());
+    // The peek fits one short transcript line; the opened pane has room for evidence below it.
+    let (mut terminal, output) = PseudoTerminal::start(
+        &crate::platform::current_executable().unwrap(),
+        &["--exact", TEST, "--nocapture", &state_argument],
+        &[],
+        180,
+        40,
+    );
+    wait_for_frame(&output, "fixture-run");
+    terminal.type_text(b"\r");
+    wait_for_frame(&output, SEED);
+    terminal.type_text(b"\r");
+    wait_for_frame(&output, "[Bottom]");
+
+    recorder.event(Kind::Delivery(Delivery {
+        turn: 1,
+        attempt: 1,
+        block: DeliveryBlock::text(0),
+        kind: DeliveryKind::Text,
+        text: DELIVERY.into(),
+        state: DeliveryState::Delta,
+    }));
+    crate::changes::drain().await;
+    wait_for_frame(&output, DELIVERY);
+
+    // Leave the Agent modal, select the next eval, and wait for the separate Runtime evidence.
+    terminal.type_text(LEFT);
+    wait_for_frame(&output, "Enter: open");
+    terminal.type_text(b"j\r");
+    wait_for_frame(&output, RUNTIME);
+    recorder.event(Kind::Answer(Answer::Completed(APPEND.into())));
+    crate::changes::drain().await;
+    terminal.type_text(LEFT);
+    wait_for_frame(&output, "Enter: open");
+    terminal.type_text(b"k\r");
+    wait_for_frame(&output, APPEND);
+    terminal.type_text(b"q");
+    let mut rest = Vec::new();
+    assert!(
+        terminal.finish_and_drain(output, &mut rest),
+        "{}",
+        String::from_utf8_lossy(&rest)
+    );
+    assert!(
+        crate::agent::session::path(&saving.state, &"fixture-session".parse().unwrap()).exists()
+    );
+}
+
+fn wait_for_frame(output: &Receiver<Vec<u8>>, expected: &str) {
+    let deadline = Instant::now() + test_os::patience(FRAME_DEADLINE);
+    let mut frame = Vec::new();
+    while !frame
+        .windows(expected.len())
+        .any(|bytes| bytes == expected.as_bytes())
+    {
+        let chunk = output
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|error| {
+                panic!(
+                    "waiting for {expected:?}: {error}; terminal output: {:?}",
+                    String::from_utf8_lossy(&frame)
+                )
+            });
+        frame.extend(chunk);
+    }
 }

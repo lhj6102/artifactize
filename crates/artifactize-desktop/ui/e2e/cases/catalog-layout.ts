@@ -6,7 +6,7 @@ import { createOutside, createUnreadableRuns, savedRuns, spoilRun } from "../fix
 import { CATALOG_NOTE, createEmptyAudit, createLayout } from "../catalog-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
-import { aside, camera, detail, FIND, findField, graphShown, nodeAt, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
+import { aside, camera, detail, FIND, findField, graphShown, nodeAt, offCentre, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
 import { afterRender, fill, press } from "../keys.ts";
 
 function slot(browser: WebdriverIO.Browser) {
@@ -111,29 +111,42 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await slot(browser))?.text.includes("Choose a branch or a waiting review in the Pane.") === true,
         { timeout: 15000, timeoutMsg: "nothing is chosen at launch" });
       const before = (await slot(browser))!;
-      // Sample render frames, not each DOM mutation: an explanation replaced before
-      // the browser gets a rendering opportunity does not count.
+      // Only accept a loading note that is still visible on both sides of a
+      // rendering opportunity. A note replaced in the first callback's frame
+      // can never be evidence, even if it already had layout geometry.
       await browser.execute(() => {
         const trace = { frames: [] as { text: string; bounds: number[]; divider: boolean }[], done: false };
         (window as unknown as { catalogLoading: typeof trace }).catalogLoading = trace;
         const stage = document.querySelector<HTMLElement>(".monitor .stage")!;
+        const read = () => {
+          const divider = document.querySelector(".monitor [data-pane-resizer]")?.getBoundingClientRect();
+          const box = stage.getBoundingClientRect();
+          const note = [...stage.querySelectorAll<HTMLElement>("p.note")].find((note) => {
+            if (!/Loading the graph…|Laying out…/.test(note.innerText)
+              || !note.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+            const range = document.createRange();
+            range.selectNodeContents(note);
+            const text = range.getBoundingClientRect();
+            return text.width > 0 && text.height > 0
+              && note.contains(document.elementFromPoint(text.left + text.width / 2, text.top + text.height / 2));
+          });
+          return { note, frame: { text: note?.innerText ?? (stage.innerText.includes("Lay out all") ? "Lay out all" : ""),
+            bounds: [box.left, box.top, box.width, box.height].map(Math.round),
+            divider: !!divider && divider.width > 0 && divider.left > 0 && divider.right <= box.left + 1 } };
+        };
+        let previous: ReturnType<typeof read> | undefined;
         function sample() {
           if (trace.done) return;
-          const divider = document.querySelector(".monitor [data-pane-resizer]")!;
-          const box = stage.getBoundingClientRect();
-          const text = stage.innerText;
-          const frame = { text, bounds: [box.left, box.top, box.width, box.height].map(Math.round), divider: divider.getBoundingClientRect().width > 0 };
-          requestAnimationFrame(() => {
-            // Keep the completed frame, including its geometry; repeats add no evidence.
-            if (JSON.stringify(trace.frames.at(-1)) !== JSON.stringify(frame)) trace.frames.push(frame);
-            sample();
-          });
+          const now = read();
+          if (previous && now.note === previous.note && now.frame.text === previous.frame.text
+            && JSON.stringify(trace.frames.at(-1)) !== JSON.stringify(now.frame)) trace.frames.push(now.frame);
+          previous = now;
+          requestAnimationFrame(sample);
         }
         requestAnimationFrame(sample);
       });
       await showRun(browser, "repo  master", run);
-      // A click where the layout puts the tree's first Artifact, its top-left corner, opens
-      // that Artifact's Detail, once the first view holds still.
+      // This fixture puts n1199 at the top left. Click that block once the first view holds still.
       await camera(browser);
       // Read the visible canvas in its own backing-store coordinates and colour space.
       // The first block and its gap to the next row are only a few device pixels tall.
@@ -184,7 +197,8 @@ export const scenarios: Scenario[] = [
       assert.ok(loading.every((shown) => !/Lay out all/.test(shown.text)), "the Run lays out without asking first");
       assert.ok(loading.every((shown) => shown.divider && JSON.stringify(shown.bounds) === JSON.stringify(before.bounds)), "loading kept the same pane geometry and its divider");
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
-      await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
+      await browser.waitUntil(async () => (/^Artifact n1199(?:\s|$)/).test((await detail(browser))?.title ?? ""),
+        { timeout: 15000, timeoutMsg: "the block clicked at the fixture's top left opens n1199's Detail" });
       await aside(browser).$("button*=Close").click();
       await browser.waitUntil(async () => (await detail(browser)) === null, { timeout: 15000, timeoutMsg: "the Detail closed" });
       // Zooming in draws named Artifacts it brings into view, ones not drawn before it; one of
@@ -221,7 +235,7 @@ export const scenarios: Scenario[] = [
       assert.deepEqual((await slot(browser))?.bounds, before.bounds, "the graph fills that same slot");
     },
   ),
-  // UX journey: J-GRAPH-LARGE
+  // UX journeys: J-GRAPH-LARGE J-GRAPH-FIND
   scenario<{ run: string }>(
     "main-large-wholes",
     "draws a whole of a large graph, too far out for names, as its box's outline in its status's colour, opens it on a click, and draws it as a named box again when zoomed in",
@@ -234,7 +248,10 @@ export const scenarios: Scenario[] = [
       await showRun(browser, "repo  master", run);
       await browser.waitUntil(() => browser.$(".monitor .graph").isExisting(), { timeout: 60000, timeoutMsg: "the large Run's graph shown" });
       await camera(browser);
-      // Find brings w00 into view, near enough to read: its box is an element, at its place in the graph.
+      // Find brings w00 from a graph drawn without names to the center as a named box.
+      const node = nodeAt("a:w00");
+      await browser.$(".monitor .graph canvas.paint").waitForDisplayed({ timeout: 15000 });
+      assert.equal(await browser.$(`${node} .title .name`).isDisplayed(), false, "no named w00 box at the fitted zoom");
       await browser.$('[aria-label="Graph tools"]').$("button=Find").click();
       await browser.waitUntil(async () => (await findField(browser))?.focused === true, { timeout: 15000, timeoutMsg: "the find field open" });
       await fill(browser, FIND, "w00");
@@ -244,9 +261,13 @@ export const scenarios: Scenario[] = [
       // Its parts match too; the whole itself is chosen by a click.
       const index = found!.entries.findIndex((entry) => entry.name === "w00");
       await (await browser.$$('.find [role="option"]'))[index].click();
-      await browser.waitUntil(async () => /^Artifact w00/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "w00's Detail open" });
+      await browser.waitUntil(async () => (/^Artifact w00(?:\s|$)/).test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "w00's Detail open" });
+      await browser.waitUntil(async () => {
+        const at = await offCentre(browser, "a:w00");
+        const name = browser.$(`${node} .title .name`);
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && await name.isDisplayed() && await name.getText() === "w00";
+      }, { timeout: 15000, timeoutMsg: "Find centers w00 left of the Detail with its name drawn, not an outline" });
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
-      const node = nodeAt("a:w00");
       await browser.$(node).waitForExist({ timeout: 15000, timeoutMsg: "w00 drawn as an element" });
       /** w00's place in the graph: its corner and size in graph units. */
       const place = await browser.execute((selector) => {
@@ -277,21 +298,24 @@ export const scenarios: Scenario[] = [
           token: getComputedStyle(document.documentElement).getPropertyValue("--green").trim(),
         };
       }, place);
-      let far = await painted();
-      for (let step = 0; step < 12 && !(far && far.zoom < 0.3); step += 1) {
+      const zoomedOut = async () => (await painted())?.zoom ?? Infinity;
+      for (let step = 0; step < 12 && await zoomedOut() >= 0.3; step += 1) {
         await browser.$(ZOOM_OUT).click();
         await camera(browser);
-        far = await painted();
       }
-      assert.ok(far && far.zoom < 0.3, `w00 painted too far out for names: ${JSON.stringify(far?.zoom)}`);
-      const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(far.token)!.slice(1).map((part) => Number.parseInt(part, 16));
-      const green = (pixel: number[]) => pixel.every((value, channel) => Math.abs(value - hex[channel]) <= 24);
-      const first = far.row.findIndex(green);
-      const last = far.row.findLastIndex(green);
-      assert.ok(first >= 0 && last > first + 2, `its outline in GREEN's colour on both sides: ${JSON.stringify(far.row)}`);
-      assert.ok(!far.row.slice(first + 2, last - 1).every(green), `an outline, not a filled block: ${JSON.stringify(far.row)}`);
+      let far: Awaited<ReturnType<typeof painted>> = null;
+      await browser.waitUntil(async () => {
+        far = await painted();
+        if (!far || far.zoom >= 0.3) return false;
+        const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(far.token)!.slice(1).map((part) => Number.parseInt(part, 16));
+        const green = (pixel: number[]) => pixel.every((value, channel) => Math.abs(value - hex[channel]) <= 24);
+        const first = far.row.findIndex(green);
+        const last = far.row.findLastIndex(green);
+        return first >= 0 && last > first + 2 && !far.row.slice(first + 2, last - 1).every(green);
+      }, { timeout: 15000, timeoutMsg: "w00 paints both sides of the GREEN outline with an unfilled interior" })
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(far)}`); });
       // A click on it, as painted, opens it.
-      await browser.action("pointer").move({ x: far.centre.x, y: far.centre.y, origin: "viewport" }).down().up().perform();
+      await browser.action("pointer").move({ x: far!.centre.x, y: far!.centre.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => /^Artifact w00/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the painted whole opened w00's Detail" });
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Detail closed");
       // Zoomed in again, it is a named box.

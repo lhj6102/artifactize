@@ -212,3 +212,38 @@ fn retry_after_reads_milliseconds_seconds_and_http_dates() {
     }
     assert_eq!(wait(&[]), None);
 }
+
+#[test]
+fn codex_errors_classify_usage_and_overload_with_the_same_diagnostic() {
+    use super::{Client, Code, codex};
+    use rig_core::{ProviderResponseError, error::ProviderError};
+
+    let root = crate::test_os::tempdir();
+    let client = Client::Codex(
+        codex::Codex::new(
+            &"test-model".parse().unwrap(),
+            "http://localhost/".parse().unwrap(),
+            &root.path().join("state"),
+            root.path(),
+        )
+        .unwrap(),
+    );
+    let now = time::OffsetDateTime::from_unix_timestamp(1_800).unwrap();
+    let usage = ProviderError::ProviderResponse(ProviderResponseError::new(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        r#"{"error":{"type":"usage_limit_reached","plan_type":"PRO","resets_at":1861}}"#,
+    ));
+    let classified = client.classify(&usage, now);
+    assert_eq!(classified.code, Code::Quota);
+    assert_eq!(
+        classified.message,
+        "usage_limit_reached: You have hit your ChatGPT usage limit (pro plan). Try again in ~2 min. (HTTP 429)"
+    );
+
+    let overload = ProviderError::ProviderResponse(ProviderResponseError::without_status(
+        r#"{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Try later"}}}"#,
+    ));
+    let classified = client.classify(&overload, now);
+    assert_eq!(classified.code, Code::Transient);
+    assert_eq!(classified.message, "server_is_overloaded: Try later");
+}

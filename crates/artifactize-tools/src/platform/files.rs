@@ -7,8 +7,6 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-#[cfg(windows)]
-mod directory_scan;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -24,6 +22,11 @@ pub use windows::{
     EntryName, canonicalize, case_sensitive, entry_kind, exact_name, is_link_refusal,
     open_directory, open_entry, open_no_follow, open_nonblocking, read_dir, verified_path,
 };
+
+/// Native lexical equality: Windows accepts either separator; Unix does not.
+pub(crate) fn paths_equal(first: &Path, second: &Path) -> bool {
+    first == second
+}
 
 /// Whether a native path is absolute on this system.
 pub fn is_absolute(path: &std::path::Path) -> bool {

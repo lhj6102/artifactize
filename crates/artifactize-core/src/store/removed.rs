@@ -63,7 +63,7 @@ async fn removed_repositories(state: &Path) -> Result<Vec<PathBuf>, String> {
     let repos = super::connection::finish(connection, result).await?;
     Ok(repos
         .into_iter()
-        .filter(|repo| matches!(repo.try_exists(), Ok(false)))
+        .filter(|repo| matches!(crate::platform::paths::target_exists(repo), Ok(false)))
         .collect())
 }
 

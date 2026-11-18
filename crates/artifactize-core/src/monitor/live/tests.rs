@@ -172,6 +172,42 @@ fn a_branch_has_its_projects_runs_on_that_branch_from_whichever_folder_they_ran_
 }
 
 #[test]
+fn saved_git_common_directory_aliases_share_one_live_branch() {
+    let root = crate::test_os::tempdir();
+    let workspace = repository(root.path());
+    let identity = repository::identify(&workspace);
+    let alias = root.path().join("metadata-alias");
+    crate::test_os::link_dir(identity.common_dir.as_deref().unwrap(), &alias);
+    let runs = [
+        run(
+            "run-1",
+            &workspace,
+            Identity {
+                common_dir: Some(alias),
+                ..identity.clone()
+            },
+            0,
+            RunStatus::Green,
+        ),
+        run("run-2", &workspace, identity, 1, RunStatus::Green),
+    ];
+    let listing = branches(&runs, Some(&workspace), &mut Discovery::default());
+    let [branch] = listing.branches.as_slice() else {
+        panic!("expected one live branch: {:?}", listing.branches);
+    };
+    assert_eq!(listing.launch.as_ref(), Some(&branch.place));
+    assert_eq!(
+        branch
+            .runs
+            .iter()
+            .map(|chip| chip.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run-1", "run-2"]
+    );
+    assert_eq!(listing.labels["run-1"], listing.labels["run-2"]);
+}
+
+#[test]
 fn a_run_below_a_worktree_alias_restores_the_nested_workspace() {
     let root = crate::test_os::tempdir();
     let worktree = repository(root.path());

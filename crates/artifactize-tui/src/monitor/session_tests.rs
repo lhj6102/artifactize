@@ -1,4 +1,4 @@
-use super::*;
+use super::{detail::PeekContent, *};
 use crate::agent::session::document::{Mode, Move};
 use crate::test_session_files::{answer, append, fixture};
 
@@ -439,8 +439,7 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     monitor.peek = Some(Peek {
         request: id,
         stamp: evidence::EvidenceStamp::new(monitor.selected_request().unwrap()),
-        live: Some(session::Live::new(7.into(), source)),
-        text: String::new(),
+        content: PeekContent::Live(Box::new(session::Live::new(7.into(), source))),
     });
     let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
     let screen = |terminal: &Terminal<TestBackend>| {
@@ -510,9 +509,8 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
     monitor.sync_peek().await;
     let peek = monitor.peek.as_ref().unwrap();
     assert!(
-        peek.live.is_none() && !peek.text.is_empty(),
-        "{}",
-        peek.text
+        matches!(&peek.content, PeekContent::Unavailable(text) if !text.is_empty()),
+        "a running request without a session says why"
     );
     monitor.tree.select(vec![
         "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
@@ -565,13 +563,14 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
             .unwrap(),
     ]);
     monitor.sync_peek().await;
-    let failed = monitor.peek.as_ref().unwrap();
-    assert!(failed.live.is_none() && !failed.text.is_empty());
+    let screen = tests::sized(&mut monitor, 160, 30);
+    assert!(screen.contains("No saved Agent conversation"), "{screen}");
     // A refresh lets the next frame resolve the failed peek again.
     monitor.refresh().await;
     assert!(monitor.peek.is_none());
     monitor.sync_peek().await;
-    assert!(monitor.peek.as_ref().unwrap().live.is_none());
+    let screen = tests::sized(&mut monitor, 160, 30);
+    assert!(screen.contains("No saved Agent conversation"), "{screen}");
     // The session appears: the peek reads it after the refresh that brings it.
     let session = |id: &str| crate::agent::session::SessionRef {
         producer: store::Producer::current().name,
@@ -612,18 +611,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     monitor.sync_peek().await;
     assert!(!tests::sized(&mut monitor, 160, 30).contains("reading the session…"));
     complete(monitor.live_mut().unwrap());
-    assert_eq!(
-        monitor
-            .peek
-            .as_ref()
-            .unwrap()
-            .live
-            .as_ref()
-            .unwrap()
-            .window
-            .rows,
-        rows
-    );
+    assert_eq!(monitor.live_mut().unwrap().window.rows, rows);
     assert!(tests::sized(&mut monitor, 160, 30).contains("first session row"));
     // A replaced session drops the old window and follows the replacement transcript.
     source.reference.session_id = "session-2".parse().unwrap();

@@ -75,17 +75,39 @@ impl Changed {
     pub fn add(&mut self, change: &Change) {
         match change {
             Change::StateInvalidated | Change::Resync => *self = Self::Everything,
-            Change::RunInvalidated(id) => match self {
-                Self::Nothing => *self = Self::Runs(BTreeSet::from([id.clone()])),
-                Self::Runs(ids) => {
-                    ids.insert(id.clone());
-                    if ids.len() > MAX_DIRTY_RUNS {
-                        *self = Self::Everything;
-                    }
-                }
-                Self::Everything => {}
-            },
+            Change::RunInvalidated(id) if !matches!(self, Self::Everything) => {
+                self.add_run(id.clone());
+            }
+            Change::RunInvalidated(_) => {}
             Change::SessionInvalidated(_) => {}
+        }
+    }
+    fn add_run(&mut self, id: RunId) {
+        match self {
+            Self::Nothing => *self = Self::Runs(BTreeSet::from([id])),
+            Self::Runs(ids) => {
+                ids.insert(id);
+                if ids.len() > MAX_DIRTY_RUNS {
+                    *self = Self::Everything;
+                }
+            }
+            Self::Everything => {}
+        }
+    }
+    fn pop(&mut self) -> Option<Change> {
+        match self {
+            Self::Nothing => None,
+            Self::Runs(ids) => {
+                let change = ids.pop_first().map(Change::RunInvalidated);
+                if ids.is_empty() {
+                    *self = Self::Nothing;
+                }
+                change
+            }
+            Self::Everything => {
+                *self = Self::Nothing;
+                Some(Change::StateInvalidated)
+            }
         }
     }
     /// Keep what `other` says changed as well, as when a read that took it was not used.
@@ -95,7 +117,7 @@ impl Changed {
             Self::Everything => *self = Self::Everything,
             Self::Runs(ids) => {
                 for id in ids {
-                    self.add(&Change::RunInvalidated(id));
+                    self.add_run(id);
                 }
             }
         }
@@ -122,8 +144,7 @@ impl Changed {
 /// replaces pending Run changes.
 enum Dirty {
     Pending {
-        state: bool,
-        runs: BTreeSet<RunId>,
+        state: Changed,
         sessions: BTreeSet<SessionId>,
     },
     Resync,
@@ -131,37 +152,20 @@ enum Dirty {
 impl Default for Dirty {
     fn default() -> Self {
         Self::Pending {
-            state: false,
-            runs: BTreeSet::new(),
+            state: Changed::Nothing,
             sessions: BTreeSet::new(),
         }
     }
 }
 impl Dirty {
     fn add(&mut self, change: Change) {
-        let Self::Pending {
-            state,
-            runs,
-            sessions,
-        } = self
-        else {
+        let Self::Pending { state, sessions } = self else {
             return;
         };
         match change {
             Change::Resync => *self = Self::Resync,
-            Change::StateInvalidated => {
-                *state = true;
-                runs.clear();
-            }
-            Change::RunInvalidated(id) => {
-                if !*state {
-                    runs.insert(id);
-                    if runs.len() > MAX_DIRTY_RUNS {
-                        *state = true;
-                        runs.clear();
-                    }
-                }
-            }
+            Change::StateInvalidated => *state = Changed::Everything,
+            Change::RunInvalidated(id) => state.add_run(id),
             Change::SessionInvalidated(id) => {
                 sessions.insert(id);
                 if sessions.len() > MAX_DIRTY_SESSIONS {
@@ -176,23 +180,13 @@ impl Dirty {
                 *self = Self::default();
                 Some(Change::Resync)
             }
-            Self::Pending {
-                state,
-                runs,
-                sessions,
-            } => {
-                if std::mem::take(state) {
-                    Some(Change::StateInvalidated)
-                } else if let Some(id) = runs.pop_first() {
-                    Some(Change::RunInvalidated(id))
-                } else {
-                    sessions.pop_first().map(Change::SessionInvalidated)
-                }
-            }
+            Self::Pending { state, sessions } => state
+                .pop()
+                .or_else(|| sessions.pop_first().map(Change::SessionInvalidated)),
         }
     }
     fn is_empty(&self) -> bool {
-        matches!(self, Self::Pending { state: false, runs, sessions } if runs.is_empty() && sessions.is_empty())
+        matches!(self, Self::Pending { state: Changed::Nothing, sessions } if sessions.is_empty())
     }
 }
 struct Inbox {

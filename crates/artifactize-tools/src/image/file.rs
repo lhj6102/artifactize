@@ -5,6 +5,9 @@ use std::{fs::File, io::Read, path::Path};
 use super::IMAGE_LIMIT;
 use crate::scope;
 
+/// Read one extra byte to detect a file growing past the limit after the metadata check.
+const GROWTH_PROBE_BYTES: usize = 1;
+
 pub(crate) fn read_output(root: &Path, path: &str) -> Result<Vec<u8>, String> {
     let relative = crate::files::logical_below(root, path)
         .ok_or("Image path must be a UTF-8 path below the tool output directory.")?;
@@ -22,7 +25,7 @@ pub(crate) fn read(file: File) -> Result<Vec<u8>, String> {
         return Err("Image exceeds the 4 MiB limit or contains no data.".into());
     }
     let mut bytes = Vec::new();
-    file.take((IMAGE_LIMIT + 1) as u64)
+    file.take((IMAGE_LIMIT + GROWTH_PROBE_BYTES) as u64)
         .read_to_end(&mut bytes)
         .map_err(|_| "Cannot read image file.")?;
     Ok(bytes)

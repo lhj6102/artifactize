@@ -159,6 +159,6 @@ fn requests_name_artifactize_as_the_caller() {
     assert!(agent.ends_with("; artifactize)"));
 }
 
-fn parsed(value: &serde_json::Value) -> Option<super::errors::Error> {
-    super::errors::Error::parse(&serde_json::to_vec(value).unwrap())
+fn parsed(value: &serde_json::Value) -> Option<Body> {
+    Body::parse(&serde_json::to_vec(value).unwrap())
 }

@@ -5,7 +5,7 @@
 //! The focused sub-area grows: the instruction (`i`), the tools with their output, or the
 //! CLAIM/REVIEW fields. Keys follow one protocol in both entry points.
 use super::{
-    Area, Control, Mode, Review, Runs, Stage, Tool, meta, outcome_text, shared, stage, view,
+    Area, Control, Mode, Review, Runs, Stage, Tool, detail_view, meta, outcome_text, shared, stage,
 };
 use crate::{config::HumanToolKind, monitor::plain, store::RequestView, types::ReviewerId};
 use ratatui::{
@@ -102,7 +102,10 @@ fn instruction(view: &RequestView, reviewer: &ReviewerId, technical: bool) -> Ve
     if technical {
         lines.push(Line::default());
         lines.push(Line::from("Technical").bold());
-        lines.extend(view::lines(super::technical(view, reviewer.as_str())));
+        lines.extend(detail_view::lines(super::technical(
+            view,
+            reviewer.as_str(),
+        )));
     }
     lines
 }
@@ -498,7 +501,7 @@ impl Review {
         }
         if self.owned() {
             if let Mode::Form(form) = &self.mode {
-                view::draw_inline_form(frame, area, form, self.field_scroll, focused);
+                detail_view::draw_inline_form(frame, area, form, self.field_scroll, focused);
                 return self.field_hits(area);
             }
             frame.render_widget(

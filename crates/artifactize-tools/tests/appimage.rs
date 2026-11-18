@@ -18,7 +18,6 @@ use std::{
 fn opened_with(
     root: &Path,
     program: &Path,
-    test: &str,
     environment: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     // No record of an earlier opener: only this run's can be read.
@@ -26,7 +25,7 @@ fn opened_with(
     if let Err(error) = std::fs::remove_file(&record) {
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound, "{error}");
     }
-    os::rerun_as(program, test, environment);
+    os::rerun_recording_as(program, "open_fixture_target", environment);
     os::recorded_environment(&record)
 }
 
@@ -61,31 +60,25 @@ impl Fixture {
 }
 
 /// In the rerun, hand one target to the desktop opener.
-fn open_when_rerun() -> bool {
-    if os::record_path().is_none() {
-        return false;
+#[tokio::test]
+#[ignore = "child entry point run with the fixture's isolated environment"]
+async fn open_fixture_target() {
+    if !os::is_recording_child("open_fixture_target") {
+        return;
     }
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(artifactize_tools::opener::open(OsStr::new("notes.md")))
+    artifactize_tools::opener::open(OsStr::new("notes.md"))
+        .await
         .unwrap();
-    true
 }
 
 #[test]
 fn a_program_started_from_inside_an_appimage_gets_the_persons_environment() {
-    if open_when_rerun() {
-        return;
-    }
     let fixture = Fixture::new();
     let root = fixture.root.path();
     let person = os::appimage_person(root);
     let received = opened_with(
         root,
         &fixture.inside,
-        "a_program_started_from_inside_an_appimage_gets_the_persons_environment",
         &os::appimage_bundled(&fixture.bundle, &person),
     );
     assert_eq!(received, person);
@@ -93,15 +86,11 @@ fn a_program_started_from_inside_an_appimage_gets_the_persons_environment() {
 
 #[test]
 fn without_an_appimage_a_started_program_gets_the_environment_unchanged() {
-    if open_when_rerun() {
-        return;
-    }
-    let test = "without_an_appimage_a_started_program_gets_the_environment_unchanged";
     let fixture = Fixture::new();
     let root = fixture.root.path();
     let bundled = os::appimage_bundled(&fixture.bundle, &os::appimage_person(root));
     let unnamed = os::appimage_without_bundle_marker(bundled.clone());
-    assert_eq!(opened_with(root, &fixture.inside, test, &unnamed), unnamed);
+    assert_eq!(opened_with(root, &fixture.inside, &unnamed), unnamed);
     // The program is outside the bundle, as in a terminal started from another AppImage.
-    assert_eq!(opened_with(root, &fixture.outside, test, &bundled), bundled);
+    assert_eq!(opened_with(root, &fixture.outside, &bundled), bundled);
 }

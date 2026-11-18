@@ -2,6 +2,7 @@
 
 mod detail;
 mod detail_input;
+mod detail_view;
 mod embedded;
 #[cfg(test)]
 mod embedded_tests;
@@ -356,7 +357,7 @@ impl Review {
     }
 
     /// The resolved command line of a tool of the open request, once known.
-    pub(crate) fn command(&self, tool: &str) -> Option<&Result<CommandLine, String>> {
+    pub(crate) fn command(&self, tool: &ToolName) -> Option<&Result<CommandLine, String>> {
         self.commands
             .as_ref()
             .and_then(|(_, commands)| commands.get(tool))

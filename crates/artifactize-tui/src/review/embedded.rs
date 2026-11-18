@@ -1,7 +1,7 @@
 //! Lifecycle controls of one open request: claim, verdict forms, tools, submit and release.
 //! The shared Detail component and monitor's buttons drive them; jobs and the ownership
 //! protocol are the same for monitor and the standalone review.
-use super::{Action, Area, Job, Mode, Outcome, Review, view};
+use super::{Action, Area, Job, Mode, Outcome, Review, detail_view};
 use crate::store::RequestView;
 use ratatui::layout::Rect;
 
@@ -83,7 +83,7 @@ impl Review {
         if self.owned()
             && let Mode::Form(form) = &self.mode
         {
-            view::field_hits(area, form, self.field_scroll)
+            detail_view::field_hits(area, form, self.field_scroll)
         } else {
             Vec::new()
         }

@@ -7,12 +7,13 @@ import { prepareFixture } from "../build-fixtures.ts";
 import { verifyAll, type Fixture } from "../fixture.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { exists, listFiles, makeDirectory, nameOf, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
+import { exists, listFiles, makeDirectory, nameOf, nativePath, primaryModifier, readText, relativeTextPath, writeText } from "../platform.ts";
 import { detail, FIND, findField, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
 import { MAIN, chooseChip, mainTitle, scanned, showRun } from "../pane.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
 import { buttonKey, dispatchInput, tab } from "../input.ts";
+import { screenshotPixels } from "../rendering.ts";
 
 const CURRENT = 'section[aria-label="Current"]';
 const DETAIL = 'aside[aria-label="Detail"]';
@@ -21,7 +22,8 @@ const TOOLS = '[aria-label="Graph tools"]';
 /** The comments of the editing fixture: app's, under its title row, and core's, longer than
  * the three lines a comment shows. */
 const APP_NOTE = "The app is split next, once the kit settles.\nThe bundle follows.";
-const CORE_NOTE = "Core needs a review before the parser lands.\nThe tests cover the happy path only.\nThe errors are untested.\nNor is the cache.";
+const CORE_LINES = ["Core needs a review.", "Only the happy path runs.", "The errors are untested", "Nor is the cache."];
+const CORE_NOTE = CORE_LINES.join("\n");
 
 /** What the editing fixture holds besides its Artifacts: `comments` adds app's and core's;
  * `nested` keeps kit's file in `.artifactize/lib/` with a comment, placed in app's box by hand;
@@ -133,14 +135,6 @@ const commentOf = (browser: WebdriverIO.Browser, id: string) => browser.execute(
     quiet: style.color === quiet,
     bare: style.backgroundColor === "rgba(0, 0, 0, 0)" && style.borderTopStyle === "none",
     cut: text.scrollHeight > text.clientHeight + 1,
-    clamp: {
-      // Engines implementing the legacy clamp through CSS Overflow's block-container
-      // layout compute the authored -webkit-box as flow-root.
-      block: style.display === "-webkit-box" || style.display === "flow-root",
-      orientation: style.getPropertyValue("-webkit-box-orient"),
-      lines: style.getPropertyValue("-webkit-line-clamp"),
-      overflow: style.overflowY,
-    },
     lineHeight: Number.parseFloat(style.lineHeight),
   };
 }, `${CURRENT} ${nodeAt(id)}, .run ${nodeAt(id)}`);
@@ -557,6 +551,7 @@ export const scenarios: Scenario[] = [
     "creates an Artifact from the tool strip, renames one with its references, and deletes one only while nothing names it",
     async () => {
       const fixture = createEditing({ nested: true, placed: true });
+      writeText(pathOf(fixture, "app"), file(fixture, "app")!.replace("kit = [0.0, 0.0]", "kit = [64.0, 48.0]"));
       return { fixture, args: ["graph", "--repo", fixture.repo], data: {} };
     },
     async (browser, { fixture }) => {
@@ -671,18 +666,26 @@ export const scenarios: Scenario[] = [
       // entry and the place follow, its file stays in its folder with its comment.
       const kitText = file(fixture, "kit");
       const appPlace = placeOf(fixture, "app", "at");
+      const kitPlace = placeOf(fixture, "app", "kit");
       assert.ok(appPlace, "the fixture placed app before renaming its part");
+      assert.deepEqual(kitPlace, [64, 48], "kit starts away from its automatic position in app's box");
       await openArtifact(browser, "a:app/a:kit", "Artifact kit");
       await browser.$(DETAIL).$("button=Rename").click();
       await dialog().waitForExist({ timeout: 15000 });
       await fill(browser, '[role="dialog"] input', "piece");
       await browser.keys("Enter");
-      await waitFor(browser, () => file(fixture, "kit") === null && exists(nativePath(fixture.repo, ".artifactize", "lib", "piece.artf")), "lib/kit.artf renamed lib/piece.artf");
+      const wholes = ["app", "bundle", "docs"];
+      await waitFor(browser, () => file(fixture, "kit") === null
+        && exists(nativePath(fixture.repo, ".artifactize", "lib", "piece.artf")) && file(fixture, "piece") === kitText
+        && wholes.every((whole) => holds(fixture, whole, "piece") && !holds(fixture, whole, "kit"))
+        && placesPart(fixture, "app", "piece") && !placesPart(fixture, "app", "kit"),
+      "lib/kit.artf renamed lib/piece.artf, with all three references and its placement renamed");
       assert.equal(file(fixture, "piece"), kitText, "its text, comment included, as it was");
-      for (const whole of ["app", "bundle", "docs"]) {
+      for (const whole of wholes) {
         assert.ok(holds(fixture, whole, "piece") && !holds(fixture, whole, "kit"), `${whole}'s parts name piece`);
       }
-      assert.ok(placesPart(fixture, "app", "piece") && !placesPart(fixture, "app", "kit"), "app's place for it follows");
+      assert.deepEqual(placeOf(fixture, "app", "piece"), kitPlace, "app's exact saved place follows kit to piece");
+      assert.equal(placeOf(fixture, "app", "kit"), null, "the old name's place is gone");
       assert.deepEqual(placeOf(fixture, "app", "at"), appPlace, "app keeps its own numeric coordinates");
       await waitFor(browser, async () => (await detail(browser))?.title === "Artifact piece", "the Detail names piece");
       await waitFor(browser, async () => await browser.$(`${CURRENT} ${nodeAt("a:app/a:piece")}`).isExisting(), "the graph draws piece in app's box");
@@ -696,7 +699,7 @@ export const scenarios: Scenario[] = [
         return all();
       };
       const refusedFor = async (name: string, text: string, kept: (string | null)[], said: () => Promise<string>) => {
-        await waitFor(browser, async () => (await said()) === `${pathOf(fixture, name).includes("lib") ? ".artifactize/lib" : ".artifactize"}/${name}.artf changed on disk.`, `${name}'s change refuses the edit, naming the file`);
+        await waitFor(browser, async () => (await said()) === `${relativeTextPath(fixture.repo, pathOf(fixture, name))} changed on disk.`, `${name}'s change refuses the edit, naming the file`);
         assert.deepEqual(all(), kept, `${name}: nothing written`);
         await waitFor(browser, async () => (await comments(browser))[`a:${name}`] === text, `the graph shows ${name}'s file as it is on disk`);
       };
@@ -816,6 +819,10 @@ export const scenarios: Scenario[] = [
       const files = () => ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
       const untouched = files();
       await drag(browser, core, await below(browser, core.x + 80, core.y), {
+        held: () => waitFor(browser, async () => {
+          const moved = await box(browser, "a:core");
+          return !!moved && Math.hypot(moved.x - core.x, moved.y - core.y) > 20;
+        }, "core visibly moves before Escape"),
         escape: true,
         escaped: () => waitFor(browser, async () => JSON.stringify(await box(browser, "a:core")) === JSON.stringify(core), "Esc put core back before the button is let go"),
       });
@@ -1106,6 +1113,77 @@ export const scenarios: Scenario[] = [
     },
   ),
 
+  // UX journeys: J-NODE-MOVE J-LAYOUT-RESET
+  scenario<null>(
+    "editing-nested-layout",
+    "pans from the face of a whole and resets an outer box without resetting its hand-placed inner box",
+    async () => {
+      const fixture = createEditing({ nested: true, placed: true });
+      writeText(pathOf(fixture, "bundle"), `path = "bundle/"
+parts = ["app", "docs"]
+basis = true
+[annotations.style]
+at = [420.0, 0.0]
+[annotations.style.parts]
+app = [248.0, 96.0]
+docs = [0.0, 0.0]
+`);
+      writeText(pathOf(fixture, "app"), file(fixture, "app")!.replace("kit = [0.0, 0.0]", "kit = [48.0, 32.0]"));
+      return { fixture, args: ["graph", "--repo", fixture.repo], data: null };
+    },
+    async (browser, { fixture }) => {
+      const outer = "a:bundle", inner = `${outer}/a:app`, kit = `${inner}/a:kit`;
+      const reset = (id: string, name: string) => browser.$(`${CURRENT} ${nodeAt(id)} button[aria-label="Reset layout of ${name}"]`);
+      await currentShown(browser, kit);
+      await reset(outer, "bundle").waitForDisplayed({ timeout: 15000 });
+      await reset(inner, "app").waitForDisplayed({ timeout: 15000 });
+      const definitions = () => ["bundle", "app", "kit", "docs", "core"].map((name) => file(fixture, name));
+      const before = definitions();
+      const beforePlaces = await places(browser);
+      const cameraBefore = await camera(browser);
+      const face = await browser.execute((selector) => {
+        const surface = document.querySelector(`${selector} > .whole`);
+        const title = surface?.querySelector(".title");
+        const canvas = surface?.closest(".canvas");
+        if (!surface || !title || !canvas) return null;
+        const box = surface.getBoundingClientRect(), room = canvas.getBoundingClientRect();
+        for (let y = Math.ceil(Math.max(title.getBoundingClientRect().bottom, room.top)) + 4; y < Math.min(box.bottom, room.bottom) - 4; y += 4) {
+          for (let x = Math.ceil(Math.max(box.left, room.left)) + 4; x < Math.min(box.right, room.right) - 4; x += 4) {
+            if (document.elementFromPoint(x, y) === surface) {
+              return { from: { x, y }, to: { x: x + (x + 70 < room.right ? 60 : -60), y } };
+            }
+          }
+        }
+        return null;
+      }, `${CURRENT} ${nodeAt(outer)}`);
+      assert.ok(face, "a reachable point on bundle's face, below its title and outside its parts");
+      await drag(browser, face.from, face.to);
+      await waitFor(browser, async () => (await camera(browser)) !== cameraBefore, "dragging the face pans the camera");
+      await afterRender(browser);
+      assert.deepEqual(await places(browser), beforePlaces, "panning moves none of the Artifacts relative to each other");
+      assert.deepEqual(definitions(), before, "the face drag writes no placement");
+
+      const relative = async (child: string, parent: string) => {
+        const [one, other] = await Promise.all([box(browser, child), box(browser, parent)]);
+        return one && other ? [one.left - other.left, one.top - other.top].map(Math.round) : null;
+      };
+      const outerOffset = await relative(inner, outer);
+      const innerOffset = await relative(kit, inner);
+      assert.ok(outerOffset && innerOffset, "both hand-placed levels are shown");
+      assert.deepEqual(placeOf(fixture, "app", "kit"), [48, 32], "the inner box really has a saved place");
+      await reset(outer, "bundle").click();
+      await waitFor(browser, () => placeOf(fixture, "bundle", "app") === null && placeOf(fixture, "bundle", "docs") === null,
+        "only the outer box's saved part positions were removed");
+      await waitFor(browser, async () => {
+        const laidOut = await relative(inner, outer);
+        return laidOut !== null && JSON.stringify(laidOut) !== JSON.stringify(outerOffset) && !(await reset(outer, "bundle").isExisting());
+      }, "the outer box returns to automatic layout");
+      assert.equal(await reset(inner, "app").isDisplayed(), true, "the inner box is still hand-placed");
+      assert.deepEqual(await relative(kit, inner), innerOffset, "the inner box keeps its drawn part placement");
+      assert.equal(file(fixture, "app"), before[1], "the inner box's definition and layout are unchanged");
+    },
+  ),
+
   // UX journey: J-PARTS-DRAG
   scenario<null>(
     "editing-shared-drop-position",
@@ -1172,8 +1250,37 @@ export const scenarios: Scenario[] = [
       await quiet("a:app", true);
       const clamped = await quiet("a:core", false);
       assert.equal(clamped.cut, true, "core's fourth line overflows its visible box");
-      assert.deepEqual(clamped.clamp, { block: true, orientation: "vertical", lines: "3", overflow: "hidden" },
-        "the browser's three-line clamp paints an ellipsis, not a plain overflow clip");
+      // The fixture's third line stops with a plain letter, well before the
+      // right edge. An ellipsis adds three visible dots after it; a plain clip
+      // leaves that part of the line blank. The fourth line has no painted ink.
+      const commentInk = async () => {
+        const sample = await browser.execute((selector, lines) => {
+          const comment = document.querySelector<HTMLElement>(selector)!;
+          const box = comment.getBoundingClientRect();
+          const style = getComputedStyle(comment);
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+          // Measure the unclipped text, not a Range that may include the engine's ellipsis.
+          const scale = box.width / comment.offsetWidth;
+          const lineHeight = Number.parseFloat(style.lineHeight) * scale;
+          const rows = lines.map((line, i) => ({ left: box.left, right: box.left + context.measureText(line).width * scale,
+            top: box.top + i * lineHeight, bottom: box.top + (i + 1) * lineHeight }));
+          const third = rows[2];
+          return { rows, suffix: { ...third, left: third.right, right: box.right },
+            viewport: { width: innerWidth, height: innerHeight },
+            ink: (style.color.match(/\d+/g) ?? []).slice(0, 3).map(Number) };
+        }, `${CURRENT} ${nodeAt("a:core")} .comment`, CORE_LINES);
+        const frame = await screenshotPixels(browser, sample.viewport);
+        const suffix = frame.inkColumns(sample.suffix, sample.ink);
+        return { lines: sample.rows.map((row) => frame.inkColumns(row, sample.ink).some(Boolean)),
+          dots: suffix.filter((on, index) => on && !suffix[index - 1]).length };
+      };
+      let paint: Awaited<ReturnType<typeof commentInk>> | undefined;
+      await waitFor(browser, async () => {
+        paint = await commentInk();
+        return paint.lines.join() === "true,true,true,false" && paint.dots === 3;
+      }, "three painted lines ending in an ellipsis, with the fourth line hidden")
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(paint)}`); });
       // Read aloud right after its node's name or its whole's title row: the last text its node
       // holds, not hidden.
       const readAfter = (id: string) => browser.execute((selector) => {

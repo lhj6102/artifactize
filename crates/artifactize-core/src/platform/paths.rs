@@ -7,6 +7,12 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// Whether the target exists through any links or aliases. A dangling link is absent;
+/// other filesystem errors leave the target's existence unknown.
+pub(crate) fn target_exists(path: &Path) -> io::Result<bool> {
+    path.try_exists()
+}
+
 pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
     let mut resolved = PathBuf::new();
     for component in std::path::absolute(path)?.components() {

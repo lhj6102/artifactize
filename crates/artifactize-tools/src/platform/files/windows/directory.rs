@@ -1,5 +1,4 @@
 //! Handle-pinned Windows directory queries and bounded native record decoding.
-use super::super::directory_scan::{DirectoryScan, Query};
 use super::{FileKind, WIDE_UNIT_BYTES, kind};
 use std::{
     ffi::OsString,
@@ -69,12 +68,24 @@ impl DirEntry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Query {
+    Restart,
+    Continue,
+}
+
+#[derive(Clone, Copy)]
+enum Scan {
+    Query(Query),
+    /// Byte offset of the next record in the current page.
+    Record(usize),
+    Done,
+}
+
 struct ReadDir<Q> {
     query: Q,
     buffer: Box<Page>,
-    /// Byte offset of the next record in `buffer`.
-    next: Option<usize>,
-    scan: DirectoryScan,
+    scan: Scan,
 }
 
 impl<Q> Iterator for ReadDir<Q>
@@ -85,22 +96,23 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(offset) = self.next {
-                match self.record(offset) {
+            let query = match self.scan {
+                Scan::Record(offset) => match self.record(offset) {
                     Ok(Some(entry)) => return Some(Ok(entry)),
                     Ok(None) => continue,
                     Err(error) => return Some(Err(error)),
-                }
-            }
-            let query = self.scan.query()?;
+                },
+                Scan::Query(query) => query,
+                Scan::Done => return None,
+            };
             if let Err(error) = (self.query)(query, &mut self.buffer) {
-                self.scan.finish();
+                self.scan = Scan::Done;
                 if error.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) {
                     return None;
                 }
                 return Some(Err(error));
             }
-            self.next = Some(0);
+            self.scan = Scan::Record(0);
         }
     }
 }
@@ -110,19 +122,17 @@ impl<Q> ReadDir<Q> {
         Self {
             query,
             buffer: Box::new(Page([0; DIRECTORY_PAGE_BYTES])),
-            next: None,
-            scan: DirectoryScan::First,
+            scan: Scan::Query(Query::Restart),
         }
     }
 
     /// Decode the record at `offset` and advance past it; `.` and `..` decode to `None`.
     fn record(&mut self, offset: usize) -> io::Result<Option<DirEntry>> {
         let Some((next, entry)) = decode_record(&self.buffer.0, offset) else {
-            self.scan.finish();
-            self.next = None;
+            self.scan = Scan::Done;
             return Err(io::Error::other("malformed directory listing"));
         };
-        self.next = next;
+        self.scan = next.map_or(Scan::Query(Query::Continue), Scan::Record);
         Ok(entry)
     }
 }

@@ -5,10 +5,11 @@ use super::{
 };
 use crate::review;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use time::OffsetDateTime;
 
 impl Monitor {
     /// Select the next ERROR, RED or waiting Human eval after the selection, wrapping around.
-    fn next_attention(&mut self) -> bool {
+    fn next_attention(&mut self, now: OffsetDateTime) -> bool {
         fn walk(
             nodes: &[Node],
             parent: &[model::NodeId],
@@ -26,7 +27,7 @@ impl Monitor {
             return false;
         }
         let mut order = Vec::new();
-        walk(&self.nodes(), &[], &mut order);
+        walk(&self.nodes(now), &[], &mut order);
         let start = order
             .iter()
             .position(|(path, _)| path.as_slice() == self.tree.selected())
@@ -47,6 +48,7 @@ impl Monitor {
         true
     }
     pub fn key(&mut self, key: KeyEvent) -> Action {
+        let now = OffsetDateTime::now_utc();
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             if let Some(review) = self.review_mut()
                 && review.busy()
@@ -64,7 +66,7 @@ impl Monitor {
             return Action::None;
         }
         if matches!(self.focus, Focus::Detail(_)) {
-            return self.detail_key(key);
+            return self.detail_key(key, now);
         }
         self.notice = None;
         match key.code {
@@ -74,7 +76,7 @@ impl Monitor {
                 return Action::None;
             }
             KeyCode::Char('!') => {
-                self.next_attention();
+                self.next_attention(now);
                 return Action::None;
             }
             // Back one level; the first level stays, and only q or Ctrl-C quit.
@@ -200,7 +202,7 @@ impl Monitor {
                     };
                     self.touched(&before);
                 }
-                KeyCode::Char('b') => self.jump_blocker(),
+                KeyCode::Char('b') => self.jump_blocker(now),
                 KeyCode::Backspace => self.jump_back(),
                 KeyCode::Enter | KeyCode::Char('o') => return Action::OpenDetail,
                 _ => {}
@@ -210,9 +212,9 @@ impl Monitor {
         Action::None
     }
     /// Keys while Detail has focus. A Human review owns them through the shared component.
-    fn detail_key(&mut self, key: KeyEvent) -> Action {
+    fn detail_key(&mut self, key: KeyEvent, now: OffsetDateTime) -> Action {
         let Focus::Detail(pane) = &mut self.focus else {
-            return Action::None;
+            unreachable!("Detail keys require focused Detail");
         };
         if let Some(review) = pane.content.review_mut() {
             match review.key_detail(key) {
@@ -248,7 +250,7 @@ impl Monitor {
             // The next attention item opens in Detail, so causes read one after another.
             KeyCode::Char('!') => {
                 self.leave_detail();
-                return if self.next_attention() {
+                return if self.next_attention(now) {
                     Action::OpenDetail
                 } else {
                     Action::None
@@ -256,9 +258,6 @@ impl Monitor {
             }
             _ => {}
         }
-        let Focus::Detail(pane) = &mut self.focus else {
-            return Action::None;
-        };
         let transcript = pane.content.session_view() == Some(SessionView::Transcript);
         match key.code {
             KeyCode::Char('t') if !transcript => {

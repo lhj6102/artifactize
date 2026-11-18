@@ -34,6 +34,8 @@ for (const item of scenarios) {
 
 export function selectedScenarios(selected: string[]): Scenario[] {
   if (selected.length === 0) return scenarios;
-  for (const id of selected) if (!ids.has(id)) throw new Error(`unknown desktop scenario: ${id}`);
-  return scenarios.filter((item) => selected.includes(item.id));
+  // The release command and Tool log share one app and one clipboard capability.
+  const wanted = selected.map((id) => id === "release-command" ? "monitor-tool-log-scroll" : id);
+  for (const id of wanted) if (!ids.has(id)) throw new Error(`unknown desktop scenario: ${id}`);
+  return scenarios.filter((item) => wanted.includes(item.id));
 }

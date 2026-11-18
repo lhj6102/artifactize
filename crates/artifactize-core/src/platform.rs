@@ -288,6 +288,22 @@ mod program_tests {
 }
 
 #[cfg(test)]
+mod private_directory_tests {
+    use super::*;
+
+    #[test]
+    fn kept_temporary_directory_transfers_cleanup_responsibility() {
+        let parent = crate::test_os::tempdir();
+        let directory = private_tempdir_in("kept-", parent.path()).unwrap();
+        let path = directory.keep();
+        assert!(path.is_dir());
+        assert!(is_private_dir(&path).unwrap());
+        remove_tree(&path).unwrap();
+        assert!(!path.exists());
+    }
+}
+
+#[cfg(test)]
 mod state_directory_tests {
     use super::*;
     use std::path::PathBuf;

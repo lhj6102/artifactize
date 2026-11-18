@@ -1,5 +1,5 @@
 //! Scoped read-only Agent tools.
-mod fixed;
+pub(crate) mod fixed;
 mod input;
 mod metadata;
 pub use fixed::{
@@ -177,12 +177,12 @@ impl Reader<'_> {
         Ok(Output::Read(output::Read {
             artifact_id: self.owner.clone(),
             resolved_artifact_id: location.artifact_id.clone(),
-            path: path.as_str().to_owned(),
+            path: path.owned(),
             rows: scan.finish(end)?,
         }))
     }
 
-    fn entries(&self, path: InputPath<&str>) -> Result<Vec<(Entry, InputPath<String>)>, String> {
+    fn entries(&self, path: InputPath<&str>) -> Result<Vec<Entry>, String> {
         self.check_cancelled()?;
         let location = self.location(path)?;
         let file = self.open(path, &location)?;
@@ -237,15 +237,8 @@ impl Reader<'_> {
         Ok(entries
             .into_iter()
             .filter_map(|(name, kind)| {
-                let child = path.child(&name)?;
-                Some((
-                    Entry {
-                        kind,
-                        path: child.as_str().to_owned(),
-                        name,
-                    },
-                    child,
-                ))
+                let path = path.child(&name)?;
+                Some(Entry { kind, name, path })
             })
             .collect())
     }
@@ -260,15 +253,7 @@ impl Reader<'_> {
     }
 
     fn list(&self, path: InputPath<&str>, offset: usize, limit: usize) -> Result<Output, String> {
-        let entries = self.entries(path)?;
-        scan::list(
-            self.owner.clone(),
-            path.as_str(),
-            entries.into_iter().map(|(entry, _)| entry).collect(),
-            offset,
-            limit,
-        )
-        .map(Output::List)
+        scan::list(self.owner.clone(), path, self.entries(path)?, offset, limit).map(Output::List)
     }
 
     fn files(&self, path: InputPath<&str>) -> Result<(BTreeSet<InputPath<String>>, bool), String> {
@@ -287,7 +272,7 @@ impl Reader<'_> {
         let mut truncated = false;
         while let Some(path) = pending.pop() {
             self.check_cancelled()?;
-            for (entry, child) in self.entries(path.borrowed())? {
+            for entry in self.entries(path.borrowed())? {
                 if seen == MAX_ENTRIES {
                     truncated = true;
                     break;
@@ -295,9 +280,9 @@ impl Reader<'_> {
                 seen += 1;
                 match entry.kind {
                     EntryKind::File => {
-                        files.insert(child);
+                        files.insert(entry.path);
                     }
-                    EntryKind::Directory => pending.push(child),
+                    EntryKind::Directory => pending.push(entry.path),
                     EntryKind::Symlink | EntryKind::Other => {}
                 }
             }
@@ -319,10 +304,10 @@ impl Reader<'_> {
             return Err("Glob path must be a directory.".into());
         }
         let (files, truncated) = self.files(path)?;
-        let mut scan = scan::Glob::new(path.as_str(), matcher, truncated);
+        let mut scan = scan::Glob::new(path, matcher, truncated);
         for file in files {
             self.check_cancelled()?;
-            match scan.push(file.as_str()) {
+            match scan.push(file.borrowed()) {
                 scan::Selection::Skip => continue,
                 scan::Selection::Full => break,
                 scan::Selection::Added => {}
@@ -342,10 +327,10 @@ impl Reader<'_> {
 
     fn grep(&self, path: InputPath<&str>, input: &input::Grep) -> Result<Output, String> {
         let (files, truncated) = self.files(path)?;
-        let mut scan = scan::Grep::new(path.as_str(), input, truncated);
+        let mut scan = scan::Grep::new(path, input, truncated);
         'files: for file in files {
             self.check_cancelled()?;
-            if !scan.allows(file.as_str()) {
+            if !scan.allows(file.borrowed()) {
                 continue;
             }
             let input = self.open(file.borrowed(), &self.location(file.borrowed())?)?;
@@ -378,7 +363,7 @@ impl Reader<'_> {
             };
             for (index, line) in text.split_inclusive('\n').enumerate() {
                 self.check_cancelled()?;
-                if !scan.line(file.as_str(), index, line) {
+                if !scan.line(file.borrowed(), index, line) {
                     break 'files;
                 }
             }
@@ -401,7 +386,8 @@ fn missing(owner: &ArtifactId, path: &str) -> String {
     }
 }
 
-fn relative<'a>(base: &str, file: &'a str) -> &'a str {
+fn relative<'a>(base: InputPath<&str>, file: InputPath<&'a str>) -> &'a str {
+    let (base, file) = (base.as_str(), file.into_str());
     if file == base {
         file.rsplit('/').next().unwrap()
     } else if base.is_empty() {

@@ -1,10 +1,7 @@
-//! Terminal input protocols and mouse hit tests over the last drawn frame.
+//! Mouse hit tests over the last drawn frame.
 use super::{Action, DetailArea, Focus, Monitor, Pane};
 use crate::review::Control;
-use crossterm::event::{
-    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 use std::time::{Duration, Instant};
 
@@ -57,21 +54,6 @@ impl Hits {
     }
 }
 
-pub(crate) fn protocols(mouse: bool, paste: bool) -> Result<(), String> {
-    let mut out = std::io::stdout();
-    if mouse {
-        crossterm::execute!(out, EnableMouseCapture)
-    } else {
-        crossterm::execute!(out, DisableMouseCapture)
-    }
-    .map_err(|error| error.to_string())?;
-    if paste {
-        crossterm::execute!(out, EnableBracketedPaste)
-    } else {
-        crossterm::execute!(out, DisableBracketedPaste)
-    }
-    .map_err(|error| error.to_string())
-}
 fn contains(rect: Rect, point: Position) -> bool {
     rect.contains(point)
 }

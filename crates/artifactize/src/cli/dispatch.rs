@@ -83,7 +83,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             provider::execute(
                 context.state_dir.as_deref(),
                 context.repo.as_deref(),
-                command.into(),
+                command,
                 context.json,
             )
             .await

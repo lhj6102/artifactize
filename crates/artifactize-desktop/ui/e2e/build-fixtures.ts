@@ -1,7 +1,7 @@
 // Domain fixture roots are inputs, not candidate leases or native lifecycle owners.
 // The outer runner calls releaseFixtures only after the service/app has exited.
 import { readCandidate, type Candidate } from "./build.ts";
-import { childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
+import { childDirectories, exists, isLink, makeDirectory, nameOf, nativePath, newDirectory, parentOf, releaseClaudeLogins, releaseRecordedBrowser, removeTree, type NativePath } from "./platform.ts";
 import { removeFixture, settleFixtureRuns } from "./runs.ts";
 import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { observe } from "./domain-fixtures/observe.ts";
@@ -35,16 +35,8 @@ export function createdRoots(): NativePath[] {
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
-/** Cancel and join the Runs and gated processes every fixture started. */
-export async function settleFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {
-  await finishFixtures(roots, candidate, false);
-}
-
+/** Cancel and join the Runs and processes of fixtures whose native owners ended. */
 export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {
-  await finishFixtures(roots, candidate, true);
-}
-
-async function finishFixtures(roots: readonly NativePath[], candidate: Candidate, remove: boolean): Promise<void> {
   const failures: unknown[] = [];
   for (const root of roots) {
     if (!exists(root)) continue;
@@ -57,14 +49,13 @@ async function finishFixtures(roots: readonly NativePath[], candidate: Candidate
     try { releaseToolGates(fixture); } catch (error) { failures.push(error); }
     try { settleFixtureRuns(candidate.cli, root, candidate.observer); } catch (error) { failures.push(error); }
     try { await joinGatedTools(fixture); } catch (error) { failures.push(error); }
-    if (remove) {
-      try { await releaseRecordedBrowser(root); } catch (error) { failures.push(error); }
-      try {
-        const active = slowTool(fixture);
-        if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
-        if (before === failures.length) removeTree(root);
-      } catch (error) { failures.push(error); }
-    }
+    try { await releaseClaudeLogins(root); } catch (error) { failures.push(error); }
+    try { await releaseRecordedBrowser(root); } catch (error) { failures.push(error); }
+    try {
+      const active = slowTool(fixture);
+      if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
+      if (before === failures.length) removeTree(root);
+    } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, "domain fixture cleanup failed; preserve failed inputs");

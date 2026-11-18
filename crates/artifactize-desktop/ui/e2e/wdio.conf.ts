@@ -5,10 +5,10 @@ import { AppStillAlive, assertAppsStopped, recordAdmission } from "./observation
 import { graphToolFailure, observeGraphTool } from "./graph-tool-session.ts";
 import { observe } from "./domain-fixtures/observe.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { createdRoots, environment, releaseFixtures, settleFixtures } from "./fixture.ts";
+import { createdRoots, environment, releaseFixtures } from "./fixture.ts";
 import {
   browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
-  assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
+  assertClipboardDesktop, commandDirectory, embeddedReady, exists, makeDirectory, nativePath, placeApp, releaseClaudeLogins, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson, writeText,
   type Environment, type NativePath,
 } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
@@ -31,8 +31,7 @@ export let ownerFiles: ReturnType<typeof recordAdmission> | undefined;
  * form one independent accounts capability; no unrelated capability consumes it. */
 export const fixedResources = {
   accounts: { callbackHost: "127.0.0.1", callbackPort: 1455 },
-  // This is the only capability to copy/paste. It writes its own selection before reading
-  // it back through a paste; neither the runner nor another capability reads the clipboard.
+  // The Tool log and release command use the clipboard through this one capability.
   "monitor-tool-log-scroll": { clipboard: true },
 } as const;
 
@@ -46,7 +45,6 @@ export async function releasePrepared(): Promise<void> {
   const release = async (action: () => Promise<void>) => {
     try { await action(); } catch (error) { failures.push(error); }
   };
-  const uncertain: NativePath[] = [];
   for (const [index, input] of prepared.splice(0).entries()) {
     const companion = companions.get(index);
     if (companion?.observation) await release(() => companion.observation!);
@@ -65,15 +63,14 @@ export async function releasePrepared(): Promise<void> {
     catch (error) {
       failures.push(error);
       removable.delete(input.fixture.root);
-      uncertain.push(input.fixture.root);
       continue;
     }
     const before = failures.length;
-    await release(async () => { await input.release?.(); });
+    await release(() => releaseClaudeLogins(input.fixture.root));
+    if (failures.length === before) await release(async () => { await input.release?.(); });
     if (failures.length !== before) removable.delete(input.fixture.root);
   }
   for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
-  await release(() => settleFixtures(uncertain));
   await release(() => releaseFixtures([...removable]));
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
@@ -122,7 +119,7 @@ export const config = {
       const relaunch = variable("DESKTOP_TEST_RELAUNCH") === "1";
       for (let index = 0; index < selected.length; index++) {
         const item = selected[index];
-        if (item.id === "monitor-tool-log-scroll") assertClipboardDesktop();
+        if (item.id === "monitor-tool-log-scroll" && fixedResources[item.id].clipboard) assertClipboardDesktop();
         const input = relaunch ? prepared[index] : await item.prepare();
         if (!input) throw new Error("the relaunched case lost its owning fixture");
         if (!relaunch) prepared.push(input);
@@ -138,7 +135,7 @@ export const config = {
           const bin = nativePath(input.fixture.root, "graph-tool-bin");
           const app = placeApp(candidate.app, bin);
           const [endpoint] = await reserveEmbeddedPorts(1);
-          driverClaims.push(async () => { await endpoint.close(); await endpoint.release(); });
+          driverClaims.push(endpoint.release);
           await endpoint.close();
           companions.set(index, { port: endpoint.port });
           env = { ...commandDirectory(env, bin), ARTIFACTIZE_STATE_HOME: input.fixture.state, ARTIFACTIZE_E2E_COMPANION_EXE: app,
@@ -178,7 +175,7 @@ export const config = {
       // Bind only after every fixture has its own endpoints. The per-port runner claim
       // survives the handoff while the native service acquires its own listener.
       const endpoints = await reserveEmbeddedPorts(selected.length);
-      driverClaims.push(...endpoints.map((endpoint) => async () => { await endpoint.close(); await endpoint.release(); }));
+      driverClaims.push(...endpoints.map((endpoint) => endpoint.release));
       try {
         for (const [index, endpoint] of endpoints.entries()) {
           capabilities[index]["wdio:tauriServiceOptions"]!.embeddedPort = endpoint.port;
@@ -187,7 +184,8 @@ export const config = {
         await Promise.all(endpoints.map((endpoint) => endpoint.close()));
       }
       const hasCompanion = companions.size > 0;
-      const recorded = recordAdmission(candidate.root, hasCompanion ? [...ids, "graph-tool-companion"] : ids);
+      const capabilityIds = selected.map((item) => item.id);
+      const recorded = recordAdmission(candidate.root, hasCompanion ? [...capabilityIds, "graph-tool-companion"] : capabilityIds);
       ownerFiles = recorded.slice(0, selected.length);
       for (const [index, capability] of capabilities.entries()) {
         const env = capability["wdio:tauriServiceOptions"]!.env as Environment;

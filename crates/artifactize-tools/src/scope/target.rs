@@ -54,7 +54,7 @@ impl<'de> Deserialize<'de> for Uri {
 }
 
 /// Kind and local selection travel with the target, so a Live URI cannot be a folder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Target {
     Folder(PathBuf),
     File(PathBuf),
@@ -184,8 +184,32 @@ impl crate::files::PathText for Target {
         self.to_string()
     }
 }
+impl PartialEq for Target {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Folder(first), Self::Folder(second))
+            | (Self::File(first), Self::File(second))
+            | (Self::Graph(first), Self::Graph(second)) => crate::files::paths_equal(first, second),
+            (
+                Self::Aspect {
+                    path: first,
+                    select,
+                },
+                Self::Aspect {
+                    path: second,
+                    select: other,
+                },
+            ) => crate::files::paths_equal(first, second) && select == other,
+            (Self::Live(first), Self::Live(second)) => first == second,
+            _ => false,
+        }
+    }
+}
+impl Eq for Target {}
+
 impl PartialEq<PathBuf> for Target {
     fn eq(&self, other: &PathBuf) -> bool {
-        self.local().is_some_and(|path| path == other)
+        self.local()
+            .is_some_and(|path| crate::files::paths_equal(path, other))
     }
 }

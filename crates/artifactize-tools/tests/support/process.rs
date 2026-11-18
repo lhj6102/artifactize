@@ -3,13 +3,17 @@
 use super::os::compile;
 use artifactize_tools::launch::{Finished, Launch, LaunchError};
 use std::{io::Read, net::TcpStream, path::Path, time::Duration};
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
+
+type LaunchResult = Result<Finished, LaunchError>;
 
 /// Expire the launcher only after both processes have connected, and check both exits
 /// before teardown can interfere with the observation.
-pub async fn timeout_tree(root: &Path) -> Result<Finished, LaunchError> {
-    let mut tree = NativeTree::start(root).await;
+pub async fn timeout_tree(root: &Path) -> LaunchResult {
+    let (mut tree, result) = NativeTree::start(root).await;
     tree.running.expire.take().unwrap().send(()).unwrap();
-    let result = tokio::time::timeout(NATIVE_WATCHDOG, &mut tree.running.result)
+    let result = tokio::time::timeout(NATIVE_WATCHDOG, result)
         .await
         .expect("native launcher expiry watchdog")
         .unwrap();
@@ -19,7 +23,7 @@ pub async fn timeout_tree(root: &Path) -> Result<Finished, LaunchError> {
 
 /// Exercise fixture ownership when an async caller unwinds after the native handshake.
 pub async fn unwind_tree(root: &Path) {
-    let tree = NativeTree::start(root).await;
+    let (tree, result) = NativeTree::start(root).await;
     let mut connections = tree.connections.clone_streams();
     let unwind = tokio::spawn(async move {
         let _tree = tree;
@@ -28,13 +32,12 @@ pub async fn unwind_tree(root: &Path) {
     .await
     .unwrap_err();
     assert!(unwind.is_panic());
+    assert!(matches!(result.await.unwrap(), Err(LaunchError::Cancelled)));
     connections.assert_terminated();
 }
 
 // These bound broken startup/cleanup, never decide expiry or success by elapsed time.
 const NATIVE_WATCHDOG: Duration = Duration::from_secs(20);
-// Even if startup or cleanup stalls, the fixture processes exit without the launcher.
-const FIXTURE_FAILSAFE: Duration = Duration::from_secs(120);
 // Expiry is requested explicitly only after both handshakes.
 const TREE_EXPIRY: Duration = Duration::from_secs(3600);
 
@@ -44,7 +47,7 @@ struct NativeTree {
 }
 
 impl NativeTree {
-    async fn start(root: &Path) -> Self {
+    async fn start(root: &Path) -> (Self, oneshot::Receiver<LaunchResult>) {
         let program = compile(
             root,
             "spawner",
@@ -52,15 +55,13 @@ impl NativeTree {
 fn main() {
     let mut args = std::env::args().skip(1);
     let address = args.next().unwrap();
-    let watchdog = args.next().unwrap();
     let child = args.next().is_some();
     let mut stream = std::net::TcpStream::connect(&address).unwrap();
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(watchdog.parse().unwrap()))).unwrap();
     stream.write_all(if child { b"C" } else { b"P" }).unwrap();
     let child_process = (!child).then(|| std::process::Command::new(std::env::current_exe().unwrap())
-        .args([&address, &watchdog, "child"]).spawn().unwrap());
-    // Do not exit just because the other process died. Read blocks until the test
-    // ends the connection or the independent watchdog expires.
+        .args([&address, "child"]).spawn().unwrap());
+    // Do not exit when the other process dies. Closing the test side of this
+    // socket independently releases each process if launcher cleanup fails.
     let _ = stream.read(&mut [0]);
     if let Some(mut child) = child_process {
         child.wait().unwrap();
@@ -74,39 +75,41 @@ fn main() {
             .unwrap();
         // This fixture writes no stdout/stderr; reserve a small bounded audit capture.
         const AUDIT_BYTES: usize = 1024;
-        let mut running = NativeRun::start(Launch {
+        let (running, mut result) = NativeRun::start(Launch {
             program,
-            args: vec![
-                listener.local_addr().unwrap().to_string().into(),
-                FIXTURE_FAILSAFE.as_secs().to_string().into(),
-            ],
+            args: vec![listener.local_addr().unwrap().to_string().into()],
             cwd: root.to_owned(),
             timeout: TREE_EXPIRY,
             output_limit: AUDIT_BYTES,
         });
-        let connections = tokio::select! {
-            result = &mut running.result => panic!("help ended before the native tree handshake: {result:?}"),
-            accepted = tokio::time::timeout(NATIVE_WATCHDOG, Connections::accept(&listener)) => {
-                accepted.expect("native tree startup watchdog")
+        let connections = {
+            // If the handshake fails, close the listening socket and all partial
+            // connections before the worker's Drop waits for launcher cleanup.
+            let listener = listener;
+            tokio::select! {
+                result = &mut result => panic!("help ended before the native tree handshake: {result:?}"),
+                accepted = tokio::time::timeout(NATIVE_WATCHDOG, Connections::accept(&listener)) => {
+                    accepted.expect("native tree startup watchdog")
+                }
             }
         };
-        Self {
-            running,
-            connections,
-        }
+        (
+            Self {
+                running,
+                connections,
+            },
+            result,
+        )
     }
 }
 
 impl Drop for NativeTree {
     fn drop(&mut self) {
-        // First give the product cancellation a chance to work with the observation
-        // sockets still open. Then signal the fallback even if observers cloned them.
-        self.running.cancellation.cancel();
-        let stopped = self.running.wait(NATIVE_WATCHDOG);
-        self.connections.release();
-        if !stopped {
-            // A launcher waiting on the live tree can now finish and be joined.
-            self.running.wait(NATIVE_WATCHDOG);
+        // Let the product demonstrate cancellation before using the independent
+        // socket shutdown, which also works when observers cloned the streams.
+        if !self.running.cancel_and_wait() {
+            self.connections.release();
+            self.running.abort_and_join();
             assert!(std::thread::panicking(), "native launcher cleanup watchdog");
         }
     }
@@ -172,20 +175,22 @@ impl Connections {
 }
 
 struct NativeRun {
-    cancellation: tokio_util::sync::CancellationToken,
-    expire: Option<tokio::sync::oneshot::Sender<()>>,
-    result: tokio::sync::oneshot::Receiver<Result<Finished, LaunchError>>,
+    cancellation: CancellationToken,
+    abort: CancellationToken,
+    expire: Option<oneshot::Sender<()>>,
     done: std::sync::mpsc::Receiver<()>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
 impl NativeRun {
-    fn start(launch: Launch) -> Self {
+    fn start(launch: Launch) -> (Self, oneshot::Receiver<LaunchResult>) {
         use artifactize_tools::launch::{Launcher, Standalone};
-        let cancellation = tokio_util::sync::CancellationToken::new();
+        let cancellation = CancellationToken::new();
         let worker_cancellation = cancellation.clone();
-        let (expire, expiry) = tokio::sync::oneshot::channel();
-        let (result_sender, result) = tokio::sync::oneshot::channel();
+        let abort = CancellationToken::new();
+        let worker_abort = abort.clone();
+        let (expire, expiry) = oneshot::channel();
+        let (result_sender, result) = oneshot::channel();
         let (completed, done) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
@@ -193,57 +198,75 @@ impl NativeRun {
                 .build()
                 .unwrap();
             let result = runtime.block_on(async {
-                let timeout = launch.timeout;
-                let mut running = Standalone.run(launch, &worker_cancellation);
-                tokio::select! {
-                    result = &mut running => result,
-                    Ok(()) = expiry => {
-                        tokio::time::pause();
-                        tokio::time::advance(timeout).await;
-                        running.await
+                let run = async {
+                    let timeout = launch.timeout;
+                    let mut running = Standalone.run(launch, &worker_cancellation);
+                    tokio::select! {
+                        result = &mut running => result,
+                        Ok(()) = expiry => {
+                            tokio::time::pause();
+                            tokio::time::advance(timeout).await;
+                            running.await
+                        }
                     }
+                };
+                tokio::select! {
+                    result = run => Some(result),
+                    _ = worker_abort.cancelled() => None,
                 }
             });
-            let _ = result_sender.send(result);
+            if let Some(result) = result {
+                let _ = result_sender.send(result);
+            }
             drop(runtime);
             let _ = completed.send(());
         });
-        Self {
-            cancellation,
-            expire: Some(expire),
+        (
+            Self {
+                cancellation,
+                abort,
+                expire: Some(expire),
+                done,
+                worker: Some(worker),
+            },
             result,
-            done,
-            worker: Some(worker),
-        }
+        )
     }
 
-    fn wait(&mut self, limit: Duration) -> bool {
-        if self.worker.is_none() {
-            return true;
-        }
-        if self.done.recv_timeout(limit) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
-            // A launcher regression cannot strand test teardown in an unbounded join.
-            // Closing the fixture connections independently releases the native processes.
+    fn cancel_and_wait(&mut self) -> bool {
+        self.cancellation.cancel();
+        if self.worker.is_some()
+            && self.done.recv_timeout(NATIVE_WATCHDOG)
+                == Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        {
             return false;
         }
-        if let Err(panic) = self.worker.take().expect("worker is owned").join()
+        self.join();
+        true
+    }
+
+    fn abort_and_join(&mut self) {
+        self.abort.cancel();
+        self.join();
+    }
+
+    fn join(&mut self) {
+        if let Some(worker) = self.worker.take()
+            && let Err(panic) = worker.join()
             && !std::thread::panicking()
         {
             std::panic::resume_unwind(panic);
         }
-        true
     }
 }
 
 impl Drop for NativeRun {
     fn drop(&mut self) {
-        // Startup can fail before NativeTree acquires the sockets. In that case they
-        // have already been dropped or the processes' own watchdog will release them.
-        self.cancellation.cancel();
-        let stopped = self.wait(NATIVE_WATCHDOG);
-        assert!(
-            stopped || std::thread::panicking(),
-            "native launcher cleanup watchdog"
-        );
+        if !self.cancel_and_wait() {
+            // The tree owner released its connections, or startup failed and the
+            // listener and partial connections were already dropped.
+            self.abort_and_join();
+            assert!(std::thread::panicking(), "native launcher cleanup watchdog");
+        }
     }
 }

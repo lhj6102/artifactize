@@ -9,7 +9,7 @@ import { afterRender, fill, press, typeText } from "../keys.ts";
 import { clickAt, visibleCenter } from "../pointer.ts";
 import { buttonKey, compositionKey, dispatchInput, tab } from "../input.ts";
 import {
-  aside, camera, detail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
+  aside, camera, detail, fact, FIND, findField, fitButton, focusedElement, focusedNode, graphShown, NO_FAVORITES, nodeAt, offCentre, openArtifact, openArtifactTab, openTab, summary, tabAt,
   unfold, ZOOM_IN, ZOOM_OUT,
 } from "../graph-view.ts";
 import { git } from "../environment.ts";
@@ -67,10 +67,6 @@ async function arrowsMoveNothing(browser: WebdriverIO.Browser, id: string): Prom
     assert.equal(await focusedNode(browser), id, `the keyboard stays on the Artifact after ${key}`);
   }
 }
-
-/** How wide an Artifact's node draws at the zoom its name starts to read at: 168 at zoom 1, at
- * three quarters. */
-const READABLE = 126;
 
 /** The copies of {@link createParts}'s graph: the wholes suite and docs, app inside suite, kit
  * inside app, site inside both, and lib, which docs reads, and guide, which reads suite, outside
@@ -227,6 +223,19 @@ async function clickWhole(browser: WebdriverIO.Browser, root: string, key: strin
     return { x: Math.round(box.left + 10), y: Math.round(box.top + 8) };
   }, root, key);
   await browser.action("pointer").move({ x: at.x, y: at.y }).down().up().perform();
+}
+
+/** Visible bodies, keyed by visible section headers in the open Detail. */
+function detailSections(browser: WebdriverIO.Browser) {
+  return browser.execute(() => Object.fromEntries([...document.querySelectorAll('aside[aria-label="Detail"] .section')]
+    .flatMap((section) => {
+      const header = section.querySelector(".head");
+      if (!header?.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return [];
+      const body = section.querySelector(":scope > .body");
+      const box = body?.getBoundingClientRect();
+      return [[header.textContent?.trim() ?? "", !!box && box.width > 0 && box.height > 0
+        && body!.checkVisibility({ opacityProperty: true, visibilityProperty: true })]];
+    })));
 }
 
 export const scenarios: Scenario[] = [
@@ -605,16 +614,8 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the press moved the keyboard into suite's Detail" });
       const inDetail = await focusedElement(browser);
       assert.ok(await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]')), `the keyboard is in suite's Detail: ${inDetail}`);
-      // Start the engine's native composition while Detail has the keyboard, then
-      // probe the key fields the application reads without sending OS events.
-      await nativeInput(browser, { type: "set", text: "ㅡ" });
-      try {
-        for (const [isComposing, keyCode] of [[true, 0], [false, 229]] as const) {
-          await compositionKey(browser, "m", 'aside[aria-label="Detail"]', isComposing, keyCode);
-          await afterRender(browser);
-          assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "composition suppresses m where plain m would toggle the whole");
-        }
-      } finally { await nativeInput(browser, { type: "cancel" }); }
+      // A non-editable Detail cannot host native preedit. The component test covers
+      // its m guard; the native shortcut probe below uses the focused Find input.
       await press(browser, ["m"], () => drawnNow(browser, ".graph", PARTS), "m expands suite, whose Detail is open");
       assert.equal(await focusedElement(browser), inDetail, "m with the Detail focused leaves the keyboard where it was");
       const unfolded = await partsDrawn(browser, ".graph");
@@ -637,14 +638,23 @@ export const scenarios: Scenario[] = [
       assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "m typed in the find field leaves suite minimized");
       await nativeInput(browser, { type: "set", text: "ㅡ" });
       await browser.waitUntil(async () => (await findField(browser))?.value === "mㅡ", { timeout: 15000, timeoutMsg: "the engine composes ㅡ in the find field" });
-      // E2E-INPUT: these fields are the app's own shortcut guard, not an OS input test.
+      // Probe the shortcut fields while the relevant target actually has native
+      // preedit. Escape's plain-key control above rules out suppressed delivery.
       for (const [composing, keyCode] of [[true, 0], [false, 229]] as const) {
-        await compositionKey(browser, "Escape", FIND, composing, keyCode);
-        await afterRender(browser);
-        assert.deepEqual(await findField(browser).then((field) => [field?.focused, field?.value]), [true, "mㅡ"],
-          `Escape during composition (isComposing ${composing}, keyCode ${keyCode}) keeps Find focused and the composition in place`);
-        assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "suite remains minimized");
+        for (const key of ["m", "Escape"] as const) {
+          await compositionKey(browser, key, FIND, composing, keyCode);
+          await afterRender(browser);
+          assert.deepEqual(await findField(browser).then((field) => [field?.focused, field?.value]), [true, "mㅡ"],
+            `${key} during composition (isComposing ${composing}, keyCode ${keyCode}) keeps Find focused and the composition in place`);
+          assert.ok(await drawnNow(browser, ".graph", SUITE_MINIMIZED), "suite remains minimized");
+        }
       }
+      // Rollback proves the text remained native preedit through both probes, rather
+      // than merely checking that the same text was visible as ordinary input.
+      await nativeInput(browser, { type: "cancel" });
+      await browser.waitUntil(async () => (await findField(browser))?.value === "m", { timeout: 15000, timeoutMsg: "cancelling native preedit removed only ㅡ" });
+      await nativeInput(browser, { type: "set", text: "ㅡ" });
+      await browser.waitUntil(async () => (await findField(browser))?.value === "mㅡ", { timeout: 15000, timeoutMsg: "native preedit restarted in Find" });
       await nativeInput(browser, { type: "commit", text: "ㅡ" });
       await press(browser, ["Escape"], async () => (await findField(browser)) === null, "Esc closes the find field");
       assert.equal((await detail(browser))?.title, "Artifact suite", "suite's Detail stays open after the find field");
@@ -677,7 +687,8 @@ export const scenarios: Scenario[] = [
         { timeout: 15000, timeoutMsg: "the hidden eval opens its selected Detail tab" });
       await browser.waitUntil(async () => {
         const at = await offCentre(browser, "a:suite");
-        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && at.width >= READABLE - 1 &&
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 &&
+          await browser.$(`${nodeAt("a:suite")} .title .name`).isDisplayed() &&
           (await partsDrawn(browser, ".graph", SUITE_MINIMIZED))["a:suite"].open &&
           await browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]'));
       }, { timeout: 15000, timeoutMsg: "the hidden eval focuses its Detail and centers the highlighted whole at readable zoom" });
@@ -994,8 +1005,8 @@ export const scenarios: Scenario[] = [
           return box.width > 0 && box.left >= canvas.left && box.right <= canvas.right && box.top >= canvas.top && box.bottom <= canvas.bottom;
         }).map((node) => node.dataset.id ?? "");
       });
-      await browser.waitUntil(async () => (await visible()).length > 0,
-        { timeout: 30000, timeoutMsg: "a graph node is visible after the initial fit" });
+      await browser.waitUntil(async () => (await visible()).includes(name(124)),
+        { timeout: 30000, timeoutMsg: "the chain's last Artifact is visible after the initial fit" });
       // Zoom in until the chain extends beyond the canvas and its last Artifact is out of view.
       const zoomIn = await browser.$(ZOOM_IN);
       for (let step = 0; step < 12; step += 1) await zoomIn.click();
@@ -1206,13 +1217,13 @@ payload.instruction = "Check the Live Artifact."
     async (browser) => {
       const field = () => findField(browser);
       const names = async () => (await field())?.entries.map((entry) => entry.name) ?? null;
-      /** The Artifact `id` sits in the middle of the graph left of the Detail, zoomed in only as
-       * far as its name needs: drawn `before` wide, or {@link READABLE} wide if that was less. */
-      const centred = async (id: string, before: number) => {
+      const zoom = () => browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText();
+      /** The named Artifact is centered to the left of the Detail without changing the readable zoom. */
+      const centred = async (id: string, before: string) => {
         const at = await offCentre(browser, id);
-        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && Math.abs(at.width - Math.max(before, READABLE)) <= 1;
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && await zoom() === before
+          && await browser.$(`${nodeAt(id)} .name`).isDisplayed();
       };
-      const width = async (id: string) => (await offCentre(browser, id))?.width ?? 0;
       const inDetail = () => browser.execute(() => !!document.activeElement?.closest('aside[aria-label="Detail"]'));
       await graphShown(browser, "a:release");
       await browser.waitUntil(() => entriesFocused(browser), { timeout: 15000, timeoutMsg: "the Pane initially has the keyboard" });
@@ -1241,10 +1252,16 @@ payload.instruction = "Check the Live Artifact."
       // With docs's Detail open, Ctrl+F finds ship; a click on it opens ship's Detail and brings
       // ship to the middle of the graph left of the Detail.
       await openArtifact(browser, "a:docs", "Artifact docs");
+      // At natural size or larger the names already read. Use the displayed zoom, not a node width.
+      for (let step = 0; step < 12 && Number.parseInt(await zoom(), 10) < 100; step += 1) {
+        await browser.$(ZOOM_IN).click();
+        await afterRender(browser);
+      }
+      assert.ok(Number.parseInt(await zoom(), 10) >= 100, "the graph is at an already readable zoom");
       await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over docs's Detail");
       await fill(browser, FIND, "ship");
       await browser.waitUntil(async () => JSON.stringify(await names()) === JSON.stringify(["ship"]), { timeout: 15000, timeoutMsg: "ship found" });
-      const shipBefore = await width("a:ship");
+      const shipBefore = await zoom();
       await browser.$('[aria-label="Found"] [role="option"]').click();
       await browser.waitUntil(async () => {
         const shown = await detail(browser);
@@ -1273,7 +1290,7 @@ payload.instruction = "Check the Live Artifact."
       const [found] = (await field())!.entries;
       assert.equal(found.chosen, false, "nothing chosen before ↓");
       await press(browser, ["ArrowDown"], async () => (await field())?.entries[0]?.chosen === true, "↓ chooses the eval");
-      const releaseBefore = await width("a:release");
+      const releaseBefore = await zoom();
       await press(browser, ["Enter"], async () => {
         const shown = await detail(browser);
         return (await field()) === null && shown?.tabs[0]?.name === "release" && shown.tabs.find((each) => each.selected)?.name === "signoff";
@@ -1430,8 +1447,8 @@ payload.instruction = "Check the Live Artifact."
       // Once scanned, every Artifact of the unchanged chain would be reused.
       await browser.waitUntil(async () => /^Scanned at \d/.test(await scanned(browser)), { timeout: 30000, timeoutMsg: "the Current scanned" });
       await press(browser, ["Enter"], () => mainFocused(browser), "the Main area focused");
-      const before = (await offCentre(browser, "a:n000"))!.width;
-      assert.ok(before < READABLE, `the whole chain shows too small to read: ${before}`);
+      const zoom = async () => Number.parseInt(await browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText(), 10);
+      const before = await zoom();
       await press(browser, [primaryModifier, "f"], async () => (await field())?.focused === true, "the find field open over the Current");
       await fill(browser, FIND, "N0");
       await browser.waitUntil(async () => (await field())?.entries.length === 50, { timeout: 15000, timeoutMsg: "fifty found" });
@@ -1443,8 +1460,10 @@ payload.instruction = "Check the Live Artifact."
       await press(browser, ["Enter"], async () => (await field()) === null && (await detail(browser))?.title === "Artifact n000", "Enter opens n000's Detail");
       await browser.waitUntil(async () => {
         const at = await offCentre(browser, "a:n000");
-        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && Math.abs(at.width - READABLE) <= 1;
-      }, { timeout: 15000, timeoutMsg: "n000 in the middle of the graph left of the Detail, zoomed in just to read" });
+        const name = browser.$(`${nodeAt("a:n000")} .name`);
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4 && await zoom() > before
+          && await name.isDisplayed() && await name.getText() === "n000";
+      }, { timeout: 15000, timeoutMsg: "n000 centered left of the Detail and zoomed in to show its name" });
       // Each listed Artifact showed what verify would do with it, reused, as its eval's row in
       // the Detail of the Current shows it.
       const reused = await browser.execute(() => {
@@ -1634,8 +1653,7 @@ payload.instruction = "Check the Live Artifact."
     },
     async (browser) => {
       /** Each section of the open Detail by its header row, and whether it is unfolded. */
-      const sections = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] .section')]
-        .map((section) => [section.querySelector(".head")?.textContent?.trim() ?? "", !!section.querySelector(":scope > .body")])));
+      const sections = () => detailSections(browser);
       const toggle = async (name: string, unfolded: boolean) => {
         await aside(browser).$(`button.head=${name}`).click();
         await browser.waitUntil(async () => (await sections())[name] === unfolded, { timeout: 15000, timeoutMsg: `${name} ${unfolded ? "unfolded" : "folded"}` });
@@ -1657,7 +1675,7 @@ payload.instruction = "Check the Live Artifact."
       await browser.waitUntil(async () => (await sections()).Path === false, { timeout: 15000, timeoutMsg: "Space folds Path" });
       await toggle("Neighbours", true);
       // Folded to its header row alone.
-      assert.equal(await aside(browser).$('section[aria-label="Path"] p.line').isExisting(), false, "a folded section shows its row alone");
+      assert.equal(await aside(browser).$('section[aria-label="Path"] p.line').isDisplayed(), false, "a folded section shows its row alone");
       // Another Artifact's Detail keeps each section as it was left, by its name.
       await aside(browser).$("button*=Close").click();
       await openArtifact(browser, "a:ship", "Artifact ship");
@@ -1684,10 +1702,10 @@ payload.instruction = "Check the Live Artifact."
       await openTab(browser, "e:release/signoff");
       const review = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] [aria-label="Human review"] .section')]
         .filter((section) => ["Tools", "Tool log", "Result"].includes(section.getAttribute("aria-label") ?? ""))
-        .map((section) => [section.getAttribute("aria-label"), { folds: !!section.querySelector(":scope > button.head"), shown: !!section.querySelector(":scope > .body") }])));
+        .map((section) => [section.getAttribute("aria-label"), { folds: !!section.querySelector(":scope > button.head"), shown: section.querySelector(":scope > .body")?.checkVisibility({ opacityProperty: true, visibilityProperty: true }) === true }])));
       await browser.waitUntil(async () => {
         const shown = await review();
-        return ["Tools", "Tool log", "Result"].every((section) => section in shown);
+        return ["Tools", "Tool log", "Result"].every((section) => shown[section]?.shown === true);
       }, { timeout: 15000, timeoutMsg: "the one-column review has Tools, Tool log and Result" });
       for (const [name, section] of Object.entries(await review())) {
         assert.deepEqual(section, { folds: false, shown: true }, `the review's ${name} does not fold`);
@@ -1695,8 +1713,7 @@ payload.instruction = "Check the Live Artifact."
     },
     async (browser) => {
       // The next launch keeps them.
-      const sections = () => browser.execute(() => Object.fromEntries([...document.querySelectorAll<HTMLElement>('aside[aria-label="Detail"] .section')]
-        .map((section) => [section.querySelector(".head")?.textContent?.trim() ?? "", !!section.querySelector(":scope > .body")])));
+      const sections = () => detailSections(browser);
       await graphShown(browser, "a:release");
       await openArtifact(browser, "a:release", "Artifact release");
       await browser.waitUntil(async () => {

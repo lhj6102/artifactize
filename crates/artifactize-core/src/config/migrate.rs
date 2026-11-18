@@ -186,7 +186,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     if !existed {
         std::fs::create_dir(&destination).map_err(|error| ConfigError::new(&destination, error))?;
     }
-    let mut created = Vec::new();
+    let mut created: Vec<PathBuf> = Vec::new();
     for file in sources.keys() {
         let final_file = destination.join(file.file_name().expect("definition filename"));
         if let Err(error) = std::fs::rename(
@@ -196,7 +196,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             &final_file,
         ) {
             for created in created {
-                let _ = std::fs::remove_file(created);
+                let _ = crate::platform::paths::remove_regular(&created);
             }
             if !existed {
                 let _ = std::fs::remove_dir(&destination);
@@ -206,12 +206,12 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         created.push(final_file);
     }
     for file in originals.keys() {
-        if let Err(error) = std::fs::remove_file(file) {
+        if let Err(error) = crate::platform::paths::remove_regular(file) {
             for (file, source) in &originals {
                 let _ = crate::platform::paths::restore_file(file, source.as_bytes());
             }
             for file in &created {
-                let _ = std::fs::remove_file(file);
+                let _ = crate::platform::paths::remove_regular(file);
             }
             if !existed {
                 let _ = std::fs::remove_dir(&destination);

@@ -1,6 +1,6 @@
 //! The standalone review's terminal loop: draw, read events, run jobs, show the Tool log.
 use super::{Action, Outcome, REFRESH, Review, SPIN};
-use crate::types::RequestId;
+use crate::{platform::terminal, types::RequestId};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::{FutureExt, StreamExt};
 use std::{path::PathBuf, time::Instant};
@@ -23,27 +23,24 @@ pub async fn run(
     open: Option<RequestId>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
-    // ratatui's panic hook restores the terminal before a panic message is printed.
-    let mut terminal = ratatui::try_init().map_err(|e| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        format!("cannot start the review: {e}")
-    })?;
-    // Bracketed paste, like monitor: a pasted block reaches a field whole, never as keys.
-    let guard = crate::monitor::InputGuard;
+    let mut display =
+        terminal::init().map_err(|error| format!("cannot start the review: {error}"))?;
+    let input = terminal::Input;
     let result = async {
         let review = Review::new(state, repo, reviewer, open);
-        crate::monitor::input::protocols(review.mouse_capture, true)?;
-        drive(&mut terminal, review, cancellation).await
+        input.capture(review.mouse_capture)?;
+        drive(&mut display, &input, review, cancellation).await
     }
     .await;
-    drop(guard);
-    drop(terminal);
-    ratatui::try_restore().map_err(|e| e.to_string())?;
+    drop(input);
+    drop(display);
+    terminal::restore()?;
     result
 }
 
 async fn drive(
     terminal: &mut ratatui::DefaultTerminal,
+    input: &terminal::Input,
     mut review: Review,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
@@ -71,7 +68,7 @@ async fn drive(
                         Action::None
                     }
                     Action::Capture(capture) => {
-                        crate::monitor::input::protocols(capture, true)?;
+                        input.capture(capture)?;
                         Action::None
                     }
                 };
@@ -123,7 +120,7 @@ async fn drive(
                     jobs.action = None;
                     if matches!(outcome, Outcome::Submitted { .. }) {
                         // Remote and cache warnings may have reached stderr; repaint every cell.
-                        crate::monitor::repaint(terminal)?;
+                        terminal::repaint(terminal)?;
                     }
                     review.finish(outcome)
                 }

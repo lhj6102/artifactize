@@ -24,15 +24,20 @@ export type Page = {
   diagnostics?: () => Promise<unknown>;
 };
 
-/** Keep the original event so defaultPrevented is observed after the handlers run. */
+/** Install before scenario input. Keep the original event so defaultPrevented
+ * is observed after the handlers run. */
+export async function recordKeys(browser: WebdriverIO.Browser): Promise<void> {
+  await browser.execute(() => {
+    const log: KeyboardEvent[] = [];
+    (window as unknown as { keyEvents: KeyboardEvent[] }).keyEvents = log;
+    window.addEventListener("keydown", (event) => log.push(event), { capture: true, passive: true });
+  });
+}
+
 function events(browser: WebdriverIO.Browser): Promise<{ received: string[]; handled: string[] }> {
   return browser.execute(() => {
     const page = window as unknown as { keyEvents?: KeyboardEvent[] };
-    if (page.keyEvents === undefined) {
-      const log: KeyboardEvent[] = [];
-      page.keyEvents = log;
-      window.addEventListener("keydown", (event) => log.push(event), { capture: true });
-    }
+    if (!page.keyEvents) throw new Error("the passive key recorder was not installed");
     return {
       received: page.keyEvents.map((event) => event.key),
       handled: page.keyEvents.filter((event) => event.defaultPrevented).map((event) => [
@@ -43,7 +48,7 @@ function events(browser: WebdriverIO.Browser): Promise<{ received: string[]; han
   });
 }
 
-/** The real app's page, logging keydowns on first use without changing their handling. */
+/** The real app's page with its already-installed key recorder. */
 export function page(browser: WebdriverIO.Browser): Page {
   return {
     keys: async (keys) => {

@@ -19,6 +19,7 @@ pub use starred::{star, star_artifact, starred, starred_artifacts};
 pub use waiting::{Waiting, waiting};
 
 use crate::{
+    platform::{FileIdentity, paths},
     repository::{self, Identity, Worktree},
     store::CatalogRun,
     types::{RunId, RunStatus, Timestamp},
@@ -205,39 +206,51 @@ impl Discovery {
     }
 }
 
+/// Pick one usable spelling per physical directory for this listing. Read each distinct
+/// saved spelling only once, even if many Runs were saved from it.
+#[derive(Default)]
+struct DirectoryKeys {
+    by_path: BTreeMap<PathBuf, PathBuf>,
+    by_identity: BTreeMap<FileIdentity, PathBuf>,
+}
+
+impl DirectoryKeys {
+    fn resolve(&mut self, path: &Path) -> PathBuf {
+        if let Some(key) = self.by_path.get(path) {
+            return key.clone();
+        }
+        let key = paths::directory_identity(path).map_or_else(
+            |_| path.to_owned(),
+            |(id, canonical)| self.by_identity.entry(id).or_insert(canonical).clone(),
+        );
+        self.by_path.insert(path.to_owned(), key.clone());
+        key
+    }
+
+    fn head(&mut self, branch: Option<String>, tree: &Path) -> Head {
+        branch
+            .and_then(|name| BranchName::try_from(name).ok())
+            .map_or_else(|| Head::Detached(self.resolve(tree)), Head::Branch)
+    }
+}
+
 /// Where `identity` (of the workspace `repo`) lives, and `repo` relative to its worktree.
 /// The head of the worktree at `tree` with `branch` checked out, or detached without one. A
 /// name Git reports that is no branch name is known by the worktree's folder instead.
-fn head(branch: Option<String>, tree: &Path) -> Head {
-    branch
-        .and_then(|name| BranchName::try_from(name).ok())
-        .map_or_else(|| Head::Detached(tree.to_path_buf()), Head::Branch)
-}
-
-fn place_of(
-    identity: &Identity,
-    repo: &Path,
-    folders: &mut BTreeMap<crate::platform::FileIdentity, PathBuf>,
-) -> (Place, PathBuf) {
+fn place_of(identity: &Identity, repo: &Path, keys: &mut DirectoryKeys) -> (Place, PathBuf) {
     match (&identity.common_dir, &identity.worktree_path) {
         (Some(common), Some(tree)) => {
-            let head = head(identity.branch.clone(), tree);
-            let relative = crate::platform::paths::relative_beneath(repo, tree).unwrap_or_default();
+            let head = keys.head(identity.branch.clone(), tree);
+            let relative = paths::relative_beneath(repo, tree).unwrap_or_default();
             (
                 Place::Git {
-                    common: common.clone(),
+                    common: keys.resolve(common),
                     head,
                 },
                 relative,
             )
         }
-        _ => {
-            let path = crate::platform::paths::directory_identity(repo).map_or_else(
-                |_| repo.to_path_buf(),
-                |(id, spelling)| folders.entry(id).or_insert(spelling).clone(),
-            );
-            (Place::Folder(path), PathBuf::new())
-        }
+        _ => (Place::Folder(keys.resolve(repo)), PathBuf::new()),
     }
 }
 
@@ -302,9 +315,9 @@ type Grouped = (Vec<Chip>, Option<(Timestamp, PathBuf)>);
 pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Discovery) -> Listing {
     let mut grouped: BTreeMap<Place, Grouped> = BTreeMap::new();
     let mut labels = Labels::new();
-    let mut folders = BTreeMap::new();
+    let mut keys = DirectoryKeys::default();
     let launched = launch.map(|path| {
-        let (place, _) = place_of(&discovery.identify(path), path, &mut folders);
+        let (place, _) = place_of(&discovery.identify(path), path, &mut keys);
         (place, path.to_path_buf())
     });
     for run in runs {
@@ -314,7 +327,7 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             } else {
                 discovery.identify(&run.repo_path)
             };
-        let (place, relative) = place_of(&identity, &run.repo_path, &mut folders);
+        let (place, relative) = place_of(&identity, &run.repo_path, &mut keys);
         labels.insert(run.id.clone(), label(&place));
         let (chips, newest) = grouped.entry(place).or_default();
         chips.push(Chip {
@@ -336,21 +349,19 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             Place::Folder(_) => None,
         })
         .collect();
-    let mut live: Vec<(Place, PathBuf)> = commons
-        .into_iter()
-        .flat_map(|common| {
-            discovery.worktrees(&common).into_iter().map(move |tree| {
-                let head = head(tree.branch, &tree.path);
-                (
-                    Place::Git {
-                        common: common.clone(),
-                        head,
-                    },
-                    tree.path,
-                )
-            })
-        })
-        .collect();
+    let mut live = Vec::new();
+    for common in commons {
+        live.extend(discovery.worktrees(&common).into_iter().map(|tree| {
+            let head = keys.head(tree.branch, &tree.path);
+            (
+                Place::Git {
+                    common: common.clone(),
+                    head,
+                },
+                tree.path,
+            )
+        }));
+    }
     let folders: BTreeSet<&PathBuf> = grouped
         .keys()
         .chain(launched.iter().map(|(place, _)| place))

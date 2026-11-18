@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { addRepository, artifactize, create, type Fixture, orderRuns, requests, savedRuns, signoff, slowTool } from "../fixture.ts";
 import { claimable, requestState, showDebug, reviewing } from "../human-review.ts";
-import { fill, press, typeText } from "../keys.ts";
+import { afterRender, fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
 import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
@@ -125,11 +125,20 @@ export const scenarios: Scenario[] = [
   // UX journey: J-QUIT
   scenario<null>(
     "review-quit-claim",
-    "asks before quitting with the claim: Esc stays, u releases and quits",
+    "types q in a field; outside a field asks before quitting with the claim: Esc stays, u releases and quits",
     async () => ({ fixture: await create(), args: ["review"], data: null }),
     async (browser, { fixture }) => {
       await claimReview(browser, fixture);
       const dialog = await browser.$('[role="alertdialog"]');
+      const field = browser.$("#field-comment");
+      await press(browser, ["g"], () => field.isDisplayed(), "the GREEN form");
+      await field.click();
+      await waitFor(browser, () => field.isFocused(), "the comment field takes the keyboard");
+      await typeText(browser, "q");
+      await afterRender(browser);
+      assert.equal(await dialog.isExisting(), false, "q in a field does not open Leave");
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "typing leaves the window and its claim alone");
+      await press(browser, ["Escape"], async () => !(await field.isExisting()) && await reviewing(browser), "left the form before trying q outside it");
       /** The prompt is open and holds focus, so its keys reach it. */
       const prompted = async () => {
         await browser.keys(["q"]);
@@ -208,7 +217,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await mainTitle(browser), "Review · read-only", "completed, the review is read-only");
     },
   ),
-  // UX journey: J-HUMAN-LAYOUT
+  // UX journeys: J-HUMAN-LAYOUT J-HUMAN-CLAIM
   scenario<null>(
     "review-layout",
     "lays a review in the Main area out as two panels where it is at least twice the Detail's width, the Tool log the view at the left and the rest a column at the right, and in one column where it is narrower",
@@ -328,7 +337,16 @@ export const scenarios: Scenario[] = [
         `Release claim, then the running tool's time and Cancel, then Submit: ${JSON.stringify(running)}`);
       await waitFor(browser, async () => await slowTool(fixture)?.() === true, "the owned slow tool is listening before Cancel");
       const alive = slowTool(fixture)!;
-      await browser.$('[aria-label="Human review"] button[aria-label="Cancel (Esc)"]').click();
+      const review = browser.$('[aria-label="Human review"]');
+      const release = review.$('button[aria-label="Release claim (u)"]');
+      assert.equal(await release.isEnabled(), false, "Release claim cannot be clicked while the tool runs");
+      await review.$('[aria-label="Instruction"]').click();
+      await press(browser, ["u"], () => true, "the release shortcut reached the busy review");
+      await afterRender(browser);
+      assert.ok(await alive() && /^\d+s$/.test((await row()).seconds), "the gated tool still runs");
+      assert.equal(await review.$(".stage").getText(), "REVIEW (yours)", "the review still shows its claim");
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "the release attempt kept the claim");
+      await review.$('button[aria-label="Cancel (Esc)"]').click();
       await waitFor(browser, async () => !(await alive()) && (await row()).seconds === "", "Cancel stopped the owned tool and dismissed its timer");
       assert.equal(await browser.$("#field-comment").getValue(), "draft kept through the tool", "the draft stays");
       // Narrow, a Main area under twice the Detail's width: one column, top to bottom, the Tool

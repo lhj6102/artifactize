@@ -14,7 +14,7 @@ import {
   type Environment, type NativePath,
 } from "./platform.ts";
 export { environment } from "./environment.ts";
-export { createdRoots, releaseFixtures, settleFixtures } from "./build-fixtures.ts";
+export { createdRoots, releaseFixtures } from "./build-fixtures.ts";
 export { slowTool } from "./process-fixtures.ts";
 
 /** The declared immutable candidates inherited from the owning suite or tool session. */

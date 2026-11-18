@@ -12,7 +12,7 @@ import { requestState, showDebug, reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
+import { canonicalPath, exists, nativePath, portablePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { detail, fact, graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
@@ -271,6 +271,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify([last, ...before.slice(0, -1)]), `only ${last} starred again: ${JSON.stringify(await names())}`);
       await waitFor(browser, async () => (await branches(browser)).filter((entry) => entry.starred).map((entry) => entry.name).join() === last,
         `only ${last} is starred before relaunch`);
+      const expected = [{ git: { common: portablePath(canonicalPath(nativePath(fixture.repo, ".git"))), head: { branch: last.split("  ")[1] } } }];
+      await waitFor(browser, () => JSON.stringify(kept(fixture.state)) === JSON.stringify(expected),
+        `only ${last}'s star is saved before relaunch`);
       writeText(nativePath(fixture.root, "expected-star-name"), last);
     },
     // The next monitor lists it first, starred; taken away, it is listed with the others again.
@@ -332,8 +335,10 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await names()).length === 3, "the removed worktrees gone");
       assert.deepEqual(await names(), ["repo  loose", "repo  master", "repo  scope-two"]);
       // The deleted folder's waiting review leaves the Waiting stack on its own; the other stays.
-      await waitFor(browser, async () => !(await waiting(browser)).rows.some((entry) => entry.id === deleted), "the deleted folder's review gone");
-      assert.ok((await waiting(browser)).rows.some((entry) => entry.id === kept), `${kept} still waits`);
+      await waitFor(browser, async () => {
+        const ids = (await waiting(browser)).rows.map((entry) => entry.id);
+        return ids.includes(kept) && !ids.includes(deleted);
+      }, "the deleted folder's review is gone while the retained review still waits");
       // A worktree Git no longer lists goes too, though its folder and files stay.
       removeTree(nativePath(fixture.root, "scope-two", ".git"));
       git(fixture.repo, "-C", fixture.repo, "worktree", "prune");

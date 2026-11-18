@@ -40,6 +40,7 @@ async fn rendered_panes_keep_neighbours_and_fill_the_body_at_every_breakpoint() 
     let (_monitor_root, mut monitor) = tests::monitor();
     monitor.set_runs(vec![super::tests::summary("run-1", 1)]);
     monitor.set_run(view, requests);
+    monitor.tree.select(vec!["a:app".parse().unwrap()]);
     for (width, side, middle, end) in [
         (80, 16, 48, 64),
         (99, 16, 67, 83),
@@ -61,18 +62,41 @@ async fn rendered_panes_keep_neighbours_and_fill_the_body_at_every_breakpoint() 
             } else {
                 monitor.focus_on(focus);
             }
-            render(&mut monitor, width, 30);
-            let actual: Vec<_> = monitor
-                .hits
-                .panes
-                .iter()
-                .map(|(pane, area)| (*pane, area.width))
-                .collect();
-            assert_eq!(actual, expected, "{width} {focus:?}");
+            let terminal = draw_terminal(&mut monitor, width, 30);
+            let buffer = terminal.backend().buffer();
             let mut x = 0;
-            for (_, area) in &monitor.hits.panes {
-                assert_eq!((area.x, area.y, area.height), (x, 1, 28));
-                x += area.width;
+            for (pane, pane_width) in expected {
+                let right = x + pane_width - 1;
+                for (y, left, right_edge) in [(1, "┌", "┐"), (28, "└", "┘")] {
+                    assert_eq!(buffer[(x, y)].symbol(), left, "{width} {focus:?} {pane:?}");
+                    assert_eq!(
+                        buffer[(right, y)].symbol(),
+                        right_edge,
+                        "{width} {focus:?} {pane:?}"
+                    );
+                }
+                for y in 2..28 {
+                    assert_eq!(buffer[(x, y)].symbol(), "│", "{width} {focus:?} {pane:?}");
+                    assert_eq!(
+                        buffer[(right, y)].symbol(),
+                        "│",
+                        "{width} {focus:?} {pane:?}"
+                    );
+                }
+                let title: String = (x + 1..right)
+                    .map(|column| buffer[(column, 1)].symbol())
+                    .collect();
+                let label = match pane {
+                    Scope => " Scope ",
+                    Runs => " Runs (1) ",
+                    Tree => " Run run-1 ",
+                    Detail => " Artifact app",
+                };
+                assert!(
+                    title.starts_with(label),
+                    "{width} {focus:?} {pane:?}: {title}"
+                );
+                x += pane_width;
             }
             assert_eq!(x, width, "panes fill the body");
         }

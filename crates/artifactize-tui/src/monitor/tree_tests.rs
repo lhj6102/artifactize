@@ -1166,7 +1166,7 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
 fn frames_preserve_rendered_rows_and_refresh_updates_their_state() {
     let (_monitor_root, mut monitor) = tests::monitor();
     wide(&mut monitor);
-    let built = monitor.nodes();
+    let built = monitor.nodes(now());
     let first = render(&mut monitor, 200, 60);
     assert_eq!(render(&mut monitor, 200, 60), first);
     monitor.key(KeyEvent::from(KeyCode::Char('j')));

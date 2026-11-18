@@ -69,6 +69,12 @@ export function parentOf(path: NativePath): NativePath {
   return dirname(path) as NativePath;
 }
 
+/** The repository-relative form of a path as shown by the app. */
+export function relativeTextPath(root: NativePath, path: NativePath): string {
+  if (!isInside(root, path)) throw new Error(`path ${path} is not inside ${root}`);
+  return portablePath(relative(root, path) as NativePath);
+}
+
 export function nameOf(path: NativePath): string {
   return basename(path);
 }
@@ -717,7 +723,11 @@ export async function reserveEmbeddedPorts(count: number): Promise<{
         claim = await serveLoopback(undefined, port + 1);
         const listener = await serveLoopback(undefined, port);
         const owned = claim;
-        reservations.push({ port, close: listener.close, release: () => owned.close() });
+        reservations.push({ port, close: listener.close, release: async () => {
+          const failures = (await Promise.allSettled([listener.close(), owned.close()]))
+            .flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+          if (failures.length) throw new AggregateError(failures, `embedded driver port ${port} release failed`);
+        } });
       } catch (error) {
         await claim?.close();
         if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
@@ -726,7 +736,9 @@ export async function reserveEmbeddedPorts(count: number): Promise<{
     if (reservations.length !== count) throw new Error("not enough exclusive ports for the embedded WebDriver service");
     return reservations;
   } catch (error) {
-    await Promise.all(reservations.flatMap((port) => [port.close(), port.release()]));
+    const failures = (await Promise.allSettled(reservations.map((port) => port.release())))
+      .flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
+    if (failures.length) throw new AggregateError([error, ...failures], "embedded port reservation and cleanup failed");
     throw error;
   }
 }
@@ -1029,9 +1041,16 @@ export async function requestWindowClose(browser: WebdriverIO.Browser): Promise<
   if (error !== null) throw new Error(`native window close failed: ${String(error)}`);
 }
 
+const browserHandoffLog = (root: NativePath) => nativePath(root, "browser-handoffs.jsonl");
+
+/** URLs received by this fixture's desktop opener, independently of visits to the site. */
+export function browserHandoffs(root: NativePath): string[] {
+  return (readTextIfExists(browserHandoffLog(root)) ?? "").split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
+}
+
 /** The system browser of a case that opens `entry`, an address on its private loopback server,
  * or one below it. Unix desktop openers are declared fixture executables performing the real
- * HTTP GET; the fixture server, not this program, records the exact address reached. */
+ * HTTP GET. */
 export async function browserEnvironment(root: NativePath, env: Environment, entry: BrowserEntry): Promise<{
   env: Environment; release?: () => Promise<void>;
 }> {
@@ -1070,6 +1089,7 @@ export async function browserEnvironment(root: NativePath, env: Environment, ent
         if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !agreed) {
           throw new Error("the handoff did not name the owned browser origin");
         }
+        appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
       }
       const reply = await fetch(url, { signal: AbortSignal.any([stop.signal, AbortSignal.timeout(30000)]) });
       await reply.arrayBuffer();
@@ -1142,6 +1162,7 @@ async function ownedWindowsBrowser(root: NativePath, env: Environment, entry: Br
         const agreed = typeof entry === "string" ? new URL(entry).origin === address.origin :
           (readTextIfExists(entries) ?? "").split("\n").includes(address.href);
         if (address.protocol !== "http:" || address.hostname !== "127.0.0.1" || !agreed) throw new Error("the handoff did not name the owned browser origin");
+        appendText(browserHandoffLog(root), `${JSON.stringify(target)}\n`);
       }
       const args = [`--user-data-dir=${portablePath(profile)}`, "--no-first-run", "--no-default-browser-check", "--disable-background-mode", launch];
       const owner = nativePath(owners, `${jobs.length}.pid`);
@@ -1183,9 +1204,12 @@ if (!reply.ok) throw new Error(await reply.text());
 export function claudeCodeEnvironment(root: NativePath, env: Environment, watchdogMs = 120000): Environment {
   const bin = makeDirectory(nativePath(root, "claude-bin"));
   const program = nativePath(bin, "claude.mjs");
+  const logins = makeDirectory(nativePath(root, "claude-logins"), { private: true });
   writeText(program, `import { appendFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 const [group, command] = process.argv.slice(2);
 const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
 const say = (text) => process.stdout.write(text);
@@ -1208,8 +1232,12 @@ if (command === "logout") {
   process.exit(0);
 }
 if (command !== "login") process.exit(2);
-// A sign-in nobody finishes, such as one a failed scenario left, ends on its own.
-setTimeout(() => process.exit(1), ${watchdogMs});
+// Admit the actual login process before allocating any resources. Teardown can
+// atomically close admission; late starts then cannot serve or open anything.
+const logins = process.env.DESKTOP_TEST_CLAUDE_LOGINS;
+writeFileSync(join(logins, process.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" });
+setInterval(() => { if (!existsSync(logins)) process.exit(1); }, 100).unref();
+setTimeout(() => process.exit(1), ${watchdogMs}).unref();
 const finish = () => {
   writeFileSync(signedIn, "claude.ai");
   say("Login successful.\\n");
@@ -1231,13 +1259,23 @@ server.listen(0, "127.0.0.1", () => {
   if (process.env.DESKTOP_TEST_BROWSER_ENTRIES) {
     appendFileSync(process.env.DESKTOP_TEST_BROWSER_ENTRIES, url + "\\n");
   }
-  if (process.env.DESKTOP_TEST_BROWSER_CLIENT) {
-    const opener = spawn(process.env.DESKTOP_TEST_BROWSER_NODE, [process.env.DESKTOP_TEST_BROWSER_CLIENT, url], { stdio: "inherit" });
-    opener.on("error", (error) => { process.stderr.write(String(error)); process.exit(1); });
-    opener.on("exit", (code) => { if (code !== 0) process.exit(1); });
-  } else if (process.env.DESKTOP_TEST_BROWSER_PROGRAM) {
-    spawn(${JSON.stringify(MACOS ? "open" : "xdg-open")}, [url], { stdio: "ignore" }).on("error", () => {});
-  }
+  const failed = (reason) => {
+    const text = "Claude fixture browser opener failed: " + String(reason);
+    appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPEN_ERRORS, text + "\\n");
+    process.stderr.write(text + "\\n");
+    process.exit(1);
+  };
+  const opener = process.env.DESKTOP_TEST_BROWSER_CLIENT
+    ? spawn(process.env.DESKTOP_TEST_BROWSER_NODE, [process.env.DESKTOP_TEST_BROWSER_CLIENT, url], { stdio: "inherit" })
+    : process.env.DESKTOP_TEST_BROWSER_PROGRAM
+      ? spawn(${JSON.stringify(MACOS ? "open" : "xdg-open")}, [url], { stdio: "inherit" })
+      : null;
+  if (!opener) return failed("no owned browser client was configured");
+  opener.on("error", failed);
+  opener.on("close", (code, signal) => {
+    if (code !== 0) return failed(signal ?? "exit " + code);
+    appendFileSync(process.env.DESKTOP_TEST_CLAUDE_OPENED, url + "\\n");
+  });
 });
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -1267,8 +1305,36 @@ process.stdin.on("end", () => process.exit(1));
     DESKTOP_TEST_CLAUDE_BROKEN: nativePath(root, "claude-broken"),
     DESKTOP_TEST_CLAUDE_VISITS: nativePath(root, "claude-visits"),
     DESKTOP_TEST_CLAUDE_OWNERS: nativePath(root, "claude-owners.jsonl"),
+    DESKTOP_TEST_CLAUDE_LOGINS: logins,
+    DESKTOP_TEST_CLAUDE_OPEN_ERRORS: nativePath(root, "claude-browser-errors"),
+    DESKTOP_TEST_CLAUDE_OPENED: nativePath(root, "claude-browser-opened"),
     CLAUDE_CONFIG_DIR: makeDirectory(nativePath(root, "claude-config"), { private: true }),
   };
+}
+
+/** A result recorded by the actual login command, not just its printed sign-in URL. */
+export function claudeBrowserOpened(root: NativePath): string[] {
+  const failures = readTextIfExists(nativePath(root, "claude-browser-errors"));
+  if (failures) throw new Error(failures.trim());
+  return (readTextIfExists(nativePath(root, "claude-browser-opened")) ?? "").split("\n").filter(Boolean);
+}
+
+/** Stop and join admitted Claude logins after the app stops, before closing their browser. */
+export async function releaseClaudeLogins(root: NativePath): Promise<void> {
+  const stopped = nativePath(root, "closed-claude-logins");
+  closeDirectory(nativePath(root, "claude-logins"), stopped);
+  if (!exists(stopped)) return;
+  const pids = listFiles(stopped).map((file) => {
+    const pid = Number(/^(\d+)-[a-f0-9-]+\.pid$/.exec(nameOf(file))?.[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`invalid Claude login owner: ${file}`);
+    return pid;
+  });
+  const deadline = Date.now() + 15000;
+  while (pids.some(processRunning)) {
+    if (Date.now() >= deadline) throw new Error(`Claude login still owns fixture ${root}`);
+    await new Promise((done) => setTimeout(done, 25));
+  }
+  removeTree(stopped);
 }
 
 /** Read the actual login process that announced this origin while it was live. */

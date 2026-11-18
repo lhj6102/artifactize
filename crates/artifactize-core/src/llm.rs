@@ -8,6 +8,7 @@ mod degenerate;
 pub(crate) mod delivery;
 #[cfg(test)]
 mod delivery_tests;
+mod error_body;
 pub mod models;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -20,6 +21,7 @@ use std::{
     time::Duration,
 };
 
+use error_body::Body;
 use futures_util::StreamExt;
 use rig_core::{
     Model,
@@ -422,19 +424,38 @@ impl Client {
     /// is the shared rule's: text holding part of a credential this client sent is withheld
     /// before it reaches output, delivery events, attempts or saved sessions.
     fn classify(&self, error: &ProviderError, now: time::OffsetDateTime) -> Classified {
+        let response = error.provider_response();
+        let body = response.and_then(|response| Body::parse(response.body.as_bytes()));
+        let body = body.as_ref();
+        // Relays may already have a machine code and status independently of the reply.
+        let (status, code) = match error {
+            ProviderError::Relayed(report) => (report.http_status, report.code.as_deref()),
+            _ => (
+                response.and_then(|response| response.status.map(|status| status.as_u16())),
+                response
+                    .and_then(|response| response.code.as_deref())
+                    .or_else(|| body.and_then(Body::provider_code)),
+            ),
+        };
+        let http = status.and_then(|status| reqwest::StatusCode::from_u16(status).ok());
+        let fallback = || diagnostic_from(body, error);
         let text = match self {
-            Self::Codex(_) => codex::diagnostic_text(error),
-            _ => diagnostic_text(error),
+            Self::Codex(_) => {
+                let unix = u64::try_from(now.unix_timestamp())
+                    .ok()
+                    .map(crate::auth::codex::Timestamp::from_seconds);
+                codex::diagnostic_text(http, body, fallback, unix)
+            }
+            _ => fallback(),
         };
         let sent = self.sent();
         let sent: Vec<&str> = sent.iter().map(String::as_str).collect();
         let message = crate::secret::server_text(&text, &sent, MAX_DIAGNOSTIC_CHARS);
-        let report = error.report();
-        let status = report.http_status;
         // Classified by the whole text (codes and words), never shown.
-        let text = format!("{} {text}", report.code.as_deref().unwrap_or_default()).to_lowercase();
+        let text = format!("{} {text}", code.unwrap_or_default()).to_lowercase();
         let any = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
-        let code = if matches!(self, Self::Codex(_)) && codex::usage_limited(error)
+        let code = if matches!(self, Self::Codex(_))
+            && body.is_some_and(|body| body.usage_limit(http))
             || any(&["quota", "billing", "credit balance", "usage limit"])
         {
             Code::Quota
@@ -451,11 +472,12 @@ impl Client {
         } else if status == Some(429) || any(&["rate_limit", "rate limit"]) {
             Code::RateLimit
         } else if error.is_retryable()
-            || matches!(self, Self::Openai(..) | Self::Codex(_)) && codex::overloaded(error)
+            || matches!(self, Self::Openai(..) | Self::Codex(_))
+                && body.and_then(|body| body.codex_fields().code()) == Some("server_is_overloaded")
             || status.is_some_and(|status| status >= 500)
             || (status.is_none()
                 && matches!(
-                    report.code.as_deref(),
+                    code,
                     // Codex reports overloads inside a successful HTTP stream, without
                     // an HTTP error status; it is the same retryable provider failure.
                     Some(
@@ -514,7 +536,10 @@ fn wait_header(
 /// A provider error as text, cleaned for a terminal but not clipped: callers decide what of
 /// it may be shown ([`crate::secret::server_text`]) before cutting it.
 fn diagnostic_text(error: &ProviderError) -> String {
-    clean_text(&message(error))
+    let body = error
+        .provider_response_body()
+        .and_then(|body| Body::parse(body.as_bytes()));
+    diagnostic_from(body.as_ref(), error)
 }
 
 /// A provider's error for a request that carried `secrets` (an API key): the shared rule for
@@ -523,17 +548,11 @@ fn diagnostic_hiding(error: &ProviderError, secrets: &[&str]) -> String {
     crate::secret::server_text(&diagnostic_text(error), secrets, MAX_DIAGNOSTIC_CHARS)
 }
 
-fn message(error: &ProviderError) -> String {
-    error
-        .provider_response()
-        .and_then(|response| serde_json::from_str::<Value>(&response.body).ok())
-        .and_then(|body| {
-            body.pointer("/error/message")
-                .or_else(|| body.get("message"))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| error.to_string())
+fn diagnostic_from(body: Option<&Body>, error: &ProviderError) -> String {
+    match body.and_then(Body::provider_message) {
+        Some(message) => clean_text(message),
+        None => clean_text(&error.to_string()),
+    }
 }
 
 /// The environment variable that points a built-in provider at a loopback test endpoint;

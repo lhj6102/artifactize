@@ -8,6 +8,13 @@ use serde_json::json;
 use std::fs;
 
 async fn fixture(count: usize) -> (tempfile::TempDir, OwnedReceipts, Monitor) {
+    fixture_with_artifact(count, "app").await
+}
+
+async fn fixture_with_artifact(
+    count: usize,
+    artifact_path: &str,
+) -> (tempfile::TempDir, OwnedReceipts, Monitor) {
     let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
@@ -17,7 +24,7 @@ async fn fixture(count: usize) -> (tempfile::TempDir, OwnedReceipts, Monitor) {
         let saved = json!({
             "id":format!("run-{n}"),"repoPath":repo,"stateDir":state,"status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
-            "selection":{"kind":"all"},"definitions":{"artifacts":{"app":{"path":"app"}}},"validation":null
+            "selection":{"kind":"all"},"definitions":{"artifacts":{"app":{"path":artifact_path}}},"validation":null
         });
         let run: Run = serde_json::from_value(saved).unwrap();
         receipts.create_run(&run, &[]).await.unwrap();
@@ -32,34 +39,43 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
         Quit,
         Error,
         Unwind,
+        SetupUnwind,
     }
-    for exit in [Exit::Quit, Exit::Error, Exit::Unwind] {
+    for exit in [Exit::Quit, Exit::Error, Exit::Unwind, Exit::SetupUnwind] {
         let (root, receipts, mut monitor) = fixture(1).await;
         drop(receipts);
         let database = monitor.state.join(crate::store::DATABASE);
-        let changes = crate::changes::Subscription::new(&monitor.state).await;
-        let (started, ready) = tokio::sync::oneshot::channel();
-        let (release_snapshot, snapshot_gate) = std::sync::mpsc::channel();
-        let snapshot = monitor
-            .start_refresh_after(Refresh::Full, move || {
-                started.send(()).unwrap();
-                snapshot_gate.recv().unwrap();
-            })
-            .unwrap();
-        ready.await.unwrap();
         let (session_root, source) = crate::test_session_files::fixture();
         let mut live = crate::monitor::session::Live::new(1.into(), source);
         live.geometry(80, 10);
         let mut job = live.job().unwrap();
-        let (release_session, session_gate) = std::sync::mpsc::channel();
-        let session = tokio::task::spawn_blocking(move || {
-            session_gate.recv().unwrap();
-            let window = job.reader.step(job.width, job.height, job.position);
-            (job, window)
-        });
-        let held = fs::File::open(&database).unwrap();
-        let jobs = crate::jobs::Jobs {
-            action: Some(Box::pin(async move {
+        let changes = crate::changes::Subscription::new(&monitor.state).await;
+        let mut jobs = crate::jobs::Jobs::default();
+        let result = std::panic::AssertUnwindSafe(async {
+            let (started, ready) = tokio::sync::oneshot::channel();
+            let (release_snapshot, snapshot_gate) = std::sync::mpsc::channel();
+            jobs.snapshot = Some(
+                monitor
+                    .start_refresh_after(Refresh::Full, move || {
+                        let _ = started.send(());
+                        // Setup can unwind before the action takes ownership of the sender.
+                        let _ = snapshot_gate.recv();
+                    })
+                    .unwrap(),
+            );
+            ready.await.unwrap();
+            assert!(
+                !matches!(exit, Exit::SetupUnwind),
+                "terminal fixture setup panic"
+            );
+            let (release_session, session_gate) = std::sync::mpsc::channel();
+            jobs.session = Some(tokio::task::spawn_blocking(move || {
+                let _ = session_gate.recv();
+                let window = job.reader.step(job.width, job.height, job.position);
+                (job, window)
+            }));
+            let held = fs::File::open(&database).unwrap();
+            jobs.action = Some(Box::pin(async move {
                 // Accepted work, not a timer, releases both blocking reads during shutdown.
                 release_snapshot.send(()).unwrap();
                 release_session.send(()).unwrap();
@@ -69,15 +85,17 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
                     quit: true,
                     failed: Vec::new(),
                 }
-            })),
-            snapshot: Some(snapshot),
-            session: Some(session),
-        };
-        let result: std::thread::Result<Result<(), String>> = match exit {
-            Exit::Quit => Ok(Ok(())),
-            Exit::Error => Ok(Err("terminal fixture error".into())),
-            Exit::Unwind => Err(Box::new("terminal fixture panic")),
-        };
+            }));
+            match exit {
+                Exit::Quit => Ok(()),
+                Exit::Error => Err("terminal fixture error".into()),
+                Exit::Unwind => panic!("terminal fixture panic"),
+                Exit::SetupUnwind => unreachable!("setup already panicked"),
+            }
+        })
+        .catch_unwind()
+        .await;
+        // The gates drop if setup fails, and every started job joins before its directory drops.
         let finished = std::panic::AssertUnwindSafe(jobs.finish(result, changes))
             .catch_unwind()
             .await;
@@ -87,6 +105,10 @@ async fn terminal_shutdown_joins_accepted_actions_readers_and_subscription_on_ev
             Exit::Unwind => assert_eq!(
                 finished.unwrap_err().downcast_ref::<&str>(),
                 Some(&"terminal fixture panic")
+            ),
+            Exit::SetupUnwind => assert_eq!(
+                finished.unwrap_err().downcast_ref::<&str>(),
+                Some(&"terminal fixture setup panic")
             ),
         }
         drop(live);
@@ -308,16 +330,42 @@ async fn run_navigation_reuses_catalog_and_page_but_detects_a_commit_without_any
 
 #[tokio::test]
 async fn different_state_identity_resets_details_even_when_run_ids_match() {
-    let (_root, _receipts, mut monitor) = fixture(1).await;
-    let (_other, _other_receipts, replacement) = fixture(1).await;
+    let (_root, _receipts, mut monitor) = fixture_with_artifact(1, "original-artifact").await;
+    let (_other, _other_receipts, replacement) =
+        fixture_with_artifact(1, "replacement-artifact").await;
     monitor.refresh().await;
+    assert_eq!(monitor.key(KeyEvent::from(KeyCode::Enter)), Action::Refresh);
+    monitor.refresh().await;
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Enter)),
+        Action::OpenDetail
+    );
     monitor.open_detail().await;
-    let previous = monitor.origin.identity().cloned().unwrap();
-    assert!(monitor.detail().is_some());
+    monitor.key(KeyEvent::from(KeyCode::Char('t')));
+    let before = tests::sized(&mut monitor, 200, 40);
+    assert!(
+        before.contains("Path: original-artifact") && before.contains("[Close]"),
+        "{before}"
+    );
+
     monitor.state = replacement.state;
     monitor.refresh().await;
-    assert_ne!(monitor.origin.identity(), Some(&previous));
-    assert_eq!(monitor.focus(), Pane::Artifacts);
-    assert!(monitor.detail().is_none() && monitor.peek.is_none() && monitor.reviews.is_empty());
-    assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
+    let replaced = tests::sized(&mut monitor, 200, 40);
+    assert!(replaced.contains("Run run-0"), "{replaced}");
+    assert!(
+        !replaced.contains("[Close]") && !replaced.contains("original-artifact"),
+        "{replaced}"
+    );
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Enter)),
+        Action::OpenDetail
+    );
+    monitor.open_detail().await;
+    monitor.key(KeyEvent::from(KeyCode::Char('t')));
+    let reopened = tests::sized(&mut monitor, 200, 40);
+    assert!(
+        reopened.contains("Path: replacement-artifact"),
+        "{reopened}"
+    );
+    assert!(!reopened.contains("original-artifact"), "{reopened}");
 }

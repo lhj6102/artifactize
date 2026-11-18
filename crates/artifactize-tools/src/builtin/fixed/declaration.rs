@@ -32,7 +32,16 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
     {
         return Err("Invalid fixed args for this builtin/kind.".into());
     }
-    if builtin == Builtin::Section && args.get(1).is_some_and(|heading| heading.trim().is_empty()) {
+    if builtin == Builtin::Section
+        && let Some(heading) = args.get(1)
+    {
+        validate_heading(heading)?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_heading(heading: &str) -> Result<(), String> {
+    if heading.trim().is_empty() {
         return Err("Section heading must not be blank.".into());
     }
     Ok(())

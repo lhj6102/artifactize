@@ -73,7 +73,7 @@ pub fn worktrees(common_dir: &Path) -> Vec<Worktree> {
         .map(|output| parse_worktrees(&output))
         .unwrap_or_default()
         .into_iter()
-        .filter(|tree| tree.path.try_exists().unwrap_or(false))
+        .filter(|tree| crate::platform::paths::target_exists(&tree.path).unwrap_or(false))
         .collect()
 }
 

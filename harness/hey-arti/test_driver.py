@@ -165,6 +165,12 @@ def owned_descriptor(acquire, register):
         return descriptor
 
 
+def pidfd_pid(descriptor):
+    """Read the process pinned by a pidfd; Linux reports -1 once it is reaped."""
+    info = Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
+    return next(int(line.split()[1]) for line in info if line.startswith("Pid:"))
+
+
 class OwnedTestCase(unittest.TestCase):
     def setUp(self):
         with driver.defer_interrupts():
@@ -176,7 +182,12 @@ class OwnedTestCase(unittest.TestCase):
 
     def spawn(self, command, **options):
         with driver.defer_interrupts():
-            process = driver.spawn(command, **options)
+            try:
+                process = driver.spawn(command, **options)
+            except driver.ProcessExitError as error:
+                if error.process is not None:
+                    self.register_child(error.process)
+                raise
             self.register_child(process)
         return process
 
@@ -390,16 +401,17 @@ child.wait()
             self.assertEqual(len(handles), 2, "the fixture must capture both process identities")
             self.assertEqual(set(select.select(handles, [], [], 0)[0]), set(handles))
             for descriptor in handles:
-                info = Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
-                self.assertIn(["Pid:", "-1"], [line.split() for line in info], "the exited child was not reaped")
+                self.assertEqual(pidfd_pid(descriptor), -1, "the exited child was not reaped")
 
     def test_reaps_a_detached_descendant_that_exited_before_teardown(self):
         program = """import os, sys
 if os.fork() == 0:
     os.setsid()
     print(os.getpid(), flush=True)
-    sys.stdin.read()
-os._exit(0)
+    os._exit(0)
+# Keep the parent alive without reaping its child. Only teardown can
+# make the zombie an orphan for the command's reaper to adopt.
+sys.stdin.read()
 """
         for defer_detached in (False, True):
             with self.subTest(deferred=defer_detached), ExitStack() as observation:
@@ -421,18 +433,12 @@ os._exit(0)
 
                 self.fixture_cleanups.append(reap_if_adopted_by_test)
                 descriptor = owned_descriptor(lambda: os.pidfd_open(pid), observation.callback)
-                process.stdin.close()
                 self.assert_exit_ready(descriptor)
-
-                def proc_pid():
-                    info = Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
-                    return next(int(line.split()[1]) for line in info if line.startswith("Pid:"))
-
-                self.assertEqual(proc_pid(), pid, "the fixture must present an exited, unreaped process")
+                self.assertEqual(pidfd_pid(descriptor), pid, "the fixture parent must hold its unreaped child")
                 driver.child_cleanup.close(process)
                 if detached is not None:
                     detached.finish()
-                self.assertEqual(proc_pid(), -1, "the early-exiting detached child must be reaped")
+                self.assertEqual(pidfd_pid(descriptor), -1, "the early-exiting detached child must be reaped")
 
     def assert_exit_ready(self, descriptor):
         self.assertTrue(select.select([descriptor], [], [], READY_BOUND)[0],
@@ -902,6 +908,7 @@ class HostLifecycleTests(OwnedTestCase):
     @unittest.skipUnless(hasattr(os, "pidfd_open"), "Linux worker-exit observation uses pidfd")
     def test_live_waits_for_running_and_already_terminal_workers_before_archive_or_delete(self):
         copy_tree, remove_tree = shutil.copytree, shutil.rmtree
+        exit_ready = driver.exit_ready
         for status, pending in (("RUNNING", "worker"), ("ERROR", "worker"), ("ERROR", "supervisor")):
             with self.subTest(saved_status=status, pending=pending):
                 self.output = self.root / f"working-{status}-{pending}"
@@ -917,9 +924,15 @@ class HostLifecycleTests(OwnedTestCase):
                     result = cli(command, **options)
                     if command[0] == str(self.candidate) and "show" in command and "--wait" in command:
                         self.assertFalse(select.select([descriptor], [], [], 0)[0],
-                                         "the worker must still be alive when the CLI reports terminal")
-                        process.stdin.close()
+                                         "the process must still be alive when the CLI reports terminal")
                     return result
+
+                def observe_exit(waited, timeout):
+                    if pidfd_pid(waited) == process.pid:
+                        # Release the fixture only when the harness actually
+                        # starts observing this process, not on terminal publication.
+                        process.stdin.close()
+                    return exit_ready(waited, timeout)
 
                 def require_worker_exit(action):
                     self.assertTrue(select.select([descriptor], [], [], 0)[0],
@@ -935,9 +948,10 @@ class HostLifecycleTests(OwnedTestCase):
                         require_worker_exit("deletion")
                     return remove_tree(path, *args, **kwargs)
 
-                # Only the CLI response and the filesystem boundaries drive
-                # the ordering check; observe exit with an independent pidfd.
+                # Let the harness perform the real exit wait. Archive and
+                # deletion observe readiness through the fixture's own pidfd.
                 with mock.patch.object(driver, "run_command", side_effect=respond), \
+                        mock.patch.object(driver, "exit_ready", side_effect=observe_exit), \
                         mock.patch.object(shutil, "copytree", side_effect=copy), \
                         mock.patch.object(shutil, "rmtree", side_effect=remove):
                     live.run(self.candidate, self.output, "test-model", self.evidence)
@@ -1104,13 +1118,13 @@ class HostLifecycleTests(OwnedTestCase):
         def launch_detached_worker(command, **options):
             if command[0] == "claude" and "-p" in command:
                 with driver.defer_interrupts():
-                    child = driver.spawn([sys.executable, "-I", "-c",
-                                          "import sys; print('worker-ready', flush=True); sys.stdin.read()"],
-                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
-                                         detached=options["detached"])
-                    # The test owns independent cleanup; do not let the global
-                    # retry close this child before the case gets its turn.
-                    self.children.append(child)
+                    detached = options["detached"]
+                    self.fixture_cleanups.append(detached.finish)
+                    child = self.spawn([sys.executable, "-I", "-c",
+                                        "import sys; print('worker-ready', flush=True); sys.stdin.read()"],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, detached=detached)
+                    # Only the case's retry should stop this tree during the test.
+                    cleanup.pending.remove(child)
                     descriptor = owned_descriptor(lambda: os.pidfd_open(child.pid), self.addCleanup)
                     workers.append(descriptor)
                 self.assertEqual(read_marker(child.stdout, b"worker-ready\n"), b"worker-ready\n")
@@ -1138,11 +1152,13 @@ class HostLifecycleTests(OwnedTestCase):
             nonlocal worker
             response = cli(command, **options)
             if command[0] == "claude" and "-p" in command:
-                worker = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"],
-                                    stdin=subprocess.PIPE, detached=options["detached"])
-                # This is an independently owned detached tree, not a child the
-                # global retry will stop before the case's retry runs.
-                cleanup.pending.remove(worker)
+                with driver.defer_interrupts():
+                    detached = options["detached"]
+                    self.fixture_cleanups.append(detached.finish)
+                    worker = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"],
+                                        stdin=subprocess.PIPE, detached=detached)
+                    # Only the case's retry should stop this tree during the test.
+                    cleanup.pending.remove(worker)
                 raise driver.ProcessExitError("host exit unconfirmed", process=host)
             return response
 

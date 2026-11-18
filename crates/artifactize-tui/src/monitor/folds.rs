@@ -33,7 +33,7 @@ struct Blocker {
 impl Monitor {
     /// The open Run's tree. `sync_tree` rebuilds it when the Run's state changes; frames,
     /// keys and hints reuse it, and redraw elapsed times from each row's clock.
-    pub(super) fn nodes(&mut self) -> Arc<Vec<Node>> {
+    pub(super) fn nodes(&mut self, now: OffsetDateTime) -> Arc<Vec<Node>> {
         let Some((run, requests)) = &self.run else {
             self.folds.cache = None;
             return Arc::default();
@@ -43,7 +43,7 @@ impl Monitor {
         {
             return nodes.clone();
         }
-        let nodes = Arc::new(model::tree(run, requests, OffsetDateTime::now_utc()));
+        let nodes = Arc::new(model::tree(run, requests, now));
         self.folds.cache = Some((run.run.id.clone(), nodes.clone()));
         nodes
     }
@@ -52,10 +52,9 @@ impl Monitor {
     /// toggled. A new Run starts on the first in-progress or failed eval, else the first row.
     #[cfg(test)]
     pub(super) fn sync_tree(&mut self, first: bool) {
+        let now = super::tests::now();
         let nodes = match &self.run {
-            Some((run, requests)) => {
-                Arc::new(model::tree(run, requests, OffsetDateTime::now_utc()))
-            }
+            Some((run, requests)) => Arc::new(model::tree(run, requests, now)),
             None => Arc::default(),
         };
         self.sync_projected_tree(first, nodes);
@@ -122,8 +121,8 @@ impl Monitor {
     }
 
     /// `b`: move to the next Artifact the origin row waits for, unmet ones first.
-    pub(super) fn jump_blocker(&mut self) {
-        let nodes = self.nodes();
+    pub(super) fn jump_blocker(&mut self, now: OffsetDateTime) {
+        let nodes = self.nodes(now);
         let origin = self.origin();
         let targets = upstream(&nodes, &origin);
         if targets.is_empty() {
@@ -163,12 +162,8 @@ impl Monitor {
     }
 
     /// The key hint for `b`, shown only when the selected row depends on an Artifact.
-    pub(super) fn blocker_hint(&mut self) -> &'static str {
-        if self.focus() != super::Pane::Artifacts {
-            return "";
-        }
-        let nodes = self.nodes();
-        if !self.highlighted(&nodes).is_empty() {
+    pub(super) fn blocker_hint(&self, nodes: &[Node]) -> &'static str {
+        if !self.highlighted(nodes).is_empty() {
             " · b/Backspace blocker"
         } else {
             ""

@@ -8,11 +8,11 @@ use std::{
 };
 
 use crate::{
-    Builtin, Content, builtin,
+    Content, ToolResult,
+    builtin::{self, fixed::FixedInput},
     scope::{Artifact, ArtifactId, Scope},
 };
 use clap::{Parser, Subcommand};
-use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
@@ -107,16 +107,16 @@ async fn execute_in(
     };
     let cancellation = CancellationToken::new();
     enum Invocation {
-        Fixed(Builtin, Vec<String>),
+        Fixed(Result<FixedInput, String>),
         Dynamic(builtin::Input),
     }
     let invocation = match tool {
-        Tool::Read { path } => Invocation::Fixed(Builtin::Read, vec![logical(path)]),
-        Tool::List { path } => Invocation::Fixed(Builtin::List, vec![logical(path)]),
+        Tool::Read { path } => Invocation::Fixed(FixedInput::read(logical(path))),
+        Tool::List { path } => Invocation::Fixed(FixedInput::list(logical(path))),
         Tool::Section { path, heading } => {
-            Invocation::Fixed(Builtin::Section, vec![logical(path), heading])
+            Invocation::Fixed(FixedInput::section(logical(path), heading))
         }
-        Tool::Help { args } => Invocation::Fixed(Builtin::Help, args),
+        Tool::Help { args } => Invocation::Fixed(FixedInput::help(&args)),
         Tool::Glob { pattern, path } => {
             Invocation::Dynamic(builtin::Input::glob(&pattern, logical(path))?)
         }
@@ -144,11 +144,10 @@ async fn execute_in(
         }
     };
     let result = match invocation {
-        Invocation::Fixed(tool, args) => {
-            builtin::call_fixed(
-                tool,
-                &args,
-                json!({}),
+        Invocation::Fixed(Err(error)) => ToolResult::error(error),
+        Invocation::Fixed(Ok(input)) => {
+            builtin::fixed::execute(
+                input,
                 builtin::Context {
                     root,
                     scope: &scope,

@@ -48,5 +48,8 @@ pub(super) async fn help(
     if finished.truncated || bytes.len() > TEXT_BYTES {
         return Err("Help output exceeds 64 KiB.".into());
     }
-    Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
+    Ok(
+        String::from_utf8(crate::terminal_text::clean_output(&bytes))
+            .expect("clean output is UTF-8"),
+    )
 }

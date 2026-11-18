@@ -332,7 +332,7 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
         }
         for (file, source) in &changes {
             if source.is_none() {
-                std::fs::remove_file(file).map_err(io)?;
+                crate::platform::paths::remove_regular(file).map_err(io)?;
             }
         }
         Ok(())
@@ -341,8 +341,10 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
         for (file, source) in originals {
             if let Some(source) = source {
                 crate::platform::paths::restore_file(&file, source.as_bytes()).map_err(io)?;
-            } else if file.exists() {
-                std::fs::remove_file(file).map_err(io)?;
+            } else if let Err(error) = crate::platform::paths::remove_regular(&file)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(io(error));
             }
         }
         return Err(error);

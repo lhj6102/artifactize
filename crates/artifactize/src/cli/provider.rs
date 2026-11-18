@@ -5,7 +5,9 @@ use std::{
     path::Path,
 };
 
-use clap::{ArgGroup, Subcommand};
+use clap::{
+    ArgGroup, ArgMatches, Args, Command, Error, FromArgMatches, Subcommand, error::ErrorKind,
+};
 use serde_json::json;
 
 use super::print_json;
@@ -20,34 +22,18 @@ pub enum ProviderCommand {
     /// Show the built-in providers' keys (never their values) and the custom providers.
     List,
     /// Add a custom provider, or replace the one with that name.
-    #[command(group(ArgGroup::new("target").args(["alias", "api"]).required(true)))]
     Add {
         /// The name evals use in `backend`.
         name: Backend,
-        /// Reach a built-in provider, with its sign-in or key, under this name.
-        #[arg(long, value_enum, value_name = "PROVIDER", conflicts_with_all = ["url", "key"])]
-        alias: Option<Provider>,
-        /// The API the endpoint speaks.
-        #[arg(long, value_enum, requires = "url")]
-        api: Option<EndpointApi>,
-        /// The endpoint's API root, such as https://api.openai.com/v1.
-        #[arg(long, value_parser = parse_url)]
-        url: Option<EndpointUrl>,
-        /// Read the endpoint's key from stdin (never argv); without it the endpoint has no key.
-        #[arg(long)]
-        key: bool,
+        #[command(flatten)]
+        target: Target,
     },
     /// Remove a custom provider.
     Remove { name: Backend },
 }
 
-pub(super) enum Action {
-    List,
-    Add { name: Backend, target: Target },
-    Remove { name: Backend },
-}
-
-pub(super) enum Target {
+#[derive(Debug)]
+pub enum Target {
     Alias(Provider),
     Endpoint {
         api: EndpointApi,
@@ -56,26 +42,64 @@ pub(super) enum Target {
     },
 }
 
-impl From<ProviderCommand> for Action {
-    fn from(command: ProviderCommand) -> Self {
-        match command {
-            ProviderCommand::List => Self::List,
-            ProviderCommand::Remove { name } => Self::Remove { name },
-            ProviderCommand::Add {
-                name,
-                alias,
-                api,
-                url,
-                key,
-            } => {
-                let target = match (alias, api, url, key) {
-                    (Some(provider), None, None, false) => Target::Alias(provider),
-                    (None, Some(api), Some(url), key) => Target::Endpoint { api, url, key },
-                    _ => unreachable!("clap requires --alias, or --api with --url"),
-                };
-                Self::Add { name, target }
-            }
+#[derive(Args)]
+#[group(skip)]
+#[command(group(ArgGroup::new("target").args(["alias", "api"]).required(true)))]
+struct TargetFlags {
+    /// Reach a built-in provider, with its sign-in or key, under this name.
+    #[arg(long, value_enum, value_name = "PROVIDER", conflicts_with_all = ["url", "key"])]
+    alias: Option<Provider>,
+    /// The API the endpoint speaks.
+    #[arg(long, value_enum, requires = "url")]
+    api: Option<EndpointApi>,
+    /// The endpoint's API root, such as https://api.openai.com/v1.
+    #[arg(long, value_parser = parse_url)]
+    url: Option<EndpointUrl>,
+    /// Read the endpoint's key from stdin (never argv); without it the endpoint has no key.
+    #[arg(long)]
+    key: bool,
+}
+
+impl TargetFlags {
+    fn target(self) -> Result<Option<Target>, Error> {
+        match (self.alias, self.api, self.url, self.key) {
+            (Some(provider), None, None, false) => Ok(Some(Target::Alias(provider))),
+            (None, Some(api), Some(url), key) => Ok(Some(Target::Endpoint { api, url, key })),
+            (None, None, None, false) => Ok(None),
+            _ => Err(missing_target()),
         }
+    }
+}
+
+fn missing_target() -> Error {
+    Error::raw(
+        ErrorKind::MissingRequiredArgument,
+        "Use --alias, or --api with --url.",
+    )
+}
+
+impl FromArgMatches for Target {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, Error> {
+        TargetFlags::from_arg_matches(matches)?
+            .target()?
+            .ok_or_else(missing_target)
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), Error> {
+        if let Some(target) = TargetFlags::from_arg_matches(matches)?.target()? {
+            *self = target;
+        }
+        Ok(())
+    }
+}
+
+impl Args for Target {
+    fn augment_args(command: Command) -> Command {
+        TargetFlags::augment_args(command)
+    }
+
+    fn augment_args_for_update(command: Command) -> Command {
+        TargetFlags::augment_args_for_update(command)
     }
 }
 
@@ -95,11 +119,11 @@ fn api_text(api: EndpointApi) -> &'static str {
 pub(super) async fn execute(
     state: Option<&Path>,
     repo: Option<&Path>,
-    command: Action,
+    command: ProviderCommand,
     json: bool,
 ) -> Result<u8, String> {
     match command {
-        Action::List => {
+        ProviderCommand::List => {
             let list = providers::list(state, repo)?;
             if json {
                 print_json(&list)?;
@@ -133,7 +157,7 @@ pub(super) async fn execute(
                 writeln!(out, "{name}\t{target}").map_err(|e| e.to_string())?;
             }
         }
-        Action::Add { name, target } => {
+        ProviderCommand::Add { name, target } => {
             let (custom, change) = match target {
                 Target::Alias(provider) => (Custom::Alias { provider }, KeyChange::None),
                 Target::Endpoint { api, url, key } => (
@@ -157,7 +181,7 @@ pub(super) async fn execute(
                     .map_err(|e| e.to_string())?;
             }
         }
-        Action::Remove { name } => {
+        ProviderCommand::Remove { name } => {
             providers::remove_custom(state, repo, &name).await?;
             if json {
                 print_json(&json!({ "provider": name, "saved": false }))?;

@@ -118,18 +118,38 @@ pub(super) struct Peek {
     pub(super) request: RequestId,
     /// The request's session facts when it was resolved; a change resolves it again.
     pub(super) stamp: evidence::EvidenceStamp,
-    pub(super) live: Option<session::Live>,
+    pub(super) content: PeekContent,
+}
+
+pub(super) enum PeekContent {
+    Live(Box<session::Live>),
     /// Why there is no session to read; a refresh resolves it again.
-    pub(super) text: String,
+    Unavailable(String),
+}
+
+impl PeekContent {
+    fn into_live(self) -> Option<session::Live> {
+        match self {
+            Self::Live(live) => Some(*live),
+            Self::Unavailable(_) => None,
+        }
+    }
+
+    fn live_mut(&mut self) -> Option<&mut session::Live> {
+        match self {
+            Self::Live(live) => Some(live),
+            Self::Unavailable(_) => None,
+        }
+    }
 }
 
 impl Monitor {
     pub(super) async fn refresh_detail(&mut self, changed: bool, now: OffsetDateTime) {
         // A peek without a session (unavailable or failed) resolves again after a refresh.
-        self.peek = self.peek.take().filter(|peek| peek.live.is_some());
-        if let Some(live) = self.peek.as_mut().and_then(|peek| peek.live.as_mut()) {
-            live.invalidate();
-        }
+        self.peek = self.peek.take().and_then(|mut peek| {
+            peek.content.live_mut()?.invalidate();
+            Some(peek)
+        });
         if let Focus::Detail(pane) = &mut self.focus {
             if let Some((run, requests)) = &self.run
                 && changed
@@ -199,7 +219,7 @@ impl Monitor {
                 .peek
                 .take()
                 .filter(|peek| view.as_ref().map(|view| &view.request.id) == Some(&peek.request))
-                .and_then(|peek| peek.live)
+                .and_then(|peek| peek.content.into_live())
                 .map_or(Content::Evidence, Content::session),
             technical: false,
             pending: false,
@@ -322,38 +342,39 @@ impl Monitor {
             .peek
             .take()
             .filter(|peek| peek.request == view.request.id)
-            .and_then(|peek| peek.live);
-        let (live, text) =
-            match live::resolve_cached(&self.state, &view, self.origin.identity()).await {
-                Ok(Resolution::Local(source)) => match kept {
+            .and_then(|peek| peek.content.into_live());
+        let content = match live::resolve_cached(&self.state, &view, self.origin.identity()).await {
+            Ok(Resolution::Local(source)) => {
+                let live = match kept {
                     Some(mut live) if live.source.reference == source.reference => {
                         live.source = source;
                         if let Some(reader) = &mut live.reader {
                             reader.source = live.source.clone();
                         }
                         live.invalidate();
-                        (Some(live), String::new())
+                        live
                     }
                     _ => {
                         self.serial = self.serial.next();
-                        (Some(session::Live::new(self.serial, source)), String::new())
+                        session::Live::new(self.serial, source)
                     }
-                },
-                Ok(Resolution::Unavailable(text)) => (None, text),
-                Err(error) => (None, format!("Conversation unavailable: {error}")),
-            };
+                };
+                PeekContent::Live(Box::new(live))
+            }
+            Ok(Resolution::Unavailable(text)) => PeekContent::Unavailable(text),
+            Err(error) => PeekContent::Unavailable(format!("Conversation unavailable: {error}")),
+        };
         self.peek = Some(Peek {
             request: view.request.id.clone(),
             stamp,
-            live,
-            text,
+            content,
         });
     }
     /// The Agent session the driver reads for: the open Detail's, or else the peek's.
     pub(super) fn live_mut(&mut self) -> Option<&mut session::Live> {
         match &mut self.focus {
             Focus::Detail(pane) => pane.content.live_mut(),
-            _ => self.peek.as_mut().and_then(|peek| peek.live.as_mut()),
+            _ => self.peek.as_mut().and_then(|peek| peek.content.live_mut()),
         }
     }
     pub(super) fn review_mut(&mut self) -> Option<&mut Review> {

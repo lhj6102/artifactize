@@ -1,4 +1,5 @@
 // One spec execution, one independent scenario, one upstream-owned app capability.
+import { recordKeys } from "./keys.ts";
 import { selectedScenarios } from "./catalog.ts";
 import { asNativePath, readJson, takeSystemFocus, variable } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
@@ -22,6 +23,7 @@ describe(item.title, () => {
       await browser.waitUntil(() => browser.execute(() => (document.getElementById("app")?.childElementCount ?? 0) > 0),
         { timeout: 30000, timeoutMsg: "setup failed: the test app did not load its frontend" });
       await takeSystemFocus(browser);
+      await recordKeys(browser);
       if (variable("DESKTOP_TEST_RELAUNCH") === "1") {
         if (!item.relaunched) throw new Error("this scenario has no relaunch assertion");
         await item.relaunched(browser, input);

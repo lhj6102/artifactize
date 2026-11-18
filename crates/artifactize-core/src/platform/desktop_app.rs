@@ -137,10 +137,11 @@ mod tests {
     use super::*;
 
     fn variables(pairs: &[(&str, &Path)]) -> impl Fn(&str) -> Option<OsString> {
+        let (pathext, extensions) = crate::test_os::PATHEXT;
         let pairs: Vec<(String, OsString)> = pairs
             .iter()
             .map(|(name, value)| (name.to_string(), value.as_os_str().to_owned()))
-            .chain([("PATHEXT".to_owned(), OsString::from(".EXE"))])
+            .chain([(pathext.to_owned(), OsString::from(extensions))])
             .collect();
         move |name| {
             pairs
