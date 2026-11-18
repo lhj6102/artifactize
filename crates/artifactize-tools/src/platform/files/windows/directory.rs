@@ -166,8 +166,10 @@ fn decode_record(page: &[u8], offset: usize) -> Option<(Option<usize>, Option<Di
     };
     let name: Vec<_> = record
         .get(name_start..name_end)?
-        .chunks_exact(WIDE_UNIT_BYTES)
-        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .as_chunks::<WIDE_UNIT_BYTES>()
+        .0
+        .iter()
+        .map(|bytes| u16::from_le_bytes(*bytes))
         .collect();
     let dot = u16::from(b'.');
     let entry = (name != [dot] && name != [dot, dot]).then(|| DirEntry {
