@@ -2,6 +2,7 @@
 
 use std::{fs, io, path::Path};
 
+use artifactize_core::platform::path_text;
 use serde_json::Value;
 
 fn locations()
@@ -109,29 +110,7 @@ pub fn write(
                 .map(str::to_owned)
         })
         .ok_or_else(|| io::Error::other("Fixture node requires a name."))?;
-    let folder = relative.parent().unwrap_or(Path::new(""));
-    let folder_path = || {
-        if folder.as_os_str().is_empty() {
-            "./".to_owned()
-        } else {
-            format!("{}/", folder.to_string_lossy().replace('\\', "/"))
-        }
-    };
-    let path = if relative == Path::new(".artf") {
-        ".artifactize/".to_owned()
-    } else if relative
-        .file_name()
-        .is_some_and(|file| file == "index.artf")
-        || value.get("select").is_some()
-    {
-        folder_path()
-    } else {
-        relative
-            .to_string_lossy()
-            .strip_suffix(".artf")
-            .unwrap()
-            .replace('\\', "/")
-    };
+    let path = fixture_path(relative, value.get("select").is_some());
     if json.is_none() {
         let file = root.join(".artifactize").join(format!("{name}.artf"));
         fs::create_dir_all(file.parent().unwrap())?;
@@ -170,6 +149,28 @@ pub fn write(
     compose(root)
 }
 
+fn fixture_path(relative: &Path, folder_target: bool) -> String {
+    if relative == Path::new(".artf") {
+        ".artifactize/".to_owned()
+    } else if folder_target
+        || relative
+            .file_name()
+            .is_some_and(|file| file == "index.artf")
+    {
+        let folder = relative.parent().unwrap_or(Path::new(""));
+        if folder.as_os_str().is_empty() {
+            "./".to_owned()
+        } else {
+            format!("{}/", path_text(folder))
+        }
+    } else {
+        path_text(relative)
+            .strip_suffix(".artf")
+            .expect("fixture definition has an .artf suffix")
+            .to_owned()
+    }
+}
+
 /// Locate a fixture definition by its target, for tests that mutate a previously
 /// declared target. No marker file is created or consumed by production discovery.
 pub fn source_path(target: impl AsRef<Path>) -> std::path::PathBuf {
@@ -190,25 +191,7 @@ pub fn source_path(target: impl AsRef<Path>) -> std::path::PathBuf {
             continue;
         };
         let relative = target.strip_prefix(root).unwrap();
-        let expected = if relative == Path::new(".artf") {
-            ".artifactize/".to_owned()
-        } else if relative
-            .file_name()
-            .is_some_and(|file| file == "index.artf")
-        {
-            let folder = relative.parent().unwrap();
-            if folder.as_os_str().is_empty() {
-                "./".to_owned()
-            } else {
-                format!("{}/", folder.to_string_lossy().replace('\\', "/"))
-            }
-        } else {
-            relative
-                .to_string_lossy()
-                .strip_suffix(".artf")
-                .unwrap()
-                .replace('\\', "/")
-        };
+        let expected = fixture_path(relative, false);
         for entry in entries.flatten() {
             let file = entry.path();
             let Ok(source) = fs::read_to_string(&file) else {

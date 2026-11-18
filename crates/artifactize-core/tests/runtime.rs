@@ -10,6 +10,7 @@ use artifactize_core::{
     process,
     runtime::{self, Command, Error, Outcome, Verdict},
 };
+use futures_util::FutureExt;
 use support::os::{private_dir, symlink_dir};
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
@@ -86,7 +87,7 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
         ))
         .await,
     );
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     assert_eq!(result.exit_code, 0);
     assert_eq!(result.output.stdout, b"out");
     assert_eq!(result.output.stderr, b"err");
@@ -98,7 +99,7 @@ async fn ordinary_nonzero_exit_is_red() {
     let scratch = Scratch::new();
     let result =
         completed(execute(scratch.command(&support::os::steps(), &["exit", "127"], None)).await);
-    assert_eq!(result.verdict, Verdict::Red);
+    assert_eq!(result.verdict(), Verdict::Red);
     assert_eq!(result.exit_code, 127);
 }
 
@@ -135,7 +136,7 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
     let (program, args, expected) = support::os::control_c_exit();
     let args: Vec<_> = args.iter().map(String::as_str).collect();
     let result = completed(execute(scratch.command(&program, &args, None)).await);
-    assert_eq!(result.verdict, Verdict::Red);
+    assert_eq!(result.verdict(), Verdict::Red);
     assert_eq!(result.exit_code, expected);
 }
 
@@ -144,7 +145,11 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
 #[tokio::test(start_paused = true)]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     let scratch = Scratch::new();
-    let command = scratch.command(&support::os::steps(), &["block"], Some(1000));
+    let command = scratch.command(
+        &support::os::steps(),
+        &["touch", "started", "block"],
+        Some(1000),
+    );
     let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |child| async move {
@@ -153,6 +158,7 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     });
     support::os::scoped(cancellation, work, async |running| {
         let pid = child.await.unwrap();
+        wait_for(|| scratch.workspace().join("started").is_file()).await;
         tokio::time::advance(Duration::from_millis(1000)).await;
         let outcome = running.await.unwrap();
         assert!(
@@ -370,7 +376,7 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
             .directory()
             .starts_with(support::os::canonical(&external.join("new/nested")))
     );
-    assert_eq!(completed(execute(command).await).verdict, Verdict::Green);
+    assert_eq!(completed(execute(command).await).verdict(), Verdict::Green);
 }
 
 #[test]
@@ -486,7 +492,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
         ))
         .await,
     );
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     assert_eq!(result.output.stdout, vec![b'x'; 128 * 1024]);
     assert_eq!(result.output.stderr, vec![b'y'; 128 * 1024]);
     assert!(result.output.truncated);
@@ -531,17 +537,17 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     .await;
 }
 
+fn reported_pid(marker: &Path) -> Option<u32> {
+    let written = std::fs::read_to_string(marker).ok()?;
+    written.strip_suffix('\n')?.trim().parse().ok()
+}
+
 /// The PID the lingering grandchild wrote to `marker`, once it has. The test yields rather
 /// than sleeps while it waits, so that a paused clock stands still.
 async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -> u32 {
     let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
     loop {
-        let written = std::fs::read_to_string(marker).ok();
-        if let Some(pid) = written
-            .as_deref()
-            .and_then(|text| text.strip_suffix('\n'))
-            .and_then(|text| text.trim().parse().ok())
-        {
+        if let Some(pid) = reported_pid(marker) {
             return pid;
         }
         assert!(
@@ -560,7 +566,7 @@ async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -
 async fn normal_exit_also_kills_a_background_descendant() {
     let scratch = Scratch::new();
     let result = completed(execute(scratch.command(&support::os::steps(), &["start"], None)).await);
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     let pid = String::from_utf8(result.output.stdout)
         .unwrap()
         .trim()
@@ -574,29 +580,62 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
     let command = scratch.command(&support::os::steps(), GRANDCHILD, None);
     let marker = scratch.workspace().join("grandchild");
+    let directory = command.directory().to_owned();
     let (registered, child) = oneshot::channel();
     let cancellation = CancellationToken::new();
     let work = runtime::execute(command, cancellation.clone(), |child| async move {
         registered.send(child).unwrap();
         Ok(())
     });
-    support::os::scoped(cancellation, work, async |running| {
-        let child = child.await.unwrap();
-        wait_for(|| {
-            std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
-        })
+    let mut owner = None;
+    let grandchild = || reported_pid(&marker);
+    let checked =
+        std::panic::AssertUnwindSafe(support::os::scoped(cancellation, work, async |running| {
+            let child = child.await.unwrap();
+            owner = Some(child.pid.get());
+            wait_for(|| grandchild().is_some()).await;
+            let pid = grandchild().expect("reported grandchild");
+            // Dropping the caller is what is under test: abort it rather than cancel it.
+            running.abort();
+            assert_gone(child.pid.get()).await;
+            assert_gone(pid).await;
+        }))
+        .catch_unwind()
         .await;
-        let pid = std::fs::read_to_string(&marker)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        // Dropping the caller is what is under test: abort it rather than cancel it.
-        running.abort();
-        assert_gone(child.pid.get()).await;
-        assert_gone(pid).await;
-    })
-    .await;
+    // The caller alone is not the supervisor. Keep the fixture until both processes are
+    // gone and the two streams have published their final capture markers.
+    let settled = || async {
+        if let Some(owner) = owner {
+            while !support::os::gone(owner)
+                || grandchild().is_some_and(|pid| !support::os::gone(pid))
+                || !["runtime.stdout.complete", "runtime.stderr.complete"]
+                    .iter()
+                    .all(|name| directory.join(name).is_file())
+            {
+                tokio::task::yield_now().await;
+            }
+        }
+    };
+    if timeout(support::os::patience(TEST_TIMEOUT), settled())
+        .await
+        .is_err()
+    {
+        if let Some(pid) = owner.filter(|pid| !support::os::gone(*pid)) {
+            support::os::kill_tree(pid);
+        }
+        if let Some(pid) = grandchild().filter(|pid| !support::os::gone(*pid)) {
+            support::os::kill(pid);
+        }
+        // Keep driving the supervisor after the fallback kill so its task reaps the tree.
+        let reaped = timeout(support::os::patience(TEST_TIMEOUT), settled()).await;
+        scratch
+            .0
+            .close()
+            .expect("remove the aborted runtime fixture");
+        reaped.expect("the forcibly stopped fixture must settle");
+        panic!("runtime capture did not settle without the fallback kill");
+    }
+    checked.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
 }
 
 #[tokio::test(start_paused = true)]

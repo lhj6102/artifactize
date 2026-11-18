@@ -81,11 +81,11 @@ impl std::fmt::Debug for RequestDefinition {
 
 #[derive(Default)]
 struct Filter<'a> {
-    run: Option<&'a str>,
-    id: Option<&'a str>,
+    run: Option<crate::types::RunId>,
+    id: Option<crate::types::RequestId>,
     repo: Option<&'a Path>,
     waiting: bool,
-    session: Option<&'a str>,
+    session: Option<crate::types::SessionId>,
     statuses: &'a [crate::types::RequestStatus],
     /// A bounded slice of the ordered requests: offset and count.
     slice: Option<(u64, u32)>,
@@ -104,19 +104,21 @@ pub enum Shown {
 }
 
 pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<RequestView>, String> {
-    read(
-        state,
-        Filter {
-            run,
-            ..Filter::default()
-        },
-    )
-    .await
+    read_requests_in(state, run, None).await
 }
 
 pub async fn read_requests_in(
     state: &Path,
     run: Option<&str>,
+    repo: Option<&Path>,
+) -> Result<Vec<RequestView>, String> {
+    let run = run.map(str::parse).transpose()?;
+    read_requests_for_run(state, run, repo).await
+}
+
+pub(crate) async fn read_requests_for_run(
+    state: &Path,
+    run: Option<crate::types::RunId>,
     repo: Option<&Path>,
 ) -> Result<Vec<RequestView>, String> {
     read(
@@ -136,6 +138,14 @@ pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String>
 
 /// Request `id` with what `shown` names besides it.
 pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<RequestView, String> {
+    read_request_by_id(state, id.parse()?, shown).await
+}
+
+async fn read_request_by_id(
+    state: &Path,
+    id: crate::types::RequestId,
+    shown: Shown,
+) -> Result<RequestView, String> {
     read(
         state,
         Filter {
@@ -151,10 +161,17 @@ pub async fn read_request_as(state: &Path, id: &str, shown: Shown) -> Result<Req
 
 /// The request whose Agent review ran as session `id`, if this state has it.
 pub async fn read_session_request(state: &Path, id: &str) -> Result<Option<RequestView>, String> {
+    read_request_by_session(state, id.parse()?).await
+}
+
+pub(crate) async fn read_request_by_session(
+    state: &Path,
+    session: crate::types::SessionId,
+) -> Result<Option<RequestView>, String> {
     Ok(read(
         state,
         Filter {
-            session: Some(id),
+            session: Some(session),
             ..Filter::default()
         },
     )
@@ -186,7 +203,7 @@ pub async fn read_original_as(
                 .map(|source| &source.request_id)
         });
     match original.filter(|id| *id != &view.request.id) {
-        Some(id) => read_request_as(state, id, shown).await,
+        Some(id) => read_request_by_id(state, id.clone(), shown).await,
         None => Ok(view.clone()),
     }
 }
@@ -346,22 +363,17 @@ async fn read_with_repo(
     if let Some(repo) = &repo {
         outside_workspace(repo, &state).map_err(|e| e.to_string())?;
     }
-    let run = filter
-        .run
-        .map(str::parse::<crate::types::RunId>)
-        .transpose()?;
-    let id = filter
-        .id
-        .map(str::parse::<crate::types::RequestId>)
-        .transpose()?;
+    let Filter {
+        run,
+        id,
+        waiting,
+        statuses,
+        slice,
+        session,
+        ..
+    } = filter;
     let repo = repo.map(|repo| crate::platform::path_text(&repo));
-    let waiting = filter.waiting;
-    let statuses = filter.statuses.to_vec();
-    let slice = filter.slice;
-    let session = filter
-        .session
-        .map(str::parse::<crate::types::SessionId>)
-        .transpose()?;
+    let statuses = statuses.to_vec();
     let shown = filter.shown;
     let Some(connection) = open_read(&state).await? else {
         return Ok(Vec::new());

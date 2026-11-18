@@ -262,13 +262,23 @@ fn waits(states: &States, prefix: &str, waits: &Waits) -> Vec<Segment> {
 
 /// The top-level Result keys behind a RED verdict, such as `violations 3`.
 fn findings(result: Option<&crate::store::ExecutionResult>) -> String {
-    let result = result.map(crate::store::ExecutionResult::to_json);
-    let fields = result
-        .as_ref()
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten();
-    let fields = fields.filter(|(key, _)| {
+    use crate::store::{ExecutionResult, ResultField};
+    let Some(result) = result else {
+        return String::new();
+    };
+    let mut fields = result.owner_fields().clone();
+    if let ExecutionResult::Runtime(runtime) = result {
+        match runtime.exit_code {
+            ResultField::Missing => {}
+            ResultField::Null => {
+                fields.insert("exitCode".into(), Value::Null);
+            }
+            ResultField::Value(code) => {
+                fields.insert("exitCode".into(), Value::from(code));
+            }
+        }
+    }
+    let fields = fields.iter().filter(|(key, _)| {
         !matches!(
             key.as_str(),
             "verdict" | "stdout" | "stderr" | "truncated" | "durationMs"

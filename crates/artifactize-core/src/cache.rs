@@ -89,7 +89,7 @@ pub struct Manifest {
     pub inputs: crate::types::Sha256Digest,
     /// Owner-relative path to the first 16 hex digits of its SHA-256.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub files: Option<BTreeMap<String, crate::types::DigestPrefix>>,
+    pub files: Option<BTreeMap<scope::LogicalTarget, crate::types::DigestPrefix>>,
 }
 
 /// An eval's reuse key: `hash(evaluation criteria, sorted (name, fingerprint) of the Artifacts it
@@ -280,12 +280,18 @@ pub struct Parallelism {
 
 impl Parallelism {
     /// At most `limit` fingerprints at a time; at least one.
-    pub fn new(limit: usize) -> Self {
+    pub fn new(limit: usize) -> Result<Self, String> {
         let limit = limit.max(1);
-        Self {
+        if limit > Semaphore::MAX_PERMITS {
+            return Err(format!(
+                "fingerprint jobs must be at most {}.",
+                Semaphore::MAX_PERMITS
+            ));
+        }
+        Ok(Self {
             slots: Arc::new(Semaphore::new(limit)),
             limit,
-        }
+        })
     }
 
     /// The default bound: the CPUs available to this process.
@@ -512,7 +518,7 @@ async fn content(
                 .iter()
                 .map(|(path, file)| {
                     (
-                        path.to_string(),
+                        path.clone(),
                         content::hex(&file.as_bytes()[..MANIFEST_DIGEST_PREFIX_BYTES])
                             .parse()
                             .expect("eight-byte SHA-256 prefix"),
@@ -590,15 +596,15 @@ pub fn changes(
             )
         })
         .filter(|dependencies| !dependencies.is_empty());
-    for dependency in dependencies.iter().flatten() {
-        parts.push(if let Some(id) = dependency.strip_prefix('+') {
+    parts.extend(dependencies.iter().flatten().map(|dependency| {
+        if let Some(id) = dependency.strip_prefix('+') {
             format!("dependency {id} added")
         } else if let Some(id) = dependency.strip_prefix('-') {
             format!("dependency {id} removed")
         } else {
             format!("dependency {dependency} changed")
-        });
-    }
+        }
+    }));
     if parts.is_empty() {
         parts.push("fingerprint changed".to_owned());
     }

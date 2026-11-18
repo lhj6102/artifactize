@@ -32,6 +32,12 @@ pub(super) fn save(db: &rusqlite::Connection, mut run: Run) -> Result<(), Error>
     if !status.is_open() && saved.is_some() {
         return Ok(());
     }
+    merge_scheduler_control(&mut run, saved, crate::broker::now());
+    super::run_record::update(db, &run)
+}
+
+/// Preserve saved admission and cancellation state when the scheduler publishes its view.
+fn merge_scheduler_control(run: &mut Run, saved: Option<Control>, at: crate::types::Timestamp) {
     let running = run.status().is_open();
     if let (Some(control), Some(saved)) = (&mut run.control, saved) {
         control.worker = saved.worker;
@@ -42,7 +48,7 @@ pub(super) fn save(db: &rusqlite::Connection, mut run: Run) -> Result<(), Error>
         {
             control.failure_code = Some(crate::types::FailureCode::Cancelled);
             run.state = super::RunState::Error {
-                at: crate::broker::now(),
+                at,
                 error: Some("Run was cancelled.".into()),
             };
             if let Some(validation) = &mut run.validation.0 {
@@ -53,7 +59,6 @@ pub(super) fn save(db: &rusqlite::Connection, mut run: Run) -> Result<(), Error>
             control.activity = Activity::Cancelling;
         }
     }
-    super::run_record::update(db, &run)
 }
 
 impl Receipts {
@@ -130,25 +135,44 @@ impl Receipts {
         error: String,
     ) -> Result<(), String> {
         let id = id.clone();
-        self.connection.call(move |db| -> Result<(), Error> {
-            let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let mut run = load(&transaction, &id)?;
-            if !run.status().is_open() { return Ok(()); }
-            let requests = {
-                let mut statement = transaction.prepare("SELECT data FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR')")?;
-                statement.query_map([&id], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>,_>>()?
-            };
-            for data in requests {
-                let mut request: Request = serde_json::from_str(&data)?;
-                request.state = super::RequestState::failed(error.clone(), Some(code), crate::broker::now());
-                super::receipts::update_request(&transaction, &request)?;
-            }
-            run.state = super::RunState::Error { at: crate::broker::now(), error: Some(error) };
-            if let Some(control) = &mut run.control { control.failure_code = Some(code); }
-            save(&transaction, run)?;
-            transaction.commit()?;
-            Ok(())
-        }).await.map_err(|e| e.to_string())
+        self.connection
+            .call(move |db| -> Result<(), Error> {
+                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mut run = load(&transaction, &id)?;
+                if !run.status().is_open() {
+                    return Ok(());
+                }
+                let requests = {
+                    let mut statement = transaction.prepare(concat!(
+                        "SELECT data FROM requests WHERE run_id=? ",
+                        "AND status NOT IN ('GREEN','RED','ERROR')"
+                    ))?;
+                    statement
+                        .query_map([&id], |row| row.get::<_, String>(0))?
+                        .collect::<Result<Vec<_>, _>>()?
+                };
+                for data in requests {
+                    let mut request: Request = serde_json::from_str(&data)?;
+                    request.state = super::RequestState::failed(
+                        error.clone(),
+                        Some(code),
+                        crate::broker::now(),
+                    );
+                    super::receipts::update_request(&transaction, &request)?;
+                }
+                run.state = super::RunState::Error {
+                    at: crate::broker::now(),
+                    error: Some(error),
+                };
+                if let Some(control) = &mut run.control {
+                    control.failure_code = Some(code);
+                }
+                save(&transaction, run)?;
+                transaction.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub(crate) async fn admit(

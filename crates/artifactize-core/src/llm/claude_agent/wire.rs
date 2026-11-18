@@ -158,7 +158,7 @@ pub struct Assistant {
     #[serde(default)]
     pub error: Option<AssistantError>,
     #[serde(default)]
-    pub parent_tool_use_id: Option<String>,
+    pub parent_tool_use_id: Option<ClaudeToolUseId>,
 }
 
 /// Why Claude Code could not answer: it writes the reason as a synthetic assistant message.
@@ -213,7 +213,7 @@ pub enum Block {
 pub struct User {
     pub message: UserMessage,
     #[serde(default)]
-    pub parent_tool_use_id: Option<String>,
+    pub parent_tool_use_id: Option<ClaudeToolUseId>,
 }
 
 #[derive(Debug, Deserialize)]

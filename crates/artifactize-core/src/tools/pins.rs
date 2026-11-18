@@ -28,7 +28,10 @@ pub type Pins = BTreeMap<
 /// without being followed. Missing/unreadable paths, special files, more than 1 GiB
 /// of file bytes, or any further entry after 10,000 retained files/links are errors.
 /// Directories are traversed but do not increment the counter or contribute a digest.
-pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins, String> {
+pub async fn execution_paths(
+    config: &RepoConfig,
+    eval_id: &crate::types::EvalId,
+) -> Result<Pins, String> {
     let registry = Registry::new(config, eval_id)?;
     let mut resolved = Vec::new();
     for (name, tool) in &registry.tools {

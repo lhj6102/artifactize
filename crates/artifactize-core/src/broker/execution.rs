@@ -234,7 +234,7 @@ fn runtime_result(
     match outcome {
         Outcome::Completed(result) => Ok(crate::store::ExecutionResult::Runtime(
             crate::store::RuntimeResult {
-                verdict: result.verdict,
+                verdict: result.verdict(),
                 exit_code: crate::store::ResultField::Value(result.exit_code),
                 stdout: crate::store::ResultField::Value(
                     String::from_utf8_lossy(&result.output.stdout).into_owned(),

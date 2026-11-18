@@ -26,8 +26,7 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
     let remote = Remote {
         url: parse_url(&server.base).unwrap(),
         share: Share::Summary,
-        token_source: TokenSource::Env,
-        token: Some("fixture-only-token".into()),
+        token: Credential::Environment("fixture-only-token".into()),
         client: OnceLock::new(),
     };
     let entries = remote

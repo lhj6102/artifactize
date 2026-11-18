@@ -227,7 +227,7 @@ async fn equal_and_ancestor_folder_parts_own_the_covered_inputs_and_require_a_na
             &config,
             [&whole, &part],
             project.root.path(),
-            &Parallelism::new(2),
+            &Parallelism::new(2).unwrap(),
             CancellationToken::new(),
         )
         .await
@@ -247,7 +247,7 @@ async fn equal_and_ancestor_folder_parts_own_the_covered_inputs_and_require_a_na
             &config,
             [&whole, &part],
             project.root.path(),
-            &Parallelism::new(2),
+            &Parallelism::new(2).unwrap(),
             CancellationToken::new(),
         )
         .await

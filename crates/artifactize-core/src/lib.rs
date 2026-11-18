@@ -1,5 +1,9 @@
 //! Pull validation and explicit review execution.
 
+// Shared test fixtures use the same crate path in unit and integration test builds.
+#[cfg(test)]
+extern crate self as artifactize_core;
+
 pub mod agent;
 pub mod auth;
 pub mod broker;

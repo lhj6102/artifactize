@@ -22,50 +22,96 @@ pub enum Audience {
     Human,
 }
 
-#[derive(Debug, Default)]
-pub struct ToolCheckOptions {
-    /// Select one Agent or Human eval's admitted scope (same as --eval).
-    pub selector: Option<crate::types::EvalId>,
-    /// Select one Agent or Human eval's admitted scope.
-    pub eval: Option<crate::types::EvalId>,
-    /// Check tools declared for one Artifact.
-    pub artifact: Option<crate::types::ArtifactName>,
-    /// Restrict --artifact to Agent or Human tools.
-    pub audience: Option<Audience>,
-    /// Check one tool by short or published name.
-    pub tool: Option<crate::config::ToolName>,
-    /// Invoke exactly one explicitly selected tool; never create review evidence.
-    pub execute: bool,
-    /// JSON arguments for an executed Agent tool.
-    pub args: Option<serde_json::Value>,
+use crate::{
+    config::ToolName,
+    types::{ArtifactName, EvalId},
+};
+
+type ToolArguments = serde_json::Map<String, serde_json::Value>;
+
+#[derive(Debug)]
+pub enum ToolCheckOptions {
+    Inspect {
+        scope: InspectionScope,
+        tool: Option<ToolName>,
+    },
+    Execute {
+        scope: ExecutionScope,
+        tool: ToolName,
+    },
+}
+
+#[derive(Debug)]
+pub enum InspectionScope {
+    Eval(EvalId),
+    Catalog {
+        artifact: Option<ArtifactName>,
+        audience: Option<Audience>,
+    },
+}
+
+#[derive(Debug)]
+pub enum ExecutionScope {
+    Eval {
+        id: EvalId,
+        args: Option<ToolArguments>,
+    },
+    Agent {
+        artifact: ArtifactName,
+        args: Option<ToolArguments>,
+    },
+    Human {
+        artifact: ArtifactName,
+    },
 }
 
 impl ToolCheckOptions {
-    pub fn validate(&self) -> Result<(), String> {
-        let eval = self.eval.is_some() || self.selector.is_some();
-        if eval && (self.artifact.is_some() || self.audience.is_some()) {
-            return Err(
-                "An eval selector determines scope and audience; do not combine it with --artifact or --audience."
-                    .into(),
-            );
+    /// Parse CLI or MCP flag combinations once, before reading project configuration.
+    pub fn from_flags(
+        eval: Option<EvalId>,
+        artifact: Option<ArtifactName>,
+        audience: Option<Audience>,
+        tool: Option<ToolName>,
+        execute: bool,
+        args: Option<ToolArguments>,
+    ) -> Result<Self, String> {
+        if eval.is_some() && (artifact.is_some() || audience.is_some()) {
+            return Err("An eval selector determines scope and audience; do not combine it with --artifact or --audience.".into());
         }
-        if self.execute
-            && (self.tool.is_none()
-                || (!eval && (self.artifact.is_none() || self.audience.is_none())))
+        if execute
+            && (tool.is_none() || (eval.is_none() && (artifact.is_none() || audience.is_none())))
         {
-            return Err(
-                "--execute requires --tool, with an eval selector or with --artifact and --audience."
-                    .into(),
-            );
+            return Err("--execute requires --tool, with an eval selector or with --artifact and --audience.".into());
         }
-        if self.args.is_some() && (!self.execute || self.audience == Some(Audience::Human)) {
-            return Err(
-                "--args requires Agent tool execution; Human tools take no free arguments.".into(),
-            );
+        if args.is_some() && (!execute || audience == Some(Audience::Human)) {
+            return Err(AGENT_ARGS.into());
         }
-        Ok(())
+        Ok(if execute {
+            let tool = tool.expect("execution requires a tool");
+            let scope = if let Some(id) = eval {
+                ExecutionScope::Eval { id, args }
+            } else {
+                let artifact = artifact.expect("execution requires an eval or an Artifact");
+                match audience.expect("Artifact execution requires an audience") {
+                    Audience::Agent => ExecutionScope::Agent { artifact, args },
+                    Audience::Human => ExecutionScope::Human { artifact },
+                }
+            };
+            Self::Execute { scope, tool }
+        } else {
+            Self::Inspect {
+                scope: eval.map_or(
+                    InspectionScope::Catalog { artifact, audience },
+                    InspectionScope::Eval,
+                ),
+                tool,
+            }
+        })
     }
 }
+
+const AGENT_ARGS: &str =
+    "--args requires Agent tool execution; Human tools take no free arguments.";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,7 +208,6 @@ pub async fn check_tools(
     options: &ToolCheckOptions,
     cancellation: CancellationToken,
 ) -> Result<ToolCheckReport, String> {
-    options.validate()?;
     let mut report = ToolCheckReport {
         ok: true,
         scopes: Vec::new(),
@@ -176,7 +221,33 @@ pub async fn check_tools(
             return Ok(report);
         }
     };
-    let selected = options.eval.as_ref().or(options.selector.as_ref());
+    let (selected, artifact, audience, tool, executing) = match options {
+        ToolCheckOptions::Inspect { scope, tool } => match scope {
+            InspectionScope::Eval(id) => (Some(id), None, None, tool.as_ref(), None),
+            InspectionScope::Catalog { artifact, audience } => {
+                (None, artifact.as_ref(), *audience, tool.as_ref(), None)
+            }
+        },
+        ToolCheckOptions::Execute { scope, tool } => match scope {
+            ExecutionScope::Eval { id, args } => {
+                (Some(id), None, None, Some(tool), Some(args.as_ref()))
+            }
+            ExecutionScope::Agent { artifact, args } => (
+                None,
+                Some(artifact),
+                Some(Audience::Agent),
+                Some(tool),
+                Some(args.as_ref()),
+            ),
+            ExecutionScope::Human { artifact } => (
+                None,
+                Some(artifact),
+                Some(Audience::Human),
+                Some(tool),
+                Some(None),
+            ),
+        },
+    };
     if let Some(id) = selected
         && !config.evals.iter().any(|eval| {
             &eval.id == id
@@ -188,38 +259,31 @@ pub async fn check_tools(
     {
         return Err("Select a declared Agent or Human eval.".into());
     }
-    if options.args.is_some()
+    if executing.flatten().is_some()
         && let Some(id) = selected
         && config
             .evals
             .iter()
             .any(|eval| &eval.id == id && matches!(eval.declaration.profile(), Profile::Human {}))
     {
-        return Err(
-            "--args requires Agent tool execution; Human tools take no free arguments.".into(),
-        );
+        return Err(AGENT_ARGS.into());
     }
-    if let Some(id) = &options.artifact
+    if let Some(id) = artifact
         && !config.artifacts.contains_key(id)
     {
         return Err(format!("Unknown Artifact: {id}"));
     }
     let mut catalogs = Vec::new();
     // An eval selector keeps the eval's own scope, also for one selected tool.
-    if options.artifact.is_some()
-        || options.audience.is_some()
-        || (options.tool.is_some() && selected.is_none())
-    {
-        let artifacts: Vec<_> = options.artifact.as_ref().map_or_else(
-            || config.artifacts.keys().map(|name| name.as_str()).collect(),
-            |id| vec![id.as_str()],
-        );
+    if artifact.is_some() || audience.is_some() || (tool.is_some() && selected.is_none()) {
+        let artifacts: Vec<_> =
+            artifact.map_or_else(|| config.artifacts.keys().collect(), |id| vec![id]);
         for artifact in artifacts {
-            for audience in [Audience::Agent, Audience::Human] {
-                if options.audience.is_some_and(|a| a != audience) {
+            for kind in [Audience::Agent, Audience::Human] {
+                if audience.is_some_and(|a| a != kind) {
                     continue;
                 }
-                let catalog = match audience {
+                let catalog = match kind {
                     Audience::Agent => {
                         tools::Registry::for_artifact(&config, artifact).map(Catalog::Agent)
                     }
@@ -227,7 +291,7 @@ pub async fn check_tools(
                         human::Registry::for_artifact(&config, artifact).map(Catalog::Human)
                     }
                 };
-                catalogs.push((None, Some(artifact), audience, catalog));
+                catalogs.push((None, Some(artifact), kind, catalog));
             }
         }
     } else {
@@ -258,10 +322,10 @@ pub async fn check_tools(
             }
         };
         let mut definitions = catalog.definitions();
-        if let Some(name) = &options.tool {
+        if let Some(name) = tool {
             let published = definitions.iter().any(|d| d.name == *name);
             definitions.retain(|d| {
-                artifact.is_none_or(|id| d.artifact_id == id)
+                artifact.is_none_or(|id| &d.artifact_id == id)
                     && (d.name == *name
                         || (!published
                             && artifact.is_some()
@@ -292,17 +356,13 @@ pub async fn check_tools(
             audience,
             tools: definitions.clone(),
         });
-        if options.execute && report.ok && definitions.len() == 1 {
+        if let Some(args) = executing
+            && report.ok
+            && definitions.len() == 1
+        {
             let name = &definitions[0].name;
-            let result = execute_tool(
-                &config,
-                state,
-                &catalog,
-                name,
-                options,
-                cancellation.clone(),
-            )
-            .await;
+            let result =
+                execute_tool(&config, state, &catalog, name, args, cancellation.clone()).await;
             match result {
                 Ok(result) => {
                     report.check(
@@ -328,7 +388,7 @@ async fn execute_tool(
     state: Option<&Path>,
     catalog: &Catalog<'_>,
     name: &crate::config::ToolName,
-    options: &ToolCheckOptions,
+    args: Option<&ToolArguments>,
     cancellation: CancellationToken,
 ) -> Result<ToolCheckResult, String> {
     match catalog {
@@ -343,7 +403,7 @@ async fn execute_tool(
                 .prefix("tools-check-")
                 .tempdir_in(root)
                 .map_err(|e| e.to_string())?;
-            let args = options.args.clone().unwrap_or(json!({}));
+            let args = serde_json::Value::Object(args.cloned().unwrap_or_default());
             let sessions = registry.sessions(&state, Some(name), cancellation.clone());
             let registry = registry.with_session_scope(&sessions)?;
             let result = registry

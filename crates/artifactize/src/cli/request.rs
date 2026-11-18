@@ -4,13 +4,16 @@ use std::{
 };
 
 use clap::Subcommand;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::{Map, Value};
 
-use super::{cancellation_listener, print_json};
+use super::{FAILURE_EXIT, cancellation_listener, print_json};
 use artifactize_core::{
-    human, store,
+    human,
+    runtime::Verdict,
+    store,
     tools::human::Content,
-    types::{RequestId, RunId},
+    types::{RequestId, ReviewerId, RunId},
 };
 
 #[derive(Debug, Subcommand)]
@@ -34,14 +37,14 @@ pub enum RequestCommand {
         id: RequestId,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
         id: RequestId,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
     /// Run a predefined Human tool as the claimant.
     Tool {
@@ -49,13 +52,13 @@ pub enum RequestCommand {
         tool: artifactize_core::config::ToolName,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
         id: RequestId,
         #[arg(long, value_enum)]
-        verdict: artifactize_core::runtime::Verdict,
+        verdict: Verdict,
         /// Owner fields as a JSON object (default {}).
         #[arg(long, value_name = "JSON", conflicts_with = "fields_file")]
         fields: Option<String>,
@@ -64,7 +67,7 @@ pub enum RequestCommand {
         fields_file: Option<PathBuf>,
         /// Reviewer name (defaults to the signed-in user).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
+        reviewer: Option<ReviewerId>,
     },
 }
 
@@ -172,7 +175,7 @@ pub(super) async fn execute(
                     .map_err(|e| e.to_string())?;
                 }
             }
-            return Ok(if result.is_error() { 2 } else { 0 });
+            return Ok(if result.is_error() { FAILURE_EXIT } else { 0 });
         }
         RequestCommand::Submit {
             id,
@@ -181,11 +184,12 @@ pub(super) async fn execute(
             fields_file,
             reviewer,
         } => {
-            let result = submission(verdict, fields, fields_file)?;
+            let source = FieldsSource::from_args(fields, fields_file);
+            let fields = OwnerFields::read(source)?;
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (cancellation, listener) = cancellation_listener()?;
-            let result =
-                human::submit_and_publish(state, &id, &reviewer, &result, cancellation).await;
+            let submission = Submission { verdict, fields };
+            let result = submit_and_publish(state, &id, &reviewer, submission, cancellation).await;
             listener.abort();
             result?;
             print_json(
@@ -201,42 +205,86 @@ pub(super) async fn execute(
     Ok(0)
 }
 
-fn submission(
-    verdict: artifactize_core::runtime::Verdict,
-    fields: Option<String>,
-    file: Option<PathBuf>,
-) -> Result<Value, String> {
-    let fields = if let Some(path) = file {
-        let file =
-            artifactize_core::platform::open_nonblocking(&path).map_err(|e| e.to_string())?;
-        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-            return Err("Human fields must be a regular JSON file.".into());
+/// A Human answer's verdict is separate from its schema-defined owner fields.
+#[derive(Serialize)]
+struct Submission {
+    verdict: Verdict,
+    #[serde(flatten)]
+    fields: OwnerFields,
+}
+
+enum FieldsSource {
+    Empty,
+    Inline(String),
+    File(PathBuf),
+}
+
+impl FieldsSource {
+    fn from_args(fields: Option<String>, file: Option<PathBuf>) -> Self {
+        match (fields, file) {
+            (None, None) => Self::Empty,
+            (Some(fields), None) => Self::Inline(fields),
+            (None, Some(path)) => Self::File(path),
+            (Some(_), Some(_)) => unreachable!("clap makes --fields and --fields-file exclusive"),
         }
-        let mut bytes = Vec::new();
-        file.take(human::FIELDS_READ_BYTES)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        String::from_utf8(bytes).map_err(|e| e.to_string())?
-    } else {
-        fields.unwrap_or_else(|| "{}".into())
-    };
-    if fields.len() > human::MAX_RESULT_BYTES {
-        return Err("Human fields exceed 256000 bytes.".into());
     }
-    let mut result: Value = serde_json::from_str(&fields).map_err(|e| e.to_string())?;
-    let object = result
-        .as_object_mut()
-        .ok_or("Human fields must be a JSON object.")?;
-    if object.contains_key("verdict") {
-        return Err("Use --verdict, not a verdict inside --fields.".into());
+}
+
+/// An object of owner fields that cannot supply its own verdict.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct OwnerFields(Map<String, Value>);
+
+impl OwnerFields {
+    fn read(source: FieldsSource) -> Result<Self, String> {
+        let fields = match source {
+            FieldsSource::Empty => return Ok(Self(Map::new())),
+            FieldsSource::Inline(fields) => fields,
+            FieldsSource::File(path) => {
+                let file = artifactize_core::platform::open_regular_input(&path)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("Human fields must be a regular JSON file.")?;
+                let mut bytes = Vec::new();
+                file.take(human::FIELDS_READ_BYTES)
+                    .read_to_end(&mut bytes)
+                    .map_err(|e| e.to_string())?;
+                String::from_utf8(bytes).map_err(|e| e.to_string())?
+            }
+        };
+        if fields.len() > human::MAX_RESULT_BYTES {
+            return Err(format!(
+                "Human fields exceed {} bytes.",
+                human::MAX_RESULT_BYTES
+            ));
+        }
+        let fields = match serde_json::from_str(&fields).map_err(|e| e.to_string())? {
+            Value::Object(fields) => fields,
+            _ => return Err("Human fields must be a JSON object.".into()),
+        };
+        if fields.contains_key("verdict") {
+            return Err("Use --verdict, not a verdict inside --fields.".into());
+        }
+        Ok(Self(fields))
     }
-    object.insert("verdict".into(), json!(verdict));
-    Ok(result)
+}
+
+async fn submit_and_publish(
+    state: &Path,
+    id: &RequestId,
+    reviewer: &ReviewerId,
+    submission: Submission,
+    cancellation: tokio_util::sync::CancellationToken,
+) -> Result<store::Request, String> {
+    // The shared API accepts a JSON result for schema validation after loading the saved request.
+    let result = serde_json::to_value(submission).map_err(|e| e.to_string())?;
+    human::submit_and_publish(state, id, reviewer, &result, cancellation).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use artifactize_core::platform::path_text;
+    use serde_json::json;
 
     #[tokio::test]
     async fn refused_human_actions_release_the_database_before_returning_the_error() {
@@ -246,15 +294,16 @@ mod tests {
         std::fs::create_dir(&repo).unwrap();
         let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
         let run: store::Run = serde_json::from_value(json!({
-            "id":"run-1", "repoPath":repo, "stateDir":state, "status":"GREEN",
+            "id":"run-1", "repoPath":path_text(&repo), "stateDir":path_text(&state), "status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
             "selection":{"kind":"all"}, "validation":null, "definitions":null
         }))
         .unwrap();
-        let request = crate::test_request::request("app/check", "GREEN", json!({"cwd":repo}))
-            .request
-            .as_ref()
-            .clone();
+        let request =
+            crate::test_request::request("app/check", "GREEN", json!({"cwd":path_text(&repo)}))
+                .request
+                .as_ref()
+                .clone();
         let id = request.id.clone();
         receipts.create_run(&run, &[request]).await.unwrap();
         store::Receipts::clone(&receipts).close().await.unwrap();

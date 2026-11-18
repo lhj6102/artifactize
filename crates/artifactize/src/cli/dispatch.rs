@@ -1,14 +1,11 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, cache, interactive,
-    maintenance, print_json, provider, remote, request, run, server, session, workflow,
+    Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, account, cache, config,
+    interactive, maintenance, provider, remote, request, run, server, session, workflow,
 };
 use clap::CommandFactory;
-use std::{
-    io::{self, Write},
-    path::PathBuf,
-};
+use std::{io, path::PathBuf};
 
 pub(super) struct Context {
     pub repo: Option<PathBuf>,
@@ -25,7 +22,8 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
     let executor = matches!(cli.command, Some(Command::VerifyExecution { .. }));
     match cli.command {
         Some(Command::Mcp) => {
-            let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+            let executable =
+                artifactize_core::platform::current_executable().map_err(|e| e.to_string())?;
             // Without --repo each call's `project`, the client's roots or the working
             // directory name the project, as a plugin's server starts in the plugin's folder.
             let repo = context
@@ -56,7 +54,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             let runs = artifactize_core::runs::Context::new(
                 context.repo.as_deref().unwrap_or(std::path::Path::new(".")),
                 context.state_dir.as_deref(),
-                &std::env::current_exe().map_err(|e| e.to_string())?,
+                &artifactize_core::platform::current_executable().map_err(|e| e.to_string())?,
             )?;
             if executor {
                 artifactize_core::runs::execute(&runs, &run_id).await?;
@@ -73,17 +71,17 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         }) => run::cancel(context, run_id).await,
         Some(Command::Tools {
             command: ToolsCommand::Check(options),
-        }) => maintenance::tools(context, options.into()).await,
+        }) => maintenance::tools(context, options.try_into()?).await,
         Some(Command::Tools {
             command: ToolsCommand::Builtin(tool),
         }) => Ok(artifactize_tools::cli::run(tool).await),
-        Some(Command::Login { provider }) => maintenance::login(context, provider).await,
-        Some(Command::Logout { provider }) => maintenance::logout(context, provider).await,
+        Some(Command::Login { provider }) => account::login(context, provider).await,
+        Some(Command::Logout { provider }) => account::logout(context, provider).await,
         Some(Command::Provider { command }) => {
             provider::execute(
                 context.state_dir.as_deref(),
                 context.repo.as_deref(),
-                command,
+                command.into(),
                 context.json,
             )
             .await
@@ -96,7 +94,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Limits { signoff_idle_grace }) => {
             maintenance::limits(context, signoff_idle_grace)
         }
-        Some(Command::Models { provider }) => maintenance::models(context, provider).await,
+        Some(Command::Models { provider }) => account::models(context, provider).await,
         Some(Command::Verify {
             selection,
             policy,
@@ -135,79 +133,16 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
         Some(Command::Config {
             command: ConfigCommand::Graph { artifact, impact },
-        }) => workflow::graph(context, artifact, impact).await,
+        }) => config::graph(context, artifact, impact),
         Some(Command::Config {
             command: ConfigCommand::Rename { old, new },
-        }) => {
-            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-            let config = artifactize_core::config::read_workspace_config(&repo)
-                .map_err(|error| error.to_string())?;
-            let artifact = config
-                .artifacts
-                .get(&old)
-                .ok_or_else(|| format!("Unknown Artifact {old}."))?;
-            let destination = artifact
-                .declaration_path()
-                .with_file_name(format!("{new}.artf"));
-            let mut based =
-                artifactize_core::config::edit::read(&repo).map_err(|error| error.to_string())?;
-            based.entry(destination).or_insert(None);
-            let result = artifactize_core::config::edit::apply(
-                &repo,
-                &based,
-                artifactize_core::config::edit::Operation::Rename { old, new },
-            )
-            .map_err(|error| error.to_string())?;
-            if context.json {
-                print_json(&result)?;
-            }
-            Ok(0)
-        }
+        }) => config::rename(context, old, new),
         Some(Command::Config {
             command: ConfigCommand::Migrate,
-        }) => {
-            let repo = context.repo.unwrap_or_else(|| PathBuf::from("."));
-            let report = artifactize_core::config::migrate::migrate(&repo)
-                .map_err(|error| error.to_string())?;
-            if context.json {
-                print_json(&report)?;
-            } else {
-                let mut output = io::stdout().lock();
-                for (old, new) in report.files {
-                    writeln!(
-                        output,
-                        "{} -> {}",
-                        artifactize_tools::files::path_text(&old),
-                        artifactize_tools::files::path_text(&new)
-                    )
-                    .map_err(|error| error.to_string())?;
-                }
-                for (whole, parts) in report.explicit_parts {
-                    writeln!(
-                        output,
-                        "{whole}: parts = {}",
-                        serde_json::to_string(&parts).map_err(|error| error.to_string())?
-                    )
-                    .map_err(|error| error.to_string())?;
-                }
-                for name in report.ignored {
-                    writeln!(output, "{name}: ignore added: .artifactize/")
-                        .map_err(|error| error.to_string())?;
-                }
-                for path in report.separate_projects {
-                    writeln!(
-                        output,
-                        "Separate project (run config migrate --repo there): {}",
-                        artifactize_tools::files::path_text(&path)
-                    )
-                    .map_err(|error| error.to_string())?;
-                }
-            }
-            Ok(0)
-        }
+        }) => config::migrate(context),
         Some(Command::Config {
             command: ConfigCommand::Check,
-        }) => workflow::check(context).await,
+        }) => config::check(context),
         Some(Command::Run {
             command: RunCommand::List {
                 all, limit, offset, ..
@@ -220,15 +155,19 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                     wait,
                     timeout_ms,
                 },
-        }) => run::show(context, run_id, wait, timeout_ms).await,
+        }) => run::show(context, run_id, run::ShowMode::from_flags(wait, timeout_ms)).await,
         Some(Command::Monitor { all, path }) => {
-            interactive::monitor(context, all, path, screens).await
+            let scope = interactive::Scope::from_args(all, path, context.repo)?;
+            interactive::monitor(context.state_dir, scope, context.json, screens).await
         }
         Some(Command::Review {
             request,
             all,
             reviewer,
-        }) => interactive::review(context, request, all, reviewer, screens).await,
+        }) => {
+            let scope = interactive::Scope::for_review(all, context.repo.clone())?;
+            interactive::review(context, scope, request, reviewer, screens).await
+        }
         Some(Command::Cache { command }) => cache::execute(context, command).await,
         Some(Command::Remote { command }) => {
             remote::execute(

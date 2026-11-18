@@ -408,8 +408,7 @@ impl ArtifactDeclarations {
     /// The Human tools the Artifact itself declares, named like the registry, each with the
     /// command line it would run (a builtin has none).
     pub fn tools(&self) -> Result<Vec<(Tool, Option<Resolved>)>, String> {
-        let registry =
-            crate::tools::human::Registry::for_artifact(&self.config, self.artifact.as_str())?;
+        let registry = crate::tools::human::Registry::for_artifact(&self.config, &self.artifact)?;
         let artifact = &self.config.artifacts[&self.artifact];
         let mut tools: Vec<_> = artifact
             .views
@@ -445,14 +444,13 @@ impl ArtifactDeclarations {
         run: log::Run,
     ) -> Result<ToolResult, String> {
         let artifact = &self.artifact;
-        let registry =
-            match crate::tools::human::Registry::for_artifact(&self.config, artifact.as_str()) {
-                Ok(registry) => registry,
-                Err(error) => {
-                    run.end(log::End::Failed(error.clone()));
-                    return Err(error);
-                }
-            };
+        let registry = match crate::tools::human::Registry::for_artifact(&self.config, artifact) {
+            Ok(registry) => registry,
+            Err(error) => {
+                run.end(log::End::Failed(error.clone()));
+                return Err(error);
+            }
+        };
         // Only the Artifact's own tools: one of a child it includes belongs to that child's Detail.
         if !registry
             .list()

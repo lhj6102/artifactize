@@ -401,7 +401,7 @@ async fn file_builtin_shares_the_definition_view_without_stripping_user_schema_k
     );
     project.node("source", "path = \"src/\"\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Review.'\npass_schema = { type = 'object', properties.comment = { type = 'string' } }\n[annotations.comment]\ntext = 'hidden-note'\n");
     let config = read_workspace_config(&project.repo).unwrap();
-    let registry = Registry::for_artifact(&config, "definitions").unwrap();
+    let registry = Registry::for_artifact(&config, &"definitions".parse().unwrap()).unwrap();
     let result = registry
         .call(
             "read_definitions",
@@ -633,7 +633,8 @@ fn apply_with_footprint(project: &Project, operation: Operation, expected: &[&st
         assert_eq!(
             *base,
             before.get(file).cloned().flatten(),
-            "snapshot base for {file:?}"
+            "snapshot base for {}",
+            support::os::path_text(file)
         );
     }
     let bases = footprint.files.into_iter().collect();

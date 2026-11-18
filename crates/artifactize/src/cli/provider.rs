@@ -41,24 +41,71 @@ pub enum ProviderCommand {
     Remove { name: Backend },
 }
 
+pub(super) enum Action {
+    List,
+    Add { name: Backend, target: Target },
+    Remove { name: Backend },
+}
+
+pub(super) enum Target {
+    Alias(Provider),
+    Endpoint {
+        api: EndpointApi,
+        url: EndpointUrl,
+        key: bool,
+    },
+}
+
+impl From<ProviderCommand> for Action {
+    fn from(command: ProviderCommand) -> Self {
+        match command {
+            ProviderCommand::List => Self::List,
+            ProviderCommand::Remove { name } => Self::Remove { name },
+            ProviderCommand::Add {
+                name,
+                alias,
+                api,
+                url,
+                key,
+            } => {
+                let target = match (alias, api, url, key) {
+                    (Some(provider), None, None, false) => Target::Alias(provider),
+                    (None, Some(api), Some(url), key) => Target::Endpoint { api, url, key },
+                    _ => unreachable!("clap requires --alias, or --api with --url"),
+                };
+                Self::Add { name, target }
+            }
+        }
+    }
+}
+
 fn parse_url(value: &str) -> Result<EndpointUrl, String> {
     value.parse()
+}
+
+fn api_text(api: EndpointApi) -> &'static str {
+    match api {
+        EndpointApi::OpenaiResponses => "openai-responses",
+        EndpointApi::OpenaiChat => "openai-chat",
+        EndpointApi::Anthropic => "anthropic",
+        EndpointApi::Gemini => "gemini",
+    }
 }
 
 pub(super) async fn execute(
     state: Option<&Path>,
     repo: Option<&Path>,
-    command: ProviderCommand,
+    command: Action,
     json: bool,
 ) -> Result<u8, String> {
-    let mut out = io::stdout().lock();
     match command {
-        ProviderCommand::List => {
+        Action::List => {
             let list = providers::list(state, repo)?;
             if json {
                 print_json(&list)?;
                 return Ok(0);
             }
+            let mut out = io::stdout().lock();
             for key in &list.keys {
                 let source = match key.source {
                     providers::KeySource::Environment if key.saved => {
@@ -78,7 +125,7 @@ pub(super) async fn execute(
                     CustomView::Alias { provider } => format!("alias of {provider}"),
                     CustomView::Endpoint { api, url, key } => format!(
                         "{} at {}{}",
-                        json!(api).as_str().unwrap_or_default(),
+                        api_text(*api),
                         url.as_str(),
                         if *key { ", saved key" } else { "" }
                     ),
@@ -86,16 +133,10 @@ pub(super) async fn execute(
                 writeln!(out, "{name}\t{target}").map_err(|e| e.to_string())?;
             }
         }
-        ProviderCommand::Add {
-            name,
-            alias,
-            api,
-            url,
-            key,
-        } => {
-            let (custom, change) = match (alias, api, url) {
-                (Some(provider), _, _) => (Custom::Alias { provider }, KeyChange::None),
-                (None, Some(api), Some(url)) => (
+        Action::Add { name, target } => {
+            let (custom, change) = match target {
+                Target::Alias(provider) => (Custom::Alias { provider }, KeyChange::None),
+                Target::Endpoint { api, url, key } => (
                     Custom::Endpoint {
                         api,
                         url,
@@ -107,21 +148,22 @@ pub(super) async fn execute(
                         KeyChange::None
                     },
                 ),
-                _ => unreachable!("clap requires --alias, or --api with --url"),
             };
             providers::save_custom(state, repo, name.clone(), custom, change).await?;
             if json {
                 print_json(&json!({ "provider": name, "saved": true }))?;
             } else {
-                writeln!(out, "Saved custom provider {name}.").map_err(|e| e.to_string())?;
+                writeln!(io::stdout().lock(), "Saved custom provider {name}.")
+                    .map_err(|e| e.to_string())?;
             }
         }
-        ProviderCommand::Remove { name } => {
+        Action::Remove { name } => {
             providers::remove_custom(state, repo, &name).await?;
             if json {
                 print_json(&json!({ "provider": name, "saved": false }))?;
             } else {
-                writeln!(out, "Removed custom provider {name}.").map_err(|e| e.to_string())?;
+                writeln!(io::stdout().lock(), "Removed custom provider {name}.")
+                    .map_err(|e| e.to_string())?;
             }
         }
     }

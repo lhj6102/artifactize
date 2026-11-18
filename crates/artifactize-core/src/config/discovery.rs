@@ -1,6 +1,6 @@
 //! Definitions live exclusively below `.artifactize/`; target placement has no meaning.
 
-use super::*;
+use super::{validation::path, *};
 use std::io::Read;
 
 pub const DEFINITION_DIR: &str = ".artifactize";
@@ -154,17 +154,18 @@ pub(super) fn parse_definition(
     source: &str,
     schemas: &mut schemas::Schemas,
 ) -> Result<(Target, ArtifactKind, ArtifactDeclaration), String> {
-    if toml::de::DeTable::parse(source).is_ok_and(|table| table.get_ref().contains_key("name")) {
+    let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
+    if table.get_ref().contains_key("name") {
         return Err(location::error_at(
             source,
             &["name"],
             "the file name is the Artifact's name",
         ));
     }
-    let (logical, kind) = target(source)?;
+    let (logical, kind) = target(source, &table)?;
     // Retain the original spans through typed validation: changing a key in memory
     // must not shift an error away from the source the editor is displaying.
-    let declaration = super::definition::parse(
+    let declaration = super::definition::parse_table(
         &super::definition::Input {
             kind,
             name: Some(name),
@@ -173,6 +174,7 @@ pub(super) fn parse_definition(
             source,
         },
         schemas,
+        table,
     )
     .map_err(|error| error.message)?;
     Ok((logical, kind, declaration))
@@ -216,11 +218,18 @@ pub(super) fn files(root: &Path) -> Result<Vec<(PathBuf, crate::platform::FileKi
 }
 
 pub(super) fn sources(root: &Path) -> Result<BTreeMap<PathBuf, String>, ConfigError> {
-    files(root)?.into_iter().map(|(file, kind)| {
-        if kind != crate::platform::FileKind::File { return Err(ConfigError::new(file, "line 1, column 1: A definition must be a regular file, not a link, directory or special file.")); }
-        let source = read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
-        Ok((file, source))
-    }).collect()
+    files(root)?
+        .into_iter()
+        .map(|(file, kind)| match kind {
+            crate::platform::FileKind::File => read_regular_text(&file)
+                .map_err(|error| ConfigError::new(&file, error))
+                .map(|source| (file, source)),
+            _ => Err(ConfigError::new(
+                file,
+                "line 1, column 1: A definition must be a regular file, not a link, directory or special file.",
+            )),
+        })
+        .collect()
 }
 
 pub(super) fn logical_join(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
@@ -297,18 +306,21 @@ pub(super) fn insert_artifact(
     Ok(())
 }
 
-pub(super) fn target(source: &str) -> Result<(Target, ArtifactKind), String> {
-    let doc = source
-        .parse::<toml_edit::DocumentMut>()
-        .map_err(|error| error.to_string())?;
+fn target(
+    source: &str,
+    table: &toml::Spanned<toml::de::DeTable<'_>>,
+) -> Result<(Target, ArtifactKind), String> {
+    let doc = table.get_ref();
     let target = doc
         .get("path")
-        .and_then(toml_edit::Item::as_str)
+        .and_then(|value| match value.get_ref() {
+            toml::de::DeValue::String(text) => Some(text.as_ref()),
+            _ => None,
+        })
         .ok_or_else(|| {
             location::error_at(source, &["path"], "path is required and must be a string")
-        })?
-        .to_owned();
-    if Uri::has_scheme(&target) {
+        })?;
+    if Uri::has_scheme(target) {
         let uri = target
             .parse::<Uri>()
             .map_err(|error| location::error_at(source, &["path"], &error.to_string()))?;
@@ -330,7 +342,7 @@ pub(super) fn target(source: &str) -> Result<(Target, ArtifactKind), String> {
     } else {
         ArtifactKind::File
     };
-    let logical = target.strip_suffix('/').unwrap_or(&target);
+    let logical = target.strip_suffix('/').unwrap_or(target);
     let logical = if target == "./" { "" } else { logical };
     if logical.contains(':') {
         return Err(location::error_at(

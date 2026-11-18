@@ -268,7 +268,7 @@ async fn recheck(
         .run_dir
         .as_deref()
         .ok_or("Human request has no output directory.")?;
-    let parallelism = cache::Parallelism::new(cache::Parallelism::available());
+    let parallelism = cache::Parallelism::new(cache::Parallelism::available())?;
     let (code, error) = match if let Some(expected) = &request.key {
         cache::recheck(config, eval, output, &parallelism, cancellation.clone())
             .await

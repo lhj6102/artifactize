@@ -386,18 +386,29 @@ pub(super) fn lookup(
     db: &rusqlite::Connection,
     key: &ReuseKey,
 ) -> Result<Option<Execution>, Error> {
-    let data: Option<String> = db
+    let row: Option<(crate::types::ExecutionId, ExecutionStatus, String)> = db
         .query_row(
             &format!(
-                "SELECT e.data FROM executions e WHERE e.key=? AND {} ORDER BY {} LIMIT 1",
+                "SELECT e.id,e.status,e.data FROM executions e WHERE e.key=? AND {} ORDER BY {} LIMIT 1",
                 history::RECORD,
                 history::LATEST
             ),
             [key],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    Ok(data.and_then(|data| super::unreadable::evidence("execution", &data)))
+    let Some((id, indexed, data)) = row else {
+        return Ok(None);
+    };
+    let Some(execution) = super::unreadable::evidence::<Execution>("execution", &data) else {
+        return Ok(None);
+    };
+    if execution.status() != indexed {
+        return Err(Error::Invalid(format!(
+            "Cached execution {id} has an inconsistent verdict."
+        )));
+    }
+    Ok(Some(execution))
 }
 
 /// End a RUNNING execution whose owner process is gone, which frees its key and its slot.
@@ -739,8 +750,8 @@ pub async fn read_latest_cached(
 
 impl Receipts {
     /// The key's latest record; a hit updates its last use.
-    pub async fn cached_execution(&self, key: &str) -> Result<Option<Execution>, String> {
-        let key: ReuseKey = key.parse()?;
+    pub async fn cached_execution(&self, key: &ReuseKey) -> Result<Option<Execution>, String> {
+        let key = key.clone();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let execution = lookup(db, &key)?;

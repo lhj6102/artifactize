@@ -55,28 +55,40 @@ pub(super) async fn list(
     Ok(0)
 }
 
+pub(super) enum ShowMode {
+    Snapshot,
+    Wait { timeout: Duration },
+}
+
+impl ShowMode {
+    /// Clap requires `--wait` when `--timeout-ms` is present.
+    pub(super) fn from_flags(wait: bool, timeout: Option<Duration>) -> Self {
+        match (wait, timeout) {
+            (true, timeout) => Self::Wait {
+                timeout: timeout.unwrap_or(DEFAULT_RUN_WAIT),
+            },
+            (false, None) => Self::Snapshot,
+            (false, Some(_)) => unreachable!("clap requires --wait with --timeout-ms"),
+        }
+    }
+}
+
 pub(super) async fn show(
     context: Context,
     run_id: artifactize_core::types::RunId,
-    wait: bool,
-    timeout_ms: Option<Duration>,
+    mode: ShowMode,
 ) -> Result<u8, String> {
     let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
     let repo = artifactize_core::store::read_run_repo(&state, &run_id).await?;
     let runs = artifactize_core::runs::Context::new(
         &repo,
         Some(&state),
-        &std::env::current_exe().map_err(|e| e.to_string())?,
+        &artifactize_core::platform::current_executable().map_err(|e| e.to_string())?,
     )?;
-    if wait {
+    if let ShowMode::Wait { timeout } = mode {
         let (cancellation, listener) = super::cancellation_listener()?;
-        let result = artifactize_core::runs::wait(
-            &runs,
-            &run_id,
-            Some(timeout_ms.unwrap_or(DEFAULT_RUN_WAIT)),
-            cancellation.clone(),
-        )
-        .await;
+        let result =
+            artifactize_core::runs::wait(&runs, &run_id, Some(timeout), cancellation.clone()).await;
         listener.abort();
         if cancellation.is_cancelled() {
             return Ok(INTERRUPTED_EXIT);
@@ -88,7 +100,7 @@ pub(super) async fn show(
         &view,
         time::OffsetDateTime::now_utc(),
     ))?;
-    if !wait {
+    if matches!(mode, ShowMode::Snapshot) {
         return Ok(0);
     }
     if view.run.status().is_open() {
@@ -111,7 +123,7 @@ pub(super) async fn cancel(
     let runs = artifactize_core::runs::Context::new(
         &repo,
         Some(&state),
-        &std::env::current_exe().map_err(|e| e.to_string())?,
+        &artifactize_core::platform::current_executable().map_err(|e| e.to_string())?,
     )?;
     print_json(&artifactize_core::runs::cancel(&runs, &id).await?)?;
     Ok(0)
@@ -127,7 +139,7 @@ pub(super) async fn watch(
     let runs = artifactize_core::runs::Context::new(
         &repo,
         Some(&state),
-        &std::env::current_exe().map_err(|e| e.to_string())?,
+        &artifactize_core::platform::current_executable().map_err(|e| e.to_string())?,
     )?;
     let (cancellation, listener) = super::cancellation_listener()?;
     let result =

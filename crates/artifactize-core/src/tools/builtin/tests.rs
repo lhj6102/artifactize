@@ -74,7 +74,7 @@ impl Fixture {
 
     async fn call(&self, tool: &str, args: Value) -> ToolResult {
         let config = read_workspace_config(&self.root).unwrap();
-        let registry = Registry::new(&config, "a/review").unwrap();
+        let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         let output = self.root.join("never-created");
         let result = registry
             .call(tool, args, &output, CancellationToken::new())
@@ -328,7 +328,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     let data = fixture.data("glob_a", json!({"pattern":"**/*"})).await;
     assert_eq!(data["files"], json!(["data/file"]));
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     fs::rename(fixture.root.join("a"), fixture.root.join("old-a")).unwrap();
     let read = || {
         registry.call(
@@ -417,7 +417,7 @@ async fn missing_paths_and_links_report_their_cause() {
 async fn descriptions_say_paths_are_relative_to_the_artifact_without_its_name() {
     let fixture = Fixture::new();
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     for tool in registry.list() {
         let example = if tool.name == "view_image_a" {
             r#"use "image.png", not "a/image.png"."#
@@ -485,7 +485,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
     fixture.write("bare/index.artf", r#"{"name":"bare"}"#);
     fixture.artifact("other", "other", "Review.");
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -586,7 +586,7 @@ async fn listing_pages_are_sorted_and_reach_referenced_nested_artifacts() {
     assert_eq!(data["truncated"], false);
     let config = read_workspace_config(&fixture.root).unwrap();
     assert!(
-        !Registry::new(&config, "a/review")
+        !Registry::new(&config, &"a/review".parse().unwrap())
             .unwrap()
             .list()
             .any(|tool| tool.name.ends_with("_hidden"))
@@ -750,7 +750,7 @@ async fn file_artifact_image_view_is_limited_to_the_target() {
             .to_string(),
     );
     let config = read_workspace_config(&fixture.root).unwrap();
-    let registry = Registry::for_artifact(&config, "hero").unwrap();
+    let registry = Registry::for_artifact(&config, &"hero".parse().unwrap()).unwrap();
     let result = registry
         .call(
             "view_image_hero",

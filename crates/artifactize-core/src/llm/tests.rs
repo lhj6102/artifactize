@@ -126,6 +126,26 @@ impl Drop for Server {
 }
 
 #[test]
+fn http_client_rejects_claude_agent_backend() {
+    let root = crate::test_os::tempdir();
+    let result = super::Client::new(
+        &crate::config::Provider::ClaudeAgent.into(),
+        &"test-model".parse().unwrap(),
+        &root.path().join("state"),
+        root.path(),
+    );
+    let Err(error) = result else {
+        panic!("Claude Agent must not get an HTTP client");
+    };
+    assert_eq!(error.code, super::Code::AgentError);
+    assert!(
+        error
+            .message
+            .contains("Unsupported client backend: claude-agent")
+    );
+}
+
+#[test]
 fn test_endpoints_are_loopback_only() {
     for (value, expected) in [
         ("http://127.0.0.1:8080/v1", "http://127.0.0.1:8080/v1"),

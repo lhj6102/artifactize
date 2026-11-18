@@ -93,8 +93,7 @@ fn config_check_reports_bad_references_without_opening_runtime_inputs() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    // Reference validation reports the authored logical declaration path (forward slashes),
-    // unlike discovery errors that report a physical directory entry with native separators.
+    // Reference validation reports the authored logical declaration path.
     assert!(error.contains(".artifactize/review.artf"), "{error}");
     assert!(error.contains("review/run"));
     assert!(error.contains("Unknown Artifact reference {missing}"));
@@ -342,27 +341,28 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
             .contains("unknown field `review_policy`")
     );
     support::declaration::remove_file(fixture.0.join("other/index.artf")).unwrap();
-    if support::os::symlink_file(
-        fixture.0.join(".artifactize/input.artf"),
-        fixture.0.join(".artifactize/other.artf"),
-    )
-    .is_some()
-    {
-        assert!(
-            read_workspace_config(&fixture.0)
-                .unwrap_err()
-                .to_string()
-                .contains("regular file")
-        );
-        support::declaration::remove_file(fixture.0.join("other/index.artf")).unwrap();
-    }
-    fs::create_dir(fixture.0.join(".artifactize/other.artf")).unwrap();
+    let link = fixture.0.join(".artifactize/other.artf");
+    support::os::file_link(&fixture.0.join(".artifactize/input.artf"), &link);
     assert!(
         read_workspace_config(&fixture.0)
             .unwrap_err()
             .to_string()
             .contains("regular file")
     );
+    support::os::remove_file_link(&link);
+    fs::create_dir(&link).unwrap();
+    let expected = format!("{}: ", support::os::path_text(&link));
+    for args in [&["config", "check"][..], &["config", "check", "--json"][..]] {
+        let output = fixture.command().args(args).record_output().unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let message = if args.contains(&"--json") {
+            json_output(&output)["error"].as_str().unwrap().to_owned()
+        } else {
+            String::from_utf8(output.stderr).unwrap()
+        };
+        assert!(message.contains(&expected), "{message}");
+        assert!(message.contains("regular file"), "{message}");
+    }
 
     let empty = Fixture::new();
     let output = empty

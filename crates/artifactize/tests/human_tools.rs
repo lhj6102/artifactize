@@ -49,7 +49,7 @@ fn write_artifact(root: &Path, path: &Path, name: &str, tools: Value, instructio
 
 async fn call(repo: &Path) -> ToolResult {
     let config = read_workspace_config(repo).unwrap();
-    Registry::new(&config, "a/review")
+    Registry::new(&config, &"a/review".parse().unwrap())
         .unwrap()
         .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
         .await
@@ -169,7 +169,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
         "Review.",
     );
     let config = read_workspace_config(repo.path()).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -180,11 +180,14 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert_eq!(
-        Registry::for_artifact(&config, "a").unwrap().list().count(),
+        Registry::for_artifact(&config, &"a".parse().unwrap())
+            .unwrap()
+            .list()
+            .count(),
         1
     );
-    assert!(Registry::new(&config, "missing").is_err());
-    assert!(tools::Registry::new(&config, "a/review").is_err());
+    assert!(Registry::new(&config, &"a/missing".parse().unwrap()).is_err());
+    assert!(tools::Registry::new(&config, &"a/review".parse().unwrap()).is_err());
     for unknown in ["read_a", "inspect_c"] {
         assert!(
             registry
@@ -216,7 +219,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
     );
     let config = read_workspace_config(repo.path()).unwrap();
     assert!(
-        Registry::new(&config, "root/review")
+        Registry::new(&config, &"root/review".parse().unwrap())
             .err()
             .unwrap()
             .contains("collide")
@@ -277,7 +280,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     );
     assert!(!owner.join("injected").exists());
     let config = read_workspace_config(repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     support::declaration::remove_file(&input).unwrap();
     // A link to a folder outside the repository redirects the operand.
     support::os::link_dir(&support::os::temp_root(), &input);
@@ -407,7 +410,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
     let (sink, mut events) = channel();
     let request = "run-1-1".parse().unwrap();
     let name = "inspect_a".parse().unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call_logged(
             &name,
@@ -453,7 +456,7 @@ async fn a_watched_run_logs_both_streams_by_line_and_a_launch_logs_until_its_pro
         "Review.",
     );
     let config = read_workspace_config(launched.path()).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call_logged(
             &name,
@@ -508,7 +511,9 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         json!({"inspect":command}),
         "Review.",
     );
+    tokio::time::pause();
     assert_eq!(text(&call(repo.path()).await), "Human tool timed out.");
+    tokio::time::resume();
     write_artifact(
         repo.path(),
         repo.path(),
@@ -520,7 +525,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     let cancellation = CancellationToken::new();
     cancellation.cancel();
     assert!(
-        Registry::new(&config, "a/review")
+        Registry::new(&config, &"a/review".parse().unwrap())
             .unwrap()
             .call(&"inspect_a".parse().unwrap(), cancellation)
             .await
@@ -605,6 +610,9 @@ async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
     }
 }
 
+#[path = "support/launch_platform.rs"]
+mod launch_platform;
+
 #[test]
 fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize_variables() {
     for unwind in [false, true] {
@@ -627,8 +635,7 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
         let pid = pid.expect("launcher saved its complete pid marker");
         // The probe that launched it has exited; the detached child outlives it, but may not
         // have finished becoming a tracked job member or process-group leader just yet.
-        support::os::wait_until(Duration::from_secs(5), || support::os::running(pid));
-        support::os::assert_detached(pid);
+        support::os::wait_until(Duration::from_secs(5), || launch_platform::is_detached(pid));
         assert!(support::os::running(pid), "detached child is still running");
         assert_eq!(
             support::declaration::read_text(launched.path().join("marker")).unwrap(),
@@ -673,16 +680,8 @@ async fn human_environment_and_launch_probe() {
     );
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
-    // Python prints native environment paths and uses CRLF on Windows. Normalize
-    // those two path fields at the observation boundary through the portable helper.
-    let observed = text(&result).replace("\r\n", "\n");
-    let mut lines: Vec<String> = observed.split('\n').map(str::to_owned).collect();
-    assert_eq!(lines.len(), 6, "{observed}");
-    for index in [1, 4] {
-        lines[index] = support::os::path_text(Path::new(&lines[index]));
-    }
     assert_eq!(
-        lines.join("\n"),
+        text(&result).replace("\r\n", "\n"),
         format!(
             "reviewer-marker\n{}\n:77\nwayland-test\n{}\n",
             support::os::path_text(&repo.join("real-home")),
@@ -714,8 +713,8 @@ async fn human_environment_and_launch_probe() {
         tool("launch", support::os::python_program(), &python(LAUNCH));
     support::declaration::write(repo, repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
-    assert!(Registry::new(&config, "a/agent").is_err());
-    let result = tools::Registry::new(&config, "a/agent")
+    assert!(Registry::new(&config, &"a/agent".parse().unwrap()).is_err());
+    let result = tools::Registry::new(&config, &"a/agent".parse().unwrap())
         .unwrap()
         .call(
             "inspect_a",

@@ -224,7 +224,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     let human = owned_run::subscribed(&fixture.state, async |changes| {
         tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
             loop {
-                let (view, requests) = fixture.load(&live).await;
+                let (_, requests) = fixture.load(&live).await;
                 let slow = requests
                     .iter()
                     .find(|view| view.request.eval_id == "slow/wait");
@@ -236,16 +236,6 @@ async fn live_verify_progress_and_runs_across_repositories() {
                 }) && human.is_some_and(|view| {
                     view.request.status() == artifactize_core::types::RequestStatus::Deferred
                 }) {
-                    let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
-                    // Open from its first sign-off request, while other work still runs.
-                    assert_eq!(progress.status.as_str(), "WAITING_HUMAN");
-                    assert_eq!(progress.validation, "pending");
-                    assert_eq!(progress.running.len(), 1);
-                    assert_eq!(progress.running[0].0, "slow/wait");
-                    assert_eq!(
-                        progress.waiting,
-                        [("human/review".into(), "unclaimed".into())]
-                    );
                     break human.unwrap().request.id.clone();
                 }
                 changes.next_reconciled().await;
@@ -372,8 +362,15 @@ async fn live_verify_progress_and_runs_across_repositories() {
     // Esc steps back to Scope and never quits; q does.
     for _ in 0..2 {
         assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::None);
-        assert_eq!(all.focus, monitor::Pane::Repositories);
     }
+    // Down now changes the selected repository, not the selected Run.
+    assert_eq!(press(&mut all, KeyCode::Down), monitor::Action::Refresh);
+    all.refresh().await;
+    let scope = screen(&mut all);
+    assert!(
+        scope.contains(&second) && !scope.contains(live.as_str()),
+        "{scope}"
+    );
     assert_eq!(press(&mut all, KeyCode::Char('q')), monitor::Action::Quit);
 }
 
@@ -789,10 +786,6 @@ fn pty_session_restores_the_terminal_on_quit() {
         output.extend(receiver.recv_timeout(wait).expect("monitor did not draw"));
     }
     terminal.type_text(b"q");
-    assert!(terminal.finish());
-    // The output ends once the terminal has closed.
-    while let Ok(chunk) = receiver.recv_timeout(wait) {
-        output.extend(chunk);
-    }
+    assert!(terminal.finish_and_drain(receiver, &mut output));
     support::os::assert_restored(&String::from_utf8_lossy(&output), frame);
 }

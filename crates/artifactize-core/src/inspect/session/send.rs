@@ -128,7 +128,7 @@ async fn files_changed(
         config,
         request.fingerprints.keys(),
         output,
-        &cache::Parallelism::new(cache::Parallelism::available()),
+        &cache::Parallelism::new(cache::Parallelism::available()).ok()?,
         cancellation,
     )
     .await

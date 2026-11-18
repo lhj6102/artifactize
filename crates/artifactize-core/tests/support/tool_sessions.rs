@@ -45,14 +45,14 @@ elif mode in ['stop', 'hang-stop', 'fail-stop', 'readonly-stop']:
     if mode == 'readonly-stop': deny_session_directory_writes(session)
 elif mode == 'probe':
     print(json.dumps({'content':[{'type':'text','text':'ready'}]}))
-elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'freeze-cleanup', 'crash']:
+elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'crash']:
     child = None
-    if mode in ['hold-tree', 'ignore-term', 'freeze-cleanup']:
+    if mode in ['hold-tree', 'ignore-term']:
         child = launch_session_child(log, 'call-' + session.name)
         wait(log / ('child-call-' + session.name))
-    if mode in ['ignore-term', 'freeze-cleanup']: observe_session_interrupt(log, mode == 'freeze-cleanup')
+    if mode == 'ignore-term': observe_session_interrupt(log)
     record('call', {'directory':path_text(session), 'home':session_home(), 'pid':session_pid(), 'child':child.pid if child else None})
-    if mode in ['hold', 'hold-tree', 'ignore-term', 'freeze-cleanup']: wait(log / 'release')
+    if mode in ['hold', 'hold-tree', 'ignore-term']: wait(log / 'release')
     if mode == 'crash':
         (session / 'exit').write_text('')
         while (log / ('start-' + session.name)).exists() and not (session / 'leader-gone').exists():

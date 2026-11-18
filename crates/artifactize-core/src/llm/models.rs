@@ -31,13 +31,17 @@ pub async fn list(
 ) -> Result<Listing, String> {
     let route =
         super::route(&backend, state, repo, "to list models").map_err(|failure| failure.message)?;
-    let models = if route.api == Api::Codex {
-        super::codex::models(&route.base, state, repo).await?
-    } else if route.api == Api::ClaudeAgent {
-        super::claude_agent::models().await?
-    } else {
-        let key = route.key.as_ref().map_or("", |key| key.expose());
-        list_at(route.api, key, &route.base).await?
+    let models = match route {
+        super::Route::ClaudeAgent => super::claude_agent::models().await?,
+        super::Route::Http(super::HttpRoute {
+            api: Api::Codex,
+            base,
+            ..
+        }) => super::codex::models(&base, state, repo).await?,
+        super::Route::Http(super::HttpRoute { api, base, key }) => {
+            let key = key.as_ref().map_or("", |key| key.expose());
+            list_at(api, key, super::adapter_base(&base)).await?
+        }
     };
     Ok(Listing { backend, models })
 }

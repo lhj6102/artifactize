@@ -21,7 +21,7 @@ fn fixture(repo: &Path) {
     let (command, args) = support::os::python_script(
         &tool,
         &support::os::portable_path_probe(
-            "import os,pathlib,sys\nPATH_TEXT_FUNCTION\nsys.stdout.write('|'.join([os.path.expanduser('~'), os.environ.get('TOOL_CHECK_SECRET', 'unset'), path_text(pathlib.Path.cwd())]))\npathlib.Path('touched').write_text('invoked')\n",
+            "import os,pathlib,sys\nPATH_TEXT_FUNCTION\nsys.stdout.write('|'.join([path_text(os.path.expanduser('~')), os.environ.get('TOOL_CHECK_SECRET', 'unset'), path_text(pathlib.Path.cwd())]))\npathlib.Path('touched').write_text('invoked')\n",
         ),
     );
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});

@@ -385,7 +385,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         &config,
         [&config.artifacts["app"].name],
         &state,
-        &cache::Parallelism::new(2),
+        &cache::Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await

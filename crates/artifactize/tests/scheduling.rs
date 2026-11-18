@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::{self, BufRead, BufReader, Write},
-    net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
+    net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread::JoinHandle,
@@ -28,7 +28,7 @@ struct EventLog {
 
 impl EventLog {
     fn new(repo: &Path) -> Self {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let listener = support::os::tcp::loopback_listener();
         let address = listener.local_addr().unwrap();
         let mut file = fs::File::create(repo.join("events")).unwrap();
         let task = std::thread::spawn(move || {

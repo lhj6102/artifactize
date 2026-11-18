@@ -17,7 +17,7 @@ async fn prepare_all<'a>(
             &config.artifacts["basis"].name,
         ],
         repo.output.path(),
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -86,7 +86,7 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
         &config,
         [&config.artifacts["app"].name],
         repo.output.path(),
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -101,7 +101,7 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
             &config,
             &config.evals[0],
             repo.output.path(),
-            &Parallelism::new(2),
+            &Parallelism::new(2).unwrap(),
             CancellationToken::new()
         )
         .await

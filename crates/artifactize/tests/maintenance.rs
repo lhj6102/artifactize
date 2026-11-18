@@ -83,15 +83,20 @@ fn run_completion(state: &Path, repo: &Path, run: &Value, at: &str) {
     let id: artifactize_core::types::RunId = run["id"].as_str().unwrap().parse().unwrap();
     support::runs::finished_worker(state, repo, &id, support::os::running);
     let at: artifactize_core::types::Timestamp = at.parse().unwrap();
-    let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();
-    let saved: String = db
-        .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
-        .unwrap();
+    let database = state.join("state.sqlite");
+    let saved: String = rusqlite::Connection::open_with_flags(
+        &database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0))
+    .unwrap();
     let mut saved: artifactize_core::store::Run = serde_json::from_str(&saved).unwrap();
     assert_eq!(saved.status(), artifactize_core::types::RunStatus::Green);
     // Keep the Run's own chronology valid without depending on the producer's clock.
     saved.created_at = at;
     saved.state = artifactize_core::store::RunState::Green { at };
+    let db = rusqlite::Connection::open(database).unwrap();
     assert_eq!(
         db.execute(
             "UPDATE runs SET data=? WHERE id=?",
@@ -114,6 +119,34 @@ fn doctor(state: &Path, path: &Path) -> Command {
         .env("HTTPS_PROXY", "http://127.0.0.1:1")
         .env("HTTP_PROXY", "http://127.0.0.1:1");
     command
+}
+
+#[test]
+fn doctor_detects_the_fixture_desktop_beside_its_cli() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    let candidate = support::os::OwnedExecutable::copy_from(&support::os::cli()).unwrap();
+    let mut app = candidate.path().with_file_name("artifactize-desktop");
+    if let Some(extension) = candidate.path().extension() {
+        app.set_extension(extension);
+    }
+    // Discovery checks metadata only. The fixture is deliberately not a runnable app.
+    fs::write(&app, "desktop installation marker").unwrap();
+    let mut command = Command::new(candidate.path());
+    command
+        .arg("doctor")
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--json")
+        .env("HTTPS_PROXY", "http://127.0.0.1:1")
+        .env("HTTP_PROXY", "http://127.0.0.1:1");
+    let report = result(&mut command, 0);
+    let desktop = check(&report, "desktop");
+    assert_eq!(desktop["status"], "PASS");
+    assert_eq!(
+        desktop["details"]["path"],
+        support::os::path_text(&support::os::canonical(&app))
+    );
 }
 
 #[test]
@@ -162,21 +195,8 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "release"
         ]
     );
-    // A test build may sit beside an app build, so the check's form depends on this machine.
-    let desktop = check(&absent, "desktop");
-    match desktop["status"].as_str().unwrap() {
-        "PASS" => assert!(desktop["details"]["path"].is_string()),
-        "WARN" => {
-            assert_eq!(desktop["details"], json!({"path":null}));
-            assert!(
-                desktop["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("https://artifactize.dev/#start")
-            );
-        }
-        status => panic!("desktop check {status}"),
-    }
+    // The CLI fixture below fixes the detected installation independently of the host;
+    // the core detector's isolated location tests cover the no-install branch.
     // A newer release or a failed lookup only warns; this build names its own version.
     assert_ne!(check(&absent, "release")["status"], "FAIL");
     assert_eq!(
@@ -593,7 +613,8 @@ fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
                 .as_str()
                 .unwrap()
                 .contains("outside the reviewed repository"),
-            "{state:?}: {error}"
+            "{}: {error}",
+            support::os::path_text(&state)
         );
     }
 }
@@ -783,13 +804,14 @@ fn claude_agent(state: &Path, bin: &Path, args: &[&str], code: &str) -> std::pro
         .env("PATH", support::claude_code::path(bin))
         .env("CLAUDE_CONFIG_DIR", bin.join("config"))
         .stdin(std::process::Stdio::piped());
-    let mut child = support::os::start(&mut command);
+    let mut child = owned_run::Watcher::new(support::os::start(&mut command));
     {
         use std::io::Write;
         let mut input = child.stdin.take().unwrap();
         input.write_all(code.as_bytes()).unwrap();
     }
-    support::os::finish(child, "login claude-agent")
+    support::os::wait_child(&mut child, "login claude-agent");
+    child.wait_with_output().unwrap()
 }
 
 #[test]

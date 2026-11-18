@@ -218,7 +218,7 @@ pub(super) fn continues(config: &RepoConfig, continuation: &Continuation<'_>) ->
             )
             .ok()
         })
-        .is_some_and(|route| route.api == Api::ClaudeAgent)
+        .is_some_and(|route| matches!(route, llm::Route::ClaudeAgent))
 }
 
 /// Answer a person's question about a review Claude Code ran. Claude Code keeps no session,

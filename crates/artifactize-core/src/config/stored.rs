@@ -44,7 +44,7 @@ impl<T> From<Option<T>> for Field<T> {
 
 /// Read schema-5 payloads without inventing an instruction field for older audits.
 /// Declarations still require a String; omission/null tolerance belongs only here.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredPayload {
     #[serde(default, skip_serializing_if = "Field::missing")]
     instruction: Field<String>,

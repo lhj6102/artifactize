@@ -590,13 +590,28 @@ async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
 }
 
+#[tokio::test]
+async fn sign_in_browser_hands_the_desktop_one_literal_url() {
+    let url = Url::parse("https://example.invalid/?a=1&b=two words").unwrap();
+    let mut target = None;
+    open_browser(&url, async |argument| {
+        target = Some(argument.to_os_string());
+        Ok(())
+    })
+    .await;
+    assert_eq!(
+        target.as_deref(),
+        Some(OsStr::new("https://example.invalid/?a=1&b=two%20words"))
+    );
+}
+
 // Windows opens through ShellExecute, which runs no program a test can stand in for.
 #[cfg(unix)]
 #[tokio::test]
-async fn sign_in_browser_uses_the_shared_literal_opener() {
+async fn sign_in_browser_calls_the_external_opener_without_a_shell() {
     let url = Url::parse("https://example.invalid/?a=1&b=two words").unwrap();
     if let Some(record) = crate::platform::environment::var(crate::test_os::RECORD) {
-        open_browser(&url).await;
+        open_browser(&url, crate::platform::program::open_desktop).await;
         assert_eq!(
             fs::read_to_string(record).unwrap(),
             format!("1\n{}\n", url.as_str())
@@ -606,7 +621,7 @@ async fn sign_in_browser_uses_the_shared_literal_opener() {
     let root = crate::test_os::tempdir();
     crate::test_os::recording_program(root.path(), crate::test_os::OPENER);
     let output = crate::test_os::run_test(
-        "auth::codex::tests::sign_in_browser_uses_the_shared_literal_opener",
+        "auth::codex::tests::sign_in_browser_calls_the_external_opener_without_a_shell",
         &[
             ("PATH", root.path().as_os_str().to_owned()),
             (

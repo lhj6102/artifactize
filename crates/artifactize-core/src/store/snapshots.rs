@@ -56,7 +56,7 @@ impl std::fmt::Display for Blocker {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HumanDefinition {
     #[serde(
         default,
@@ -74,7 +74,7 @@ pub struct HumanDefinition {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HumanEval {
     #[serde(default, skip_serializing_if = "Field::missing")]
     pub id: Field<EvalId>,
@@ -89,14 +89,6 @@ pub struct HumanEval {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-impl PartialEq for HumanDefinition {
-    fn eq(&self, other: &Self) -> bool {
-        // Owner JSON schemas are structural values; compare their preserved saved forms.
-        serde_json::to_value(self).expect("Human definition is JSON")
-            == serde_json::to_value(other).expect("Human definition is JSON")
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Validation(pub Option<ValidationSnapshot>);

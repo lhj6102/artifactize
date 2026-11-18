@@ -11,7 +11,8 @@
 
 use std::{
     collections::BTreeMap,
-    io::{IsTerminal, Read, Write},
+    ffi::OsStr,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -411,7 +412,7 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
     // Refuse before reading the terminal: where the tokens go and the sign-in root.
     Storage::new(state, repo, Tokens::Codex)?;
     auth_root()?;
-    let terminal = std::io::stdin().is_terminal();
+    let terminal = crate::platform::stdin_is_terminal();
     let pasted = if terminal {
         let (send, receive) = oneshot::channel();
         // Detached: a sign-in finished in the browser leaves this read unanswered.
@@ -505,7 +506,7 @@ async fn sign_in(
     let url = pending.authorize_url(root, redirect_uri)?;
     show(&url, listener.is_some());
     if browser {
-        open_browser(&url).await;
+        open_browser(&url, crate::platform::program::open_desktop).await;
     }
     let code = pending.wait(listener, pasted).await?;
     let tokens = token_request(
@@ -526,9 +527,9 @@ async fn sign_in(
     storage.save(CREDENTIALS, &credentials)
 }
 
-async fn open_browser(url: &Url) {
+async fn open_browser(url: &Url, open: impl AsyncFnOnce(&OsStr) -> io::Result<()>) {
     // The printed authorization URL remains available if desktop handoff fails.
-    let _ = crate::platform::program::open_desktop(std::ffi::OsStr::new(url.as_str())).await;
+    let _ = open(OsStr::new(url.as_str())).await;
 }
 
 #[derive(Deserialize)]

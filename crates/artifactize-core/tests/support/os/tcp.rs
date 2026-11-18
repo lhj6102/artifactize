@@ -1,4 +1,4 @@
-//! TCP termination observations for fixtures whose owner has already completed.
+//! Local subprocess endpoints and TCP termination observations.
 
 use std::io;
 use tokio::{
@@ -27,4 +27,32 @@ pub async fn closed_probe(stream: &mut BufReader<TcpStream>, probe: &[u8]) -> io
         Err(error) if error.kind() == io::ErrorKind::ConnectionReset => Ok(response),
         Err(error) => Err(error),
     }
+}
+
+/// Reserve a private port on the local IPv4 loopback interface for the fixture's lifetime.
+pub fn loopback_listener() -> std::net::TcpListener {
+    std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap()
+}
+
+pub fn nonblocking_loopback_listener() -> std::net::TcpListener {
+    let listener = loopback_listener();
+    listener.set_nonblocking(true).unwrap();
+    listener
+}
+
+pub fn async_loopback_listener() -> tokio::net::TcpListener {
+    tokio::net::TcpListener::from_std(nonblocking_loopback_listener()).unwrap()
+}
+
+/// A Python subprocess optionally sends its label, then blocks until fixture release.
+pub fn socket_gate_args(address: std::net::SocketAddr, label: Option<&str>) -> Vec<String> {
+    [
+        "-c".into(),
+        "import socket,sys\nwith socket.create_connection((sys.argv[1],int(sys.argv[2]))) as stream:\n    if len(sys.argv) > 3: stream.sendall(sys.argv[3].encode())\n    assert stream.recv(1) == b'x'".into(),
+        address.ip().to_string(),
+        address.port().to_string(),
+    ]
+    .into_iter()
+    .chain(label.map(str::to_owned))
+    .collect()
 }

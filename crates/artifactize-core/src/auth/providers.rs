@@ -61,20 +61,29 @@ impl std::str::FromStr for ApiKey {
 
 /// A custom endpoint's API root: http(s), without credentials, a query or a fragment, which
 /// belong in its key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
-pub struct EndpointUrl(String);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointUrl(Url);
 
 impl EndpointUrl {
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str().trim_end_matches('/')
+    }
+
+    pub(crate) fn into_url(self) -> Url {
+        self.0
+    }
+}
+
+impl Serialize for EndpointUrl {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
     }
 }
 
 impl std::str::FromStr for EndpointUrl {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = Url::parse(value.trim()).map_err(|_| format!("{value:?} is not a URL."))?;
+        let mut url = Url::parse(value.trim()).map_err(|_| format!("{value:?} is not a URL."))?;
         if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
             return Err("An endpoint URL uses http:// or https:// and names a host.".into());
         }
@@ -88,7 +97,11 @@ impl std::str::FromStr for EndpointUrl {
                     .into(),
             );
         }
-        Ok(Self(url.as_str().trim_end_matches('/').to_owned()))
+        if url.path().len() > 1 && url.path().ends_with('/') {
+            let path = url.path().trim_end_matches('/').to_owned();
+            url.set_path(&path);
+        }
+        Ok(Self(url))
     }
 }
 

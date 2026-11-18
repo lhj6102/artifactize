@@ -136,14 +136,16 @@ impl Server {
         );
     }
 
-    fn stop(&mut self) {
-        self.child.stop().unwrap();
+    fn stop(&mut self) -> std::io::Result<()> {
+        self.child.stop().map(|_| ())
     }
 }
 
 impl Drop for Server {
     fn drop(&mut self) {
-        self.stop();
+        if let Err(error) = self.stop() {
+            eprintln!("review-store fixture shutdown failed: {error}");
+        }
     }
 }
 
@@ -497,7 +499,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
         &server.url,
         &server.token("bob", "read,publish"),
     );
-    server.stop();
+    server.stop().unwrap();
     let repo = runtime_repo(root.path(), "repo", "v1");
 
     let (text, stderr) = bob.run(&repo, &["verify", "--wait", "--all"], 0);
@@ -878,7 +880,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             &config,
             [&config.artifacts["app"].name],
             &state,
-            &artifactize_core::cache::Parallelism::new(2),
+            &artifactize_core::cache::Parallelism::new(2).unwrap(),
             tokio_util::sync::CancellationToken::new(),
         )
         .await

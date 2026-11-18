@@ -517,10 +517,9 @@ pub(crate) fn launch_detached(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(false);
-    let mut child = platform::spawn_detached(command).map_err(Error::Spawn)?;
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
+    platform::spawn_detached(command)
+        .map_err(Error::Spawn)?
+        .reap();
     Ok(())
 }
 
@@ -585,8 +584,7 @@ pub(crate) fn launch_watched(
         Ok(child) => child,
         Err(error) => return Err((Error::Spawn(error), run)),
     };
-    let stdout = child.stdout.take().expect("stdout is piped");
-    let stderr = child.stderr.take().expect("stderr is piped");
+    let (stdout, stderr) = child.take_output();
     tokio::spawn(async move {
         // Nothing is retained: the lines go to the log, the rest is discarded. Nobody owns
         // this program's group, so its pipes are read for as long as anything holds them.
@@ -606,25 +604,7 @@ pub(crate) fn launch_watched(
 
 /// Resolve the installed CLI, with sibling build outputs for Rust library consumers/tests.
 pub(crate) fn artifactize_executable() -> Result<std::path::PathBuf, String> {
-    let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    for directory in current
-        .parent()
-        .into_iter()
-        .flat_map(|parent| [Some(parent), parent.parent()])
-        .flatten()
-    {
-        if let Some(candidate) = platform::program::candidates(&directory.join("artifactize"))
-            .into_iter()
-            .find(|path| path.is_file())
-        {
-            return Ok(candidate);
-        }
-    }
-    platform::program::resolve(
-        std::ffi::OsStr::new("artifactize"),
-        &std::env::current_dir().map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    platform::program::resolve_near_current("artifactize".as_ref()).map_err(|e| e.to_string())
 }
 
 /// The internal supervisor and executor have no inherited requester stdio/lifetime.
@@ -639,7 +619,7 @@ pub(crate) fn spawn_run(
     repo: &std::path::Path,
     state: &std::path::Path,
     entry: RunEntry,
-) -> Result<(ChildIdentity, tokio::process::Child), Error> {
+) -> Result<(ChildIdentity, platform::DetachedChild), Error> {
     let mut options = platform::private_options();
     options.write(true);
     match entry {
@@ -676,8 +656,7 @@ pub(crate) fn spawn_run(
         .stderr(Stdio::from(stderr))
         .kill_on_drop(false);
     let child = platform::spawn_run(command).map_err(Error::Spawn)?;
-    let identity = child_identity(child.id().expect("spawned worker has a PID"))
-        .map_err(Error::Registration)?;
+    let identity = child_identity(child.pid()).map_err(Error::Registration)?;
     Ok((identity, child))
 }
 pub(crate) fn launch_run(
@@ -686,10 +665,8 @@ pub(crate) fn launch_run(
     repo: &std::path::Path,
     state: &std::path::Path,
 ) -> Result<ChildIdentity, Error> {
-    let (identity, mut child) = spawn_run(program, id, repo, state, RunEntry::Supervisor)?;
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
+    let (identity, child) = spawn_run(program, id, repo, state, RunEntry::Supervisor)?;
+    child.reap();
     Ok(identity)
 }
 

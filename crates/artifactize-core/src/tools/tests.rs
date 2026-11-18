@@ -42,7 +42,7 @@ impl Fixture {
 
     async fn call(&self, args: Value) -> ToolResult {
         let config = read_workspace_config(&self.repo).unwrap();
-        let registry = Registry::new(&config, "a/review").unwrap();
+        let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         let result = registry
             .call("inspect_a", args, &self.output, CancellationToken::new())
             .await;
@@ -102,7 +102,7 @@ fn owned_call(
     let cancellation = CancellationToken::new();
     let token = cancellation.clone();
     let work = async move {
-        let registry = Registry::new(&config, "a/review").unwrap();
+        let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
         registry.call("inspect_a", json!({}), &output, token).await
     };
     (cancellation, work)
@@ -188,7 +188,7 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
         "open('spawned', 'w').write('yes')\nprint('{\"content\":[{\"type\":\"text\",\"text\":\"ran\"}]}')",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     for args in [
         json!([]),
         json!({}),
@@ -535,7 +535,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
             "Review.",
         );
         if let Ok(config) = read_workspace_config(&fixture.repo) {
-            let registry = Registry::new(&config, "a/review").unwrap();
+            let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
             assert!(
                 registry
                     .call(
@@ -558,7 +558,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
         "Review.",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let result = registry
         .call(
             "inspect_a",
@@ -615,7 +615,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
     )
     .unwrap();
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -649,7 +649,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         )
         .contains("Unknown")
     );
-    assert!(Registry::new(&config, "a/missing").is_err());
+    assert!(Registry::new(&config, &"a/missing".parse().unwrap()).is_err());
 }
 
 #[test]
@@ -677,7 +677,9 @@ fn concatenated_tool_name_collisions_are_rejected() {
         "Review.",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let error = Registry::new(&config, "root/review").err().unwrap();
+    let error = Registry::new(&config, &"root/review".parse().unwrap())
+        .err()
+        .unwrap();
     assert!(error.contains("collide: inspect_b_a"));
 }
 
@@ -728,7 +730,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
         assert!(crate::test_os::gone(pid));
     })
     .await;
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     let cancel = CancellationToken::new();
     cancel.cancel();
     assert!(
@@ -788,7 +790,7 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
         "import json,sys\nrequest=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':request['context']['scope']}]}))",
     );
     let config = read_workspace_config(&fixture.repo).unwrap();
-    let registry = Registry::new(&config, "a/review").unwrap();
+    let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     assert_eq!(
         registry
             .list()
@@ -808,10 +810,6 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
         panic!("{result:?}")
     };
     assert_eq!(data["a"]["nested"], json!({"cases":"leaf"}));
-    assert_eq!(
-        data["leaf"]["path"],
-        json!(crate::platform::path_text(&fixture.repo.join("cases")))
-    );
     assert_eq!(
         data["leaf"],
         json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","nested":{}})

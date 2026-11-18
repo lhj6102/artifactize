@@ -66,9 +66,11 @@ impl Session {
         parse(&self.output(repo, args, code))
     }
 
-    /// A private copy for edits that turn an example RED.
+    /// A private copy for one scenario, retained until the session releases its Runs.
     fn copy(&self, name: &str) -> PathBuf {
-        let target = self.root.path().join(name);
+        let target = support::os::tempdir_in(self.root.path(), "example-")
+            .keep()
+            .join(name);
         support::copy_directory(&example(name), &target);
         target
     }
@@ -159,7 +161,7 @@ fn every_example_passes_static_queries_and_reports_status() {
         ("agent-tools", 2, 2),
         ("posts", 4, 3),
     ] {
-        let repo = example(name);
+        let repo = session.copy(name);
         let before = files(&repo);
         assert_eq!(
             session.json(&repo, &["config", "check", "--json"], 0),
@@ -179,7 +181,7 @@ fn every_example_passes_static_queries_and_reports_status() {
     }
 
     let graph = session.json(
-        &example("runtime-relations"),
+        &session.copy("runtime-relations"),
         &["config", "graph", "--json"],
         0,
     );
@@ -202,7 +204,7 @@ fn every_example_passes_static_queries_and_reports_status() {
 #[test]
 fn runtime_relations_reuses_fingerprints_and_turns_red() {
     let session = Session::new();
-    let repo = example("runtime-relations");
+    let repo = session.copy("runtime-relations");
     let before = files(&repo);
     let first = session.json(&repo, &["verify", "--wait", "--all", "--json"], 0);
     assert_eq!(first["executionsStarted"], 3);
@@ -276,7 +278,7 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
 #[test]
 fn file_posts_reuse_independently_and_track_the_shared_style() {
     let session = Session::new();
-    let repo = example("posts");
+    let repo = session.copy("posts");
     let before = files(&repo);
     let green = map(&[
         ("release-notes/style", "GREEN"),
@@ -459,7 +461,7 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
 #[test]
 fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let session = Session::new();
-    let repo = example("agent-tools");
+    let repo = session.copy("agent-tools");
     let before = files(&repo);
 
     // Built-in launch tools are checked without launching an application on the host.

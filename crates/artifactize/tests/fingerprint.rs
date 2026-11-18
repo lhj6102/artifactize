@@ -11,7 +11,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::os::{steps, symlink_file, true_program};
+use support::os::{steps, true_program};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
 mod support;
@@ -164,16 +164,14 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
         "valid",
     )
     .unwrap();
-    let mut links = Vec::new();
-    if symlink_file("key", fixture.repo.join("link")).is_some() {
-        links.extend([
-            (
-                json!({"script":{"command":true_program(),"args":[],"files":["link"]}}),
-                "symlinks",
-            ),
-            (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
-        ]);
-    }
+    support::os::file_link(&fixture.repo.join("key"), &fixture.repo.join("link"));
+    let links = [
+        (
+            json!({"script":{"command":true_program(),"args":[],"files":["link"]}}),
+            "symlinks",
+        ),
+        (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
+    ];
     support::os::link_dir(&fixture.repo, &fixture.repo.join("dir-link"));
     // Only the declared deadline ends this command; host scheduling cannot race a natural exit.
     let (lingering, lingering_args) = support::os::lingering_command();

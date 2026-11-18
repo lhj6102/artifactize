@@ -65,10 +65,15 @@ pub enum Client {
 }
 
 /// Where a provider's requests go: its API, its root and its key.
-pub(crate) struct Route {
-    pub api: Api,
-    pub base: String,
-    pub key: Option<ApiKey>,
+pub(crate) enum Route {
+    ClaudeAgent,
+    Http(HttpRoute),
+}
+
+pub(crate) struct HttpRoute {
+    api: Api,
+    base: url::Url,
+    key: Option<ApiKey>,
 }
 
 /// Resolve `backend` on this machine: a built-in provider, or the custom provider `state`
@@ -86,11 +91,11 @@ pub(crate) fn route(
         None => match providers::custom(backend, state, repo)? {
             Some(Custom::Alias { provider }) => provider,
             Some(Custom::Endpoint { api, url, key }) => {
-                return Ok(Route {
+                return Ok(Route::Http(HttpRoute {
                     api: api.into(),
-                    base: url.as_str().to_owned(),
+                    base: url.into_url(),
                     key,
-                });
+                }));
             }
             None => {
                 return Err(missing(format!(
@@ -99,6 +104,9 @@ pub(crate) fn route(
             }
         },
     };
+    if provider == Provider::ClaudeAgent {
+        return Ok(Route::ClaudeAgent);
+    }
     let key = match providers::key_variable(provider) {
         Some(variable) => Some(providers::key(provider, state, repo)?.ok_or_else(|| {
             missing(format!(
@@ -107,11 +115,11 @@ pub(crate) fn route(
         })?),
         None => None,
     };
-    Ok(Route {
+    Ok(Route::Http(HttpRoute {
         api: provider.into(),
         base: base_url(provider)?,
         key,
-    })
+    }))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,35 +207,33 @@ impl Client {
         state: &Path,
         repo: &Path,
     ) -> Result<Self, Failure> {
-        Self::at(
-            route(backend, Some(state), Some(repo), "for this Agent backend")?,
-            model,
-            state,
-            repo,
-        )
+        match route(backend, Some(state), Some(repo), "for this Agent backend")? {
+            Route::Http(route) => Self::at(route, model, state, repo),
+            Route::ClaudeAgent => Err(Failure::new(
+                Code::AgentError,
+                "Unsupported client backend: claude-agent runs reviews through Claude Code.",
+            )),
+        }
     }
 
     /// The client of a resolved `route`. Claude Code runs its own conversation, so its
     /// reviews never reach this ([`claude_agent`]).
     pub(crate) fn at(
-        Route { api, base, key }: Route,
+        HttpRoute { api, base, key }: HttpRoute,
         model: &crate::config::ModelId,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, Failure> {
-        assert!(
-            api != Api::ClaudeAgent,
-            "Claude Code reviews run in llm::claude_agent"
-        );
         if api == Api::Codex {
-            return Ok(Self::Codex(codex::Codex::new(model, &base, state, repo)?));
+            return Ok(Self::Codex(codex::Codex::new(model, base, state, repo)?));
         }
+        let base = adapter_base(&base);
         // An endpoint without a key sends an empty one, which keyless servers ignore.
         let key = key.map(|key| key.expose().to_owned()).unwrap_or_default();
         let http = delivery::Tap::new(http_client()?);
         let openai = || {
             openai::OpenAIConfig::new(key.clone())
-                .with_base_url(&base)
+                .with_base_url(base)
                 .connect(http.clone())
         };
         Ok(match api {
@@ -238,7 +244,7 @@ impl Client {
             Api::Anthropic => Self::Anthropic(
                 Box::new(
                     anthropic::AnthropicConfig::new(key.clone())
-                        .with_base_url(&base)
+                        .with_base_url(base)
                         .connect(http)
                         .completion(model.as_str()),
                 ),
@@ -247,7 +253,7 @@ impl Client {
             Api::Gemini => Self::Gemini(
                 Box::new(
                     gemini::GeminiConfig::new(key.clone())
-                        .with_base_url(&base)
+                        .with_base_url(base)
                         .connect(http)
                         .completion(model.as_str()),
                 ),
@@ -902,20 +908,23 @@ fn loopback_url(value: &str) -> Result<TestEndpoint, String> {
 
 /// The provider's API root: its loopback test endpoint, else the provider's. Claude Code
 /// has none: it reaches its service itself.
-fn base_url(provider: Provider) -> Result<String, String> {
-    Ok(test_endpoint(provider)?.map_or_else(
-        || {
-            match provider {
-                Provider::Openai => "https://api.openai.com/v1",
-                Provider::Anthropic => "https://api.anthropic.com",
-                Provider::Gemini => gemini::BASE_URL,
-                Provider::Codex => codex::BASE_URL,
-                Provider::ClaudeAgent => "",
-            }
-            .into()
-        },
-        |endpoint| endpoint.root().to_owned(),
-    ))
+fn base_url(provider: Provider) -> Result<url::Url, String> {
+    if let Some(endpoint) = test_endpoint(provider)? {
+        return Ok(endpoint.0);
+    }
+    let base = match provider {
+        Provider::Openai => "https://api.openai.com/v1",
+        Provider::Anthropic => "https://api.anthropic.com",
+        Provider::Gemini => gemini::BASE_URL,
+        Provider::Codex => codex::BASE_URL,
+        Provider::ClaudeAgent => unreachable!("Claude Code has no HTTP route"),
+    };
+    Ok(url::Url::parse(base).expect("built-in provider base URL"))
+}
+
+/// Rig model listing appends a path starting with `/` to this textual root.
+fn adapter_base(base: &url::Url) -> &str {
+    base.as_str().trim_end_matches('/')
 }
 
 fn http_client() -> Result<reqwest::Client, String> {

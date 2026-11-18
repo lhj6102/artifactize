@@ -33,7 +33,7 @@ fn default_concurrency_and_run_history_page_remain_compatible() {
     let cli = Cli::try_parse_from(["artifactize", "verify", "--all", "--jobs", "2"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Verify { jobs: Some(2), .. })
+        Some(Command::Verify { jobs: Some(jobs), .. }) if jobs.get() == 2
     ));
     let cli = Cli::try_parse_from(["artifactize", "run", "list"]).unwrap();
     let Some(Command::Run {

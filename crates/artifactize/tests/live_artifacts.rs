@@ -307,7 +307,7 @@ async fn command_tools_and_fingerprint_scripts_receive_the_same_opaque_live_addr
         "evals":{"observe":runtime(support::os::true_program(),json!([]),"Observe {service}.")}
     }));
     let config = config::read_workspace_config(&project.repo).unwrap();
-    let registry = Registry::for_artifact(&config, "service").unwrap();
+    let registry = Registry::for_artifact(&config, &"service".parse().unwrap()).unwrap();
     registry.preflight("observe_service").unwrap();
     let result = registry
         .call(

@@ -22,7 +22,7 @@ assert os.environ['AUTHOR_VARIABLE'] == 'from-the-terminal'
 assert (home / '.toolchains' / 'stable' / 'version').read_text().strip() == 'cargo 9.9'
 assert 'ARTIFACTIZE_REMOTE_TOKEN' not in os.environ
 assert 'ARTIFACTIZE_REMOTE' not in os.environ
-tmp = pathlib.Path(os.environ['TMPDIR'])
+tmp = pathlib.Path(os.environ['TEMP_NAME'])
 assert tmp.is_dir() and not tmp.is_relative_to(home)
 (home / ('seen-tmp-' + sys.argv[2])).write_text(path_text(tmp))
 if sys.argv[2] == 'tool':
@@ -49,7 +49,11 @@ impl Project {
         fs::create_dir(&repo).unwrap();
         support::os::write_python_script(
             &repo.join("probe.py"),
-            &support::os::portable_path_probe(&PROBE.replace("HOME_NAME", support::os::home_env())),
+            &support::os::portable_path_probe(
+                &PROBE
+                    .replace("HOME_NAME", support::os::home_env())
+                    .replace("TEMP_NAME", support::os::temp_env()),
+            ),
         );
         let home = support::os::path_text(&home);
         support::declaration::write(

@@ -9,8 +9,7 @@ homepage.workspace = true
 documentation = "https://docs.rs/artifactize-core"
 keywords = ["collaboration", "ai", "agent", "review", "llm"]
 categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
-# The portable OS utility stand-in, which tests build from source on demand.
-exclude = ["tests/support/fixture.rs", "index.artf"]
+exclude = ["index.artf"]
 
 [features]
 # Hooks that the unit tests of artifactize-tui count queries and derivations with.

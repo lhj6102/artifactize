@@ -271,6 +271,8 @@ fn spawn_gated_with(
 ) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let job = Job::new()?;
     command.creation_flags(CREATE_SUSPENDED | CREATE_NEW_PROCESS_GROUP | flags);
+    // Pass the argument vector to std. For PATHEXT batch shims it constructs and
+    // validates the native invocation; artifactize supplies no shell string or raw args.
     let child = command
         .spawn()
         .and_then(|mut child| match job.assign(&child) {

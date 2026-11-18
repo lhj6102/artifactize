@@ -103,7 +103,7 @@ impl Session {
                 if !requested.contains(record.key.as_str()) {
                     return Err("the store returned an unrequested key".into());
                 }
-                record.mirror(self.remote.url.as_str())
+                record.mirror(self.remote.url().as_str())
             });
             match mirrored {
                 Ok(execution) => executions.push(execution),

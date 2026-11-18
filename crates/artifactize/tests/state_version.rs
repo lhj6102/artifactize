@@ -9,9 +9,16 @@ use support::runs::RecordOutput;
 
 use std::{fs, path::Path, process::Command};
 
-use artifactize_core::store::{EARLIER_STATE, STATE_SCHEMA_VERSION};
+use artifactize_core::store::STATE_SCHEMA_VERSION;
 use rusqlite::Connection;
 use serde_json::{Value, json};
+
+/// User-facing recovery steps expected when opening an unsupported earlier state.
+const EARLIER_STATE: &str = concat!(
+    "This state was written by an earlier artifactize. ",
+    "Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). ",
+    "Only schema 6 and later supported versions can be upgraded.",
+);
 
 /// Some of the tables of a 0.5 state, before the four of 0.6.
 const EARLIER: &str =

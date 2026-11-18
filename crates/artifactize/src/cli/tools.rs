@@ -22,24 +22,31 @@ pub struct ToolCheckArgs {
     pub execute: bool,
     /// JSON arguments for an executed Agent tool.
     #[arg(long, value_name = "JSON", value_parser = json_arguments)]
-    pub args: Option<serde_json::Value>,
+    pub args: Option<ToolArguments>,
 }
 
-impl From<ToolCheckArgs> for artifactize_core::diagnostics::ToolCheckOptions {
-    fn from(args: ToolCheckArgs) -> Self {
-        Self {
-            selector: args.selector,
-            eval: args.eval,
-            artifact: args.artifact,
-            audience: args.audience,
-            tool: args.tool,
-            execute: args.execute,
-            args: args.args,
-        }
+impl TryFrom<ToolCheckArgs> for artifactize_core::diagnostics::ToolCheckOptions {
+    type Error = String;
+
+    fn try_from(args: ToolCheckArgs) -> Result<Self, Self::Error> {
+        Self::from_flags(
+            args.eval.or(args.selector),
+            args.artifact,
+            args.audience,
+            args.tool,
+            args.execute,
+            args.args.map(|ToolArguments(object)| object),
+        )
     }
 }
 
-/// `--args`, parsed once where it is given.
-fn json_arguments(text: &str) -> Result<serde_json::Value, String> {
-    serde_json::from_str(text).map_err(|e| format!("Invalid --args JSON: {e}"))
+/// Agent tools take named arguments; their particular schema is resolved during diagnostics.
+#[derive(Debug, Clone)]
+pub struct ToolArguments(serde_json::Map<String, serde_json::Value>);
+
+fn json_arguments(text: &str) -> Result<ToolArguments, String> {
+    match serde_json::from_str(text).map_err(|e| format!("Invalid --args JSON: {e}"))? {
+        serde_json::Value::Object(object) => Ok(ToolArguments(object)),
+        _ => Err("--args must be a JSON object.".into()),
+    }
 }

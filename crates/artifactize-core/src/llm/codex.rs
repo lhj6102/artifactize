@@ -93,14 +93,13 @@ pub struct Codex {
 impl Codex {
     pub(super) fn new(
         model: &crate::config::ModelId,
-        base: &str,
+        base: reqwest::Url,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, String> {
         Ok(Self {
             model: model.clone(),
-            base: reqwest::Url::parse(base)
-                .map_err(|_| format!("Invalid Codex endpoint: {base}"))?,
+            base,
             state: state.into(),
             repo: repo.into(),
             http: super::http_client()?,
@@ -240,13 +239,14 @@ fn picker_models(data: &[u8]) -> Result<Vec<super::models::ListedModel>, String>
 /// The account's Codex models that the Codex picker lists (`visibility: "list"`), in
 /// server order, from `GET <root>/models?client_version=…` as the Codex CLI asks.
 pub(super) async fn models(
-    base: &str,
+    base: &reqwest::Url,
     state: Option<&Path>,
     repo: Option<&Path>,
 ) -> Result<Vec<super::models::ListedModel>, String> {
     let token = auth::access_token(state, repo)
         .await
         .map_err(|error| error.message)?;
+    let base = base.as_str().trim_end_matches('/');
     let response = super::http_client()?
         .get(format!("{base}/models?client_version={CLIENT_VERSION}"))
         .bearer_auth(&token.access_token)

@@ -135,6 +135,18 @@ impl Fixture {
     }
 
     fn request_state(&self, run: &str, eval: &str, expected: &str) {
+        self.saved_until(run, |view| {
+            view.requests
+                .iter()
+                .any(|request| request.eval_id == eval && request.status().as_str() == expected)
+        });
+    }
+
+    fn saved_until(
+        &self,
+        run: &str,
+        ready: impl Fn(&artifactize_core::store::RunView) -> bool + Sync,
+    ) {
         let run: artifactize_core::types::RunId = run.parse().unwrap();
         thread::scope(|scope| {
             scope
@@ -153,10 +165,7 @@ impl Fixture {
                                             artifactize_core::store::read_run(&self.state, &run)
                                                 .await
                                                 .unwrap();
-                                        if view.requests.iter().any(|request| {
-                                            request.eval_id == eval
-                                                && request.status().as_str() == expected
-                                        }) {
+                                        if ready(&view) {
                                             return;
                                         }
                                         assert!(view.run.status().is_open(), "{view:?}");
@@ -165,7 +174,7 @@ impl Fixture {
                                 },
                             )
                             .await
-                            .expect("saved request reaches the asserted state");
+                            .expect("saved Run reaches the asserted state");
                         })
                         .await;
                     });
@@ -480,6 +489,9 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     let run_id = waiting["runId"].as_str().unwrap();
+    fixture.saved_until(run_id, |view| {
+        view.run.status() == artifactize_core::types::RunStatus::WaitingHuman
+    });
     assert_eq!(
         fixture.json(&["run", "show", run_id], 0)["status"],
         "WAITING_HUMAN"

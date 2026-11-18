@@ -245,16 +245,8 @@ impl Walk {
                 hash_file(file, input, &mut state)?;
             }
         }
-        let mut digest = Sha256::new();
-        for (path, file) in &state.files {
-            digest.update(path.as_bytes());
-            digest.update([0]);
-            digest.update(file.as_bytes());
-        }
         Ok(Files {
-            digest: hex(&digest.finalize())
-                .parse()
-                .expect("SHA-256 input digest"),
+            digest: aggregate(&state.files),
             files: state.files,
         })
     }
@@ -275,16 +267,18 @@ impl Walk {
     ) -> Result<(), String> {
         let label = if path.is_empty() { "." } else { path.as_str() };
         // Enumerate the pinned directory, not a path that could have been replaced by a link.
-        let mut entries = Vec::new();
-        for entry in platform::read_dir(directory).map_err(|e| format!("{label}: {e}"))? {
-            let entry = entry.map_err(|e| format!("{label}: {e}"))?;
-            let kind = entry.file_type().map_err(|e| format!("{label}: {e}"))?;
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "Artifact paths must be UTF-8.")?;
-            entries.push((name, kind == FileKind::Directory));
-        }
+        let mut entries = platform::read_dir(directory)
+            .map_err(|e| format!("{label}: {e}"))?
+            .map(|entry| {
+                let entry = entry.map_err(|e| format!("{label}: {e}"))?;
+                let kind = entry.file_type().map_err(|e| format!("{label}: {e}"))?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| "Artifact paths must be UTF-8.")?;
+                Ok((name, kind == FileKind::Directory))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         entries.sort();
         let gitignore =
             read_gitignore(directory).map_err(|e| format!("{}: {e}", gitignore_name(path)))?;
@@ -394,6 +388,21 @@ fn read_gitignore(directory: &File) -> Result<Option<Gitignore>, String> {
         let _ = builder.add_line(None, line);
     }
     builder.build().map(Some).map_err(|e| e.to_string())
+}
+
+/// Hash the ordered owner-relative paths and their file digests, without filesystem access.
+fn aggregate(
+    files: &BTreeMap<LogicalTarget, crate::types::Sha256Bytes>,
+) -> crate::types::Sha256Digest {
+    let mut digest = Sha256::new();
+    for (path, file) in files {
+        digest.update(path.as_bytes());
+        digest.update([0]);
+        digest.update(file.as_bytes());
+    }
+    hex(&digest.finalize())
+        .parse()
+        .expect("SHA-256 input digest")
 }
 
 fn hash_file(mut file: File, path: &LogicalTarget, state: &mut State) -> Result<(), String> {

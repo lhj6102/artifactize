@@ -13,7 +13,6 @@ use support::runs::RecordOutput;
 use std::{
     fs,
     io::Write,
-    net::{Ipv4Addr, TcpListener},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{
@@ -162,9 +161,10 @@ impl Fixture {
 
     /// Hold an openai slot with an execution of this live process (the test).
     fn hold(&self) {
+        let pid = support::os::current_pid();
         self.stimulus().execute(
             "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) SELECT 'held',NULL,eval_def_hash,'RUNNING',?1,?2,'openai',json_set(data,'$.id','held','$.key',NULL,'$.status','RUNNING','$.result',NULL,'$.error',NULL,'$.errorCode',NULL,'$.completedAt',NULL,'$.ownerPid',?1,'$.ownerStartTime',?2) FROM executions LIMIT 1",
-            rusqlite::params![std::process::id(), own_start_time() as i64],
+            rusqlite::params![pid, support::os::start_time(pid) as i64],
         )
         .unwrap();
     }
@@ -243,11 +243,6 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     assert_eq!(fixture.active.load(Ordering::SeqCst), 0);
 }
 
-/// This process's start time, as artifactize records owners.
-fn own_start_time() -> u64 {
-    support::os::start_time(std::process::id())
-}
-
 #[test]
 fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     let fixture = Fixture::new();
@@ -294,15 +289,7 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
         )
         .unwrap();
     assert_eq!(held, ("ERROR".to_owned(), "OWNER_DIED".to_owned()));
-    // Every execution names the backend whose slot it held.
-    let backends: Vec<Option<String>> = db
-        .prepare("SELECT DISTINCT backend FROM executions WHERE id!='held'")
-        .unwrap()
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .map(Result::unwrap)
-        .collect();
-    assert_eq!(backends, [Some("openai".to_owned())]);
+    assert_eq!(run["requests"][0]["options"]["backend"], "openai");
 }
 
 #[tokio::test]
@@ -311,11 +298,11 @@ async fn a_slot_waiter_finishes_by_reusing_a_forced_producers_completed_result()
     let repo = fixture.repo("solo", 1);
     // Keep the waiter's one job occupied until its Agent request has reused the cache.
     // It cannot race through claim/reuse instead of the scheduler's cache-read path.
-    let barrier = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    barrier.set_nonblocking(true).unwrap();
+    let barrier = support::os::tcp::nonblocking_loopback_listener();
     let address = barrier.local_addr().unwrap();
     // A stable key lets the waiting Run reuse the forced producer's eventual result.
-    support::declaration::write(&(repo),
+    support::declaration::write(
+        &(repo),
         repo.join("solo0/index.artf"),
         json!({"name":"solo0","evals":[
             {"id":"review","title":"Review",
@@ -323,7 +310,7 @@ async fn a_slot_waiter_finishes_by_reusing_a_forced_producers_completed_result()
                 "payload":{"instruction":"Review."}},
             {"id":"zz-hold","title":"Hold the job",
                 "profile":{"kind":"runtime","command":support::os::python_program(),
-                    "args":["-c","import socket,sys\nwith socket.create_connection((sys.argv[1],int(sys.argv[2]))) as stream:\n    assert stream.recv(1) == b'x'",address.ip().to_string(),address.port().to_string()]},
+                    "args":support::os::tcp::socket_gate_args(address, None)},
                 "payload":{"instruction":"Wait for the fixture's release."}}
         ]})
         .to_string(),

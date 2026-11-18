@@ -505,10 +505,18 @@ fn explicit_cancel_cleans_the_group_persists_cancelled_and_does_not_hold_a_write
     });
     // Acquiring a writer is the explicit probe under test, not the observation interface.
     let writer = Connection::open(fixture.state.join(artifactize_core::store::DATABASE)).unwrap();
-    writer
-        .busy_timeout(support::os::patience(Duration::from_millis(100)))
-        .unwrap();
-    writer.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
+    writer.busy_timeout(Duration::ZERO).unwrap();
+    // A competing transaction may finish on either side of child registration.
+    // Observe acquisition itself while the runtime's held child is still alive.
+    support::os::wait_until(Duration::from_secs(10), || {
+        match writer.execute_batch("BEGIN IMMEDIATE; COMMIT;") {
+            Ok(()) => true,
+            Err(error) if error.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy) => {
+                false
+            }
+            Err(error) => panic!("writer probe failed: {error}"),
+        }
+    });
     drop(writer);
     support::runs::cancel_active(&fixture.state, &fixture.repo);
     let output = wait_for(child);
@@ -578,7 +586,6 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
             "kind":"runtime",
             "command":support::os::echo_program(),
             "args":["variant", "{input}/data.txt"],
-            "timeout_ms":support::os::slow(1000),
         },
     });
     support::declaration::write(&(fixture.repo), &source, declaration.to_string()).unwrap();

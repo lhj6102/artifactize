@@ -29,6 +29,38 @@ mod process_observation;
 /// Portable fixture observation bound, not a verification lifetime or timing assertion.
 const ADMISSION_BOUND: Duration = Duration::from_secs(30);
 
+/// Join the subscription before letting an observation panic unwind into its state owner.
+pub async fn with_subscription<T>(
+    state: &Path,
+    observe: impl AsyncFnOnce(&mut artifactize_core::changes::Subscription) -> T,
+) -> T {
+    use std::{
+        future::poll_fn,
+        panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+        pin::pin,
+        task::Poll,
+    };
+    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+    let observed = {
+        let mut observation = pin!(async { observe(&mut changes).await });
+        poll_fn(
+            |cx| match catch_unwind(AssertUnwindSafe(|| observation.as_mut().poll(cx))) {
+                Ok(poll) => poll.map(Ok),
+                Err(panic) => Poll::Ready(Err(panic)),
+            },
+        )
+        .await
+    };
+    let closed = changes.close().await;
+    match observed {
+        Err(panic) => resume_unwind(panic),
+        Ok(result) => {
+            closed.expect("join the fixture subscription's shutdown");
+            result
+        }
+    }
+}
+
 /// A terminal receipt can precede the worker's final SQLite/notification cleanup. Waiting
 /// here owns no execution: the executor and supervisor's saved birth identities are observed,
 /// never the launcher, and a still-running Human/timeout result retains its real Run lifetime.
@@ -36,6 +68,18 @@ pub async fn terminal_worker_exited(
     view: &store::RunView,
     changes: &mut artifactize_core::changes::Subscription,
     cancellation: &CancellationToken,
+) -> Result<(), String> {
+    terminal_worker_exited_on(view, cancellation, async || {
+        changes.next_reconciled().await;
+    })
+    .await
+}
+
+/// Wait for another reconciliation before observing a still-live owner again.
+pub async fn terminal_worker_exited_on(
+    view: &store::RunView,
+    cancellation: &CancellationToken,
+    mut reconcile: impl AsyncFnMut(),
 ) -> Result<(), String> {
     if view.run.status().is_open() {
         return Ok(());
@@ -49,7 +93,7 @@ pub async fn terminal_worker_exited(
         for owner in owner.into_iter().chain(control.supervisor) {
             while process_observation::same_process_running(owner.pid.get(), owner.start_time) {
                 tokio::select! {
-                    _ = changes.next_reconciled() => {},
+                    _ = reconcile() => {},
                     _ = cancellation.cancelled() => return Err("Fixture observation cancelled.".into()),
                 }
             }
@@ -358,6 +402,13 @@ pub fn cancel_active(state: &Path, repo: &Path) -> artifactize_core::types::RunI
     })
 }
 
+/// Deadline of the terminal worker barrier, with a short controlled clock in its own test.
+pub async fn worker_exit_watchdog<T>(bound: Duration, wait: impl Future<Output = T>) -> T {
+    tokio::time::timeout(bound, wait)
+        .await
+        .expect("terminal fixture worker exits before the byte baseline")
+}
+
 /// A terminal Run's worker can still close its last SQLite connection and checkpoint.
 /// Byte-preservation fixtures start their baseline only after that exact owner exits.
 pub fn finished_worker(
@@ -373,8 +424,7 @@ pub fn finished_worker(
                     .enable_all()
                     .build()
                     .unwrap();
-                runtime.block_on(async {
-                    let mut changes = artifactize_core::changes::Subscription::new(state).await;
+                runtime.block_on(with_subscription(state, async |changes| {
                     let view = store::read_run(state, id).await.unwrap();
                     assert_eq!(
                         view.run.repo_path,
@@ -386,7 +436,7 @@ pub fn finished_worker(
                     let runs::Worker::Admitted { owner } = control.worker else {
                         panic!("fixture worker was admitted");
                     };
-                    let result = tokio::time::timeout(ADMISSION_BOUND, async {
+                    worker_exit_watchdog(ADMISSION_BOUND, async {
                         for owner in std::iter::once(owner).chain(control.supervisor) {
                             while running(owner.pid.get())
                                 && process_observation::same_process_running(
@@ -402,9 +452,7 @@ pub fn finished_worker(
                         }
                     })
                     .await;
-                    changes.close().await.unwrap();
-                    result.expect("terminal fixture worker exits before the byte baseline");
-                });
+                }));
             })
             .join()
             .unwrap();

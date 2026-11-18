@@ -51,8 +51,7 @@ pub async fn request_list(
     repo: Option<&Path>,
     now: time::OffsetDateTime,
 ) -> Result<Vec<Value>, String> {
-    let views =
-        crate::store::read_requests_in(state, run.map(crate::types::RunId::as_str), repo).await?;
+    let views = crate::store::read_requests_for_run(state, run.cloned(), repo).await?;
     Ok(views
         .iter()
         .map(|view| crate::query::request_output(view, now))

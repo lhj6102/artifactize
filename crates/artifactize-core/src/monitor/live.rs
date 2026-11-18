@@ -13,7 +13,7 @@ mod waiting;
 mod tests;
 
 pub use current::{Current, CurrentArtifact, CurrentEdge, CurrentEval, Plan, scan};
-pub use loader::{Input, Loader, Opened, Snapshot};
+pub use loader::{Input, Loader, OpenRun, Opened, Snapshot};
 pub use query::{DEFAULT, Query, Sort, complete, show};
 pub use starred::{star, star_artifact, starred, starred_artifacts};
 pub use waiting::{Waiting, waiting};

@@ -8,7 +8,7 @@ mod support;
 use std::{
     fs,
     io::{Read, Write},
-    net::{Ipv4Addr, TcpListener, TcpStream},
+    net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -59,8 +59,7 @@ impl Fixture {
                 )
             }
         });
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        listener.set_nonblocking(true).unwrap();
+        let listener = support::os::tcp::nonblocking_loopback_listener();
         Self {
             root,
             provider,
@@ -91,7 +90,7 @@ impl Fixture {
         let address = self.listener.local_addr().unwrap();
         json!({"id":id,"title":id,"mutex":tags,
             "profile":{"kind":"runtime","command":support::os::python_program(),
-                "args":["-c", "import socket,sys\nwith socket.create_connection((sys.argv[1],int(sys.argv[2]))) as stream:\n    stream.sendall(sys.argv[3].encode())\n    assert stream.recv(1) == b'x'",address.ip().to_string(),address.port().to_string(),id]},
+                "args":support::os::tcp::socket_gate_args(address, Some(id))},
             "payload":{"instruction":"Wait for the fixture's release."}})
     }
 
@@ -320,9 +319,11 @@ fn an_ended_run_cannot_keep_tags_even_when_the_recorded_process_is_alive() {
     finish(first);
     // Model an abandoned RUNNING lease whose Run already ended. The owner identity is
     // deliberately live, so process liveness alone cannot release this lease.
-    Connection::open(fixture.state().join("state.sqlite")).unwrap().execute(
+    let pid = support::os::current_pid();
+    let db = Connection::open(fixture.state().join("state.sqlite")).unwrap();
+    db.execute(
         "UPDATE executions SET status='RUNNING',owner_pid=?1,owner_start_time=?2,data=json_set(data,'$.status','RUNNING','$.result',NULL,'$.completedAt',NULL,'$.ownerPid',?1,'$.ownerStartTime',?2)",
-        rusqlite::params![std::process::id(), support::os::start_time(std::process::id()) as i64],
+        rusqlite::params![pid, support::os::start_time(pid) as i64],
     ).unwrap();
     let second = fixture.spawn(&repo, &["--force"]);
     release(fixture.started("hold"));

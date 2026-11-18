@@ -163,9 +163,18 @@ impl std::fmt::Display for Verdict {
 
 #[derive(Debug)]
 pub struct ReviewResult {
-    pub verdict: Verdict,
     pub exit_code: i32,
     pub output: Output,
+}
+
+impl ReviewResult {
+    pub fn verdict(&self) -> Verdict {
+        if self.exit_code == 0 {
+            Verdict::Green
+        } else {
+            Verdict::Red
+        }
+    }
 }
 
 /// Operational errors carry no review verdict.
@@ -213,15 +222,7 @@ where
             output.stderr = clean_output(&output.stderr);
             match crate::platform::process_end(&output.status) {
                 crate::platform::ProcessEnd::Exited(exit_code) => {
-                    Outcome::Completed(ReviewResult {
-                        verdict: if exit_code == 0 {
-                            Verdict::Green
-                        } else {
-                            Verdict::Red
-                        },
-                        exit_code,
-                        output,
-                    })
+                    Outcome::Completed(ReviewResult { exit_code, output })
                 }
                 crate::platform::ProcessEnd::Signaled(signal) => {
                     Outcome::OperationalError(Error::AbnormalExit { signal, output })

@@ -125,13 +125,14 @@ pub(super) async fn inspect(
         }
         "tools_check" => {
             let args: Tools = parse(arguments)?;
-            let options = artifactize_core::diagnostics::ToolCheckOptions {
-                eval: args.eval,
-                artifact: args.artifact,
-                tool: args.tool,
-                audience: args.audience.map(Into::into),
-                ..Default::default()
-            };
+            let options = artifactize_core::diagnostics::ToolCheckOptions::from_flags(
+                args.eval,
+                args.artifact,
+                args.audience.map(Into::into),
+                args.tool,
+                false,
+                None,
+            )?;
             encode(
                 artifactize_core::diagnostics::check_tools(
                     repo,

@@ -12,12 +12,30 @@ pub(super) fn parse(
     found: &Input<'_>,
     schemas: &mut super::schemas::Schemas,
 ) -> Result<ArtifactDeclaration, ConfigError> {
+    let table = toml::de::DeTable::parse(found.source)
+        .map_err(|error| ConfigError::new(found.file, error))?;
+    parse_table(found, schemas, table)
+}
+
+pub(super) fn parse_table(
+    found: &Input<'_>,
+    schemas: &mut super::schemas::Schemas,
+    table: toml::Spanned<toml::de::DeTable<'_>>,
+) -> Result<ArtifactDeclaration, ConfigError> {
     let file = found.file;
-    let source = &found.source;
+    let source = found.source;
+    let fields = table.get_ref();
+    let has_fingerprint = fields.contains_key("fingerprint");
+    let has_parts = fields.contains_key("parts");
+    let has_select = fields.contains_key("select");
+    let has_file_ignore = fields
+        .get("fingerprint")
+        .and_then(|value| value.get_ref().get("ignore"))
+        .is_some();
     let parse = |schemas: &mut super::schemas::Schemas| {
-        parse_declaration_named(source, schemas, found.name)
+        declaration::parse_declaration_table(source, schemas, found.name, table)
     };
-    if found.kind != ArtifactKind::Aspect && selects(source) {
+    if found.kind != ArtifactKind::Aspect && has_select {
         return Err(found_error(
             found,
             &["select"],
@@ -28,7 +46,7 @@ pub(super) fn parse(
         ArtifactKind::Folder => parse(schemas).map_err(|error| ConfigError::new(file, error)),
         ArtifactKind::Live => {
             let mut declaration = parse(schemas).map_err(|error| ConfigError::new(file, error))?;
-            if !declares(source, "fingerprint") {
+            if !has_fingerprint {
                 declaration.fingerprint = None;
             }
             if matches!(
@@ -64,7 +82,7 @@ pub(super) fn parse(
         ArtifactKind::Aspect => {
             let mut declaration = parse(schemas).map_err(|error| ConfigError::new(file, error))?;
             let select = declaration.select.clone().unwrap_or_default();
-            if !declares(source, "fingerprint") {
+            if !has_fingerprint {
                 // Without a fingerprint of its own, an aspect hashes what it selects.
                 declaration.fingerprint = Some(Fingerprint::Artifactsum {
                     files: select,
@@ -91,16 +109,14 @@ pub(super) fn parse(
             Ok(declaration)
         }
         ArtifactKind::Graph => {
-            let table: toml::Table =
-                toml::from_str(source).map_err(|error| ConfigError::new(file, error))?;
-            if table.contains_key("fingerprint") {
+            if has_fingerprint {
                 return Err(found_error(
                     found,
                     &["fingerprint"],
                     "The graph Artifact cannot declare fingerprint.",
                 ));
             }
-            if table.contains_key("parts") {
+            if has_parts {
                 return Err(found_error(
                     found,
                     &["parts"],
@@ -118,21 +134,14 @@ pub(super) fn parse(
                 .and_then(|target| target.to_str())
                 .expect("a walk names file Artifacts by their UTF-8 target");
             let mut declaration = parse(schemas).map_err(|error| ConfigError::new(file, error))?;
-            let value =
-                toml::de::DeTable::parse(source).map_err(|error| ConfigError::new(file, error))?;
-            if value.get_ref().get("fingerprint").is_none() {
+            if !has_fingerprint {
                 declaration.fingerprint = Some(Fingerprint::Artifactsum {
                     files: vec![target.parse().expect("validated target logical path")],
                     ignore: Default::default(),
                 });
             }
             if let Some(Fingerprint::Artifactsum { files, .. }) = &declaration.fingerprint {
-                if value
-                    .get_ref()
-                    .get("fingerprint")
-                    .and_then(|value| value.get_ref().get("ignore"))
-                    .is_some()
-                {
+                if has_file_ignore {
                     return Err(found_error(
                         found,
                         &["fingerprint", "ignore"],

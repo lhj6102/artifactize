@@ -28,7 +28,7 @@ pub fn database_released(path: &std::path::Path) -> std::io::Result<bool> {
 #[path = "os/observation.rs"]
 mod observation;
 #[path = "os/tcp.rs"]
-mod tcp;
+pub mod tcp;
 
 /// Observe closed TCP after the caller has completed its owning operation.
 /// Every application response byte is retained, including bytes before a reset.
@@ -415,6 +415,20 @@ fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::Pa
     program
 }
 
+/// A repository-local program that records its help arguments without a shell.
+pub fn help_stub(directory: &Path) -> String {
+    let binary = compiled_program(
+        directory,
+        "help-stub",
+        r#"fn main() {
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    println!("stub documentation: {}", args.join(" "));
+}
+"#,
+    );
+    format!("./{}", binary.file_name().unwrap().to_str().unwrap())
+}
+
 /// An executable-resolution fixture that reports its cwd as portable path text.
 pub fn working_directory_program(directory: &Path, name: &str) -> std::path::PathBuf {
     compiled_program(
@@ -447,6 +461,87 @@ fn main() {
 }
 "#,
     )
+}
+
+/// Observe a desktop handoff without opening a real app or changing file associations.
+/// Unix accepts a fake launcher; Windows ShellExecute accepts a fixture executable as the
+/// target and invokes it directly, making the target itself the stand-in.
+pub struct DesktopOpenProbe {
+    pub target: std::path::PathBuf,
+    record: std::path::PathBuf,
+    #[cfg(unix)]
+    bin: std::path::PathBuf,
+}
+
+impl DesktopOpenProbe {
+    pub fn new(root: &Path, folder: &Path) -> Self {
+        #[cfg(unix)]
+        let (target, bin) = {
+            let bin = root.join("bin");
+            fs::create_dir(&bin).unwrap();
+            recording_program(&bin, OPENER);
+            let target = folder.join("notes with spaces.md");
+            fs::write(&target, "notes").unwrap();
+            (target, bin)
+        };
+        #[cfg(windows)]
+        let target = {
+            let program = compiled_program(
+                root,
+                "desktop-open-probe",
+                r#"#![windows_subsystem = "windows"]
+fn main() {
+    let target = std::env::current_exe().unwrap();
+    let args = std::env::args_os().skip(1).count();
+    let pid = std::process::id();
+    let record = std::path::PathBuf::from(std::env::var_os("ARTIFACTIZE_OPENER_RECORD").unwrap());
+    let pending = record.with_extension(pid.to_string());
+    std::fs::write(&pending, format!("{pid}\n{args}\n{}\n", target.display())).unwrap();
+    std::fs::rename(pending, record).unwrap();
+}
+"#,
+            );
+            let target = folder.join(format!("notes with spaces{}", std::env::consts::EXE_SUFFIX));
+            fs::rename(program, &target).unwrap();
+            target
+        };
+        Self {
+            target,
+            record: root.join("desktop-handoff"),
+            #[cfg(unix)]
+            bin,
+        }
+    }
+
+    pub fn configure(&self, command: &mut Command) {
+        command.env(RECORD, &self.record);
+        #[cfg(unix)]
+        command.env("PATH", &self.bin);
+    }
+
+    pub fn assert_handoff(&self) {
+        #[cfg(unix)]
+        assert_eq!(
+            fs::read_to_string(&self.record).unwrap(),
+            format!("1\n{}\n", path_text(&canonical(&self.target)))
+        );
+        #[cfg(windows)]
+        {
+            // ShellExecute returns before this single-shot fixture app runs.
+            const WATCHDOG: std::time::Duration = std::time::Duration::from_secs(10);
+            wait_until(WATCHDOG, || self.record.is_file());
+            let record = fs::read_to_string(&self.record).unwrap();
+            let mut lines = record.lines();
+            let pid = lines.next().unwrap().parse().unwrap();
+            wait_until(WATCHDOG, || gone(pid));
+            assert_eq!(lines.next(), Some("0"), "no arguments beyond the target");
+            assert_eq!(
+                canonical(Path::new(lines.next().unwrap())),
+                canonical(&self.target)
+            );
+            assert_eq!(lines.next(), None);
+        }
+    }
 }
 
 /// A program in `directory` that prints `output` and exits with `code`.
@@ -765,6 +860,14 @@ impl Launch for Command {
     fn launch(&mut self) -> std::process::Child {
         self.spawn().expect("the command starts")
     }
+}
+
+/// Terminate a fixture child if it is still running and reap its exit.
+pub fn stop_child(child: &mut std::process::Child) -> std::io::Result<std::process::ExitStatus> {
+    if child.try_wait()?.is_none() {
+        child.kill()?;
+    }
+    child.wait()
 }
 
 /// Observe and reap an exited standard child without changing its caller's ownership.
@@ -1322,13 +1425,11 @@ mod fixture {
                 .unwrap();
             let program = directory.path().join(format!("fixture{EXE_SUFFIX}"));
             let rustc = fixture_compiler();
+            let core = super::worker::core_manifest_dir();
             let output = Command::new(rustc)
                 .args(["--edition", "2024", "--crate-name", "fixture", "-o"])
                 .arg(&program)
-                .arg(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../artifactize-core/tests/support/fixture.rs"
-                ))
+                .arg(core.join("tests/support/fixture.rs"))
                 .output()
                 .expect("rustc builds the test fixture");
             assert!(
@@ -1377,6 +1478,11 @@ pub fn remove_link_dir(link: &Path) {
     std::fs::remove_dir(link).unwrap();
 }
 
+/// End an isolated fixture process without unwinding its stack.
+pub fn exit_probe(code: i32) -> ! {
+    std::process::exit(code)
+}
+
 /// The current test process's native identity, for fixtures that need a live owner.
 pub fn current_pid() -> u32 {
     std::process::id()
@@ -1405,6 +1511,41 @@ pub fn terminate(pid: u32) {
     }
     #[cfg(windows)]
     interrupt(pid);
+}
+
+/// A link in a file operand's place: a file symlink, or on Windows without symlink
+/// privilege, a directory junction. Both exercise no-follow rejection at the link itself.
+pub fn file_link(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).unwrap();
+    #[cfg(windows)]
+    match std::os::windows::fs::symlink_file(target, link) {
+        Err(error) if error.raw_os_error() == Some(1314) => {
+            // Keep the destination inside the owning fixture, but never link to an ancestor.
+            let directory = tempfile::Builder::new()
+                .prefix(".link-target-")
+                .tempdir_in(target.parent().expect("fixture target has a parent"))
+                .unwrap()
+                .keep();
+            junction(&directory, link);
+        }
+        result => result.unwrap(),
+    }
+}
+
+/// Remove a test link made by `file_link` without touching the linked target.
+pub fn remove_file_link(link: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_DIRECTORY;
+
+        if link.symlink_metadata().unwrap().file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0 {
+            fs::remove_dir(link).unwrap();
+            return;
+        }
+    }
+    fs::remove_file(link).unwrap();
 }
 
 /// A symbolic link to a file, which may not exist. On Windows this needs Developer Mode or
@@ -1788,6 +1929,17 @@ impl PseudoTerminal {
             .input
             .write_all(text)
             .unwrap();
+    }
+
+    /// Close and join the reader before draining output through end of stream.
+    pub fn finish_and_drain(
+        self,
+        receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+        output: &mut Vec<u8>,
+    ) -> bool {
+        let success = self.finish();
+        output.extend(receiver.into_iter().flatten());
+        success
     }
 
     /// Wait for the program to exit, then close the terminal so that its output ends.
@@ -2794,6 +2946,11 @@ pub fn home_env() -> &'static str {
     "HOME"
 }
 
+/// The native temporary-directory variable applications normally look up.
+pub fn temp_env() -> &'static str {
+    if cfg!(windows) { "TEMP" } else { "TMPDIR" }
+}
+
 /// The variables that name the author's home for `home`: `HOME`, and on Windows `USERPROFILE`,
 /// which programs there (Python's `expanduser` among them) read instead.
 pub fn home_variables(
@@ -2938,10 +3095,11 @@ pub fn run_human_test(
 }
 
 pub fn human_environment_probe() -> String {
-    format!(
-        "import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['{}']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])",
+    let source = format!(
+        "import os, pathlib\nPATH_TEXT_FUNCTION\nprint(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(path_text(os.environ['{}'])); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(path_text(os.environ['XDG_CONFIG_HOME']))",
         home_env()
-    )
+    );
+    portable_path_probe(&source)
 }
 pub fn inherited_home_probe() -> String {
     format!(
@@ -3081,6 +3239,12 @@ pub fn portable_path_probe(source: &str) -> String {
         "def path_text(path):\n    return pathlib.Path(path).as_posix()\n",
     )
 }
+
+/// Path-text conversion for Rust fixture programs built outside the workspace.
+pub const RUST_PATH_TEXT: &str = r#"fn path_text(path: &std::path::Path) -> String {
+    let text = path.to_str().expect("fixture paths are Unicode");
+    if cfg!(windows) { text.replace('\\', "/") } else { text.to_owned() }
+}"#;
 
 /// Native executable suffix lookup used by the batch shim fixture.
 pub const PATHEXT: (&str, &str) = ("PATHEXT", ".CMD;.EXE;.BAT;.COM");
@@ -3390,22 +3554,19 @@ pub fn assert_delete_blocked(path: &Path) {
 }
 
 /// The interrupted fixture records a handshake before returning from its handler.
-/// Freezing the owner in that handler makes crash-during-cleanup deterministic:
-/// its grace-period timer cannot run before the test kills the frozen owner.
 pub fn session_interrupt_observer() -> &'static str {
     #[cfg(unix)]
     {
-        r#"def observe_session_interrupt(log, freeze):
+        r#"def observe_session_interrupt(log):
     import signal
     def interrupted(signum, frame):
-        if freeze: os.kill(int((log / 'owner').read_text()), signal.SIGSTOP)
         (log / 'interrupted').write_text(str(os.getpid()))
     signal.signal(signal.SIGTERM, interrupted)
 "#
     }
     #[cfg(windows)]
     {
-        "def observe_session_interrupt(log, freeze):\n    pass\n"
+        "def observe_session_interrupt(log):\n    pass\n"
     }
 }
 
@@ -3426,6 +3587,19 @@ pub fn session_directory_write_denial() -> &'static str {
 pub fn restore_directory_writes(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+/// A colon-bearing file and definition. Windows excludes colons from file names.
+#[cfg(unix)]
+pub fn colon_target_definition(repo: &Path) -> std::path::PathBuf {
+    let inputs = repo.join("inputs");
+    fs::create_dir(&inputs).unwrap();
+    fs::write(inputs.join("a:b"), "input").unwrap();
+    let definitions = repo.join(".artifactize");
+    fs::create_dir(&definitions).unwrap();
+    let definition = definitions.join("file.artf");
+    fs::write(&definition, "path = 'inputs/a:b'\nfingerprint = false\n").unwrap();
+    definition
 }
 
 /// A relative path that starts with a Windows drive letter, which is an ordinary name elsewhere.

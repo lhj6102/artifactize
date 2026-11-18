@@ -2,6 +2,11 @@
 
 use std::io::{self, Write};
 
+use super::FAILURE_EXIT;
+
+/// Public exit 1 reports a RED verdict, not a command or runtime failure.
+const RED_EXIT: u8 = 1;
+
 /// Public exit 3 means the wait deadline elapsed without cancelling a Run; preserve the
 /// established code so existing automation can distinguish waiting from an execution error.
 pub(super) const WAIT_TIMEOUT_EXIT: u8 = 3;
@@ -15,12 +20,12 @@ pub(super) fn verify(
     view: &artifactize_core::store::RunView,
     json_output: bool,
 ) -> Result<(), String> {
+    let observed_at = time::OffsetDateTime::now_utc();
     if json_output {
-        print_json(&artifactize_core::query::run_output(
-            view,
-            time::OffsetDateTime::now_utc(),
-        ))?;
+        print_json(&artifactize_core::query::run_output(view, observed_at))?;
     } else {
+        let (summary, saved) = artifactize_core::query::run_summary(view, observed_at);
+        let stopped = stopped_backend_lines(view);
         let mut stdout = io::stdout().lock();
         writeln!(
             stdout,
@@ -54,28 +59,9 @@ pub(super) fn verify(
         for unreadable in &view.unreadable {
             writeln!(stdout, "  {unreadable}").map_err(|error| error.to_string())?;
         }
-        for stopped in &view.run.stopped_backends {
-            let skipped = view
-                .requests
-                .iter()
-                .filter(|request| {
-                    request.error_code()
-                        == Some(artifactize_core::types::FailureCode::BackendStopped)
-                        && request.options.backend.as_ref() == Some(&stopped.backend)
-                })
-                .count();
-            writeln!(
-                stdout,
-                "Stopped backend {} after {} in {}: {skipped} review{} not started.",
-                stopped.backend,
-                stopped.error_code,
-                stopped.eval_id,
-                if skipped == 1 { "" } else { "s" }
-            )
-            .map_err(|e| e.to_string())?;
+        for line in stopped {
+            writeln!(stdout, "{line}").map_err(|e| e.to_string())?;
         }
-        let (summary, saved) =
-            artifactize_core::query::run_summary(view, time::OffsetDateTime::now_utc());
         writeln!(
             stdout,
             "Summary: executed {}, reused {}{}",
@@ -125,6 +111,32 @@ pub(super) fn verify(
         }
     }
     Ok(())
+}
+
+/// Summarize why work did not start after a backend stopped, in the saved stop order.
+fn stopped_backend_lines(view: &artifactize_core::store::RunView) -> Vec<String> {
+    view.run
+        .stopped_backends
+        .iter()
+        .map(|stopped| {
+            let skipped = view
+                .requests
+                .iter()
+                .filter(|request| {
+                    request.error_code()
+                        == Some(artifactize_core::types::FailureCode::BackendStopped)
+                        && request.options.backend.as_ref() == Some(&stopped.backend)
+                })
+                .count();
+            format!(
+                "Stopped backend {} after {} in {}: {skipped} review{} not started.",
+                stopped.backend,
+                stopped.error_code,
+                stopped.eval_id,
+                if skipped == 1 { "" } else { "s" },
+            )
+        })
+        .collect()
 }
 
 /// Where a reused result came from: its source Run, plus the producer for a remote result,
@@ -359,12 +371,12 @@ pub(super) fn graph(view: &artifactize_core::query::GraphView<'_>) -> io::Result
 pub(super) fn outcome_code(run: &artifactize_core::store::Run) -> u8 {
     match run.status() {
         artifactize_core::types::RunStatus::Green => 0,
-        artifactize_core::types::RunStatus::Red => 1,
+        artifactize_core::types::RunStatus::Red => RED_EXIT,
         artifactize_core::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
         artifactize_core::types::RunStatus::Yellow => YELLOW_EXIT,
         artifactize_core::types::RunStatus::Running
         | artifactize_core::types::RunStatus::WaitingHuman
-        | artifactize_core::types::RunStatus::Error => 2,
+        | artifactize_core::types::RunStatus::Error => FAILURE_EXIT,
     }
 }
 

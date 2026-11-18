@@ -1,6 +1,8 @@
 //! Command-line parsing, projections, and exit codes.
 
+mod account;
 mod cache;
+mod config;
 #[cfg(test)]
 mod defaults_tests;
 mod dispatch;
@@ -14,6 +16,9 @@ mod provider;
 mod remote;
 mod render;
 mod run;
+mod runtime;
+use runtime::cancellation_listener;
+pub use runtime::{Screens, run};
 mod secret;
 mod tools;
 mod workflow;
@@ -26,15 +31,9 @@ use request::RequestCommand;
 use server::ServerCommand;
 use session::SessionCommand;
 
-use std::io::{self, Write};
-use std::path::PathBuf;
-use std::process::ExitCode;
+use std::{num::NonZeroU32, path::PathBuf};
 
-use clap::{
-    Args, Parser, Subcommand,
-    error::{ContextKind, ErrorKind},
-};
-use serde_json::json;
+use clap::{Args, CommandFactory, Parser, Subcommand};
 
 use artifactize_core::{
     config::ProfileKind,
@@ -47,6 +46,9 @@ const DEFAULT_RUN_LIST_LIMIT: u32 = 50;
 
 /// Shells conventionally report an interrupt as 130; use the same status on every platform.
 const INTERRUPTED_EXIT: u8 = 130;
+
+/// Public exit 2 distinguishes CLI usage and operational failures from a RED verdict.
+const FAILURE_EXIT: u8 = 2;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -142,12 +144,8 @@ pub enum Command {
         #[command(flatten)]
         policy: PolicyArgs,
         /// Opt-in maximum concurrent evals, including fingerprint waiters; otherwise unlimited.
-        #[arg(
-            long,
-            value_name = "N",
-            value_parser = clap::value_parser!(u32).range(1..)
-        )]
-        jobs: Option<u32>,
+        #[arg(long, value_name = "N")]
+        jobs: Option<NonZeroU32>,
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
@@ -307,8 +305,8 @@ pub struct PolicyArgs {
     #[arg(long)]
     force: bool,
     /// Fingerprints to compute at once (default: the available CPUs).
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
-    fingerprint_jobs: Option<u32>,
+    #[arg(long, value_name = "N")]
+    fingerprint_jobs: Option<NonZeroU32>,
 }
 
 impl PolicyArgs {
@@ -317,7 +315,7 @@ impl PolicyArgs {
             profile: self.profile.map(ProfileSelection::Named),
             recursive: self.recursive,
             force: self.force,
-            fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs as usize),
+            fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs.get() as usize),
             ..Default::default()
         }
     }
@@ -409,32 +407,6 @@ pub enum ToolsCommand {
     Builtin(artifactize_tools::cli::Tool),
 }
 
-fn cancellation_listener() -> Result<
-    (
-        tokio_util::sync::CancellationToken,
-        tokio::task::JoinHandle<()>,
-    ),
-    String,
-> {
-    let cancellation = tokio_util::sync::CancellationToken::new();
-    let stop = artifactize_core::platform::stop_requested().map_err(|e| e.to_string())?;
-    let token = cancellation.clone();
-    let listener = tokio::spawn(async move {
-        stop.await;
-        token.cancel();
-    });
-    Ok((cancellation, listener))
-}
-
-fn failure(message: &str, json: bool) -> ExitCode {
-    if json {
-        let _ = writeln!(io::stdout().lock(), "{}", json!({ "error": message }));
-    } else {
-        let _ = writeln!(io::stderr().lock(), "{message}");
-    }
-    ExitCode::from(2)
-}
-
 /// Global options may precede or follow the subcommand, but only once in total.
 fn repeated_global(options: &[&str]) -> Option<&'static str> {
     ["--repo", "--state-dir", "--json"]
@@ -451,30 +423,13 @@ fn repeated_global(options: &[&str]) -> Option<&'static str> {
         })
 }
 
-/// What a screen runs until the reviewer quits; screens need no `Send`, the command runs on a
-/// single thread.
-pub type Screen = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>;
-
-/// The terminal screens `artifactize monitor` and `artifactize review` open. They live in
-/// `artifactize-tui`; the binary wires these entry points without a dependency from core to CLI.
-#[derive(Clone, Copy)]
-pub struct Screens {
-    /// The Monitor over the state directory, on one repository or on every one.
-    pub monitor: fn(PathBuf, Option<PathBuf>, tokio_util::sync::CancellationToken) -> Screen,
-    /// The Human review list, or one request when given.
-    pub review: fn(
-        PathBuf,
-        Option<PathBuf>,
-        artifactize_core::types::ReviewerId,
-        Option<artifactize_core::types::RequestId>,
-        tokio_util::sync::CancellationToken,
-    ) -> Screen,
+enum ParseError {
+    RepeatedGlobal { name: &'static str, json: bool },
+    Clap { error: clap::Error, json: bool },
 }
 
-pub fn run(screens: Screens) -> ExitCode {
-    let args: Vec<_> = std::env::args_os().collect();
-    let has_args = args.len() > 1;
-    let parsed = Cli::try_parse_from(&args);
+fn parse_args(args: &[std::ffi::OsString]) -> Result<(Cli, bool), ParseError> {
+    let parsed = Cli::try_parse_from(args);
     // The help tool's trailing arguments belong to the target program, even if they
     // happen to share names with artifactize's global flags.
     let tool_args = match &parsed {
@@ -494,76 +449,21 @@ pub fn run(screens: Screens) -> ExitCode {
         .take_while(|arg| *arg != "--")
         .filter_map(|arg| arg.to_str())
         .collect();
-    let mcp = matches!(
-        &parsed,
-        Ok(Cli {
-            command: Some(Command::Mcp),
-            ..
-        })
-    ) || parsed
-        .as_ref()
-        .err()
-        .and_then(|error| error.get(ContextKind::Usage))
-        .is_some_and(|usage| usage.to_string().starts_with("Usage: artifactize mcp"));
+    let mcp = match &parsed {
+        Ok(cli) => matches!(cli.command, Some(Command::Mcp)),
+        Err(_) => Cli::command()
+            .ignore_errors(true)
+            .try_get_matches_from(args)
+            .is_ok_and(|matches| matches.subcommand_name() == Some("mcp")),
+    };
     let json = options.contains(&"--json") && !mcp;
     if let Some(name) = repeated_global(&options) {
-        return failure(&format!("{name} cannot be used multiple times."), json);
+        return Err(ParseError::RepeatedGlobal { name, json });
     }
-    let cli = match parsed {
-        Ok(cli) => cli,
-        Err(error) if json && error.use_stderr() => {
-            let message = error.to_string();
-            let message = if error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand {
-                "A subcommand is required; see --help."
-            } else {
-                let usage = message.split("\n\n").next().unwrap_or_default();
-                usage.trim_start_matches("error: ")
-            };
-            return failure(message, true);
-        }
-        Err(error) => {
-            return if error.print().is_ok() && !error.use_stderr() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(2)
-            };
-        }
-    };
-    // Run on a thread whose stack is the same size everywhere: Windows gives the main thread
-    // only 1 MiB, which deep review futures outgrow in debug builds.
-    let worker = std::thread::Builder::new()
-        .name("artifactize".into())
-        .stack_size(STACK_BYTES)
-        .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .thread_stack_size(STACK_BYTES)
-                .build()
-                .map_err(|error| error.to_string())?;
-            runtime.block_on(Box::pin(async {
-                let result = dispatch::execute(cli, screens).await;
-                artifactize_core::changes::drain().await;
-                result
-            }))
-        });
-    let result = match worker {
-        Ok(worker) => worker
-            .join()
-            .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
-        Err(error) => Err(error.to_string()),
-    };
-    match result {
-        Ok(code) => match artifactize_core::platform::pause_after_help(has_args) {
-            Ok(()) => ExitCode::from(code),
-            Err(error) => failure(&error.to_string(), json),
-        },
-        Err(error) => failure(&error, json),
-    }
+    parsed
+        .map(|cli| (cli, json))
+        .map_err(|error| ParseError::Clap { error, json })
 }
-
-/// The stack of the thread commands run on, and of blocking helper threads: 8 MiB, the
-/// usual Linux and macOS main-thread size, so every system runs the same futures.
-const STACK_BYTES: usize = 8 * 1024 * 1024;
 
 /// Parse protocol milliseconds exactly once, preserving the public signed 32-bit bound.
 fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
@@ -571,7 +471,10 @@ fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
         .parse()
         .map_err(|_| "timeout must be milliseconds".to_owned())?;
     if !(1..=artifactize_core::config::MAX_TIMEOUT_MS).contains(&millis) {
-        return Err("timeoutMs must be between 1 and 2147483647".into());
+        return Err(format!(
+            "timeoutMs must be between 1 and {}",
+            artifactize_core::config::MAX_TIMEOUT_MS
+        ));
     }
     Ok(std::time::Duration::from_millis(millis))
 }

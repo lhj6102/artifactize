@@ -105,7 +105,10 @@ async fn read(
         }
     }
     let started = Instant::now();
-    let read = timeout(*grace, pipe.read(buffer)).await;
+    let read = timeout(*grace, pipe.read(buffer));
+    #[cfg(test)]
+    platform::pipe_grace_armed();
+    let read = read.await;
     *grace = grace.saturating_sub(started.elapsed());
     read.ok()
 }

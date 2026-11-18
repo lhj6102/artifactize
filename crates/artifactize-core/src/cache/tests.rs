@@ -42,7 +42,7 @@ impl Repo {
             &config,
             [id],
             self.output.path(),
-            &Parallelism::new(2),
+            &Parallelism::new(2).unwrap(),
             CancellationToken::new(),
         )
         .await?;
@@ -57,6 +57,7 @@ impl Repo {
             .files
             .unwrap()
             .into_keys()
+            .map(|path| path.to_string())
             .collect()
     }
 }
@@ -68,7 +69,10 @@ async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_id
     repo.write("content/a.txt", "abc");
     let fingerprint = repo.fingerprint("root").await.unwrap();
     let manifest = fingerprint.manifest.unwrap();
-    assert_eq!(manifest.files.unwrap()["a.txt"], "ba7816bf8f01cfea");
+    assert_eq!(
+        manifest.files.unwrap()[&"a.txt".parse().unwrap()],
+        "ba7816bf8f01cfea"
+    );
     assert_eq!(
         manifest.inputs,
         "e4f6b6f577a7a9d1317c8277472a2cf20ab370750350f87150dc6169e62a7506"
@@ -396,7 +400,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
         files: Some(
             files
                 .iter()
-                .map(|(path, digest)| (path.to_string(), digest.repeat(16).parse().unwrap()))
+                .map(|(path, digest)| (path.parse().unwrap(), digest.repeat(16).parse().unwrap()))
                 .collect(),
         ),
     };
@@ -621,7 +625,7 @@ async fn missing_dependency_keeps_its_validated_artifact_name_and_omits_eval_key
         &config,
         dependencies(&config, &config.evals[0]),
         repo.output.path(),
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await

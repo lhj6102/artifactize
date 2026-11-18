@@ -121,7 +121,12 @@ impl Runs {
                 file: target(),
                 heading: (*heading).to_owned(),
             },
-            (Some(Builtin::Help), [_, ..]) => Self::Help(super::shell(args.iter().copied())),
+            (Some(Builtin::Help), [program, subcommands @ ..]) => {
+                let program = crate::platform::program_text(program);
+                Self::Help(super::shell(
+                    std::iter::once(program.as_str()).chain(subcommands.iter().copied()),
+                ))
+            }
             _ => {
                 let program = builtin
                     .map(|builtin| {
@@ -138,7 +143,7 @@ impl Runs {
                         }
                         .to_owned()
                     })
-                    .unwrap_or_else(|| crate::platform::path_text(std::path::Path::new(command)));
+                    .unwrap_or_else(|| crate::platform::program_text(command));
                 Self::Command(super::shell(
                     std::iter::once(program.as_str()).chain(args.iter().copied()),
                 ))

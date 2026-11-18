@@ -180,17 +180,7 @@ pub fn prune(
                     | crate::types::ExecutionStatus::Error
             ) || process::is_alive(owner).map_err(|e| e.to_string())?;
         }
-        if !matches!(
-            status,
-            crate::types::RunStatus::Green
-                | crate::types::RunStatus::Red
-                | crate::types::RunStatus::Error
-                | crate::types::RunStatus::Incomplete
-        ) || finished.is_none()
-            || cutoff.is_some_and(|cutoff| finished.is_some_and(|date| date > cutoff))
-            || !requests_terminal
-            || owned
-        {
+        if !eligible_to_prune(status, finished, cutoff, requests_terminal, owned) {
             report.skipped_runs.push(id);
         } else {
             eligible.push(id);
@@ -226,6 +216,22 @@ pub fn prune(
         }
     }
     Ok(report)
+}
+
+fn eligible_to_prune(
+    status: crate::types::RunStatus,
+    finished: Option<time::OffsetDateTime>,
+    cutoff: Option<time::OffsetDateTime>,
+    requests_terminal: bool,
+    owned: bool,
+) -> bool {
+    use crate::types::RunStatus;
+    matches!(
+        status,
+        RunStatus::Green | RunStatus::Red | RunStatus::Error | RunStatus::Incomplete
+    ) && finished.is_some_and(|date| cutoff.is_none_or(|cutoff| date <= cutoff))
+        && requests_terminal
+        && !owned
 }
 
 fn segment(value: &str) -> bool {

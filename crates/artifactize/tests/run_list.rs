@@ -6,6 +6,7 @@ use std::{
     fs,
     path::Path,
     process::{Command, Output},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -56,8 +57,39 @@ fn counts(run: &Value) -> Value {
     json!(counts)
 }
 
-#[test]
-fn saved_definitions_and_paged_runs_survive_repository_removal() {
+async fn wait_for_other_verdicts(state: &Path, id: &str) {
+    use artifactize_core::types::{RequestStatus, RunStatus};
+
+    const WATCHDOG: Duration = Duration::from_secs(30);
+    let expected = [
+        ("other/pass", RequestStatus::Green),
+        ("other/fail", RequestStatus::Red),
+        ("notes/human", RequestStatus::Deferred),
+    ];
+    owned_run::subscribed(state, async |changes| {
+        tokio::time::timeout(support::os::patience(WATCHDOG), async {
+            loop {
+                let run = artifactize_core::store::read_run(state, id).await.unwrap();
+                if run.run.status() == RunStatus::WaitingHuman
+                    && expected.iter().all(|(eval, verdict)| {
+                        run.requests
+                            .iter()
+                            .any(|request| &request.eval_id == eval && request.status() == *verdict)
+                    })
+                {
+                    return;
+                }
+                changes.next_reconciled().await;
+            }
+        })
+        .await
+        .expect("Run did not save the two machine verdicts and deferred sign-off");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let root = owned_run::Root::from(support::os::tempdir());
     let first = root.path().join("first");
     let second = root.path().join("second");
@@ -175,7 +207,11 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         0,
     );
     // Submission returns while the owned Run stays WAITING_HUMAN with its sign-off open.
-    let other = query(&second, &state, &["verify", "--all"], 0);
+    // Read the submit-only response itself, not the saved-audit view from RecordOutput.
+    let accepted = support::os::run(command(&second, &state).args(["verify", "--all", "--json"]));
+    assert_eq!(accepted.status.code(), Some(0), "{accepted:?}");
+    let other: Value = serde_json::from_slice(&accepted.stdout).unwrap();
+    let other_id = other["run"].as_str().unwrap();
     let last = query(
         &first,
         &state,
@@ -191,6 +227,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
+    wait_for_other_verdicts(&state, other_id).await;
+    let other = query(&second, &state, &["run", "show", other_id], 0);
     // Fixed creation times make ordering and pagination independent of clock resolution.
     let [selected, other, last] = {
         [

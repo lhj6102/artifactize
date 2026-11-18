@@ -113,7 +113,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
         Selector::Id { request, session } => {
             match store::read_request(state, request.as_str()).await {
                 Ok(view) => view,
-                Err(_) => store::read_session_request(state, session.as_str())
+                Err(_) => store::read_request_by_session(state, session.clone())
                     .await?
                     .ok_or_else(|| {
                         format!(

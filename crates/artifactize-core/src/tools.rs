@@ -106,11 +106,11 @@ pub struct Registry<'a> {
 }
 
 impl<'a> Registry<'a> {
-    pub fn new(config: &'a RepoConfig, eval_id: &str) -> Result<Self, String> {
+    pub fn new(config: &'a RepoConfig, eval_id: &crate::types::EvalId) -> Result<Self, String> {
         let eval = config
             .evals
             .iter()
-            .find(|eval| eval.id == eval_id)
+            .find(|eval| &eval.id == eval_id)
             .ok_or_else(|| format!("Unknown eval: {eval_id}"))?;
         if !matches!(eval.declaration.profile(), Profile::Agent { .. }) {
             return Err("Agent tools require an Agent eval.".into());
@@ -121,11 +121,13 @@ impl<'a> Registry<'a> {
         )
     }
 
-    pub fn for_artifact(config: &'a RepoConfig, artifact_id: &str) -> Result<Self, String> {
-        let artifact_id: crate::config::ArtifactName = artifact_id.parse()?;
+    pub fn for_artifact(
+        config: &'a RepoConfig,
+        artifact_id: &crate::config::ArtifactName,
+    ) -> Result<Self, String> {
         Self::with_scope(
             config,
-            scope::artifact_scope(config, &[&artifact_id]).map_err(|e| e.to_string())?,
+            scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?,
         )
     }
 

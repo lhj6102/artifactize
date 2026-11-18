@@ -1,6 +1,6 @@
 //! Deterministic marker discovery through the no-follow platform file interface.
 
-use super::*;
+use super::{site::declaration_of, validation::path, *};
 use std::io::Read;
 
 struct DiscoveryEntry {

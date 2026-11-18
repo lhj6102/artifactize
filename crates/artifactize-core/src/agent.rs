@@ -102,12 +102,9 @@ pub async fn execute(
         Some(&config.root),
         "for this Agent backend",
     )
-    .and_then(|route| {
-        if route.api == llm::Api::ClaudeAgent {
-            Ok(None)
-        } else {
-            Client::at(route, model, state, &config.root).map(Some)
-        }
+    .and_then(|route| match route {
+        llm::Route::ClaudeAgent => Ok(None),
+        llm::Route::Http(route) => Client::at(route, model, state, &config.root).map(Some),
     });
     match client {
         Ok(None) => claude_agent::review(config, eval, output, recorder, cancellation, tools).await,

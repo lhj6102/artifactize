@@ -6,7 +6,7 @@ use artifactize_core::{
     project::{VerifyOptions, selection::Selection},
     store::{self, DATABASE, Execution, Request},
 };
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use serde_json::{Value, json};
 
 #[path = "../../artifactize-core/tests/support/mod.rs"]
@@ -283,40 +283,17 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
     );
 }
 
-#[tokio::test]
-async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_survive() {
-    let root = support::os::tempdir();
-    let repo = root.path().join("repo");
-    let state = root.path().join("state");
-    fs::create_dir(&repo).unwrap();
-    support::declaration::write(&(repo), repo.join("index.artf"), json!({
-        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::echo_program(),"args":["ok"]}}]
-    }).to_string()).unwrap();
-    let run = verify(&repo, &state).await;
-    let db = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    let request_text: String = db
-        .query_row(
-            "SELECT data FROM requests WHERE id=?",
-            [&run.requests[0].id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let execution_text: String = db
-        .query_row(
-            "SELECT data FROM executions WHERE id=?",
-            params![run.requests[0].execution_id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let request: Request = serde_json::from_str(&request_text).unwrap();
-    let execution: Execution = serde_json::from_str(&execution_text).unwrap();
-    assert_eq!(serde_json::to_string(&request).unwrap(), request_text);
-    assert_eq!(serde_json::to_string(&execution).unwrap(), execution_text);
-    let base = serde_json::to_value(&request).unwrap();
+#[test]
+fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_survive() {
+    // Independent schema-5 records: ordering, nulls and omissions are part of the old wire format.
+    const REQUEST: &str = r#"{"id":"legacy-request","runId":"legacy-run","evalId":"app/check","target":"app","title":"Check","profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","options":{},"executionId":"legacy-execution","provenance":null,"usage":null,"payload":{"instruction":"Review."},"references":{},"deps":[],"force":false,"fingerprint":null,"key":null,"status":"GREEN","createdAt":"2026-01-01T00:00:00.000000000Z","startedAt":null,"completedAt":"2026-01-01T00:00:01.000000000Z","cwd":"repo","runDir":null,"argv":null,"child":null,"result":{"verdict":"GREEN"},"error":null,"errorCode":null,"blockedReason":null}"#;
+    const EXECUTION: &str = r#"{"id":"legacy-execution","key":null,"fingerprint":null,"evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ownerPid":1,"ownerStartTime":1,"status":"GREEN","result":{"verdict":"GREEN"},"error":null,"errorCode":null,"profile":{"kind":"human"},"options":{},"usage":null,"provenance":{"repoPath":"repo","runId":"legacy-run","requestId":"legacy-request","evalId":"app/check","evalDefHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","completedAt":"2026-01-01T00:00:01.000000000Z"},"startedAt":"2026-01-01T00:00:00.000000000Z","completedAt":"2026-01-01T00:00:01.000000000Z"}"#;
+    let request: Request = serde_json::from_str(REQUEST).unwrap();
+    let execution: Execution = serde_json::from_str(EXECUTION).unwrap();
+    assert_eq!(serde_json::to_string(&request).unwrap(), REQUEST);
+    assert_eq!(serde_json::to_string(&execution).unwrap(), EXECUTION);
+    let base: Value = serde_json::from_str(REQUEST).unwrap();
+    let execution_base: Value = serde_json::from_str(EXECUTION).unwrap();
     for status in [
         "QUEUED",
         "BLOCKED",
@@ -359,7 +336,7 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
                 status,
                 "RUNNING" | "WAITING_HUMAN" | "GREEN" | "RED" | "ERROR"
             ) {
-                let mut execution_wire = serde_json::to_value(&execution).unwrap();
+                let mut execution_wire = execution_base.clone();
                 for key in ["status", "result", "error", "errorCode", "completedAt"] {
                     execution_wire[key] = wire[key].clone();
                 }

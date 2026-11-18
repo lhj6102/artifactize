@@ -1,9 +1,11 @@
 //! Durable admission journals. Removal requires confirmed process cleanup.
 use super::ownership::Cleanup;
 use crate::{platform, process};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
-    io,
+    ffi::OsStr,
+    fs::File,
+    io::{self, BufReader},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -126,34 +128,42 @@ struct Owner {
     leader: Option<process::ChildIdentity>,
 }
 
-pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, std::fs::File)> {
+fn read_record<T: DeserializeOwned>(directory: &File, name: &OsStr) -> io::Result<T> {
+    let file = platform::paths::open_regular_entry(directory, name)?;
+    serde_json::from_reader(BufReader::new(file)).map_err(io::Error::other)
+}
+
+pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, File)> {
     platform::create_private_dir_all(root)?;
-    let lock = platform::private_options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(root.join("lock"))?;
+    let lock = platform::open_no_follow(
+        platform::private_options()
+            .read(true)
+            .write(true)
+            .create(true),
+        &root.join("lock"),
+    )?;
     lock.lock()?;
     // The allocation lock makes an owner-less directory unambiguously abandoned.
-    for entry in std::fs::read_dir(root)? {
+    let sessions = platform::open_directory(root)?;
+    for entry in platform::read_dir(&sessions)? {
         let entry = entry?;
-        let path = entry.path();
-        // Through the platform's no-follow classification: a link is not a directory.
-        if !matches!(platform::path_kind(&path)?, platform::FileKind::Directory) {
+        if entry.file_type()? != platform::FileKind::Directory {
             continue;
         }
-        let record = match std::fs::read(path.join("owner.json")) {
-            Ok(bytes) => Some(serde_json::from_slice::<Owner>(&bytes).map_err(io::Error::other)?),
+        let name = entry.file_name();
+        let directory = platform::paths::open_named(&sessions, &name)?;
+        let path = root.join(&name);
+        let record = match read_record::<Owner>(&directory, OsStr::new("owner.json")) {
+            Ok(record) => Some(record),
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => return Err(error),
         };
         if let Some(record) = record {
             if process::is_alive(Some(record.owner))? {
-                match platform::private_options()
-                    .read(true)
-                    .write(true)
-                    .open(path.join("lease"))
-                {
+                match platform::open_no_follow(
+                    platform::private_options().read(true).write(true),
+                    &path.join("lease"),
+                ) {
                     Ok(lease) => match lease.try_lock() {
                         Err(std::fs::TryLockError::WouldBlock) => continue,
                         Err(std::fs::TryLockError::Error(error)) => return Err(error),
@@ -168,21 +178,19 @@ pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, std
             if let Some(leader) = record.leader {
                 platform::kill_saved_group(leader)?;
             }
-            for entry in std::fs::read_dir(&path)? {
+            for entry in platform::read_dir(&directory)? {
                 let entry = entry?;
-                if !entry.file_name().to_string_lossy().starts_with("process-")
-                    || entry
-                        .path()
-                        .extension()
-                        .is_none_or(|extension| extension != "json")
+                let name = entry.file_name();
+                if !name.as_encoded_bytes().starts_with(b"process-")
+                    || Path::new(&name).extension() != Some(OsStr::new("json"))
                 {
                     continue;
                 }
-                let child = serde_json::from_slice(&std::fs::read(entry.path())?)
-                    .map_err(io::Error::other)?;
+                let child = read_record(&directory, name.as_ref())?;
                 platform::kill_saved_group(child)?;
             }
         }
+        drop(directory);
         match platform::remove_abandoned_directory(&path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -207,13 +215,62 @@ pub(super) fn save_owner(
     let owner = process::child_identity(std::process::id())?;
     let bytes = serde_json::to_vec(&Owner { owner, leader }).map_err(io::Error::other)?;
     let path = directory.join("owner.next");
-    let mut file = platform::private_options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&path)?;
+    let mut file =
+        platform::open_no_follow(platform::private_options().write(true).create(true), &path)?;
+    // Clear a leftover pending record only after the no-follow open has checked it.
+    file.set_len(0)?;
     std::io::Write::write_all(&mut file, &bytes)?;
     file.sync_all()?;
     std::fs::rename(path, directory.join("owner.json"))?;
     platform::sync_dir(directory)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_os;
+    use std::fs;
+
+    #[test]
+    fn recovery_refuses_linked_owner_and_process_records() {
+        let fixture = test_os::tempdir();
+        let root = fixture.path().join("sessions");
+        let abandoned = root.join("abandoned");
+        platform::create_private_dir_all(&abandoned).unwrap();
+        let owner = process::child_identity(std::process::id()).unwrap();
+        let owner_record = abandoned.join("owner.json");
+        let outside = fixture.path().join("outside.json");
+        fs::write(
+            &outside,
+            serde_json::to_vec(&Owner {
+                owner,
+                leader: None,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        test_os::file_link(&outside, &owner_record);
+        let Err(error) = allocate(&root) else {
+            panic!("a linked owner journal was accepted");
+        };
+        assert!(artifactize_tools::files::is_link_refusal(&error), "{error}");
+        assert!(abandoned.is_dir(), "a refused record is retained");
+
+        test_os::remove_file_link(&owner_record);
+        save_owner(&abandoned, None).unwrap();
+        // No process holds this lease, so recovery proceeds even though its owner is live.
+        fs::write(abandoned.join("lease"), "").unwrap();
+        let old_identity = process::ChildIdentity {
+            start_time: owner.start_time ^ 1,
+            ..owner
+        };
+        fs::write(&outside, serde_json::to_vec(&old_identity).unwrap()).unwrap();
+        test_os::file_link(&outside, &abandoned.join("process-old.json"));
+        let Err(error) = allocate(&root) else {
+            panic!("a linked process journal was accepted");
+        };
+        assert!(artifactize_tools::files::is_link_refusal(&error), "{error}");
+        assert!(abandoned.is_dir(), "a refused record is retained");
+        assert!(outside.is_file(), "recovery leaves the link target alone");
+    }
 }

@@ -287,29 +287,25 @@ impl Browse {
             let mut worker = worker;
             // The graph is drawn from every accepted snapshot: it is built here, off the
             // window's thread, along with the tree.
-            let result = worker.load(input).map(|mut snapshot| {
-                let selected = snapshot
-                    .opened
-                    .take()
-                    .map(|(run, requests, tree, footprint)| {
-                        let graph = monitor::graph(&tree);
-                        // The same Run with the same Artifacts and edges keeps its shape.
-                        let kept = before
-                            .as_ref()
-                            .filter(|before| {
-                                before.run.run.id == run.run.id && before.graph.same_shape(&graph)
-                            })
-                            .map(|before| before.shape);
-                        (run, requests, tree, graph, kept, footprint)
-                    });
-                (snapshot, selected)
+            let result = worker.load(input).map(|snapshot| {
+                snapshot.map_open_run(|(run, requests, tree, footprint)| {
+                    let graph = monitor::graph(&tree);
+                    // The same Run with the same Artifacts and edges keeps its shape.
+                    let kept = before
+                        .as_ref()
+                        .filter(|before| {
+                            before.run.run.id == run.run.id && before.graph.same_shape(&graph)
+                        })
+                        .map(|before| before.shape);
+                    (run, requests, tree, graph, kept, footprint)
+                })
             });
             (worker, result)
         })
         .await;
         let (worker, result) = crate::failure::joined(joined)?;
         *loader = worker;
-        let (snapshot, selected) = match result {
+        let snapshot = match result {
             Ok(read) => read,
             Err(error) => {
                 self.restore_changed(changed);
@@ -335,7 +331,10 @@ impl Browse {
         }
         let changed = read.full
             || !shown.initialized
-            || selected.is_some()
+            || matches!(snapshot.open_run, live::OpenRun::Loaded(_))
+            || (matches!(snapshot.open_run, live::OpenRun::Absent)
+                && open.is_some()
+                && !matches!(shown.opened, Opened::Missing(_)))
             || shown.branches != snapshot.branches;
         if snapshot.origin.replaces(&shown.origin) {
             if let Some(id) = &open {
@@ -352,8 +351,9 @@ impl Browse {
         if let Some(waiting) = waiting {
             shown.waiting = waiting;
         }
-        match (selected, snapshot.open, open) {
-            (Some((run, requests, tree, graph, kept, footprint)), _, _) => {
+        match snapshot.open_run {
+            live::OpenRun::Loaded(run) => {
+                let (run, requests, tree, graph, kept, footprint) = *run;
                 let shape = kept.unwrap_or_else(|| shown.shapes.next());
                 shown.opened = Opened::Loaded(Arc::new(Selected {
                     run,
@@ -364,9 +364,8 @@ impl Browse {
                     _footprint: footprint,
                 }));
             }
-            (None, false, Some(id)) => shown.opened = Opened::Missing(id),
-            (None, false, None) => shown.opened = Opened::None,
-            (None, true, _) => {}
+            live::OpenRun::Absent => shown.opened = open.map_or(Opened::None, Opened::Missing),
+            live::OpenRun::Unchanged => {}
         }
         shown.initialized = true;
         shown.error = None;

@@ -96,6 +96,6 @@ async fn resolved_nested_and_global_inputs_reach_the_runtime_executor() {
     let Outcome::Completed(result) = outcome else {
         panic!("{outcome:?}")
     };
-    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.verdict(), Verdict::Green);
     assert_eq!(result.output.stdout, b"owner\nchild\ninput\n");
 }

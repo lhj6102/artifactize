@@ -23,6 +23,14 @@ use std::{
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
+struct ReleaseOnExit(support::Gate);
+
+impl Drop for ReleaseOnExit {
+    fn drop(&mut self) {
+        self.0.open();
+    }
+}
+
 /// A workspace of Artifacts, each with one Agent eval and its own fingerprint.
 struct Project {
     // Retain inputs if releasing any durable worker fails, including on assertion unwind.
@@ -341,31 +349,6 @@ fn every_backend_retries_and_reports_exhausted_failures_by_code() {
         assert_eq!(review["errorCode"], "RATE_LIMIT", "{run}");
         assert_eq!(review["usage"].as_array().unwrap().len(), 3);
     }
-}
-
-#[test]
-fn a_retry_after_past_the_deadline_fails_at_once() {
-    let mut profile = agent("openai");
-    profile["timeout_ms"] = json!(5000);
-    let project = Project::new(&[("notes", profile)]);
-    let provider = FakeProvider::start(|_| {
-        error(
-            429,
-            vec![("retry-after", "120".into())],
-            json!({"error":{"message":"Rate limit reached","code":"rate_limit_exceeded"}}),
-        )
-    });
-    let run = project.run(&provider, &["--all"], 2);
-    let review = request(&run, "notes/review");
-    assert_eq!(review["errorCode"], "RATE_LIMIT");
-    assert!(
-        review["error"]
-            .as_str()
-            .unwrap()
-            .ends_with("The provider asked to retry after 120.0 s, past the review deadline."),
-        "{review}"
-    );
-    assert_eq!(provider.requests().len(), 1);
 }
 
 #[test]
@@ -752,12 +735,6 @@ fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
             scope.spawn(|| project.verify_with_cli(candidate.path(), &provider, &["--all"], true));
         // The provider request proves the real durable worker is alive, not just admitted.
         // Release on assertion unwind as well, before the scoped caller is joined.
-        struct ReleaseOnExit(support::Gate);
-        impl Drop for ReleaseOnExit {
-            fn drop(&mut self) {
-                self.0.open();
-            }
-        }
         let release_on_exit = ReleaseOnExit(release.clone());
         admitted
             .recv_timeout(support::os::patience(Duration::from_secs(20)))
@@ -855,7 +832,7 @@ fn owned_cli_exit_probe() {
     {
         "success" => {}
         "unwind" => panic!("scripted test unwind"),
-        "exit" => std::process::exit(0),
+        "exit" => support::os::exit_probe(0),
         mode => panic!("unknown CLI exit mode: {mode}"),
     }
 }
@@ -931,7 +908,10 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         .env("ANTHROPIC_API_KEY", "fake-anthropic-key")
         .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
         .env("ARTIFACTIZE_ANTHROPIC_BASE_URL", provider.anthropic_base());
-    let child = Child::new(
+    // Drop the gate before the child owner tries to join the Run on unwind.
+    let child;
+    let _release_on_exit = ReleaseOnExit(release.clone());
+    child = Child::new(
         support::os::start(&mut command),
         &project.state,
         &project.repo,
@@ -1093,8 +1073,11 @@ async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
         panic!("an impossible retry waited instead of failing immediately");
     };
     let error = result.unwrap_err();
+    assert_eq!(error.code, artifactize_core::agent::error::Code::RateLimit);
     assert!(
-        error.message.contains("past the review deadline"),
+        error
+            .message
+            .ends_with("The provider asked to retry after 120.0 s, past the review deadline."),
         "{error:?}"
     );
     assert_eq!(captured.requests().len(), 1);

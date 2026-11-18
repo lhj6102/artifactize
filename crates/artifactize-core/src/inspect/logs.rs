@@ -1,9 +1,10 @@
 //! Bounded runtime evidence queries. Full captures stay on disk, never in a tool result.
-use crate::{store, types::RequestId};
+use crate::{platform, store, types::RequestId};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    io::{BufRead, BufReader, Cursor, Read},
+    ffi::OsStr,
+    io::{self, BufRead, BufReader, Cursor, Read},
     path::Path,
 };
 
@@ -168,15 +169,17 @@ fn excerpt(
     if let Some(directory) = source.and_then(|v| v.request.run_dir.as_ref()) {
         let path = directory.join(format!("runtime.{name}"));
         // Saved paths are not authority to read outside this state's Run output.
-        if path.exists() {
-            let root =
-                crate::platform::canonicalize(&state.join("runs")).map_err(|e| e.to_string())?;
-            let canonical = crate::platform::canonicalize(&path).map_err(|e| e.to_string())?;
-            if !crate::platform::is_within(&canonical, &root) {
-                return Err("Runtime log is outside saved Run output.".into());
-            }
-            let file = std::fs::File::open(&canonical).map_err(|e| e.to_string())?;
-            let complete = path.with_extension(format!("{name}.complete")).is_file();
+        let opened = match platform::paths::open_regular_beneath(&state.join("runs"), &path) {
+            Ok(opened) => Some(opened),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string()),
+        };
+        if let Some((directory, file)) = opened {
+            let marker = format!("runtime.{name}.complete");
+            let complete = matches!(
+                platform::entry_kind(&directory, OsStr::new(&marker)),
+                Ok(platform::FileKind::File)
+            );
             // A live producer may keep appending: query only the bytes present at open.
             let length = file.metadata().map_err(|e| e.to_string())?.len();
             let (lines, next_start) = select(BufReader::new(file.take(length)), query)?;
@@ -315,4 +318,56 @@ fn select(
         }
     }
     Ok((selected.into(), None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn runtime_evidence_requires_a_regular_completion_marker() {
+        let state = crate::test_os::tempdir();
+        let run = state.path().join("runs/run-1");
+        fs::create_dir_all(&run).unwrap();
+        let capture = run.join("runtime.stdout");
+        fs::write(&capture, "output\n").unwrap();
+        let marker = run.join("runtime.stdout.complete");
+        let view = crate::test_request::request(
+            "app/check",
+            "RUNNING",
+            serde_json::json!({"runDir": platform::path_text(&run)}),
+        );
+        let inspect = || {
+            excerpt(
+                state.path(),
+                Some(&view),
+                &view,
+                true,
+                Stream::Stdout,
+                &LogQuery::default(),
+            )
+        };
+        let evidence = || {
+            let excerpt = inspect().unwrap();
+            assert_eq!(excerpt.lines[0].text, "output");
+            excerpt.evidence
+        };
+        assert!(matches!(evidence(), Evidence::Partial));
+        let outside = state.path().join("outside");
+        fs::write(&outside, "").unwrap();
+        crate::test_os::file_link(&outside, &marker);
+        assert!(matches!(evidence(), Evidence::Partial));
+        crate::test_os::remove_file_link(&marker);
+        fs::write(marker, "").unwrap();
+        assert!(matches!(evidence(), Evidence::Complete));
+
+        fs::remove_file(&capture).unwrap();
+        assert!(matches!(inspect().unwrap().evidence, Evidence::Missing));
+        crate::test_os::file_link(&outside, &capture);
+        assert!(
+            inspect().is_err(),
+            "a linked capture must not expose its target"
+        );
+    }
 }

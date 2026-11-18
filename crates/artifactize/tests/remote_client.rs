@@ -177,9 +177,8 @@ fn login_status_overrides_and_logout_against_a_test_server() {
         ),
         json!({"configured":false})
     );
-    let closed = TcpListener::bind("127.0.0.1:0").unwrap();
-    let closed_url = format!("http://{}/", closed.local_addr().unwrap());
-    drop(closed);
+    let disconnected = support::FakeProvider::start(|_| support::Reply::Disconnect);
+    let closed_url = format!("{}/", disconnected.url);
     let elsewhere = run(
         artifactize(&state)
             .args(["remote", "status"])
@@ -327,11 +326,7 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     }
     // A terminal's Enter key sends a carriage return.
     terminal.type_text(format!("{token}\r").as_bytes());
-    assert!(terminal.finish());
-    // The output ends once the terminal has closed.
-    while let Ok(chunk) = receiver.recv_timeout(wait) {
-        output.extend(chunk);
-    }
+    assert!(terminal.finish_and_drain(receiver, &mut output));
     let output = String::from_utf8_lossy(&output);
     assert!(!output.contains(&token));
     assert!(output.contains("as alice-laptop"), "{output}");

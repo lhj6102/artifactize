@@ -398,11 +398,11 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         Ok(Some(remote)) => {
             let details = Details::Remote {
                 configured: true,
-                url: remote.url,
+                url: remote.url().clone(),
                 share: remote.share,
-                token_source: remote.token_source,
+                token_source: remote.token_source(),
             };
-            if remote.token_source == auth::remote::TokenSource::None {
+            if remote.token_source() == auth::remote::TokenSource::None {
                 report.add(
                     "remote",
                     CheckStatus::Warn,

@@ -706,19 +706,50 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     let id = run.requests[0].id.clone();
     // The Run's saved graph no longer decodes, and the workspace no longer reads as a whole:
     // a reader of either fails.
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
-    let saved: String = db
-        .query_row(
-            "SELECT data FROM run_definitions WHERE run_id=?",
-            [&run.run.id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    db.execute(
-        "UPDATE run_definitions SET data='{' WHERE run_id=?",
+    struct SavedDefinition {
+        db: rusqlite::Connection,
+        run_id: artifactize_core::types::RunId,
+        json: String,
+    }
+    impl Drop for SavedDefinition {
+        fn drop(&mut self) {
+            let restored = self.db.execute(
+                "UPDATE run_definitions SET data=? WHERE run_id=?",
+                [&self.json, self.run_id.as_str()],
+            );
+            if !matches!(restored, Ok(1)) {
+                if std::thread::panicking() {
+                    eprintln!("restoring the fixture's saved definition failed: {restored:?}");
+                } else {
+                    panic!("restoring the fixture's saved definition failed: {restored:?}");
+                }
+            }
+        }
+    }
+    let database = fixture.state.join(store::DATABASE);
+    let saved = rusqlite::Connection::open_with_flags(
+        &database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap()
+    .query_row(
+        "SELECT data FROM run_definitions WHERE run_id=?",
         [&run.run.id],
+        |row| row.get(0),
     )
     .unwrap();
+    let definition = SavedDefinition {
+        db: rusqlite::Connection::open(&database).unwrap(),
+        run_id: run.run.id.clone(),
+        json: saved,
+    };
+    definition
+        .db
+        .execute(
+            "UPDATE run_definitions SET data='{' WHERE run_id=?",
+            [&run.run.id],
+        )
+        .unwrap();
     fs::write(
         support::declaration::source_path(fixture.repo.join("other/index.artf")),
         "name = ",
@@ -752,12 +783,8 @@ async fn human_actions_read_neither_the_runs_definitions_nor_declarations_outsid
     .await
     .unwrap();
     assert_eq!(submitted.status().as_str(), "GREEN");
-    // The fixture's cleanup reads the Run whole.
-    db.execute(
-        "UPDATE run_definitions SET data=? WHERE run_id=?",
-        [&saved, run.run.id.as_str()],
-    )
-    .unwrap();
+    // Restore on either path before the Run-owning fixture cleans up.
+    drop(definition);
 }
 
 #[tokio::test]
@@ -873,7 +900,6 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
         .await
         .unwrap()
         .run;
-    let mut changes = artifactize_core::changes::Subscription::new(&fixture.state).await;
     let status = |view: &RunView, target: &str| {
         view.requests
             .iter()
@@ -881,19 +907,22 @@ async fn an_open_run_reads_running_again_once_its_last_signoff_is_submitted() {
             .unwrap()
             .status()
     };
-    let waiting = tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
-        loop {
-            let view = store::read_run(&fixture.state, id.as_str()).await.unwrap();
-            if status(&view, "review").is_human_wait()
-                && status(&view, "work") == artifactize_core::types::RequestStatus::Running
-            {
-                return view;
+    let waiting = owned_run::subscribed(&fixture.state, async |changes| {
+        tokio::time::timeout(support::os::patience(Duration::from_secs(30)), async {
+            loop {
+                let view = store::read_run(&fixture.state, id.as_str()).await.unwrap();
+                if status(&view, "review").is_human_wait()
+                    && status(&view, "work") == artifactize_core::types::RequestStatus::Running
+                {
+                    return view;
+                }
+                changes.next_state().await;
             }
-            changes.next_state().await;
-        }
+        })
+        .await
+        .expect("the sign-off waits while the machine eval runs")
     })
-    .await
-    .expect("the sign-off waits while the machine eval runs");
+    .await;
     let shown = |view: &RunView| view.run.status().as_str();
     assert_eq!(shown(&waiting), "WAITING_HUMAN");
     // It follows from the open sign-off; the saved Run stays RUNNING.

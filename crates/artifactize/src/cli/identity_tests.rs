@@ -1,5 +1,6 @@
 //! Clap parses identities at the public boundary; existing segment and mirror types stay unchanged.
 use super::*;
+use clap::error::ErrorKind;
 
 #[test]
 fn all_run_request_and_reuse_key_arguments_retain_valid_wire_strings() {

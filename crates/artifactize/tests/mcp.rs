@@ -1063,6 +1063,7 @@ async fn graph_discovery_and_conservative_impact_match_cli() {
     let mut client = Client::new(project.command(), "2026-07-28").await;
     let arguments = json!({"scope":{"kind":"artifact","artifactId":"input"},"impact":true});
     let mcp = client.inspect("config_graph", arguments).await;
+    assert_eq!(mcp["artifacts"]["consumer"]["name"], "consumer", "{mcp}");
     let cli = support::os::run(
         project
             .command()
@@ -1162,8 +1163,9 @@ async fn in_its_plugins_folder_without_roots_the_server_serves_each_calls_projec
     );
     // With it, the call serves that project, exactly as the CLI there does.
     let mut arguments = graph.clone();
-    arguments["project"] = json!(project.repo);
+    arguments["project"] = json!(support::os::path_text(&project.repo));
     let mcp = client.inspect("config_graph", arguments).await;
+    assert_eq!(mcp["artifacts"]["app"]["name"], "app", "{mcp}");
     let cli = support::os::run(project.command().args(["config", "graph", "app", "--json"]));
     assert_eq!(mcp, serde_json::from_slice::<Value>(&cli.stdout).unwrap());
     // A relative folder would resolve against the plugin's folder: refused.

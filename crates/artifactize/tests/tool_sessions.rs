@@ -782,33 +782,56 @@ fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
     });
 }
 
-// Only Unix SIGSTOP can freeze the owner from the interrupted bound tool before
-// its grace timer fires; Windows Job owner-death behavior is covered separately.
+#[cfg(unix)]
+const CLEANUP_PROBE_ROOT: &str = "ARTIFACTIZE_TEST_CLEANUP_PROBE_ROOT";
+
+// The crash leaves Unix process groups available for journal recovery; Windows
+// kills the bound group when the owning Job handle closes.
+#[cfg(unix)]
+#[tokio::test(start_paused = true)]
+async fn paused_cleanup_probe() {
+    use artifactize_core::diagnostics::{ExecutionScope, ToolCheckOptions, check_tools};
+    use std::{io::Read, path::Path};
+    use tokio_util::sync::CancellationToken;
+
+    let Some(root) = support::os::environment_variable(CLEANUP_PROBE_ROOT) else {
+        return;
+    };
+    let root = Path::new(&root);
+    // A blocking read inhibits Tokio's automatic clock advance. Keep the parent's
+    // pipe open until the crash so the bound call cannot exhaust its cleanup grace.
+    let barrier = tokio::task::spawn_blocking(|| std::io::stdin().read_exact(&mut [0]));
+    let repo = root.join("repo");
+    let state = root.join("state");
+    let options = ToolCheckOptions::Execute {
+        scope: ExecutionScope::Agent {
+            artifact: "app".parse().unwrap(),
+            args: None,
+        },
+        tool: "act".parse().unwrap(),
+    };
+    let check = check_tools(&repo, Some(&state), &options, CancellationToken::new());
+    tokio::select! {
+        result = barrier => panic!("crash barrier ended: {result:?}"),
+        result = check => panic!("cleanup finished before the crash: {result:?}"),
+    }
+}
+
+// Unix groups survive owner death; Windows Jobs kill the bound processes instead.
 #[cfg(unix)]
 #[test]
 fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable() {
-    let fixture = Fixture::new("start", "stop", "freeze-cleanup", 0);
-    let owner = fixture
-        .command(&[
-            "tools",
-            "check",
-            "--execute",
-            "--artifact",
-            "app",
-            "--audience",
-            "agent",
-            "--tool",
-            "act",
-        ])
+    let fixture = Fixture::new("start", "stop", "ignore-term", 0);
+    let mut command = support::os::test_command("paused_cleanup_probe", &[]);
+    command
+        .env(CLEANUP_PROBE_ROOT, fixture.root.path())
+        .envs(support::os::home_variables(
+            fixture.root.path().join("home"),
+        ))
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .launch();
-    let mut owner = Watcher::new(owner);
-    fs::write(
-        support::declaration::source_path(fixture.log().join("owner")),
-        owner.id().to_string(),
-    )
-    .unwrap();
+        .stderr(Stdio::inherit());
+    let mut owner = Watcher::new(command.launch());
     support::os::wait_until(Duration::from_secs(10), || {
         !fixture.records("call").is_empty()
     });

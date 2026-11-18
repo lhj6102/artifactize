@@ -183,21 +183,28 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         "--request-key",
         "watch-attempt",
     ]);
-    use std::io::BufRead;
-    let mut announced = String::new();
-    std::io::BufReader::new(watcher.stderr.take().unwrap())
-        .read_line(&mut announced)
-        .unwrap();
-    assert!(announced.contains(run.as_str()));
+    let confirm_attachment = |watcher: &mut owned_run::Watcher| {
+        use std::io::BufRead;
+        let mut announced = String::new();
+        std::io::BufReader::new(watcher.stderr.take().unwrap())
+            .read_line(&mut announced)
+            .unwrap();
+        assert!(
+            announced.starts_with(&format!("Started {run} ")),
+            "{announced}"
+        );
+    };
+    confirm_attachment(&mut watcher);
     support::os::interrupt(watcher.id());
     assert_eq!(watcher.wait_with_output().unwrap().status.code(), Some(130));
-    let closed = fixture.watcher(&[
+    let mut closed = fixture.watcher(&[
         "verify",
         "--all",
         "--wait",
         "--request-key",
         "watch-attempt",
     ]);
+    confirm_attachment(&mut closed);
     // A killed terminal cannot run any graceful cancellation path.
     support::os::kill(closed.id());
     let _ = closed.wait_with_output().unwrap();
@@ -397,21 +404,27 @@ async fn a3_v6_runs_cache_and_human_approvals_survive_an_idempotent_upgrade() {
         &started.run,
         support::os::running,
     );
-    let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
-    let state_id: String = db
+    let database = fixture.state.join(store::DATABASE);
+    let read = || {
+        rusqlite::Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+    };
+    let state_id: String = read()
         .query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
             row.get(0)
         })
         .unwrap();
     // Back to schema 8, which kept a Run's definitions in its record, then back to schema 6.
+    let db = rusqlite::Connection::open(&database).unwrap();
     db.execute_batch(support::schema::EIGHT).unwrap();
     assert!(
-        db.query_row(
-            "SELECT json_type(data,'$.definitions') FROM runs WHERE id=?",
-            [&started.run],
-            |row| row.get::<_, String>(0)
-        )
-        .unwrap()
+        read()
+            .query_row(
+                "SELECT json_type(data,'$.definitions') FROM runs WHERE id=?",
+                [&started.run],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap()
             == "object"
     );
     db.execute_batch("UPDATE runs SET data=json_remove(data,'$.control','$.requestKey'); DROP INDEX run_request_key; ALTER TABLE runs DROP COLUMN request_key; DROP INDEX active_key; ALTER TABLE executions DROP COLUMN profile_identity; CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN'); PRAGMA user_version=6;").unwrap();

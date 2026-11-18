@@ -283,17 +283,23 @@ pub fn executable() -> Result<&'static Path, String> {
         .map_err(Clone::clone)
 }
 
+/// Core's own package is self-contained; other workspace tests share this source.
+pub fn core_manifest_dir() -> PathBuf {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if env!("CARGO_PKG_NAME") == "artifactize-core" {
+        manifest.to_owned()
+    } else {
+        manifest.with_file_name("artifactize-core")
+    }
+}
+
 fn source_executable() -> Result<PathBuf, String> {
     // Cargo names the executable for its own package's integration tests. Library
     // tests build the core worker example, never an interface or an installed command.
     if let Some(path) = option_env!("CARGO_BIN_EXE_artifactize") {
         return Ok(PathBuf::from(path));
     }
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace crate parent")
-        .join("artifactize-core")
-        .join("Cargo.toml");
+    let manifest = core_manifest_dir().join("Cargo.toml");
     let built = Command::new(env!("CARGO"))
         .args([
             "build",

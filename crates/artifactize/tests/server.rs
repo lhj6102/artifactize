@@ -354,8 +354,10 @@ async fn typed_publish_fields_preserve_extensible_payload_and_wire_id_limits() {
         server.publish(&token, &app, &valid).await.0,
         StatusCode::CREATED
     );
-    let (_, found) = server.lookup(&token, &[&app]).await;
-    let saved = &found["entries"][0];
+    let records = stored(&server.state);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].0, app);
+    let saved: Value = serde_json::from_str(&records[0].2).unwrap();
     assert_eq!(saved["executionId"], valid["executionId"]);
     assert_eq!(saved["profile"], valid["profile"]);
     assert_eq!(saved["ownerExtension"], valid["ownerExtension"]);

@@ -11,7 +11,7 @@ use futures_util::FutureExt;
 use std::{fs, path::PathBuf, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -102,14 +102,15 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
     let cli = workspace.join("crates/artifactize");
     let helper = cli.join("publish.mjs");
     fs::write(&helper, include_str!("../publish.mjs")).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = support::os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
+    let path_text = support::os::RUST_PATH_TEXT;
     // OUT_DIR proves the real Cargo build script reached the owned staging tree.
     // A leaked script answers the post-cancellation probe instead of hanging the test.
     fs::write(
         workspace.join("crates/artifactize-tools/build.rs"),
         format!(
-            "use std::io::{{Read, Write}};\nfn main() {{ let mut s = std::net::TcpStream::connect(\"{address}\").unwrap(); writeln!(s, \"{{}}\\t{{}}\", std::process::id(), std::env::var(\"OUT_DIR\").unwrap()).unwrap(); let mut b = [0]; if s.read_exact(&mut b).is_ok() {{ s.write_all(b\"alive\").unwrap(); }} }}\n"
+            "use std::io::{{Read, Write}};\n{path_text}\nfn main() {{ let mut s = std::net::TcpStream::connect(\"{address}\").unwrap(); let out = std::env::var_os(\"OUT_DIR\").unwrap(); writeln!(s, \"{{}}\\t{{}}\", std::process::id(), path_text(std::path::Path::new(&out))).unwrap(); let mut b = [0]; if s.read_exact(&mut b).is_ok() {{ s.write_all(b\"alive\").unwrap(); }} }}\n"
         ),
     )
     .unwrap();
@@ -251,7 +252,7 @@ async fn publication_fixture(unwind: bool, released: &mut bool) {
 
 #[tokio::test]
 async fn publication_closed_probe_preserves_a_live_peers_buffered_reply() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = support::os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     let peer = async {
         let (mut socket, _) = listener.accept().await?;

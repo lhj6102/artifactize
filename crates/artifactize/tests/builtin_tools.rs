@@ -147,7 +147,7 @@ async fn fixed_agent_reads_sections_and_schemas_but_not_nested_artifacts() {
         json!({}),
     );
     let config = read_workspace_config(&repo).unwrap();
-    let registry = tools::Registry::for_artifact(&config, "a").unwrap();
+    let registry = tools::Registry::for_artifact(&config, &"a".parse().unwrap()).unwrap();
     let schema = |name: &str| {
         registry
             .list()
@@ -224,9 +224,7 @@ fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
     let state = root.path().join("state");
     root.track(&state, &repo);
     declaration(&repo, json!({}), json!({}));
-    if support::os::symlink_file(repo.join("a/notes.md"), repo.join("a/link.md")).is_none() {
-        return;
-    }
+    support::os::file_link(&repo.join("a/notes.md"), &repo.join("a/link.md"));
     for audience in ["agent_tools", "human_tools"] {
         let mut value = json!({"name":"a","views":{}});
         value["views"][audience] = json!({"linked":{"builtin":"read","args":["link.md"]}});
@@ -278,7 +276,7 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     value["evals"][0]["payload"]["instruction"] = json!("Review {b}.");
     support::declaration::write(&(repo), repo.join("a/index.artf"), value.to_string()).unwrap();
     let config = read_workspace_config(&repo).unwrap();
-    let registry = tools::human::Registry::new(&config, "a/review").unwrap();
+    let registry = tools::human::Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
     registry.preflight(&"reference_a".parse().unwrap()).unwrap();
     let result = registry
         .call(&"reference_a".parse().unwrap(), CancellationToken::new())
@@ -290,7 +288,7 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
             text: "reference text\n".into()
         }]
     );
-    let outside = tools::human::Registry::for_artifact(&config, "a")
+    let outside = tools::human::Registry::for_artifact(&config, &"a".parse().unwrap())
         .unwrap()
         .call(&"reference_a".parse().unwrap(), CancellationToken::new())
         .await;
@@ -397,22 +395,21 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     }
 }
 
-// Windows opens through ShellExecute, which runs no program a test can stand in for.
-#[cfg(unix)]
 #[test]
 fn request_open_hands_one_target_to_the_shared_opener() {
     let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     root.track(&state, &repo);
+    let folder = repo.join("a");
+    fs::create_dir_all(&folder).unwrap();
+    let opener = support::os::DesktopOpenProbe::new(root.path(), &folder);
+    let target = opener.target.file_name().unwrap().to_str().unwrap();
     declaration(
         &repo,
         json!({}),
-        json!({"open":{"builtin":"open","args":["{artifactPath}/notes.md"]}}),
+        json!({"open":{"builtin":"open","args":[format!("{{artifactPath}}/{target}")]}}),
     );
-    let bin = root.path().join("bin");
-    fs::create_dir(&bin).unwrap();
-    support::os::recording_program(&bin, support::os::OPENER);
     let run = parsed(
         command(&repo, &state)
             .args(["verify", "--all", "--json"])
@@ -428,22 +425,15 @@ fn request_open_hands_one_target_to_the_shared_opener() {
             .unwrap(),
         0,
     );
-    let record = root.path().join("record");
-    let output = command(&repo, &state)
-        .env("PATH", bin)
-        .env(support::os::RECORD, &record)
+    let mut request = command(&repo, &state);
+    opener.configure(&mut request);
+    let output = request
         .args(["request", "tool", id, "open_a", "--json"])
         .record_output()
         .unwrap();
     let result = parsed(output, 0);
     assert_eq!(result["content"][0]["launched"], true);
-    assert_eq!(
-        support::declaration::read_text(record).unwrap(),
-        format!(
-            "1\n{}\n",
-            support::os::path_text(&support::os::canonical(&repo.join("a/notes.md")))
-        )
-    );
+    opener.assert_handoff();
 }
 
 #[tokio::test]
@@ -463,7 +453,7 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
         }, "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}]
     }).to_string()).unwrap();
     let config = read_workspace_config(root.path()).unwrap();
-    let registry = tools::human::Registry::new(&config, "notes/review").unwrap();
+    let registry = tools::human::Registry::new(&config, &"notes/review".parse().unwrap()).unwrap();
     let read = registry
         .call(&"read_notes".parse().unwrap(), CancellationToken::new())
         .await;

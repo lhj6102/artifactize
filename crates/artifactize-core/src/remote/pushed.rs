@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::Path, time::Duration};
 
 const FILE: &str = "remote-pushed.json";
+/// A separate lock inode stays in place across atomic history updates.
+const LOCK: &str = "remote-pushed.lock";
 /// Retain every push that could still belong to the reader's local day.
 const KEPT: Duration = Duration::from_secs(48 * 60 * 60);
 /// The existing JSON wire uses epoch milliseconds; Timestamp keeps nanoseconds internally.
@@ -61,6 +63,16 @@ pub(crate) fn record(state: &Path, count: usize) -> Result<(), String> {
     record_at(state, count, Timestamp::now())
 }
 fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(), String> {
+    let lock = crate::platform::open_no_follow(
+        crate::platform::private_options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false),
+        &state.join(LOCK),
+    )
+    .map_err(|error| error.to_string())?;
+    lock.lock().map_err(|error| error.to_string())?;
     let mut pushes = kept_at(state, at);
     pushes.push(Pushed { at, count });
     let mut file = tempfile::NamedTempFile::new_in(state).map_err(|error| error.to_string())?;
@@ -73,6 +85,30 @@ fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn concurrent_pushes_keep_all_counts() {
+        let state = crate::test_os::tempdir();
+        let at = Timestamp::new(time::OffsetDateTime::UNIX_EPOCH).unwrap();
+        let counts = 1..=8;
+        let ready = std::sync::Barrier::new(counts.clone().count());
+        std::thread::scope(|scope| {
+            for count in counts.clone() {
+                let path = state.path();
+                let ready = &ready;
+                scope.spawn(move || {
+                    ready.wait();
+                    record_at(path, count, at).unwrap();
+                });
+            }
+        });
+        let mut saved: Vec<_> = kept_at(state.path(), at)
+            .into_iter()
+            .map(|entry| entry.count)
+            .collect();
+        saved.sort_unstable();
+        assert_eq!(saved, counts.collect::<Vec<_>>());
+    }
+
     #[test]
     fn keeps_each_push_with_its_count_and_drops_old_ones() {
         let state = crate::test_os::tempdir();

@@ -222,7 +222,7 @@ async fn repositories_share_one_state_database() {
     root.track(&state, &second);
     let mut saved = Vec::new();
     for explicit in [false, true] {
-        for repo in [&first, &second] {
+        for (repo, name) in [(&first, "first"), (&second, "second")] {
             let mut command = Command::new(support::os::cli());
             command
                 .env("ARTIFACTIZE_STATE_HOME", &state)
@@ -252,7 +252,8 @@ async fn repositories_share_one_state_database() {
                     .join(run["id"].as_str().unwrap())
                     .is_dir()
             );
-            saved.push(run);
+            let id = run["id"].as_str().unwrap().to_owned();
+            saved.push((id, repo.clone(), name));
         }
     }
     let db = Connection::open_with_flags(
@@ -270,18 +271,29 @@ async fn repositories_share_one_state_database() {
             .unwrap(),
         4
     );
-    fs::remove_dir_all(first).unwrap();
-    fs::remove_dir_all(second).unwrap();
-    for run in saved {
-        let read = read_run(&state, run["id"].as_str().unwrap()).await.unwrap();
+    fs::remove_dir_all(&first).unwrap();
+    fs::remove_dir_all(&second).unwrap();
+    for (id, repo, name) in saved {
+        let read = read_run(&state, &id).await.unwrap();
+        assert_eq!(read.run.id.as_str(), id);
+        assert_eq!(read.run.repo_path, repo);
+        assert_eq!(read.run.state_dir, state);
+        assert_eq!(read.run.status(), artifactize_core::types::RunStatus::Green);
+        assert!(read.run.completed_at().is_some());
+        assert!(matches!(
+            read.run.selection,
+            artifactize_core::project::selection::Selection::All
+        ));
         assert_eq!(
-            serde_json::to_value(artifactize_core::query::run_output(
-                &read,
-                time::OffsetDateTime::now_utc()
-            ))
-            .unwrap(),
-            run
+            read.run.validation.snapshot().unwrap().satisfied.value(),
+            Some(&true)
         );
+        assert!(read.requests.is_empty());
+        assert!(read.unreadable.is_empty());
+        let graph = read.run.definitions.graph().unwrap();
+        assert_eq!(graph.artifacts().count(), 1);
+        assert_eq!(graph.artifact(name).unwrap().basis.value(), Some(&true));
+        assert!(graph.evals().is_empty());
     }
     assert!(!root.path().join("unused").exists());
 }
@@ -395,9 +407,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
     fs::write(support::declaration::source_path(&protected), "unchanged").unwrap();
     for suffix in ["", "-wal", "-shm"] {
         let file = state.join(format!("{DATABASE}{suffix}"));
-        if support::os::symlink_file(&protected, &file).is_none() {
-            continue;
-        }
+        support::os::file_link(&protected, &file);
         assert!(
             Receipts::open(&state, &repo)
                 .await
@@ -415,7 +425,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
             support::declaration::read_text(&protected).unwrap(),
             "unchanged"
         );
-        support::declaration::remove_file(file).unwrap();
+        support::os::remove_file_link(&file);
     }
 }
 

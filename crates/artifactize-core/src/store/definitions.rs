@@ -107,7 +107,7 @@ impl Graph {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
@@ -186,7 +186,7 @@ pub(super) fn artifact_targets<'de, D: Deserializer<'de>>(
     }
     Ok(field)
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Views {
     #[serde(default, skip_serializing_if = "missing")]
@@ -196,13 +196,13 @@ pub struct Views {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AgentTool {
     Command(CommandTool),
     Builtin(BuiltinTool),
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandTool {
     pub description: String,
@@ -238,7 +238,7 @@ impl<'de> Deserialize<'de> for InputSchema {
         Ok(Self(schema.to_string().into_boxed_str()))
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BuiltinTool {
     pub builtin: config::Builtin,
     #[serde(default, skip_serializing_if = "missing")]
@@ -248,13 +248,13 @@ pub struct BuiltinTool {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum HumanTool {
     Command(HumanCommandTool),
     Builtin(HumanBuiltinTool),
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanCommandTool {
     pub description: String,
@@ -264,7 +264,7 @@ pub struct HumanCommandTool {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HumanBuiltinTool {
     pub builtin: config::Builtin,
     pub description: String,
@@ -273,7 +273,7 @@ pub struct HumanBuiltinTool {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fingerprint {
     #[serde(default, skip_serializing_if = "missing")]
@@ -285,7 +285,7 @@ pub struct Fingerprint {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Script {
     pub command: String,
@@ -310,7 +310,7 @@ pub struct Eval {
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]

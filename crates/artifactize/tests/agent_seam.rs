@@ -438,9 +438,7 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
         "# First\nbody\n## Child\nchild\n# Next\nlast\n",
     )
     .unwrap();
-    let stub = project.repo.join("spec/help-stub");
-    support::os::write_script(&stub, "printf 'stub documentation: %s\\n' \"$*\"\n");
-    support::os::make_executable(&stub);
+    let stub = support::os::help_stub(&project.repo.join("spec"));
     let mut declaration = support::declaration::read(
         support::declaration::read_file(project.repo.join("spec/index.artf")).unwrap(),
     )
@@ -449,7 +447,7 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
         "fixed":{"builtin":"read","args":["spec.md"]},
         "section":{"builtin":"section","args":["spec.md"]},
         "fixed_section":{"builtin":"section","args":["spec.md","First"]},
-        "help":{"builtin":"help","args":["./help-stub","sub"]}
+        "help":{"builtin":"help","args":[stub,"sub"]}
     });
     support::declaration::write(
         &(project.repo),

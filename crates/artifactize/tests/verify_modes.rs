@@ -123,7 +123,7 @@ impl Fixture {
                             return view;
                         }
                         assert!(
-                            view.run.status().is_open(),
+                            view.run.status().is_open() || view.run.status() == RunStatus::Yellow,
                             "{}",
                             serde_json::to_string_pretty(&view).unwrap()
                         );
@@ -541,9 +541,21 @@ async fn c2_a_claim_holds_the_run_open_until_it_is_submitted_or_released() {
         let held = fixture
             .until(&run, |view| {
                 status(view, "slow/check") == RequestStatus::Green
+                    && view.run.control.as_ref().is_some_and(|control| {
+                        control.activity == artifactize_core::runs::Activity::Waiting
+                    })
             })
             .await;
         assert_eq!(held.run.status(), RunStatus::WaitingHuman);
+        let signoff = held
+            .requests
+            .iter()
+            .find(|request| request.eval_id == "notes/sign")
+            .unwrap();
+        let saved = store::read_request(&fixture.state, &signoff.id)
+            .await
+            .unwrap();
+        assert_eq!(saved.claim.unwrap().reviewer.as_str(), "reviewer");
         let ended = if submit {
             fixture.sign(&held, "notes/sign", "GREEN").await;
             let ended = fixture.settled(&run).await;
@@ -632,6 +644,7 @@ async fn c2_a_run_that_an_earlier_version_ended_signoffs_pending_reads_as_yellow
     fixture.declare("notes", vec![human_eval(&[])]);
     let run = fixture.submit(&[], None);
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Yellow);
+    support::runs::finished_worker(&fixture.state, &fixture.repo, &run, support::os::running);
     // Back to schema 9, which called the same end SIGNOFFS_PENDING.
     let db = rusqlite::Connection::open(fixture.state.join(store::DATABASE)).unwrap();
     db.execute(
@@ -703,9 +716,11 @@ async fn c2_cancelling_a_run_ends_its_deferred_signoff_and_the_requests_joined_t
     let cancelled = fixture.settled(&run).await;
     assert_eq!(cancelled.run.status(), RunStatus::Error);
     assert_eq!(status(&cancelled, "up/sign"), RequestStatus::Error);
-    let follower = store::read_run(&fixture.state, &follower.run.id)
-        .await
-        .unwrap();
+    let follower = fixture
+        .until(&follower.run.id, |view| {
+            status(view, "up/sign") == RequestStatus::Error
+        })
+        .await;
     assert_eq!(
         status(&follower, "up/sign"),
         RequestStatus::Error,

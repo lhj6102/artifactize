@@ -189,10 +189,7 @@ fn a_workspace_may_contain_only_a_file_artifact_and_index_is_always_a_folder_mar
 fn symlink_targets_and_declarations_are_rejected() {
     let fixture = Fixture::new();
     fixture.write("actual", "input");
-    if support::os::symlink_file(fixture.repo.join("actual"), fixture.repo.join("linked")).is_none()
-    {
-        return;
-    }
+    support::os::file_link(&fixture.repo.join("actual"), &fixture.repo.join("linked"));
     fixture.declare("linked.artf", json!({"name":"file"}));
     let config = fixture.config();
     assert!(
@@ -210,14 +207,10 @@ fn symlink_targets_and_declarations_are_rejected() {
     );
     support::declaration::remove_file(fixture.repo.join("linked.artf")).unwrap();
     fixture.write("actual-declaration", "name = 'file'");
-    if support::os::symlink_file(
-        fixture.repo.join("actual-declaration"),
-        fixture.repo.join(".artifactize/actual.artf"),
-    )
-    .is_none()
-    {
-        return;
-    }
+    support::os::file_link(
+        &fixture.repo.join("actual-declaration"),
+        &fixture.repo.join(".artifactize/actual.artf"),
+    );
     fixture.error(
         ".artifactize/actual.artf",
         "definition must be a regular file",
@@ -284,7 +277,7 @@ async fn fingerprints(
         config,
         config.artifacts.keys(),
         output,
-        &Parallelism::new(2),
+        &Parallelism::new(2).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -319,8 +312,9 @@ async fn file_artifactsum_hashes_only_its_target_while_its_wholes_hash_excludes_
             .as_ref()
             .unwrap()
             .keys()
+            .map(artifactize_core::scope::LogicalTarget::as_str)
             .collect::<Vec<_>>(),
-        [&"input.txt".to_owned()]
+        ["input.txt"]
     );
     fixture.declare(
         "nested/input.txt.artf",
@@ -387,7 +381,7 @@ async fn builtins_expose_only_the_target_and_explicit_references() {
         }),
     );
     let config = fixture.config();
-    let registry = Registry::new(&config, "file/review").unwrap();
+    let registry = Registry::new(&config, &"file/review".parse().unwrap()).unwrap();
     let names = registry
         .list()
         .map(|tool| tool.name.as_str())
@@ -532,7 +526,9 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
         }),
     );
     let config = fixture.config();
-    let registry = artifactize_core::tools::human::Registry::for_artifact(&config, "file").unwrap();
+    let registry =
+        artifactize_core::tools::human::Registry::for_artifact(&config, &"file".parse().unwrap())
+            .unwrap();
     let command = registry.command(&"open_file".parse().unwrap()).unwrap();
     assert_eq!(command.cwd, config.root.join("files"));
     assert_eq!(
@@ -733,7 +729,7 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
         }),
     );
     let config = fixture.config();
-    let registry = Registry::for_artifact(&config, "file").unwrap();
+    let registry = Registry::for_artifact(&config, &"file".parse().unwrap()).unwrap();
     registry.preflight("inspect_file").unwrap();
     let data = call(&registry, "inspect_file", json!({}), &fixture.state).await;
     let input = support::os::path_text(&support::os::canonical(
@@ -762,7 +758,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
         }),
     );
     let config = fixture.config();
-    let registry = Registry::for_artifact(&config, "file").unwrap();
+    let registry = Registry::for_artifact(&config, &"file".parse().unwrap()).unwrap();
     support::declaration::remove_file(fixture.repo.join("input.txt")).unwrap();
     fs::create_dir(fixture.repo.join("input.txt")).unwrap();
     fixture.write("input.txt/secret", "secret");
@@ -771,7 +767,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
             &config,
             [&config.artifacts["file"].name],
             &fixture.state,
-            &Parallelism::new(1),
+            &Parallelism::new(1).unwrap(),
             CancellationToken::new()
         )
         .await
@@ -792,14 +788,10 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
     }
     fs::remove_dir_all(fixture.repo.join("input.txt")).unwrap();
     fixture.write("sibling.txt", "secret");
-    if support::os::symlink_file(
-        fixture.repo.join("sibling.txt"),
-        fixture.repo.join("input.txt"),
-    )
-    .is_none()
-    {
-        return;
-    }
+    support::os::file_link(
+        &fixture.repo.join("sibling.txt"),
+        &fixture.repo.join("input.txt"),
+    );
     assert!(
         registry
             .call(
@@ -864,7 +856,7 @@ async fn relative_tool_executables_work_on_file_artifacts() {
         }),
     );
     let config = fixture.config();
-    let registry = Registry::for_artifact(&config, "file").unwrap();
+    let registry = Registry::for_artifact(&config, &"file".parse().unwrap()).unwrap();
     registry.preflight("inspect_file").unwrap();
     let result = registry
         .call(
@@ -1055,21 +1047,17 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
         }
         if kind == "symlink" {
             fixture.write("sibling.txt", "sibling");
-            if support::os::symlink_file(
-                fixture.repo.join("sibling.txt"),
-                fixture.repo.join("input.txt"),
-            )
-            .is_none()
-            {
-                continue;
-            }
+            support::os::file_link(
+                &fixture.repo.join("sibling.txt"),
+                &fixture.repo.join("input.txt"),
+            );
         }
         assert!(
             cache::prepare(
                 &config,
                 [&config.artifacts["file"].name],
                 &fixture.state,
-                &Parallelism::new(1),
+                &Parallelism::new(1).unwrap(),
                 CancellationToken::new()
             )
             .await
@@ -1081,7 +1069,7 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
                 &config,
                 &config.evals[0],
                 &fixture.state,
-                &Parallelism::new(1),
+                &Parallelism::new(1).unwrap(),
                 CancellationToken::new()
             )
             .await
@@ -1150,23 +1138,22 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
             }),
         );
         let config = fixture.config();
-        let agent = Registry::for_artifact(&config, "file").unwrap();
-        let human =
-            artifactize_core::tools::human::Registry::for_artifact(&config, "file").unwrap();
+        let agent = Registry::for_artifact(&config, &"file".parse().unwrap()).unwrap();
+        let human = artifactize_core::tools::human::Registry::for_artifact(
+            &config,
+            &"file".parse().unwrap(),
+        )
+        .unwrap();
         support::declaration::remove_file(fixture.repo.join("input.txt")).unwrap();
         if kind == "directory" {
             fs::create_dir(fixture.repo.join("input.txt")).unwrap();
         }
         if kind == "symlink" {
             fixture.write("sibling", "secret");
-            if support::os::symlink_file(
-                fixture.repo.join("sibling"),
-                fixture.repo.join("input.txt"),
-            )
-            .is_none()
-            {
-                continue;
-            }
+            support::os::file_link(
+                &fixture.repo.join("sibling"),
+                &fixture.repo.join("input.txt"),
+            );
         }
         assert!(
             agent
@@ -1194,9 +1181,10 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
 #[test]
 fn colon_targets_are_rejected_before_scoped_tools_can_be_declared() {
     let fixture = Fixture::new();
-    fixture.write("a:b", "input");
-    fixture.declare("a:b.artf", json!({"name":"file","fingerprint":false}));
-    fixture.error("a:b.artf", "must not contain ':'");
+    let definition = support::os::colon_target_definition(&fixture.repo);
+    let error = read_workspace_config(&fixture.repo).unwrap_err();
+    assert_eq!(error.path, definition);
+    assert!(error.message.contains("must not contain ':'"), "{error}");
 }
 
 // Search-only (execute without read) directories are a Unix permission.

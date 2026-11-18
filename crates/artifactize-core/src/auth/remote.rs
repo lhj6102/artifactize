@@ -72,11 +72,33 @@ struct StoredToken {
 
 /// A resolved remote; its token is private and never serialized.
 pub struct Remote {
-    pub url: Url,
+    url: Url,
     pub share: Share,
-    pub token_source: TokenSource,
-    token: Option<String>,
+    token: Credential,
     client: OnceLock<reqwest::Client>,
+}
+
+enum Credential {
+    None,
+    Environment(String),
+    File(String),
+}
+
+impl Credential {
+    fn as_deref(&self) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::Environment(token) | Self::File(token) => Some(token),
+        }
+    }
+
+    fn source(&self) -> TokenSource {
+        match self {
+            Self::None => TokenSource::None,
+            Self::Environment(_) => TokenSource::Env,
+            Self::File(_) => TokenSource::File,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -211,16 +233,16 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
             .map_err(|_| "ARTIFACTIZE_REMOTE_SHARE must be summary or full.".to_owned())?,
         None => config.map(|config| config.share).unwrap_or_default(),
     };
-    let (token, token_source) = if let Some(token) = variable("ARTIFACTIZE_REMOTE_TOKEN") {
+    let token = if let Some(token) = variable("ARTIFACTIZE_REMOTE_TOKEN") {
         valid_token(&token).map_err(|e| format!("ARTIFACTIZE_REMOTE_TOKEN: {e}"))?;
-        (Some(token), TokenSource::Env)
+        Credential::Environment(token)
     } else {
         match Storage::inspect(Some(&state_dir), repo, Tokens::Remote)?
             .read::<StoredToken>(TOKEN)?
         {
             Some(stored) if parse_url(&stored.url)?.origin() == url.origin() => {
                 valid_token(&stored.token)?;
-                (Some(stored.token), TokenSource::File)
+                Credential::File(stored.token)
             }
             // A token is bound to the origin it was issued for.
             Some(_) => {
@@ -228,13 +250,12 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
                     "The stored remote token was issued for another store; {LOGIN}."
                 ));
             }
-            None => (None, TokenSource::None),
+            None => Credential::None,
         }
     };
     Ok(Some(Remote {
         url,
         share,
-        token_source,
         token,
         client: OnceLock::new(),
     }))
@@ -291,6 +312,14 @@ fn diagnostic(text: &str, token: Option<&str>) -> String {
 }
 
 impl Remote {
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    pub fn token_source(&self) -> TokenSource {
+        self.token.source()
+    }
+
     fn request(&self, method: Method, route: &str) -> Result<reqwest::RequestBuilder, Failure> {
         // One client per process reuses connections and the loaded trust store.
         let client = match self.client.get() {
@@ -300,8 +329,13 @@ impl Remote {
                 self.client.get_or_init(|| built)
             }
         };
-        let mut request = client.request(method, self.url.join(route).expect("relative route"));
-        if let Some(token) = &self.token {
+        let url = self.url.join(route).map_err(|_| Failure {
+            unavailable: false,
+            responded: false,
+            message: "Invalid route for the remote store.".into(),
+        })?;
+        let mut request = client.request(method, url);
+        if let Some(token) = self.token.as_deref() {
             request = request.bearer_auth(token);
         }
         Ok(request)
@@ -320,7 +354,7 @@ impl Remote {
             message,
         };
         Err(match status {
-            StatusCode::UNAUTHORIZED if self.token.is_none() => {
+            StatusCode::UNAUTHORIZED if matches!(self.token, Credential::None) => {
                 failure(false, format!("No remote token; {LOGIN}."))
             }
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => failure(
@@ -417,12 +451,12 @@ pub async fn login(
     share: Share,
     token: String,
 ) -> Result<(Remote, Principal), String> {
+    let url = parse_url(url.as_str())?;
     valid_token(&token)?;
     let remote = Remote {
         url,
         share,
-        token_source: TokenSource::File,
-        token: Some(token),
+        token: Credential::File(token),
         client: OnceLock::new(),
     };
     let principal = remote.whoami().await.map_err(|failure| failure.message)?;
@@ -431,7 +465,7 @@ pub async fn login(
         TOKEN,
         &StoredToken {
             url: remote.url.to_string(),
-            token: remote.token.clone().expect("login token"),
+            token: remote.token.as_deref().expect("login token").to_owned(),
         },
     )?;
     let state = crate::store::state_dir(state)?;
@@ -548,7 +582,7 @@ pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<
     Ok(Some(Status {
         url: remote.url.to_string(),
         share: remote.share,
-        token_source: remote.token_source,
+        token_source: remote.token_source(),
         connection,
     }))
 }

@@ -124,7 +124,7 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
     let repo = fixture();
     crate::test_declaration::write(repo.path(), repo.path().join("index.artf"), format!("{APP}\n[views.agent_tools.structure]\nbuiltin = 'graph'\nargs = []\n[views.human_tools.viewer]\nbuiltin = 'graph'\nkind = 'launch'\nargs = []\n")).unwrap();
     let config = crate::config::read_workspace_config(repo.path()).unwrap();
-    let registry = crate::tools::Registry::for_artifact(&config, "app").unwrap();
+    let registry = crate::tools::Registry::for_artifact(&config, &"app".parse().unwrap()).unwrap();
     // Change an unrelated definition after creating the registry: current, not saved state.
     crate::test_declaration::write(
         repo.path(),
@@ -147,7 +147,8 @@ async fn graph_agent_tool_prints_current_extracted_structure_from_any_artifact()
     };
     assert!(text.contains("leaf → app"));
     assert!(text.contains("graph/review: Changed graph title"));
-    let human = crate::tools::human::Registry::for_artifact(&config, "app").unwrap();
+    let human =
+        crate::tools::human::Registry::for_artifact(&config, &"app".parse().unwrap()).unwrap();
     human.preflight(&"viewer_app".parse().unwrap()).unwrap();
     assert_eq!(
         human.list().next().unwrap().kind,

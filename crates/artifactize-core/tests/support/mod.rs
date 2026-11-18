@@ -130,6 +130,8 @@ pub enum Reply {
     /// A `text/event-stream` of `event: <type>` and `data: <json>` records.
     Events(Vec<Value>),
     Json(u16, Value),
+    /// Close the connection without sending an HTTP response.
+    Disconnect,
     /// A status, extra headers and a raw body.
     Raw(u16, Vec<(&'static str, String)>, String),
 }
@@ -377,6 +379,7 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>, s
             body.to_string(),
         ),
         Reply::Raw(status, headers, body) => (status, headers, body),
+        Reply::Disconnect => return,
     };
     extra.push(("content-length", body.len().to_string()));
     extra.push(("connection", "close".to_owned()));

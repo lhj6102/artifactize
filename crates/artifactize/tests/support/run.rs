@@ -52,10 +52,7 @@ impl Watcher {
     }
     /// Stop only an unreaped caller, never signal a PID after its cached exit.
     pub fn stop(&mut self) -> io::Result<std::process::ExitStatus> {
-        if self.try_wait()?.is_none() {
-            self.kill()?;
-        }
-        self.wait()
+        crate::support::os::stop_child(self)
     }
     pub fn wait_with_output(mut self) -> io::Result<Output> {
         // Retain the caller guard while draining both pipes, including I/O-error exits.
@@ -101,10 +98,7 @@ impl DerefMut for Watcher {
 impl Drop for Watcher {
     fn drop(&mut self) {
         if let Some(child) = &mut self.0 {
-            if child.try_wait().ok().flatten().is_none() {
-                crate::support::os::kill(child.id());
-            }
-            let _ = child.wait();
+            let _ = crate::support::os::stop_child(child);
         }
     }
 }
@@ -230,10 +224,7 @@ impl Drop for RunChild {
         let cleanup = release_run(&self.state, &self.repo, run);
         // Reap the watcher even if Run cleanup fails; the field guard is also unwind-safe.
         if let Some(child) = &mut self.child.0 {
-            if child.try_wait().ok().flatten().is_none() {
-                crate::support::os::kill(child.id());
-            }
-            let _ = child.wait();
+            let _ = crate::support::os::stop_child(child);
         }
         if !std::thread::panicking() {
             cleanup.expect("fixture releases its exact Run and worker before temporary state");
@@ -482,11 +473,12 @@ mod observation_tests {
             let state = root.path().join("state");
             let repo = root.path().join("repo");
             std::fs::create_dir(&repo).unwrap();
-            let writer = artifactize_core::store::OwnedReceipts::open(&state, &repo)
+            let writer = artifactize_core::store::Receipts::open(&state, &repo)
                 .await
                 .unwrap();
-            drop(writer);
+            writer.close().await.unwrap();
             let database = state.join(artifactize_core::store::DATABASE);
+            assert!(crate::support::os::database_released(&database).unwrap());
             let result = std::panic::AssertUnwindSafe(subscribed(&state, async |_changes| {
                 assert!(
                     !crate::support::os::database_released(&database).unwrap(),

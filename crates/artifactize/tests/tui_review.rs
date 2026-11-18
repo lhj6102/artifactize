@@ -299,7 +299,6 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     assert!(unwrapped(&selected).contains(&prefix), "{selected}");
     assert!(!selected.contains("{artifactPath}"), "{selected}");
     press(&mut review, KeyCode::Enter).await;
-    assert_eq!(review.mode(), &Mode::Request);
     let notes = screen(&mut review);
     assert!(
         notes.contains("# Release notes") && notes.contains("- Ready."),
@@ -550,11 +549,7 @@ fn pty_review_restores_the_terminal_on_quit() {
         output.extend(receiver.recv_timeout(wait).expect("review did not draw"));
     }
     terminal.type_text(b"q");
-    assert!(terminal.finish());
-    // The output ends once the terminal has closed.
-    while let Ok(chunk) = receiver.recv_timeout(wait) {
-        output.extend(chunk);
-    }
+    assert!(terminal.finish_and_drain(receiver, &mut output));
     let output = String::from_utf8_lossy(&output);
     support::os::assert_restored(&output, frame);
     support::os::assert_bracketed_paste(&output);

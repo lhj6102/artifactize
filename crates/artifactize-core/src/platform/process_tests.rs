@@ -145,6 +145,18 @@ async fn many_short_runs_keep_their_exit_and_output_while_their_evidence_waits_f
     .await;
 }
 
+// Tests run on a current-thread runtime. A thread without an observer does nothing.
+thread_local! {
+    static PIPE_GRACE_ARMED: std::cell::RefCell<Option<oneshot::Sender<()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn pipe_grace_armed() {
+    if let Some(send) = PIPE_GRACE_ARMED.take() {
+        let _ = send.send(());
+    }
+}
+
 /// The process a `leave` step starts outside the run's group, known by the process id the step
 /// records in this file. The test owns it from before the run starts: it is killed when the
 /// test ends, whatever failed in between, and gone before the test's temporary directory is.
@@ -187,28 +199,20 @@ async fn output_a_process_outside_the_group_still_holds_is_named_and_the_exit_is
         env: BTreeMap::from([("PATH".into(), crate::test_os::path())]),
         timeout: WATCHDOG,
     };
-    let (started, pid) = oneshot::channel();
+    let (armed, grace_armed) = oneshot::channel();
+    PIPE_GRACE_ARMED.set(Some(armed));
     let cancellation = CancellationToken::new();
-    let work = process::run(command, cancellation.clone(), move |child| async move {
-        started.send(child.pid.get()).unwrap();
-        Ok(())
-    });
+    let work = process::run(command, cancellation.clone(), |_| async { Ok(()) });
     crate::test_os::scoped(cancellation, work, async move |running| {
-        let leader = busy(pid).await.unwrap();
         busy(async {
-            while !crate::test_os::gone(leader) {
-                tokio::task::yield_now().await;
+            tokio::select! {
+                armed = grace_armed => armed.unwrap(),
+                outcome = &mut *running => panic!("run ended before the pipe grace: {outcome:?}"),
             }
         })
         .await;
-        // Time passes only here, a second at a time, until the run gives up on its pipes.
-        let result = busy(async {
-            while !running.is_finished() {
-                tokio::time::advance(Duration::from_secs(1)).await;
-            }
-            running.await.unwrap()
-        })
-        .await;
+        tokio::time::advance(process::OUTPUT_CLOSE_GRACE).await;
+        let result = running.await.unwrap();
         use crate::tools::human::log::Stream::{Stderr, Stdout};
         let Err(process::Error::Capture(error)) = result else {
             panic!("the held pipes must fail the capture: {result:?}");

@@ -68,6 +68,13 @@ async fn fail(receipts: &OwnedReceipts, requests: &[store::Request], id: &str) {
     receipts.save_request(&request).await.unwrap();
 }
 
+fn loaded(snapshot: Snapshot) -> Opened {
+    let OpenRun::Loaded(run) = snapshot.open_run else {
+        panic!("snapshot should have loaded the Run");
+    };
+    *run
+}
+
 #[tokio::test]
 async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alone() {
     let root = crate::test_os::tempdir();
@@ -105,7 +112,7 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     let broken = loader
         .load(input(&state, &repo, Some("run-broken"), Changed::Nothing))
         .unwrap();
-    assert!(broken.opened.is_none());
+    assert!(matches!(broken.open_run, OpenRun::Absent));
     assert!(
         broken
             .unreadable
@@ -116,16 +123,16 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     );
     let mut open = input(&state, &repo, Some("run-large"), Changed::Nothing);
     open.force = true;
-    let (opened, requests, _, _) = loader.load(open).unwrap().opened.unwrap();
+    let (opened, requests, _, _) = loaded(loader.load(open).unwrap());
     assert_eq!(requests.len(), LARGE);
 
     // A write to the open Run reads its changed request again, never its definitions.
     fail(&receipts, &large_requests, "run-large-a7").await;
-    let (reread, requests, _, _) = loader
-        .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
-        .unwrap()
-        .opened
-        .unwrap();
+    let (reread, requests, _, _) = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-large"), hinted("run-large")))
+            .unwrap(),
+    );
     assert!(reread.run.definitions.shared(&opened.run.definitions));
     let failed = requests
         .iter()
@@ -139,7 +146,7 @@ async fn a_large_run_is_listed_unread_opened_once_and_followed_by_its_hints_alon
     let other = loader
         .load(input(&state, &repo, Some("run-large"), hinted("run-small")))
         .unwrap();
-    assert!(other.open && other.opened.is_none());
+    assert!(matches!(other.open_run, OpenRun::Unchanged));
     let statements = loader.reader.traced_statements();
     assert!(
         statements.iter().any(|sql| sql.contains("run-small")),
@@ -201,28 +208,28 @@ async fn a_run_no_longer_shown_gives_its_memory_back_once_its_last_share_goes() 
     let mut loader = Loader::default();
     let released = crate::platform::releases;
     let before = released();
-    let shown = loader
-        .load(input(&state, &repo, Some("run-first"), Changed::Nothing))
-        .unwrap()
-        .opened
-        .unwrap();
+    let shown = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-first"), Changed::Nothing))
+            .unwrap(),
+    );
 
     // Reading the shown Run again keeps it: nothing goes back.
     fail(&receipts, &first_requests, "run-first-a0").await;
-    let reread = loader
-        .load(input(&state, &repo, Some("run-first"), hinted("run-first")))
-        .unwrap()
-        .opened
-        .unwrap();
+    let reread = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-first"), hinted("run-first")))
+            .unwrap(),
+    );
     drop(reread);
     assert_eq!(released(), before);
 
     // Another Run shown: the loader lets the first go, but its view still holds it.
-    let next = loader
-        .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
-        .unwrap()
-        .opened
-        .unwrap();
+    let next = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
+            .unwrap(),
+    );
     assert_eq!(released(), before);
     drop(shown);
     assert_eq!(
@@ -237,7 +244,7 @@ async fn a_run_no_longer_shown_gives_its_memory_back_once_its_last_share_goes() 
     let closed = loader
         .load(input(&state, &repo, None, Changed::Nothing))
         .unwrap();
-    assert!(closed.opened.is_none());
+    assert!(matches!(closed.open_run, OpenRun::Absent));
     assert_eq!(
         released(),
         before + 2,
@@ -245,11 +252,11 @@ async fn a_run_no_longer_shown_gives_its_memory_back_once_its_last_share_goes() 
     );
 
     // Shown again, it is read in full, definitions included.
-    let reopened = loader
-        .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
-        .unwrap()
-        .opened
-        .unwrap();
+    let reopened = loaded(
+        loader
+            .load(input(&state, &repo, Some("run-second"), Changed::Nothing))
+            .unwrap(),
+    );
     assert_eq!(reopened.1.len(), 3);
     assert_eq!(released(), before + 2);
 }

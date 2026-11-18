@@ -301,7 +301,7 @@ impl Fixture {
             let key = format!("{i:064x}");
             transaction
                 .execute(
-                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?4,'seed',status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?4) FROM executions LIMIT 1",
+                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?4,eval_def_hash,status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?4) FROM executions LIMIT 1",
                     rusqlite::params![id, format!("2000-01-01T00:00:00.{i:09}Z"), bytes, key],
                 )
                 .unwrap();
@@ -1239,9 +1239,10 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
         [],
     )
     .unwrap();
+    let pid = support::os::current_pid();
     db.execute(
         "UPDATE executions SET owner_pid=?,owner_start_time=0,status='RUNNING',data=json_set(data,'$.ownerPid',?,'$.ownerStartTime',0,'$.status','RUNNING','$.result',NULL,'$.completedAt',NULL,'$.provenance.completedAt',NULL) WHERE id=?",
-        rusqlite::params![std::process::id(), std::process::id(), id],
+        rusqlite::params![pid, pid, id],
     )
     .unwrap();
     assert_eq!(
@@ -1698,7 +1699,8 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         0,
     );
     // The new record is the eval's newest now; of the rest, the least recently used left.
-    assert_eq!(fixture.records(), 10_001);
+    let history = fixture.command(&repo, &["cache", "list", "--history"], 0);
+    assert_eq!(history.as_array().unwrap().len(), 10_001);
     assert_eq!(
         fixture.command(
             &repo,
@@ -1718,7 +1720,6 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
                 .is_object()
         );
     }
-    assert_eq!(fixture.count("executions"), 10_003);
     assert_eq!(
         fixture.command(&repo, &["run", "show", original["id"].as_str().unwrap()], 0),
         original

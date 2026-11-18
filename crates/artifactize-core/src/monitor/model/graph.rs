@@ -141,26 +141,28 @@ pub fn graph(tree: &[Node]) -> Graph {
             Kind::Eval(_) => None,
         })
         .collect();
-    let mut lights: BTreeMap<ArtifactName, Light> = BTreeMap::new();
-    for (name, node, completion) in &artifacts {
-        // The first light of its evals in precedence order.
-        let evals = node
-            .children
-            .iter()
-            .filter_map(|eval| match &eval.kind {
-                Kind::Eval(view) => Some(eval_light(eval, view)),
-                Kind::Artifact { .. } => None,
-            })
-            .min()
-            .unwrap_or(Light::Green);
-        // Every eval done, yet graph.rs still holds them on their own gates, or a part
-        // is not done: not complete.
-        let light = match evals {
-            Light::Green => Light::from(*completion),
-            light => light,
-        };
-        lights.insert(name.clone(), light);
-    }
+    let lights: BTreeMap<_, _> = artifacts
+        .iter()
+        .map(|(name, node, completion)| {
+            // The first light of its evals in precedence order.
+            let evals = node
+                .children
+                .iter()
+                .filter_map(|eval| match &eval.kind {
+                    Kind::Eval(view) => Some(eval_light(eval, view)),
+                    Kind::Artifact { .. } => None,
+                })
+                .min()
+                .unwrap_or(Light::Green);
+            // Every eval done, yet graph.rs still holds them on their own gates, or a part
+            // is not done: not complete.
+            let light = match evals {
+                Light::Green => Light::from(*completion),
+                light => light,
+            };
+            (name.clone(), light)
+        })
+        .collect();
     let position: BTreeMap<&ArtifactName, usize> = artifacts
         .iter()
         .enumerate()
