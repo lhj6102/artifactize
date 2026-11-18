@@ -298,7 +298,7 @@ a node with its own evals.</div>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">11</span><div><b>Comment dragged</b><span>Its text floats with the faint shadow; an Artifact without a comment under the pointer is the drop target. Released there, the comment moves from one file to the other in one edit. A press on a comment followed by moving starts its drag; a press and release without moving is a click, which opens its field.</span></div></li>
+  <li><span class="n">11</span><div><b>Comment dragged</b><span>Its text alone follows the pointer, lifted by a faint shadow on its letters, with no card under it; an Artifact without a comment under the pointer is the drop target. Released there, the comment moves from one file to the other in one edit. A press on a comment followed by moving starts its drag; a press and release without moving is a click, which opens its field.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -320,7 +320,7 @@ a node with its own evals.</div>
   <dt id="D-CUR-8">D-CUR-8</dt>
   <dd>The comment field opens in place of the comment, or where it would be, under its node (D-NODE-6): a <code>--surface-input</code> field with a 1px <code>--line-input</code> border and the <code>--focus</code> ring, as wide as the comment, growing with its lines to show the comment whole, its text <code>--text-small</code> in <code>--ink</code> with its line breaks; the graph around it stays as it was. It has no buttons and no hint: Enter writes, Shift+Enter breaks the line, Esc or a click outside puts back, and Enter on an empty field removes the comment; however it closes (written, removed or put back), focus returns to where the field was opened from: the Definition's Comment button, or the graph when a click on the comment opened it; a refusal is said as the Main area's notice (D-CUR-7) and the field stays with its text. <span class="avoid">a dialog, a popover or a Detail section for a comment; Save and Cancel buttons on the field; a line that explains its keys; a field that covers other nodes' names without growing the space under its own.</span></dd>
   <dt id="D-CUR-9">D-CUR-9</dt>
-  <dd>A comment is dragged by its text: while dragged it floats as a dragged node does (D-CUR-4), its text on <code>--surface-raised</code> with the faint shadow and no outline; the Artifact a release would give it, one without a comment, is the drop target of D-CUR-5, and nothing else shows. Released elsewhere it returns under its node. <span class="avoid">a comment that keeps a card after the drag; a drop target on an Artifact that has a comment; a comment left on the canvas where it was dropped.</span></dd>
+  <dd>A comment is dragged by its text: while dragged its text alone follows the pointer, lifted by a faint <code>--scrim</code> shadow on its letters, in the same ink, width and lines as under its node, with no surface, outline, rounded corners or box around it; the Artifact a release would give it, one without a comment, is the drop target of D-CUR-5, and nothing else shows. Released elsewhere it returns under its node. <span class="avoid">a dragged comment on a card, a raised surface or a rounded box; a drop target on an Artifact that has a comment; a comment left on the canvas where it was dropped.</span></dd>
 </dl>
 </main>
 </div>
