@@ -1,5 +1,5 @@
 path = "crates/artifactize-desktop/"
-parts = ["desktop-backend", "desktop-design", "desktop-e2e-rules", "desktop-ui", "desktop-ux-features", "desktop-ux-graph"]
+parts = ["desktop-backend", "desktop-design", "desktop-e2e-rules", "desktop-ui", "desktop-ux-features"]
 
 [views.human_tools]
 app = { description = "Build the desktop app from this tree and open its branch with your own artifactize state, removing the build output when the window closes.", kind = "launch", command = "node", args = ["harness/app.mts"] }
@@ -81,7 +81,7 @@ payload.instruction = "Run eslint over the TypeScript automation harness directl
 title = "The desktop automation harness and integration tests follow the test rules"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 payload.instruction = """
-Read the TEST- rules and M-TAUTOLOGICAL-TESTS of {rules-code-style}. Review the automation harness owned by {desktop} (harness/) and its Rust integration tests (tests/). The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as {rules-code-style} states them. Submit GREEN when none is clearly violated. Otherwise submit RED with up to 20 violations, each with the TEST- rule id (item), a path:line (where), and one sentence on what to change.
+Read the TEST- rules and M-TAUTOLOGICAL-TESTS of {rules-code-style}. Review the automation harness owned by {desktop} (harness/) and its Rust integration tests (tests/). The tests of {desktop-ui} and {desktop-e2e} have their own reviews: do not duplicate them. Check M-TAUTOLOGICAL-TESTS and every TEST- rule as {rules-code-style} states them. Report only what a rule item states: each finding names the item (or journey) it violates and points to a concrete place where that item's text is not met. An improvement the item's text does not require (a further split, a stronger type, an extra assertion, a scenario on an OS the item does not name) is not a finding. Submit GREEN when none is clearly violated. Otherwise submit RED with up to 20 violations, each with the TEST- rule id (item), a path:line (where), and one sentence on what to change.
 """
 pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
 fail_schema = { type = "object", properties = { violations = { type = "array", minItems = 1, maxItems = 20, items = { type = "object", properties = { item = { type = "string", minLength = 1 }, where = { type = "string", minLength = 1 }, change = { type = "string", minLength = 1 } }, required = ["item", "where", "change"], additionalProperties = false } } }, required = ["violations"], additionalProperties = false }

@@ -12,14 +12,13 @@ title = "The desktop definitions judge each Artifact against what specifies it"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 1800000 }
 payload.instruction = """
 Read every definition in {graph-desktop}; use the graph tool for relations that leave the
-folder. The desktop app is specified by the journeys (desktop-ux-features), the screens
-and edges (desktop-ux-graph) and the design (desktop-design with its pages), and realized
-by desktop-ui, desktop-backend, desktop-e2e and desktop. Check that:
+folder. The desktop app is specified by the journeys (desktop-ux-features) and the design
+(desktop-design with its pages), and realized by desktop-ui, desktop-backend, desktop-e2e and desktop. Check that:
 - Direction: an eval judges a realization against what specifies it, never a
   specification against its realization. The journeys are judged against nothing in this
-  folder, the screens and edges against the journeys, the design against both.
+  folder, the design against the journeys.
 - Coverage: each realization has an eval naming what specifies it: the UI names the
-  design; the end-to-end tests name the journeys and the edges; the eval that runs the
+  design; the end-to-end tests name the journeys; the eval that runs the
   suite names the UI, the backend and the tests it runs.
 - Sign-offs: Human evals sit only on specifications.
 - Composition: every definition in this folder is desktop or one of its parts, their

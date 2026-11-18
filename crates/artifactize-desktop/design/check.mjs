@@ -3,14 +3,10 @@
 //                                          data-screen main, numbered callouts with notes,
 //                                          unique D- rules each with a dd, no colour literal
 //   node check.mjs whole [DIR]             the whole design: dark only, index.html well formed
-//                                          (each screen page has its own page check and
-//                                          ux-graph-doc.html its doc check), D- ids unique across pages, every screen
-//                                          page linked from index.html,
-//                                          every token and every icon named on index.html,
+//                                          (each screen page has its own page check), D- ids
+//                                          unique across pages, every screen page linked from
+//                                          index.html, every token and every icon named on it,
 //                                          no colour literal outside tokens.css
-//   node check.mjs doc DOC.html UX-GRAPH.md  the graph doc is well formed as a page is, cites
-//                                          every edge of UX-GRAPH.md exactly once, no other
-//                                          edge, and only known screens
 //   node check.mjs tokens A.css B.css      the two sheets declare the same tokens with the
 //                                          same values, neither with a second scheme
 // Exit 0 when everything holds; 1 with one line per problem; 2 on a usage error.
@@ -19,7 +15,6 @@ import { join, dirname, basename } from "node:path";
 
 const SHEETS = ["tokens.css", "mock.css", "design.css"];
 const SCREENS = ["monitor", "current", "detail", "review", "settings", "overlays"];
-const TERMINALS = ["start", "any", "quit"];
 const COLOUR = /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(|(?<![-\w])(?:white|black)(?![-\w])/gi;
 const read = (path) => readFileSync(path, "utf8");
 const problems = [];
@@ -76,9 +71,8 @@ function whole(dir) {
   const seen = new Map();
   const screens = new Map();
   for (const file of pages) {
-    // A screen page's own form is its page check's and the graph doc's its doc check's; the
-    // whole reads them for their ids only.
-    const own = SCREENS.includes(basename(file, ".html")) || file === "ux-graph-doc.html";
+    // A screen page's own form is its page check's; the whole reads it for its ids only.
+    const own = SCREENS.includes(basename(file, ".html"));
     const { screen, ids } = page(join(dir, file), own ? { report: () => {} } : {});
     if (screen) screens.set(screen, file);
     for (const id of ids) {
@@ -93,38 +87,16 @@ function whole(dir) {
     if (screens.get(screen) !== file) report(`whole: ${file} does not declare data-screen="${screen}"`);
     if (!index.includes(`href="${file}"`)) report(`index.html: does not link ${file}`);
   }
-  for (const screen of screens.keys()) if (!SCREENS.includes(screen) && screen !== "ux-graph-doc" && screen !== "index") report(`whole: unknown screen ${screen}`);
+  for (const screen of screens.keys()) if (!SCREENS.includes(screen) && screen !== "index") report(`whole: unknown screen ${screen}`);
   for (const name of sheet.root.keys()) if (!index.includes(`--${name}</code>`)) report(`index.html: does not name the token --${name}`);
   // The icon set lives in mock.css as --i-NAME drawings; index.html's sheet names every one.
   const icons = [...read(join(dir, "mock.css")).matchAll(/^\s*--i-([a-z-]+)\s*:/gm)].map((match) => match[1]);
   if (icons.length === 0) report("mock.css: declares no icon (--i-NAME)");
   for (const icon of icons) if (!index.includes(`<code>i-${icon}</code>`)) report(`index.html: does not name the icon i-${icon}`);
-  if (!index.includes('href="ux-graph-doc.html"')) report("index.html: does not link ux-graph-doc.html");
 }
 
 function report(text) {
   fail(text);
-}
-
-function doc(docPath, graphPath) {
-  page(docPath);
-  const html = read(docPath);
-  const edges = [...read(graphPath).matchAll(/^\|\s*(E-[A-Z0-9-]+)\s*\|/gm)].map((match) => match[1]);
-  if (edges.length === 0) fail(`${graphPath}: has no edge ids`);
-  const rows = [...html.matchAll(/<tr id="(E-[A-Z0-9-]+)" data-edge="(E-[A-Z0-9-]+)" data-from="([a-z -]+)" data-to="([a-z -]+)">/g)];
-  const cited = rows.map((match) => match[2]);
-  for (const [, id, edge, from, to] of rows) {
-    if (id !== edge) fail(`${edge}: row id ${id} differs`);
-    for (const screen of [...from.split(/\s+/), ...to.split(/\s+/)]) if (!SCREENS.includes(screen) && !TERMINALS.includes(screen)) fail(`${edge}: unknown screen ${screen}`);
-  }
-  for (const edge of edges) {
-    const times = cited.filter((id) => id === edge).length;
-    if (times !== 1) fail(`${edge}: cited ${times} times in the doc`);
-  }
-  for (const edge of cited) if (!edges.includes(edge)) fail(`${edge}: not an edge of ${basename(graphPath)}`);
-  for (const screen of [...SCREENS, ...TERMINALS]) {
-    if (!html.includes(`data-screen="${screen}"`) && !html.includes(`data-terminal="${screen}"`)) fail(`doc: does not describe ${screen}`);
-  }
 }
 
 function same(aPath, bPath) {
@@ -142,10 +114,9 @@ function same(aPath, bPath) {
 const [mode, ...rest] = process.argv.slice(2);
 if (mode === "page" && rest[0]) page(rest[0]);
 else if (mode === "whole") whole(rest[0] ?? dirname(new URL(import.meta.url).pathname));
-else if (mode === "doc" && rest[0] && rest[1]) doc(rest[0], rest[1]);
 else if (mode === "tokens" && rest[0] && rest[1]) same(rest[0], rest[1]);
 else {
-  console.error("usage: check.mjs page PAGE.html | whole [DIR] | doc DOC.html UX-GRAPH.md | tokens A.css B.css");
+  console.error("usage: check.mjs page PAGE.html | whole [DIR] | tokens A.css B.css");
   process.exit(2);
 }
 for (const problem of problems) console.log(problem);
