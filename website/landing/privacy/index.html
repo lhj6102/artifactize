@@ -34,7 +34,7 @@
       <span>Artifactize</span>
     </a>
     <nav class="top-nav" aria-label="Main">
-      <a class="hide-sm" href="/#story">The story</a>
+      <a class="hide-sm" href="/#story">How it works</a>
       <a class="hide-sm" href="/#start">Install</a>
       <a class="nav-docs" href="/docs/">Docs</a>
       <a class="nav-icon" href="https://github.com/lhj6102/artifactize" aria-label="Artifactize on GitHub">
@@ -62,7 +62,7 @@
   <h2>Local data</h2>
   <p>Run history, review results, reuse caches, captured output and saved Agent conversations stay in your local state directory unless you choose to share them. Codex sign-in tokens, the API keys and custom providers you save with <code>artifactize login</code>, <code>artifactize provider</code> or the desktop Settings, and shared review server credentials are stored there too, readable by your account only.</p>
   <ul>
-    <li>Windows unpackaged installs: <code>%LOCALAPPDATA%\artifactize</code> by default. The Microsoft Store package uses Windows' default AppData virtualization and keeps new state in a package-private location, not shared Runs, sign-in or cache with other install methods. Windows may still read or modify existing unvirtualized AppData files; see the <a href="/docs/features/others/state.html#state">Windows overlay caveat</a>.</li>
+    <li>Windows unpackaged installs: <code>%LOCALAPPDATA%\artifactize</code> by default. The Microsoft Store package uses Windows' default AppData virtualization and keeps new state in a package-private location, not shared Runs, sign-in or cache with other install methods. Windows may still read or modify existing unvirtualized AppData files; see <a href="/docs/reference/cli-and-mcp.html#state-cache-and-limits">state, cache and limits</a>.</li>
     <li>Linux and macOS: <code>$XDG_STATE_HOME/artifactize</code> when set, otherwise <code>~/.local/state/artifactize</code>.</li>
   </ul>
   <p><code>--state-dir</code> or <code>ARTIFACTIZE_STATE_HOME</code> overrides the location; <code>XDG_STATE_HOME</code> also takes precedence on Windows. OpenAI, Anthropic and Gemini API keys set in <code>OPENAI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code> and <code>GEMINI_API_KEY</code> are read from the environment and not saved. An optional <code>ARTIFACTIZE_CODEX_AUTH_FILE</code> points to an existing sign-in file that Artifactize only reads.</p>
@@ -75,10 +75,10 @@
   <p>Runtime and Human evals do not call LLM providers. User-declared commands and tools are trusted local programs, not a network sandbox: they can communicate externally, and Human tools can open web URLs.</p>
 
   <h2>Your shared review server</h2>
-  <p>If you run or connect to <code>artifactize server</code>, verdicts and review metadata are shared with that server, operated by you or your team. The default summary includes owner fields, fingerprints, declared profiles, reviewer/producer names and timestamps; choosing full sharing also sends captured output. See <a href="/docs/features/team/index.html">shared review server details</a>.</p>
+  <p>If you run or connect to <code>artifactize server</code>, verdicts and review metadata are shared with that server, operated by you or your team. The default summary includes owner fields, fingerprints, declared profiles, reviewer/producer names and timestamps; choosing full sharing also sends captured output. See <a href="/docs/guides/team-and-ci.html">shared review server details</a>.</p>
 
   <h2>Removing data</h2>
-  <p>Delete the state directory printed by <code>artifactize doctor</code> to remove local history, caches, stored sign-ins and saved keys. API keys in your environment and an external Codex auth file are separate. Removing an unpackaged install keeps its state directory. Uninstalling the Store package removes its package-private state. Project files, exported files, files written by user-configured commands outside the package-private view, existing unvirtualized AppData files and state explicitly placed outside AppData are not removed with the package; delete those separately if no longer needed. See <a href="/docs/getting-started/update.html#cleanup-and-uninstall">cleanup and uninstall</a>.</p>
+  <p>Delete the state directory printed by <code>artifactize doctor</code> to remove local history, caches, stored sign-ins and saved keys. API keys in your environment and an external Codex auth file are separate. Removing an unpackaged install keeps its state directory. Uninstalling the Store package removes its package-private state. Project files, exported files, files written by user-configured commands outside the package-private view, existing unvirtualized AppData files and state explicitly placed outside AppData are not removed with the package; delete those separately if no longer needed. See <a href="/docs/getting-started/install.html#3-update-and-uninstall">update and uninstall</a>.</p>
 
   <h2>Changes</h2>
   <p>This policy is <a href="https://github.com/lhj6102/artifactize/blob/main/website/landing/privacy/index.html">versioned in the public repository</a>. Changes will update the effective date above.</p>
@@ -94,7 +94,7 @@
     <nav class="foot-nav" aria-label="Footer">
       <a href="/docs/">Docs</a>
       <a href="/docs/getting-started/guide.html">Quick start</a>
-      <a href="/docs/features/others/reference.html">Reference</a>
+      <a href="/docs/reference/declarations.html">Reference</a>
       <a href="/privacy/" aria-current="page">Privacy</a>
       <a href="https://github.com/lhj6102/artifactize">GitHub</a>
     </nav>

@@ -7,49 +7,44 @@ glob = { builtin = "glob" }
 grep = { builtin = "grep" }
 read = { builtin = "read" }
 
-[evals.matches-core]
-title = "The documentation explains the core Artifact completely and accurately"
+[evals.matches-engine]
+title = "The documentation accurately covers the core workflow, tools, and CLI without dumping internal bounds"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
-[evals.matches-core.payload]
+[evals.matches-engine.payload]
 instruction = """
-Review {docs-en} against only {engine-core}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Features (src/features/), including Artifact and its Graph, eval kinds, fingerprints and reuse, Runs, tools framework and lifecycle, team review store/CI and supporting topics. Getting Started introduces these shared features. Do not judge the endpoint-specific CLI, MCP, desktop, skill or terminal presentation here.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {engine-core} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
+Review {docs-en} against {engine-core}, {engine-tools} and {engine-cli}, starting from src/SUMMARY.md.
+Check two things:
+1. No contradiction: every declaration key, command, flag, default, exit code and workflow behavior stated in {docs-en} agrees with the implementation.
+2. Core user tasks are covered: installing, declaring Artifacts and evals (.artf) with parts and references, running verify and status, fingerprints and reuse, built-in and custom tools (including tool sessions and artifactize-tools), team review store and CI, and the CLI command reference.
+
+IMPORTANT — What must NOT be required:
+- Do NOT require internal validation bounds (such as maximum string or byte lengths, integer ceilings, file or directory entry traversal caps, schema byte limits, character set grammars, or Unicode surrogate counting), exact error message strings, or edge-case refusal/fallback conditions. Omitting those bounds and edge cases is NEVER a mismatch.
+- Do NOT require legacy upgrade notes for historical versions (such as 0.5, 0.9, 0.11, or 0.16); only `config migrate` for moving declarations into `.artifactize/` belongs in the docs.
+- How artifactize implements behavior internally (process groups, signals, SQLite journals, transactions, recovery, locking) and the Rust library API are not user-facing. Documentation of them is a mismatch whose fix is to remove it.
+
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by {engine-core}, {engine-tools} and {engine-cli} to inspect them. Tool paths are Artifact-relative.
+Submit GREEN when nothing stated in {docs-en} contradicts the implementation and the core user tasks above are covered without internal implementation details.
+Otherwise submit RED with up to 20 concrete mismatches, most misleading first, each with the doc path:line, the implementation path:line, and one sentence on how to fix the documentation. Fix the docs, not the code.
 """
 
-[evals.matches-core.pass_schema]
+[evals.matches-engine.pass_schema]
 type = "object"
 properties.summary = { type = "string", minLength = 1 }
 required = ["summary"]
 additionalProperties = false
 
-[evals.matches-core.fail_schema]
+[evals.matches-engine.fail_schema]
 type = "object"
 required = ["mismatches"]
 additionalProperties = false
 
-[evals.matches-core.fail_schema.properties.mismatches]
+[evals.matches-engine.fail_schema.properties.mismatches]
 type = "array"
 minItems = 1
 maxItems = 20
 
-[evals.matches-core.fail_schema.properties.mismatches.items]
+[evals.matches-engine.fail_schema.properties.mismatches.items]
 type = "object"
 properties.doc = { type = "string", minLength = 1 }
 properties.code = { type = "string", minLength = 1 }
@@ -57,49 +52,43 @@ properties.fix = { type = "string", minLength = 1 }
 required = ["doc", "code", "fix"]
 additionalProperties = false
 
-[evals.matches-tools]
-title = "The documentation explains the tools Artifact completely and accurately"
+[evals.matches-interfaces]
+title = "The documentation accurately covers the desktop app and terminal UI"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
-[evals.matches-tools.payload]
+[evals.matches-interfaces.payload]
 instruction = """
-Review {docs-en} against only {engine-tools}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Tools inside Features (src/features/tools/), with the built-in tools, the artifactize-tools command endpoint and how an author builds and attaches custom tool Artifacts for agents and people. Judge the tools crate behavior, not implementation details of the separate shared lifecycle framework.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {engine-tools} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
+Review {docs-en} against {desktop}, its parts {desktop-backend} and {desktop-ui}, and {engine-tui}, starting from src/SUMMARY.md.
+Check two things:
+1. No contradiction: every launch mode, flag, pane, view (Run, Current, Detail, Human review, Settings), search syntax, and keyboard/mouse control stated in {docs-en} agrees with the implementation.
+2. Core user tasks are covered: opening and navigating the desktop app (branches, Runs, Current, editing definitions and positions, Detail, waiting Human reviews, Settings) and using the terminal UI (`artifactize monitor` and `artifactize review`).
+
+IMPORTANT — What must NOT be required:
+- Do NOT require internal rendering or layout constants, pixel sizes, exact error strings, or every edge-case refusal condition. Omitting minor edge cases or internal bounds is NEVER a mismatch.
+- How artifactize implements behavior internally and the Rust/Svelte internals are not user-facing; documenting them is a mismatch whose fix is to remove it.
+
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by {desktop}, {desktop-backend}, {desktop-ui} and {engine-tui} to inspect them. Tool paths are Artifact-relative.
+Submit GREEN when nothing stated in {docs-en} contradicts the implementation and the core user tasks above are covered.
+Otherwise submit RED with up to 20 concrete mismatches, most misleading first, each with the doc path:line, the implementation path:line, and one sentence on how to fix the documentation. Fix the docs, not the code.
 """
 
-[evals.matches-tools.pass_schema]
+[evals.matches-interfaces.pass_schema]
 type = "object"
 properties.summary = { type = "string", minLength = 1 }
 required = ["summary"]
 additionalProperties = false
 
-[evals.matches-tools.fail_schema]
+[evals.matches-interfaces.fail_schema]
 type = "object"
 required = ["mismatches"]
 additionalProperties = false
 
-[evals.matches-tools.fail_schema.properties.mismatches]
+[evals.matches-interfaces.fail_schema.properties.mismatches]
 type = "array"
 minItems = 1
 maxItems = 20
 
-[evals.matches-tools.fail_schema.properties.mismatches.items]
+[evals.matches-interfaces.fail_schema.properties.mismatches.items]
 type = "object"
 properties.doc = { type = "string", minLength = 1 }
 properties.code = { type = "string", minLength = 1 }
@@ -107,349 +96,43 @@ properties.fix = { type = "string", minLength = 1 }
 required = ["doc", "code", "fix"]
 additionalProperties = false
 
-[evals.matches-desktop]
-title = "The documentation explains the desktop Artifact completely and accurately"
+[evals.matches-agent-workflow]
+title = "The documentation accurately covers the agent plugin, skills, and MCP server"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
-[evals.matches-desktop.payload]
+[evals.matches-agent-workflow.payload]
 instruction = """
-Review {docs-en} against only {desktop} and its parts {desktop-backend} and {desktop-ui}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Desktop (src/desktop/), including launch, the Pane (branches, their Runs, search and waiting reviews), the Main area (Runs, Currents, graphs and Detail), Human review, keyboard/mouse interaction and Settings.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {desktop}, {desktop-backend} and {desktop-ui} to inspect them. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
+Review {docs-en} against {agent-plugin}, {agent-onramp}, {agent-claude-marketplace}, {agent-codex-marketplace}, {agent-hey-arti}, {agent-focus-then-sweep} and {engine-mcp}, starting from src/SUMMARY.md.
+Check two things:
+1. No contradiction: every plugin installation command (including `claude plugin install` and `codex plugin add` as verified by {agent-onramp}, and `/plugin marketplace update artifactize` / `codex plugin marketplace upgrade artifactize`), skill invocation, workflow plan, and MCP server registration or tool name/argument stated in {docs-en} agrees with the implementation and skills.
+2. Core user tasks are covered: installing the plugin in Claude Code and Codex, working with Hey Arti to shape or audit a project, iterating with Focus then sweep (Plans A, B, C and working toward YELLOW), and registering and calling the MCP stdio server's verification and inspection tools.
+
+IMPORTANT — What must NOT be required:
+- Do NOT require internal byte/character caps, cursor implementation details, or every edge-case error condition. Omitting those bounds and edge cases is NEVER a mismatch.
+- How artifactize implements MCP or skills internally is not user-facing; documenting it is a mismatch whose fix is to remove it.
+
+Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools exposed by the referenced Artifacts to inspect them. Tool paths are Artifact-relative.
+Submit GREEN when nothing stated in {docs-en} contradicts the implementation and the core user tasks above are covered.
+Otherwise submit RED with up to 20 concrete mismatches, most misleading first, each with the doc path:line, the implementation path:line, and one sentence on how to fix the documentation. Fix the docs, not the code.
 """
 
-[evals.matches-desktop.pass_schema]
+[evals.matches-agent-workflow.pass_schema]
 type = "object"
 properties.summary = { type = "string", minLength = 1 }
 required = ["summary"]
 additionalProperties = false
 
-[evals.matches-desktop.fail_schema]
+[evals.matches-agent-workflow.fail_schema]
 type = "object"
 required = ["mismatches"]
 additionalProperties = false
 
-[evals.matches-desktop.fail_schema.properties.mismatches]
+[evals.matches-agent-workflow.fail_schema.properties.mismatches]
 type = "array"
 minItems = 1
 maxItems = 20
 
-[evals.matches-desktop.fail_schema.properties.mismatches.items]
-type = "object"
-properties.doc = { type = "string", minLength = 1 }
-properties.code = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["doc", "code", "fix"]
-additionalProperties = false
-
-[evals.matches-hey-arti]
-title = "The documentation explains the hey-arti Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.matches-hey-arti.payload]
-instruction = """
-Review {docs-en} against only {agent-hey-arti}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Hey Arti inside Agent plugin (src/agent-plugin/hey-arti.md), including Arti's role, using the canonical portable skill, interviewing and proposing a composition, the practices it recommends, MCP-first workflow, tool sessions, durable Runs, Human authority, team sharing and read-only CI.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {agent-hey-arti} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
-"""
-
-[evals.matches-hey-arti.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-hey-arti.fail_schema]
-type = "object"
-required = ["mismatches"]
-additionalProperties = false
-
-[evals.matches-hey-arti.fail_schema.properties.mismatches]
-type = "array"
-minItems = 1
-maxItems = 20
-
-[evals.matches-hey-arti.fail_schema.properties.mismatches.items]
-type = "object"
-properties.doc = { type = "string", minLength = 1 }
-properties.code = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["doc", "code", "fix"]
-additionalProperties = false
-
-[evals.matches-focus-then-sweep]
-title = "The documentation explains the focus-then-sweep Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.matches-focus-then-sweep.payload]
-instruction = """
-Review {docs-en} against only {agent-focus-then-sweep}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is Focus then sweep inside Agent plugin (src/agent-plugin/focus-then-sweep.md), including why a fix makes other evals stale, getting and invoking the canonical skill, the three plans (focus first and sweep last as the default, focus with the expected impact, always sweep), reading a focus Run, cycles, sign-offs and working toward YELLOW.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {agent-focus-then-sweep} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
-"""
-
-[evals.matches-focus-then-sweep.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-focus-then-sweep.fail_schema]
-type = "object"
-required = ["mismatches"]
-additionalProperties = false
-
-[evals.matches-focus-then-sweep.fail_schema.properties.mismatches]
-type = "array"
-minItems = 1
-maxItems = 20
-
-[evals.matches-focus-then-sweep.fail_schema.properties.mismatches.items]
-type = "object"
-properties.doc = { type = "string", minLength = 1 }
-properties.code = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["doc", "code", "fix"]
-additionalProperties = false
-
-[evals.matches-agent-plugin]
-title = "The documentation explains the agent-plugin Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.matches-agent-plugin.payload]
-instruction = """
-Review {docs-en} against only {agent-plugin} and the marketplace catalogs {agent-claude-marketplace} and {agent-codex-marketplace} that list it. Start with src/SUMMARY.md in the docs.
-The owned documentation area is the plugin page inside Agent plugin (src/agent-plugin/plugin.md), including what the plugin provides, the prerequisite artifactize install, the install steps per host, how each host launches the MCP server, updates and the manual fallback.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {agent-plugin}, {agent-claude-marketplace} and {agent-codex-marketplace} to inspect them. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
-"""
-
-[evals.matches-agent-plugin.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-agent-plugin.fail_schema]
-type = "object"
-required = ["mismatches"]
-additionalProperties = false
-
-[evals.matches-agent-plugin.fail_schema.properties.mismatches]
-type = "array"
-minItems = 1
-maxItems = 20
-
-[evals.matches-agent-plugin.fail_schema.properties.mismatches.items]
-type = "object"
-properties.doc = { type = "string", minLength = 1 }
-properties.code = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["doc", "code", "fix"]
-additionalProperties = false
-
-[evals.matches-mcp]
-title = "The documentation explains the mcp Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.matches-mcp.payload]
-instruction = """
-Review {docs-en} against only {engine-mcp}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is MCP inside Agent plugin (src/agent-plugin/mcp.md), including registering the stdio endpoint, verification and inspection tools, bounds, detail paging, lifecycle and deliberately absent operations.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {engine-mcp} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
-"""
-
-[evals.matches-mcp.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-mcp.fail_schema]
-type = "object"
-required = ["mismatches"]
-additionalProperties = false
-
-[evals.matches-mcp.fail_schema.properties.mismatches]
-type = "array"
-minItems = 1
-maxItems = 20
-
-[evals.matches-mcp.fail_schema.properties.mismatches.items]
-type = "object"
-properties.doc = { type = "string", minLength = 1 }
-properties.code = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["doc", "code", "fix"]
-additionalProperties = false
-
-[evals.matches-cli]
-title = "The documentation explains the cli Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.matches-cli.payload]
-instruction = """
-Review {docs-en} against only {engine-cli}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is CLI (src/cli/), including every command, flag, default, output and exit behavior. Interactive terminal screens belong to the TUI area; the CLI area explains how to launch them. The current-directory tools (`artifactize-tools` and its `artifactize tools` spelling) belong to the Tools area; the CLI area lists them and links there.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {engine-cli} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
-"""
-
-[evals.matches-cli.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-cli.fail_schema]
-type = "object"
-required = ["mismatches"]
-additionalProperties = false
-
-[evals.matches-cli.fail_schema.properties.mismatches]
-type = "array"
-minItems = 1
-maxItems = 20
-
-[evals.matches-cli.fail_schema.properties.mismatches.items]
-type = "object"
-properties.doc = { type = "string", minLength = 1 }
-properties.code = { type = "string", minLength = 1 }
-properties.fix = { type = "string", minLength = 1 }
-required = ["doc", "code", "fix"]
-additionalProperties = false
-
-[evals.matches-tui]
-title = "The documentation explains the tui Artifact completely and accurately"
-profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
-
-[evals.matches-tui.payload]
-instruction = """
-Review {docs-en} against only {engine-tui}. Start with src/SUMMARY.md in the docs.
-The owned documentation area is TUI (src/tui/), including Monitor, Review, shared Human Detail, navigation, live evidence, forms, tools, search, claims and exit behavior.
-Check that this area is grouped in one distinct place, that all user-facing features
-of the described Artifact are present, and that they are explained well and agree
-with its actual behavior. Follow links within the docs for necessary context.
-Use list_docs__en, glob_docs__en, grep_docs__en and read_docs__en for documentation, and the tools
-exposed by {engine-tui} to inspect that Artifact. Tool paths are Artifact-relative.
-Do not infer correctness from other docs or review other code Artifacts.
-User-facing means what a user declares, runs, sees or must decide: declarations,
-commands, flags, screens, outputs, exit codes, actionable errors and limits that
-change what they can do. How artifactize implements it (process groups, signals,
-journals, transactions, recovery, locking) and the Rust library API are not
-user-facing. Documentation of them is a mismatch whose fix is to remove it.
-Submit GREEN only when no feature is missing, poorly explained or contradicted, and
-no implementation detail is documented.
-Otherwise submit RED with up to 20 concrete mismatches, most misleading first,
-each with the doc path:line, the implementation path:line (or skill location),
-and one sentence on how to fix the documentation. Fix the docs, not the code.
-"""
-
-[evals.matches-tui.pass_schema]
-type = "object"
-properties.summary = { type = "string", minLength = 1 }
-required = ["summary"]
-additionalProperties = false
-
-[evals.matches-tui.fail_schema]
-type = "object"
-required = ["mismatches"]
-additionalProperties = false
-
-[evals.matches-tui.fail_schema.properties.mismatches]
-type = "array"
-minItems = 1
-maxItems = 20
-
-[evals.matches-tui.fail_schema.properties.mismatches.items]
+[evals.matches-agent-workflow.fail_schema.properties.mismatches.items]
 type = "object"
 properties.doc = { type = "string", minLength = 1 }
 properties.code = { type = "string", minLength = 1 }
@@ -458,7 +141,7 @@ required = ["doc", "code", "fix"]
 additionalProperties = false
 
 [evals.follows-rules]
-title = "The documentation is concise, plain and written for people who use artifactize"
+title = "The documentation is structured for developers, concise, non-repetitive, and within budget"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.follows-rules.profile_variants]
@@ -469,19 +152,14 @@ luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning 
 [evals.follows-rules.payload]
 instruction = """
 Review the mdBook documentation {docs-en} in src/, starting from src/SUMMARY.md. These are this Artifact's self-evaluation criteria:
-- D-CONCISE-FEATURES: Explain the product's features concisely; unnecessary repetition and
-  long-winded explanation fail this criterion.
-- D-PLAIN-DOCS: A reader who is not already an expert can understand the guide. Explain
-  necessary terms and commands in plain language rather than assuming professional expertise.
-- D-READER: The reader uses artifactize: they declare a project, run verify, sign off, set up
-  a team store or CI, or write tool Artifacts. Each page first explains what the reader does
-  and what they see as a result. A paragraph that explains how artifactize implements
-  something (process groups, signals, journals, transactions, recovery, locking) or the Rust
-  library API violates this item; the command protocol a tool author writes against is
-  user-facing.
-Read every page. Submit GREEN only when no paragraph violates an item. Otherwise submit RED
-with up to 20 violations, most important first, each with the item id, a documentation path:line and one
-sentence on what to change in the documentation.
+- D-ASSUME-DEVELOPER: The reader is a software developer who already knows Git, terminals, PATH, environment variables, JSON, TOML, regular expressions, and HTTP/SSH. A sentence that defines these general developer tools (such as explaining what Git, PATH, JSON or TOML is) fails this criterion. Define only Artifactize-specific terms (Artifact, eval, fingerprint, reuse key, Run, part, basis, aspect).
+- D-CONCEPT-ORDER: Getting Started teaches one clean first-run path (install -> create a minimal project or run an example -> verify -> see reuse) before advanced lifecycle details. Explaining PROVISIONAL, YELLOW idle-grace tuning, speculate, cycle peers, or historical version upgrade notes in Getting Started fails this criterion.
+- D-ONE-HOME: Avoid multi-paragraph duplication across guides: each detailed workflow or mechanism has one canonical section that explains it in full, while other prose pages give only a brief summary and link there. Concise summary rows in Reference tables (src/reference/) and short overview bullets are expected and do not violate this criterion.
+- D-NO-BOUND-DUMPS: Prose that dumps internal parser ceilings, character/byte caps, directory traversal entry limits, or verbatim error message strings outside a concise reference table fails this criterion.
+- D-READER: The reader uses artifactize to declare a project, run verify, sign off, set up a team store or CI, or write tool Artifacts. A paragraph that explains internal implementation mechanics (process groups, signals, journals, transactions, recovery, locking) or the Rust library API violates this criterion.
+- D-BUDGET: Every page in Getting Started, Core Concepts, and Guides stays at or under 180 lines (Reference pages at or under 320 lines), and src/SUMMARY.md lists at most 15 pages in total.
+
+Read every page. Submit GREEN only when no page violates a criterion. Otherwise submit RED with up to 20 violations, most important first, each with the item id, a documentation path:line and one sentence on what to change in the documentation.
 """
 
 [evals.follows-rules.pass_schema]

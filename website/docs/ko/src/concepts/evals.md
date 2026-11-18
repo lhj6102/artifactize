@@ -1,0 +1,51 @@
+# eval: Runtime, Agent, Human {#evals-runtime-agent-and-human}
+
+**eval**(`[evals.<id>]`, 전체 eval ID는 `<artifact>/<id>`)은 Artifact 하나에 대한 단일 검사입니다. 모든 eval에는 통과 조건을 요약하는 `title`, 세 가지 평가자 종류 중 하나를 고르는 `profile`, 그리고 구체적인 평가 기준을 적는 `payload.instruction`이 필요합니다(대체 실행 프로필은 [`profile_variants`](../reference/declarations.md#eval-fields-evalsid)에 선언합니다).
+
+| 종류 | 평가자 | 판정 및 결과 |
+|---|---|---|
+| `runtime` | 프로그램 실행 (`command` + `args`) | 종료 코드 `0`이면 `GREEN`, 그 외 종료 코드는 `RED`입니다. 실행 파일 누락, 시간 초과, 출력 저장 실패, 실행 중 파일 변경(`INPUT_CHANGED`) 같은 실행 오류는 `ERROR`로 기록됩니다. |
+| `agent` | 선언된 읽기 전용 도구를 쓰는 단일 LLM (`backend` + `model`) | 스키마 검증을 거친 `GREEN` 또는 `RED` 판정과 사용자 정의 결과 필드를 JSON 객체로 반환합니다(`pass_schema` / `fail_schema`). |
+| `human` | 대기 중인 요청을 맡아 양식을 제출하는 사람 | 스키마 검증을 거친 `GREEN` 또는 `RED` 양식 필드를 제출합니다. |
+
+## Runtime eval {#runtime-evals}
+
+```toml
+[evals.tests]
+title = "The library tests pass"
+profile = { kind = "runtime", command = "cargo", args = ["test", "--locked"], timeout_ms = 240000 }
+payload.instruction = "Run the tests of {library}."
+```
+
+- 지정한 실행 기준 폴더([대상 종류](artifacts.md#target-kinds-path-and-select))에서 `command`를 직접 실행합니다. 셸 명령 문자열을 해석하는 대신 `args`의 각 항목을 개별 인자로 넘깁니다(Windows에서 `.cmd`/`.bat` 배치 스크립트는 `cmd.exe`로 실행). 표준 입력(`stdin`)은 비워 둡니다. 호출한 프로세스의 환경 변수를 명령에 넘기되 기존 `ARTIFACTIZE_*` 변수는 제외하고, `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`을 새로 넣어 전달합니다(`TMPDIR`/`TMP`/`TEMP`는 전용 임시 디렉터리를 가리킴).
+- `args`에 적은 `{name}`이나 `{name}/하위경로`는 해당 Artifact의 절대 경로(또는 Live URI)로 바뀝니다. 다른 Artifact를 참조하면 그 eval의 의존성이 추가됩니다. 같은 eval의 검사 대상을 참조하면 경로만 바뀌고 의존성은 추가되지 않습니다.
+- 캡처된 `stdout`과 `stderr`는 Run에 저장되며 `artifactize request logs REQUEST_ID`나 데스크톱 앱·TUI Detail 화면에서 볼 수 있습니다. 실행이 끝난 뒤 다시 확인한 fingerprint나 Live 스냅샷이 시작할 때와 달라졌으면 판정 대신 `ERROR`(`INPUT_CHANGED`)가 기록됩니다.
+
+## Agent eval {#agent-evals}
+
+```toml
+[evals.review]
+title = "The implementation satisfies the spec"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "high", timeout_ms = 240000, max_tokens = 100000, max_tool_calls = 100 }
+payload.instruction = "Review {app} against {spec}. Submit GREEN only when all requirements hold."
+pass_schema = { type = "object", properties = { summary = { type = "string", minLength = 1 } }, required = ["summary"], additionalProperties = false }
+fail_schema = { type = "object", properties = { findings = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 } }, required = ["findings"], additionalProperties = false }
+```
+
+- **백엔드와 모델**: `backend`에는 `openai`, `anthropic`, `gemini`, `codex`, `claude-agent` 또는 [`artifactize provider`](../reference/cli-and-mcp.md#command-reference)(및 데스크톱 앱 **Settings → Providers**)로 등록한 사용자 지정 프로바이더 이름을 적습니다. 내장 모델 목록이나 자동 대체(fallback)는 없으며 `model`에는 프로바이더가 제공하는 정확한 모델 ID(`artifactize models BACKEND`)를 적어야 합니다.
+- **추론 강도와 예산**: `reasoning`은 프로바이더에 그대로 전달됩니다(`openai`와 `codex`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `claude-agent`: `low`, `medium`, `high`, `xhigh`, `max`; `anthropic`: `low`, `medium`, `high`, `max`; `gemini`: `minimal`, `low`, `medium`, `high`). 선택 필드인 `max_tokens`와 `max_tool_calls`로 프로바이더가 보고한 리뷰 전체의 토큰 사용량과 도구 호출 시도 횟수를 제한할 수 있습니다. 한도를 넘기면 `ERROR/PROVIDER_BUDGET_EXCEEDED`로 종료됩니다.
+- **읽기 전용 리뷰**: Agent는 대상 Artifact와 `{name}`으로 참조한 Artifact에 선언된 [도구](../guides/tools.md)만 사용해 리뷰합니다. `claude-agent`를 쓸 때도 로컬 Claude Code의 훅, 스킬, `CLAUDE.md`, 메모리, MCP 서버는 리뷰에 개입하지 않습니다.
+- **스키마 검증**: 최종 응답은 `pass_schema`(`GREEN`) 또는 `fail_schema`(`RED`)와 일치해야 합니다. 형식이 맞지 않으면 도구를 호출하지 않고 JSON 객체를 한 번 고칠 수 있습니다. 다시 제출한 응답도 스키마와 맞지 않으면 `ERROR/INVALID_RESULT`로 기록됩니다(`artifactize session show REF`로 저장된 대화 확인).
+- **제한 시간, 재시도, 백엔드 중단**: `timeout_ms`는 Agent 리뷰 전체 시간을 제한합니다(직접 연결하는 API 백엔드는 이 시간 안에서 일시적인 오류를 재시도하며, `claude-agent`와 그 별칭은 Claude Code 자체의 재시도 방식을 따릅니다). 인증 실패(`AUTHENTICATION`)나 할당량 초과(`QUOTA`)가 발생하면 해당 Run에서는 그 백엔드의 새 리뷰를 더 이상 시작하지 않습니다(`BACKEND_STOPPED`). `artifactize login`으로 다시 로그인하거나 할당량을 확보한 뒤 `verify`를 다시 실행하세요.
+- **저장된 대화**: 각 리뷰의 전체 대화와 도구 호출 내역은 기본으로 로컬 `$STATE/agent-sessions/`에 저장됩니다([`limits.json`의 `agentSessions`](../reference/cli-and-mcp.md#state-cache-and-limits)로 설정). `artifactize session show REF [--summary]`로 내용을 확인하고, `artifactize session send REF "질문"`으로 기존 판정을 바꾸지 않고 후속 질문을 보낼 수 있습니다.
+
+## Human eval {#human-reviews}
+
+```toml
+[evals.approved]
+title = "The release notes are approved"
+profile = { kind = "human" }
+payload.instruction = "Open {notes} and verify the highlights before signing off."
+```
+
+Human eval에서는 리뷰어가 대기 중인 요청을 맡고 선언된 [Human 도구](../guides/tools.md#human-tools)로 대상을 확인한 뒤 `GREEN` 또는 `RED` 판정 양식을 제출합니다(`artifactize request` 명령, `artifactize review`, 또는 데스크톱 앱 사용). 승인을 요청하는 시점, 여러 Run이 기존 승인 요청의 결과를 공유하는 방식, 승인 결과를 재사용하는 조건은 [승인과 Run의 종료](runs.md#sign-offs-and-the-end-of-a-run)를 참고하세요.

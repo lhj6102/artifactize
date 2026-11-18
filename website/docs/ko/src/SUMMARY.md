@@ -2,54 +2,25 @@
 
 # 시작하기
 
-- [소개](getting-started/intro.md)
+- [개요](getting-started/intro.md)
 - [설치](getting-started/install.md)
-  - [다른 설치 방법](getting-started/install-options.md)
-  - [업데이트와 제거](getting-started/update.md)
-  - [백엔드와 로그인](getting-started/backends.md)
-- [가이드](getting-started/guide.md)
-  - [예제](getting-started/examples.md)
+- [5분 만에 첫 프로젝트 만들어 보기](getting-started/guide.md)
 
-# 기능
+# 핵심 개념
 
-- [Artifact](features/artifact.md)
-  - [선언과 Artifact Graph](features/declarations.md)
-- [Eval](features/eval.md)
-  - [Agent](features/agent.md)
-  - [Agent 응답](features/tools/agent-responses.md)
-  - [Human](features/human.md)
-  - [Runtime](features/runtime.md)
-- [Fingerprint](features/fingerprint.md)
-- [Run](features/run.md)
-- [도구](features/tools/index.md)
-  - [내장 도구](features/tools/builtin.md)
-  - [Agent 도구와 세션](features/tools/agent.md)
-  - [Human 도구](features/tools/human.md)
-- [팀으로 일하기](features/team/index.md)
-  - [워크스루: 두 머신과 CI](features/team/walkthrough.md)
-  - [CI](features/team/ci.md)
-- [기타](features/others/index.md)
-  - [상태, 캐시, 제한](features/others/state.md)
-  - [운영체제](features/others/platforms.md)
-  - [보조 레퍼런스](features/others/reference.md)
+- [Artifact와 Artifact Graph](concepts/artifacts.md)
+- [eval: Runtime, Agent, Human](concepts/evals.md)
+- [fingerprint와 재사용](concepts/reuse.md)
+- [Run과 실행 흐름](concepts/runs.md)
 
-# 데스크톱
+# 가이드
 
-- [데스크톱](desktop/index.md)
+- [코딩 에이전트와 함께 쓰기](agent-plugin/plugin.md)
+- [도구와 하네스 세션](guides/tools.md)
+- [데스크톱 앱과 TUI](guides/interfaces.md)
+- [팀 리뷰 저장소와 CI](guides/team-and-ci.md)
 
-# 에이전트 플러그인
+# 레퍼런스
 
-- [Claude Code와 Codex용 플러그인](agent-plugin/plugin.md)
-- [Hey Arti](agent-plugin/hey-arti.md)
-- [Focus then sweep](agent-plugin/focus-then-sweep.md)
-- [MCP](agent-plugin/mcp.md)
-
-# CLI
-
-- [CLI](cli/index.md)
-  - [리뷰 저장소 서버와 클라이언트](cli/review-store.md)
-  - [캐시와 유지보수](cli/maintenance.md)
-
-# TUI
-
-- [TUI](tui/index.md)
+- [선언(.artf) 레퍼런스](reference/declarations.md)
+- [CLI와 MCP 레퍼런스](reference/cli-and-mcp.md)

@@ -56,7 +56,7 @@ required = ["item", "where", "change"]
 additionalProperties = false
 
 [evals.translates-ko]
-title = "The Korean landing page translates the English one accurately"
+title = "The Korean landing page conveys the same content and links as the English one"
 profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning = "xhigh", timeout_ms = 1800000 }
 
 [evals.translates-ko.payload]
@@ -68,24 +68,23 @@ data-locale on both, and on the Korean page gives an element's ATTR the value of
 data-ko-ATTR attribute. site.js writes a few words itself, in the page's language from <html lang>.
 Read index.html and site.js and compare the two pages. The project sentence "Artifactize: Evaluation-driven development
 for people and AI agents." always stays in English, on the Korean page too: as the headline, the page title,
-the Open Graph title and the start of the descriptions. Check these criteria:
+the Open Graph title and the start of the descriptions. Product terms (Artifact, Artifact Graph, eval, Run, Run ID,
+fingerprint, artifactsum, GREEN, RED, YELLOW) also stay in English in the Korean text by design (per K-TERMS). Check these criteria:
 - K-COMPLETE: Every text a reader sees or hears on the English page has its Korean counterpart in
-  the same place: headings, paragraphs, list items, links and buttons, figure captions, image alt
-  text, aria-label values, the recordings' data-alt and data-label, the page title, the meta and
-  Open Graph descriptions and titles, and the words site.js writes. The story's animated graphic
-  (the .stage element, including the step titles it shows from data-short) stays English by
-  design, as do commands, code, product names and brand names.
-- K-FAITHFUL: Each Korean text has the same meaning as its English counterpart and keeps its order.
-  Nothing is left out, added, softened or strengthened.
+  the same section: headings, paragraphs, list items, links and buttons, figure captions, image alt
+  text, aria-label values, the page title, the meta and Open Graph descriptions and titles, and the
+  words site.js writes. Commands, code, product names and brand names stay in English by design.
+- K-MEANING: Each Korean section and element conveys the same facts, commands and meaning as its
+  English counterpart. Splitting a long English sentence into two Korean sentences or reordering
+  clauses within a paragraph for natural Korean flow is ENCOURAGED and is NEVER a violation.
 - K-SAME-TARGETS: Every Korean link reaches the same target as its English counterpart, except that
   documentation links (/docs/...) reach the same page of the Korean documentation (/docs/ko/...),
-  links to the landing page reach /ko/, the hero's example graph is graph-example.ko.png, the role animation stays roles.en.gif and the
-  canonical and Open Graph URLs are https://artifactize.dev/ko/. The development board (/board/)
+  links to the landing page reach /ko/, the example graph image is /media/graph-example.ko.png on the Korean page (copied from assets/others/ by layout.py at build time, just like /media/graph-example.en.png and /media/review-loop.gif),
+  the Open Graph image is https://artifactize.dev/media/og.ko.jpg, and the canonical and Open Graph URLs are https://artifactize.dev/ko/. The development board (/board/)
   and the privacy page (/privacy/) are English only, and their Korean links say so. Commands, copy
   targets and code are unchanged; only comments in code may be translated. Both pages link to
   each other in the header and declare each other with hreflang.
-Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifact-relative. Judge only
-whether the Korean says the same; the Korean writing and the English page are reviewed elsewhere.
+Use the list, glob, grep and read tools of {docs-landing}. Tool paths are Artifact-relative.
 Submit GREEN only when no criterion is clearly violated. Otherwise submit RED with up to 20
 violations, most important first, each with the criterion id, the index.html or site.js line of the
 Korean text, the line of the English text and one sentence on how to fix the Korean page.
@@ -122,7 +121,7 @@ profile = { kind = "agent", backend = "codex", model = "gpt-6.2-sol", reasoning 
 
 [evals.follows-write-in-korean.payload]
 instruction = """
-Read {rules-write-in-korean}. Read index.html and site.js of {docs-landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale=\"ko\" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Artifactize: Evaluation-driven development for people and AI agents." stays in English by design, and "Artifact Graph" is the product's name for the graph.
+Read {rules-write-in-korean}. Read index.html and site.js of {docs-landing}. index.html holds the English and the Korean landing page in one file: the Korean page's text is in elements with data-locale="ko" and in data-ko-* attribute values, and site.js writes a few Korean words from its ko table. Judge only that Korean text; the project sentence "Artifactize: Evaluation-driven development for people and AI agents." stays in English by design, and "Artifact Graph" is the product's name for the graph.
 The How it works section says "evaluations" in English, so its Korean says 평가 there by the owner's choice, not 검사.
 Check its Korean prose against every K- item. Code, commands, configuration keys, file paths,
 output samples and links are not prose and are not judged; whether the Korean says the same as

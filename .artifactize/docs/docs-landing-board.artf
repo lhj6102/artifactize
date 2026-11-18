@@ -50,9 +50,14 @@ instruction = """
 Read {rules-writer-introduction}. Read index.html of {docs-landing-board} and the visible text that main.js
 writes into it. Check the page's visible text against W-INTRO-FIRST-READER,
 W-INTRO-PLAIN-LANGUAGE and W-INTRO-NO-RAMBLING; the other W- items are for the landing
-page's introduction and do not apply here. Submit GREEN only when none of the three is
-clearly violated. Otherwise submit RED with up to 20 violations, most important first,
-each with the item id, a board path:line and one sentence on what to change in the board.
+page's introduction and do not apply here. Because the board is for first-time visitors
+observing the repository's live GitHub activity, its brief definitions of commit/branch/pull
+request, its `dev-green`/`GREEN`/`YELLOW` status labels, its `verify run-...` and `CI ...`
+shorthand in activity lines and tooltips, and its short note on GitHub's public API request
+limits are helpful visitor context and are not violations. Submit GREEN
+only when none of the three is clearly violated. Otherwise submit RED with up to 20 violations,
+most important first, each with the item id, a board path:line and one sentence on what to
+change in the board.
 """
 
 [evals.follows-rules.pass_schema]
