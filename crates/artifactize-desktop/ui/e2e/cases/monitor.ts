@@ -101,6 +101,12 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
 }
 
 /** The nonblank lines of `text`, as typed or pasted on any platform. */
+function toolCaptions(browser: WebdriverIO.Browser): Promise<string[]> {
+  return browser.execute(() => [...document.querySelectorAll<HTMLElement>('[aria-label="Tools"] .group > p.artifact')]
+    .filter((caption) => caption.checkVisibility({ visibilityProperty: true, opacityProperty: true }) && caption.getClientRects().length > 0)
+    .map((caption) => caption.innerText.trim()));
+}
+
 export const scenarios: Scenario[] = [
   // UX journeys: J-LAUNCH J-MAIN-RUN
   scenario<null>(
@@ -248,14 +254,15 @@ export const scenarios: Scenario[] = [
       const { toolLog, runOf, tool, openReview } = await monitorUI(browser, fixture);
       await openReview();
       const open = await tool("open");
+      assert.deepEqual(await toolCaptions(browser), [], "the single Artifact's tools have no visible group caption");
       assert.equal(launched(fixture), false, "finding the tool did not launch this case's application");
       await open.button.click();
       // It returns at once; what ended well is said by the log, never a sentence.
       await browser.waitUntil(async () => (await runOf("open")) !== null && await reviewing(browser), { timeout: 15000, timeoutMsg: "the launch returned" });
-      assert.equal((await toolLog()).notice, "", "nothing more is said");
       // The application stand-in really ran, and its exit ends its run in the log.
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application" });
       await browser.waitUntil(async () => (await runOf("open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the launched application's exit logged" });
+      assert.equal((await toolLog()).notice, "", "no separate success notice is shown after the exit");
     },
   ),
 
@@ -751,8 +758,7 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture }) => {
       const { human, openReview, runOf, toolLog } = await monitorUI(browser, fixture, "Read {docs} and approve.");
       await openReview();
-      const groups = await browser.execute(() => [...document.querySelectorAll('[aria-label="Tools"] .group')].map((group) => group.getAttribute("aria-label")));
-      assert.deepEqual(groups, ["Tools of release", "Tools of docs"], "own tools precede the alphabetically earlier dependency");
+      assert.deepEqual(await toolCaptions(browser), ["release", "docs"], "own tools are visibly captioned before the alphabetically earlier dependency");
       await human().$('[aria-label="Tools of release"]').$('button=notes').click();
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end", { timeout: 15000, timeoutMsg: "release's notes completed" });
       await human().$('[aria-label="Tools of docs"]').$('button=reference').click();

@@ -13,6 +13,7 @@ pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
                 "the fixture opener requires its declared executable",
             )
         })?;
+        super::check_launch_program(std::path::Path::new(&node))?;
         let status = tokio::process::Command::new(node)
             .arg(program)
             .arg(target)

@@ -115,7 +115,7 @@ async fn admitted(
         loop {
             // Run status and requests come from one read-only transaction. The observer
             // must not reconcile a dead owner or finish/cancel the Run it is waiting for.
-            let view = store::read_run(state, id).await?;
+            let view = store::read_run_snapshot(state, id).await?;
             remember_owners(state, &view);
             let waiting = view.run.control.as_ref().map_or_else(
                 || {
@@ -397,12 +397,17 @@ async fn release_run(context: &runs::Context, state: &Path, id: &RunId) -> Resul
     // A fixture watchdog bounds failed cleanup, never a verification execution lifetime.
     let mut changes = artifactize_core::changes::Subscription::new(state).await;
     let result = tokio::time::timeout(ADMISSION_BOUND, async {
-        if store::read_run(state, id).await?.run.status().is_open() {
+        if store::read_run_snapshot(state, id)
+            .await?
+            .run
+            .status()
+            .is_open()
+        {
             // This is an explicit cleanup action, not part of an observation barrier.
             runs::cancel(context, id).await?;
         }
         loop {
-            let view = store::read_run(state, id).await?;
+            let view = store::read_run_snapshot(state, id).await?;
             if !view.run.status().is_open() {
                 terminal_worker_exited(&view, &mut changes, &CancellationToken::new()).await?;
                 return Ok::<_, String>(());
@@ -508,7 +513,7 @@ impl RecordOutput for Command {
                             let mut changes =
                                 artifactize_core::changes::Subscription::new(&state).await;
                             let result = tokio::time::timeout(ADMISSION_BOUND, async {
-                                let view = store::read_run(&state, &id).await?;
+                                let view = store::read_run_snapshot(&state, &id).await?;
                                 terminal_worker_exited(
                                     &view,
                                     &mut changes,
@@ -590,7 +595,7 @@ pub fn finished_worker(
                     .build()
                     .unwrap();
                 runtime.block_on(with_subscription(state, async |changes| {
-                    let view = store::read_run(state, id).await.unwrap();
+                    let view = store::read_run_snapshot(state, id).await.unwrap();
                     assert_eq!(
                         view.run.repo_path,
                         artifactize_core::workspace::canonical_target(repo).unwrap(),
@@ -643,7 +648,7 @@ pub fn worker_pid(state: &Path, repo: &Path) -> u32 {
                     let mut changes = artifactize_core::changes::Subscription::new(state).await;
                     let result = tokio::time::timeout(ADMISSION_BOUND, async {
                         loop {
-                            let view = store::read_run(state, &active.id).await.unwrap();
+                            let view = store::read_run_snapshot(state, &active.id).await.unwrap();
                             let control = view.run.control.unwrap();
                             if control.activity == runs::Activity::Waiting
                                 || view.requests.iter().any(|request| {

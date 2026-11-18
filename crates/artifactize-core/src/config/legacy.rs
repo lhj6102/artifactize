@@ -62,16 +62,17 @@ fn read(repo: &Path, targets: FileTargets) -> Result<RepoConfig, ConfigError> {
     for artifact in config.artifacts.values_mut() {
         artifact.definition = declaration_of(artifact.kind(), &artifact.path);
         if artifact.kind() == ArtifactKind::Aspect {
-            artifact.path = Target::Aspect {
-                path: artifact
-                    .path
-                    .local()
-                    .expect("legacy filesystem target")
-                    .parent()
-                    .unwrap_or(Path::new(""))
-                    .to_owned(),
-                select: artifact.select().to_vec(),
-            };
+            let parent = artifact
+                .path
+                .local()
+                .expect("legacy filesystem target")
+                .parent()
+                .unwrap_or(Path::new(""));
+            artifact.path = Target::try_from(parent.to_owned())
+                .and_then(|target| {
+                    target.with_kind(ArtifactKind::Aspect, artifact.select().to_vec())
+                })
+                .map_err(|error| ConfigError::new(&artifact.definition, error))?;
         }
     }
     crate::scope::resolve_config(&mut config)?;
@@ -351,7 +352,8 @@ fn declare(
         let folder = config.artifacts.get_mut(folder).unwrap();
         folder.nested.insert(path, name.clone());
     }
-    super::discovery::insert_artifact(config, found.path, found.kind, declaration, found.file)?;
+    let path = Target::try_from(found.path).map_err(|error| ConfigError::new(found.file, error))?;
+    super::discovery::insert_artifact(config, path, found.kind, declaration, found.file)?;
     if let Some(owner) = found.owner {
         config
             .artifacts

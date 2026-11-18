@@ -179,24 +179,26 @@ impl Transcript {
         self.active = None;
     }
     fn delivery(&mut self, send: Option<usize>, delivery: &Delivery) -> Vec<Patch> {
-        let mut patches = Vec::new();
         if delivery.block.is_attempt() && delivery.state == DeliveryState::Interrupted {
-            for ((follow, turn, attempt, kind, _), block) in &self.deliveries {
-                if (*follow, *turn, *attempt) == (send, delivery.turn, delivery.attempt)
-                    && !block.text.is_empty()
-                {
+            return self
+                .deliveries
+                .iter()
+                .filter(|((follow, turn, attempt, _, _), block)| {
+                    (*follow, *turn, *attempt) == (send, delivery.turn, delivery.attempt)
+                        && !block.text.is_empty()
+                })
+                .map(|((_, _, _, kind, _), block)| {
                     let label = if *kind == DeliveryKind::Summary {
                         "Thinking · partial"
                     } else {
                         "Partial response"
                     };
-                    patches.push(Patch {
+                    Patch {
                         id: block.id,
                         text: format!("{label} (interrupted)\n{}\n\n", block.text),
-                    });
-                }
-            }
-            return patches;
+                    }
+                })
+                .collect();
         }
         self.active = None;
         let key = (
@@ -249,7 +251,7 @@ impl Transcript {
                 .text
                 .clear();
         }
-        patches.push(Patch {
+        vec![Patch {
             id,
             text: format!(
                 "{}{}{}\n\n",
@@ -265,8 +267,7 @@ impl Transcript {
                     ""
                 }
             ),
-        });
-        patches
+        }]
     }
     pub fn is_thinking(&self, id: BlockId) -> bool {
         self.thinking.contains(&id)

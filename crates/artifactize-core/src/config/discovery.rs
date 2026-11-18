@@ -274,7 +274,7 @@ pub(super) fn read_regular_text(path: &Path) -> std::io::Result<String> {
 
 pub(super) fn insert_artifact(
     config: &mut RepoConfig,
-    path: impl Into<Target>,
+    path: Target,
     kind: ArtifactKind,
     declaration: ArtifactDeclaration,
     file: &Path,
@@ -315,7 +315,6 @@ pub(super) fn insert_artifact(
             authored_path: None,
             target_error: None,
             path: path
-                .into()
                 .with_kind(kind, select.unwrap_or_default())
                 .map_err(|error| ConfigError::new(file, error))?,
             covering_part: None,

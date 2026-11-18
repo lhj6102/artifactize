@@ -27,6 +27,8 @@ const SEED: &str = "QUACK-BUZZ";
 const DELIVERY: &str = "LIVE_PROVIDER_FRAGMENT";
 const RUNTIME: &str = "RUNTIME_OUTPUT_VISIBLE";
 const APPEND: &str = "NEW_ANSWER_AFTER_SWITCH";
+// The collapsed preview shows only this final line of the appended answer.
+const APPEND_TAIL: &str = "APPENDED_ANSWER_TAIL";
 
 #[tokio::test]
 async fn live_session_pty_fixture() {
@@ -46,8 +48,8 @@ async fn live_session_pty_fixture() {
     let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(json!({
         "id":"fixture-run",
-        "repoPath":repo,
-        "stateDir":state,
+        "repoPath":crate::platform::path_text(&repo),
+        "stateDir":crate::platform::path_text(&state),
         "status":"RUNNING",
         "createdAt":"2026-01-01T00:00:00Z",
         "selection":{"kind":"all"},
@@ -128,7 +130,7 @@ async fn live_session_pty_fixture() {
     receipts.save_request(&view.request).await.unwrap();
     drop(receipts);
 
-    let state_argument = format!("{STATE_ARGUMENT}{}", state.to_str().unwrap());
+    let state_argument = format!("{STATE_ARGUMENT}{}", crate::platform::path_text(&state));
     // The peek fits one short transcript line; the opened pane has room for evidence below it.
     let (mut terminal, output) = PseudoTerminal::start(
         &crate::platform::current_executable().unwrap(),
@@ -137,11 +139,11 @@ async fn live_session_pty_fixture() {
         180,
         40,
     );
-    wait_for_frame(&output, "fixture-run");
+    wait_for_frame(&output, &["fixture-run"]);
     terminal.type_text(b"\r");
-    wait_for_frame(&output, SEED);
+    wait_for_frame(&output, &[SEED]);
     terminal.type_text(b"\r");
-    wait_for_frame(&output, "[Bottom]");
+    wait_for_frame(&output, &["[Bottom]"]);
 
     recorder.event(Kind::Delivery(Delivery {
         turn: 1,
@@ -152,19 +154,21 @@ async fn live_session_pty_fixture() {
         state: DeliveryState::Delta,
     }));
     crate::changes::drain().await;
-    wait_for_frame(&output, DELIVERY);
+    wait_for_frame(&output, &[DELIVERY]);
 
     // Leave the Agent modal, select the next eval, and wait for the separate Runtime evidence.
     terminal.type_text(LEFT);
-    wait_for_frame(&output, "Enter: open");
+    wait_for_frame(&output, &["Enter: open"]);
     terminal.type_text(b"j\r");
-    wait_for_frame(&output, RUNTIME);
-    recorder.event(Kind::Answer(Answer::Completed(APPEND.into())));
+    wait_for_frame(&output, &[RUNTIME]);
+    recorder.event(Kind::Answer(Answer::Completed(format!(
+        "{APPEND}\n{APPEND_TAIL}"
+    ))));
     crate::changes::drain().await;
     terminal.type_text(LEFT);
-    wait_for_frame(&output, "Enter: open");
+    wait_for_frame(&output, &["Enter: open"]);
     terminal.type_text(b"k\r");
-    wait_for_frame(&output, APPEND);
+    wait_for_frame(&output, &[APPEND, "[Bottom]", "[Details (d)]"]);
     terminal.type_text(b"q");
     let mut rest = Vec::new();
     assert!(
@@ -177,13 +181,14 @@ async fn live_session_pty_fixture() {
     );
 }
 
-fn wait_for_frame(output: &Receiver<Vec<u8>>, expected: &str) {
+fn wait_for_frame(output: &Receiver<Vec<u8>>, expected: &[&str]) {
     let deadline = Instant::now() + test_os::patience(FRAME_DEADLINE);
     let mut frame = Vec::new();
-    while !frame
-        .windows(expected.len())
-        .any(|bytes| bytes == expected.as_bytes())
-    {
+    while !expected.iter().all(|marker| {
+        frame
+            .windows(marker.len())
+            .any(|bytes| bytes == marker.as_bytes())
+    }) {
         let chunk = output
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .unwrap_or_else(|error| {

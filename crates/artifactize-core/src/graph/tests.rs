@@ -59,7 +59,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 name: name.parse().unwrap(),
                 tags: declaration.tags,
                 basis: declaration.basis,
-                path: name.into(),
+                path: name.try_into().unwrap(),
                 covering_part: None,
                 nested: BTreeMap::new(),
                 parts: Default::default(),

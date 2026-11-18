@@ -381,16 +381,16 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
 
 #[test]
 fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables() {
-    // The probe's PATH has no compiler, so build the Windows stand-ins first.
-    support::os::env_program();
+    // Resolve the fixture in the parent; the probe has no compiler on its PATH.
+    let program = support::os::env_program();
     let root = support::os::tempdir();
     let author_home = root.path().join("author-home");
     std::fs::create_dir(&author_home).unwrap();
     // Set the parent environment in another process, never mutate this test runner's env.
-    let result = support::os::run_test(
+    let mut probe = support::os::isolated_test_command(
         "environment_subprocess_probe",
         &[
-            ("ARTIFACTIZE_ENV_PROBE", "enabled".into()),
+            ("ARTIFACTIZE_ENV_PROBE", program.into()),
             ("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-the-command".into()),
             ("ARTIFACTIZE_REMOTE", "https://store.invalid".into()),
             ("AUTHOR_VARIABLE", "from-the-terminal".into()),
@@ -399,6 +399,7 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
             ("LANG", "C".into()),
         ],
     );
+    let result = support::os::run(support::os::temporary_environment(&mut probe, root.path()));
     assert!(
         result.status.success(),
         "{}{}",
@@ -408,10 +409,27 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
 }
 
 #[tokio::test]
+async fn stand_in_runs_a_background_utility_with_literal_arguments() {
+    let scratch = Scratch::new();
+    let source = scratch.workspace().join("background");
+    std::fs::write(&source, "printf '%s' \"$1\" > result &\nwait\n").unwrap();
+    let shell = support::os::stand_in_shell();
+    let argument = "literal value; $(false)";
+    let result = completed(
+        execute(scratch.command(shell.to_str().unwrap(), &["background", argument], None)).await,
+    );
+    assert_eq!(result.verdict(), Verdict::Green);
+    assert_eq!(
+        std::fs::read_to_string(scratch.workspace().join("result")).unwrap(),
+        argument
+    );
+}
+
+#[tokio::test]
 async fn environment_subprocess_probe() {
-    if support::os::environment_variable("ARTIFACTIZE_ENV_PROBE").is_none() {
+    let Some(program) = support::os::environment_variable("ARTIFACTIZE_ENV_PROBE") else {
         return;
-    }
+    };
     assert_eq!(
         support::os::environment_variable("ARTIFACTIZE_REMOTE_TOKEN").unwrap(),
         "azt_not-for-the-command"
@@ -419,7 +437,7 @@ async fn environment_subprocess_probe() {
     // Capture the controlled parent input before executing the product's child environment.
     let author_home = support::os::environment_variable(support::os::home_env()).unwrap();
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command(&support::os::env_program(), &[], None)).await);
+    let result = completed(execute(scratch.command(program.to_str().unwrap(), &[], None)).await);
     let output = String::from_utf8(result.output.stdout).unwrap();
     let lines: Vec<&str> = output.lines().collect();
     // The author's own environment: path, locale, real home and any variable of theirs.
@@ -555,11 +573,6 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     .await;
 }
 
-fn reported_pid(marker: &Path) -> Option<u32> {
-    let written = std::fs::read_to_string(marker).ok()?;
-    written.strip_suffix('\n')?.trim().parse().ok()
-}
-
 #[tokio::test]
 async fn normal_exit_also_kills_a_background_descendant() {
     let scratch = Scratch::new();
@@ -593,61 +606,55 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
     let command = scratch.command(&support::os::steps(), GRANDCHILD, None);
     let marker = scratch.workspace().join("grandchild");
-    let directory = command.directory().to_owned();
-    let (registered, child) = oneshot::channel();
+    let descendant = support::os::MarkedChild::new(&marker);
+    let (registered, mut child) = oneshot::channel();
+    // The fixture, not the waiter being dropped, owns the supervisor.
     let cancellation = CancellationToken::new();
-    let work = runtime::execute(command, cancellation.clone(), |child| async move {
+    let mut execution = runtime::start(command, cancellation.clone(), |child| async move {
         registered.send(child).unwrap();
         Ok(())
     });
-    let mut owner = None;
-    let grandchild = || reported_pid(&marker);
-    let checked =
-        std::panic::AssertUnwindSafe(support::os::scoped(cancellation, work, async |running| {
-            let child = child.await.unwrap();
-            owner = Some(child.pid.get());
-            wait_for(|| grandchild().is_some()).await;
-            let pid = grandchild().expect("reported grandchild");
-            // Dropping the caller is what is under test: abort it rather than cancel it.
-            running.abort();
-            assert_gone(child.pid.get()).await;
-            assert_gone(pid).await;
-        }))
-        .catch_unwind()
-        .await;
-    // The caller alone is not the supervisor. Keep the fixture until both processes are
-    // gone and the two streams have published their final capture markers.
-    let settled = || async {
-        if let Some(owner) = owner {
-            while !support::os::gone(owner)
-                || grandchild().is_some_and(|pid| !support::os::gone(pid))
-                || !["runtime.stdout.complete", "runtime.stderr.complete"]
-                    .iter()
-                    .all(|name| directory.join(name).is_file())
-            {
-                tokio::task::yield_now().await;
+    let mut early = None;
+    let checked = std::panic::AssertUnwindSafe(async {
+        let (child, pid) = {
+            let waiter = std::panic::AssertUnwindSafe(execution.wait()).catch_unwind();
+            tokio::pin!(waiter);
+            tokio::select! {
+                biased;
+                outcome = &mut waiter => {
+                    early = Some(outcome);
+                    return;
+                }
+                started = async {
+                    let child = (&mut child).await.unwrap();
+                    wait_for(|| descendant.pid().is_some()).await;
+                    (child, descendant.pid().expect("reported grandchild"))
+                } => started,
             }
-        }
-    };
-    if timeout(support::os::patience(TEST_TIMEOUT), settled())
-        .await
-        .is_err()
-    {
-        if let Some(pid) = owner.filter(|pid| !support::os::gone(*pid)) {
-            support::os::kill_tree(pid);
-        }
-        if let Some(pid) = grandchild().filter(|pid| !support::os::gone(*pid)) {
-            support::os::kill(pid);
-        }
-        // Keep driving the supervisor after the fallback kill so its task reaps the tree.
-        settled().await;
-        scratch
-            .0
-            .close()
-            .expect("remove the aborted runtime fixture");
-        panic!("runtime capture did not settle without the fallback kill");
+            // Dropping this pending wait is the action under test.
+        };
+        assert_gone(child.pid.get()).await;
+        assert_gone(pid).await;
+    })
+    .catch_unwind()
+    .await;
+    if let Some(outcome) = early {
+        let outcome = outcome.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        panic!("execution completed before its caller was dropped: {outcome:?}");
     }
+    if checked.is_err() {
+        cancellation.cancel();
+    }
+    // Join the supervisor before fixture teardown, even when an observation failed.
+    let outcome = execution.wait().await;
     checked.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Cancelled))
+        ),
+        "{outcome:?}"
+    );
 }
 
 #[tokio::test(start_paused = true)]

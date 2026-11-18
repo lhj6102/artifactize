@@ -8,7 +8,7 @@ use crate::scope;
 /// Read one extra byte to detect a file growing past the limit after the metadata check.
 const GROWTH_PROBE_BYTES: usize = 1;
 
-pub(crate) fn read_output(root: &Path, path: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn read_output(root: &Path, path: &Path) -> Result<Vec<u8>, String> {
     let relative = crate::files::logical_below(root, path)
         .ok_or("Image path must be a UTF-8 path below the tool output directory.")?;
     let file = scope::open_scoped(root, &relative)

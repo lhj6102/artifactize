@@ -94,6 +94,12 @@ export const scenarios: Scenario[] = [
       ], [/^↑ \/ ↓ · j \/ k$/, /^c$/], "the Main area");
       // On a Run's graph, Help pairs each of its marks with its word.
       assert.deepEqual(await marks(), RUN_MARKS, "the Run's marks, each with its word");
+      await openArtifact(browser, "a:release", "Artifact release");
+      const debug = aside(browser).$('section[aria-label="Debug"] > button');
+      await debug.waitForDisplayed({ timeout: 15000 });
+      await debug.click();
+      await waitFor(browser, () => debug.isFocused(), "the Detail's Debug header has focus");
+      await listed([[/^t$/, /^Show or hide Debug$/], [/^Esc$/, /^Close the Detail/]], [/^c$/], "the graph Detail");
       const beneath = await mainTitle(browser);
       await press(browser, [primaryModifier, ","], () => browser.$("#settings-title").isExisting(), "Settings open");
       assert.equal(await mainTitle(browser), beneath, "Settings opens over the Main area's view");

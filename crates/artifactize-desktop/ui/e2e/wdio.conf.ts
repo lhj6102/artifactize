@@ -41,7 +41,8 @@ export async function releasePrepared(): Promise<void> {
   const failures: unknown[] = [];
   // A missing birth record is not permission to remove that capability's inputs.
   // It must not strand unrelated fixtures whose native owners did stop.
-  const removable = new Set(createdRoots());
+  const roots = createdRoots();
+  const retained = new Set<NativePath>();
   const release = async (action: () => Promise<void>) => {
     try { await action(); } catch (error) { failures.push(error); }
   };
@@ -62,16 +63,15 @@ export async function releasePrepared(): Promise<void> {
     }
     catch (error) {
       failures.push(error);
-      removable.delete(input.fixture.root);
-      continue;
+      retained.add(input.fixture.root);
     }
     const before = failures.length;
     await release(() => releaseClaudeLogins(input.fixture.root));
-    if (failures.length === before) await release(async () => { await input.release?.(); });
-    if (failures.length !== before) removable.delete(input.fixture.root);
+    await release(async () => { await input.release?.(); });
+    if (failures.length !== before) retained.add(input.fixture.root);
   }
   for (const releaseClaim of driverClaims.splice(0)) await release(releaseClaim);
-  await release(() => releaseFixtures([...removable]));
+  await release(() => releaseFixtures(roots, candidate, retained));
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
 

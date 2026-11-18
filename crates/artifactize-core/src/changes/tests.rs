@@ -23,9 +23,8 @@ impl TestState {
 
 impl Drop for TestState {
     fn drop(&mut self) {
-        // Remove only this unique state's namespace. remove_dir_all unlinks an owner.lock
-        // symlink without following its target, and needs no permission "repair" first.
-        let removed = std::fs::remove_dir_all(&self.endpoint);
+        // Remove only this unique state's namespace, without following its fixture links.
+        let removed = crate::platform::remove_tree(&self.endpoint);
         if !std::thread::panicking() {
             removed.unwrap_or_else(|error| {
                 panic!(

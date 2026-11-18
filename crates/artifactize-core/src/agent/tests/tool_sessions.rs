@@ -20,6 +20,37 @@ async fn advance_lifecycle_clock() {
         .unwrap();
 }
 
+/// Hold the lifecycle executor's clock while it waits on a real child handshake.
+async fn with_paused_lifecycle_clock(observe: impl Future<Output = ()>) {
+    use futures_util::FutureExt;
+    use std::panic::{AssertUnwindSafe, resume_unwind};
+    use tokio::sync::oneshot;
+
+    let (paused, ready) = oneshot::channel();
+    let (advance, observed) = oneshot::channel();
+    let driver = crate::tools::sessions::executor()
+        .unwrap()
+        .spawn(async move {
+            // Tokio does not auto-advance while blocking I/O is pending. The child runs
+            // outside this executor, so keep that inhibition until its acknowledgment.
+            let (release, hold) = std::sync::mpsc::channel::<()>();
+            let keep_time = tokio::task::spawn_blocking(move || hold.recv());
+            tokio::time::pause();
+            let _ = paused.send(());
+            if observed.await.unwrap_or(false) {
+                tokio::time::advance(std::time::Duration::from_secs(60)).await;
+            }
+            tokio::time::resume();
+            drop(release);
+            let _ = keep_time.await.unwrap();
+        });
+    ready.await.unwrap();
+    let observed = AssertUnwindSafe(observe).catch_unwind().await;
+    advance.send(observed.is_ok()).unwrap();
+    driver.await.unwrap();
+    observed.unwrap_or_else(|failure| resume_unwind(failure));
+}
+
 fn fixture(stop: &str) -> OwnedFixture {
     let mut fixture = Fixture::new("openai");
     let log = fixture.directory.path().join("log");
@@ -182,14 +213,14 @@ async fn hanging_stop_cannot_retain_the_group_or_session_directory() {
         _ = reached(|| !harness::records(&log, "call").is_empty()) => {},
         _ = &mut future => panic!("review completed before tool handshake"),
     }
-    cancellation.cancel();
-    tokio::select! {
-        _ = reached(|| !harness::records(&log, "stop").is_empty()) => {},
-        _ = &mut future => panic!("stop did not hang"),
-    }
-    // Advance only after stop has actually entered. This checks bounded cleanup
-    // without assuming how fast a process starts on any operating system.
-    advance_lifecycle_clock().await;
+    with_paused_lifecycle_clock(async {
+        cancellation.cancel();
+        tokio::select! {
+            _ = reached(|| !harness::records(&log, "stop").is_empty()) => {},
+            _ = &mut future => panic!("stop completed before its acknowledgment"),
+        }
+    })
+    .await;
     assert_eq!(future.await.result.unwrap_err().code, Code::Cancelled);
     harness::assert_cleaned(&fixture.state(), &log, 1);
 }

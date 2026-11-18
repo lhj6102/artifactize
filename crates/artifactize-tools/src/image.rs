@@ -79,7 +79,10 @@ pub fn from_base64(data: &str, mime_type: &str) -> Result<Content, String> {
 /// Read a file-backed image whose MIME type has not already been parsed by the caller.
 pub fn from_output(root: &std::path::Path, path: &str, mime_type: &str) -> Result<Content, String> {
     let mime_type = mime_type.parse()?;
-    normalize(&read_output(root, path)?, Some(mime_type))
+    normalize(
+        &read_output(root, std::path::Path::new(path))?,
+        Some(mime_type),
+    )
 }
 
 pub(crate) fn normalize_base64(data: &str, mime_type: Mime) -> Result<Content, String> {

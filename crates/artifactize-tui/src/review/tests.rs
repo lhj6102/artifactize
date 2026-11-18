@@ -256,6 +256,7 @@ fn logged(review: &mut Review, stdout: &str, stderr: &str, code: i32) {
         code: Some(code),
         text: format!("exit status: {code}"),
     });
+    review.drain_log();
 }
 
 fn screen(review: &mut Review) -> String {
@@ -263,7 +264,10 @@ fn screen(review: &mut Review) -> String {
 }
 
 pub(crate) fn sized(review: &mut Review, width: u16, height: u16) -> String {
-    let buffer = draw_buffer(review, width, height);
+    frame_text(&draw_buffer(review, width, height))
+}
+
+fn frame_text(buffer: &ratatui::buffer::Buffer) -> String {
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());
     rows.collect::<Vec<_>>().join("\n")
@@ -1284,23 +1288,28 @@ fn control_characters_never_break_one_row_texts() {
 fn review_uses_the_reactive_layout_of_monitor() {
     let mut review = listed();
     press(&mut review, KeyCode::Char('j'));
-    for (width, side, full) in [
-        (80, 16, 64),
-        (99, 16, 83),
-        (100, 28, 72),
-        (120, 28, 92),
-        (139, 28, 111),
-        (140, 36, 104),
-        (160, 36, 124),
-    ] {
+    let cases = [
+        (80, 16),
+        (99, 16),
+        (100, 28),
+        (120, 28),
+        (139, 28),
+        (140, 36),
+        (160, 36),
+    ];
+    let draw_panes = |review: &mut Review, width, split| {
+        let buffer = draw_buffer(review, width, 30);
+        for (left, right) in [(0, split - 1), (split, width - 1)] {
+            for (y, first, last) in [(1, "┌", "┐"), (28, "└", "┘")] {
+                assert_eq!(buffer[(left, y)].symbol(), first, "{width} columns");
+                assert_eq!(buffer[(right, y)].symbol(), last, "{width} columns");
+            }
+        }
+        frame_text(&buffer)
+    };
+    for (width, side) in cases {
         // List focused: Full fills the body beside a fixed-width Detail Preview.
-        let text = sized(&mut review, width, 30);
-        assert_eq!((review.hits.list.x, review.hits.list.width), (0, full));
-        assert_eq!(
-            (review.hits.preview.x, review.hits.preview.width),
-            (full, side)
-        );
-        assert_eq!(review.hits.preview.right(), width);
+        let text = draw_panes(&mut review, width, width - side);
         assert!(
             text.contains("EVAL") && text.contains("REQUEST"),
             "{width}\n{text}"
@@ -1309,33 +1318,14 @@ fn review_uses_the_reactive_layout_of_monitor() {
         assert!(!text.contains("· REVIEW (yours)"), "{width}\n{text}");
     }
     press(&mut review, KeyCode::Enter);
-    for (width, side, full) in [
-        (80, 16, 64),
-        (99, 16, 83),
-        (100, 28, 72),
-        (120, 28, 92),
-        (139, 28, 111),
-        (140, 36, 104),
-        (160, 36, 124),
-    ] {
+    for (width, side) in cases {
         // Detail focused: its immediate list neighbour stays Compact at every width.
-        let text = sized(&mut review, width, 30);
-        assert_eq!((review.hits.list.x, review.hits.list.width), (0, side));
-        assert_eq!(
-            (review.hits.detail.x, review.hits.detail.width),
-            (side, full)
-        );
-        assert_eq!(review.hits.detail.right(), width);
+        let text = draw_panes(&mut review, width, side);
         assert!(text.contains("· REVIEW (yours)"), "{width}\n{text}");
         assert!(!text.contains("Enter: open"), "{width}\n{text}");
         assert!(
             !text.contains("EVAL "),
             "the Compact list has no columns\n{text}"
-        );
-        let first = text.lines().nth(1).unwrap();
-        assert!(
-            first.starts_with('┌') && first.chars().nth(usize::from(side)) == Some('┌'),
-            "{width}\n{text}"
         );
         assert!(
             text.contains("artifactize review › waiting Human reviews › release/signoff"),

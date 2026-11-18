@@ -12,7 +12,7 @@ macro_rules! identity {
                 if ($valid)(value) {
                     Ok(Self(value.to_owned()))
                 } else {
-                    Err(format!("Invalid {}: {value:?}", stringify!($name)))
+                    Err(format!("Invalid {}.", stringify!($name)))
                 }
             }
         }

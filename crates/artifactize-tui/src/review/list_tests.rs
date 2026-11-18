@@ -30,7 +30,7 @@ fn request(run: &str, eval: &str, status: &str, profile: serde_json::Value) -> s
 
 async fn run(state: &Path, repo: &Path, id: &str, requests: &[store::Request]) {
     let receipts = store::OwnedReceipts::open(state, repo).await.unwrap();
-    let run: store::Run = serde_json::from_value(json!({"id":id,"repoPath":repo,"stateDir":state,
+    let run: store::Run = serde_json::from_value(json!({"id":id,"repoPath":crate::platform::path_text(repo),"stateDir":crate::platform::path_text(state),
         "status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},
         "validation":null}))
     .unwrap();
@@ -277,6 +277,29 @@ async fn an_agent_or_settled_request_opens_a_read_only_detail_with_its_evidence(
         saved.claim.is_none(),
         "a read-only Detail never saves a claim"
     );
+    // A session lost while viewing Sections must not leave that mode behind. When a
+    // session returns for the same request, start with its transcript again.
+    press(&mut review, KeyEvent::from(KeyCode::Char('d'))).await;
+    assert!(screen(&mut review).contains("d transcript"));
+    let receipts = store::OwnedReceipts::open(&fixture.state, &fixture.alpha)
+        .await
+        .unwrap();
+    let mut without_session = saved.request.as_ref().clone();
+    without_session.session_id = None;
+    without_session.session = None;
+    receipts.save_request(&without_session).await.unwrap();
+    review.refresh().await;
+    let shown = screen(&mut review);
+    assert!(
+        shown.contains("Agent session") && !shown.contains("d transcript"),
+        "{shown}"
+    );
+
+    receipts.save_request(&saved.request).await.unwrap();
+    drop(receipts);
+    review.refresh().await;
+    let shown = screen(&mut review);
+    assert!(shown.contains("Space tools · d details"), "{shown}");
     press(&mut review, KeyEvent::from(KeyCode::Esc)).await;
     assert_eq!(review.focus, Focus::List);
 

@@ -56,7 +56,7 @@ struct RegisteredTool<'a> {
 #[serde(rename_all = "camelCase")]
 struct ToolContext {
     artifact_id: crate::config::ArtifactName,
-    artifact_path: crate::config::Target,
+    artifact_path: ContextTarget,
     scope: BTreeMap<crate::config::ArtifactName, ContextArtifact>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     execution_paths: BTreeMap<crate::config::LogicalPath, ContextPath>,
@@ -75,7 +75,7 @@ struct ToolContext {
 }
 #[derive(Serialize)]
 struct ContextArtifact {
-    path: crate::config::Target,
+    path: ContextTarget,
     kind: crate::config::ArtifactKind,
     nested: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,7 +84,14 @@ struct ContextArtifact {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     select: Vec<crate::config::LogicalPath>,
 }
-#[derive(Serialize)]
+/// Tool context exposes absolute physical paths, not project-relative Artifact targets.
+#[derive(Clone, Serialize)]
+#[serde(untagged)]
+enum ContextTarget {
+    Local(ContextPath),
+    Live(crate::config::Uri),
+}
+#[derive(Clone, Serialize)]
 struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
 
 struct Invocation {
@@ -452,12 +459,14 @@ impl<'a> Registry<'a> {
             .values()
             .map(|artifact| {
                 let path = match &artifact.path {
-                    crate::config::Target::Live(uri) => crate::config::Target::Live(uri.clone()),
-                    _ => {
-                        scope::scoped_path(&self.config.root, artifact.referenced_path().ok_or(())?)
-                            .map_err(|_| ())?
-                            .into()
-                    }
+                    crate::config::Target::Live(uri) => ContextTarget::Live(uri.clone()),
+                    _ => ContextTarget::Local(ContextPath(
+                        scope::scoped_path(
+                            &self.config.root,
+                            artifact.referenced_path().ok_or(())?,
+                        )
+                        .map_err(|_| ())?,
+                    )),
                 };
                 Ok((
                     artifact.name.clone(),

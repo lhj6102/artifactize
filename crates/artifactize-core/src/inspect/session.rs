@@ -14,10 +14,7 @@ use std::path::{Path, PathBuf};
 #[serde(try_from = "String")]
 pub enum Selector {
     Reference(SessionRef),
-    Id {
-        request: crate::types::RequestId,
-        session: crate::types::SessionId,
-    },
+    Id(crate::types::RequestId),
 }
 
 impl std::str::FromStr for Selector {
@@ -27,12 +24,9 @@ impl std::str::FromStr for Selector {
         if let Some(reference) = SessionRef::parse(text) {
             return Ok(Self::Reference(reference));
         }
-        match (text.parse(), text.parse()) {
-            (Ok(request), Ok(session)) => Ok(Self::Id { request, session }),
-            _ => Err(format!(
-                "{text} is not a session reference, a request id or a session id."
-            )),
-        }
+        text.parse().map(Self::Id).map_err(|_| {
+            format!("{text} is not a session reference, a request id or a session id.")
+        })
     }
 }
 
@@ -110,16 +104,19 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
             }
             view
         }
-        Selector::Id { request, session } => match store::read_request_id(state, request).await {
+        Selector::Id(id) => match store::read_request_id(state, id).await {
             Ok(view) => view,
-            Err(_) => store::read_request_by_session(state, session.clone())
-                .await?
-                .ok_or_else(|| {
-                    format!(
-                        "No Agent request or session {session} in this state ({}).",
-                        crate::platform::path_text(state)
-                    )
-                })?,
+            Err(_) => store::read_request_by_session(
+                state,
+                crate::types::SessionId::from_bare_request(id),
+            )
+            .await?
+            .ok_or_else(|| {
+                format!(
+                    "No Agent request or session {id} in this state ({}).",
+                    crate::platform::path_text(state)
+                )
+            })?,
         },
     };
     let mut reused_by = None;

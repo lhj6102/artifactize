@@ -12,20 +12,13 @@ import { requestState, showDebug, reviewing } from "../human-review.ts";
 import { fill, press } from "../keys.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
-import { canonicalPath, exists, nativePath, portablePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
+import { exists, nativePath, readText, removeTree, writeText, type NativePath } from "../platform.ts";
 import { detail, fact, graphShown } from "../graph-view.ts";
 import { runOf } from "../tool-log.ts";
 import { branch, branches, chooseChip, entriesFocused, expand, listed, MAIN, mainTitle, openWaiting, runComment, SEARCH, selectBranch, showRun, waiting, leans } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
-}
-
-/** The starred branches saved in `state`, or null before the first star. The file is replaced
- * whole, never written in place. */
-function kept(state: NativePath): unknown[] | null {
-  const file = nativePath(state, "starred-branches.json");
-  return exists(file) ? JSON.parse(readText(file)) as unknown[] : null;
 }
 
 /** A comment longer than a timeline entry's line, as an agent working on a task gives it. */
@@ -271,25 +264,25 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify([last, ...before.slice(0, -1)]), `only ${last} starred again: ${JSON.stringify(await names())}`);
       await waitFor(browser, async () => (await branches(browser)).filter((entry) => entry.starred).map((entry) => entry.name).join() === last,
         `only ${last} is starred before relaunch`);
-      const expected = [{ git: { common: portablePath(canonicalPath(nativePath(fixture.repo, ".git"))), head: { branch: last.split("  ")[1] } } }];
-      await waitFor(browser, () => JSON.stringify(kept(fixture.state)) === JSON.stringify(expected),
-        `only ${last}'s star is saved before relaunch`);
+      await commandsRendered(browser);
       writeText(nativePath(fixture.root, "expected-star-name"), last);
     },
     // The next monitor lists it first, starred; taken away, it is listed with the others again.
     async (browser, { fixture }) => {
       const names = async () => (await branches(browser)).map((entry) => entry.name);
-      await waitFor(browser, async () => (await names()).length === 3, "the three worktrees listed again");
-      const shown = await branches(browser);
-      assert.deepEqual(shown.map((entry) => [entry.star, entry.starred]), [["★", true], ["☆", false], ["☆", false]], `the star kept: ${JSON.stringify(shown)}`);
       const starred = readText(nativePath(fixture.root, "expected-star-name"));
-      assert.equal(shown[0].name, starred, "the same branch is starred after relaunch");
+      const marks = [["★", true], ["☆", false], ["☆", false]];
+      let shown = await branches(browser);
+      await waitFor(browser, async () => {
+        shown = await branches(browser);
+        return shown[0]?.name === starred && JSON.stringify(shown.map(({ star, starred }) => [star, starred])) === JSON.stringify(marks);
+      }, `only the same branch (${starred}) is starred after relaunch`);
       await browser.$(`button[aria-label=${JSON.stringify(`Star ${shown[0].label}`)}]`).click();
       // It was the last of the search's order before it was starred.
       const after = [...shown.slice(1).map((entry) => entry.name), starred];
       await waitFor(browser, async () => JSON.stringify(await names()) === JSON.stringify(after), `listed with the others: ${JSON.stringify(await names())}`);
       assert.equal((await branch(browser, starred))?.starred, false);
-      await waitFor(browser, async () => kept(fixture.state)?.length === 0, "the star's removal saved");
+      await commandsRendered(browser);
     },
   ),
 

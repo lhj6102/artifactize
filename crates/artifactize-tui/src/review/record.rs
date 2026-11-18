@@ -4,7 +4,7 @@
 use crate::{
     agent::session::{document::Move, live},
     config::ProfileKind,
-    monitor::{self, Detail, Evidence, EvidenceStamp, Target, session::Live},
+    monitor::{self, Detail, Evidence, EvidenceStamp, SessionView, Target, session::Live},
     store::{self, RequestView},
 };
 use crossterm::event::{KeyCode, KeyEvent};
@@ -25,18 +25,21 @@ const SECTIONS_SHARE: u16 = 50;
 /// Rows a page key scrolls the sections, as in the Human Detail.
 const PAGE: u16 = 10;
 
+const SESSION_TITLE: &str = "Agent session";
+
 pub(crate) struct Record {
     pub view: RequestView,
     detail: Detail,
-    evidence: Evidence,
+    content: Content,
     stamp: EvidenceStamp,
-    /// The Agent session, read by the monitor's incremental reader.
-    pub live: Option<Live>,
     technical: bool,
     pending: bool,
-    /// An Agent's sections instead of its transcript (`d`).
-    details: bool,
     scroll: u16,
+}
+
+enum Content {
+    Evidence(Evidence),
+    Session { live: Box<Live>, view: SessionView },
 }
 
 impl Record {
@@ -53,24 +56,17 @@ impl Record {
         let detail = monitor::detail(&run, &requests, &target, OffsetDateTime::now_utc());
         let stamp = EvidenceStamp::new(&view);
         let previous = previous.filter(|previous| previous.view.request.id == view.request.id);
-        let (technical, pending, details, scroll) =
-            previous
-                .as_ref()
-                .map_or((false, false, false, 0), |previous| {
-                    (
-                        previous.technical,
-                        previous.pending,
-                        previous.details,
-                        previous.scroll,
-                    )
-                });
-        let (evidence, live) = match previous {
-            Some(previous) if previous.stamp == stamp => (previous.evidence, previous.live),
+        let (technical, pending, scroll) =
+            previous.as_ref().map_or((false, false, 0), |previous| {
+                (previous.technical, previous.pending, previous.scroll)
+            });
+        let content = match previous {
+            Some(previous) if previous.stamp == stamp => previous.content,
             previous => {
-                evidence(
+                Content::load(
                     state,
                     &view,
-                    previous.and_then(|previous| previous.live),
+                    previous.map(|previous| previous.content),
                     serial,
                 )
                 .await
@@ -79,46 +75,56 @@ impl Record {
         Ok(Self {
             view,
             detail,
-            evidence,
+            content,
             stamp,
-            live,
             technical,
             pending,
-            details,
             scroll,
         })
     }
 
+    /// The Agent session, read by the monitor's incremental reader.
+    pub(super) fn live_mut(&mut self) -> Option<&mut Live> {
+        match &mut self.content {
+            Content::Session { live, .. } => Some(live),
+            Content::Evidence(_) => None,
+        }
+    }
+
     /// Keys of the read-only Detail; `false` leaves the key to the caller (Esc, q).
     pub fn key(&mut self, key: KeyEvent) -> bool {
-        if let Some(live) = self.live.as_mut().filter(|_| !self.details) {
-            let movement = match key.code {
-                KeyCode::Up | KeyCode::Char('k') => Some(Move::Up(1)),
-                KeyCode::Down | KeyCode::Char('j') => Some(Move::Down(1)),
-                KeyCode::PageUp => Some(Move::Up(live.scroll.height.max(1))),
-                KeyCode::PageDown => Some(Move::Down(live.scroll.height.max(1))),
-                KeyCode::Home => Some(Move::Top),
-                KeyCode::End => Some(Move::Bottom),
-                _ => None,
-            };
-            if let Some(movement) = movement {
-                live.movement(movement);
+        if let Content::Session { live, view } = &mut self.content {
+            if key.code == KeyCode::Char('d') {
+                *view = match *view {
+                    SessionView::Transcript => SessionView::Sections,
+                    SessionView::Sections => SessionView::Transcript,
+                };
                 return true;
             }
-            match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') => {
-                    live.toggle_visible();
+            if *view == SessionView::Transcript {
+                let movement = match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => Some(Move::Up(1)),
+                    KeyCode::Down | KeyCode::Char('j') => Some(Move::Down(1)),
+                    KeyCode::PageUp => Some(Move::Up(live.scroll.height.max(1))),
+                    KeyCode::PageDown => Some(Move::Down(live.scroll.height.max(1))),
+                    KeyCode::Home => Some(Move::Top),
+                    KeyCode::End => Some(Move::Bottom),
+                    _ => None,
+                };
+                if let Some(movement) = movement {
+                    live.movement(movement);
                     return true;
                 }
-                KeyCode::Char('d') => {
-                    self.details = true;
-                    return true;
+                match key.code {
+                    KeyCode::Enter | KeyCode::Char(' ') => {
+                        live.toggle_visible();
+                        return true;
+                    }
+                    _ => return false,
                 }
-                _ => return false,
             }
         }
         match key.code {
-            KeyCode::Char('d') if self.live.is_some() => self.details = false,
             KeyCode::Char('t') => self.technical = !self.technical,
             KeyCode::Char('w') => self.pending = !self.pending,
             KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
@@ -133,12 +139,16 @@ impl Record {
 
     /// The keys this Detail answers to, for the footer.
     pub fn hints(&self) -> &'static str {
-        match (&self.live, self.details) {
-            (Some(_), false) => {
-                "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back"
-            }
-            (Some(_), true) => "↑↓ scroll · t technical · w pending · d transcript · Esc back",
-            (None, _) => "↑↓ PgUp/PgDn scroll · t technical · w pending · Esc back",
+        match &self.content {
+            Content::Session {
+                view: SessionView::Transcript,
+                ..
+            } => "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back",
+            Content::Session {
+                view: SessionView::Sections,
+                ..
+            } => "↑↓ scroll · t technical · w pending · d transcript · Esc back",
+            Content::Evidence(_) => "↑↓ PgUp/PgDn scroll · t technical · w pending · Esc back",
         }
     }
 
@@ -167,8 +177,11 @@ impl Record {
             .wrap(Wrap { trim: false })
             .scroll((self.scroll, 0))
         };
-        match &mut self.live {
-            Some(live) if !self.details => {
+        let (title, text) = match &mut self.content {
+            Content::Session {
+                live,
+                view: SessionView::Transcript,
+            } => {
                 let [rows, footer] =
                     Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
                 live.geometry(usize::from(rows.width), usize::from(rows.height));
@@ -178,63 +191,63 @@ impl Record {
                         .dark_gray(),
                     footer,
                 );
+                return;
             }
-            _ if self.evidence.is_empty() => frame.render_widget(sections(), inner),
-            _ => {
-                let [left, right] =
-                    Layout::vertical([Constraint::Percentage(SECTIONS_SHARE), Constraint::Fill(1)])
-                        .areas(inner);
-                frame.render_widget(sections(), left);
-                frame.render_widget(
-                    Paragraph::new(self.evidence.text.as_str())
-                        .wrap(Wrap { trim: false })
-                        .block(Block::bordered().title(format!(" {} ", self.evidence.title))),
-                    right,
-                );
+            Content::Evidence(evidence) if evidence.is_empty() => {
+                frame.render_widget(sections(), inner);
+                return;
             }
-        }
+            Content::Evidence(evidence) => (evidence.title.as_str(), evidence.text.as_str()),
+            Content::Session {
+                view: SessionView::Sections,
+                ..
+            } => (SESSION_TITLE, ""),
+        };
+        let [top, bottom] =
+            Layout::vertical([Constraint::Percentage(SECTIONS_SHARE), Constraint::Fill(1)])
+                .areas(inner);
+        frame.render_widget(sections(), top);
+        frame.render_widget(
+            Paragraph::new(text)
+                .wrap(Wrap { trim: false })
+                .block(Block::bordered().title(format!(" {title} "))),
+            bottom,
+        );
     }
 }
 
-/// What a request's Detail shows beside its sections: saved runtime logs, or its Agent
-/// session (keeping `kept` when it reads the same session), or why there is none.
-async fn evidence(
-    state: &Path,
-    view: &RequestView,
-    kept: Option<Live>,
-    serial: crate::monitor::session::ReaderId,
-) -> (Evidence, Option<Live>) {
-    if view.request.profile.kind() != ProfileKind::Agent {
-        return (monitor::evidence(state, view), None);
-    }
-    let title = "Agent session".to_owned();
-    match live::resolve(state, view).await {
-        Ok(live::Resolution::Local(source)) => {
-            let live = match kept {
-                Some(mut live) => {
-                    if live.refresh(&source) {
-                        live
-                    } else {
-                        Live::new(serial, source)
-                    }
-                }
-                None => Live::new(serial, source),
-            };
-            (
-                Evidence {
-                    title,
-                    text: String::new(),
-                },
-                Some(live),
-            )
+impl Content {
+    /// Restore the current reader and mode only when there is still a live session.
+    async fn load(
+        state: &Path,
+        request: &RequestView,
+        previous: Option<Self>,
+        serial: crate::monitor::session::ReaderId,
+    ) -> Self {
+        if request.request.profile.kind() != ProfileKind::Agent {
+            return Self::Evidence(monitor::evidence(state, request));
         }
-        Ok(live::Resolution::Unavailable(text)) => (Evidence { title, text }, None),
-        Err(error) => (
-            Evidence {
-                title,
-                text: format!("Conversation unavailable: {error}"),
-            },
-            None,
-        ),
+        let text = match live::resolve(state, request).await {
+            Ok(live::Resolution::Local(source)) => {
+                return match previous {
+                    Some(Self::Session { mut live, view }) => {
+                        if !live.refresh(&source) {
+                            *live = Live::new(serial, source);
+                        }
+                        Self::Session { live, view }
+                    }
+                    _ => Self::Session {
+                        live: Box::new(Live::new(serial, source)),
+                        view: SessionView::Transcript,
+                    },
+                };
+            }
+            Ok(live::Resolution::Unavailable(text)) => text,
+            Err(error) => format!("Conversation unavailable: {error}"),
+        };
+        Self::Evidence(Evidence {
+            title: SESSION_TITLE.into(),
+            text,
+        })
     }
 }

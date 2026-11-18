@@ -16,6 +16,7 @@ import { git } from "../environment.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
 import { makeDirectory, nativeInput, nativePath, primaryModifier, writeText } from "../platform.ts";
 import { scenario, type Scenario } from "../scenario.ts";
+import { canvasSnapshot } from "../rendering.ts";
 import { graphAppearance, graphHasColours, visibleColour, type GraphAppearance } from "./graph-appearance.ts";
 import { branch, chooseChip, ENTRIES, entriesFocused, listed, MAIN, mainFocused, mainTitle, scanned, searchFocused, showRun } from "../pane.ts";
 
@@ -1486,6 +1487,26 @@ payload.instruction = "Check the Live Artifact."
     },
   ),
 
+  // UX journey: J-GRAPH-FIND
+  scenario<{ run: string }>(
+    "graph-find-order",
+    "lists matching names in the shown Run's dependency order rather than alphabetical order",
+    async () => ended(createChain(3, false, (index) => ["stage-zulu", "stage-alpha", "stage-mike"][index])),
+    async (browser, { data: { run } }) => {
+      await shownRun(browser, run);
+      await graphShown(browser, "a:stage-zulu");
+      await browser.$('[aria-label="Graph tools"]').$("button=Find").click();
+      await fill(browser, FIND, "STAGE-");
+      const expected = ["stage-zulu", "stage-alpha", "stage-mike"];
+      const matches = async () => (await findField(browser))?.entries.map(({ name }) => name);
+      await browser.waitUntil(async () => (await matches())?.length === expected.length,
+        { timeout: 15000, timeoutMsg: "all three stage Artifacts were found" });
+      assert.deepEqual(await matches(), expected, "the prerequisite stage comes before both its consumers despite its name");
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact stage-zulu",
+        "the first match opens the upstream stage");
+    },
+  ),
+
   // UX journey: J-GRAPH-MINIMIZE
   scenario<{ run: string }>(
     "graph-minimize-joined",
@@ -1547,41 +1568,46 @@ payload.instruction = "Check the Live Artifact."
         `the Navigator, tall enough to point at, frames the part in view: ${JSON.stringify(shown)}`);
       // The whole chain in small, every Artifact a block of its status's colour,
       // at the graph's bottom right.
-      const drawing = () => browser.execute(() => {
-        const navigator = document.querySelector("[data-navigator]")!.getBoundingClientRect();
-        const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
-        const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect() ?? null;
-        const map = document.querySelector<HTMLCanvasElement>("[data-navigator] canvas")!;
-        const pixels = map.getContext("2d")!.getImageData(0, 0, map.width, map.height).data;
-        const style = getComputedStyle(document.documentElement);
-        const colour = (token: string) => [1, 3, 5].map((at) => Number.parseInt(style.getPropertyValue(token).trim().slice(at, at + 2), 16));
-        const red = colour("--red"), green = colour("--green");
-        const matches = (at: number, expected: number[]) => pixels[at + 3] > 0 && expected.every((value, channel) => Math.abs(pixels[at + channel] - value) <= 8);
-        // Project each Artifact's center between the graph's own outer edges onto the painting.
-        const nodes = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
-          .filter((node) => !node.closest('aside[aria-label="Detail"]'))
-          .map((node) => ({ id: node.dataset.id!, box: node.getBoundingClientRect() }));
-        const left = Math.min(...nodes.map(({ box }) => box.left));
-        const right = Math.max(...nodes.map(({ box }) => box.right));
-        const top = Math.min(...nodes.map(({ box }) => box.top));
-        const bottom = Math.max(...nodes.map(({ box }) => box.bottom));
-        const blocks = nodes.map(({ id, box }) => {
-          const x = Math.floor((box.left + box.width / 2 - left) / (right - left) * map.width);
-          const y = Math.floor((box.top + box.height / 2 - top) / (bottom - top) * map.height);
-          const at = (y * map.width + x) * 4;
+      const drawing = async () => {
+        const { image, blocks, red, green, ...placement } = await browser.execute(() => {
+          const navigator = document.querySelector("[data-navigator]")!.getBoundingClientRect();
+          const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+          const detail = document.querySelector('aside[aria-label="Detail"]')?.getBoundingClientRect() ?? null;
+          const map = document.querySelector<HTMLCanvasElement>("[data-navigator] canvas")!;
+          const style = getComputedStyle(document.documentElement);
+          const colour = (token: string) => [1, 3, 5].map((at) => Number.parseInt(style.getPropertyValue(token).trim().slice(at, at + 2), 16));
+          const red = colour("--red"), green = colour("--green");
+          // Project each Artifact's center between the graph's own outer edges onto the painting.
+          const nodes = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")]
+            .filter((node) => !node.closest('aside[aria-label="Detail"]'))
+            .map((node) => ({ id: node.dataset.id!, box: node.getBoundingClientRect() }));
+          const left = Math.min(...nodes.map(({ box }) => box.left));
+          const right = Math.max(...nodes.map(({ box }) => box.right));
+          const top = Math.min(...nodes.map(({ box }) => box.top));
+          const bottom = Math.max(...nodes.map(({ box }) => box.bottom));
+          const blocks = nodes.map(({ id, box }) => {
+            const x = Math.floor((box.left + box.width / 2 - left) / (right - left) * map.width);
+            const y = Math.floor((box.top + box.height / 2 - top) / (bottom - top) * map.height);
+            return {
+              id,
+              x, y,
+              outside: box.right < canvas.left || box.left > canvas.right || box.bottom < canvas.top || box.top > canvas.bottom,
+            };
+          });
           return {
-            id,
-            colour: matches(at, red) ? "red" : matches(at, green) ? "green" : null,
-            outside: box.right < canvas.left || box.left > canvas.right || box.bottom < canvas.top || box.top > canvas.bottom,
+            atBottomRight: navigator.left > canvas.left + canvas.width / 2 && navigator.top > canvas.top + canvas.height / 2 &&
+              navigator.right <= canvas.right && navigator.bottom <= canvas.bottom,
+            leftOfDetail: detail !== null && navigator.right <= detail.left,
+            image: map.toDataURL(), blocks, red, green,
           };
         });
-        return {
-          atBottomRight: navigator.left > canvas.left + canvas.width / 2 && navigator.top > canvas.top + canvas.height / 2 &&
-            navigator.right <= canvas.right && navigator.bottom <= canvas.bottom,
-          leftOfDetail: detail !== null && navigator.right <= detail.left,
-          blocks,
-        };
-      });
+        const painting = canvasSnapshot(image);
+        return { ...placement, blocks: blocks.map(({ x, y, ...block }) => {
+          const rgba = painting.at(x, y);
+          const matches = (expected: number[]) => rgba[3] > 0 && expected.every((value, channel) => Math.abs(rgba[channel] - value) <= 8);
+          return { ...block, colour: matches(red) ? "red" : matches(green) ? "green" : null };
+        }) };
+      };
       const look = await drawing();
       assert.deepEqual(look.blocks.map(({ id }) => id).sort(), Array.from({ length: 30 }, (_, n) => `a:n${String(n).padStart(3, "0")}`));
       assert.ok(look.blocks.some(({ outside }) => outside) && look.blocks.every(({ id, colour }) => colour === (id === "a:n029" ? "red" : "green")),
@@ -1597,33 +1623,40 @@ payload.instruction = "Check the Live Artifact."
       const kept = await zoom();
       /** The frame's centre, across the Navigator. */
       const centre = async () => { const at = (await navigator())!; return at.frame.left + at.frame.width / 2; };
-      const middle = Math.round(shown.map.top + shown.map.height / 2);
-      // A click in it moves the camera there, the zoom kept.
-      const before = await camera(browser);
-      const there = Math.round(shown.map.left + shown.map.width * 0.35);
-      await dispatchInput(browser, { kind: "pointer", phase: "down", x: there, y: middle });
-      await dispatchInput(browser, { kind: "pointer", phase: "up", x: there, y: middle });
-      await browser.waitUntil(async () => Math.abs((await centre()) - there) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place clicked" });
-      /** Where the place `at` of the Navigator lies on the screen, from the canvas's middle,
-       * across the chain: the Navigator spans the chain's drawn nodes end to end. */
-      const offset = (at: number) => browser.execute((fraction) => {
+      const pointAt = (x: number, y: number) => ({
+        x: Math.round(shown.map.left + shown.map.width * x), y: Math.round(shown.map.top + shown.map.height * y),
+      });
+      /** Project the chosen point from the drawn mini-map into the graph on both axes. */
+      const offset = (point: { x: number; y: number }) => browser.execute(({ x, y }) => {
         const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();
+        const map = document.querySelector("[data-navigator] canvas")!.getBoundingClientRect();
         const nodes = [...document.querySelectorAll(".svelte-flow__node")].filter((node) => !node.closest('aside[aria-label="Detail"]')).map((node) => node.getBoundingClientRect());
         const [left, right] = [Math.min(...nodes.map((box) => box.left)), Math.max(...nodes.map((box) => box.right))];
-        return left + fraction * (right - left) - (canvas.left + canvas.right) / 2;
-      }, (at - shown.map.left) / shown.map.width);
-      assert.ok(Math.abs(await offset(there)) <= 12, `the place clicked is in the middle of the view: ${await offset(there)}`);
+        const [top, bottom] = [Math.min(...nodes.map((box) => box.top)), Math.max(...nodes.map((box) => box.bottom))];
+        const fraction = (at: number, start: number, span: number) => Math.max(0, Math.min(1, (at - start) / span));
+        return { x: left + fraction(x, map.left, map.width) * (right - left) - (canvas.left + canvas.right) / 2,
+          y: top + fraction(y, map.top, map.height) * (bottom - top) - (canvas.top + canvas.bottom) / 2 };
+      }, point);
+      const centered = async (point: { x: number; y: number }, action: string) => {
+        await browser.waitUntil(async () => {
+          const at = await offset(point);
+          return Math.abs((await centre()) - point.x) <= 3 && Math.abs(at.x) <= 12 && Math.abs(at.y) <= 4;
+        }, { timeout: 15000, timeoutMsg: `${action} centered the off-axis point on both axes` })
+          .catch(async (error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(await offset(point))}`, { cause: error }); });
+        assert.equal(await zoom(), kept, `${action} kept the zoom`);
+      };
+      const before = await camera(browser);
+      const there = pointAt(0.35, 0.25);
+      await dispatchInput(browser, { kind: "pointer", phase: "down", ...there });
+      await dispatchInput(browser, { kind: "pointer", phase: "up", ...there });
+      await centered(there, "the click");
       assert.notEqual(await camera(browser), before, "the click moved the camera");
-      assert.equal(await zoom(), kept, "the click kept the zoom");
-      // A drag in it moves the camera along.
-      const further = Math.round(shown.map.left + shown.map.width * 0.65);
-      await dispatchInput(browser, { kind: "pointer", phase: "down", x: there, y: middle });
+      const further = pointAt(0.65, 0.75);
+      await dispatchInput(browser, { kind: "pointer", phase: "down", ...there });
       await afterRender(browser);
-      await dispatchInput(browser, { kind: "pointer", phase: "move", x: further, y: middle });
-      await dispatchInput(browser, { kind: "pointer", phase: "up", x: further, y: middle });
-      await browser.waitUntil(async () => Math.abs((await centre()) - further) <= 3, { timeout: 15000, timeoutMsg: "the frame on the place dragged to" });
-      assert.ok(Math.abs(await offset(further)) <= 12, `the place dragged to is in the middle of the view: ${await offset(further)}`);
-      assert.equal(await zoom(), kept, "the drag kept the zoom");
+      await dispatchInput(browser, { kind: "pointer", phase: "move", ...further });
+      await dispatchInput(browser, { kind: "pointer", phase: "up", ...further });
+      await centered(further, "the drag");
       // With a Detail open, it sits left of the Detail.
       const inView = await browser.execute(() => {
         const canvas = [...document.querySelectorAll(".canvas")].find((element) => !element.closest('aside[aria-label="Detail"]'))!.getBoundingClientRect();

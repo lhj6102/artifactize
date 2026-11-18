@@ -1,8 +1,9 @@
 //! Route parsed commands to focused workflows; no business logic or rendering here.
 
 use super::{
-    Cli, Command, ConfigCommand, RunCommand, Screens, ToolsCommand, account, cache, config,
-    interactive, maintenance, provider, remote, request, run, server, session, status, workflow,
+    Cli, Command, ConfigCommand, Invocation, Parsed, RunCommand, Screens, ToolsCommand, account,
+    cache, config, interactive, maintenance, provider, remote, request, run, server, session,
+    status, workflow,
 };
 use clap::CommandFactory;
 use std::{io, path::PathBuf};
@@ -13,14 +14,36 @@ pub(super) struct Context {
     pub json: bool,
 }
 
-pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
-    let context = Context {
-        repo: cli.repo,
-        state_dir: cli.state_dir,
-        json: cli.json,
-    };
-    let executor = matches!(cli.command, Some(Command::VerifyExecution { .. }));
-    match cli.command {
+pub(super) async fn execute(cli: Parsed, screens: Screens) -> Result<u8, String> {
+    let Parsed {
+        state_dir,
+        json,
+        invocation,
+    } = cli;
+    match invocation {
+        Invocation::Monitor(scope) => interactive::monitor(state_dir, scope, json, screens).await,
+        Invocation::Review {
+            scope,
+            request,
+            reviewer,
+        } => interactive::review(state_dir, scope, request, reviewer, json, screens).await,
+        Invocation::General(command, repo) => {
+            execute_general(
+                command,
+                Context {
+                    repo,
+                    state_dir,
+                    json,
+                },
+            )
+            .await
+        }
+    }
+}
+
+async fn execute_general(command: Option<Command>, context: Context) -> Result<u8, String> {
+    let executor = matches!(command, Some(Command::VerifyExecution { .. }));
+    match command {
         Some(Command::Mcp) => {
             let executable =
                 artifactize_core::platform::current_executable().map_err(|e| e.to_string())?;
@@ -155,26 +178,6 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Run {
             command: RunCommand::Show { run_id, mode },
         }) => run::show(context, run_id, mode).await,
-        Some(Command::Monitor { all, path }) => {
-            let scope = interactive::Scope::from_args(all, path, context.repo)?;
-            interactive::monitor(context.state_dir, scope, context.json, screens).await
-        }
-        Some(Command::Review {
-            request,
-            all,
-            reviewer,
-        }) => {
-            let scope = interactive::Scope::for_review(all, context.repo)?;
-            interactive::review(
-                context.state_dir,
-                scope,
-                request,
-                reviewer,
-                context.json,
-                screens,
-            )
-            .await
-        }
         Some(Command::Cache { command }) => cache::execute(context, command).await,
         Some(Command::Remote { command }) => {
             remote::execute(

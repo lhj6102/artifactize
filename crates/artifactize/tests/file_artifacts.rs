@@ -998,7 +998,8 @@ fn reuse_key_covers_target_part_and_reference_kinds_but_never_paths_or_tags() {
             .clone()
             .with_kind(ArtifactKind::Folder, Vec::new())
             .unwrap();
-        config.artifacts.get_mut(id).unwrap().path = PathBuf::from(format!("moved/{id}")).into();
+        config.artifacts.get_mut(id).unwrap().path =
+            PathBuf::from(format!("moved/{id}")).try_into().unwrap();
         config.artifacts.get_mut(id).unwrap().tags = vec!["changed".into()];
         assert_eq!(
             key,

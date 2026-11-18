@@ -22,7 +22,8 @@ enum Entry {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), String> {
     let args = Arguments::parse();
-    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let executable =
+        artifactize_core::platform::current_executable().map_err(|error| error.to_string())?;
     let context = runs::Context::new(&args.repo, Some(&args.state_dir), &executable)?;
     match args.command {
         Entry::Supervise { run_id } => {

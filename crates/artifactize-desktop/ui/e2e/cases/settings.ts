@@ -11,17 +11,20 @@ import {
 import { clickOption } from "../input.ts";
 import { git } from "../environment.ts";
 import { commandFields, runtimeProfile } from "../native-fixtures.ts";
-import { fill, press, typeText } from "../keys.ts";
-import { graphShown } from "../graph-view.ts";
+import { afterRender, fill, press, typeText } from "../keys.ts";
+import { graphShown, ZOOM_IN } from "../graph-view.ts";
+import { clickAt, visibleCenter } from "../pointer.ts";
 import { branch, mainTitle, openWaiting, showRun } from "../pane.ts";
+import { commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
+import { childDirectories, claudeBrowserOpened, claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, listFiles, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readBytes, readText, replaceText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const SAVED = "sk-e2e-saved-gemini-key";
 const SHADOWED = "sk-e2e-saved-openai-key";
 const ENDPOINT_KEY = "sk-e2e-endpoint-key";
 const TOKEN = "azt_e2esettingstoken0123456789abcdef";
+const CLAUDE_CREDENTIAL = "fixture-claude-credential-never-returned-with-status";
 
 function settingsEnvironment(fixture: Fixture): NodeJS.ProcessEnv {
   return {
@@ -106,14 +109,30 @@ export const scenarios: Scenario[] = [
     },
     async (browser) => {
       await graphShown(browser, "a:release");
+      await browser.setWindowSize(1440, 850);
+      // With the graph across the window, its tool strip begins outside the modal's panel.
+      await press(browser, [primaryModifier, "b"], async () => !(await browser.$('[aria-label="Branches"]').isDisplayed()), "the Pane is hidden");
       const before = await mainTitle(browser);
       assert.match(before, /^run-/);
       const button = () => browser.$("button=Settings");
       const open = () => settingsOpen(browser);
       const closed = async () => !(await browser.$("#settings-title").isExisting()) && (await button().getAttribute("aria-pressed")) === "false";
+      const zoom = () => browser.$('[aria-label="Graph tools"] [aria-label="Zoom"]').getText();
+      const zoomBefore = await zoom();
+      const graphControl = browser.$(ZOOM_IN);
+      const graphPoint = await visibleCenter(browser, await graphControl.getElement());
       await press(browser, [primaryModifier, ","], open, "Settings by Ctrl+,");
-      assert.equal(await mainTitle(browser), before, "the screen beneath Settings stays as it was");
       assert.equal(await browser.$('[role="tab"][aria-selected="true"]').getText(), "Providers", "Settings opens on the Providers tab");
+      assert.equal(await browser.execute(({ x, y }) => {
+        const box = document.querySelector('[role="dialog"][aria-labelledby="settings-title"]')!.getBoundingClientRect();
+        return x < box.left || x >= box.right || y < box.top || y >= box.bottom;
+      }, graphPoint), true, "the graph control is outside the dialog, not just covered by its panel");
+      await clickAt(browser, graphPoint);
+      await afterRender(browser);
+      // The outside click may dismiss the dialog; it must not reach the underlying graph.
+      assert.equal(await zoom(), zoomBefore, "Settings blocks the graph's Zoom in control");
+      if (!(await open())) await press(browser, [primaryModifier, ","], open, "Settings reopened after outside click");
+      assert.equal(await mainTitle(browser), before, "the screen beneath Settings stays as it was");
       await press(browser, ["Escape"], closed, "Settings closed by Esc");
       assert.equal(await mainTitle(browser), before);
       await graphShown(browser, "a:release");
@@ -126,6 +145,8 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(closed, { timeout: 15000, timeoutMsg: "Settings closed by Close" });
       assert.equal(await mainTitle(browser), before, "the screen is still the one before Settings");
       await graphShown(browser, "a:release");
+      await clickAt(browser, await visibleCenter(browser, await graphControl.getElement()));
+      await browser.waitUntil(async () => await zoom() !== zoomBefore, { timeout: 15000, timeoutMsg: "the graph control works after Settings closes" });
     },
   ),
   // UX journey: J-SET-CLAUDE-AGENT
@@ -134,16 +155,47 @@ export const scenarios: Scenario[] = [
     "settings: shows Claude Code's own sign-in, asks again, and signs in and out by running Claude Code's own commands: cancelled, refused, with a pasted code and by the browser returning",
     async () => {
       const fixture = createOutside();
-      // Claude Code opens the system browser itself: the case's fixture browser, at its loopback.
-      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null, browser: { dynamic: true } };
+      const audit = nativePath(fixture.root, "claude-credential-access.json");
+      const accesses: string[] = [];
+      replaceText(audit, "[]");
+      // The stand-in's credential stays in an owned service; its only read endpoint is audited.
+      // Claude Code emits auth facts, never the credential, on its status stdout.
+      let signedIn = false;
+      const env = claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture));
+      const vault = await serveLoopbackHttp((request, response) => {
+        request.resume();
+        if (request.url === "/state") {
+          response.writeHead(signedIn ? 200 : 404).end();
+          return;
+        }
+        const path = request.url ?? "";
+        accesses.push(path);
+        replaceText(audit, JSON.stringify(accesses));
+        switch (path) {
+          case "/login": signedIn = true; response.end(); break;
+          case "/logout": signedIn = false; response.end(); break;
+          case "/credential": response.writeHead(signedIn ? 200 : 404).end(signedIn ? CLAUDE_CREDENTIAL : ""); break;
+          default: response.writeHead(404).end();
+        }
+      });
+      return { fixture, env: { ...env, DESKTOP_TEST_CLAUDE_VAULT: vault.url }, data: { vault: vault.url, audit },
+        browser: { dynamic: true }, release: vault.close };
     },
-    async (browser, { fixture }) => {
+    async (browser, { fixture, data: { vault, audit } }) => {
       const status = () => browser.$('[data-testid="claude-agent-status"]').getText();
       const shows = (expected: string, why: string) =>
         browser.waitUntil(async () => (await status()).trim() === expected && !(await browser.$("button=Cancel sign-in").isExisting()),
           { timeout: 15000, timeoutMsg: why });
       const signedIn = "Signed in · claude.ai · max";
-      const marker = nativePath(fixture.root, "signed-in");
+      const accesses = () => JSON.parse(readText(audit)) as string[];
+      const vaultState = () => httpGet(`${vault}/state`);
+      const noCredentialInState = (directory: typeof fixture.state) => {
+        if (!exists(directory)) return;
+        for (const file of listFiles(directory)) {
+          assert.equal(Buffer.from(readBytes(file)).includes(CLAUDE_CREDENTIAL), false, "Artifactize did not retain the Claude credential");
+        }
+        for (const child of childDirectories(directory)) noCredentialInState(child);
+      };
       /** Sign in with Claude Code; returns the loopback origin of the running `claude auth login`. */
       const visits = nativePath(fixture.root, "claude-visits");
       const visited = () => (exists(visits) ? readText(visits).split("\n").filter(Boolean) : []);
@@ -173,14 +225,12 @@ export const scenarios: Scenario[] = [
       async function signOut() {
         await browser.$("button=Sign out of Claude Code").click();
         await shows("Not signed in", "Claude Code signs out");
-        assert.equal(exists(marker), false, "claude auth logout ran");
+        assert.equal(await vaultState(), 404, "claude auth logout removed its credential");
       }
 
       await openSettings(browser);
       await choose(browser, "Claude Agent");
       await shows("Not signed in", "Claude Code reports it is not signed in");
-      const explained = (await browser.$('[data-testid="claude-agent-sign-in"]').getText()).replace(/\s+/g, " ");
-      assert.ok(explained.includes("Claude Code's own") && explained.includes("never reads, copies or stores it"), explained);
       assert.equal(await browser.$("#provider-key").isExisting(), false, "Claude Agent takes no key");
 
       // Claude Code that cannot report its sign-in shows the error it failed with, and Claude
@@ -202,7 +252,7 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$("button=Sign in with Claude Code").isEnabled(), true, "signing in is offered again");
 
       // Claude Code signed in elsewhere, in a terminal: Check again asks it again.
-      writeText(marker, "claude.ai");
+      assert.equal(await httpGet(`${vault}/login`), 200);
       assert.equal((await status()).trim(), "Not signed in");
       await browser.$("button=Check again").click();
       await shows(signedIn, "Check again shows Claude Code signed in");
@@ -218,7 +268,7 @@ export const scenarios: Scenario[] = [
       await browser.$("dd*=Claude Code sign-in was cancelled.").waitForExist({ timeout: 15000 });
       await browser.waitUntil(() => !processRunning(cancelled),
         { timeout: 15000, timeoutMsg: "the exact Claude Code process exits after cancellation" });
-      assert.equal(exists(marker), false);
+      assert.equal(await vaultState(), 404, "cancelling left Claude Code signed out");
 
       // A code Claude Code refuses ends its sign-in with Claude Code's own error.
       await begin();
@@ -230,9 +280,22 @@ export const scenarios: Scenario[] = [
       // The code the sign-in page gives, pasted.
       await begin();
       await fill(browser, "#claude-agent-code", "good-code");
+      const beforeLogin = accesses().length;
       await browser.$("button=Finish sign-in").click();
       await shows(signedIn, "the pasted code signs Claude Code in");
+      await commandsRendered(browser);
+      assert.equal(await vaultState(), 200);
+      assert.deepEqual(accesses().slice(beforeLogin), ["/login", "/credential"], "only Claude Code's login and its subsequent status use the credential service");
+      const beforeStatus = accesses().length;
+      await browser.$("button=Check again").click();
+      await browser.waitUntil(() => accesses().length > beforeStatus, { timeout: 15000, timeoutMsg: "Check again reached Claude Code's credential lookup" });
+      await commandsRendered(browser);
+      await shows(signedIn, "Check again renders Claude Code's account facts");
+      assert.deepEqual(accesses().slice(beforeStatus), ["/credential"], "only Claude Code's one status reads the credential");
+      assert.equal((await browser.execute(() => document.documentElement.outerHTML)).includes(CLAUDE_CREDENTIAL), false, "the credential never reaches the settings page");
+      noCredentialInState(fixture.state);
       await signOut();
+      noCredentialInState(fixture.state);
 
       // The browser returns to Claude Code.
       const returned = await begin();
@@ -729,9 +792,11 @@ Review the agent folder."""
       // The push reports success before its follow-up status request enables the button.
       const checkStatus = browser.$("button=Check status");
       await checkStatus.waitForEnabled({ timeout: 15000, timeoutMsg: "the push's status refresh finished" });
+      writeText(principalFile, "alice-after-push");
       await checkStatus.click();
-      await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the push counted today" });
-      assert.equal(await statusLine().getText(), "Signed in · alice-after-dry-run (scopes: read, publish) · 1 pushed today");
+      await browser.waitUntil(async () => await statusLine().isDisplayed()
+        && await statusLine().getText() === "Signed in · alice-after-push (scopes: read, publish) · 1 pushed today",
+      { timeout: 15000, timeoutMsg: "the fresh status after the real push counts it today" });
       writeText(principalFile, "");
       await browser.$("button=Check status").click();
       const error = browser.$('section[aria-labelledby="remote-title"]').$('p[aria-label="Remote store"], [role="alert"]');

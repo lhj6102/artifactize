@@ -22,7 +22,8 @@ const TOOLS = '[aria-label="Graph tools"]';
 /** The comments of the editing fixture: app's, under its title row, and core's, longer than
  * the three lines a comment shows. */
 const APP_NOTE = "The app is split next, once the kit settles.\nThe bundle follows.";
-const CORE_LINES = ["Core needs a review.", "Only the happy path runs.", "The errors are untested", "Nor is the cache."];
+// Short hard lines keep the clamp, rather than font-dependent wrapping, under test.
+const CORE_LINES = ["Review core.", "Happy path only.", "Errors untested", "Cache too."];
 const CORE_NOTE = CORE_LINES.join("\n");
 
 /** What the editing fixture holds besides its Artifacts: `comments` adds app's and core's;
@@ -567,28 +568,34 @@ export const scenarios: Scenario[] = [
       await browser.$(TOOLS).$("button=New Artifact").click();
       await dialog().waitForExist({ timeout: 15000, timeoutMsg: "the New Artifact dialog" });
       assert.equal(await dialog().$(".dialog-title").getText(), "New Artifact");
-      const name = dialog().$("label:nth-of-type(1) input");
-      const path = dialog().$("label:nth-of-type(2) input");
+      const field = (label: "Name" | "Path") => dialog().$(`.//label[normalize-space(span)="${label}"]`);
+      const input = (label: "Name" | "Path") => field(label).$("input");
+      const enter = async (label: "Name" | "Path", value: string) => {
+        await input(label).setValue(value);
+        await waitFor(browser, async () => await input(label).getValue() === value, `${label} contains the typed value`);
+      };
+      const invalidField = (label: "Name" | "Path") => input(label).getAttribute("aria-invalid");
+      const fieldError = async (label: "Name" | "Path", reason: RegExp) => {
+        const error = field(label).$('./following-sibling::*[1][@role="alert"]');
+        return await error.isDisplayed() && reason.test(await error.getText());
+      };
+      const name = input("Name");
       await waitFor(browser, () => name.isFocused(), "Name gets focus when New Artifact opens");
-      assert.match(await dialog().$("label:nth-of-type(1)").getText(), /Name/);
-      assert.match(await dialog().$("label:nth-of-type(2)").getText(), /Path/);
-      assert.ok((await path.getLocation("y")) >= (await name.getLocation("y")) + (await name.getSize("height")), "Path is below Name");
-      await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "Core");
-      await fill(browser, '[role="dialog"] label:nth-of-type(2) input', "core/");
+      await enter("Name", "Core");
+      await enter("Path", "core/");
       await dialog().$("button=Create").click();
-      await waitFor(browser, () => explains("label:nth-of-type(1)", /core.*already exists/i), "the duplicate name explanation is under Name");
+      await waitFor(browser, () => fieldError("Name", /core.*already exists/i), "the duplicate name explanation is under Name");
       assert.deepEqual(definitionFiles(), definitionsBefore, "refusal leaves the actual definition entries and contents unchanged");
-      const invalid = (at: 1 | 2) => dialog().$(`label:nth-of-type(${at}) input`).getAttribute("aria-invalid");
-      assert.equal(await invalid(1), "true", "the used name's field marked");
+      assert.equal(await invalidField("Name"), "true", "the used name's field marked");
       // A name that is no name is refused under the Name; a Path outside the project under the Path.
-      await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "two words");
+      await enter("Name", "two words");
       await dialog().$("button=Create").click();
-      await waitFor(browser, async () => (await invalid(1)) === "true" && await explains("label:nth-of-type(1)", /name.*(?:invalid|must|expected)|invalid.*name/i), "a name with a space refused under the Name");
+      await waitFor(browser, async () => (await invalidField("Name")) === "true" && await fieldError("Name", /name.*(?:invalid|must|expected)|invalid.*name/i), "a name with a space refused under the Name");
       assert.equal(file(fixture, "two words"), null, "nothing written");
-      await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "outside");
-      await fill(browser, '[role="dialog"] label:nth-of-type(2) input', "../outside/");
+      await enter("Name", "outside");
+      await enter("Path", "../outside/");
       await dialog().$("button=Create").click();
-      await waitFor(browser, async () => (await invalid(2)) === "true" && (await invalid(1)) === "false" && await explains("label:nth-of-type(2)", /outside|project-relative|escape|\.\./i), "a Path outside the project refused under the Path");
+      await waitFor(browser, async () => (await invalidField("Path")) === "true" && (await invalidField("Name")) === "false" && await fieldError("Path", /outside|project-relative|escape|\.\./i), "a Path outside the project refused under the Path");
       assert.equal(file(fixture, "outside"), null, "nothing written");
       await browser.keys("Escape");
       await dialog().waitForExist({ reverse: true, timeout: 15000, timeoutMsg: "Esc closes the dialog" });
@@ -597,8 +604,8 @@ export const scenarios: Scenario[] = [
       // of the Detail, at a zoom that reads.
       await browser.$(TOOLS).$("button=New Artifact").click();
       await dialog().waitForExist({ timeout: 15000 });
-      await fill(browser, '[role="dialog"] label:nth-of-type(1) input', "extra");
-      await fill(browser, '[role="dialog"] label:nth-of-type(2) input', "extra/");
+      await enter("Name", "extra");
+      await enter("Path", "extra/");
       await browser.keys("Enter");
       await waitFor(browser, () => file(fixture, "extra") !== null, "extra's file written");
       assert.ok(file(fixture, "extra")?.includes('path = "extra/"'), "with its Path");
@@ -1075,8 +1082,17 @@ export const scenarios: Scenario[] = [
       // Placed again, the places draw the branch's Run as they draw its Current.
       const again = (await box(browser, "a:docs"))!;
       await drag(browser, again, await below(browser, again.x + 50));
-      await waitFor(browser, () => /\bat = \[/.test(file(fixture, "docs") ?? ""), "docs placed");
-      await afterRender(browser);
+      await waitFor(browser, () => placeOf(fixture, "docs", "at") !== null, "docs placed");
+      const savedDocs = placeOf(fixture, "docs", "at")!;
+      await waitFor(browser, async () => {
+        const at = await browser.execute((selector) => {
+          const node = document.querySelector(selector);
+          if (!node) return null;
+          const { e, f } = new DOMMatrixReadOnly(getComputedStyle(node).transform);
+          return [e, f];
+        }, `${CURRENT} ${nodeAt("a:docs")}`);
+        return at !== null && savedDocs.every((axis, i) => Math.abs(axis - at[i]) <= 1);
+      }, "the Current draws docs at its newly saved position");
       const onCurrent = await places(browser);
       writeText(nativePath(fixture.root, "places.json"), JSON.stringify(onCurrent));
       await showRun(browser, "repo  master", run);
@@ -1250,37 +1266,63 @@ docs = [0.0, 0.0]
       await quiet("a:app", true);
       const clamped = await quiet("a:core", false);
       assert.equal(clamped.cut, true, "core's fourth line overflows its visible box");
-      // The fixture's third line stops with a plain letter, well before the
-      // right edge. An ellipsis adds three visible dots after it; a plain clip
-      // leaves that part of the line blank. The fourth line has no painted ink.
+      // Center the sample by Find so the graph viewport cannot crop the comment or
+      // the blank area under it. A fit view only guarantees the node itself is visible.
+      await browser.$(TOOLS).$("button=Find").click();
+      await fill(browser, FIND, "core");
+      await waitFor(browser, async () => (await findField(browser))?.entries[0]?.name === "core", "Find lists core");
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact core", "Find opens core's Detail");
+      await waitFor(browser, async () => {
+        const at = await offCentre(browser, "a:core");
+        return at !== null && Math.abs(at.x) <= 4 && Math.abs(at.y) <= 4;
+      }, "core is centered left of the Detail");
+      await press(browser, ["Escape"], async () => (await detail(browser)) === null, "core's Detail closed");
+      const zoom = () => browser.$(`${TOOLS} [aria-label="Zoom"]`).getText();
+      for (let step = 0; step < 4 && Number.parseInt(await zoom(), 10) < 100; step++) {
+        await browser.$(`${TOOLS} button[aria-label="Zoom in"]`).click();
+        await camera(browser);
+      }
       const commentInk = async () => {
-        const sample = await browser.execute((selector, lines) => {
-          const comment = document.querySelector<HTMLElement>(selector)!;
+        const sample = await browser.execute((selector, thirdLine) => {
+          const comment = document.querySelector<HTMLElement>(selector);
+          const canvas = comment?.closest(".canvas");
+          if (!comment || !canvas) return null;
           const box = comment.getBoundingClientRect();
+          const clip = canvas.getBoundingClientRect();
           const style = getComputedStyle(comment);
           const context = document.createElement("canvas").getContext("2d")!;
           context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-          // Measure the unclipped text, not a Range that may include the engine's ellipsis.
           const scale = box.width / comment.offsetWidth;
           const lineHeight = Number.parseFloat(style.lineHeight) * scale;
-          const rows = lines.map((line, i) => ({ left: box.left, right: box.left + context.measureText(line).width * scale,
-            top: box.top + i * lineHeight, bottom: box.top + (i + 1) * lineHeight }));
-          const third = rows[2];
-          return { rows, suffix: { ...third, left: third.right, right: box.right },
+          const end = box.left + context.measureText(thirdLine).width * scale;
+          // Check the unoccluded geometry through the fourth row before sampling. Rows
+          // 1–3 come from the painted box; row 4 would start immediately below it.
+          const top = Math.max(0, clip.top), bottom = Math.min(innerHeight, clip.bottom);
+          const left = Math.max(0, clip.left), right = Math.min(innerWidth, clip.right);
+          if (box.left < left || box.right > right || box.top < top || box.bottom + lineHeight > bottom
+            || !comment.contains(document.elementFromPoint(box.left + 2, box.bottom - lineHeight / 2))) return null;
+          const rowHeight = box.height / 3;
+          const rows = [0, 1, 2, 3].map((i) => ({ left: box.left, right: box.right,
+            top: box.top + i * rowHeight, bottom: box.top + (i + 1) * rowHeight }));
+          return { rows, thirdText: { ...rows[2], right: end }, suffix: { ...rows[2], left: end },
             viewport: { width: innerWidth, height: innerHeight },
-            ink: (style.color.match(/\d+/g) ?? []).slice(0, 3).map(Number) };
-        }, `${CURRENT} ${nodeAt("a:core")} .comment`, CORE_LINES);
+            ink: (style.color.match(/\d+/g) ?? []).slice(0, 3).map(Number), scale };
+        }, `${CURRENT} ${nodeAt("a:core")} .comment`, CORE_LINES[2]);
+        if (!sample) return null;
         const frame = await screenshotPixels(browser, sample.viewport);
         const suffix = frame.inkColumns(sample.suffix, sample.ink);
         return { lines: sample.rows.map((row) => frame.inkColumns(row, sample.ink).some(Boolean)),
-          dots: suffix.filter((on, index) => on && !suffix[index - 1]).length };
+          thirdText: frame.inkColumns(sample.thirdText, sample.ink).some(Boolean),
+          dots: suffix.filter((on, index) => on && !suffix[index - 1]).length, scale: sample.scale };
       };
       let paint: Awaited<ReturnType<typeof commentInk>> | undefined;
       await waitFor(browser, async () => {
         paint = await commentInk();
-        return paint.lines.join() === "true,true,true,false" && paint.dots === 3;
+        return paint?.lines.join() === "true,true,true,false" && paint.thirdText && paint.dots === 3;
       }, "three painted lines ending in an ellipsis, with the fourth line hidden")
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(paint)}`); });
+      await browser.$(TOOLS).$("button=Fit").click();
+      await camera(browser);
       // Read aloud right after its node's name or its whole's title row: the last text its node
       // holds, not hidden.
       const readAfter = (id: string) => browser.execute((selector) => {
@@ -1398,6 +1440,8 @@ docs = [0.0, 0.0]
           const next = { x: Math.round(docs.x + 12), y: Math.round(docs.y + 4) };
           await dispatchInput(browser, { kind: "pointer", phase: "move", ...next });
           await waitFor(browser, () => liftedComment(next), "the lifted text follows the held pointer to a second position");
+          await dispatchInput(browser, { kind: "pointer", phase: "move", x: Math.round(docs.x), y: Math.round(docs.y) });
+          await waitFor(browser, () => liftedComment(docs), "back over the drop point before release");
         },
       });
       await waitFor(browser, () => commentIn(fixture, "docs") === KIT_NOTE && !/annotations/.test(file(fixture, "kit") ?? ""), "the comment moved from kit's file to docs's");

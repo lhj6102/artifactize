@@ -109,18 +109,12 @@ impl From<&config::AgentTool> for AgentTool {
             }),
             config::AgentTool::Command(tool) => Self::Command(CommandTool {
                 description: tool.description.clone(),
-                input_schema: InputSchema(tool.input_schema.to_string().into_boxed_str()),
+                input_schema: InputSchema(tool.input_schema.clone()),
                 protocol: tool.protocol,
                 command: crate::platform::program_text(&tool.command),
                 args: tool.args.iter().map(ToString::to_string).collect(),
                 timeout_ms: optional(tool.timeout_ms),
-                execution_paths: nonempty(
-                    &tool
-                        .execution_paths
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>(),
-                ),
+                execution_paths: nonempty(&tool.execution_paths),
                 extra: tool
                     .session
                     .iter()

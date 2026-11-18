@@ -23,6 +23,8 @@ const INDENT: usize = 2;
 const GLYPH: usize = 2;
 /// The gap between the widest name and the status column.
 const STATUS_GAP: usize = 2;
+/// Keep right-aligned text distinct from what precedes it, even in a narrow pane.
+const RIGHT_GAP: usize = 1;
 /// The mark after a changed node's status; every row keeps room for it once any node shows it.
 const CHANGED_MARK: &str = " *";
 /// A full-width row's name column never narrows below its glyph and the status gap, so a deep
@@ -109,7 +111,7 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     let right = &node.right_at(layout.now, layout.compact);
     let tail = width(right) + if star { width(CHANGED_MARK) } else { 0 };
     let budget = if layout.compact {
-        available.saturating_sub(tail + 1)
+        available.saturating_sub(tail + RIGHT_GAP)
     } else {
         column.saturating_sub(lead).max(MIN_COLUMN).min(available)
     };
@@ -160,7 +162,8 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     if !layout.compact && !node.text.is_empty() {
         spans.push(Span::raw(" ".repeat(budget.saturating_sub(used))));
         used = used.max(budget);
-        let mut room = available.saturating_sub(used + tail + usize::from(!right.is_empty()));
+        let mut room =
+            available.saturating_sub(used + tail + if right.is_empty() { 0 } else { RIGHT_GAP });
         let text = match node.weight {
             Weight::Bold => Style::new().fg(color(node.tone)),
             _ => row,
@@ -180,7 +183,7 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     }
     if !right.is_empty() || node.changed {
         spans.push(Span::raw(
-            " ".repeat(available.saturating_sub(used + tail).max(1)),
+            " ".repeat(available.saturating_sub(used + tail).max(RIGHT_GAP)),
         ));
         let right_style = if artifact.is_some() || dim {
             Style::new().fg(Color::DarkGray)

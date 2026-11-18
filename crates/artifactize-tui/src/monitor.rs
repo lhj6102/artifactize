@@ -4,6 +4,7 @@
 mod catalog_tests;
 mod detail;
 mod folds;
+mod help;
 pub(crate) mod input;
 mod keys;
 pub(crate) mod layout;
@@ -36,6 +37,7 @@ pub(crate) use view::{clock, crumbs, section_lines, transcript_lines};
 use self::detail::Content;
 pub use self::detail::DetailPane;
 use self::detail::Peek;
+pub(crate) use self::detail::SessionView;
 use crate::{
     review::{self, Review},
     store::{RequestView, RunSummary, RunView},

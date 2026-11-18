@@ -45,12 +45,16 @@ fn canonical(value: toml::Value) -> toml::Value {
 /// document bound also bounds this parse; an oversized declaration is an explicit error,
 /// never a partial parse that could expose un-fingerprinted presentation text.
 const DOCUMENT_BYTES: u64 = 8 * 1024 * 1024;
+/// Read one extra byte to distinguish an exact fit from an oversized declaration.
+const OVERFLOW_PROBE_BYTES: u64 = 1;
+
 pub(crate) fn reader(file: File, path: &str) -> io::Result<Box<dyn Read>> {
     if !path.ends_with(".artf") {
         return Ok(Box::new(file));
     }
     let mut bytes = Vec::new();
-    file.take(DOCUMENT_BYTES + 1).read_to_end(&mut bytes)?;
+    file.take(DOCUMENT_BYTES + OVERFLOW_PROBE_BYTES)
+        .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > DOCUMENT_BYTES {
         return Err(io::Error::other(
             "Artifact definition exceeds the 8 MiB file-tool bound.",

@@ -3,6 +3,7 @@ use super::{LogicalPath, ScopeError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     borrow::Cow,
+    ffi::{OsStr, OsString},
     fmt,
     path::{Path, PathBuf},
 };
@@ -53,17 +54,38 @@ impl<'de> Deserialize<'de> for Uri {
     }
 }
 
+/// A project-relative native path with verified logical entry names. Retain the names so
+/// scoped opens can walk pinned directories without reparsing the trusted owner target.
+#[derive(Debug, Clone)]
+pub struct LocalTarget {
+    path: PathBuf,
+    names: Vec<OsString>,
+}
+
+impl TryFrom<PathBuf> for LocalTarget {
+    type Error = ScopeError;
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        let names = crate::files::relative_names(&path)
+            .map_err(|error| ScopeError(error.to_string()))?
+            .into_iter()
+            .map(OsStr::to_owned)
+            .collect();
+        Ok(Self { path, names })
+    }
+}
+
 /// Kind and local selection travel with the target, so a Live URI cannot be a folder.
 #[derive(Debug, Clone)]
 pub enum Target {
-    Folder(PathBuf),
-    File(PathBuf),
+    Folder(LocalTarget),
+    File(LocalTarget),
     Aspect {
-        path: PathBuf,
+        path: LocalTarget,
         select: Vec<LogicalPath>,
     },
     /// Historical saved graphs and the migration reader only.
-    Graph(PathBuf),
+    Graph(LocalTarget),
     Live(Uri),
 }
 impl Target {
@@ -78,6 +100,9 @@ impl Target {
         }
     }
     pub fn local(&self) -> Option<&Path> {
+        self.local_target().map(|local| local.path.as_path())
+    }
+    fn local_target(&self) -> Option<&LocalTarget> {
         match self {
             Self::Folder(path)
             | Self::File(path)
@@ -100,9 +125,23 @@ impl Target {
     }
     pub fn folder(&self) -> &Path {
         match self {
-            Self::Folder(path) | Self::Graph(path) | Self::Aspect { path, .. } => path,
-            Self::File(path) => crate::files::parent(path).unwrap_or(Path::new("")),
+            Self::Folder(local) | Self::Graph(local) | Self::Aspect { path: local, .. } => {
+                &local.path
+            }
+            Self::File(local) => crate::files::parent(&local.path).unwrap_or(Path::new("")),
             Self::Live(_) => Path::new(""),
+        }
+    }
+    pub(super) fn folder_names(&self) -> Option<&[OsString]> {
+        match self {
+            Self::File(local) => Some(local.names.split_last().map_or(&[], |(_, names)| names)),
+            _ => self.local_target().map(|local| local.names.as_slice()),
+        }
+    }
+    pub(super) fn file_name(&self) -> Option<&str> {
+        match self {
+            Self::File(local) => local.names.last()?.to_str(),
+            _ => None,
         }
     }
     /// Join the separate fields of an existing local declaration or saved wire record.
@@ -117,16 +156,18 @@ impl Target {
                 "Only an aspect target has selected paths.".into(),
             ));
         }
-        if let Self::Live(_) = self {
-            return if kind == ArtifactKind::Live {
-                Ok(self)
-            } else {
-                Err(ScopeError(
+        let path = match self {
+            Self::Folder(path)
+            | Self::File(path)
+            | Self::Graph(path)
+            | Self::Aspect { path, .. } => path,
+            Self::Live(_) if kind == ArtifactKind::Live => return Ok(self),
+            Self::Live(_) => {
+                return Err(ScopeError(
                     "A Live URI cannot have a filesystem kind.".into(),
-                ))
-            };
-        }
-        let path = self.local().expect("local variant").to_owned();
+                ));
+            }
+        };
         match kind {
             ArtifactKind::Folder => Ok(Self::Folder(path)),
             ArtifactKind::File => Ok(Self::File(path)),
@@ -144,14 +185,18 @@ impl Target {
         }
     }
 }
-impl From<PathBuf> for Target {
-    fn from(path: PathBuf) -> Self {
-        Self::Folder(path)
+impl TryFrom<PathBuf> for Target {
+    type Error = ScopeError;
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        LocalTarget::try_from(path).map(Self::Folder)
     }
 }
-impl From<&str> for Target {
-    fn from(path: &str) -> Self {
-        Self::Folder(path.into())
+impl TryFrom<&str> for Target {
+    type Error = ScopeError;
+
+    fn try_from(path: &str) -> Result<Self, Self::Error> {
+        Self::try_from(PathBuf::from(path))
     }
 }
 impl fmt::Display for Target {
@@ -173,9 +218,8 @@ impl<'de> Deserialize<'de> for Target {
                 .map(Self::Live)
                 .map_err(serde::de::Error::custom)
         } else {
-            crate::files::parse_target_path(&value)
-                .map(Self::Folder)
-                .map_err(serde::de::Error::custom)
+            let path = crate::files::parse_target_path(&value).map_err(serde::de::Error::custom)?;
+            Self::try_from(path).map_err(serde::de::Error::custom)
         }
     }
 }
@@ -189,7 +233,9 @@ impl PartialEq for Target {
         match (self, other) {
             (Self::Folder(first), Self::Folder(second))
             | (Self::File(first), Self::File(second))
-            | (Self::Graph(first), Self::Graph(second)) => crate::files::paths_equal(first, second),
+            | (Self::Graph(first), Self::Graph(second)) => {
+                crate::files::paths_equal(&first.path, &second.path)
+            }
             (
                 Self::Aspect {
                     path: first,
@@ -199,7 +245,7 @@ impl PartialEq for Target {
                     path: second,
                     select: other,
                 },
-            ) => crate::files::paths_equal(first, second) && select == other,
+            ) => crate::files::paths_equal(&first.path, &second.path) && select == other,
             (Self::Live(first), Self::Live(second)) => first == second,
             _ => false,
         }

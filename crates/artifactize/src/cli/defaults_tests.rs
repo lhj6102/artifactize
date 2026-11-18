@@ -22,7 +22,7 @@ fn native_and_shared_tools_subcommand_names_never_collide() {
 #[test]
 fn default_concurrency_and_run_history_page_remain_compatible() {
     let cli = Cli::try_parse_from(["artifactize", "verify", "--all"]).unwrap();
-    let Some(Command::Verify { jobs, .. }) = cli.command else {
+    let Some(CommandArgs::General(Command::Verify { jobs, .. })) = cli.command else {
         panic!("verify command");
     };
     assert_eq!(jobs, None);
@@ -33,12 +33,12 @@ fn default_concurrency_and_run_history_page_remain_compatible() {
     let cli = Cli::try_parse_from(["artifactize", "verify", "--all", "--jobs", "2"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Verify { jobs: Some(jobs), .. }) if jobs.get() == 2
+        Some(CommandArgs::General(Command::Verify { jobs: Some(jobs), .. })) if jobs.get() == 2
     ));
     let cli = Cli::try_parse_from(["artifactize", "run", "list"]).unwrap();
-    let Some(Command::Run {
+    let Some(CommandArgs::General(Command::Run {
         command: RunCommand::List { limit, offset, .. },
-    }) = cli.command
+    })) = cli.command
     else {
         panic!("run list command");
     };

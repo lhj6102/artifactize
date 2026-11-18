@@ -6,10 +6,30 @@ use std::{
     path::PathBuf,
 };
 
-use super::Cli;
+use super::{Cli, Command, CommandArgs, interactive::Scope};
+use artifactize_core::types::{RequestId, ReviewerId};
 
+/// What the CLI can dispatch, after resolving flags that choose mutually exclusive scopes.
+pub(super) enum Invocation {
+    General(Option<Command>, Option<PathBuf>),
+    Monitor(Scope),
+    Review {
+        scope: Scope,
+        request: Option<RequestId>,
+        reviewer: Option<ReviewerId>,
+    },
+}
+
+pub(super) struct Parsed {
+    pub(super) state_dir: Option<PathBuf>,
+    pub(super) json: bool,
+    pub(super) invocation: Invocation,
+}
+
+#[derive(Debug)]
 pub(super) enum ParseError {
     RepeatedGlobal { name: &'static str, json: bool },
+    ConflictingScope { message: String, json: bool },
     Clap { error: clap::Error, json: bool },
 }
 
@@ -69,7 +89,7 @@ impl Prefix {
     }
 }
 
-pub(super) fn parse_args(args: &[OsString]) -> Result<(Cli, bool), ParseError> {
+pub(super) fn parse_args(args: &[OsString]) -> Result<Parsed, ParseError> {
     let mut args = args.iter();
     let mut command = args.next().into_iter().cloned().collect::<Vec<_>>();
     let mut remaining = args.peekable();
@@ -120,11 +140,31 @@ pub(super) fn parse_args(args: &[OsString]) -> Result<(Cli, bool), ParseError> {
     if let Some(name) = globals.repeated {
         return Err(ParseError::RepeatedGlobal { name, json });
     }
-    let mut cli = Cli::try_parse_from(command).map_err(|error| ParseError::Clap { error, json })?;
-    cli.repo = globals.repo.and_then(|repo| repo.resolve(cli.repo));
-    cli.state_dir = globals
+    let cli = Cli::try_parse_from(command).map_err(|error| ParseError::Clap { error, json })?;
+    let repo = globals.repo.and_then(|repo| repo.resolve(cli.repo));
+    let state_dir = globals
         .state_dir
         .and_then(|state| state.resolve(cli.state_dir));
-    cli.json = json;
-    Ok((cli, json))
+    let scope_error = |message| ParseError::ConflictingScope { message, json };
+    let invocation = match cli.command {
+        Some(CommandArgs::Monitor { all, path }) => {
+            Invocation::Monitor(Scope::from_args(all, path, repo).map_err(scope_error)?)
+        }
+        Some(CommandArgs::Review {
+            request,
+            all,
+            reviewer,
+        }) => Invocation::Review {
+            scope: Scope::for_review(all, repo).map_err(scope_error)?,
+            request,
+            reviewer,
+        },
+        Some(CommandArgs::General(command)) => Invocation::General(Some(command), repo),
+        None => Invocation::General(None, repo),
+    };
+    Ok(Parsed {
+        state_dir,
+        json,
+        invocation,
+    })
 }

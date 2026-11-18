@@ -353,7 +353,7 @@ Summarize {docs}."""
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(look)}`); });
       // A scan's last step comes as it ends; the header names when once it has.
       await waitFor(browser, async () => (await scannedAt(browser)) !== null, "the scan before the Run ended");
-      const before = { checkpoint: await checkpoint(browser), scans: await scans(), at: await scannedAt(browser), drawn: await drawn(), look };
+      const before = { checkpoint: await checkpoint(browser), scans: await scans(), drawn: await drawn(), look };
       assert.notEqual(before.look.nodes["a:release"].mark, reusedLook.nodes["a:release"].mark, "would run is painted unlike reused");
       // Another process verifies: while its Run waits the row starts with it; signed off, the
       // Run ends and the Current is scanned again by itself.
@@ -365,13 +365,12 @@ Summarize {docs}."""
       signOff(fixture, request.id);
       await waitFor(browser, async () => JSON.stringify((await drawn()).nodes) === JSON.stringify(allReused), "the Run's end scanned the Current again: everything reused");
       assert.deepEqual(await placed(), at, "recoloured in place: no Artifact moved");
-      // A scan of its own after the one before the Run, drawn in the reused colours again. Once
-      // that scan has ended, the header names its own instant, not the one before.
-      assert.ok((await scans()) > before.scans, "the Run's end started a new scan");
+      // Completion identifies the new scan even if both scans use the same clock tick.
+      await waitFor(browser, async () => (await scans()) > before.scans, "the scan triggered by the Run's end completed");
       await commandsRendered(browser, before.checkpoint);
-      await waitFor(browser, async () => ![null, before.at].includes(await scannedAt(browser)), "the header names the new scan once it ended");
-      const instant = await scannedAt(browser);
-      assert.ok(instant && instant !== before.at, `the header names the new scan, not ${before.at}: ${instant}`);
+      await waitFor(browser, async () => (await scannedAt(browser)) !== null && /^Scanned at \d/.test(await scanned(browser)),
+        "the completed scan's time is rendered in the header");
+      const instant = (await scannedAt(browser))!;
       const local = await browser.execute((shown: string) => new Date(shown).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }), instant);
       assert.equal(await scanned(browser), `Scanned at ${local}`, "the header reads that scan's local time");
       const after = await graphAppearance(browser);
@@ -468,13 +467,26 @@ payload.instruction = "Check {added}."
       const rechecked = await drawn();
       assert.deepEqual([rechecked.nodes["a:quick"], rechecked.nodes["a:slow"]], ["quick: checking", "slow: checking"]);
       await waitFor(browser, () => fingerprintRuns(checking) === 3, "the new scan ran the fingerprint script again");
+      const beforeF5 = await checkpoint(browser);
+      writeDeclaration(fixture.repo, nativePath(fixture.repo, "refreshed", "index.artf"), `name = "refreshed"
+[evals.check]
+title = "Check the declaration introduced before F5"
+profile = ${runtimeProfile()}
+payload.instruction = "Check {refreshed}."
+`);
       await press(browser, ["F5"], async () => (await scanned(browser)) === "2 left", "F5 leaves the second gated scan showing", { handled: true });
       assert.equal(fingerprintRuns(checking), 3, "F5 did not replace the scan already running");
       writeText(gate, "go");
       await waitFor(browser, () => fingerprintRuns(checking) === 4, "F5 also queues a follow-up scan");
-      await waitFor(browser, async () => (await nodes()) === known, "known again");
-      // Let the successful scan finish before testing a separate failed scan.
-      await waitFor(browser, async () => /^Scanned at \d/.test(await scanned(browser)), "the scan ended again");
+      // The follow-up is queued inside the F5 request, not a second IPC call.
+      // Only its graph can include the declaration added after the third scan began.
+      await commandsRendered(browser, beforeF5);
+      const afterF5 = { ...JSON.parse(known) as Record<string, string>, "a:refreshed": "refreshed: would run (1 eval)" };
+      await waitFor(browser, async () => {
+        const refreshed = (await drawn()).nodes;
+        return Object.keys(refreshed).length === Object.keys(afterF5).length
+          && Object.entries(afterF5).every(([id, plan]) => refreshed[id] === plan) && /^Scanned at \d/.test(await scanned(browser));
+      }, "the completed F5 scan shows its new declaration, all plans and the scanned header");
       // A fingerprint that fails ends a running scan; what it showed stays.
       removeTree(gate);
       await refresh(browser).click();
@@ -490,7 +502,7 @@ payload.instruction = "Check {added}."
       let shown = await visible();
       await waitFor(browser, async () => {
         shown = await visible();
-        return JSON.stringify(Object.keys(shown.nodes).sort()) === JSON.stringify(["a:added", "a:other", "a:quick", "a:slow"]) &&
+        return JSON.stringify(Object.keys(shown.nodes).sort()) === JSON.stringify(["a:added", "a:other", "a:quick", "a:refreshed", "a:slow"]) &&
           shown.nodes["a:slow"].light === "checking" && Object.keys(shown.edges).length > 0 &&
           Object.values({ ...shown.nodes, ...shown.edges }).every((item) => item.painted);
       }, "the running scan's graph drawn")

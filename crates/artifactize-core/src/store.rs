@@ -29,8 +29,8 @@ mod run_read;
 pub use lifecycle::{ExecutionState, GreenResult, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
 pub use run_control::read_run_repo;
-pub use run_read::read_run;
 pub(crate) use run_read::{read_new_results, read_run_record, read_run_requests_only};
+pub use run_read::{read_run, read_run_snapshot};
 pub use snapshots::{
     ArtifactValidation, Blocker, ChildIdentity, EvalValidation, HumanDefinition, Validation,
     ValidationSnapshot,

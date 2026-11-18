@@ -26,11 +26,32 @@ pub(crate) use desktop::open_desktop;
 /// An extensionless program name is tried with each `PATHEXT` suffix.
 pub(crate) const USES_PATHEXT: bool = true;
 
-/// Windows has no execute bit; any regular file is a candidate. A `.bat`/`.cmd` shim (npm's
-/// `pnpm.cmd`, `codex.cmd`) runs through cmd.exe, and the standard library quotes its argument
-/// vector for cmd.exe or refuses arguments it cannot pass safely.
+/// Windows has no execute bit; any regular file is a lookup candidate, including batch shims.
 pub(crate) fn is_executable(path: &Path) -> bool {
     path.metadata().is_ok_and(|metadata| metadata.is_file())
+}
+
+/// Rust delegates batch files to cmd.exe, which interprets a shell string instead of an
+/// argument vector. Refuse them here, not in PATH/PATHEXT lookup.
+pub(crate) fn check_launch_program(program: &Path) -> io::Result<()> {
+    let Some(name) = program.file_name() else {
+        return Ok(());
+    };
+    let name = name.to_string_lossy();
+    // Win32 can ignore trailing dots and spaces in non-verbatim paths.
+    let batch = name
+        .trim_end_matches(['.', ' '])
+        .rsplit_once('.')
+        .is_some_and(|(_, extension)| {
+            extension.eq_ignore_ascii_case("bat") || extension.eq_ignore_ascii_case("cmd")
+        });
+    if batch {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Windows batch files cannot be launched as argument vectors; use an executable instead.",
+        ));
+    }
+    Ok(())
 }
 
 /// A started program in a kill-on-close Job Object, so that its children die with it.

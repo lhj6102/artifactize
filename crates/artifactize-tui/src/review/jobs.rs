@@ -143,6 +143,8 @@ impl Review {
 
     /// Apply a job's outcome.
     pub fn finish(&mut self, outcome: Outcome) -> Action {
+        // The job may finish before the driver receives its last log events.
+        self.drain_log();
         self.busy = None;
         let notice = outcome.notice();
         match outcome {

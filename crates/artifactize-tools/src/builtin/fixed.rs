@@ -3,7 +3,7 @@ use super::input::{List, LogicalPath};
 use crate::{
     Builtin, Content, ToolResult,
     launch::Launcher,
-    scope::{self, ArtifactId, Scope},
+    scope::{ArtifactId, Scope},
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -68,7 +68,7 @@ pub(crate) async fn execute(
         Invocation::Help { program, args } => {
             let cwd = match scope
                 .artifact(owner)
-                .and_then(|artifact| scope::scoped_path(root, artifact.folder()))
+                .and_then(|artifact| artifact.native_folder(root))
             {
                 Ok(cwd) => cwd,
                 Err(error) => return ToolResult::error(error.to_string()),

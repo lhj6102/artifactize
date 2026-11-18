@@ -20,7 +20,7 @@ pub(super) enum Content {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum SessionView {
+pub(crate) enum SessionView {
     Transcript,
     Sections,
 }
@@ -370,6 +370,17 @@ impl Monitor {
             content,
         });
     }
+    #[cfg(test)]
+    pub(super) fn live(&self) -> Option<&session::Live> {
+        match &self.focus {
+            Focus::Detail(pane) => pane.content.live(),
+            _ => match &self.peek.as_ref()?.content {
+                PeekContent::Live(live) => Some(live),
+                PeekContent::Unavailable(_) => None,
+            },
+        }
+    }
+
     /// The Agent session the driver reads for: the open Detail's, or else the peek's.
     pub(super) fn live_mut(&mut self) -> Option<&mut session::Live> {
         match &mut self.focus {

@@ -68,18 +68,11 @@ fn open_owned<'a>(
     artifact: &'a Artifact,
     path: InputPath<&'a str>,
 ) -> Result<Opened<'a>, OpenError> {
-    let local = artifact
+    let owner = artifact
         .path
-        .local()
+        .folder_names()
         .ok_or_else(|| ScopeError("Live Artifacts have no filesystem inputs.".into()))?;
-    // Validate the target as well as the containing directory. In particular, a rooted or
-    // drive-relative owner must not become an independent root through native joining.
-    platform::relative_names(local).map_err(io_scope)?;
-    let owner = platform::relative_names(artifact.folder()).map_err(io_scope)?;
-    let mut opened = open_root(root)?;
-    for name in owner {
-        opened.descend(name)?;
-    }
+    let mut opened = open_folder(root, owner)?;
     let mut reserved: Vec<_> = artifact
         .nested
         .keys()
@@ -113,6 +106,29 @@ fn open_owned<'a>(
         && !opened.file.metadata().map_err(io_scope)?.is_file()
     {
         return Err(ScopeError("File Artifact target must remain a regular file.".into()).into());
+    }
+    Ok(opened)
+}
+
+impl Artifact {
+    pub(crate) fn native_folder(&self, root: &Path) -> Result<PathBuf, ScopeError> {
+        // A Live Artifact has no files; its help program can still run from the workspace.
+        let names = self.path.folder_names().unwrap_or_default();
+        native_path(
+            open_folder(root, names),
+            root,
+            &platform::path_text(self.folder()),
+        )
+    }
+}
+
+fn open_folder<'a>(
+    root: &'a Path,
+    names: &'a [std::ffi::OsString],
+) -> Result<Opened<'a>, OpenError> {
+    let mut opened = open_root(root)?;
+    for name in names {
+        opened.descend(name)?;
     }
     Ok(opened)
 }

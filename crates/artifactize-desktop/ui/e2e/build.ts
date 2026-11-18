@@ -1,9 +1,9 @@
 // Invocation-owned build inputs for the Human app launcher and WDIO test runners.
 // Test app/driver lifetimes belong exclusively to WDIO's Tauri service.
 import {
-  absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
-  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, readText, removeTree, runStep, scratchDirectory,
-  setVariable, suitePath, variable, writeJson, type Environment, type NativePath,
+  ProcessTreeNotJoined, absolutePath, asNativePath, childDirectories, copyFile, executableName, exists, inheritedEnvironment, isInside,
+  makeDirectory, nativePath, newDirectory, packageCommand, pathNotUrl, readJson, removeTree, runStep, scratchDirectory,
+  setVariable, suitePath, testWindowOptions, variable, withBuildInterrupts, writeJson, type Environment, type NativePath,
 } from "./platform.ts";
 
 export const workspace = absolutePath(suitePath(), "../../../..");
@@ -26,27 +26,20 @@ function cargoEnvironment(root: NativePath): Environment {
   };
 }
 
-/** The test app's windows keep rendering while another test's window covers them: a suite
- * runs several apps at once, and a covered macOS WebView otherwise stops its frames, so a
- * graph waiting for its layout never appears. Other systems ignore the policy. The merged
- * config replaces the window list, so each declared window is copied with the policy. */
-function testWindows(): unknown[] {
-  const declared = JSON.parse(readText(nativePath(workspace, "crates", "artifactize-desktop", "tauri.conf.json"))) as {
-    app: { windows: Record<string, unknown>[] };
-  };
-  return declared.app.windows.map((window) => ({ ...window, backgroundThrottling: "disabled" }));
-}
-
 /** Build only the selected frontend and inspect its actual bundler inputs. */
-async function frontend(root: NativePath, selected: "production" | "e2e" = "e2e"): Promise<Environment> {
+async function frontend(root: NativePath, build: { kind: "production" } | { kind: "e2e"; signal: AbortSignal }): Promise<Environment> {
   const env = cargoEnvironment(root);
+  const selected = build.kind;
   const dist = nativePath(root, `frontend-${selected}`);
   const frontend = packageCommand(["-C", ui, "build", "--mode", selected, "--outDir", dist, "--manifest"]);
-  await runStep(frontend.program, frontend.args, { env, cwd: workspace, forwardInterrupts: selected === "production" });
+  await runStep(frontend.program, frontend.args, { env, cwd: workspace, signal: build.kind === "e2e" ? build.signal : undefined });
   const manifest = readJson(nativePath(dist, ".vite", "manifest.json")) as Record<string, unknown>;
   const plugin = Object.keys(manifest).some((key) => key.includes("/@wdio/tauri-plugin/"));
   if (plugin !== (selected === "e2e")) throw new Error(`${selected} frontend has the wrong WebDriver plugin inputs`);
-  const app = selected === "e2e" ? { withGlobalTauri: true, windows: testWindows() } : {};
+  const declared = readJson(nativePath(workspace, "crates", "artifactize-desktop", "tauri.conf.json")) as {
+    app: { windows: Record<string, unknown>[] };
+  };
+  const app = selected === "e2e" ? { withGlobalTauri: true, ...testWindowOptions(declared.app.windows) } : {};
   // frontendDist takes a URL or a folder. A URL makes the app browse it instead of embedding
   // and serving the frontend, so the folder is given in a form that cannot be a URL.
   return { ...env, TAURI_CONFIG: JSON.stringify({ build: { frontendDist: pathNotUrl(dist) }, app }) };
@@ -61,11 +54,11 @@ export async function prepareApp(): Promise<{ root: NativePath; app: NativePath 
   const root = resourceRoot();
   try {
     console.log(`Building the production desktop app in ${root}`);
-    const env = await frontend(root, "production");
+    const env = await frontend(root, { kind: "production" });
     // Keep both commands beside the app, just as in an installed distribution. Source
     // builds do not register them on PATH or change the person's command installation.
     await runStep("cargo", ["build", "--locked", "-p", "artifactize-desktop", "-p", "artifactize", "-p", "artifactize-tools", "--bins"],
-      { env, cwd: workspace, forwardInterrupts: true });
+      { env, cwd: workspace });
     return { root, app: nativePath(root, "target", "debug", executableName("artifactize-desktop")) };
   } catch (error) {
     removeTree(root);
@@ -84,25 +77,32 @@ function save(root: NativePath, cli: NativePath, app: NativePath, observer: Nati
 export async function prepare(directory?: NativePath): Promise<Candidate> {
   const root = resourceRoot(directory);
   try {
-    const env = await frontend(root);
-    const output = await runStep("cargo", ["build", "--locked", "-p", "artifactize", "-p", "artifactize-desktop",
-      "--features", "artifactize-desktop/e2e", "--bins", "--message-format=json-render-diagnostics"], { env, cwd: workspace, capture: true });
-    const executables = new Map<string, NativePath>();
-    for (const line of output.split("\n").filter(Boolean)) {
-      const item = JSON.parse(line) as { reason?: string; target?: { name?: string; kind?: string[] }; executable?: string };
-      if (item.reason === "compiler-artifact" && item.executable && item.target?.kind?.includes("bin") && item.target.name) {
-        executables.set(item.target.name, asNativePath(item.executable));
+    return await withBuildInterrupts(async (signal) => {
+      const env = await frontend(root, { kind: "e2e", signal });
+      const output = await runStep("cargo", ["build", "--locked", "-p", "artifactize", "-p", "artifactize-desktop",
+        "--features", "artifactize-desktop/e2e", "--bins", "--message-format=json-render-diagnostics"], { env, cwd: workspace, capture: true, signal });
+      const executables = new Map<string, NativePath>();
+      for (const line of output.split("\n").filter(Boolean)) {
+        const item = JSON.parse(line) as { reason?: string; target?: { name?: string; kind?: string[] }; executable?: string };
+        if (item.reason === "compiler-artifact" && item.executable && item.target?.kind?.includes("bin") && item.target.name) {
+          executables.set(item.target.name, asNativePath(item.executable));
+        }
       }
-    }
-    const cli = executables.get("artifactize");
-    const app = executables.get("artifactize-desktop");
-    const observer = executables.get("artifactize-e2e-observe");
-    if (!cli || !app || !observer) throw new Error("Cargo did not emit the CLI, desktop and native observation executables");
-    return save(root, cli, app, observer);
-  } catch (error) {
-    removeTree(root);
-    throw error;
+      const cli = executables.get("artifactize");
+      const app = executables.get("artifactize-desktop");
+      const observer = executables.get("artifactize-e2e-observe");
+      if (!cli || !app || !observer) throw new Error("Cargo did not emit the CLI, desktop and native observation executables");
+      return save(root, cli, app, observer);
+    });
+  } catch (error) { failedBuild(root, error); }
+}
+
+function failedBuild(root: NativePath, error: unknown): never {
+  if (error instanceof ProcessTreeNotJoined) {
+    throw new Error(`desktop build shutdown was not confirmed; retained inputs at ${root}`, { cause: error });
   }
+  removeTree(root);
+  throw error;
 }
 
 /** Only the owner's explicitly supplied manifest can select a candidate. */
@@ -164,11 +164,12 @@ export async function cleanup(root: NativePath): Promise<void> {
 export async function cargoGate(mode: "clippy" | "test"): Promise<void> {
   const root = resourceRoot();
   try {
-    const env = await frontend(root);
-    const args = [mode, "--locked", "-p", "artifactize-desktop", "--features", "e2e"];
-    if (mode === "clippy") args.push("--all-targets", "--", "-D", "warnings");
-    await runStep("cargo", args, { env, cwd: workspace });
-  } finally {
-    await cleanup(root);
-  }
+    await withBuildInterrupts(async (signal) => {
+      const env = await frontend(root, { kind: "e2e", signal });
+      const args = [mode, "--locked", "-p", "artifactize-desktop", "--features", "e2e"];
+      if (mode === "clippy") args.push("--all-targets", "--", "-D", "warnings");
+      await runStep("cargo", args, { env, cwd: workspace, signal });
+    });
+  } catch (error) { failedBuild(root, error); }
+  await cleanup(root);
 }

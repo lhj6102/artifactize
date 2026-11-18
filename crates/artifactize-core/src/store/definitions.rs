@@ -215,29 +215,17 @@ pub struct CommandTool {
     #[serde(default, skip_serializing_if = "missing", with = "duration_field")]
     pub timeout_ms: Field<std::time::Duration>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub execution_paths: Field<Vec<String>>,
+    pub execution_paths: Field<Vec<config::LogicalPath>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
-/// A command tool's saved input schema, kept as compact JSON text and decoded only when read:
-/// a catalog of Artifacts saves one per tool, and a decoded schema takes about ten times its
-/// text's memory, while only a review that offers the tool reads it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InputSchema(Box<str>);
+/// An owner-authored JSON Schema, decoded at the store boundary and shared across copies.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct InputSchema(Arc<Value>);
 impl InputSchema {
-    pub fn value(&self) -> Value {
-        serde_json::from_str(&self.0).expect("kept as the text of a decoded value")
-    }
-}
-impl Serialize for InputSchema {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.value().serialize(serializer)
-    }
-}
-impl<'de> Deserialize<'de> for InputSchema {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let schema = Value::deserialize(deserializer)?;
-        Ok(Self(schema.to_string().into_boxed_str()))
+    pub fn value(&self) -> &Value {
+        &self.0
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

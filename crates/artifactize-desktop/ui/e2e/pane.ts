@@ -1,7 +1,9 @@
 // The window's one screen as a person sees it: the Pane (its Search, the Branches with their
 // timelines, the Waiting stack) beside the Main area. Every reading is read-only; actions are
 // real clicks on what the window shows.
-import { requestState, showDebug } from "./human-review.ts";
+import { requestState } from "./human-review.ts";
+import { press } from "./keys.ts";
+import { clickAt, visibleCenter } from "./pointer.ts";
 
 /** A timeline entry as read: the Run it shows (`current` for the Current), its status word and
  * age as `text` (`GREEN 5m ago`, `Running 2m`, `Current`), the line under it (a Run's comment,
@@ -200,23 +202,36 @@ export function scannedAt(browser: WebdriverIO.Browser): Promise<string | null> 
 export async function openWaiting(browser: WebdriverIO.Browser, id: string): Promise<void> {
   await browser.waitUntil(async () => (await waiting(browser)).rows.some((entry) => entry.id === id),
     { timeout: 15000, timeoutMsg: `${id} waits in the stack` });
-  await browser.$(`[aria-label="Waiting reviews"] [data-key=${JSON.stringify(id)}]`).click();
+  const row = browser.$(`[aria-label="Waiting reviews"] [data-key=${JSON.stringify(id)}]`);
+  // Bits UI can leave the background pointer-locked briefly after Settings leaves the DOM.
+  // A delivered click during that interval never selects the review or starts loading Debug.
+  await clickAt(browser, await visibleCenter(browser, await row.getElement()));
+  await browser.waitUntil(async () => await row.getAttribute("aria-selected") === "true",
+    { timeout: 15000, timeoutMsg: `${id} is selected in the Waiting stack` });
   await expectMainReview(browser, id);
 }
 
-/** Inspect the displayed request using Debug, restoring its previous fold afterwards. */
+/** Inspect the loaded request using its Debug shortcut, restoring its previous fold afterwards. */
 export async function expectMainReview(browser: WebdriverIO.Browser, id: string): Promise<void> {
   const review = `${MAIN} [aria-label="Human review"]`;
-  const debug = browser.$(review).$("button.head=Debug");
-  await browser.waitUntil(async () => (await mainTitle(browser)) === "Review" && await debug.isDisplayed(),
-    { timeout: 15000, timeoutMsg: "the Main review and its Debug control are visible" });
-  const restore = (await debug.getAttribute("aria-expanded")) === "false";
-  if (restore) await showDebug(browser, review);
-  await browser.waitUntil(async () => (await requestState(browser, review)).startsWith(`Request ${id} · `),
-    { timeout: 15000, timeoutMsg: `${id}'s Review identified in the Main area` });
-  if (restore) {
-    await debug.click();
-    await browser.waitUntil(async () => (await debug.getAttribute("aria-expanded")) === "false",
-      { timeout: 15000, timeoutMsg: "the review's previous Debug fold was restored" });
+  // When ResizeObserver first measures a wide Review, the single column (and every
+  // button in it) can be replaced by the split layout. Do not keep a Debug element
+  // handle across polls or from the readiness check into the action.
+  const ready = () => browser.execute((query, main) => {
+    const root = document.querySelector(query);
+    const debug = root?.querySelector('section[aria-label="Debug"] > button');
+    const title = document.querySelector(`${main} > header h2`)?.textContent?.trim();
+    return title === "Review" && root?.contains(document.activeElement) && !root.querySelector(".busy")
+      && debug?.checkVisibility({ visibilityProperty: true }) ? debug.getAttribute("aria-expanded") : null;
+  }, review, MAIN);
+  let previous: string | null = null;
+  await browser.waitUntil(async () => (previous = await ready()) !== null,
+    { timeout: 15000, timeoutMsg: `the loaded Main Review for ${id} has focus and a Debug section` });
+  const identified = async () => (await requestState(browser, review)).startsWith(`Request ${id} · `);
+  if (previous === "false") {
+    await press(browser, ["t"], identified, `Debug identifies the Main Review for ${id}`);
+    await press(browser, ["t"], async () => (await ready()) === "false", "the review's previous Debug fold was restored");
+  } else {
+    await browser.waitUntil(identified, { timeout: 15000, timeoutMsg: `${id}'s Review identified in the Main area` });
   }
 }

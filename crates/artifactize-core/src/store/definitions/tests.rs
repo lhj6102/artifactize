@@ -35,6 +35,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                             "protocol":"json",
                             "command":crate::test_os::echo_program(),
                             "args":["find"],
+                            "executionPaths":["scripts/find"],
                         },
                     },
                     "humanTools":{
@@ -118,8 +119,12 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     };
     assert_eq!(
         find.input_schema.value(),
-        wire["artifacts"]["page"]["views"]["agentTools"]["find"]["inputSchema"]
+        &wire["artifacts"]["page"]["views"]["agentTools"]["find"]["inputSchema"]
     );
+    let [path] = find.execution_paths.value().unwrap().as_slice() else {
+        panic!("the saved command tool keeps its execution path");
+    };
+    assert_eq!(path.as_str(), "scripts/find");
     let graph = snapshot.graph().unwrap();
     assert_eq!(
         graph.repo_path.value().unwrap(),

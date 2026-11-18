@@ -35,8 +35,7 @@ pub fn is_absolute(path: &std::path::Path) -> bool {
 
 /// The logical form of `path` below `root`: an absolute native path is taken relative to
 /// `root` (`None` outside it), a relative one is already logical.
-pub fn logical_below(root: &std::path::Path, path: &str) -> Option<String> {
-    let path = std::path::Path::new(path);
+pub fn logical_below(root: &Path, path: &Path) -> Option<String> {
     if path.is_absolute() {
         logical_from_native(path.strip_prefix(root).ok()?)
     } else {
@@ -46,10 +45,6 @@ pub fn logical_below(root: &std::path::Path, path: &str) -> Option<String> {
 
 pub(crate) fn parent(path: &Path) -> Option<&Path> {
     path.parent()
-}
-
-pub(crate) fn file_name(path: &Path) -> Option<&str> {
-    path.file_name()?.to_str()
 }
 
 /// The filesystem root of an absolute path (`/`, or a Windows volume or share) and the names
@@ -274,18 +269,10 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn pinned_owners_refuse_drive_relative_and_rooted_paths() {
-        use crate::scope::{Artifact, open_input};
-        use std::{collections::BTreeMap, path::PathBuf};
-        let root = crate::test_os::tempdir();
+        use crate::scope::Target;
         for path in [r"C:owner", r"\owner"] {
-            let owner = Artifact {
-                path: PathBuf::from(path).into(),
-                name: "owner".into(),
-                nested: BTreeMap::new(),
-                covering_part: None,
-            };
             assert!(
-                open_input(root.path(), &owner, "")
+                Target::try_from(path)
                     .unwrap_err()
                     .to_string()
                     .contains("relative to its declared root")

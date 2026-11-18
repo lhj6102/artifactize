@@ -3,17 +3,17 @@
 // follower included) and after a search of the Pane.
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
-import { verifyWaiting, addRepository, create, requests, signOff, signoff } from "../fixture.ts";
+import { verifyWaiting, addRepository, create, createJoined, requests, savedRuns, signOff, signoff } from "../fixture.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { choosePaletteCommand } from "../palette-commands.ts";
 import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, shortcutLabel } from "../platform.ts";
 import { reviewing } from "../human-review.ts";
-import { detail, graphShown } from "../graph-view.ts";
+import { detail, graphShown, openArtifact } from "../graph-view.ts";
 import { dispatchInput } from "../input.ts";
 import { pointerGapClick, visibleCenter } from "../pointer.ts";
-import { chooseChip, entriesFocused, expectMainReview, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
+import { chooseChip, entriesFocused, expectMainReview, mainTitle, SEARCH, searchFocused, showRun, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -204,6 +204,27 @@ export const scenarios: Scenario[] = [
       await reset().waitForDisplayed({ reverse: true, timeout: 15000 });
       await checkCurrent(false);
       await escape("Esc");
+    },
+  ),
+  // UX journey: J-PALETTE
+  scenario(
+    "palette-whole",
+    "offers the whole's minimize or expand command with its key while its Detail is open",
+    async () => {
+      const fixture = createJoined();
+      return { fixture, args: ["--repo", fixture.repo], data: { run: savedRuns(fixture)[0].id } };
+    },
+    async (browser, { data }) => {
+      await showRun(browser, "repo  master", data.run);
+      await graphShown(browser, "a:pack/a:bad");
+      await openArtifact(browser, "a:pack", "Artifact pack");
+      const { ctrlK, run } = palette(browser);
+      await ctrlK("the whole's active Detail");
+      const command = "Minimize or expand the whole";
+      await waitFor(browser, async () => (await rendered(browser)).some(({ group, commands }) => group === "Graph"
+        && commands.some(([label, key]) => label === command && key === "m")), "the whole's command is rendered with m");
+      await run(command);
+      await browser.$('button[aria-label="Expand pack (m)"]').waitForDisplayed({ timeout: 15000 });
     },
   ),
   // UX journey: J-PALETTE

@@ -186,7 +186,7 @@ pub fn call(binary: &str, root: &Path, args: &[&str]) -> std::process::Output {
 pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::process::Output {
     let mut command = tools(binary);
     #[cfg(windows)]
-    command.env("PATHEXT", ".EXE");
+    command.env("PATHEXT", ".CMD;.BAT;.EXE");
     command
         .current_dir(root)
         .env("PATH", root)

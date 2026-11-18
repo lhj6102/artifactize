@@ -1,7 +1,8 @@
 // Exercise the public Launcher and actual Tauri service, not a replacement service hook.
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { releaseToolGates } from "./process-fixtures.ts";
+import { observe } from "./domain-fixtures/observe.ts";
+import { joinGatedTools, releaseToolGates, slowTool } from "./process-fixtures.ts";
 import { environment } from "./environment.ts";
 import {
   childDirectories, executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
@@ -117,6 +118,7 @@ it("joins fixture descendants even after their root process returned", { timeout
     const command = runnerCommand([suitePath("domain-fixtures", "tree.ts"), "owner-exits", String(receiver.port)], environment(fixture(directory)));
     const result = await fixtureRunner(command, test.signal);
     assert.equal(result.code, 0, result.stderr);
+    await observe(() => descendant !== undefined, () => "the receiver did not deliver the descendant PID");
     assert.ok(descendant && !processRunning(descendant), "the root returned but the same fixture had to join its still-live descendant");
   } finally {
     try { await receiver?.close(); } finally { removeTree(directory); }
@@ -161,6 +163,28 @@ it("a stand-in starting after gate teardown cannot recreate or wait on its relea
     assert.equal(runProgramOk(nodeProgram, args, { timeout: 5000 }), "");
     assert.equal(exists(owned.root), false);
   } finally { removeTree(directory); }
+});
+
+it("fixture teardown joins a slow tool without app cancellation", { timeout: 10000 }, async (test) => {
+  const directory = root();
+  const owned = fixture(directory);
+  const cancellation = new AbortController();
+  makeDirectory(nativePath(owned.root, "gated-tools"));
+  const command = { program: nodeProgram, args: [suitePath("domain-fixtures", "command.ts"), "slow", nativePath(owned.root, "slow.endpoint")],
+    env: environment(owned) };
+  const running = fixtureRunner(command, AbortSignal.any([cancellation.signal, test.signal]));
+  try {
+    await observe(async () => await slowTool(owned)?.() === true, () => "the slow tool did not serve its owned endpoint");
+    const alive = slowTool(owned)!;
+    releaseToolGates(owned);
+    const result = await running;
+    assert.equal(result.code, 0, result.stderr);
+    await joinGatedTools(owned);
+    assert.equal(await alive(), false, "the same endpoint is gone after the fixture gate closes");
+  } finally {
+    cancellation.abort();
+    try { await running; } finally { removeTree(directory); }
+  }
 });
 
 it("closing an owned TCP endpoint joins a stalled connection and repeated callers", { timeout: 10000 }, async () => {

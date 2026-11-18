@@ -97,8 +97,9 @@ async fn execute_in(
         artifacts: BTreeMap::from([(
             owner.clone(),
             Artifact {
-                path: PathBuf::new().into(),
-
+                path: PathBuf::new()
+                    .try_into()
+                    .expect("workspace root is relative"),
                 name: "cwd".into(),
                 covering_part: None,
                 nested: BTreeMap::new(),

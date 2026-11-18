@@ -18,8 +18,8 @@ async fn starting_inside_saved_non_git_workspace_selects_its_runs() {
     let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
     let run: store::Run = serde_json::from_value(serde_json::json!({
         "id":"run-non-git",
-        "repoPath":repo,
-        "stateDir":state,
+        "repoPath":crate::platform::path_text(&repo),
+        "stateDir":crate::platform::path_text(&state),
         "status":"GREEN",
         "createdAt":"2026-01-01T00:00:00Z",
         "completedAt":"2026-01-01T00:00:01Z",

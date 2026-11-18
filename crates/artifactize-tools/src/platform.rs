@@ -29,4 +29,4 @@ use unix as os;
 #[cfg(windows)]
 use windows as os;
 
-pub(crate) use os::{USES_PATHEXT, is_executable, open_desktop, spawn_tree};
+pub(crate) use os::{USES_PATHEXT, check_launch_program, is_executable, open_desktop, spawn_tree};

@@ -113,7 +113,7 @@ mod tests {
             crate::test_os::lookup_program(&root.path().join(directory), "shim", None);
         }
         let program = crate::test_os::executable_name("shim");
-        let path = env::join_paths(["second", "first"]).unwrap();
+        let path = OsString::from(crate::test_os::path_list(["second", "first"]));
         assert_eq!(
             resolve_with(OsStr::new(&program), root.path(), |name| (name
                 == SEARCH_PATH)
@@ -146,7 +146,7 @@ mod tests {
         for extension in ["cmd", "exe", "bat"] {
             crate::test_os::lookup_program(root.path(), "shim", Some(extension));
         }
-        let path = env::join_paths([root.path()]).unwrap();
+        let path = OsString::from(crate::test_os::path_list([root.path()]));
         assert_eq!(
             resolve_with(OsStr::new("shim"), root.path(), |name| match name {
                 SEARCH_PATH => Some(path.clone()),

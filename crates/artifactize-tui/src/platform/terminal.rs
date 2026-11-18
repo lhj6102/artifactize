@@ -1,9 +1,32 @@
-//! Own the console modes and restoration for both terminal screens.
+//! Own console modes, normalized input and restoration for both terminal screens.
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event as RawEvent, EventStream, KeyEvent, KeyEventKind, MouseEvent,
 };
+use futures_util::{Stream, StreamExt, future};
 use ratatui::DefaultTerminal;
 use std::io;
+
+pub(crate) enum Event {
+    Key(KeyEvent),
+    Mouse(MouseEvent),
+    Paste(String),
+    Resize,
+}
+
+pub(crate) fn events() -> impl Stream<Item = io::Result<Event>> {
+    EventStream::new().filter_map(|event| {
+        // Terminals differ in whether they report release and repeat. Dispatch only presses.
+        future::ready(match event {
+            Ok(RawEvent::Key(key)) if key.kind == KeyEventKind::Press => Some(Ok(Event::Key(key))),
+            Ok(RawEvent::Mouse(mouse)) => Some(Ok(Event::Mouse(mouse))),
+            Ok(RawEvent::Paste(text)) => Some(Ok(Event::Paste(text))),
+            Ok(RawEvent::Resize(_, _)) => Some(Ok(Event::Resize)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+    })
+}
 
 pub(crate) fn init() -> io::Result<DefaultTerminal> {
     // Ratatui's panic hook restores the terminal before printing a panic.

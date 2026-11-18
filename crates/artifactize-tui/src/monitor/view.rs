@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
 };
 use std::{sync::Arc, time::Duration};
 use time::OffsetDateTime;
@@ -44,13 +44,6 @@ const PANE_CHROME: usize = 3;
 const SCOPE_INDENT: usize = 2;
 /// The label before a running Agent's last transcript line in the peek.
 const LAST_LABEL: &str = "last: ";
-/// The help popup stays this wide, so its key column and descriptions read as a table.
-const HELP_WIDTH: u16 = 72;
-/// The help popup reserves one row for each of its top and bottom borders.
-const HELP_BORDER_ROWS: u16 = 2;
-/// One more than "Tab / Shift-Tab", the longest key label in [`HELP`], so every label gets
-/// at least one space before its text.
-const HELP_KEY_WIDTH: usize = 16;
 /// The headline wraps into at most this share of the pane's height, so nothing below it is
 /// pushed off.
 const HEADLINE_HEIGHT_SHARE: u16 = 3;
@@ -351,7 +344,7 @@ impl Monitor {
             }
         }
         if self.help {
-            draw_help(frame, body);
+            super::help::draw(frame, body);
         }
     }
     fn scope_label(&self) -> String {
@@ -385,12 +378,9 @@ impl Monitor {
             .filter(|row| row.scope == Scope::All)
             .map(|row| row.badge.parts())
             .unwrap_or_default();
-        for (status, count) in badge {
-            right.push(Span::styled(
-                format!("{}{count} ", status.glyph()),
-                color(status),
-            ));
-        }
+        right.extend(badge.into_iter().map(|(status, count)| {
+            Span::styled(format!("{}{count} ", status.glyph()), color(status))
+        }));
         if !self.mouse_capture {
             right.push(" mouse off · F2".yellow());
         }
@@ -919,68 +909,4 @@ pub(crate) fn crumbs(root: &str, segments: &[String], room: usize) -> String {
         }
     }
     unreachable!("the last limit returns")
-}
-
-const HELP: &[(&str, &str)] = &[
-    ("Panes", ""),
-    ("→ / Enter", "next level: Scope → Runs → Run → Detail"),
-    ("← / Esc", "previous level; never quits"),
-    ("Tab / Shift-Tab", "cycle Scope, Runs and the Run tree"),
-    ("↑↓ j k", "select; in Detail, scroll"),
-    ("!", "next ERROR, RED or waiting Human eval"),
-    ("r", "refresh now"),
-    ("q / Ctrl-C", "quit"),
-    ("Scope", ""),
-    ("Space", "show or hide worktrees without Runs"),
-    ("Run tree", ""),
-    ("h / l / Space", "fold, unfold, toggle"),
-    ("Enter on Run", "Run detail: usage, budgets and counts"),
-    ("Detail", ""),
-    ("t", "show or hide the Technical section"),
-    (
-        "w",
-        "show or hide the pending evals of what an eval waits for",
-    ),
-    ("Tab", "sections and evidence; Human tools and fields"),
-    ("d / Space", "Agent: details, tool groups"),
-    ("c g r u", "Human: claim, GREEN, RED, release"),
-    ("i", "Human: expand or fold the instruction"),
-    (
-        "Ctrl-S",
-        "Human: submit the review; Ctrl-G/R pick a verdict while editing",
-    ),
-    ("Esc", "Human: stop editing, then step back"),
-    ("Mouse", ""),
-    ("click", "focus and select; double-click opens"),
-    ("wheel", "scroll the pane under the pointer"),
-    ("F2", "mouse capture on or off; paste works either way"),
-];
-
-fn draw_help(frame: &mut Frame, area: Rect) {
-    let lines: Vec<Line> = HELP
-        .iter()
-        .map(|(key, text)| {
-            if text.is_empty() {
-                Line::from(Span::styled(*key, Style::new().bold().cyan()))
-            } else {
-                Line::from(vec![
-                    Span::styled(format!("  {key:<HELP_KEY_WIDTH$}"), Modifier::BOLD),
-                    Span::raw(*text),
-                ])
-            }
-        })
-        .collect();
-    let width = area.width.min(HELP_WIDTH);
-    let height = area.height.min(lines.len() as u16 + HELP_BORDER_ROWS);
-    let area = Rect::new(
-        area.x + (area.width - width) / 2,
-        area.y + (area.height - height) / 2,
-        width,
-        height,
-    );
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines).block(Block::bordered().title(" Keys · any key closes ").cyan()),
-        area,
-    );
 }

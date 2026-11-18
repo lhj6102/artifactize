@@ -74,9 +74,16 @@ switch (operation) {
   case "slow": {
     // The listening socket exists only for this process's actual lifetime. Observers
     // issue no command to it: a connection only reads the unique fixture identity.
+    const endpoint = absolutePath(argument);
+    // Only fixture teardown opens this gate; the test still checks real tool cancellation.
+    const shutdown = gated(nativePath(parentOf(endpoint), "slow.shutdown"));
+    if (!shutdown) break;
     const token = randomUUID();
     const server = await serveLoopback((socket) => socket.end(token));
-    replaceText(absolutePath(argument), JSON.stringify({ port: server.port, token }));
+    try {
+      replaceText(endpoint, JSON.stringify({ port: server.port, token }));
+      await shutdown();
+    } finally { await server.close(); }
     break;
   }
   default:

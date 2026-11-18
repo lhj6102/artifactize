@@ -356,23 +356,42 @@ export async function runProgramAsync(program: string, args: readonly string[], 
   return { status: result.code ?? -1, stdout: result.stdout, stderr: result.stderr };
 }
 
+/** The e2e app can be covered by another app window during a parallel run. macOS
+ * otherwise suspends WebView frames in that situation. Omit the override elsewhere. */
+export function testWindowOptions(windows: readonly Record<string, unknown>[]): Record<string, unknown> {
+  return MACOS ? { windows: windows.map((window) => ({ ...window, backgroundThrottling: "disabled" })) } : {};
+}
+
+/** Keep the build owner alive on interruption so it can join the compiler tree
+ * before removing inputs. One signal covers both frontend and native build steps. */
+export async function withBuildInterrupts<T>(build: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const stop = new AbortController();
+  const interrupt = () => stop.abort(new Error("desktop test build interrupted"));
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
+  try {
+    const result = await build(stop.signal);
+    stop.signal.throwIfAborted();
+    return result;
+  }
+  finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", interrupt);
+  }
+}
+
 /** Run a build step with inherited output; with `capture`, its standard output is
  * returned and its progress on standard error stays visible. */
-export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean; forwardInterrupts?: boolean }): Promise<string> {
-  if (options.forwardInterrupts) {
+export async function runStep(program: string, args: readonly string[], options: { env: Environment; cwd: NativePath; capture?: boolean; signal?: AbortSignal }): Promise<string> {
+  if (!options.signal) {
     const code = await runVisible(program, args, options.env, options.cwd);
     if (code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${code}`);
     return "";
   }
-  const child = spawn(program, args, { cwd: options.cwd, env: options.env, stdio: ["ignore", options.capture ? "pipe" : 2, "inherit"] });
-  let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => { output += chunk; });
-  const code = await new Promise<number | null>((done, fail) => {
-    child.once("error", fail);
-    child.once("close", done);
-  });
-  if (code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${code}`);
-  return output;
+  const built = await fixtureRunner({ program, args: [...args], cwd: options.cwd, env: options.env }, options.signal,
+    { stdout: !options.capture, stderr: true });
+  if (built.code !== 0) throw new Error(`${program} ${args.join(" ")} exited ${built.code}`);
+  return built.stdout;
 }
 
 /** Run a child runner with inherited output. An interrupt of this process is reported
@@ -446,7 +465,7 @@ export function setExitCode(code: number): void {
 export function runnerCommand(args: string[], inherited: Environment = process.env): {
   program: string; args: string[]; env: Environment;
 } {
-  const env: Environment = { ...inherited, DESKTOP_TEST_WRAPPED: "1" };
+  const env: Environment = { ...inherited };
   if (!LINUX) return { program: process.execPath, args, env };
   delete env.WAYLAND_DISPLAY;
   return {
@@ -456,15 +475,19 @@ export function runnerCommand(args: string[], inherited: Environment = process.e
   };
 }
 
-/** Startup regression fixtures never admit a native app. Their test timeout must
- * terminate the entire wrapped runner, including dbus/Xvfb and fixture descendants,
- * then join its closed pipes before the test removes any inputs. This is not the
- * suite's app lifecycle: that remains exclusively with WDIO's Tauri service. */
-export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & { cwd?: NativePath }, signal: AbortSignal): Promise<{
+type TtyOutput = { stdout: boolean; stderr: boolean };
+
+/** Do not remove inputs a child may still be using when a join was not confirmed. */
+export class ProcessTreeNotJoined extends Error {}
+
+/** Supervise a build or startup regression fixture, never a service-owned WDIO app.
+ * Terminate and join the full process tree, including descendants that closed their pipes. */
+export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & { cwd?: NativePath }, signal: AbortSignal,
+  visible?: TtyOutput): Promise<{
   code: number | null; stdout: string; stderr: string;
 }> {
   signal.throwIfAborted();
-  if (WINDOWS) return windowsFixtureRunner(command, signal);
+  if (WINDOWS) return windowsFixtureRunner(command, signal, visible);
   const child = spawn(command.program, command.args, {
     cwd: command.cwd ?? resolve(import.meta.dirname, ".."), env: command.env,
     detached: true, stdio: ["ignore", "pipe", "pipe"],
@@ -472,8 +495,8 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & 
   let stdout = "";
   let stderr = "";
   const failures: unknown[] = [];
-  child.stdout.on("data", (chunk: Buffer) => { stdout += chunk; });
-  child.stderr.on("data", (chunk: Buffer) => { stderr += chunk; });
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { if (visible?.stdout) process.stdout.write(chunk); else stdout += chunk; });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => { if (visible?.stderr) process.stderr.write(chunk); else stderr += chunk; });
   // Abort and spawn errors can precede close; neither releases fixture ownership.
   child.on("error", (error) => { failures.push(error); });
   const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
@@ -481,7 +504,9 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & 
   });
   let cancellation: Promise<void> | undefined;
   const cancel = () => {
-    cancellation ??= stopTree(child).catch((error: unknown) => { failures.push(error); });
+    cancellation ??= stopTree(child).catch((error: unknown) => {
+      failures.push(new ProcessTreeNotJoined("fixture process group teardown was not confirmed", { cause: error }));
+    });
   };
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();
@@ -494,6 +519,9 @@ export async function fixtureRunner(command: ReturnType<typeof runnerCommand> & 
     if (signal.aborted) failures.unshift(signal.reason);
     else if (outcome.signal) failures.push(new Error(`fixture runner terminated by ${outcome.signal}`));
     if (failures.length === 1) throw failures[0];
+    if (failures.some((error) => error instanceof ProcessTreeNotJoined)) {
+      throw new ProcessTreeNotJoined("failed while stopping the fixture process group", { cause: new AggregateError(failures) });
+    }
     if (failures.length > 1) throw new AggregateError(failures, "fixture runner failed or could not be cancelled");
     return { code: outcome.code, stdout, stderr };
   } finally {
@@ -520,7 +548,8 @@ async function stopTree(child: ChildProcess): Promise<void> {
 
 /** The job, not the root PID or its inherited pipes, owns Windows descendants.
  * Gate the starter before it can create any descendants or exit. */
-async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & { cwd?: NativePath; owner?: NativePath; holdDescendants?: boolean }, signal: AbortSignal) {
+async function windowsFixtureRunner(command: ReturnType<typeof runnerCommand> & { cwd?: NativePath; owner?: NativePath; holdDescendants?: boolean }, signal: AbortSignal,
+  visible?: TtyOutput) {
   const root = newDirectory(scratchDirectory(), "fixture-job-");
   const script = nativePath(root, "job.ps1");
   const input = nativePath(root, "command.json");
@@ -615,12 +644,15 @@ try {
 `);
     const child = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-File", script, "-InputPath", input, "-OutputPath", output], {
       cwd: command.cwd ?? resolve(import.meta.dirname, ".."), env: command.env, stdio: ["pipe", "pipe", "pipe"],
+      // The build owner handles Ctrl+C by closing the job owner's stdin, not by
+      // interrupting the PowerShell process responsible for joining the job.
+      detached: visible !== undefined, windowsHide: visible !== undefined,
     });
     let stdout = "";
     let stderr = "";
     let failure: unknown;
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => { if (visible?.stdout) process.stdout.write(chunk); else stdout += chunk; });
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => { if (visible?.stderr) process.stderr.write(chunk); else stderr += chunk; });
     child.on("error", (error) => { failure = error; });
     if (command.owner) child.once("spawn", () => {
       try { writeText(command.owner!, String(child.pid)); }
@@ -632,8 +664,11 @@ try {
     if (signal.aborted) cancel();
     try {
       const status = await new Promise<number | null>((done) => child.once("close", done));
+      if (status !== 0 || !exists(output)) {
+        if (child.pid === undefined && failure) throw failure;
+        throw new ProcessTreeNotJoined(`Windows fixture job teardown was not confirmed (${status}): ${stderr}`, { cause: failure });
+      }
       if (failure) throw failure;
-      if (status !== 0 || !exists(output)) throw new Error(`Windows fixture job teardown was not confirmed (${status}): ${stderr}`);
       signal.throwIfAborted();
       const { code } = readJson(output) as { code: number | null };
       return { code, stdout, stderr };
@@ -1212,6 +1247,8 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 const [group, command] = process.argv.slice(2);
 const signedIn = process.env.DESKTOP_TEST_CLAUDE_SIGNED_IN;
+const vault = process.env.DESKTOP_TEST_CLAUDE_VAULT;
+const account = (path) => fetch(vault + path);
 const say = (text) => process.stdout.write(text);
 if (group !== "auth") process.exit(2);
 // An older Claude Code, which has no auth command: it reports nothing and says why.
@@ -1220,14 +1257,16 @@ if (existsSync(process.env.DESKTOP_TEST_CLAUDE_BROKEN)) {
   process.exit(1);
 }
 if (command === "status") {
-  const signed = existsSync(signedIn);
+  const signed = vault ? !!(await (await account("/credential")).text()) : existsSync(signedIn);
   say(JSON.stringify(signed
     ? { loggedIn: true, authMethod: "claude.ai", subscriptionType: "max", email: "person@example.com" }
     : { loggedIn: false, authMethod: "none" }) + "\\n");
   process.exit(signed ? 0 : 1);
 }
 if (command === "logout") {
-  rmSync(signedIn, { force: true });
+  if (vault) {
+    if (!(await account("/logout")).ok) process.exit(1);
+  } else rmSync(signedIn, { force: true });
   say("Successfully logged out.\\n");
   process.exit(0);
 }
@@ -1238,8 +1277,13 @@ const logins = process.env.DESKTOP_TEST_CLAUDE_LOGINS;
 writeFileSync(join(logins, process.pid + "-" + randomUUID() + ".pid"), "", { flag: "wx" });
 setInterval(() => { if (!existsSync(logins)) process.exit(1); }, 100).unref();
 setTimeout(() => process.exit(1), ${watchdogMs}).unref();
-const finish = () => {
-  writeFileSync(signedIn, "claude.ai");
+let finishing = false;
+const finish = async () => {
+  if (finishing) return;
+  finishing = true;
+  if (vault) {
+    if (!(await account("/login")).ok) process.exit(1);
+  } else writeFileSync(signedIn, "claude.ai");
   say("Login successful.\\n");
   process.exit(0);
 };
@@ -1282,11 +1326,11 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (text) => {
   input += text;
   if (!input.includes("\\n")) return;
-  if (input.split("\\n")[0].trim() === "good-code") finish();
+  if (input.split("\\n")[0].trim() === "good-code") { void finish(); return; }
   process.stderr.write("Login failed: That code was not accepted.\\n");
   process.exit(1);
 });
-process.stdin.on("end", () => process.exit(1));
+process.stdin.on("end", () => { if (!finishing) process.exit(1); });
 `);
   // Paths are arguments, never interpreted as shell source.
   if (WINDOWS) {

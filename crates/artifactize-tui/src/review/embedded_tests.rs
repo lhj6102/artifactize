@@ -106,10 +106,10 @@ async fn refused_review_jobs_release_database_before_returning() {
     let view = crate::monitor::tests::request(
         "app/check",
         "GREEN",
-        json!({"profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"cwd":repo}),
+        json!({"profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"cwd":crate::platform::path_text(&repo)}),
     );
     let run: store::Run = serde_json::from_value(json!({
-        "id":view.request.run_id,"repoPath":repo,"stateDir":state,"status":"GREEN",
+        "id":view.request.run_id,"repoPath":crate::platform::path_text(&repo),"stateDir":crate::platform::path_text(&state),"status":"GREEN",
         "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
         "selection":{"kind":"all"},"validation":null
     }))

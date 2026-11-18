@@ -51,10 +51,11 @@ pub struct Screens {
 pub fn run(screens: Screens) -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
     let has_args = args.len() > 1;
-    let (cli, json) = match parse_args(&args) {
+    let cli = match parse_args(&args) {
         Ok(parsed) => parsed,
         Err(error) => return print_parse_error(error),
     };
+    let json = cli.json;
     // Run on a thread whose stack is the same size everywhere: Windows gives the main thread
     // only 1 MiB, which deep review futures outgrow in debug builds.
     let worker = std::thread::Builder::new()
@@ -93,6 +94,7 @@ const STACK_BYTES: usize = 8 * 1024 * 1024;
 
 fn print_parse_error(error: ParseError) -> ExitCode {
     match error {
+        ParseError::ConflictingScope { message, json } => failure(&message, json),
         ParseError::RepeatedGlobal { name, json } => {
             failure(&format!("{name} cannot be used multiple times."), json)
         }

@@ -1,6 +1,11 @@
 //! Shared process outcomes for standalone and host launchers.
 
-use std::process::ExitStatus;
+use std::process::{ExitCode, ExitStatus};
+
+/// Return the standalone command’s numeric result to the host process.
+pub fn exit_code(code: u8) -> ExitCode {
+    ExitCode::from(code)
+}
 
 /// How a finished process ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

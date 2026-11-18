@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -210,7 +210,7 @@ struct InlineImage {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ImageFile {
     mime_type: image::Mime,
-    path: String,
+    path: PathBuf,
 }
 
 /// Malformed or oversized command output; callers expose their own execution diagnostic.

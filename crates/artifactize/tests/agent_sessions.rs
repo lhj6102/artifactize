@@ -41,6 +41,11 @@ struct Project {
 
 impl Project {
     fn new(backend: &str) -> Self {
+        const HEADER_TIMEOUT_MS: u64 = 20_000;
+        Self::with_timeout(backend, HEADER_TIMEOUT_MS)
+    }
+
+    fn with_timeout(backend: &str, timeout_ms: u64) -> Self {
         let root = owned_run::Root::from(support::os::tempdir());
         let repo = root.path().join("repo");
         let folder = repo.join("notes");
@@ -51,7 +56,7 @@ impl Project {
         )
         .unwrap();
         let profile = json!({"kind":"agent","backend":backend,
-            "model":format!("{backend}-model"),"timeout_ms":20000});
+            "model":format!("{backend}-model"),"timeout_ms":timeout_ms});
         support::declaration::write(
             &(repo),
             folder.join("index.artf"),
@@ -662,7 +667,8 @@ fn concurrent_sends_take_turns_in_one_thread() {
 
 #[test]
 fn the_session_store_is_collected_oldest_first_down_to_its_target() {
-    let project = Project::new("openai");
+    // The provider gate owns progress during prune. The declared timeout must not race it.
+    let project = Project::with_timeout("openai", artifactize_core::config::MAX_TIMEOUT_MS);
     let release = support::Gate::default();
     release.open();
     let provider = FakeProvider::start({

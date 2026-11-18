@@ -190,7 +190,6 @@ export const scenarios: Scenario[] = [
     () => prepare(baseline().tag, { browser: PAGE, used: true }),
     async (browser, { fixture, env, data }) => {
       const lookups = () => visited(data).filter((path) => path === LOOKUP).length;
-      const asked = async () => (await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0;
       const shownNotice = async () => await anyNotice(browser).isExisting() ? await anyNotice(browser).getText() : null;
       const initialNotice = baseline().notice;
       // A released candidate starts without a notice; a dev candidate sees the matching stable release.
@@ -201,9 +200,9 @@ export const scenarios: Scenario[] = [
       // A release comes out. The app looks again by itself, but within the day it reuses its
       // answer and does not ask the site.
       replaceText(data.answer, `v${LATEST}`);
-      const before = await asked();
-      await browser.waitUntil(async () => (await asked()) >= before + 2, { timeout: 15000, timeoutMsg: "the app looked again twice" });
-      await afterRender(browser);
+      // Observe the cache through the shared lookup used by doctor, without counting the UI's
+      // internal polls. The app remains on its starting notice until the clock crosses the day.
+      assert.equal(runProgramOk(cli(), ["--state-dir", fixture.state, "doctor", "--json"], { env }).includes(LATEST), false);
       assert.equal(await shownNotice(), initialNotice, "within the day the kept answer stands");
       assert.equal(lookups(), 1, "within the day the app asked the site nothing more");
       // A day later, the next look asks the site again and finds the release.

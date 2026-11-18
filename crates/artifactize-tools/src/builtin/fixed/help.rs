@@ -1,7 +1,7 @@
 //! Bounded help-process execution through the declared launcher.
 use super::TEXT_BYTES;
 use crate::{
-    launch::{Launch, LaunchError, Launcher},
+    launch::{Finished, Launch, LaunchError, Launcher},
     program,
 };
 use std::{
@@ -21,6 +21,7 @@ pub(super) async fn help(
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
     let program = program::resolve(program, cwd).map_err(|error| error.to_string())?;
+    crate::platform::check_launch_program(&program).map_err(|error| error.to_string())?;
     args.push(OsString::from("--help"));
     let launch = Launch {
         program,
@@ -36,6 +37,10 @@ pub(super) async fn help(
             LaunchError::TimedOut => "Help timed out.".to_owned(),
             error => error.to_string(),
         })?;
+    help_output(finished)
+}
+
+fn help_output(finished: Finished) -> Result<String, String> {
     if !finished.status.success() {
         return Err(format!(
             "Help exited unsuccessfully ({}).\n{}",

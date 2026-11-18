@@ -19,7 +19,7 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
             },
             review: |_, _, _, _, _| unreachable!("monitor never routes to review"),
         };
-        let cli = Cli::try_parse_from(args).unwrap();
+        let cli = parse_args(&args.into_iter().map(Into::into).collect::<Vec<_>>()).unwrap();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -101,6 +101,50 @@ fn a5_monitor_starts_on_all_from_any_cwd_and_paths_select_only_initial_scope() {
         vec!["monitor", ".", "--all"],
         vec!["monitor", "--all", "--repo", "."],
     ] {
-        assert!(Cli::try_parse_from(std::iter::once("artifactize").chain(args)).is_err());
+        let args = std::iter::once("artifactize")
+            .chain(args)
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        assert!(parse_args(&args).is_err());
+    }
+}
+
+#[test]
+fn review_parses_one_scope_and_rejects_conflicts_with_either_repo_syntax() {
+    use interactive::Scope;
+
+    let parse = |tail: &[&str]| {
+        let args = std::iter::once("artifactize")
+            .chain(tail.iter().copied())
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        parse_args(&args).map(|parsed| parsed.invocation)
+    };
+    for args in [&["review"][..], &["review", "--all"]] {
+        assert!(matches!(
+            parse(args).unwrap(),
+            Invocation::Review {
+                scope: Scope::All,
+                ..
+            }
+        ));
+    }
+    for args in [
+        &["--repo", "selected", "review"][..],
+        &["review", "--repo=selected"],
+    ] {
+        assert!(
+            matches!(parse(args).unwrap(), Invocation::Review { scope: Scope::Repository(path), .. }
+            if path == std::path::Path::new("selected"))
+        );
+    }
+    for args in [
+        &["review", "--all", "--repo", "selected"][..],
+        &["--repo=selected", "review", "--all", "--json"],
+    ] {
+        assert!(
+            matches!(parse(args), Err(ParseError::ConflictingScope { message, json })
+            if message == "review accepts --repo or --all, not both." && json == args.contains(&"--json"))
+        );
     }
 }

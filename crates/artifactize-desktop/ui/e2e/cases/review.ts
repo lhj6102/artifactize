@@ -6,7 +6,7 @@ import { addRepository, artifactize, create, type Fixture, orderRuns, requests, 
 import { claimable, requestState, showDebug, reviewing } from "../human-review.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
 import { sessionEndedByApp } from "../observation.ts";
-import { commandsRendered } from "../commands.ts";
+import { checkpoint, commandsRendered } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, requestWindowClose } from "../platform.ts";
 import { branch, entriesFocused, expand, MAIN, mainTitle, openWaiting, showRun, waiting } from "../pane.ts";
@@ -341,13 +341,17 @@ export const scenarios: Scenario[] = [
       const release = review.$('button[aria-label="Release claim (u)"]');
       assert.equal(await release.isEnabled(), false, "Release claim cannot be clicked while the tool runs");
       await review.$('[aria-label="Instruction"]').click();
+      const releaseCalls = async () => (await checkpoint(browser)).activity.commands.humanRelease?.started ?? 0;
+      const beforeBusyShortcut = await releaseCalls();
       await press(browser, ["u"], () => true, "the release shortcut reached the busy review");
-      await afterRender(browser);
       assert.ok(await alive() && /^\d+s$/.test((await row()).seconds), "the gated tool still runs");
       assert.equal(await review.$(".stage").getText(), "REVIEW (yours)", "the review still shows its claim");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "the release attempt kept the claim");
       await review.$('button[aria-label="Cancel (Esc)"]').click();
       await waitFor(browser, async () => !(await alive()) && (await row()).seconds === "", "Cancel stopped the owned tool and dismissed its timer");
+      await commandsRendered(browser);
+      assert.equal(await releaseCalls(), beforeBusyShortcut, "the busy shortcut never sent a release, including one with a delayed write");
+      assert.equal(signoff(fixture).claim?.reviewer, "alice", "the claim remains once the tool's cancellation completed");
       assert.equal(await browser.$("#field-comment").getValue(), "draft kept through the tool", "the draft stays");
       // Narrow, a Main area under twice the Detail's width: one column, top to bottom, the Tool
       // log a box between the Tools and the Result.
@@ -365,6 +369,9 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => await browser.$('aside[aria-label="Detail"] [aria-label="Human review"] [aria-label="Instruction"]').isDisplayed() && oneColumn(await arranged()),
         "the Run Detail has the instruction above Tools, Tool log and Result in one readable column");
       await checkHeadingAndDebug('aside[aria-label="Detail"]', 'aside[aria-label="Detail"] header h2', false);
+      await review.$('[aria-label="Instruction"]').click();
+      await press(browser, ["u"], async () => signoff(fixture).claim === null && await claimable(browser), "the same shortcut releases the idle review");
+      assert.equal(await releaseCalls(), beforeBusyShortcut + 1, "the release probe detects the successful shortcut");
     },
   ),
 ];

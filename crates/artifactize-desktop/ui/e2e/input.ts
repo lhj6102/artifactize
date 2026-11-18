@@ -30,10 +30,11 @@ export async function clickOption(browser: WebdriverIO.Browser, target: Webdrive
     mouse("mousemove", 0, 0);
     if (mouse("mousedown", 1, 1)) {
       select.focus();
-      if (!select.disabled && !option.disabled && !option.closest("optgroup")?.disabled && !option.selected) {
+      if (!select.disabled && !option.disabled && !option.closest("optgroup")?.disabled) {
+        const wasSelected = option.selected;
         select.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
         option.selected = true;
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+        if (!wasSelected) select.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }
     mouse("mouseup", 0, 1);

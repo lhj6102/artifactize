@@ -207,6 +207,12 @@ impl ExecutionId {
     }
 }
 identity!(SessionId, segment);
+impl SessionId {
+    /// A bare conversation selector tries the same validated segment in both namespaces.
+    pub(crate) fn from_bare_request(id: &RequestId) -> Self {
+        Self(id.0.clone())
+    }
+}
 // A tool name as a model called it: the model controls it, so it is only bounded and printable.
 identity!(CalledTool, |value: &str| (1..=MAX_CALLED_TOOL_BYTES)
     .contains(&value.len())

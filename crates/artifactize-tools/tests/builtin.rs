@@ -35,10 +35,10 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
                 Artifact {
                     covering_part: None,
                     nested: BTreeMap::from([(ChildPrefix::new("docs").unwrap(), id("target"))]),
-                    ..folder("".into())
+                    ..folder("".try_into().unwrap())
                 },
             ),
-            (id("target"), folder("docs".into())),
+            (id("target"), folder("docs".try_into().unwrap())),
         ]),
     };
     let call = |tool, input| {
@@ -112,7 +112,7 @@ fn folder_scope(owner: &ArtifactId) -> Scope {
         artifacts: BTreeMap::from([(
             owner.clone(),
             Artifact {
-                path: "".into(),
+                path: "".try_into().unwrap(),
 
                 name: "fixture".into(),
                 covering_part: None,
@@ -318,7 +318,7 @@ fn searches_pass_over_a_nested_artifact_the_review_does_not_admit() {
     let id = |name| ArtifactId::new(name).unwrap();
     let owner = id("app");
     let folder = |path: &str, nested| Artifact {
-        path: path.into(),
+        path: path.try_into().unwrap(),
 
         name: "fixture".into(),
         nested,

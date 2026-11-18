@@ -2763,6 +2763,20 @@ pub fn ignored_tests(environment: &[(&str, std::ffi::OsString)]) -> Command {
     command
 }
 
+/// An exact probe with only its declared variables and the native loader's requirements.
+pub fn isolated_test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", test, "--nocapture"]).env_clear();
+    #[cfg(windows)]
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        command.env("SystemRoot", root);
+    }
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    command
+}
+
 /// Prepare an exact child probe for a caller to customize before owning it with start/finish.
 pub fn test_command(test: &str, environment: &[(&str, std::ffi::OsString)]) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
@@ -3271,10 +3285,15 @@ pub fn invalid_fingerprints() -> Vec<Vec<u8>> {
     }
     values
 }
-pub fn valid_fingerprints() -> Vec<Vec<u8>> {
-    let mut values = vec![b"Aa0._:-".to_vec(), b"Aa0._:-\n".to_vec(), vec![b'x'; 128]];
+pub fn valid_fingerprints() -> Vec<(Vec<u8>, String)> {
+    let entry = |bytes: &[u8], expected: &str| (bytes.to_vec(), expected.to_owned());
+    let mut values = vec![
+        entry(b"Aa0._:-", "Aa0._:-"),
+        entry(b"Aa0._:-\n", "Aa0._:-"),
+        (vec![b'x'; 128], "x".repeat(128)),
+    ];
     if cfg!(windows) {
-        values.push(b"Aa0._:-\r\n".to_vec());
+        values.push(entry(b"Aa0._:-\r\n", "Aa0._:-"));
     }
     values
 }

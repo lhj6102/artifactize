@@ -132,6 +132,29 @@ fn help_resolves_path_and_enforces_output_bounds() {
     assert!(String::from_utf8(large.stderr).unwrap().contains("64 KiB"));
 }
 
+// Windows resolves batch shims through PATHEXT but would launch them through cmd.exe.
+#[cfg(windows)]
+#[test]
+fn help_refuses_batch_shims_found_on_path() {
+    let root = os::tempdir();
+    for (program, extension) in [("batch", "bat"), ("shim", "cmd")] {
+        os::lookup_program(root.path(), program, Some(extension));
+        let output = os::help(
+            env!("CARGO_BIN_EXE_artifactize-tools"),
+            root.path(),
+            program,
+            &[],
+        );
+        assert_eq!(os::exit_code(&output), 1);
+        assert!(output.stdout.is_empty());
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            error.contains("Windows batch files cannot be launched"),
+            "{error}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn standalone_refuses_an_output_limit_without_room_for_the_probe() {
     use artifactize_tools::launch::{Launch, LaunchError, Launcher, Standalone};

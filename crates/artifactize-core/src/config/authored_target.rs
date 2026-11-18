@@ -1,6 +1,6 @@
 //! The validated spelling used for a definition's PATH and for editor operations.
 
-use super::{Target, Uri, validation};
+use super::{ArtifactKind, Target, Uri, validation};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{path::PathBuf, str::FromStr};
 
@@ -29,7 +29,7 @@ impl FromStr for AuthoredTarget {
         let target = if Uri::has_scheme(text) {
             Target::Live(text.parse::<Uri>().map_err(|error| error.to_string())?)
         } else if text == "./" {
-            Target::Folder(PathBuf::new())
+            Target::try_from(PathBuf::new()).expect("workspace root is relative")
         } else {
             let logical = text.strip_suffix('/').unwrap_or(text);
             if logical.contains(':') {
@@ -39,11 +39,14 @@ impl FromStr for AuthoredTarget {
                 return Err("path must name a file or folder".into());
             }
             validation::path(logical)?;
-            if text.ends_with('/') {
-                Target::Folder(logical.into())
+            let kind = if text.ends_with('/') {
+                ArtifactKind::Folder
             } else {
-                Target::File(logical.into())
-            }
+                ArtifactKind::File
+            };
+            Target::try_from(logical)
+                .and_then(|local| local.with_kind(kind, Vec::new()))
+                .map_err(|error| error.to_string())?
         };
         Ok(Self {
             text: text.into(),

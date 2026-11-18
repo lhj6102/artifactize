@@ -534,8 +534,8 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
     let receipts = store::OwnedReceipts::open(&state, &repo).await.unwrap();
-    let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
-        "stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z",
+    let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":crate::platform::path_text(&repo),
+        "stateDir":crate::platform::path_text(&state),"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z",
         "selection":{"kind":"all"},"validation":null}))
     .unwrap();
     let mut request = tests::request(
@@ -604,14 +604,14 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     let live = monitor.live_mut().unwrap();
     live.movement(Move::Top);
     complete(live);
-    let rows = live.window.rows.clone();
+    let rows = monitor.live().unwrap().window.rows.clone();
     let paused = tests::sized(&mut monitor, 160, 30);
     assert!(!paused.contains("last: first session row 79"), "{paused}");
     monitor.refresh().await;
     monitor.sync_peek().await;
     assert!(!tests::sized(&mut monitor, 160, 30).contains("reading the session…"));
     complete(monitor.live_mut().unwrap());
-    assert_eq!(monitor.live_mut().unwrap().window.rows, rows);
+    assert_eq!(monitor.live().unwrap().window.rows, rows);
     assert!(tests::sized(&mut monitor, 160, 30).contains("first session row"));
     // A replaced session drops the old window and follows the replacement transcript.
     source.reference.session_id = "session-2".parse().unwrap();

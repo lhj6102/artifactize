@@ -35,8 +35,10 @@ export function createdRoots(): NativePath[] {
   return childDirectories(scratch).filter((root) => nameOf(root).startsWith("fixture-"));
 }
 
-/** Cancel and join the Runs and processes of fixtures whose native owners ended. */
-export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate()): Promise<void> {
+/** Stop fixture-owned work independently of file deletion. An unconfirmed native owner
+ * can still read its inputs; it never owns the stand-ins or already submitted Runs. */
+export async function releaseFixtures(roots: readonly NativePath[] = createdRoots(), candidate: Candidate = readCandidate(),
+  retain: ReadonlySet<NativePath> = new Set()): Promise<void> {
   const failures: unknown[] = [];
   for (const root of roots) {
     if (!exists(root)) continue;
@@ -54,7 +56,7 @@ export async function releaseFixtures(roots: readonly NativePath[] = createdRoot
     try {
       const active = slowTool(fixture);
       if (active) await observe(async () => !await active(), () => `tool still owns fixture ${root}; preserve inputs`);
-      if (before === failures.length) removeTree(root);
+      if (!retain.has(root) && before === failures.length) removeTree(root);
     } catch (error) { failures.push(error); }
   }
   if (failures.length === 1) throw failures[0];

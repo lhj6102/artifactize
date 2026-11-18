@@ -24,7 +24,7 @@ fn child_names_cannot_be_bypassed_by_a_filesystem_alias() {
     fs::write(root.join("Secret/x"), "excluded").unwrap();
     fs::write(root.join("public"), "visible").unwrap();
     let owner = Artifact {
-        path: "".into(),
+        path: "".try_into().unwrap(),
 
         name: "parent".into(),
         covering_part: None,

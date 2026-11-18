@@ -35,7 +35,7 @@ test("option clicks supply the WebDriver default once and never change disabled 
       const changed = state === "fresh" || state === "click-prevented";
       const initial = state === "selected" ? "1" : "0";
       assert.deepEqual(events, changed ? ["mousedown:0", "input:0", "change:1", "mouseup:1", "click:1"]
-        : ["mousedown", "mouseup", "click"].map((kind) => `${kind}:${initial}`));
+        : (state === "selected" ? ["mousedown", "input", "mouseup", "click"] : ["mousedown", "mouseup", "click"]).map((kind) => `${kind}:${initial}`));
       assert.equal(select.value, changed ? "1" : initial);
     } finally { page.window.close(); }
   }

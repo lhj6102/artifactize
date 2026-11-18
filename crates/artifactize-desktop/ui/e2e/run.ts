@@ -111,7 +111,8 @@ async function suite(ids: string[]): Promise<void> {
       };
       confirmed = false;
       try {
-        const code = await execute(nodeProgram, [file, "batch"], env);
+        const wrapped = runnerCommand([file, "batch"], env);
+        const code = await execute(wrapped.program, wrapped.args, wrapped.env);
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
       try {
@@ -168,13 +169,8 @@ try {
     } finally { removeTree(marker); }
   } else if (mode === "unit") await unit();
   else if (mode === "batch") await batch();
-  else if (mode === "suite") {
-    if (variable("DESKTOP_TEST_WRAPPED") === "1") await suite(process.argv.slice(3));
-    else {
-      const wrapped = runnerCommand([file, "suite", ...process.argv.slice(3)]);
-      process.exitCode = await execute(wrapped.program, wrapped.args, wrapped.env);
-    }
-  } else throw new Error(`unknown desktop test runner mode: ${mode}`);
+  else if (mode === "suite") await suite(process.argv.slice(3));
+  else throw new Error(`unknown desktop test runner mode: ${mode}`);
 } catch (error) {
   console.error(inspect(error, { depth: null, colors: false }));
   process.exitCode = 1;

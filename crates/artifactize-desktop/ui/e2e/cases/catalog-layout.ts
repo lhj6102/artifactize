@@ -8,6 +8,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, offCentre, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
 import { afterRender, fill, press } from "../keys.ts";
+import { canvasSnapshot } from "../rendering.ts";
 
 function slot(browser: WebdriverIO.Browser) {
   return browser.execute(() => {
@@ -150,37 +151,37 @@ export const scenarios: Scenario[] = [
       await camera(browser);
       // Read the visible canvas in its own backing-store coordinates and colour space.
       // The first block and its gap to the next row are only a few device pixels tall.
-      const painted = () => browser.execute(() => {
-        const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
-        const view = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
-        const surface = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
-        const box = surface?.getBoundingClientRect();
-        const context = surface?.getContext("2d");
-        if (!surface || !box?.width || !box.height || !context || !surface.checkVisibility({ visibilityProperty: true })) return null;
-        const x = view.e + 84 * view.a, y = view.f + 22 * view.d;
-        const corner = { x: Math.round(box.left + x), y: Math.round(box.top + y) };
-        if (!document.elementFromPoint(corner.x, corner.y)?.closest(".monitor .graph .canvas")) return null;
-        const sx = surface.width / box.width, sy = surface.height / box.height;
-        const colourSpace = context.getContextAttributes().colorSpace;
-        const swatch = document.createElement("canvas").getContext("2d", { colorSpace: colourSpace })!;
-        const token = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
-        if (!CSS.supports("color", token)) throw new Error(`invalid GREEN swatch ${token}`);
-        swatch.fillStyle = token;
-        swatch.fillRect(0, 0, 1, 1);
-        const expected = [...swatch.getImageData(0, 0, 1, 1).data];
-        const color = [...context.getImageData(Math.floor(x * sx), Math.floor(y * sy), 1, 1).data];
-        const green = color[3] === 255 && expected.slice(0, 3).every((value, i) => Math.abs(value - color[i]) <= 1);
-        // At this fixture's top left there is a 44-unit node and then the comment
-        // area. Sample the gap, excluding one *backing pixel* at the block's edge
-        // for resampling bleed. Do not subtract a CSS pixel from a subpixel range.
-        const left = Math.ceil((view.e + 4 * view.a) * sx), right = Math.floor((view.e + 150 * view.a) * sx);
-        const top = Math.ceil((view.f + 44 * view.d) * sy) + 1;
-        const bottom = Math.floor((view.f + 78 * view.d) * sy);
-        const hasGap = left >= 0 && right <= surface.width && top >= 0 && bottom <= surface.height && right > left && bottom > top;
-        const under = hasGap ? context.getImageData(left, top, right - left, bottom - top).data : null;
-        return { corner, color, expected, green, gap: [left, top, right, bottom], scale: [sx, sy],
-          noComment: !!under && under.every((alpha, i) => i % 4 !== 3 || alpha === 0) };
-      });
+      const painted = async () => {
+        const sample = await browser.execute(() => {
+          const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport");
+          const surface = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
+          const box = surface?.getBoundingClientRect();
+          if (!viewport || !surface || !box?.width || !box.height || !surface.checkVisibility({ visibilityProperty: true })) return null;
+          const view = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+          const x = view.e + 84 * view.a, y = view.f + 22 * view.d;
+          const corner = { x: Math.round(box.left + x), y: Math.round(box.top + y) };
+          if (!document.elementFromPoint(corner.x, corner.y)?.closest(".monitor .graph .canvas")) return null;
+          const sx = surface.width / box.width, sy = surface.height / box.height;
+          const token = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
+          const expected = [1, 3, 5].map((at) => Number.parseInt(token.slice(at, at + 2), 16));
+          // Exclude one backing pixel at the block's edge for resampling bleed.
+          const left = Math.ceil((view.e + 4 * view.a) * sx), right = Math.floor((view.e + 150 * view.a) * sx);
+          const top = Math.ceil((view.f + 44 * view.d) * sy) + 1, bottom = Math.floor((view.f + 78 * view.d) * sy);
+          const hasGap = left >= 0 && right <= surface.width && top >= 0 && bottom <= surface.height && right > left && bottom > top;
+          return { dataUrl: surface.toDataURL(), corner, expected, sampleX: Math.floor(x * sx), sampleY: Math.floor(y * sy),
+            left, right, top, bottom, hasGap, scale: [sx, sy] };
+        });
+        if (!sample) return null;
+        const { dataUrl, corner, expected, sampleX, sampleY, left, right, top, bottom, hasGap, scale } = sample;
+        const image = canvasSnapshot(dataUrl);
+        const color = [...image.at(sampleX, sampleY)];
+        const green = color[3] === 255 && expected.every((value, i) => Math.abs(value - color[i]) <= 1);
+        let noComment = hasGap;
+        for (let y = top; noComment && y < bottom; y++) for (let x = left; x < right; x++) {
+          if (image.at(x, y)[3] !== 0) noComment = false;
+        }
+        return { corner, color, expected, green, gap: [left, top, right, bottom], scale, noComment };
+      };
       let pixels = await painted();
       await browser.waitUntil(async () => (pixels = await painted())?.green === true,
         { timeout: 15000, timeoutMsg: "the visible canvas paints the first Artifact as a GREEN block" })
@@ -279,25 +280,30 @@ export const scenarios: Scenario[] = [
       }, node);
       // Zoomed out until names cannot be read, it is painted: its box's outline in GREEN's colour
       // around a face that is not filled.
-      const painted = () => browser.execute((at) => {
-        const canvas = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
-        const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport");
-        if (!canvas || !viewport) return null;
-        const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
-        const box = canvas.getBoundingClientRect();
-        const ratio = canvas.width / box.width;
-        const [left, top] = [camera.e + at.x * camera.a, camera.f + at.y * camera.a];
-        const [width, height] = [at.width * camera.a, at.height * camera.a];
-        const pixel = (x: number, y: number) => [...canvas.getContext("2d")!.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data.slice(0, 3)];
-        const middle = top + height / 2;
-        const row = Array.from({ length: Math.max(2, Math.round(width) + 4) }, (_, step) => pixel(left - 2 + step, middle));
-        return {
-          zoom: camera.a,
-          centre: { x: Math.round(box.left + left + width / 2), y: Math.round(box.top + middle) },
-          row,
-          token: getComputedStyle(document.documentElement).getPropertyValue("--green").trim(),
-        };
-      }, place);
+      const painted = async () => {
+        const sample = await browser.execute((at) => {
+          const canvas = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
+          const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport");
+          if (!canvas || !viewport) return null;
+          const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
+          const box = canvas.getBoundingClientRect();
+          const ratio = canvas.width / box.width;
+          const [left, top] = [camera.e + at.x * camera.a, camera.f + at.y * camera.a];
+          const [width, height] = [at.width * camera.a, at.height * camera.a];
+          const middle = top + height / 2;
+          return {
+            dataUrl: canvas.toDataURL(), ratio, left, width, middle, zoom: camera.a,
+            centre: { x: Math.round(box.left + left + width / 2), y: Math.round(box.top + middle) },
+            token: getComputedStyle(document.documentElement).getPropertyValue("--green").trim(),
+          };
+        }, place);
+        if (!sample) return null;
+        const { dataUrl, ratio, left, width, middle, ...shown } = sample;
+        const image = canvasSnapshot(dataUrl);
+        const row = Array.from({ length: Math.max(2, Math.round(width) + 4) }, (_, step) =>
+          [...image.at(Math.round((left - 2 + step) * ratio), Math.round(middle * ratio)).subarray(0, 3)]);
+        return { ...shown, row };
+      };
       const zoomedOut = async () => (await painted())?.zoom ?? Infinity;
       for (let step = 0; step < 12 && await zoomedOut() >= 0.3; step += 1) {
         await browser.$(ZOOM_OUT).click();

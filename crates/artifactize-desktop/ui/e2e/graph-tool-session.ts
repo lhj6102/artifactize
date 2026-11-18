@@ -23,8 +23,16 @@ export async function observeGraphTool(fixture: Fixture, window: WebdriverIO.Bro
           const selection = [...document.querySelectorAll('[aria-label="Branches"] > [role="treeitem"]')]
             .filter((branch) => branch.getAttribute("aria-selected") === "true" || branch.querySelector('[role="treeitem"][aria-selected="true"]'))
             .map((branch) => `${words(branch.querySelector(".project")).replace(/ \/$/, "")}  ${words(branch.querySelector(".branch-name"))}`);
-          const artifacts = [...document.querySelectorAll<HTMLElement>('section[aria-label="Current"] .svelte-flow__node')]
-            .filter((node) => node.checkVisibility({ visibilityProperty: true }) && node.getBoundingClientRect().width > 0)
+          const canvas = document.querySelector('section[aria-label="Current"] .canvas');
+          const clip = canvas?.getBoundingClientRect();
+          const artifacts = [...(canvas?.querySelectorAll<HTMLElement>(".svelte-flow__node") ?? [])]
+            .filter((node) => {
+              if (!clip || !node.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
+              const box = node.getBoundingClientRect();
+              const left = Math.max(box.left, clip.left, 0), right = Math.min(box.right, clip.right, innerWidth);
+              const top = Math.max(box.top, clip.top, 0), bottom = Math.min(box.bottom, clip.bottom, innerHeight);
+              return left < right && top < bottom && node.contains(document.elementFromPoint((left + right) / 2, (top + bottom) / 2));
+            })
             .map((node) => node.getAttribute("aria-label") ?? "");
           return { title, selection, artifacts };
         }, MAIN);

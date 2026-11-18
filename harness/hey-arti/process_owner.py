@@ -82,14 +82,16 @@ def process_table():
         yield pid, (int(fields[1]), int(fields[3]), int(fields[19]))
 
 
-def drain_tree():
+def drain_tree(command):
     """Kill direct children until the kernel proves the entire subtree is gone."""
     deadline = time.monotonic() + EXIT_BOUND
     while True:
         try:
-            # Consuming any child status is safe here: all children belong to
-            # this command, and an exited leader's status is saved separately.
-            if os.waitpid(-1, os.WNOHANG)[0]:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+            if pid:
+                # A failed stop can leave the leader for the drain to reap.
+                if pid == command.pid:
+                    command.returncode = os.waitstatus_to_exitcode(status)
                 continue
         except ChildProcessError:
             return
@@ -192,6 +194,13 @@ def serve(channel, command, inherited, deferred):
             child.wait(timeout=EXIT_BOUND)
         return child.returncode
 
+    def finish_command():
+        try:
+            stop_command()
+        finally:
+            drain_tree(child)
+        return child.returncode
+
     finished = False
     try:
         # Only the application should keep the data pipes and fixture fds open.
@@ -204,19 +213,15 @@ def serve(channel, command, inherited, deferred):
         while request := receive(channel):
             operation, *args = request
             try:
-                if operation == "stop":
-                    result = stop_command(preserve_session_id=deferred)
-                    if not deferred:
-                        drain_tree()
-                        finished = True
+                if operation == "stop" and deferred:
+                    result = stop_command(preserve_session_id=True)
+                elif operation in {"stop", "finish"}:
+                    result = finish_command()
+                    finished = True
                 elif operation == "submitters":
                     argv = b"\0".join(os.fsencode(arg) for arg in args) + b"\0"
                     drain_matches(lambda table: submitters(table, argv))
                     result = None
-                elif operation == "finish":
-                    result = stop_command()
-                    drain_tree()
-                    finished = True
                 else:
                     raise ValueError(f"Unknown process ownership operation: {operation!r}")
             except Exception as error:
@@ -227,8 +232,7 @@ def serve(channel, command, inherited, deferred):
                     return
     finally:
         if not finished:
-            stop_command()
-            drain_tree()
+            finish_command()
 
 
 if __name__ == "__main__":

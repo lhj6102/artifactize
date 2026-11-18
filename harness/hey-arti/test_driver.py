@@ -220,12 +220,21 @@ class OwnedTestCase(unittest.TestCase):
             for process in self.children:
                 try:
                     driver.child_cleanup.close(process)
-                except Exception as error:
+                except BaseException as error:
                     failures.append(error)
-            if failures:
-                raise ExceptionGroup(f"Owned children remain; fixture retained at {self.root.as_posix()}", failures)
+            # Finalizers can still stop deferred descendants and release other
+            # resources after a join fails. Retry only unfinished finalizers.
+            pending = []
             for release in reversed(self.fixture_cleanups):
-                release()
+                try:
+                    release()
+                except BaseException as error:
+                    pending.append(release)
+                    failures.append(error)
+            self.fixture_cleanups[:] = reversed(pending)
+            if failures:
+                raise BaseExceptionGroup(
+                    f"Fixture cleanup incomplete; files retained at {self.root.as_posix()}", failures)
             if self.root.exists():
                 shutil.rmtree(self.root)
             driver.child_cleanup.fixtures.discard(self.release_files)
@@ -480,6 +489,65 @@ ctypes.CDLL(None).pthread_exit(None)
             self.assertIsNotNone(status)
             self.assertEqual((status.si_code, status.si_status), (os.CLD_EXITED, 23))
 
+    def test_subreaper_drains_descendants_when_leader_stop_fails(self):
+        reaper = """import socket, subprocess, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import process_owner
+
+def fail_kill(self):
+    raise PermissionError("controlled leader stop failure")
+
+subprocess.Popen.kill = fail_kill
+with socket.socket(fileno=int(sys.argv[2])) as channel:
+    try:
+        process_owner.serve(channel, [sys.executable, "-I", "-c", sys.argv[3]], (), False)
+    except PermissionError as error:
+        if str(error) != "controlled leader stop failure":
+            raise
+        raise SystemExit(23)
+"""
+        tree = """import os, sys
+if os.fork() == 0:
+    os.setsid()
+    print(os.getpid(), flush=True)
+sys.stdin.read()
+"""
+        for operation in (None, "stop", "finish"):
+            with self.subTest(operation=operation), ExitStack() as resources:
+                with driver.defer_interrupts():
+                    channel, endpoint = socket.socketpair(type=socket.SOCK_SEQPACKET)
+                    resources.enter_context(channel)
+                    resources.enter_context(endpoint)
+                    process = self.spawn([sys.executable, "-I", "-c", reaper, str(ROOT),
+                                          str(endpoint.fileno()), tree], pass_fds=(endpoint.fileno(),),
+                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                    endpoint.close()
+                channel.settimeout(READY_BOUND)
+                leader = driver.process_owner.receive(channel)["pid"]
+                self.assertTrue(select.select([process.stdout], [], [], READY_BOUND)[0])
+                descendant = int(process.stdout.readline())
+                descriptors = [owned_descriptor(lambda: os.pidfd_open(pid), resources.callback)
+                               for pid in (leader, descendant)]
+
+                if operation is None:
+                    channel.shutdown(socket.SHUT_WR)
+                    self.assertEqual(channel.recv(1), b"")
+                else:
+                    driver.process_owner.send(channel, [operation])
+                    self.assertEqual(driver.process_owner.receive(channel), {"error": "controlled leader stop failure"})
+                # The outer fixture is still active, so it can't mask a leak in
+                # the inner subreaper by adopting and cleaning up its children.
+                for descriptor in descriptors:
+                    self.assert_exit_ready(descriptor)
+                    self.assertEqual(pidfd_pid(descriptor), -1)
+                if operation is None:
+                    self.assertEqual(process.wait(timeout=READY_BOUND), 23)
+                else:
+                    driver.process_owner.send(channel, [operation])
+                    self.assertEqual(driver.process_owner.receive(channel), {"result": -signal.SIGKILL})
+                    self.assertEqual(process.wait(timeout=READY_BOUND), 0)
+
     def test_child_cleanup_reports_interrupted_join_and_never_resignals_a_reaped_group(self):
         process = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
         with mock.patch.object(driver.process_owner, "send", side_effect=KeyboardInterrupt):
@@ -523,14 +591,30 @@ ctypes.CDLL(None).pthread_exit(None)
                 self.children.append(child)  # Independently release it if the tested retry regresses.
                 marker = fixture.root / "owned.txt"
                 marker.write_text("fixture input")
+                independent = fixture.root / "independent.txt"
+                independent.touch()
+                released = self.root / "released"
+
+                def release_after_join():
+                    if child.returncode is None:
+                        raise OSError("controlled finalizer failure")
+                    released.touch(exist_ok=False)
+
+                # Run the failing finalizer first. The successful unlink must
+                # still run, and it must not run again on shutdown retry.
+                fixture.fixture_cleanups.extend((independent.unlink, release_after_join))
                 with mock.patch.object(driver.process_owner, "send", side_effect=PermissionError("controlled stop failure")):
-                    with self.assertRaises(ExceptionGroup):
+                    with self.assertRaises(ExceptionGroup) as raised:
                         fixture.release_files()
+                self.assertEqual([type(error) for error in raised.exception.exceptions],
+                                 [driver.ProcessExitError, OSError])
                 self.assertTrue(marker.exists())
                 self.assertIsNone(child.returncode)
+                self.assertFalse(independent.exists())
             finally:
                 cleanup.retry()
             self.assertIsNotNone(child.returncode)
+            self.assertTrue(released.exists())
             self.assertFalse(fixture.root.exists())
 
     def test_three_source_cases_are_private_independent_and_have_real_runtime_behavior(self):

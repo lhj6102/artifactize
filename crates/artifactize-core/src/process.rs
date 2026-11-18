@@ -695,8 +695,9 @@ pub(crate) async fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-/// Runtime logs live with their Run and are pruned with it. Protocol callers retain
-/// prefix-only capture: changing protocol bytes to head/tail would corrupt replies.
+/// Runtime logs live with their Run and are pruned with it. The caller owns this
+/// future in a supervisor that survives its result waiter; protocol callers retain
+/// prefix-only capture because changing protocol bytes to head/tail would corrupt replies.
 pub(crate) async fn run_logged<F, R>(
     command: Command,
     directory: PathBuf,
@@ -707,20 +708,16 @@ where
     F: FnOnce(ChildIdentity) -> R + Send + 'static,
     R: Future<Output = io::Result<()>> + Send + 'static,
 {
-    let cancellation = cancellation.child_token();
-    let _cancel_on_drop = cancellation.clone().drop_guard();
-    crate::task::joined(
-        tokio::spawn(run_inner(
-            command,
-            None,
-            OUTPUT_LIMIT,
-            Capture {
-                logs: Some(directory),
-                lines: None,
-            },
-            cancellation,
-            Some(register),
-        ))
-        .await,
-    )?
+    run_inner(
+        command,
+        None,
+        OUTPUT_LIMIT,
+        Capture {
+            logs: Some(directory),
+            lines: None,
+        },
+        cancellation,
+        Some(register),
+    )
+    .await
 }

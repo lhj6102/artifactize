@@ -79,7 +79,37 @@ pub struct Cli {
     pub json: bool,
 
     #[command(subcommand)]
-    pub command: Option<Command>,
+    command: Option<CommandArgs>,
+}
+
+/// Raw interactive arguments are lowered to an exclusive scope at the parse boundary.
+#[derive(Debug, Subcommand)]
+enum CommandArgs {
+    /// Browse Runs; starts on ALL regardless of cwd. Paths select only the initial repository.
+    Monitor {
+        /// Initial repository/worktree; all scopes remain accessible in the UI.
+        #[arg(value_name = "PATH", conflicts_with = "repo")]
+        path: Option<PathBuf>,
+        /// Initially select ALL repositories (the default).
+        #[arg(long, conflicts_with_all = ["path", "repo"])]
+        all: bool,
+    },
+    /// Search saved requests and claim, run tools for and submit Human reviews in a terminal
+    /// UI; the search starts on the waiting Human reviews of every repository.
+    Review {
+        /// Open this request instead of the list.
+        #[arg(value_name = "REQUEST_ID")]
+        request: Option<RequestId>,
+        /// Search every repository (the default); with --repo the search starts on that
+        /// repository's term instead.
+        #[arg(long)]
+        all: bool,
+        /// Reviewer name (defaults to the signed-in user).
+        #[arg(long, value_name = "NAME")]
+        reviewer: Option<artifactize_core::types::ReviewerId>,
+    },
+    #[command(flatten)]
+    General(Command),
 }
 
 #[derive(Debug, Subcommand)]
@@ -219,29 +249,6 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Browse Runs; starts on ALL regardless of cwd. Paths select only the initial repository.
-    Monitor {
-        /// Initial repository/worktree; all scopes remain accessible in the UI.
-        #[arg(value_name = "PATH", conflicts_with = "repo")]
-        path: Option<PathBuf>,
-        /// Initially select ALL repositories (the default).
-        #[arg(long, conflicts_with_all = ["path", "repo"])]
-        all: bool,
-    },
-    /// Search saved requests and claim, run tools for and submit Human reviews in a terminal
-    /// UI; the search starts on the waiting Human reviews of every repository.
-    Review {
-        /// Open this request instead of the list.
-        #[arg(value_name = "REQUEST_ID")]
-        request: Option<RequestId>,
-        /// Search every repository (the default); with --repo the search starts on that
-        /// repository's term instead.
-        #[arg(long)]
-        all: bool,
-        /// Reviewer name (defaults to the signed-in user).
-        #[arg(long, value_name = "NAME")]
-        reviewer: Option<artifactize_core::types::ReviewerId>,
-    },
     /// Serve or administer a shared remote review store (review-store.sqlite).
     Server {
         #[command(subcommand)]
@@ -278,7 +285,7 @@ impl PolicyArgs {
 }
 
 mod argv;
-use argv::{ParseError, parse_args};
+use argv::{Invocation, ParseError, Parsed, parse_args};
 
 /// Whole seconds as a duration, read at the command line.
 fn seconds(text: &str) -> Result<std::time::Duration, String> {

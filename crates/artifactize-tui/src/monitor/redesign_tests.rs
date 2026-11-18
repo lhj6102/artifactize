@@ -111,8 +111,8 @@ fn saved_run(
 ) -> store::Run {
     let mut run: store::Run = serde_json::from_value(json!({
         "id":id,
-        "repoPath":repo,
-        "stateDir":state,
+        "repoPath":crate::platform::path_text(repo),
+        "stateDir":crate::platform::path_text(state),
         "status":"GREEN",
         "createdAt":"2026-01-01T00:00:00Z",
         "completedAt":"2026-01-01T00:00:01Z",
@@ -417,11 +417,6 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     ));
     assert!(monitor.detail().is_none());
     assert_eq!(monitor.focus(), Pane::Artifacts);
-    let before = monitor.target();
-    monitor.key(KeyEvent::from(KeyCode::F(2)));
-    monitor.mouse(mouse(MouseEventKind::ScrollDown, area.x + 2, area.y + 2));
-    assert_eq!(monitor.target(), before);
-    monitor.key(KeyEvent::from(KeyCode::F(2)));
     render(&mut monitor, 100, 30);
     let tree_area = monitor.hits.tree;
     assert!(
@@ -442,6 +437,45 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
         tree.y + 1,
     ));
     assert_eq!(monitor.focus(), Pane::Artifacts);
+}
+
+#[test]
+fn disabling_mouse_capture_freezes_the_visible_tree_viewport() {
+    let (view, requests) = tests::live();
+    let (_root, mut monitor) = tests::monitor();
+    monitor.set_runs(vec![tests::summary("run-1", 1)]);
+    monitor.set_run(view, requests);
+    monitor.focus_on(Pane::Artifacts);
+
+    // A short terminal leaves enough rows to see the tree, but not all its nodes.
+    const WIDTH: u16 = 160;
+    const HEIGHT: u16 = 12;
+    let title = rendered_point(&mut monitor, WIDTH, HEIGHT, " Run run-1 ");
+    let wheel = |kind| mouse(kind, title.x, title.y + 1);
+    let body = |monitor: &mut Monitor| {
+        render_text(monitor, WIDTH, HEIGHT)
+            .lines()
+            .skip(1)
+            .take(usize::from(HEIGHT - 2))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let initial = body(&mut monitor);
+    monitor.mouse(wheel(MouseEventKind::ScrollDown));
+    let scrolled = body(&mut monitor);
+    assert_ne!(scrolled, initial, "capture on: the wheel moves the tree");
+
+    monitor.key(KeyEvent::from(KeyCode::F(2)));
+    monitor.mouse(wheel(MouseEventKind::ScrollUp));
+    assert_eq!(body(&mut monitor), scrolled, "capture off: no scrolling");
+
+    monitor.key(KeyEvent::from(KeyCode::F(2)));
+    monitor.mouse(wheel(MouseEventKind::ScrollUp));
+    assert_eq!(
+        body(&mut monitor),
+        initial,
+        "capture on: the wheel scrolls back"
+    );
 }
 
 #[tokio::test]

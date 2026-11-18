@@ -31,6 +31,17 @@ export function subdued(colour: number[], ink: number[], background: number[]): 
   return Math.max(...colour) - Math.min(...colour) < 48 && separation(colour) < separation(ink) && separation(colour) > 0;
 }
 
+/** Exporting a canvas's painted bitmap does not create or alter its rendering context. */
+export function canvasSnapshot(dataUrl: string) {
+  const image = PNG.sync.read(Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"));
+  return {
+    at: (x: number, y: number) => {
+      const offset = (y * image.width + x) * 4;
+      return image.data.subarray(offset, offset + 4);
+    },
+  };
+}
+
 export type ViewportBox = { left: number; right: number; top: number; bottom: number };
 
 /** Pixels in viewport coordinates, from one real WebDriver capture. */

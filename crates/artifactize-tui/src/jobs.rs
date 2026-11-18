@@ -99,19 +99,18 @@ mod tests {
                     .unwrap(),
             );
             let database = state.join(crate::store::DATABASE);
+            let snapshot_file =
+                (!matches!(panic, Panic::Session)).then(|| std::fs::File::open(&database).unwrap());
+            let session_file = std::fs::File::open(&database).unwrap();
             let changes = Subscription::new(&state).await;
-            let snapshot = if matches!(panic, Panic::Session) {
-                None
-            } else {
-                let held = std::fs::File::open(&database).unwrap();
-                Some(tokio::spawn(async move {
-                    let _held = held;
+            let snapshot = snapshot_file.map(|file| {
+                tokio::spawn(async move {
+                    let _held = file;
                     panic!("snapshot fixture panic");
-                }))
-            };
-            let held = std::fs::File::open(&database).unwrap();
+                })
+            });
             let session = tokio::spawn(async move {
-                let _held = held;
+                let _held = session_file;
                 panic!("session fixture panic");
             });
             let jobs = Jobs {

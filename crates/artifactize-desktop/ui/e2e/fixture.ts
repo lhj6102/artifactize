@@ -478,11 +478,10 @@ export function createJoined(): Fixture {
  * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
  * before it, all verified GREEN except an optionally RED final eval: a Run too large for the graph to draw every node at once.
  */
-export function createChain(count: number, redEnd = false): Fixture {
+export function createChain(count: number, redEnd = false, name = (index: number) => `n${String(index).padStart(3, "0")}`): Fixture {
   return prepareFixture((root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
-    const name = (index: number) => `n${String(index).padStart(3, "0")}`;
     for (let index = 0; index < count; index += 1) {
       const reference = index === 0 ? "the start" : `{${name(index - 1)}}`;
       const text = `name = "${name(index)}"

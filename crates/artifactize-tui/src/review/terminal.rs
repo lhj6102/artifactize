@@ -1,7 +1,9 @@
 //! The standalone review's terminal loop: draw, read events, run jobs, show the Tool log.
 use super::{Action, Outcome, REFRESH, Review, SPIN};
-use crate::{platform::terminal, types::RequestId};
-use crossterm::event::{Event, EventStream, KeyEventKind};
+use crate::{
+    platform::terminal::{self, Event},
+    types::RequestId,
+};
 use futures_util::{FutureExt, StreamExt};
 use std::{path::PathBuf, time::Instant};
 use time::OffsetDateTime;
@@ -45,7 +47,7 @@ async fn drive(
     cancellation: CancellationToken,
 ) -> Result<(), String> {
     let mut changes = crate::changes::Subscription::new(&review.state).await;
-    let mut events = EventStream::new();
+    let mut events = terminal::events();
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut spin = tokio::time::interval(SPIN);
@@ -73,6 +75,7 @@ async fn drive(
                     }
                 };
             }
+            review.drain_log();
             terminal
                 .draw(|frame| review.draw(frame))
                 .map_err(|e| e.to_string())?;
@@ -146,10 +149,10 @@ async fn drive(
                     }
                 },
                 event = events.next() => match event {
-                    Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
+                    Some(Ok(Event::Key(key))) => review.key(key),
                     Some(Ok(Event::Mouse(mouse))) => review.mouse(mouse),
                     Some(Ok(Event::Paste(text))) => review.paste(&text),
-                    Some(Ok(_)) => Action::None,
+                    Some(Ok(Event::Resize)) => Action::None,
                     Some(Err(error)) => return Err(error.to_string()),
                     None => Action::Quit,
                 },

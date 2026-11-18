@@ -256,8 +256,6 @@ impl Review {
         now: OffsetDateTime,
         elapsed: Duration,
     ) -> Hits {
-        // Lines that arrived while another Detail was shown.
-        self.drain_log();
         let mut hits = Hits::default();
         let Some(view) = self.shown.request().cloned() else {
             let text = self.error.clone().unwrap_or_else(|| "Loading…".into());

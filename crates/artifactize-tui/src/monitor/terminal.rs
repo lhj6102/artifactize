@@ -1,7 +1,6 @@
 //! Terminal ownership and the asynchronous event/job driver.
 use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, loading::Refresh, review};
-use crate::platform::terminal;
-use crossterm::event::{Event, EventStream, KeyEventKind};
+use crate::platform::terminal::{self, Event};
 use futures_util::{FutureExt, StreamExt};
 use std::{
     path::PathBuf,
@@ -54,7 +53,7 @@ async fn watch(
     cancellation: CancellationToken,
 ) -> Result<(), String> {
     let mut changes = crate::changes::Subscription::new(&monitor.state).await;
-    let mut events = EventStream::new();
+    let mut events = terminal::events();
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut spin = tokio::time::interval(SPIN);
@@ -94,6 +93,9 @@ async fn watch(
                 jobs.snapshot = monitor.start_refresh(mode);
             }
             monitor.sync_peek().await;
+            if let Some(review) = monitor.review_mut() {
+                review.drain_log();
+            }
             terminal
                 .draw(|frame| monitor.draw(frame))
                 .map_err(|error| error.to_string())?;
@@ -114,17 +116,16 @@ async fn watch(
                 biased;
                 _ = cancellation.cancelled() => Action::Quit,
                 event = events.next() => match event {
-                    Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
+                    Some(Ok(Event::Key(key))) => monitor.key(key),
                     Some(Ok(Event::Mouse(mouse))) => monitor.mouse(mouse),
                     Some(Ok(Event::Paste(text))) => {
                         monitor.paste(&text);
                         Action::None
                     }
-                    Some(Ok(Event::Resize(_, _))) => {
+                    Some(Ok(Event::Resize)) => {
                         monitor.hits = input::Hits::default();
                         Action::None
                     }
-                    Some(Ok(_)) => Action::None,
                     Some(Err(error)) => return Err(error.to_string()),
                     None => Action::Quit,
                 },

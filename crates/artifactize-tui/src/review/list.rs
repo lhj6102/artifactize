@@ -271,6 +271,6 @@ impl Review {
         self.shown
             .record_mut()
             .filter(|_| self.focus == Focus::Detail)
-            .and_then(|record| record.live.as_mut())
+            .and_then(super::record::Record::live_mut)
     }
 }

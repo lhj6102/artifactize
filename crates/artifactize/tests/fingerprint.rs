@@ -139,20 +139,14 @@ fn exact_output_is_validated_before_any_review_can_start() {
         );
         fixture.no_execution(&error);
     }
-    for bytes in support::os::valid_fingerprints() {
+    for (bytes, expected) in support::os::valid_fingerprints() {
         fs::write(
             support::declaration::source_path(fixture.repo.join("key")),
             &bytes,
         )
         .unwrap();
         let run = fixture.verify(&["--all"], 0);
-        assert_eq!(
-            run["requests"][0]["fingerprint"],
-            String::from_utf8(bytes.to_vec())
-                .unwrap()
-                .trim_end_matches('\n')
-                .trim_end_matches('\r')
-        );
+        assert_eq!(run["requests"][0]["fingerprint"], expected);
     }
 }
 
@@ -875,6 +869,11 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
             }),
         );
     }
+    let watch_beta = || Descendant {
+        marker: fixture.repo.join("beta/pid"),
+        processes: owned_run::Processes::protect(&fixture.root),
+    };
+    let beta = watch_beta();
     let output = fixture
         .command()
         .args(["status", "--fingerprint-jobs", "4"])
@@ -886,11 +885,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         stderr.contains("Fingerprint script for Artifact alpha failed"),
         "{stderr}"
     );
-    let pid: u32 = support::declaration::read_text(fixture.repo.join("beta/pid"))
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let pid = beta.pid().expect("beta published its PID");
     assert!(
         support::os::gone(pid),
         "later fingerprint was not cancelled"
@@ -900,14 +895,20 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         assert!(started.join(name).exists());
     }
     // Repeat the same handshake for verify instead of inheriting status's markers.
+    drop(beta);
+    support::declaration::remove_file(fixture.repo.join("beta/pid")).unwrap();
     support::declaration::remove_file(fixture.repo.join("beta/ready")).unwrap();
     support::declaration::remove_file(fixture.repo.join("gamma/finished")).unwrap();
+    let beta = watch_beta();
     let run = fixture
         .command()
-        .args(["verify", "--wait", "--all"])
+        .args(["verify", "--wait", "--all", "--fingerprint-jobs", "4"])
         .record_output()
         .unwrap();
     assert_eq!(run.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&run.stderr).contains("Artifact alpha"));
+    assert!(support::os::gone(
+        beta.pid().expect("beta published its PID")
+    ));
     assert!(!fixture.repo.join("executed").exists());
 }

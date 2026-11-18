@@ -22,7 +22,7 @@ async fn fixture_with_artifact(
     let receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
     for n in 0..count {
         let saved = json!({
-            "id":format!("run-{n}"),"repoPath":repo,"stateDir":state,"status":"GREEN",
+            "id":format!("run-{n}"),"repoPath":crate::platform::path_text(&repo),"stateDir":crate::platform::path_text(&state),"status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
             "selection":{"kind":"all"},"definitions":{"artifacts":{"app":{"path":artifact_path}}},"validation":null
         });

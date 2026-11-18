@@ -49,7 +49,13 @@ fn eval(id: &str, profile: Value, instruction: &str) -> Value {
 }
 
 fn runtime(command: &str, args: &[&str]) -> Value {
-    json!({"kind":"runtime","command":command,"args":args,"timeout_ms":20000})
+    // A concrete duration is needed for the ordinary profile-options rendering assertion.
+    const DISPLAY_TIMEOUT_MS: u64 = 20_000;
+    runtime_with_timeout(command, args, DISPLAY_TIMEOUT_MS)
+}
+
+fn runtime_with_timeout(command: &str, args: &[&str], timeout_ms: u64) -> Value {
+    json!({"kind":"runtime","command":command,"args":args,"timeout_ms":timeout_ms})
 }
 
 impl Fixture {
@@ -104,10 +110,16 @@ impl Fixture {
             json!({"name":"part","basis":true,"fingerprint":{}}),
         );
         let waiting = support::os::waiting_program(root.path());
+        // Keep the release marker, rather than a short Runtime deadline, in control of the eval.
+        let wait_profile = runtime_with_timeout(
+            &waiting,
+            &[&support::os::path_text(&release)],
+            artifactize_core::config::MAX_TIMEOUT_MS,
+        );
         declare(
             &(beta),
             &beta.join("slow"),
-            json!({"name":"slow","evals":[eval("wait", runtime(&waiting, &[&support::os::path_text(&release)]), "Wait.")]}),
+            json!({"name":"slow","evals":[eval("wait", wait_profile, "Wait.")]}),
         );
         declare(
             &(beta),
@@ -216,6 +228,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
             .args(["verify", "--wait", "--all"]),
     );
     let child = RunChild::new(child, &fixture.state, &fixture.beta);
+    let release = owned_run::FileGate::new(fixture.release.clone());
     let live = child.run();
     // Observe the exact submitted Run and persisted request states, not the rendering
     // function whose output is under test. The timeout only bounds a broken fixture.
@@ -261,10 +274,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         .lines()
         .find(|line| line.contains(live.as_str()) && line.contains("WAITING_HUMAN"))
         .unwrap();
-    assert!(
-        live_row.contains("WAITING_HUMAN") && live_row.contains("beta"),
-        "{list}"
-    );
+    assert!(live_row.contains("beta"), "{list}");
     assert!(list.contains(&second));
     let mut scoped = Monitor::new(fixture.state.clone(), Some(fixture.alpha.clone()));
     scoped.refresh().await;
@@ -293,7 +303,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{progress}"
     );
 
-    fs::write(support::declaration::source_path(&fixture.release), "").unwrap();
+    release.release().unwrap();
     owned_run::subscribed(&fixture.state, async |changes| {
         tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
             loop {
