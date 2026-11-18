@@ -6,6 +6,7 @@ Source fixtures never contain declarations. Live builders run manually outside C
 import argparse
 import atexit
 from contextlib import contextmanager
+import ctypes
 import os
 from pathlib import Path, PurePosixPath
 import runpy
@@ -22,6 +23,8 @@ import tomllib
 ROOT = Path(__file__).resolve().parent
 # Cleanup watchdog only; no caller or suite timeout determines an owned lifetime.
 EXIT_BOUND = 30
+# Linux prctl(2): adopt orphaned descendants rather than relying on PID 1.
+PR_SET_CHILD_SUBREAPER = 36
 
 
 class Terminated(KeyboardInterrupt):
@@ -79,7 +82,9 @@ def process_descriptor(owner):
         fields = Path(f"/proc/{owner['pid']}/stat").read_bytes().rsplit(b")", 1)[1].split()
         # procfs starttime is field 22; the tail after the name starts at field 3.
         same_process = int(fields[19]) == owner["start_time"]
-        if same_process and fields[0] not in {b"Z", b"X", b"x"}:
+        if same_process:
+            # A zombie group leader can still have live threads; only the
+            # process pidfd proves group-wide exit.
             return descriptor
     except FileNotFoundError:
         pass
@@ -101,11 +106,57 @@ def wait_for_exit(owner, *, timeout=EXIT_BOUND):
     try:
         with defer_interrupts():
             descriptor = process_descriptor(owner)
-        if descriptor is not None and not exit_ready(descriptor, timeout):
-            raise RuntimeError(f"Owned process {owner['pid']} did not exit; preserve its working files")
+        if descriptor is not None:
+            if not exit_ready(descriptor, timeout):
+                raise RuntimeError(f"Owned process {owner['pid']} did not exit; preserve its working files")
+            subreaper.reap(owner["pid"], owner["start_time"])
     finally:
         if descriptor is not None:
             os.close(descriptor)
+
+
+class Subreaper:
+    """Own adopted descendants without stealing an explicit child's wait status."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.leaders = {}
+        self.enabled = False
+
+    def launch(self, command, options):
+        with self.lock:
+            if not self.enabled:
+                libc = ctypes.CDLL(None, use_errno=True)
+                prctl = libc.prctl
+                prctl.argtypes = [ctypes.c_int, *([ctypes.c_ulong] * 4)]
+                if prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+                    error = ctypes.get_errno()
+                    raise OSError(error, f"Cannot adopt fixture descendants: {os.strerror(error)}")
+                self.enabled = True
+            process = OwnedChild(command, **options)
+            self.leaders[process.pid] = process
+            return process
+
+    def joined(self, process):
+        with self.lock:
+            if self.leaders.get(process.pid) is process:
+                del self.leaders[process.pid]
+
+    def reap(self, pid, start_time):
+        # Reap only a proven fixture identity. The lock excludes explicitly
+        # launched leaders and identity verification excludes reused PIDs.
+        with self.lock:
+            if pid in self.leaders:
+                return
+            try:
+                fields = Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()
+                if int(fields[1]) == os.getpid() and int(fields[19]) == start_time:
+                    os.waitpid(pid, os.WNOHANG)
+            except (FileNotFoundError, ProcessLookupError, ChildProcessError):
+                pass
+
+
+subreaper = Subreaper()
 
 
 class OwnedChild(subprocess.Popen):
@@ -133,7 +184,9 @@ class OwnedChild(subprocess.Popen):
             if not self._leader_exited(None if timeout is None else max(0, timeout)):
                 raise subprocess.TimeoutExpired(self.args, timeout)
             self.drain()
-        return super()._wait(timeout)
+        result = super()._wait(timeout)
+        subreaper.joined(self)
+        return result
 
     def drain(self):
         if self.group_drained:
@@ -163,6 +216,9 @@ class Descendants:
     def __init__(self):
         self.token = token_hex(16)
         self.marker = f"HEY_ARTI_FIXTURE_OWNER={self.token}".encode("ascii")
+        # Once observed with the ownership marker, a process is still ours
+        # after exit even though procfs no longer exposes its environment.
+        self.observed = set()
 
     def environment(self, env):
         return dict(os.environ if env is None else env, HEY_ARTI_FIXTURE_OWNER=self.token)
@@ -192,14 +248,30 @@ class Descendants:
         self._finish_matching(None)
 
 
+def require_pidfd():
+    # Probe the calling process: no fixture may start until its owner can
+    # open, signal and observe pidfds. Signal 0 checks support without delivery.
+    try:
+        with defer_interrupts():
+            descriptor = os.pidfd_open(os.getpid())
+            try:
+                signal.pidfd_send_signal(descriptor, 0)
+                exit_ready(descriptor, 0)
+            finally:
+                os.close(descriptor)
+    except (AttributeError, OSError) as error:
+        raise RuntimeError("The hey-arti harness requires Linux pidfd open, signal and exit observation support") from error
+
+
 def spawn(command, *, detached=None, **options):
     """Launch a Linux child; its cleanup owns a session and inherited marker."""
     if sys.platform != "linux":
         raise RuntimeError("The hey-arti harness runs on Linux only.")
+    require_pidfd()
     descendants = detached if detached is not None else Descendants()
     options["start_new_session"] = True
     options["env"] = descendants.environment(options.get("env"))
-    process = OwnedChild(command, **options)
+    process = subreaper.launch(command, options)
     process.descendants = descendants
     process.deferred = detached is not None
     return process
@@ -210,6 +282,7 @@ class ChildCleanup:
 
     def __init__(self):
         self.pending = set()
+        self.fixtures = set()
 
     def add(self, process):
         self.pending.add(process)
@@ -224,6 +297,12 @@ class ChildCleanup:
                 self.close(process)
             except BaseException as error:
                 print(f"Could not release owned child {process.pid} at shutdown: {error}", file=sys.stderr)
+        for release in tuple(self.fixtures):
+            try:
+                release()
+                self.fixtures.discard(release)
+            except BaseException as error:
+                print(f"Could not release fixture at shutdown: {error}", file=sys.stderr)
 
 
 child_cleanup = ChildCleanup()
@@ -276,12 +355,27 @@ def owned_members(session, descendants, matches):
     for stat in Path("/proc").glob("[0-9]*/stat"):
         try:
             fields = stat.read_bytes().rsplit(b")", 1)[1].split()
-            if fields[0] in {b"Z", b"X", b"x"}:
+            pid, start_time = int(stat.parent.name), int(fields[19])
+            identity = (pid, start_time)
+            if descendants and descendants.contains(stat.parent):
+                descendants.observed.add(identity)
+            if int(fields[3]) != session and not (descendants and identity in descendants.observed):
                 continue
-            if (int(fields[3]) == session or (descendants and descendants.contains(stat.parent))) and (
-                matches is None or matches(stat.parent)
-            ):
-                yield {"pid": int(stat.parent.name), "start_time": int(fields[19])}
+            if matches is not None and not matches(stat.parent):
+                continue
+            if fields[0] in {b"Z", b"X", b"x"}:
+                # A zombie group leader need not be dead process-wide. Confirm
+                # with its pidfd before treating it as an adopted corpse.
+                descriptor = process_descriptor({"pid": pid, "start_time": start_time})
+                if descriptor is None:
+                    continue
+                try:
+                    if exit_ready(descriptor, 0):
+                        subreaper.reap(pid, start_time)
+                        continue
+                finally:
+                    os.close(descriptor)
+            yield {"pid": pid, "start_time": start_time}
         except (FileNotFoundError, ProcessLookupError):
             continue
 
@@ -309,6 +403,7 @@ def drain_members(session, descendants, deadline, *, matches=None):
                     pass
                 if not exit_ready(descriptor, max(0, deadline - time.monotonic())):
                     raise RuntimeError(f"Owned process {member['pid']} did not exit")
+                subreaper.reap(member["pid"], member["start_time"])
             finally:
                 if descriptor is not None:
                     os.close(descriptor)
@@ -345,7 +440,7 @@ def run_command(command, *, timeout, check=False, capture_output=False, input=No
             try:
                 stdout, stderr = process.communicate(timeout=EXIT_BOUND)
             except subprocess.TimeoutExpired as drain_error:
-                raise ProcessExitError("Command output did not close after group exit") from drain_error
+                raise ProcessExitError("Command output did not close after group exit", process=process) from drain_error
             raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from error
         result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         if check:
@@ -441,4 +536,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # The in-process tests share the process-wide ownership registry.
+    sys.modules["driver"] = sys.modules[__name__]
     raise SystemExit(main())

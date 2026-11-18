@@ -42,26 +42,40 @@ def smoke(host, candidate, output, model):
     candidate = candidate.resolve(strict=True)
     output = output.resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
-    stopped = True
+    def release():
+        failures = []
+        with driver.defer_interrupts():
+            for name in ("repo", "config", "bin", "state"):
+                path = output / name
+                try:
+                    if not path.is_symlink() and path.is_dir():
+                        shutil.rmtree(path)
+                    else:
+                        path.unlink(missing_ok=True)
+                except OSError as error:
+                    failures.append(error)
+            if failures:
+                raise ExceptionGroup(f"Could not remove all smoke inputs at {output.as_posix()}", failures)
+
+    def retry(process):
+        with driver.defer_interrupts():
+            if output.exists():
+                driver.child_cleanup.close(process)
+                release()
+
     try:
         inventory(host, candidate, output, model)
-    except driver.ProcessExitError:
-        stopped = False
+    except driver.ProcessExitError as error:
+        # Keep inputs while the host might still use them. Once its owned
+        # handle is joinable, the shutdown retry can release them safely.
+        if error.process is not None:
+            driver.child_cleanup.fixtures.add(lambda process=error.process: retry(process))
         raise
-    finally:
-        # Retain inputs if a host group cannot be joined; evidence is never deleted.
-        if stopped:
-            failures = []
-            with driver.defer_interrupts():
-                for name in ("repo", "config", "bin", "state"):
-                    path = output / name
-                    if path.exists():
-                        try:
-                            shutil.rmtree(path)
-                        except OSError as error:
-                            failures.append(error)
-                if failures:
-                    raise ExceptionGroup(f"Could not remove all smoke inputs at {output.as_posix()}", failures)
+    except BaseException:
+        release()
+        raise
+    else:
+        release()
 
 
 # Bound each host request even when unsolicited output keeps the pipe readable.

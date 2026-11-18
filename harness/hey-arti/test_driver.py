@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
+import errno
 import importlib.util
 import json
 import os
@@ -25,11 +26,9 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent
 # Loading the driver must not leave bytecode among the reviewed harness inputs.
 sys.dont_write_bytecode = True
-spec = importlib.util.spec_from_file_location("hey_arti_driver", ROOT / "driver.py")
-driver = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = driver
-sys.modules["driver"] = driver
-spec.loader.exec_module(driver)
+sys.path.insert(0, str(ROOT))
+import driver
+
 CANDIDATE = None
 
 
@@ -173,7 +172,8 @@ class OwnedTestCase(unittest.TestCase):
         with driver.defer_interrupts():
             self.root = Path(tempfile.mkdtemp(prefix="hey-arti-test-")).resolve()
             self.children = []
-            self.retain_files = False
+            self.fixture_cleanups = []
+            driver.child_cleanup.fixtures.add(self.release_files)
             self.addCleanup(self.release_files)
 
     def spawn(self, command, **options):
@@ -195,9 +195,8 @@ class OwnedTestCase(unittest.TestCase):
         try:
             return driver.run_command(*args, on_spawn=register, **options)
         except driver.ProcessExitError as error:
-            if error.process not in self.children:
-                self.retain_files = True
-                error.add_note(f"Working files retained at {self.root.as_posix()}")
+            if error.process is not None and error.process not in self.children:
+                self.register_child(error.process)
             raise
 
     def doCleanups(self):
@@ -216,8 +215,11 @@ class OwnedTestCase(unittest.TestCase):
                     failures.append(error)
             if failures:
                 raise ExceptionGroup(f"Owned children remain; fixture retained at {self.root.as_posix()}", failures)
-            if not self.retain_files and self.root.exists():
+            for release in reversed(self.fixture_cleanups):
+                release()
+            if self.root.exists():
                 shutil.rmtree(self.root)
+            driver.child_cleanup.fixtures.discard(self.release_files)
 
 
 class HarnessTests(OwnedTestCase):
@@ -310,6 +312,17 @@ except module.driver.Terminated as error:
             self.assertIsNotNone(child.returncode, f"interrupted suite must join owned child {child.pid}")
         self.assertEqual(sys.argv, original_arguments)
 
+    def test_command_refuses_to_launch_without_pidfd_support(self):
+        command = [sys.executable, "-I", "-c", "pass"]
+        for module, operation in ((os, "pidfd_open"), (signal, "pidfd_send_signal"),
+                                  (driver.selectors.DefaultSelector, "register")):
+            with self.subTest(operation=operation), \
+                    mock.patch.object(module, operation, create=True, side_effect=OSError(errno.ENOSYS, operation)), \
+                    mock.patch.object(subprocess.Popen, "__init__", side_effect=AssertionError("launched a child")) as launch:
+                with self.assertRaisesRegex(RuntimeError, "requires Linux pidfd"):
+                    self.command(command, timeout=READY_BOUND)
+                launch.assert_not_called()
+
     @unittest.skipUnless(hasattr(os, "pidfd_open"), "Linux descendant exit observation uses pidfd")
     def test_command_timeout_joins_owned_descendants(self):
         for detached in (False, True):
@@ -336,13 +349,9 @@ child.wait()
         def close_fixture_child(process, handles):
             # The pipe has already released well-behaved children. Force-stop
             # and join the owned tree too, in case launch never reached readiness.
-            try:
-                driver.child_cleanup.close(process)
-                for descriptor in handles:
-                    self.assert_exit_ready(descriptor)
-            except BaseException:
-                self.retain_files = True
-                raise
+            driver.child_cleanup.close(process)
+            for descriptor in handles:
+                self.assert_exit_ready(descriptor)
 
         with ExitStack() as fixture, ExitStack() as cleanup, ExitStack() as release:
             with driver.defer_interrupts():
@@ -357,7 +366,7 @@ child.wait()
                 # The independent release pipe stops descendants even if the
                 # driver never signals their group, including on test failure.
                 cleanup.callback(close_fixture_child, process, handles)
-                driver.child_cleanup.add(process)
+                self.register_child(process)
                 descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), fixture.callback)
                 handles.append(descriptor)
                 self.assertEqual(read_marker(process.stdout, b"tree-ready\n"), b"tree-ready\n")
@@ -381,10 +390,47 @@ child.wait()
             self.assertTrue(expired, "the controlled expiry must be reached")
             self.assertEqual(len(handles), 2, "the fixture must capture both process identities")
             self.assertEqual(set(select.select(handles, [], [], 0)[0]), set(handles))
+            for descriptor in handles:
+                info = Path(f"/proc/self/fdinfo/{descriptor}").read_text().splitlines()
+                self.assertIn(["Pid:", "-1"], [line.split() for line in info], "the exited child was not reaped")
 
     def assert_exit_ready(self, descriptor):
         self.assertTrue(select.select([descriptor], [], [], READY_BOUND)[0],
                         "fixture-owned process did not reach exit readiness")
+
+    def test_worker_exit_requires_all_threads_not_just_main_thread(self):
+        program = """import ctypes, sys, threading
+ready = threading.Event()
+def worker():
+    ready.set()
+    sys.stdin.read()
+threading.Thread(target=worker).start()
+ready.wait()
+ctypes.CDLL(None).pthread_exit(None)
+"""
+        process = self.spawn([sys.executable, "-I", "-c", program], stdin=subprocess.PIPE)
+        stat = Path(f"/proc/{process.pid}/stat")
+        deadline = time.monotonic() + READY_BOUND
+        while True:
+            fields = stat.read_bytes().rsplit(b")", 1)[1].split()
+            if fields[0] == b"Z":
+                break
+            self.assertLess(time.monotonic(), deadline, "the fixture leader did not exit its main thread")
+        owner = {"pid": process.pid, "start_time": int(fields[19])}
+        try:
+            with self.assertRaisesRegex(RuntimeError, "did not exit"):
+                driver.wait_for_exit(owner, timeout=0)
+        finally:
+            process.stdin.close()
+        driver.wait_for_exit(owner)
+
+    def test_draining_a_fixture_does_not_reap_an_unrelated_child(self):
+        unrelated = [sys.executable, "-I", "-c", "raise SystemExit(23)"]
+        with subprocess.Popen(unrelated) as process, ExitStack() as observation:
+            descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
+            self.assert_exit_ready(descriptor)
+            self.command([sys.executable, "-I", "-c", "pass"], timeout=READY_BOUND, check=True)
+            self.assertEqual(process.wait(), 23)
 
     def test_child_cleanup_reports_interrupted_join_and_never_resignals_a_reaped_group(self):
         process = self.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE)
@@ -416,6 +462,28 @@ child.wait()
             owner.retry()
             self.assertIsNotNone(process.returncode)
             self.assertTrue(process.stdin.closed)
+
+    def test_shutdown_retry_removes_disposable_root_after_a_failed_join(self):
+        cleanup = driver.ChildCleanup()
+        fixture = OwnedTestCase()
+        with mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(tempfile, "tempdir", str(self.root)):
+            fixture.setUp()
+            try:
+                child = fixture.spawn([sys.executable, "-I", "-c", "import sys; sys.stdin.read()"],
+                                      stdin=subprocess.PIPE)
+                self.children.append(child)  # Independently release it if the tested retry regresses.
+                marker = fixture.root / "owned.txt"
+                marker.write_text("fixture input")
+                with mock.patch.object(driver.os, "killpg", side_effect=PermissionError("controlled stop failure")):
+                    with self.assertRaises(ExceptionGroup):
+                        fixture.release_files()
+                self.assertTrue(marker.exists())
+                self.assertIsNone(child.returncode)
+            finally:
+                cleanup.retry()
+            self.assertIsNotNone(child.returncode)
+            self.assertFalse(fixture.root.exists())
 
     def test_three_source_cases_are_private_independent_and_have_real_runtime_behavior(self):
         self.assertEqual(set(driver.cases()), {"library-consumer", "docs-assets", "monorepo"})
@@ -540,8 +608,8 @@ print(ui['render'](api['response']()))
             # Exercise actual session admission/cleanup through the candidate, not just Popen.
             if case_id == "monorepo":
                 # Eval-scoped selection uses the declared operation's published name.
-                self.check_preview(command, environment, *preview)
-                self.check_preview_after_nonterminating_stop(command, environment, *preview)
+                self.check_preview(command, environment, *preview, graceful=True)
+                self.check_preview(command, environment, *preview, graceful=False)
             # Fake CI text is an input, not evidence that a real builder or CI passed.
             self.assertFalse(list((root / "evidence").iterdir()), "fake results are never live evidence")
 
@@ -569,15 +637,16 @@ def await_shutdown_gate(stage):
         if gate.recv(1) != b"x":
             sys.exit("Preview fixture did not release shutdown")
 
-if sys.argv[1] == "start":
+role = sys.argv[1]
+if role in ("start", "stop"):
     fields = Path("/proc/self/stat").read_bytes().rsplit(b")", 1)[1].split()
-    owner = Path({str(owners)!r}) / f"{{os.getpid()}}-{{fields[19].decode()}}.json"
+    owner = Path({str(owners)!r}) / f"{{role}}-{{os.getpid()}}-{{fields[19].decode()}}.json"
     staging = owner.with_suffix(".pending")
     staging.write_text(json.dumps({{"pid": os.getpid(), "start_time": int(fields[19])}}))
     staging.replace(owner)
     if not Path({str(permit)!r}).exists():
         sys.exit("Preview fixture already closed")
-elif sys.argv[1] == "stop":
+if role == "stop":
     await_shutdown_gate(b"s")
     if os.environ.get("HEY_ARTI_TEST_SKIP_GRACEFUL_STOP"):
         # Report success without sending the real stop message; only the
@@ -596,65 +665,66 @@ elif operation == "stop":
 
         def cleanup():
             try:
-                try:
-                    # A late attempt can no longer establish a listener after revocation.
-                    permit.unlink(missing_ok=True)
-                    for owner in owners.glob("*.json"):
-                        with ExitStack() as observation:
-                            descriptor = owned_descriptor(lambda: driver.process_descriptor(json.loads(owner.read_text())),
-                                                          observation.callback)
-                            if descriptor is not None:
-                                try:
-                                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
-                                except ProcessLookupError:
-                                    pass
-                                self.assert_exit_ready(descriptor)
-                finally:
-                    detached.finish()
-            except BaseException:
-                self.retain_files = True
-                raise
+                # A late attempt can no longer establish a listener after revocation.
+                permit.unlink(missing_ok=True)
+                for owner in owners.glob("*.json"):
+                    with ExitStack() as observation:
+                        identity = json.loads(owner.read_text())
+                        detached.observed.add((identity["pid"], identity["start_time"]))
+                        descriptor = owned_descriptor(lambda: driver.process_descriptor(identity), observation.callback)
+                        if descriptor is not None:
+                            try:
+                                signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            self.assert_exit_ready(descriptor)
+            finally:
+                detached.finish()
 
-        self.addCleanup(cleanup)
+        self.fixture_cleanups.append(cleanup)
         return listener, owners, detached
 
-    def check_preview(self, command, environment, listener, owners, detached):
-        spawn = driver.spawn
+    def check_preview(self, command, environment, listener, owners, detached, *, graceful):
         environment = dict(environment)
-        environment.pop("HEY_ARTI_TEST_SKIP_GRACEFUL_STOP", None)
+        if graceful:
+            environment.pop("HEY_ARTI_TEST_SKIP_GRACEFUL_STOP", None)
+        else:
+            environment["HEY_ARTI_TEST_SKIP_GRACEFUL_STOP"] = "1"
         with ExitStack() as observation:
-            cli_handles = []
-            cli_published = threading.Event()
+            # Files let the candidate finish without a pipe reader that might
+            # also reap it and run the harness's fallback group cleanup.
+            stdout = observation.enter_context(tempfile.TemporaryFile(dir=self.root, mode="w+t"))
+            stderr = observation.enter_context(tempfile.TemporaryFile(dir=self.root, mode="w+t"))
+            process = self.spawn(command + ["tools", "check", "--execute", "--eval", "ui/review", "--tool", "inspect_ui"],
+                                 stdout=stdout, stderr=stderr, env=environment, detached=detached)
+            cli = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
+            exits = observation.enter_context(select.epoll())
+            exits.register(cli, select.EPOLLIN | select.EPOLLONESHOT)
 
-            def launch(argv, **options):
-                process = spawn(argv, **options)
-                self.register_child(process)
-                descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
-                cli_handles.append(descriptor)
-                cli_published.set()
-                return process
+            def live_owner(receipt):
+                owner = json.loads(receipt.read_text())
+                detached.observed.add((owner["pid"], owner["start_time"]))
+                descriptor = owned_descriptor(lambda: driver.process_descriptor(owner), observation.callback)
+                if descriptor is not None and not select.select([descriptor], [], [], 0)[0]:
+                    return descriptor
+                return None
 
-            with mock.patch.object(driver, "spawn", side_effect=launch), ThreadPoolExecutor(max_workers=1) as executor:
-                completion = executor.submit(self.command,
-                    command + ["tools", "check", "--execute", "--eval", "ui/review", "--tool", "inspect_ui"],
-                    capture_output=True, text=True, timeout=30, env=environment, detached=detached)
-                with listener.accept()[0] as gate:
-                    gate.settimeout(READY_BOUND)
-                    self.assertEqual(gate.recv(1), b"s")
-                    self.assertTrue(cli_published.wait(READY_BOUND), "the candidate's PID handle was not published")
-                    self.assertEqual(len(cli_handles), 1)
-                    cli = cli_handles[0]
-                    self.assertFalse(select.select([cli], [], [], 0)[0],
-                                     "CLI exited before the stop command was released")
-                    handles = []
-                    for owner in owners.glob("*.json"):
-                        descriptor = owned_descriptor(lambda: driver.process_descriptor(json.loads(owner.read_text())),
-                                                      observation.callback)
-                        if descriptor is not None:
-                            handles.append(descriptor)
-                    self.assertTrue(handles, "the shutdown gate must hold an active preview")
-                    gate.sendall(b"x")
+            with listener.accept()[0] as gate:
+                gate.settimeout(READY_BOUND)
+                self.assertEqual(gate.recv(1), b"s")
+                self.assertFalse(select.select([cli], [], [], 0)[0],
+                                 "CLI exited before the stop command was released")
+                previews = [fd for receipt in owners.glob("start-*.json")
+                            if (fd := live_owner(receipt)) is not None]
+                stops = [fd for receipt in owners.glob("stop-*.json")
+                         if (fd := live_owner(receipt)) is not None]
+                self.assertTrue(previews, "the shutdown gate must hold an active preview")
+                self.assertEqual(len(stops), 1, "the stop gate must hold the actual stop process")
+                for descriptor in previews + stops:
+                    exits.register(descriptor, select.EPOLLIN | select.EPOLLONESHOT)
+                gate.sendall(b"x")
 
+            if graceful:
                 with ExitStack() as shutdown:
                     gates = {}
                     for _ in ("preview", "stop"):
@@ -662,56 +732,41 @@ elif operation == "stop":
                         gate.settimeout(READY_BOUND)
                         gates[gate.recv(1)] = gate
                     self.assertEqual(set(gates), {b"p", b"d"})
-                    self.assertFalse(select.select([cli, *handles], [], [], 0)[0],
-                                     "both CLI and preview must still be alive at the shutdown gates")
+                    self.assertFalse(select.select([cli, *previews, *stops], [], [], 0)[0],
+                                     "CLI, preview and stop must still be alive at the shutdown gates")
                     gates[b"p"].sendall(b"x")
-                    for descriptor in handles:
+                    for descriptor in previews:
                         self.assert_exit_ready(descriptor)
                     self.assertFalse(select.select([cli], [], [], 0)[0],
                                      "the CLI must still be alive after the preview has exited")
                     gates[b"d"].sendall(b"x")
-                result = completion.result(timeout=READY_BOUND)
-            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            report = json.loads(result.stdout)
-            self.assertEqual(report["result"]["content"][0]["data"]["rendered"], "Hello orchard")
 
-    def check_preview_after_nonterminating_stop(self, command, environment, listener, owners, detached):
-        process = self.spawn(command + ["tools", "check", "--execute", "--eval", "ui/review", "--tool", "inspect_ui"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                             env=dict(environment, HEY_ARTI_TEST_SKIP_GRACEFUL_STOP="1"), detached=detached)
-        with ExitStack() as observation:
-            cli = owned_descriptor(lambda: os.pidfd_open(process.pid), observation.callback)
-            with listener.accept()[0] as stop:
-                stop.settimeout(READY_BOUND)
-                self.assertEqual(stop.recv(1), b"s")
-                handles = []
-                for owner in owners.glob("*.json"):
-                    descriptor = owned_descriptor(lambda: driver.process_descriptor(json.loads(owner.read_text())),
-                                                  observation.callback)
-                    if descriptor is not None:
-                        handles.append(descriptor)
-                self.assertTrue(handles, "the nonterminating stop command must have an active preview")
-                stop.sendall(b"x")
-            self.assert_exit_ready(cli)
-            # The start script is still listening unless the candidate itself
-            # shuts it down. Do not wait() or communicate() before observing it,
-            # as that would run the harness's independent fallback cleanup.
-            self.assertEqual(set(select.select(handles, [], [], 0)[0]), set(handles),
-                             "successful stop completion did not settle the preview")
-            # Rescan receipts at the completion boundary to include any
-            # replacement preview started after the stop gate was opened.
-            for owner in owners.glob("*.json"):
-                descriptor = None
-                try:
-                    with driver.defer_interrupts():
-                        descriptor = driver.process_descriptor(json.loads(owner.read_text()))
-                    self.assertIsNone(descriptor, f"preview {owner.stem} outlived candidate completion")
-                finally:
-                    if descriptor is not None:
-                        os.close(descriptor)
-        stdout, stderr = process.communicate(timeout=READY_BOUND)
-        self.assertEqual(process.returncode, 0, stderr + stdout)
-        self.assertEqual(json.loads(stdout)["result"]["content"][0]["data"]["rendered"], "Hello orchard")
+            # Register while the gates hold every process alive. Linux epoll's
+            # ready queue delivers the first wakeups in enqueue order; one-shot
+            # registrations keep later level-triggered polls from reordering them.
+            # Do not reap the CLI (which also drains its group) before reading it.
+            pending = set(previews + stops)
+            deadline = time.monotonic() + READY_BOUND
+            complete = False
+            while not complete:
+                remaining = deadline - time.monotonic()
+                self.assertGreater(remaining, 0, "candidate and fixture exit events did not arrive")
+                for descriptor, _ in exits.poll(remaining):
+                    if descriptor == cli:
+                        self.assertFalse(pending, f"preview or stop outlived the CLI (graceful={graceful})")
+                        complete = True
+                        break
+                    pending.remove(descriptor)
+            # Include any replacement started after opening the gates.
+            for receipt in owners.glob("*.json"):
+                self.assertIsNone(live_owner(receipt), f"{receipt.stem} outlived candidate completion")
+
+            result = process.wait(timeout=READY_BOUND)
+            stdout.seek(0)
+            stderr.seek(0)
+            output = stdout.read()
+            self.assertEqual(result, 0, stderr.read() + output)
+            self.assertEqual(json.loads(output)["result"]["content"][0]["data"]["rendered"], "Hello orchard")
 
 
 class HostLifecycleTests(OwnedTestCase):
@@ -817,19 +872,14 @@ class HostLifecycleTests(OwnedTestCase):
                 if pending == "supervisor":
                     control = {"worker": {"state": "admitted", "owner": self.launcher}, "supervisor": owner}
                 terminal_view = threading.Event()
-                exit_observation = threading.Event()
+                exit_wait = threading.Event()
                 cli = self.host_cli(control=control, saved_status=status)
-                exit_ready = driver.exit_ready
+                wait_for_exit = driver.wait_for_exit
 
-                def observe_exit(handle, timeout):
-                    # Synchronization at the kernel exit-wait boundary, not
-                    # just at descriptor acquisition. Other children cannot
-                    # release the fixture worker.
-                    if terminal_view.is_set():
-                        info = Path(f"/proc/self/fdinfo/{handle}").read_text().splitlines()
-                        if any(line.split() == ["Pid:", str(owner["pid"])] for line in info):
-                            exit_observation.set()
-                    return exit_ready(handle, timeout)
+                def observe_owner(identity):
+                    if identity == owner:
+                        exit_wait.set()
+                    wait_for_exit(identity)
 
                 def respond(command, **options):
                     result = cli(command, **options)
@@ -837,30 +887,33 @@ class HostLifecycleTests(OwnedTestCase):
                         terminal_view.set()
                     return result
 
+                def require_worker_exit(action):
+                    self.assertTrue(select.select([descriptor], [], [], 0)[0],
+                                    f"{action} must follow process exit")
+
                 def copy(source, destination, *args, **kwargs):
                     if Path(destination).is_relative_to(self.evidence):
-                        self.assertTrue(select.select([descriptor], [], [], 0)[0], "archive must follow process exit")
+                        require_worker_exit("archive")
                     return copy_tree(source, destination, *args, **kwargs)
 
                 def remove(path, *args, **kwargs):
                     if Path(path).is_relative_to(self.output):
-                        self.assertTrue(select.select([descriptor], [], [], 0)[0], "deletion must follow process exit")
+                        require_worker_exit("deletion")
                     return remove_tree(path, *args, **kwargs)
 
-                # Synchronize on the terminal CLI reply and the kernel probe;
-                # assertions about archive and deletion use actual exit readiness.
+                # Synchronize at the lifecycle's saved-owner observation seam,
+                # not the implementation's kernel calls. Archive and deletion
+                # still check actual process exit at the filesystem boundary.
                 with mock.patch.object(driver, "run_command", side_effect=respond), \
-                        mock.patch.object(driver, "exit_ready", side_effect=observe_exit), \
+                        mock.patch.object(driver, "wait_for_exit", side_effect=observe_owner), \
                         mock.patch.object(shutil, "copytree", side_effect=copy), \
                         mock.patch.object(shutil, "rmtree", side_effect=remove), ThreadPoolExecutor() as executor:
                     completion = executor.submit(live.run, self.candidate, self.output, "test-model", self.evidence)
                     try:
-                        self.assertTrue(terminal_view.wait(READY_BOUND), "cleanup never received the terminal response")
-                        self.assertTrue(exit_observation.wait(READY_BOUND), "cleanup never observed the live process")
-                        self.assertTrue((self.output / "library-consumer/repo").exists())
-                        self.assertFalse((self.evidence / "library-consumer").exists())
+                        self.assertTrue(terminal_view.wait(READY_BOUND), "cleanup never reached the terminal response")
+                        self.assertTrue(exit_wait.wait(READY_BOUND), "cleanup never joined the saved worker identity")
                     finally:
-                        driver.close_child(process)
+                        process.stdin.close()
                     completion.result(timeout=READY_BOUND)
                 self.assertFalse(self.output.exists())
                 cleanup = json.loads((self.evidence / "library-consumer/evidence/cleanup.json").read_text())
@@ -874,7 +927,8 @@ class HostLifecycleTests(OwnedTestCase):
     def test_worker_observation_expiry_retains_inputs_and_cleanup_error(self):
         process, owner = self.controlled_worker()
         descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), self.addCleanup)
-        with mock.patch.object(driver.selectors.DefaultSelector, "select", return_value=[]):
+        wait_for_exit = driver.wait_for_exit
+        with mock.patch.object(driver, "wait_for_exit", side_effect=lambda identity: wait_for_exit(identity, timeout=0)):
             with self.assertRaises(ExceptionGroup):
                 self.run_live(owner=owner)
         self.assertFalse(select.select([descriptor], [], [], 0)[0], "fixture worker must still be running")
@@ -909,6 +963,9 @@ class HostLifecycleTests(OwnedTestCase):
         retained = self.output / "library-consumer"
         self.assertTrue((retained / "repo/builder-evidence.json").is_file())
         self.assertTrue((retained / "state/owned.txt").is_file())
+        self.assertTrue((retained / "host").is_dir())
+        self.assertTrue((retained / "bin/artifactize").is_file())
+        self.assertTrue((retained / "repo/.mcp.json").is_file())
         archive = self.evidence / "library-consumer"
         self.assertFalse((archive / "repo").exists())
         self.assertFalse((archive / "state").exists())
@@ -964,6 +1021,86 @@ class HostLifecycleTests(OwnedTestCase):
         self.assertTrue((smoke_output / "repo/.artifactize/smoke.artf").exists())
         self.assertTrue((smoke_output / "bin/artifactize").exists())
 
+    def test_shutdown_retry_joins_host_before_releasing_smoke_inputs(self):
+        process, _ = self.controlled_worker()
+        cleanup = driver.ChildCleanup()
+
+        def inventory(host, candidate, output, model):
+            for name in ("repo", "config", "bin", "state"):
+                (output / name).mkdir()
+            (output / "transcript.jsonl").write_text("recorded output\n")
+            raise driver.ProcessExitError("join not confirmed", process=process)
+
+        with mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(host_smoke, "inventory", side_effect=inventory):
+            with self.assertRaises(driver.ProcessExitError):
+                host_smoke.smoke("claude", self.candidate, self.output, "test-model")
+            self.assertIsNone(process.returncode)
+            self.assertTrue((self.output / "bin").is_dir())
+            cleanup.retry()
+        self.assertIsNotNone(process.returncode)
+        self.assertEqual({path.name for path in self.output.iterdir()}, {"transcript.jsonl"})
+        self.assertEqual((self.output / "transcript.jsonl").read_text(), "recorded output\n")
+
+    def test_shutdown_retry_joins_host_then_settles_and_archives_owned_runs(self):
+        process, _ = self.controlled_worker()
+        descriptor = owned_descriptor(lambda: os.pidfd_open(process.pid), self.addCleanup)
+        cleanup = driver.ChildCleanup()
+        cli = self.host_cli()
+
+        def host_exit_unconfirmed(command, **options):
+            response = cli(command, **options)
+            if command[0] == "claude" and "-p" in command:
+                raise driver.ProcessExitError("join not confirmed", process=process)
+            if command[0] == str(self.candidate) and "run" in command:
+                self.assertTrue(select.select([descriptor], [], [], 0)[0], "Run cleanup must follow host exit")
+            return response
+
+        with mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(driver, "run_command", side_effect=host_exit_unconfirmed):
+            with self.assertRaises(ExceptionGroup):
+                live.run(self.candidate, self.output, "test-model", self.evidence)
+            self.assert_unconfirmed()
+            self.assertIsNone(process.returncode)
+            cleanup.retry()
+        self.assertIsNotNone(process.returncode)
+        self.assertFalse(self.output.exists())
+        self.assert_cancel_precedes_wait(self.calls)
+        saved = self.evidence / "library-consumer/evidence"
+        self.assertFalse((saved / "settlement-unconfirmed.txt").exists())
+        self.assertEqual(json.loads((saved / "cleanup.json").read_text())[0]["worker_exit"], "not_admitted")
+
+    def test_final_retry_stops_detached_workers_even_when_run_settlement_stays_unconfirmed(self):
+        cleanup = driver.ChildCleanup()
+        cli = self.host_cli(failure="listing")
+        workers = []
+
+        def launch_detached_worker(command, **options):
+            if command[0] == "claude" and "-p" in command:
+                with driver.defer_interrupts():
+                    child = driver.spawn([sys.executable, "-I", "-c",
+                                          "import sys; print('worker-ready', flush=True); sys.stdin.read()"],
+                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                                         detached=options["detached"])
+                    # The test owns independent cleanup; do not let the global
+                    # retry close this child before the case gets its turn.
+                    self.children.append(child)
+                    descriptor = owned_descriptor(lambda: os.pidfd_open(child.pid), self.addCleanup)
+                    workers.append(descriptor)
+                self.assertEqual(read_marker(child.stdout, b"worker-ready\n"), b"worker-ready\n")
+            return cli(command, **options)
+
+        with mock.patch.object(driver, "child_cleanup", cleanup), \
+                mock.patch.object(driver, "run_command", side_effect=launch_detached_worker):
+            with self.assertRaises(ExceptionGroup):
+                live.run(self.candidate, self.output, "test-model", self.evidence)
+            self.assertEqual(len(workers), 1)
+            descriptor = workers[0]
+            self.assertFalse(select.select([descriptor], [], [], 0)[0])
+            cleanup.retry()
+        self.assertTrue(select.select([descriptor], [], [], 0)[0], "the final retry must join the detached worker")
+        self.assertIn("listing_error", json.loads((self.assert_unconfirmed() / "cleanup.json").read_text())[0])
+
     def test_failed_cancellation_or_nonterminal_observation_never_deletes_run_inputs(self):
         scenarios = ({"cancel_code": 2}, {"failure": "cancel-timeout"},
                      {"terminal": "RUNNING", "show_code": 3}, {"failure": "show-timeout"},
@@ -979,7 +1116,7 @@ class HostLifecycleTests(OwnedTestCase):
                 if options.get("failure") != "listing":
                     self.assert_cancel_precedes_wait(self.calls)
 
-    def test_archive_failure_does_not_delete_working_evidence_after_join(self):
+    def test_archive_failure_releases_host_inputs_and_keeps_recovery_data_after_join(self):
         copytree = shutil.copytree
         def fail_archive(source, destination, *args, **kwargs):
             if Path(destination).is_relative_to(self.evidence):
@@ -988,8 +1125,14 @@ class HostLifecycleTests(OwnedTestCase):
         with mock.patch.object(live.shutil, "copytree", side_effect=fail_archive):
             with self.assertRaises(ExceptionGroup):
                 self.run_live()
-        self.assertEqual((self.output / "library-consumer/state/owned.txt").read_text(), "saved Run evidence")
-        self.assertTrue((self.output / "library-consumer/evidence/cleanup.json").is_file())
+        retained = self.output / "library-consumer"
+        self.assertEqual((retained / "repo/builder-evidence.json").read_text(), '{"handoff":"pending Human"}')
+        self.assertEqual((retained / "state/owned.txt").read_text(), "saved Run evidence")
+        self.assertEqual((retained / "evidence/transcript.jsonl").read_text(), "host transcript\n")
+        cleanup = json.loads((retained / "evidence/cleanup.json").read_text())
+        self.assertEqual(cleanup[0]["worker_exit"], "not_admitted")
+        for disposable in ("host", "bin", "repo/.mcp.json"):
+            self.assertFalse((retained / disposable).exists(), disposable)
         self.assertFalse((self.evidence / "index.json").exists())
 
     def test_termination_during_materialization_releases_unclaimed_cases(self):
@@ -1114,13 +1257,12 @@ class HostLifecycleTests(OwnedTestCase):
                     handles.clear()
                 # Never delete the private repository/state until BOTH the terminal
                 # receipt and actual admitted worker exit have been observed.
-                if not self.retain_files:
-                    shutil.rmtree(area)
+                shutil.rmtree(area)
                 return cleanup
 
         with driver.defer_interrupts():
             area = Path(tempfile.mkdtemp(prefix="hey-arti-real-run-")).resolve()
-            self.addCleanup(release)
+            self.fixture_cleanups.append(release)
         repo, state = area / "repo", area / "state"
         repo.mkdir()
         state.mkdir()

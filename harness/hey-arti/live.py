@@ -122,6 +122,25 @@ def archive_case(area, evidence_root, records):
     return archive
 
 
+def release_case_tools(area):
+    # Keep the recoverable case but remove host inputs that are no longer used.
+    paths = [area / "host", area / "bin"]
+    repo = area / "repo"
+    if not repo.is_symlink():
+        paths.append(repo / ".mcp.json")
+    failures = []
+    for path in paths:
+        try:
+            if not path.is_symlink() and path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
+        except OSError as error:
+            failures.append(error)
+    if failures:
+        raise ExceptionGroup(f"Could not remove all host inputs at {area.as_posix()}", failures)
+
+
 def save_unconfirmed_diagnostics(area, evidence_root):
     # The builder or a Run may still write to the case. Publish only files the
     # harness finished writing, not a repo/state snapshot or a manifest entry.
@@ -155,8 +174,8 @@ def run(candidate, output, model, evidence_root):
             run_case(candidate, working / case_id, case, model, skill, version, host_version,
                      evidence_root, records, claimed)
     finally:
-        # Cases the host never entered cannot own Runs. Claimed cases clean up only
-        # after cancellation/terminal observation AND evidence archival succeed.
+        # Cases the host never entered cannot own Runs. Claimed cases release
+        # their tools after settlement and their recovery data after archival.
         if working is not None:
             release_unclaimed(working, cases.keys() - claimed)
     return evidence_root
@@ -182,8 +201,56 @@ def run_case(candidate, area, case, model, skill, version, host_version, evidenc
     case_id = area.name
     builder_started = False
     detached = driver.Descendants()
-    host_stopped = True
+    host_exit_error = None
     failures = []
+
+    def settle(*, final=False):
+        if host_exit_error is not None:
+            if host_exit_error.process is None:
+                raise host_exit_error
+            driver.child_cleanup.close(host_exit_error.process)
+        if builder_started:
+            # Stop submissions before listing; do not kill admitted workers
+            # before the owned Runs can acknowledge cancellation and settle.
+            try:
+                detached.stop_mcp_submitters(mcp_command)
+                settle_runs(candidate, area)
+            except BaseException as error:
+                if final:
+                    try:
+                        detached.finish()
+                    except BaseException as cleanup_error:
+                        raise BaseExceptionGroup("Run settlement and detached cleanup failed", [error, cleanup_error]) from None
+                raise
+            detached.finish()
+
+    def archive_and_release():
+        try:
+            archive = archive_case(area, evidence_root, records)
+        except BaseException as error:
+            error.add_note(f"Working repository, state and diagnostics retained at {area.as_posix()}")
+            try:
+                release_case_tools(area)
+            except Exception as cleanup_error:
+                raise BaseExceptionGroup("Archival and disposable host cleanup failed", [error, cleanup_error])
+            raise
+        shutil.rmtree(area)
+        print(f"{case_id}: evidence {archive.as_posix()}; working files removed", flush=True)
+
+    def retry():
+        with driver.defer_interrupts():
+            if not area.exists():
+                return
+            settle(final=True)
+            # The first attempt may have published diagnostic-only evidence;
+            # store the authoritative final snapshot once settlement succeeds.
+            diagnostic_only = evidence_root / case_id
+            if diagnostic_only.exists():
+                shutil.rmtree(diagnostic_only)
+            archive_and_release()
+            if not any(area.parent.iterdir()):
+                area.parent.rmdir()
+
     try:
         claimed.add(case_id)
         repo = area / "repo"
@@ -278,41 +345,30 @@ CANONICAL SKILL
                   "transcript": "evidence/transcript.jsonl", "summary": "builder-evidence.json"}
         (area / "evidence/live.json").write_text(json.dumps(record, indent=2))
     except BaseException as error:
-        host_stopped = not isinstance(error, driver.ProcessExitError)
+        if isinstance(error, driver.ProcessExitError):
+            host_exit_error = error
         failures.append(error)
         (area / "evidence/failure.txt").write_text(f"{type(error).__name__}: {error}\n")
     finally:
         with driver.defer_interrupts():
-            settled = not builder_started and host_stopped
-            if builder_started:
-                # The harness cancels leftovers, never signs off a Human request.
-                runs_settled = detached_stopped = False
-                try:
-                    # A builder that may still be running can add Runs after
-                    # any listing; that snapshot cannot prove settlement.
-                    if host_stopped:
-                        detached.stop_mcp_submitters(mcp_command)
-                        settle_runs(candidate, area)
-                        runs_settled = True
-                except BaseException as error:
-                    failures.append(error)
-                finally:
-                    try:
-                        detached.finish()
-                        detached_stopped = True
-                    except BaseException as error:
-                        failures.append(error)
-                settled = host_stopped and runs_settled and detached_stopped
             try:
-                if settled:
-                    archive = archive_case(area, evidence_root, records)
-                    shutil.rmtree(area)
-                    print(f"{case_id}: evidence {archive.as_posix()}; working files removed", flush=True)
-                else:
+                if host_exit_error is not None:
+                    raise host_exit_error
+                settle()
+            except BaseException as error:
+                driver.child_cleanup.fixtures.add(retry)
+                if error is not host_exit_error:
+                    failures.append(error)
+                try:
                     save_unconfirmed_diagnostics(area, evidence_root)
                     print(f"{case_id}: settlement unconfirmed; working files retained at {area.as_posix()}", flush=True)
-            except Exception as error:
-                failures.append(error)
+                except Exception as diagnostic_error:
+                    failures.append(diagnostic_error)
+            else:
+                try:
+                    archive_and_release()
+                except BaseException as error:
+                    failures.append(error)
     if failures:
         if len(failures) == 1 and isinstance(failures[0], driver.Terminated):
             raise failures[0]
