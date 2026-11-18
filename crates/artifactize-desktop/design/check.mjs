@@ -2,14 +2,15 @@
 //   node check.mjs page PAGE.html          one screen page: links the three sheets, has its
 //                                          data-screen main, numbered callouts with notes,
 //                                          unique D- rules each with a dd, no colour literal
-//   node check.mjs whole [DIR]             the whole design: dark only, index.html and
-//                                          ux-graph-doc.html well formed (each screen page has
-//                                          its own page check), D- ids unique across pages, every screen
-//                                          page listed on index.html and in ux-graph-doc.html,
+//   node check.mjs whole [DIR]             the whole design: dark only, index.html well formed
+//                                          (each screen page has its own page check and
+//                                          ux-graph-doc.html its doc check), D- ids unique across pages, every screen
+//                                          page linked from index.html,
 //                                          every token and every icon named on index.html,
 //                                          no colour literal outside tokens.css
-//   node check.mjs doc DOC.html UX-GRAPH.md  the graph doc cites every edge of UX-GRAPH.md
-//                                          exactly once, no other edge, and only known screens
+//   node check.mjs doc DOC.html UX-GRAPH.md  the graph doc is well formed as a page is, cites
+//                                          every edge of UX-GRAPH.md exactly once, no other
+//                                          edge, and only known screens
 //   node check.mjs tokens A.css B.css      the two sheets declare the same tokens with the
 //                                          same values, neither with a second scheme
 // Exit 0 when everything holds; 1 with one line per problem; 2 on a usage error.
@@ -75,8 +76,9 @@ function whole(dir) {
   const seen = new Map();
   const screens = new Map();
   for (const file of pages) {
-    // A screen page's own form is its page check's; the whole reads it for its ids only.
-    const own = SCREENS.includes(basename(file, ".html"));
+    // A screen page's own form is its page check's and the graph doc's its doc check's; the
+    // whole reads them for their ids only.
+    const own = SCREENS.includes(basename(file, ".html")) || file === "ux-graph-doc.html";
     const { screen, ids } = page(join(dir, file), own ? { report: () => {} } : {});
     if (screen) screens.set(screen, file);
     for (const id of ids) {
@@ -85,13 +87,11 @@ function whole(dir) {
     }
   }
   const index = read(join(dir, "index.html"));
-  const doc = read(join(dir, "ux-graph-doc.html"));
   for (const screen of SCREENS) {
     const file = `${screen}.html`;
     if (!pages.includes(file)) report(`whole: no page ${file}`);
     if (screens.get(screen) !== file) report(`whole: ${file} does not declare data-screen="${screen}"`);
     if (!index.includes(`href="${file}"`)) report(`index.html: does not link ${file}`);
-    if (!doc.includes(`data-screen="${screen}"`)) report(`ux-graph-doc.html: does not list the screen ${screen}`);
   }
   for (const screen of screens.keys()) if (!SCREENS.includes(screen) && screen !== "ux-graph-doc" && screen !== "index") report(`whole: unknown screen ${screen}`);
   for (const name of sheet.root.keys()) if (!index.includes(`--${name}</code>`)) report(`index.html: does not name the token --${name}`);
@@ -107,6 +107,7 @@ function report(text) {
 }
 
 function doc(docPath, graphPath) {
+  page(docPath);
   const html = read(docPath);
   const edges = [...read(graphPath).matchAll(/^\|\s*(E-[A-Z0-9-]+)\s*\|/gm)].map((match) => match[1]);
   if (edges.length === 0) fail(`${graphPath}: has no edge ids`);

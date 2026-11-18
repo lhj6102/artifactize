@@ -21,9 +21,9 @@ instruction = """
 Read the checklist {rules-frontend-style} and the TEST- rules of \
 {rules-code-style}. Then review the Svelte and TypeScript \
 of {desktop-ui}: its src folder (the generated bindings in src/ipc/bindings.ts are excluded; src/ipc/client.ts is not) and its build configuration, but not the end-to-end tests in e2e, against \
-every frontend item, and its tests and test helpers against every TEST- rule. The UI gets all \
-domain state and decisions from the library {engine-core} through the IPC bindings: report any that it \
-re-implements (read the library). Tool paths are relative to the Artifact, for example src/lib.rs. Submit GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most important first, each with the item id, a path:line and one sentence on what to change."""
+every frontend item, and its tests and test helpers against every TEST- rule. What the UI's eslint \
+configuration (eslint.config.js) checks mechanically is the lint eval's and is not reviewed again here. For \
+U-LIBRARY-OWNS, read the library {engine-core} the UI's state comes from. Tool paths are relative to the Artifact, for example src/lib.rs. Submit GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most important first, each with the item id, a path:line and one sentence on what to change."""
 
 [evals.follows-frontend-style.pass_schema]
 type = "object"
@@ -55,8 +55,7 @@ profile = { kind = "runtime", command = "pnpm", args = ["lint"], timeout_ms = 60
 
 [evals.lint.payload]
 instruction = """
-Run eslint (no inline config; Svelte recommended rules, prefer-writable-derived, \
-no-unnecessary-state-wrap, require-each-key, and a $effect without an // EFFECT: comment) over \
+Run eslint with the UI's configuration, which checks the mechanical items of {rules-frontend-style}, over \
 the source and build configuration of {desktop-ui}, then svelte-check over the same files. The generated bindings and the end-to-end tests are excluded."""
 
 [evals.tokens-match-design]
@@ -84,8 +83,7 @@ are drawn with mock.css and whose D- rules say what must hold on that screen. Th
 {desktop-ui}: src/app.css and src/tokens.css, src/App.svelte, and the components under src/monitor, src/review, \
 src/settings and src/shell (the generated bindings in src/ipc are not UI; the tests and e2e are reviewed \
 elsewhere). For each D- rule, find the component or stylesheet that renders what the rule describes and judge \
-whether it holds: the surfaces, lines and tokens it names (a component declares no colour literal and uses a \
-token for the role the rule gives it), the sizes within the tolerances the rule states, the order and anatomy of \
+whether it holds: the surfaces, lines and tokens it names, the sizes within the tolerances the rule states, the order and anatomy of \
 the elements, the treatment of selection, hover and focus, and what the rule says to avoid. Mock markup need not \
 be copied: the app renders the same anatomy with its own components. Behaviour is reviewed by other evals; judge \
 appearance and arrangement only, and do not invent requirements the pages do not state. Submit GREEN when no \

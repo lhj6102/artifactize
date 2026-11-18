@@ -1,3 +1,6 @@
 # The design's mechanical checker: an input of the design's evals and of desktop-ui/tokens-match-design.
+# Its page mode is the form every screen page shares: the page links tokens.css, mock.css and
+# design.css, declares its screen, every callout has its note and every note its callout, its D-
+# rule ids are unique and each has its text, and no colour literal appears in it.
 basis = true
 path = "crates/artifactize-desktop/design/check.mjs"

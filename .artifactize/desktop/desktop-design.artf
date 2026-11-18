@@ -20,10 +20,9 @@ profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}"
 [evals.well-formed.payload]
 instruction = """
 Check {desktop-design} as a whole with {desktop-design-check}: tokens.css declares the one dark scheme (color-scheme: dark, \
-no second scheme); D- rule ids are unique across the pages; every screen page is linked from index.html and listed in \
-ux-graph-doc.html; index.html names every token and every icon of mock.css; mock.css and design.css hold no colour literal; \
-and index.html and ux-graph-doc.html, which no page eval covers, are well formed as a page is. Each screen page's own form \
-is judged by that page's well-formed eval."""
+no second scheme); D- rule ids are unique across the pages; every screen page is linked from index.html; index.html names every token and every icon of mock.css; mock.css and design.css hold no colour literal; \
+and index.html, which no page eval covers, is well formed as a page is. Each screen page's own form is judged by that \
+page's well-formed eval, and ux-graph-doc.html's by desktop-design-graph-doc."""
 
 [evals.agrees-with-journeys]
 title = "The screens and their rules agree with the journeys and the UX graph"

@@ -1,7 +1,7 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
 import { assertAppsStopped } from "./observation.ts";
-import { checkIntegrity } from "../lint/e2e-integrity.ts";
+import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
   absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
@@ -152,7 +152,7 @@ async function unit(): Promise<void> {
 
 const mode = process.argv[2] ?? "suite";
 try {
-  if (mode === "suite" || mode === "prepare") checkIntegrity();
+  if (mode === "suite" || mode === "prepare") checkSuite();
   if (mode === "suite" || mode === "batch") assertRunnerMachine();
   if (mode === "prepare") console.log((await prepare()).manifest);
   else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);

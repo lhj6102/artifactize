@@ -100,11 +100,11 @@ title = "Clippy passes for every Rust target"
 profile = { kind = "runtime", command = "cargo", args = ["clippy", "--locked", "-p", "artifactize-mcp", "--all-targets", "--", "-D", "warnings"], timeout_ms = 1800000 }
 
 [evals.clippy.payload]
-instruction = "Check every Rust target of {engine-mcp} with {engine-core} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}, treating every clippy warning as an error."
+instruction = "Check every Rust target of {engine-mcp} with {engine-core} with {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}, treating every clippy warning as an error."
 
 [evals.tests]
 title = "The Rust crate tests pass"
 profile = { kind = "runtime", command = "cargo", args = ["test", "--locked", "-p", "artifactize-mcp"], timeout_ms = 1800000 }
 
 [evals.tests.payload]
-instruction = "Run the tests of {engine-mcp} with {engine-core} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}. Fixtures build or declare every executable they use and own their resources."
+instruction = "Run the tests of {engine-mcp} with {engine-core} with {engine-tools} with the workspace {engine-cargo-manifest} and {engine-cargo-lock}. Fixtures build or declare every executable they use and own their resources."

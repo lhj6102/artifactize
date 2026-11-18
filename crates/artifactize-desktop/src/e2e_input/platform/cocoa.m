@@ -22,6 +22,9 @@ static ArtiIme *device_for(WKWebView *view) {
 const char *arti_ime_set(void *raw, const char *text) {
     WKWebView *view = (__bridge WKWebView *)raw;
     NSResponder *responder = view.window.firstResponder;
+    /* Only this WebView (or a view inside it) may receive the composition. */
+    if (![responder isKindOfClass:[NSView class]] || ![(NSView *)responder isDescendantOf:view])
+        return "The focused responder is not this WebView";
     if (![responder conformsToProtocol:@protocol(NSTextInputClient)])
         return "The focused WebView is not a native text input client";
     ArtiIme *device = device_for(view);
@@ -43,13 +46,16 @@ const char *arti_ime_commit(void *raw, const char *text) {
 const char *arti_ime_cancel(void *raw) { return arti_ime_commit(raw, ""); }
 
 /* WKWebView's responder editing actions, not constructed AppKit events. */
+/* Sent to the WKWebView itself, never forwarded up the responder chain. */
 const char *arti_edit_copy(void *raw) {
     WKWebView *view = (__bridge WKWebView *)raw;
-    if (![view tryToPerform:@selector(copy:) with:nil]) return "The WebView has no Copy editing action";
+    if (![view respondsToSelector:@selector(copy:)]) return "The WebView has no Copy editing action";
+    [(id)view copy:nil];
     return NULL;
 }
 const char *arti_edit_paste(void *raw) {
     WKWebView *view = (__bridge WKWebView *)raw;
-    if (![view tryToPerform:@selector(paste:) with:nil]) return "The WebView has no Paste editing action";
+    if (![view respondsToSelector:@selector(paste:)]) return "The WebView has no Paste editing action";
+    [(id)view paste:nil];
     return NULL;
 }

@@ -6,12 +6,12 @@ path = "crates/artifactize-desktop/design/ux-graph-doc.html"
 read = { builtin = "read" }
 
 [evals.cites-every-edge]
-title = "The graph doc places every edge of the UX graph, and no other, between known screens"
+title = "The graph doc is a well-formed page placing every edge of the UX graph, and no other, between known screens"
 profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "doc", "ux-graph-doc.html", "{desktop-ux-graph}"], timeout_ms = 30000 }
 
 [evals.cites-every-edge.payload]
 instruction = """
-Check {desktop-design-graph-doc} with {desktop-design-check}: every edge id of {desktop-ux-graph} is cited exactly \
+Check {desktop-design-graph-doc} with {desktop-design-check}: it is well formed as a page is, every edge id of {desktop-ux-graph} is cited exactly \
 once, no edge is cited that the graph does not have, every screen an edge leaves or reaches is one of the design's \
 screens or a terminal (start, any, quit), and every screen and terminal is described."""
 
@@ -27,11 +27,8 @@ instruction = """
 Read {desktop-design-graph-doc} whole, in pages with offset and limit since it is longer than one read prints, and the UX graph {desktop-ux-graph}. The doc describes its screens (monitor, \
 current, detail, review, settings, overlays) and terminals (start, any, quit) at its top, and places each edge \
 between screens with data-from and data-to. Check every row: the screens it leaves are where the edge's From \
-state is shown, the screens it reaches are where its To state is shown (a Run's and a Current's graphs are the \
-monitor and current screens; the Detail docked over either is detail; a Human review is review in the Main area \
-and detail on a Human eval's tab; the palette, Help, Open by ID, the Leave and Update dialogs, the Find field and \
-a Current's New Artifact, Rename and Delete dialogs are overlays; a dragged Artifact or comment, a drop target, a \
-comment and its field are on the graph they are drawn on; Settings is settings; an edge from or to whatever view is shown uses any). Check also that the map \
+state is shown, the screens it reaches are where its To state is shown, as the doc's own screen descriptions and the \
+design's screen pages of {desktop-design} place each state. Check also that the map \
 and the prose do not contradict the rows. Submit GREEN when every row is placed right. Otherwise submit RED with \
 up to 20 misplaced edges, each with the edge id (item), the row (where) and the screens it should name (change)."""
 

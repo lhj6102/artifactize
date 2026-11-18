@@ -19,12 +19,15 @@ you to continue the dev-master cycle, start the next run from step 1.
 - `dev` is where work comes together. Merging a ready pull request may turn it
   RED; that is expected, and this cycle brings it back to GREEN. Its states:
   RED (an eval fails), YELLOW (only Human sign-offs remain) and GREEN
-  (verify GREEN and CI green). Changes reach `dev` only as merged pull requests,
-  so every `dev` commit has passed CI; never push to `dev` directly.
+  (verify GREEN and CI green). Changes reach `dev` only as merged pull requests
+  whose blocking checks passed (CI skips pull requests that change only the
+  website, and pushes to `dev` start none); never push to `dev` directly.
 - `dev-green` is a lightweight tag on the latest GREEN `dev` commit. Only you
   move it. dev-worker branches start from it.
-- Development branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
-  `dev-green`, reach verify GREEN and open a pull request into `dev`.
+- dev-worker branches (`feat/…`, `fix/…`, `docs/…`, `chore/…`) start at
+  `dev-green` and open a pull request into `dev` once verify is GREEN, or YELLOW
+  while sign-offs wait; you merge one only when its head verifies GREEN (step 2).
+  Your own fix branches start at `origin/dev` instead (step 3).
 
 ## Verify
 
@@ -47,11 +50,13 @@ env -u DESKTOP_TEST_CANDIDATE CARGO_TARGET_DIR="$scratch/target" \
 `env -u DESKTOP_TEST_CANDIDATE` makes the desktop end-to-end evals build their
 candidate from this tree. The command prints the Run ID, the Run's outcome on
 `Execution:`, and ends with `Validation: SATISFIED` or `Validation: NOT
-SATISFIED`, the latter followed by `Unmet obligation:` lines. The exit code is
+SATISFIED`, the latter followed by `Unmet obligation:` lines when the Run
+reports unmet obligations. The exit code is
 the outcome: 0 GREEN (`Validation: SATISFIED`), 5 YELLOW, 1 RED,
 2 ERROR, 4 INCOMPLETE. Sign-offs never hold up the machine evals; once only
 sign-offs are left, the Run waits while one is claimed and ends YELLOW after its
-idle grace (2 minutes) with none claimed.
+idle grace (2 minutes unless set with `artifactize limits --signoff-idle-grace`)
+with none claimed.
 Read a Run and its failing evals with
 `"$scratch/target/debug/artifactize" run show RUN_ID --json`.
 
@@ -62,8 +67,9 @@ Read a Run and its failing evals with
   documents or CI, no skipped evals, and never a submitted or fabricated Human
   sign-off. Rule documents in `project-rules/` change only with the owner's
   sign-off.
-- A provider "server overloaded" ERROR is not a finding: run verify again;
-  finished results are reused.
+- A provider "server overloaded" ERROR is not a finding: run verify again.
+  Finished results whose reuse key still matches are reused; an operational
+  error is not a result and runs again.
 - Never save a copy of a `*.artf` file in a shared directory (use a `.txt`
   suffix), and remove the scratch files you no longer need.
 
@@ -102,8 +108,8 @@ Merge one when all of these hold:
    `headRefOid`. Otherwise (YELLOW, an older commit, no note),
    verify the head yourself in `.claude/worktrees/pr-N`
    (`git fetch origin pull/N/head` and `git worktree add --detach … FETCH_HEAD`);
-   unchanged results are reused. When it is GREEN, update the note's `verify`
-   line. When only sign-offs remain, list them for the owner and leave the pull
+   results whose reuse key still matches are reused. When it is GREEN, update
+   the note's `verify` line. When only sign-offs remain, list them for the owner and leave the pull
    request waiting; when it is RED, leave it for its worker.
 2. **CI green.** `gh pr checks N`: every job passed, judged by each job's own
    conclusion. Desktop E2E is informational on pull requests into `dev`; record

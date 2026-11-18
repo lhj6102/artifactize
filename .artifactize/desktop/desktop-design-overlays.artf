@@ -5,11 +5,9 @@ path = "crates/artifactize-desktop/design/overlays.html"
 read = { builtin = "read", args = ["overlays.html"] }
 
 [evals.well-formed]
-title = "The overlays page links the design's sheets, numbers its callouts and states its rules"
+title = "The overlays page has the form every screen page shares"
 profile = { kind = "runtime", command = "node", args = ["{desktop-design-check}", "page", "overlays.html"], timeout_ms = 30000 }
 
 [evals.well-formed.payload]
 instruction = """
-Check {desktop-design-overlays} with {desktop-design-check}: it links tokens.css, mock.css and design.css, declares its \
-screen, every callout has its note and every note its callout, its D- rule ids are unique and each has its text, \
-and no colour literal appears in it."""
+Check {desktop-design-overlays} against the page form of {desktop-design-check}, which every screen page shares."""
