@@ -830,6 +830,20 @@
 .m-slash {
   color: var(--ink-2);
 }
+/* The Artifact's chip and the slash after it wrap as one group; only the name inside is cut. */
+.m-chip-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.m-chip-lead .m-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .m-body {
   flex: 1;
   min-height: 0;
