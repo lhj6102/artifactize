@@ -9,6 +9,11 @@ use serde_json::json;
 use url::Url;
 
 use super::print_json;
+
+/// `remote status` exits 1 when no remote review store is configured, as it does for a
+/// configured store that is not signed in: either way the status is not usable, and the
+/// output says which. Signed in exits 0; errors exit 2.
+const NOT_CONFIGURED_EXIT: u8 = 1;
 use artifactize_core::auth::remote::{self, Share, TokenSource};
 
 #[derive(Debug, Subcommand)]
@@ -147,7 +152,7 @@ pub(super) async fn execute(
                     writeln!(io::stdout().lock(), "No remote review store is configured.")
                         .map_err(|e| e.to_string())?;
                 }
-                return Ok(1);
+                return Ok(NOT_CONFIGURED_EXIT);
             };
             if json {
                 print_json(&artifactize_core::inspect::remote_output(Some(&status)))?;

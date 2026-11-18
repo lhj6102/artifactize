@@ -591,7 +591,14 @@ fn site_reads_keep_the_target_kind_and_its_aspect_selection_together() {
 
 #[test]
 fn placement_wire_keys_are_validated_before_becoming_edit_operations() {
-    for key in ["", "whole/part/extra", "whole/", "../part", "whole/CON"] {
+    let reserved = format!("whole/{}", support::os::reserved_device_name());
+    for key in [
+        "",
+        "whole/part/extra",
+        "whole/",
+        "../part",
+        reserved.as_str(),
+    ] {
         assert!(
             serde_json::from_value::<Operation>(
                 serde_json::json!({"kind":"savePlaces", "places":{key:[1,2]}})
