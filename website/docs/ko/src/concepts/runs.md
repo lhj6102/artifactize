@@ -16,7 +16,7 @@ artifactize verify app/tests --recursive --wait  # 의존성 클로저의 선행
 
 - **실행 게이트와 Run 통과 요건(Final obligations)의 차이**:
   - **실행 게이트(Execution gates)**는 선택한 eval이 언제 시작될 수 있는지 결정합니다([eval 단위 게이트](artifacts.md#eval-dependencies) 참고).
-  - **Run 통과 요건(Final obligations)**: 이 요건을 모두 충족해야 Run이 통과합니다. 단일 eval(`verify app/tests`)만 선택했더라도 Run이 최종 `GREEN`이 되려면 `app`의 나머지 eval, 하위 `parts`, 그리고 직접 또는 간접으로 의존하는 모든 상위 Artifact(Human 승인 포함)에 유효한 `GREEN` 근거가 있어야 합니다. eval과 `parts`가 없고 `basis = true`도 아닌 Artifact를 선택했을 때도 미검증 요건으로 남습니다. 선택하지 않은 요건은 로컬 캐시나 원격 저장소에 남은 결과(Run 기록의 `evidence`)로 충족 여부를 확인하며, Run 결과 우선순위와 종료 코드는 [승인과 Run의 종료](#sign-offs-and-the-end-of-a-run)를 참고하세요. 선택한 eval과 여기에 직간접으로 연결된 모든 선행 eval을 함께 실행하려면 `--recursive`나 `--all`을 사용하세요.
+  - **Run 통과 요건(Final obligations)**: 이 요건을 모두 충족해야 Run이 통과합니다. 단일 eval(`verify app/tests`)만 선택했더라도 Run이 최종 `GREEN`이 되려면 `app`의 나머지 eval, 하위 `parts`, 그리고 직접 또는 간접으로 의존하는 모든 상위 Artifact(Human 승인 포함)에 유효한 `GREEN` 근거가 있어야 합니다. eval도 `parts`도 없고 `basis = true`도 아닌 Artifact를 선택하면, 해당 Artifact는 검증하지 못한 항목으로 남습니다. 선택하지 않은 요건은 로컬 캐시나 원격 저장소에 남은 결과(Run 기록의 `evidence`)로 충족 여부를 확인하며, Run 결과 우선순위와 종료 코드는 [승인과 Run의 종료](#sign-offs-and-the-end-of-a-run)를 참고하세요. 선택한 eval과 여기에 직간접으로 연결된 모든 선행 eval을 함께 실행하려면 `--recursive`나 `--all`을 사용하세요.
 - **동시 실행과 대기(`QUEUED`)**: 준비된(`READY`) 모든 eval은 게이트가 열리는 즉시 시작됩니다. 기본 설정에서는 Run 하나에서 동시에 실행할 수 있는 eval 수에 제한이 없습니다. 같은 [`mutex` 태그](../reference/declarations.md#eval-fields-evalsid)를 쓰는 다른 eval이 실행 중이면 해당 eval을 `QUEUED` 상태로 대기열에 넣습니다. 같은 상태 디렉터리를 공유하는 Run들에서 [`limits.json`](../reference/cli-and-mcp.md#state-cache-and-limits)의 백엔드별 동시 실행 작업 수 한도에 도달했거나 사용자가 `--jobs N` 제한을 지정했을 때도 `QUEUED` 상태로 대기합니다. `--max-executions N`은 새로 시작하는 `runtime` 및 `agent` 실행 횟수를 제한합니다. 실행 횟수에는 캐시 재사용, 실행 중인 작업의 결과 공유, Human 승인 요청을 포함하지 않습니다. 한도 때문에 준비된 실행을 시작하지 못하면 해당 요청은 `BUDGET_EXHAUSTED`가 되고 Run은 종료 코드 `4`인 `INCOMPLETE`로 끝납니다.
 
 ## Run 시작, 진행 상황 확인, 취소 {#submit-observe-and-cancel}
@@ -34,7 +34,7 @@ Artifactize는 Run을 시작한 터미널이나 MCP 세션과 독립적으로 �
 
 기본 모드에서는 상위 의존성의 실행 조건이 충족(`GREEN`, `PROVISIONAL`, 또는 선택된 `DEFERRED` 승인)된 뒤에만 하위 eval을 시작합니다. `--speculate`를 넘기면 상위 게이트가 확정되기 전이라도 `--jobs`, `--max-executions`, 백엔드 슬롯, `mutex` 한도 안에서 요청한 `runtime` 및 `agent` eval을 먼저 시작합니다. Human 승인은 미리 요청하지 않습니다.
 
-- 게이트가 충족된 일반 작업이 우선권을 가집니다. 일반 작업에 `--jobs`나 백엔드 슬롯이 필요하면 미리 실행 중이던 리뷰를 중단하고 대기열에 다시 넣습니다(시작할 때마다 `--max-executions` 횟수 차감).
+- 실행 조건을 충족한 일반 작업부터 처리합니다. 일반 작업에 `--jobs`나 백엔드 슬롯이 필요하면 미리 실행 중이던 리뷰를 중단하고 대기열에 다시 넣습니다(시작할 때마다 `--max-executions` 횟수 차감).
 - 상위 의존성이 나중에 `GREEN`으로 통과하면 미리 실행해 둔 결과를 그대로 인정해 전체 시간을 단축합니다.
 - 하위 eval의 대상 Artifact나 순환 참조 밖의 상위 의존성이 `RED` 또는 `ERROR`가 되면, 그 입력에 의존하는 하위 eval 중 미리 실행 중인 작업을 즉시 취소하고 이미 완료된 실행 결과도 무효화해 재사용 기록에서 제외합니다. 이어서 영향받는 하위 요청(Human 승인 포함)을 `BLOCKED`로 표시합니다.
 - 반복 수정([Focus then sweep](../agent-plugin/plugin.md#focus-then-sweep-iterate-on-red-evals)) 중에 `verify --eval ID --speculate --wait`를 쓰면 상위 입력이 아직 재검증되지 않은 상태에서도 수정 중인 eval만 바로 실행해 볼 수 있습니다.
@@ -50,7 +50,7 @@ Human eval이 시작되려면 `{name}`으로 참조한 상위 의존성 게이�
 | Run 결과 | 종료 코드 | 의미 |
 |---|---|---|
 | `GREEN` | `0` | Human 승인을 포함한 모든 필수 eval이 `GREEN`으로 통과했습니다. |
-| `RED` | `1` | eval이나 그 밖의 필수 요건 중 하나라도 결과가 `RED`입니다(취소, `ERROR`, 또는 예산/`--reuse-only`로 인한 `INCOMPLETE`가 없을 때). |
+| `RED` | `1` | eval이나 그 밖의 필수 요건 중 하나라도 결과가 `RED`입니다(취소, `ERROR`, 또는 실행 횟수 한도나 `--reuse-only`로 인한 `INCOMPLETE`가 없을 때). |
 | `ERROR` | `2` | 명시적인 Run 취소(`ERROR/CANCELLED`, 최우선 적용)나 Run 준비 단계 오류(fingerprint 스크립트 실패, 준비 중 선언 변경 `INPUT_CHANGED` 등)가 일어났거나, 취소되지 않은 Run에서 eval 실행 오류가 발생하면 `ERROR`가 됩니다. 다만 취소되지 않은 Run에서 실행 횟수 한도나 `--reuse-only`로 판정이 `INCOMPLETE`라면 그쪽이 개별 eval 오류보다 우선합니다. |
 | `INCOMPLETE` | `4` | 취소되지 않은 Run에서 `--max-executions` 한도에 걸려 실행을 시작하지 못했거나(`BUDGET_EXHAUSTED`) [`--reuse-only`에서 재사용할 캐시 결과가 없으면](../guides/team-and-ci.md#ci) `INCOMPLETE`로 끝납니다. 이 두 경우는 `ERROR`나 `RED`보다 먼저 적용됩니다. 그 외에는 `ERROR`나 `RED`가 없더라도 충족하지 못한 요건(유효한 근거가 없는 미선택 요건, 또는 eval·`parts`·`basis = true`가 없는 선택된 Artifact)이 남으면 `INCOMPLETE`가 됩니다. |
 | `YELLOW` | `5` | 모든 자동 검사는 통과(`GREEN` 또는 `PROVISIONAL`)했고 **제출되지 않은 Human 승인만 남아 있습니다**(최종 승인 아님). |

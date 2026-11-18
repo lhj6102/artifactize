@@ -100,5 +100,5 @@ artifactize verify --all --wait
 
 ## 다음 단계 {#next-steps}
 
-- **[코딩 에이전트와 함께 쓰기](../agent-plugin/plugin.md)**: **Arti**와 대화하며 내 프로젝트에 맞는 `.artifactize/` 선언을 설계하고 **Focus then sweep**으로 빠르게 문제를 수정합니다.
+- **[코딩 에이전트와 함께 쓰기](../agent-plugin/plugin.md)**: **Arti**와 대화하며 프로젝트에 맞춰 `.artifactize/` 선언을 설계하고 **Focus then sweep**으로 빠르게 문제를 수정합니다.
 - **[데스크톱 앱과 TUI](../guides/interfaces.md)**: `artifactize-desktop`이나 `artifactize monitor`에서 실시간 그래프와 Run 기록을 살펴봅니다.
