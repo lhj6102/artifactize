@@ -37,7 +37,13 @@ including e2e tests and harnesses.
 - **TEST-EXACT-STATE**: an async test waits for the exact state it asserts. Accepted, saved,
   released and rendered are different states.
 - **TEST-CONTROLLED-TIME**: ordering and expiry tests use explicit times or a controlled clock.
-- **TEST-READ-ONLY**: observations go through read-only interfaces.
+  An end-to-end test controls time only through a declared external input the app already
+  reads (such as a fixture clock of the test build); where the app has no such input, a
+  real-time expiry check bounded by the product's own deadline is acceptable.
+- **TEST-READ-ONLY**: observations go through read-only interfaces. In an end-to-end test that
+  drives a real UI, a UI action that reveals what the case checks (such as opening Debug to
+  read a request ID) is part of the case's action, not an observation; the observations
+  themselves stay read-only.
 - **TEST-OWN-FIXTURES**: a fixture owns its processes, connections and temporary files, and
   cleans them up.
 - **TEST-SELF-CONTAINED**: tests build or declare every executable and input they use; they
