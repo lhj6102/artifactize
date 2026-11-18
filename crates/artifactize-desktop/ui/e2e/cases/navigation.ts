@@ -134,23 +134,23 @@ export const scenarios: Scenario[] = [
     async (browser, { fixture, data }) => {
       await graphShown(browser, "a:release");
       const run = requests(fixture)[0].runId;
-      // Overwrite an existing Run on disk without going through the app or emitting a state hint.
       const comment = "A Run comment saved outside the window";
       const timeline = () => browser.$(`[data-chip="${run}"] .sub`);
-      await timeline().waitForDisplayed({ timeout: 15000 });
-      assert.equal(await timeline().getText(), run, "the Run initially has no comment");
+      const timelineShows = async (text: string) => await timeline().isDisplayed() && await timeline().getText() === text;
+      await waitFor(browser, () => timelineShows(run), "the Run initially has no comment");
+      assert.equal(await mainTitle(browser), run, "the Run is shown before refreshing");
+      assert.equal(await branch(browser, "repo  after-refresh"), undefined, "the new worktree is not listed yet");
+      let before = await checkpoint(browser);
       updateDatabase(nativePath(fixture.state, "state.sqlite"), (db) => {
         assert.equal(db.prepare("UPDATE runs SET data=json_set(data,'$.comment',?) WHERE id=?").run(comment, run).changes, 1);
       });
-      // The Run shown: a refresh keeps it shown, and finds a worktree Git alone added.
       git(fixture.repo, "-C", fixture.repo, "worktree", "add", "-q", "-b", "after-refresh", data.worktree);
-      assert.equal(await timeline().getText(), run, "the changed Run is not yet rendered");
-      let before = await checkpoint(browser);
+      // Background reconciliation can also pick up the edits. Require F5's own read to
+      // complete, then wait for the timeline and Branches to show the changed inputs.
       await press(browser, ["F5"], async () => (await checkpoint(browser)).activity.refresh?.generation === (before.activity.refresh?.generation ?? 0) + 1,
-        "F5's refresh shown", { handled: true });
-      await refreshed(browser, before);
-      await waitFor(browser, async () => await timeline().isDisplayed() && await timeline().getText() === comment, "the timeline renders the Run comment reloaded from disk");
-      assert.ok(await branch(browser, "repo  after-refresh"), "the refresh scanned the branches again: the new worktree listed");
+        "F5's refresh completed", { handled: true });
+      await waitFor(browser, () => timelineShows(comment), "the timeline renders the Run comment reloaded from disk");
+      await waitFor(browser, async () => !!(await branch(browser, "repo  after-refresh")), "the refreshed Branches list the new worktree");
       assert.equal(await mainTitle(browser), run, "on the same view");
       assert.equal(await browser.$(`${MAIN} > header [role="status"]`).isExisting(), false, "the refresh read without an error");
       // The new branch's Current: only a refresh or its Refresh button scans it again.

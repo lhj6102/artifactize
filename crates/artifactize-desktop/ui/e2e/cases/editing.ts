@@ -8,7 +8,7 @@ import { verifyAll, type Fixture } from "../fixture.ts";
 import { runtimeProfile } from "../native-fixtures.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { exists, listFiles, makeDirectory, nameOf, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
-import { detail, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
+import { detail, FIND, findField, graphShown, nodeAt, offCentre, openArtifact } from "../graph-view.ts";
 import { MAIN, chooseChip, mainTitle, scanned, showRun } from "../pane.ts";
 import { afterRender, fill, press } from "../keys.ts";
 import { clickAt, pointerGapClick, visibleCenter } from "../pointer.ts";
@@ -190,15 +190,16 @@ function partDrawn(browser: WebdriverIO.Browser, id: string, whole: string, insi
   }, [`${CURRENT} ${nodeAt(id)}`, `${CURRENT} ${nodeAt(whole)}`, `${CURRENT} .canvas`], inside);
 }
 
-/** Every drawn copy's place on the shown graph, from docs's, in the graph's own units (a node
- * is 168 wide), whatever the camera's zoom. */
+/** Each drawn copy's CSS placement relative to docs, before the outer viewport's pan and zoom.
+ * Reading the node's transform avoids rounding screen pixels back into graph units. */
 const places = (browser: WebdriverIO.Browser) => browser.execute(() => {
   const nodes = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].filter((node) => !node.closest("aside"));
-  const origin = nodes.find((node) => node.dataset.id === "a:docs")?.getBoundingClientRect();
-  const unit = (nodes.find((node) => node.querySelector(".artifact"))?.getBoundingClientRect().width ?? 168) / 168;
+  const position = (node: HTMLElement) => new DOMMatrixReadOnly(getComputedStyle(node).transform);
+  const docs = nodes.find((node) => node.dataset.id === "a:docs");
+  const origin = docs ? position(docs) : new DOMMatrixReadOnly();
   return Object.fromEntries(nodes.map((node) => {
-    const at = node.getBoundingClientRect();
-    return [node.dataset.id ?? "", [Math.round((at.left - (origin?.left ?? 0)) / unit), Math.round((at.top - (origin?.top ?? 0)) / unit)]];
+    const at = position(node);
+    return [node.dataset.id ?? "", [Math.round(at.e - origin.e), Math.round(at.f - origin.f)]];
   }));
 });
 
@@ -821,7 +822,7 @@ export const scenarios: Scenario[] = [
       // Esc during a drag puts the node back, writing nothing.
       const files = () => ["core", "docs", "app", "bundle", "kit"].map((name) => file(fixture, name));
       const untouched = files();
-      await drag(browser, { x: core.x, y: core.y }, { x: core.x + 80, y: core.y + 80 }, {
+      await drag(browser, core, await below(browser, core.x + 80, core.y), {
         escape: true,
         escaped: () => waitFor(browser, async () => JSON.stringify(await box(browser, "a:core")) === JSON.stringify(core), "Esc put core back before the button is let go"),
       });
@@ -855,19 +856,31 @@ export const scenarios: Scenario[] = [
       // A later move writes the moved node's file only.
       const docsBefore = file(fixture, "docs");
       const coreAt = ownAt(fixture, "core");
-      await openArtifact(browser, "a:core", "Artifact core");
+      // Find opens the Detail and puts the drag source in the uncovered part of the graph.
+      await browser.$(TOOLS).$("button=Find").click();
+      await fill(browser, FIND, "core");
+      await waitFor(browser, async () => (await findField(browser))?.entries.some((entry) => entry.name === "core") === true, "Find lists core");
+      await press(browser, ["Enter"], async () => (await detail(browser))?.title === "Artifact core", "Find opens core's Detail");
       const beforeSelected = await browser.$(`${CURRENT} ${nodeAt("a:core")} .artifact`).getAttribute("class");
       assert.match(beforeSelected ?? "", /\bopen\b/, "the moved node is selected with its Detail open");
       const cameraWithDetail = await camera(browser);
-      await drag(browser, placed!, { x: placed!.x + 40, y: placed!.y });
+      await graphShown(browser, "a:core");
+      const selected = (await box(browser, "a:core"))!;
+      const next = await below(browser, selected.x + 40, selected.y);
+      await drag(browser, selected, next);
       await waitFor(browser, () => ownAt(fixture, "core") !== coreAt, "core's new place written");
-      await waitFor(browser, async () => Math.abs(((await box(browser, "a:core"))?.x ?? 0) - (placed!.x + 40)) < 12, "core moved again");
+      await waitFor(browser, async () => {
+        const at = await box(browser, "a:core");
+        return !!at && Math.hypot(at.x - next.x, at.y - next.y) < 12;
+      }, "core moved again");
       assert.equal(file(fixture, "docs"), docsBefore, "docs's file untouched");
       assert.equal((await detail(browser))?.title, "Artifact core", "placing keeps the active Detail");
       assert.match(await browser.$(`${CURRENT} ${nodeAt("a:core")} .artifact`).getAttribute("class") ?? "", /\bopen\b/, "placing keeps the same selection");
       assert.equal(await camera(browser), cameraWithDetail, "placing with an open Detail preserves the camera");
       await browser.$(DETAIL).$("button=Close").click();
       await waitFor(browser, async () => (await detail(browser)) === null, "the Detail closed before the next drop");
+      await browser.$(TOOLS).$("button=Fit").click();
+      await camera(browser);
 
       // A whole is dragged by its title row, carrying its parts; minimized, it is dragged as a node.
       const bundleTitle = await titleOf(browser, "a:bundle");
@@ -1026,16 +1039,19 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => holds(fixture, "docs", "kit") && !holds(fixture, "app", "kit"), "kit moved from app's parts to docs's");
       assert.equal(placesPart(fixture, "app", "kit"), false, "kit's place gone from app's file");
       assert.ok(holds(fixture, "bundle", "kit"), "bundle still holds kit");
-      await graphShown(browser, "a:docs/a:kit");
+      const arrived = await settled(browser, "a:docs/a:kit");
       assert.deepEqual((await places(browser))["a:bundle/a:kit"], bundleKit, "bundle's copy of kit stays where it was");
       const written = placeOf(fixture, "docs", "kit");
       assert.ok(written?.every(Number.isFinite), "docs owns the dropped part's new coordinates");
-      const arrived = await settled(browser, "a:docs/a:kit");
       const destination = await settled(browser, "a:docs");
       assert.ok(arrived.left >= destination.left && arrived.top > destination.top && arrived.left < destination.left + destination.width, "the dropped part is drawn inside its destination");
       assert.ok(Math.abs(arrived.x - docsNode.x) <= arrived.width && Math.abs(arrived.y - docsNode.y) <= arrived.height * 2,
         `the part is drawn at the drop on docs, not an unrelated position: ${JSON.stringify({ arrived, docsNode, written })}`);
-      // Back into app, for the layout to come back as it was.
+      // The drop may have grown docs past the canvas edge. Fit after checking the
+      // placement in the original camera, so both ends of the return drag are reachable.
+      await browser.$(TOOLS).$("button=Fit").click();
+      await camera(browser);
+      await graphShown(browser, "a:docs/a:kit");
       const kitInDocs = (await box(browser, "a:docs/a:kit"))!;
       const appNode = (await box(browser, "a:app"))!;
       await drag(browser, kitInDocs, { x: appNode.x, y: appNode.y });
@@ -1052,7 +1068,9 @@ export const scenarios: Scenario[] = [
       assert.equal(await camera(browser), zoomed, "the camera stays");
       await browser.$(`${CURRENT} ${nodeAt("a:app")} button[aria-label="Reset layout of app"]`).click();
       await waitFor(browser, () => !/annotations\.style\.parts/.test(file(fixture, "app") ?? ""), "app's places gone");
-      await waitFor(browser, async () => JSON.stringify(await places(browser)) === JSON.stringify(initial), "laid out as it first was");
+      let reset = {};
+      await waitFor(browser, async () => JSON.stringify(reset = await places(browser)) === JSON.stringify(initial), "laid out as it first was")
+        .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(reset)} after reset, ${JSON.stringify(initial)} initially`); });
 
       // Placed again, the places draw the branch's Run as they draw its Current.
       const again = (await box(browser, "a:docs"))!;
@@ -1069,7 +1087,8 @@ export const scenarios: Scenario[] = [
       // A Run's graph is a record: nothing moves, nothing is offered to edit.
       const onRun = (await box(browser, "a:docs"))!;
       const runCamera = await camera(browser);
-      await drag(browser, onRun, { x: onRun.x + 80, y: onRun.y + 80 });
+      // Docs was placed near the bottom; pan it up into the graph, not out of the window.
+      await drag(browser, onRun, { x: onRun.x, y: onRun.y - 80 });
       await waitFor(browser, async () => (await camera(browser)) !== runCamera, "the drag on a Run panned the camera");
       assert.equal(await browser.$(TOOLS).$("button=New Artifact").isExisting(), false, "no New Artifact on a Run");
       assert.equal(await browser.$(TOOLS).$("button=Reset layout").isExisting(), false, "no Reset layout on a Run");
@@ -1082,8 +1101,11 @@ export const scenarios: Scenario[] = [
     },
     async (browser, { fixture }) => {
       // After a restart the places still hold: the graph is drawn where it was left.
-      await currentShown(browser, "a:docs");
+      await waitFor(browser, async () => (await mainTitle(browser)) === "Current · repo  master" && /^Scanned at \d/.test(await scanned(browser)), "the branch's Current was scanned after restart");
       await waitFor(browser, async () => await browser.$(TOOLS).$("button=Reset layout").isExisting(), "the top level still placed by hand");
+      await browser.$(TOOLS).$("button=Fit").click();
+      await camera(browser);
+      await graphShown(browser, "a:docs");
       const saved = readText(nativePath(fixture.root, "places.json"));
       let shown = {};
       await waitFor(browser, async () => JSON.stringify(shown = await places(browser)) === saved, "every Artifact where it was left")

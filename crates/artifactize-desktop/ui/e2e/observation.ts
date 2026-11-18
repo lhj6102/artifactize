@@ -38,9 +38,9 @@ function recordedOrderlyExit(owner: Identity, path: string | undefined): boolean
 /** The expected transport error from a driver shutting down during the action. */
 function driverDisconnected(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  // The embedded driver's response channel can close before the HTTP server does.
-  const channelClosed = /^WebDriverError: Channel closed when running "(?:actions|execute\/(?:a?sync))" with method "POST"(?:$| and args )/i;
-  return channelClosed.test(error.message)
+  // The embedded driver can lose the webview or its response channel before HTTP shuts down.
+  const webviewDisconnected = /^WebDriverError: (?:Channel closed|runtime error: failed to send message to the webview) when running "(?:actions|execute\/(?:a?sync))" with method "POST"(?:$| and args )/i;
+  return webviewDisconnected.test(error.message)
     || /\b(?:ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR_SOCKET)\b|fetch failed|socket hang up|other side closed/i.test(error.message)
     || driverDisconnected(error.cause);
 }

@@ -28,16 +28,39 @@ function app() {
   };
 }
 
-it("retires only the client session after the previously live native process exits", async () => {
-  const { browser, alive, exit, orderlyExit } = app();
-  assert.equal(alive(owner), true, "the same observer sees the native process alive");
-  await sessionEndedByApp(browser, async () => {
-    assert.equal(browser.sessionId, "the-live-session", "the action does not retire a live session");
-    exit();
-    throw new Error('WebDriverError: Channel closed when running "actions" with method "POST"');
-  }, alive, orderlyExit);
-  assert.equal(browser.sessionId, undefined);
-  assert.equal(alive(owner), false);
+const lostWebview = "runtime error: failed to send message to the webview";
+const actionError = (message: string, command: string) =>
+  new Error(`WebDriverError: ${message} when running "${command}" with method "POST"`);
+
+for (const [message, command] of [["Channel closed", "actions"], [lostWebview, "actions"], [lostWebview, "execute/async"]]) {
+  it(`retires the client session for ${message} on ${command} only after a native exit with a receipt`, async () => {
+    const { browser, alive, exit, orderlyExit } = app();
+    assert.equal(alive(owner), true, "the same observer sees the native process alive");
+    await sessionEndedByApp(browser, async () => {
+      assert.equal(browser.sessionId, "the-live-session", "the action does not retire a live session");
+      exit();
+      throw actionError(message, command);
+    }, alive, orderlyExit);
+    assert.equal(browser.sessionId, undefined);
+    assert.equal(alive(owner), false);
+  });
+}
+
+it("rejects losing the webview if the app is still alive or exited without its receipt", async () => {
+  for (const stop of [false, true]) {
+    const { browser, alive, exit, orderlyExit } = app();
+    const actionFailure = actionError(lostWebview, "actions");
+    await assert.rejects(sessionEndedByApp(browser, async () => {
+      if (stop) exit(false);
+      throw actionFailure;
+    }, alive, orderlyExit), (error: unknown) => {
+      assert.ok(error instanceof AggregateError);
+      assert.equal(error.errors[0], actionFailure);
+      assert.match(String(error.errors[1]), stop ? /without a successful, orderly shutdown/ : /still running/);
+      return true;
+    });
+    assert.equal(browser.sessionId, "the-live-session");
+  }
 });
 
 it("does not turn a transport loss caused by a crash into an orderly quit", async () => {
