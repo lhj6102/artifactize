@@ -272,20 +272,26 @@ pub struct Form {
 }
 
 impl Form {
-    /// The form of `verdict` for its owner schema, or none. A schema a form cannot enter is
-    /// refused, as [`check`] refuses it when the declaration loads.
-    pub fn new(verdict: crate::runtime::Verdict, schema: Option<&Value>) -> Result<Self, String> {
-        let fields = match schema {
-            None => Vec::new(),
-            Some(Value::Object(schema)) => fields(schema, "")?,
-            Some(_) => return Err("A Human result schema must be a JSON object.".into()),
-        };
-        Ok(Self {
+    /// Open the form using an already validated specification.
+    pub fn from_spec(verdict: crate::runtime::Verdict, spec: &Specification) -> Self {
+        Self {
             verdict,
-            fields,
+            fields: spec.0.clone(),
             selected: 0,
             error: None,
-        })
+        }
+    }
+
+    /// Parse an externally supplied JSON schema into a form at the input boundary.
+    pub fn new(verdict: crate::runtime::Verdict, schema: Option<&Value>) -> Result<Self, String> {
+        let schema = schema
+            .map(|value| {
+                value
+                    .as_object()
+                    .ok_or("A Human result schema must be a JSON object.")
+            })
+            .transpose()?;
+        Ok(Self::from_spec(verdict, &Specification::parse(schema)?))
     }
 
     /// The complete result: owner fields plus the chosen verdict.
@@ -454,8 +460,21 @@ impl Form {
 
 /// Whether a Human eval may declare `schema` as a result schema: only shapes a form can
 /// enter. The error names the offending key and what is allowed instead.
-pub fn check(schema: &Map<String, Value>) -> Result<(), String> {
-    fields(schema, "").map(drop)
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Specification(Vec<Field>);
+
+impl Specification {
+    pub(crate) fn parse(schema: Option<&Map<String, Value>>) -> Result<Self, String> {
+        schema.map_or_else(
+            || Ok(Self::default()),
+            |schema| fields(schema, "").map(Self),
+        )
+    }
+}
+
+#[cfg(test)]
+fn check(schema: &Map<String, Value>) -> Result<(), String> {
+    Specification::parse(Some(schema)).map(drop)
 }
 
 /// The fields of an object schema at `path` (empty for the result itself).

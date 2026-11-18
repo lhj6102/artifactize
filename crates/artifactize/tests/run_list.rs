@@ -2,7 +2,6 @@
 mod owned_run;
 
 use std::{
-    collections::BTreeMap,
     fs,
     path::Path,
     process::{Command, Output},
@@ -47,14 +46,9 @@ fn query(repo: &Path, state: &Path, args: &[&str], code: i32) -> Value {
     serde_json::from_slice(&output(repo, state, &args, code).stdout).unwrap()
 }
 
-fn counts(run: &Value) -> Value {
-    let mut counts = BTreeMap::<&str, u64>::new();
-    for request in run["requests"].as_array().unwrap() {
-        *counts
-            .entry(request["status"].as_str().unwrap())
-            .or_default() += 1;
-    }
-    json!(counts)
+async fn saved_run(state: &Path, id: &str) -> Value {
+    let view = artifactize_core::store::read_run(state, id).await.unwrap();
+    serde_json::to_value(view).unwrap()
 }
 
 async fn wait_for_other_verdicts(state: &Path, id: &str) {
@@ -206,8 +200,9 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
+    owned_run::hold_signoffs(&state);
     // Submission returns while the owned Run stays WAITING_HUMAN with its sign-off open.
-    // Read the submit-only response itself, not the saved-audit view from RecordOutput.
+    // Read the submit-only response itself, not the saved audit.
     let accepted = support::os::run(command(&second, &state).args(["verify", "--all", "--json"]));
     assert_eq!(accepted.status.code(), Some(0), "{accepted:?}");
     let other: Value = serde_json::from_slice(&accepted.stdout).unwrap();
@@ -228,34 +223,27 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
         0,
     );
     wait_for_other_verdicts(&state, other_id).await;
-    let other = query(&second, &state, &["run", "show", other_id], 0);
+    let other = saved_run(&state, other_id).await;
     // Fixed creation times make ordering and pagination independent of clock resolution.
-    let [selected, other, last] = {
-        [
-            (selected, "2000-01-01T00:00:00.000000000Z"),
-            (other, "2000-01-02T00:00:00.000000000Z"),
-            (last, "2000-01-03T00:00:00.000000000Z"),
-        ]
-        .map(|(run, created)| {
-            let id = run["id"].as_str().unwrap();
-            if run["status"] != "WAITING_HUMAN" {
-                support::runs::finished_worker(
-                    &state,
-                    &first,
-                    &id.parse().unwrap(),
-                    support::os::running,
-                );
-            }
-            order::created_at(&state, id, created);
-            // Read the seeded audit before repository removal, including derived durations.
-            query(
-                &first,
+    let mut audits = Vec::new();
+    for (run, created) in [
+        (selected, "2000-01-01T00:00:00.000000000Z"),
+        (other, "2000-01-02T00:00:00.000000000Z"),
+        (last, "2000-01-03T00:00:00.000000000Z"),
+    ] {
+        let id = run["id"].as_str().unwrap();
+        if run["status"] != "WAITING_HUMAN" {
+            support::runs::finished_worker(
                 &state,
-                &["run", "show", run["id"].as_str().unwrap()],
-                0,
-            )
-        })
-    };
+                &first,
+                &id.parse().unwrap(),
+                support::os::running,
+            );
+        }
+        order::created_at(&state, id, created);
+        audits.push(saved_run(&state, id).await);
+    }
+    let [selected, other, last] = audits.try_into().expect("three saved Run audits");
     assert_eq!(selected["profile"], "brief");
     assert_eq!(
         selected["selection"],
@@ -302,12 +290,11 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let before = support::declaration::read_file(state.join("state.sqlite")).unwrap();
     let all = query(&first, &state, &["run", "list", "--all"], 0);
     assert_eq!(all.as_array().unwrap().len(), 3);
-    for (summary, saved) in all
-        .as_array()
-        .unwrap()
-        .iter()
-        .zip([&last, &other, &selected])
-    {
+    for (summary, (saved, counts)) in all.as_array().unwrap().iter().zip([
+        (&last, json!({"GREEN":1})),
+        (&other, json!({"GREEN":1,"RED":1,"DEFERRED":1})),
+        (&selected, json!({"GREEN":2})),
+    ]) {
         for field in [
             "id",
             "repoPath",
@@ -318,28 +305,52 @@ async fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ] {
             assert_eq!(summary[field], saved[field], "{field}");
         }
-        assert_eq!(summary["counts"], counts(saved));
+        assert_eq!(summary["counts"], counts);
     }
-    assert_eq!(all[1]["counts"], json!({"GREEN":1,"RED":1,"DEFERRED":1}));
     assert_eq!(all[0]["comment"], "Checking out — étape 2");
     assert!(
         all[1].get("comment").is_none(),
         "a Run without a comment lists none"
     );
-    for saved in [&selected, &last, &other] {
-        let shown = query(
+    for (saved, status, evals) in [
+        (
+            &selected,
+            "GREEN",
+            &[("checkout/review", "GREEN"), ("search/review", "GREEN")][..],
+        ),
+        (&last, "GREEN", &[("checkout/review", "GREEN")]),
+        (
+            &other,
+            "WAITING_HUMAN",
+            &[
+                ("other/pass", "GREEN"),
+                ("other/fail", "RED"),
+                ("notes/human", "DEFERRED"),
+            ],
+        ),
+    ] {
+        let reopened = query(
             &first,
             &state,
             &["run", "show", saved["id"].as_str().unwrap()],
             0,
         );
-        if saved["status"] == "WAITING_HUMAN" {
-            assert_eq!(shown["id"], saved["id"]);
-            assert_eq!(shown["requests"], saved["requests"]);
-            assert_eq!(shown["definitions"], saved["definitions"]);
-        } else {
-            assert_eq!(shown, *saved);
+        assert_eq!(reopened["id"], saved["id"]);
+        assert_eq!(reopened["status"], status);
+        assert_eq!(reopened["createdAt"], saved["createdAt"]);
+        let requests = reopened["requests"].as_array().unwrap();
+        assert_eq!(requests.len(), evals.len());
+        for &(eval, verdict) in evals {
+            let request = requests
+                .iter()
+                .find(|request| request["evalId"] == eval)
+                .unwrap();
+            assert_eq!(request["status"], verdict);
+            if eval.ends_with("/review") {
+                assert_eq!(request["result"]["stdout"], "saved result\n");
+            }
         }
+        assert_eq!(reopened["definitions"], saved["definitions"]);
         for request in saved["requests"].as_array().unwrap() {
             let shown = query(
                 &first,

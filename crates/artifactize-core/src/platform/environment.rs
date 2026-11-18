@@ -48,10 +48,7 @@ pub(crate) fn set(
     value: impl Into<OsString>,
 ) {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.retain(|key, _| {
-            !key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-        });
+        environment.retain(|key, _| !same_name(key, OsStr::new(name)));
     }
     environment.insert(name.into(), value.into());
 }
@@ -60,10 +57,7 @@ pub(crate) fn set(
 /// names.
 pub(crate) fn remove(environment: &mut BTreeMap<OsString, OsString>, name: &str) {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.retain(|key, _| {
-            !key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-        });
+        environment.retain(|key, _| !same_name(key, OsStr::new(name)));
     } else {
         environment.remove(OsStr::new(name));
     }
@@ -76,12 +70,41 @@ pub(crate) fn lookup<'a>(
     name: &str,
 ) -> Option<&'a OsStr> {
     if super::ENV_NAMES_IGNORE_CASE {
-        environment.iter().find_map(|(key, value)| {
-            key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-                .then_some(value.as_os_str())
-        })
+        environment
+            .iter()
+            .find_map(|(key, value)| same_name(key, OsStr::new(name)).then_some(value.as_os_str()))
     } else {
         environment.get(OsStr::new(name)).map(OsString::as_os_str)
+    }
+}
+
+#[cfg(unix)]
+fn same_name(left: &OsStr, right: &OsStr) -> bool {
+    left == right
+}
+
+#[cfg(windows)]
+fn same_name(left: &OsStr, right: &OsStr) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+    let left: Vec<_> = left.encode_wide().collect();
+    let right: Vec<_> = right.encode_wide().collect();
+    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
+    else {
+        return false;
+    };
+    // SAFETY: both UTF-16 buffers remain live for their explicit lengths; no pointer is retained.
+    unsafe {
+        CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
+    }
+}
+
+/// Have a child allocate its ordinary temporary files within its owned run directory.
+pub(crate) fn set_temporary_directory(
+    environment: &mut BTreeMap<OsString, OsString>,
+    dir: &std::path::Path,
+) {
+    for key in super::TEMP_VARIABLES {
+        set(environment, key, dir);
     }
 }

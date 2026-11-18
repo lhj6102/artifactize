@@ -95,8 +95,7 @@ pub struct Draft {
 }
 
 fn new(request: &Request, verdict: Verdict) -> Result<Form, Failure> {
-    let schema = review::schema(request, verdict.into()).map_err(Failure::Action)?;
-    Form::new(verdict.into(), schema.as_ref()).map_err(Failure::Action)
+    review::form(request, verdict.into()).map_err(Failure::Action)
 }
 
 fn form_field(field: &Field) -> FormField {

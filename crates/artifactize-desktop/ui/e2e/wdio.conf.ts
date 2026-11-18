@@ -1,25 +1,29 @@
 // The upstream embedded service is the sole native app/driver lifecycle owner.
-import { SevereServiceError } from "webdriverio";
+import { remote, SevereServiceError } from "webdriverio";
 import { readCandidate } from "./build.ts";
+import { recordAdmission } from "./observation.ts";
+import { graphToolSession } from "./graph-tool-session.ts";
 import { selectedScenarios } from "./catalog.ts";
-import { environment, releaseFixtures, settleFixtures } from "./fixture.ts";
+import { environment, releaseFixtures } from "./fixture.ts";
 import {
-  browserEnvironment, asNativePath, releaseBrowser, assertHarnessPlatform, assertRunnerMachine, embeddedPorts, harnessEnvironment,
+  browserEnvironment, asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment,
   assertClipboardDesktop, makeDirectory, nativePath, replaceEnvironment, requiredVariable, setVariable, suitePath, variable, writeJson,
   type Environment,
 } from "./platform.ts";
 import type { Prepared } from "./scenario.ts";
 
 // Reject an unsafe OS session before any fixture or service is initialized.
-assertRunnerMachine();
+assertHarnessPlatform();
 const candidate = readCandidate();
 const ids = JSON.parse(variable("DESKTOP_TEST_BATCH") ?? "[]") as string[];
 if (!ids.length) throw new Error("a WDIO invocation requires an explicit scenario batch");
 const selected = selectedScenarios(ids);
 const outputDir = makeDirectory(asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each WDIO batch writes its own logs")));
 const prepared: Prepared[] = [];
+const driverClaims: (() => Promise<void>)[] = [];
 // WDIO wraps severe hook errors; retain the original for the matching runner owner.
 export let preparationFailure: unknown;
+export let ownerFiles: ReturnType<typeof recordAdmission> | undefined;
 
 /** The product has one fixed auth callback endpoint. All its auth actions therefore
  * form one independent accounts capability; no unrelated capability consumes it. */
@@ -32,18 +36,17 @@ export const fixedResources = {
 
 /** Called by the runner AFTER Launcher.run returns, never from config onComplete:
  * WDIO runs the user's onComplete before the upstream service's shutdown hook. */
-/** Called by the runner when an app was not confirmed stopped: its inputs stay, but the
- * Runs the fixtures started are cancelled and joined, so no fixture worker outlives the batch. */
-export function settlePrepared(): void {
-  settleFixtures();
-}
-
 export async function releasePrepared(): Promise<void> {
   const failures: unknown[] = [];
   for (const input of prepared.splice(0)) {
     try { await input.release?.(); } catch (error) { failures.push(error); }
   }
-  try { await releaseFixtures(); } catch (error) { failures.push(error); }
+  for (const release of driverClaims.splice(0)) {
+    try { await release(); } catch (error) { failures.push(error); }
+  }
+  try {
+    if (!failures.length) await releaseFixtures();
+  } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, "desktop scenario fixture release failed");
 }
 
@@ -88,7 +91,6 @@ export const config = {
     try {
       assertHarnessPlatform();
       const native = harnessEnvironment();
-      const endpoints = await embeddedPorts(selected.length);
       for (let index = 0; index < selected.length; index++) {
         const item = selected[index];
         if (item.id === "monitor-tool-log-scroll") assertClipboardDesktop();
@@ -101,16 +103,26 @@ export const config = {
           ...environment(input.fixture), ...native, ...input.env,
           DESKTOP_TEST_SCENARIO: item.id, DESKTOP_TEST_FIXTURE_ROOT: input.fixture.root,
           DESKTOP_TEST_RELAUNCH: variable("DESKTOP_TEST_RELAUNCH"),
-          ARTIFACTIZE_E2E_OWNER_FILE: nativePath(outputDir, `${item.id}.owner.json`),
         };
+        if (item.id === "current-human-graph-tool") {
+          const [endpoint] = await reserveEmbeddedPorts(1);
+          driverClaims.push(async () => { await endpoint.close(); await endpoint.release(); });
+          const graph = await graphToolSession(candidate, input.fixture, env, endpoint.port, endpoint.close, () => remote({
+            hostname: "127.0.0.1", port: endpoint.port, path: "/", logLevel: "warn",
+            capabilities: { browserName: "tauri", "wdio:enforceWebDriverClassic": true }, connectionRetryCount: 0,
+          }));
+          env = graph.env;
+          input.release = graph.release;
+        }
         const entry = input.browser;
-        if (entry) {
-          env = browserEnvironment(input.fixture.root, env, entry);
+        if (entry && variable("DESKTOP_TEST_RELAUNCH") !== "1") {
+          const browser = await browserEnvironment(input.fixture.root, env, entry);
+          env = browser.env;
           // Runs after the app has ended and before the fixture is deleted.
           const release = input.release;
           input.release = async () => {
             const failures: unknown[] = [];
-            try { await releaseBrowser(input.fixture.root, entry); } catch (error) { failures.push(error); }
+            try { await browser.release?.(); } catch (error) { failures.push(error); }
             try { await release?.(); } catch (error) { failures.push(error); }
             if (failures.length) throw new AggregateError(failures, "browser fixtures could not be released");
           };
@@ -122,7 +134,6 @@ export const config = {
         capabilities[index]["wdio:tauriServiceOptions"] = {
           appArgs: args,
           env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
-          embeddedPort: endpoints[index],
         };
       }
       const ownerRoot = nativePath(candidate.root, "runner-environment");
@@ -134,6 +145,22 @@ export const config = {
         if (value === undefined) delete safe[name];
       }
       replaceEnvironment(safe);
+      // Bind only after every fixture has its own endpoints. The per-port runner claim
+      // survives the handoff while the native service acquires its own listener.
+      const endpoints = await reserveEmbeddedPorts(selected.length);
+      driverClaims.push(...endpoints.map((endpoint) => async () => { await endpoint.close(); await endpoint.release(); }));
+      try {
+        for (const [index, endpoint] of endpoints.entries()) {
+          capabilities[index]["wdio:tauriServiceOptions"]!.embeddedPort = endpoint.port;
+        }
+      } finally {
+        await Promise.all(endpoints.map((endpoint) => endpoint.close()));
+      }
+      ownerFiles = recordAdmission(candidate.root, ids);
+      for (const [index, capability] of capabilities.entries()) {
+        Object.assign(capability["wdio:tauriServiceOptions"]!.env as Environment,
+          { ARTIFACTIZE_E2E_OWNER_FILE: ownerFiles[index] });
+      }
     } catch (cause) {
       preparationFailure = cause;
       // WDIO logs and swallows ordinary launcher-hook failures. Its public severe
@@ -149,5 +176,5 @@ export const config = {
     setVariable("DESKTOP_TEST_SCENARIO", capabilities["artifactize:scenario"]);
     setVariable("DESKTOP_TEST_CONTEXT", context);
   },
-  mochaOpts: { timeout: 120000 },
+  mochaOpts: { timeout: selected.some((item) => item.id === "settings-claude-timeout") ? 660000 : 120000 },
 };

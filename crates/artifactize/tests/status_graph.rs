@@ -359,10 +359,30 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
 fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let fixture = Fixture::new("declarations");
     let marker = fixture.repo.join("review/hook-executed");
-    let hook = fixture.repo.join("review/hook.sh");
-    // The hook runs in its Artifact; no native temporary root is interpolated into a shell.
-    support::os::write_script(&hook, "printf called > hook-executed\nexit 91\n");
-    support::os::allow_execution(&hook);
+    let hook = fixture.repo.join("review/hook.py");
+    support::os::write_python_script(
+        &hook,
+        "from pathlib import Path\nPath('hook-executed').write_text('called')\nraise SystemExit(91)\n",
+    );
+    let path = fixture.repo.join("review/index.artf");
+    let mut declaration: Value =
+        support::declaration::read(support::declaration::read_file(&path).unwrap()).unwrap();
+    let command = support::os::python_program();
+    declaration["fingerprint"]["script"] =
+        json!({"command":command,"args":["hook.py"],"files":["hook.py"]});
+    declaration["views"]["agent_tools"]["read"]["command"] = json!(command);
+    declaration["views"]["agent_tools"]["read"]["args"] = json!(["hook.py"]);
+    declaration["views"]["human_tools"]["read"]["command"] = json!(command);
+    declaration["views"]["human_tools"]["read"]["args"] = json!(["hook.py"]);
+    let runtime = declaration["evals"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|eval| eval["profile"]["kind"] == "runtime")
+        .unwrap();
+    runtime["profile"]["command"] = json!(command);
+    runtime["profile"]["args"] = json!(["hook.py"]);
+    support::declaration::write(&fixture.repo, &path, declaration.to_string()).unwrap();
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());

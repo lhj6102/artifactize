@@ -216,7 +216,8 @@ fn lookup_launch_exits_before_temporary_files_on_normal_drop_and_assertion_unwin
             "launched"
         );
         let pids: Vec<u32> = serde_json::from_slice(
-            &support::declaration::read_file(project.launch_path().join("pids")).unwrap(),
+            &support::declaration::read_file(project.launch_path().join("launch-identities"))
+                .unwrap(),
         )
         .unwrap();
         assert!(!pids.is_empty(), "the probe reports its actual processes");

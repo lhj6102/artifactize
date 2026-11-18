@@ -173,7 +173,7 @@ fn a_red_part_blocks_no_eval_but_keeps_its_parent_from_passing() {
     assert!(evaluation.evals["consumer/check"].can_execute());
     assert_eq!(evaluation.evals["app/check"].status, EvalStatus::Green);
     assert_eq!(evaluation.artifacts["app"].status, ArtifactStatus::Red);
-    assert!(!evaluation.artifacts["consumer"].satisfied);
+    assert!(!evaluation.artifacts["consumer"].satisfied());
 }
 
 #[test]

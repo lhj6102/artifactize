@@ -8,6 +8,7 @@ const owner: Identity = { pid: 123, start_time: "9007199254740993" };
 
 function app() {
   let running = true;
+  let graceful = false;
   const browser = {
     sessionId: "the-live-session",
     execute: async () => ({ ...owner }),
@@ -21,19 +22,31 @@ function app() {
     assert.deepEqual(identity, owner, "every read refers to the same exact birth identity");
     return running;
   };
-  return { browser, alive, exit: () => { running = false; } };
+  return {
+    browser, alive, orderlyExit: () => graceful,
+    exit: (orderly = true) => { running = false; graceful = orderly; },
+  };
 }
 
 it("retires only the client session after the previously live native process exits", async () => {
-  const { browser, alive, exit } = app();
+  const { browser, alive, exit, orderlyExit } = app();
   assert.equal(alive(owner), true, "the same observer sees the native process alive");
   await sessionEndedByApp(browser, async () => {
     assert.equal(browser.sessionId, "the-live-session", "the action does not retire a live session");
     exit();
-    throw new Error("the quit response ended with the app");
-  }, alive);
+    throw new Error("ECONNRESET: the quit response ended with the app");
+  }, alive, orderlyExit);
   assert.equal(browser.sessionId, undefined);
   assert.equal(alive(owner), false);
+});
+
+it("does not turn a transport loss caused by a crash into an orderly quit", async () => {
+  const { browser, alive, exit, orderlyExit } = app();
+  await assert.rejects(sessionEndedByApp(browser, async () => {
+    exit(false);
+    throw new Error("ECONNRESET");
+  }, alive, orderlyExit), /quit action and native app-exit observation failed/);
+  assert.equal(browser.sessionId, "the-live-session");
 });
 
 it("fails without retiring when the listener closes but native cleanup remains alive", async () => {

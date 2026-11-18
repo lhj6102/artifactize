@@ -1,6 +1,7 @@
 //! Readiness status wire forms and the public report's aggregate severity.
 use super::*;
 use serde_json::json;
+use std::fs;
 
 #[test]
 fn readiness_check_status_wire_and_display_are_pinned() {

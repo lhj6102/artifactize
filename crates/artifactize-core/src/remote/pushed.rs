@@ -46,8 +46,12 @@ mod milliseconds {
 }
 /// Recent pushes, oldest first; absent or unreadable state has no history to show.
 pub fn recent(state: Option<&Path>) -> Vec<Pushed> {
-    crate::store::state_dir(state)
-        .map_or_else(|_| Vec::new(), |dir| kept_at(&dir, Timestamp::now()))
+    recent_at(state, Timestamp::now())
+}
+
+/// Get the recent pushes relative to the supplied time.
+pub fn recent_at(state: Option<&Path>, now: Timestamp) -> Vec<Pushed> {
+    crate::store::state_dir(state).map_or_else(|_| Vec::new(), |dir| kept_at(&dir, now))
 }
 fn kept_at(state: &Path, now: Timestamp) -> Vec<Pushed> {
     let Ok(text) = fs::read_to_string(state.join(FILE)) else {
@@ -59,10 +63,7 @@ fn kept_at(state: &Path, now: Timestamp) -> Vec<Pushed> {
         .filter(|pushed| now.since(pushed.at) <= KEPT)
         .collect()
 }
-pub(crate) fn record(state: &Path, count: usize) -> Result<(), String> {
-    record_at(state, count, Timestamp::now())
-}
-fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(), String> {
+pub(super) fn record_at(state: &Path, count: usize, at: Timestamp) -> Result<(), String> {
     let lock = crate::platform::open_no_follow(
         crate::platform::private_options()
             .read(true)

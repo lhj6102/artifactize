@@ -239,63 +239,24 @@ pub(crate) fn executable(
         };
         // Even an extensionless declaration must not hide a link behind PATHEXT.
         crate::platform::program::reject_link_ancestors(&physical)?;
-        let mut failure = None;
-        crate::platform::program::candidates(Path::new(relative))
-            .into_iter()
-            .find_map(|candidate| {
-                // A suffix the lookup added is matched to the entry's actual spelling.
-                let candidate = if candidate.as_path() != Path::new(relative) {
-                    executable_spelling(root, scope, owner, &cwd, &candidate)?
-                } else {
-                    candidate
-                };
-                let resolved = if artifact.file_name().is_some()
-                    || artifact.kind() == crate::config::ArtifactKind::Live
-                {
-                    scoped_path(&cwd, &candidate)
-                } else {
-                    scope.resolve_input(
-                        root,
-                        owner,
-                        &artifactize_tools::scope::logical_from_native(&candidate)?,
-                    )
-                };
-                match resolved {
-                    Ok(program) if program.is_file() => Some(program),
-                    Ok(_) => None,
-                    Err(error) => {
-                        failure.get_or_insert_with(|| error.to_string());
-                        None
-                    }
-                }
-            })
-            .ok_or_else(|| {
-                failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into())
-            })?
+        let resolve = |candidate: &Path| {
+            if artifact.file_name().is_some()
+                || artifact.kind() == crate::config::ArtifactKind::Live
+            {
+                scoped_path(&cwd, candidate).map_err(|error| error.to_string())
+            } else {
+                let logical = artifactize_tools::scope::logical_from_native(candidate)
+                    .ok_or_else(|| "Executable path is not portable text.".to_owned())?;
+                scope
+                    .resolve_input(root, owner, &logical)
+                    .map_err(|error| error.to_string())
+            }
+        };
+        crate::platform::program::resolve_scoped(Path::new(relative), resolve)?
     } else {
         PathBuf::from(command)
     };
     Ok(program.into_os_string())
-}
-
-/// PATHEXT supplies a suffix, not a model-authored name: use its actual directory-entry
-/// spelling before strict scoped validation. Parent components retain their input spelling.
-fn executable_spelling(
-    root: &Path,
-    scope: &Scope<'_>,
-    owner: &ArtifactName,
-    cwd: &Path,
-    candidate: &Path,
-) -> Option<PathBuf> {
-    let parent = candidate.parent().unwrap_or(Path::new(""));
-    let directory = if scope.artifacts[owner].file_name().is_some()
-        || scope.artifacts[owner].path.uri().is_some()
-    {
-        scoped_path(cwd, parent).ok()?
-    } else {
-        scope.resolve_input(root, owner, parent.to_str()?).ok()?
-    };
-    crate::platform::program::suffix_spelling(&directory, candidate)
 }
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {

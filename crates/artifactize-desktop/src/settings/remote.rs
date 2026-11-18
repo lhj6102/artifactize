@@ -125,16 +125,36 @@ impl RemoteStatus {
     }
 }
 
-async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
-    remote::status(Some(&app.launch.state), app.launch.repo.as_deref())
-        .await
-        .map(|status| {
-            RemoteStatus::of(
-                status,
-                &artifactize_core::remote::recent_pushes(Some(&app.launch.state)),
-            )
+#[cfg(feature = "e2e")]
+fn fixed_time() -> Result<Option<artifactize_core::types::Timestamp>, Failure> {
+    artifactize_core::platform::environment::var("ARTIFACTIZE_E2E_DATE")
+        .map(|value| {
+            value
+                .to_str()
+                .and_then(|text| text.parse::<i64>().ok())
+                .and_then(|seconds| time::OffsetDateTime::from_unix_timestamp(seconds).ok())
+                .and_then(artifactize_core::types::Timestamp::new)
+                .ok_or_else(|| Failure::Account("invalid E2E date".into()))
         })
-        .map_err(Failure::Account)
+        .transpose()
+}
+
+async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
+    let state = Some(app.launch.state.as_path());
+    let status = remote::status(state, app.launch.repo.as_deref())
+        .await
+        .map_err(Failure::Account)?;
+    #[cfg(feature = "e2e")]
+    if let Some(now) = fixed_time()? {
+        return Ok(RemoteStatus::of(
+            status,
+            &artifactize_core::remote::recent_pushes_at(state, now),
+        ));
+    }
+    Ok(RemoteStatus::of(
+        status,
+        &artifactize_core::remote::recent_pushes(state),
+    ))
 }
 
 /// `remote status`: URL, share level, token source, reachability, principal and scopes.
@@ -160,7 +180,11 @@ pub async fn remote_login(
         app.launch.repo.as_deref(),
         url,
         share.into(),
-        token.trim().to_owned(),
+        token
+            .trim()
+            .to_owned()
+            .try_into()
+            .map_err(Failure::Account)?,
     )
     .await
     .map_err(Failure::Account)?;
@@ -190,13 +214,16 @@ pub struct Pushed {
 #[tauri::command]
 #[specta::specta]
 pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pushed, Failure> {
-    let report = artifactize_core::remote::push(
-        Some(&app.launch.state),
-        app.launch.repo.as_deref(),
-        dry_run,
-    )
-    .await
-    .map_err(Failure::Account)?;
+    let state = Some(app.launch.state.as_path());
+    let repo = app.launch.repo.as_deref();
+    #[cfg(not(feature = "e2e"))]
+    let report = artifactize_core::remote::push(state, repo, dry_run).await;
+    #[cfg(feature = "e2e")]
+    let report = match fixed_time()? {
+        Some(now) => artifactize_core::remote::push_with_clock(state, repo, dry_run, || now).await,
+        None => artifactize_core::remote::push(state, repo, dry_run).await,
+    };
+    let report = report.map_err(Failure::Account)?;
     let count = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
     Ok(Pushed {
         dry_run: report.dry_run,

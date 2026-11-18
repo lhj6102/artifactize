@@ -2,10 +2,13 @@
 
 mod account;
 mod cache;
+use cache::CacheCommand;
 mod config;
+use config::ConfigCommand;
 #[cfg(test)]
 mod defaults_tests;
 mod dispatch;
+mod graph;
 #[cfg(test)]
 mod identity_tests;
 mod interactive;
@@ -16,11 +19,13 @@ mod provider;
 mod remote;
 mod render;
 mod run;
+use run::RunCommand;
 mod runtime;
 use runtime::cancellation_listener;
 pub use runtime::{Screens, run};
 mod secret;
 mod tools;
+use tools::ToolsCommand;
 mod workflow;
 use dispatch::Context;
 use render::{outcome_code, print_json};
@@ -33,16 +38,13 @@ use session::SessionCommand;
 
 use std::{num::NonZeroU32, path::PathBuf};
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 use artifactize_core::{
     config::ProfileKind,
     project::selection::{ProfileSelection, Selection, read_selection_file},
-    types::{RequestId, ReuseKey, RunId},
+    types::{RequestId, RunId},
 };
-
-/// Keep default Run history output readable; --limit/--offset expose older records.
-const DEFAULT_RUN_LIST_LIMIT: u32 = 50;
 
 /// Shells conventionally report an interrupt as 130; use the same status on every platform.
 const INTERRUPTED_EXIT: u8 = 130;
@@ -124,9 +126,10 @@ pub enum Command {
     },
     /// Show the machine-wide limits; with --signoff-idle-grace, change it first.
     Limits {
-        /// Seconds a Run with nothing but unclaimed sign-offs left stays open (0–86400), for
-        /// the Runs started afterwards.
-        #[arg(long, value_name = "SECONDS", value_parser = seconds)]
+        #[arg(long, value_name = "SECONDS", value_parser = seconds, help = format!(
+            "Seconds a Run with nothing but unclaimed sign-offs left stays open (0–{}), for the Runs started afterwards.",
+            artifactize_core::limits::MAX_SIGNOFF_IDLE_GRACE.as_secs()
+        ))]
         signoff_idle_grace: Option<std::time::Duration>,
     },
     /// List the models a built-in or custom provider offers to your key or account.
@@ -155,11 +158,15 @@ pub enum Command {
         /// Submit and stream JSON-line updates, eval results and final validation.
         #[arg(long, conflicts_with = "wait")]
         watch: bool,
-        /// Retry-safe caller attempt key (1–128 ASCII letters/digits/._:-).
-        #[arg(long, value_name = "KEY")]
+        #[arg(long, value_name = "KEY", help = format!(
+            "Retry-safe caller attempt key (1–{} ASCII letters/digits/._:-).",
+            artifactize_core::types::MAX_REQUEST_KEY_BYTES
+        ))]
         request_key: Option<artifactize_core::types::RequestKey>,
-        /// A short note on what you are working on, shown with the Run (1–200 characters).
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", help = format!(
+            "A short note on what you are working on, shown with the Run (1–{} characters).",
+            artifactize_core::types::MAX_RUN_COMMENT_CHARS
+        ))]
         comment: Option<artifactize_core::types::RunComment>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
         /// not executed.
@@ -184,7 +191,7 @@ pub enum Command {
     Graph {
         // Any former graph arguments, including --help, get the same hint.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
-        args: Vec<String>,
+        args: Vec<std::ffi::OsString>,
     },
     /// Read recorded Runs without discovering or executing project code.
     Run {
@@ -268,27 +275,36 @@ pub struct SelectionArgs {
 
 impl SelectionArgs {
     fn resolve(self) -> Result<Selection, String> {
-        if let Some(selector) = self.artifact {
-            Ok(match selector {
-                Selector::Artifact(id) => Selection::Artifact { artifact_id: id },
-                Selector::Eval(id) => Selection::Eval { eval_id: id },
-            })
-        } else if let Some(eval_id) = self.eval {
-            Ok(Selection::Eval { eval_id })
-        } else if let Some(ids) = self.evals {
-            Ok(Selection::Evals { eval_ids: ids })
-        } else if let Some(ids) = self.artifacts {
-            Ok(Selection::Artifacts { artifact_ids: ids })
-        } else if let Some(path) = self.evals_file {
-            Ok(Selection::Evals {
-                eval_ids: selection_file::<artifactize_core::types::EvalId>(&path)?,
-            })
-        } else if let Some(path) = self.artifacts_file {
-            Ok(Selection::Artifacts {
-                artifact_ids: selection_file::<artifactize_core::types::ArtifactName>(&path)?,
-            })
-        } else {
-            Ok(Selection::All)
+        match (
+            self.artifact,
+            self.eval,
+            self.evals,
+            self.artifacts,
+            self.evals_file,
+            self.artifacts_file,
+            self.all,
+        ) {
+            (None, None, None, None, None, None, _) => Ok(Selection::All),
+            (Some(Selector::Artifact(artifact_id)), None, None, None, None, None, false) => {
+                Ok(Selection::Artifact { artifact_id })
+            }
+            (Some(Selector::Eval(eval_id)), None, None, None, None, None, false)
+            | (None, Some(eval_id), None, None, None, None, false) => {
+                Ok(Selection::Eval { eval_id })
+            }
+            (None, None, Some(eval_ids), None, None, None, false) => {
+                Ok(Selection::Evals { eval_ids })
+            }
+            (None, None, None, Some(artifact_ids), None, None, false) => {
+                Ok(Selection::Artifacts { artifact_ids })
+            }
+            (None, None, None, None, Some(path), None, false) => Ok(Selection::Evals {
+                eval_ids: selection_file(&path)?,
+            }),
+            (None, None, None, None, None, Some(path), false) => Ok(Selection::Artifacts {
+                artifact_ids: selection_file(&path)?,
+            }),
+            _ => unreachable!("clap makes Artifact and Eval selectors exclusive"),
         }
     }
 }
@@ -321,163 +337,8 @@ impl PolicyArgs {
     }
 }
 
-#[derive(Debug, Subcommand)]
-pub enum ConfigCommand {
-    /// Convert in-tree declarations to .artifactize/<name>.artf.
-    Migrate,
-    /// Rename a node, its references and saved layout together.
-    Rename {
-        old: artifactize_core::types::ArtifactName,
-        new: artifactize_core::types::ArtifactName,
-    },
-    /// Validate declarations and unique Artifact/Eval ids.
-    Check,
-    /// Inspect full static definitions, relations, and cycles.
-    Graph {
-        /// Select one Artifact and its required closure; defaults to all.
-        artifact: Option<artifactize_core::types::ArtifactName>,
-        /// Include downstream consumers and their required inputs (conservative impact).
-        #[arg(long)]
-        impact: bool,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum RunCommand {
-    /// Request cancellation; committed results are kept and cleanup settles asynchronously.
-    Cancel { run_id: RunId },
-    /// List saved Runs, newest first; defaults to the current repository.
-    List {
-        /// Explicitly restrict results to --repo (the default).
-        #[arg(long, conflicts_with = "all")]
-        repo_only: bool,
-        /// List Runs from every repository in the shared state.
-        #[arg(long)]
-        all: bool,
-        /// Maximum number of Runs to return.
-        #[arg(long, value_name = "N", default_value_t = DEFAULT_RUN_LIST_LIMIT)]
-        limit: u32,
-        /// Skip this many Runs before returning results.
-        #[arg(long, value_name = "N", default_value = "0")]
-        offset: u32,
-    },
-    /// Stream live updates, saved eval results and final validation as JSON lines.
-    Watch { run_id: RunId },
-    /// Read the full saved audit as JSON, even without --json.
-    Show {
-        run_id: RunId,
-        /// Follow a RUNNING Run until it finishes and exit with its outcome code.
-        #[arg(long)]
-        wait: bool,
-        /// Wait timeout; never cancels the Run (default 600000).
-        #[arg(
-            long,
-            value_name = "MS",
-            requires = "wait",
-            value_parser = timeout_duration
-        )]
-        timeout_ms: Option<std::time::Duration>,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum CacheCommand {
-    /// List the latest record of each reuse key, the one verify reuses.
-    List {
-        /// List every record of every key, latest first per key.
-        #[arg(long)]
-        history: bool,
-    },
-    /// Read a key's latest record (result, profile, options, provenance) as JSON.
-    Show {
-        key: ReuseKey,
-        /// Print every record of the key as a JSON array, latest first.
-        #[arg(long)]
-        history: bool,
-    },
-    /// Remove every record of an unused key, preserving saved Runs and executions.
-    Rm { key: ReuseKey },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum ToolsCommand {
-    /// Static preflight by default; --execute opts in to one tool call.
-    Check(tools::ToolCheckArgs),
-    #[command(flatten)]
-    Builtin(artifactize_tools::cli::Tool),
-}
-
-/// Global options may precede or follow the subcommand, but only once in total.
-fn repeated_global(options: &[&str]) -> Option<&'static str> {
-    ["--repo", "--state-dir", "--json"]
-        .into_iter()
-        .find(|name| {
-            options
-                .iter()
-                .filter(|arg| {
-                    arg.strip_prefix(name)
-                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('='))
-                })
-                .count()
-                > 1
-        })
-}
-
-enum ParseError {
-    RepeatedGlobal { name: &'static str, json: bool },
-    Clap { error: clap::Error, json: bool },
-}
-
-fn parse_args(args: &[std::ffi::OsString]) -> Result<(Cli, bool), ParseError> {
-    let parsed = Cli::try_parse_from(args);
-    // The help tool's trailing arguments belong to the target program, even if they
-    // happen to share names with artifactize's global flags.
-    let tool_args = match &parsed {
-        Ok(Cli {
-            command:
-                Some(Command::Tools {
-                    command: ToolsCommand::Builtin(artifactize_tools::cli::Tool::Help { args }),
-                }),
-            ..
-        }) => args.len(),
-        _ => 0,
-    };
-    let options: Vec<_> = args
-        .iter()
-        .take(args.len() - tool_args)
-        .skip(1)
-        .take_while(|arg| *arg != "--")
-        .filter_map(|arg| arg.to_str())
-        .collect();
-    let mcp = match &parsed {
-        Ok(cli) => matches!(cli.command, Some(Command::Mcp)),
-        Err(_) => Cli::command()
-            .ignore_errors(true)
-            .try_get_matches_from(args)
-            .is_ok_and(|matches| matches.subcommand_name() == Some("mcp")),
-    };
-    let json = options.contains(&"--json") && !mcp;
-    if let Some(name) = repeated_global(&options) {
-        return Err(ParseError::RepeatedGlobal { name, json });
-    }
-    parsed
-        .map(|cli| (cli, json))
-        .map_err(|error| ParseError::Clap { error, json })
-}
-
-/// Parse protocol milliseconds exactly once, preserving the public signed 32-bit bound.
-fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
-    let millis: u64 = text
-        .parse()
-        .map_err(|_| "timeout must be milliseconds".to_owned())?;
-    if !(1..=artifactize_core::config::MAX_TIMEOUT_MS).contains(&millis) {
-        return Err(format!(
-            "timeoutMs must be between 1 and {}",
-            artifactize_core::config::MAX_TIMEOUT_MS
-        ));
-    }
-    Ok(std::time::Duration::from_millis(millis))
-}
+mod argv;
+use argv::{ParseError, parse_args};
 
 /// The positional selection intentionally accepts either an Artifact or qualified Eval.
 #[derive(Debug, Clone)]

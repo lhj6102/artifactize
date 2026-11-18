@@ -132,9 +132,5 @@ async fn live_session_pty_fixture() {
     fs::write(root.join("quit"), "quit").unwrap();
     writers.join_next().await.unwrap().unwrap();
     terminal_result.unwrap();
-    assert!(
-        saved::path(&saving.state, "fixture-session")
-            .unwrap()
-            .exists()
-    );
+    assert!(saved::path(&saving.state, &"fixture-session".parse().unwrap()).exists());
 }

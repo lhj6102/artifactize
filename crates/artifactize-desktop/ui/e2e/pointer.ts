@@ -46,7 +46,12 @@ function centre(browser: WebdriverIO.Browser, element: WebdriverIO.Element): Pro
   }, element as unknown as HTMLElement);
 }
 
-/** Complete primary-pointer input at the actual page hit target. */
-export function clickAt(browser: WebdriverIO.Browser, point: { x: number; y: number }): Promise<void> {
+/** Use the provider's ordinary WebDriver mouse action at a viewport point. */
+export async function clickAt(browser: WebdriverIO.Browser, point: { x: number; y: number }): Promise<void> {
+  await browser.action("pointer").move({ ...point, origin: "viewport" }).down().up().perform();
+}
+
+/** Use only for controls whose press handler needs the omitted pointerdown. */
+export function pointerGapClick(browser: WebdriverIO.Browser, point: { x: number; y: number }): Promise<void> {
   return dispatchInput(browser, { kind: "click", ...point });
 }

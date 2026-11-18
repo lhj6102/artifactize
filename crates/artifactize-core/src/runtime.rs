@@ -215,12 +215,22 @@ where
     let scratch = command.directory.join("tmp");
     let result =
         process::run_logged(command.command, command.directory, cancellation, register).await;
-    let _ = std::fs::remove_dir_all(scratch);
+    let cleanup = crate::task::joined(
+        tokio::task::spawn_blocking(move || crate::platform::remove_tree(&scratch)).await,
+    )
+    .map_err(io::Error::other)
+    .and_then(std::convert::identity);
+    if let Err(error) = cleanup
+        && error.kind() != io::ErrorKind::NotFound
+        && result.is_ok()
+    {
+        return Outcome::OperationalError(Error::Environment(error));
+    }
     match result {
         Ok(mut output) => {
             output.stdout = clean_output(&output.stdout);
             output.stderr = clean_output(&output.stderr);
-            match crate::platform::process_end(&output.status) {
+            match output.status.end {
                 crate::platform::ProcessEnd::Exited(exit_code) => {
                     Outcome::Completed(ReviewResult { exit_code, output })
                 }

@@ -106,6 +106,13 @@ pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<Priv
     ))
 }
 
+/// A protected scratch directory whose basename is already reserved by its lease.
+pub(crate) fn private_named_dir(parent: &Path, name: &str) -> io::Result<PrivateTempDir> {
+    let path = std::path::absolute(parent)?.join(name);
+    create_private_dir(&path)?;
+    Ok(PrivateTempDir(Some(path)))
+}
+
 /// Own the directory until dropped, or transfer cleanup responsibility with `keep`.
 pub(crate) struct PrivateTempDir(Option<PathBuf>);
 
@@ -114,6 +121,10 @@ impl PrivateTempDir {
         self.0
             .as_deref()
             .expect("temporary directory is still owned")
+    }
+
+    pub(crate) fn close(self) -> io::Result<()> {
+        super::remove_tree(&self.keep())
     }
 
     pub(crate) fn keep(mut self) -> PathBuf {

@@ -164,6 +164,14 @@ async fn readers_observe_empty_state_until_schema_commits() {
     let (ready_tx, ready_rx) = mpsc::channel();
     let (commit_tx, commit_rx) = mpsc::channel();
     let path = state.join(DATABASE);
+    let id = "run-initialized";
+    let repo_text = support::os::path_text(&repo);
+    let saved = serde_json::json!({
+        "id": id, "repoPath": repo_text, "stateDir": support::os::path_text(&state),
+        "status":"GREEN", "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"}, "validation":null, "definitions":null
+    })
+    .to_string();
     let mut initializer = Initializer {
         commit: Some(commit_tx),
         thread: Some(thread::spawn(move || {
@@ -178,6 +186,12 @@ async fn readers_observe_empty_state_until_schema_commits() {
             transaction
                 .pragma_update(None, "user_version", STATE_SCHEMA_VERSION)
                 .unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)",
+                    rusqlite::params![id, repo_text, "GREEN", saved],
+                )
+                .unwrap();
             ready_tx.send(()).unwrap();
             if commit_rx.recv().is_ok() {
                 transaction.commit().unwrap();
@@ -186,18 +200,20 @@ async fn readers_observe_empty_state_until_schema_commits() {
     };
     ready_rx.recv().unwrap();
     assert_empty_reads(&state, &repo).await;
-    initializer.finish().unwrap();
-    assert_empty_reads(&state, &repo).await;
-    let db = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
-            .unwrap(),
-        STATE_SCHEMA_VERSION
+    assert!(
+        read_run(&state, id)
+            .await
+            .unwrap_err()
+            .contains("Run not found")
     );
+    initializer.finish().unwrap();
+    let saved = read_run(&state, id).await.unwrap();
+    assert_eq!(saved.run.id.as_str(), id);
+    assert_eq!(
+        saved.run.status(),
+        artifactize_core::types::RunStatus::Green
+    );
+    assert!(saved.requests.is_empty());
 }
 
 #[tokio::test]
@@ -299,31 +315,82 @@ async fn repositories_share_one_state_database() {
 }
 
 #[tokio::test]
-async fn schema_allows_only_one_active_execution_per_key_and_profile() {
+async fn concurrent_runs_share_a_claim_without_preventing_independent_executions() {
+    use artifactize_core::types::{RequestStatus, RunId};
+    use serde_json::{Value, json};
+    use std::time::Duration;
+
     let root = owned_run::Root::from(support::os::tempdir());
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    let _receipts = OwnedReceipts::open(&state, &repo).await.unwrap();
-    let db = Connection::open(state.join(DATABASE)).unwrap();
-    let insert = "INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,profile_identity,data) VALUES (?, ?, 'hash', 1, 1, ?, 'profile', '{}')";
-    db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
-    assert!(
-        db.execute(insert, ["second", "shared", "WAITING_HUMAN"])
-            .is_err()
-    );
-    db.execute("INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,profile_identity,data) VALUES ('other-profile','shared','hash',1,1,'RUNNING','other-profile','{}')", []).unwrap();
-    db.execute(insert, ["different", "other", "WAITING_HUMAN"])
-        .unwrap();
-    db.execute(insert, ["completed", "shared", "GREEN"])
-        .unwrap();
-    db.execute("UPDATE executions SET status='ERROR' WHERE id='first'", [])
-        .unwrap();
-    db.execute(insert, ["second", "shared", "RUNNING"]).unwrap();
-    db.execute(insert, [Some("uncached"), None, Some("RUNNING")])
-        .unwrap();
-    db.execute(insert, [Some("forced"), None, Some("RUNNING")])
-        .unwrap();
+    root.track(&state, &repo);
+    let release = owned_run::FileGate::new(repo.join("release"));
+    support::declaration::write(&repo, repo.join("index.artf"), json!({
+        "name":"app", "fingerprint":{"files":["input"]},
+        "evals":[{"id":"check", "title":"Check", "payload":{"instruction":"Check."},
+            "profile":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"]},
+            "profile_variants":{"other":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"],"timeout_ms":120_000}}}]
+    }).to_string()).unwrap();
+    fs::write(repo.join("input"), "stable").unwrap();
+    let submit = |args: &[&str]| -> RunId {
+        let output = support::os::run(
+            Command::new(support::os::cli())
+                .arg("--repo")
+                .arg(&repo)
+                .arg("--state-dir")
+                .arg(&state)
+                .env("ARTIFACTIZE_REMOTE", "off")
+                .args(["verify", "--all", "--json"])
+                .args(args),
+        );
+        assert!(output.status.success(), "{output:?}");
+        let accepted: Value = serde_json::from_slice(&output.stdout).unwrap();
+        accepted["run"].as_str().unwrap().parse().unwrap()
+    };
+    let pending = async |id: &RunId, status: RequestStatus| {
+        owned_run::subscribed(&state, async |changes| {
+            const WATCHDOG: Duration = Duration::from_secs(30);
+            tokio::time::timeout(support::os::patience(WATCHDOG), async {
+                loop {
+                    let view = read_run(&state, id).await.unwrap();
+                    if let Some(request) = view.requests.first()
+                        && request.status() == status
+                        && (request.execution_id.is_some() || request.child.is_some())
+                    {
+                        return (request.key.clone(), request.execution_id.clone());
+                    }
+                    assert!(view.run.status().is_open(), "{view:?}");
+                    changes.next_reconciled().await;
+                }
+            })
+            .await
+            .unwrap_or_else(|error| panic!("Run {id} did not reach {status}: {error}"))
+        })
+        .await
+    };
+    let first = submit(&[]);
+    let main = pending(&first, RequestStatus::Running).await;
+    assert!(main.0.is_some() && main.1.is_some());
+    let second = submit(&[]);
+    assert_eq!(pending(&second, RequestStatus::Queued).await, main);
+    let other = submit(&["--profile", "other"]);
+    let variant = pending(&other, RequestStatus::Running).await;
+    assert_eq!(variant.0, main.0);
+    assert_ne!(variant.1, main.1);
+    let forced = submit(&["--force"]);
+    // Forced work has its own child before its execution ID is saved with the outcome.
+    assert!(pending(&forced, RequestStatus::Running).await.1.is_none());
+    release.release().unwrap();
+    for (id, relation) in [(first, 1), (second, 0), (other, 1), (forced, 1)] {
+        let completed = owned_run::terminal(&state, &id).await;
+        assert_eq!(completed.requests[0].status(), RequestStatus::Green);
+        assert_eq!(completed.run.executions_started, relation);
+        if completed.run.force {
+            assert_ne!(completed.requests[0].execution_id, main.1);
+            assert!(completed.requests[0].execution_id.is_some());
+        }
+    }
 }
 
 #[test]
@@ -538,18 +605,6 @@ async fn schema_five_profiles_survive_typed_reads_and_invalid_states_fail_at_par
     let mut wire = serde_json::to_value(&view.run).unwrap();
     wire["status"] = json!("GREEN");
     assert!(serde_json::from_value::<artifactize_core::store::Run>(wire).is_err());
-    // Parsing is the observable rejection boundary. No write was attempted, so an
-    // unchanged database would not independently demonstrate atomic write behavior.
-    let db = Connection::open_with_flags(
-        state.join(DATABASE),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    assert_eq!(
-        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
-            .unwrap(),
-        STATE_SCHEMA_VERSION
-    );
     // Valid older writes still read unchanged; contradictory lifecycle fields are
     // corruption and fail only that record at the parse boundary.
     Connection::open(state.join(DATABASE))

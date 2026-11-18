@@ -228,17 +228,19 @@ pub fn eval_key(
             },
         );
     }
-    let mut values: BTreeMap<ArtifactName, crate::types::Fingerprint> = BTreeMap::new();
-    for id in dependencies(config, eval) {
-        let fingerprint = fingerprints.get(id).ok_or_else(|| {
-            if config.artifacts[id].kind() == crate::config::ArtifactKind::Live {
-                Unkeyed::LiveUnobserved(id.clone())
-            } else {
-                Unkeyed::Dependency(id.clone())
-            }
-        })?;
-        values.insert(id.clone(), fingerprint.value.clone());
-    }
+    let values = dependencies(config, eval)
+        .into_iter()
+        .map(|id| {
+            let fingerprint = fingerprints.get(id).ok_or_else(|| {
+                if config.artifacts[id].kind() == crate::config::ArtifactKind::Live {
+                    Unkeyed::LiveUnobserved(id.clone())
+                } else {
+                    Unkeyed::Dependency(id.clone())
+                }
+            })?;
+            Ok((id.clone(), fingerprint.value.clone()))
+        })
+        .collect::<Result<BTreeMap<_, _>, Unkeyed>>()?;
     let eval_def_hash = eval_definition_hash(&eval.declaration);
     let artifact_kinds = values
         .keys()
@@ -510,6 +512,10 @@ async fn content(
     cancellation: &CancellationToken,
 ) -> Result<PreparedFingerprint, String> {
     let files = content::files(config, id, inputs, ignore, cancellation).await?;
+    Ok(artifactsum(files))
+}
+
+fn artifactsum(files: content::Files) -> PreparedFingerprint {
     let mut manifest = Manifest {
         inputs: files.digest.clone(),
         files: Some(
@@ -534,12 +540,12 @@ async fn content(
     {
         manifest.files = None;
     }
-    Ok(PreparedFingerprint {
+    PreparedFingerprint {
         value: format!("artifactsum:{}", files.digest)
             .parse()
             .expect("artifactsum digest is a fingerprint"),
         manifest: Some(manifest),
-    })
+    }
 }
 
 /// Explain a changed key against an earlier cached execution of the same Eval definition:
@@ -681,7 +687,7 @@ async fn script(
         if !output.status.success() {
             return Err(format!(
                 "Fingerprint command exited with {}.",
-                crate::platform::exit_description(&output.status)
+                output.status
             ));
         }
         if output.truncated {

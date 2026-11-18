@@ -1,6 +1,6 @@
 //! Terminal UI setup and cancellation workflows.
 
-use super::{Context, Screens, cancellation_listener};
+use super::{Screens, cancellation_listener};
 use std::path::PathBuf;
 
 pub(super) enum Scope {
@@ -59,20 +59,21 @@ pub(super) async fn monitor(
 }
 
 pub(super) async fn review(
-    context: Context,
+    state_dir: Option<PathBuf>,
     scope: Scope,
     request: Option<artifactize_core::types::RequestId>,
     reviewer: Option<artifactize_core::types::ReviewerId>,
+    json: bool,
     screens: Screens,
 ) -> Result<u8, String> {
-    if context.json {
+    if json {
         return Err("review is an interactive terminal UI; --json is not supported.".into());
     }
     let reviewer = match reviewer {
         Some(reviewer) => Ok(reviewer),
         None => artifactize_core::human::default_reviewer(),
     }?;
-    let state = artifactize_core::store::state_dir(context.state_dir.as_deref())?;
+    let state = artifactize_core::store::state_dir(state_dir.as_deref())?;
     if let Some(id) = &request {
         artifactize_core::store::read_request(&state, id).await?;
     }

@@ -268,7 +268,7 @@ impl Review {
                     format!("{} {status}", status.glyph()),
                     claim,
                     age,
-                    entry.repository.clone(),
+                    crate::platform::path_text(&entry.repository),
                 ]
                 .map(|cell| plain(&cell).into_owned())
             })

@@ -299,6 +299,11 @@ fn source_executable() -> Result<PathBuf, String> {
     if let Some(path) = option_env!("CARGO_BIN_EXE_artifactize") {
         return Ok(PathBuf::from(path));
     }
+    library_executable()
+}
+
+/// Build the library-only worker even for a CLI test that needs a fixture-specific entry.
+pub(super) fn library_executable() -> Result<PathBuf, String> {
     let manifest = core_manifest_dir().join("Cargo.toml");
     let built = Command::new(env!("CARGO"))
         .args([

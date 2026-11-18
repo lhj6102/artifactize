@@ -96,14 +96,15 @@ impl Fixture {
     }
 
     fn cli_verify(&self) -> Value {
-        let output = Command::new(support::os::cli())
+        let recorded = Command::new(support::os::cli())
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
             .args(["verify", "--all", "--json"])
-            .record_output()
+            .recorded()
             .unwrap();
+        let output = &recorded.output;
         // Submission returns at once; the request stays open for the person.
         assert_eq!(
             output.status.code(),
@@ -111,7 +112,7 @@ impl Fixture {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        serde_json::from_slice(&output.stdout).unwrap()
+        recorded.saved_json().expect("submitted Human Run")
     }
 
     /// End Runs as soon as only unclaimed sign-offs are left, as a YELLOW Run whose
@@ -224,8 +225,8 @@ fn returning() -> VerifyOptions {
     }
 }
 
-fn green() -> Value {
-    json!({"verdict":"GREEN","approved":true})
+fn green() -> human::Submission {
+    human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap()
 }
 
 /// A request ID parsed once, where a test names one.
@@ -424,17 +425,19 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         json!({"verdict":"GREEN","approved":true,"extra":1}),
         json!({"verdict":"RED","reason":"x".repeat(256_000)}),
     ] {
-        assert!(
-            human::submit(
+        let refused = match human::Submission::try_from(result) {
+            Ok(result) => human::submit(
                 &receipts,
                 &rid(id),
                 &"alice".parse().unwrap(),
                 &result,
-                CancellationToken::new()
+                CancellationToken::new(),
             )
             .await
-            .is_err()
-        );
+            .map(|_| ()),
+            Err(error) => Err(error),
+        };
+        assert!(refused.is_err());
         assert_eq!(
             store::read_run(&fixture.state, &run.run.id)
                 .await
@@ -1030,7 +1033,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &receipts,
         &rid(follower),
         &"alice".parse().unwrap(),
-        &json!({"verdict":"RED","reason":"Needs work"}),
+        &human::Submission::try_from(json!({"verdict":"RED","reason":"Needs work"})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -1436,7 +1439,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         &receipts,
         &run.requests[2].id,
         &"bob".parse().unwrap(),
-        &json!({"verdict":"RED","reason":"Different review"}),
+        &human::Submission::try_from(json!({"verdict":"RED","reason":"Different review"})).unwrap(),
         CancellationToken::new(),
     )
     .await

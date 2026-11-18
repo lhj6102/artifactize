@@ -1,6 +1,7 @@
 // The window's one screen as a person sees it: the Pane (its Search, the Branches with their
 // timelines, the Waiting stack) beside the Main area. Every reading is read-only; actions are
 // real clicks on what the window shows.
+import { requestState, showDebug } from "./human-review.ts";
 
 /** A timeline entry as read: the Run it shows (`current` for the Current), its status word and
  * age as `text` (`GREEN 5m ago`, `Running 2m`, `Current`), the line under it (a Run's comment,
@@ -200,5 +201,22 @@ export async function openWaiting(browser: WebdriverIO.Browser, id: string): Pro
   await browser.waitUntil(async () => (await waiting(browser)).rows.some((entry) => entry.id === id),
     { timeout: 15000, timeoutMsg: `${id} waits in the stack` });
   await browser.$(`[aria-label="Waiting reviews"] [data-key=${JSON.stringify(id)}]`).click();
-  await browser.waitUntil(async () => (await mainTitle(browser)) === "Review", { timeout: 15000, timeoutMsg: `${id}'s Review shown` });
+  await expectMainReview(browser, id);
+}
+
+/** Inspect the displayed request using Debug, restoring its previous fold afterwards. */
+export async function expectMainReview(browser: WebdriverIO.Browser, id: string): Promise<void> {
+  const review = `${MAIN} [aria-label="Human review"]`;
+  const debug = browser.$(review).$("button.head=Debug");
+  await browser.waitUntil(async () => (await mainTitle(browser)) === "Review" && await debug.isDisplayed(),
+    { timeout: 15000, timeoutMsg: "the Main review and its Debug control are visible" });
+  const restore = (await debug.getAttribute("aria-expanded")) === "false";
+  if (restore) await showDebug(browser, review);
+  await browser.waitUntil(async () => (await requestState(browser, review)).startsWith(`Request ${id} · `),
+    { timeout: 15000, timeoutMsg: `${id}'s Review identified in the Main area` });
+  if (restore) {
+    await debug.click();
+    await browser.waitUntil(async () => (await debug.getAttribute("aria-expanded")) === "false",
+      { timeout: 15000, timeoutMsg: "the review's previous Debug fold was restored" });
+  }
 }

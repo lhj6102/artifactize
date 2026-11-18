@@ -32,8 +32,13 @@ pub(crate) fn validate_directory(path: &Path) -> io::Result<()> {
 // MetadataExt reports u32 modes, while macOS libc uses u16 mode_t.
 const STICKY_BIT: u32 = 0o1000;
 
+/// Use 96 bits of the full digest in the runtime directory name to fit Unix socket paths.
+/// It is not authentication; ownership and the complete registration identity still apply.
+const NAMESPACE_HEX_CHARS: usize = 24;
+
 /// The private directory for one state namespace, created when missing and then validated.
-pub(crate) fn directory(namespace: &str, user: &str) -> io::Result<PathBuf> {
+pub(crate) fn directory(identity: &crate::config::EndpointId, user: &str) -> io::Result<PathBuf> {
+    let namespace = &identity[..NAMESPACE_HEX_CHARS];
     // The standard OS temporary root is shared but sticky. The 0700 child is both short
     // enough for sockaddr_un and owned by this user. No environment-chosen endpoint path.
     // macOS's /tmp is a link. Use its fixed physical target, not a canonicalized path
@@ -55,7 +60,7 @@ pub(crate) fn directory(namespace: &str, user: &str) -> io::Result<PathBuf> {
     if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & STICKY_BIT == 0 {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
-    let directory = root.join(format!("artifactize-ipc-{user}-{}", namespace));
+    let directory = root.join(format!("artifactize-ipc-{user}-{namespace}"));
     match platform::create_private_dir(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}

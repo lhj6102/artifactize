@@ -97,11 +97,11 @@ impl Artifact {
 
     /// What `{name}` stands for: the folder or file, or an aspect's folder, since an
     /// aspect's path is only its declaration's label.
-    pub fn referenced_path(&self) -> &Path {
+    pub fn referenced_path(&self) -> Option<&Path> {
         if self.kind() == ArtifactKind::Aspect {
-            self.folder()
+            Some(self.folder())
         } else {
-            self.path.local().expect("filesystem reference")
+            self.path.local()
         }
     }
 
@@ -127,7 +127,6 @@ impl Artifact {
     /// Where it is declared.
     pub fn site(&self) -> Site {
         Site {
-            kind: self.kind(),
             path: self.path.clone(),
             definition: self.declaration_path(),
         }

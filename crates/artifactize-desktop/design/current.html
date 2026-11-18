@@ -30,8 +30,8 @@
   tool strip and the Current graph lit by what <code>verify</code> would do. The bar and the Pane are
   as on the Monitor page; the Pane's Current entry sits in its pill. A Current is also where the
   branch's Artifacts are defined: the second figure shows an Artifact dragged into a whole's
-  box, the third a drop that was refused, the fourth a comment being written and another
-  being moved.
+  box, the third a drop that was refused, the fourth two refusals for the file an edit would write, and the last two a comment being written and, separately,
+  another being moved.
 </p>
 
 <figure class="figure">
@@ -62,7 +62,7 @@
             </div>
             <div class="m-entry">
               <span class="m-dot" style="--dot: var(--red)"></span><span class="m-status tone-red">RED</span><span class="m-age">2m ago</span>
-              <span class="m-sub">run-7SR0YW</span>
+              <span class="m-sub">dogfood: desktop design pages and the restyle…</span>
             </div>
           </div>
         </div>
@@ -75,7 +75,7 @@
           <div class="m-latest"><span class="m-dot" style="--dot: var(--green)"></span><span class="m-status tone-green">GREEN</span><span class="m-age">2d ago</span></div>
         </div>
       </div>
-      <section class="m-waiting"><h2>Waiting (0)</h2></section>
+      <section class="m-waiting"><h2>(0)</h2></section>
     </section>
     <div class="m-divider"></div>
     <section class="m-main focused">
@@ -184,7 +184,61 @@
 </ol>
 
 <figure class="figure">
-<div class="stage" style="--w: 1000; --h: 340">
+<div class="stage" style="--w: 1000; --h: 380">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr) minmax(0, 1fr)">
+  <section class="m-main">
+    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text"><span class="m-icon i-checking tone-checking"></span> 4 left</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf changed on disk; nothing written</span><span class="m-button small">Refresh</span></div>
+    <div class="m-strip">
+      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
+      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
+      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
+      <span class="m-button small"><span class="m-icon i-reset"></span>Reset layout</span>
+    </div>
+    <div class="m-canvas">
+      <div class="m-node out light-checking" style="left: 40px; top: 24px"><span class="m-light"></span><span class="m-name">desktop-design</span></div>
+      <div class="m-whole in light-checking" style="left: 330px; top: 4px; width: 420px; height: 100px">
+        <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-toggle"><span class="m-icon i-reset"></span></span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
+        <div class="m-node light-checking" style="left: 16px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-backend</span></div>
+        <div class="m-node light-checking" style="left: 228px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-ui</span></div>
+      </div>
+      <div class="m-edge" style="left: 208px; top: 44px; width: 122px"></div>
+    </div>
+  </section>
+  <section class="m-main" style="border-top: 1px solid var(--line-panel)">
+    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:06:30</span></span><span class="m-notice">.artifactize/desktop/desktop-design.artf has unsaved text in its Source; nothing written</span><span class="m-button small">Refresh</span></div>
+    <div class="m-strip">
+      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
+      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
+      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
+      <span class="m-button small"><span class="m-icon i-reset"></span>Reset layout</span>
+    </div>
+    <div class="m-canvas">
+      <div class="m-node out light-reused" style="left: 40px; top: 24px"><span class="m-light"></span><span class="m-name">desktop-design</span><span class="m-tally">4/4</span></div>
+      <div class="m-whole in light-run" style="left: 330px; top: 4px; width: 420px; height: 100px">
+        <div class="m-whole-title"><span class="m-light"></span><span class="m-name">desktop</span><span class="m-tally">0/1</span><span class="m-toggle"><span class="m-icon i-reset"></span></span><span class="m-toggle"><span class="m-icon i-minus"></span></span></div>
+        <div class="m-node light-reused" style="left: 16px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-backend</span><span class="m-tally">3/3</span></div>
+        <div class="m-node light-run" style="left: 228px; top: 46px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
+      </div>
+      <div class="m-edge" style="left: 208px; top: 44px; width: 122px"></div>
+    </div>
+  </section>
+</div>
+<span class="callout" style="left: 900px; top: 52px">12</span>
+<span class="callout" style="left: 900px; top: 242px">13</span>
+</div>
+<figcaption>Stage 1000 × 380. Two edits on the graph refused for the file they would write, shown one above the other here: desktop-design dragged within the top level after its file changed on disk (top), the Current already scanning again; the same drag while desktop-design.artf has typed text in its Source in the Detail (bottom). In both, desktop-design is back where it was and the graph stays shown.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">12</span><div><b>Changed on disk</b><span>A placing release, a drop, Reset layout or a comment whose file changed on disk since the Current read it writes nothing: the notice names that file, what was dragged is back where it was, and the Current is scanned again, so the graph shows what is on disk.</span></div></li>
+  <li><span class="n">13</span><div><b>Unsaved Source</b><span>The same edits are refused while that file's Source holds typed text, so the graph never overwrites it: the notice names the file whose Source holds the text, nothing is written and the text stays, until that Source is saved or reverted. Neither notice has a line and column: those belong to an error in a Source's text, said under the Source.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1000; --h: 300">
 <div class="stage-inner">
 <div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
   <section class="m-main">
@@ -203,23 +257,48 @@ agent can turn this into
 a node with its own evals.</div>
       <div class="m-node light-run" style="left: 340px; top: 40px"><span class="m-light"></span><span class="m-name">docs-en</span><span class="m-tally">2/4</span></div>
       <p class="m-comment" style="left: 340px; top: 84px">The getting-started guide still shows the old declarations and needs the definition folder instead.</p>
+    </div>
+  </section>
+</div>
+<span class="callout" style="left: 214px; top: 150px">9</span>
+<span class="callout" style="left: 514px; top: 142px">10</span>
+</div>
+<figcaption>Stage 1000 × 300. engine-core's comment open in its field; docs-en's comment cut after three lines.</figcaption>
+</figure>
+
+<ol class="notes">
+  <li><span class="n">9</span><div><b>Comment field</b><span>Opened in place under the node by the Definition's Comment or a click on the comment, holding it whole: Enter writes it into the node's file, Shift+Enter breaks the line, Esc or a click outside the field (a press and release without moving) puts it back, nothing written, and Enter on an empty field removes it. However it closes, focus returns to where it was opened from: the Comment button, or the graph for a click on the comment.</span></div></li>
+  <li><span class="n">10</span><div><b>Comment</b><span>Text alone in the quieter ink, at most three lines; the rest is in its field and in the Source.</span></div></li>
+</ol>
+
+<figure class="figure">
+<div class="stage" style="--w: 1000; --h: 300">
+<div class="stage-inner">
+<div class="m-window" style="grid-template-rows: minmax(0, 1fr)">
+  <section class="m-main">
+    <div class="m-main-head"><h2>Current · artifactize  dev</h2><span class="m-headline"><span class="m-text">14:05:02</span></span><span class="m-spacer"></span><span class="m-button small">Refresh</span></div>
+    <div class="m-strip">
+      <span class="m-button small"><span class="m-icon i-find"></span>Find</span>
+      <span class="m-zoomer"><span><span class="m-icon i-minus"></span></span><span class="m-zoom">100%</span><span><span class="m-icon i-add"></span></span></span>
+      <span class="m-button small"><span class="m-icon i-fit"></span>Fit</span>
+      <span class="m-button small"><span class="m-icon i-add"></span>New Artifact</span>
+    </div>
+    <div class="m-canvas">
+      <div class="m-node light-reused" style="left: 40px; top: 40px"><span class="m-light"></span><span class="m-name">engine-core</span><span class="m-tally">5/5</span></div>
+      <p class="m-comment" style="left: 40px; top: 84px">Split the store out once the read path settles; an agent can turn this into a node with its own evals.</p>
       <div class="m-node light-run target" style="left: 680px; top: 120px"><span class="m-light"></span><span class="m-name">desktop-ui</span><span class="m-tally">2/4</span></div>
       <p class="m-comment lifted" style="left: 790px; top: 150px">Check Korean labels.</p>
       <div class="m-node light-reused" style="left: 680px; top: 30px"><span class="m-light"></span><span class="m-name">media-brand</span><span class="m-tally">1/1</span></div>
     </div>
   </section>
 </div>
-<span class="callout" style="left: 214px; top: 150px">9</span>
-<span class="callout" style="left: 514px; top: 142px">10</span>
 <span class="callout" style="left: 940px; top: 186px">11</span>
 </div>
-<figcaption>Stage 1000 × 340. engine-core's comment open in its field; docs-en's comment cut after three lines; media-brand's comment dragged onto desktop-ui, the drop target.</figcaption>
+<figcaption>Stage 1000 × 300. A separate moment: media-brand's comment is dragged onto desktop-ui, the drop target; the place it left under media-brand stays empty.</figcaption>
 </figure>
 
 <ol class="notes">
-  <li><span class="n">9</span><div><b>Comment field</b><span>Opened in place under the node by the Definition's Comment or a click on the comment, holding it whole: Enter writes it into the node's file, Shift+Enter breaks the line, Esc puts it back, Enter on an empty field removes it.</span></div></li>
-  <li><span class="n">10</span><div><b>Comment</b><span>Text alone in the quieter ink, at most three lines; the rest is in its field and in the Source.</span></div></li>
-  <li><span class="n">11</span><div><b>Comment dragged</b><span>Its text floats with the faint shadow; an Artifact without a comment under the pointer is the drop target. Released there, the comment moves from one file to the other in one edit.</span></div></li>
+  <li><span class="n">11</span><div><b>Comment dragged</b><span>Its text floats with the faint shadow; an Artifact without a comment under the pointer is the drop target. Released there, the comment moves from one file to the other in one edit. A press on a comment followed by moving starts its drag; a press and release without moving is a click, which opens its field.</span></div></li>
 </ol>
 
 <h2>Rules</h2>
@@ -227,19 +306,19 @@ a node with its own evals.</div>
   <dt id="D-CUR-1">D-CUR-1</dt>
   <dd>The Current's scan state is the headline of the Main area's header row (D-MAIN-1), after <i>Current · {project} {branch}</i>: the scan's state in <code>--ink-2</code> with tabular figures, said without a sentence: while it runs, the checking icon in <code>--checking</code> and <i>n left</i>, how many Artifacts are still being checked, a count that falls to none and is read aloud as <i>Checking, n Artifacts left</i>; once it ends, the time it was scanned at, <i>HH:MM:SS</i>, read aloud as <i>Scanned at HH:MM:SS</i>; only a failure is said in words, why it failed in <code>--red</code>. A small Refresh button sits at the row's end (<kbd>Ctrl+R</kbd> and <kbd>F5</kbd> do the same); a refresh asked while a scan runs keeps that scan shown, the header still counting, and one more scan follows once it ends. <span class="avoid">a sentence for a scan that runs or ended well; a ratio that reads like a node's tally (<i>3/24</i>); a spinner without the count; the state in a banner; a second row for the scan's state; a key cap on Refresh.</span></dd>
   <dt id="D-CUR-2">D-CUR-2</dt>
-  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
+  <dd>The Current graph is drawn as a Run's (D-GRAPH-1, D-NODE-1 to D-NODE-4) under the same tool strip (D-GRAPH-4), with marks of its own (reused, would run, waiting, blocked, checking, each with its icon, named in Help, D-OVL-5); a node still being checked uses <code>--checking</code> and recolours in place. Read aloud, a node says its name and what verify would do with it (reused, would run, waiting or blocked), with, when it would run, how many of its evals would run, or that it is still being checked. <span class="avoid">a different node shape for a Current; a redraw that moves the camera.</span></dd>
   <dt id="D-CUR-3">D-CUR-3</dt>
   <dd>On a Current the tool strip (D-GRAPH-4) adds, after Fit, <b>New Artifact</b>, a small button with the add icon and its words, and, while the top level is placed by hand, <b>Reset layout</b>, a small button with the reset icon and its words; a Run's strip has neither. <span class="avoid">an edit control on a Run's graph; New Artifact as an icon alone; Reset layout shown, or disabled, for a top level laid out automatically; a key cap on either.</span></dd>
   <dt id="D-CUR-4">D-CUR-4</dt>
-  <dd>A dragged Artifact (a node, a minimized whole, or a whole with its parts) floats: raised to <code>--surface-raised</code> with the faint shadow (D-SYS-2), its outline, icon, strip and tally as they were, its edges and its comment following it; the place it left stays empty. A drag begins once the pointer has moved a few pixels with the button held, so a click stays a click; a whole is dragged by its title row. <span class="avoid">a ghost left at the old place; a drag that starts on a click; a node that turns into a block or a different shape while dragged; the camera moving while a node is dragged.</span></dd>
+  <dd>A dragged Artifact (a node, a minimized whole, or a whole with its parts) floats: raised to <code>--surface-raised</code> with the faint shadow (D-SYS-2), its outline, icon, strip and tally as they were, its edges and its comment following it; the place it left stays empty. A press and release without moving is a click (it opens the Detail); a press followed by moving starts the drag; a whole is dragged by its title row. <span class="avoid">a ghost left at the old place; a drag that starts on a press and release without moving; a node that turns into a block or a different shape while dragged; the camera moving while a node is dragged.</span></dd>
   <dt id="D-CUR-5">D-CUR-5</dt>
-  <dd>The drop target, the box or node a release would make the dragged Artifact's whole, is outlined 2px in <code>--accent</code>, its face and strip unchanged, only while the drop would be accepted. The box the Artifact is dragged within, an Artifact a drop would make a cycle with, and the top level show nothing. <span class="avoid">a status colour or red for a drop target; a mark for a drop that would be refused; drop zones drawn on the canvas; a highlighted edge.</span></dd>
+  <dd>The drop target, the box or node a release would make the dragged Artifact's whole, is outlined 2px in <code>--accent</code>, its face and strip unchanged, while the drop would make a valid whole, as the graph knows during the drag (E-NODE-DRAG). The box the Artifact is dragged within, an Artifact a drop would make a cycle with, and the top level show nothing. Whether a file can be written is learnt only on release: a highlighted drop whose file changed on disk, or whose file's Source in the Detail holds typed text, is refused then, the Artifact back where it was, nothing written, and the Main area's notice naming the file (D-CUR-7). <span class="avoid">a status colour or red for a drop target; a mark for a drop that would make a cycle; a drop target withheld because of a file's state on disk or in a Source; drop zones drawn on the canvas; a highlighted edge.</span></dd>
   <dt id="D-CUR-6">D-CUR-6</dt>
   <dd>A box placed by hand carries Reset layout in its title row, before Minimize: a button of Minimize's size and border (D-NODE-3) with the reset icon, named <i>Reset layout of {whole}</i> when read aloud; a box laid out automatically has none, so the button alone tells a box placed by hand. <span class="avoid">a badge, a lock or a pin marking a placed box; a tooltip on the button (D-SYS-7); Reset layout on a Run's graph.</span></dd>
   <dt id="D-CUR-7">D-CUR-7</dt>
-  <dd>An edit made on the graph that is refused (a cycle, a definition the project would not accept, a file changed on disk) puts the dragged Artifact back where it was and says why as the Main area's notice (D-MAIN-1): <code>--red</code>, a few words naming the Artifacts or the file, its whole text a click away. <span class="avoid">a dialog or a toast for a refusal; a refusal said on the canvas; a refused drop left where it was dropped.</span></dd>
+  <dd>An edit made on the graph (a placing release, a drop, Reset layout, Enter in a comment field or a comment's drop) that is refused writes nothing, puts the dragged Artifact or comment back where it was, or leaves the comment field as it was, and says why as the Main area's notice (D-MAIN-1): <code>--red</code>, a few words, its whole text a click away. What it names tells the refusals apart: a cycle or a definition the project would not accept names the Artifacts and why; a file changed on disk since the Current read it names that file, <i>{file} changed on disk; nothing written</i>, and the Current is scanned again; a file whose Source in the Detail holds typed text names that file, <i>{file} has unsaved text in its Source; nothing written</i>, the typed text kept, until that Source is saved or reverted. A graph's notice never carries a line and column, which only an error in a Source's text has (D-INS-11). <span class="avoid">a dialog or a toast for a refusal; a refusal said on the canvas; a refused drop left where it was dropped; a refusal that does not name the file it concerns; a graph edit that overwrites or clears a Source's typed text.</span></dd>
   <dt id="D-CUR-8">D-CUR-8</dt>
-  <dd>The comment field opens in place of the comment, or where it would be, under its node (D-NODE-6): a <code>--surface-input</code> field with a 1px <code>--line-input</code> border and the <code>--focus</code> ring, as wide as the comment, growing with its lines to show the comment whole, its text <code>--text-small</code> in <code>--ink</code> with its line breaks; the graph around it stays as it was. It has no buttons and no hint: Enter writes, Shift+Enter breaks the line, Esc or a click outside puts back, and Enter on an empty field removes the comment; a refusal is said as the Main area's notice (D-CUR-7) and the field stays with its text. <span class="avoid">a dialog, a popover or a Detail section for a comment; Save and Cancel buttons on the field; a line that explains its keys; a field that covers other nodes' names without growing the space under its own.</span></dd>
+  <dd>The comment field opens in place of the comment, or where it would be, under its node (D-NODE-6): a <code>--surface-input</code> field with a 1px <code>--line-input</code> border and the <code>--focus</code> ring, as wide as the comment, growing with its lines to show the comment whole, its text <code>--text-small</code> in <code>--ink</code> with its line breaks; the graph around it stays as it was. It has no buttons and no hint: Enter writes, Shift+Enter breaks the line, Esc or a click outside puts back, and Enter on an empty field removes the comment; however it closes (written, removed or put back), focus returns to where the field was opened from: the Definition's Comment button, or the graph when a click on the comment opened it; a refusal is said as the Main area's notice (D-CUR-7) and the field stays with its text. <span class="avoid">a dialog, a popover or a Detail section for a comment; Save and Cancel buttons on the field; a line that explains its keys; a field that covers other nodes' names without growing the space under its own.</span></dd>
   <dt id="D-CUR-9">D-CUR-9</dt>
   <dd>A comment is dragged by its text: while dragged it floats as a dragged node does (D-CUR-4), its text on <code>--surface-raised</code> with the faint shadow and no outline; the Artifact a release would give it, one without a comment, is the drop target of D-CUR-5, and nothing else shows. Released elsewhere it returns under its node. <span class="avoid">a comment that keeps a card after the drag; a drop target on an Artifact that has a comment; a comment left on the canvas where it was dropped.</span></dd>
 </dl>

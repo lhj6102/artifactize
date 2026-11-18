@@ -4,12 +4,11 @@ use std::{
 };
 
 use clap::Subcommand;
-use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::{FAILURE_EXIT, cancellation_listener, print_json};
 use artifactize_core::{
-    human,
+    human::{self, Submission},
     runtime::Verdict,
     store,
     tools::human::Content,
@@ -30,7 +29,7 @@ pub enum RequestCommand {
     Logs {
         id: RequestId,
         #[command(flatten)]
-        query: artifactize_core::inspect::LogQuery,
+        query: artifactize_core::inspect::LogOptions,
     },
     /// Acquire the Human reviewer lock.
     Claim {
@@ -119,7 +118,7 @@ pub(super) async fn execute(
             )?;
         }
         RequestCommand::Logs { id, query } => {
-            print_json(&artifactize_core::inspect::logs(state, &id, query).await?)?;
+            print_json(&artifactize_core::inspect::logs(state, &id, query.try_into()?).await?)?;
         }
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
@@ -185,11 +184,12 @@ pub(super) async fn execute(
             reviewer,
         } => {
             let source = FieldsSource::from_args(fields, fields_file);
-            let fields = OwnerFields::read(source)?;
+            let submission = Submission::new(verdict, source.read()?)
+                .map_err(|_| "Use --verdict, not a verdict inside --fields.")?;
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (cancellation, listener) = cancellation_listener()?;
-            let submission = Submission { verdict, fields };
-            let result = submit_and_publish(state, &id, &reviewer, submission, cancellation).await;
+            let result =
+                human::submit_and_publish(state, &id, &reviewer, &submission, cancellation).await;
             listener.abort();
             result?;
             print_json(
@@ -203,14 +203,6 @@ pub(super) async fn execute(
         }
     }
     Ok(0)
-}
-
-/// A Human answer's verdict is separate from its schema-defined owner fields.
-#[derive(Serialize)]
-struct Submission {
-    verdict: Verdict,
-    #[serde(flatten)]
-    fields: OwnerFields,
 }
 
 enum FieldsSource {
@@ -228,17 +220,10 @@ impl FieldsSource {
             (Some(_), Some(_)) => unreachable!("clap makes --fields and --fields-file exclusive"),
         }
     }
-}
 
-/// An object of owner fields that cannot supply its own verdict.
-#[derive(Serialize)]
-#[serde(transparent)]
-struct OwnerFields(Map<String, Value>);
-
-impl OwnerFields {
-    fn read(source: FieldsSource) -> Result<Self, String> {
-        let fields = match source {
-            FieldsSource::Empty => return Ok(Self(Map::new())),
+    fn read(self) -> Result<Map<String, Value>, String> {
+        let fields = match self {
+            FieldsSource::Empty => return Ok(Map::new()),
             FieldsSource::Inline(fields) => fields,
             FieldsSource::File(path) => {
                 let file = artifactize_core::platform::open_regular_input(&path)
@@ -261,23 +246,8 @@ impl OwnerFields {
             Value::Object(fields) => fields,
             _ => return Err("Human fields must be a JSON object.".into()),
         };
-        if fields.contains_key("verdict") {
-            return Err("Use --verdict, not a verdict inside --fields.".into());
-        }
-        Ok(Self(fields))
+        Ok(fields)
     }
-}
-
-async fn submit_and_publish(
-    state: &Path,
-    id: &RequestId,
-    reviewer: &ReviewerId,
-    submission: Submission,
-    cancellation: tokio_util::sync::CancellationToken,
-) -> Result<store::Request, String> {
-    // The shared API accepts a JSON result for schema validation after loading the saved request.
-    let result = serde_json::to_value(submission).map_err(|e| e.to_string())?;
-    human::submit_and_publish(state, id, reviewer, &result, cancellation).await
 }
 
 #[cfg(test)]

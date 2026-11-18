@@ -1,9 +1,9 @@
 // Newer releases through the real app: a loopback stand-in for the repository's site answers
 // the app's release lookup and records what the system browser fetches. The app finds its
 // install channel from where it runs; a case places the candidate where a channel puts it.
-// The app keeps the site's answer in its state for a day; a case moves that answer's time back
-// a day to stand for a day passing.
+// The app keeps the site's answer for a day. The fixture advances its external clock.
 import assert from "node:assert/strict";
+import { readCandidate } from "../build.ts";
 import { app, cli, create, createOutside, environment, type Fixture } from "../fixture.ts";
 import { checkpoint } from "../commands.ts";
 import { dispatchInput } from "../input.ts";
@@ -12,8 +12,8 @@ import { mainTitle } from "../pane.ts";
 import { visibleCenter } from "../pointer.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import {
-  appendText, diskImageAppDirectory, nativePath, placeApp, primaryModifier, readText, replaceText, runProgramOk,
-  serveLoopbackHttp, storePackageDirectory, writeText,
+  appendText, commandDirectory, copyFile, diskImageAppDirectory, executableName, nativePath, placeApp,
+  primaryModifier, readText, replaceText, runProgramOk, serveLoopbackHttp, storePackageDirectory, writeText,
   type Environment, type HttpServer, type NativePath,
 } from "../platform.ts";
 
@@ -21,17 +21,21 @@ const LATEST = "9.9.9";
 const LOOKUP = "/api/releases/latest";
 const PAGE = "/releases/latest";
 const DISK_IMAGE = "/releases/latest/download/Artifactize.dmg";
-/** The answer the app keeps in its state, and a day in its seconds. */
-const KEPT = "release-check.json";
 const DAY_SECONDS = 24 * 60 * 60;
+const CARGO_CONTROL = ["install", "artifactize", "artifactize-tools", "--locked"];
 
-type Site = { url: string; visits: NativePath; answer: NativePath };
+type Site = { url: string; visits: NativePath; answer: NativePath; clock: NativePath; afterDay: number };
+const cargoLog = (fixture: Fixture) => nativePath(fixture.root, "cargo-launches.jsonl");
 
 /** The stand-in site: it answers the lookup with the tag in `answer`, which a case may replace
  * while the app runs, serves the release page and file, and records the path of every GET. */
 async function site(fixture: Fixture, tag: string): Promise<{ data: Site; server: HttpServer }> {
   const visits = nativePath(fixture.root, "site-get-paths.jsonl");
   const answer = nativePath(fixture.root, "site-latest-tag.txt");
+  const clock = nativePath(fixture.root, "release-clock-seconds");
+  // Both the app and doctor read this same fixture clock.
+  const afterDay = 1_800_000_000;
+  writeText(clock, String(afterDay - DAY_SECONDS));
   writeText(visits, "");
   writeText(answer, tag);
   const server = await serveLoopbackHttp((request, response) => {
@@ -42,7 +46,7 @@ async function site(fixture: Fixture, tag: string): Promise<{ data: Site; server
     response.writeHead(known ? 200 : 404, { "content-type": lookup ? "application/json" : "text/html" });
     response.end(lookup ? JSON.stringify({ tag_name: readText(answer) }) : "");
   });
-  return { data: { url: server.url, visits, answer }, server };
+  return { data: { url: server.url, visits, answer, clock, afterDay }, server };
 }
 
 const visited = (data: Site): string[] => readText(data.visits).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string);
@@ -58,6 +62,12 @@ function running(): string {
   return runProgramOk(cli(), ["--version"]).trim().split(" ")[1];
 }
 
+/** The stable release of the candidate's own version, newer only for a prerelease build. */
+function baseline() {
+  const [version, prerelease] = running().split("+")[0].split("-", 2);
+  return { tag: `v${version}`, notice: prerelease ? `${version} available` : null };
+}
+
 /** The app's release lookup has answered at least once, none of its calls failed, and the
  * window shows its answer. */
 async function lookedUp(browser: WebdriverIO.Browser): Promise<void> {
@@ -69,6 +79,7 @@ async function lookedUp(browser: WebdriverIO.Browser): Promise<void> {
 }
 
 const notice = (browser: WebdriverIO.Browser) => browser.$(`button=${LATEST} available`);
+const anyNotice = (browser: WebdriverIO.Browser) => browser.$("header.bar").$("button*= available");
 const dialog = (browser: WebdriverIO.Browser) => browser.$('[role="dialog"]');
 const shown = (browser: WebdriverIO.Browser) => async () =>
   (await dialog(browser).isExisting()) && (await dialog(browser).getText()).includes("Update artifactize");
@@ -114,7 +125,7 @@ async function prepare(tag: string, options: {
   const { data, server } = await site(fixture, tag);
   return {
     fixture,
-    env: { ...env, ARTIFACTIZE_RELEASES_URL: data.url },
+    env: { ...env, ARTIFACTIZE_RELEASES_URL: data.url, ARTIFACTIZE_E2E_RELEASE_CLOCK: data.clock },
     data,
     ...(placed ? { app: placed.app } : {}),
     ...(options.browser ? { browser: `${data.url}${options.browser}` } : {}),
@@ -127,13 +138,15 @@ export const scenarios: Scenario[] = [
   scenario<Site>(
     "release-notice",
     "a release found later while the app runs shows in the header, as doctor reports it; its dialog links the release page, which opens in the browser, and closes by Esc or Close",
-    () => prepare(`v${running()}`, { browser: PAGE, used: true }),
+    () => prepare(baseline().tag, { browser: PAGE, used: true }),
     async (browser, { fixture, env, data }) => {
       const lookups = () => visited(data).filter((path) => path === LOOKUP).length;
       const asked = async () => (await checkpoint(browser)).activity.commands.releaseNotice?.completed ?? 0;
-      // At start the app asks the site once. The running version is the latest: nothing shows.
+      const shownNotice = async () => await anyNotice(browser).isExisting() ? await anyNotice(browser).getText() : null;
+      const initialNotice = baseline().notice;
+      // A released candidate starts without a notice; a dev candidate sees the matching stable release.
       await lookedUp(browser);
-      assert.equal(await notice(browser).isExisting(), false, "no notice while this app is the latest release");
+      assert.equal(await shownNotice(), initialNotice, "the header reflects the baseline stable release");
       assert.equal(lookups(), 1, "the app asked the site at start");
       const view = await mainTitle(browser);
       // A release comes out. The app looks again by itself, but within the day it reuses its
@@ -142,12 +155,10 @@ export const scenarios: Scenario[] = [
       const before = await asked();
       await browser.waitUntil(async () => (await asked()) >= before + 2, { timeout: 15000, timeoutMsg: "the app looked again twice" });
       await afterRender(browser);
-      assert.equal(await notice(browser).isExisting(), false, "within the day the kept answer stands");
+      assert.equal(await shownNotice(), initialNotice, "within the day the kept answer stands");
       assert.equal(lookups(), 1, "within the day the app asked the site nothing more");
       // A day later, the next look asks the site again and finds the release.
-      const kept = nativePath(fixture.state, KEPT);
-      const answer = JSON.parse(readText(kept)) as { checkedAt: number };
-      replaceText(kept, JSON.stringify({ ...answer, checkedAt: answer.checkedAt - DAY_SECONDS }));
+      replaceText(data.clock, String(data.afterDay));
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "a day later the app's lookup puts the notice in the header" });
       assert.equal(lookups(), 2, "a day later the app asked the site once more");
       assert.equal(await mainTitle(browser), view, "the notice leaves the shown view as it was");
@@ -184,10 +195,17 @@ export const scenarios: Scenario[] = [
     () => prepare(`v${LATEST}`, {
       place: (fixture) => {
         const cargo = nativePath(fixture.root, "cargo");
-        return { app: placeApp(app(), nativePath(cargo, "bin")), env: { CARGO_HOME: cargo } };
+        const bin = nativePath(cargo, "bin");
+        const placed = placeApp(app(), bin);
+        copyFile(readCandidate().observer, nativePath(bin, executableName("cargo")));
+        const env = commandDirectory({ ...environment(fixture), CARGO_HOME: cargo, ARTIFACTIZE_E2E_CARGO_LOG: cargoLog(fixture) }, bin);
+        // Positive control: the same command on the app's private PATH is recorded.
+        runProgramOk("cargo", CARGO_CONTROL, { env });
+        assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL));
+        return { app: placed, env };
       },
     }),
-    async (browser, { data }) => {
+    async (browser, { data, fixture }) => {
       await notice(browser).waitForExist({ timeout: 15000, timeoutMsg: "the lookup at start puts the notice in the header" });
       await openDialog(browser);
       const command = dialog(browser).$("pre.command");
@@ -199,6 +217,7 @@ export const scenarios: Scenario[] = [
       const selected = await browser.execute(() => getSelection()?.toString() ?? "");
       assert.ok(selected.includes("cargo install artifactize artifactize-tools --locked"), `the command is selectable text: ${selected}`);
       await closeByButton(browser);
+      assert.equal(readText(cargoLog(fixture)).trim(), JSON.stringify(CARGO_CONTROL), "only the fixture's positive control launched Cargo");
       onlyLookups(data);
     },
   ),
@@ -219,6 +238,22 @@ export const scenarios: Scenario[] = [
       await closeByButton(browser);
     },
   ),
+  // UX journey: J-UPDATE; UX edge: E-UPDATE-NOTICE
+  scenario<Site>(
+    "release-prerelease",
+    "a newer prerelease is not shown after a fresh lookup replaces the previous stable-release notice",
+    () => prepare(`v${LATEST}`, { used: true }),
+    async (browser, { data }) => {
+      await notice(browser).waitForDisplayed();
+      const before = visited(data).filter((path) => path === LOOKUP).length;
+      replaceText(data.answer, `v${LATEST}-rc.1`);
+      replaceText(data.clock, String(data.afterDay));
+      await browser.waitUntil(() => visited(data).filter((path) => path === LOOKUP).length > before,
+        { timeout: 15000, timeoutMsg: "the site served the fresh prerelease lookup" });
+      await anyNotice(browser).waitForDisplayed({ reverse: true, timeout: 15000, timeoutMsg: "the applied response cleared the prior notice without showing a prerelease" });
+      onlyLookups(data);
+    },
+  ),
   // UX journey: J-UPDATE; UX edges: E-UPDATE-NOTICE
   scenario<Site>(
     "release-store",
@@ -226,7 +261,7 @@ export const scenarios: Scenario[] = [
     () => prepare(`v${LATEST}`, { place: (fixture) => ({ app: placeApp(app(), storePackageDirectory(fixture.root)) }) }),
     async (browser) => {
       await lookedUp(browser);
-      assert.equal(await notice(browser).isExisting(), false, "the Store updates the app: no notice");
+      assert.equal(await anyNotice(browser).isExisting(), false, "the Store updates the app: no notice");
     },
   ),
 ];

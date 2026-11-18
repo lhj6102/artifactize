@@ -262,6 +262,24 @@ impl<'a> Registry<'a> {
         output_root: &Path,
         cancellation: CancellationToken,
     ) -> ToolResult {
+        self.call_with_cleanup(
+            name,
+            args,
+            output_root,
+            cancellation,
+            tempfile::TempDir::close,
+        )
+        .await
+    }
+
+    async fn call_with_cleanup(
+        &self,
+        name: &str,
+        args: Value,
+        output_root: &Path,
+        cancellation: CancellationToken,
+        cleanup: impl FnOnce(tempfile::TempDir) -> std::io::Result<()> + Send + 'static,
+    ) -> ToolResult {
         let Some(tool) = self.tools.get(name) else {
             return ToolResult::error("Unknown registered Agent tool.");
         };
@@ -364,6 +382,7 @@ impl<'a> Registry<'a> {
                         &output_root,
                         cancellation,
                         environment,
+                        cleanup,
                     )
                     .await
                 })
@@ -434,9 +453,11 @@ impl<'a> Registry<'a> {
             .map(|artifact| {
                 let path = match &artifact.path {
                     crate::config::Target::Live(uri) => crate::config::Target::Live(uri.clone()),
-                    _ => scope::scoped_path(&self.config.root, artifact.referenced_path())
-                        .map_err(|_| ())?
-                        .into(),
+                    _ => {
+                        scope::scoped_path(&self.config.root, artifact.referenced_path().ok_or(())?)
+                            .map_err(|_| ())?
+                            .into()
+                    }
                 };
                 Ok((
                     artifact.name.clone(),
@@ -515,6 +536,7 @@ async fn invoke(
     output_root: &Path,
     cancellation: CancellationToken,
     environment: Option<sessions::ownership::Call>,
+    cleanup: impl FnOnce(tempfile::TempDir) -> std::io::Result<()>,
 ) -> ToolResult {
     let run = || {
         let root = workspace::prepare_directory(output_root, workspace).map_err(|_| ())?;
@@ -591,7 +613,7 @@ async fn invoke(
         }
     }
     .await;
-    let cleaned = directory.close();
+    let cleaned = cleanup(directory);
     if cancellation.is_cancelled() {
         return ToolResult::error("Agent tool call was cancelled.");
     }

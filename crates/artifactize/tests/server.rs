@@ -315,8 +315,33 @@ async fn records_append_per_key_the_latest_wins_and_scopes_are_enforced() {
     let revoked = admin(&server.state, &["token", "revoke", "bob-laptop", "--purge"]);
     assert_eq!(revoked["purgedEntries"], 1);
     assert_eq!(server.whoami(&bob).await.0, StatusCode::UNAUTHORIZED);
-    let (_, found) = server.lookup(&reader, &[&app, &sign]).await;
-    let entries = found["entries"].as_array().unwrap();
+    let history = stored(&server.state);
+    let app_history: Vec<_> = history
+        .iter()
+        .filter(|(key, _, _)| key == app.as_str())
+        .map(|(_, _, record)| serde_json::from_str::<Value>(record).unwrap())
+        .collect();
+    assert_eq!(
+        app_history
+            .iter()
+            .map(|record| &record["executionId"])
+            .collect::<Vec<_>>(),
+        [&json!("execution-run-c-1"), &json!("execution-run-a-1")]
+    );
+    let signoff = history
+        .iter()
+        .find(|(key, _, _)| key == sign.as_str())
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&signoff.2).unwrap()["publisher"],
+        "alice-signoff"
+    );
+    assert_eq!(history.len(), 3);
+    // Exercise the public lookup behavior too. This is a real cache access, not a probe
+    // of the deletion transaction: a client must now get Alice's latest execution.
+    let (status, reply) = server.lookup(&reader, &[&app, &sign]).await;
+    assert_eq!(status, StatusCode::OK);
+    let entries = reply["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0]["executionId"], "execution-run-a-1");
     assert_eq!(entries[1]["publisher"], "alice-signoff");
@@ -332,9 +357,9 @@ async fn records_append_per_key_the_latest_wins_and_scopes_are_enforced() {
         admin(&server.state, &["rm", app.as_str()]),
         json!({"removed":false})
     );
-    let (_, found) = server.lookup(&reader, &[&app]).await;
-    assert_eq!(found, json!({"entries":[]}));
-    assert_eq!(stored(&server.state).len(), 1);
+    let remaining = stored(&server.state);
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].0, sign.as_str());
 }
 
 #[tokio::test]
@@ -480,8 +505,12 @@ async fn older_review_stores_upgrade_in_place_and_keep_their_tokens() {
                 .0,
             StatusCode::CREATED
         );
-        let (_, found) = server.lookup(token, &[&app]).await;
-        assert_eq!(found["entries"][0]["key"], app.as_str());
+        let saved = stored(&server.state);
+        assert_eq!(saved.len(), 1);
+        let (key, _, data) = &saved[0];
+        assert_eq!(key, app.as_str());
+        let record: Value = serde_json::from_str(data).unwrap();
+        assert_eq!(record["verdict"], "GREEN");
     }
 }
 

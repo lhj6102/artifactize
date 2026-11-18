@@ -7,9 +7,9 @@ mod runs;
 pub mod search;
 
 /// The Tool log every review interface shows; see [`log::Sink`].
-pub use crate::tools::human::log;
+pub use crate::{human::Submission, tools::human::log};
 pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
-pub use form::{Field, Form, Input, Key, Row, check as check_schema};
+pub use form::{Field, Form, Input, Key, Row, Specification};
 pub use runs::Runs;
 
 use crate::{
@@ -19,7 +19,6 @@ use crate::{
     tools::human::{CommandLine, Content, ToolResult},
     types::RequestId,
 };
-use serde_json::Value;
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
@@ -72,28 +71,6 @@ pub fn release_refusal(
         Ok((_, false)) => None,
         Ok((_, true)) => Some(NOT_CLAIMED.into()),
         Err(error) => Some(error),
-    }
-}
-
-/// A Human submission has one verdict, parsed with its owner fields at the UI edge.
-/// The private envelope prevents a separate display choice from contradicting the result;
-/// the request's owner schema is still checked by the shared Human submission operation.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Submission(crate::agent::verdict::ValidatedResult);
-impl TryFrom<Value> for Submission {
-    type Error = String;
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        serde_json::from_value(value)
-            .map(Self)
-            .map_err(|error| error.to_string())
-    }
-}
-impl Submission {
-    pub fn verdict(&self) -> crate::runtime::Verdict {
-        self.0.verdict
-    }
-    pub fn to_json(&self) -> Value {
-        self.0.to_json()
     }
 }
 
@@ -319,7 +296,7 @@ impl Job {
                         let closed = receipts.close().await;
                         claimed = Some(result.and_then(|claim| closed.map(|()| claim))?);
                     }
-                    human::submit_and_publish(&state, &id, &reviewer, &result.to_json(), cancel)
+                    human::submit_and_publish(&state, &id, &reviewer, &result, cancel)
                         .await
                         .map(Box::new)
                 }
@@ -502,22 +479,12 @@ fn declared(
     tools
 }
 
-/// The owner schema of `verdict` recorded with the request: `None` when it declares none.
-/// Without a recorded Human definition the schemas are unknown, not empty: an empty form
-/// would submit a verdict the schema then rejects.
-pub fn schema(
-    request: &Request,
-    verdict: crate::runtime::Verdict,
-) -> Result<Option<Value>, String> {
+/// The typed specification of the saved Human form. A missing definition is not an empty form.
+pub fn form(request: &Request, verdict: crate::runtime::Verdict) -> Result<Form, String> {
     let definition = request.human_definition.as_ref().ok_or(
         "This request records no Human definition; open the original request its actions go to.",
     )?;
-    let declaration = definition.eval.declaration.value();
-    let schema = declaration.and_then(|declaration| match verdict {
-        crate::runtime::Verdict::Green => declaration.pass_schema.value(),
-        crate::runtime::Verdict::Red => declaration.fail_schema.value(),
-    });
-    Ok(schema.map(|schema| Value::Object(schema.clone())))
+    definition.eval.form(verdict)
 }
 
 /// Words joined for an on-screen preview, double-quoted when a word has whitespace or a

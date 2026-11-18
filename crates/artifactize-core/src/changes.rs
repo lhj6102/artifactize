@@ -31,11 +31,16 @@ const RECONNECT: Duration = Duration::from_millis(500);
 const DELIVERY_TIMEOUT: Duration = Duration::from_millis(300);
 /// Bound hostile frames before allocation (IDs are at most 200 bytes).
 const MAX_FRAME_BYTES: usize = 1024;
-/// Bound per-process publishers, per-hub connections, broadcast backlog and dirty sets.
+/// Share a small number of long-lived per-state publisher tasks; a writer can always
+/// commit without notifications when those are full.
 const MAX_STATES: usize = 32;
+/// Cap per-hub handles and tasks so abandoned or idle clients cannot exhaust them.
 const MAX_CLIENTS: usize = 64;
+/// Absorb a burst of commits without unbounded buffering for a stalled subscriber.
 const MAX_BACKLOG: usize = 64;
+/// Above this many dirty transcripts, one resync is cheaper than tracking every hint.
 const MAX_DIRTY_SESSIONS: usize = 64;
+/// Above this many dirty Runs, reread the state rather than holding an unbounded set.
 const MAX_DIRTY_RUNS: usize = 64;
 /// Version 2 names the Run a write changed ([`Change::RunInvalidated`]). The wire format is
 /// independent of the state database schema and durable session-event format. The Hello
@@ -243,11 +248,24 @@ pub struct Subscription {
 }
 impl Subscription {
     pub async fn new(state: &Path) -> Self {
+        let mut interval =
+            tokio::time::interval_at(tokio::time::Instant::now() + RECONCILE, RECONCILE);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        Self::with_reconciliation(state, Reconciliation::Interval(interval)).await
+    }
+
+    async fn with_reconciliation(state: &Path, reconciliation: Reconciliation) -> Self {
         let inbox = Arc::new(Inbox::default());
         let cancel = CancellationToken::new();
         let (ready, registered) = oneshot::channel();
         let state = state.to_path_buf();
-        let task = tokio::spawn(watch(state, inbox.clone(), cancel.clone(), ready));
+        let task = tokio::spawn(watch(
+            state,
+            inbox.clone(),
+            cancel.clone(),
+            ready,
+            reconciliation,
+        ));
         // Keep cancellation ownership even if the caller abandons registration midway.
         let subscription = Self {
             inbox,
@@ -478,21 +496,39 @@ async fn publish(publisher: Arc<Publishing>) {
     }
 }
 
+enum Reconciliation {
+    Interval(tokio::time::Interval),
+    #[cfg(test)]
+    Controlled(tokio::sync::mpsc::UnboundedReceiver<()>),
+}
+
+impl Reconciliation {
+    async fn tick(&mut self) {
+        match self {
+            Self::Interval(interval) => {
+                interval.tick().await;
+            }
+            #[cfg(test)]
+            Self::Controlled(ticks) => {
+                if ticks.recv().await.is_none() {
+                    std::future::pending::<()>().await;
+                }
+            }
+        }
+    }
+}
+
 async fn watch(
     state: std::path::PathBuf,
     inbox: Arc<Inbox>,
     cancel: CancellationToken,
     ready: oneshot::Sender<()>,
+    mut reconcile: Reconciliation,
 ) -> Result<(), String> {
     let mut ready = Some(ready);
     let endpoint = Endpoint::new(&state).ok();
     let mut hub = None;
     let mut probe = probe::Probe::new(state);
-    // The baseline probe below already covers startup. An immediate interval tick
-    // could obscure a racing publication with a redundant Resync.
-    let mut reconcile =
-        tokio::time::interval_at(tokio::time::Instant::now() + RECONCILE, RECONCILE);
-    reconcile.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Establish the cheap persistent baseline before the caller reads its snapshot.
     let _ = probe.changed().await;
     loop {

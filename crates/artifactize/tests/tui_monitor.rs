@@ -10,9 +10,7 @@ use std::{
 };
 
 use artifactize_core::store::{self, RequestView, RunView};
-use artifactize_tui::monitor::{
-    self, Completion, EvalView, Kind, Monitor, Node, NotRun, Target, Upstream,
-};
+use artifactize_tui::monitor::{self, EvalView, Kind, Monitor, Node, Target};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{Terminal, backend::TestBackend};
 use rusqlite::Connection;
@@ -211,6 +209,7 @@ fn finish(child: RunChild) -> std::process::Output {
 async fn live_verify_progress_and_runs_across_repositories() {
     let fixture = Fixture::new();
     let (_, second) = fixture.seed();
+    owned_run::hold_signoffs(&fixture.state);
     let child = support::os::start(
         fixture
             .command(&fixture.beta)
@@ -224,18 +223,21 @@ async fn live_verify_progress_and_runs_across_repositories() {
     let human = owned_run::subscribed(&fixture.state, async |changes| {
         tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
             loop {
-                let (_, requests) = fixture.load(&live).await;
+                let (saved, requests) = fixture.load(&live).await;
                 let slow = requests
                     .iter()
                     .find(|view| view.request.eval_id == "slow/wait");
                 let human = requests
                     .iter()
                     .find(|view| view.request.eval_id == "human/review");
-                if slow.is_some_and(|view| {
-                    view.request.status() == artifactize_core::types::RequestStatus::Running
-                }) && human.is_some_and(|view| {
-                    view.request.status() == artifactize_core::types::RequestStatus::Deferred
-                }) {
+                if saved.run.status() == artifactize_core::types::RunStatus::WaitingHuman
+                    && slow.is_some_and(|view| {
+                        view.request.status() == artifactize_core::types::RequestStatus::Running
+                    })
+                    && human.is_some_and(|view| {
+                        view.request.status() == artifactize_core::types::RequestStatus::Deferred
+                    })
+                {
                     break human.unwrap().request.id.clone();
                 }
                 changes.next_reconciled().await;
@@ -295,11 +297,17 @@ async fn live_verify_progress_and_runs_across_repositories() {
     owned_run::subscribed(&fixture.state, async |changes| {
         tokio::time::timeout(support::os::patience(PROGRESS_BOUND), async {
             loop {
-                let (_, requests) = fixture.load(&live).await;
-                if requests.iter().any(|view| {
-                    view.request.eval_id == "slow/wait"
-                        && view.request.status() == artifactize_core::types::RequestStatus::Green
-                }) {
+                let (view, requests) = fixture.load(&live).await;
+                let saved = |eval, status| {
+                    requests
+                        .iter()
+                        .any(|view| view.request.eval_id == eval && view.request.status() == status)
+                };
+                use artifactize_core::types::{RequestStatus, RunStatus};
+                if view.run.status() == RunStatus::WaitingHuman
+                    && saved("slow/wait", RequestStatus::Green)
+                    && saved("human/review", RequestStatus::Deferred)
+                {
                     break;
                 }
                 changes.next_reconciled().await;
@@ -428,58 +436,37 @@ async fn saved_tree_details_without_repository_or_writes() {
     let nodes = monitor::tree(&view, &requests, now);
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
-    let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    for id in [
+    let rows: Vec<_> = all.iter().map(|node| node.line()).collect();
+    let artifact = |name: &str| *all.iter().find(|row| row.name == name).unwrap();
+    for name in [
         "input", "checkout", "search", "cycle-a", "cycle-b", "red", "part",
     ] {
         assert_eq!(
-            all.iter()
-                .filter(|node| node.id.as_str() == format!("a:{id}"))
-                .count(),
+            all.iter().filter(|row| row.name == name).count(),
             1,
-            "{id}"
+            "{name}: {rows:#?}"
         );
     }
-    let eval = |id: &str| match &node(id).kind {
-        Kind::Eval(view) => view.clone(),
-        kind => panic!("{kind:?}"),
-    };
-    for request in &requests {
-        assert_ne!(
-            eval(&format!("e:{}", request.request.eval_id)),
-            EvalView::NotRun(NotRun::Absent)
-        );
+    assert_eq!(rows.len(), 7 + 5, "{rows:#?}");
+    for name in ["checkout", "search"] {
+        assert_eq!(artifact(name).line(), format!("✓ {name}  1/1"));
     }
-    for id in ["a:checkout", "a:search"] {
-        assert_eq!(node(id).line(), format!("✓ {}  1/1", &id[2..]));
-        assert!(node(id).done());
-    }
-    // Peers are marked, and the cycle is never a wait between them.
-    assert_eq!(node("a:cycle-a").marks, "  ↻ cycle-b");
-    assert_eq!(node("a:cycle-b").marks, "  ↻ cycle-a");
+    assert!(artifact("cycle-a").line().contains("↻ cycle-b"));
+    assert!(artifact("cycle-b").line().contains("↻ cycle-a"));
+    let red = artifact("red")
+        .children
+        .iter()
+        .map(Node::line)
+        .find(|row| row.starts_with("✗ check  RED · exitCode 7"));
+    assert!(red.is_some(), "{rows:#?}");
     for (id, inputs) in [
-        ("e:cycle-a/check", &["cycle-b"][..]),
-        ("e:cycle-b/check", &["input", "cycle-a"]),
+        ("cycle-b/check", &["input", "cycle-a"][..]),
+        ("checkout/review", &["input"][..]),
     ] {
-        let upstream: Vec<_> = node(id)
-            .upstream
-            .iter()
-            .map(|up| up.artifact.as_str())
-            .collect();
-        assert_eq!(upstream, inputs, "{id}");
+        let detail = monitor::detail(&view, &requests, &Target::Eval(id.parse().unwrap()), now);
+        let waits = detail.field("Waits for").unwrap();
+        assert!(inputs.iter().all(|input| waits.contains(input)), "{waits}");
     }
-    // One row per eval: relations live in the Artifact detail, not in the tree.
-    assert!(all.iter().all(|node| !node.id.starts_with("r:")));
-    assert_eq!(eval("e:red/check"), EvalView::Failed { verdict: true });
-    let red = node("e:red/check").line();
-    assert!(red.starts_with("✗ check  RED · exitCode 7"), "{red}");
-    assert_eq!(
-        node("e:checkout/review").upstream,
-        [Upstream {
-            artifact: "input".parse().unwrap(),
-            completion: Completion::Complete
-        }]
-    );
     let waits = monitor::detail(
         &view,
         &requests,
@@ -709,12 +696,13 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
     assert_eq!(
-        node("e:b/x").kind,
-        Kind::Eval(EvalView::Done(monitor::Source::Saved))
+        node("e:b/x").line(),
+        "✓ x  GREEN · saved result, not in this Run"
     );
-    assert_eq!(
-        node("e:c/y").kind,
-        Kind::Eval(EvalView::Done(monitor::Source::Executed))
+    let executed = node("e:c/y").line();
+    assert!(
+        executed.starts_with("✓ y  GREEN  ") && !executed.contains("saved result"),
+        "{executed}"
     );
     assert!(all.iter().all(|node| !node.changed));
 

@@ -142,14 +142,14 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
     assert!(partial.evals["b/check"].can_execute());
     assert_eq!(partial.artifacts["a"].status, ArtifactStatus::Incomplete);
     assert!(partial.artifacts["a"].own_satisfied);
-    assert!(!partial.artifacts["a"].satisfied);
+    assert!(!partial.artifacts["a"].satisfied());
     assert_eq!(partial.obligations, ["b", "consumer", "independent"]);
     assert_eq!(partial.status, FinalStatus::Incomplete);
 
     outcomes.insert("b/check".parse().unwrap(), GREEN);
     let released = graph.evaluate(&outcomes);
     assert!(released.evals["consumer/check"].can_execute());
-    assert!(released.artifacts["a"].satisfied);
+    assert!(released.artifacts["a"].satisfied());
     outcomes.insert("consumer/check".parse().unwrap(), GREEN);
     outcomes.insert("independent/check".parse().unwrap(), GREEN);
     let complete = graph.evaluate(&outcomes);
@@ -249,7 +249,7 @@ fn cycle_peer_red_does_not_gate_its_peers() {
     assert!(evaluation.evals["b/check"].can_execute());
     assert_eq!(evaluation.evals["c/check"].readiness, Readiness::Blocked);
     assert_eq!(evaluation.artifacts["b"].status, ArtifactStatus::Unreviewed);
-    assert!(!evaluation.artifacts["b"].satisfied);
+    assert!(!evaluation.artifacts["b"].satisfied());
 }
 
 #[test]
@@ -387,7 +387,9 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
         ["argument", "child", "instruction", "owner"]
     );
     assert_eq!(
-        graph.eval_target("owner/check").map(ArtifactName::as_str),
+        graph
+            .eval_target(&"owner/check".parse().unwrap())
+            .map(ArtifactName::as_str),
         Some("owner")
     );
     assert!(graph.evaluate(&BTreeMap::new()).evals["owner/check"].can_execute());
@@ -466,7 +468,7 @@ fn speculation_keeps_file_evidence_but_never_waives_final_obligations() {
     let pending = graph.evaluate_for_run(&outcomes, true);
     assert_eq!(pending.evals["b/check"].evidence, Some(GREEN));
     assert_eq!(pending.evals["b/check"].status, EvalStatus::Wait);
-    assert!(!pending.artifacts["b"].satisfied);
+    assert!(!pending.artifacts["b"].satisfied());
     assert_eq!(pending.obligations, ["a", "b", "c"]);
     assert_eq!(pending.status, FinalStatus::Incomplete);
     let failed = graph.evaluate_for_run(
@@ -515,7 +517,7 @@ fn a_part_verdict_is_part_of_its_parent_without_gating_the_parent_evals() {
     // Yet neither the parent nor anything above it passes while a part fails.
     for parent in ["combat", "game"] {
         assert_eq!(result.artifacts[parent].status, ArtifactStatus::Red);
-        assert!(!result.artifacts[parent].satisfied);
+        assert!(!result.artifacts[parent].satisfied());
     }
     assert_eq!(
         result.artifacts["consumer"].status,

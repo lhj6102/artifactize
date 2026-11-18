@@ -1,22 +1,27 @@
 // Declared portable programs used by real runtime evaluations and Human tools.
 import { randomUUID } from "node:crypto";
-import { absolutePath, appendText, exists, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
+import { absolutePath, appendText, exists, makeDirectory, nativePath, parentOf, processId, readText, replaceText, serveLoopback, writeText, type NativePath } from "../platform.ts";
 
 /** How often a stand-in looks for the gate its test opens: a poll, never a wait for time. */
 const GATE_POLL = 20;
 
 const [operation, argument, record] = process.argv.slice(2);
 
-/** Until the test writes `gate`, or its fixture is gone. */
-async function opened(gate: NativePath): Promise<void> {
-  await new Promise<void>((done) => {
+/** Publish the process before it can be used, so teardown can release and join it. */
+function gated(gate: NativePath): () => Promise<void> {
+  const root = parentOf(gate);
+  const directory = makeDirectory(nativePath(root, "gated-tools"));
+  replaceText(nativePath(directory, `${randomUUID()}.pid`), String(processId()));
+  const closed = nativePath(root, "close-tool-gates");
+  return () => new Promise<void>((done) => {
     const poll = setInterval(() => {
-      if (!exists(gate) && exists(absolutePath(gate, ".."))) return;
+      if (!exists(gate) && !exists(closed)) return;
       clearInterval(poll);
       done();
     }, GATE_POLL);
   });
 }
+
 switch (operation) {
   case "report":
     for (let line = 0; line < 80; line += 1) {
@@ -37,22 +42,24 @@ switch (operation) {
     break;
   case "talk": {
     // A launched application that tells its reviewer what happened in it: one line at once,
-    // then, once its test opens the gate (or its fixture is gone), one on each stream.
-    const gate = absolutePath(argument);
+    // then, once its gate is released, one on each stream.
+    const opened = gated(absolutePath(argument));
     process.stdout.write("opened the stand-in\n");
-    await opened(gate);
+    await opened();
     process.stdout.write("chose: B\n");
     process.stderr.write("warning: B is slower\n");
     break;
   }
-  case "fingerprint":
+  case "fingerprint": {
     // A fingerprint script that records each of its runs, then answers once its test opens
     // the gate: it fails when the gate says so.
+    const opened = gated(absolutePath(argument));
     appendText(absolutePath(record), "run\n");
-    await opened(absolutePath(argument));
+    await opened();
     if (exists(absolutePath(argument)) && readText(absolutePath(argument)) === "fail") process.exitCode = 1;
     else process.stdout.write("fixture:v1\n");
     break;
+  }
   case "hold":
     // The product's declared runtime deadline, not an elapsed-time assertion,
     // terminates this command and produces an operational ERROR on every OS.

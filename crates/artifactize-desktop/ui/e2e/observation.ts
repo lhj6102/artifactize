@@ -1,11 +1,11 @@
 import { readCandidate } from "./build.ts";
-import { asNativePath, exists, nameOf, nativePath, readJson, runProgramOk, variable, type NativePath } from "./platform.ts";
+import { asNativePath, childDirectories, exists, nameOf, nativePath, newDirectory, processId, processRunning, readJson, runProgramOk, variable, writeJson, type NativePath } from "./platform.ts";
 import type { Fixture } from "./fixture.ts";
 import type { Identity } from "./runs.ts";
 
 /** Read only the identity this E2E app captured for itself, never discover a PID
  * from a port, scan processes, or acquire ownership of the service's app. */
-async function identity(browser: WebdriverIO.Browser): Promise<Identity> {
+async function identity(browser: WebdriverIO.Browser): Promise<Identity & { exitReceipt?: string }> {
   const value: unknown = await browser.execute(() =>
     (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: unknown }).__ARTIFACTIZE_E2E_PROCESS__);
   if (!value || typeof value !== "object" || !("pid" in value) || !("start_time" in value)
@@ -13,7 +13,8 @@ async function identity(browser: WebdriverIO.Browser): Promise<Identity> {
     || typeof value.start_time !== "string" || !/^\d+$/.test(value.start_time)) {
     throw new Error("the test app did not expose its native birth identity");
   }
-  return { pid: value.pid, start_time: value.start_time };
+  const exitReceipt = "exitReceipt" in value && typeof value.exitReceipt === "string" ? value.exitReceipt : undefined;
+  return { pid: value.pid, start_time: value.start_time, exitReceipt };
 }
 
 /** The existing Rust observer reads the saved birth identity without signalling,
@@ -28,6 +29,18 @@ function nativeAlive(owner: Identity): boolean {
   return value[0];
 }
 
+function recordedOrderlyExit(owner: Identity, path: string | undefined): boolean {
+  if (!path || !exists(asNativePath(path))) return false;
+  const receipt = readJson(asNativePath(path)) as Partial<Identity>;
+  return receipt.pid === owner.pid && receipt.start_time === owner.start_time;
+}
+
+/** The expected transport error from a driver shutting down during the action. */
+function driverDisconnected(error: unknown): boolean {
+  return error instanceof Error && (/\b(?:ECONNREFUSED|ECONNRESET|EPIPE|UND_ERR_SOCKET)\b|fetch failed|socket hang up|other side closed/i.test(error.message)
+    || driverDisconnected(error.cause));
+}
+
 /** @wdio/runner always DELETEs its session, but the embedded server dies with the
  * app. Only the quit helper reads native metadata. Retire this client session only
  * after the same native process was observed alive before the action and exited
@@ -37,8 +50,9 @@ export async function sessionEndedByApp(
   browser: WebdriverIO.Browser,
   quit: () => Promise<unknown>,
   observeAlive: (owner: Identity) => boolean | Promise<boolean> = nativeAlive,
+  orderlyExit = recordedOrderlyExit,
 ): Promise<void> {
-  const owner = await identity(browser);
+  const { exitReceipt, ...owner } = await identity(browser);
   if (!(await observeAlive(owner))) throw new Error("the app had already exited before its quit action");
   let actionFailure: unknown;
   try { await quit(); }
@@ -48,10 +62,12 @@ export async function sessionEndedByApp(
       timeout: 15000,
       timeoutMsg: "the native app process did not exit after its quit action",
     });
+    if (!orderlyExit(owner, exitReceipt)) throw new Error("native app exited without a successful, orderly shutdown");
   } catch (error) {
     if (actionFailure !== undefined) throw new AggregateError([actionFailure, error], "the quit action and native app-exit observation failed");
     throw error;
   }
+  if (actionFailure !== undefined && !driverDisconnected(actionFailure)) throw actionFailure;
   if (!Reflect.set(browser, "sessionId", undefined)) throw new Error("the ended client session could not be retired");
 }
 
@@ -59,6 +75,9 @@ export async function saveEvidence(browser: WebdriverIO.Browser, fixture: Fixtur
   const output = variable("HUMAN_FOCUS_EVIDENCE");
   if (output) await browser.saveScreenshot(nativePath(asNativePath(output), `${nameOf(fixture.root)}-${label.replaceAll(" ", "-")}.png`));
 }
+
+/** Explicitly separate an owned live app from an invalid observation. */
+export class AppStillAlive extends Error {}
 
 /** Service/runner exit alone is not proof that its native apps stopped. Missing birth
  * records or live owners keep fixture inputs intact; this observes, never signals them. */
@@ -72,7 +91,37 @@ export function assertAppsStopped(observer: NativePath, files: NativePath[]): vo
     return value as Identity;
   });
   const alive: unknown = JSON.parse(runProgramOk(observer, ["alive"], { input: JSON.stringify(owners), timeout: 5000 }));
-  if (!Array.isArray(alive) || alive.length !== owners.length || alive.some((value) => value !== false)) {
-    throw new Error("Native shutdown is unconfirmed; preserve app fixtures and executable inputs");
+  if (!Array.isArray(alive) || alive.length !== owners.length || alive.some((value) => typeof value !== "boolean")) {
+    throw new Error("Native shutdown is unconfirmed; invalid native observation");
+  }
+  if (alive.some(Boolean)) throw new AppStillAlive("A native app still owns its fixtures and executable inputs");
+}
+
+function admissions(root: NativePath): NativePath[] {
+  const directory = nativePath(root, "admissions");
+  return exists(directory) ? childDirectories(directory) : [];
+}
+
+/** Journal admission before yielding to the launcher; diagnostics may be deleted
+ * independently, even after a runner was interrupted. No missing record is proof. */
+export function recordAdmission(root: NativePath, ids: string[]): NativePath[] {
+  const directory = newDirectory(nativePath(root, "admissions"), "launch-");
+  const names = ids.map((id) => `${id}.owner.json`);
+  writeJson(nativePath(directory, "expected.json"), { runner: processId(), names });
+  if (exists(nativePath(root, "cleaning.json"))) throw new Error("candidate cleanup already started; refusing app admission");
+  return names.map((name) => nativePath(directory, name));
+}
+
+export function assertAdmissionsStopped(root: NativePath, observer: NativePath, ownRunner = false): void {
+  for (const directory of admissions(root)) {
+    const { runner, names } = readJson(nativePath(directory, "expected.json")) as { runner: number; names: string[] };
+    if (!Number.isSafeInteger(runner) || runner <= 0 || !Array.isArray(names) || !names.length
+      || names.some((name) => typeof name !== "string" || !/^[a-z0-9-]+\.owner\.json$/.test(name))) {
+      throw new Error(`Invalid app admission journal: ${directory}`);
+    }
+    if ((!ownRunner || runner !== processId()) && processRunning(runner)) {
+      throw new Error(`App admission still owned by a live runner: ${directory}`);
+    }
+    assertAppsStopped(observer, names.map((name) => nativePath(directory, name)));
   }
 }

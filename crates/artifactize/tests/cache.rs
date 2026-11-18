@@ -446,8 +446,7 @@ fn wait_until(mut condition: impl FnMut() -> bool) {
     }
 }
 
-fn finish(mut child: Child, code: i32) -> Value {
-    wait_until(|| child.try_wait().unwrap().is_some());
+fn finish(child: Child, code: i32) -> Value {
     output(child.wait_with_output().unwrap(), code)
 }
 
@@ -495,7 +494,7 @@ fn orphan_group(fixture: &Fixture) -> owned_run::Processes {
         .unwrap()
         .parse()
         .unwrap();
-    let mut processes = owned_run::Processes::default();
+    let mut processes = owned_run::Processes::protect(&fixture.root);
     processes.own(pid);
     processes
 }
@@ -1154,7 +1153,7 @@ fn different_profiles_execute_independently_for_the_same_reuse_key() {
         "execute"
     );
     let other = finish(fixture.spawn(&target, &[]), 0);
-    assert!(owner.try_wait().unwrap().is_none());
+    assert!(!owner.exited());
     assert_eq!(other["executionsStarted"], 1);
     assert_eq!(other["requests"][0]["profile"]["model"], "retry");
     assert_eq!(fixture.count("executions WHERE status='RUNNING'"), 1);
@@ -1198,7 +1197,7 @@ async fn cancelling_a_joined_run_leaves_its_owner_running_and_cancelling_the_own
     let cancelled = fixture.completed(&target, &waiter_id, waiter, 2).await;
     assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
     assert!(cancelled["requests"][0]["child"].is_null());
-    assert!(owner.try_wait().unwrap().is_none());
+    assert!(!owner.exited());
     assert_eq!(
         fixture.execution(waiting.execution_id.as_deref().unwrap())["status"],
         "RUNNING"
@@ -1855,7 +1854,7 @@ fn rm_refuses_an_active_key_even_without_an_entry() {
     );
     fixture.publish("other", "2000-01-02T00:00:00Z");
     assert_eq!(fixture.count("executions"), 2);
-    assert!(owner.try_wait().unwrap().is_none());
+    assert!(!owner.exited());
     fixture.release();
     finish(owner, 0);
 }

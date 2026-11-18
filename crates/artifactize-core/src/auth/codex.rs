@@ -10,9 +10,6 @@
 //! token.
 
 use std::{
-    collections::BTreeMap,
-    ffi::OsStr,
-    io::{self, Read, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -24,14 +21,19 @@ use base64::{
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-    sync::oneshot,
-};
-
+mod auth_file;
 mod callback;
+mod interactive;
+use auth_file::{AuthFileError, FileToken, read_auth_file_at};
+#[cfg(test)]
+use interactive::*;
+pub use interactive::{Prompt, login, login_with};
+#[cfg(test)]
+use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::{collections::BTreeMap, ffi::OsStr};
+#[cfg(test)]
+use tokio::sync::oneshot;
 mod timestamp;
 use callback::Callback;
 pub use timestamp::Timestamp;
@@ -46,36 +48,16 @@ pub const AUTH_URL_VARIABLE: &str = "ARTIFACTIZE_CODEX_AUTH_URL";
 /// A Codex auth file (for example `~/.codex/auth.json`) to read instead of
 /// artifactize's own tokens. It is never written, copied or refreshed.
 pub const AUTH_FILE_VARIABLE: &str = "ARTIFACTIZE_CODEX_AUTH_FILE";
-/// Match the localhost callback convention of the Codex public-client flow that Pi
-/// also uses; listener and OAuth redirect must agree for browser/pasted-URL interoperability.
-const CALLBACK_PORT: u16 = 1455;
-const CALLBACK_PATH: &str = "/auth/callback";
-const SCOPE: &str = "openid profile email offline_access";
 /// The `originator` that sign-in and every Codex request name.
 pub const ORIGINATOR: &str = "artifactize";
 #[cfg(test)]
 const CLAIM: &str = "https://api.openai.com/auth";
 const CREDENTIALS: &str = "codex.json";
 const LOCK: &str = "codex";
-/// 32 random bytes give 256 bits and 43 unpadded base64url characters, within RFC 7636's
-/// permitted 43–128-character code_verifier length; the S256 challenge hashes that text.
-const PKCE_VERIFIER_BYTES: usize = 32;
-/// Choose 128 unpredictable bits for OAuth state/CSRF correlation, encoded as 32 hex
-/// characters. This is this client's chosen size, not an OAuth-mandated exact length.
-const OAUTH_STATE_BYTES: usize = 16;
 /// Refresh this many seconds before expiry, as the Codex CLI's refresh window does.
 const REFRESH_MARGIN: Duration = Duration::from_secs(300);
-/// A read-only auth file's token must outlive this many seconds.
-const FILE_MARGIN: Duration = Duration::from_secs(60);
-/// Give a person five minutes to finish browser or pasted-redirect sign-in,
-/// without leaving an unattended callback listener alive indefinitely.
-const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 /// Bound individual token-exchange HTTP calls independently of the interactive login wait.
 const AUTH_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
-/// Release the callback listener from a client that stops sending its request headers.
-const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(5);
-/// A stalled browser must not hold up a completed callback while receiving its short reply.
-const CALLBACK_WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Best-effort logout should finish sooner than an ordinary token exchange.
 const REVOCATION_TIMEOUT: Duration = Duration::from_secs(10);
 /// OAuth error codes are diagnostics, not arbitrary provider text; keep them short.
@@ -128,9 +110,23 @@ pub(crate) fn now() -> Result<Timestamp, String> {
 }
 
 /// The sign-in root: its loopback test endpoint, else `https://auth.openai.com`.
-pub fn auth_root() -> Result<String, String> {
-    Ok(crate::llm::variable_endpoint(AUTH_URL_VARIABLE)?
-        .map_or_else(|| AUTH_ROOT.into(), |endpoint| endpoint.root().to_owned()))
+pub fn auth_root() -> Result<Url, String> {
+    Ok(
+        crate::llm::variable_endpoint(AUTH_URL_VARIABLE)?.map_or_else(
+            || Url::parse(AUTH_ROOT).expect("built-in Codex auth URL"),
+            crate::llm::TestEndpoint::into_url,
+        ),
+    )
+}
+
+fn endpoint(root: &Url, route: &str) -> Result<Url, String> {
+    let mut url = root.clone();
+    url.path_segments_mut()
+        .map_err(|_| "Invalid Codex sign-in URL.")?
+        .pop_if_empty()
+        .push("oauth")
+        .push(route);
+    Ok(url)
 }
 
 /// The configured read-only auth file, if any.
@@ -163,12 +159,10 @@ fn claims(token: &str) -> Option<JwtClaims> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn account_id(access_token: &str) -> Option<crate::types::CodexAccountId> {
-    claims(access_token)?.auth.0?.0.chatgpt_account_id.0
-}
-
-fn expiry(access_token: &str) -> Option<Timestamp> {
-    claims(access_token)?.exp.0
+impl JwtClaims {
+    fn account_id(self) -> Option<crate::types::CodexAccountId> {
+        self.auth.0?.0.chatgpt_account_id.0
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -182,354 +176,6 @@ struct JwtClaims {
 struct AccountClaim {
     #[serde(default)]
     chatgpt_account_id: crate::json::Optional<crate::types::CodexAccountId>,
-}
-
-fn random(bytes: usize) -> Result<Vec<u8>, String> {
-    let mut value = vec![0; bytes];
-    getrandom::fill(&mut value).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
-    Ok(value)
-}
-
-/// One sign-in attempt: PKCE verifier, its S256 challenge and the `state` it expects.
-struct Pending {
-    verifier: String,
-    state: crate::types::OAuthState,
-}
-
-impl Pending {
-    fn new() -> Result<Self, String> {
-        let state: String = random(OAUTH_STATE_BYTES)?
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        Ok(Self {
-            verifier: URL_SAFE_NO_PAD.encode(random(PKCE_VERIFIER_BYTES)?),
-            state: state.parse().expect("generated OAuth state is valid"),
-        })
-    }
-
-    fn challenge(&self) -> String {
-        URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.as_bytes()))
-    }
-
-    fn authorize_url(&self, root: &str, redirect_uri: &str) -> Result<Url, String> {
-        let mut url = Url::parse(&format!("{root}/oauth/authorize"))
-            .map_err(|_| "Invalid Codex sign-in URL.".to_owned())?;
-        url.query_pairs_mut().extend_pairs([
-            ("response_type", "code"),
-            ("client_id", CLIENT_ID),
-            ("redirect_uri", redirect_uri),
-            ("scope", SCOPE),
-            ("code_challenge", &self.challenge()),
-            ("code_challenge_method", "S256"),
-            ("state", &self.state),
-            ("id_token_add_organizations", "true"),
-            ("codex_cli_simplified_flow", "true"),
-            ("originator", ORIGINATOR),
-        ]);
-        Ok(url)
-    }
-
-    /// The code from a pasted redirect URL, `code#state`, a query string or a bare code,
-    /// as Pi accepts them. A pasted state must match.
-    fn pasted(&self, input: &str) -> Result<String, String> {
-        let input = input.trim();
-        let (code, state) = if let Ok(url) = Url::parse(input) {
-            let pairs: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
-            (pairs.get("code").cloned(), pairs.get("state").cloned())
-        } else if let Some((code, state)) = input.split_once('#') {
-            (Some(code.to_owned()), Some(state.to_owned()))
-        } else if input.contains("code=") {
-            let pairs: BTreeMap<_, _> = url::form_urlencoded::parse(input.as_bytes())
-                .into_owned()
-                .collect();
-            (pairs.get("code").cloned(), pairs.get("state").cloned())
-        } else {
-            (Some(input.to_owned()), None)
-        };
-        if state.is_some_and(|state| state != self.state) {
-            return Err("Codex sign-in state mismatch.".into());
-        }
-        code.filter(|code| !code.is_empty())
-            .ok_or_else(|| "The pasted input has no authorization code.".into())
-    }
-
-    /// Answer one callback request. `Some` ends the sign-in; `None` keeps waiting.
-    fn callback(
-        &self,
-        target: &str,
-    ) -> (&'static str, &'static str, Option<Result<String, String>>) {
-        let Ok(url) = Url::parse(&format!("http://localhost{target}")) else {
-            return ("400 Bad Request", "Invalid callback.", None);
-        };
-        if url.path() != CALLBACK_PATH {
-            return ("404 Not Found", "Not found.", None);
-        }
-        let mut parameters = BTreeMap::new();
-        for (key, value) in url.query_pairs().into_owned() {
-            if parameters.insert(key, value).is_some() {
-                return ("400 Bad Request", "Duplicate callback parameter.", None);
-            }
-        }
-        if parameters.get("state").map(String::as_str) != Some(self.state.as_str()) {
-            return ("400 Bad Request", "State mismatch.", None);
-        }
-        if let Some(error) = parameters.get("error") {
-            let error: String = error
-                .chars()
-                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .take(MAX_OAUTH_ERROR_CHARS)
-                .collect();
-            return (
-                "400 Bad Request",
-                "Codex sign-in was not completed. Return to artifactize.",
-                Some(Err(format!("Codex sign-in failed ({error})."))),
-            );
-        }
-        match parameters.get("code").filter(|code| !code.is_empty()) {
-            Some(code) => (
-                "200 OK",
-                "Signed in to Codex. Return to artifactize; you can close this page.",
-                Some(Ok(code.clone())),
-            ),
-            None => ("400 Bad Request", "Missing authorization code.", None),
-        }
-    }
-
-    /// Serve the loopback callback until one completes the sign-in. Requests must be
-    /// `GET` with a loopback `Host` matching the reserved port.
-    async fn serve(&self, listener: TcpListener) -> Result<String, String> {
-        // Allow browser callback headers and the authorization URL while bounding
-        // memory consumed by an untrusted loopback client before HTTP validation.
-        const MAX_CALLBACK_HEADER_BYTES: usize = 16 * 1024;
-        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-        let hosts = [
-            format!("localhost:{port}"),
-            format!("127.0.0.1:{port}"),
-            format!("[::1]:{port}"),
-        ];
-        loop {
-            let (mut stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
-            let head = tokio::time::timeout(CALLBACK_READ_TIMEOUT, async {
-                let mut head = Vec::new();
-                let mut byte = [0];
-                while !head.ends_with(b"\r\n\r\n") && head.len() < MAX_CALLBACK_HEADER_BYTES {
-                    if stream.read(&mut byte).await? == 0 {
-                        break;
-                    }
-                    head.push(byte[0]);
-                }
-                Ok::<_, std::io::Error>(head)
-            })
-            .await;
-            let Ok(Ok(head)) = head else { continue };
-            let head = String::from_utf8_lossy(&head);
-            let line: Vec<_> = head
-                .lines()
-                .next()
-                .unwrap_or("")
-                .split_whitespace()
-                .collect();
-            let host: Vec<_> = head
-                .lines()
-                .skip(1)
-                .filter_map(|line| line.split_once(':'))
-                .filter(|(name, _)| name.eq_ignore_ascii_case("host"))
-                .map(|(_, value)| value.trim())
-                .collect();
-            let valid = head.ends_with("\r\n\r\n")
-                && line.len() == 3
-                && line[0] == "GET"
-                && matches!(line[2], "HTTP/1.0" | "HTTP/1.1")
-                && host.len() == 1
-                && hosts.iter().any(|expected| expected == host[0])
-                && line[1].starts_with('/')
-                && !line[1].starts_with("//");
-            let (status, body, result) = if valid {
-                self.callback(line[1])
-            } else {
-                ("400 Bad Request", "Invalid callback.", None)
-            };
-            let response = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            let _ = tokio::time::timeout(
-                CALLBACK_WRITE_TIMEOUT,
-                stream.write_all(response.as_bytes()),
-            )
-            .await;
-            if let Some(result) = result {
-                return result;
-            }
-        }
-    }
-
-    /// The authorization code from the callback or a pasted redirect, whichever is first.
-    async fn wait(
-        &self,
-        listener: Option<Callback>,
-        pasted: Option<oneshot::Receiver<String>>,
-    ) -> Result<String, String> {
-        let callback = async {
-            match listener {
-                Some(listener) => listener.wait(self).await,
-                None => std::future::pending().await,
-            }
-        };
-        let pasted = async {
-            match pasted {
-                Some(receiver) => match receiver.await {
-                    Ok(input) => self.pasted(&input),
-                    Err(_) => std::future::pending().await,
-                },
-                None => std::future::pending().await,
-            }
-        };
-        tokio::time::timeout(LOGIN_TIMEOUT, async {
-            tokio::select! {
-                result = callback => result,
-                result = pasted => result,
-            }
-        })
-        .await
-        .map_err(|_| "Codex sign-in timed out; run `artifactize login codex` again.".to_owned())?
-    }
-}
-
-/// What a sign-in asks the person to do: open `url`, and whether the browser can return to
-/// this machine's callback (when the port is taken, only a pasted redirect URL finishes it).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Prompt {
-    pub url: String,
-    pub callback: bool,
-}
-
-/// Sign in interactively and save artifactize's own tokens. The sign-in URL goes to
-/// stderr, also with --json.
-pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
-    // Refuse before reading the terminal: where the tokens go and the sign-in root.
-    Storage::new(state, repo, Tokens::Codex)?;
-    auth_root()?;
-    let terminal = crate::platform::stdin_is_terminal();
-    let pasted = if terminal {
-        let (send, receive) = oneshot::channel();
-        // Detached: a sign-in finished in the browser leaves this read unanswered.
-        std::thread::Builder::new()
-            .name("codex-login-input".into())
-            .spawn(move || {
-                for line in std::io::stdin().lines() {
-                    match line {
-                        Ok(line) if line.trim().is_empty() => continue,
-                        Ok(line) => {
-                            let _ = send.send(line);
-                        }
-                        Err(_) => {}
-                    }
-                    break;
-                }
-            })
-            .map_err(|error| format!("Cannot start Codex sign-in input: {error}"))?;
-        Some(receive)
-    } else {
-        None
-    };
-    login_with(state, repo, pasted, true, |prompt| {
-        let mut err = std::io::stderr().lock();
-        let _ = writeln!(err, "Open this URL to sign in with Codex:\n{}", prompt.url);
-        if !prompt.callback {
-            let _ = writeln!(
-                err,
-                "Port {CALLBACK_PORT} is in use (another sign-in, such as the Codex CLI or app, may hold it), so the browser cannot return here."
-            );
-        }
-        if terminal {
-            let _ = writeln!(
-                err,
-                "When the browser cannot return here, paste the full URL it was sent to (starting http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}?code=) and press Enter. Find it in the browser's address bar after the failed load, or in DevTools → Network if the page keeps loading."
-            );
-        }
-    })
-    .await
-}
-
-/// The sign-in behind `login codex` for any interface: `show` receives the prompt once the
-/// callback listener is up, `pasted` may deliver the redirect URL the browser was sent to,
-/// and `browser` hands the URL to the desktop's opener. It ends when the tokens are saved, the
-/// sign-in fails, or after five minutes; dropping the future stops it and frees the port.
-pub async fn login_with(
-    state: Option<&Path>,
-    repo: Option<&Path>,
-    pasted: Option<oneshot::Receiver<String>>,
-    browser: bool,
-    show: impl FnOnce(&Prompt),
-) -> Result<(), String> {
-    // Check where the tokens will go before anyone signs in.
-    let storage = Storage::new(state, repo, Tokens::Codex)?;
-    let root = auth_root()?;
-    let listener = Callback::bind(CALLBACK_PORT)
-        .map_err(|error| format!("Cannot bind Codex sign-in callback: {error}"))?;
-    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
-    sign_in(
-        &storage,
-        &root,
-        listener,
-        &redirect_uri,
-        pasted,
-        browser,
-        |url, callback| {
-            show(&Prompt {
-                url: url.to_string(),
-                callback,
-            })
-        },
-    )
-    .await
-}
-
-async fn sign_in(
-    storage: &Storage,
-    root: &str,
-    listener: Option<Callback>,
-    redirect_uri: &str,
-    pasted: Option<oneshot::Receiver<String>>,
-    browser: bool,
-    show: impl FnOnce(&Url, bool),
-) -> Result<(), String> {
-    if listener.is_none() && pasted.is_none() {
-        return Err(format!(
-            "Port {CALLBACK_PORT} is in use and there is no terminal to paste the redirect URL into; finish the other sign-in and try again."
-        ));
-    }
-    let pending = Pending::new()?;
-    let url = pending.authorize_url(root, redirect_uri)?;
-    show(&url, listener.is_some());
-    if browser {
-        open_browser(&url, crate::platform::program::open_desktop).await;
-    }
-    let code = pending.wait(listener, pasted).await?;
-    let tokens = token_request(
-        root,
-        &[
-            ("grant_type", "authorization_code"),
-            ("client_id", CLIENT_ID),
-            ("code", &code),
-            ("code_verifier", &pending.verifier),
-            ("redirect_uri", redirect_uri),
-        ],
-        None,
-    )
-    .await
-    .map_err(|error| error.message)?;
-    let credentials = credentials(tokens, now()?)?;
-    let _lock = storage.lock(LOCK).await?;
-    storage.save(CREDENTIALS, &credentials)
-}
-
-async fn open_browser(url: &Url, open: impl AsyncFnOnce(&OsStr) -> io::Result<()>) {
-    // The printed authorization URL remains available if desktop handoff fails.
-    let _ = open(OsStr::new(url.as_str())).await;
 }
 
 #[derive(Deserialize)]
@@ -554,7 +200,8 @@ fn credentials(tokens: TokenResponse, saved_at: Timestamp) -> Result<Credentials
     ) else {
         return Err(invalid());
     };
-    let account_id = account_id(&access_token)
+    let account_id = claims(&access_token)
+        .and_then(JwtClaims::account_id)
         .ok_or("The Codex access token names no ChatGPT account; nothing was saved.")?;
     Ok(Credentials {
         access_token,
@@ -579,12 +226,12 @@ fn terminal(code: &str) -> bool {
 /// POST a form to the token endpoint. Error bodies are never echoed: they may carry
 /// codes or tokens. A terminal refresh error removes the stored tokens.
 async fn token_request(
-    root: &str,
+    root: &Url,
     form: &[(&str, &str)],
     refreshing: Option<&Storage>,
 ) -> Result<TokenResponse, TokenError> {
     let response = client()?
-        .post(format!("{root}/oauth/token"))
+        .post(endpoint(root, "token")?)
         .form(form)
         .send()
         .await
@@ -634,18 +281,18 @@ async fn token_request(
 /// refreshed under a cross-process lock when it is about to expire.
 pub async fn access_token(state: Option<&Path>, repo: Option<&Path>) -> Result<Token, TokenError> {
     if let Some(path) = auth_file() {
-        return Ok(read_auth_file(&path)?);
+        return Ok(read_auth_file_at(&path, now()?)?.token);
     }
     stored_token(&Storage::new(state, repo, Tokens::Codex)?, &auth_root()?).await
 }
 
-async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError> {
+async fn stored_token(storage: &Storage, root: &Url) -> Result<Token, TokenError> {
     stored_token_at(storage, root, now).await
 }
 
 async fn stored_token_at(
     storage: &Storage,
-    root: &str,
+    root: &Url,
     clock: impl Fn() -> Result<Timestamp, String>,
 ) -> Result<Token, TokenError> {
     let _lock = storage.lock(LOCK).await?;
@@ -684,155 +331,6 @@ async fn stored_token_at(
 
 /// Known read-only import fields. Wrong-typed optional fields retain the old missing/null
 /// behavior; extra fields are ignored and no credential data is echoed in parse errors.
-#[derive(Default)]
-struct AuthFile {
-    tokens: crate::json::Optional<crate::json::Object<AuthFileTokens>>,
-}
-#[derive(Default)]
-struct AuthFileTokens {
-    access_token: crate::json::Optional<String>,
-    account_id: crate::json::Optional<String>,
-}
-impl<'de> Deserialize<'de> for AuthFile {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct AuthVisitor;
-        impl<'de> serde::de::Visitor<'de> for AuthVisitor {
-            type Value = AuthFile;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("an auth-file object")
-            }
-            fn visit_map<M: serde::de::MapAccess<'de>>(
-                self,
-                mut map: M,
-            ) -> Result<Self::Value, M::Error> {
-                let mut auth = AuthFile::default();
-                while let Some(field) = map.next_key::<String>()? {
-                    if field == "tokens" {
-                        auth.tokens = map.next_value()?;
-                    } else {
-                        map.next_value::<crate::json::Ignored>()?;
-                    }
-                }
-                Ok(auth)
-            }
-        }
-        deserializer.deserialize_map(AuthVisitor)
-    }
-}
-impl<'de> Deserialize<'de> for AuthFileTokens {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct TokensVisitor;
-        impl<'de> serde::de::Visitor<'de> for TokensVisitor {
-            type Value = AuthFileTokens;
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("an auth-file token object")
-            }
-            fn visit_map<M: serde::de::MapAccess<'de>>(
-                self,
-                mut map: M,
-            ) -> Result<Self::Value, M::Error> {
-                let mut tokens = AuthFileTokens::default();
-                while let Some(field) = map.next_key::<String>()? {
-                    match field.as_str() {
-                        "access_token" => tokens.access_token = map.next_value()?,
-                        "account_id" => tokens.account_id = map.next_value()?,
-                        _ => {
-                            map.next_value::<crate::json::Ignored>()?;
-                        }
-                    }
-                }
-                Ok(tokens)
-            }
-        }
-        deserializer.deserialize_map(TokensVisitor)
-    }
-}
-
-/// The access token of a Codex auth file (`{"tokens":{"access_token",...}}`), read
-/// once per use and never written. An expiring token is an error, never a refresh.
-/// Why a Codex auth file could not be read as a usable token: the expired case is a state
-/// callers may want to report on its own, so it is a variant rather than a message prefix.
-#[derive(Debug)]
-enum AuthFileError {
-    /// The token in the file has expired; the message explains how to fix it.
-    Expired(String),
-    /// The file itself, or what it holds, could not be used; the message explains why.
-    Unreadable(String),
-}
-
-impl std::fmt::Display for AuthFileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Expired(message) | Self::Unreadable(message) => write!(f, "{message}"),
-        }
-    }
-}
-
-impl From<AuthFileError> for String {
-    fn from(error: AuthFileError) -> Self {
-        error.to_string()
-    }
-}
-
-impl From<AuthFileError> for TokenError {
-    fn from(error: AuthFileError) -> Self {
-        error.to_string().into()
-    }
-}
-
-fn read_auth_file(path: &Path) -> Result<Token, AuthFileError> {
-    read_auth_file_at(path, now().unwrap_or(Timestamp::from_seconds(u64::MAX)))
-}
-
-fn read_auth_file_at(path: &Path, now: Timestamp) -> Result<Token, AuthFileError> {
-    let name = crate::platform::path_text(path);
-    let unreadable = |reason: &str| {
-        AuthFileError::Unreadable(format!(
-            "{AUTH_FILE_VARIABLE}: cannot read {name}: {reason}."
-        ))
-    };
-    let file =
-        crate::platform::open_regular(path).map_err(|error| unreadable(&error.to_string()))?;
-    if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
-        return Err(unreadable("it is not a regular file"));
-    }
-    let mut data = Vec::new();
-    // Match owned credential storage: one extra byte detects oversized imports.
-    file.take(MAX_CREDENTIAL_BYTES as u64 + 1)
-        .read_to_end(&mut data)
-        .map_err(|error| unreadable(&error.to_string()))?;
-    if data.len() > MAX_CREDENTIAL_BYTES {
-        return Err(unreadable("it is larger than 1 MiB"));
-    }
-    let auth: crate::json::Optional<crate::json::Object<AuthFile>> =
-        serde_json::from_slice(&data).map_err(|_| unreadable("it is not a Codex auth file"))?;
-    let tokens = auth
-        .0
-        .and_then(|crate::json::Object(auth)| auth.tokens.0)
-        .map(|crate::json::Object(tokens)| tokens);
-    let access_token = tokens
-        .as_ref()
-        .and_then(|tokens| tokens.access_token.0.as_deref())
-        .filter(|token| !token.is_empty())
-        .ok_or_else(|| unreadable("it holds no ChatGPT sign-in tokens"))?;
-    if expiry(access_token).is_some_and(|exp| exp <= now.saturating_add(FILE_MARGIN)) {
-        return Err(AuthFileError::Expired(format!(
-            "The Codex access token in {name} has expired; sign in with Codex again (for example `codex login`). artifactize never refreshes that file."
-        )));
-    }
-    let account_id = tokens
-        .as_ref()
-        .and_then(|tokens| tokens.account_id.0.as_deref())
-        .filter(|id| !id.is_empty())
-        .and_then(|id| id.parse().ok())
-        .or_else(|| account_id(access_token))
-        .ok_or_else(|| unreadable("its token names no ChatGPT account"))?;
-    Ok(Token {
-        access_token: access_token.to_owned(),
-        account_id,
-    })
-}
-
 /// A read-only file can carry a usable token without an expiry claim. An expired
 /// file reports no timestamp because the existing reader refuses it before returning a token.
 #[derive(Debug)]
@@ -902,10 +400,8 @@ pub fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Status, Strin
     let now = now()?;
     if let Some(path) = auth_file() {
         // Reading fails on an expiring token; that is a state to report, not an error.
-        let expiry = match read_auth_file(&path) {
-            Ok(token) => FileExpiry::Usable {
-                expires_at: expiry(&token.access_token),
-            },
+        let expiry = match read_auth_file_at(&path, now) {
+            Ok(FileToken { expires_at, .. }) => FileExpiry::Usable { expires_at },
             Err(AuthFileError::Expired(_)) => FileExpiry::Expired,
             Err(error) => return Err(error.into()),
         };
@@ -942,7 +438,7 @@ pub async fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<bool, S
     sign_out(&Storage::new(state, repo, Tokens::Codex)?, &auth_root()?).await
 }
 
-async fn sign_out(storage: &Storage, root: &str) -> Result<bool, String> {
+async fn sign_out(storage: &Storage, root: &Url) -> Result<bool, String> {
     let _lock = storage.lock(LOCK).await?;
     let Some(stored) = storage.read::<Credentials>(CREDENTIALS)? else {
         return Ok(true);
@@ -952,12 +448,15 @@ async fn sign_out(storage: &Storage, root: &str) -> Result<bool, String> {
     Ok(revoked)
 }
 
-async fn revoke(root: &str, refresh_token: &str) -> bool {
+async fn revoke(root: &Url, refresh_token: &str) -> bool {
     let Ok(client) = client() else {
         return false;
     };
+    let Ok(url) = endpoint(root, "revoke") else {
+        return false;
+    };
     client
-        .post(format!("{root}/oauth/revoke"))
+        .post(url)
         .timeout(REVOCATION_TIMEOUT)
         .json(
             &json!({"token":refresh_token,"token_type_hint":"refresh_token","client_id":CLIENT_ID}),

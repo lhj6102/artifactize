@@ -164,7 +164,7 @@ identity!(EvalId, |value: &str| value.split_once('/').is_some_and(
     |(artifact, eval)| artifact_name(artifact) && name(eval)
 ));
 /// Caller attempt keys are bounded independently of path-segment identities.
-const MAX_REQUEST_KEY_BYTES: usize = 128;
+pub const MAX_REQUEST_KEY_BYTES: usize = 128;
 identity!(RequestKey, |value: &str| (1..=MAX_REQUEST_KEY_BYTES)
     .contains(&value.len())
     && value.bytes().all(

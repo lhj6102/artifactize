@@ -82,7 +82,7 @@ impl Fixture {
     }
 
     fn submit_human(&self) -> String {
-        // Observe submission bytes before RecordOutput can replace them with a saved audit.
+        // Observe the submit-only command output, not the saved audit.
         let output = support::os::run(self.command().args(["verify", "human", "--json"]));
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         parse(&output)["run"].as_str().unwrap().to_owned()
@@ -182,7 +182,6 @@ fn remote_login_rejects_bad_inputs_without_echoing_credentials() {
         .unwrap()
         .write_all(b"do-not-echo invalid-token\n")
         .unwrap();
-    support::os::wait_child(&mut child, "invalid remote login");
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(2));
     let json = parse(&output);
@@ -236,8 +235,45 @@ async fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     let id = waiting.as_str();
     // The live claim keeps the Run open until this fixture supplies a verdict.
     fixture.json(&["request", "claim", id], 0);
-    let running = fixture.json(&["run", "show", run, "--wait", "--timeout-ms", "50"], 3);
-    assert_eq!(running["status"], "WAITING_HUMAN");
+    let context = artifactize_core::runs::Context::new(
+        &fixture.repo,
+        Some(&fixture.state),
+        &support::os::cli(),
+    )
+    .unwrap();
+    // Keep the deadline well beyond the readiness watchdog. Advance only after the
+    // waiter reports its first saved snapshot, so a slow read cannot consume the deadline.
+    const BOUND: Duration = Duration::from_secs(600);
+    const WATCHDOG: Duration = Duration::from_secs(20);
+    let (sender, first) = tokio::sync::oneshot::channel();
+    let mut sender = Some(sender);
+    let run_id = submitted.parse().unwrap();
+    let pending = artifactize_core::runs::wait_observing(
+        &context,
+        &run_id,
+        Some(BOUND),
+        tokio_util::sync::CancellationToken::new(),
+        |snapshot| {
+            if let Some(sender) = sender.take() {
+                let _ = sender.send(snapshot.state);
+            }
+        },
+    );
+    tokio::pin!(pending);
+    let state = tokio::select! {
+        early = &mut pending => panic!("observer returned before controlled expiry: {early:?}"),
+        observed = tokio::time::timeout(support::os::patience(WATCHDOG), first) => observed.unwrap().unwrap(),
+    };
+    assert_eq!(state, artifactize_core::runs::State::WaitingHuman);
+    tokio::time::pause();
+    tokio::time::advance(BOUND).await;
+    let expired = pending.await.unwrap();
+    tokio::time::resume();
+    assert_eq!(expired.state, artifactize_core::runs::State::WaitingHuman);
+    assert_eq!(
+        fixture.json(&["run", "show", run], 0)["status"],
+        "WAITING_HUMAN"
+    );
     fixture.json(&["request", "submit", id, "--verdict", "GREEN"], 0);
     assert_eq!(
         fixture.json(&["run", "show", run, "--wait"], 0)["status"],
@@ -308,6 +344,29 @@ async fn exit_codes_cover_outcomes_waits_and_usage_errors() {
 }
 
 #[test]
+fn remote_login_rejects_an_oversized_secret_even_when_its_prefix_trims_to_a_valid_token() {
+    let fixture = Fixture::new();
+    let mut child = Watcher::new(support::os::start(
+        fixture
+            .command()
+            .args(["remote", "login", "https://example.test", "--json"])
+            .stdin(std::process::Stdio::piped()),
+    ));
+    use std::io::Write;
+    // The prefix looks valid after trimming, but the full line is not a credential.
+    let line = format!("fixture-secret{}not-part-of-the-prefix\n", " ".repeat(8192));
+    let written = child.stdin.take().unwrap().write_all(line.as_bytes());
+    if let Err(error) = written {
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let error = parse(&output)["error"].as_str().unwrap().to_owned();
+    assert!(error.contains("line exceeds"), "{error}");
+    assert!(!error.contains("fixture-secret"));
+}
+
+#[test]
 fn run_fixture_releases_executor_supervisor_and_sqlite_on_return_and_unwind() {
     for unwind in [false, true] {
         let parent = owned_run::Root::from(support::os::tempdir());
@@ -367,26 +426,34 @@ fn version_matches_package() {
     assert!(output.stderr.is_empty());
 }
 
+#[test]
+fn redirected_help_never_waits_for_input() {
+    assert_help_does_not_read_input(Command::new(support::os::cli()));
+}
+
 // Only Windows creates or suppresses a console for desktop launches.
 #[cfg(windows)]
 #[test]
-fn redirected_or_no_console_help_never_waits_for_input() {
+fn console_launch_modes_never_wait_for_redirected_input() {
     for with_console in [true, false] {
         let mut command = Command::new(support::os::cli());
         support::os::console_launch(&mut command, with_console);
-        let child = support::os::start(command.stdin(std::process::Stdio::piped()));
-        let mut child = Watcher::new(child);
-        // Keep the empty input pipe OPEN until the child has exited: an accidental read
-        // cannot succeed on EOF, so completion proves it did not pause. No clock involved.
-        let input = child.stdin.take().unwrap();
-        let output = child.wait_with_output().unwrap();
-        drop(input);
-        assert!(output.status.success(), "{output:?}");
-        assert!(output.stderr.is_empty());
-        let text = String::from_utf8(output.stdout).unwrap();
-        assert!(text.contains("Usage: artifactize"));
-        assert!(!text.contains("Press Enter"));
+        assert_help_does_not_read_input(command);
     }
+}
+
+fn assert_help_does_not_read_input(mut command: Command) {
+    let child = support::os::start(command.stdin(std::process::Stdio::piped()));
+    let mut child = Watcher::new(child);
+    // Open, empty stdin cannot return EOF. Help must finish without reading it.
+    let input = child.stdin.take().unwrap();
+    let output = child.wait_with_output().unwrap();
+    drop(input);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("Usage: artifactize"));
+    assert!(!text.contains("Press Enter"));
 }
 
 #[test]

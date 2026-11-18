@@ -135,20 +135,27 @@ impl Catalog {
         let mut badges: BTreeMap<Scope, Badge> = BTreeMap::new();
         let mut paths: BTreeMap<Scope, BTreeSet<PathBuf>> = BTreeMap::new();
         let mut branches: BTreeMap<Scope, Option<String>> = BTreeMap::new();
+        let mut workspaces = BTreeMap::new();
         for run in runs {
+            let mut workspace = || {
+                crate::platform::paths::directory_identity(&run.repo_path).map_or_else(
+                    |_| run.repo_path.clone(),
+                    |(id, path)| workspaces.entry(id).or_insert(path).clone(),
+                )
+            };
             let identity =
                 if run.repository.common_dir.is_some() && run.repository.worktree_path.is_some() {
                     run.repository.clone()
                 } else {
                     self.identity(&run.repo_path)
                 };
-            let repository = identity.common_dir.clone().map_or_else(
-                || Repository::Workspace(run.repo_path.clone()),
-                Repository::Git,
-            );
-            let tree = identity
-                .worktree_path
-                .unwrap_or_else(|| run.repo_path.clone());
+            let (repository, tree) = match (identity.common_dir, identity.worktree_path) {
+                (Some(common), Some(tree)) => (Repository::Git(common), tree),
+                _ => {
+                    let path = workspace();
+                    (Repository::Workspace(path.clone()), path)
+                }
+            };
             let scope = Scope::Worktree(repository.clone(), tree);
             branches.insert(scope.clone(), identity.branch);
             for scope in [Scope::All, Scope::Repository(repository), scope] {

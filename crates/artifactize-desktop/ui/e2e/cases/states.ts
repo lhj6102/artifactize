@@ -9,6 +9,9 @@ import { MAIN } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
 import { graphAppearance, graphHasColours, type VerdictLight } from "./graph-appearance.ts";
 
+// Long names are ordinary authored declarations and force the real headline to overflow.
+const ATTENTION_SUFFIX = "-with-a-long-name-for-clipped-run-attention-entries";
+
 export const scenarios: Scenario[] = [
   // UX journey J-GRAPH-COLOURS: every verdict's own colour, on nodes and on edges.
   scenario<Record<string, never>>(
@@ -151,18 +154,24 @@ export const scenarios: Scenario[] = [
     "states-run-outcome",
     "names a Run with RED and ERROR evals and a waiting sign-off in its one header row, and opens its outcome from there: its status, the evals that failed, its tally, its time and what it waits for",
     async () => {
-      const fixture = await createStates();
+      const fixture = await createStates(ATTENTION_SUFFIX);
       return { fixture, args: ["--repo", fixture.repo], data: {} };
     },
     async (browser) => {
+      await browser.setWindowSize(1040, 760);
       await graphShown(browser, "a:crash");
       /** The header row: the Run's ID, then its headline's verdict and each eval that needs attention, by its mark. */
       const header = () => browser.execute((main) => {
         const row = document.querySelector(`${main} > header`)!;
-        const headline = row.querySelector("button.headline");
+        const headline = row.querySelector<HTMLElement>("button.headline")!;
+        const items = [...row.querySelectorAll("h2, button.headline .status, button.headline .need")].map((item) => item.getBoundingClientRect());
+        const rowBox = row.getBoundingClientRect();
         return {
           title: row.querySelector("h2")?.textContent?.trim() ?? "",
           verdict: [headline?.querySelector(".status svg")?.getAttribute("data-icon") ?? "", headline?.querySelector(".status")?.textContent?.trim() ?? ""],
+          singleRow: items.every((item) => item.top >= rowBox.top && item.bottom <= rowBox.bottom) &&
+            Math.max(...items.map((item) => item.top)) < Math.min(...items.map((item) => item.bottom)),
+          clipped: ["hidden", "clip"].includes(getComputedStyle(headline).overflowX) && headline.scrollWidth > headline.clientWidth,
           needs: [...(headline?.querySelectorAll(".need") ?? [])].map((need) => [need.querySelector("svg")?.getAttribute("data-icon") ?? "", need.textContent?.trim() ?? ""]),
         };
       }, MAIN);
@@ -170,8 +179,9 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (shown = await header()).needs.length === 3, { timeout: 15000, timeoutMsg: "the Run's headline drawn" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(shown)}`); });
       assert.match(shown.title, /^run-/, "the Run's ID first");
-      // Every failure first, then the sign-off that waits, each by its status's mark.
-      assert.deepEqual(shown.needs, [["red", "red/check"], ["error", "crash/check"], ["human", "gate/signoff"]], JSON.stringify(shown));
+      assert.deepEqual(shown.needs.sort(), [["error", `crash/check${ATTENTION_SUFFIX}`], ["human", `gate/signoff${ATTENTION_SUFFIX}`], ["red", `red/check${ATTENTION_SUFFIX}`]], JSON.stringify(shown));
+      assert.ok(shown.singleRow && shown.clipped, "ID, verdict and attention entries share one clipped row");
+
       // A click on the headline opens the Run's outcome and what it waits for, both unfolded.
       await browser.$(`${MAIN} > header button.headline`).click();
       await browser.waitUntil(async () => (await detail(browser))?.title === `Run ${shown.title}`, { timeout: 15000, timeoutMsg: "the Run's Detail" });
@@ -187,15 +197,15 @@ export const scenarios: Scenario[] = [
           failed: marks(facts.Failed),
           tally: marks(facts.Tally),
           time: (facts["Running for"] ?? facts.Took)?.textContent?.trim() ?? "",
-          // The sign-off it waits for: in its outcome, or under Waits for when it has one.
-          waits: [...dock.querySelectorAll('section[aria-label="Outcome"] .body, section[aria-label="Waits for"] .body')].map((body) => body.textContent).join(" "),
+          waits: [...dock.querySelectorAll('section[aria-label="Waits for"] .body li')].map((item) => item.textContent ?? ""),
+          open: dock.querySelector('section[aria-label="Waits for"] button.head')?.getAttribute("aria-expanded"),
         };
       });
       let read = await outcome();
       await browser.waitUntil(async () => (read = await outcome()).status !== "", { timeout: 15000, timeoutMsg: "the Run's outcome" })
         .catch((error: Error) => { throw new Error(`${error.message}: ${JSON.stringify(read)}`); });
       assert.equal(read.statusIcon, shown.verdict[0], `its status, said once, by the headline's mark: ${read.status}`);
-      assert.deepEqual(read.failed, [["red", "red/check"], ["error", "crash/check"]], "the evals that failed, by name");
+      assert.deepEqual(read.failed, [["red", `red/check${ATTENTION_SUFFIX}`], ["error", `crash/check${ATTENTION_SUFFIX}`]], "the evals that failed, by name");
       assert.equal(read.status, "WAITING HUMAN", "its status in words");
       // How many evals ended in each status, as the fixture's nine Artifacts leave them.
       assert.deepEqual(read.tally.map(([, text]) => text),
@@ -204,7 +214,8 @@ export const scenarios: Scenario[] = [
         assert.ok(read.tally.some(([shownIcon, text]) => shownIcon === icon && text.endsWith(` ${word}`)), `the tally marks ${word} with its icon: ${JSON.stringify(read.tally)}`);
       }
       assert.match(read.time, /\d/, "what the Run took so far");
-      assert.match(read.waits, /gate\/signoff/, "what it waits for");
+      assert.equal(read.open, "true", "Waits for opens unfolded");
+      assert.ok(read.waits.some((item) => item.includes(`gate/signoff${ATTENTION_SUFFIX}`)), "the waiting sign-off is under Waits for");
       await press(browser, ["Escape"], async () => (await detail(browser)) === null, "the Run's Detail closed");
     },
   ),

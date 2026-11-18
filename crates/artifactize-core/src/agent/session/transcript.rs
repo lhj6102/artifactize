@@ -51,7 +51,10 @@ impl Group {
         let failed = self
             .activities
             .iter()
-            .filter(|activity| matches!(activity.state, State::Failed(_)))
+            .filter_map(|activity| match &activity.state {
+                State::Failed(reason) => Some((activity, reason)),
+                _ => None,
+            })
             .collect::<Vec<_>>();
         let mut text = match active {
             Some(activity) => format!(
@@ -93,10 +96,7 @@ impl Group {
             }
         };
         // Failures remain visible even when collapsed. Only recorded failure flags qualify.
-        for activity in failed {
-            let State::Failed(reason) = &activity.state else {
-                unreachable!("failed activities filtered");
-            };
+        for (activity, reason) in failed {
             text.push_str(&format!(
                 "{}{} {} — failed: {}",
                 if expanded { "\n  " } else { " · " },
@@ -165,7 +165,7 @@ pub struct Transcript {
     assistant: Option<crate::types::Sha256Bytes>,
     question: Option<(Option<usize>, crate::types::Sha256Bytes)>,
     /// A JSON-looking assistant message is unchanged until its authoritative End arrives.
-    result_candidate: Option<(BlockId, serde_json::Value)>,
+    result_candidate: Option<(BlockId, Candidate)>,
     deliveries: BTreeMap<
         (
             Option<usize>,
@@ -181,7 +181,7 @@ pub struct Transcript {
 }
 /// Provider envelopes, null placeholders and JSON-encoded fields are presentation details.
 /// Only a matching validated End replaces the raw answer; examples and failed answers stay.
-fn candidate(text: &str) -> Option<serde_json::Value> {
+fn candidate(text: &str) -> Option<Candidate> {
     if text.len() > crate::agent::verdict::MAX_RESPONSE_BYTES {
         return None;
     }
@@ -206,34 +206,95 @@ fn candidate(text: &str) -> Option<serde_json::Value> {
         object.insert("verdict".into(), verdict);
         value = fields;
     }
-    matches!(value.get("verdict")?.as_str()?, "GREEN" | "RED").then_some(value)
+    let result: crate::agent::verdict::ValidatedResult = serde_json::from_value(value).ok()?;
+    Some(Candidate {
+        verdict: result.verdict,
+        fields: result
+            .fields
+            .into_iter()
+            .map(|(key, value)| (key, OwnerValue::from_json(value)))
+            .collect(),
+    })
 }
 
-fn same_result(wire: &serde_json::Value, result: &serde_json::Value) -> bool {
-    if wire == result {
-        return true;
+#[derive(Debug)]
+struct Candidate {
+    verdict: crate::runtime::Verdict,
+    fields: BTreeMap<String, OwnerValue>,
+}
+
+impl Candidate {
+    fn matches(&self, result: &crate::agent::verdict::ValidatedResult) -> bool {
+        self.verdict == result.verdict && owner_fields_match(&self.fields, &result.fields)
     }
-    match (wire, result) {
-        (serde_json::Value::String(text), _) => {
-            serde_json::from_str(text).is_ok_and(|decoded| same_result(&decoded, result))
+}
+
+/// Older providers sometimes encoded owner values a second time. Keep the literal
+/// string and its structural interpretation, both decoded before the End event.
+#[derive(Debug)]
+enum OwnerValue {
+    Scalar(serde_json::Value),
+    Text {
+        literal: String,
+        decoded: Option<Box<Self>>,
+    },
+    Object(BTreeMap<String, Self>),
+    Array(Vec<Self>),
+}
+
+impl OwnerValue {
+    fn from_json(value: serde_json::Value) -> Self {
+        use serde_json::Value;
+        match value {
+            Value::String(literal) => {
+                let decoded = serde_json::from_str(&literal)
+                    .ok()
+                    .map(Self::from_json)
+                    .map(Box::new);
+                Self::Text { literal, decoded }
+            }
+            Value::Object(fields) => Self::Object(
+                fields
+                    .into_iter()
+                    .map(|(key, value)| (key, Self::from_json(value)))
+                    .collect(),
+            ),
+            Value::Array(items) => Self::Array(items.into_iter().map(Self::from_json).collect()),
+            value => Self::Scalar(value),
         }
-        (serde_json::Value::Object(wire), serde_json::Value::Object(result)) => {
-            result
-                .iter()
-                .all(|(key, value)| wire.get(key).is_some_and(|wire| same_result(wire, value)))
-                && wire
-                    .iter()
-                    .all(|(key, value)| result.contains_key(key) || value.is_null())
-        }
-        (serde_json::Value::Array(wire), serde_json::Value::Array(result)) => {
-            wire.len() == result.len()
-                && wire
-                    .iter()
-                    .zip(result)
-                    .all(|(wire, result)| same_result(wire, result))
-        }
-        _ => false,
     }
+
+    fn matches(&self, result: &serde_json::Value) -> bool {
+        use serde_json::Value;
+        match (self, result) {
+            (Self::Scalar(value), result) => value == result,
+            (Self::Text { literal, decoded }, result) => {
+                result.as_str() == Some(literal.as_str())
+                    || decoded.as_ref().is_some_and(|value| value.matches(result))
+            }
+            (Self::Object(wire), Value::Object(result)) => owner_fields_match(wire, result),
+            (Self::Array(wire), Value::Array(result)) => {
+                wire.len() == result.len()
+                    && wire
+                        .iter()
+                        .zip(result)
+                        .all(|(wire, result)| wire.matches(result))
+            }
+            _ => false,
+        }
+    }
+}
+
+fn owner_fields_match(
+    wire: &BTreeMap<String, OwnerValue>,
+    result: &serde_json::Map<String, serde_json::Value>,
+) -> bool {
+    result
+        .iter()
+        .all(|(key, value)| wire.get(key).is_some_and(|wire| wire.matches(value)))
+        && wire.iter().all(|(key, value)| {
+            result.contains_key(key) || matches!(value, OwnerValue::Scalar(serde_json::Value::Null))
+        })
 }
 
 impl Transcript {
@@ -501,10 +562,9 @@ impl Transcript {
             Kind::End(end) => {
                 self.stopped(&mut dirty);
                 if let Some(result) = end.result() {
-                    let value = result.to_json();
                     let text = result_text(result);
                     if let Some((id, candidate)) = self.result_candidate.take()
-                        && same_result(&candidate, &value)
+                        && candidate.matches(result)
                     {
                         patches.push(Patch {
                             id,

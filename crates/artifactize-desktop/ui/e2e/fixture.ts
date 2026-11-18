@@ -35,7 +35,7 @@ export function finishTalk(fixture: Fixture): void {
 }
 
 /** Declared Human content, captured in the request before the app starts. */
-export type SignoffDefinition = { title: string; instruction: string; scalars?: boolean; report?: boolean; missing?: boolean };
+export type SignoffDefinition = { title: string; instruction: string; scalars?: boolean; report?: boolean; missing?: boolean; gatedFingerprint?: boolean; fileHandoff?: string };
 const DEFAULT_SIGNOFF: SignoffDefinition = {
   title: "A person approves the release",
   instruction: "Read the release notes and approve them.",
@@ -43,11 +43,12 @@ const DEFAULT_SIGNOFF: SignoffDefinition = {
 
 const release = (root: NativePath, signoff: SignoffDefinition = DEFAULT_SIGNOFF) => `name = "release"
 tags = ["type:release"]
-fingerprint = { files = ["."] }
+fingerprint = ${signoff.gatedFingerprint ? `{ script = { ${commandFields("fingerprint", portablePath(nativePath(root, "submit.gate")), portablePath(nativePath(root, "submit.runs")))}, files = [], timeout_ms = 600000 } }` : '{ files = ["."] }'}
 
 [views.human_tools]
+${signoff.fileHandoff ? 'handoff = { description = "Open the review handoff file.", builtin = "open", args = ["{artifactPath}/handoff.html"] }' : ""}
 ${signoff.report ? `report = { description = "Print long lines on both output streams.", kind = "output", ${commandFields("report")} }` : ""}
-${signoff.missing ? `gone = { description = "Run a program that is not installed.", kind = "output", command = "artifactize-e2e-not-installed", args = [] }` : ""}
+${signoff.missing ? `gone = { description = "Run a program that is not installed.", kind = "output", command = ${JSON.stringify(portablePath(nativePath(root, "absent", "artifactize-e2e-not-installed")))}, args = [] }` : ""}
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", ${commandFields("read", textPath("{artifactPath}", "notes.md"))} }
 open = { description = "Open {artifactName}.", kind = "launch", ${commandFields("launch", portablePath(nativePath(root, "launched")))} }
 fail = { description = "Fail on purpose.", kind = "output", ${commandFields("fail")} }
@@ -186,6 +187,9 @@ function declare(repo: NativePath, notes = "# Release notes\n- Ready to ship.\n"
   ]) {
     writeDeclaration(repo, nativePath(makeDirectory(nativePath(repo, name)), "index.artf"), text);
   }
+  if (signoff.gatedFingerprint) writeText(nativePath(parentOf(repo), "submit.gate"), "go");
+  if (signoff.fileHandoff) writeText(nativePath(repo, "release", "handoff.html"),
+    `<!doctype html><meta http-equiv="refresh" content="0;url=${signoff.fileHandoff}/file-opened">\n`);
   writeText(nativePath(repo, "release", "notes.md"), notes);
   writeText(nativePath(repo, "docs", "notes.md"), "Documentation checked.\n");
   git(repo, "init", "-q", "--initial-branch=master", repo);
@@ -699,20 +703,21 @@ export function spoilRun(fixture: Fixture, run: string): void {
  * `red` fails, `crash` exceeds its runtime deadline (ERROR), `down` is blocked by `red`, `after` by
  * `crash`, `fine` is GREEN, and `later` waits for the Human sign-off of `gate`. Three of them have no dependency, so they share the graph's first column.
  */
-export async function createStates(): Promise<Fixture> {
+export async function createStates(attentionSuffix = ""): Promise<Fixture> {
   return prepareFixture(async (root) => {
     const repo = nativePath(root, "repo");
     const state = nativePath(root, "state");
     const artifact = (name: string, operation: Operation, instruction: string, timeoutMs?: number) => {
+      const evaluation = name === "red" || name === "crash" ? `check${attentionSuffix}` : "check";
       writeDeclaration(repo,
         nativePath(makeDirectory(nativePath(repo, name)), "index.artf"),
         `name = "${name}"
 
-  [evals.check]
+  [evals.${evaluation}]
   title = "Check ${name}"
   profile = ${runtimeProfile(operation, timeoutMs)}
 
-  [evals.check.payload]
+  [evals.${evaluation}.payload]
   instruction = """
   ${instruction}"""
   `,
@@ -731,11 +736,11 @@ export async function createStates(): Promise<Fixture> {
       nativePath(makeDirectory(nativePath(repo, "gate")), "index.artf"),
       `name = "gate"
 
-  [evals.signoff]
+  [evals.signoff${attentionSuffix}]
   title = "A person approves"
   profile = { kind = "human" }
 
-  [evals.signoff.payload]
+  [evals.signoff${attentionSuffix}.payload]
   instruction = """
   Approve."""
   `,

@@ -9,7 +9,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
 };
 
 use serde_json::{Value, json};
@@ -99,10 +99,10 @@ impl Fixture {
         repo
     }
 
-    fn run(&self, repo: &Path, args: &[&str], code: i32) -> Output {
+    fn run(&self, repo: &Path, args: &[&str], code: i32) -> support::runs::Recorded {
         self.root.track(&self.root.path().join("state"), repo);
         let root = self.root.path();
-        let output = Command::new(support::os::cli())
+        let recorded = Command::new(support::os::cli())
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -112,8 +112,9 @@ impl Fixture {
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")
-            .record_output()
+            .recorded()
             .unwrap();
+        let output = &recorded.output;
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -121,16 +122,18 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        output
+        recorded
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let output = self.run(repo, &[args, &["--json"]].concat(), code);
-        serde_json::from_slice(&output.stdout).unwrap()
+        let recorded = self.run(repo, &[args, &["--json"]].concat(), code);
+        recorded
+            .saved_json()
+            .unwrap_or_else(|| serde_json::from_slice(&recorded.output.stdout).unwrap())
     }
 
     fn text(&self, repo: &Path, args: &[&str], code: i32) -> String {
-        String::from_utf8(self.run(repo, args, code).stdout).unwrap()
+        String::from_utf8(self.run(repo, args, code).output.stdout).unwrap()
     }
 
     /// Submits the Human signoff that `run` recorded, publishing it for reuse.

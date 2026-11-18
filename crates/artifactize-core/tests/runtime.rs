@@ -565,13 +565,28 @@ async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -
 #[tokio::test]
 async fn normal_exit_also_kills_a_background_descendant() {
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command(&support::os::steps(), &["start"], None)).await);
+    let marker = scratch.workspace().join("normal-child");
+    let child = support::os::MarkedChild::new(&marker);
+    let result = completed(
+        execute(scratch.command(
+            &support::os::steps(),
+            &["start-marked", "normal-child"],
+            None,
+        ))
+        .await,
+    );
     assert_eq!(result.verdict(), Verdict::Green);
-    let pid = String::from_utf8(result.output.stdout)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let pid = child
+        .pid()
+        .expect("the blocking descendant recorded its PID");
+    assert_eq!(
+        String::from_utf8(result.output.stdout)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
+            .unwrap(),
+        pid
+    );
     assert_gone(pid).await;
 }
 
@@ -627,12 +642,11 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
             support::os::kill(pid);
         }
         // Keep driving the supervisor after the fallback kill so its task reaps the tree.
-        let reaped = timeout(support::os::patience(TEST_TIMEOUT), settled()).await;
+        settled().await;
         scratch
             .0
             .close()
             .expect("remove the aborted runtime fixture");
-        reaped.expect("the forcibly stopped fixture must settle");
         panic!("runtime capture did not settle without the fallback kill");
     }
     checked.unwrap_or_else(|panic| std::panic::resume_unwind(panic));

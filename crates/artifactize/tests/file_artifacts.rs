@@ -1187,8 +1187,6 @@ fn colon_targets_are_rejected_before_scoped_tools_can_be_declared() {
     assert!(error.message.contains("must not contain ':'"), "{error}");
 }
 
-// Search-only (execute without read) directories are a Unix permission.
-#[cfg(unix)]
 #[test]
 fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_markers() {
     let fixture = Fixture::new();

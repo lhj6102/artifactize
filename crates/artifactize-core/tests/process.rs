@@ -122,8 +122,8 @@ async fn failed_registration_never_executes_and_reaps_the_child() {
     })
     .await;
     assert!(matches!(result, Err(process::Error::Registration(_))));
-    assert!(!scratch.0.join("started").exists());
     assert_gone(pid.load(Ordering::SeqCst)).await;
+    assert!(!scratch.0.join("started").exists());
 }
 
 #[tokio::test]
@@ -139,6 +139,10 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     });
     support::os::scoped(cancellation, work, async |running| {
         let child = child.await.unwrap();
+        let _owner = support::os::OwnedProcess {
+            pid: child.pid.get(),
+            birth: child.start_time,
+        };
         // Dropping the caller is what is under test: abort it rather than cancel it.
         running.abort();
         assert_gone(child.pid.get()).await;
@@ -213,11 +217,7 @@ async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
 
 #[tokio::test]
 async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
-    use artifactize_core::{
-        project::{VerifyOptions, selection::Selection},
-        runs::Worker,
-        types::RequestStatus,
-    };
+    use artifactize_core::{runs::Worker, types::RequestStatus};
 
     for unwinding in [false, true] {
         let root = support::os::tempdir();
@@ -233,15 +233,9 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
         )
         .unwrap();
         let fixture = support::runs::RepoLease::new(root, &state, &repo);
-        let run = support::runs::record(
-            &repo,
-            Some(&state),
-            &Selection::All,
-            &VerifyOptions::default(),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap();
+        let run = support::runs::record_deferred(&repo, &state, &"app/review".parse().unwrap())
+            .await
+            .unwrap();
         assert_eq!(run.requests[0].status(), RequestStatus::Deferred);
         let Worker::Admitted { owner } = run.run.control.unwrap().worker else {
             panic!("the fixture worker was admitted");
@@ -269,15 +263,9 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
             artifactize_core::types::RunStatus::Error
         );
         // Explicit teardown must not disarm ownership of later submissions.
-        let later = support::runs::record(
-            &repo,
-            Some(&state),
-            &Selection::All,
-            &VerifyOptions::default(),
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap();
+        let later = support::runs::record_deferred(&repo, &state, &"app/review".parse().unwrap())
+            .await
+            .unwrap();
         assert_eq!(later.requests[0].status(), RequestStatus::Deferred);
         assert_ne!(run.run.id, later.run.id);
         let Worker::Admitted { owner } = later.run.control.unwrap().worker else {
@@ -310,34 +298,42 @@ async fn owned_human_runs_exit_before_fixture_removal_on_success_and_unwind() {
     }
 }
 
-#[test]
-fn failed_run_cleanup_retains_inputs_and_preserves_an_existing_panic() {
-    // This fixture deliberately contains no worker: its invalid SQLite input exercises
-    // retention on cleanup failure without leaving a process for this test to recover.
-    struct RetainedDirectory(PathBuf);
-    impl Drop for RetainedDirectory {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
+#[tokio::test]
+async fn fixture_stops_owned_workers_and_removes_inputs_without_readable_receipts() {
+    use artifactize_core::runs::Worker;
     for unwinding in [false, true] {
         let root = support::os::tempdir();
         let directory = root.path().to_owned();
-        let retained = RetainedDirectory(directory.clone());
-        let repo = root.path().join("repo");
-        let state = root.path().join("state");
+        let repo = directory.join("repo");
+        let state = directory.join("state");
         std::fs::create_dir(&repo).unwrap();
-        std::fs::create_dir(&state).unwrap();
-        std::fs::write(repo.join("input"), "owned input").unwrap();
-        std::fs::write(state.join(artifactize_core::store::DATABASE), "not SQLite").unwrap();
-        let fixture = support::runs::RepoLease::new(root, &state, &repo);
+        support::declaration::write(
+            &repo,
+            repo.join("index.artf"),
+            "name = 'app'\nfingerprint = {}\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\n[evals.review.payload]\ninstruction = 'Inspect.'\n",
+        ).unwrap();
+        let lease = support::runs::RepoLease::new(root, &state, &repo);
+        let run = support::runs::record_deferred(&repo, &state, &"app/review".parse().unwrap())
+            .await
+            .unwrap();
+        let control = run.run.control.unwrap();
+        let Worker::Admitted { owner } = control.worker else {
+            panic!("fixture recorded an admitted worker");
+        };
+        let supervisor = control.supervisor.unwrap();
+        assert!(support::os::same_process_running(
+            owner.pid.get(),
+            owner.start_time
+        ));
+        let db = rusqlite::Connection::open(state.join(artifactize_core::store::DATABASE)).unwrap();
+        db.pragma_update(None, "user_version", 0).unwrap();
+        drop(db);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let fixture = fixture;
+            let lease = lease;
             if unwinding {
                 panic!("scripted original panic");
             }
-            drop(fixture);
+            drop(lease);
         }));
         let panic = result.unwrap_err();
         if unwinding {
@@ -350,14 +346,18 @@ fn failed_run_cleanup_retains_inputs_and_preserves_an_existing_panic() {
                 panic
                     .downcast_ref::<String>()
                     .unwrap()
-                    .starts_with("Fixture Run cleanup failed; inputs retained at ")
+                    .contains("Unsupported state schema version: 0.")
             );
         }
-        assert_eq!(std::fs::read(repo.join("input")).unwrap(), b"owned input");
-        drop(retained);
+        for worker in [owner, supervisor] {
+            assert!(!support::os::same_process_running(
+                worker.pid.get(),
+                worker.start_time
+            ));
+        }
         assert!(
             !directory.exists(),
-            "the failure-test fixture also owns its retained files"
+            "unreadable receipts do not retain the owned fixture"
         );
     }
 }

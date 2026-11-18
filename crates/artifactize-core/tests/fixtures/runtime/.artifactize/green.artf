@@ -3,7 +3,7 @@ path = "review/"
 
 [evals.check]
 title = "Check green"
-profile = { kind = "runtime", command = "/bin/sh", args = ["check.sh", "{input}/data.txt"], timeout_ms = 1000 }
+profile = { kind = "runtime", command = "/bin/sh", args = ["check.sh", "{input}/data.txt"] }
 
 [evals.check.payload]
 instruction = """

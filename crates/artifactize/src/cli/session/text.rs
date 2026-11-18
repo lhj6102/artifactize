@@ -140,7 +140,7 @@ pub(super) fn show(located: &Located, conversation: &Conversation) -> io::Result
             reasoning: header.reasoning,
         },
     )?;
-    for event in &conversation.events {
+    for event in conversation.events() {
         let send = event
             .send
             .map_or(String::new(), |send| format!(", follow-up {send}"));

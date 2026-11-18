@@ -1,10 +1,7 @@
 #[cfg(test)]
 mod tests;
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -195,7 +192,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         } else {
             workspace::outside_artifact_workspaces(&state)?;
         }
-        probe_writable(&state)
+        crate::platform::paths::probe_writable(&state)
     })();
     match writable {
         Ok(()) => report.add(
@@ -638,22 +635,4 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
         test_auth_endpoint: sign_in,
     };
     (level, message, details)
-}
-
-fn probe_writable(state: &Path) -> std::io::Result<()> {
-    let mut parent = state;
-    while !parent.try_exists()? {
-        parent = parent
-            .parent()
-            .ok_or_else(|| std::io::Error::other("No existing state directory ancestor."))?;
-    }
-    if !fs::metadata(parent)?.is_dir() {
-        return Err(std::io::Error::other(
-            "State directory or its ancestor is not a directory.",
-        ));
-    }
-    let probe = tempfile::Builder::new()
-        .prefix(".artifactize-doctor-")
-        .tempdir_in(parent)?;
-    probe.close()
 }

@@ -6,16 +6,16 @@ import { writeDeclaration } from "../declaration-fixtures.ts";
 import assert from "node:assert/strict";
 import {
   artifactize, create, createOutside, createSignoffOnly, environment, newestRunStatus, providerList, remoteStatus, signoffGrace, verifyAll,
-  type Fixture,
+  requests, savedRuns, type Fixture,
 } from "../fixture.ts";
 import { clickOption } from "../input.ts";
 import { git } from "../environment.ts";
-import { runtimeProfile } from "../native-fixtures.ts";
+import { commandFields, runtimeProfile } from "../native-fixtures.ts";
 import { fill, press, typeText } from "../keys.ts";
 import { graphShown } from "../graph-view.ts";
-import { mainTitle } from "../pane.ts";
+import { mainTitle, openWaiting } from "../pane.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { claudeCodeEnvironment, claudeCodeInstalled, exists, httpGet, makeDirectory, nativePath, primaryModifier, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
+import { claudeCodeEnvironment, claudeCodeInstalled, claudeLoginOwner, exists, httpGet, makeDirectory, nativePath, portablePath, primaryModifier, processRunning, readText, removeTree, serveLoopbackHttp, writeText } from "../platform.ts";
 
 const KEY = "sk-e2e-settings-value";
 const SAVED = "sk-e2e-saved-gemini-key";
@@ -136,7 +136,7 @@ export const scenarios: Scenario[] = [
     async () => {
       const fixture = createOutside();
       // Claude Code opens the system browser itself: the case's fixture browser, at its loopback.
-      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null, browser: "http://127.0.0.1:" };
+      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture)), data: null, browser: { dynamic: true } };
     },
     async (browser, { fixture }) => {
       const status = () => browser.$('[data-testid="claude-agent-status"]').getText();
@@ -211,12 +211,13 @@ export const scenarios: Scenario[] = [
       await signOut();
 
       // A cancelled sign-in stops Claude Code before it signs in.
-      const cancelled = await begin();
+      const cancelled = claudeLoginOwner(fixture.root, await begin());
+      assert.ok(processRunning(cancelled), "the recorded login process is genuinely alive before Cancel");
       await browser.$("button=Cancel sign-in").click();
       await shows("Not signed in", "the cancelled sign-in ends");
       await browser.$("dd*=Claude Code sign-in was cancelled.").waitForExist({ timeout: 15000 });
-      await browser.waitUntil(() => httpGet(`${cancelled}/alive`).then(() => false, () => true),
-        { timeout: 15000, timeoutMsg: "the cancelled Claude Code stops" });
+      await browser.waitUntil(() => !processRunning(cancelled),
+        { timeout: 15000, timeoutMsg: "the exact Claude Code process exits after cancellation" });
       assert.equal(exists(marker), false);
 
       // A code Claude Code refuses ends its sign-in with Claude Code's own error.
@@ -329,15 +330,44 @@ export const scenarios: Scenario[] = [
     "shows Anthropic set and OpenAI not set without exposing the Anthropic fixture value",
     async () => {
       const fixture = createOutside();
-      return { fixture, env: { ...settingsEnvironment(fixture), OPENAI_API_KEY: undefined, ANTHROPIC_API_KEY: KEY }, data: { key: KEY } };
+      const gemini = `${KEY}-gemini`;
+      return { fixture, env: { ...settingsEnvironment(fixture), OPENAI_API_KEY: undefined, ANTHROPIC_API_KEY: KEY, GEMINI_API_KEY: gemini }, data: { key: KEY, gemini } };
     },
-    async (browser, { data: { key } }) => {
+    async (browser, { data: { key, gemini } }) => {
       await openSettings(browser);
       await choose(browser, "OpenAI");
       await browser.waitUntil(async () => (await keyText(browser, "openai")) === "not set", { timeout: 15000, timeoutMsg: "the OpenAI key is not set" });
       await choose(browser, "Anthropic");
       await browser.waitUntil(async () => (await keyText(browser, "anthropic")) === "set from the environment (ANTHROPIC_API_KEY)", { timeout: 15000, timeoutMsg: "the Anthropic key is set from its variable" });
       assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(key), "the Anthropic fixture value is nowhere in the page");
+      await choose(browser, "Gemini");
+      await browser.waitUntil(async () => (await keyText(browser, "gemini")) === "set from the environment (GEMINI_API_KEY)",
+        { timeout: 15000, timeoutMsg: "Gemini reports its environment key source" });
+      assert.ok(!(await browser.execute(() => document.documentElement.outerHTML)).includes(gemini), "the Gemini fixture value is nowhere in the page");
+    },
+  ),
+  // UX journey: J-SET-CLAUDE-AGENT; UX edge: E-SET-CLAUDE-AGENT-END
+  scenario<null>(
+    "settings-claude-timeout",
+    "leaves Claude Code sign-in unanswered until the actual ten-minute deadline, then shows the timeout and refreshed sign-in status",
+    async () => {
+      const fixture = createOutside();
+      return { fixture, env: claudeCodeEnvironment(fixture.root, settingsEnvironment(fixture), 660000), data: null, browser: { dynamic: true } };
+    },
+    async (browser, { fixture }) => {
+      const status = () => browser.$('[data-testid="claude-agent-status"]').getText();
+      await openSettings(browser);
+      await choose(browser, "Claude Agent");
+      await browser.waitUntil(async () => (await status()) === "Not signed in", { timeout: 15000, timeoutMsg: "Claude Code starts signed out" });
+      const started = Date.now();
+      await browser.$("button=Sign in with Claude Code").click();
+      await browser.waitUntil(async () => (await status()) === "sign-in in progress" && await browser.$("button=Cancel sign-in").isDisplayed(),
+        { timeout: 15000, timeoutMsg: "real sign-in starts and waits, with no code or browser callback" });
+      await browser.waitUntil(async () => (await status()) === "Not signed in" &&
+        await browser.$("dd*=Claude Code sign-in timed out").isDisplayed() && await browser.$("button=Sign in with Claude Code").isEnabled(),
+      { timeout: 620000, interval: 1000, timeoutMsg: "the ten-minute deadline ends the sign-in, reports the timeout, and refreshes its status" });
+      assert.ok(Date.now() - started >= 599000, "the sign-in did not terminate before its ten-minute deadline");
+      assert.equal(exists(nativePath(fixture.root, "signed-in")), false);
     },
   ),
   // UX journey: J-SET-SIGNOFF-GRACE
@@ -347,9 +377,24 @@ export const scenarios: Scenario[] = [
     "settings: shows the sign-off idle grace, saves a new one the CLI reads, and a later Run ends by it",
     async () => {
       const fixture = createSignoffOnly();
-      return { fixture, env: settingsEnvironment(fixture), data: null };
+      const later = nativePath(fixture.root, "later");
+      const gate = nativePath(fixture.root, "later.gate");
+      writeDeclaration(later, nativePath(later, "human", "index.artf"), `name = "human"
+[evals.signoff]
+title = "Review the later work"
+profile = { kind = "human" }
+payload.instruction = "Review the later work."
+`);
+      writeDeclaration(later, nativePath(later, "worker", "index.artf"), `name = "worker"
+[evals.check]
+title = "Wait until the sign-off is claimed"
+profile = { kind = "runtime", ${commandFields("talk", portablePath(gate))} }
+payload.instruction = "Check the worker."
+`);
+      git(later, "init", "-q", "--initial-branch=master", later);
+      return { fixture, env: settingsEnvironment(fixture), data: { later, gate } };
     },
-    async (browser, { fixture }) => {
+    async (browser, { fixture, data: { later, gate } }) => {
       // The grace in force is in the seconds field that changes it; once saved, Save has nothing
       // more to save.
       const shown = () => browser.$("#grace-seconds").getValue();
@@ -368,13 +413,31 @@ export const scenarios: Scenario[] = [
       assert.equal(artifactize(fixture, "limits", "--signoff-idle-grace", "86400"), 0);
       await showLimits(browser);
       await browser.waitUntil(async () => (await shown()) === "86400", { timeout: 15000, timeoutMsg: "the day the CLI set" });
+      assert.equal(artifactize(fixture, "verify", "--all"), 0);
+      await browser.waitUntil(() => newestRunStatus(fixture) === "WAITING_HUMAN", { timeout: 15000, timeoutMsg: "the first Run is already waiting with its original grace" });
+      const prior = savedRuns(fixture)[0].id;
       await fill(browser, "#grace-seconds", "0");
       await browser.$("button=Save").click();
       await browser.waitUntil(async () => signoffGrace(fixture) === 0 && (await saved()), { timeout: 15000, timeoutMsg: "no idle grace saved" });
-      assert.equal(artifactize(fixture, "verify", "--all"), 0);
-      await browser.waitUntil(async () => newestRunStatus(fixture) === "YELLOW", {
-        timeout: 15000, timeoutMsg: "the Run started after the save ends YELLOW without a grace",
+      const next = { ...fixture, repo: later };
+      await browser.$("button=Settings").click();
+      await browser.waitUntil(async () => !(await settingsOpen(browser)), { timeout: 15000, timeoutMsg: "Settings closed" });
+      assert.equal(artifactize(next, "verify", "--all"), 0);
+      const laterReview = () => requests(next).find((request) => request.evalId === "human/signoff");
+      await browser.waitUntil(() => laterReview()?.status === "DEFERRED", { timeout: 15000, timeoutMsg: "the later sign-off is ready while its machine eval is still gated" });
+      await openWaiting(browser, laterReview()!.id);
+      await browser.$("button=Claim to review").click();
+      await browser.waitUntil(() => laterReview()?.claim?.reviewer === "alice", { timeout: 15000, timeoutMsg: "the later sign-off is claimed before the Run becomes idle" });
+      writeText(gate, "go");
+      await browser.waitUntil(async () => newestRunStatus(next) === "WAITING_HUMAN" && await browser.$("button=Release claim").isDisplayed(),
+        { timeout: 15000, timeoutMsg: "the later Run does not expire after becoming idle with a claimed review and grace zero" });
+      assert.equal(laterReview()?.claim?.reviewer, "alice");
+      await browser.$("button=Release claim").click();
+      await browser.waitUntil(() => newestRunStatus(next) === "YELLOW", {
+        timeout: 15000, timeoutMsg: "the later Run ends YELLOW once its zero grace is allowed to run",
       });
+      assert.equal(savedRuns(fixture).some(({ id }) => id === prior), true);
+      assert.equal(newestRunStatus(fixture), "WAITING_HUMAN", "saving zero never shortened the original Run's grace");
     },
   ),
   // UX journey: J-SET-CUSTOM; UX edges: E-SET-CUSTOM-NEW E-SET-CUSTOM-SAVE E-SET-CUSTOM-REMOVE
@@ -510,6 +573,13 @@ Review the agent folder."""
       const changed = await custom();
       assert.deepEqual(changed.local, { kind: "endpoint", api: "openai-responses", url, key: true });
       assert.deepEqual(Object.keys(changed), ["claude-local", "local", "work"]);
+      // Reopen from the saved list rather than reading the draft option left by our own input.
+      await choose(browser, "work");
+      await choose(browser, "local");
+      await browser.waitUntil(async () => await browser.$("#custom-api").getValue() === "openaiResponses"
+        && await browser.$("#custom-url").getValue() === url
+        && await browser.$("#custom-key").getAttribute("placeholder") === "Saved; type to replace",
+      { timeout: 15000, timeoutMsg: "Settings reopens the saved responses endpoint and its kept key" });
 
       await browser.$("button=Remove provider").click();
       await browser.waitUntil(async () => !(await listed(browser)).includes("local"), { timeout: 15000, timeoutMsg: "local is removed" });
@@ -543,7 +613,10 @@ Review the agent folder."""
           response.end(JSON.stringify(body));
         };
         if (!signedIn) return answer(401, { error: "Invalid or revoked token." });
-        if (request.method === "GET" && request.url === "/v1/whoami") return answer(200, { principal: readText(principalFile), scopes: ["read", "publish"] });
+        if (request.method === "GET" && request.url === "/v1/whoami") {
+          const principal = readText(principalFile);
+          return principal ? answer(200, { principal, scopes: ["read", "publish"] }) : answer(503, { error: "Store temporarily unavailable." });
+        }
         // Nothing is in the store yet; each record put is received once.
         if (request.method === "POST" && request.url === "/v1/lookup") return answer(200, { entries: [] });
         if (request.method === "PUT" && request.url?.startsWith("/v1/entries/")) {
@@ -554,7 +627,7 @@ Review the agent folder."""
       });
       return {
         fixture,
-        env,
+        env: { ...env, ARTIFACTIZE_E2E_DATE: String(Date.UTC(2026, 0, 12, 12) / 1000) },
         data: { url: `${store.url}/`, principalFile, receivedFile, token: TOKEN },
         release: () => store.close(),
       };
@@ -614,6 +687,17 @@ Review the agent folder."""
       assert.equal(received(), 1, "the store received the one record");
       await browser.$("button=Check status").click();
       await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the push counted today" });
+      writeText(principalFile, "");
+      await browser.$("button=Check status").click();
+      const error = browser.$('section[aria-labelledby="remote-title"]').$('p[aria-label="Remote store"], [role="alert"]');
+      await browser.waitUntil(async () => await error.isDisplayed() && /503|Store temporarily unavailable/.test(await error.getText()),
+        { timeout: 15000, timeoutMsg: "the signed-in store's status error is shown" });
+      assert.equal(await browser.$('[data-testid="remote-principal"]').isDisplayed(), false, "the prior signed-in status no longer shows");
+      assert.equal(await browser.$('[data-testid="remote-pushed"]').isDisplayed(), false, "the prior push count no longer shows");
+      // Restore the stand-in before proceeding through the ordinary signed-in sign-out path.
+      writeText(principalFile, "alice-desktop");
+      await browser.$("button=Check status").click();
+      await browser.waitUntil(async () => (await pushedToday()) === "1 pushed today", { timeout: 15000, timeoutMsg: "the store recovered" });
       await browser.$("button=Sign out of the store").click();
       await browser.$("button=Sign in to the store").waitForExist({ timeout: 15000, timeoutMsg: "the store is signed out, its fields back" });
       assert.equal(await browser.$("#remote-token").getValue(), "", "the token field is empty");

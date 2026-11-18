@@ -397,7 +397,7 @@ pub(crate) async fn execute(
         .collect();
     let satisfied = required
         .iter()
-        .all(|id| evaluation.artifacts[id.as_str()].satisfied);
+        .all(|id| evaluation.artifacts[id.as_str()].satisfied());
     let budget_exhausted = requests
         .iter()
         .any(|request| request.status() == crate::types::RequestStatus::BudgetExhausted);
@@ -502,7 +502,7 @@ pub(crate) async fn execute(
                         status: Field::Value(artifact.status.into()),
                         passed: Field::Value(artifact.passed as u64),
                         total: Field::Value(artifact.total as u64),
-                        satisfied: Field::Value(artifact.satisfied),
+                        satisfied: Field::Value(artifact.satisfied()),
                         fingerprint_kind,
                         fingerprint,
                         extra: Default::default(),

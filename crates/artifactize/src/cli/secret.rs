@@ -24,12 +24,17 @@ pub(super) fn read(what: &str) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
     }
     let mut secret = String::new();
-    let read = stdin.take(SECRET_STDIN_BYTES).read_line(&mut secret);
+    let read = stdin.take(SECRET_STDIN_BYTES + 1).read_line(&mut secret);
     if let SecretInput::Hidden(guard) = mode {
         drop(guard);
         // The Enter key was not echoed either.
         let _ = writeln!(io::stderr().lock());
     }
-    read.map_err(|_| format!("Cannot read the {what} from stdin."))?;
+    let read = read.map_err(|_| format!("Cannot read the {what} from stdin."))?;
+    if read as u64 > SECRET_STDIN_BYTES {
+        return Err(format!(
+            "The {what} line exceeds {SECRET_STDIN_BYTES} bytes."
+        ));
+    }
     Ok(secret.trim().to_owned())
 }

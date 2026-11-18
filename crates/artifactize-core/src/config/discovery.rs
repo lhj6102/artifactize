@@ -13,7 +13,9 @@ pub(crate) fn read_workspace_declarations(repo: &Path) -> Result<RepoConfig, Con
     let root =
         crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let sources = sources(&root)?;
-    read_sources(root, &sources)
+    let mut config = read_sources(root, &sources)?;
+    inspect_targets(&mut config);
+    Ok(config)
 }
 
 /// Read and validate an in-memory prospective project, without inspecting target files.
@@ -78,12 +80,15 @@ pub(super) fn read_sources_unresolved(
             .definition = file.strip_prefix(&config.root).unwrap_or(file).to_owned();
     }
     populate_nested(&mut config);
+    Ok(config)
+}
+
+pub(super) fn inspect_targets(config: &mut RepoConfig) {
     for artifact in config.artifacts.values_mut() {
         artifact.target_error = crate::scope::validate_file_target(&config.root, artifact)
             .err()
             .map(|error| error.to_string());
     }
-    Ok(config)
 }
 
 /// Folder parts hide their own target from a whole's tools, not unrelated nested nodes.

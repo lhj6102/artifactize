@@ -43,13 +43,14 @@ pub use hidden_input::{SecretInput, secret_input, stdin_is_terminal};
 pub use os::HiddenInput;
 pub use os::stop_requested;
 pub(crate) use os::{
-    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLE, PrivateTempDir,
+    CRLF_LINE_ENDINGS, Child, ENV_NAMES_IGNORE_CASE, HOME_VARIABLES, PrivateTempDir,
     STATE_VARIABLES, TEMP_VARIABLES, USER_VARIABLES, create_private_dir, create_private_dir_all,
     exit_signal, file_identity, hide_console_window, home_directory, host_name, ipc, is_owner_only,
     is_private_dir, is_private_file, kill_saved_group, kill_saved_session, path_from_bytes,
-    private_options, private_tempdir_in, process_start_time, release_free_memory,
-    remove_abandoned_directory, resolve_system_aliases, restrict_file, running_process_start_time,
-    spawn_gated, spawn_now, spawn_windowless, sync_dir, transient_file_access,
+    private_named_dir, private_options, private_tempdir_in, process_start_time,
+    release_free_memory, remove_tree, resolve_system_aliases, restrict_file,
+    running_process_start_time, spawn_gated, spawn_now, spawn_windowless, sync_dir,
+    transient_file_access,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
@@ -94,7 +95,7 @@ pub(crate) fn releases() -> usize {
 
 /// A file's identity on its volume. Two open files with equal identities are the same file,
 /// whatever paths reached them; a replaced file gets a new identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct FileIdentity {
     volume: u64,
     index: u64,
@@ -102,7 +103,7 @@ pub(crate) struct FileIdentity {
 
 /// How a finished process ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProcessEnd {
+pub enum ProcessEnd {
     /// It exited with this code.
     Exited(i32),
     /// It was ended without an exit code: on Unix by a signal, when known.
@@ -132,7 +133,7 @@ pub(crate) use artifactize_tools::files::{
     EntryName, FileKind, canonicalize, entry_kind, link_target, open_directory, open_entry,
     open_no_follow, read_dir,
 };
-pub use artifactize_tools::files::{open_nonblocking, path_text};
+pub use artifactize_tools::files::{current_directory, open_nonblocking, path_text};
 
 /// The absolute local folder a `file:` URI names, by this OS's path rules (a drive letter
 /// or UNC host on Windows); `None` for another scheme, a remote host or a relative path.
@@ -148,6 +149,12 @@ pub fn file_uri_path(uri: &str) -> Option<std::path::PathBuf> {
 /// process's working directory, which the caller cannot see.
 pub fn absolute_folder(text: &str) -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(text)).filter(|path| path.is_absolute())
+}
+
+/// Whether native lookup reaches a regular file, following links and honoring the volume's
+/// name matching. Missing or inaccessible entries do not count.
+pub fn is_regular_file(path: &std::path::Path) -> bool {
+    path.is_file()
 }
 
 /// Open a caller-selected file, following links but never blocking on a special file.
@@ -287,6 +294,7 @@ mod program_tests {
     fn a_declared_program_is_written_with_forward_slashes() {
         assert_eq!(super::program_text("pnpm"), "pnpm");
         assert_eq!(super::program_text("tools/run.sh"), "tools/run.sh");
+        // Windows interprets backslashes as separators; Unix permits them in filenames.
         #[cfg(windows)]
         assert_eq!(super::program_text(r"tools\run.cmd"), "tools/run.cmd");
     }
@@ -335,7 +343,8 @@ mod console;
 pub use console::pause_after_help;
 
 mod interaction;
-pub(crate) use interaction::{is_within, label, paths_equal, private_anonymous_file};
+pub use interaction::paths_equal;
+pub(crate) use interaction::{is_within, label, private_anonymous_file};
 
 /// Whether an entry exists without following links (including dangling links).
 pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
@@ -363,4 +372,37 @@ pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
 /// search (execute) permission on every ancestor up to it.
 pub(crate) fn marker_metadata(path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
     path.symlink_metadata()
+}
+
+/// The reason a process ended and the host's wording for diagnostics.
+#[derive(Debug)]
+pub struct ProcessOutcome {
+    pub end: ProcessEnd,
+    description: String,
+}
+
+impl ProcessOutcome {
+    pub(crate) fn from_native(status: &std::process::ExitStatus) -> Self {
+        Self {
+            end: process_end(status),
+            description: exit_description(status),
+        }
+    }
+
+    pub fn code(&self) -> Option<i32> {
+        match self.end {
+            ProcessEnd::Exited(code) => Some(code),
+            ProcessEnd::Signaled(_) => None,
+        }
+    }
+
+    pub fn success(&self) -> bool {
+        self.code() == Some(0)
+    }
+}
+
+impl std::fmt::Display for ProcessOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.description)
+    }
 }

@@ -130,7 +130,11 @@ fn profile(profile: &crate::config::StoredProfile) -> String {
             format!("agent {backend} {model}{reasoning}")
         }
         StoredProfile::Runtime { command, args, .. } => {
-            format!("runtime {command} {}", args.join(" "))
+            format!(
+                "runtime {} {}",
+                crate::platform::program_text(command),
+                args.join(" ")
+            )
         }
         StoredProfile::Human {} => "human".into(),
     }
@@ -518,6 +522,13 @@ pub fn detail(
                         },
                     ),
             );
+            if artifact
+                .and_then(|artifact| artifact.path.value())
+                .and_then(crate::config::Target::uri)
+                .is_some()
+            {
+                detail.push("Target kind", "Live");
+            }
             detail.push(
                 "Fingerprint",
                 saved

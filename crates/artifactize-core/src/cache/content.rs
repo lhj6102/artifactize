@@ -179,7 +179,10 @@ impl Walk {
                         .map(|path| part.folder().join(path))
                         .collect()
                 } else {
-                    vec![part.referenced_path().to_owned()]
+                    part.referenced_path()
+                        .map(std::path::Path::to_path_buf)
+                        .into_iter()
+                        .collect()
                 }
             })
             .filter_map(|path| {

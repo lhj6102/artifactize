@@ -390,7 +390,7 @@ fn reserved_names_are_refused_before_creating_a_native_file() {
         &project.repo,
         &edit::BasedOn::default(),
         Operation::Create {
-            name: name("con"),
+            name: name(support::os::reserved_device_name()),
             path: "./".into(),
         },
     )

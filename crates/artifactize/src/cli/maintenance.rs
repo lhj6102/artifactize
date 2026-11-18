@@ -48,7 +48,7 @@ pub(super) async fn doctor(context: Context) -> Result<u8, String> {
     Ok(u8::from(!report.ok))
 }
 
-pub(super) async fn prune(
+pub(super) fn prune(
     context: Context,
     older_than: Option<std::time::Duration>,
     dry_run: bool,

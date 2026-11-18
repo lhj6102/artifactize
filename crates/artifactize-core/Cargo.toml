@@ -58,6 +58,7 @@ process-wrap = { version = "=10.0.1", default-features = false, features = ["tok
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",

@@ -8,6 +8,7 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { listed, mainTitle, showRun } from "../pane.ts";
 import { aside, camera, detail, FIND, findField, graphShown, nodeAt, ZOOM_IN, ZOOM_OUT } from "../graph-view.ts";
 import { afterRender, fill, press } from "../keys.ts";
+import { screenshotPixels } from "../rendering.ts";
 
 function slot(browser: WebdriverIO.Browser) {
   return browser.execute(() => {
@@ -135,44 +136,34 @@ export const scenarios: Scenario[] = [
       // A click where the layout puts the tree's first Artifact, its top-left corner, opens
       // that Artifact's Detail, once the first view holds still.
       await camera(browser);
-      const corner = await browser.execute(() => {
+      const frame = await browser.execute(() => {
         const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
         const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
-        const canvas = document.querySelector(".monitor .graph .canvas")!.getBoundingClientRect();
-        return { x: Math.round(canvas.left + camera.e + 84 * camera.a), y: Math.round(canvas.top + camera.f + 22 * camera.d) };
+        const canvas = document.querySelector<HTMLElement>(".monitor .graph .canvas")!;
+        const box = canvas.getBoundingClientRect();
+        const left = box.left + camera.e;
+        const top = box.top + camera.f;
+        const green = getComputedStyle(document.documentElement).getPropertyValue("--green").trim();
+        const background = getComputedStyle(canvas).backgroundColor;
+        return {
+          width: innerWidth, height: innerHeight, green, background,
+          corner: { x: Math.round(left + 84 * camera.a), y: Math.round(top + 22 * camera.d) },
+          // The first line of the would-be comment, clear of the block's lower edge.
+          under: { left, right: left + 150 * camera.a, top: top + 48 * camera.d + 1, bottom: top + 65 * camera.d },
+        };
       });
-      // Too far out for names, each Artifact is a block of its status's colour: the first one's
-      // place on the picture is GREEN, as the CLI saved it.
-      const block = await browser.execute((at) => {
-        const paint = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint");
-        const context = paint?.getContext("2d");
-        if (!paint || !context) return null;
-        const box = paint.getBoundingClientRect();
-        const ratio = paint.width / box.width;
-        const [red, green, blue] = context.getImageData(Math.round((at.x - box.left) * ratio), Math.round((at.y - box.top) * ratio), 1, 1).data;
-        return { painted: [red, green, blue], token: getComputedStyle(document.documentElement).getPropertyValue("--green").trim() };
-      }, corner);
-      assert.ok(block, "the large graph is painted");
-      const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(block.token);
-      assert.deepEqual(block.painted, hex?.slice(1).map((part) => Number.parseInt(part, 16)), `the first Artifact is a block in GREEN's colour: ${JSON.stringify(block)}`);
-      // Drawn as blocks, no comment is painted: under the first block, where its comment's
-      // lines would be, the picture is empty.
-      const under = await browser.execute(() => {
-        const viewport = document.querySelector<HTMLElement>(".monitor .svelte-flow__viewport")!;
-        const camera = new DOMMatrixReadOnly(getComputedStyle(viewport).transform);
-        const paint = document.querySelector<HTMLCanvasElement>(".monitor .graph canvas.paint")!;
-        const box = paint.getBoundingClientRect();
-        const ratio = paint.width / box.width;
-        const canvas = document.querySelector(".monitor .graph .canvas")!.getBoundingClientRect();
-        // A comment's first line: 4 under the node's 44, 17 high; a pixel's row clear of the
-        // block's own edge.
-        const [left, top] = [canvas.left - box.left + camera.e, canvas.top - box.top + camera.f + 48 * camera.d + 1];
-        const pixels = paint.getContext("2d")!.getImageData(Math.round(left * ratio), Math.ceil(top * ratio), Math.max(1, Math.round(150 * camera.a * ratio)), Math.max(1, Math.round(16 * camera.d * ratio))).data;
-        let inked = 0;
-        for (let at = 3; at < pixels.length; at += 4) if (pixels[at] !== 0) inked += 1;
-        return { inked, zoom: camera.a };
-      });
-      assert.equal(under.inked, 0, `no comment painted under a block: ${JSON.stringify(under)}`);
+      const { corner } = frame;
+      const green = frame.green.match(/[0-9a-f]{2}/gi)?.map((part) => Number.parseInt(part, 16));
+      const background = frame.background.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+      assert.equal(green?.length, 3, "the expected GREEN palette color is declared");
+      assert.equal(background?.length, 3, "the graph has a computed background color");
+      const sameColor = (sample: number[], expected: number[]) => sample.every((value, channel) => Math.abs(value - expected[channel]) <= 1);
+      let pixels = await screenshotPixels(browser, frame);
+      await browser.waitUntil(async () => {
+        pixels = await screenshotPixels(browser, frame);
+        return sameColor(pixels.at(corner.x, corner.y), green!);
+      }, { timeout: 15000, timeoutMsg: "the screenshot shows the first Artifact as a GREEN block" });
+      assert.ok(pixels.every(frame.under, (sample) => sameColor(sample, background!)), "no comment is painted under the block in that screenshot");
       await browser.action("pointer").move({ x: corner.x, y: corner.y, origin: "viewport" }).down().up().perform();
       await browser.waitUntil(async () => /^Artifact n\d{4}\b/.test((await detail(browser))?.title ?? ""), { timeout: 15000, timeoutMsg: "the clicked Artifact's Detail opened" });
       await aside(browser).$("button*=Close").click();

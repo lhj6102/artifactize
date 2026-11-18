@@ -13,11 +13,11 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { create, createdRoots, environment, releaseFixtures, type Fixture } from "../ui/e2e/fixture.ts";
-import { asNativePath, assertHarnessPlatform, embeddedPorts, harnessEnvironment, nativePath, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
+import { asNativePath, assertHarnessPlatform, reserveEmbeddedPorts, harnessEnvironment, nativePath, runnerCommand, type Environment } from "../ui/e2e/platform.ts";
 import { page, press, typeText } from "../ui/e2e/keys.ts";
 import { adopt, cargoGate, cleanup, prepare, snapshotCandidate, type Candidate } from "../ui/e2e/build.ts";
 import { checkpoint, commandsRendered, type Checkpoint } from "../ui/e2e/commands.ts";
-import { assertAppsStopped } from "../ui/e2e/observation.ts";
+import { assertAppsStopped, recordAdmission } from "../ui/e2e/observation.ts";
 import { settleFixtureRuns } from "../ui/e2e/runs.ts";
 
 // Resolve the public package entry from the frontend which declares this dependency.
@@ -136,7 +136,7 @@ async function pressKey(browser: WebdriverIO.Browser, key: string): Promise<void
 
 /** The service merges process.env into the app environment, so sanitize that source too. */
 async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Record<string, string>, args: string[] = []): Promise<Session> {
-  const owner = nativePath(candidate.root, `owner-${randomBytes(16).toString("hex")}.json`);
+  const [owner] = recordAdmission(candidate.root, ["harness"]);
   const env: Environment = { ...environment(fixture), ...platformEnv, ARTIFACTIZE_E2E_OWNER_FILE: owner };
   for (const name of Object.keys(process.env)) if (env[name] === undefined) delete process.env[name];
   for (const [name, value] of Object.entries(env)) if (value !== undefined) process.env[name] = value;
@@ -148,14 +148,19 @@ async function launch(candidate: Candidate, fixture: Fixture, platformEnv: Recor
     logLevel: "error",
   });
   capabilities["wdio:enforceWebDriverClassic"] = true;
-  const [embeddedPort] = await embeddedPorts(1);
+  const [endpoint] = await reserveEmbeddedPorts(1);
   const serviceOptions = {
     ...capabilities["wdio:tauriServiceOptions"],
-    embeddedPort,
+    embeddedPort: endpoint.port,
     logDir: join(candidate.root, "logs"),
   };
   capabilities["wdio:tauriServiceOptions"] = serviceOptions;
-  const browser = await startWdioSession(capabilities);
+  const browser = await (async () => {
+    try {
+      await endpoint.close();
+      return await startWdioSession(capabilities);
+    } finally { await endpoint.release(); }
+  })();
   // Commands must fail within one attempt rather than replaying actions after transport loss.
   browser.options.connectionRetryTimeout = LAUNCH_TIMEOUT;
   browser.options.connectionRetryCount = 0;

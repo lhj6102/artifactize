@@ -174,8 +174,8 @@ pub(crate) fn section_lines(
 /// The visible rows of an Agent session: thinking and tool activity dimmed, or why there are
 /// none.
 pub(crate) fn transcript_lines(live: &super::session::Live) -> Vec<Line<'static>> {
-    if let Some(status) = &live.window.status {
-        return vec![Line::from(status.clone())];
+    if let Some(status) = live.window.note() {
+        return vec![Line::from(status.to_owned())];
     }
     if live.window.rows.is_empty() {
         return vec![Line::from(
@@ -700,7 +700,7 @@ impl Monitor {
             match &mut peek.live {
                 Some(live) => {
                     live.geometry(PEEK_WIDTH, PEEK_ROWS);
-                    let last = live.window.status.clone().or_else(|| {
+                    let last = live.window.note().map(str::to_owned).or_else(|| {
                         live.window
                             .rows
                             .iter()

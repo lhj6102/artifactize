@@ -8,7 +8,7 @@ use owned_run::{
 use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use artifactize_core::{human, store};
-use artifactize_tui::review::{Action, Mode, Review};
+use artifactize_tui::review::{Action, Review};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
@@ -351,14 +351,24 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
         invalid.contains(r#"- instancePath "/reason": "" is shorter than 1 character"#),
         "{invalid}"
     );
-    assert!(matches!(review.mode(), Mode::Form(_)));
+    for ch in "Corrected reason".chars() {
+        press(&mut review, KeyCode::Char(ch)).await;
+    }
+    let corrected = screen(&mut review);
+    assert!(
+        corrected.contains("RED fields") && corrected.contains("Corrected reason"),
+        "{corrected}"
+    );
     let view = store::read_request(&fixture.state, &id).await.unwrap();
     assert_eq!(view.request.status().as_str(), "DEFERRED");
     press(&mut review, KeyCode::Esc).await;
     press(&mut review, KeyCode::Char('g')).await;
     // The constant is the form's own: not shown, yet submitted below.
-    assert!(matches!(review.mode(), Mode::Form(_)));
-    assert!(!screen(&mut review).contains("approved"));
+    let green = screen(&mut review);
+    assert!(
+        green.contains("GREEN fields") && !green.contains("approved"),
+        "{green}"
+    );
     // Nothing else waits after the submission, so the review hands back to its caller.
     assert_eq!(press(&mut review, ctrl('s')).await, Action::Quit);
 
@@ -384,6 +394,7 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
     for (complete, unwind) in [(false, false), (false, true), (true, false), (true, true)] {
         let fixture = Fixture::new();
         let root = fixture._root.path().to_owned();
+        owned_run::hold_signoffs(&fixture.state);
         let output = support::os::run(fixture.command().args(["verify", "--all", "--json"]));
         assert!(output.status.success(), "{output:?}");
         let accepted: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -410,7 +421,7 @@ async fn submit_only_fixture_releases_its_human_worker_on_drop_and_unwind() {
                 &receipts,
                 &id,
                 &reviewer,
-                &json!({"verdict":"GREEN","approved":true}),
+                &human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
                 tokio_util::sync::CancellationToken::new(),
             )
             .await

@@ -3,14 +3,13 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Site {
-    pub kind: ArtifactKind,
     pub path: Target,
     pub definition: PathBuf,
 }
 impl Site {
     /// Base of relative commands and inputs, not the definition's containing folder.
     pub fn folder(&self) -> &Path {
-        folder_of(self.kind, &self.path)
+        folder_of(self.path.kind(), &self.path)
     }
     pub fn declaration_path(&self) -> PathBuf {
         self.definition.clone()
@@ -64,7 +63,6 @@ pub fn read_sites(repo: &Path) -> Result<BTreeMap<ArtifactName, Site>, ConfigErr
             Ok((
                 name,
                 Site {
-                    kind,
                     path,
                     definition: file.strip_prefix(&root).unwrap().to_owned(),
                 },
@@ -126,7 +124,8 @@ fn read_declared(
         pending.extend(declaration.parts.into_iter().flatten());
         selected.insert(file, source);
     }
-    let config = discovery::read_sources_unresolved(root, &selected)?;
+    let mut config = discovery::read_sources_unresolved(root, &selected)?;
+    discovery::inspect_targets(&mut config);
     if !config
         .artifacts
         .get(name)

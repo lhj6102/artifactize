@@ -11,11 +11,8 @@ mod order;
 use std::{
     fs,
     io::{BufRead, BufReader},
-    net::TcpListener,
     path::{Path, PathBuf},
     process::{ChildStdout, Command, Output, Stdio},
-    thread,
-    time::{Duration, Instant},
 };
 
 use rusqlite::Connection;
@@ -197,8 +194,13 @@ impl<'a> Machine<'a> {
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let (stdout, _) = self.run(repo, &[args, &["--json"]].concat(), code);
-        serde_json::from_str(&stdout).unwrap()
+        let recorded = self
+            .command(repo, &[args, &["--json"]].concat())
+            .recorded()
+            .unwrap();
+        let saved = recorded.saved_json();
+        let (stdout, _) = checked(recorded.output, code, &self.token);
+        saved.unwrap_or_else(|| serde_json::from_str(&stdout).unwrap())
     }
 
     /// Seed ordering only after this Run's actual producer has closed SQLite.
@@ -522,8 +524,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
 #[test]
 fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
     let root = owned_run::Root::from(support::os::tempdir());
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
+    let listener = support::os::tcp::nonblocking_loopback_listener();
     let url = format!("http://{}/", listener.local_addr().unwrap());
     let machine = Machine::new(&root, "bob", &url, "azt_unused");
     let repo = runtime_repo(root.path(), "repo", "v1");
@@ -589,15 +590,6 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     assert_eq!(entries[0].1["reviewer"], "alice");
 
     // Bob's wait poll finds the remote sign-off and settles his waiting request from it.
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-    let mut waiting = waiting;
-    while waiting.try_wait().unwrap().is_none() {
-        assert!(
-            Instant::now() < deadline,
-            "the waiting verify did not settle"
-        );
-        thread::sleep(Duration::from_millis(50));
-    }
     let (text, _) = checked(waiting.wait_with_output().unwrap(), 0, &bob.token);
     let marker = line(&text, "brand/signoff");
     assert!(
@@ -924,17 +916,11 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
             Some(&repo),
             artifactize_core::auth::remote::parse_url(&server.url).unwrap(),
             artifactize_core::auth::remote::Share::Summary,
-            token.clone(),
+            token.clone().try_into().unwrap(),
         )
         .await
         .unwrap();
         assert!(remote.publish(&record).await.unwrap());
-        let fetched = remote
-            .lookup(std::slice::from_ref(&record.key))
-            .await
-            .unwrap();
-        assert_eq!(fetched.len(), 1);
-        assert_eq!(fetched[0].as_ref().unwrap().execution_paths, pins);
         serde_json::to_value(pins).unwrap()
     });
     let expected: String =

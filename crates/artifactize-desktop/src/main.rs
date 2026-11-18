@@ -16,17 +16,34 @@ fn main() -> std::process::ExitCode {
     };
     let builder = tauri::Builder::default();
     #[cfg(feature = "e2e")]
-    let builder = match e2e_metadata::init() {
-        Ok(metadata) => builder
-            .plugin(metadata)
-            .plugin(tauri_plugin_wdio::init())
-            .plugin(tauri_plugin_wdio_webdriver::init()),
+    let (builder, exit) = match e2e_metadata::init() {
+        Ok((metadata, exit)) => (
+            builder
+                .plugin(metadata)
+                .plugin(tauri_plugin_wdio::init())
+                .plugin(tauri_plugin_wdio_webdriver::init()),
+            exit,
+        ),
         Err(error) => {
             eprintln!("cannot initialize E2E observation: {error}");
             return std::process::ExitCode::FAILURE;
         }
     };
-    let result = artifactize_desktop::app(builder, launch).run(tauri::generate_context!());
+    let app = artifactize_desktop::app(builder, launch);
+    #[cfg(not(feature = "e2e"))]
+    let result = app.run(tauri::generate_context!());
+    #[cfg(feature = "e2e")]
+    let result = app.build(tauri::generate_context!()).map(|app| {
+        let code = app.run_return(|_, _| {});
+        if code == 0 {
+            if let Err(error) = exit.record() {
+                eprintln!("cannot record orderly E2E app exit: {error}");
+                std::process::exit(1);
+            }
+        } else {
+            std::process::exit(code);
+        }
+    });
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

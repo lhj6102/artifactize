@@ -1,6 +1,9 @@
 //! Ephemeral formatted text and row offsets. Large events are decoded once, never retained.
 //! Layout scans bounded UTF-8 chunks; rows/page-in use this same explicit grapheme model.
-use super::document::{Anchor, Position, cell_width};
+use super::{
+    document::{Anchor, Position, cell_width},
+    transcript::BlockId,
+};
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
@@ -215,7 +218,7 @@ impl Pages {
     }
     /// Stable semantic block slots are replaced by appending a new private text extent.
     /// Only layout is rebuilt; original JSONL events are never decoded again.
-    pub fn set(&mut self, id: usize, text: &str) -> Result<(), String> {
+    pub fn set(&mut self, BlockId(id): BlockId, text: &str) -> Result<(), String> {
         assert!(
             id <= self.texts.len(),
             "semantic block slots are consecutive"

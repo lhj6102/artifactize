@@ -30,3 +30,29 @@ export function subdued(colour: number[], ink: number[], background: number[]): 
   // Neutral UI greys may carry a slight cool/warm tint, but not a status colour's saturation.
   return Math.max(...colour) - Math.min(...colour) < 48 && separation(colour) < separation(ink) && separation(colour) > 0;
 }
+
+export type ViewportBox = { left: number; right: number; top: number; bottom: number };
+
+/** Pixels in viewport coordinates, from one real WebDriver capture. */
+export async function screenshotPixels(browser: WebdriverIO.Browser, viewport: { width: number; height: number }) {
+  const image = PNG.sync.read(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const sx = image.width / viewport.width;
+  const sy = image.height / viewport.height;
+  function rgb(x: number, y: number): number[] {
+    if (x < 0 || y < 0 || x >= image.width || y >= image.height) throw new Error("screenshot sample falls outside the viewport");
+    const at = (y * image.width + x) * 4;
+    return [...image.data.subarray(at, at + 3)];
+  }
+  return {
+    at: (x: number, y: number) => rgb(Math.round(x * sx), Math.round(y * sy)),
+    every: (box: ViewportBox, matches: (color: number[]) => boolean) => {
+      const left = Math.ceil(box.left * sx), right = Math.floor(box.right * sx);
+      const top = Math.ceil(box.top * sy), bottom = Math.floor(box.bottom * sy);
+      if (left >= right || top >= bottom) throw new Error("screenshot sample has no pixels");
+      for (let y = top; y < bottom; y += 1) for (let x = left; x < right; x += 1) {
+        if (!matches(rgb(x, y))) return false;
+      }
+      return true;
+    },
+  };
+}

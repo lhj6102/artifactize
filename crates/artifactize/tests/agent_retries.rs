@@ -713,10 +713,9 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
 /// A private candidate must keep serving later Runs, including their durable self-spawn.
 #[test]
 fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
-    let root = support::os::tempdir();
-    let source = root.path().join(support::os::cli().file_name().unwrap());
-    fs::copy(support::os::cli(), &source).unwrap();
-    let candidate = support::os::OwnedExecutable::copy_from(&source).unwrap();
+    let published = support::os::OwnedExecutable::copy_from(&support::os::cli()).unwrap();
+    let source = published.path();
+    let candidate = support::os::OwnedExecutable::copy_from(source).unwrap();
     let project = Project::new(&[("notes", agent("openai"))]);
     let release = support::Gate::default();
     let (arrived, admitted) = std::sync::mpsc::sync_channel(1);
@@ -739,9 +738,9 @@ fn an_owned_cli_keeps_verifying_when_its_published_source_is_replaced() {
         admitted
             .recv_timeout(support::os::patience(Duration::from_secs(20)))
             .expect("the candidate's durable worker reached the provider");
-        support::declaration::remove_file(&source).unwrap();
+        support::declaration::remove_file(source).unwrap();
         fs::write(
-            support::declaration::source_path(&source),
+            support::declaration::source_path(source),
             "replacement is deliberately not the declared CLI",
         )
         .unwrap();
@@ -794,7 +793,9 @@ fn the_process_owned_cli_is_removed_on_success_and_test_unwind() {
             ],
         );
         command.arg("--ignored");
-        let output = support::os::finish(support::os::start(&mut command), "owned CLI exit");
+        let output = owned_run::Watcher::new(support::os::start(&mut command))
+            .wait_with_output()
+            .unwrap();
         assert_eq!(
             output.status.success(),
             mode != "unwind",

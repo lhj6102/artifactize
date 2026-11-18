@@ -1,5 +1,8 @@
 //! CLI argument parsing for the shared tool diagnostic operation.
 
+use artifactize_core::diagnostics::ToolArguments;
+use clap::Subcommand;
+
 #[derive(Debug, Default, clap::Args)]
 pub struct ToolCheckArgs {
     /// Select one Agent or Human eval's admitted scope (same as --eval).
@@ -21,7 +24,7 @@ pub struct ToolCheckArgs {
     #[arg(long)]
     pub execute: bool,
     /// JSON arguments for an executed Agent tool.
-    #[arg(long, value_name = "JSON", value_parser = json_arguments)]
+    #[arg(long, value_name = "JSON")]
     pub args: Option<ToolArguments>,
 }
 
@@ -35,18 +38,15 @@ impl TryFrom<ToolCheckArgs> for artifactize_core::diagnostics::ToolCheckOptions 
             args.audience,
             args.tool,
             args.execute,
-            args.args.map(|ToolArguments(object)| object),
+            args.args,
         )
     }
 }
 
-/// Agent tools take named arguments; their particular schema is resolved during diagnostics.
-#[derive(Debug, Clone)]
-pub struct ToolArguments(serde_json::Map<String, serde_json::Value>);
-
-fn json_arguments(text: &str) -> Result<ToolArguments, String> {
-    match serde_json::from_str(text).map_err(|e| format!("Invalid --args JSON: {e}"))? {
-        serde_json::Value::Object(object) => Ok(ToolArguments(object)),
-        _ => Err("--args must be a JSON object.".into()),
-    }
+#[derive(Debug, Subcommand)]
+pub enum ToolsCommand {
+    /// Static preflight by default; --execute opts in to one tool call.
+    Check(ToolCheckArgs),
+    #[command(flatten)]
+    Builtin(artifactize_tools::cli::Tool),
 }

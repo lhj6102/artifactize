@@ -11,8 +11,8 @@ import { scenario, type Scenario } from "../scenario.ts";
 import { primaryModifier, shortcutLabel } from "../platform.ts";
 import { reviewing } from "../human-review.ts";
 import { detail, graphShown } from "../graph-view.ts";
-import { clickAt } from "../pointer.ts";
-import { entriesFocused, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
+import { pointerGapClick } from "../pointer.ts";
+import { entriesFocused, expectMainReview, mainTitle, SEARCH, searchFocused, waiting } from "../pane.ts";
 
 async function waitFor(browser: WebdriverIO.Browser, check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
   await browser.waitUntil(async () => !!(await check()), { timeout: ms, timeoutMsg: `timed out: ${what}` });
@@ -211,7 +211,7 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
       await fill(browser, '[aria-label="Request ID"]', data.otherId);
       await browser.$('[role="dialog"] button[type="submit"]').click();
-      await waitFor(browser, async () => (await mainTitle(browser)) === "Review", "the review opened by ID");
+      await expectMainReview(browser, data.otherId);
       await ctrlK("after the review opened");
       await escape("Esc");
     },
@@ -287,7 +287,7 @@ export const scenarios: Scenario[] = [
       await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
       await watchErrors(browser);
       await ctrlK("Ctrl+K");
-      await clickAt(browser, { x: 20, y: 600 });
+      await pointerGapClick(browser, { x: 20, y: 600 });
       await closed("outside click");
       await ctrlK("after the outside click");
       await escape("Esc");

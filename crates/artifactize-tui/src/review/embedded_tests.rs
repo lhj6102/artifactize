@@ -436,7 +436,7 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
         &state,
         &view.request.id,
         &"alice".parse().unwrap(),
-        &json!({"verdict":"GREEN","approved":true}),
+        &Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -512,7 +512,7 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
         &state,
         &id,
         &"alice".parse().unwrap(),
-        &json!({"verdict":"GREEN","approved":true}),
+        &Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -604,7 +604,7 @@ instruction = "Keep this independent review claimed."
         &state,
         &id,
         &"alice".parse().unwrap(),
-        &json!({"verdict":"GREEN","approved":true}),
+        &Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
         CancellationToken::new(),
     )
     .await

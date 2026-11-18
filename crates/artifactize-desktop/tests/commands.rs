@@ -774,7 +774,7 @@ async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String 
     .unwrap();
     receipts.create_run(&run, &[request]).await.unwrap();
     // The recorded conversation: a review header, then one answer per row.
-    let path = artifactize_core::agent::session::path(&fixture.state, session).unwrap();
+    let path = artifactize_core::agent::session::path(&fixture.state, &session.parse().unwrap());
     os::create_private_dir_all(path.parent().unwrap());
     let answer = |text: String| {
         serde_json::to_string(&artifactize_core::agent::session::Event {

@@ -359,14 +359,14 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
         "x".repeat(80_000),
     )
     .unwrap();
-    let run = parsed(
-        command(&repo, &state)
-            .args(["verify", "--all", "--json"])
-            .record_output()
-            .unwrap(),
-        0,
-    );
-    let id = run["requests"][0]["id"].as_str().unwrap();
+    let recorded = command(&repo, &state)
+        .args(["verify", "--all", "--json"])
+        .recorded()
+        .unwrap();
+    let run = recorded.saved.expect("submitted Human Run");
+    let accepted = parsed(recorded.output, 0);
+    assert_eq!(accepted["run"].as_str(), Some(run.run.id.as_str()));
+    let id = run.requests[0].id.as_str();
     parsed(
         command(&repo, &state)
             .args(["request", "claim", id, "--json"])
@@ -410,14 +410,14 @@ fn request_open_hands_one_target_to_the_shared_opener() {
         json!({}),
         json!({"open":{"builtin":"open","args":[format!("{{artifactPath}}/{target}")]}}),
     );
-    let run = parsed(
-        command(&repo, &state)
-            .args(["verify", "--all", "--json"])
-            .record_output()
-            .unwrap(),
-        0,
-    );
-    let id = run["requests"][0]["id"].as_str().unwrap();
+    let recorded = command(&repo, &state)
+        .args(["verify", "--all", "--json"])
+        .recorded()
+        .unwrap();
+    let run = recorded.saved.expect("submitted Human Run");
+    let accepted = parsed(recorded.output, 0);
+    assert_eq!(accepted["run"].as_str(), Some(run.run.id.as_str()));
+    let id = run.requests[0].id.as_str();
     parsed(
         command(&repo, &state)
             .args(["request", "claim", id, "--json"])

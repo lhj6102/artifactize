@@ -1,10 +1,11 @@
 // Exercise the public Launcher and actual Tauri service, not a replacement service hook.
 import assert from "node:assert/strict";
 import { it } from "node:test";
+import { assertAdmissionsStopped, recordAdmission } from "./observation.ts";
 import { environment } from "./environment.ts";
 import {
   executableName, fixtureRunner, makeDirectory, nativePath, newDirectory, removeTree, runnerCommand, scratchDirectory,
-  processRunning, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
+  exists, nodeProgram, processRunning, readLoopback, serveLoopback, suitePath, writeJson, writeText, type LoopbackServer, type NativePath,
 } from "./platform.ts";
 
 function root(): NativePath {
@@ -98,4 +99,51 @@ it("cancelling a wrapped runner joins its fixture descendants before releasing i
     const failures = released.flatMap((result) => result.status === "rejected" ? [result.reason as unknown] : []);
     if (failures.length) throw new AggregateError(failures, "runner regression fixture release failed");
   }
+});
+
+it("joins fixture descendants even after their root process returned", { timeout: 120000 }, async (test) => {
+  const directory = root();
+  let descendant: number | undefined;
+  const receiver = await serveLoopback((socket) => {
+    let input = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk: string) => { input += chunk; });
+    socket.once("end", () => { descendant = JSON.parse(input) as number; });
+  });
+  try {
+    const command = runnerCommand([suitePath("domain-fixtures", "tree.ts"), "owner-exits", String(receiver.port)], environment(fixture(directory)));
+    const result = await fixtureRunner(command, test.signal);
+    assert.equal(result.code, 0, result.stderr);
+    assert.ok(descendant && !processRunning(descendant), "the root returned but the same fixture had to join its still-live descendant");
+  } finally {
+    await receiver.close();
+    removeTree(directory);
+  }
+});
+
+it("a missing native birth record cannot authorize cleanup of admitted inputs", () => {
+  const directory = root();
+  try {
+    const fixtureFile = nativePath(directory, "owned-input");
+    writeText(fixtureFile, "the app still may use this");
+    recordAdmission(directory, ["unconfirmed"]);
+    assert.throws(() => assertAdmissionsStopped(directory, nodeProgram), /live runner/);
+    assert.throws(() => assertAdmissionsStopped(directory, nodeProgram, true), /birth record missing/);
+    assert.equal(exists(fixtureFile), true);
+  } finally { removeTree(directory); }
+});
+
+it("closing an owned TCP endpoint joins a stalled connection and repeated callers", { timeout: 10000 }, async () => {
+  let connected!: () => void;
+  const accepted = new Promise<void>((done) => { connected = done; });
+  const server = await serveLoopback(() => connected());
+  const client = readLoopback(server.port, 5000);
+  try {
+    await accepted;
+    const first = server.close();
+    assert.equal(server.close(), first, "both callers await one teardown");
+    await first;
+    assert.equal(server.listening(), false);
+    assert.ok([null, ""].includes(await client), "the stalled accepted peer was disconnected");
+  } finally { await server.close(); }
 });

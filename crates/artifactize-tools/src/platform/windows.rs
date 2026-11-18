@@ -155,6 +155,25 @@ impl Drop for Tree {
 
 /// Hand the target to ShellExecute's default verb on a blocking thread.
 pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
+    #[cfg(feature = "fixture-opener")]
+    if let Some(program) = std::env::var_os("ARTIFACTIZE_E2E_BROWSER_PROGRAM") {
+        let node = std::env::var_os("ARTIFACTIZE_E2E_BROWSER_NODE").ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the fixture opener requires its declared executable",
+            )
+        })?;
+        let status = tokio::process::Command::new(node)
+            .arg(program)
+            .arg(target)
+            .status()
+            .await?;
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(io::Error::other(format!("fixture opener exited {status}")))
+        };
+    }
     let target = target.to_owned();
     match tokio::task::spawn_blocking(move || shell_execute(&target)).await {
         Ok(result) => result,

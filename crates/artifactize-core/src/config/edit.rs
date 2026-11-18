@@ -324,7 +324,7 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
     compare_changes(&root, based_on, &changes)?;
     let written = (|| -> Result<(), Refusal> {
         for (file, temp) in staged {
-            temp.persist(&file).map_err(io)?;
+            crate::platform::paths::replace_open_file(temp, &file).map_err(io)?;
         }
         for (file, source) in &changes {
             if source.is_none() {
@@ -336,7 +336,7 @@ pub fn apply(project: &Path, based_on: &BasedOn, operation: Operation) -> Result
     if let Err(error) = written {
         for (file, source) in originals {
             if let Some(source) = source {
-                std::fs::write(file, source).map_err(io)?;
+                crate::platform::paths::restore_file(&file, source.as_bytes()).map_err(io)?;
             } else if file.exists() {
                 std::fs::remove_file(file).map_err(io)?;
             }
@@ -461,6 +461,69 @@ fn rename_value(
         _ => (),
     }
 }
+fn names_artifact(
+    item: &toml_edit::Item,
+    artifact: &Artifact,
+    name: &ArtifactName,
+    keys: &mut Vec<String>,
+) -> bool {
+    let mut in_table = |table: &toml_edit::Table| {
+        table.iter().any(|(key, item)| {
+            keys.push(key.to_owned());
+            let found = names_artifact(item, artifact, name, keys);
+            keys.pop();
+            found
+        })
+    };
+    match item {
+        toml_edit::Item::Table(table) => in_table(table),
+        toml_edit::Item::ArrayOfTables(tables) => tables.iter().any(in_table),
+        toml_edit::Item::Value(value) => names_artifact_value(value, artifact, name, keys),
+        toml_edit::Item::None => false,
+    }
+}
+
+fn names_artifact_value(
+    value: &toml_edit::Value,
+    artifact: &Artifact,
+    name: &ArtifactName,
+    keys: &mut Vec<String>,
+) -> bool {
+    if keys.first().is_some_and(|key| key == "annotations") {
+        return false;
+    }
+    match value {
+        toml_edit::Value::String(text) => {
+            let text = text.value();
+            let argument = || {
+                matches!(text.parse::<crate::scope::Argument>(),
+                Ok(crate::scope::Argument::Reference { name: target, .. }) if target.as_str() == name.as_str())
+            };
+            match reference_field(keys, artifact) {
+                _ if keys.as_slice() == ["parts"] => text == name.as_str(),
+                Some(ReferenceField::Instruction) => crate::scope::reference_spans(text)
+                    .iter()
+                    .any(|reference| reference.name.as_str() == name.as_str()),
+                Some(ReferenceField::Arguments) => argument(),
+                Some(ReferenceField::HumanArguments) if name.as_str() != "artifactPath" => {
+                    argument()
+                }
+                _ => false,
+            }
+        }
+        toml_edit::Value::Array(array) => array
+            .iter()
+            .any(|value| names_artifact_value(value, artifact, name, keys)),
+        toml_edit::Value::InlineTable(table) => table.iter().any(|(key, value)| {
+            keys.push(key.to_owned());
+            let found = names_artifact_value(value, artifact, name, keys);
+            keys.pop();
+            found
+        }),
+        _ => false,
+    }
+}
+
 enum ReferenceField {
     Instruction,
     Arguments,
@@ -603,7 +666,8 @@ pub fn footprint(project: &Project, operation: &Operation) -> Result<Footprint, 
 pub fn read_project(project: &Path) -> Result<Project, Refusal> {
     let root = crate::platform::canonicalize(project).map_err(io)?;
     let sources = discovery::sources(&root)?;
-    let config = discovery::read_sources(root.clone(), &sources)?;
+    let mut config = discovery::read_sources(root.clone(), &sources)?;
+    discovery::inspect_targets(&mut config);
     let files = sources
         .into_iter()
         .map(|(file, source)| {

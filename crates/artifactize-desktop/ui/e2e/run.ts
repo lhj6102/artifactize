@@ -1,11 +1,11 @@
 // Build once, then let the public WDIO Launcher own each bounded batch of capabilities.
 import { inspect } from "node:util";
-import { assertAppsStopped } from "./observation.ts";
+import { AppStillAlive, assertAdmissionsStopped, assertAppsStopped } from "./observation.ts";
 import { checkSuite } from "../lint/e2e-integrity.ts";
 import { cleanup, prepare, readCandidate, snapshotCandidate } from "./build.ts";
 import {
-  absolutePath, appsAtOnce, asNativePath, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
-  nativeCrashReports, nodeProgram, readJson, requiredVariable, removeTree, setVariable, writeJson, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
+  absolutePath, appsAtOnce, asNativePath, assertHarnessPlatform, assertRunnerMachine, exists, inheritedEnvironment, listFiles, nativePath, newDirectory,
+  nativeCrashReports, nodeProgram, processId, processRunning, readText, requiredVariable, removeTree, setVariable, writeTextOnce, runForwardingInterrupts, runnerCommand, scratchDirectory, serviceFailureLogs, suitePath, variable, type Environment,
 } from "./platform.ts";
 
 const file = suitePath("run.ts");
@@ -21,6 +21,18 @@ function execute(program: string, args: string[], env: Environment): Promise<num
 }
 
 async function batch(): Promise<void> {
+  assertHarnessPlatform();
+  const candidate = readCandidate();
+  const runner = nativePath(candidate.root, "running.json");
+  if (!writeTextOnce(runner, String(processId()))) throw new Error("candidate already has a batch owner; use a fresh candidate");
+  try {
+    if (exists(nativePath(candidate.root, "cleaning.json"))) throw new Error("candidate cleanup already started");
+    assertAdmissionsStopped(candidate.root, candidate.observer);
+    await launchBatch();
+  } finally { removeTree(runner); }
+}
+
+async function launchBatch(): Promise<void> {
   const { Launcher } = await import("@wdio/cli");
   const launcher = new Launcher(suitePath("wdio.conf.ts"));
   // Initialize the public loader before importing its config, so the fixture owner
@@ -36,12 +48,8 @@ async function batch(): Promise<void> {
     const cases = selectedScenarios(ids);
     if (code === 0 && cases.some((item) => item.relaunched)) {
       if (cases.length !== 1) throw new Error("a relaunch case owns its own Launcher batch");
-      const candidate = readCandidate();
-      const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
-      assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-      // The first birth record attests an exited owner. Retire it only after that
-      // observation; the next native lifetime must create its own fresh birth record.
-      for (const id of ids) removeTree(nativePath(output, `${id}.owner.json`));
+      if (!configuration.ownerFiles) throw new Error("the first launch has no app admission journal");
+      assertAppsStopped(readCandidate().observer, configuration.ownerFiles);
       setVariable("DESKTOP_TEST_RELAUNCH", "1");
       const next = new Launcher(suitePath("wdio.conf.ts"));
       await next.initialize();
@@ -53,21 +61,23 @@ async function batch(): Promise<void> {
       : new Error("Desktop scenario preparation failed", { cause: configuration.preparationFailure }));
   }
   try {
-    const candidate = readCandidate();
-    const ids = JSON.parse(requiredVariable("DESKTOP_TEST_BATCH", "each batch owns its app identities")) as string[];
-    const output = asNativePath(requiredVariable("DESKTOP_TEST_BATCH_OUTPUT", "each batch records native owners"));
-    if (configuration.preparationFailure !== undefined) {
-      // SevereServiceError refused app admission. Release domain workers acquired
-      // during preparation, then attest that no native-app ownership was acquired.
+    if (configuration.preparationFailure !== undefined && !configuration.ownerFiles) {
       await configuration.releasePrepared();
-      writeJson(nativePath(output, "prelaunch-refused.json"), { refused: true });
     } else {
-      // Only an app confirmed stopped no longer uses its inputs: unconfirmed, none is deleted,
-      // but the fixtures' Runs are still cancelled and joined.
-      try { assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`))); }
-      catch (error) {
-        try { configuration.settlePrepared(); } catch (settlement) { failures.push(settlement); }
-        throw error;
+      // No release callback or Run settlement is safe while a native owner may still use it.
+      const candidate = readCandidate();
+      let reported = false;
+      for (;;) {
+        try { assertAdmissionsStopped(candidate.root, candidate.observer, true); break; }
+        catch (error) {
+          if (!(error instanceof AppStillAlive)) throw error;
+          if (!reported) {
+            reported = true;
+            failures.push(error);
+            console.error(`${error.message}; waiting without dismantling their fixtures`);
+          }
+        }
+        await new Promise((done) => setTimeout(done, 100));
       }
       await configuration.releasePrepared();
     }
@@ -98,7 +108,11 @@ async function suite(ids: string[]): Promise<void> {
   // The full suite always builds its own evaluated inputs, even when an Agent-tool
   // session has a prepared candidate in the environment. Explicit targeted developer
   // runs may reuse immutable binaries, but still own a private snapshot and fixtures.
-  const candidate = ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? await snapshotCandidate(scratch) : await prepare();
+  const candidate = await (ids.length > 0 && variable("DESKTOP_TEST_CANDIDATE") ? snapshotCandidate(scratch) : prepare())
+    .catch((error: unknown) => {
+      if (declaredOutput === undefined) removeTree(output);
+      throw error;
+    });
   console.error(`Desktop E2E diagnostics: ${output}`);
   const failures: unknown[] = [];
   let confirmed = true;
@@ -118,11 +132,7 @@ async function suite(ids: string[]): Promise<void> {
         if (code !== 0) failures.push(new Error(`scenarios ${ids.join(", ")} failed with exit code ${code}`));
       } catch (error) { failures.push(error); }
       try {
-        const output = asNativePath(env.DESKTOP_TEST_BATCH_OUTPUT);
-        const refused = nativePath(output, "prelaunch-refused.json");
-        if (!exists(refused) || (readJson(refused) as { refused?: boolean }).refused !== true) {
-          assertAppsStopped(candidate.observer, ids.map((id) => nativePath(output, `${id}.owner.json`)));
-        }
+        assertAdmissionsStopped(candidate.root, candidate.observer);
         confirmed = true;
       } catch (error) { failures.push(error); }
       if (!confirmed) break;
@@ -139,6 +149,9 @@ async function suite(ids: string[]): Promise<void> {
     if (confirmed) {
       try { await cleanup(candidate.root); } catch (error) { failures.push(error); }
     } else failures.push(new Error(`Native shutdown unconfirmed; retained inputs at ${candidate.root}`));
+    if (declaredOutput === undefined) {
+      try { removeTree(output); } catch (error) { failures.push(error); }
+    }
   }
   if (failures.length) throw new AggregateError(failures, "desktop E2E failures");
 }
@@ -155,8 +168,22 @@ try {
   if (mode === "suite" || mode === "prepare") checkSuite();
   if (mode === "suite" || mode === "batch") assertRunnerMachine();
   if (mode === "prepare") console.log((await prepare()).manifest);
-  else if (mode === "cleanup") await cleanup(readCandidate(process.argv[3]).root);
-  else if (mode === "unit") await unit();
+  else if (mode === "cleanup") {
+    const candidate = readCandidate(process.argv[3]);
+    const marker = nativePath(candidate.root, "cleaning.json");
+    if (!writeTextOnce(marker, "cleanup\n")) throw new Error("candidate cleanup already started");
+    try {
+      const runner = nativePath(candidate.root, "running.json");
+      if (exists(runner)) {
+        const pid = Number(readText(runner));
+        if (!Number.isSafeInteger(pid) || pid <= 0 || processRunning(pid)) {
+          throw new Error("candidate is still owned by its batch runner");
+        }
+      }
+      assertAdmissionsStopped(candidate.root, candidate.observer);
+      await cleanup(candidate.root);
+    } finally { removeTree(marker); }
+  } else if (mode === "unit") await unit();
   else if (mode === "batch") await batch();
   else if (mode === "suite") {
     if (variable("DESKTOP_TEST_WRAPPED") === "1") await suite(process.argv.slice(3));

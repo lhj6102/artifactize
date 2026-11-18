@@ -2,25 +2,15 @@
 
 use std::io;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncReadExt, BufReader},
     net::TcpStream,
 };
 
 /// Probe a peer after its owning operation has completed, preserving every reply byte.
 /// EOF and a peer reset both terminate TCP; neither is evidence of process reaping by
 /// itself. The caller separately checks the owner outcome and rejects any reply bytes.
-/// A broken/reset send is a closed write side, but the buffered read is still drained.
-/// Every other send/read error remains an error, never a successful observation.
-pub async fn closed_probe(stream: &mut BufReader<TcpStream>, probe: &[u8]) -> io::Result<Vec<u8>> {
-    match stream.get_mut().write_all(probe).await {
-        Ok(()) => {}
-        Err(error)
-            if matches!(
-                error.kind(),
-                io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
-            ) => {}
-        Err(error) => return Err(error),
-    }
+/// Any error other than a peer reset remains an error.
+pub async fn closed_probe(stream: &mut BufReader<TcpStream>) -> io::Result<Vec<u8>> {
     let mut response = Vec::new();
     match stream.read_to_end(&mut response).await {
         Ok(_) => Ok(response),
@@ -55,4 +45,44 @@ pub fn socket_gate_args(address: std::net::SocketAddr, label: Option<&str>) -> V
     .into_iter()
     .chain(label.map(str::to_owned))
     .collect()
+}
+
+/// A tool process announces its PID after optional JSON input and waits for its owner.
+pub fn tool_ready_script(address: std::net::SocketAddr, read_input: bool) -> String {
+    let input = if read_input {
+        "json.load(sys.stdin)\n"
+    } else {
+        ""
+    };
+    let (ip, port) = (address.ip(), address.port());
+    format!(
+        "import json,os,socket,sys,threading\n{input}s = socket.create_connection(('{ip}', {port}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()"
+    )
+}
+
+/// Python's fixture-side half of the acknowledged IPC marker protocol.
+pub const PYTHON_MARKERS: &str = r#"import socket, sys
+host, port = sys.argv[2:4]
+def record(kind):
+    with socket.create_connection((host, int(port))) as stream:
+        stream.sendall((kind + ' ' + sys.argv[1] + '\n').encode())
+        with stream.makefile('rb') as response:
+            assert response.readline() == b'ok\n'
+"#;
+
+/// A build-script callback that reports its identity and waits for the fixture owner.
+pub fn cargo_build_callback(address: std::net::SocketAddr) -> String {
+    let path_text = super::RUST_PATH_TEXT;
+    format!(
+        r#"use std::io::{{Read, Write}};
+{path_text}
+fn main() {{
+    let mut stream = std::net::TcpStream::connect("{address}").unwrap();
+    let out = std::env::var_os("OUT_DIR").unwrap();
+    writeln!(stream, "{{}}\t{{}}", std::process::id(), path_text(std::path::Path::new(&out))).unwrap();
+    let mut probe = [0];
+    if stream.read_exact(&mut probe).is_ok() {{ stream.write_all(b"alive").unwrap(); }}
+}}
+"#
+    )
 }

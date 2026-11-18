@@ -191,7 +191,7 @@ pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, Fil
             }
         }
         drop(directory);
-        match platform::remove_abandoned_directory(&path) {
+        match platform::remove_tree(&path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),

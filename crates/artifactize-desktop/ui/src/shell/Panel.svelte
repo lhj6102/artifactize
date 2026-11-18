@@ -154,21 +154,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* Expanded text floats from its one-line header slot: reading a notice never
-   * moves or resizes the graph underneath it. */
-  .notice.open button {
-    position: absolute;
-    inset: 0 0 auto;
-    z-index: 30;
-    padding: 8px;
+  /* Expanded, the notice keeps its place in the header row (E-MON-NOTICE): raised inside a
+   * panel line, its whole text wrapped at that place's width and scrolling within the row's
+   * height, so the header keeps its height and nothing below it moves or is covered. */
+  .notice.open {
+    box-sizing: border-box;
+    height: 28px;
+    overflow-x: hidden;
+    overflow-y: auto;
     border: 1px solid var(--line-panel);
     border-radius: var(--radius-control);
     background: var(--surface-raised);
-    box-shadow: 0 2px 8px var(--scrim);
-    max-height: 40vh;
-    overflow: auto;
+  }
+  .notice.open button {
+    padding: 2px 8px;
+    line-height: 1.25;
     text-align: start;
     white-space: normal;
+    overflow: visible;
     overflow-wrap: anywhere;
   }
   .actions {

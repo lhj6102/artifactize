@@ -6,8 +6,10 @@ use artifactize_core::{
     types::{RequestStatus, RunId},
 };
 use std::{
-    path::Path,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
     process::{Command, Output},
+    sync::{Arc, Mutex, Weak},
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
@@ -106,6 +108,7 @@ async fn admitted(
     state: &Path,
     id: &RunId,
     cancellation: CancellationToken,
+    expected: Option<(&artifactize_core::types::EvalId, RequestStatus)>,
 ) -> Result<store::RunView, String> {
     let mut changes = artifactize_core::changes::Subscription::new(state).await;
     let result = tokio::time::timeout(ADMISSION_BOUND, async {
@@ -113,6 +116,7 @@ async fn admitted(
             // Run status and requests come from one read-only transaction. The observer
             // must not reconcile a dead owner or finish/cancel the Run it is waiting for.
             let view = store::read_run(state, id).await?;
+            remember_owners(state, &view);
             let waiting = view.run.control.as_ref().map_or_else(
                 || {
                     !view
@@ -124,15 +128,26 @@ async fn admitted(
                     !control.cancellation_requested && control.activity == runs::Activity::Waiting
                 },
             );
-            if !view.run.status().is_open()
-                || (waiting
-                    && view
-                        .requests
-                        .iter()
-                        .any(|request| request.status().is_human_wait()))
-            {
+            let admitted = match expected {
+                Some((eval, status)) => view
+                    .requests
+                    .iter()
+                    .any(|request| &request.eval_id == eval && request.status() == status),
+                None => {
+                    !view.run.status().is_open()
+                        || (waiting
+                            && view
+                                .requests
+                                .iter()
+                                .any(|request| request.status().is_human_wait()))
+                }
+            };
+            if admitted {
                 terminal_worker_exited(&view, &mut changes, &cancellation).await?;
                 return Ok::<_, String>(view);
+            }
+            if !view.run.status().is_open() {
+                return Err("Fixture Run ended before the expected request state.".into());
             }
             tokio::select! {
                 _ = changes.next_state() => {},
@@ -156,25 +171,128 @@ pub async fn record(
 ) -> Result<store::RunView, String> {
     let context = runs::Context::new(repo, state, fixture_worker::executable()?)?;
     let observation = runs::start(&context, selection, options, None).await?;
-    admitted(&store::state_dir(state)?, &observation.run, cancellation).await
+    admitted(context.state(), &observation.run, cancellation, None).await
+}
+
+/// Submit the single Eval fixture and wait for the exact Deferred receipt, not admission alone.
+pub async fn record_deferred(
+    repo: &Path,
+    state: &Path,
+    eval: &artifactize_core::types::EvalId,
+) -> Result<store::RunView, String> {
+    let context = runs::Context::new(repo, Some(state), fixture_worker::executable()?)?;
+    let observation =
+        runs::start(&context, &Selection::All, &VerifyOptions::default(), None).await?;
+    admitted(
+        context.state(),
+        &observation.run,
+        CancellationToken::new(),
+        Some((eval, RequestStatus::Deferred)),
+    )
+    .await
+}
+
+/// The last observed birth identities of a Run this fixture submitted, independent of SQLite.
+struct Owners {
+    children: Vec<artifactize_core::process::ChildIdentity>,
+    worker: Option<artifactize_core::process::ChildIdentity>,
+    supervisor: Option<artifactize_core::process::ChildIdentity>,
+}
+
+type OwnedRuns = Mutex<BTreeMap<RunId, Owners>>;
+type FixturePaths = (PathBuf, PathBuf);
+static LEASES: Mutex<BTreeMap<FixturePaths, Weak<OwnedRuns>>> = Mutex::new(BTreeMap::new());
+
+fn remember_owners(state: &Path, view: &store::RunView) {
+    let key = (state.to_owned(), view.run.repo_path.clone());
+    let owners = LEASES.lock().unwrap().get(&key).and_then(Weak::upgrade);
+    if let (Some(owners), Some(control)) = (owners, &view.run.control) {
+        let worker = match control.worker {
+            runs::Worker::Admitted { owner } => Some(owner),
+            _ => None,
+        };
+        let children = view
+            .requests
+            .iter()
+            .filter(|request| !request.joined)
+            .filter_map(|request| request.child.as_ref())
+            .map(|child| artifactize_core::process::ChildIdentity {
+                pid: child.pid,
+                start_time: child.start_time,
+            })
+            .collect();
+        owners.lock().unwrap().insert(
+            view.run.id.clone(),
+            Owners {
+                children,
+                worker,
+                supervisor: control.supervisor,
+            },
+        );
+    }
 }
 
 /// Own every Run submitted to one fixture repository, including its temporary input/state.
-/// Successful teardown cancels active Runs, observes saved terminal state and waits for the
-/// admitted workers' birth identities to exit before deleting the directory. Failed cleanup
-/// retains the directory so a surviving worker never loses its inputs during test unwinding.
+/// Teardown normally cancels through the saved Run, then waits for worker exit. An unreadable
+/// store falls back to the birth identities observed during fixture submission.
 pub struct RepoLease {
     root: Option<tempfile::TempDir>,
-    state: std::path::PathBuf,
-    repo: std::path::PathBuf,
+    state: PathBuf,
+    repo: PathBuf,
+    owners: Arc<OwnedRuns>,
 }
 
 impl RepoLease {
     pub fn new(root: tempfile::TempDir, state: &Path, repo: &Path) -> Self {
+        let state = artifactize_core::workspace::canonical_target(state).unwrap();
+        let repo = artifactize_core::workspace::canonical_target(repo).unwrap();
+        let owners = Arc::new(OwnedRuns::default());
+        let previous = LEASES
+            .lock()
+            .unwrap()
+            .insert((state.clone(), repo.clone()), Arc::downgrade(&owners));
+        assert!(
+            previous.and_then(|lease| lease.upgrade()).is_none(),
+            "fixture already has a RepoLease"
+        );
         Self {
             root: Some(root),
-            state: state.to_owned(),
-            repo: repo.to_owned(),
+            state,
+            repo,
+            owners,
+        }
+    }
+
+    fn stop_saved_owners(&self) -> Result<(), String> {
+        let owners = self.owners.lock().unwrap();
+        let mut errors = Vec::new();
+        for run in owners.values() {
+            let members = run
+                .children
+                .iter()
+                .copied()
+                .map(|child| (child, true))
+                .chain(
+                    run.worker
+                        .into_iter()
+                        .chain(run.supervisor)
+                        .map(|owner| (owner, false)),
+                );
+            for (member, group) in members {
+                if let Err(error) = process_observation::stop_owned(
+                    member.pid.get(),
+                    member.start_time,
+                    group,
+                    ADMISSION_BOUND,
+                ) {
+                    errors.push(format!("{}: {error}", member.pid.get()));
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
         }
     }
 
@@ -186,8 +304,10 @@ impl RepoLease {
     /// observe saved terminal state plus worker exit, while retaining the fixture root.
     /// This does not disarm the lease; Drop also releases any subsequently submitted Runs.
     pub fn release(&self) -> Result<(), String> {
-        if !self.state.join(store::DATABASE).is_file() {
-            return Ok(());
+        match self.state.join(store::DATABASE).try_exists() {
+            Ok(true) => {}
+            Ok(false) => return self.stop_saved_owners(),
+            Err(error) => return Err(error.to_string()),
         }
         std::thread::scope(|scope| {
             scope
@@ -228,26 +348,44 @@ impl RepoLease {
 
 impl Drop for RepoLease {
     fn drop(&mut self) {
-        if let Err(error) = self.release() {
-            let retained = self.root.take().expect("fixture root is owned").keep();
-            let message = format!(
-                "Fixture Run cleanup failed; inputs retained at {}: {error}",
-                fixture_worker::path_text(&retained)
-            );
-            if std::thread::panicking() {
-                // Preserve the original test panic, but report the cleanup failure too.
-                eprintln!("{message}");
-            } else {
-                panic!("{message}");
-            }
-        } else if let Err(error) = {
-            // The state's IPC namespace lives in the OS temp root, outside the fixture root;
-            // name it while the state still exists, then remove both.
+        let released = self.release();
+        let fallback = if released.is_err() {
+            self.stop_saved_owners()
+        } else {
+            Ok(())
+        };
+        LEASES
+            .lock()
+            .unwrap()
+            .remove(&(self.state.clone(), self.repo.clone()));
+        let root = self.root.take().expect("fixture root is owned");
+        let (closed, ipc) = if fallback.is_ok() {
+            // Name the namespace before closing the fixture; attempt both removals.
             let namespace = artifactize_core::changes::namespace(&self.state);
-            let closed = self.root.take().expect("fixture root is owned").close();
-            closed.and(namespace.and_then(std::fs::remove_dir_all))
-        } {
-            let message = format!("Fixture directory cleanup failed: {error}");
+            (root.close(), namespace.and_then(std::fs::remove_dir_all))
+        } else {
+            // A surviving owned process still needs its inputs. Keep them only when
+            // a checked, receipt-independent stop failed, never for receipt failure alone.
+            let retained = root.keep();
+            (
+                Err(std::io::Error::other(format!(
+                    "process exit unconfirmed; fixture retained at {}",
+                    fixture_worker::path_text(&retained)
+                ))),
+                Ok(()),
+            )
+        };
+        let failure = [
+            released,
+            fallback,
+            closed.map_err(|error| error.to_string()),
+            ipc.map_err(|error| error.to_string()),
+        ]
+        .into_iter()
+        .filter_map(Result::err)
+        .collect::<Vec<_>>();
+        if !failure.is_empty() {
+            let message = format!("Fixture Run cleanup failed: {}", failure.join("; "));
             if std::thread::panicking() {
                 eprintln!("{message}");
             } else {
@@ -281,34 +419,66 @@ async fn release_run(context: &runs::Context, state: &Path, id: &RunId) -> Resul
     result
 }
 
-/// Existing Human fixtures need a saved request, not a validation result. Submission stdout
-/// is inspected first, then a subscribed barrier yields the authoritative saved Run JSON.
+/// Original command output and, separately, the saved view for a submit-only verify.
+pub struct Recorded {
+    pub output: Output,
+    pub saved: Option<store::RunView>,
+}
+
+impl Recorded {
+    /// The admission snapshot from the store, not a claim about the command's stdout.
+    pub fn saved_json(&self) -> Option<serde_json::Value> {
+        self.saved.as_ref().map(|view| {
+            serde_json::to_value(artifactize_core::query::run_output(
+                view,
+                time::OffsetDateTime::now_utc(),
+            ))
+            .expect("saved Run view serializes")
+        })
+    }
+}
+
 pub trait RecordOutput {
-    fn record_output(&mut self) -> std::io::Result<Output>;
+    fn recorded(&mut self) -> std::io::Result<Recorded>;
+
+    fn record_output(&mut self) -> std::io::Result<Output> {
+        self.recorded().map(|recorded| recorded.output)
+    }
 }
 impl RecordOutput for Command {
-    fn record_output(&mut self) -> std::io::Result<Output> {
+    fn recorded(&mut self) -> std::io::Result<Recorded> {
         let args = self
             .get_args()
             .map(|arg| arg.to_os_string())
             .collect::<Vec<_>>();
         let verifies = args.iter().any(|arg| arg == "verify");
         let is_submission = verifies && !args.iter().any(|arg| arg == "--wait");
-        let mut output = fixture_worker::output(self)?;
+        let output = fixture_worker::output(self)?;
         if !verifies {
-            return Ok(output);
+            return Ok(Recorded {
+                output,
+                saved: None,
+            });
         }
         let accepted: serde_json::Value = match serde_json::from_slice(&output.stdout) {
             Ok(value) => value,
-            Err(_) => return Ok(output),
+            Err(_) => {
+                return Ok(Recorded {
+                    output,
+                    saved: None,
+                });
+            }
         };
         let submission_id = accepted["run"].as_str();
         let Some(id) = submission_id.or_else(|| accepted["id"].as_str()) else {
-            return Ok(output);
+            return Ok(Recorded {
+                output,
+                saved: None,
+            });
         };
-        // Rewrite successful submission JSON only. --wait and RED/ERROR outputs retain
-        // their original bytes and exit status; their saved terminal worker still exits.
-        let rewrite = is_submission && output.status.success() && submission_id.is_some();
+        // Submission-only fixtures can inspect the saved request after admission. A waiting
+        // command's own result is already terminal; observe worker exit before returning it.
+        let inspect_admission = is_submission && output.status.success() && submission_id.is_some();
         let id: RunId = id.parse().map_err(std::io::Error::other)?;
         // A terminal Run reports the state chosen by the child, including its default
         // environment and working directory. Never resolve defaults in this observer's
@@ -332,8 +502,8 @@ impl RecordOutput for Command {
                         .build()
                         .map_err(|e| e.to_string())?;
                     runtime.block_on(async {
-                        if rewrite {
-                            admitted(&state, &id, CancellationToken::new())
+                        if inspect_admission {
+                            admitted(&state, &id, CancellationToken::new(), None)
                                 .await
                                 .map(Some)
                         } else {
@@ -361,13 +531,10 @@ impl RecordOutput for Command {
                 .unwrap()
         })
         .map_err(std::io::Error::other)?;
-        if let Some(view) = view {
-            output.stdout = serde_json::to_vec(&artifactize_core::query::run_output(
-                &view,
-                time::OffsetDateTime::now_utc(),
-            ))?;
-        }
-        Ok(output)
+        Ok(Recorded {
+            output,
+            saved: view,
+        })
     }
 }
 

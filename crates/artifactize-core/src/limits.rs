@@ -293,8 +293,8 @@ impl Limits {
             tempfile::NamedTempFile::new_in(state).map_err(|error| location(&path, error))?;
         file.write_all(&text)
             .map_err(|error| location(&path, error))?;
-        file.persist(&path)
-            .map_err(|error| location(&path, error.error))?;
+        crate::platform::paths::replace_open_file(file, &path)
+            .map_err(|error| location(&path, error))?;
         Ok(limits)
     }
 

@@ -15,11 +15,11 @@ export const scenarios: Scenario[] = [false, true].map((followerFirst) =>
     `canonical Review (${followerFirst ? "follower" : "original"} first): keeps the same draft through original/follower/original request openings`,
     async () => {
       const fixture = await create();
+      const original = requests(fixture).find((request) => request.evalId === "release/signoff");
+      assert.ok(original, "the first Run created its waiting request");
       await verifyWaiting(fixture);
       const signoffs = requests(fixture).filter((request) => request.evalId === "release/signoff");
-      const original = signoffs.find((request) =>
-        (request as unknown as { execution?: { provenance?: { requestId?: string } } }).execution?.provenance?.requestId === request.id);
-      assert.ok(original && signoffs.length === 2, "one original and one real follower");
+      assert.equal(signoffs.length, 2, "the second Run created a distinct follower");
       const follower = signoffs.find((request) => request.id !== original.id)!;
       const ids = followerFirst ? [follower.id, original.id] : [original.id, follower.id];
       assert.equal(artifactize(fixture, "request", "claim", original.id, "--reviewer", "alice"), 0);

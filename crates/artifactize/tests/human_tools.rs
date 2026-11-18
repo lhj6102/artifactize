@@ -545,7 +545,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         launched.path(),
         launched.path(),
         "a",
-        json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
+        json!({"inspect":tool("launch", support::os::python_program(), &python(&format!("MARKER = 'explicit-launch'\n{LAUNCH}")))}),
         "Review.",
     );
     assert_eq!(
@@ -554,12 +554,9 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     );
     // Handoff acceptance is not the saved marker. Observe the full marker and adopt the
     // child while it is held by the fixture's release, including assertion-unwind paths.
-    let expected = support::os::environment_variable("ARTIFACTIZE_HUMAN_MARKER")
-        .map(|value| value.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "launched".into());
     support::os::wait_until(Duration::from_secs(5), || {
         support::declaration::read_text(launched.path().join("marker")).unwrap_or_default()
-            == expected
+            == "explicit-launch"
             && launched.own().is_some()
     });
 }
@@ -608,6 +605,45 @@ async fn detached_launch_cleanup_adopts_a_pending_handoff_on_drop_and_unwind() {
         drop(inputs);
         assert!(!root.exists(), "child cleanup precedes fixture removal");
     }
+}
+
+#[tokio::test]
+async fn detached_fixture_reaps_a_launch_that_never_hands_off_its_pid() {
+    let repo = support::os::tempdir();
+    fs::write(repo.path().join("withhold-handoff"), "").unwrap();
+    write_artifact(
+        repo.path(),
+        repo.path(),
+        "a",
+        json!({"inspect":tool("launch", support::os::python_program(), &python(LAUNCH))}),
+        "Review.",
+    );
+    let launched = Launched::new(repo);
+    let config = read_workspace_config(launched.path()).unwrap();
+    let result = Registry::new(&config, &"a/review".parse().unwrap())
+        .unwrap()
+        .call_logged(
+            &"inspect_a".parse().unwrap(),
+            CancellationToken::new(),
+            launched.observe(artifactize_core::review::log::Run::unwatched()),
+        )
+        .await;
+    assert_eq!(result.content(), [Content::Launch { launched: true }]);
+    support::os::wait_until(Duration::from_secs(5), || {
+        launched.path().join("handoff-ready").exists()
+    });
+    assert!(!launched.path().join("pid").exists());
+    assert!(!launched.path().join("launch-identities").exists());
+    let identity = launched
+        .native_identity()
+        .expect("native launch observer received the owner");
+    let root = launched.path().to_owned();
+    launched.close().unwrap();
+    assert!(!support::os::same_process_running(
+        identity.pid.get(),
+        identity.start_time
+    ));
+    assert!(!root.exists());
 }
 
 #[path = "support/launch_platform.rs"]

@@ -11,8 +11,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
-    thread,
-    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -586,26 +584,13 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
 
     // README: the Human sign-off through request claim, tool and submit, while verify waits.
     let signoff = ["verify", "--wait", "--eval", "spec/signoff", "--json"];
+    // Give this controlled fixture the maximum grace, so it never has to beat the
+    // user's idle default. The saved WAITING_HUMAN receipt, not elapsed time, orders claim.
+    session.output(&repo, &["limits", "--signoff-idle-grace", "86400"], 0);
     let verify = support::os::start(&mut session.command(&repo, &signoff));
     let verify = RunChild::new(verify, &session.root.path().join("state"), &repo);
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
-    let run_id = loop {
-        let listed = session.json(&repo, &["request", "list", "--json"], 0);
-        // The request is saved QUEUED first, then turns DEFERRED.
-        if let Some(request) = listed
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|request| request["status"] == "DEFERRED")
-        {
-            break request["runId"].as_str().unwrap().to_owned();
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the sign-off request did not start waiting: {listed}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    let waiting = verify.human_waiting();
+    let run_id = waiting.run.id.to_string();
     let listed = session.json(&repo, &["request", "list", "--run", &run_id, "--json"], 0);
     assert_eq!(listed.as_array().unwrap().len(), 1);
     let request = listed[0]["id"].as_str().unwrap();

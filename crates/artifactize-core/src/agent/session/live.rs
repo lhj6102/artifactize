@@ -249,7 +249,6 @@ pub struct Reader {
     transcript: super::transcript::Transcript,
     error: Option<String>,
     pub bytes_read: u64,
-    pub decoded_events: usize,
 }
 #[derive(Debug, Clone, Default)]
 pub struct Window {
@@ -258,12 +257,34 @@ pub struct Window {
     pub total: usize,
     pub anchor: Anchor,
     pub position: Position,
-    pub loading: bool,
+    pub status: WindowStatus,
     pub reset: bool,
-    pub status: Option<String>,
     pub groups: Vec<(usize, super::transcript::BlockId)>,
     pub thinking: Vec<usize>,
 }
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum WindowStatus {
+    #[default]
+    Ready,
+    Loading,
+    WaitingForHeader,
+    Unavailable(String),
+}
+
+impl Window {
+    pub fn loading(&self) -> bool {
+        self.status == WindowStatus::Loading
+    }
+
+    pub fn note(&self) -> Option<&str> {
+        match &self.status {
+            WindowStatus::Ready | WindowStatus::Loading => None,
+            WindowStatus::WaitingForHeader => Some("Waiting for a complete review header…"),
+            WindowStatus::Unavailable(message) => Some(message),
+        }
+    }
+}
+
 impl Reader {
     pub fn new(source: Source) -> Self {
         Self {
@@ -283,7 +304,6 @@ impl Reader {
             transcript: super::transcript::Transcript::default(),
             error: None,
             bytes_read: 0,
-            decoded_events: 0,
         }
     }
     pub fn commit(&mut self, width: usize) {
@@ -447,10 +467,9 @@ impl Reader {
                 self.pages
                     .as_mut()
                     .expect("pages initialized")
-                    .set(patch.id.0, &patch.text)?;
+                    .set(patch.id, &patch.text)?;
             }
             self.records += 1;
-            self.decoded_events += 1;
             budget += size;
             count += 1;
         }
@@ -474,7 +493,7 @@ impl Reader {
             if !exists {
                 return Ok(Window {
                     reset,
-                    status: Some(
+                    status: WindowStatus::Unavailable(
                         if self.source.saved {
                             "This Agent session was removed by session GC (or the saved file was removed)."
                         } else {
@@ -506,7 +525,7 @@ impl Reader {
                 self.pages
                     .as_mut()
                     .expect("pages initialized")
-                    .set(patch.id.0, &patch.text)?;
+                    .set(patch.id, &patch.text)?;
             }
             self.pages
                 .as_mut()
@@ -554,10 +573,12 @@ impl Reader {
             };
             window.position = position;
             window.reset = reset;
-            window.loading = self.error.is_none() && (indexing || layout);
-            window.status = self.error.clone().or_else(|| {
-                (self.records == 0).then(|| "Waiting for a complete review header…".into())
-            });
+            window.status = match &self.error {
+                Some(error) => WindowStatus::Unavailable(error.clone()),
+                None if indexing || layout => WindowStatus::Loading,
+                None if self.records == 0 => WindowStatus::WaitingForHeader,
+                None => WindowStatus::Ready,
+            };
             Ok::<_, ReadError>(window)
         })();
         match result {
@@ -577,7 +598,7 @@ impl Reader {
                 }
                 Window {
                     reset,
-                    status: Some(format!("Conversation unavailable: {error}")),
+                    status: WindowStatus::Unavailable(format!("Conversation unavailable: {error}")),
                     ..Window::default()
                 }
             }

@@ -13,7 +13,7 @@
   import Settings from "./settings/Settings.svelte";
   import ReleaseDialog from "./shell/ReleaseDialog.svelte";
   import { useCommands } from "./shell/commands.svelte";
-  import { chord, composing, label, plain } from "./shell/keys";
+  import { chord, composing, editable, label, plain } from "./shell/keys";
   import { help, type Focused } from "./shell/shortcuts";
   import Icon from "./shell/Icon.svelte";
   import { AppState, setAppState } from "./shell/app.svelte";
@@ -132,8 +132,8 @@
     } else if (chord(event, "b") && free()) {
       event.preventDefault();
       void togglePane();
-    } else if (chord(event, "f") && sourceOf(m.shown) !== null && m.focus !== "pane" && free()) {
-      // Over a graph, Ctrl+F finds in it; in the Pane, or with no graph, it searches the Pane.
+    } else if (chord(event, "f") && sourceOf(m.shown) !== null && m.focus !== "pane" && !editable(event.target) && free()) {
+      // Outside fields and the Pane, Ctrl+F finds in a graph. Otherwise it searches the Pane.
       event.preventDefault();
       m.finding = true;
     } else if (chord(event, "f") || (plain(event, "/") && free())) {

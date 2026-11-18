@@ -48,8 +48,8 @@ pub async fn waiting(
                 .get(&view.request.run_id)
                 .cloned()
                 .unwrap_or_else(|| Label {
-                    project: Path::new(&entry.repository).file_name().map_or_else(
-                        || entry.repository.clone(),
+                    project: entry.repository.file_name().map_or_else(
+                        || crate::platform::path_text(&entry.repository),
                         |name| name.to_string_lossy().into_owned(),
                     ),
                     branch: String::new(),

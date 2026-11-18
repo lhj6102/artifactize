@@ -18,7 +18,6 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    agent::error::Code,
     cache,
     config::{ProfileKind, RepoConfig},
     graph::{EvalStatus, Evidence, Graph},
@@ -119,11 +118,14 @@ impl Stops {
         let (Some(backend), Some(code)) = (&request.options.backend, &request.error_code()) else {
             return;
         };
+        let Ok(error_code) = crate::types::BackendStopCode::try_from(*code) else {
+            return;
+        };
         let mut stopped = self.0.lock().unwrap();
-        if Code::stops_backend(code) && !stopped.iter().any(|stop| &stop.backend == backend) {
+        if !stopped.iter().any(|stop| &stop.backend == backend) {
             stopped.push(StoppedBackend {
                 backend: backend.clone(),
-                error_code: (*code).try_into().expect("backend stopping failure"),
+                error_code,
                 eval_id: request.eval_id.clone(),
                 request_id: request.id.clone(),
                 error: request.error().map(str::to_owned).unwrap_or_default(),

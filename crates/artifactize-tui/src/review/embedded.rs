@@ -1,7 +1,7 @@
 //! Lifecycle controls of one open request: claim, verdict forms, tools, submit and release.
 //! The shared Detail component and monitor's buttons drive them; jobs and the ownership
 //! protocol are the same for monitor and the standalone review.
-use super::{Action, Area, Form, Job, Mode, Outcome, Review, view};
+use super::{Action, Area, Job, Mode, Outcome, Review, view};
 use crate::store::RequestView;
 use ratatui::layout::Rect;
 
@@ -132,17 +132,12 @@ impl Review {
                 if matches!(&self.mode, Mode::Form(form) if form.verdict == verdict) {
                     return Action::None;
                 }
-                let schema = match self.shown.request() {
-                    Some(view) => super::schema(&view.request, verdict),
-                    None => return Action::None,
-                };
-                let schema = match schema {
-                    Ok(schema) => schema,
-                    Err(error) => return self.notify(error, true),
+                let Some(view) = self.shown.request() else {
+                    return Action::None;
                 };
                 let form = match self.drafts.remove(&verdict) {
                     Some(form) => form,
-                    None => match Form::new(verdict, schema.as_ref()) {
+                    None => match super::form(&view.request, verdict) {
                         Ok(form) => form,
                         Err(error) => return self.notify(error, true),
                     },

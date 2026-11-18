@@ -79,3 +79,6 @@ fn exclusive(socket: &Socket) -> io::Result<()> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+pub(crate) mod fixtures;

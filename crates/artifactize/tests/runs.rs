@@ -115,42 +115,73 @@ impl Fixture {
     }
 }
 
+const DETACHED_SUBMITTER: &str = "ARTIFACTIZE_TEST_DETACHED_SUBMITTER";
+
+#[tokio::test]
+async fn detached_submitter() {
+    let Some(root) = support::os::environment_variable(DETACHED_SUBMITTER) else {
+        return;
+    };
+    let root = std::path::Path::new(&root);
+    let executable = support::os::environment_variable("ARTIFACTIZE_TEST_DETACHED_WORKER")
+        .expect("the test owns a gated worker executable");
+    let context = runs::Context::new(
+        &root.join("repo"),
+        Some(&root.join("state")),
+        std::path::Path::new(&executable),
+    )
+    .unwrap();
+    runs::start(&context, &Selection::All, &VerifyOptions::default(), None)
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence() {
-    // The real project had 35 requests when a submit-only caller exited before admission.
-    // Retain a substantial saved graph so reading its snapshot overlaps the handoff naturally;
-    // no elapsed-time assertion or watcher keeps the submitter alive.
-    const DETACHED_REQUESTS: usize = 35;
-    const INSTRUCTION_BYTES: usize = 64 * 1024;
+    let executable = support::os::library_worker();
     let detached = Fixture::new();
     let runs = detached.state.join("runs");
     support::os::create_private_dir_all(&detached.state);
     fs::create_dir(&runs).unwrap();
     support::os::share_dir(&runs);
     assert!(!support::os::private_dir(&runs));
-    let instruction = "Check. ".repeat(INSTRUCTION_BYTES / "Check. ".len());
-    let evals: Vec<_> = (0..DETACHED_REQUESTS)
-        .map(|index| {
-            json!({
-                "id":format!("check-{index}"),"title":"Check",
-                "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
-                "payload":{"instruction":instruction},
-            })
-        })
-        .collect();
-    support::declaration::write(
-        &(detached.repo),
-        detached.repo.join("index.artf"),
-        json!({
-            "name":"app","fingerprint":false,"evals":evals,
-        })
-        .to_string(),
-    )
-    .unwrap();
-    let submitted = support::os::run(detached.command().args(["verify", "--all", "--json"]));
+    let admission = detached.state.join("fixture-admission");
+    fs::create_dir(&admission).unwrap();
+    let gate = owned_run::FileGate::new(admission.join("release"));
+    support::os::publish_file(&detached.repo.join("release"), "ready");
+
+    // Use the durable submission API with an owned fixture worker that cannot enter
+    // admission (or start any eval) until its submitter has demonstrably exited.
+    let mut submitter = support::os::test_command(
+        "detached_submitter",
+        &[
+            (
+                DETACHED_SUBMITTER,
+                detached._root.path().as_os_str().to_owned(),
+            ),
+            (
+                "ARTIFACTIZE_TEST_DETACHED_WORKER",
+                executable.path().as_os_str().to_owned(),
+            ),
+        ],
+    );
+    submitter.env("ARTIFACTIZE_REMOTE", "off");
+    let submitted = Watcher::new(support::os::start(&mut submitter))
+        .wait_with_output()
+        .unwrap();
     assert!(submitted.status.success(), "{submitted:?}");
-    let accepted: Value = serde_json::from_slice(&submitted.stdout).unwrap();
-    let id: RunId = accepted["run"].as_str().unwrap().parse().unwrap();
+    support::os::wait_until(Duration::from_secs(10), || admission.join("held").is_file());
+    let saved = store::read_runs(&detached.state, Some(&detached.repo), 2, 0)
+        .await
+        .unwrap();
+    let [saved] = saved.as_slice() else {
+        panic!("expected one submitted Run: {saved:?}")
+    };
+    let id = saved.id.clone();
+    let held = store::read_run(&detached.state, &id).await.unwrap();
+    assert!(held.run.status().is_open(), "{held:?}");
+    assert_eq!(held.run.executions_started, 0);
+    gate.release().unwrap();
     assert_eq!(detached.settled(&id).await.run.status(), RunStatus::Green);
     let directory = runs.join(id.as_str());
     assert!(support::os::private_dir(&directory));
@@ -160,7 +191,7 @@ async fn a1_submit_watch_disposal_and_explicit_cancel_preserve_run_and_evidence(
         completed.run.control.unwrap().worker,
         runs::Worker::Admitted { .. }
     ));
-    assert_eq!(completed.requests.len(), DETACHED_REQUESTS);
+    assert_eq!(completed.requests.len(), 2);
     assert!(
         completed
             .requests

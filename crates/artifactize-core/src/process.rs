@@ -104,7 +104,8 @@ pub struct ChildIdentity {
 
 #[derive(Debug)]
 pub struct Output {
-    pub status: ExitStatus,
+    pub status: platform::ProcessOutcome,
+    native_status: ExitStatus,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub truncated: bool,
@@ -145,7 +146,7 @@ impl artifactize_tools::launch::Launcher for Launcher {
             };
             match run_unregistered(command, None, launch.output_limit, cancellation.clone()).await {
                 Ok(output) => Ok(Finished {
-                    status: output.status,
+                    status: output.native_status,
                     stdout: output.stdout,
                     stderr: output.stderr,
                     truncated: output.truncated,
@@ -174,6 +175,8 @@ pub enum Error {
     Cleanup(#[source] io::Error),
     #[error("process supervision task failed: {0}")]
     Task(#[from] tokio::task::JoinError),
+    #[error("process timeout is too large to represent as a deadline")]
+    InvalidTimeout,
     #[error("process timed out")]
     Timeout,
     #[error("process was cancelled")]
@@ -193,6 +196,7 @@ impl Error {
             Self::Spawn(_)
             | Self::Registration(_)
             | Self::Io(_)
+            | Self::InvalidTimeout
             | Self::Timeout
             | Self::Cancelled
             | Self::Capture(_) => true,
@@ -337,7 +341,9 @@ where
     R: Future<Output = io::Result<()>>,
 {
     let started = Instant::now();
-    let deadline = started + command.timeout;
+    let deadline = started
+        .checked_add(command.timeout)
+        .ok_or(Error::InvalidTimeout)?;
     if cancellation.is_cancelled() {
         return Err(Error::Cancelled);
     }
@@ -501,10 +507,11 @@ fn environment_value<'a>(
 }
 
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
-pub(crate) fn launch_detached(
+fn launch_detached(
     program: &std::ffi::OsStr,
     args: &[String],
     cwd: &std::path::Path,
+    run: &mut Run,
 ) -> Result<(), Error> {
     let program = platform::program::resolve(program, cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
@@ -517,9 +524,9 @@ pub(crate) fn launch_detached(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(false);
-    platform::spawn_detached(command)
-        .map_err(Error::Spawn)?
-        .reap();
+    let child = platform::spawn_detached(command).map_err(Error::Spawn)?;
+    run.launched(child.pid());
+    child.reap();
     Ok(())
 }
 
@@ -555,10 +562,10 @@ pub(crate) fn launch_watched(
     program: &std::ffi::OsStr,
     args: &[String],
     cwd: &std::path::Path,
-    run: Run,
+    mut run: Run,
 ) -> Result<(), (Error, Run)> {
     if !run.watched() {
-        return match launch_detached(program, args, cwd) {
+        return match launch_detached(program, args, cwd, &mut run) {
             Ok(()) => {
                 run.end(End::Launched);
                 Ok(())
@@ -584,6 +591,7 @@ pub(crate) fn launch_watched(
         Ok(child) => child,
         Err(error) => return Err((Error::Spawn(error), run)),
     };
+    run.launched(child.pid());
     let (stdout, stderr) = child.take_output();
     tokio::spawn(async move {
         // Nothing is retained: the lines go to the log, the rest is discarded. Nobody owns
@@ -595,7 +603,7 @@ pub(crate) fn launch_watched(
             capture::capture(stderr, 0, None, Some(run.lines(Stream::Stderr)), &held),
         );
         run.end(match status {
-            Ok(status) => End::exited(&status),
+            Ok(status) => End::exited(&platform::ProcessOutcome::from_native(&status)),
             Err(error) => End::Failed(error.to_string()),
         });
     });

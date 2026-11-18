@@ -2,7 +2,7 @@
 
 use rusqlite::OptionalExtension;
 
-use super::{Claim, Execution, owner_died};
+use super::{Claim, Execution, admission::owner_died};
 use crate::{process, runs::Worker, store::receipts::Error, types::RunStatus};
 
 pub(super) fn conflict(

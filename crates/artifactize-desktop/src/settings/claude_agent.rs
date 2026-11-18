@@ -94,7 +94,7 @@ pub async fn claude_agent_login_start(
         })
         .await?;
     Ok(ClaudeAgentPrompt {
-        url: prompt.url,
+        url: prompt.url.to_string(),
         sign_in,
     })
 }

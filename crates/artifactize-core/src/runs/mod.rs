@@ -11,8 +11,11 @@ use crate::{
     store::{self, Receipts},
     types::{FailureCode, RequestKey, RunId},
 };
-pub use observe::{Counts, RunObservation, State, status, view, wait};
-pub use result::{Finding, ResultCursor, ResultState, RunResultPage, RunVerdict, result};
+pub use observe::{Counts, RunObservation, State, status, view, wait, wait_observing};
+pub use result::{
+    Finding, PAGE_SIZE as RESULT_PAGE_SIZE, ResultCursor, ResultState, RunResultPage, RunVerdict,
+    result,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 pub use watch::{RunEvent, watch};

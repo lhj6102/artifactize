@@ -215,7 +215,7 @@ impl EvalDeclaration {
                 if self.profile().kind() == ProfileKind::Human {
                     location
                         .child(key)
-                        .check(crate::review::check_schema(schema))?;
+                        .check(crate::review::Specification::parse(Some(schema)).map(drop))?;
                 }
             }
         }

@@ -97,13 +97,25 @@ fn owned_call(
     CancellationToken,
     impl std::future::Future<Output = ToolResult> + Send + 'static,
 ) {
+    owned_call_with_cleanup(fixture, tempfile::TempDir::close)
+}
+
+fn owned_call_with_cleanup(
+    fixture: &Fixture,
+    cleanup: impl FnOnce(tempfile::TempDir) -> std::io::Result<()> + Send + 'static,
+) -> (
+    CancellationToken,
+    impl Future<Output = ToolResult> + Send + 'static,
+) {
     let config = read_workspace_config(&fixture.repo).unwrap();
     let output = fixture.output.clone();
     let cancellation = CancellationToken::new();
     let token = cancellation.clone();
     let work = async move {
         let registry = Registry::new(&config, &"a/review".parse().unwrap()).unwrap();
-        registry.call("inspect_a", json!({}), &output, token).await
+        registry
+            .call_with_cleanup("inspect_a", json!({}), &output, token, cleanup)
+            .await
     };
     (cancellation, work)
 }
@@ -690,12 +702,10 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     let mut tool = command();
     tool["timeout_ms"] = json!(TIMEOUT.as_millis());
     let fixture = Fixture::new(tool);
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
-    fixture.script(&format!(
-        "import json,os,socket,sys,threading\njson.load(sys.stdin)\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()",
-        listener.local_addr().unwrap().port()
+    let listener = crate::test_os::tcp::async_loopback_listener();
+    fixture.script(&crate::test_os::tcp::tool_ready_script(
+        listener.local_addr().unwrap(),
+        true,
     ));
     let config = read_workspace_config(&fixture.repo).unwrap();
     let (cancellation, work) = owned_call(&fixture);
@@ -825,11 +835,22 @@ async fn json_scope_contains_only_paths_kinds_and_nested_folders() {
 #[tokio::test]
 async fn dropping_call_cleans_process_before_removing_directories() {
     let fixture = Fixture::new(command());
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
-    fixture.script(&format!("import os,socket,threading\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()", listener.local_addr().unwrap().port()));
-    let (cancellation, work) = owned_call(&fixture);
+    let listener = crate::test_os::tcp::async_loopback_listener();
+    fixture.script(&crate::test_os::tcp::tool_ready_script(
+        listener.local_addr().unwrap(),
+        false,
+    ));
+    let (send_pid, received_pid) = std::sync::mpsc::channel();
+    let (send_released, released) = tokio::sync::oneshot::channel();
+    let (cancellation, work) = owned_call_with_cleanup(&fixture, move |directory| {
+        let pid = received_pid
+            .try_recv()
+            .expect("fixture announces the child before dropping the call");
+        let gone = crate::test_os::gone(pid);
+        let result = directory.close();
+        let _ = send_released.send((gone, result.is_ok()));
+        result
+    });
     crate::test_os::scoped(cancellation, work, async |call| {
         let pid = tokio::select! {
             result = &mut *call => panic!("unexpected completion: {result:?}"),
@@ -841,16 +862,17 @@ async fn dropping_call_cleans_process_before_removing_directories() {
                 pid.parse::<u32>().unwrap()
             }) => result.unwrap(),
         };
+        send_pid.send(pid).unwrap();
         // Dropping the caller is what is under test: abort it rather than cancel it.
         call.abort();
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while fixture.output_entries() != [fixture.output.join("retained")] {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-        assert!(crate::test_os::gone(pid));
+        let (reaped_before_removal, removed) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), released)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(reaped_before_removal);
+        assert!(removed);
+        assert_eq!(fixture.output_entries(), [fixture.output.join("retained")]);
     })
     .await;
 }

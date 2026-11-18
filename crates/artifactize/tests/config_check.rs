@@ -199,14 +199,53 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         ".artifactize/input.artf",
         include_str!("../../artifactize-core/tests/fixtures/declarations/.artifactize/input.artf"),
     );
-    fixture.write(
-        ".artifactize/review.artf",
-        include_str!("../../artifactize-core/tests/fixtures/declarations/.artifactize/review.artf"),
+    let hook = fixture.0.join("review/hook.py");
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    support::os::write_python_script(
+        &hook,
+        "from pathlib import Path\nPath('hook-executed').write_text('ran')\nraise SystemExit(91)\n",
     );
-    fixture.write(
-        "review/hook.sh",
-        include_str!("../../artifactize-core/tests/fixtures/declarations/review/hook.sh"),
+    let command = support::os::python_program();
+    let review = format!(
+        r#"fingerprint = {{ script = {{ command = {command:?}, args = ["hook.py"], files = ["hook.py"], timeout_ms = 1000 }} }}
+path = "review/"
+
+[views.agent_tools]
+read = {{ description = "Read {{artifactName}}", input_schema = {{ type = "object" }}, timeout_ms = 1000, command = {command:?}, args = ["hook.py"], protocol = "plain" }}
+
+[views.human_tools]
+read = {{ description = "Read {{artifactName}}", kind = "output", command = {command:?}, args = ["hook.py"] }}
+
+[evals.runtime]
+title = "Check input"
+profile = {{ kind = "runtime", command = {command:?}, args = ["hook.py"], timeout_ms = 1000 }}
+
+[evals.runtime.payload]
+instruction = """
+Check {{input}}."""
+owner = {{ literal = "$FIXTURE_LITERAL" }}
+
+[evals.agent]
+title = "Review input"
+profile = {{ kind = "agent", backend = "openai", model = "not-called", reasoning = "high" }}
+
+[evals.agent.payload]
+instruction = """
+Inspect {{input}}."""
+
+[evals.agent.pass_schema]
+properties.notes = {{ type = "string" }}
+
+[evals.human]
+title = "Inspect input"
+profile = {{ kind = "human" }}
+
+[evals.human.payload]
+instruction = """
+Inspect {{input}}."""
+"#
     );
+    fixture.write(".artifactize/review.artf", &review);
     fixture.write(
         ".artifactize/unreviewed.artf",
         include_str!(
@@ -215,7 +254,6 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     );
     fixture.write("input/.gitkeep", "");
     fixture.write("unreviewed/.gitkeep", "");
-    support::os::make_executable(&fixture.0.join("review/hook.sh"));
     fs::create_dir_all(fixture.0.join(".git/ignored")).unwrap();
     fs::write(
         support::declaration::source_path(fixture.0.join(".git/ignored/index.artf")),

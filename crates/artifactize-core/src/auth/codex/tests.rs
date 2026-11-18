@@ -50,8 +50,8 @@ fn stored(storage: &Storage, access: &str, expires_at: u64) {
 }
 
 /// The server's root, which the fake treats as `/v1`.
-fn root(server: &Server) -> String {
-    server.base.clone()
+fn root(server: &Server) -> Url {
+    server.base.parse().unwrap()
 }
 
 fn form(body: &Value) -> BTreeMap<String, String> {
@@ -84,7 +84,7 @@ fn authorize_url_carries_pkce_and_the_codex_flow_parameters() {
     // RFC 7636, Appendix B: independent S256 verifier/challenge vector.
     pending.verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into();
     let url = pending
-        .authorize_url("https://auth.openai.com", &redirect_uri)
+        .authorize_url(&AUTH_ROOT.parse().unwrap(), &redirect_uri)
         .unwrap();
     assert_eq!(url.path(), "/oauth/authorize");
     let query: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
@@ -422,7 +422,9 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     {
         let _read_only = crate::test_os::read_only(&path);
         let before = (fs::read(&path).unwrap(), identity());
-        let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000)).unwrap();
+        let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+            .unwrap()
+            .token;
         assert_eq!(token.access_token, access);
         assert_eq!(token.account_id, "file-account");
         assert_eq!((fs::read(&path).unwrap(), identity()), before);
@@ -432,6 +434,7 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     assert_eq!(
         read_auth_file_at(&path, Timestamp::from_seconds(10_000))
             .unwrap()
+            .token
             .account_id,
         "claim-account"
     );
@@ -441,6 +444,7 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     assert_eq!(
         read_auth_file_at(&path, Timestamp::from_seconds(10_000))
             .unwrap()
+            .token
             .account_id,
         "test"
     );
@@ -504,6 +508,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         assert_eq!(
             read_auth_file_at(&path, Timestamp::from_seconds(10_000))
                 .unwrap()
+                .token
                 .account_id,
             "claim-account"
         );
@@ -534,7 +539,9 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         r#"{"tokens":{"access_token":"first","access_token":"last","account_id":"first","account_id":"last"}}"#,
     )
     .unwrap();
-    let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000)).unwrap();
+    let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+        .unwrap()
+        .token;
     assert_eq!(
         (token.access_token.as_str(), token.account_id.as_str()),
         ("last", "last")
@@ -547,6 +554,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
     assert_eq!(
         read_auth_file_at(&path, Timestamp::from_seconds(10_000))
             .unwrap()
+            .token
             .account_id,
         "final"
     );
@@ -623,7 +631,7 @@ async fn sign_in_browser_calls_the_external_opener_without_a_shell() {
     let output = crate::test_os::run_test(
         "auth::codex::tests::sign_in_browser_calls_the_external_opener_without_a_shell",
         &[
-            ("PATH", root.path().as_os_str().to_owned()),
+            ("PATH", crate::test_os::isolated_path(root.path())),
             (
                 crate::test_os::RECORD,
                 root.path().join("record").into_os_string(),
@@ -661,5 +669,8 @@ fn token_expiry_seconds_are_converted_once_and_overflow_is_rejected() {
     assert!(credentials(parse(json!(1)).unwrap(), Timestamp::from_seconds(u64::MAX)).is_err());
     assert!(parse(json!(-1)).is_err());
     assert!(parse(json!("3600")).is_err());
-    assert_eq!(expiry(&access), Some(Timestamp::from_seconds(13_600)));
+    assert_eq!(
+        claims(&access).unwrap().exp.0,
+        Some(Timestamp::from_seconds(13_600))
+    );
 }

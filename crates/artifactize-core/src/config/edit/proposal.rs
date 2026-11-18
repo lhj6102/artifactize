@@ -162,18 +162,11 @@ pub(super) fn propose(
                     if other == &name {
                         return None;
                     }
-                    let mut doc = sources[&root.join(artifact.declaration_path())]
+                    let doc = sources[&root.join(artifact.declaration_path())]
                         .parse::<toml_edit::DocumentMut>()
                         .expect("validated source");
-                    let original = doc.to_string();
-                    rename_item(
-                        doc.as_item_mut(),
-                        &name,
-                        "renamed-node",
-                        artifact,
-                        &mut Vec::new(),
-                    );
-                    (doc.to_string() != original).then(|| other.to_string())
+                    names_artifact(doc.as_item(), artifact, &name, &mut Vec::new())
+                        .then(|| other.to_string())
                 })
                 .collect::<Vec<_>>();
             if !users.is_empty() {

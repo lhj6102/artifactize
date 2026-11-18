@@ -4,32 +4,36 @@
 type Input = { kind: "key"; key: "PageUp" | "PageDown" } | { kind: "key"; key: "Enter"; shift: true } | { kind: "click" | "text-click"; x: number; y: number }
   | { kind: "pointer"; phase: "down" | "move" | "up"; x: number; y: number };
 
-/** Click the actual option through WebDriver, then supply only its missing HTML default
- * action: W3C Element Click's selectedness, input, change steps. A conforming provider
- * already selected it and needs no second input. App state and handlers are never touched. */
+/** WebDriver Element Click's option path targets its containing select. The
+ * upstream generic click skips these steps, so deliver the option sequence once. */
 export async function clickOption(browser: WebdriverIO.Browser, target: WebdriverIO.Element): Promise<void> {
-  const eligible = await browser.execute((option: HTMLOptionElement) => {
+  await target.waitForExist();
+  await browser.execute((option: HTMLOptionElement) => {
     if (option.tagName !== "OPTION") throw new Error("option-click requires an option element");
     const select = option.closest("select");
     if (!select || select.multiple) throw new Error("option-click requires a single-choice select");
-    if (select.disabled || option.disabled || option.closest("optgroup")?.disabled || option.selected) return false;
-    const page = window as unknown as { optionClicks?: WeakMap<HTMLOptionElement, Event> };
-    page.optionClicks ??= new WeakMap();
-    option.addEventListener("click", (event) => page.optionClicks!.set(option, event), { once: true, capture: true });
-    return true;
-  }, target as unknown as HTMLOptionElement);
-  await target.click();
-  if (!eligible) return;
-  await browser.execute((option: HTMLOptionElement) => {
-    const page = window as unknown as { optionClicks?: WeakMap<HTMLOptionElement, Event> };
-    const event = page.optionClicks?.get(option);
-    page.optionClicks?.delete(option);
-    if (!event) throw new Error("the option click did not reach its target");
-    const select = option.closest("select");
-    if (!select || event.defaultPrevented || select.disabled || option.disabled || option.closest("optgroup")?.disabled || option.selected) return;
-    option.selected = true;
-    select.dispatchEvent(new Event("input", { bubbles: true }));
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const { left, top, right, bottom } = select.getBoundingClientRect();
+    const common = {
+      view: window, clientX: (Math.max(left, 0) + Math.min(right, innerWidth)) / 2,
+      clientY: (Math.max(top, 0) + Math.min(bottom, innerHeight)) / 2,
+      button: 0, bubbles: true, cancelable: true, composed: true,
+    };
+    const mouse = (type: string, buttons: number, detail: number) =>
+      select.dispatchEvent(new MouseEvent(type, { ...common, buttons, detail }));
+    mouse("mouseover", 0, 0);
+    mouse("mousemove", 0, 0);
+    if (mouse("mousedown", 1, 1)) {
+      select.focus();
+      if (!select.disabled && !option.disabled && !option.closest("optgroup")?.disabled && !option.selected) {
+        select.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        option.selected = true;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+    mouse("mouseup", 0, 1);
+    select.dispatchEvent(new PointerEvent("click", {
+      ...common, detail: 1, pointerId: 1, pointerType: "mouse", isPrimary: true, width: 1, height: 1,
+    }));
   }, target as unknown as HTMLOptionElement);
 }
 
@@ -67,6 +71,21 @@ export async function tab(browser: WebdriverIO.Browser, shift = false): Promise<
   }, shift);
 }
 
+/** The provider sends synthetic keys, which never perform a native button's keyboard
+ * activation. Supply that default only if the page does not cancel the key. */
+export async function buttonKey(browser: WebdriverIO.Browser, key: "Enter" | "Space"): Promise<void> {
+  await browser.execute((key) => {
+    const target = document.activeElement;
+    if (!(target instanceof HTMLButtonElement) || target.disabled) throw new Error("button key requires an enabled focused button");
+    const keyCode = key === "Enter" ? 13 : 32;
+    const input = { key: key === "Enter" ? "Enter" : " ", code: key, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true };
+    const down = target.dispatchEvent(new KeyboardEvent("keydown", input));
+    if (down && key === "Enter") target.click();
+    const up = (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keyup", input));
+    if (down && up && key === "Space" && document.activeElement === target) target.click();
+  }, key);
+}
+
 export async function dispatchInput(browser: WebdriverIO.Browser, input: Input): Promise<void> {
   await browser.execute((input) => {
     if (input.kind === "key") {
@@ -86,12 +105,15 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
       const gesture = window as Window & { e2eMouseSuppressed?: boolean; e2ePressed?: Element | null };
       if (input.kind === "pointer") {
         const buttons = input.phase === "up" ? 0 : 1;
-        const allowed = target.dispatchEvent(new PointerEvent(`pointer${input.phase}`, { ...pointer, buttons, pressure: buttons ? 0.5 : 0 }));
+        const move = input.phase === "move";
+        const allowed = target.dispatchEvent(new PointerEvent(`pointer${input.phase}`, {
+          ...pointer, button: move ? -1 : 0, detail: 0, buttons, pressure: buttons ? 0.5 : 0,
+        }));
         if (input.phase === "down") {
           gesture.e2eMouseSuppressed = !allowed;
           gesture.e2ePressed = target;
         }
-        if (!gesture.e2eMouseSuppressed) target.dispatchEvent(new MouseEvent(`mouse${input.phase}`, { ...common, buttons }));
+        if (!gesture.e2eMouseSuppressed) target.dispatchEvent(new MouseEvent(`mouse${input.phase}`, { ...common, detail: move ? 0 : 1, buttons }));
         if (input.phase === "up") {
           gesture.e2eMouseSuppressed = false;
           // As the engine does, the release clicks the nearest element holding both where the
@@ -99,7 +121,7 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
           let shared: Element | null = gesture.e2ePressed?.isConnected ? gesture.e2ePressed : null;
           while (shared && !shared.contains(target)) shared = shared.parentElement;
           gesture.e2ePressed = null;
-          shared?.dispatchEvent(new MouseEvent("click", { ...common, buttons: 0 }));
+          shared?.dispatchEvent(new PointerEvent("click", { ...pointer, buttons: 0, pressure: 0 }));
         }
         return;
       }
@@ -129,9 +151,13 @@ export async function dispatchInput(browser: WebdriverIO.Browser, input: Input):
           }
         }
       }
-      target.dispatchEvent(new PointerEvent("pointerup", { ...pointer, buttons: 0, pressure: 0 }));
-      if (pointerDown) target.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0 }));
-      target.dispatchEvent(new MouseEvent("click", { ...common, buttons: 0 }));
+      const released = document.elementFromPoint(input.x, input.y);
+      if (!released) return;
+      released.dispatchEvent(new PointerEvent("pointerup", { ...pointer, detail: 0, buttons: 0, pressure: 0 }));
+      if (pointerDown) released.dispatchEvent(new MouseEvent("mouseup", { ...common, buttons: 0 }));
+      let shared: Element | null = target.isConnected ? target : null;
+      while (shared && !shared.contains(released)) shared = shared.parentElement;
+      shared?.dispatchEvent(new PointerEvent("click", { ...pointer, buttons: 0, pressure: 0 }));
     }
   }, input);
 }

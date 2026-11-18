@@ -96,8 +96,7 @@ fn write(state: Option<&Path>, file: &str, kept: &impl Serialize) -> Result<(), 
     let mut temporary = tempfile::NamedTempFile::new_in(&dir).map_err(|e| e.to_string())?;
     serde_json::to_writer(&mut temporary, kept).map_err(|e| e.to_string())?;
     temporary.flush().map_err(|e| e.to_string())?;
-    temporary
-        .persist(dir.join(file))
-        .map_err(|e| e.error.to_string())?;
+    crate::platform::paths::replace_open_file(temporary, &dir.join(file))
+        .map_err(|error| error.to_string())?;
     Ok(())
 }

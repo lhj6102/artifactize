@@ -214,14 +214,15 @@ fn head(branch: Option<String>, tree: &Path) -> Head {
         .map_or_else(|| Head::Detached(tree.to_path_buf()), Head::Branch)
 }
 
-fn place_of(identity: &Identity, repo: &Path) -> (Place, PathBuf) {
+fn place_of(
+    identity: &Identity,
+    repo: &Path,
+    folders: &mut BTreeMap<crate::platform::FileIdentity, PathBuf>,
+) -> (Place, PathBuf) {
     match (&identity.common_dir, &identity.worktree_path) {
         (Some(common), Some(tree)) => {
             let head = head(identity.branch.clone(), tree);
-            let relative = repo
-                .strip_prefix(tree)
-                .map(Path::to_path_buf)
-                .unwrap_or_default();
+            let relative = crate::platform::paths::relative_beneath(repo, tree).unwrap_or_default();
             (
                 Place::Git {
                     common: common.clone(),
@@ -230,7 +231,13 @@ fn place_of(identity: &Identity, repo: &Path) -> (Place, PathBuf) {
                 relative,
             )
         }
-        _ => (Place::Folder(repo.to_path_buf()), PathBuf::new()),
+        _ => {
+            let path = crate::platform::paths::directory_identity(repo).map_or_else(
+                |_| repo.to_path_buf(),
+                |(id, spelling)| folders.entry(id).or_insert(spelling).clone(),
+            );
+            (Place::Folder(path), PathBuf::new())
+        }
     }
 }
 
@@ -295,6 +302,11 @@ type Grouped = (Vec<Chip>, Option<(Timestamp, PathBuf)>);
 pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Discovery) -> Listing {
     let mut grouped: BTreeMap<Place, Grouped> = BTreeMap::new();
     let mut labels = Labels::new();
+    let mut folders = BTreeMap::new();
+    let launched = launch.map(|path| {
+        let (place, _) = place_of(&discovery.identify(path), path, &mut folders);
+        (place, path.to_path_buf())
+    });
     for run in runs {
         let identity =
             if run.repository.common_dir.is_some() && run.repository.worktree_path.is_some() {
@@ -302,7 +314,7 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             } else {
                 discovery.identify(&run.repo_path)
             };
-        let (place, relative) = place_of(&identity, &run.repo_path);
+        let (place, relative) = place_of(&identity, &run.repo_path, &mut folders);
         labels.insert(run.id.clone(), label(&place));
         let (chips, newest) = grouped.entry(place).or_default();
         chips.push(Chip {
@@ -316,10 +328,6 @@ pub fn branches(runs: &[CatalogRun], launch: Option<&Path>, discovery: &mut Disc
             *newest = Some((run.created_at, relative));
         }
     }
-    let launched = launch.map(|path| {
-        let (place, _) = place_of(&discovery.identify(path), path);
-        (place, path.to_path_buf())
-    });
     let commons: BTreeSet<PathBuf> = grouped
         .keys()
         .chain(launched.iter().map(|(place, _)| place))

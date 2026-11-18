@@ -8,7 +8,7 @@ export type LogRow = { text: string; kind: "start" | "line" | "end"; error: bool
 export function toolLog(browser: WebdriverIO.Browser, scope: string): Promise<{ notice: string; noticeError: boolean; rows: LogRow[] }> {
   return browser.execute((within) => {
     const root = document.querySelector(within);
-    const notice = root?.querySelector('[role="status"].error');
+    const notice = root?.querySelector('p[role="status"]:not(.busy)');
     const log = root?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",

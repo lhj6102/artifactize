@@ -108,6 +108,7 @@ pub enum StoredProfile {
     },
     Human {},
     Runtime {
+        #[serde(serialize_with = "crate::platform::serialize_program")]
         command: String,
         args: Vec<String>,
         #[serde(

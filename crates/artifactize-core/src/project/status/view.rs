@@ -112,7 +112,7 @@ pub(super) fn assemble(
             .filter(|id| !evaluation.artifacts[id.as_str()].own_satisfied)
             .map(|id| (*id).clone())
             .collect::<Vec<_>>();
-        let reason = if artifact.satisfied {
+        let reason = if artifact.satisfied() {
             "All required obligations are satisfied.".into()
         } else if own.evals.is_empty() && !own.basis {
             "No Evals are declared and this Artifact is not a basis.".into()
@@ -139,7 +139,7 @@ pub(super) fn assemble(
             eval_ids: own.evals.iter().map(|id| (*id).clone()).collect(),
             passed: artifact.passed,
             total: artifact.total,
-            satisfied: artifact.satisfied,
+            satisfied: artifact.satisfied(),
             obligations: unmet,
         });
     }

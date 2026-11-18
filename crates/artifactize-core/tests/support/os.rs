@@ -34,9 +34,8 @@ pub mod tcp;
 /// Every application response byte is retained, including bytes before a reset.
 pub async fn closed_tcp_probe(
     stream: &mut tokio::io::BufReader<tokio::net::TcpStream>,
-    probe: &[u8],
 ) -> std::io::Result<Vec<u8>> {
-    tcp::closed_probe(stream, probe).await
+    tcp::closed_probe(stream).await
 }
 #[path = "os/worker.rs"]
 mod worker;
@@ -46,6 +45,27 @@ use std::fs;
 use std::{path::Path, process::Command};
 
 pub type OwnedExecutable = worker::Executable;
+
+/// Create the non-executable installation marker a discovery probe expects beside its CLI.
+pub fn desktop_installation_marker(cli: &Path) -> std::path::PathBuf {
+    let mut app = cli.with_file_name("artifactize-desktop");
+    if let Some(extension) = cli.extension() {
+        app.set_extension(extension);
+    }
+    fs::write(&app, "desktop installation marker").unwrap();
+    app
+}
+
+/// Restrict program search to one fixture directory, without inheriting the host PATH.
+pub fn isolated_path(directory: &Path) -> std::ffi::OsString {
+    std::env::join_paths([directory]).expect("fixture directory is a valid PATH entry")
+}
+
+/// An isolated library fixture executable, separate from the real CLI candidate.
+pub fn library_worker() -> OwnedExecutable {
+    OwnedExecutable::copy_from(&worker::library_executable().expect("build the fixture worker"))
+        .expect("own the fixture worker executable")
+}
 
 #[cfg(unix)]
 pub type BeforeIdentity = checkpoints::BeforeIdentity;
@@ -293,26 +313,14 @@ pub fn stand_ins() -> bool {
     cfg!(windows) || std::env::var_os("ARTIFACTIZE_TEST_STAND_INS").is_some()
 }
 
-/// A deadline for a review that should finish, not time out: unchanged on Unix, ten times as
-/// long on Windows, where each process start costs more and a busy runner starts dozens at
-/// once.
-pub fn slow(milliseconds: u64) -> u64 {
-    if cfg!(windows) {
-        milliseconds * 10
-    } else {
-        milliseconds
-    }
-}
-
-/// How long a test waits for something that should happen, scaled like `slow`. Only a
-/// failing test waits that long.
+/// A watchdog only bounds a failing fixture, never the behavior it observes.
 pub fn patience(duration: std::time::Duration) -> std::time::Duration {
-    std::time::Duration::from_millis(slow(duration.as_millis() as u64))
+    duration
 }
 
 /// Poll `condition` until it holds, or panic after `patience(limit)`: the shared "wait for
-/// an external process or file to reach a state" loop, scaled for a slower CI host rather
-/// than checking once or sleeping a fixed real-time span.
+/// an external process or file to reach a state" loop, rather than asserting against a
+/// fixed real-time span.
 pub fn wait_until(limit: std::time::Duration, mut condition: impl FnMut() -> bool) {
     let deadline = std::time::Instant::now() + patience(limit);
     while !condition() {
@@ -392,6 +400,49 @@ fn fixture_compiler() -> std::ffi::OsString {
             .with_file_name(format!("rustc{}", std::env::consts::EXE_SUFFIX))
             .into_os_string()
     })
+}
+
+/// Bind both programs to Cargo's selected toolchain, without rustup rediscovery in a probe.
+pub fn cargo_toolchain() -> (&'static Path, std::path::PathBuf) {
+    let cargo = Path::new(env!("CARGO"));
+    (
+        cargo,
+        cargo.with_file_name(format!("rustc{}", std::env::consts::EXE_SUFFIX)),
+    )
+}
+
+/// Launch a Node entry with the selected toolchain and an isolated Cargo configuration.
+pub fn isolated_cargo_node(
+    launcher: &Path,
+    cargo: &Path,
+    compiler: &Path,
+    cargo_home: &Path,
+    entry: &Path,
+) -> Vec<std::ffi::OsString> {
+    assert!(
+        cargo.is_file() && compiler.is_file(),
+        "Cargo's toolchain supplies both programs"
+    );
+    write_python_script(
+        launcher,
+        r#"
+import os, subprocess, sys
+path, compiler, config, node, entry = sys.argv[1:]
+env = {k:v for k,v in os.environ.items() if not k.upper().startswith(('CARGO_', 'RUSTC', 'RUSTFLAGS', 'RUSTUP_', 'RUSTDOC'))}
+env.update(CARGO_HOME=config, RUSTC=compiler, CARGO_REGISTRIES_FIXTURE_TOKEN="fixture-only")
+env['PATH'] = path
+raise SystemExit(subprocess.call([node, entry], env=env))
+"#,
+    );
+    vec![
+        "-I".into(),
+        launcher.into(),
+        prepend_path(cargo.parent().unwrap()),
+        compiler.into(),
+        cargo_home.into(),
+        node_program().into(),
+        entry.into(),
+    ]
 }
 
 /// Build a program named `name` in `directory` from Rust `source`. A compiled program runs the
@@ -686,6 +737,12 @@ fn run(steps: Vec<String>) {
                     .unwrap();
                 line(&next(&mut steps), &child.id().to_string());
             }
+            "start-marked" => {
+                let pid = blocking_child().id().to_string();
+                line(&next(&mut steps), &pid);
+                println!("{pid}");
+                std::io::stdout().flush().unwrap();
+            }
             "start" => {
                 println!("{}", blocking_child().id());
                 std::io::stdout().flush().unwrap();
@@ -887,14 +944,27 @@ pub fn is_terminal(stream: &impl std::io::IsTerminal) -> bool {
 /// The watchdog bounds failure only; completion is observed from the child itself.
 pub fn wait_child(child: &mut std::process::Child, what: &str) {
     const EXIT_BOUND: std::time::Duration = std::time::Duration::from_secs(20);
+    wait_child_for(child, EXIT_BOUND).unwrap_or_else(|error| panic!("{what}: {error}"));
+}
+
+/// Observe and reap a child within a failure bound; callers can release it on error.
+pub fn wait_child_for(
+    child: &mut std::process::Child,
+    bound: std::time::Duration,
+) -> std::io::Result<std::process::ExitStatus> {
     // Standard children have no portable blocking wait with a deadline.
     const EXIT_POLL: std::time::Duration = std::time::Duration::from_millis(20);
-    let deadline = std::time::Instant::now() + patience(EXIT_BOUND);
-    while !child_exited(child) {
-        assert!(
-            std::time::Instant::now() <= deadline,
-            "{what} did not finish"
-        );
+    let deadline = std::time::Instant::now() + patience(bound);
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "fixture process did not exit",
+            ));
+        }
         std::thread::sleep(EXIT_POLL);
     }
 }
@@ -1087,7 +1157,7 @@ pub fn mode(path: &Path) -> u32 {
 
 /// A directory whose known descendants remain reachable without allowing its entries to
 /// be listed or changed. Declare this after its TempDir so Drop restores cleanup access.
-/// Windows has no Unix search-only permission mode, so only Unix exposes this fixture.
+/// Unix uses permission bits; Windows denies listing/creation without denying traversal.
 #[cfg(unix)]
 pub struct SearchOnlyDirectory {
     path: std::path::PathBuf,
@@ -1129,6 +1199,22 @@ impl Drop for SearchOnlyDirectory {
     fn drop(&mut self) {
         // Best effort during unwind, before the fixture owner's recursive cleanup runs.
         let _ = fs::set_permissions(&self.path, self.original.clone());
+    }
+}
+
+#[cfg(windows)]
+pub struct SearchOnlyDirectory(creation::CreationDenied);
+
+#[cfg(windows)]
+impl SearchOnlyDirectory {
+    pub fn new(path: &Path) -> Self {
+        Self(creation::search_only(path))
+    }
+    pub fn restore(&self) {
+        self.0.restore();
+    }
+    pub fn restrict(&self) {
+        self.0.restrict();
     }
 }
 
@@ -1182,6 +1268,11 @@ pub fn case_insensitive(directory: &Path) -> bool {
     let insensitive = other_case(&probe).exists();
     std::fs::remove_file(probe).unwrap();
     insensitive
+}
+
+/// A Windows device alias reserved by portable Artifact name rules on every OS.
+pub fn reserved_device_name() -> &'static str {
+    "con"
 }
 
 /// The null device: `/dev/null` on Unix, `NUL` on Windows.
@@ -2739,16 +2830,15 @@ pub fn git(path: &Path, arguments: &[&str]) {
     );
 }
 
-/// Point a copied declaration's Unix commands at the stand-ins, and with `deadlines` give
-/// its deadlines of a second or more `os::slow` room. The runtime fixture's `check.sh`
+/// Point a copied declaration's Unix commands at the stand-ins. The runtime fixture's `check.sh`
 /// compares its working folder as a file rather than as text: Windows spells that folder
 /// with `\`, where the script appends `/review`.
-pub fn port_fixture(path: &Path, deadlines: bool) {
+pub fn port_fixture(path: &Path) {
     if !stand_ins() && !cfg!(target_os = "macos") {
         return;
     }
     /// Whether anything changed.
-    fn commands(value: &mut Value, deadlines: bool) -> bool {
+    fn commands(value: &mut Value) -> bool {
         match value {
             Value::Object(object) => {
                 let mut changed = false;
@@ -2765,15 +2855,7 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
                             *command = resolved;
                             changed
                         }
-                        Value::Number(deadline)
-                            if deadlines
-                                && key == "timeout_ms"
-                                && deadline.as_u64().is_some_and(|ms| ms >= 1000) =>
-                        {
-                            *value = json!(slow(deadline.as_u64().unwrap()));
-                            true
-                        }
-                        other => commands(other, deadlines),
+                        other => commands(other),
                     };
                 }
                 changed
@@ -2781,7 +2863,7 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
             Value::Array(items) => {
                 let mut changed = false;
                 for item in items {
-                    changed |= commands(item, deadlines);
+                    changed |= commands(item);
                 }
                 changed
             }
@@ -2793,7 +2875,7 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
         Some(name) if name.ends_with(".artf") => {
             let mut declaration: Value =
                 toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-            if commands(&mut declaration, deadlines) {
+            if commands(&mut declaration) {
                 fs::write(path, toml::to_string_pretty(&declaration).unwrap()).unwrap();
             }
         }
@@ -3186,7 +3268,7 @@ pub fn signal_fingerprint() -> Option<Value> {
     if cfg!(windows) {
         None
     } else {
-        Some(json!({"script":{"command":bin("/bin/sh"),"args":["-c","kill -TERM $$"]}}))
+        Some(json!({"script":{"command":steps(),"args":["terminate"]}}))
     }
 }
 
@@ -3302,6 +3384,78 @@ pub fn node_program() -> &'static str {
 }
 
 /// Python used by multimodal command-tool fixtures, installed on all CI platforms.
+/// Resolve Python 3 and require the standard-library sqlite3 extension for this fixture.
+pub fn sqlite_python() -> &'static str {
+    let program = python_program();
+    let checked = Command::new(program)
+        .args(["-I", "-c", "import sqlite3"])
+        .output()
+        .expect("SQLite holder fixture requires Python 3 with sqlite3");
+    assert!(
+        checked.status.success(),
+        "SQLite holder fixture requires Python 3 with sqlite3: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    program
+}
+
+/// Independently stop a registered process if a lifecycle assertion unwinds.
+pub struct OwnedProcess {
+    pub pid: u32,
+    pub birth: u64,
+}
+impl Drop for OwnedProcess {
+    fn drop(&mut self) {
+        let result = observation::stop_owned(
+            self.pid,
+            self.birth,
+            false,
+            std::time::Duration::from_secs(5),
+        );
+        if !std::thread::panicking() {
+            result.expect("registered fixture process exits");
+        }
+    }
+}
+
+/// Own a descendant that announces its PID through a fixture marker, even if the test unwinds.
+pub struct MarkedChild<'a> {
+    marker: &'a Path,
+    observed: std::cell::Cell<Option<(u32, u64)>>,
+}
+
+impl<'a> MarkedChild<'a> {
+    pub fn new(marker: &'a Path) -> Self {
+        Self {
+            marker,
+            observed: std::cell::Cell::new(None),
+        }
+    }
+    pub fn pid(&self) -> Option<u32> {
+        let marker = std::fs::read_to_string(self.marker).ok()?;
+        let pid = marker.strip_suffix('\n')?.trim().parse().ok()?;
+        if self.observed.get().is_none()
+            && let Some(birth) = observation::observed_start_time(pid)
+        {
+            self.observed.set(Some((pid, birth)));
+        }
+        Some(pid)
+    }
+}
+
+impl Drop for MarkedChild<'_> {
+    fn drop(&mut self) {
+        let _ = self.pid();
+        if let Some((pid, birth)) = self.observed.get() {
+            let result =
+                observation::stop_owned(pid, birth, false, std::time::Duration::from_secs(5));
+            if !std::thread::panicking() {
+                result.expect("fixture descendant is stopped");
+            }
+        }
+    }
+}
+
 pub fn python_program() -> &'static str {
     worker::python_program()
 }

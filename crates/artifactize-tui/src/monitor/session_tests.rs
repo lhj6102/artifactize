@@ -158,7 +158,7 @@ fn completed_but_stale_resize_never_replaces_layout_and_home_down_keeps_requeste
     let mut made_stale = false;
     for _ in 0..JOB_LIMIT {
         let (job, window) = run_job(&mut live);
-        if !window.loading {
+        if !window.loading() {
             live.geometry(100, 10);
             live.movement(Move::Up(1));
             live.finish(job, window);
@@ -169,7 +169,7 @@ fn completed_but_stale_resize_never_replaces_layout_and_home_down_keeps_requeste
     }
     assert!(made_stale, "the resize never finished loading");
     complete(&mut live);
-    assert!(live.window.status.is_none(), "{:?}", live.window.status);
+    assert!(live.window.note().is_none(), "{:?}", live.window.status);
     assert!(live.window.anchor.event <= shown.event);
     live.movement(Move::Top);
     live.movement(Move::Down(3));
@@ -195,12 +195,12 @@ fn flip_back_partial_widths_do_not_replace_committed_generation() {
     for width in [40, 80, 40] {
         live.geometry(width, 10);
         let (job, window) = run_job(&mut live);
-        assert!(window.loading);
+        assert!(window.loading());
         live.finish(job, window);
     }
     live.movement(Move::Up(1));
     complete(&mut live);
-    assert!(live.window.status.is_none(), "{:?}", live.window.status);
+    assert!(live.window.note().is_none(), "{:?}", live.window.status);
     assert_eq!(live.window.anchor.event, expected.event);
     assert!(live.window.anchor.byte <= expected.byte);
 }
@@ -213,13 +213,13 @@ fn scrolling_during_large_append_layout_uses_completed_visible_prefix() {
     live.invalidate();
     let (job, window) = run_job(&mut live);
     assert!(
-        window.loading,
+        window.loading(),
         "the large append has not finished laying out"
     );
     live.finish(job, window);
     live.movement(Move::Up(1));
     complete(&mut live);
-    assert!(live.window.status.is_none(), "{:?}", live.window.status);
+    assert!(live.window.note().is_none(), "{:?}", live.window.status);
     assert!(live.window.anchor.event <= old.event);
     assert_eq!(live.scroll.mode, Mode::Paused);
 }
@@ -241,29 +241,23 @@ fn reset_and_saved_promotion_are_not_lost_when_job_is_stale() {
     complete(&mut live);
     assert_eq!(live.scroll.mode, Mode::Following);
     assert!(live.window.rows.join("\n").contains("replacement"));
-    std::fs::remove_file(
-        crate::agent::session::path(&live.source.state, &live.source.reference.session_id).unwrap(),
-    )
+    std::fs::remove_file(crate::agent::session::path(
+        &live.source.state,
+        &live.source.reference.session_id,
+    ))
     .unwrap();
     let mut source = live.source.clone();
     source.saved = false;
     assert!(live.refresh(&source));
     let (job, window) = run_job(&mut live);
-    assert!(
-        window
-            .status
-            .as_deref()
-            .unwrap()
-            .contains("never recorded as saved")
-    );
+    assert!(window.note().unwrap().contains("never recorded as saved"));
     source.saved = true;
     assert!(live.refresh(&source));
     live.finish(job, window);
     complete(&mut live);
     assert!(
         live.window
-            .status
-            .as_deref()
+            .note()
             .unwrap()
             .contains("removed by session GC"),
         "the next read uses the saved promotion received while its previous job was in flight"

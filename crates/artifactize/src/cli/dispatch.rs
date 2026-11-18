@@ -41,7 +41,9 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
                 state: context.state_dir,
                 executable,
             };
-            artifactize_mcp::serve(launch).await?;
+            artifactize_mcp::serve(launch)
+                .await
+                .map_err(|error| error.to_string())?;
             Ok(0)
         }
         None => {
@@ -90,7 +92,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
         Some(Command::Prune {
             older_than,
             dry_run,
-        }) => maintenance::prune(context, older_than, dry_run).await,
+        }) => maintenance::prune(context, older_than, dry_run),
         Some(Command::Limits { signoff_idle_grace }) => {
             maintenance::limits(context, signoff_idle_grace)
         }
@@ -113,7 +115,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             }
             workflow::verify(
                 context,
-                selection,
+                selection.resolve()?,
                 policy,
                 workflow::VerifyLimits {
                     modes: artifactize_core::runs::RunModes { speculate },
@@ -128,7 +130,7 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             .await
         }
         Some(Command::Status { selection, policy }) => {
-            workflow::status(context, selection, policy).await
+            workflow::status(context, selection.resolve()?, policy).await
         }
         Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
         Some(Command::Config {
@@ -165,8 +167,16 @@ pub(super) async fn execute(cli: Cli, screens: Screens) -> Result<u8, String> {
             all,
             reviewer,
         }) => {
-            let scope = interactive::Scope::for_review(all, context.repo.clone())?;
-            interactive::review(context, scope, request, reviewer, screens).await
+            let scope = interactive::Scope::for_review(all, context.repo)?;
+            interactive::review(
+                context.state_dir,
+                scope,
+                request,
+                reviewer,
+                context.json,
+                screens,
+            )
+            .await
         }
         Some(Command::Cache { command }) => cache::execute(context, command).await,
         Some(Command::Remote { command }) => {

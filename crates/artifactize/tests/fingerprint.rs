@@ -173,8 +173,6 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
         (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
     ];
     support::os::link_dir(&fixture.repo, &fixture.repo.join("dir-link"));
-    // Only the declared deadline ends this command; host scheduling cannot race a natural exit.
-    let (lingering, lingering_args) = support::os::lingering_command();
     for (declared, message) in [
         (
             fingerprint(&[
@@ -186,10 +184,6 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
                 "7",
             ]),
             "exited with",
-        ),
-        (
-            json!({"script":{"command":lingering,"args":lingering_args,"timeout_ms":50}}),
-            "timed out",
         ),
         (
             json!({"script":{"command":"missing-fingerprint-executable","args":[]}}),
@@ -222,6 +216,56 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
         assert!(!error.contains("private-diagnostic"));
         fixture.no_execution(&run);
     }
+}
+
+#[tokio::test]
+async fn fingerprint_timeout_refuses_even_a_value_printed_before_the_deadline() {
+    use artifactize_core::project::{VerifyOptions, selection::Selection};
+    use tokio_util::sync::CancellationToken;
+
+    let fixture = Fixture::new();
+    const DEADLINE: Duration = Duration::from_secs(600);
+    fixture.write("index.artf", json!({
+        "name":"test",
+        "fingerprint":{"script":{"command":steps(),"args":["print","valid","pid","ready","wait","release"],"timeout_ms": DEADLINE.as_millis() as u64}},
+        "evals":[eval("check", &["touch", "executed"])],
+    }));
+    let gate = owned_run::FileGate::new(fixture.repo.join("release"));
+    let child = Descendant {
+        marker: fixture.repo.join("ready"),
+        processes: owned_run::Processes::protect(&fixture.root),
+    };
+    let selection = Selection::All;
+    let options = VerifyOptions::default();
+    let status = artifactize_core::project::status(
+        &fixture.repo,
+        Some(&fixture.state),
+        &selection,
+        &options,
+        CancellationToken::new(),
+    );
+    tokio::pin!(status);
+    const READY_BOUND: Duration = Duration::from_secs(20);
+    // Poll only to observe publication of the full process marker, not elapsed time.
+    const POLL: Duration = Duration::from_millis(10);
+    let pid = tokio::select! {
+        result = &mut status => panic!("fingerprint ended before its barrier: {result:?}"),
+        observed = tokio::time::timeout(support::os::patience(READY_BOUND), async {
+            loop {
+                if let Some(pid) = child.pid() { return pid; }
+                tokio::time::sleep(POLL).await;
+            }
+        }) => observed.expect("fingerprint process reached its barrier"),
+    };
+    tokio::time::pause();
+    tokio::time::advance(DEADLINE).await;
+    let error = status.await.unwrap_err();
+    tokio::time::resume();
+    assert!(error.contains("timed out"), "{error}");
+    assert!(!support::os::running(pid));
+    assert!(!fixture.repo.join("executed").exists());
+    fixture.no_records();
+    gate.release().unwrap();
 }
 
 #[test]
@@ -315,37 +359,43 @@ fn a_fingerprint_scripts_background_descendant_ends_with_it() {
             "evals":[eval("check", &["exit", "0"])],
         }),
     );
+    let descendant = Descendant {
+        marker,
+        processes: owned_run::Processes::protect(&fixture.root),
+    };
     let output = fixture
         .command()
         .args(["status", "--all", "--json"])
         .record_output()
         .unwrap();
-    let descendant = Descendant(
-        support::declaration::read_text(&marker)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap(),
-    );
+    let pid = descendant
+        .pid()
+        .expect("the fingerprint script spawned a child");
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(status["evals"][0]["fingerprint"], "stable", "{status}");
-    support::os::wait_until(Duration::from_secs(5), || support::os::gone(descendant.0));
+    support::os::wait_until(Duration::from_secs(5), || support::os::gone(pid));
 }
 
-/// A process a fixture's script left behind, owned by the test from its PID marker on: ended
-/// and waited for when the test ends, whether artifactize's cleanup already ended it or not.
-struct Descendant(u32);
+/// Installed before invoking status, so even a failed command/pipe read adopts any child.
+struct Descendant {
+    marker: PathBuf,
+    processes: owned_run::Processes,
+}
+
+impl Descendant {
+    fn pid(&self) -> Option<u32> {
+        support::declaration::read_text(&self.marker)
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
+    }
+}
 
 impl Drop for Descendant {
     fn drop(&mut self) {
-        if support::os::gone(self.0) {
-            return;
-        }
-        support::os::kill(self.0);
-        // No assertion here: a second panic while unwinding would abort the test binary.
-        let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
-        while !support::os::gone(self.0) && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
+        if let Some(pid) = self.pid() {
+            self.processes.own(pid);
         }
     }
 }
@@ -616,8 +666,8 @@ struct FingerprintCaller {
 }
 
 impl FingerprintCaller {
-    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
-        self.child.as_mut().unwrap().try_wait()
+    fn exited(&mut self) -> bool {
+        self.child.as_mut().unwrap().exited()
     }
 
     fn wait_with_output(mut self) -> std::io::Result<std::process::Output> {
@@ -731,7 +781,7 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
                         && text.lines().any(|line| line.parse::<usize>() == Ok(bound))
                 })
         }) {
-            if child.try_wait().unwrap().is_some() {
+            if child.exited() {
                 let output = child.wait_with_output().unwrap();
                 panic!(
                     "status ended before its fingerprint workers met: {}{}",

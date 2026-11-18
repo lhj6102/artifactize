@@ -22,6 +22,7 @@ function requireCallbackPort(): Promise<void> {
 }
 
 export const scenarios: Scenario[] = [
+  // UX journeys: J-SET-CODEX J-SET-MODELS
   // UX edges: E-SET-CODEX-LOGIN E-SET-CODEX-CANCEL E-SET-CODEX-BY-HAND E-SET-CODEX-PASTE
   // E-SET-CODEX-LOGOUT E-SET-CODEX-RETURN E-SET-MODELS
   scenario(

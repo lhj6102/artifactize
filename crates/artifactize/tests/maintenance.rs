@@ -19,7 +19,8 @@ fn command(state: &Path) -> Command {
 }
 
 fn result(command: &mut Command, code: i32) -> Value {
-    let output = command.record_output().unwrap();
+    let recorded = command.recorded().unwrap();
+    let output = &recorded.output;
     assert_eq!(
         output.status.code(),
         Some(code),
@@ -27,7 +28,9 @@ fn result(command: &mut Command, code: i32) -> Value {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    recorded
+        .saved_json()
+        .unwrap_or_else(|| serde_json::from_slice(&output.stdout).unwrap())
 }
 
 fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
@@ -111,13 +114,12 @@ fn doctor(state: &Path, path: &Path) -> Command {
     let mut command = command(state);
     command
         .arg("doctor")
-        .env("PATH", path)
+        .env("PATH", support::os::isolated_path(path))
         .env_remove("OPENAI_API_KEY")
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("GEMINI_API_KEY")
         .env_remove("ARTIFACTIZE_CODEX_AUTH_FILE")
-        .env("HTTPS_PROXY", "http://127.0.0.1:1")
-        .env("HTTP_PROXY", "http://127.0.0.1:1");
+        .env(artifactize_core::release::OFF_VARIABLE, "1");
     command
 }
 
@@ -126,20 +128,14 @@ fn doctor_detects_the_fixture_desktop_beside_its_cli() {
     let root = support::os::tempdir();
     let state = root.path().join("state");
     let candidate = support::os::OwnedExecutable::copy_from(&support::os::cli()).unwrap();
-    let mut app = candidate.path().with_file_name("artifactize-desktop");
-    if let Some(extension) = candidate.path().extension() {
-        app.set_extension(extension);
-    }
-    // Discovery checks metadata only. The fixture is deliberately not a runnable app.
-    fs::write(&app, "desktop installation marker").unwrap();
+    let app = support::os::desktop_installation_marker(candidate.path());
     let mut command = Command::new(candidate.path());
     command
         .arg("doctor")
         .arg("--state-dir")
         .arg(&state)
         .arg("--json")
-        .env("HTTPS_PROXY", "http://127.0.0.1:1")
-        .env("HTTP_PROXY", "http://127.0.0.1:1");
+        .env(artifactize_core::release::OFF_VARIABLE, "1");
     let report = result(&mut command, 0);
     let desktop = check(&report, "desktop");
     assert_eq!(desktop["status"], "PASS");
@@ -320,7 +316,11 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     );
     assert_eq!(
         check(&report, "schema")["message"],
-        artifactize_core::store::EARLIER_STATE
+        concat!(
+            "This state was written by an earlier artifactize. ",
+            "Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). ",
+            "Only schema 6 and later supported versions can be upgraded."
+        )
     );
     assert_eq!(
         support::declaration::read_file(older.join("state.sqlite")).unwrap(),
@@ -376,6 +376,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let repo = root.path().join("repo");
     root.track(&state, &repo);
     let finished = runtime_run(&state, &repo);
+    owned_run::hold_signoffs(&state);
     let waiting = verify(&state, &repo, json!({"kind":"human"}), 0);
     let _waiting = owned_run::RunLease::new(
         &state,
@@ -591,10 +592,6 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
 #[test]
 fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
     let root = support::os::tempdir();
-    // The behavior exists only where the volume ignores case.
-    if !support::os::case_insensitive(root.path()) {
-        return;
-    }
     let repo = support::os::canonical(root.path()).join("Repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(
@@ -603,10 +600,9 @@ fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
         r#"{"name":"a","basis":true}"#,
     )
     .unwrap();
-    for state in [
-        repo.join("state"),
-        support::os::other_case(&repo).join("state"),
-    ] {
+    let alias = support::os::case_insensitive(root.path())
+        .then(|| support::os::other_case(&repo).join("state"));
+    for state in std::iter::once(repo.join("state")).chain(alias) {
         let error = result(command(&state).arg("prune").arg("--repo").arg(&repo), 2);
         assert!(
             error["error"]
@@ -810,7 +806,6 @@ fn claude_agent(state: &Path, bin: &Path, args: &[&str], code: &str) -> std::pro
         let mut input = child.stdin.take().unwrap();
         input.write_all(code.as_bytes()).unwrap();
     }
-    support::os::wait_child(&mut child, "login claude-agent");
     child.wait_with_output().unwrap()
 }
 
@@ -872,7 +867,7 @@ fn claude_agent_signs_in_and_out_through_claude_codes_own_commands() {
     let mut missing = command(&state);
     missing
         .args(["login", "claude-agent"])
-        .env("PATH", &empty)
+        .env("PATH", support::os::isolated_path(&empty))
         .stdin(std::process::Stdio::null());
     let missing = missing.record_output().unwrap();
     assert_eq!(missing.status.code(), Some(2));

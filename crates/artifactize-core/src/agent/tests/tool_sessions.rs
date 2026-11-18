@@ -266,6 +266,39 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
     }
 }
 
+#[tokio::test]
+async fn abandoned_cleanup_is_recovered_with_a_live_owner() {
+    let _clock = CLOCK.lock().await;
+    let fixture = fixture("stop");
+    let log = fixture.directory.path().join("log");
+    let sessions = fixture
+        .ready_sessions_with_removal(CancellationToken::new(), |_| {
+            Err(std::io::Error::other("deliberate removal failure"))
+        })
+        .await
+        .unwrap();
+    assert!(
+        sessions
+            .close()
+            .await
+            .unwrap_err()
+            .contains("deliberate removal failure")
+    );
+    let start = harness::records(&log, "start").pop().unwrap();
+    let abandoned = PathBuf::from(start["directory"].as_str().unwrap());
+    assert!(abandoned.join("owner.json").is_file());
+    for key in ["pid", "child"] {
+        assert!(!os::running(start[key].as_u64().unwrap() as u32));
+    }
+    let next = fixture
+        .ready_sessions(CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!abandoned.exists());
+    next.close().await.unwrap();
+    harness::assert_cleaned(&fixture.state(), &log, 2);
+}
+
 // This fixture uses Unix directory write permission; Windows directory attributes
 // are not equivalent. Windows pending-delete sharing has its own CLI seam.
 #[cfg(unix)]

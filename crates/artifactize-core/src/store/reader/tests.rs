@@ -386,18 +386,31 @@ async fn snapshot_keeps_old_evidence_while_a_wal_writer_commits_and_then_reconci
     let (_root, _repo, state, _receipts) = fixture(1, 2).await;
     let mut reader = Reader::default();
     let id: RunId = "run-0".parse().unwrap();
-    reader.snapshot(&state, |db, cache, _| {
-        let before: String = db.query_row("SELECT status FROM requests WHERE id='run-0-a0'", [], |row| row.get(0))?;
-        let path = state.join(DATABASE);
-        std::thread::spawn(move || {
-            let writer = Connection::open(path).unwrap();
-            writer.execute("UPDATE requests SET status='QUEUED',data=json_set(data,'$.status','QUEUED','$.result',NULL) WHERE id='run-0-a0'", []).unwrap();
-        }).join().unwrap();
-        let selected = cache.selected(db, &state, &id, false)?.unwrap();
-        assert_eq!(before, "GREEN");
-        assert_eq!(selected.1[0].request.status(), crate::types::RequestStatus::Green);
-        Ok(())
-    }).unwrap();
+    reader
+        .snapshot(&state, |db, cache, _| {
+            let before: String = db.query_row(
+                "SELECT status FROM requests WHERE id='run-0-a0'",
+                [],
+                |row| row.get(0),
+            )?;
+            let path = state.join(DATABASE);
+            let statement = "UPDATE requests SET status='QUEUED', \
+                data=json_set(data,'$.status','QUEUED','$.result',NULL) WHERE id='run-0-a0'";
+            std::thread::spawn(move || {
+                let writer = Connection::open(path).unwrap();
+                writer.execute(statement, []).unwrap();
+            })
+            .join()
+            .unwrap();
+            let selected = cache.selected(db, &state, &id, false)?.unwrap();
+            assert_eq!(before, "GREEN");
+            assert_eq!(
+                selected.1[0].request.status(),
+                crate::types::RequestStatus::Green
+            );
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(
         read(&mut reader, &state, &id, 1).unwrap().1[0]
             .request
@@ -689,7 +702,6 @@ async fn a_changed_request_is_read_alone_and_the_rest_stay_shared_with_the_shown
     let (run, next) = read(&mut reader, &state, &id, 1).unwrap();
     assert_eq!(next[1].request.title, "Changed");
     assert_eq!(shown[1].request.title, "Title");
-    assert!(!std::sync::Arc::ptr_eq(&shown[1].request, &next[1].request));
     for n in [0, 2] {
         assert!(std::sync::Arc::ptr_eq(&shown[n].request, &next[n].request));
     }

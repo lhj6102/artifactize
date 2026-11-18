@@ -1,5 +1,6 @@
 use jsonschema::Validator;
 use serde_json::{Map, Value, json};
+use std::sync::LazyLock;
 
 use crate::{config::EvalDeclaration, tools::schema::quoted};
 
@@ -9,17 +10,23 @@ pub(super) use structured::Structured;
 /// Validate a parsed Agent or Human result without repair or owner-field rewriting.
 /// Errors list at most five failing instance paths, so a reviewer can correct the fields.
 pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<ValidatedResult, String> {
+    check_result(eval, value)?;
+    Ok(ValidatedResult::from_validated(value.clone()))
+}
+
+pub(crate) fn check_result(eval: &EvalDeclaration, value: &Value) -> Result<(), String> {
     let schema = VerdictSchema::new(eval.pass_schema(), eval.fail_schema())?;
     schema
         .validate(value)
-        .map_err(|error| schema.explain(error, value))?;
-    Ok(ValidatedResult::from_validated(value.clone()))
+        .map_err(|error| schema.explain(error, value))
 }
 
 /// Bound the raw model response before parsing; prose/whitespace can exceed the semantic result.
 pub(super) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 /// Keep the normalized owner result bounded in saved receipts, in UTF-16 units for JSON clients.
 const MAX_RESULT_CHARS: usize = 256_000;
+static RESULT_TOO_LARGE: LazyLock<String> =
+    LazyLock::new(|| format!("over_size: normalized result exceeds {MAX_RESULT_CHARS} characters"));
 /// Bound schema compilation and the schema sent in the provider request.
 const MAX_SCHEMA_BYTES: usize = 8 * 1024 * 1024;
 /// Five diagnostics give an actionable repair without flooding the next provider turn.
@@ -210,7 +217,7 @@ impl VerdictSchema {
             .count()
             > MAX_RESULT_CHARS
         {
-            return Err("over_size: normalized result exceeds 256000 characters");
+            return Err(&RESULT_TOO_LARGE);
         }
         Ok(())
     }

@@ -1,7 +1,7 @@
 use super::*;
 use futures_util::FutureExt;
 use std::path::PathBuf;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 
 /// A watchdog reports a stuck fixture; it never establishes ordering or expiry.
 const WAIT: Duration = Duration::from_secs(6);
@@ -327,7 +327,7 @@ fn database_release_probe_tracks_idle_readers_among_unrelated_descriptors() {
     crate::test_os::hard_link(&database, &alias);
     let contents = fs::read(&database).unwrap();
     let unrelated = fs::File::create(root.path().join("unrelated")).unwrap();
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let listener = crate::test_os::tcp::loopback_listener();
 
     for path in [&database, &alias] {
         for observed in [&database, &alias] {
@@ -649,9 +649,8 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
     rusqlite::Connection::open(&database).unwrap();
     let target = state.path().join("unrelated");
     std::fs::write(&target, "untouched").unwrap();
-    if crate::test_os::symlink_file(&target, state.path().join("state.sqlite-shm")).is_none() {
-        return;
-    }
+    let sidecar = state.path().join("state.sqlite-shm");
+    crate::test_os::file_link(&target, &sidecar);
     let mut probe = probe::Probe::new(state.path().into());
     let outcome = unwound(async {
         assert_eq!(probe.changed().await, probe::Probed::Replaced);
@@ -660,7 +659,9 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
         assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
     })
     .await;
-    settled(outcome, [probe.close().await]);
+    let closed = probe.close().await;
+    crate::test_os::remove_file_link(&sidecar);
+    settled(outcome, [closed]);
 }
 
 // Child processes run this exact fixture test, never a provider, installed binary or default state.
@@ -712,9 +713,7 @@ async fn multiprocess_fixture() {
     }
 }
 async fn child(state: &Path, role: &str) -> (crate::test_os::TestChild, TcpStream) {
-    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
-        .await
-        .unwrap();
+    let listener = crate::test_os::tcp::async_loopback_listener();
     let child = crate::test_os::spawn_test(
         crate::test_os::self_test("changes::tests::multiprocess_fixture")
             .env("ARTIFACTIZE_IPC_FIXTURE_STATE", state)
@@ -909,17 +908,17 @@ async fn a_commit_no_hint_reported_is_read_like_a_state_change_not_a_resync() {
     let db = rusqlite::Connection::open(&database).unwrap();
     db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE fixture(value INTEGER);")
         .unwrap();
-    let mut subscriber = Subscription::new(state.path()).await;
+    let (tick, ticks) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscriber =
+        Subscription::with_reconciliation(state.path(), Reconciliation::Controlled(ticks)).await;
     let outcome = unwound(async {
         registered(&mut subscriber).await;
-        // A writer that never reaches the hub: the reconcile finds its commit.
+        // A writer that never reaches the hub: an explicit reconciliation finds its commit.
         db.execute("INSERT INTO fixture VALUES(1)", []).unwrap();
-        let change = tokio::time::timeout(
-            crate::test_os::patience(RECONCILE + WAIT),
-            subscriber.next(),
-        )
-        .await
-        .unwrap();
+        tick.send(()).unwrap();
+        let change = tokio::time::timeout(crate::test_os::patience(WAIT), subscriber.next())
+            .await
+            .unwrap();
         assert_eq!(change, Change::StateInvalidated);
     })
     .await;

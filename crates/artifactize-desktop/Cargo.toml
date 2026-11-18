@@ -13,7 +13,7 @@ publish = false
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-e2e = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver", "dep:libc", "dep:windows-sys", "dep:cc", "dep:pkg-config", "dep:gtk", "dep:webkit2gtk", "dep:webview2-com", "dep:windows-core"]
+e2e = ["artifactize-tools/fixture-opener", "dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver", "dep:libc", "dep:windows-sys", "dep:cc", "dep:pkg-config", "dep:gtk", "dep:webkit2gtk", "dep:webview2-com", "dep:windows-core"]
 
 [[bin]]
 name = "artifactize-e2e-observe"

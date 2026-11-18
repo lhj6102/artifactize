@@ -245,7 +245,7 @@ struct Outcome {
 
 impl Outcome {
     fn saved(&self) -> session::Conversation {
-        let path = session::path(&self.fixture.state, SESSION).unwrap();
+        let path = session::path(&self.fixture.state, &SESSION.parse().unwrap());
         session::Conversation::load(&path).unwrap().unwrap()
     }
 }
@@ -362,7 +362,7 @@ async fn a_review_runs_its_tools_in_artifactize_and_returns_the_validated_verdic
     });
     assert_eq!(call.as_deref(), Some("read_a"));
     let delivered = saved
-        .wire_events
+        .wire_events()
         .iter()
         .any(|event| event["kind"] == "delivery" && event["text"] == "It holds.");
     assert!(delivered, "the text reached the live view");

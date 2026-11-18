@@ -55,8 +55,11 @@ impl Summary {
         let header = conversation.header();
 
         let (started_at, ended_at) = (
-            conversation.events.first().and_then(|event| event.at),
-            conversation.events.last().and_then(|event| event.at),
+            conversation.header_at,
+            conversation
+                .events()
+                .last()
+                .map_or(conversation.header_at, |event| event.at),
         );
         let duration_ms = started_at
             .zip(ended_at)
@@ -75,7 +78,7 @@ impl Summary {
         };
         // Calls by tool, then the results that answered them and those that failed.
         let mut answered = BTreeMap::<crate::types::CalledTool, (u64, u64)>::new();
-        for event in &conversation.events {
+        for event in conversation.events() {
             match &event.kind {
                 super::Kind::Attempt(attempt) => summary.attempt(event.send, attempt),
                 super::Kind::Message(event) => match &event.message {
@@ -188,7 +191,7 @@ mod tests {
             id: None,
             content: vec![AssistantContent::ToolCall(call("c3", "read"))],
         };
-        let events = vec![
+        let events = [
             json!({"kind":"review","backend":"openai","model":"m","at":"2026-10-06T01:00:00Z"}),
             json!({"kind":"attempt","turn":1,"attempt":1,"usage":{},"error":"busy"}),
             json!({
@@ -217,14 +220,18 @@ mod tests {
             json!({"kind":"message","send":1,"turn":1,"message":unanswered}),
             json!({"kind":"answer","send":1,"error":"stopped","at":"2026-10-06T01:00:02.5Z"}),
         ];
-        let summary = Summary::new(&Conversation {
-            path: "session.jsonl".into(),
-            wire_events: Vec::new(),
-            events: events
-                .into_iter()
-                .map(|event| serde_json::from_value(event).unwrap())
-                .collect(),
-        });
+        let root = crate::test_os::tempdir();
+        let path = root.path().join("session.jsonl");
+        std::fs::write(
+            &path,
+            events
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let summary = Summary::new(&Conversation::load(&path).unwrap().unwrap());
         assert_eq!(
             summary.backend,
             Some(crate::config::Provider::Openai.into())

@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -210,7 +209,7 @@ pub fn prune(
         } else {
             real_path(&path)?;
             validate_tree(&path, &runs, &repositories)?;
-            fs::remove_dir_all(&path)
+            platform::remove_tree(&path)
                 .map_err(|e| format!("Cannot prune {}: {e}", crate::platform::path_text(&path)))?;
             report.removed.push(path);
         }

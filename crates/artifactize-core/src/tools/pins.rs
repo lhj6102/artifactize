@@ -102,6 +102,12 @@ fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
     let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     walk(&directory, path, "", &mut entries, &mut bytes)?;
+    Ok(directory_digest(entries))
+}
+
+type EntryDigest = (String, u8, crate::types::Sha256Bytes);
+
+fn directory_digest(mut entries: Vec<EntryDigest>) -> crate::types::Sha256Digest {
     entries.sort();
     let mut digest = Sha256::new();
     for (relative, kind, entry) in entries {
@@ -110,7 +116,7 @@ fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
         digest.update([0]);
         digest.update(entry.as_bytes());
     }
-    Ok(hex(&digest.finalize()))
+    hex(&digest.finalize())
 }
 
 /// Collect `(logical path, kind, digest)` for each file (`f`) and link (`l`) below the
@@ -120,7 +126,7 @@ fn walk(
     directory: &File,
     path: &Path,
     relative: &str,
-    entries: &mut Vec<(String, u8, crate::types::Sha256Bytes)>,
+    entries: &mut Vec<EntryDigest>,
     bytes: &mut u64,
 ) -> Result<(), String> {
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {

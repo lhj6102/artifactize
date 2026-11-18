@@ -112,12 +112,8 @@ impl Fixture {
     }
 
     fn json(&self, args: &[&str], code: i32) -> Value {
-        let output = self
-            .command()
-            .args(args)
-            .arg("--json")
-            .record_output()
-            .unwrap();
+        let recorded = self.command().args(args).arg("--json").recorded().unwrap();
+        let output = &recorded.output;
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -125,7 +121,7 @@ impl Fixture {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        parse(&output)
+        recorded.saved_json().unwrap_or_else(|| parse(output))
     }
 
     fn start(&self) -> Child {
@@ -229,8 +225,7 @@ fn parse(output: &Output) -> Value {
     })
 }
 
-fn finish(mut child: Child, code: i32) -> Value {
-    support::os::wait_child(&mut child, "verify");
+fn finish(child: Child, code: i32) -> Value {
     let output = child.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
@@ -466,12 +461,13 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let fixture = Fixture::new(false);
     let sibling = fixture.repo.join("sibling");
     fs::create_dir(&sibling).unwrap();
+    let gate = owned_run::FileGate::new(sibling.join("release"));
     support::declaration::write(
         &fixture.repo,
         sibling.join("index.artf"),
         json!({
             "name":"sibling","fingerprint":false,"evals":[{"id":"check","title":"Once",
-            "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
+            "profile":{"kind":"runtime","command":support::os::steps(),"args":["wait","release"]},
             "payload":{"instruction":"Run before the Human finishes."}}]
         })
         .to_string(),
@@ -490,15 +486,15 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let id = waiting["id"].as_str().unwrap();
     let run_id = waiting["runId"].as_str().unwrap();
     fixture.saved_until(run_id, |view| {
-        view.run.status() == artifactize_core::types::RunStatus::WaitingHuman
+        use artifactize_core::types::{RequestStatus, RunStatus};
+        view.run.status() == RunStatus::WaitingHuman
+            && view.requests.iter().any(|request| {
+                request.eval_id == "sibling/check" && request.status() == RequestStatus::Running
+            })
     });
-    assert_eq!(
-        fixture.json(&["run", "show", run_id], 0)["status"],
-        "WAITING_HUMAN"
-    );
-    // The sibling's saved result, not merely Human admission, orders the submission.
-    fixture.request_state(run_id, "sibling/check", "GREEN");
     fixture.json(&["request", "claim", id, "--reviewer", "custom"], 0);
+    gate.release().unwrap();
+    fixture.request_state(run_id, "sibling/check", "GREEN");
     fixture.json(
         &[
             "request",

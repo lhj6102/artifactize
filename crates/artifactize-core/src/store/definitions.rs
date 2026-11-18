@@ -1,5 +1,6 @@
 //! Typed schema-5 saved graph snapshots, distinct from strict live declarations.
 //! Unknown saved fields survive round-trips; owner schemas and payload extensions stay JSON.
+mod authored;
 mod extensions;
 #[cfg(test)]
 mod tests;
@@ -208,6 +209,7 @@ pub struct CommandTool {
     pub description: String,
     pub input_schema: InputSchema,
     pub protocol: config::ToolProtocol,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "missing", with = "duration_field")]
@@ -259,6 +261,7 @@ pub enum HumanTool {
 pub struct HumanCommandTool {
     pub description: String,
     pub kind: config::HumanToolKind,
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<String>,
     #[serde(flatten)]
@@ -288,6 +291,7 @@ pub struct Fingerprint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Script {
+    #[serde(serialize_with = "crate::platform::serialize_program")]
     pub command: String,
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "missing")]

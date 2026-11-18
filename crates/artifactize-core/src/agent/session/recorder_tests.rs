@@ -55,11 +55,11 @@ fn disabled_and_pending_recorders_do_not_create_files_or_references_before_start
         pending.reference(),
         Some(&expected_reference(&saving, &request, &id))
     );
-    let conversation = Conversation::load(&path(&saving.state, &id).unwrap())
+    let conversation = Conversation::load(&path(&saving.state, &id))
         .unwrap()
         .unwrap();
-    assert_eq!(conversation.events.len(), 1);
-    assert!(matches!(&conversation.events[0].kind, Kind::Review(_)));
+    assert_eq!(conversation.events().len(), 0);
+    assert_eq!(conversation.wire_events()[0]["kind"], "review");
 }
 
 #[test]
@@ -87,10 +87,10 @@ fn initial_header_is_lazy_authoritative_and_repeated_end_preserves_saved_referen
     recorder.event(Kind::End(End::default()));
     recorder.event(Kind::Answer(Answer::Completed("after end".into())));
     assert_eq!(recorder.reference(), Some(&reference));
-    let conversation = Conversation::load(&path(&saving.state, &id).unwrap())
+    let conversation = Conversation::load(&path(&saving.state, &id))
         .unwrap()
         .unwrap();
-    assert_eq!(conversation.events.len(), 5);
+    assert_eq!(conversation.events().len(), 4);
     assert_eq!(conversation.header().version, Some(1));
     assert_eq!(conversation.header().session_id.as_ref(), Some(&id));
     assert_eq!(
@@ -103,22 +103,25 @@ fn initial_header_is_lazy_authoritative_and_repeated_end_preserves_saved_referen
     );
     assert_eq!(conversation.header().eval_id.as_deref(), Some("app/check"));
     assert!(
+        conversation.header_at.is_some() && conversation.wire_events()[0].get("send").is_none()
+    );
+    assert!(
         conversation
-            .events
+            .events()
             .iter()
             .all(|event| event.at.is_some() && event.send.is_none())
     );
     assert!(matches!(
-        &conversation.events[1].kind,
+        &conversation.events()[0].kind,
         Kind::Message(message) if message.turn == 1 && message.message == Message::user("recorded")
     ));
     assert!(matches!(
-        &conversation.events[2].kind,
+        &conversation.events()[1].kind,
         Kind::End(End::Completed(verdict)) if verdict.verdict == crate::runtime::Verdict::Green
     ));
-    assert!(matches!(&conversation.events[3].kind, Kind::End(_)));
+    assert!(matches!(&conversation.events()[2].kind, Kind::End(_)));
     assert!(matches!(
-        &conversation.events[4].kind,
+        &conversation.events()[3].kind,
         Kind::Answer(answer) if answer.text() == Some("after end")
     ));
 }
@@ -141,7 +144,7 @@ fn open_failure_disables_future_events_and_append_does_not_create_missing_files(
     recorder.event(Kind::End(End::default()));
     assert!(recorder.reference().is_none());
     assert!(!directory(&saving.state).exists());
-    let missing = path(&saving.state, &id).unwrap();
+    let missing = path(&saving.state, &id);
     assert!(Recorder::append(&saving.state, &missing, &id, 1).is_err());
     assert!(!missing.exists());
 }
@@ -154,7 +157,7 @@ fn followup_has_send_number_no_new_header_and_no_new_saved_review_reference() {
     let reference = review.reference().unwrap().clone();
     review.event(Kind::End(End::default()));
     drop(review);
-    let path = path(&saving.state, &id).unwrap();
+    let path = path(&saving.state, &id);
     let mut follow = Recorder::append(&saving.state, &path, &id, 7).unwrap();
     follow.start(Header::default());
     follow.event(Kind::Send(Send {
@@ -165,18 +168,19 @@ fn followup_has_send_number_no_new_header_and_no_new_saved_review_reference() {
     follow.event(Kind::Answer(Answer::Completed("answer".into())));
     assert!(follow.reference().is_none());
     let conversation = Conversation::load(&path).unwrap().unwrap();
-    assert_eq!(conversation.events.len(), 5);
+    assert_eq!(conversation.events().len(), 4);
     assert_eq!(
         conversation.header().request_id.as_ref(),
         Some(&reference.request_id)
     );
+    assert!(conversation.wire_events()[0].get("send").is_none());
     assert!(
-        conversation.events[..2]
+        conversation.events()[..1]
             .iter()
             .all(|event| event.send.is_none())
     );
     assert!(
-        conversation.events[2..]
+        conversation.events()[1..]
             .iter()
             .all(|event| event.send == Some(7))
     );
@@ -212,7 +216,7 @@ fn first_header_write_failure_never_promotes_reference_and_later_failure_retains
     let mut review = Recorder::new(Some(&saving), &request, &id);
     review.start(Header::default());
     let reference = expected_reference(&saving, &request, &id);
-    let path = path(&saving.state, &id).unwrap();
+    let path = path(&saving.state, &id);
     let saved = fs::read(&path).unwrap();
     // Inject an unwritable handle at the I/O boundary; only saved effects are asserted.
     review.state = Recording::Review {
@@ -229,7 +233,10 @@ fn first_header_write_failure_never_promotes_reference_and_later_failure_retains
     )));
     assert_eq!(review.reference(), Some(&reference));
     assert_eq!(fs::read(&path).unwrap(), saved);
-    assert_eq!(Conversation::load(&path).unwrap().unwrap().events.len(), 1);
+    assert_eq!(
+        Conversation::load(&path).unwrap().unwrap().events().len(),
+        0
+    );
     drop(review);
 
     let mut follow = Recorder::append(&saving.state, &path, &id, 3).unwrap();
@@ -274,8 +281,11 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
                     .unwrap(),
                 Change::SessionInvalidated(id.clone())
             );
-            let path = path(&saving.state, &id).unwrap();
-            assert_eq!(Conversation::load(&path).unwrap().unwrap().events.len(), 1);
+            let path = path(&saving.state, &id);
+            assert_eq!(
+                Conversation::load(&path).unwrap().unwrap().events().len(),
+                0
+            );
             recorder.event(Kind::Answer(Answer::Completed("flushed".into())));
             crate::changes::drain().await;
             assert_eq!(
@@ -285,7 +295,7 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
                 Change::SessionInvalidated(id.clone())
             );
             assert!(matches!(
-                &Conversation::load(&path).unwrap().unwrap().events[1].kind,
+                &Conversation::load(&path).unwrap().unwrap().events()[0].kind,
                 Kind::Answer(answer) if answer.text() == Some("flushed")
             ));
             let reference = expected_reference(&saving, &request, &id);

@@ -312,7 +312,14 @@ pub fn view(
             let fields: Vec<_> = detail
                 .fields
                 .iter()
-                .filter(|(key, _)| Section::of(key) == section)
+                .filter(|(key, _)| {
+                    let group = if outcome.is_some() && *key == "Waiting" {
+                        Section::Waits
+                    } else {
+                        Section::of(key)
+                    };
+                    group == section
+                })
                 .filter(|(key, _)| outcome.is_none() || !OUTCOME.contains(key))
                 .collect();
             if fields.is_empty() {

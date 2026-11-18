@@ -197,8 +197,7 @@ fn wait_until(condition: impl FnMut() -> bool) {
     support::os::wait_until(Duration::from_secs(10), condition);
 }
 
-fn finish(mut child: Child, code: i32) -> Value {
-    wait_until(|| child.try_wait().unwrap().is_some());
+fn finish(child: Child, code: i32) -> Value {
     let output = child.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
@@ -309,18 +308,19 @@ async fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() 
 }
 
 fn slow_eval(id: &str, address: SocketAddr) -> Value {
-    let mut check = eval(id, SLOW);
-    check["profile"]["args"] = json!(["-c", SLOW, id, address.to_string()]);
+    let script = format!("{}\n{SLOW}", support::os::tcp::PYTHON_MARKERS);
+    let mut check = eval(id, &script);
+    check["profile"]["args"] = json!([
+        "-c",
+        script,
+        id,
+        address.ip().to_string(),
+        address.port().to_string()
+    ]);
     check
 }
 
-const SLOW: &str = r#"import pathlib, socket, sys, time
-host, port = sys.argv[2].rsplit(':', 1)
-def record(kind):
-    with socket.create_connection((host, int(port))) as stream:
-        stream.sendall((kind + ' ' + sys.argv[1] + '\n').encode())
-        with stream.makefile('rb') as response:
-            assert response.readline() == b'ok\n'
+const SLOW: &str = r#"import pathlib, time
 record('start')
 while not pathlib.Path('release').exists():
     time.sleep(0.01)
@@ -434,7 +434,7 @@ async fn completion_releases_a_dependent_while_an_independent_eval_is_still_runn
             && view.requests[2].status() == artifactize_core::types::RequestStatus::Running
     })
     .await;
-    assert!(child.try_wait().unwrap().is_none());
+    assert!(!child.exited());
     assert!(fixture.repo.join("c-slow/started").exists());
     fs::write(
         support::declaration::source_path(fixture.repo.join("c-slow/release")),

@@ -45,7 +45,7 @@ async fn terminal_cleanup_waits_for_a_late_supervisor_before_releasing_its_state
         .unwrap();
     let database = state.join(store::DATABASE);
     let start = || {
-        let mut command = std::process::Command::new(support::os::python_program());
+        let mut command = std::process::Command::new(support::os::sqlite_python());
         command.args(["-I", "-c", "import sqlite3,sys\ndb=sqlite3.connect(sys.argv[1])\nprint('holding',flush=True)\nsys.stdin.buffer.read()\ndb.close()"])
             .arg(&database).current_dir(&state);
         support::os::spawn_piped_test(command)
@@ -60,7 +60,7 @@ async fn terminal_cleanup_waits_for_a_late_supervisor_before_releasing_its_state
     }
     let view = store::RunView {
         run: serde_json::from_value(json!({
-            "id":"run-terminal", "repoPath":repo, "stateDir":state, "status":"GREEN",
+            "id":"run-terminal", "repoPath":support::os::path_text(&repo), "stateDir":support::os::path_text(&state), "status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z", "completedAt":"2026-01-01T00:00:01Z",
             "selection":{"kind":"all"}, "validation":null,
             "control":{"worker":{"state":"admitted","owner":{"pid":executor.id(),"start_time":support::os::start_time(executor.id())}}, "supervisor":{"pid":supervisor.id(),"start_time":support::os::start_time(supervisor.id())}, "activity":"executing"}

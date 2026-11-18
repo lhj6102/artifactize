@@ -186,7 +186,7 @@ pub struct StateHomeError;
 fn state_home_variables() -> String {
     let names: Vec<&str> = std::iter::once("ARTIFACTIZE_STATE_HOME")
         .chain(platform::STATE_VARIABLES.iter().copied())
-        .chain([platform::HOME_VARIABLE])
+        .chain(platform::HOME_VARIABLES.iter().copied())
         .collect();
     let (last, rest) = names.split_last().expect("constant names");
     format!("{}, or {last}", rest.join(", "))

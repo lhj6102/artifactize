@@ -192,6 +192,32 @@ fn a_folder_outside_git_lives_while_it_exists_and_holds_declarations() {
 }
 
 #[test]
+fn a_folder_and_its_alias_share_one_monitor_workspace() {
+    let root = crate::test_os::tempdir();
+    let real = root.path().join("plain");
+    std::fs::create_dir(&real).unwrap();
+    let alias = root.path().join("alias");
+    crate::test_os::link_dir(&real, &alias);
+    let runs = [
+        run("run-1", &real, Identity::default(), 0, RunStatus::Green),
+        run("run-2", &alias, Identity::default(), 1, RunStatus::Green),
+    ];
+    let listing = branches(&runs, Some(&alias), &mut Discovery::default());
+    let [branch] = listing.branches.as_slice() else {
+        panic!("aliases share one branch: {:?}", listing.branches);
+    };
+    assert_eq!(listing.launch.as_ref(), Some(&branch.place));
+    assert_eq!(
+        branch
+            .runs
+            .iter()
+            .map(|run| run.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run-1", "run-2"]
+    );
+}
+
+#[test]
 fn the_launch_folder_is_listed_before_its_project_has_a_run() {
     let root = crate::test_os::tempdir();
     let main = repository(root.path());
@@ -226,15 +252,15 @@ fn the_launch_folder_outside_git_is_listed_with_its_artifacts_only_in_subfolders
 
 fn branch(project: &str, name: &str, latest: Option<i64>) -> Branch {
     Branch {
-        place: Place::Folder(format!("/{project}/{name}").into()),
+        place: Place::Folder(format!("{project}/{name}").into()),
         project: project.into(),
         name: name.into(),
-        workspace: "/".into(),
+        workspace: ".".into(),
         runs: latest
             .map(|day| {
                 let chip = run(
                     "run-1",
-                    Path::new("/"),
+                    Path::new("."),
                     Identity::default(),
                     day,
                     RunStatus::Green,
@@ -369,14 +395,14 @@ fn starred_branches_come_first_in_the_search_order_and_stay_starred() {
 #[test]
 fn starred_artifacts_are_kept_per_project_for_every_branch_of_it() {
     let main = Place::Git {
-        common: "/repo/.git".into(),
+        common: "repo/.git".into(),
         head: Head::Branch(BranchName::try_from("main".to_owned()).unwrap()),
     };
     let feature = Place::Git {
-        common: "/repo/.git".into(),
+        common: "repo/.git".into(),
         head: Head::Branch(BranchName::try_from("feat/x".to_owned()).unwrap()),
     };
-    let other = Place::Folder("/notes".into());
+    let other = Place::Folder("notes".into());
     let name = |text: &str| text.parse::<ArtifactName>().unwrap();
     let state = crate::test_os::tempdir();
     assert_eq!(
@@ -411,7 +437,7 @@ fn starred_artifacts_are_kept_per_project_for_every_branch_of_it() {
     // A stored star whose Artifact is no Artifact name is refused when read back.
     std::fs::write(
         crate::test_declaration::source_path(state.path().join("starred-artifacts.json")),
-        r#"[{"project":{"folder":"/notes"},"artifacts":["no name"]}]"#,
+        r#"[{"project":{"folder":"notes"},"artifacts":["no name"]}]"#,
     )
     .unwrap();
     assert!(starred_artifacts(Some(state.path()), &other.project()).is_err());
@@ -475,7 +501,7 @@ fn a_branch_name_is_a_valid_ref_and_a_stored_star_with_another_is_refused() {
     for bad in ["", "topic.lock/child"] {
         std::fs::write(
             crate::test_declaration::source_path(state.path().join("starred-branches.json")),
-            format!(r#"[{{"git":{{"common":"/repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
+            format!(r#"[{{"git":{{"common":"repo/.git","head":{{"branch":"{bad}"}}}}}}]"#),
         )
         .unwrap();
         assert!(starred(Some(state.path())).is_err(), "{bad:?}");

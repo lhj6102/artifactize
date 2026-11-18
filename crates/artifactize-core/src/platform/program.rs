@@ -34,12 +34,37 @@ pub(crate) fn folder_relative(command: &str) -> Result<Option<String>, String> {
     Ok(Some(relative.to_owned()))
 }
 
-pub(crate) fn candidates(path: &Path) -> Vec<PathBuf> {
-    artifactize_tools::program::candidates(path, super::environment::var)
+/// Select a scoped executable in host lookup order, with all path admissions supplied by
+/// the caller. Distinguish generated suffixes from parent components authored by the caller.
+pub(crate) fn resolve_scoped(
+    relative: &Path,
+    admit: impl Fn(&Path) -> Result<PathBuf, String>,
+) -> Result<PathBuf, String> {
+    let mut failure = None;
+    for candidate in artifactize_tools::program::candidates(relative, super::environment::var) {
+        let candidate = if candidate != relative {
+            let parent = candidate.parent().unwrap_or(Path::new(""));
+            let directory = admit(parent)?;
+            let Some(spelling) = suffix_spelling(&directory, &candidate) else {
+                continue;
+            };
+            spelling
+        } else {
+            candidate
+        };
+        match admit(&candidate) {
+            Ok(path) if resolve(path.as_os_str(), Path::new("")).is_ok() => return Ok(path),
+            Ok(_) => (),
+            Err(error) => {
+                failure.get_or_insert(error);
+            }
+        }
+    }
+    Err(failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into()))
 }
 
 /// Lookup-added suffixes use actual entry spelling; caller-authored parents remain exact.
-pub(crate) fn suffix_spelling(directory: &Path, candidate: &Path) -> Option<PathBuf> {
+fn suffix_spelling(directory: &Path, candidate: &Path) -> Option<PathBuf> {
     let requested = candidate.file_name()?.to_str()?;
     std::fs::read_dir(directory)
         .ok()?
@@ -79,10 +104,12 @@ pub(crate) fn resolve_near_current(program: &OsStr) -> io::Result<PathBuf> {
 }
 
 fn resolve_sibling(program: &OsStr, current: &Path) -> Option<PathBuf> {
+    // Probe the executable's directory and the parent of Cargo's `deps` directory.
+    const SIBLING_DIRECTORIES: usize = 2;
     current
         .ancestors()
         .skip(1)
-        .take(2)
+        .take(SIBLING_DIRECTORIES)
         .find_map(|directory| resolve(directory.join(program).as_os_str(), directory).ok())
 }
 

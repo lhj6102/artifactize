@@ -225,11 +225,8 @@ fn failure_text(failures: &[(Stream, StreamFailure)]) -> String {
         .join("; ")
 }
 
-fn end_text(status: &std::process::ExitStatus) -> String {
-    format!(
-        "the process had ended ({})",
-        platform::exit_description(status)
-    )
+fn end_text(status: &platform::ProcessOutcome) -> String {
+    format!("the process had ended ({status})")
 }
 
 impl Captured {
@@ -262,7 +259,8 @@ pub(super) fn finish(
         .chain(stderr_failures.map(|failure| (Stream::Stderr, failure)))
         .collect();
     let output = super::Output {
-        status,
+        status: platform::ProcessOutcome::from_native(&status),
+        native_status: status,
         stdout,
         stderr,
         truncated: stdout_truncated || stderr_truncated,

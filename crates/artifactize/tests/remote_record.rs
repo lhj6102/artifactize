@@ -326,7 +326,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
         &receipts,
         &request.id,
         &"alice".parse().unwrap(),
-        &json!({"verdict":"GREEN","approved":true}),
+        &human::Submission::try_from(json!({"verdict":"GREEN","approved":true})).unwrap(),
         CancellationToken::new(),
     )
     .await

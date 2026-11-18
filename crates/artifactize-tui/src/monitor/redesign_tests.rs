@@ -461,7 +461,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     assert!(
         reader
             .step(80, 10, Position::Bottom)
-            .status
+            .note()
             .unwrap()
             .contains("removed by session GC")
     );
@@ -1054,7 +1054,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
         &receipts,
         &id,
         &reviewer,
-        &json!({"verdict":"GREEN","note":"outside"}),
+        &crate::human::Submission::try_from(json!({"verdict":"GREEN","note":"outside"})).unwrap(),
         tokio_util::sync::CancellationToken::new(),
     )
     .await

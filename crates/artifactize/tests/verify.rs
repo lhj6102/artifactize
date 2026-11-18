@@ -79,14 +79,19 @@ impl Fixture {
         if wait {
             command.arg("--wait");
         }
-        let output = command.args(args).arg("--json").record_output().unwrap();
+        let recorded = command.args(args).arg("--json").recorded().unwrap();
+        let output = &recorded.output;
         assert_eq!(
             output.status.code(),
             Some(code),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        json_output(&output)
+        if wait {
+            json_output(output)
+        } else {
+            recorded.saved_json().expect("submitted Run")
+        }
     }
 
     fn runtime(&self, program: &str, args: &[&str]) {
@@ -462,10 +467,7 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     assert_eq!(support::declaration::read_text(&marker).unwrap(), "run\n");
 }
 
-fn wait_for(mut child: RunChild) -> Output {
-    support::os::wait_until(Duration::from_secs(10), || {
-        support::os::child_exited(&mut child)
-    });
+fn wait_for(child: RunChild) -> Output {
     child.wait_with_output().unwrap()
 }
 

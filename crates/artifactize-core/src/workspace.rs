@@ -30,7 +30,8 @@ fn has_marker(path: &Path) -> io::Result<bool> {
 
 pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
     for marker in ARTIFACT_MARKERS {
-        if has_marker(&path.join(marker))? {
+        if crate::platform::paths::has_exact_entry(path, marker)? && has_marker(&path.join(marker))?
+        {
             return Ok(true);
         }
     }

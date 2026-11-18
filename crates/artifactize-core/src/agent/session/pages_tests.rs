@@ -23,7 +23,7 @@ fn session_windows_wrap_unicode_against_independent_rows() {
         append(&source, &answer(text));
         let mut reader = Reader::new(source);
         let window = finish(&mut reader, width, 20, Position::Row(0));
-        assert!(window.status.is_none(), "{:?}", window.status);
+        assert!(window.note().is_none(), "{:?}", window.status);
         assert_eq!(window.rows, expected, "width {width}");
         assert_eq!(window.total, expected.len());
     }
@@ -40,12 +40,12 @@ fn wide_graphemes_do_not_hide_following_rows_or_later_appends() {
     let mut reader = Reader::new(source.clone());
     for _ in 0..3 {
         let window = finish(&mut reader, 1, 4, Position::Row(0));
-        assert!(window.status.is_none(), "{:?}", window.status);
+        assert!(window.note().is_none(), "{:?}", window.status);
         assert_eq!(window.rows, ["A", "B", "C", ""]);
     }
     append(&source, &answer("D"));
     let window = finish(&mut reader, 1, 2, Position::Bottom);
-    assert!(window.status.is_none(), "{:?}", window.status);
+    assert!(window.note().is_none(), "{:?}", window.status);
     assert_eq!(window.rows, ["D", ""]);
 }
 
@@ -56,7 +56,7 @@ fn huge_combining_grapheme_and_row_offsets_are_not_limited_to_u16() {
     append(&source, &answer(&("x".repeat(70_000) + &grapheme)));
     let mut reader = Reader::new(source);
     let window = finish(&mut reader, 1, 3, Position::Bottom);
-    assert!(window.status.is_none(), "{:?}", window.status);
+    assert!(window.note().is_none(), "{:?}", window.status);
     assert_eq!(window.total, 70_002);
     assert_eq!(window.top, 69_999);
     assert_eq!(window.rows, ["x", grapheme.as_str(), ""]);

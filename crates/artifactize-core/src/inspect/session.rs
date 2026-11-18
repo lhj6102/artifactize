@@ -145,7 +145,7 @@ pub async fn locate(state: &Path, selector: &Selector) -> Result<Located, String
         .clone()
         .ok_or_else(|| format!("Request {} ran no Agent review.", view.request.id))?;
     Ok(Located {
-        path: session::path(state, &id)?,
+        path: session::path(state, &id),
         reference: view.request.session.clone(),
         reused_by,
         id,
@@ -166,7 +166,7 @@ pub async fn show(state: &Path, selector: &Selector, summary: bool) -> Result<Va
     } else {
         Ok(
             json!({"reference": located.reference.as_ref().map(ToString::to_string),
-            "file": crate::platform::path_text(&conversation.path), "events": conversation.wire_events}),
+            "file": crate::platform::path_text(&conversation.path), "events": conversation.wire_events()}),
         )
     }
 }

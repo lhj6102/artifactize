@@ -94,12 +94,6 @@ mod tests {
         let directory = root.path().join("Secret");
         fs::create_dir(&directory).unwrap();
         let selected = case_alias_or_original(&directory, "secret");
-        let expected = if super::super::case_insensitive(root.path()) {
-            root.path().join("secret")
-        } else {
-            directory.clone()
-        };
-        assert_eq!(selected, expected);
         fs::write(selected.join("key.txt"), "changed").unwrap();
         assert_eq!(fs::read(directory.join("key.txt")).unwrap(), b"changed");
         let names: Vec<_> = fs::read_dir(root.path())

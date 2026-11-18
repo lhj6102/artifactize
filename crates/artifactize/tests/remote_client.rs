@@ -5,7 +5,6 @@ use owned_run::Watcher;
 use std::{
     fs,
     io::Write,
-    net::TcpListener,
     path::Path,
     process::{Command, Stdio},
     time::Duration,
@@ -229,15 +228,14 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     let bin = root.path().join("bin");
     support::os::create_private_dir_all(&state.join("auth"));
     fs::create_dir(&bin).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
+    let listener = support::os::tcp::nonblocking_loopback_listener();
     let url = format!("http://{}/", listener.local_addr().unwrap());
     let token = test_token();
     let doctor = |code| {
         let report = run(
             artifactize(&state)
                 .arg("doctor")
-                .env("PATH", &bin)
+                .env("PATH", support::os::isolated_path(&bin))
                 .env_remove("OPENAI_API_KEY")
                 .env_remove("ANTHROPIC_API_KEY"),
             "",

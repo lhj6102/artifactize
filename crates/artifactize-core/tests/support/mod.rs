@@ -84,34 +84,32 @@ pub mod schema;
 pub mod tool_sessions;
 
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the
-/// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins, and
-/// their deadlines of a second or more get `os::slow` room. A shorter one is there to expire.
+/// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins.
 pub fn copy_fixture(name: &str, target: &Path) {
     copy(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../artifactize-core/tests/fixtures")
             .join(name),
         target,
-        true,
     );
 }
 
 /// Copy a directory; with the stand-ins, its declarations then name them. Nothing else
 /// changes, so a copy keeps every fingerprint that covers its declarations.
 pub fn copy_directory(source: &Path, target: &Path) {
-    copy(source, target, false);
+    copy(source, target);
 }
 
-fn copy(source: &Path, target: &Path, deadlines: bool) {
+fn copy(source: &Path, target: &Path) {
     fs::create_dir_all(target).unwrap();
     for entry in fs::read_dir(source).unwrap() {
         let entry = entry.unwrap();
         let destination = target.join(entry.file_name());
         if entry.file_type().unwrap().is_dir() {
-            copy(&entry.path(), &destination, deadlines);
+            copy(&entry.path(), &destination);
         } else {
             fs::copy(entry.path(), &destination).unwrap();
-            os::port_fixture(&destination, deadlines);
+            os::port_fixture(&destination);
         }
     }
 }

@@ -21,7 +21,7 @@ const UNLOCKED_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// A fingerprint's own directory, removed with its lock when dropped.
 pub(super) struct Scratch {
-    directory: Option<tempfile::TempDir>,
+    directory: Option<platform::PrivateTempDir>,
     lock: PathBuf,
     /// Held until the directory is gone.
     _held: File,
@@ -45,10 +45,7 @@ impl Scratch {
                 .and_then(|name| name.to_str())
                 .and_then(|name| name.strip_suffix(LOCK))
                 .expect("the lock was named with its suffix");
-            tempfile::Builder::new()
-                .prefix(name)
-                .rand_bytes(0)
-                .tempdir_in(root)
+            platform::private_named_dir(root, name)
         })();
         match directory {
             Ok(directory) => Ok(Self {
@@ -135,7 +132,7 @@ fn sweep(
         }
         let owned = lock.strip_suffix(LOCK).expect("a lock's name");
         if directories.remove(owned) {
-            match platform::remove_abandoned_directory(&root.join(owned)) {
+            match platform::remove_tree(&root.join(owned)) {
                 Ok(()) => {}
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(_) => continue,
@@ -156,7 +153,7 @@ fn sweep(
                     .is_ok_and(|age| age >= UNLOCKED_AGE)
             });
         if untouched {
-            let _ = platform::remove_abandoned_directory(&root.join(name));
+            let _ = platform::remove_tree(&root.join(name));
         }
     }
     Ok(())

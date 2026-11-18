@@ -1,171 +1,102 @@
 //! Repository-bound inspection and lossless detail paging, with no CLI duplication.
-use super::{RUN_LIST_LIMIT, encode, input::*, page, parse};
-use artifactize_core::{project::VerifyOptions, runs};
-use serde_json::Value;
+use super::{
+    error::Error,
+    input::{Inspection, Read},
+    page::Page,
+};
+use artifactize_core::{
+    cache, config, diagnostics, inspect, llm, platform, project, query, runs, store,
+    types::RequestId,
+};
+use serde_json::to_string;
 use tokio_util::sync::CancellationToken;
 
 pub(super) async fn inspect(
     context: &runs::Context,
-    name: &str,
-    arguments: Value,
-) -> Result<Value, String> {
+    Inspection { read, page }: Inspection,
+) -> Result<Page, Error> {
     let repo = context.repo();
     let state = Some(context.state());
-
-    let cursor = arguments
-        .get("cursor")
-        .map(|value| {
-            value
-                .as_str()
-                .ok_or("cursor must be a string".to_owned())?
-                .parse::<page::Cursor>()
-        })
-        .transpose()?;
-    let as_of = cursor
-        .as_ref()
-        .map_or_else(time::OffsetDateTime::now_utc, |cursor| cursor.as_of);
-    let mut query = arguments.clone();
-    if let Some(object) = query.as_object_mut() {
-        object.remove("cursor");
-    }
-    let arguments = query.clone();
-    let output = match name {
-        "status" => {
-            let args: Status = parse(arguments)?;
-            encode(
-                artifactize_core::project::status(
-                    repo,
-                    state,
-                    &args.scope.0,
-                    &VerifyOptions::default(),
-                    CancellationToken::new(),
-                )
-                .await?,
-            )?
-        }
-        "config_graph" => {
-            let args: GraphInput = parse(arguments)?;
-            let config =
-                artifactize_core::config::read_workspace_config(repo).map_err(|e| e.to_string())?;
-            let selection = if args.impact {
-                artifactize_core::query::impact(&config, &args.scope.0)?
+    let as_of = page.as_of();
+    let text = match read {
+        Read::Status(args) => to_string(
+            &project::status(
+                repo,
+                state,
+                args.scope.selection(),
+                &project::VerifyOptions::default(),
+                CancellationToken::new(),
+            )
+            .await?,
+        )?,
+        Read::Graph(args) => {
+            let config = config::read_workspace_config(repo).map_err(Error::Config)?;
+            let selection = args.scope.selection();
+            if args.impact {
+                to_string(&query::graph(&config, &query::impact(&config, selection)?)?)?
             } else {
-                args.scope.0
-            };
-            encode(artifactize_core::query::graph(&config, &selection)?)?
-        }
-        "request_logs" => {
-            let args: LogInput = parse(arguments)?;
-            if artifactize_core::store::read_request_repo(context.state(), &args.id).await? != *repo
-            {
-                return Err("Request not found in this repository.".into());
+                to_string(&query::graph(&config, selection)?)?
             }
-            encode(artifactize_core::inspect::logs(context.state(), &args.id, args.query).await?)?
         }
-        "config_check" => {
-            let _: Empty = parse(arguments)?;
-            encode(artifactize_core::inspect::config_check(repo)?)?
+        Read::Logs(args) => {
+            verify_request_project(context, &args.id).await?;
+            to_string(&inspect::logs(context.state(), &args.id, args.query).await?)?
         }
-        "run_list" => {
-            let args: Runs = parse(arguments)?;
-            let limit = args.limit.unwrap_or(RUN_LIST_LIMIT);
-            if limit > RUN_LIST_LIMIT {
-                return Err("limit must be at most 20; use offset for older Runs.".into());
-            }
-            encode(
-                artifactize_core::store::read_runs(
-                    context.state(),
-                    Some(repo),
-                    limit,
-                    args.offset.unwrap_or(0),
-                )
-                .await?,
-            )?
-        }
-        "run_show" => {
-            let args: RunDetails = parse(arguments)?;
-            encode(artifactize_core::query::run_output(
-                &runs::view(context, &args.run).await?,
-                as_of,
-            ))?
-        }
-        "request_list" => {
-            let args: Requests = parse(arguments)?;
+        Read::Config => to_string(&inspect::config_check(repo)?)?,
+        Read::Runs(args) => to_string(
+            &store::read_runs(
+                context.state(),
+                Some(repo),
+                args.limit(),
+                args.offset.unwrap_or_default(),
+            )
+            .await?,
+        )?,
+        Read::Run(run) => to_string(&query::run_output(&runs::view(context, &run).await?, as_of))?,
+        Read::Requests(args) => {
             if let Some(run) = &args.run {
                 runs::view(context, run).await?;
             }
-            encode(
-                artifactize_core::inspect::request_list(
-                    context.state(),
-                    args.run.as_ref(),
-                    Some(repo),
-                    as_of,
-                )
-                .await?,
+            to_string(
+                &inspect::request_list(context.state(), args.run.as_ref(), Some(repo), as_of)
+                    .await?,
             )?
         }
-        "request_show" => {
-            let args: super::input::Request = parse(arguments)?;
-            let view = artifactize_core::store::read_request(context.state(), &args.id).await?;
-            if artifactize_core::store::read_request_repo(context.state(), &view.request.id).await?
-                != repo
-            {
-                return Err("Request not found in this repository.".into());
-            }
-            artifactize_core::inspect::request_show(context.state(), &args.id, as_of).await?
+        Read::Request(id) => {
+            verify_request_project(context, &id).await?;
+            to_string(&inspect::request_show(context.state(), &id, as_of).await?)?
         }
-        "session_show" => {
-            let args: Session = parse(arguments)?;
-            let located =
-                artifactize_core::inspect::session::locate(context.state(), &args.reference)
-                    .await?;
+        Read::Session(args) => {
+            let located = inspect::session::locate(context.state(), &args.reference).await?;
             runs::view(context, &located.request.request.run_id).await?;
-            artifactize_core::inspect::session_show(context.state(), &args.reference, args.summary)
-                .await?
-        }
-        "tools_check" => {
-            let args: Tools = parse(arguments)?;
-            let options = artifactize_core::diagnostics::ToolCheckOptions::from_flags(
-                args.eval,
-                args.artifact,
-                args.audience.map(Into::into),
-                args.tool,
-                false,
-                None,
-            )?;
-            encode(
-                artifactize_core::diagnostics::check_tools(
-                    repo,
-                    state,
-                    &options,
-                    CancellationToken::new(),
-                )
-                .await?,
+            to_string(
+                &inspect::session_show(context.state(), &args.reference, args.summary).await?,
             )?
         }
-        "doctor" => {
-            let _: Empty = parse(arguments)?;
-            encode(artifactize_core::diagnostics::doctor(state, Some(repo)).await?)?
+        Read::Tools(options) => to_string(
+            &diagnostics::check_tools(repo, state, &options, CancellationToken::new()).await?,
+        )?,
+        Read::Doctor => to_string(&diagnostics::doctor(state, Some(repo)).await?)?,
+        Read::Models(provider) => {
+            to_string(&llm::models::list(provider, state, Some(repo)).await?)?
         }
-        "models" => {
-            let args: Models = parse(arguments)?;
-            encode(artifactize_core::llm::models::list(args.provider, state, Some(repo)).await?)?
-        }
-        "remote_status" => {
-            let _: Empty = parse(arguments)?;
-            artifactize_core::inspect::remote_status(state, Some(repo)).await?
-        }
-        "cache_show" => {
-            let args: Cache = parse(arguments)?;
-            let mut records =
-                artifactize_core::cache::show(context.state(), &args.key, args.history).await?;
+        Read::Remote => to_string(&inspect::remote_status(state, Some(repo)).await?)?,
+        Read::Cache(args) => {
+            let records = cache::show(context.state(), &args.key, args.history).await?;
             if args.history {
-                encode(records)?
+                to_string(&records)?
             } else {
-                encode(records.pop())?
+                to_string(&records.into_iter().next_back())?
             }
         }
-        _ => return Err(format!("Unknown tool: {name}")),
     };
-    page::project(context, name, &query, output, cursor, as_of)
+    page.project(context, &text)
+}
+
+async fn verify_request_project(context: &runs::Context, request: &RequestId) -> Result<(), Error> {
+    let repo = store::read_request_repo(context.state(), request).await?;
+    if !platform::paths_equal(&repo, context.repo()) {
+        return Err(Error::RequestOutsideProject);
+    }
+    Ok(())
 }

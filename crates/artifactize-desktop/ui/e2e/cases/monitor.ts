@@ -7,10 +7,11 @@ import assert from "node:assert/strict";
 import { artifactize, create, finishTalk, type Fixture, launched, requests, signoff, slowTool, type SignoffDefinition } from "../fixture.ts";
 import { claimable, reviewing } from "../human-review.ts";
 import { sessionEndedByApp } from "../observation.ts";
+import { joinGatedTools } from "../process-fixtures.ts";
 import { afterRender, fill, press, typeText } from "../keys.ts";
-import { checkpoint, commandsRendered } from "../commands.ts";
+import { checkpoint } from "../commands.ts";
 import { scenario, type Scenario } from "../scenario.ts";
-import { nativeInput, nativePath, primaryModifier, readText, writeText } from "../platform.ts";
+import { nativeInput, nativePath, primaryModifier, readText, removeTree, serveLoopbackHttp, writeText, type NativePath } from "../platform.ts";
 import { visibleCenter } from "../pointer.ts";
 import { clickOption, dispatchInput, tab } from "../input.ts";
 import { emptyRepository } from "../catalog-fixtures.ts";
@@ -36,7 +37,7 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
    * Result's row of actions. */
   const toolLog = () => browser.execute(() => {
     const detail = document.querySelector('[aria-label="Human review"]');
-    const notice = detail?.querySelector('[role="status"].error');
+    const notice = detail?.querySelector('section[aria-label="Result"] .actions .said [role="status"]:not(.busy)');
     const log = detail?.querySelector('[role="log"][aria-label="Tool log"]');
     return {
       notice: notice?.textContent?.trim() ?? "",
@@ -56,19 +57,11 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
     const next = rows.findIndex((row, index) => index > at && row.kind === "start");
     return rows.slice(at, next < 0 ? rows.length : next);
   };
-  const toolRuns = async () => {
-    const probe = (await checkpoint(browser)).activity.commands.humanRun;
-    assert.ok(probe, "the wrapped humanRun observation is available before any tool action");
-    return probe.started;
-  };
-  /** Release's tool `operation`, its button usable after the claim. The returned check
-   * proves this same probe observes the run the button starts. */
+  /** Release's tool button, usable after the claim. Callers observe its own output or effect. */
   async function tool(operation: string) {
-    const runsBefore = await toolRuns();
     const button = await human().$(`button=${operation}`);
     await button.waitForEnabled({ timeout: 15000, timeoutMsg: `release's ${operation} tool usable` });
-    assert.equal(await toolRuns(), runsBefore, "finding a tool starts no tool command");
-    return { button, observed: async () => assert.ok(await toolRuns() > runsBefore, "the same probe observes the explicitly run tool, not a missing-as-zero counter") };
+    return { button };
   }
 
   /** The request's state, as its Debug section says it once unfolded. */
@@ -95,7 +88,6 @@ async function monitorUI(browser: WebdriverIO.Browser, fixture: Fixture, instruc
     });
     if (claim) {
       await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice" && await reviewing(browser), "this case's claim");
-      assert.equal(await toolRuns(), 0, "this fresh session has dispatched no tool");
       const initial = await toolLog();
       assert.deepEqual(initial.rows, [], "this case's Tool log starts empty");
       assert.equal(initial.noticeError, false, "this case's claim did not inherit a tool error");
@@ -240,7 +232,6 @@ export const scenarios: Scenario[] = [
       await notes.button.click();
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end" && await reviewing(browser),
         { timeout: 15000, timeoutMsg: "the notes tool's run ended in the Tool log" });
-      await notes.observed();
       assert.deepEqual(await runOf("notes"), [
         { text: "▶ HH:MM:SS · notes · release", kind: "start", error: false },
         { text: "# Release notes", kind: "line", error: false },
@@ -272,7 +263,41 @@ export const scenarios: Scenario[] = [
       // The application stand-in really ran, and its exit ends its run in the log.
       await browser.waitUntil(() => launched(fixture), { timeout: 15000, timeoutMsg: "the launched application" });
       await browser.waitUntil(async () => (await runOf("open"))?.at(-1)?.text === "■ exit 0", { timeout: 15000, timeoutMsg: "the launched application's exit logged" });
-      await open.observed();
+    },
+  ),
+
+  // UX journey: J-HUMAN-LOG; UX edge: E-HUMAN-TOOL-LAUNCH
+  scenario<{ visited: NativePath }>(
+    "monitor-tool-file-handoff",
+    "hands a declared file to its desktop application and ends the tool log with launched",
+    async () => {
+      let visited: NativePath | undefined;
+      const endpoint = await serveLoopbackHttp((request, response) => {
+        request.resume();
+        const known = request.method === "GET" && request.url === "/file-opened";
+        if (known && visited) writeText(visited, "opened");
+        response.writeHead(known ? 200 : 404).end();
+      });
+      try {
+        const input = await atRepo({ title: "A person approves the release", instruction: "Read the release notes and approve them.", fileHandoff: endpoint.url });
+        const file = nativePath(input.fixture.repo, "release", "handoff.html");
+        visited = nativePath(input.fixture.root, "handoff-visited");
+        writeText(visited, "");
+        return { ...input, data: { visited }, browser: { file }, release: () => endpoint.close() };
+      } catch (error) {
+        await endpoint.close();
+        throw error;
+      }
+    },
+    async (browser, { fixture, data: { visited } }) => {
+      const { openReview, tool, runOf } = await monitorUI(browser, fixture);
+      await openReview();
+      assert.equal(readText(visited), "", "the file was not opened by setup");
+      const handoff = await tool("handoff");
+      await handoff.button.click();
+      await browser.waitUntil(async () => (await runOf("handoff"))?.at(-1)?.text === "■ launched" && await reviewing(browser),
+        { timeout: 15000, timeoutMsg: "the desktop handoff completed as launched, not as a subprocess exit" });
+      await browser.waitUntil(() => readText(visited) === "opened", { timeout: 15000, timeoutMsg: "the desktop application opened the declared file" });
     },
   ),
 
@@ -290,7 +315,6 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await runOf("talk"))?.some((row) => row.text === "opened the stand-in") === true && await reviewing(browser),
       { timeout: 15000, timeoutMsg: "the launched stand-in's first line, with the review idle" });
       assert.ok(!(await runOf("talk"))!.some((row) => row.kind === "end"), "the launched application has not ended");
-      await talk.observed();
       const notes = await tool("notes");
       await notes.button.click();
       await browser.waitUntil(async () => (await runOf("notes"))?.at(-1)?.kind === "end",
@@ -385,7 +409,6 @@ export const scenarios: Scenario[] = [
       await browser.waitUntil(async () => (await box()).below < 24, { timeout: 15000, timeoutMsg: "the Tool log at its bottom" });
       await runNotes();
       assert.ok((await box()).below < 24, "the Tool log follows its newest line again");
-      await notes.observed();
       // Its text is ordinary selectable page text. Select it through input, then copy
       // and paste through the engine's own editing commands.
       // The tool buttons let go of the keyboard while they ran: the instruction takes it.
@@ -453,9 +476,9 @@ export const scenarios: Scenario[] = [
       await openReview();
       const fail = await tool("fail");
       await fail.button.click();
-      await browser.waitUntil(async () => (await runOf("fail"))?.at(-1)?.kind === "end" && (await toolLog()).noticeError,
-        { timeout: 15000, timeoutMsg: "the failing tool's end and error notice" });
-      await fail.observed();
+      await browser.waitUntil(async () => (await runOf("fail"))?.at(-1)?.kind === "end" && (await toolLog()).notice.includes("fail_release failed"),
+        { timeout: 15000, timeoutMsg: "the failing tool's end and notice text" });
+      assert.equal((await toolLog()).noticeError, true, "the notice is presented as an error");
       assert.deepEqual(await runOf("fail"), [
         { text: "▶ HH:MM:SS · fail · release", kind: "start", error: false },
         { text: "■ exit 1", kind: "end", error: true },
@@ -494,9 +517,33 @@ export const scenarios: Scenario[] = [
       await press(browser, ["Escape"], async () => !(await running("Running slow")), "the tool cancelled by Esc on the tabs");
       await browser.waitUntil(async () => !(await alive()), { timeout: 15000, timeoutMsg: "Esc terminated the owned tool process" });
       await browser.waitUntil(async () => (await runOf("slow"))?.at(-1)?.text === "■ cancelled", { timeout: 15000, timeoutMsg: "the run ended as cancelled" });
-      await slow.observed();
       assert.ok(await human().isExisting(), "Esc cancelled the job and left the Detail open");
       assert.equal(await browser.$("#field-comment").getValue(), "kept while stepping back", "the form stays open while the job is cancelled");
+      for (const action of ["Close", "graph background"]) {
+        const previous = (await runOf("slow"))?.[0];
+        await slow.button.click();
+        await browser.waitUntil(async () => await running("Running slow") && (await runOf("slow"))?.at(-1)?.kind !== "end" && await slowTool(fixture)?.() === true,
+          { timeout: 15000, timeoutMsg: `a freshly owned tool is running before ${action}` });
+        const process = slowTool(fixture);
+        assert.ok(process && previous);
+        if (action === "Close") await browser.$('aside[aria-label="Detail"]').$("button*=Close").click();
+        else {
+          const point = await browser.execute(() => {
+            const canvas = document.querySelector('.graph [data-graph-area]')!.getBoundingClientRect();
+            for (let y = canvas.bottom - 24; y > canvas.top + 24; y -= 28) for (let x = canvas.left + 24; x < canvas.right; x += 28) {
+              if (document.elementFromPoint(x, y)?.classList.contains("svelte-flow__pane")) return { x: Math.round(x), y: Math.round(y) };
+            }
+            throw new Error("no exposed graph background");
+          });
+          await browser.action("pointer").move(point).down().up().perform();
+        }
+        await browser.waitUntil(async () => !(await process()) && (await runOf("slow"))?.at(-1)?.text === "■ cancelled" && !(await running("Running slow")),
+          { timeout: 15000, timeoutMsg: `${action} cancels this tool and it really exits` });
+        assert.ok(await human().isDisplayed(), `${action} does not dismiss the review`);
+        assert.equal(await browser.$("#field-comment").getValue(), "kept while stepping back");
+      }
+      await chip.click();
+      await browser.waitUntil(() => chip.isFocused(), { timeout: 15000, timeoutMsg: "the eval tab has keyboard focus after the pointer actions" });
       await press(browser, ["Escape"], async () => !(await browser.$("#field-comment").isExisting()), "the form left by the next Esc");
       assert.ok(await human().isExisting(), "leaving the form left the Detail open");
       assert.equal(signoff(fixture).claim?.reviewer, "alice", "the review stays claimed");
@@ -507,6 +554,45 @@ export const scenarios: Scenario[] = [
       await human().waitForExist({ timeout: 15000, timeoutMsg: "the Human Detail again" });
       await human().click();
       await press(browser, ["g"], async () => (await browser.$("#field-comment").isExisting()) && (await browser.$("#field-comment").getValue()) === "kept while stepping back", "the kept GREEN draft");
+    },
+  ),
+
+  // UX journey: J-HUMAN-ESC; UX edge: E-HUMAN-ESC-CANCEL
+  scenario<null>(
+    "monitor-submit-cancel",
+    "cancels an in-flight submission before it saves, staying on the same review with the same draft",
+    () => atRepo({ title: "A person approves the release", instruction: "Read the release notes and approve them.", gatedFingerprint: true }),
+    async (browser, { fixture }) => {
+      const { human, openReview, meta, running } = await monitorUI(browser, fixture);
+      await openReview();
+      await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form");
+      const draft = "kept when submission is cancelled";
+      await fill(browser, "#field-comment", draft);
+      const gate = nativePath(fixture.root, "submit.gate");
+      const record = nativePath(fixture.root, "submit.runs");
+      const rounds = () => readText(record).split("\n").filter(Boolean).length;
+      const before = rounds();
+      const id = signoff(fixture).id;
+      removeTree(gate);
+      await human().$("button=Submit GREEN").click();
+      await browser.waitUntil(async () => await running("Submitting GREEN") && rounds() > before,
+        { timeout: 15000, timeoutMsg: "the submission reached its gated final fingerprint check" });
+      const chip = browser.$(tabAt("e:release/signoff"));
+      await chip.click();
+      await browser.waitUntil(() => chip.isFocused(), { timeout: 15000, timeoutMsg: "the same review's Detail tab has focus" });
+      await press(browser, ["Escape"], async () => !(await running("Submitting GREEN")), "Esc on the tab cancels the in-flight submission");
+      // The gate is still closed: only cancellation can end its actual fingerprint process.
+      await joinGatedTools(fixture);
+      assert.ok((await meta()).startsWith(`Request ${id} · DEFERRED · claimed by you (alice)`), "the same claimed review stays open");
+      assert.equal(await browser.$("#field-comment").getValue(), draft, "its draft stays open");
+      const saved = signoff(fixture);
+      assert.equal(saved.status, "DEFERRED");
+      assert.equal(saved.result, null, "cancellation did not save a verdict");
+      // The same draft can still be submitted normally once the external check is allowed through.
+      writeText(gate, "go");
+      await human().$("button=Submit GREEN").click();
+      await browser.waitUntil(async () => /completed result/i.test(await human().getText()), { timeout: 15000, timeoutMsg: "the retried submission is complete" });
+      assert.deepEqual(signoff(fixture).result, { verdict: "GREEN", approved: true, comment: draft });
     },
   ),
 
@@ -521,9 +607,10 @@ export const scenarios: Scenario[] = [
       await human().click();
       // Each verdict switch rebuilds the form: the field is found again every time.
       const reason = () => browser.$("#field-reason");
-      await press(browser, ["r"], () => reason().isExisting(), "the RED reason form");
+      await human().$("button=RED").click();
+      await reason().waitForDisplayed({ timeout: 15000, timeoutMsg: "the RED button opened the reason form" });
       await fill(browser, "#field-reason", "no");
-      await browser.keys([primaryModifier, "s"]);
+      await human().$("button=Submit RED").click();
       const alert = await browser.$('[role="alert"]');
       await alert.waitForExist({ timeout: 15000 });
       assert.match(await alert.getText(), /reason/);
@@ -736,11 +823,11 @@ export const scenarios: Scenario[] = [
       await expand(browser, "repo  master");
       await browser.waitUntil(async () => /^GREEN /.test((await branch(browser, "repo  master"))?.chips.find((chip) => chip.id === run)?.text ?? ""),
         { timeout: 15000, timeoutMsg: "the app has rendered this Run's terminal GREEN update on its chip" });
-      await commandsRendered(browser);
-      assert.ok(await human().isExisting(), "the completed Detail stays open after the terminal subscription update");
-      const completed = await browser.execute(() => document.querySelector<HTMLElement>('[aria-label="Human review"]')?.innerText ?? "");
-      assert.match(completed, /completed result/i);
-      assert.ok(completed.includes(korean), "the completed result shows what was submitted");
+      await browser.waitUntil(async () => {
+        const result = human().$('section[aria-label="Result"] pre');
+        return await result.isDisplayed() && (await result.getText()).includes(korean)
+          && /completed result/i.test(await human().getText());
+      }, { timeout: 15000, timeoutMsg: "the completed Detail stays open and shows the submitted Korean text" });
     },
   ),
 

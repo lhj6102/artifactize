@@ -117,6 +117,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
             new.strip_prefix(&root).unwrap().to_owned(),
         ));
         originals.insert(file, source);
+        normalize_commands(doc.as_table_mut());
         sources.insert(new, doc.to_string());
     }
     if !problems.is_empty() {
@@ -125,21 +126,27 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     discovery::read_sources(root.clone(), &sources)?;
     // Report nested old projects without interpreting them as part of this project.
     let ignored = legacy::discovery_ignore(&root)?;
-    let mut pending = vec![root.clone()];
-    while let Some(directory) = pending.pop() {
-        for entry in
-            std::fs::read_dir(&directory).map_err(|error| ConfigError::new(&directory, error))?
+    let opened =
+        crate::platform::open_directory(&root).map_err(|error| ConfigError::new(&root, error))?;
+    let mut pending = vec![(root.clone(), opened)];
+    while let Some((directory, opened)) = pending.pop() {
+        for entry in crate::platform::read_dir(&opened)
+            .map_err(|error| ConfigError::new(&directory, error))?
         {
             let entry = entry.map_err(|error| ConfigError::new(&directory, error))?;
-            let file = entry.path();
-            let kind = crate::platform::path_kind(&file)
+            let name = entry.file_name();
+            let file = directory.join(&name);
+            let kind = entry
+                .file_type()
                 .map_err(|error| ConfigError::new(&file, error))?;
             if kind == crate::platform::FileKind::Directory
-                && entry.file_name() != ".git"
-                && entry.file_name() != "node_modules"
-                && entry.file_name() != "target"
+                && name != ".git"
+                && name != "node_modules"
+                && name != "target"
             {
-                pending.push(file);
+                let child = crate::platform::paths::open_named(&opened, &name)
+                    .map_err(|error| ConfigError::new(&file, error))?;
+                pending.push((file, child));
             } else if kind == crate::platform::FileKind::File
                 && file
                     .extension()
@@ -198,7 +205,7 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
     for file in originals.keys() {
         if let Err(error) = std::fs::remove_file(file) {
             for (file, source) in &originals {
-                let _ = std::fs::write(file, source);
+                let _ = crate::platform::paths::restore_file(file, source.as_bytes());
             }
             for file in &created {
                 let _ = std::fs::remove_file(file);
@@ -210,4 +217,38 @@ pub fn migrate(repo: &Path) -> Result<Migration, ConfigError> {
         }
     }
     Ok(report)
+}
+
+/// Normalize only executable fields, retaining all other text and the lines' comments.
+fn normalize_commands(table: &mut dyn toml_edit::TableLike) {
+    use toml_edit::{Formatted, Item, Value};
+    fn visit(item: &mut Item) {
+        if let Some(table) = item.as_table_like_mut() {
+            normalize_commands(table);
+        } else if let Some(tables) = item.as_array_of_tables_mut() {
+            for table in tables.iter_mut() {
+                normalize_commands(table);
+            }
+        } else if let Some(array) = item.as_array_mut() {
+            for value in array.iter_mut() {
+                if let Some(table) = value.as_inline_table_mut() {
+                    normalize_commands(table);
+                }
+            }
+        }
+    }
+    for (key, item) in table.iter_mut() {
+        if key.get() == "command"
+            && let Some(Value::String(command)) = item.as_value_mut()
+        {
+            let portable = crate::platform::program_text(command.value());
+            if &portable != command.value() {
+                let mut normalized = Formatted::new(portable);
+                *normalized.decor_mut() = command.decor().clone();
+                *command = normalized;
+            }
+        } else {
+            visit(item);
+        }
+    }
 }

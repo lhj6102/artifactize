@@ -138,3 +138,148 @@ pub(crate) fn portable_filename(name: &str) -> Result<(), String> {
         Ok(())
     }
 }
+
+/// Restore bytes through a regular-file handle, refusing links and reparse points.
+pub(crate) fn restore_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+
+    super::program::reject_link_ancestors(path).map_err(io::Error::other)?;
+    let mut file = super::open_no_follow(
+        File::options().write(true).create(true).truncate(false),
+        path,
+    )?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    file.set_len(0)?;
+    file.write_all(bytes)
+}
+
+/// Physical directory identity and a usable path for display and subsequent lookups.
+pub(crate) fn directory_identity(path: &Path) -> io::Result<(super::FileIdentity, PathBuf)> {
+    let canonical = super::canonicalize(path)?;
+    let identity = super::file_identity(&super::open_directory(&canonical)?)?;
+    Ok((identity, canonical))
+}
+
+/// Replace a credential snapshot while a reader may still hold the old file open.
+/// On Windows std's rename supports that case, unlike tempfile's MoveFileEx persistence.
+pub(crate) fn replace_open_file(
+    file: tempfile::NamedTempFile,
+    destination: &Path,
+) -> io::Result<()> {
+    let temporary = file.into_temp_path().keep().map_err(|error| error.error)?;
+    if let Err(error) = std::fs::rename(&temporary, destination) {
+        let _ = std::fs::remove_file(temporary);
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// Try creating and removing a directory at the closest existing state ancestor.
+pub(crate) fn probe_writable(state: &Path) -> io::Result<()> {
+    let parent = state
+        .ancestors()
+        .find_map(|path| match path.try_exists() {
+            Ok(true) => Some(Ok(path)),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .ok_or_else(|| io::Error::other("No existing state directory ancestor."))??;
+    if !std::fs::metadata(parent)?.is_dir() {
+        return Err(io::Error::other(
+            "State directory or its ancestor is not a directory.",
+        ));
+    }
+    tempfile::Builder::new()
+        .prefix(".artifactize-doctor-")
+        .tempdir_in(parent)?
+        .close()
+}
+
+/// Marker names are case-exact on every host, independent of volume lookup behavior.
+pub(crate) fn has_exact_entry(directory: &Path, name: &str) -> io::Result<bool> {
+    match std::fs::read_dir(directory) {
+        Ok(entries) => {
+            for entry in entries {
+                if entry?.file_name() == name {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            // A search-only ancestor permits probing a fixed name but not listing it.
+            // If the volume aliases that spelling, conservatively treat it as a marker:
+            // this check guards writes, and exact case cannot be observed by enumeration.
+            match std::fs::symlink_metadata(directory.join(name)) {
+                Ok(_) => Ok(true),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+                Err(error) => Err(error),
+            }
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Stable namespace spelling even before the leaf exists. Resolve existing aliases first,
+/// then normalize case on volumes which do not distinguish it.
+pub(crate) fn ipc_identity(path: &Path) -> io::Result<Vec<u8>> {
+    let path = canonical_target(path)?;
+    let sensitive = path
+        .ancestors()
+        .find_map(|ancestor| {
+            super::open_directory(ancestor)
+                .ok()
+                .filter(|file| file.metadata().is_ok_and(|metadata| metadata.is_dir()))
+                .and_then(|file| artifactize_tools::files::case_sensitive(&file).ok())
+        })
+        .unwrap_or(!super::ENV_NAMES_IGNORE_CASE);
+    let raw = path.as_os_str();
+    Ok(if sensitive {
+        raw.as_encoded_bytes().to_vec()
+    } else {
+        raw.as_encoded_bytes()
+            .utf8_chunks()
+            .flat_map(|chunk| {
+                // Avoid expanding one character into several, which can merge distinct names.
+                chunk
+                    .valid()
+                    .chars()
+                    .map(|character| {
+                        let mut upper = character.to_uppercase();
+                        let first = upper.next().unwrap_or(character);
+                        if upper.next().is_some() {
+                            character
+                        } else {
+                            first
+                        }
+                    })
+                    .collect::<String>()
+                    .into_bytes()
+                    .into_iter()
+                    .chain(chunk.invalid().iter().copied())
+            })
+            .collect()
+    })
+}
+
+/// Relative path below an ancestor, using volume identity for alias-equivalent ancestor names.
+pub(crate) fn relative_beneath(path: &Path, root: &Path) -> Option<PathBuf> {
+    let path = canonical_target(path).unwrap_or_else(|_| path.to_owned());
+    let ancestor = path
+        .ancestors()
+        .find(|candidate| super::paths_equal(candidate, root))?;
+    path.strip_prefix(ancestor).ok().map(Path::to_owned)
+}

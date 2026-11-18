@@ -1,5 +1,7 @@
 //! Apply declaration changes and present the owner's migration report.
 
+use clap::Subcommand;
+
 use super::{Context, print_json};
 use artifactize_core::{
     config::read_workspace_config, project::selection::Selection, types::ArtifactName,
@@ -95,7 +97,7 @@ pub(super) fn graph(
     if context.json {
         print_json(&view)?;
     } else {
-        super::render::graph(&view).map_err(|error| error.to_string())?;
+        super::graph::graph(&view).map_err(|error| error.to_string())?;
     }
     Ok(0)
 }
@@ -113,4 +115,25 @@ pub(super) fn check(context: Context) -> Result<u8, String> {
             .map_err(|error| error.to_string())?;
     }
     Ok(0)
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConfigCommand {
+    /// Convert in-tree declarations to .artifactize/<name>.artf.
+    Migrate,
+    /// Rename a node, its references and saved layout together.
+    Rename {
+        old: artifactize_core::types::ArtifactName,
+        new: artifactize_core::types::ArtifactName,
+    },
+    /// Validate declarations and unique Artifact/Eval ids.
+    Check,
+    /// Inspect full static definitions, relations, and cycles.
+    Graph {
+        /// Select one Artifact and its required closure; defaults to all.
+        artifact: Option<artifactize_core::types::ArtifactName>,
+        /// Include downstream consumers and their required inputs (conservative impact).
+        #[arg(long)]
+        impact: bool,
+    },
 }

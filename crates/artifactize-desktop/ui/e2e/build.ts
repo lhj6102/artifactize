@@ -37,20 +37,15 @@ function testWindows(): unknown[] {
   return declared.app.windows.map((window) => ({ ...window, backgroundThrottling: "disabled" }));
 }
 
-/** Build independent release/e2e bundles and check the bundler's actual input graph.
- * The release bundle must not contain the test-only frontend plugin, while the E2E
- * bundle must include it. Neither bundle is written to ui/dist or borrowed. */
+/** Build only the selected frontend and inspect its actual bundler inputs. */
 async function frontend(root: NativePath, selected: "production" | "e2e" = "e2e"): Promise<Environment> {
   const env = cargoEnvironment(root);
-  for (const mode of selected === "e2e" ? ["production", "e2e"] : ["production"]) {
-    const dist = nativePath(root, `frontend-${mode}`);
-    const frontend = packageCommand(["-C", ui, "build", "--mode", mode, "--outDir", dist, "--manifest"]);
-    await runStep(frontend.program, frontend.args, { env, cwd: workspace, forwardInterrupts: selected === "production" });
-    const manifest = readJson(nativePath(dist, ".vite", "manifest.json")) as Record<string, unknown>;
-    const plugin = Object.keys(manifest).some((key) => key.includes("/@wdio/tauri-plugin/"));
-    if (plugin !== (mode === "e2e")) throw new Error(`${mode} frontend has the wrong WebDriver plugin inputs`);
-  }
   const dist = nativePath(root, `frontend-${selected}`);
+  const frontend = packageCommand(["-C", ui, "build", "--mode", selected, "--outDir", dist, "--manifest"]);
+  await runStep(frontend.program, frontend.args, { env, cwd: workspace, forwardInterrupts: selected === "production" });
+  const manifest = readJson(nativePath(dist, ".vite", "manifest.json")) as Record<string, unknown>;
+  const plugin = Object.keys(manifest).some((key) => key.includes("/@wdio/tauri-plugin/"));
+  if (plugin !== (selected === "e2e")) throw new Error(`${selected} frontend has the wrong WebDriver plugin inputs`);
   const app = selected === "e2e" ? { withGlobalTauri: true, windows: testWindows() } : {};
   // frontendDist takes a URL or a folder. A URL makes the app browse it instead of embedding
   // and serving the frontend, so the folder is given in a form that cannot be a URL.

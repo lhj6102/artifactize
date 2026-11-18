@@ -43,13 +43,13 @@ pub fn header(source: &Source) -> String {
     )
 }
 pub(crate) fn write(source: &Source, text: &str) {
-    let path = path(&source.state, &source.reference.session_id).unwrap();
+    let path = path(&source.state, &source.reference.session_id);
     crate::test_os::rewrite_private_file(&path, text);
 }
 pub(crate) fn append(source: &Source, text: &str) {
     fs::OpenOptions::new()
         .append(true)
-        .open(path(&source.state, &source.reference.session_id).unwrap())
+        .open(path(&source.state, &source.reference.session_id))
         .unwrap()
         .write_all(text.as_bytes())
         .unwrap();
@@ -69,7 +69,7 @@ pub(crate) fn finish(
 ) -> live::Window {
     for _ in 0..JOB_LIMIT {
         let window = reader.step(width, height, position);
-        if !window.loading {
+        if !window.loading() {
             return window;
         }
         position = window.position;

@@ -201,7 +201,7 @@ impl Fixture {
             &receipts,
             &request.id,
             &reviewer,
-            &json!({"verdict":verdict}),
+            &human::Submission::try_from(json!({"verdict":verdict})).unwrap(),
             CancellationToken::new(),
         )
         .await
@@ -227,7 +227,6 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
         // The Run stays open for its sign-offs until they are submitted.
         fixture.grace(24 * 60 * 60);
         let gate = support::Gate::default();
-        gate.close();
         let started = Arc::new(AtomicBool::new(false));
         let provider = support::FakeProvider::start({
             let gate = gate.clone();
@@ -244,6 +243,7 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
                 )
             }
         });
+        let _release_provider = owned_run::ReleaseGate::new(gate.clone());
         fixture.declare("up", vec![fixture.runtime("check", &[])]);
         fixture.declare("down", vec![fixture.runtime("runtime", &["up"]),
             json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},"payload":{"instruction":"Review {up}."}}), human_eval(&["up"])]);
@@ -301,7 +301,8 @@ async fn c1_speculation_starts_machine_work_never_signoffs_cancels_transitive_re
             fixture.release("up", "check", 0);
             let signoff = fixture
                 .until(&run, |view| {
-                    status(view, "down/sign") == RequestStatus::Deferred
+                    view.run.status() == RunStatus::WaitingHuman
+                        && status(view, "down/sign") == RequestStatus::Deferred
                         && status(view, "notes/sign") == RequestStatus::Deferred
                 })
                 .await;
@@ -602,16 +603,8 @@ async fn c2_the_idle_grace_holds_a_run_with_only_signoffs_left_open() {
         })
         .await;
     assert_eq!(waiting.run.status(), RunStatus::WaitingHuman);
-    let observed =
-        support::os::run(
-            fixture
-                .command()
-                .args(["run", "show", run.as_str(), "--json"]),
-        );
-    assert_eq!(
-        serde_json::from_slice::<Value>(&observed.stdout).unwrap()["status"],
-        "WAITING_HUMAN"
-    );
+    let observed = store::read_run(&fixture.state, &run).await.unwrap();
+    assert_eq!(observed.run.status(), RunStatus::WaitingHuman);
     fixture.sign(&waiting, "notes/sign", "RED").await;
     assert_eq!(fixture.settled(&run).await.run.status(), RunStatus::Red);
 
@@ -795,7 +788,16 @@ async fn c2_new_human_issuance_supersedes_changed_deferred_signoffs_and_follower
             })
             .await;
         for (run, request) in [(&first.run.id, original), (&joined.run.id, follower)] {
-            let ended = store::read_run(&fixture.state, run).await.unwrap();
+            let ended = fixture
+                .until(run, |view| {
+                    view.requests.iter().any(|saved| {
+                        saved.id == request.id
+                            && saved.status() == RequestStatus::Error
+                            && saved.error_code()
+                                == Some(artifactize_core::types::FailureCode::Superseded)
+                    })
+                })
+                .await;
             let signoff = ended.requests.iter().find(|q| q.id == request.id).unwrap();
             assert_eq!(signoff.status(), RequestStatus::Error);
             assert_eq!(

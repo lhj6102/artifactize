@@ -7,7 +7,8 @@
 //! when the browser did not, and then waits until the browser returns to it or the code that
 //! URL's page shows is written to its input.
 
-use std::{io, process::ExitStatus, time::Duration};
+use crate::platform::ProcessOutcome;
+use std::{io, time::Duration};
 
 use serde::Deserialize;
 use tokio::{
@@ -111,7 +112,7 @@ pub async fn status() -> Status {
 
 /// What `claude auth status --json` printed. It prints its JSON also when signed out, then
 /// with exit status 1.
-fn read_status(stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> Status {
+fn read_status(stdout: &[u8], stderr: &[u8], ended: &ProcessOutcome) -> Status {
     match serde_json::from_slice::<Reported>(stdout) {
         Ok(reported) if reported.logged_in => Status::SignedIn {
             method: reported
@@ -129,17 +130,14 @@ fn read_status(stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> Status {
 
 /// Why Claude Code failed to `doing`: what it wrote on stderr, else on stdout, else how it
 /// ended.
-fn failure(doing: &str, stdout: &[u8], stderr: &[u8], ended: &ExitStatus) -> String {
+fn failure(doing: &str, stdout: &[u8], stderr: &[u8], ended: &ProcessOutcome) -> String {
     let said = [stderr, stdout]
         .into_iter()
         .map(|bytes| shown(&String::from_utf8_lossy(bytes)))
         .find(|text| !text.is_empty());
     match said {
         Some(said) => format!("Claude Code {doing}: {said}"),
-        None => format!(
-            "Claude Code {doing}; it ended with {}.",
-            platform::exit_description(ended)
-        ),
+        None => format!("Claude Code {doing}; it ended with {}.", ended),
     }
 }
 
@@ -162,7 +160,7 @@ pub async fn logout() -> Result<(), String> {
 /// not, and paste the code its page then shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prompt {
-    pub url: String,
+    pub url: url::Url,
 }
 
 /// The code Claude Code's sign-in page shows, as pasted: one line, written to Claude Code's
@@ -177,9 +175,9 @@ fn code(pasted: &str) -> Result<String, String> {
 }
 
 /// The first `http(s)://` URL in `line`.
-fn url_in(line: &str) -> Option<&str> {
+fn url_in(line: &str) -> Option<url::Url> {
     let start = line.find("https://").or_else(|| line.find("http://"))?;
-    line[start..].split_whitespace().next()
+    line[start..].split_whitespace().next()?.parse().ok()
 }
 
 /// Read `reader` to its end, keeping its last [`KEPT_BYTES`].
@@ -230,9 +228,7 @@ pub async fn login_with(
             if let Some(url) = url_in(&line)
                 && let Some(show) = show.take()
             {
-                show(&Prompt {
-                    url: url.to_owned(),
-                });
+                show(&Prompt { url });
                 continue;
             }
             said.extend_from_slice(line.as_bytes());
@@ -274,7 +270,12 @@ pub async fn login_with(
     if exited.success() {
         Ok(())
     } else {
-        Err(failure("could not sign in", &said, &errors, &exited))
+        Err(failure(
+            "could not sign in",
+            &said,
+            &errors,
+            &ProcessOutcome::from_native(&exited),
+        ))
     }
 }
 
@@ -314,7 +315,11 @@ mod tests {
     fn a_signed_in_status_names_the_method_and_plan_but_not_the_account() {
         let stdout = br#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"a@example.com","orgName":"A","subscriptionType":"max"}"#;
         assert_eq!(
-            read_status(stdout, b"", &ExitStatus::default()),
+            read_status(
+                stdout,
+                b"",
+                &ProcessOutcome::from_native(&std::process::ExitStatus::default())
+            ),
             Status::SignedIn {
                 method: "claude.ai".into(),
                 plan: Some("max".into())
@@ -326,7 +331,11 @@ mod tests {
     fn a_signed_out_status_is_read_from_its_json() {
         let stdout = br#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#;
         assert_eq!(
-            read_status(stdout, b"", &ExitStatus::default()),
+            read_status(
+                stdout,
+                b"",
+                &ProcessOutcome::from_native(&std::process::ExitStatus::default())
+            ),
             Status::SignedOut
         );
     }
@@ -337,7 +346,7 @@ mod tests {
             read_status(
                 b"",
                 b"error: unknown command 'auth'\n",
-                &ExitStatus::default()
+                &ProcessOutcome::from_native(&std::process::ExitStatus::default())
             ),
             Status::Failed {
                 error: "Claude Code could not report its sign-in: error: unknown command 'auth'"
@@ -352,7 +361,11 @@ mod tests {
             url_in(
                 "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&state=s"
             ),
-            Some("https://claude.com/cai/oauth/authorize?code=true&state=s")
+            Some(
+                "https://claude.com/cai/oauth/authorize?code=true&state=s"
+                    .parse()
+                    .unwrap()
+            )
         );
         assert_eq!(url_in("Opening browser to sign in…"), None);
     }

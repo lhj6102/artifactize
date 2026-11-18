@@ -265,7 +265,11 @@ export const scenarios: Scenario[] = [
       // → expands it; → again enters its timeline on its Current; ↓ and ↑ move through its Runs,
       // each shown and marked.
       await press(browser, ["ArrowRight"], () => expanded("repo  master"), "repo expanded");
-      await press(browser, ["ArrowRight"], async () => (await filled("repo  master")) === "current", "on its Current");
+      assert.equal(await selected(), "repo  master", "expanding leaves the branch selected");
+      await press(browser, ["ArrowRight"], () => browser.execute(() => !!document.querySelector(
+        '[aria-label="Branches"] > [role="treeitem"][aria-selected="false"] [role="treeitem"][aria-selected="true"] button[data-chip="current"]',
+      )), "the keyboard selection enters repo's Current");
+      assert.equal(await mainTitle(browser), "Current · repo  master");
       await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === newer.id && (await filled("repo  master")) === newer.id, "the newer Run shown");
       await press(browser, ["ArrowDown"], async () => (await mainTitle(browser)) === older.id && (await filled("repo  master")) === older.id, "the older Run shown");
       await press(browser, ["ArrowUp"], async () => (await filled("repo  master")) === newer.id, "the newer Run again");

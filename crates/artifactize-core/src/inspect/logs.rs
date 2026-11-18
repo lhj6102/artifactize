@@ -13,7 +13,7 @@ const STREAM_BYTES: usize = 10 * 1024;
 /// One query is a diagnostic excerpt, not a replacement for the saved log.
 const MAX_LINES: usize = 200;
 /// A short default tail supplies diagnostic context without filling an agent context.
-const DEFAULT_TAIL: usize = 50;
+pub const DEFAULT_TAIL: usize = 50;
 /// Bound one unusually long line independently of the stream page.
 const LINE_BYTES: usize = 2048;
 
@@ -28,7 +28,7 @@ pub enum Stream {
 
 #[derive(Debug, Clone, Default, Deserialize, clap::Args)]
 #[serde(deny_unknown_fields)]
-pub struct LogQuery {
+pub struct LogOptions {
     /// Select stdout, stderr, or both (default).
     #[arg(long, value_enum, default_value = "both")]
     #[serde(default)]
@@ -77,8 +77,30 @@ pub struct Logs {
     pub streams: Vec<LogExcerpt>,
 }
 
+#[derive(Debug, Clone)]
+pub struct LogQuery {
+    stream: Stream,
+    selection: Selection,
+    search: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum Selection {
+    Tail(usize),
+    Range { start: usize, end: Option<usize> },
+}
+
+impl Default for LogQuery {
+    fn default() -> Self {
+        Self {
+            stream: Stream::Both,
+            selection: Selection::Tail(DEFAULT_TAIL),
+            search: None,
+        }
+    }
+}
+
 pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs, String> {
-    validate(&query)?;
     let view = store::read_request(state, id).await?;
     // Reused/joined results point at the execution's original request, not this Run's output.
     let producer = view
@@ -124,20 +146,38 @@ pub async fn logs(state: &Path, id: &RequestId, query: LogQuery) -> Result<Logs,
     .map_err(|e| e.to_string())?
 }
 
-fn validate(query: &LogQuery) -> Result<(), String> {
-    if query.tail.is_some_and(|n| n == 0 || n > MAX_LINES)
-        || query.start == Some(0)
-        || query.end == Some(0)
-        || query.start.zip(query.end).is_some_and(|(a, b)| a > b)
-        || (query.tail.is_some() && (query.start.is_some() || query.end.is_some()))
-        || query
-            .search
-            .as_ref()
-            .is_some_and(|s| s.is_empty() || s.len() > LINE_BYTES)
-    {
-        return Err("Use positive line numbers, tail 1–200, an ordered range, and a nonempty search up to 2048 bytes; tail and range are exclusive.".into());
+impl TryFrom<LogOptions> for LogQuery {
+    type Error = String;
+
+    fn try_from(query: LogOptions) -> Result<Self, String> {
+        if query.tail.is_some_and(|n| n == 0 || n > MAX_LINES)
+            || query.start == Some(0)
+            || query.end == Some(0)
+            || query.start.zip(query.end).is_some_and(|(a, b)| a > b)
+            || (query.tail.is_some() && (query.start.is_some() || query.end.is_some()))
+            || query
+                .search
+                .as_ref()
+                .is_some_and(|s| s.is_empty() || s.len() > LINE_BYTES)
+        {
+            return Err(format!(
+                "Use positive line numbers, tail 1–{MAX_LINES}, an ordered range, and a nonempty search up to {LINE_BYTES} bytes; tail and range are exclusive."
+            ));
+        }
+        let selection = match (query.tail, query.start, query.end) {
+            (Some(tail), _, _) => Selection::Tail(tail),
+            (None, None, None) => Selection::Tail(DEFAULT_TAIL),
+            (None, start, end) => Selection::Range {
+                start: start.unwrap_or(1),
+                end,
+            },
+        };
+        Ok(Self {
+            stream: query.stream,
+            search: query.search,
+            selection,
+        })
     }
-    Ok(())
 }
 
 fn excerpt(
@@ -241,9 +281,10 @@ fn select(
     mut reader: impl BufRead,
     query: &LogQuery,
 ) -> Result<(Vec<Line>, Option<usize>), String> {
-    let tail = query
-        .tail
-        .or_else(|| (query.start.is_none() && query.end.is_none()).then_some(DEFAULT_TAIL));
+    let (tail, start, end) = match query.selection {
+        Selection::Tail(tail) => (Some(tail), 1, None),
+        Selection::Range { start, end } => (None, start, end),
+    };
     let mut selected = VecDeque::new();
     let mut bytes = 0;
     let mut number = 0;
@@ -284,10 +325,10 @@ fn select(
             break;
         }
         number += 1;
-        if query.end.is_some_and(|end| number > end) {
+        if end.is_some_and(|end| number > end) {
             break;
         }
-        if number < query.start.unwrap_or(1) || !matched {
+        if number < start || !matched {
             continue;
         }
         let text = if length > LINE_BYTES {

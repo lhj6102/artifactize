@@ -7,7 +7,9 @@ use std::{
     path::PathBuf,
 };
 
-use super::{PolicyArgs, SelectionArgs, outcome_code};
+use artifactize_core::project::selection::Selection;
+
+use super::{PolicyArgs, outcome_code};
 
 /// What `verify` does after submitting the Run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,7 +47,7 @@ pub(super) struct VerifyLimits {
 
 pub(super) async fn verify(
     context: Context,
-    selection: SelectionArgs,
+    selection: Selection,
     policy: PolicyArgs,
     limits: VerifyLimits,
 ) -> Result<u8, String> {
@@ -58,7 +60,6 @@ pub(super) async fn verify(
         comment,
         reuse_only,
     } = limits;
-    let selection = selection.resolve()?;
     let options = artifactize_core::project::VerifyOptions {
         modes,
         jobs: jobs.map(|limit| limit.get() as usize),
@@ -129,10 +130,9 @@ pub(super) async fn verify(
 
 pub(super) async fn status(
     context: Context,
-    selection: SelectionArgs,
+    selection: Selection,
     policy: PolicyArgs,
 ) -> Result<u8, String> {
-    let selection = selection.resolve()?;
     let (cancellation, listener) = cancellation_listener()?;
     let result = artifactize_core::project::status(
         &context.repo.unwrap_or_else(|| PathBuf::from(".")),

@@ -120,6 +120,14 @@ impl OwnedFixture {
         &self,
         cancellation: CancellationToken,
     ) -> Pin<Box<dyn Future<Output = Result<OwnedSessions, String>> + Send>> {
+        self.ready_sessions_with_removal(cancellation, crate::platform::remove_tree)
+    }
+
+    pub fn ready_sessions_with_removal(
+        &self,
+        cancellation: CancellationToken,
+        remove_directory: fn(&std::path::Path) -> std::io::Result<()>,
+    ) -> Pin<Box<dyn Future<Output = Result<OwnedSessions, String>> + Send>> {
         let config = read_workspace_config(&self.config.root).unwrap();
         let state = self.state();
         let output = self.output.clone();
@@ -135,7 +143,12 @@ impl OwnedFixture {
         let started = owner.spawn(async move {
             let result = match Registry::new(&config, &config.evals[0].id) {
                 Ok(registry) => {
-                    let sessions = registry.sessions(&state, None, cancellation.clone());
+                    let sessions = registry.sessions_with_removal(
+                        &state,
+                        None,
+                        cancellation.clone(),
+                        remove_directory,
+                    );
                     let result = registry
                         .with_session_scope(&sessions)
                         .unwrap()

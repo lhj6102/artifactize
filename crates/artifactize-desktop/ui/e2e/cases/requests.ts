@@ -63,13 +63,15 @@ export const scenarios: Scenario[] = [
       await fill(browser, "#field-comment", "GREEN draft stays");
       // An idempotent verdict leaves the same field visible: require the real chord's
       // defaultPrevented flag after the app handler, not only that already-true field state.
-      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G preserves GREEN", { handled: true });
+      await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "Ctrl+G handled", { handled: true });
+      await commandsRendered(browser);
       assert.equal(await browser.$("#field-comment").getValue(), "GREEN draft stays");
       assert.ok(!(await browser.$("#field-reason").isExisting()), "Ctrl+G kept the GREEN schema");
       await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "the RED form");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "no GREEN field in the RED form");
       await fill(browser, "#field-reason", "RED draft stays");
-      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R preserves RED", { handled: true });
+      await press(browser, [primaryModifier, "r"], () => browser.$("#field-reason").isExisting(), "Ctrl+R handled", { handled: true });
+      await commandsRendered(browser);
       assert.equal(await browser.$("#field-reason").getValue(), "RED draft stays");
       assert.ok(!(await browser.$("#field-comment").isExisting()), "Ctrl+R kept the RED schema");
       await press(browser, [primaryModifier, "g"], () => browser.$("#field-comment").isExisting(), "the GREEN form again");
@@ -138,14 +140,15 @@ export const scenarios: Scenario[] = [
       assert.equal(await browser.$("#field-approved").isExisting(), false, "the schema's approved constant is filled in, not shown");
       const comment = browser.$("#field-comment");
       await comment.click();
-      type ImeEvent = { type: string; code: string; composing: boolean; keyCode: number; trusted: boolean };
+      type ImeEvent = { type: string; key: string; target: string; composing: boolean; keyCode: number; trusted: boolean };
       await browser.execute(() => {
-        const log: { type: string; code: string; composing: boolean; keyCode: number; trusted: boolean }[] = [];
+        const log: ImeEvent[] = [];
         (window as unknown as { imeEvents: typeof log }).imeEvents = log;
         for (const type of ["compositionstart", "compositionupdate", "compositionend", "keydown"]) {
           window.addEventListener(type, (event) => {
             const key = event as KeyboardEvent;
-            log.push({ type, code: key.code ?? "", composing: key.isComposing ?? false, keyCode: key.keyCode ?? 0, trusted: event.isTrusted });
+            const target = event.target instanceof Element ? event.target.id : "";
+            log.push({ type, key: key.key ?? "", target, composing: key.isComposing ?? false, keyCode: key.keyCode ?? 0, trusted: event.isTrusted });
           }, { capture: true });
         }
       });
@@ -166,7 +169,8 @@ export const scenarios: Scenario[] = [
         // and Refresh.
         for (const [key, primary] of [["g", false], ["r", false], ["q", false], ["u", false], ["c", false], ["Escape", false], ["g", true], ["r", true], ["s", true],
           ["k", true], ["o", true], [",", true], ["b", true], ["F5", false], ["?", false]] as const) {
-          const received = await browser.execute((input) => {
+          const observed = (await events()).length;
+          await browser.execute((input) => {
             const target = document.activeElement;
             if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) throw new Error("the composition field lost focus");
             const event = new KeyboardEvent("keydown", {
@@ -175,9 +179,10 @@ export const scenarios: Scenario[] = [
               ctrlKey: input.primary && input.modifier === "Control", metaKey: input.primary && input.modifier === "Meta",
             });
             target.dispatchEvent(event);
-            return { composing: event.isComposing, keyCode: event.keyCode, key: event.key };
           }, { key, primary, modifier: primaryModifier, composing, keyCode });
-          assert.deepEqual(received, { composing, keyCode, key }, "the page received the guard fields it actually reads");
+          const received = (await events()).slice(observed).filter((event) => event.type === "keydown" && !event.trusted);
+          assert.deepEqual(received, [{ type: "keydown", trusted: false, target: "field-comment", composing, keyCode, key }],
+            "the page's capture listener saw the guard fields on the composing input");
           // What this key would have done, had it not been guarded, before the next one.
           await commandsRendered(browser);
           const now = (await checkpoint(browser)).activity;

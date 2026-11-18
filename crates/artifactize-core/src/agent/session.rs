@@ -134,9 +134,8 @@ pub fn directory(state: &Path) -> PathBuf {
 }
 
 /// The conversation file of a session id.
-pub fn path(state: &Path, id: &str) -> Result<PathBuf, String> {
-    let id: crate::types::SessionId = id.parse()?;
-    Ok(directory(state).join(format!("{id}.jsonl")))
+pub fn path(state: &Path, id: &crate::types::SessionId) -> PathBuf {
+    directory(state).join(format!("{id}.jsonl"))
 }
 
 /// Where new conversations are saved, and as which producer and state; `None` when saving is
@@ -192,13 +191,7 @@ impl Recorder {
         let Some(saving) = saving else {
             return Self::off(id);
         };
-        let path = match path(&saving.state, id) {
-            Ok(path) => path,
-            Err(error) => {
-                warn(&error);
-                return Self::off(id);
-            }
-        };
+        let path = path(&saving.state, id);
         Self {
             id: id.clone(),
             state: Recording::Pending(Box::new(Pending {
@@ -223,7 +216,7 @@ impl Recorder {
         let id: crate::types::SessionId = id.parse().unwrap();
         Self {
             state: Recording::Pending(Box::new(Pending {
-                path: path(state, &id).unwrap(),
+                path: path(state, &id),
                 reference: SessionRef {
                     producer: "tester@host".parse().unwrap(),
                     state: "state".parse().unwrap(),
@@ -416,9 +409,11 @@ fn create(path: &Path) -> Result<File, String> {
 #[derive(Debug)]
 pub struct Conversation {
     pub path: PathBuf,
-    pub events: Vec<Event>,
+    header: Box<Header>,
+    header_at: Option<crate::types::Timestamp>,
+    events: Vec<Event>,
     /// Original events for the lossless --json output; computations use events.
-    pub wire_events: Vec<Value>,
+    wire_events: Vec<Value>,
 }
 
 impl Conversation {
@@ -471,28 +466,48 @@ impl Conversation {
                 }
             }
         }
-        if events
-            .first()
-            .is_none_or(|event| !matches!(event.kind, Kind::Review(_)))
-        {
+        Self::from_events(path, events, wire_events).map(Some)
+    }
+
+    fn from_events(
+        path: &Path,
+        events: Vec<Event>,
+        wire_events: Vec<Value>,
+    ) -> Result<Self, String> {
+        let mut events = events.into_iter();
+        let Some(Event {
+            at: header_at,
+            kind: Kind::Review(header),
+            ..
+        }) = events.next()
+        else {
             return Err(format!(
                 "{} has no review event.",
                 crate::platform::path_text(path)
             ));
-        }
-        Ok(Some(Self {
+        };
+        Ok(Self {
             path: path.into(),
-            events,
+            header,
+            header_at,
+            events: events.collect(),
             wire_events,
-        }))
+        })
     }
 
-    /// The `review` event.
+    /// The required `review` header.
     pub fn header(&self) -> &Header {
-        let Kind::Review(header) = &self.events[0].kind else {
-            unreachable!("load requires a review header")
-        };
-        header
+        &self.header
+    }
+
+    /// Events after the review header, in file order.
+    pub fn events(&self) -> &[Event] {
+        &self.events
+    }
+
+    /// Original records, including the header, in file order.
+    pub fn wire_events(&self) -> &[Value] {
+        &self.wire_events
     }
 
     /// How many follow-ups were sent.
@@ -561,8 +576,8 @@ impl Conversation {
 }
 
 /// Hold `<sessionId>.lock` until the returned file drops: sends to one session take turns.
-pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
-    let path = path(state, id)?.with_extension("lock");
+pub async fn lock(state: &Path, id: &crate::types::SessionId) -> Result<File, String> {
+    let path = path(state, id).with_extension("lock");
     let file = platform::open_no_follow(
         platform::private_options()
             .read(true)
@@ -652,9 +667,8 @@ mod tests {
         ] {
             assert_eq!(SessionRef::parse(text), None, "{text}");
         }
-        let root = crate::test_os::tempdir();
-        assert!(path(root.path(), "..").is_err());
-        assert!(path(root.path(), "a/b").is_err());
+        assert!("..".parse::<crate::types::SessionId>().is_err());
+        assert!("a/b".parse::<crate::types::SessionId>().is_err());
     }
 
     #[test]
@@ -676,6 +690,7 @@ mod tests {
         let ran = Message::tool_results(vec![
             call("c1").result(vec![ToolResultContent::text("ran")]),
         ]);
+        let root = crate::test_os::tempdir();
         let replay = |messages: &[&Message]| {
             let events: Vec<Value> = std::iter::once(json!({"kind":"review"}))
                 .chain(
@@ -684,16 +699,18 @@ mod tests {
                         .map(|message| json!({"kind":"message","message":message})),
                 )
                 .collect();
-            Conversation {
-                path: "session.jsonl".into(),
-                wire_events: Vec::new(),
-                events: events
-                    .into_iter()
-                    .map(|event| serde_json::from_value(event).unwrap())
-                    .collect(),
-            }
-            .history()
-            .unwrap()
+            let path = root.path().join("session.jsonl");
+            let text = events
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            std::fs::write(&path, text).unwrap();
+            Conversation::load(&path)
+                .unwrap()
+                .unwrap()
+                .history()
+                .unwrap()
         };
         let results = |message: &Message| match message {
             Message::User { content } => content
@@ -768,7 +785,7 @@ mod tests {
         let message = r#"{"kind":"message","turn":1,"message":{"role":"user","content":[{"type":"text","text":"hello"}]},"at":"2026-01-01T00:00:01Z"}"#;
         std::fs::write(&file, format!("{header}\n{message}\n{{\"kind\":")).unwrap();
         let conversation = Conversation::load(&file).unwrap().unwrap();
-        assert_eq!(conversation.events.len(), 2);
+        assert_eq!(conversation.events().len(), 1);
         assert_eq!(
             conversation.header().session_id.as_ref().unwrap().as_str(),
             "legacy.session"

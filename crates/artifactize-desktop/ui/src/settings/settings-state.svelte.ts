@@ -398,7 +398,10 @@ export class SettingsState {
     try {
       const status = await run();
       if (mine !== this.remoteCalls) return;
-      this.remoteRead = Date.now();
+      const controlled = import.meta.env.MODE === "e2e"
+        ? (window as Window & { __ARTIFACTIZE_E2E_PROCESS__?: { fixedDate: number | null } }).__ARTIFACTIZE_E2E_PROCESS__?.fixedDate
+        : null;
+      this.remoteRead = controlled ?? Date.now();
       this.remote = status;
     } catch (failure) {
       if (mine === this.remoteCalls) this.remoteError = message(failure);

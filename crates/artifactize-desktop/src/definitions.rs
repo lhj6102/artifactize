@@ -370,6 +370,15 @@ pub async fn definition_edit(
     let operation = edit::Operation::try_from(operation)?;
     let applied = crate::failure::joined(
         tokio::task::spawn_blocking(move || {
+            if matches!(&operation, edit::Operation::MoveComment { .. }) {
+                // A move creates no definition. Give the library the shown bases
+                // directly so its conflict check runs before any semantic refusal.
+                let based_on = shown
+                    .into_iter()
+                    .map(|(file, source)| (PathBuf::from(file), Some(source)))
+                    .collect();
+                return edit::apply(&workspace, &based_on, operation);
+            }
             let project = edit::read_project(&workspace)?;
             let footprint = edit::footprint(&project, &operation)?;
             let mut based_on = edit::BasedOn::default();

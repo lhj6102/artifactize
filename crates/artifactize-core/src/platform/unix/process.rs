@@ -344,7 +344,8 @@ pub(crate) struct Gate {
 
 impl Gate {
     pub async fn pid(&self) -> io::Result<u32> {
-        let mut bytes = [0; 4];
+        // The child writes its PID as a native-endian u32.
+        let mut bytes = [0; size_of::<u32>()];
         let mut offset = 0;
         while offset < bytes.len() {
             let mut ready = self.socket.readable().await?;

@@ -27,7 +27,19 @@ use crate::{
     types::{ArtifactName, EvalId},
 };
 
-type ToolArguments = serde_json::Map<String, serde_json::Value>;
+/// Named arguments supplied by the owner, validated against the selected tool's schema.
+#[derive(Debug, Clone)]
+pub struct ToolArguments(serde_json::Map<String, serde_json::Value>);
+
+impl std::str::FromStr for ToolArguments {
+    type Err = String;
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match serde_json::from_str(text).map_err(|error| format!("Invalid --args JSON: {error}"))? {
+            serde_json::Value::Object(object) => Ok(Self(object)),
+            _ => Err("--args must be a JSON object.".into()),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum ToolCheckOptions {
@@ -139,12 +151,23 @@ pub enum ToolCheckStage {
     Execute,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct ToolCheck {
     pub stage: ToolCheckStage,
     pub tool: Option<crate::config::ToolName>,
-    pub ok: bool,
-    pub message: Option<String>,
+    pub result: Result<(), String>,
+}
+
+impl Serialize for ToolCheck {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ToolCheck", 4)?;
+        state.serialize_field("stage", &self.stage)?;
+        state.serialize_field("tool", &self.tool)?;
+        state.serialize_field("ok", &self.result.is_ok())?;
+        state.serialize_field("message", &self.result.as_ref().err())?;
+        state.end()
+    }
 }
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
@@ -164,8 +187,7 @@ impl ToolCheckReport {
         self.checks.push(ToolCheck {
             stage,
             tool: name.cloned(),
-            ok: result.is_ok(),
-            message: result.err(),
+            result,
         });
     }
 }
@@ -403,7 +425,8 @@ async fn execute_tool(
                 .prefix("tools-check-")
                 .tempdir_in(root)
                 .map_err(|e| e.to_string())?;
-            let args = serde_json::Value::Object(args.cloned().unwrap_or_default());
+            let args =
+                serde_json::Value::Object(args.map(|args| args.0.clone()).unwrap_or_default());
             let sessions = registry.sessions(&state, Some(name), cancellation.clone());
             let registry = registry.with_session_scope(&sessions)?;
             let result = registry

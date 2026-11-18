@@ -158,7 +158,6 @@ fn a_site_that_no_longer_declares_the_artifact_has_moved() {
     // Another Artifact's site, or one of another kind at the same path.
     assert!(moved("app", &sites[&Workspace::name("docs")]));
     let folder = Site {
-        kind: ArtifactKind::Folder,
         path: "app/main.rs".into(),
     };
     assert!(moved("main", &folder));

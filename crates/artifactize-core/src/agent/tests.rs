@@ -105,12 +105,12 @@ impl Fixture {
 
     /// The tool calls of the latest review, from its saved session.
     fn calls(&self) -> Vec<Call> {
-        let path = session::path(&self.state(), SESSION).unwrap();
+        let path = session::path(&self.state(), &SESSION.parse().unwrap());
         let Some(conversation) = session::Conversation::load(&path).unwrap() else {
             return Vec::new();
         };
         let (mut ids, mut calls) = (Vec::new(), Vec::<Call>::new());
-        for event in &conversation.wire_events {
+        for event in conversation.wire_events() {
             let Ok(message) = serde_json::from_value::<Message>(event["message"].clone()) else {
                 continue;
             };

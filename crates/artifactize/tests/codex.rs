@@ -288,11 +288,12 @@ fn an_expired_sign_in_is_refreshed_and_rotated_before_the_review() {
     let saved: Value =
         serde_json::from_slice(&support::declaration::read_file(project.credentials()).unwrap())
             .unwrap();
+    let issued = codex::jwt("account-1", codex::VALID_EXPIRY);
     assert_eq!(saved["refresh_token"], "rotated-refresh");
-    assert_eq!(
-        calls[1].headers["authorization"],
-        format!("Bearer {}", saved["access_token"].as_str().unwrap())
-    );
+    assert_eq!(saved["access_token"], issued);
+    for call in &calls[1..] {
+        assert_eq!(call.headers["authorization"], format!("Bearer {issued}"));
+    }
     assert!(support::os::private_file(&project.credentials()));
 }
 

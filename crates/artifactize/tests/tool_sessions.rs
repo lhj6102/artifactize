@@ -56,9 +56,9 @@ impl Fixture {
         });
         root.track(&root.path().join("state"), &repo);
         Self {
+            processes: RefCell::new(owned_run::Processes::protect(&root)),
             root,
             provider,
-            processes: RefCell::default(),
         }
     }
     fn repo(&self) -> PathBuf {
@@ -87,6 +87,31 @@ impl Fixture {
     }
     fn json(&self, args: &[&str], code: i32) -> Value {
         let output = self.command(args).record_output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+    fn verify_after_stop_release(&self, code: i32) -> Value {
+        support::os::publish_file(&self.log().join("hold-stop"), "ready");
+        let child = support::os::start(&mut self.command(&["verify", "--wait", "--all"]));
+        let owner = RunChild::new(child, &self.state(), &self.repo());
+        let gate = owned_run::FileGate::new(self.log().join("release"));
+        // The stop command publishes its record immediately before it waits at the gate.
+        support::os::wait_until(Duration::from_secs(10), || !self.records("stop").is_empty());
+        let saved = owner.saved();
+        assert!(saved.run.status().is_open(), "{saved:?}");
+        assert_eq!(
+            saved.requests[0].status(),
+            artifactize_core::types::RequestStatus::Running
+        );
+        assert!(saved.requests[0].result().is_none());
+        gate.release().unwrap();
+        let output = owner.wait_with_output().unwrap();
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -226,7 +251,7 @@ fn a_start_exiting_before_readiness_is_a_cached_tool_error_and_the_review_contin
 fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() {
     for action in ["act", "plain"] {
         let fixture = Fixture::new("start", "fail-stop", action, 2);
-        let run = fixture.json(&["verify", "--wait", "--all"], 0);
+        let run = fixture.verify_after_stop_release(0);
         assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
         harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
         let requests = fixture.provider.requests();
@@ -412,7 +437,7 @@ fn diagnostic_fixture_releases_detached_processes_before_removal_on_drop_and_unw
 fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
     let fixture = Fixture::new("start", "stop", "crash", 2);
     let child = support::os::start(&mut fixture.command(&["verify", "--wait", "--all"]));
-    let mut child = RunChild::new(child, &fixture.state(), &fixture.repo());
+    let child = RunChild::new(child, &fixture.state(), &fixture.repo());
     support::os::wait_until(Duration::from_secs(10), || {
         !fixture.records("call").is_empty()
     });
@@ -428,7 +453,7 @@ fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
         "",
     )
     .unwrap();
-    assert!(child.wait().unwrap().success());
+    assert!(child.wait_with_output().unwrap().status.success());
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
     let requests = fixture.provider.requests();
     assert_eq!(requests.len(), 3);
@@ -478,7 +503,7 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
             // not keep this abandoned directory alive merely because it exists.
             support::declaration::remove_file(directory.join("lease")).unwrap();
         } else {
-            owner.wait().unwrap();
+            owner.reap().unwrap();
         }
         assert!(support::os::running(descendant));
         if variant == "leaderless" {
@@ -519,7 +544,7 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
             );
         }
         // Always reap here; non-zombie variants already have a cached exit status.
-        owner.wait().unwrap();
+        owner.reap().unwrap();
         if variant == "mismatch" {
             assert!(support::os::running(leader));
             assert!(support::os::running(descendant));
@@ -573,7 +598,7 @@ fn crash_sweep_recovers_stop_and_bound_invocation_groups_with_their_descendants(
         ]
         .map(|pid| pid.as_u64().unwrap() as u32);
         support::os::kill(owner.id());
-        owner.wait().unwrap();
+        owner.reap().unwrap();
         assert!(pids.iter().all(|pid| support::os::running(*pid)));
         fixture.rewrite(|definition| {
             definition["views"]["agent_tools"]["act"]["args"][1] = json!("act");
@@ -618,7 +643,7 @@ fn red_reviews_stop_and_cleanup_before_the_result_is_published() {
             openai::usage(10, 5),
         )
     });
-    let run = fixture.json(&["verify", "--wait", "--all"], 1);
+    let run = fixture.verify_after_stop_release(1);
     assert_eq!(run["requests"][0]["status"], "RED", "{run}");
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
 }
@@ -877,7 +902,7 @@ fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable()
         support::os::exists(owner.id()),
         "recovery happened before owner reaping"
     );
-    owner.wait().unwrap();
+    owner.reap().unwrap();
     assert!(!directory.exists());
     support::os::wait_until(Duration::from_secs(10), || {
         !support::os::running(bound) && !support::os::running(descendant)

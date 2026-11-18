@@ -57,38 +57,6 @@ impl TypedValueParser for LoginUrl {
     }
 }
 
-/// Limit bearer credentials as the remote login API does, without logging their values.
-const MAX_TOKEN_BYTES: usize = 4096;
-
-struct BearerToken(String);
-
-impl TryFrom<String> for BearerToken {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if (1..=MAX_TOKEN_BYTES).contains(&value.len())
-            && value.bytes().all(|byte| byte.is_ascii_graphic())
-        {
-            Ok(Self(value))
-        } else {
-            Err(format!(
-                "A remote token is 1–{MAX_TOKEN_BYTES} printable ASCII characters without spaces."
-            ))
-        }
-    }
-}
-
-async fn login(
-    state: Option<&Path>,
-    repo: Option<&Path>,
-    url: Url,
-    share: Share,
-    token: BearerToken,
-) -> Result<(remote::Remote, remote::Principal), String> {
-    // The core API still takes an owned string and also validates tokens from non-CLI callers.
-    remote::login(state, repo, url, share, token.0).await
-}
-
 fn share_text(share: Share) -> &'static str {
     match share {
         Share::Summary => "summary",
@@ -110,11 +78,10 @@ pub(super) async fn execute(
     command: RemoteCommand,
     json: bool,
 ) -> Result<u8, String> {
-    let mut out = io::stdout();
     match command {
         RemoteCommand::Login { url, share } => {
             let token = super::secret::read("remote token")?.try_into()?;
-            let (remote, principal) = login(state, repo, url, share, token).await?;
+            let (remote, principal) = remote::login(state, repo, url, share, token).await?;
             if json {
                 print_json(&json!({
                     "url": remote.url(),
@@ -123,6 +90,7 @@ pub(super) async fn execute(
                     "scopes": principal.scopes,
                 }))?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "Signed in to {} as {} (scopes: {}).",
@@ -144,6 +112,7 @@ pub(super) async fn execute(
             if json {
                 print_json(&json!({"signedIn": false}))?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`."
@@ -157,6 +126,7 @@ pub(super) async fn execute(
             if json {
                 print_json(&report)?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "{} {}, already in the store {}, skipped {}.",
@@ -174,7 +144,7 @@ pub(super) async fn execute(
                 if json {
                     print_json(&artifactize_core::inspect::remote_output(None))?;
                 } else {
-                    writeln!(out, "No remote review store is configured.")
+                    writeln!(io::stdout().lock(), "No remote review store is configured.")
                         .map_err(|e| e.to_string())?;
                 }
                 return Ok(1);
@@ -182,6 +152,7 @@ pub(super) async fn execute(
             if json {
                 print_json(&artifactize_core::inspect::remote_output(Some(&status)))?;
             } else {
+                let mut out = io::stdout().lock();
                 writeln!(
                     out,
                     "Remote: {}\nShare: {}\nToken: {}\nReachable: {}",

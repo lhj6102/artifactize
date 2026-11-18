@@ -21,7 +21,7 @@ async fn shared_port_redirect_matches_authorize_and_token_exchange() {
     let (send, receive) = oneshot::channel();
     sign_in(
         &storage,
-        &server.base,
+        &server.base.parse().unwrap(),
         None,
         &redirect,
         Some(receive),

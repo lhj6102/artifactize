@@ -163,7 +163,7 @@ export const scenarios: Scenario[] = [
       assert.ok(docs, "the docs eval's request was saved");
       return { fixture, data: { id: docs.id } };
     },
-    async (browser, { data: { id } }) => {
+    async (browser, { fixture, data: { id } }) => {
       const record = () => browser.$('section.panel[aria-label="Main area"] [role="document"]');
       await waitFor(browser, () => entriesFocused(browser), "the Pane's entries focused");
       await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "the Request ID dialog");
@@ -182,6 +182,18 @@ export const scenarios: Scenario[] = [
       await waitFor(browser, async () => (await debug().getAttribute("aria-expanded")) === "true" && (await fields()).Request === id, "Debug identifies the exact opened request");
       await browser.$('section.panel[aria-label="Main area"] > header').$("button*=Close").click();
       await waitFor(browser, () => entriesFocused(browser), "Close returned to the Pane");
+      const human = signoff(fixture);
+      const result = { approved: true, comment: "Read-only result from the owner" };
+      signOff(fixture, human.id, JSON.stringify(result));
+      await press(browser, [primaryModifier, "o"], () => browser.$('[aria-label="Request ID"]').isExisting(), "open another request by ID");
+      await fill(browser, '[aria-label="Request ID"]', human.id);
+      await browser.$('[role="dialog"] button[type="submit"]').click();
+      await waitFor(browser, async () => (await mainTitle(browser)).endsWith("· read-only"), "the completed Human request is open read-only");
+      const resultText = () => browser.execute(() => document.querySelector('section[aria-label="Main area"] section[aria-label="Result"] pre')?.textContent ?? "");
+      await waitFor(browser, async () => (await resultText()).includes(result.comment), "the exact Human result is displayed");
+      const rendered = await resultText();
+      assert.deepEqual(JSON.parse(rendered.slice(rendered.indexOf("{"))), { verdict: "GREEN", ...result });
+      assert.equal(await browser.$('section[aria-label="Main area"] button[aria-label^="Claim to review"], section[aria-label="Main area"] button[aria-label^="Submit"], section[aria-label="Main area"] button[aria-label^="GREEN"], section[aria-label="Main area"] button[aria-label^="RED"], section[aria-label="Main area"] textarea').isExisting(), false, "no claim, verdict editing or submit controls");
     },
   ),
 

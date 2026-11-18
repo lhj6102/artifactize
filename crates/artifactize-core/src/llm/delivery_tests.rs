@@ -60,7 +60,7 @@ async fn read_request_bytes(socket: &mut tokio::net::TcpStream) {
 
 #[tokio::test]
 async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_enters_delivery() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = crate::test_os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     let (release_tx, release_rx) = oneshot::channel();
     let server = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -214,14 +214,15 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
                     && text.contains("Visible first visible second")
                     && release.is_some()
                 {
-                    let saved = session::Conversation::load(
-                        &session::path(root.path(), "stream-fixture").unwrap(),
-                    )
+                    let saved = session::Conversation::load(&session::path(
+                        root.path(),
+                        &"stream-fixture".parse().unwrap(),
+                    ))
                     .unwrap()
                     .unwrap();
                     assert!(
                         saved
-                            .events
+                            .events()
                             .iter()
                             .any(|event| matches!(event.kind, Kind::Delivery(_)))
                     );
@@ -287,9 +288,9 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
     server.await.unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn cancelled_text_keeps_partial_and_does_not_retry() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = crate::test_os::tcp::async_loopback_listener();
     let address = listener.local_addr().unwrap();
     let (stop_tx, stop_rx) = oneshot::channel();
     let server = AbortOnDropHandle::new(tokio::spawn(async move {
@@ -309,7 +310,9 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
                         "item_id":"message",
                         "output_index":0,
                         "content_index":0,
-                        "delta":"partial visible",
+                        // Deliver without the cadence timer: this partial exceeds the pending
+                        // output flush threshold, while its suffix remains incomplete.
+                        "delta": format!("partial visible {}", "sample ".repeat(6000)),
                     }),
                     0,
                 )
@@ -331,27 +334,39 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
     let cancel = CancellationToken::new();
     let mut attempts = Vec::new();
     let mut deliveries = Vec::new();
-    let error = client
-        .turn_observed(
-            &CompletionRequest::new(Message::user("fixture")),
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let request = CompletionRequest::new(Message::user("fixture"));
+    let model = "fixture-model".parse().unwrap();
+    let mut tokens_used = 0;
+    let mut receive = |event: session::Delivery| {
+        if event.text.contains("partial visible") {
+            cancel.cancel();
+        }
+        deliveries.push(event);
+    };
+    let error = {
+        let turn = client.turn_observed(
+            &request,
             Turn {
                 number: 1,
-                model: &"fixture-model".parse().unwrap(),
-                deadline: Instant::now() + Duration::from_secs(5),
+                model: &model,
+                deadline,
                 cancellation: &cancel,
                 max_tokens: None,
-                tokens_used: &mut 0,
+                tokens_used: &mut tokens_used,
             },
             &mut attempts,
-            &mut |event| {
-                if event.text.contains("partial visible") {
-                    cancel.cancel();
-                }
-                deliveries.push(event);
-            },
-        )
-        .await
-        .unwrap_err();
+            &mut receive,
+        );
+        tokio::pin!(turn);
+        let watchdog = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            tokio::select! {
+                result = &mut turn => break result.unwrap_err(),
+                _ = tokio::task::yield_now() => assert!(std::time::Instant::now() < watchdog, "provider did not deliver the partial response"),
+            }
+        }
+    };
     assert_eq!(error.code, Code::Cancelled);
     assert_eq!(attempts.len(), 1);
     assert!(
