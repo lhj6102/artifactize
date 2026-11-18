@@ -28,7 +28,7 @@ needs, in their terms, and link the page for the rest.
 | An **eval** is one check on an Artifact that ends in a **verdict** recording whether the work met the agreed criteria: `GREEN` means it passed, and `RED` means the check found something that needs attention. The reviewer is a command (runtime), a model (Agent) or a person (Human). | [Evals: Runtime, Agent, and Human](https://artifactize.dev/docs/concepts/evals.html) |
 | An eval names each input it uses as `{name}`: for example, an app review that references `{spec}` tells artifactize which spec it relies on, so a spec change makes the earlier app review stale even if the app itself was not edited, while unrelated checks keep their verdicts. | [Eval dependencies](https://artifactize.dev/docs/concepts/artifacts.html#eval-dependencies), [Fingerprints and Reuse](https://artifactize.dev/docs/concepts/reuse.html) |
 | Running **verify** answers what the developer needs to know: which agreed checks are satisfied, which earlier reviews still count, and what needs attention next. | [Runs and Workflows](https://artifactize.dev/docs/concepts/runs.html) |
-| Reviewers inspect the project through declared read-only tools (`views`), and teammates and CI share reusable verdicts through the team review store (`artifactize server` / `remote`) and inspect or run checks through MCP and the CLI. | [Tools](https://artifactize.dev/docs/guides/tools.html), [Team & CI](https://artifactize.dev/docs/guides/team-and-ci.html), [CLI & MCP](https://artifactize.dev/docs/reference/cli-and-mcp.html) |
+| Agent and Human reviewers inspect the project through declared read-only tools (`views`; a runtime eval runs its declared `command` and `args` directly), and teammates and CI share reusable verdicts through the team review store (`artifactize server` / `remote`) and inspect or run checks through MCP and the CLI. | [Tools](https://artifactize.dev/docs/guides/tools.html), [Team & CI](https://artifactize.dev/docs/guides/team-and-ci.html), [CLI & MCP](https://artifactize.dev/docs/reference/cli-and-mcp.html) |
 
 ## 2. Working with a client
 
@@ -163,7 +163,7 @@ covers scheduling, unselected obligations, and outcome precedence).
   preparation failure such as a failing fingerprint script, or a required eval ending
   `ERROR` while other evals keep their saved verdicts; an explicit cancellation reports
   `state: "cancelled"` in `verify_status`/`verify_wait`, `verdict: "CANCELLED"` in
-  `verify_result`, and `status: "ERROR"` with `failureCode: "CANCELLED"` in `run_show`).
+  `verify_result`, and `status: "ERROR"` with `control.failureCode: "CANCELLED"` in `run_show`).
   Read `run_show` for Run-level failures and `request_show` for a failing request (plus
   `request_logs` when a runtime process ran, or `session_show` when an Agent conversation
   was saved) and fix the cause, not the verdict.
@@ -201,9 +201,10 @@ ended YELLOW its historical verdict is final; a later sign-off settles its waiti
 request (and any follower requests joined to it, unless a newer Run in the same working
 tree superseded the old request with `ERROR/SUPERSEDED`, in which case the person reviews
 the replacement request). After the person signs off, verify again: when fingerprinting is
-enabled and inputs still match, the new Run reuses that sign-off (`fingerprint = false`
-disables reuse so a fresh sign-off is requested whenever that Human eval is selected, its
-prerequisites pass, and the execution policy permits it). No keep-alive turns or polling
+enabled and the Human eval's reuse key (its criteria, result schemas, and covered inputs)
+still matches, the new Run reuses that sign-off (`fingerprint = false` disables reuse so a
+fresh sign-off is requested whenever that Human eval is selected, its prerequisites pass,
+and the execution policy permits it). No keep-alive turns or polling
 loops.
 
 ## 4. Best practices and references

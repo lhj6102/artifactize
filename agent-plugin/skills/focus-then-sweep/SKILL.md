@@ -46,9 +46,10 @@ Fix the Artifact the eval evaluates, then rerun only that eval:
   also selected a Human sign-off and `--wait` stays open in `WAITING_HUMAN` after all
   focused machine checks have finished, check `artifactize run show RUN_ID` or press Ctrl-C
   on `--wait` to stop watching without cancelling the Run, inspect all selected requests—including
-  any selected sign-off that is `RED` or `ERROR`—and `evidence` in `run show RUN_ID`, confirm
-  the focused machine verdicts passed, and address any other `RED` or `ERROR` in focus
-  before sweeping, without waiting for any `DEFERRED` sign-off).
+  any selected sign-off that is `RED` or a non-superseded `ERROR`—and `evidence` in
+  `run show RUN_ID`, confirm the focused machine verdicts passed, and address any other
+  `RED` or non-superseded `ERROR` in focus before sweeping, without waiting for any
+  `DEFERRED` sign-off).
 
 Read that focused eval's own verdict (in MCP, find the focused eval's request in `run_show`
 or `request_list` with `run` and check its `status` or `request_show`; in the CLI, read the
@@ -56,9 +57,11 @@ eval's output line or `run show RUN_ID`), not the Run's overall outcome. A focus
 eval that passes (`GREEN`, or `PROVISIONAL` when a widened focus also selected an upstream
 sign-off that is still pending) is done for focus. Whether the Run has settled or is still
 open in `WAITING_HUMAN` (`verify_result` `ready: false`) because a selected sign-off is
-`DEFERRED`, if another selected request (machine or Human) or required obligation in the
-selected target's dependency closure is **RED** or **ERROR**, take that RED or ERROR eval into
-focus next without waiting for the `DEFERRED` sign-off; if the Run ends **INCOMPLETE** (exit 4)
+`DEFERRED`, if another selected request (machine or non-superseded Human—a sign-off marked
+`ERROR/SUPERSEDED` because a newer Run replaced it is treated as unanswered rather than a
+failure, and the reviewer signs off the replacement request in the newer Run) or required
+obligation in the selected target's dependency closure is **RED** or **ERROR**, take that RED
+or ERROR eval into focus next without waiting for the `DEFERRED` sign-off; if the Run ends **INCOMPLETE** (exit 4)
 with `Unmet obligation:` lines when other obligations in that closure have no valid reusable
 evidence—whether because your fix made them stale, because they were never reviewed yet, or
 because they have no reuse key such as `fingerprint = false` or a Live runtime check—leave

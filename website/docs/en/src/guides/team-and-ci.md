@@ -55,8 +55,4 @@ Give CI a token with the **`read`** scope only and run `artifactize verify --all
     ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}
 ```
 
-How the CI merge gate works:
-
-- **Runtime evals** execute when their upstream dependency gates are satisfied (or reuse if cached).
-- **Agent and Human evals** are never executed (`--reuse-only agent,human`). If a matching `GREEN` record exists in the team store (or local cache) for the commit's exact fingerprints and criteria, CI reuses it; if a matching `RED` record is the latest, CI reuses that `RED` verdict (blocking downstream dependents).
-- **Missing or pending reviews fail the gate**: when a `--reuse-only` Agent or Human eval reaches its reuse lookup and finds no matching cached record (for example, because a developer's Run ended `YELLOW` with an unsubmitted sign-off, or a file changed after review), that eval is not executed and shows `STALE`, downstream checks that depend on it wait behind the unmet gate, and the Run finishes **`INCOMPLETE`** (exit `4`, even if another eval returned `RED`; whereas a `--reuse-only` eval that is already blocked by an upstream `RED` prerequisite remains `BLOCKED` and the Run can exit `1`).
+With `--reuse-only agent,human`, CI runs `runtime` checks (or reuses cached ones) and never executes `agent` or `human` checks, reusing the latest matching verdict from the team store or local cache ([Fingerprints and Reuse](../concepts/reuse.md#completed-result-reuse)). If a `--reuse-only` check that is not already blocked by an upstream `RED` prerequisite has no matching cached verdict (for example, because a sign-off is still pending at `YELLOW` or files changed after review), that check stays `STALE` without executing, dependents gated on it do not run, and the Run fails as **`INCOMPLETE`** (exit `4`; see [Sign-offs and the end of a Run](../concepts/runs.md#sign-offs-and-the-end-of-a-run) for Run outcome precedence).
