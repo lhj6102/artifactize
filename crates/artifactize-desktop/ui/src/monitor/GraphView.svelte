@@ -142,6 +142,15 @@
       new Map(drawn.map((copy) => [copy.key, copy.node.id])),
     ),
   );
+  /** What the canvas paints from: the layout, with a dragged node and the parts inside it where
+   * the drag has taken them. */
+  const paintedAt = $derived.by(() => {
+    const moved = v.moved;
+    if (!moved || !canvased) return laid;
+    const inside = (copy: Copy | undefined): boolean => !!copy && (copy.key === moved.key || inside(copy.parent === null ? undefined : byKey.get(copy.parent)));
+    const shifted = new Map([...rects].map(([key, rect]) => [key, inside(byKey.get(key)) ? { ...rect, x: rect.x + moved.x, y: rect.y + moved.y } : rect]));
+    return scene(shifted, new Set(drawn.filter((copy) => copy.parts.length > 0).map((copy) => copy.key)), new Map(drawn.map((copy) => [copy.key, copy.node.id])));
+  });
   /** The whole graph, as Fit View fits it. */
   const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
@@ -344,7 +353,7 @@
       minimized: hidden,
       comments: annotations.comments,
     };
-    const where = laid;
+    const where = paintedAt;
     let settle: ReturnType<typeof setTimeout> | undefined;
     const show = (sharp: boolean) => {
       const [width, height] = [Math.round(what.width * what.ratio), Math.round(what.height * what.ratio)];
@@ -486,6 +495,8 @@
    * only while the library would accept it. */
   function dragMove(key: string, event: MouseEvent | TouchEvent) {
     if (!v.dragging || v.dragging.cancelled) return;
+    const [from, now] = [v.pressed, pointOf(event)];
+    if (canvased && from && now) v.moved = { key, x: now.x - from.x, y: now.y - from.y };
     const [copy, drop] = [byKey.get(key), dropOf(key, event)];
     if (!copy || drop?.kind !== "join") {
       // No destination here: a check still pending for the last one lights nothing.
@@ -511,6 +522,14 @@
    * drawn where it was let go until what was written is laid out, or back where it was when the
    * edit is refused. */
   async function dragStop(node: Node, event: MouseEvent | TouchEvent) {
+    try {
+      await release(node, event);
+    } finally {
+      v.moved = null;
+    }
+  }
+
+  async function release(node: Node, event: MouseEvent | TouchEvent) {
     const held = v.dragging;
     v.dragging = null;
     v.target = null;
@@ -661,6 +680,7 @@
     event.preventDefault();
     event.stopPropagation();
     v.dragging = { ...v.dragging, cancelled: true };
+    v.moved = null;
     v.target = null;
     v.epoch += 1;
     // Svelte Flow's drag ends on the button's release; this release ends it now.

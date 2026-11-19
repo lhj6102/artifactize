@@ -240,8 +240,13 @@ export class Definitions {
       const why = refusalText(outcome.refusal);
       if (where === "graph") this.notice = why;
       await this.load(branch);
-      // A file changed on disk: the Current shows what is there now.
-      if (outcome.refusal.kind === "changed") this.rescan(branch);
+      // A file changed on disk: the Current shows what is there now, and so do the Definition's
+      // Path and Parts, the edit typed not kept (D-INS-10).
+      if (outcome.refusal.kind === "changed") {
+        const edited = operation.kind === "setPath" ? operation.name : operation.kind === "addPart" || operation.kind === "removePart" ? operation.whole : null;
+        if (edited !== null && this.forms.has(edited)) Object.assign(this.form(edited), { path: null, adding: null });
+        this.rescan(branch);
+      }
       return why;
     } catch (failure) {
       const why = message(failure);

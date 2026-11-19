@@ -43,7 +43,7 @@
   const METADATA = ["Timing", "Usage", "Saved usage", "Work", "Budget"];
   const SHOWN = new Set(["Status", "Instruction", "Result", "Error", "Fingerprint", ...OPTIONS, ...METADATA]);
   /** An Artifact's evals are listed above its Detail already. */
-  const ARTIFACT_SHOWN = new Set(["Status", "Path", "Target kind", "Evals"]);
+  const ARTIFACT_SHOWN = new Set(["Status", "Path", "Target kind", "Address", "Evals"]);
 
   const fields = $derived(detail.sections.flatMap((section) => section.fields));
   const waits = $derived(detail.sections.flatMap((section) => section.waits));
@@ -195,10 +195,10 @@
           <dl class="path">
             <dt>Target</dt>
             <dd class="mono">{field.value}</dd>
-            {#if pick(["Target kind"]).some(({ value }) => value === "Live")}
+            {#each pick(["Address"]) as address (address.key)}
               <dt>Address</dt>
-              <dd class="mono">{field.value}</dd>
-            {/if}
+              <dd class="mono">{address.value}</dd>
+            {/each}
           </dl>
         </Section>
       {/each}

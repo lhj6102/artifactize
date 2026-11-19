@@ -530,12 +530,13 @@ pub fn detail(
                         },
                     ),
             );
-            if artifact
+            // A Live Artifact is observed at the address its PATH names.
+            if let Some(address) = artifact
                 .and_then(|artifact| artifact.path.value())
                 .and_then(crate::config::Target::uri)
-                .is_some()
             {
                 detail.push("Target kind", "Live");
+                detail.push("Address", address.as_str());
             }
             detail.push(
                 "Fingerprint",
