@@ -58,7 +58,7 @@ export class Review {
         claimant: review.querySelector(".claimant")?.textContent?.trim() ?? "",
         sections: [...review.querySelectorAll(".instruction, section.section")].map((part) => part.getAttribute("aria-label") ?? ""),
         verdict: review.querySelector('[role="radiogroup"][aria-label="Verdict"] [aria-checked="true"]')?.textContent?.trim() ?? "",
-        completed: review.querySelector<HTMLElement>('section[aria-label="Result"] pre')?.innerText ?? "",
+        completed: review.querySelector<HTMLElement>('section[aria-label="Result"] .completed')?.innerText ?? "",
         readOnly: (review.textContent ?? "").includes("Read-only until released."),
         running: review.querySelector('.busy [role="img"], .busy [aria-label]')?.getAttribute("aria-label") ?? "",
         notice: review.querySelector('section[aria-label="Result"] .said [role="status"]:not(.busy)')?.textContent?.trim() ?? "",

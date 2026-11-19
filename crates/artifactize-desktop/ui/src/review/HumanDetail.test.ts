@@ -203,7 +203,7 @@ describe("HumanDetail", () => {
     if (from === "Submit button") await user.click(screen.getByRole("button", { name: /Submit/ }));
     else await user.keyboard("{Control>}s{/Control}");
 
-    await screen.findByText("Completed result");
+    await completedResult();
     expect(region.isConnected).toBe(true);
     expect(screen.queryByLabelText(/comment/)).toBeNull();
     expect(left).toBe(0);
@@ -246,7 +246,7 @@ describe("HumanDetail", () => {
     const submit = screen.getByRole("button", { name: "Submit GREEN (Ctrl+S)" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     await user.click(submit);
-    await screen.findByText("Completed result");
+    await completedResult();
     expect(calls.map(({ cmd }) => cmd).filter((cmd) => ["human_run", "human_cancel", "human_submit"].includes(cmd))).toEqual([
       "human_run", "human_cancel", "human_submit",
     ]);
@@ -270,7 +270,7 @@ describe("HumanDetail", () => {
     try {
       await user.click(elsewhere);
       finish({ notice: null, view: humanView("completed"), settled: "published" });
-      await screen.findByText("Completed result");
+      await completedResult();
       // The submission's focus recovery runs on the tick after it settled; wait for that step.
       await settled;
       await tick();
@@ -458,3 +458,8 @@ describe("Tools focused", () => {
     await waitFor(() => expect(document.activeElement).toBe(tools));
   });
 });
+
+/** Wait for the submitted review's completed result in place of its form. */
+async function completedResult(): Promise<void> {
+  await waitFor(() => expect(screen.getByRole("region", { name: "Result" }).querySelector(".completed")).not.toBeNull());
+}

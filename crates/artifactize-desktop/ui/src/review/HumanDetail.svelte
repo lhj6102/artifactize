@@ -15,6 +15,7 @@
   import Tools from "./Tools.svelte";
   import ToolLog from "./ToolLog.svelte";
   import VerdictForm from "./VerdictForm.svelte";
+  import ResultEntries from "../monitor/ResultEntries.svelte";
   import { getAppState } from "../shell/app.svelte";
   import Icon from "../shell/Icon.svelte";
   import Section from "../shell/Section.svelte";
@@ -43,7 +44,8 @@
   setHumanDetailState(h);
 
   const view = $derived(review.view);
-  const stage = $derived(view?.stage === "completed" ? "completed" : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
+  /** The stage pill's words; a submitted review has none. */
+  const stage = $derived(view?.stage === "completed" ? null : view?.stage === "review" ? "REVIEW (yours)" : "CLAIM");
   /** The default share of the area the Detail takes, as the dock's width says. */
   const DOCK_SHARE = 0.46;
   const DOCK_MOST = 680;
@@ -154,7 +156,7 @@
   <!-- The stage alone: CLAIM, or REVIEW (yours) once claimed here; the claimant beside it while
        another reviewer holds the claim. -->
   <div class="head">
-    <span class="stage" data-stage={view?.stage}>{stage}</span>
+    {#if stage}<span class="stage" data-stage={view?.stage}>{stage}</span>{/if}
     {#if view?.claim && !view.claim.mine && !review.owned}<span class="claimant">{view.claim.reviewer}</span>{/if}
   </div>
 {/snippet}
@@ -184,10 +186,13 @@
         <ToolLog entries={review.log} empty="What the tools print shows here." />
       </Section>
     {/if}
-    <Section name={review.settled ? "Completed result" : "Result"} label="Result" folds={false}>
+    <Section name="Result" folds={false}>
       <div class="result" role="group" onfocusin={() => (review.area = "fields")}>
         {#if review.settled}
-          <pre>{view.result}</pre>
+          <!-- The completed result by field, read-only; a request settled without one, its error. -->
+          <div class="completed">
+            {#if view.completed}<ResultEntries entries={view.completed} />{:else}<pre>{view.result}</pre>{/if}
+          </div>
           <!-- Settled here but not published: what failed, so it is pushed again, not resubmitted. -->
           {#if review.notice?.error}<p class="error" role="status">{review.notice.text}</p>{/if}
         {:else if review.owned && review.form}

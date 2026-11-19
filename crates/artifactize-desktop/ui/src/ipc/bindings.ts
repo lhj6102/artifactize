@@ -690,6 +690,8 @@ export type HumanView = {
 	recorded: boolean,
 	/**  A completed request's status and result, or its error. */
 	result: string | null,
+	/**  A completed request's verdict and fields by name, the form's constants left out. */
+	completed: ResultEntry[] | null,
 	/**  The state generation it was read from; a newer one means it no longer applies. */
 	generation: number,
 };

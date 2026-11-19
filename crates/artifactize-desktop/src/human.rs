@@ -10,7 +10,11 @@ pub(crate) mod log;
 pub use form::{Draft, FormView, Verdict};
 
 use crate::ids::{JobId, RequestKey};
-use crate::{App, Failure, detail::Field, status::Mark};
+use crate::{
+    App, Failure,
+    detail::{Field, ResultEntry},
+    status::Mark,
+};
 use artifactize_core::{
     config::{HumanToolKind, ToolName},
     monitor,
@@ -205,6 +209,8 @@ pub struct HumanView {
     pub recorded: bool,
     /// A completed request's status and result, or its error.
     pub result: Option<String>,
+    /// A completed request's verdict and fields by name, the form's constants left out.
+    pub completed: Option<Vec<ResultEntry>>,
     /// The state generation it was read from; a newer one means it no longer applies.
     pub generation: u32,
 }
@@ -235,6 +241,29 @@ pub(crate) fn kind(kind: HumanToolKind) -> ToolKind {
         HumanToolKind::Launch => ToolKind::Launch,
         HumanToolKind::Output => ToolKind::Output,
     }
+}
+
+/// A settled result as its reviewer entered it: the verdict, then each field the form asked
+/// for, without the constants the form filled in.
+fn completed(request: &store::Request) -> Option<Vec<ResultEntry>> {
+    let result = request.result()?;
+    let verdict = result.verdict();
+    let constants: BTreeSet<String> = review::form(request, verdict)
+        .map(|form| {
+            form.fields
+                .into_iter()
+                .filter(|field| matches!(field.input, review::Input::Fixed(_)))
+                .map(|field| field.name)
+                .collect()
+        })
+        .unwrap_or_default();
+    let verdict = serde_json::json!(verdict);
+    let fields = result.owner_fields();
+    Some(crate::detail::result_entries(
+        std::iter::once((&"verdict".to_owned(), &verdict))
+            .chain(fields.iter().filter(|(key, _)| !constants.contains(*key)))
+            .collect::<Vec<_>>(),
+    ))
 }
 
 fn view(
@@ -295,6 +324,7 @@ fn view(
             .collect(),
         recorded: request.human_definition.is_some(),
         result: settled.then(|| format!("{}\n{}", request.status(), review::outcome_text(request))),
+        completed: settled.then(|| completed(request)).flatten(),
         generation,
     }
 }

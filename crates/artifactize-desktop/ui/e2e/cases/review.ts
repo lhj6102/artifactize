@@ -102,6 +102,9 @@ export const scenarios: Scenario[] = [
       await review.select("channel", "\"preview\"");
       const done = await review.submit();
       assert.match(done.completed, /확인 gu/, "the completed result stays open");
+      assert.match(done.completed, /comment\s*확인 gu/, "its fields by name");
+      assert.doesNotMatch(done.completed, /approved/, "the form's constant not shown");
+      assert.equal(done.stage, "", "a submitted review shows no stage pill");
       const saved = request(fixture);
       assert.equal(saved.status, "GREEN");
       assert.deepEqual(saved.result, { verdict: "GREEN", approved: true, comment: "확인 gu", score: 4.5, confirmed: true, channel: "preview" });

@@ -172,25 +172,30 @@ fn result_item(value: &serde_json::Value) -> ResultItem {
     }
 }
 
+/// A result's fields as entries, in their order: a list as its items, any other value as text.
+pub fn result_entries<'a>(
+    fields: impl IntoIterator<Item = (&'a String, &'a serde_json::Value)>,
+) -> Vec<ResultEntry> {
+    fields
+        .into_iter()
+        .map(|(key, value)| match value {
+            serde_json::Value::Array(items) => ResultEntry::Items {
+                key: key.clone(),
+                items: items.iter().map(result_item).collect(),
+            },
+            other => ResultEntry::Text {
+                key: key.clone(),
+                text: text(other),
+            },
+        })
+        .collect()
+}
+
 impl From<monitor::Card> for CardView {
     fn from(card: monitor::Card) -> Self {
         Self {
             instruction: card.instruction,
-            result: card.result.map(|entries| {
-                entries
-                    .iter()
-                    .map(|(key, value)| match value {
-                        serde_json::Value::Array(items) => ResultEntry::Items {
-                            key: key.clone(),
-                            items: items.iter().map(result_item).collect(),
-                        },
-                        other => ResultEntry::Text {
-                            key: key.clone(),
-                            text: text(other),
-                        },
-                    })
-                    .collect()
-            }),
+            result: card.result.as_ref().map(result_entries),
             exit_code: card.exit_code,
             error: card.error,
             reused: card.reused,

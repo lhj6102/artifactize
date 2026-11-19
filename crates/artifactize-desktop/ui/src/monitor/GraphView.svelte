@@ -106,8 +106,8 @@
   /** The zoom from which an Artifact's name reads: bringing a found one into view zooms in to
    * it, never out. */
   const READABLE = 0.75;
-  /** The most Artifacts kept as elements: the window stays quick to pan and zoom with this
-   * many. */
+  /** A graph of more drawings than this keeps as elements only those in view: the window stays
+   * quick to pan and zoom. */
   const DRAWN = 500;
   /** How the whole graph fits, its first view and Fit View: never enlarged beyond its nodes'
    * own size, only the person's own zooming goes further. */
@@ -146,20 +146,19 @@
   const bounds = $derived(laid.bounds);
   /** More Artifacts than the window keeps as elements: the canvas draws what they do not. */
   const large = $derived(drawn.length > DRAWN);
-  /** In a large graph, the Artifacts in view by number while at most `DRAWN` are, else `null`;
-   * none before the canvas has a size. */
-  const inView = $derived(large && v.area ? within(laid, view(camera.current, v.area.width, v.area.height), DRAWN) : []);
-  /** The Artifacts in view are painted as blocks, of any graph, while the zoom makes their names
-   * too small to read (D-GRAPH-2); of a large graph also while too many are in view to keep as
-   * elements: a smaller canvas holds fewer at a zoom. A zoom of 0 shows nothing yet: the canvas
-   * has no size its first fit could use. */
-  const painted = $derived(inView === null || (v.area !== null && camera.current.zoom > 0 && !legible(v.font, camera.current.zoom)));
+  /** The Artifacts in view are painted as blocks while the zoom alone makes their names too
+   * small to read (D-GRAPH-2), never for how many are in view. A zoom of 0 shows nothing yet: the
+   * canvas has no size its first fit could use. */
+  const painted = $derived(v.area !== null && camera.current.zoom > 0 && !legible(v.font, camera.current.zoom));
+  /** In a large graph whose names read, the Artifacts in view by number; none before the canvas
+   * has a size. */
+  const inView = $derived(large && v.area && !painted ? (within(laid, view(camera.current, v.area.width, v.area.height)) ?? []) : []);
   /** The canvas paints: every edge of a large graph, and whatever is painted as blocks. */
   const canvased = $derived(large || painted);
   /** The copies kept as elements: none while painted; every one of a small graph (`null`); of a
    * large one, those in view. A text key, so that panning over the same ones keeps the same
    * elements. */
-  const kept = $derived(painted ? "" : large ? (inView?.join() ?? "") : null);
+  const kept = $derived(painted ? "" : large ? inView.join() : null);
 
   // Lights change in place; positions only come with a new layout, or, after a drag that wrote
   // nothing, as they were.

@@ -13,6 +13,7 @@
   import Section from "../shell/Section.svelte";
   import { markIcon, statusIcon } from "../shell/icons";
   import { tone } from "../shell/tone";
+  import ResultEntries from "./ResultEntries.svelte";
   import Transcript from "./Transcript.svelte";
 
   let {
@@ -186,11 +187,16 @@
   {:else if detail.target === "artifact"}
     <div class="shown sections">
       {#each path ? pick(["Path"]) : [] as field (field.key)}
+        <!-- Read-only facts: what the PATH names, and where a Live Artifact is observed. -->
         <Section name="Path">
-          {#if pick(["Target kind"]).some(({ value }) => value === "Live")}
-            <p class="line muted">Live target</p>
-          {/if}
-          <p class="line muted">{field.value}</p>
+          <dl class="path">
+            <dt>Target</dt>
+            <dd class="mono">{field.value}</dd>
+            {#if pick(["Target kind"]).some(({ value }) => value === "Live")}
+              <dt>Address</dt>
+              <dd class="mono">{field.value}</dd>
+            {/if}
+          </dl>
         </Section>
       {/each}
       {@render debug()}
@@ -215,23 +221,7 @@
           <Section name="Result">
             <div class="result">
               {#if card.error}<p class="error">{card.error}</p>{/if}
-              {#each card.result ?? [] as entry (entry.key)}
-                {#if entry.kind === "text"}
-                  <p class="text">{#if entry.key !== "summary"}<span class="key">{entry.key}</span> {/if}{entry.text}</p>
-                {:else}
-                  <p class="key">{entry.key}</p>
-                  <ol class="items">
-                    {#each entry.items as item, at (at)}
-                      <li>
-                        {#if item.head}<p class="head">{item.head}</p>{/if}
-                        {#each item.fields as field, part (part)}
-                          <p class="line">{#if item.fields.length > 1}<span class="key">{field.key}</span> {/if}{field.value}</p>
-                        {/each}
-                      </li>
-                    {/each}
-                  </ol>
-                {/if}
-              {/each}
+              <ResultEntries entries={card.result ?? []} />
             </div>
           </Section>
         {/if}
@@ -349,19 +339,8 @@
     margin: 0 0 4px;
     white-space: pre-wrap;
   }
-  .key,
   .muted {
     color: var(--ink-2);
-  }
-  .items {
-    margin: 0;
-    padding-left: 20px;
-  }
-  .items li {
-    margin-bottom: 8px;
-  }
-  .head {
-    font-weight: 600;
   }
   .error {
     color: var(--red);
@@ -383,6 +362,14 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-variant-numeric: tabular-nums;
+  }
+  /* A Run's Path: its facts in --ink-2, the paths and addresses in --mono. */
+  .path dd {
+    color: var(--ink-2);
+    user-select: text;
+  }
+  .mono {
+    font-family: var(--mono);
   }
   .marks {
     display: flex;
