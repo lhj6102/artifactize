@@ -51,7 +51,7 @@ memory, configuration and cache directories, and console color modes.
   test of behavior one operating system lacks is gated, and its `cfg` gate, the one `cfg`
   branch P-ONE-LAYER allows outside the platform layer, carries a comment saying why.
   Operating-system setup in tests (programs, temporary paths, links, permissions, processes)
-  goes through shared test helpers, never hard-coded operating-system values.
+  goes through shared test helpers.
 - **P-TEST-NO-TIMING**: clock resolution and scheduling differ between systems, so tests do
   not depend on the host clock's reading, sleep lengths or names made from the time; fixed
   timestamps and controlled clocks are fine.
