@@ -107,7 +107,7 @@ Arti reads your repository, asks what matters to your team, and proposes Artifac
 | **Three kinds of checks** | Combine `runtime` commands (tests, linters), `agent` reviews (LLM judgment with read-only tools), and `human` sign-offs in one workflow. |
 | **Input-based reuse** | Content fingerprints (`artifactsum` by default) track what each check reads; unchanged inputs reuse earlier verdicts across branches, teammates, and CI. |
 | **Durable Runs** | `artifactize verify` runs in the background while agents fix failing checks, and requests human sign-offs only after automated checks pass. |
-| **Desktop & terminal UI** | Inspect live Runs on the visual graph, edit declarations, and claim or submit waiting human reviews from the desktop app or terminal interface. |
+| **Desktop app** | Inspect live Runs on the visual graph, edit declarations, and claim or submit waiting human reviews from the desktop app. |
 
 ## Learn more
 
