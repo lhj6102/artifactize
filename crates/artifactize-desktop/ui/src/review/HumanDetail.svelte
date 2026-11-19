@@ -179,7 +179,7 @@
     <Section name="Tools" folds={false}>
       <Tools {review} />
     </Section>
-    {#if !split}
+    {#if !split && !(review.settled && review.log.length === 0)}
       <Section name="Tool log" folds={false}>
         <ToolLog entries={review.log} empty="What the tools print shows here." />
       </Section>

@@ -139,6 +139,7 @@
             {/each}
           </ol>
           <button class="button small add" onclick={() => void form.add(field.name)}><Icon name="add" />Add</button>
+          {#if list.length === 0 && !field.required}<span class="optional">Optional</span>{/if}
         {:else if field.input.kind === "groups"}
           {@const subs = entered(field.input.fields)}
           {@const list = groups(value)}
@@ -324,6 +325,12 @@
   .error {
     color: var(--red);
     white-space: pre-wrap;
+    font-size: var(--text-small);
+  }
+  /* An empty optional list says so in grey beside its Add (J-HUMAN-FORM). */
+  .optional {
+    margin-left: var(--gap);
+    color: var(--ink-2);
     font-size: var(--text-small);
   }
 </style>
